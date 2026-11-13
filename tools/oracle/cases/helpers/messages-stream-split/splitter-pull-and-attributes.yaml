@@ -1,0 +1,95 @@
+kind: helper
+name: messages-stream-split-splitter-pull-and-attributes
+call:
+  messages_stream_split:
+    steps:
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 4
+        chunks:
+          - id: chunk-1
+            created: 7
+            model: m
+            choices:
+              - index: 0
+                delta:
+                  role: assistant
+                  reasoning_content: R
+                  content: T
+                  tool_calls:
+                    - {index: 0, id: call-1, type: function, function: {name: lookup, arguments: "{}"}}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: async
+        splitters: 1
+        rounds: 4
+        chunks:
+          - id: chunk-2
+            created: 8
+            model: m
+            choices:
+              - index: 0
+                delta:
+                  role: assistant
+                  reasoning_content: R
+                  content: T
+                  tool_calls:
+                    - {index: 0, id: call-1, type: function, function: {name: lookup, arguments: "{}"}}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 2
+        rounds: 4
+        chunks:
+          - id: chunk-3
+            created: 9
+            model: m
+            choices:
+              - index: 0
+                delta: {reasoning_content: R, content: T}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 1
+        chunks: []
+        chunks_attr:
+          - id: attr-1
+            created: 1
+            model: m
+            choices: []
+        messages_attr:
+          - {role: user, content: hi}
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 2
+        chunks: []
+        chunks_attr: null
+        messages_attr: null
+        failure: {kind: base_llm, status_code: 429, message: slow down}
+      - function: split
+        mode: async
+        splitters: 1
+        rounds: 3
+        chunks:
+          - id: chunk-4
+            created: 10
+            model: m
+            choices:
+              - index: 0
+                delta: {content: T}
+                finish_reason: stop
+        chunks_attr: null
+        messages_attr: null
+        failure: {kind: mid_stream_fallback, status_code: 500, message: fell over}
+env: {}
+compare: {ignore: []}

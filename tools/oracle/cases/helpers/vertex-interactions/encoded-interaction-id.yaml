@@ -1,0 +1,12 @@
+kind: helper
+name: vertex-interactions-encoded-interaction-id
+call:
+  vertex_interactions:
+    mint: {token: minted-token}
+    calls:
+      - {function: lifecycle, action: get, api_base: "", stream: false, interaction_id: "a/b c?d#e%", headers: {}, params: {vertex_project: project-1}}
+      - {function: lifecycle, action: delete, api_base: "", stream: false, interaction_id: "a-b.c_d~e", headers: {}, params: {vertex_project: project-1}}
+      - {function: lifecycle, action: cancel, api_base: "", stream: false, interaction_id: "é", headers: {}, params: {vertex_project: project-1}}
+      - {function: lifecycle, action: get, api_base: "https://proxy.example/v1", stream: false, interaction_id: project-1, headers: {}, params: {vertex_project: project-1, vertex_location: us-central1}}
+env: {}
+compare: {ignore: []}

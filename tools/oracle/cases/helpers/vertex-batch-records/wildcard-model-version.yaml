@@ -1,0 +1,80 @@
+kind: helper
+name: vertex-batch-records-wildcard-model-version
+call:
+  vertex_batch_records:
+    operation: row
+    calls:
+      - row:
+          request: {contents: []}
+          response:
+            candidates: []
+            usageMetadata: {promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5}
+            modelVersion: gemini-1.5-flash-001
+        model_name: "vertex_ai/*"
+        model_info: null
+        pricing: fixed
+      - row:
+          request: {contents: []}
+          response:
+            candidates: []
+            usageMetadata: {promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5}
+            modelVersion: gemini-1.5-flash-001
+        model_name: null
+        model_info: null
+        pricing: fixed
+      - row:
+          request: {contents: []}
+          response:
+            candidates: []
+            usageMetadata: {promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5}
+            modelVersion: gemini-1.5-flash-001
+        model_name: my-deployment
+        model_info: null
+        pricing: fixed
+      - row:
+          request: {contents: []}
+          response:
+            candidates: []
+            usageMetadata: {promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5}
+            modelVersion: gemini-1.5-flash-001
+        model_name: ""
+        model_info: null
+        pricing: fixed
+      - row:
+          request: {contents: []}
+          response:
+            candidates: []
+            usageMetadata: {promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5}
+            modelVersion: 7
+        model_name: "vertex_ai/*"
+        model_info: null
+        pricing: fixed
+      - row:
+          request: {contents: []}
+          response:
+            candidates: []
+            usageMetadata: {promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5}
+            modelVersion: 7
+        model_name: ""
+        model_info: null
+        pricing: fixed
+      - row:
+          request: {contents: []}
+          response:
+            candidates: []
+            usageMetadata: {promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5}
+            modelVersion: 7
+        model_name: null
+        model_info: null
+        pricing: fixed
+      - row:
+          request: {contents: []}
+          response:
+            candidates: []
+            usageMetadata: {promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5}
+            modelVersion: gemini-1.5-flash-001
+        model_name: my-deployment
+        model_info: {input_cost_per_token: "0.000001"}
+        pricing: requires_info
+env: {}
+compare: {ignore: []}

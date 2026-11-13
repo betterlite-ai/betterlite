@@ -1,0 +1,13 @@
+kind: helper
+name: studio-files-delete-id-from-url
+call:
+  studio_files:
+    calls:
+      - function: delete_reply
+        replies:
+          - {status: 200, url: "https://generativelanguage.googleapis.com/v1beta/files/abc123?alt=json", body: "{}"}
+          - {status: 200, url: "https://h/v1beta/files/files/abc", body: "{}"}
+          - {status: 200, url: "https://h/v1beta/files/", body: "{}"}
+          - {status: 200, url: "https://h/v1beta/other/abc", body: "{}"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: registry-dynamic-headers-empty-params
+call:
+  b3851:
+    function: dynamic_otlp_headers
+    callback_name: arize
+    params: null
+    allowed_hosts: []
+env: {}
+compare:
+  ignore: []

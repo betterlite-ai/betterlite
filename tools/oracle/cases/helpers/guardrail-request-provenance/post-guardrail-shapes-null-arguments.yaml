@@ -1,0 +1,12 @@
+kind: helper
+name: post-guardrail-shapes-null-arguments
+call:
+  b3670:
+    function: post_guardrail_shapes
+    returned:
+      - {"function": {"name": "lookup", "arguments": null}}
+    pre:
+      - {"id": "c1", "type": "function", "function": {"name": "lookup", "arguments": "a"}, "index": 0}
+    guardrail_name: pii
+env: {}
+compare: {ignore: []}

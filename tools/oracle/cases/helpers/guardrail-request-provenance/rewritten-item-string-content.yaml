@@ -1,0 +1,9 @@
+kind: helper
+name: rewritten-item-string-content
+call:
+  b3670:
+    function: rewritten_item
+    item: {"type": "function_call_output", "call_id": "c1", "output": "old"}
+    rewritten: {"content": "new"}
+env: {}
+compare: {ignore: []}

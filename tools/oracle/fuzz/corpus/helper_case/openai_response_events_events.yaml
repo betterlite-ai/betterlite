@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-events-seed-events
+call:
+  openai_response_events:
+    unknown_generic_event:
+      probes:
+        - {event: {type: vendor.future, payload: {n: 1}}}
+env: {}
+compare: {ignore: []}

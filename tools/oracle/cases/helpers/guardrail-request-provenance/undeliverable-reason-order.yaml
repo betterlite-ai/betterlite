@@ -1,0 +1,13 @@
+kind: helper
+name: undeliverable-reason-order
+call:
+  b3670:
+    function: undeliverable_reason
+    call_ids: ["c1"]
+    tool_call_item_count: 2
+    post_guardrail_tool_call_count: 0
+    unresolved_argument_event: true
+    rewritten_call_ids: ["c1"]
+    event_call_ids: []
+env: {}
+compare: {ignore: []}
