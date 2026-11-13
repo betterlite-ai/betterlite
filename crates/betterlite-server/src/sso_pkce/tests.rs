@@ -17,7 +17,7 @@ use tempfile::NamedTempFile;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::fmt;
 
-use super::token_exchange::{TokenExchangeParameters, prepare_token_exchange_parameters};
+use super::token_exchange::{TokenExchangeParameters, token_exchange_parameters};
 use super::verifier_cache::{
     PkceCacheEntry, PkceCacheKind, PkceCaches, VerifierCache, stored_entry,
 };
@@ -314,7 +314,7 @@ async fn a_cached_object_verifier_is_returned_with_its_cache_key() {
         user: &cache,
     };
     let parameters =
-        prepare_token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
+        token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
             .await
             .unwrap();
     assert!(parameters.include_client_id);
@@ -340,7 +340,7 @@ async fn a_legacy_string_verifier_stays_usable_and_warns() {
         user: &cache,
     };
     let parameters =
-        prepare_token_exchange_parameters(Some("state"), false, &settings(true, false), &caches)
+        token_exchange_parameters(Some("state"), false, &settings(true, false), &caches)
             .await
             .unwrap();
     assert_eq!(verifier_of(&parameters).as_deref(), Some("legacy"));
@@ -356,7 +356,7 @@ async fn a_missing_state_only_warns_even_in_strict_mode() {
         redis: None::<&FakeCache>,
         user: &cache,
     };
-    let parameters = prepare_token_exchange_parameters(None, true, &settings(true, true), &caches)
+    let parameters = token_exchange_parameters(None, true, &settings(true, true), &caches)
         .await
         .unwrap();
     assert!(parameters.verifier.is_none());
@@ -375,7 +375,7 @@ async fn pkce_disabled_never_touches_the_cache() {
         user: &cache,
     };
     let parameters =
-        prepare_token_exchange_parameters(Some("state"), true, &settings(false, true), &caches)
+        token_exchange_parameters(Some("state"), true, &settings(false, true), &caches)
             .await
             .unwrap();
     assert!(parameters.verifier.is_none());
@@ -391,10 +391,9 @@ async fn a_strict_cache_miss_returns_the_pkce_cache_miss_error() {
         redis: None::<&FakeCache>,
         user: &cache,
     };
-    let error =
-        prepare_token_exchange_parameters(Some("state"), true, &settings(true, true), &caches)
-            .await
-            .unwrap_err();
+    let error = token_exchange_parameters(Some("state"), true, &settings(true, true), &caches)
+        .await
+        .unwrap_err();
     assert!(matches!(&error, PkceError::MissingVerifier { .. }));
     assert_eq!(error.status(), 401);
     assert_eq!(error.error_type(), "auth_error");
@@ -413,7 +412,7 @@ async fn a_permissive_cache_miss_continues_without_a_verifier() {
         user: &cache,
     };
     let parameters =
-        prepare_token_exchange_parameters(Some("state"), false, &settings(true, false), &caches)
+        token_exchange_parameters(Some("state"), false, &settings(true, false), &caches)
             .await
             .unwrap();
     assert!(parameters.verifier.is_none());
@@ -432,10 +431,9 @@ async fn an_empty_verifier_field_is_deleted_and_fails_in_strict_mode() {
         redis: None::<&FakeCache>,
         user: &cache,
     };
-    let error =
-        prepare_token_exchange_parameters(Some("state"), true, &settings(true, true), &caches)
-            .await
-            .unwrap_err();
+    let error = token_exchange_parameters(Some("state"), true, &settings(true, true), &caches)
+        .await
+        .unwrap_err();
     assert!(matches!(&error, PkceError::EmptyVerifier { .. }));
     assert_eq!(error.status(), 401);
     assert_eq!(error.param(), Some("PKCE_CACHE_MISS"));
@@ -454,7 +452,7 @@ async fn an_empty_verifier_field_is_deleted_and_warns_when_permissive() {
         user: &cache,
     };
     let parameters =
-        prepare_token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
+        token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
             .await
             .unwrap();
     assert!(parameters.verifier.is_none());
@@ -473,10 +471,9 @@ async fn a_corrupt_entry_is_deleted_before_the_strict_error() {
         redis: None::<&FakeCache>,
         user: &cache,
     };
-    let error =
-        prepare_token_exchange_parameters(Some("state"), true, &settings(true, true), &caches)
-            .await
-            .unwrap_err();
+    let error = token_exchange_parameters(Some("state"), true, &settings(true, true), &caches)
+        .await
+        .unwrap_err();
     assert!(matches!(&error, PkceError::UnexpectedShape { .. }));
     assert_eq!(error.code(), "401");
     assert_eq!(cache.deletes(), vec!["pkce_verifier:state".to_owned()]);
@@ -494,7 +491,7 @@ async fn a_corrupt_entry_is_deleted_and_warns_when_permissive() {
         user: &cache,
     };
     let parameters =
-        prepare_token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
+        token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
             .await
             .unwrap();
     assert!(parameters.verifier.is_none());
@@ -520,7 +517,7 @@ async fn the_redis_usage_cache_is_read_when_one_is_configured() {
         user: &user,
     };
     let parameters =
-        prepare_token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
+        token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
             .await
             .unwrap();
     assert_eq!(verifier_of(&parameters).as_deref(), Some("from-redis"));
@@ -541,7 +538,7 @@ async fn the_user_cache_is_read_when_no_redis_cache_exists() {
         user: &user,
     };
     let parameters =
-        prepare_token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
+        token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
             .await
             .unwrap();
     assert_eq!(verifier_of(&parameters).as_deref(), Some("from-user"));
@@ -556,10 +553,9 @@ async fn a_strict_miss_names_the_multi_instance_cause_when_redis_is_configured()
         redis: Some(&redis),
         user: &user,
     };
-    let error =
-        prepare_token_exchange_parameters(Some("state"), true, &settings(true, true), &caches)
-            .await
-            .unwrap_err();
+    let error = token_exchange_parameters(Some("state"), true, &settings(true, true), &caches)
+        .await
+        .unwrap_err();
     assert!(error.to_string().contains("different instances"));
 }
 
@@ -571,7 +567,7 @@ async fn a_failed_cache_read_is_a_miss() {
         user: &cache,
     };
     let parameters =
-        prepare_token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
+        token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
             .await
             .unwrap();
     assert!(parameters.verifier.is_none());
@@ -593,7 +589,7 @@ async fn a_user_cache_entry_round_trips_through_the_auth_cache() {
         user: &cache,
     };
     let parameters =
-        prepare_token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
+        token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
             .await
             .unwrap();
     let verifier = parameters.verifier.unwrap();
@@ -618,7 +614,7 @@ async fn deleting_a_verifier_removes_the_user_cache_entry() {
     };
     caches.delete_verifier("pkce_verifier:state").await;
     let parameters =
-        prepare_token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
+        token_exchange_parameters(Some("state"), true, &settings(true, false), &caches)
             .await
             .unwrap();
     assert!(parameters.verifier.is_none());

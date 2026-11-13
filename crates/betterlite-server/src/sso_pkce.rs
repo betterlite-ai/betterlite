@@ -1,5 +1,3 @@
-use std::fmt;
-
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use betterlite_config::sso_pkce::PkceSettings;
@@ -28,16 +26,16 @@ pub enum PkceCacheShape {
     Null,
 }
 
-impl fmt::Display for PkceCacheShape {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let name = match self {
+impl PkceCacheShape {
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
             Self::Object => "object",
             Self::Boolean => "bool",
             Self::Number => "number",
             Self::List => "list",
             Self::Null => "null",
-        };
-        formatter.write_str(name)
+        }
     }
 }
 
@@ -54,10 +52,7 @@ pub enum PkceError {
     #[error(
         "PKCE verifier for state '{state}' has an unrecognized format ({shape}); the cached entry may be corrupt"
     )]
-    UnexpectedShape {
-        state: String,
-        shape: PkceCacheShape,
-    },
+    UnexpectedShape { state: String, shape: &'static str },
 }
 
 impl PkceError {
