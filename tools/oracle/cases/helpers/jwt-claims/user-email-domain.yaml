@@ -1,0 +1,56 @@
+kind: helper
+name: jwt-claims-user-email-domain
+call:
+  jwt_claims:
+    scenarios:
+      - settings: {user_id_jwt_field: sub, user_email_jwt_field: email, user_allowed_email_domain: "example.com", user_id_upsert: true, end_user_id_jwt_field: eid, agent_id_jwt_field: azp, org_id_jwt_field: org, org_alias_jwt_field: org_name}
+        trusted_issuers: []
+        claims: {sub: user-1, email: a@example.com, eid: end-1, azp: agent-1, org: org-1, org_name: Org}
+        default_value: null
+        valid_user_email: null
+        leeway: 7
+      - settings: {user_id_jwt_field: sub, user_email_jwt_field: email, user_allowed_email_domain: "example.com", user_id_upsert: true}
+        trusted_issuers: []
+        claims: {sub: user-1, email: a@example.com}
+        default_value: null
+        valid_user_email: false
+        leeway: 0
+      - settings: {user_allowed_email_domain: ""}
+        trusted_issuers: []
+        claims: {}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {}
+        trusted_issuers: []
+        claims: {email: a@example.com}
+        default_value: fallback
+        valid_user_email: null
+        leeway: 0
+      - settings: {user_email_jwt_field: email}
+        trusted_issuers: []
+        claims: {}
+        default_value: fallback
+        valid_user_email: null
+        leeway: 0
+      - settings: {user_email_jwt_field: email}
+        trusted_issuers: []
+        claims: {email: null}
+        default_value: fallback
+        valid_user_email: null
+        leeway: 0
+      - settings: {user_email_jwt_field: email, user_id_jwt_field: sub}
+        trusted_issuers: [https://idp.example]
+        claims: {_litellm_jwt_issuer: https://idp.example, _litellm_user_email: trusted@example.com, _litellm_user_id: trusted-user, email: raw@example.com, sub: raw-user}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {agent_id_jwt_field: azp}
+        trusted_issuers: []
+        claims: {azp: 5}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+    tokens: []
+env: {}
+compare: {ignore: []}

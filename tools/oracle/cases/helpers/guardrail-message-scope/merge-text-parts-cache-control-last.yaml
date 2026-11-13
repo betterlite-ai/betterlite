@@ -1,0 +1,6 @@
+kind: helper
+name: merge-text-parts-cache-control-last
+call:
+  b3663: {"function": "content_text", "content": "x", "parts": [{"type": "text", "text": "a", "cache_control": {"type": "ephemeral"}, "extra": 1}, {"type": "text", "text": "b", "cache_control": {"type": "ephemeral", "ttl": "1h"}}], "new_text": "merged"}
+env: {}
+compare: {ignore: []}

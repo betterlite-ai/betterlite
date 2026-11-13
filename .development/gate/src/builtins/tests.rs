@@ -49,8 +49,40 @@ fn the_expect_budget_counts_inner_and_outer_attributes() {
         "#![expect(dead_code, reason = \"wired in the next task\")]".to_owned(),
         "let budget = 1;".to_owned(),
     ];
-    assert!(expect_budget::check(2, &lines).is_empty());
-    assert_eq!(expect_budget::check(1, &lines).len(), 3);
+    assert!(expect_budget::check(2, &lines, &[]).is_empty());
+    assert_eq!(expect_budget::check(1, &lines, &[]).len(), 3);
+}
+
+#[test]
+fn the_expect_budget_counts_python_casts_and_ignores_once_per_line() {
+    let lines = [
+        "    view = cast(Json, event.model_dump())  # https://github.com/BerriAI/litellm/blob/0/x.py#L1".to_owned(),
+        "    value = typing.cast(\"dict[str, Json]\", raw)".to_owned(),
+        "    total = run(x)  # type: ignore[misc]  # pyright: ignore[reportAny]".to_owned(),
+        "import litellm.types.utils  # pyright:ignore[reportMissingTypeStubs]".to_owned(),
+        "    hidden = ours._hidden_params  # noqa: SLF001".to_owned(),
+    ];
+    assert!(expect_budget::check(5, &[], &lines).is_empty());
+    assert_eq!(expect_budget::check(4, &[], &lines).len(), 6);
+}
+
+#[test]
+fn the_expect_budget_skips_python_lines_that_only_name_a_cast_or_a_hash() {
+    let lines = [
+        "    forecast(value)".to_owned(),
+        "    broadcast(event)".to_owned(),
+        "    color = \"#ffffff\"  # the theme's own white".to_owned(),
+        "    note = \"type: ignore\"".to_owned(),
+    ];
+    assert!(expect_budget::check(0, &[], &lines).is_empty());
+}
+
+#[test]
+fn the_expect_budget_shares_one_limit_between_rust_and_python() {
+    let rust = ["#[expect(dead_code, reason = \"wired in the next task\")]".to_owned()];
+    let python = ["    view = cast(Json, raw)".to_owned()];
+    assert!(expect_budget::check(2, &rust, &python).is_empty());
+    assert_eq!(expect_budget::check(1, &rust, &python).len(), 3);
 }
 
 #[test]

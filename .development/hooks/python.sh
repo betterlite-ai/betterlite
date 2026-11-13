@@ -36,7 +36,7 @@ case ${mode} in
     for found in "${unlinked}" "${owned}"; do
       [[ -z ${found} ]] && continue
       printf '%s\n' "${found}"
-      echo "a cast, noqa, type: ignore or pyright: ignore[rule] is allowed only for an upstream dependency's own types, and its line carries the upstream source it works around as a link pinned to a commit (https://github.com/<owner>/<repo>/blob/<40-hex sha>/...)" >&2
+      echo "a cast, noqa, type: ignore or pyright: ignore[rule] is allowed only for an upstream dependency's own types, and its line carries the upstream source it works around as a link pinned to a commit (https://github.com/<owner>/<repo>/blob/<40-hex sha>/...), and each such line costs one from the task's max_new_expects" >&2
       status=1
     done
     if [[ -n ${banned} ]]; then
@@ -56,7 +56,7 @@ case ${mode} in
     exit "${status}"
     ;;
   mypy)
-    [[ ${#strict[@]} -eq 0 ]] || exec "${oracle[@]}" mypy --config-file tools/oracle/litellm/pyproject.toml "${strict[@]}"
+    [[ ${#strict[@]} -eq 0 ]] || exec "${oracle[@]}" mypy --config-file tools/oracle/litellm/mypy.toml "${strict[@]}"
     ;;
   pyright)
     # 1031 task checks run basedpyright over the whole helpers folder, so a helper change has to pass that same run, importers included

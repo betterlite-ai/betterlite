@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-content-unsupported-and-text
+call: {"messages_content_primitives": {"operation": "tool_result_content", "raw_content": [{"type": "mystery"}, 7, "a"]}}
+env: {}
+compare: {ignore: []}

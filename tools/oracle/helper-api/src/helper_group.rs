@@ -5,6 +5,7 @@ macro_rules! helper_group {
 
         pub mod helpers {
             pub use $crate::error::HelperError;
+            pub use $crate::error::OrHelperError;
             pub use $crate::helper::{Helper, HelperResult};
         }
 

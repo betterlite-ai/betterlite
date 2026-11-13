@@ -1,0 +1,22 @@
+kind: helper
+name: session-token-codec-bearer-decrypt-failures
+call:
+  session_token_codec:
+    salt_key: salt-one
+    master_key: null
+    env: {}
+    nonce_hex: "000102030405060708090a0b0c0d0e0f"
+    now: "2026-11-12T17:50:00.123456+00:00"
+    steps:
+      - op: decode
+        token: "litellm_login_AAECAwQFBgcICQoLx_c1Cro7-pOncdS01DFNTCqEWiAH51WFH4QZY2Y96Q6mr1Cksg"
+      - op: decode
+        token: "litellm_login_AAECAwQFBgcICQoLLMZDyNhTuJeV-wimaWlxMeTB3A"
+      - op: decode
+        token: "litellm_login_AAAA"
+      - op: decode
+        token: "litellm_login_%%%%"
+      - op: decode
+        token: "litellm_login_"
+env: {}
+compare: {ignore: []}

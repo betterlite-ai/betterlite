@@ -1,0 +1,17 @@
+kind: helper
+name: computer-tool-beta
+call:
+  anthropic_feature_flags:
+    fixture: {model_cost: {}}
+    calls:
+      - {function: computer, tools: [{type: computer_20250124}], versions: [computer_20250124, computer_20241022, computer_20990101]}
+      - {function: computer, tools: [{type: computer_20241022}, {type: computer_20250124}], versions: []}
+      - {function: computer, tools: [{name: bash}], versions: []}
+      - {function: computer, tools: null, versions: []}
+      - {function: computer, tools: [{type: web_search_20250305}], versions: []}
+      - {function: computer, tools: [{type: web_search}], versions: []}
+      - {function: computer, tools: [{type: web_searches}], versions: []}
+      - {function: computer, tools: [{name: web_search}], versions: []}
+      - {function: computer, tools: [], versions: []}
+env: {}
+compare: {ignore: []}

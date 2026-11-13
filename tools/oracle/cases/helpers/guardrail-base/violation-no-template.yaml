@@ -1,0 +1,6 @@
+kind: helper
+name: violation-no-template
+call:
+  b5471: {"function": "violation", "template": null, "default": "fallback", "context": {}}
+env: {}
+compare: {ignore: []}
