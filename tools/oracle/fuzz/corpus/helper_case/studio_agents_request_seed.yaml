@@ -1,0 +1,11 @@
+kind: helper
+name: studio-agents-seed-request
+call:
+  studio_agents:
+    calls:
+      - function: list_request
+        api_base: https://seed.example
+        page_size: 2
+        page_token: seed-token
+env: {}
+compare: {ignore: []}

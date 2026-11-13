@@ -1,0 +1,20 @@
+kind: helper
+name: studio-agents-successful-empty-delete
+call:
+  studio_agents:
+    calls:
+      - function: reply
+        operation: delete
+        name: my-agent
+        status: 200
+        body: "{}"
+      - function: reply
+        operation: delete
+        name: my-agent
+        status: 204
+        body: ""
+      - function: item_request
+        name: my-agent
+        api_base: https://custom.example
+env: {}
+compare: {ignore: []}

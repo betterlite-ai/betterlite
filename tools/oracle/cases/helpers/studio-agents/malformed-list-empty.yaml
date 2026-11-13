@@ -1,0 +1,17 @@
+kind: helper
+name: studio-agents-malformed-list-empty
+call:
+  studio_agents:
+    calls:
+      - function: reply
+        operation: list
+        name: ignored
+        status: 200
+        body: "not json"
+      - function: reply
+        operation: versions
+        name: my-agent
+        status: 200
+        body: "<html></html>"
+env: {}
+compare: {ignore: []}

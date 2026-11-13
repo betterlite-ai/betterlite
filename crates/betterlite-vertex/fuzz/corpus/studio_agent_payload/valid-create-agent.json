@@ -1,0 +1,1 @@
+{"id": "agent", "name": "my-agent", "base_agent": "waverunner", "extra": {"k": [1, 2]}}
