@@ -89,17 +89,30 @@ fn copies_the_configured_filter_fields() {
     assert_eq!(patterns[0].pattern_type, "prebuilt");
     assert_eq!(patterns[0].pattern_name.as_deref(), Some("us_ssn"));
     assert_eq!(patterns[0].action, ContentFilterAction::Mask);
-    let words = built.blocked_words.as_ref().unwrap();
-    assert_eq!(words.len(), 1);
-    assert_eq!(words[0].keyword, "secret");
-    assert_eq!(words[0].action, ContentFilterAction::Block);
-    assert_eq!(words[0].description.as_deref(), Some("a secret"));
     assert_eq!(built.blocked_words_file.as_deref(), Some("words.yaml"));
     assert_eq!(
         built.event_hook,
         LitellmParamsMode::One("during_call".to_owned())
     );
     assert!(built.default_on);
+    assert_eq!(built.severity_threshold, "low");
+}
+
+#[test]
+fn copies_the_blocked_words_and_categories() {
+    let built = initialize_content_filter(
+        &params(EVERY_FIELD),
+        Some("content-filter"),
+        None,
+        None,
+        false,
+    )
+    .unwrap();
+    let words = built.blocked_words.as_ref().unwrap();
+    assert_eq!(words.len(), 1);
+    assert_eq!(words[0].keyword, "secret");
+    assert_eq!(words[0].action, ContentFilterAction::Block);
+    assert_eq!(words[0].description.as_deref(), Some("a secret"));
     let categories = built.categories.as_ref().unwrap();
     assert_eq!(categories.len(), 1);
     assert_eq!(categories[0].category, "harmful_self_harm");
@@ -109,7 +122,18 @@ fn copies_the_configured_filter_fields() {
         categories[0].severity_threshold,
         ContentFilterSeverity::High
     );
-    assert_eq!(built.severity_threshold, "low");
+}
+
+#[test]
+fn copies_the_extra_and_session_fields() {
+    let built = initialize_content_filter(
+        &params(EVERY_FIELD),
+        Some("content-filter"),
+        None,
+        None,
+        false,
+    )
+    .unwrap();
     assert_eq!(built.image_model.as_deref(), Some("gpt-4o-mini"));
     let competitor = built.competitor_intent_config.as_ref().unwrap();
     assert_eq!(
@@ -132,17 +156,23 @@ fn defaults_the_severity_and_the_default_on_flag() {
     assert_eq!(built.name, "safety");
     assert_eq!(built.guardrail_id, None);
     assert_eq!(built.policy_template, None);
-    assert!(built.patterns.is_none());
-    assert!(built.blocked_words.is_none());
-    assert_eq!(built.blocked_words_file, None);
     assert_eq!(
         built.event_hook,
         LitellmParamsMode::One("pre_call".to_owned())
     );
     assert!(!built.default_on);
-    assert!(built.categories.is_none());
     assert_eq!(built.severity_threshold, "medium");
     assert!(!built.router_present);
+}
+
+#[test]
+fn leaves_the_other_optional_fields_absent() {
+    let built =
+        initialize_content_filter(&params(MINIMAL), Some("safety"), None, None, false).unwrap();
+    assert!(built.patterns.is_none());
+    assert!(built.blocked_words.is_none());
+    assert_eq!(built.blocked_words_file, None);
+    assert!(built.categories.is_none());
     assert_eq!(built.image_model, None);
     assert_eq!(built.competitor_intent_config, None);
     assert_eq!(built.end_session_after_n_fails, None);
