@@ -1,6 +1,21 @@
 #![cfg(test)]
 
+use std::time::Duration;
+
+use betterlite_logging::logging_pre_post::args::RawBody;
+use betterlite_logging::logging_pre_post::env::{
+    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
+};
+use betterlite_logging::logging_privacy::request::Decision;
+use betterlite_logging::logging_state::correlation::{
+    CorrelationContext, CorrelationSettings, CorrelationSetup,
+};
+use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_models::decisions::Json as LoggedJson;
 use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use chrono::DateTime;
+use indexmap::IndexMap;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -9,6 +24,7 @@ use super::messages::{
     handle_message_with_file, handle_name_in_message, handle_tool_call_message,
     is_empty_assistant_message, strip_output_only_fields,
 };
+use super::reply::{ResponseReply, transform_response};
 use super::reply::{
     decode_mistral_chat, handle_content_list_to_str_conversion, handle_empty_content_response,
 };
@@ -16,11 +32,13 @@ use super::request::{
     MessageTransform, RequestTransform, add_reasoning_system_prompt_if_needed, transform_messages,
     transform_request,
 };
-use super::stream::chunk_parser;
+use super::stream::{MistralChatResponseIterator, chunk_parser, get_model_response_iterator};
 use crate::chat::ChatMessage;
 use crate::chat_choices::stream::StreamError;
 use crate::chat_content::{Mode, RefuseDownloads};
+use crate::compatible_wire::{LogInput, ReplyOptions};
 use crate::mistral_options::REASONING_SYSTEM_PROMPT;
+use crate::openai_base_config::Headers;
 
 fn message(value: Value) -> ChatMessage {
     serde_json::from_value(value).expect("a chat message")
@@ -428,6 +446,99 @@ fn a_stream_error_chunk_reaches_the_parent_after_a_malformed_block() {
     });
     let error = chunk_parser(&mut chunk, Uuid::nil, i64::default).expect_err("an error chunk");
     assert!(matches!(error, StreamError::Provider { status: 400, .. }));
+}
+
+struct Discard;
+
+impl LogSink for Discard {
+    fn emit(&self, _record: LogRecord) {}
+}
+
+#[test]
+fn transform_response_logs_headers_then_converts_the_reply() {
+    let init = r#"{"model":"mistral-large","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("a redactor");
+    let mut state = LoggingState::new(
+        serde_json::from_str::<LoggingInit>(init).expect("a logging init"),
+        CorrelationSetup {
+            context: &mut CorrelationContext::default(),
+            settings: CorrelationSettings::default(),
+        },
+        &redactor,
+        || "trace".to_owned(),
+        Duration::default,
+    )
+    .expect("a logging state");
+    let env = PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor: &redactor,
+        log: &Discard,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").expect("a time"),
+    };
+    let body = json!({"id": "c", "object": "chat.completion", "created": 1, "model": "m",
+        "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": [
+            {"type": "thinking", "thinking": [{"type": "text", "text": "why"}]},
+            {"type": "text", "text": "hi"}
+        ]}}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}})
+    .to_string();
+    let headers = Headers::from([
+        ("authorization".to_owned(), "Bearer abc123".to_owned()),
+        ("x-trace".to_owned(), "t".to_owned()),
+    ]);
+    let reply = transform_response(
+        &ResponseReply {
+            status: 200,
+            headers: &headers,
+            body: body.as_bytes(),
+        },
+        &mut state,
+        &env,
+        LogInput {
+            messages: LoggedJson::Text("hello".to_owned()),
+            data: RawBody::Object(IndexMap::new()),
+        },
+        &ReplyOptions {
+            json_mode: false,
+            provider: None,
+            base_model: None,
+            identifier: Uuid::nil,
+            clock: i64::default,
+        },
+    )
+    .expect("a converted reply");
+    let converted = serde_json::to_value(&reply.response).expect("a reply value");
+    assert_eq!(converted["choices"][0]["message"]["content"], json!("hi"));
+    assert_eq!(
+        converted["choices"][0]["message"]["reasoning_content"],
+        json!("why")
+    );
+    let details = serde_json::to_value(&state.model_call_details).expect("call details");
+    assert_eq!(
+        details["response_headers"],
+        json!({"authorization": "Be****23", "x-trace": "t"})
+    );
+    assert_eq!(details["original_response"], json!(body));
+}
+
+#[test]
+fn the_iterator_keeps_the_json_mode_it_was_created_with() {
+    assert_eq!(
+        get_model_response_iterator(true),
+        MistralChatResponseIterator { json_mode: true }
+    );
+    assert_ne!(
+        get_model_response_iterator(false),
+        get_model_response_iterator(true)
+    );
 }
 
 #[test]
