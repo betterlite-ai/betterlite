@@ -10,6 +10,24 @@ pub enum ResponseSource<'response> {
     OutputText(&'response str),
 }
 
+fn response_array<'response>(
+    response: &'response BTreeMap<String, GuardrailValue>,
+    key: &str,
+) -> Option<&'response Vec<GuardrailValue>> {
+    match response.get(key) {
+        Some(GuardrailValue::Array(items)) => Some(items),
+        _ => None,
+    }
+}
+
+fn joined(parts: Vec<&str>, separator: &str) -> Option<String> {
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(separator))
+    }
+}
+
 #[must_use]
 pub fn extract_response_text(response: ResponseSource<'_>) -> Option<String> {
     match response {
@@ -28,9 +46,7 @@ pub fn extract_response_text(response: ResponseSource<'_>) -> Option<String> {
 
 #[must_use]
 pub fn chat_completion_text(response: &BTreeMap<String, GuardrailValue>) -> Option<String> {
-    let Some(GuardrailValue::Array(choices)) = response.get("choices") else {
-        return None;
-    };
+    let choices = response_array(response, "choices")?;
     let mut parts: Vec<&str> = Vec::new();
     for choice in choices {
         if let Some(message) = get_field(Some(choice), "message")
@@ -45,11 +61,7 @@ pub fn chat_completion_text(response: &BTreeMap<String, GuardrailValue>) -> Opti
             parts.push(text);
         }
     }
-    if parts.is_empty() {
-        None
-    } else {
-        Some(parts.join("\n"))
-    }
+    joined(parts, "\n")
 }
 
 fn function_call_arguments(item: &BTreeMap<String, GuardrailValue>) -> Option<&str> {
@@ -85,25 +97,19 @@ fn output_message_text(item: &BTreeMap<String, GuardrailValue>) -> Vec<&str> {
     texts
 }
 
+fn output_item_text(item: &GuardrailValue) -> Vec<&str> {
+    let Some(object) = object_of(item) else {
+        return Vec::new();
+    };
+    if let Some(arguments) = function_call_arguments(object) {
+        return vec![arguments];
+    }
+    output_message_text(object)
+}
+
 #[must_use]
 pub fn responses_api_text(response: &BTreeMap<String, GuardrailValue>) -> Option<String> {
-    let Some(GuardrailValue::Array(output)) = response.get("output") else {
-        return None;
-    };
-    let mut texts: Vec<&str> = Vec::new();
-    for item in output {
-        let Some(object) = object_of(item) else {
-            continue;
-        };
-        if let Some(arguments) = function_call_arguments(object) {
-            texts.push(arguments);
-            continue;
-        }
-        texts.extend(output_message_text(object));
-    }
-    if texts.is_empty() {
-        None
-    } else {
-        Some(texts.concat())
-    }
+    let output = response_array(response, "output")?;
+    let texts: Vec<&str> = output.iter().flat_map(output_item_text).collect();
+    joined(texts, "")
 }
