@@ -1,0 +1,15 @@
+kind: helper
+name: nonadmin-plugin-denied
+call:
+  claude_plugin_policy:
+    calls:
+      - function: require_admin
+        caller: {user_role: internal_user, key_skills: null, team_skills: null}
+      - function: require_admin
+        caller: {user_role: proxy_admin_viewer, key_skills: null, team_skills: null}
+      - function: require_admin
+        caller: {user_role: proxy_admin, key_skills: null, team_skills: null}
+      - function: require_admin
+        caller: {user_role: null, key_skills: null, team_skills: null}
+env: {}
+compare: {ignore: []}
