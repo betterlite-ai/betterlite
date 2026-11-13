@@ -48,12 +48,6 @@ def element(html: str, opening: str, closing: str) -> str:
     return html[start:end]
 
 
-def tag_with(html: str, needle: str) -> str:
-    at = html.index(needle)
-    start = html.rindex("<", 0, at)
-    return html[start : html.index(">", at) + 1]
-
-
 def normalized(block: str) -> str:
     kept = [line.strip() for line in block.splitlines() if line.strip()]
     return "\n".join(kept)
@@ -79,9 +73,11 @@ def verification_facts(html: str) -> Json:
         "heading": normalized(between(html, "<h1>", "</h1>")),
         "instructions": normalized(between(html, "<p>", "</p>")),
         "form": normalized(element(html, "<form ", ">")),
-        "token_input": normalized(tag_with(html, 'name="browser_complete_token"')),
+        "token_input": normalized(
+            element(html, '<input type="hidden" name="browser_complete_token"', ">")
+        ),
         "code_label": normalized(element(html, '<label for="user_code">', "</label>")),
-        "code_input": normalized(tag_with(html, 'id="user_code"')),
+        "code_input": normalized(element(html, '<input id="user_code"', ">")),
         "submit": normalized(element(html, '<button type="submit">', "</button>")),
     }
     return facts
@@ -91,7 +87,9 @@ def consent_facts(html: str) -> Json:
     lifetime = int(between(html, "expires within ", " hours"))
     team_hidden: Json = None
     if '<input type="hidden" name="team_id"' in html:
-        team_hidden = normalized(tag_with(html, 'name="team_id"'))
+        team_hidden = normalized(
+            element(html, '<input type="hidden" name="team_id"', ">")
+        )
     logout: Json = "lite logout" if "<code>lite logout</code>" in html else None
     denied = normalized(
         element(html, '<button type="submit" name="decision" value="deny"', "</button>")
@@ -101,10 +99,10 @@ def consent_facts(html: str) -> Json:
     )
     facts: dict[str, Json] = {
         "page": "consent",
-        "referrer": normalized(tag_with(html, 'name="referrer"')),
+        "referrer": normalized(element(html, '<meta name="referrer"', ">")),
         "script": None,
         "form": normalized(element(html, "<form ", ">")),
-        "flow_input": normalized(tag_with(html, 'name="flow"')),
+        "flow_input": normalized(element(html, '<input type="hidden" name="flow"', ">")),
         "origin": normalized(between(html, "<code>", "</code>")),
         "user": normalized(between(html, "<strong>", "</strong>")),
         "lifetime_hours": lifetime,

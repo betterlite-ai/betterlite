@@ -183,7 +183,6 @@ fn consent_page_shows_the_origin_user_lifetime_and_decision_buttons() {
     ));
 }
 
-// LiteLLM's escape() left quotes raw in these slots; betterlite escapes them, so a hostile value stays text or attribute data (deviation)
 #[test]
 fn consent_page_escapes_quotes_in_the_origin_user_action_and_flow() {
     let html = render_consent_page(ConsentPage {

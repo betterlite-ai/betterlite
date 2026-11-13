@@ -13,7 +13,6 @@ pub(super) enum Field {
     Null,
     Text(&'static str, &'static str),
     Block(&'static str, &'static str),
-    Tag(&'static str),
     Lines(&'static str, &'static str),
     OptionalText(&'static str, &'static str),
     OptionalBlock(&'static str, &'static str),
@@ -25,12 +24,18 @@ pub(super) const VERIFICATION_FIELDS: &[(&str, Field)] = &[
     ("heading", Field::Text("<h1>", "</h1>")),
     ("instructions", Field::Text("<p>", "</p>")),
     ("form", Field::Block("<form ", ">")),
-    ("token_input", Field::Tag("name=\"browser_complete_token\"")),
+    (
+        "token_input",
+        Field::Block("<input type=\"hidden\" name=\"browser_complete_token\"", ">"),
+    ),
     (
         "code_label",
         Field::Block("<label for=\"user_code\">", "</label>"),
     ),
-    ("code_input", Field::Tag("id=\"user_code\"")),
+    (
+        "code_input",
+        Field::Block("<input id=\"user_code\"", ">"),
+    ),
     (
         "submit",
         Field::Block("<button type=\"submit\">", "</button>"),
@@ -38,10 +43,13 @@ pub(super) const VERIFICATION_FIELDS: &[(&str, Field)] = &[
 ];
 
 pub(super) const CONSENT_FIELDS: &[(&str, Field)] = &[
-    ("referrer", Field::Tag("name=\"referrer\"")),
+    ("referrer", Field::Block("<meta name=\"referrer\"", ">")),
     ("script", Field::Null),
     ("form", Field::Block("<form ", ">")),
-    ("flow_input", Field::Tag("name=\"flow\"")),
+    (
+        "flow_input",
+        Field::Block("<input type=\"hidden\" name=\"flow\"", ">"),
+    ),
     ("origin", Field::Text("<code>", "</code>")),
     ("user", Field::Text("<strong>", "</strong>")),
     (
@@ -98,7 +106,6 @@ impl Field {
             Self::Block(opening, closing) => {
                 element(html, opening, closing).map(|raw| json!(normalized(raw)))
             }
-            Self::Tag(needle) => tag_with(html, needle).map(|raw| json!(normalized(raw))),
             Self::Lines(opening, closing) => Ok(json!(lines(between(html, opening, closing)?))),
             Self::OptionalText(opening, closing) => optional_text(html, opening, closing),
             Self::OptionalBlock(opening, closing) => optional_block(html, opening, closing),
@@ -115,7 +122,8 @@ pub(super) fn consent_entries(html: &str) -> Entries {
         .contains("<code>lite logout</code>")
         .then_some("lite logout");
     let team_hidden = if html.contains("<input type=\"hidden\" name=\"team_id\"") {
-        tag_with(html, "name=\"team_id\"").map(|raw| json!(normalized(raw)))?
+        element(html, "<input type=\"hidden\" name=\"team_id\"", ">")
+            .map(|raw| json!(normalized(raw)))?
     } else {
         Value::Null
     };
@@ -179,27 +187,22 @@ fn between<'render>(html: &'render str, opening: &str, closing: &str) -> Markup<
         .ok_or_else(|| classified("ValueError", MISSING))
 }
 
-fn found<T>(value: Option<T>) -> Result<T, Box<HelperError>> {
-    let Some(inner) = value else {
-        return Err(classified("ValueError", MISSING));
-    };
-    Ok(inner)
-}
-
 fn element<'render>(html: &'render str, opening: &str, closing: &str) -> Markup<'render> {
-    let start = found(html.find(opening))?;
-    let tail = found(html.get(start..))?;
-    let offset = found(tail.find(closing))?;
-    let end = found(offset.checked_add(closing.len()))?;
-    found(tail.get(..end))
-}
-
-fn tag_with<'render>(html: &'render str, needle: &str) -> Markup<'render> {
-    let at = found(html.find(needle))?;
-    let start = found(html.get(..at).and_then(|head| head.rfind('<')))?;
-    let close = found(html.get(at..).and_then(|tail| tail.find('>')))?;
-    let end = found(close.checked_add(at).and_then(|index| index.checked_add(1)))?;
-    found(html.get(start..end))
+    let inner = between(html, opening, closing)?;
+    let start = html
+        .find(opening)
+        .ok_or_else(|| classified("ValueError", MISSING))?;
+    let inner_start = start
+        .checked_add(opening.len())
+        .ok_or_else(|| classified("ValueError", MISSING))?;
+    let inner_end = inner_start
+        .checked_add(inner.len())
+        .ok_or_else(|| classified("ValueError", MISSING))?;
+    let end = inner_end
+        .checked_add(closing.len())
+        .ok_or_else(|| classified("ValueError", MISSING))?;
+    html.get(start..end)
+        .ok_or_else(|| classified("ValueError", MISSING))
 }
 
 fn normalized(block: &str) -> String {
