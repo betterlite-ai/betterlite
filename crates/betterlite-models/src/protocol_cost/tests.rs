@@ -154,7 +154,22 @@ fn agent_charge_follows_the_precedence(#[case] call: ProtocolCall, #[case] expec
     agent("null", "null", "\"x\"", "null", A2aUsage::Mapping),
     "input_cost_per_token"
 )]
-fn agent_charge_rejects_values_that_are_not_finite_numbers(
+#[case::a_null_tool_price(
+    tool("null", "search", "0.1", r#"{"search": null}"#),
+    "tool_name_to_cost_per_query"
+)]
+#[case::a_text_tool_price(
+    tool("null", "search", "0.1", r#"{"search": "0.2"}"#),
+    "tool_name_to_cost_per_query"
+)]
+#[case::a_boolean_tool_price(
+    tool("null", "search", "0.1", r#"{"search": true}"#),
+    "tool_name_to_cost_per_query"
+)]
+#[case::a_text_default(tool("null", "fetch", "\"0.1\"", "{}"), "default_cost_per_query")]
+#[case::a_list_default(tool("null", "fetch", "[]", "{}"), "default_cost_per_query")]
+#[case::a_text_response_cost(tool("\"0.5\"", "fetch", "null", "{}"), "response_cost")]
+fn protocol_charge_rejects_values_that_are_not_finite_numbers(
     #[case] call: ProtocolCall,
     #[case] field: &str,
 ) {
@@ -216,30 +231,4 @@ fn agent_charge_reports_a_sum_overflow() {
 )]
 fn tool_charge_follows_the_precedence(#[case] call: ProtocolCall, #[case] expected: &str) {
     assert_eq!(protocol_charge(&call).unwrap(), money(expected));
-}
-
-#[rstest]
-#[case::a_null_tool_price(
-    tool("null", "search", "0.1", r#"{"search": null}"#),
-    "tool_name_to_cost_per_query"
-)]
-#[case::a_text_tool_price(
-    tool("null", "search", "0.1", r#"{"search": "0.2"}"#),
-    "tool_name_to_cost_per_query"
-)]
-#[case::a_boolean_tool_price(
-    tool("null", "search", "0.1", r#"{"search": true}"#),
-    "tool_name_to_cost_per_query"
-)]
-#[case::a_text_default(tool("null", "fetch", "\"0.1\"", "{}"), "default_cost_per_query")]
-#[case::a_list_default(tool("null", "fetch", "[]", "{}"), "default_cost_per_query")]
-#[case::a_text_response_cost(tool("\"0.5\"", "fetch", "null", "{}"), "response_cost")]
-fn tool_charge_rejects_values_that_are_not_numbers(
-    #[case] call: ProtocolCall,
-    #[case] field: &str,
-) {
-    assert!(matches!(
-        protocol_charge(&call),
-        Err(ProtocolCostError::InvalidMoney { field: named }) if named == field
-    ));
 }

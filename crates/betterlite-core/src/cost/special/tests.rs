@@ -249,13 +249,11 @@ impl Fixture {
     }
 
     fn charge(&self, request: &SpecialRequest<'_>, model: &str, provider: Option<&str>) -> Decimal {
-        match self
-            .run(request, attempt(Some(model), provider))
-            .expect("the call is priced")
-        {
-            SpecialOutcome::Charged(charge) => charge,
-            SpecialOutcome::Failed(_) | SpecialOutcome::Continue(_) => panic!("no early charge"),
-        }
+        let outcome = self.run(request, attempt(Some(model), provider));
+        let Ok(SpecialOutcome::Charged(charge)) = outcome else {
+            panic!("no early charge");
+        };
+        charge
     }
 
     fn stage(
@@ -264,12 +262,11 @@ impl Fixture {
         model: &str,
         provider: Option<&str>,
     ) -> TokenStage {
-        match self
-            .run(request, attempt(Some(model), provider))
-            .expect("the call continues")
-        {
-            SpecialOutcome::Continue(stage) => *stage,
-            SpecialOutcome::Charged(_) | SpecialOutcome::Failed(_) => panic!("the call ended"),
+        match self.run(request, attempt(Some(model), provider)) {
+            Ok(SpecialOutcome::Continue(stage)) => *stage,
+            Ok(SpecialOutcome::Charged(_) | SpecialOutcome::Failed(_)) | Err(_) => {
+                panic!("the call did not continue")
+            }
         }
     }
 }

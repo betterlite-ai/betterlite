@@ -74,8 +74,16 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let cost = match input {
             Input::A2a { a2a: None } | Input::Mcp { mcp: None } => Ok(Decimal::ZERO),
-            Input::A2a { a2a: Some(agent) } => agent_cost(agent),
-            Input::Mcp { mcp: Some(tool) } => tool_cost(tool),
+            Input::A2a { a2a: Some(agent) } => {
+                protocol_charge(&ProtocolCall::from(agent)).map_err(Failure::from)
+            }
+            Input::Mcp { mcp: Some(tool) } => protocol_charge(&ProtocolCall::Mcp(McpCall {
+                response_cost: tool.response_cost.clone(),
+                tool_name: tool.tool_name.clone(),
+                default_cost_per_query: tool.default_cost_per_query.clone(),
+                tool_name_to_cost_per_query: tool.tool_name_to_cost_per_query.clone(),
+            }))
+            .map_err(Failure::from),
             Input::Replicate { replicate_charge } => replicate_cost(replicate_charge),
         }
         .map_err(Box::<crate::helpers::HelperError>::from)?;
@@ -85,31 +93,24 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn agent_cost(agent: &A2aInput) -> Result<Decimal, Failure> {
-    let usage = match agent.usage {
-        UsageKind::Absent => A2aUsage::Absent,
-        UsageKind::Mapping => A2aUsage::Mapping,
-        UsageKind::Tokens => A2aUsage::Tokens {
-            prompt_tokens: agent.prompt_tokens,
-            completion_tokens: agent.completion_tokens,
-        },
-    };
-    Ok(protocol_charge(&ProtocolCall::A2a(A2aCall {
-        response_cost: agent.response_cost.clone(),
-        cost_per_query: agent.cost_per_query.clone(),
-        input_cost_per_token: agent.input_cost_per_token.clone(),
-        output_cost_per_token: agent.output_cost_per_token.clone(),
-        usage,
-    }))?)
-}
-
-fn tool_cost(tool: &McpInput) -> Result<Decimal, Failure> {
-    Ok(protocol_charge(&ProtocolCall::Mcp(McpCall {
-        response_cost: tool.response_cost.clone(),
-        tool_name: tool.tool_name.clone(),
-        default_cost_per_query: tool.default_cost_per_query.clone(),
-        tool_name_to_cost_per_query: tool.tool_name_to_cost_per_query.clone(),
-    }))?)
+impl From<&A2aInput> for ProtocolCall {
+    fn from(agent: &A2aInput) -> Self {
+        let usage = match agent.usage {
+            UsageKind::Absent => A2aUsage::Absent,
+            UsageKind::Mapping => A2aUsage::Mapping,
+            UsageKind::Tokens => A2aUsage::Tokens {
+                prompt_tokens: agent.prompt_tokens,
+                completion_tokens: agent.completion_tokens,
+            },
+        };
+        Self::A2a(A2aCall {
+            response_cost: agent.response_cost.clone(),
+            cost_per_query: agent.cost_per_query.clone(),
+            input_cost_per_token: agent.input_cost_per_token.clone(),
+            output_cost_per_token: agent.output_cost_per_token.clone(),
+            usage,
+        })
+    }
 }
 
 fn replicate_cost(replicate: &ReplicateInput) -> Result<Decimal, Failure> {
