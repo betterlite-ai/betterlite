@@ -1,0 +1,30 @@
+use crate::alice::error::AliceError;
+use crate::alice::wire::AliceVerdict;
+
+pub(super) const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+
+pub(super) async fn read_answer(mut response: reqwest::Response) -> Result<Vec<u8>, AliceError> {
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(crate::alice::error::request_error)?
+    {
+        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
+            return Err(AliceError::ResponseTooLarge {
+                limit: MAX_RESPONSE_BYTES,
+            });
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
+pub(super) fn verdict_from_body(body: &[u8]) -> Result<AliceVerdict, AliceError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(body).map_err(|source| AliceError::ResponseJson { source })?;
+    if !value.is_object() {
+        return Err(AliceError::NonObjectBody);
+    }
+    serde_json::from_value(value).map_err(|source| AliceError::MalformedVerdict { source })
+}

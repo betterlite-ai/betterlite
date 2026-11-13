@@ -11,12 +11,17 @@ pub mod error;
 pub mod json_safe;
 pub mod wire;
 
+mod enforcement;
+mod transport;
+
 use crate::generic_guardrail_contracts::{GuardrailInputType, UnreachableFallback};
 use crate::guardrail_base::contract::GuardrailContract;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
+use enforcement::{apply_replacements, blocked, has_selectable_input};
 use error::AliceError;
 use json_safe::{CREDENTIAL_KEYS_TO_STRIP, safe_payload};
+use transport::{read_answer, verdict_from_body};
 use wire::{
     AliceVerdict, EvaluateRequest, VERDICT_ALLOW, VERDICT_BLOCK, VERDICT_DETECT, VERDICT_MASK,
 };
@@ -27,7 +32,6 @@ pub const EVALUATE_PATH: &str = "/v2/evaluate/litellm";
 pub const DEFAULT_BLOCK_MESSAGE: &str = "Blocked by your organization's content policy.";
 // LiteLLM falls back to httpx's 600 second read/write timeout when no guardrail timeout is configured
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
-const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -233,89 +237,6 @@ impl GuardrailContract for AliceGuardrail {
         };
         self.enforce(&verdict, inputs)
     }
-}
-
-fn has_selectable_input(inputs: &GuardrailApiInputs) -> bool {
-    inputs
-        .texts
-        .as_ref()
-        .is_some_and(|values| !values.is_empty())
-        || inputs
-            .images
-            .as_ref()
-            .is_some_and(|values| !values.is_empty())
-        || inputs
-            .tools
-            .as_ref()
-            .is_some_and(|values| !values.is_empty())
-        || inputs
-            .tool_calls
-            .as_ref()
-            .is_some_and(|values| !values.is_empty())
-        || inputs
-            .structured_messages
-            .as_ref()
-            .is_some_and(|values| !values.is_empty())
-}
-
-fn apply_replacements(
-    verdict: &AliceVerdict,
-    inputs: &mut GuardrailApiInputs,
-) -> Result<(), GuardrailFailure> {
-    let replacements = verdict.replacements.as_deref().unwrap_or_default();
-    if replacements.is_empty() {
-        return Err(blocked(verdict));
-    }
-    let mut texts = inputs.texts.take().unwrap_or_default();
-    for replacement in replacements {
-        let index = replacement
-            .index
-            .and_then(|index| usize::try_from(index).ok());
-        let (Some(index), Some(text)) = (index, replacement.text.as_deref()) else {
-            return Err(blocked(verdict));
-        };
-        let Some(slot) = texts.get_mut(index) else {
-            return Err(blocked(verdict));
-        };
-        *slot = text.to_owned();
-    }
-    inputs.texts = Some(texts);
-    Ok(())
-}
-
-fn blocked(verdict: &AliceVerdict) -> GuardrailFailure {
-    GuardrailFailure::GuardrailRaised {
-        guardrail_name: Some(GUARDRAIL_NAME.to_owned()),
-        message: verdict
-            .message
-            .clone()
-            .unwrap_or_else(|| DEFAULT_BLOCK_MESSAGE.to_owned()),
-        wrap_default_message: false,
-        status_code: 400,
-        blocked_content: true,
-    }
-}
-
-async fn read_answer(mut response: reqwest::Response) -> Result<Vec<u8>, AliceError> {
-    let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(error::request_error)? {
-        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
-            return Err(AliceError::ResponseTooLarge {
-                limit: MAX_RESPONSE_BYTES,
-            });
-        }
-        body.extend_from_slice(&chunk);
-    }
-    Ok(body)
-}
-
-fn verdict_from_body(body: &[u8]) -> Result<AliceVerdict, AliceError> {
-    let value: serde_json::Value =
-        serde_json::from_slice(body).map_err(|source| AliceError::ResponseJson { source })?;
-    if !value.is_object() {
-        return Err(AliceError::NonObjectBody);
-    }
-    serde_json::from_value(value).map_err(|source| AliceError::MalformedVerdict { source })
 }
 
 mod tests;

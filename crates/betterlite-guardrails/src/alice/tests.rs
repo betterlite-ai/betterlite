@@ -511,6 +511,24 @@ async fn alice_guardrail_missing_verdict_fails_open_when_configured() {
     assert_eq!(returned_inputs(outcome), text_inputs(&["x"]));
 }
 
+#[tokio::test]
+async fn alice_guardrail_a_client_error_propagates_without_the_fallback_policy() {
+    let harness = serve(Answer::Json {
+        status: 401,
+        body: serde_json::json!({}),
+    })
+    .await;
+    let instance = guardrail(
+        &harness.base,
+        UnreachableFallback::FailOpen,
+        Duration::from_secs(2),
+    );
+    match failure(apply(&instance, text_inputs(&["x"]), &BTreeMap::new()).await) {
+        GuardrailFailure::Http { status, .. } => assert_eq!(status, 401),
+        other => panic!("expected an http failure, got {other}"),
+    }
+}
+
 #[rstest]
 #[case::server_error(Answer::Json { status: 500, body: serde_json::json!({}) })]
 #[case::bad_gateway(Answer::Json { status: 502, body: serde_json::json!({}) })]
