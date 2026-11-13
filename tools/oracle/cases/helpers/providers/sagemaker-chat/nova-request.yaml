@@ -1,0 +1,9 @@
+kind: helper
+name: sagemaker-chat-nova-request
+call:
+  b5960:
+    steps:
+      - {kind: nova_request, model: endpoint, messages: [{role: user, content: hi}], optional: {temperature: 0.7}}
+      - {kind: nova_request, model: endpoint, messages: [{role: user, content: hi}], hf_model_name: hf-model, optional: {top_k: 5}}
+env: {}
+compare: {ignore: []}

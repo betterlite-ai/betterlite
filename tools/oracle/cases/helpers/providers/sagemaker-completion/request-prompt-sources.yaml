@@ -1,0 +1,33 @@
+kind: helper
+name: sagemaker-completion-request-prompt-sources
+call:
+  b5960:
+    steps:
+      - kind: completion_request
+        model: acme-endpoint
+        messages: [{role: user, content: hi}]
+        custom_prompt_dict:
+          acme-endpoint:
+            roles: {user: {pre_message: "U: "}}
+            initial_prompt_value: "<i>"
+            final_prompt_value: "<f>"
+      - kind: completion_request
+        model: acme-endpoint
+        messages: [{role: user, content: hi}]
+        hf_model_name: hf/entry
+        custom_prompt_dict:
+          hf/entry:
+            roles: {user: {pre_message: "H: "}}
+      - kind: completion_request
+        model: meta-llama/Llama-2-7b-chat-hf
+        messages: [{role: user, content: hi}]
+      - kind: completion_request
+        model: acme/llama-2-13b
+        messages: [{role: user, content: hi}]
+      - kind: completion_request
+        model: plain-model
+        messages: [{role: user, content: hi}]
+        optional: {temperature: 0.7, stream: true}
+        now: 1700000000
+env: {}
+compare: {ignore: []}

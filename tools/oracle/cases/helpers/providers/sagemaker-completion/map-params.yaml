@@ -1,0 +1,13 @@
+kind: helper
+name: sagemaker-completion-map-params
+call:
+  b5960:
+    steps:
+      - {kind: params, non_default: {temperature: 0.0, top_p: 0.9}}
+      - {kind: params, non_default: {n: 3, stop: [END]}}
+      - {kind: params, non_default: {max_tokens: 0}}
+      - {kind: params, non_default: {max_completion_tokens: 70, max_tokens: 0}}
+      - {kind: params, non_default: {max_tokens: 0, max_completion_tokens: 70}}
+      - {kind: params, non_default: {stream: true, temperature: 0.5}}
+env: {}
+compare: {ignore: []}
