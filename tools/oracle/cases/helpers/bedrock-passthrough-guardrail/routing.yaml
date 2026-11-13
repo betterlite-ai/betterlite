@@ -1,0 +1,9 @@
+kind: helper
+name: bedrock-passthrough-routing
+call:
+  b3678:
+    function: routing
+    endpoint: model/anthropic.claude-v2/converse-stream/
+    content_type: application/vnd.amazon.eventstream; charset=utf-8
+env: {}
+compare: {ignore: []}
