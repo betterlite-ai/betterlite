@@ -1504,6 +1504,7 @@ dependencies = [
  "betterlite-auth",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-cost",
  "betterlite-db",
  "betterlite-env",
  "betterlite-error",
