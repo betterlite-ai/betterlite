@@ -141,14 +141,14 @@ pub(crate) fn mode_to_value(mode: &LitellmParamsMode) -> GuardrailValue {
     match mode {
         LitellmParamsMode::One(name) => GuardrailValue::Text(name.clone()),
         LitellmParamsMode::Many(names) => target_to_value(ModeTarget::Many(names.clone())),
-        LitellmParamsMode::Tagged(mode) => {
-            let tags = mode
+        LitellmParamsMode::Tagged(configured) => {
+            let tags = configured
                 .tags
                 .iter()
                 .map(|(tag, target)| (tag.clone(), target_to_value(target.clone())))
                 .collect();
             let mut fields = BTreeMap::from([(TAGS.to_owned(), GuardrailValue::Object(tags))]);
-            if let Some(default) = &mode.default {
+            if let Some(default) = &configured.default {
                 fields.insert(DEFAULT.to_owned(), target_to_value(default.clone()));
             }
             GuardrailValue::Object(fields)
@@ -187,16 +187,16 @@ fn mode_from_value(
 }
 
 fn mode_from_fields(fields: BTreeMap<String, GuardrailValue>) -> Result<Mode, GuardrailCallError> {
-    let mut tags = None;
+    let mut gathered = None;
     let mut default = None;
     for (key, value) in fields {
         match key.as_str() {
-            TAGS => tags = Some(tags_from_value(value)?),
+            TAGS => gathered = Some(tags_from_value(value)?),
             DEFAULT => default = default_from_value(value)?,
             _unknown => return Err(GuardrailCallError::ModeKey { name: key }),
         }
     }
-    let Some(tags) = tags else {
+    let Some(tags) = gathered else {
         return Err(GuardrailCallError::EventHookShape);
     };
     Ok(Mode { tags, default })
@@ -218,7 +218,13 @@ fn tags_from_value(
 fn default_from_value(value: GuardrailValue) -> Result<Option<ModeTarget>, GuardrailCallError> {
     match value {
         GuardrailValue::Null => Ok(None),
-        other => target_from_value(other).map(Some),
+        other @ (GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_)
+        | GuardrailValue::Object(_)) => target_from_value(other).map(Some),
     }
 }
 

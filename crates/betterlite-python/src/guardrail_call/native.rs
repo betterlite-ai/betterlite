@@ -3,7 +3,7 @@ use pyo3::prelude::*;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_base::GuardrailBase;
 use betterlite_guardrails::guardrail_base::advisory::inject_advisory_message;
-use betterlite_guardrails::guardrail_selection::gate::GuardrailSelection;
+use betterlite_guardrails::guardrail_selection::gate::GuardrailSelection as _;
 
 use super::convert;
 use super::convert::settings::SettingsJson;
@@ -19,9 +19,8 @@ impl NativeGuardrail {
     #[new]
     pub(crate) fn new(settings_json: &str, strict_modes: bool) -> PyResult<Self> {
         let settings = convert::settings_from_text(settings_json)?;
-        GuardrailBase::new(settings, strict_modes)
-            .map(|base| Self { base })
-            .map_err(GuardrailCallError::from)
+        let base = GuardrailBase::new(settings, strict_modes).map_err(GuardrailCallError::from)?;
+        Ok(Self { base })
     }
 
     fn mode(&self) -> PyResult<String> {
@@ -31,7 +30,7 @@ impl NativeGuardrail {
             .as_ref()
             .map(convert::settings::mode_to_value);
         let value = mode.unwrap_or(GuardrailValue::Null);
-        convert::value_to_text(&value)
+        Ok(convert::value_to_text(&value)?)
     }
 
     fn update_params(&mut self, litellm_params: &str) -> PyResult<()> {
@@ -42,10 +41,11 @@ impl NativeGuardrail {
 
     fn settings(&self) -> PyResult<String> {
         let json = SettingsJson::from(&self.base.settings);
-        serde_json::to_string(&json).map_err(|source| GuardrailCallError::Json {
+        let text = serde_json::to_string(&json).map_err(|source| GuardrailCallError::Json {
             field: "guardrail settings",
             source,
-        })
+        })?;
+        Ok(text)
     }
 
     fn render_violation_message(&self, default: &str, context: &str) -> PyResult<String> {
@@ -57,7 +57,8 @@ impl NativeGuardrail {
         Ok(self.base.render_violation_message(default, &borrowed))
     }
 
-    fn inject_advisory_message(&self, data: &str, message: &str) -> PyResult<(bool, String)> {
+    #[staticmethod]
+    fn inject_advisory_message(data: &str, message: &str) -> PyResult<(bool, String)> {
         let mut body = convert::data_from_text(data)?;
         let written = inject_advisory_message(&mut body, message);
         let text = convert::data_to_text(&body)?;
@@ -72,10 +73,10 @@ impl NativeGuardrail {
     ) -> PyResult<bool> {
         let body = convert::data_from_text(data)?;
         let hook = convert::event_type_from_name(event_type)?;
-        let suppressed = convert::suppressed_from_text(suppressed)?;
+        let blocked = convert::suppressed_from_text(suppressed)?;
         let answer = self
             .base
-            .should_run_guardrail(&body, hook, &suppressed)
+            .should_run_guardrail(&body, hook, &blocked)
             .map_err(|source| GuardrailCallError::Selection { source })?;
         Ok(answer)
     }
@@ -92,6 +93,6 @@ impl NativeGuardrail {
             .base
             .dynamic_request_body_params(&body)
             .map_err(|source| GuardrailCallError::Selection { source })?;
-        convert::data_to_text(&params)
+        Ok(convert::data_to_text(&params)?)
     }
 }

@@ -22,12 +22,16 @@ impl NativeGuardrailInvocation {
         request_data: &str,
         inputs: Option<&str>,
     ) -> PyResult<Py<Self>> {
-        let hook = convert::hook_from_name(hook)?;
+        let selected_hook = convert::hook_from_name(hook)?;
         let data = convert::data_from_text(request_data)?;
-        let inputs = convert::inputs_from_text(inputs)?;
-        let invocation =
-            GuardrailInvocation::begin(hook, &data, inputs.as_ref(), SystemTime::now())
-                .map_err(GuardrailCallError::from)?;
+        let api_inputs = convert::inputs_from_text(inputs)?;
+        let invocation = GuardrailInvocation::begin(
+            selected_hook,
+            &data,
+            api_inputs.as_ref(),
+            SystemTime::now(),
+        )
+        .map_err(GuardrailCallError::from)?;
         Py::new(
             py,
             Self {
@@ -64,12 +68,12 @@ impl NativeGuardrailInvocation {
         context: &str,
     ) -> PyResult<(String, String)> {
         let mut body = convert::data_from_text(data)?;
-        let response = convert::optional_value_from_text(response)?;
+        let present = convert::optional_value_from_text(response)?;
         let mut parts = record_parts(context)?;
         let invocation = self.invocation.take().ok_or(GuardrailCallError::Finished)?;
         let mut record_context = parts.context(&mut body);
         invocation
-            .finish_success(&mut record_context, response.as_ref(), SystemTime::now())
+            .finish_success(&mut record_context, present.as_ref(), SystemTime::now())
             .map_err(GuardrailCallError::from)?;
         let text = convert::data_to_text(&body)?;
         Ok((text, parts.log_target_text()?))

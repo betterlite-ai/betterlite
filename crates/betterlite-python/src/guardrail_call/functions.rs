@@ -43,7 +43,7 @@ fn tool_cache() -> Result<DualLocalCache, GuardrailCallError> {
 pub(crate) fn sanitize_guardrail_response(response: &str) -> PyResult<String> {
     let value = convert::value_from_text(response)?;
     let cleaned = sanitize_response(value).map_err(GuardrailCallError::from)?;
-    convert::value_to_text(&cleaned)
+    Ok(convert::value_to_text(&cleaned)?)
 }
 
 #[pyfunction]
@@ -66,7 +66,7 @@ pub(crate) fn sync_log_target(data: &str, target: &str) -> PyResult<String> {
     let body = convert::data_from_text(data)?;
     let mut logging = log_target_from_text(target)?;
     sync_target(&body, &mut logging);
-    log_target_to_text(&logging)
+    Ok(log_target_to_text(&logging)?)
 }
 
 #[pyfunction]
@@ -78,12 +78,18 @@ pub(crate) fn summarize_guardrail_response(
     let parsed = convert::value_from_text(response)?;
     let kept = match parsed {
         GuardrailValue::Null => None,
-        value => Some(value),
+        present @ (GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_)
+        | GuardrailValue::Object(_)) => Some(present),
     };
-    let baseline = convert::optional_data_from_text(baseline)?;
-    let event_type = event_type.map(convert::event_type_from_name).transpose()?;
-    let summary = summarize_response(kept.as_ref(), baseline.as_ref(), event_type);
-    convert::value_to_text(&summary)
+    let original = convert::optional_data_from_text(baseline)?;
+    let hook = event_type.map(convert::event_type_from_name).transpose()?;
+    let summary = summarize_response(kept.as_ref(), original.as_ref(), hook);
+    Ok(convert::value_to_text(&summary)?)
 }
 
 #[pyfunction]
@@ -93,9 +99,9 @@ pub(crate) fn messages_for_call_type(
 ) -> PyResult<Option<String>> {
     let body = convert::optional_data_from_text(data)?;
     let cache = tool_cache()?;
-    let messages =
+    let selected =
         messages_for_type(call_type, body.as_ref(), &cache).map_err(GuardrailCallError::from)?;
-    let Some(messages) = messages else {
+    let Some(messages) = selected else {
         return Ok(None);
     };
     let text = serde_json::to_string(&messages).map_err(|source| GuardrailCallError::Json {

@@ -88,12 +88,18 @@ pub(crate) fn value_to_text(value: &GuardrailValue) -> Result<String, GuardrailC
 pub(crate) fn optional_value_from_text(
     text: Option<&str>,
 ) -> Result<Option<GuardrailValue>, GuardrailCallError> {
-    let Some(text) = text else {
+    let Some(given) = text else {
         return Ok(None);
     };
-    match value_from_text(text)? {
+    match value_from_text(given)? {
         GuardrailValue::Null => Ok(None),
-        value => Ok(Some(value)),
+        present @ (GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_)
+        | GuardrailValue::Object(_)) => Ok(Some(present)),
     }
 }
 
@@ -120,11 +126,11 @@ pub(crate) fn data_to_text(
 pub(crate) fn optional_data_from_text(
     text: Option<&str>,
 ) -> Result<Option<BTreeMap<String, GuardrailValue>>, GuardrailCallError> {
-    let Some(text) = text else {
+    let Some(given) = text else {
         return Ok(None);
     };
     let raw: Option<BTreeMap<String, GuardrailValue>> =
-        serde_json::from_str(text).map_err(|source| GuardrailCallError::Json {
+        serde_json::from_str(given).map_err(|source| GuardrailCallError::Json {
             field: "request data",
             source,
         })?;
@@ -134,11 +140,11 @@ pub(crate) fn optional_data_from_text(
 pub(crate) fn inputs_from_text(
     text: Option<&str>,
 ) -> Result<Option<GuardrailApiInputs>, GuardrailCallError> {
-    let Some(text) = text else {
+    let Some(given) = text else {
         return Ok(None);
     };
     let inputs: Option<GuardrailApiInputs> =
-        serde_json::from_str(text).map_err(|source| GuardrailCallError::Json {
+        serde_json::from_str(given).map_err(|source| GuardrailCallError::Json {
             field: "guardrail inputs",
             source,
         })?;
@@ -164,10 +170,10 @@ pub(crate) fn text_context_from_text(
         })?;
     let mut entries = Vec::with_capacity(raw.len());
     for (name, value) in raw {
-        let GuardrailValue::Text(value) = value else {
+        let GuardrailValue::Text(field) = value else {
             return Err(GuardrailCallError::ContextValue { name });
         };
-        entries.push((name, value));
+        entries.push((name, field));
     }
     Ok(entries)
 }

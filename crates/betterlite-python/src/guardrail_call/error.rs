@@ -62,7 +62,7 @@ struct NativeErrorPayload<'name> {
 }
 
 impl GuardrailCallError {
-    pub(crate) fn kind(&self) -> &'static str {
+    pub(crate) const fn kind(&self) -> &'static str {
         match self {
             Self::Json { .. } => "InvalidJson",
             Self::ContextValue { .. } => "ContextValueNotText",

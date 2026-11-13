@@ -3,8 +3,9 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_base::GuardrailBase;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
+use betterlite_guardrails::guardrail_records::error::GuardrailSpanError;
 use betterlite_guardrails::guardrail_records::record::{
-    GuardrailInvocationRecord, GuardrailRecordContext, GuardrailSpanError, GuardrailSpanSink,
+    GuardrailInvocationRecord, GuardrailRecordContext, GuardrailSpanSink,
 };
 use serde::{Deserialize, Serialize};
 
@@ -71,10 +72,9 @@ impl RecordParts {
     }
 
     pub(crate) fn log_target_text(&self) -> Result<String, GuardrailCallError> {
-        match &self.log_target {
-            None => Ok("null".to_owned()),
-            Some(target) => log_target_to_text(target),
-        }
+        self.log_target
+            .as_ref()
+            .map_or_else(|| Ok("null".to_owned()), log_target_to_text)
     }
 }
 

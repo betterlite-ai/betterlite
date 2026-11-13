@@ -70,7 +70,7 @@ fn settings_default_from_a_name() {
 }
 
 #[test]
-fn settings_read_every_constructor_argument() {
+fn settings_read_the_name_and_hooks() {
     let settings = settings_from_text(FULL_SETTINGS).unwrap();
     assert_eq!(settings.guardrail_name.as_deref(), Some("pii"));
     assert_eq!(
@@ -87,6 +87,11 @@ fn settings_read_every_constructor_argument() {
             "post_call".to_owned()
         ]))
     );
+}
+
+#[test]
+fn settings_read_the_policy_flags() {
+    let settings = settings_from_text(FULL_SETTINGS).unwrap();
     assert!(settings.default_on);
     assert!(settings.mask_request_content);
     assert!(settings.mask_response_content);
@@ -109,7 +114,12 @@ fn settings_read_every_constructor_argument() {
     assert!(settings.run_in_parallel);
     assert!(settings.scan_raw_request);
     assert!(settings.only_scan_new_messages);
-    assert_eq!(settings.timeout, Some(12.5));
+    assert_eq!(settings.timeout, Some(12.5_f64));
+}
+
+#[test]
+fn settings_read_the_switches() {
+    let settings = settings_from_text(FULL_SETTINGS).unwrap();
     assert!(settings.switches.use_native_during_call_hook);
     assert!(settings.switches.use_native_lifecycle_hooks);
     assert!(settings.switches.records_own_information);
@@ -168,15 +178,15 @@ fn settings_reject_a_bad_event_hook(#[case] event_hook: &str) {
 fn settings_reject_an_unsupported_hook() {
     let text = r#"{"guardrail_name": "pii", "supported_event_hooks": ["pre_call"], "event_hook": "post_call"}"#;
     let settings = settings_from_text(text).unwrap();
-    let error = GuardrailBase::new(settings, true).unwrap_err();
-    let error = GuardrailCallError::from(error);
+    let refusal = GuardrailBase::new(settings, true).unwrap_err();
+    let error = GuardrailCallError::from(refusal);
     assert_eq!(error.kind(), "UnsupportedEventHook");
     assert_eq!(
         error.to_string(),
         "Event hook post_call is not in the supported event hooks [pre_call]"
     );
     assert!(NativeGuardrail::new(text, true).is_err());
-    assert!(NativeGuardrail::new(text, false).is_ok());
+    NativeGuardrail::new(text, false).unwrap();
 }
 
 #[test]
@@ -202,7 +212,7 @@ fn settings_update_params_follow_the_given_params() {
     assert!(updated.mask_request_content);
     assert_eq!(updated.violation_message_template.as_deref(), Some("stop"));
     assert_eq!(updated.on_violation.as_deref(), Some("warn"));
-    assert_eq!(updated.timeout, Some(4.5));
+    assert_eq!(updated.timeout, Some(4.5_f64));
     assert_eq!(
         updated.event_hook,
         Some(GuardrailValue::Text("pre_call".to_owned()))
@@ -359,38 +369,39 @@ fn params_read_a_guardrail_mode() {
     assert_eq!(error.kind(), "InvalidJson");
 }
 
+const RECORD_INPUT: &str = r#"{
+    "guardrail_response": {"verdict": "x", "score": 1.5},
+    "guardrail_status": "guardrail_intervened",
+    "start_time": 10.0,
+    "end_time": 12.0,
+    "duration": 2.0,
+    "masked_entity_count": {"EMAIL": 2},
+    "guardrail_provider": "pii",
+    "event_type": "pre_call",
+    "tracing_detail": {
+        "guardrail_id": "g-1",
+        "policy_template": "t",
+        "detection_method": "regex",
+        "confidence_score": 0.9,
+        "classification": {"kind": "pii"},
+        "match_details": "REDACTED",
+        "patterns_checked": 4,
+        "alert_recipients": ["a@example.com"],
+        "risk_score": 1.5,
+        "violation_categories": ["pii"],
+        "guardrail_action": "block",
+        "guardrail_usage": {"units": 2},
+        "guardrail_cost": 1.50,
+        "guardrail_cost_by_unit": {"units": 0.5},
+        "guardrail_cost_in_spend": true
+    }
+}"#;
+
 #[test]
-fn record_input_reads_every_field() {
-    let text = r#"{
-        "guardrail_response": {"verdict": "x", "score": 1.5},
-        "guardrail_status": "guardrail_intervened",
-        "start_time": 10.0,
-        "end_time": 12.0,
-        "duration": 2.0,
-        "masked_entity_count": {"EMAIL": 2},
-        "guardrail_provider": "pii",
-        "event_type": "pre_call",
-        "tracing_detail": {
-            "guardrail_id": "g-1",
-            "policy_template": "t",
-            "detection_method": "regex",
-            "confidence_score": 0.9,
-            "classification": {"kind": "pii"},
-            "match_details": "REDACTED",
-            "patterns_checked": 4,
-            "alert_recipients": ["a@example.com"],
-            "risk_score": 1.5,
-            "violation_categories": ["pii"],
-            "guardrail_action": "block",
-            "guardrail_usage": {"units": 2},
-            "guardrail_cost": 1.50,
-            "guardrail_cost_by_unit": {"units": 0.5},
-            "guardrail_cost_in_spend": true
-        }
-    }"#;
-    let input = record_input_from_text(text).unwrap();
+fn record_input_reads_the_response_and_status() {
+    let input = record_input_from_text(RECORD_INPUT).unwrap();
     assert_eq!(input.guardrail_status, GuardrailStatus::GuardrailIntervened);
-    assert_eq!(input.start_time, Some(10.0));
+    assert_eq!(input.start_time, Some(10.0_f64));
     assert_eq!(
         input.masked_entity_count,
         Some(BTreeMap::from([("EMAIL".to_owned(), 2_i64)]))
@@ -404,13 +415,37 @@ fn record_input_reads_every_field() {
             ("verdict".to_owned(), GuardrailValue::Text("x".to_owned())),
         ]))
     );
+}
+
+#[test]
+fn record_input_reads_the_tracing_detail() {
+    let input = record_input_from_text(RECORD_INPUT).unwrap();
     let detail = input.tracing_detail.unwrap();
     assert_eq!(detail.guardrail_id.as_deref(), Some("g-1"));
+    assert_eq!(detail.policy_template.as_deref(), Some("t"));
+    assert_eq!(detail.detection_method.as_deref(), Some("regex"));
+    assert_eq!(detail.confidence_score, Some(0.9_f64));
+    assert_eq!(detail.guardrail_action.as_deref(), Some("block"));
     assert_eq!(detail.patterns_checked, Some(4));
-    assert_eq!(detail.risk_score, Some(1.5));
+    assert_eq!(detail.risk_score, Some(1.5_f64));
+    assert_eq!(
+        detail.guardrail_usage,
+        Some(BTreeMap::from([("units".to_owned(), 2_i64)]))
+    );
+    assert_eq!(
+        detail.match_details,
+        Some(GuardrailValue::Text("REDACTED".to_owned()))
+    );
     assert_eq!(
         detail.guardrail_cost.map(|cost| cost.to_string()),
         Some("1.50".to_owned())
+    );
+    assert_eq!(
+        detail.guardrail_cost_by_unit,
+        Some(BTreeMap::from([(
+            "units".to_owned(),
+            Some(rust_decimal::Decimal::new(5, 1))
+        )]))
     );
     assert_eq!(detail.guardrail_cost_in_spend, Some(true));
 }
