@@ -1,0 +1,97 @@
+kind: helper
+name: singulr-http-error
+call:
+  b8215:
+    scenarios:
+      - name: http-500-fails-closed
+        settings:
+          api_key: oracle-key
+          api_base: "http://localhost:8003"
+          application_id: application-1
+          guardrail_id: guardrail-1
+          block_on_error: true
+          timeout: 5.0
+        inputs:
+          texts: ["hello"]
+        request_data: {}
+        input_type: request
+        answer:
+          status: 500
+          headers: {}
+          body: {detail: boom}
+      - name: http-500-fails-open
+        settings:
+          api_key: oracle-key
+          api_base: "http://localhost:8003"
+          application_id: null
+          guardrail_id: null
+          block_on_error: false
+          timeout: 5.0
+        inputs:
+          texts: ["hello"]
+        request_data: {}
+        input_type: request
+        answer:
+          status: 500
+          headers: {}
+          body: {detail: boom}
+      - name: an-unparsable-answer-fails-closed
+        settings:
+          api_key: oracle-key
+          api_base: "http://localhost:8003"
+          application_id: null
+          guardrail_id: null
+          block_on_error: true
+          timeout: 5.0
+        inputs:
+          texts: ["hello"]
+        request_data: {}
+        input_type: request
+        answer:
+          status: 200
+          headers: {}
+          body: {should_block: "maybe"}
+      - name: an-unparsable-answer-fails-open
+        settings:
+          api_key: oracle-key
+          api_base: "http://localhost:8003"
+          application_id: null
+          guardrail_id: null
+          block_on_error: false
+          timeout: 5.0
+        inputs:
+          texts: ["hello"]
+        request_data: {}
+        input_type: request
+        answer:
+          status: 200
+          headers: {}
+          body: {should_block: "maybe"}
+      - name: an-unreachable-endpoint-fails-closed
+        settings:
+          api_key: oracle-key
+          api_base: "http://localhost:8003"
+          application_id: null
+          guardrail_id: null
+          block_on_error: true
+          timeout: 5.0
+        inputs:
+          texts: ["hello"]
+        request_data: {}
+        input_type: request
+        answer: null
+      - name: an-unreachable-endpoint-fails-open
+        settings:
+          api_key: oracle-key
+          api_base: "http://localhost:8003"
+          application_id: null
+          guardrail_id: null
+          block_on_error: false
+          timeout: 5.0
+        inputs:
+          texts: ["hello"]
+        request_data: {}
+        input_type: request
+        answer: null
+env: {}
+compare: {ignore: []}

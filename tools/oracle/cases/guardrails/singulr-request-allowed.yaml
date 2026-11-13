@@ -1,0 +1,40 @@
+kind: helper
+name: singulr-request-allowed
+call:
+  b8215:
+    scenarios:
+      - name: chat-request
+        settings:
+          api_key: oracle-key
+          api_base: "http://localhost:8003"
+          application_id: application-1
+          guardrail_id: guardrail-1
+          block_on_error: true
+          timeout: 5.0
+        inputs:
+          texts: ["tell me a story"]
+          structured_messages:
+            - {role: system, content: "be brief"}
+            - {role: user, content: "tell me a story"}
+          images: ["https://example.test/cat.png"]
+          tools:
+            - {type: function, function: {name: weather, parameters: {city: string}}}
+          model: gpt-4o
+        request_data:
+          litellm_call_id: call-1
+          litellm_metadata:
+            user_api_key_alias: litellm-alias
+          metadata:
+            user_api_key_alias: metadata-alias
+            user_api_key_user_id: user-1
+          litellm_params:
+            metadata:
+              user_api_key_user_email: user@example.test
+              user_api_key_team_alias: team-alpha
+        input_type: request
+        answer:
+          status: 200
+          headers: {}
+          body: {should_block: false}
+env: {}
+compare: {ignore: []}

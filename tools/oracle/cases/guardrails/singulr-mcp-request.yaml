@@ -1,0 +1,50 @@
+kind: helper
+name: singulr-mcp-request
+call:
+  b8215:
+    scenarios:
+      - name: mcp-request-by-call-type
+        settings:
+          api_key: oracle-key
+          api_base: "http://localhost:8003"
+          application_id: application-1
+          guardrail_id: guardrail-1
+          block_on_error: true
+          timeout: 5.0
+        inputs:
+          texts: ["read the file"]
+        request_data:
+          call_type: call_mcp_tool
+          mcp_tool_name: read_file
+          mcp_arguments: {path: /tmp/report.txt}
+          mcp_server_name: files
+          name: ignored-name
+          metadata:
+            user_api_key_team_id: team-1
+        input_type: request
+        answer:
+          status: 200
+          headers: {}
+          body: {should_block: false}
+      - name: mcp-request-by-tool-name-with-arguments
+        settings:
+          api_key: null
+          api_base: "http://localhost:8003"
+          application_id: application-2
+          guardrail_id: null
+          block_on_error: true
+          timeout: null
+        inputs:
+          texts: ["read the file"]
+        request_data:
+          mcp_tool_name: null
+          mcp_arguments: null
+          arguments: {path: /tmp/other.txt}
+          name: read_file
+        input_type: request
+        answer:
+          status: 200
+          headers: {}
+          body: {should_block: false}
+env: {}
+compare: {ignore: []}

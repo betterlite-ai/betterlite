@@ -1,0 +1,17 @@
+task: B8215
+deviations:
+  - what: The initializer returns SingulrArgs and registers nothing.
+    why: B3682 owns the registry and the registration, as with B3681.
+    link: ""
+  - what: A timeout of the guardrail call is a transport failure, so block_on_error decides whether it raises.
+    why: LiteLLM's shared AsyncHTTPHandler turns an httpx timeout into a litellm Timeout before singulr.py's TransportError branch sees it, so its block_on_error never applies and the request fails with a timeout error instead. A working setup that fails closed on an unreachable endpoint relies on the documented transport-error behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L852-L867
+  - what: The guardrail answer body is capped at 1 MiB, and a larger answer is an invalid response.
+    why: Every outbound body is bounded; LiteLLM reads the whole answer with no limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/singulr/singulr.py#L181-L189
+  - what: An HTTP error body that is not UTF-8 is refused rather than decoded with replacement characters.
+    why: The workspace forbids a lossy decode, and the body only feeds betterlite's own error text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/singulr/singulr.py#L191-L196
+  - what: A request that fails to connect is sent once, not twice.
+    why: B173's pooled guardrail client disables implicit retries, and the retry lives in LiteLLM's shared AsyncHTTPHandler rather than in the Singulr guardrail.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L836-L851
