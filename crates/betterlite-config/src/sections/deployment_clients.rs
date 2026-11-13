@@ -73,14 +73,14 @@ impl Section for Raw {
             self.router_settings.client_ttl,
             "router_settings.client_ttl",
             lookup,
-            parse_seconds,
+            parse_integer::<u64>,
         )?
         .unwrap_or(DEFAULT_CLIENT_TTL_SECONDS);
         let default_max_parallel_requests = resolve_number(
             self.router_settings.default_max_parallel_requests,
             "router_settings.default_max_parallel_requests",
             lookup,
-            parse_i64,
+            parse_integer::<i64>,
         )?;
         let mut deployments = Vec::with_capacity(self.model_list.len());
         for (index, deployment) in self.model_list.into_iter().enumerate() {
@@ -108,25 +108,19 @@ where
             params.max_parallel_requests,
             &path("max_parallel_requests"),
             lookup,
-            parse_i64,
+            parse_integer::<i64>,
         )?,
-        rpm: resolve_number(params.rpm, &path("rpm"), lookup, parse_i64)?,
-        tpm: resolve_number(params.tpm, &path("tpm"), lookup, parse_i64)?,
+        rpm: resolve_number(params.rpm, &path("rpm"), lookup, parse_integer::<i64>)?,
+        tpm: resolve_number(params.tpm, &path("tpm"), lookup, parse_integer::<i64>)?,
     })
 }
 
-fn parse_i64(text: &str, path: &str) -> Result<i64, ConfigError> {
+fn parse_integer<T>(text: &str, path: &str) -> Result<T, ConfigError>
+where
+    T: std::str::FromStr<Err = std::num::ParseIntError>,
+{
     text.trim()
-        .parse::<i64>()
-        .map_err(|source| ConfigError::InvalidInteger {
-            path: path.to_owned(),
-            source,
-        })
-}
-
-fn parse_seconds(text: &str, path: &str) -> Result<u64, ConfigError> {
-    text.trim()
-        .parse::<u64>()
+        .parse::<T>()
         .map_err(|source| ConfigError::InvalidInteger {
             path: path.to_owned(),
             source,

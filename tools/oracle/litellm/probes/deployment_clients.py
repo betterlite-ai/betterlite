@@ -2,10 +2,7 @@ from typing import Final, Literal, NoReturn
 
 from litellm.exceptions import RateLimitError
 from litellm.router import Router
-from litellm.router_utils.client_initalization_utils import (
-    InitalizeCachedClient,
-    MaxParallelRequestsLimit,
-)
+from litellm.router_utils.client_initalization_utils import MaxParallelRequestsLimit
 from litellm.router_utils.clientside_credential_handler import (
     get_dynamic_litellm_params,
     is_clientside_credential,
@@ -182,9 +179,19 @@ def cached_lookups(spec: CachedInput) -> list[CachedObservation]:
         cached: object | None = router.cache.get_cache(key=key, local_only=True)
         installed = cached is None
         if cached is None:
-            InitalizeCachedClient.set_max_parallel_requests_client(
-                litellm_router_instance=router, model=model_entry(spec)
+            calculated = calculate_max_parallel_requests(
+                max_parallel_requests=spec.max_parallel_requests,
+                rpm=spec.rpm,
+                tpm=spec.tpm,
+                default_max_parallel_requests=spec.default_max_parallel_requests,
             )
+            if calculated:
+                limit = MaxParallelRequestsLimit(
+                    max_parallel_requests=calculated,
+                    model_id=spec.model_id,
+                    model_group=spec.model_group,
+                )
+                router.cache.set_cache(key=key, value=limit, local_only=True)
             cached = router.cache.get_cache(key=key, local_only=True)
         observations.append(
             CachedObservation(

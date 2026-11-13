@@ -105,45 +105,44 @@ pub fn credential_deployment<'catalog>(
                 .get(&(team.to_owned(), model_id.to_owned()))?;
             indices.first().and_then(|index| catalog.models.get(*index))
         })
-        .or_else(|| wildcard_deployment(catalog, model_id, team_id))?;
+        .or_else(|| {
+            let matched = wildcard_model_id(catalog, model_id, team_id)?;
+            catalog
+                .id_index
+                .get(&matched)
+                .and_then(|index| catalog.models.get(*index))
+        })?;
     if matches!(deployment.model_info.get("blocked"), Some(Json::Bool(true))) {
         return None;
     }
     Some(deployment)
 }
 
-fn wildcard_deployment<'catalog>(
-    catalog: &'catalog DeploymentCatalog,
+// the team's own patterns answer first; a global pattern only counts when the deployment it names is usable
+fn wildcard_model_id(
+    catalog: &DeploymentCatalog,
     model_id: &str,
     team_id: Option<&str>,
-) -> Option<&'catalog DeploymentSpec> {
+) -> Option<String> {
     if let Some(patterns) = team_id.and_then(|team| catalog.team_pattern_routers.get(team)) {
-        if let Some(candidate) = patterns
+        return patterns
             .router
             .route(model_id, None)
             .and_then(|matched| matched.into_iter().next())
-        {
-            return candidate
+            .and_then(|candidate| candidate.model_id);
+    }
+    let matched = catalog.pattern_router.route(model_id, None)?;
+    matched
+        .into_iter()
+        .find(|candidate| {
+            candidate
                 .model_id
                 .as_deref()
                 .and_then(|id| catalog.id_index.get(id))
-                .and_then(|index| catalog.models.get(*index));
-        }
-    }
-    let matched = catalog.pattern_router.route(model_id, None)?;
-    let usable = matched.into_iter().find(|candidate| {
-        candidate
-            .model_id
-            .as_deref()
-            .and_then(|id| catalog.id_index.get(id))
-            .and_then(|index| catalog.models.get(*index))
-            .is_some_and(|deployment| usable_by_team(deployment, team_id))
-    })?;
-    usable
-        .model_id
-        .as_deref()
-        .and_then(|id| catalog.id_index.get(id))
-        .and_then(|index| catalog.models.get(*index))
+                .and_then(|index| catalog.models.get(*index))
+                .is_some_and(|deployment| usable_by_team(deployment, team_id))
+        })
+        .and_then(|candidate| candidate.model_id)
 }
 
 // get_deployment_credentials: the credentials of an exact deployment id, and nothing for a paused one.

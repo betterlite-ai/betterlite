@@ -141,7 +141,7 @@ pub struct LimitSource {
     pub default_max_parallel_requests: Option<i64>,
 }
 
-// InitalizeCachedClient.set_max_parallel_requests_client: a falsy calculation installs no cap at all
+// the cached limit initializer: a falsy calculation installs no cap at all
 #[must_use]
 pub fn installable_limit(
     source: LimitSource,
