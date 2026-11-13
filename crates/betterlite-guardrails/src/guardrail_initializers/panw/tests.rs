@@ -20,9 +20,17 @@ fn build(extras: &str) -> Result<super::PanwArgs, InitializerError> {
 
 #[test]
 fn panw_refuses_a_missing_api_key_first() {
-    let error = build(r#", "profile_name": "profile""#).unwrap_err();
-    assert!(matches!(error, InitializerError::MissingApiKey));
-    assert_eq!(error.to_string(), "PANW Prisma AIRS: api_key is required");
+    let both_missing = build("").unwrap_err();
+    assert!(matches!(both_missing, InitializerError::MissingApiKey));
+    assert_eq!(
+        both_missing.to_string(),
+        "PANW Prisma AIRS: api_key is required"
+    );
+    let profile_configured = build(r#", "profile_name": "profile""#).unwrap_err();
+    assert!(matches!(
+        profile_configured,
+        InitializerError::MissingApiKey
+    ));
 }
 
 #[test]

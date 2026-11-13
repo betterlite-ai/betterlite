@@ -1,9 +1,11 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use betterlite_config::sections::guardrail_identity::enums::PiiAction;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::decode::decode_litellm_params;
-use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
+use betterlite_config::sections::guardrail_params::mode::{LitellmParamsMode, Mode, ModeTarget};
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use rstest::rstest;
 
@@ -49,7 +51,7 @@ fn default_scope_builds_the_input_scan_and_the_output_mask() {
 #[case::both("both", 2, false)]
 fn filter_scope_picks_the_callbacks(#[case] scope: &str, #[case] count: usize, #[case] mask: bool) {
     let callbacks = build(
-        "pre_call",
+        r#""pre_call""#,
         &format!(r#", "presidio_filter_scope": "{scope}""#),
     )
     .unwrap();
@@ -74,6 +76,21 @@ fn output_parse_pii_adds_the_restore_callback_after_the_input_scan() {
     assert!(!restore.mask_response_content);
     assert_eq!(
         restore.event_hook,
+        LitellmParamsMode::Many(vec!["post_call".to_owned()])
+    );
+}
+
+#[test]
+fn restore_with_an_mcp_only_mode_keeps_the_post_call_hook() {
+    let callbacks = build(
+        r#""pre_mcp_call""#,
+        r#", "presidio_filter_scope": "input", "output_parse_pii": true"#,
+    )
+    .unwrap();
+    assert_eq!(callbacks.len(), 2);
+    assert_eq!(callbacks[1].role, PresidioRole::Restore);
+    assert_eq!(
+        callbacks[1].event_hook,
         LitellmParamsMode::Many(vec!["post_call".to_owned()])
     );
 }
@@ -136,6 +153,29 @@ fn mcp_only_mode_with_an_explicit_scope_keeps_mcp_output_hooks() {
     assert_eq!(
         callbacks[1].event_hook,
         LitellmParamsMode::Many(vec!["post_call".to_owned()])
+    );
+}
+
+#[test]
+fn tagged_mode_mask_keeps_mcp_only_tags_empty_without_an_explicit_scope() {
+    let callbacks = build(
+        r#"{"tags": {"chat": "pre_call", "mcp": "pre_mcp_call"}}"#,
+        "",
+    )
+    .unwrap();
+    assert_eq!(callbacks.len(), 2);
+    assert_eq!(
+        callbacks[1].event_hook,
+        LitellmParamsMode::Tagged(Mode {
+            tags: BTreeMap::from([
+                (
+                    "chat".to_owned(),
+                    ModeTarget::Many(vec!["post_call".to_owned()]),
+                ),
+                ("mcp".to_owned(), ModeTarget::Many(Vec::new())),
+            ]),
+            default: None,
+        })
     );
 }
 
