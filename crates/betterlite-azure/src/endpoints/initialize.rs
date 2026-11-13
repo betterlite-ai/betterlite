@@ -15,7 +15,7 @@ use crate::credentials::source::{CallableTokenProvider, CredentialSources, Sourc
 use crate::oidc_exchange::OidcExchangeInput;
 
 use super::projection::{
-    AzureClientInputs, CallableProvider, HttpClient, LiteLlmParams, SessionKind,
+    AzureClientInputs, CallableProvider, HttpClient, LiteLlmParams, SessionKind, TokenProvider,
 };
 
 pub struct InitializeRequest<'data> {
@@ -87,7 +87,7 @@ pub fn initialize_azure_sdk_client<'data>(
         api_version,
         api_key: request.api_key.clone(),
         azure_ad_token: token,
-        token_provider: provider,
+        token_provider: provider.map(TokenProvider),
         max_retries: request
             .params
             .max_retries
@@ -160,21 +160,18 @@ fn client_secret_provider<'data>(
     scope: &str,
     sources: &'data dyn CredentialSources,
 ) -> Result<Option<Arc<dyn CallableTokenProvider + 'data>>, EndpointError> {
-    let (Some(tenant_id), Some(client_id), Some(client_secret)) = (
+    let Some((tenant_id, client_id, client_secret)) = non_empty_auth(
         environment.tenant_id.as_deref(),
         environment.client_id.as_deref(),
         environment.client_secret.as_ref(),
     ) else {
         return Ok(None);
     };
-    if tenant_id.is_empty() || client_id.is_empty() || client_secret.expose_secret().is_empty() {
-        return Ok(None);
-    }
     tracing::debug!("Using Azure AD Token Provider from Entra ID for Azure Auth");
     let record = ClientSecretRecord {
-        tenant_id: tenant_id.to_owned(),
-        client_id: client_id.to_owned(),
-        client_secret: client_secret.clone(),
+        tenant_id,
+        client_id,
+        client_secret,
         scope: scope.to_owned(),
     };
     Ok(Some(sources.client_secret(&record)?))
@@ -186,25 +183,38 @@ fn username_password_provider<'data>(
     scope: &str,
     sources: &'data dyn CredentialSources,
 ) -> Result<Option<Arc<dyn CallableTokenProvider + 'data>>, EndpointError> {
-    let (Some(client_id), Some(username), Some(password)) = (
+    let Some((client_id, username, password)) = non_empty_auth(
         environment.client_id.as_deref(),
         environment.azure_username.as_deref(),
         environment.azure_password.as_ref(),
     ) else {
         return Ok(None);
     };
-    if client_id.is_empty() || username.is_empty() || password.expose_secret().is_empty() {
-        return Ok(None);
-    }
     tracing::debug!("Using Azure Username and Password for Azure Auth");
     let record = UsernamePasswordRecord {
-        client_id: client_id.to_owned(),
-        username: username.to_owned(),
-        password: password.clone(),
+        client_id,
+        username,
+        password,
         tenant_id: None,
         scope: scope.to_owned(),
     };
     Ok(Some(sources.username_password(&record)?))
+}
+
+fn non_empty_auth(
+    first: Option<&str>,
+    second: Option<&str>,
+    secret: Option<&SecretString>,
+) -> Option<(String, String, SecretString)> {
+    let (first_text, second_text, secret_text) = (first?, second?, secret?);
+    if first_text.is_empty() || second_text.is_empty() || secret_text.expose_secret().is_empty() {
+        return None;
+    }
+    Some((
+        first_text.to_owned(),
+        second_text.to_owned(),
+        secret_text.clone(),
+    ))
 }
 
 // only a ValueError from the cached refresh provider is swallowed; every other failure propagates

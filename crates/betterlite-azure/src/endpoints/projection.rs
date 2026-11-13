@@ -41,6 +41,15 @@ pub struct CallableProvider {
     pub identity: u64,
 }
 
+// wraps the resolved token provider so the client inputs can derive Debug without leaking the callable
+pub struct TokenProvider<'data>(pub Arc<dyn CallableTokenProvider + 'data>);
+
+impl fmt::Debug for TokenProvider<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("TokenProvider")
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ClientIdentity {
     pub is_async: bool,
@@ -65,36 +74,22 @@ pub enum ClientSource {
     Constructed,
 }
 
+#[derive(Debug)]
 pub struct AzureClientInputs<'data> {
     pub endpoint: EndpointSelection,
     pub api_version: String,
     pub api_key: Option<SecretString>,
     pub azure_ad_token: Option<SecretString>,
-    pub token_provider: Option<Arc<dyn CallableTokenProvider + 'data>>,
+    pub token_provider: Option<TokenProvider<'data>>,
     pub max_retries: i64,
     pub timeout: Option<f64>,
     pub http_client: HttpClient,
 }
 
-impl fmt::Debug for AzureClientInputs<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("AzureClientInputs")
-            .field("endpoint", &self.endpoint)
-            .field("api_version", &self.api_version)
-            .field("api_key", &self.api_key)
-            .field("azure_ad_token", &self.azure_ad_token)
-            .field("token_provider", &self.token_provider.is_some())
-            .field("max_retries", &self.max_retries)
-            .field("timeout", &self.timeout)
-            .field("http_client", &self.http_client)
-            .finish()
-    }
-}
-
 pub enum V1Key<'data> {
     Static(SecretString),
     Provider {
-        provider: Arc<dyn CallableTokenProvider + 'data>,
+        provider: TokenProvider<'data>,
         offload: bool,
     },
 }
@@ -112,6 +107,7 @@ impl fmt::Debug for V1Key<'_> {
 }
 
 // LiteLLM only forwards the three optional constructor arguments when the initializer produced them
+#[derive(Debug)]
 pub struct OpenAiV1ClientInputs<'data> {
     pub key: Option<V1Key<'data>>,
     pub base_url: Option<String>,
@@ -120,30 +116,10 @@ pub struct OpenAiV1ClientInputs<'data> {
     pub http_client: HttpClient,
 }
 
-impl fmt::Debug for OpenAiV1ClientInputs<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("OpenAiV1ClientInputs")
-            .field("key", &self.key)
-            .field("base_url", &self.base_url)
-            .field("timeout", &self.timeout)
-            .field("max_retries", &self.max_retries)
-            .field("http_client", &self.http_client)
-            .finish()
-    }
-}
-
+#[derive(Debug)]
 pub enum ClientInputs<'data> {
     Azure(AzureClientInputs<'data>),
     OpenAiV1(OpenAiV1ClientInputs<'data>),
-}
-
-impl fmt::Debug for ClientInputs<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Azure(inputs) => fmt::Debug::fmt(inputs, f),
-            Self::OpenAiV1(inputs) => fmt::Debug::fmt(inputs, f),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

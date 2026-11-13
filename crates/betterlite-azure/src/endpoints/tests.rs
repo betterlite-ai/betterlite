@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 mod cases;
+mod credential_cases;
 mod support;
 
 use rstest::rstest;
@@ -27,10 +28,10 @@ fn endpoints_cases(#[case] case: u8) {
 
 #[test]
 fn azure_endpoints_credential_identity_isolation() {
-    cases::credential_identity_isolation();
+    credential_cases::credential_identity_isolation();
 }
 
 #[test]
 fn azure_endpoints_secret_safe_failure() {
-    cases::secret_safe_failure();
+    credential_cases::secret_safe_failure();
 }

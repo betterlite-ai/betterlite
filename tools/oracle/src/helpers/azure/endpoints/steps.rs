@@ -29,12 +29,10 @@ pub(super) fn run(input: &Input) -> HelperResult {
         Input::SeparateTokenClientIdentity(steps)
         | Input::AzureSdkClientMode(steps)
         | Input::AzureV1ClientProjection(steps) => client_steps(steps),
-        Input::DynamicApiVersion(steps) => Ok(json!({"steps": dynamic_steps(steps)})),
+        Input::DynamicApiVersion(steps) => Ok(json!({
+            "steps": steps.iter().map(dynamic_step).collect::<Vec<Value>>()
+        })),
     }
-}
-
-fn dynamic_steps(steps: &[DynamicStep]) -> Vec<Value> {
-    steps.iter().map(dynamic_step).collect()
 }
 
 fn dynamic_step(step: &DynamicStep) -> Value {
@@ -71,16 +69,14 @@ fn initialize_steps(steps: &[InitializeStep]) -> HelperResult {
 }
 
 fn initialize_step(step: &InitializeStep) -> Result<Value, Box<HelperError>> {
-    let settings = settings(step.defaults.as_ref());
     let sources = Sources::new(&step.sources);
-    let mut refresh = RefreshProviderCache::new(&sources);
-    let provider = step
-        .provider
-        .as_ref()
-        .map(|provider| callable(provider.script.clone(), provider.identity));
+    let settings = settings(step.defaults.as_ref());
     let request = InitializeRequest {
         params: step.params.clone(),
-        provider,
+        provider: step
+            .provider
+            .as_ref()
+            .map(|provider| callable(provider.script.clone(), provider.identity)),
         api_key: step
             .api_key
             .as_ref()
@@ -95,6 +91,7 @@ fn initialize_step(step: &InitializeStep) -> Result<Value, Box<HelperError>> {
         environment: &step.environment,
         sources: &sources,
     };
+    let mut refresh = RefreshProviderCache::new(&sources);
     let inputs = initialize_azure_sdk_client(&request, &mut refresh)
         .map_err(|error| endpoint_error(&error))?;
     Ok(reports::initialize_report(
@@ -113,14 +110,8 @@ fn client_steps(steps: &[ClientStep]) -> HelperResult {
 }
 
 fn client_step(step: &ClientStep) -> Result<Value, Box<HelperError>> {
-    let settings = settings(step.defaults.as_ref());
     let sources = Sources::new(&step.sources);
-    let mut refresh = RefreshProviderCache::new(&sources);
-    let mut cache = Cache::for_choice(step.cached);
-    let provider = step
-        .provider
-        .as_ref()
-        .map(|provider| callable(provider.script.clone(), provider.identity));
+    let settings = settings(step.defaults.as_ref());
     let request = GetClientRequest {
         api_key: step
             .api_key
@@ -131,7 +122,10 @@ fn client_step(step: &ClientStep) -> Result<Value, Box<HelperError>> {
         model: None,
         is_async: step.is_async,
         params: step.params.clone(),
-        provider,
+        provider: step
+            .provider
+            .as_ref()
+            .map(|provider| callable(provider.script.clone(), provider.identity)),
         supplied: step.supplied.as_ref().map(supplied_client),
         settings: &settings,
         environment: &step.environment,
@@ -139,6 +133,8 @@ fn client_step(step: &ClientStep) -> Result<Value, Box<HelperError>> {
         session: step.session.session(),
         sources: &sources,
     };
+    let mut refresh = RefreshProviderCache::new(&sources);
+    let mut cache = Cache::for_choice(step.cached);
     let outcome = get_azure_openai_client(&request, &mut cache, &mut refresh)
         .map_err(|error| endpoint_error(&error))?;
     let owned = cache.sets.last().map(|(_, _, owned)| *owned);

@@ -49,49 +49,36 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let module = self.litellm_settings;
-        let default_max_retries = resolve_number(
+        let default_max_retries = match resolve_number(
             module.default_max_retries,
             "litellm_settings.DEFAULT_MAX_RETRIES",
             lookup,
             parse_retries,
-        )?
-        .or(environment_retries(lookup)?)
-        .unwrap_or(DEFAULT_MAX_RETRIES);
+        )? {
+            Some(value) => value,
+            // LiteLLM reads the constant with int(os.getenv(...)), so an empty value counts as unset
+            None => lookup
+                .lookup(MAX_RETRIES_ENV)
+                .map(|text| betterlite_env::number::<i64>(MAX_RETRIES_ENV, &text))
+                .transpose()?
+                .flatten()
+                .unwrap_or(DEFAULT_MAX_RETRIES),
+        };
         let azure_default_api_version = match module.azure_default_api_version {
             Some(text) => {
                 resolve_string(text, "litellm_settings.AZURE_DEFAULT_API_VERSION", lookup)?
             }
-            None => environment_api_version(lookup),
+            // the module setting has no environment default, and an explicit empty value stays empty
+            None => lookup
+                .lookup(API_VERSION_ENV)
+                .filter(|text| !text.is_empty())
+                .unwrap_or_else(|| AZURE_DEFAULT_API_VERSION.to_owned()),
         };
         Ok(Settings {
             default_max_retries,
             azure_default_api_version,
         })
     }
-}
-
-// LiteLLM reads the constant with int(os.getenv(...)), so an empty value counts as unset
-fn environment_retries<L>(lookup: &L) -> Result<Option<i64>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let value = lookup
-        .lookup(MAX_RETRIES_ENV)
-        .map(|text| betterlite_env::number::<i64>(MAX_RETRIES_ENV, &text))
-        .transpose()?
-        .flatten();
-    Ok(value)
-}
-
-// the module setting has no environment default in LiteLLM, and an explicit empty value stays empty
-fn environment_api_version<L>(lookup: &L) -> String
-where
-    L: EnvironmentLookup,
-{
-    lookup
-        .lookup(API_VERSION_ENV)
-        .filter(|text| !text.is_empty())
-        .unwrap_or_else(|| AZURE_DEFAULT_API_VERSION.to_owned())
 }
 
 fn parse_retries(text: &str, path: &str) -> Result<i64, ConfigError> {
