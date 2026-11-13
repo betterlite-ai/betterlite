@@ -1,0 +1,29 @@
+kind: probe
+name: no-compactor-available
+probes:
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      compaction_history:
+        function: compactor
+        model: parent-model
+        surface: chat
+        messages:
+          - {role: system, content: You are terse.}
+          - {role: user, content: first question}
+          - {role: assistant, content: first answer}
+          - {role: user, content: latest question}
+        items: []
+        tools: []
+        text: null
+        config_model: null
+        max_tokens: 4096
+        count: 1000
+        groups:
+          - model: small-compactor
+            deployments:
+              - litellm_params: {model: gpt-4o, custom_llm_provider: openai}
+                max_input_tokens: 128000
+                max_output_tokens: 16384
+compare:
+  ignore: []
