@@ -1,0 +1,12 @@
+kind: helper
+name: messages-chat-tools-schema-web-search-only
+call:
+  messages_chat_tools_schema:
+    operation: request
+    request:
+      model: gpt-4o
+      messages: []
+      tools:
+        - {type: web_search_20260209, name: web_search}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,68 @@
+kind: helper
+name: container-collection
+call:
+  response_id_traversal:
+    operation: container_collection
+    responses:
+      - output:
+          - container_id: c1
+          - __object__:
+              fields:
+                container_id: c1
+              readonly: []
+          - code_interpreter_call:
+              container_id: c2
+          - __object__:
+              fields:
+                code_interpreter_call:
+                  __object__:
+                    fields:
+                      container_id: c2
+                    readonly: []
+              readonly: []
+          - type: message
+            content:
+              - annotations:
+                  - container_id: c3
+                  - container_id: c1
+      - output:
+          - container_id: ""
+          - container_id: null
+          - container_id: 5
+          - code_interpreter_call:
+              container_id: ""
+      - null
+      - {}
+      - output: not-a-list
+      - output:
+          container_id: c1
+      - output:
+          - container_id: "cntr_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm90aGVyO21vZGVsX2lkOm07Y29udGFpbmVyX2lkOmM="
+          - code_interpreter_call:
+              container_id: c2
+      - output:
+          - type: function_call
+            content:
+              - annotations:
+                  - container_id: c4
+      - output:
+          - type: message
+            content: not-a-list
+          - type: message
+            content:
+              - annotations: not-a-list
+      - output:
+          - code_interpreter_call:
+              container_id: c2
+              code_interpreter_call:
+                container_id: c9
+      - output:
+          - code_interpreter_call:
+              type: message
+              container_id: c2
+              content:
+                - annotations:
+                    - container_id: c3
+env: {}
+compare:
+  ignore: []
