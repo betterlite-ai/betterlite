@@ -1,0 +1,16 @@
+kind: helper
+name: reasoning-none-and-declared
+call:
+  b5831:
+    model_cost:
+      together_ai/together-b5831-declared: {litellm_provider: together_ai, mode: chat, supports_reasoning: true, reasoning_effort_levels: [minimal, high]}
+    chat_map:
+      - model: MiniMaxAI/MiniMax-M3
+        params: {reasoning_effort: none}
+      - model: together-b5831-declared
+        params: {reasoning_effort: minimal}
+      - model: together-b5831-declared
+        params: {reasoning_effort: xhigh}
+
+env: {}
+compare: {ignore: []}

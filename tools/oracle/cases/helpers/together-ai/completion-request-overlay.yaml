@@ -1,0 +1,14 @@
+kind: helper
+name: completion-request-overlay
+call:
+  b5831:
+    completion:
+      - model: together/llama
+        messages: [{role: user, content: hello}]
+        optional_params: {temperature: 0.5, stop: ["\n"]}
+      - model: together/llama
+        messages: [{role: user, content: hello}]
+        optional_params: {model: together/other, prompt: other prompt}
+
+env: {}
+compare: {ignore: []}

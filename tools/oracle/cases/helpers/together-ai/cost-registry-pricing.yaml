@@ -1,0 +1,15 @@
+kind: helper
+name: cost-registry-pricing
+call:
+  b5831:
+    model_cost:
+      together_ai/together-b5831-priced: {litellm_provider: together_ai, mode: chat, input_cost_per_token: 0.0000004}
+      together_ai/together-b5831-unpriced: {litellm_provider: together_ai, mode: chat}
+    cost_registry:
+      - {model: together-b5831-priced}
+      - {model: together_ai/together-b5831-priced}
+      - {model: together-b5831-unpriced}
+      - {model: together-b5831-absent}
+
+env: {}
+compare: {ignore: []}

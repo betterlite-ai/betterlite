@@ -1,0 +1,25 @@
+kind: helper
+name: cost-category-billions
+call:
+  b5831:
+    cost_categories:
+      - {model: llama-3b}
+      - {model: llama-4b}
+      - {model: llama-5b}
+      - {model: llama-8b}
+      - {model: llama-9b}
+      - {model: llama-21b}
+      - {model: llama-22b}
+      - {model: llama-41b}
+      - {model: llama-42b}
+      - {model: llama-80b}
+      - {model: llama-81b}
+      - {model: llama-110b}
+      - {model: llama-111b}
+      - {model: llama-3-70b-chat}
+      - {model: mixtral-8x7b}
+      - {model: Llama-3-70B}
+      - {model: llama-chat}
+
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,22 @@
+kind: helper
+name: reasoning-adjustable-models
+call:
+  b5831:
+    chat_map:
+      - model: openai/gpt-oss-120b
+        params: {reasoning_effort: xhigh}
+      - model: openai/gpt-oss-120b
+        params: {reasoning_effort: none}
+      - model: openai/gpt-oss-120b
+        params: {reasoning_effort: minimal}
+      - model: openai/gpt-oss-20b
+        params: {reasoning_effort: max}
+      - model: openai/gpt-oss-20b
+        params: {reasoning_effort: default}
+      - model: openai/gpt-oss-20b
+        params: {reasoning_effort: custom}
+      - model: together-b5831-plain
+        params: {reasoning_effort: high}
+
+env: {}
+compare: {ignore: []}

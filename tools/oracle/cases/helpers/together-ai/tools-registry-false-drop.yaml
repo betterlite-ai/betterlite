@@ -1,0 +1,16 @@
+kind: helper
+name: tools-registry-false-drop
+call:
+  b5831:
+    model_cost:
+      together_ai/together-b5831-tools-false: {litellm_provider: together_ai, mode: chat, supports_function_calling: false}
+    chat_map:
+      - model: together-b5831-tools-false
+        params: {tools: [{type: function, function: {name: lookup}}], tool_choice: auto, function_call: {name: lookup}, temperature: 0.5}
+        drop_params: true
+      - model: together-b5831-tools-false
+        params: {tools: [{type: function, function: {name: lookup}}], temperature: 0.5}
+        global_drop_params: true
+
+env: {}
+compare: {ignore: []}

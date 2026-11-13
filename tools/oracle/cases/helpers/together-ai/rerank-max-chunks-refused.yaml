@@ -1,0 +1,14 @@
+kind: helper
+name: rerank-max-chunks-refused
+call:
+  b5831:
+    rerank_requests:
+      - model: together/reranker
+        query: which one
+        documents: [one]
+        max_chunks_per_doc: 2
+        api_key: sk-together
+        api_base: https://api.together.ai/v1
+
+env: {}
+compare: {ignore: []}

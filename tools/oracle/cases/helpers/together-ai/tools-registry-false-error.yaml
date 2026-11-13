@@ -1,0 +1,14 @@
+kind: helper
+name: tools-registry-false-error
+call:
+  b5831:
+    model_cost:
+      together_ai/together-b5831-tools-false: {litellm_provider: together_ai, mode: chat, supports_function_calling: false}
+    chat_map:
+      - model: together-b5831-tools-false
+        params: {tools: [{type: function, function: {name: lookup}}], temperature: 0.5}
+      - model: together-b5831-tools-false
+        params: {tools: [{type: function, function: {name: lookup}}], tool_choice: auto}
+
+env: {}
+compare: {ignore: []}

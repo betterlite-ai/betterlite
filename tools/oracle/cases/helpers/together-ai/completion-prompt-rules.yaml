@@ -1,0 +1,20 @@
+kind: helper
+name: completion-prompt-rules
+call:
+  b5831:
+    completion:
+      - model: together/llama
+        messages: [{role: user, content: hello}]
+      - model: together/llama
+        messages: [{role: user, content: a}, {role: user, content: b}]
+      - model: together/llama
+        messages: [{role: user, content: [1, 2, 3]}]
+      - model: together/llama
+        messages: [{role: user, content: [[1, 2], [3]]}]
+      - model: together/llama
+        messages: []
+      - model: together/llama
+        messages: [{role: user, content: ""}]
+
+env: {}
+compare: {ignore: []}

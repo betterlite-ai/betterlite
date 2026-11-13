@@ -1,0 +1,25 @@
+kind: helper
+name: reasoning-deepseek-v4-pro
+call:
+  b5831:
+    model_cost:
+      together_ai/together-b5831-deepseek-declared: {litellm_provider: together_ai, mode: chat, supports_reasoning: true, reasoning_effort_levels: [low, medium]}
+      together_ai/deepseek-ai/DeepSeek-V4-Pro: {litellm_provider: together_ai, mode: chat, reasoning_effort_levels: [low, medium]}
+    chat_map:
+      - model: deepseek-ai/DeepSeek-V4-Pro-turbo
+        params: {reasoning_effort: minimal}
+      - model: deepseek-ai/DeepSeek-V4-Pro-turbo
+        params: {reasoning_effort: low}
+      - model: deepseek-ai/DeepSeek-V4-Pro-turbo
+        params: {reasoning_effort: medium}
+      - model: deepseek-ai/DeepSeek-V4-Pro-turbo
+        params: {reasoning_effort: xhigh}
+      - model: deepseek-ai/DeepSeek-V4-Pro-turbo
+        params: {reasoning_effort: high}
+      - model: deepseek-ai/DeepSeek-V4-Pro-turbo
+        params: {reasoning_effort: custom}
+      - model: deepseek-ai/DeepSeek-V4-Pro
+        params: {reasoning_effort: medium}
+
+env: {}
+compare: {ignore: []}
