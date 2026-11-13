@@ -1,3 +1,6 @@
+from typing import Protocol
+
+from litellm.exceptions import BadRequestError
 from litellm.router import Router
 from pydantic import JsonValue
 from typing_extensions import override
@@ -5,6 +8,14 @@ from typing_extensions import override
 from probes.protocol import Operation, Strict
 
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
+
+
+class IdSource(Protocol):
+    @staticmethod
+    def generate_model_id(model_group: str, litellm_params: dict[str, JsonValue]) -> str: ...
+
+
+ID_SOURCE: IdSource = Router
 
 
 class Output(Strict):
@@ -20,16 +31,12 @@ class DeploymentIdentity(Operation):
 
     @override
     def run(self) -> Output:
-        generated = Router.generate_model_id(self.model_name, dict(self.litellm_params))
-        router = Router(model_list=[], ignore_invalid_deployments=self.ignore_invalid_deployments)
+        generated = ID_SOURCE.generate_model_id(self.model_name, dict(self.litellm_params))
         try:
-            # litellm/router.py L8942: the deployment builder behind set_model_list, with the router's ignore setting
-            deployment = router._create_deployment(
-                deployment_info={},
-                _model_name=self.model_name,
-                _litellm_params=dict(self.litellm_params),
-                _model_info={},
+            router = Router(
+                model_list=[{"model_name": self.model_name, "litellm_params": dict(self.litellm_params)}],
+                ignore_invalid_deployments=self.ignore_invalid_deployments,
             )
-        except Exception:
+        except (ValueError, TypeError, BadRequestError):
             return Output(id=generated, created=False, raised=True)
-        return Output(id=generated, created=deployment is not None, raised=False)
+        return Output(id=generated, created=len(router.get_model_list() or []) == 1, raised=False)
