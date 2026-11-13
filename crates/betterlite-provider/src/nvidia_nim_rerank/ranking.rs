@@ -1,10 +1,10 @@
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_models::decisions::Json;
-use betterlite_openai::api::rerank_contracts::records::{RerankDocument, RerankResponse};
+use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 use serde_json::Number;
 
-use super::request::rerank_body;
+use super::request::{cohere_rerank_params, rerank_body};
 use super::retrieval::NvidiaNimRerankConfig;
 use super::{
     DEFAULT_NIM_RERANK_API_BASE, NVIDIA_NIM_PREFIX, NvidiaNimRerankError, RANKING_PASSAGE_FIELDS,
@@ -70,24 +70,11 @@ impl BaseRerankConfig for NvidiaNimRankingConfig {
         &self,
         request: MapCohereRerankParams<'_>,
     ) -> Result<Params, Self::Error> {
-        let mut params = Params::from([
-            ("query".to_owned(), Json::Text(request.query.to_owned())),
-            (
-                "documents".to_owned(),
-                Json::List(
-                    request
-                        .documents
-                        .iter()
-                        .map(RerankDocument::as_json)
-                        .collect(),
-                ),
-            ),
-        ]);
-        params.extend(
-            request
-                .non_default_params
-                .iter()
-                .map(|(name, value)| (name.clone(), value.clone())),
+        let mut params = cohere_rerank_params(
+            request.query,
+            request.documents,
+            request.non_default_params,
+            None,
         );
         params.remove(TOP_K);
         if let Some(top_n) = request.top_n {

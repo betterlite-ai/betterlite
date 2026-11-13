@@ -1,5 +1,7 @@
 use betterlite_models::decisions::Json;
+use betterlite_openai::api::rerank_contracts::records::RerankDocument;
 use indexmap::IndexMap;
+use serde_json::Number;
 
 use super::NvidiaNimRerankError;
 use crate::api::rerank_contracts::Params;
@@ -13,6 +15,31 @@ const TRUNCATE: &str = "truncate";
 const TEXT: &str = "text";
 const NONE: &str = "NONE";
 const END: &str = "END";
+
+// the shared Cohere mapping: top_k from top_n goes in before the request overlay, which then wins
+pub fn cohere_rerank_params(
+    query: &str,
+    documents: &[RerankDocument],
+    non_default: &Params,
+    top_k: Option<i64>,
+) -> Params {
+    let mut params = Params::from([
+        (QUERY.to_owned(), Json::Text(query.to_owned())),
+        (
+            DOCUMENTS.to_owned(),
+            Json::List(documents.iter().map(RerankDocument::as_json).collect()),
+        ),
+    ]);
+    if let Some(top_n) = top_k {
+        params.insert(TOP_K.to_owned(), Json::Number(Number::from(top_n)));
+    }
+    params.extend(
+        non_default
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone())),
+    );
+    params
+}
 
 pub fn rerank_body(
     model: &str,

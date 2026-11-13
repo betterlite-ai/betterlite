@@ -1,11 +1,10 @@
 use betterlite_models::decisions::Json;
-use betterlite_openai::api::rerank_contracts::records::{RerankDocument, RerankResponse};
+use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::Number;
 use uuid::Uuid;
 
 use super::reply::{decode_nvidia_nim_rerank_reply, to_response};
-use super::request::rerank_body;
+use super::request::{cohere_rerank_params, rerank_body};
 use super::{
     DEFAULT_NIM_RERANK_API_BASE, NVIDIA_NIM_PREFIX, NvidiaNimRerankError, SUPPORTED_COHERE_PARAMS,
     TEXT_PASSAGE_FIELDS,
@@ -109,29 +108,12 @@ impl BaseRerankConfig for NvidiaNimRerankConfig {
         &self,
         request: MapCohereRerankParams<'_>,
     ) -> Result<Params, Self::Error> {
-        let mut params = Params::from([
-            ("query".to_owned(), Json::Text(request.query.to_owned())),
-            (
-                "documents".to_owned(),
-                Json::List(
-                    request
-                        .documents
-                        .iter()
-                        .map(RerankDocument::as_json)
-                        .collect(),
-                ),
-            ),
-        ]);
-        if let Some(top_n) = request.top_n {
-            params.insert("top_k".to_owned(), Json::Number(Number::from(top_n)));
-        }
-        params.extend(
-            request
-                .non_default_params
-                .iter()
-                .map(|(name, value)| (name.clone(), value.clone())),
-        );
-        Ok(params)
+        Ok(cohere_rerank_params(
+            request.query,
+            request.documents,
+            request.non_default_params,
+            request.top_n,
+        ))
     }
 
     fn transform_rerank_request(
