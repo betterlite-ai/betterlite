@@ -78,6 +78,16 @@ fn an_unknown_response_event_type_still_marks_a_responses_stream() {
 }
 
 #[test]
+fn a_typed_error_event_is_not_a_responses_stream() {
+    let stream = chunks(
+        r#"[{"type":"error","sequence_number":1,"error":{"type":"invalid_request_error","code":"bad_request","message":"boom"}}]"#,
+    );
+    let (is_responses_api, assembled) = assemble_responses_stream(&stream);
+    assert!(!is_responses_api);
+    assert!(assembled.is_none());
+}
+
+#[test]
 fn a_chat_stream_is_not_a_responses_stream() {
     let stream = chunks(r#"[{"type":"chat.completion.chunk","choices":[]}]"#);
     let (is_responses_api, assembled) = assemble_responses_stream(&stream);

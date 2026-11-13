@@ -50,10 +50,10 @@ impl MicrosoftPurviewDLPGuardrail {
         let input = data
             .get("input")
             .filter(|value| !matches!(value, Json::Null));
-        let instructions = match data.get("instructions") {
-            Some(Json::Text(text)) if !text.is_empty() => Some(text.clone()),
-            _ => None,
-        };
+        let instructions = data
+            .get("instructions")
+            .and_then(Json::as_str)
+            .map(str::to_owned);
         if input.is_none() && instructions.is_none() {
             return Ok(None);
         }
