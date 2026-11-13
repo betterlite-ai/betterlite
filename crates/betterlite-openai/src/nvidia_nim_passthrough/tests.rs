@@ -54,6 +54,7 @@ fn url_request<'call>(
 }
 
 #[rstest]
+#[case::empty_segments_dropped("https://h/a//v1", "v2/models", "https://h/a/v1")]
 #[case::repeats_the_last_segment("https://h/v1", "v1/chat/completions", "https://h")]
 #[case::keeps_earlier_segments("https://h/api/v1", "/v1/models", "https://h/api")]
 #[case::trailing_slash("https://h/v1/", "v1/models", "https://h")]
