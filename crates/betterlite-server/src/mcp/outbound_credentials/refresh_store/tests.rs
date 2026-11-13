@@ -289,7 +289,8 @@ async fn refreshing_store_returns_none_when_the_token_is_absent() {
 
 #[tokio::test]
 async fn refreshing_store_refreshes_a_token_at_the_skew_boundary() {
-    let inner = Scripted::new(vec![Ok(Some(token("stale", Some(at(1_000)))))]);
+    let stale = token("stale", Some(at(1_000)));
+    let inner = Scripted::new(vec![Ok(Some(stale.clone())), Ok(Some(stale))]);
     let refresher = Scripted::new(vec![Ok(Some(token("fresh", None)))]);
     let store = store(inner, refresher, clock_at(940));
     assert_eq!(
@@ -297,6 +298,7 @@ async fn refreshing_store_refreshes_a_token_at_the_skew_boundary() {
         Ok(Some(token("fresh", None)))
     );
     assert_eq!(store.refresher.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(store.inner.calls.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test]
@@ -313,7 +315,8 @@ async fn refreshing_store_keeps_a_token_just_outside_the_skew() {
 
 #[tokio::test]
 async fn refreshing_store_returns_none_when_the_refresh_fails() {
-    let inner = Scripted::new(vec![Ok(Some(token("stale", Some(at(1_000)))))]);
+    let stale = token("stale", Some(at(1_000)));
+    let inner = Scripted::new(vec![Ok(Some(stale.clone())), Ok(Some(stale))]);
     let refresher = Scripted::new(vec![Ok(None)]);
     let store = store(inner, refresher, clock_at(1_000));
     assert_eq!(store.fetch("user", "server").await, Ok(None));
@@ -322,7 +325,8 @@ async fn refreshing_store_returns_none_when_the_refresh_fails() {
 
 #[tokio::test]
 async fn refreshing_store_propagates_a_refresh_error() {
-    let inner = Scripted::new(vec![Ok(Some(token("stale", Some(at(1_000)))))]);
+    let stale = token("stale", Some(at(1_000)));
+    let inner = Scripted::new(vec![Ok(Some(stale.clone())), Ok(Some(stale))]);
     let refresher = Scripted::new(vec![Err(TokenStoreUnavailable {
         detail: "the store is down".to_owned(),
     })]);
