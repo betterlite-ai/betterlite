@@ -147,15 +147,13 @@ pub fn filter_request_betas(
         return Ok(dropped);
     };
     let filtered = filter_beta_tokens(matrix, provider, &tokens)?;
+    dropped.extend(filtered.dropped);
     if filtered.tokens.is_empty() {
         body.shift_remove("anthropic_beta");
-    } else {
-        body.insert(
-            "anthropic_beta".to_owned(),
-            Json::List(filtered.tokens.into_iter().map(Json::Text).collect()),
-        );
+        return Ok(dropped);
     }
-    dropped.extend(filtered.dropped);
+    let list = Json::List(filtered.tokens.into_iter().map(Json::Text).collect());
+    body.insert("anthropic_beta".to_owned(), list);
     Ok(dropped)
 }
 

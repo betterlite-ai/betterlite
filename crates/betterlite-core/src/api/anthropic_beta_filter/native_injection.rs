@@ -55,16 +55,7 @@ fn request_betas(
     request: &NativeRequest<'_>,
 ) -> Result<BTreeSet<String>, BetaFilterError> {
     let mut betas = existing_beta_tokens(headers);
-    let compaction = optional_object(request.optional_params, "compaction")?;
-    let feature_params = FeatureParams {
-        compaction: compaction.map(params_json),
-        container: None,
-        output_config: None,
-        reasoning_effort: None,
-    };
-    if requires_compaction_beta(request.provider, &feature_params, request.messages) {
-        betas.insert(COMPACT_NATIVE_BETA.to_owned());
-    }
+    add_compaction_beta(&mut betas, request)?;
     add_context_management_betas(&mut betas, request.optional_params)?;
     if structured_outputs_used(request.optional_params)? {
         betas.insert(STRUCTURED_OUTPUTS_BETA.to_owned());
@@ -75,7 +66,16 @@ fn request_betas(
     if has_output_config(request.messages) {
         betas.insert(PER_TURN_CONTROL_BETA.to_owned());
     }
-    let tools = tools(request.optional_params)?;
+    let tools = match request.optional_params.get("tools") {
+        Some(Json::List(tools)) => tools.as_slice(),
+        None | Some(Json::Null) => &[],
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
+            return Err(BetaFilterError::Field {
+                field: "tools",
+                expected: "a list",
+            });
+        }
+    };
     if tools.iter().any(is_advisor_tool) {
         betas.insert(ADVISOR_TOOL_BETA.to_owned());
     }
@@ -89,6 +89,23 @@ fn request_betas(
         betas.insert(TOOL_CHANGES_BETA.to_owned());
     }
     Ok(betas)
+}
+
+fn add_compaction_beta(
+    betas: &mut BTreeSet<String>,
+    request: &NativeRequest<'_>,
+) -> Result<(), BetaFilterError> {
+    let compaction = optional_object(request.optional_params, "compaction")?;
+    let feature_params = FeatureParams {
+        compaction: compaction.map(params_json),
+        container: None,
+        output_config: None,
+        reasoning_effort: None,
+    };
+    if requires_compaction_beta(request.provider, &feature_params, request.messages) {
+        betas.insert(COMPACT_NATIVE_BETA.to_owned());
+    }
+    Ok(())
 }
 
 fn existing_beta_tokens(headers: &Headers) -> BTreeSet<String> {
@@ -110,20 +127,22 @@ fn existing_beta_tokens(headers: &Headers) -> BTreeSet<String> {
 fn context_management_edits(
     params: &IndexMap<String, Json>,
 ) -> Result<Option<&[Json]>, BetaFilterError> {
-    let Some(management) = optional_object(params, "context_management")? else {
+    let Some(value) = optional_object(params, "context_management")? else {
         return Ok(None);
     };
-    match management
-        .as_object()
-        .and_then(|fields| fields.get("edits"))
-    {
-        None => Ok(Some(&[])),
-        Some(Json::List(edits)) => Ok(Some(edits)),
-        Some(_) => Err(BetaFilterError::Field {
+    let Some(management) = value.as_object() else {
+        return Ok(None);
+    };
+    let Some(configured) = management.get("edits") else {
+        return Ok(Some(&[]));
+    };
+    let Json::List(edits) = configured else {
+        return Err(BetaFilterError::Field {
             field: "context_management.edits",
             expected: "a list",
-        }),
-    }
+        });
+    };
+    Ok(Some(edits))
 }
 
 fn add_context_management_betas(
@@ -161,31 +180,22 @@ fn structured_outputs_used(params: &IndexMap<String, Json>) -> Result<bool, Beta
     if optional_object(params, "output_format")?.is_some() {
         return Ok(true);
     }
-    Ok(optional_object(params, "output_config")?
+    let format = optional_object(params, "output_config")?
         .and_then(Json::as_object)
-        .and_then(|config| config.get("format"))
-        .is_some_and(|format| !matches!(format, Json::Null)))
+        .and_then(|config| config.get("format"));
+    Ok(format.is_some_and(|value| !matches!(value, Json::Null)))
 }
 
 fn fast_mode_used(params: &IndexMap<String, Json>) -> Result<bool, BetaFilterError> {
     match params.get("speed") {
         None | Some(Json::Null) => Ok(false),
-        Some(Json::Text(speed)) => Ok(speed == "fast"),
-        Some(_) => Err(BetaFilterError::Field {
-            field: "speed",
-            expected: "a string",
-        }),
-    }
-}
-
-fn tools(params: &IndexMap<String, Json>) -> Result<&[Json], BetaFilterError> {
-    match params.get("tools") {
-        None | Some(Json::Null) => Ok(&[]),
-        Some(Json::List(tools)) => Ok(tools),
-        Some(_) => Err(BetaFilterError::Field {
-            field: "tools",
-            expected: "a list",
-        }),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            Err(BetaFilterError::Field {
+                field: "speed",
+                expected: "a string",
+            })
+        }
+        Some(value) => Ok(matches!(value, Json::Text(text) if text == "fast")),
     }
 }
 

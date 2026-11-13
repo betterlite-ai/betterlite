@@ -307,7 +307,7 @@ fn output_and_speed_betas(
     #[case] expected: Option<&str>,
 ) {
     let merged = inject(&[], "anthropic", optional_params, request_messages);
-    assert_eq!(beta_header(&merged), expected);
+    assert_eq!(merged.get("anthropic-beta").map(String::as_str), expected);
 }
 
 #[rstest]
@@ -402,7 +402,14 @@ fn tool_and_thinking_betas(
     #[case] request_messages: &str,
     #[case] expected: Option<&str>,
 ) {
-    let merged = inject(&[], provider, optional_params, request_messages);
+    let case_params = params(optional_params);
+    let case_messages = messages(request_messages);
+    let request = NativeRequest {
+        provider,
+        optional_params: &case_params,
+        messages: &case_messages,
+    };
+    let merged = inject_native_betas(headers(&[]), &request).unwrap();
     assert_eq!(beta_header(&merged), expected);
 }
 
