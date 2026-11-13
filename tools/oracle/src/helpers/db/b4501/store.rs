@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use betterlite_db::daily_spend_sql::bind::SqlBind;
 use betterlite_db::lens_repository::database::{Database, ExecuteFuture, QueryFuture};
@@ -46,10 +46,7 @@ impl Database for FakeDatabase {
         query: &'database str,
         args: &'database [SqlBind],
     ) -> QueryFuture<'database> {
-        let rows = match self.store.lock() {
-            Ok(mut store) => store.query(query, args),
-            Err(poisoned) => poisoned.into_inner().query(query, args),
-        };
+        let rows = lock_store(&self.store).query(query, args);
         Box::pin(async move { Ok(rows) })
     }
 
@@ -58,11 +55,15 @@ impl Database for FakeDatabase {
         query: &'database str,
         args: &'database [SqlBind],
     ) -> ExecuteFuture<'database> {
-        let count = match self.store.lock() {
-            Ok(mut store) => store.execute(query, args),
-            Err(poisoned) => poisoned.into_inner().execute(query, args),
-        };
+        let count = lock_store(&self.store).execute(query, args);
         Box::pin(async move { Ok(count) })
+    }
+}
+
+fn lock_store(store: &Mutex<Store>) -> MutexGuard<'_, Store> {
+    match store.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
     }
 }
 

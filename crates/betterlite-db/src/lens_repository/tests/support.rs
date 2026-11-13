@@ -34,8 +34,20 @@ CREATE TABLE "LiteLLM_LensWorker" (
 );
 "#;
 
+const INSERT_LENS: &str =
+    r#"INSERT INTO "LiteLLM_Lens" (id, version, data) VALUES ($1, $2::bigint, $3::text::jsonb)"#;
+
 const INSERT_RUN: &str = r#"INSERT INTO "LiteLLM_LensRun" (id, lens_id, created_at, data)
 VALUES ($1, $2, $3::text::timestamp, $4::text::jsonb)"#;
+
+const INSERT_WORKER: &str =
+    r#"INSERT INTO "LiteLLM_LensWorker" (id, token_hash, data) VALUES ($1, $2, $3::text::jsonb)"#;
+
+const STORED_RUNS: &str =
+    r#"SELECT data::text FROM "LiteLLM_LensRun" WHERE lens_id=$1 ORDER BY id"#;
+
+const STORED_WORKERS: &str =
+    r#"SELECT token_hash, data::text FROM "LiteLLM_LensWorker" ORDER BY id"#;
 
 pub(crate) const LENS_ID: &str = "lens-a";
 
@@ -121,10 +133,7 @@ pub(crate) async fn insert_lens(pool: &Pool, lens: &Lens, version: i64) {
     let client = pool.get().await.unwrap();
     let data = serde_json::to_string(lens).unwrap();
     client
-        .execute(
-            r#"INSERT INTO "LiteLLM_Lens" (id, version, data) VALUES ($1, $2::bigint, $3::text::jsonb)"#,
-            &[&lens.id, &version, &data],
-        )
+        .execute(INSERT_LENS, &[&lens.id, &version, &data])
         .await
         .unwrap();
 }
@@ -147,10 +156,7 @@ pub(crate) async fn insert_worker(pool: &Pool, worker: &Worker, token_hash: &str
     let client = pool.get().await.unwrap();
     let data = serde_json::to_string(worker).unwrap();
     client
-        .execute(
-            r#"INSERT INTO "LiteLLM_LensWorker" (id, token_hash, data) VALUES ($1, $2, $3::text::jsonb)"#,
-            &[&worker.id, &token_hash, &data],
-        )
+        .execute(INSERT_WORKER, &[&worker.id, &token_hash, &data])
         .await
         .unwrap();
 }
@@ -182,13 +188,7 @@ pub(crate) async fn stored_lens(pool: &Pool, lens_id: &str) -> (i64, Lens) {
 
 pub(crate) async fn stored_runs(pool: &Pool, lens_id: &str) -> Vec<Job> {
     let client = pool.get().await.unwrap();
-    let rows = client
-        .query(
-            r#"SELECT data::text FROM "LiteLLM_LensRun" WHERE lens_id=$1 ORDER BY id"#,
-            &[&lens_id],
-        )
-        .await
-        .unwrap();
+    let rows = client.query(STORED_RUNS, &[&lens_id]).await.unwrap();
     rows.iter()
         .map(|row| decode::<Job>(row.get::<_, String>(0).as_bytes()).unwrap())
         .collect()
@@ -196,18 +196,13 @@ pub(crate) async fn stored_runs(pool: &Pool, lens_id: &str) -> Vec<Job> {
 
 pub(crate) async fn stored_workers(pool: &Pool) -> Vec<(String, Worker)> {
     let client = pool.get().await.unwrap();
-    let rows = client
-        .query(
-            r#"SELECT token_hash, data::text FROM "LiteLLM_LensWorker" ORDER BY id"#,
-            &[],
-        )
-        .await
-        .unwrap();
+    let rows = client.query(STORED_WORKERS, &[]).await.unwrap();
     rows.iter()
         .map(|row| {
-            let token_hash: String = row.get(0);
-            let data: String = row.get(1);
-            (token_hash, decode::<Worker>(data.as_bytes()).unwrap())
+            (
+                row.get(0),
+                decode::<Worker>(row.get::<_, String>(1).as_bytes()).unwrap(),
+            )
         })
         .collect()
 }
@@ -224,21 +219,12 @@ pub(crate) struct Recorder<Db> {
 }
 
 impl<Db: Database> Database for Recorder<Db> {
-    fn query_raw<'database>(
-        &'database self,
-        query: &'database str,
-        args: &'database [SqlBind],
-    ) -> QueryFuture<'database> {
+    fn query_raw(&self, query: &str, args: &[SqlBind]) -> QueryFuture<'_> {
         self.queries.lock().unwrap().push(query.to_owned());
         self.database.query_raw(query, args)
     }
 
-    fn execute_raw<'database>(
-        &'database self,
-        query: &'database str,
-        args: &'database [SqlBind],
-    ) -> ExecuteFuture<'database> {
-        self.queries.lock().unwrap().push(query.to_owned());
+    fn execute_raw(&self, query: &str, args: &[SqlBind]) -> ExecuteFuture<'_> {
         self.database.execute_raw(query, args)
     }
 }
