@@ -1,1 +1,404 @@
+use std::collections::BTreeMap;
+use std::error::Error;
+
+use betterlite_core::agents::json::AgentJson;
+use betterlite_models::decisions::Json;
+use futures_core::Stream;
+use futures_util::StreamExt as _;
+use futures_util::stream::BoxStream;
+use indexmap::IndexMap;
+use thiserror::Error;
+
+use crate::completion_bridge::EventSource;
+use crate::completion_bridge::wire::MessageSendParams;
+use crate::utils::session_scoping::{get_session_id_from_a2a_params, scope_session_to_principal};
+use params::LitellmParams;
+use runtime::{AgentCoreRuntime, HttpRequest, RpcMethod, SigningRequest};
+
+pub mod params;
+pub mod runtime;
 mod tests;
+
+// LiteLLM's _filter_reserved_headers, _request_scoped_runtime_session_id and _validate_runtime_session_id (which raises BadRequestError) are the three helpers below.
+const RUNTIME_SESSION_ID_MIN_LENGTH: usize = 33;
+const RUNTIME_SESSION_ID_MAX_LENGTH: usize = 256;
+const SESSION_HEADER: &str = "X-Amzn-Bedrock-AgentCore-Runtime-Session-Id";
+const USER_HEADER: &str = "X-Amzn-Bedrock-AgentCore-Runtime-User-Id";
+const RESERVED_EXACT_HEADERS: [&str; 2] = ["authorization", "host"];
+const RESERVED_PREFIX_HEADERS: [&str; 2] = ["x-amzn-bedrock-agentcore-runtime-", "x-amz-"];
+const JSON_CONTENT_TYPE: &str = "application/json";
+
+#[derive(Debug, Error)]
+pub enum TransformError {
+    #[error(
+        "litellm_params is required for BedrockAgentCoreA2AConfig (must contain model with AgentCore ARN)"
+    )]
+    MissingParams,
+    #[error("the AgentCore runtime session id must be 33 to 256 characters, and this one is {} characters", .session_id.chars().count())]
+    SessionId { session_id: String },
+    #[error("the AgentCore request field '{field}' must be a string")]
+    FieldType { field: &'static str },
+    #[error("the AgentCore message parameters could not be encoded")]
+    Encode(#[source] serde_json::Error),
+    #[error("the AgentCore response is not JSON")]
+    Decode(#[source] serde_json::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum AgentCoreError<E: Error + 'static> {
+    #[error(transparent)]
+    Transform(#[from] TransformError),
+    #[error("the AgentCore runtime answered with HTTP status {status}")]
+    Status { status: u16 },
+    #[error(transparent)]
+    Runtime(E),
+}
+
+pub type StreamedEvents<E> = BoxStream<'static, Result<AgentJson, AgentCoreError<E>>>;
+
+pub struct SignedRequest {
+    pub url: String,
+    pub headers: BTreeMap<String, String>,
+    pub body: Vec<u8>,
+}
+
+pub struct SignedRequestCall<'call> {
+    pub request_id: &'call str,
+    pub params: &'call MessageSendParams,
+    pub litellm_params: &'call LitellmParams,
+    pub method: RpcMethod,
+    pub agent_extra_headers: Option<&'call BTreeMap<String, String>>,
+}
+
+pub struct HandlerCall<'call> {
+    pub request_id: &'call str,
+    pub params: &'call MessageSendParams,
+    pub litellm_params: &'call LitellmParams,
+    pub agent_extra_headers: Option<&'call BTreeMap<String, String>>,
+}
+
+pub struct ConfigCall<'call> {
+    pub request_id: &'call str,
+    pub params: &'call MessageSendParams,
+    // LiteLLM's config methods take api_base and never pass it on: the URL comes from the model ARN
+    pub api_base: Option<&'call str>,
+    pub litellm_params: Option<&'call BTreeMap<String, AgentJson>>,
+    pub agent_extra_headers: Option<&'call BTreeMap<String, String>>,
+}
+
+pub struct AgentCoreHandler<R, S> {
+    pub runtime: R,
+    pub ids: S,
+}
+
+pub struct BedrockAgentCoreConfig<R, S> {
+    pub handler: AgentCoreHandler<R, S>,
+}
+
+fn filter_reserved_headers(
+    agent_extra_headers: &BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    let mut filtered = BTreeMap::new();
+    let mut dropped = Vec::new();
+    for (name, value) in agent_extra_headers {
+        let lower = name.to_lowercase();
+        let reserved = RESERVED_EXACT_HEADERS.contains(&lower.as_str())
+            || RESERVED_PREFIX_HEADERS
+                .iter()
+                .any(|prefix| lower.starts_with(prefix));
+        if reserved {
+            dropped.push(name.clone());
+            continue;
+        }
+        filtered.insert(name.clone(), value.clone());
+    }
+    if !dropped.is_empty() {
+        dropped.sort();
+        tracing::warn!(
+            headers = ?dropped,
+            "BedrockAgentCore A2A: dropping reserved header(s) from agent_extra_headers (not forwarded to AgentCore)"
+        );
+    }
+    filtered
+}
+
+fn request_scoped_runtime_session_id(
+    params: &MessageSendParams,
+    principal: Option<&str>,
+) -> Option<String> {
+    let context_id = get_session_id_from_a2a_params(params).ok().flatten()?;
+    if context_id.is_empty() {
+        return None;
+    }
+    Some(scope_session_to_principal(&context_id, principal))
+}
+
+fn validate_runtime_session_id(session_id: &str) -> Result<String, TransformError> {
+    let length = session_id.chars().count();
+    if !(RUNTIME_SESSION_ID_MIN_LENGTH..=RUNTIME_SESSION_ID_MAX_LENGTH).contains(&length) {
+        return Err(TransformError::SessionId {
+            session_id: session_id.to_owned(),
+        });
+    }
+    Ok(session_id.to_owned())
+}
+
+fn envelope(
+    request_id: &str,
+    method: RpcMethod,
+    params: &MessageSendParams,
+) -> Result<IndexMap<String, Json>, TransformError> {
+    let encoded = serde_json::to_value(params).map_err(TransformError::Encode)?;
+    let encoded_params = serde_json::from_value(encoded).map_err(TransformError::Encode)?;
+    Ok(IndexMap::from([
+        ("jsonrpc".to_owned(), Json::Text("2.0".to_owned())),
+        ("method".to_owned(), Json::Text(method.name().to_owned())),
+        ("id".to_owned(), Json::Text(request_id.to_owned())),
+        ("params".to_owned(), encoded_params),
+    ]))
+}
+
+pub async fn get_url_and_signed_request<R, S>(
+    runtime: &R,
+    call: &SignedRequestCall<'_>,
+    ids: &mut S,
+) -> Result<SignedRequest, AgentCoreError<R::Error>>
+where
+    R: AgentCoreRuntime,
+    S: EventSource + Send,
+{
+    let model = call.litellm_params.model.as_str();
+    let agentcore_model = model.strip_prefix("bedrock/").unwrap_or(model);
+    let optional_params = &call.litellm_params.optional;
+    let url = runtime
+        .complete_url(agentcore_model, optional_params)
+        .map_err(AgentCoreError::Runtime)?;
+    let request_data = envelope(call.request_id, call.method, call.params)?;
+    let mut headers = BTreeMap::new();
+    let derived =
+        request_scoped_runtime_session_id(call.params, call.litellm_params.principal.as_deref());
+    let session_id = match derived {
+        Some(session_id) => session_id,
+        None => runtime
+            .session_id(optional_params, ids.next_uuid())
+            .map_err(AgentCoreError::Runtime)?,
+    };
+    headers.insert(
+        SESSION_HEADER.to_owned(),
+        validate_runtime_session_id(&session_id)?,
+    );
+    let user_id = runtime
+        .user_id(optional_params)
+        .map_err(AgentCoreError::Runtime)?;
+    if let Some(user_id) = user_id.filter(|value| !value.is_empty()) {
+        headers.insert(USER_HEADER.to_owned(), user_id);
+    }
+    if let Some(extra_headers) = call.agent_extra_headers {
+        headers.extend(filter_reserved_headers(extra_headers));
+    }
+    let request = SigningRequest {
+        headers: &headers,
+        optional_params,
+        request_data: &request_data,
+        api_base: &url,
+        model: agentcore_model,
+        api_key: call.litellm_params.api_key.as_ref(),
+    };
+    runtime
+        .sign(&request)
+        .await
+        .map_err(AgentCoreError::Runtime)
+}
+
+#[must_use]
+pub fn parse_sse_events<L, E>(lines: L) -> impl Stream<Item = Result<AgentJson, AgentCoreError<E>>>
+where
+    L: Stream<Item = Result<String, E>>,
+    E: Error + 'static,
+{
+    async_stream::stream! {
+        let mut lines = std::pin::pin!(lines);
+        while let Some(line) = lines.next().await {
+            let line = match line {
+                Ok(line) => line,
+                Err(source) => {
+                    yield Err(AgentCoreError::Runtime(source));
+                    return;
+                }
+            };
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let Some(payload) = line.strip_prefix("data:") else {
+                continue;
+            };
+            let payload = payload.trim();
+            if payload.is_empty() {
+                continue;
+            }
+            match serde_json::from_str::<AgentJson>(payload) {
+                Ok(event) => yield Ok(event),
+                Err(_) => tracing::debug!("BedrockAgentCore A2A: skipping a non-JSON SSE line"),
+            }
+        }
+    }
+}
+
+impl<R, S> AgentCoreHandler<R, S>
+where
+    R: AgentCoreRuntime,
+    S: EventSource + Send,
+{
+    pub async fn handle_non_streaming(
+        &mut self,
+        call: &HandlerCall<'_>,
+    ) -> Result<AgentJson, AgentCoreError<R::Error>> {
+        let signed = get_url_and_signed_request(
+            &self.runtime,
+            &SignedRequestCall {
+                request_id: call.request_id,
+                params: call.params,
+                litellm_params: call.litellm_params,
+                method: RpcMethod::Send,
+                agent_extra_headers: call.agent_extra_headers,
+            },
+            &mut self.ids,
+        )
+        .await?;
+        // LiteLLM branches here on client.post(..., stream=True); the runtime seam owns the HTTP client
+        let response = self
+            .runtime
+            .post(&HttpRequest {
+                url: &signed.url,
+                headers: &signed.headers,
+                body: &signed.body,
+            })
+            .await
+            .map_err(AgentCoreError::Runtime)?;
+        if !(200..300).contains(&response.status) {
+            return Err(AgentCoreError::Status {
+                status: response.status,
+            });
+        }
+        let value: AgentJson =
+            serde_json::from_slice(&response.body).map_err(TransformError::Decode)?;
+        if value.get("error").is_some() {
+            tracing::warn!("BedrockAgentCore A2A: the agent returned an error response");
+        }
+        Ok(value)
+    }
+
+    pub async fn handle_streaming(
+        &mut self,
+        call: &HandlerCall<'_>,
+    ) -> Result<StreamedEvents<R::Error>, AgentCoreError<R::Error>> {
+        let signed = get_url_and_signed_request(
+            &self.runtime,
+            &SignedRequestCall {
+                request_id: call.request_id,
+                params: call.params,
+                litellm_params: call.litellm_params,
+                method: RpcMethod::Stream,
+                agent_extra_headers: call.agent_extra_headers,
+            },
+            &mut self.ids,
+        )
+        .await?;
+        let response = self
+            .runtime
+            .post_stream(&HttpRequest {
+                url: &signed.url,
+                headers: &signed.headers,
+                body: &signed.body,
+            })
+            .await
+            .map_err(AgentCoreError::Runtime)?;
+        if !(200..300).contains(&response.status) {
+            return Err(AgentCoreError::Status {
+                status: response.status,
+            });
+        }
+        let json_reply = response
+            .content_type
+            .to_lowercase()
+            .contains(JSON_CONTENT_TYPE);
+        let lines = response.lines;
+        Ok(async_stream::stream! {
+            if json_reply {
+                let body = match collect_body(lines).await {
+                    Ok(body) => body,
+                    Err(error) => {
+                        yield Err(error);
+                        return;
+                    }
+                };
+                match serde_json::from_str::<AgentJson>(&body) {
+                    Ok(value) => yield Ok(value),
+                    Err(source) => yield Err(AgentCoreError::Transform(TransformError::Decode(source))),
+                }
+            } else {
+                let mut events = std::pin::pin!(parse_sse_events(lines));
+                while let Some(event) = events.next().await {
+                    yield event;
+                }
+            }
+        }
+        .boxed())
+    }
+}
+
+async fn collect_body<L, E>(lines: L) -> Result<String, AgentCoreError<E>>
+where
+    L: Stream<Item = Result<String, E>>,
+    E: Error + 'static,
+{
+    let mut lines = std::pin::pin!(lines);
+    let mut body = String::new();
+    while let Some(line) = lines.next().await {
+        let line = line.map_err(AgentCoreError::Runtime)?;
+        if !body.is_empty() {
+            body.push('\n');
+        }
+        body.push_str(&line);
+    }
+    Ok(body)
+}
+
+impl<R, S> BedrockAgentCoreConfig<R, S>
+where
+    R: AgentCoreRuntime,
+    S: EventSource + Send,
+{
+    pub async fn handle_non_streaming(
+        &mut self,
+        call: &ConfigCall<'_>,
+    ) -> Result<AgentJson, AgentCoreError<R::Error>> {
+        let litellm_params =
+            LitellmParams::parse(call.litellm_params.ok_or(TransformError::MissingParams)?)?;
+        self.handler
+            .handle_non_streaming(&HandlerCall {
+                request_id: call.request_id,
+                params: call.params,
+                litellm_params: &litellm_params,
+                agent_extra_headers: call.agent_extra_headers,
+            })
+            .await
+    }
+
+    pub async fn handle_streaming(
+        &mut self,
+        call: &ConfigCall<'_>,
+    ) -> Result<StreamedEvents<R::Error>, AgentCoreError<R::Error>> {
+        let litellm_params =
+            LitellmParams::parse(call.litellm_params.ok_or(TransformError::MissingParams)?)?;
+        self.handler
+            .handle_streaming(&HandlerCall {
+                request_id: call.request_id,
+                params: call.params,
+                litellm_params: &litellm_params,
+                agent_extra_headers: call.agent_extra_headers,
+            })
+            .await
+    }
+}

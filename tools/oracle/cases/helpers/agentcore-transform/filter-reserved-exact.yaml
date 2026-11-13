@@ -1,0 +1,33 @@
+kind: helper
+name: agentcore-transform-filter-reserved-exact
+call:
+  b4804:
+    {
+      "function": "signed_request",
+      "request_id": "req-1",
+      "params": {
+        "message": {
+          "kind": "message",
+          "role": "user",
+          "parts": [
+            {
+              "kind": "text",
+              "text": "hello"
+            }
+          ],
+          "messageId": "msg-1"
+        }
+      },
+      "litellm_params": {
+        "model": "bedrock/agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime",
+        "api_key": "jwt-token",
+        "runtimeSessionId": "ssssssssssssssssssssssssssssssssssssssss"
+      },
+      "agent_extra_headers": {
+        "authorization": "Bearer fake",
+        "host": "evil.example",
+        "x-keep": "yes"
+      }
+    }
+env: {}
+compare: {ignore: []}
