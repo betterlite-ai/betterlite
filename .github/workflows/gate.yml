@@ -12,8 +12,8 @@ on:
 permissions: {}
 
 env:
-  # three runners take main's whole suite from 13.5 to 10 minutes
-  TEST_SHARDS: 3
+  # cargo gate affected --shard packs whole packages onto the shards by their test seconds; six took 9.6 to 17.1 minutes on 11-13 (run 43471939068) against 20 to 28 for three hash shards
+  TEST_SHARDS: 6
   # cargo mutants tests one mutant at a time, so a task pull request splits them over six runners; three took a median 20 and a p90 38 minutes on 11-13
   MUTANTS_SHARDS: 6
 
@@ -87,6 +87,10 @@ jobs:
             if jq -en --arg changed "$changed" --argjson rules "$rules" '[$rules["path-rule"][] | select(.["mark-changed"] == []) | .globs[]] as $inert | $changed | split("\n") | all(. as $path | $inert | any(. as $glob | if endswith("/**") then $path | startswith($glob[:-2]) else $path == $glob end))' > /dev/null; then
               parts='["lint"]'
             fi
+          fi
+          # a tests part builds only its own packages, so on main one part builds every test target for the cache
+          if [[ $EVENT == push ]]; then
+            parts=$(jq -c '. + ["cache"]' <<<"$parts")
           fi
           echo "branch $branch, base $base, task ${task:-none}, parts $parts"
           printf 'base=%s\ntask=%s\nparts=%s\n' "$base" "$task" "$parts" >> "$GITHUB_OUTPUT"
@@ -176,12 +180,12 @@ jobs:
       - name: Add Rust components
         run: rustup component add clippy rustfmt llvm-tools-preview
 
-      # clippy keeps check builds and the tests keep full builds, so each kind has its own cache, and only the first test shard saves it
+      # clippy keeps check builds and the tests keep full builds, so each kind has its own cache, and main's cache part saves the test one
       - name: Restore the cargo cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: gate-${{ matrix.part == 'lint' && 'lint' || 'tests' }}
-          save-if: ${{ github.ref == 'refs/heads/main' && (matrix.part == 'lint' || matrix.part == 'tests-1') }}
+          save-if: ${{ github.ref == 'refs/heads/main' && (matrix.part == 'lint' || matrix.part == 'cache') }}
           workspaces: |
             .development/gate -> target
             . -> target
@@ -265,6 +269,14 @@ jobs:
           key: oracle-answers-${{ github.sha }}
           restore-keys: oracle-answers-
 
+      # a task's own checks may run node (B9090's do), and the image has none; 24.19.0 is what LiteLLM's ui/litellm-dashboard/.nvmrc pins
+      - name: Set up Node
+        if: matrix.part == 'task'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.19.0
+          package-manager-cache: false
+
       # lint and task split every check between them, so a check added to checks.yaml runs in task
       - name: Run the gate's ${{ matrix.part }} checks on the merged result
         if: github.event_name != 'pull_request' || needs.find.outputs.task != ''
@@ -298,14 +310,17 @@ jobs:
                 if [[ -n $affected ]]; then echo "the change affects $affected, but find started no tests part"; exit 1; fi
               fi ;;
             tests-*)
-              affected=$(cargo gate affected) || exit 1
-              if [[ -z $affected ]]; then echo "the change affects no package"; exit 0; fi
+              affected=$(cargo gate affected --shard "${PART#tests-}" --shards "$TEST_SHARDS") || exit 1
+              if [[ -z $affected ]]; then echo "no package the change affects falls in this shard"; exit 0; fi
               read -r -a packages <<< "$affected"
               # the oracle library and its unit-test build need about 8 GB each, so they take turns on a 16 GB runner
               export RUSTC_WRAPPER="$GITHUB_WORKSPACE/.github/scripts/oracle-rustc-turns.sh"
               # the tests use LiteLLM but not its dev tools, about 330 MB
               # a shard that stops at its first failure hides the rest: on 11-13 shard 3 ran 30 of 22702 tests in run 43451345497
-              UV_NO_DEV=1 exec cargo nextest run --locked --no-tests=warn --max-fail 20 --partition "hash:${PART#tests-}/$TEST_SHARDS" "${packages[@]}" ;;
+              UV_NO_DEV=1 exec cargo nextest run --locked --no-tests=warn --max-fail 20 "${packages[@]}" ;;
+            cache)
+              export RUSTC_WRAPPER="$GITHUB_WORKSPACE/.github/scripts/oracle-rustc-turns.sh"
+              exec cargo test --locked --no-run --workspace ;;
             task)
               export NEXTEST_PROFILE=task
               for id in "${lint[@]}" "${later[@]}"; do selection+=(--skip "$id"); done ;;
