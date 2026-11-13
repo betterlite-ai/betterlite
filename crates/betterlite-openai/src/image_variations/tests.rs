@@ -109,7 +109,7 @@ fn supplied(kind: ClientKind) -> ImageVariationClient {
         timeout: Some(Duration::from_secs(45)),
         max_retries: 1,
         organization: Some(String::from("org-supplied")),
-        shared_session: false,
+        shared_session: true,
     }
 }
 
