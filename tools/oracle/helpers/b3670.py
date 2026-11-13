@@ -168,10 +168,6 @@ def undeliverable_reason_answer(input_value: UndeliverableReasonInput) -> JsonVa
     )
 
 
-def client_tool_use_answer(input_value: ClientToolUseInput) -> JsonValue:
-    return _is_client_tool_use(input_value["block"])
-
-
 def run(input_value: Input) -> JsonValue:
     answer: JsonValue
     if input_value["function"] == "input_item_provenance":
@@ -189,5 +185,5 @@ def run(input_value: Input) -> JsonValue:
     elif input_value["function"] == "undeliverable_reason":
         answer = undeliverable_reason_answer(input_value)
     else:
-        answer = client_tool_use_answer(input_value)
+        answer = _is_client_tool_use(input_value["block"])
     return answer
