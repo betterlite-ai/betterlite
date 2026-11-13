@@ -1,5 +1,6 @@
 from typing import Literal, TypedDict
 
+from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.types.google_genai.main import GenerateContentRequestDict, GenerateContentResponse
 from litellm.types.utils import LlmProviders
 from litellm.utils import ProviderConfigManager
@@ -65,14 +66,10 @@ def top_level(call: TopLevelCall) -> JsonValue:
 
 
 def error(call: ErrorCall) -> JsonValue:
-    selected = ProviderConfigManager.get_provider_google_genai_generate_content_config(
-        "gemini-2.5-flash", LlmProviders.GEMINI
-    )
-    if selected is None:
-        raise ValueError("no native GenAI config for gemini-2.5-flash")
-    raised = selected.get_error_class(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/google_genai/transformation.py#L198-L216
-        error_message=call["message"],
+    # get_error_class returns this constructor's value; its bare dict annotation is unknown
+    raised = BaseLLMException(
         status_code=call["status_code"],
+        message=call["message"],
         headers=call["headers"],
     )
     record = ErrorRecord.model_validate(raised, from_attributes=True)
