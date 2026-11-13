@@ -6,6 +6,7 @@
     test,
     expect(
         clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
         reason = "serde_json test fixtures built with json! are concise and type-directed"
     )
 )]
@@ -58,17 +59,17 @@ pub fn post_guardrail_tool_call_shapes(
     if pre.is_empty() {
         return pre.to_vec();
     }
-    let Some(returned) = returned else {
+    let Some(returned_calls) = returned else {
         warn_about_returned(guardrail_name, "returned no", pre.len());
         return pre.to_vec();
     };
-    if returned.len() != pre.len() {
-        let count = returned.len().to_string();
+    if returned_calls.len() != pre.len() {
+        let count = returned_calls.len().to_string();
         warn_about_returned(guardrail_name, &count, pre.len());
         return pre.to_vec();
     }
-    let mut shapes = Vec::with_capacity(returned.len());
-    for tool_call in returned {
+    let mut shapes = Vec::with_capacity(returned_calls.len());
+    for tool_call in returned_calls {
         let Some(shape) = returned_tool_call_shape(tool_call) else {
             tracing::warn!(
                 guardrail = guardrail_name.unwrap_or_default(),

@@ -8,7 +8,7 @@ use super::{
     ToolUseInputTarget, is_client_tool_use,
 };
 
-fn block_map(value: Value) -> Map<String, Value> {
+fn block_map(value: &Value) -> Map<String, Value> {
     value.as_object().cloned().unwrap()
 }
 
@@ -107,5 +107,5 @@ fn extracted_input_keeps_scanned_texts_and_tool_calls() {
 #[case::missing_type(json!({"id": "t1", "name": "f", "input": {}}), false)]
 #[case::non_string_type(json!({"type": 1, "id": "t1", "name": "f", "input": {}}), false)]
 fn client_tool_use_requires_the_declared_fields(#[case] block: Value, #[case] expected: bool) {
-    assert_eq!(is_client_tool_use(&block_map(block)), expected);
+    assert_eq!(is_client_tool_use(&block_map(&block)), expected);
 }

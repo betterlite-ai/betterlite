@@ -6,6 +6,7 @@
     test,
     expect(
         clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
         reason = "serde_json test fixtures built with json! are concise and type-directed"
     )
 )]
@@ -53,17 +54,31 @@ pub struct ScannedText {
     pub target: InputWriteBackTarget,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct ScannedToolCall {
     pub tool_call: Value,
     pub target: ToolUseInputTarget,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct ExtractedInput {
     pub scanned: Vec<ScannedText>,
     pub images: Vec<String>,
     pub tool_calls: Vec<ScannedToolCall>,
+}
+
+impl PartialEq for ScannedToolCall {
+    fn eq(&self, other: &Self) -> bool {
+        self.tool_call == other.tool_call && self.target == other.target
+    }
+}
+
+impl PartialEq for ExtractedInput {
+    fn eq(&self, other: &Self) -> bool {
+        self.scanned == other.scanned
+            && self.images == other.images
+            && self.tool_calls == other.tool_calls
+    }
 }
 
 impl ExtractedInput {

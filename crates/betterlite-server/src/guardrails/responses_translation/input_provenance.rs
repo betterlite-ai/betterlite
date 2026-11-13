@@ -6,6 +6,7 @@
     test,
     expect(
         clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
         reason = "serde_json test fixtures built with json! are concise and type-directed"
     )
 )]
@@ -14,6 +15,7 @@ pub mod error;
 mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::slice;
 use std::sync::Arc;
 
 use betterlite_config::sections::local_ttl_cache::Settings;
@@ -52,35 +54,51 @@ pub fn input_item_provenance(
     let items = to_json_items(raw_input)?;
     let mut solo_conversions = Vec::with_capacity(items.len());
     for item in &items {
-        solo_conversions.push(convert(&[item.clone()], &cache)?);
+        solo_conversions.push(convert(slice::from_ref(item), &cache)?);
     }
     let full_conversion = convert(&items, &cache)?;
     if full_conversion.as_slice() != expected_messages {
         return Ok(None);
     }
     let units = provenance_unit_bounds(raw_input, &solo_conversions);
+    let Some(unit_messages) = unit_conversions(&items, &units, &solo_conversions, &cache)? else {
+        return Ok(None);
+    };
+    if !unit_messages.iter().flatten().eq(full_conversion.iter()) {
+        return Ok(None);
+    }
+    Ok(provenance_maps(&units, &unit_messages))
+}
+
+fn unit_conversions(
+    items: &[Json],
+    units: &[(usize, usize)],
+    solo_conversions: &[Vec<Value>],
+    cache: &DualLocalCache,
+) -> Result<Option<Vec<Vec<Value>>>, InputProvenanceError> {
     let mut unit_messages = Vec::with_capacity(units.len());
-    for (start, end) in &units {
+    for (start, end) in units {
         let messages = if end.saturating_sub(*start) == 1 {
-            match solo_conversions.get(*start) {
-                Some(messages) => messages.clone(),
-                None => return Ok(None),
-            }
-        } else {
-            let slice = match items.get(*start..*end) {
-                Some(slice) => slice,
-                None => return Ok(None),
+            let Some(messages) = solo_conversions.get(*start) else {
+                return Ok(None);
             };
-            convert(slice, &cache)?
+            messages.clone()
+        } else {
+            let Some(slice) = items.get(*start..*end) else {
+                return Ok(None);
+            };
+            convert(slice, cache)?
         };
         unit_messages.push(messages);
     }
-    let flattened = unit_messages.iter().flatten();
-    let full = full_conversion.iter();
-    if !flattened.eq(full) {
-        return Ok(None);
-    }
-    let boundaries = message_boundaries(&unit_messages);
+    Ok(Some(unit_messages))
+}
+
+fn provenance_maps(
+    units: &[(usize, usize)],
+    unit_messages: &[Vec<Value>],
+) -> Option<InputProvenance> {
+    let boundaries = message_boundaries(unit_messages);
     let mut item_for_message = BTreeMap::new();
     let mut tainted = BTreeSet::new();
     for (unit_index, (start, end)) in units.iter().enumerate() {
@@ -88,7 +106,7 @@ pub fn input_item_provenance(
             boundaries.get(unit_index),
             boundaries.get(unit_index.saturating_add(1)),
         ) else {
-            return Ok(None);
+            return None;
         };
         if end.saturating_sub(*start) > 1 {
             tainted.extend(*from..*to);
@@ -98,10 +116,10 @@ pub fn input_item_provenance(
             }
         }
     }
-    Ok(Some(InputProvenance {
+    Some(InputProvenance {
         item_for_message,
         tainted,
-    }))
+    })
 }
 
 #[must_use]

@@ -17,7 +17,7 @@ pub(crate) struct Op;
 
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
-pub(crate) enum Input {
+pub(crate) enum Request {
     InputItemProvenance {
         raw_input: Vec<Value>,
         expected_messages: Vec<Value>,
@@ -55,69 +55,95 @@ pub(crate) enum Input {
 }
 
 impl Helper for Op {
-    type Input = Input;
+    type Input = Request;
 
     fn run(input: &Self::Input) -> HelperResult {
         Ok(match input {
-            Input::InputItemProvenance {
+            Request::InputItemProvenance {
                 raw_input,
                 expected_messages,
-            } => {
-                let provenance = input_item_provenance(raw_input, expected_messages)
-                    .or_value_error()?;
-                provenance_value(provenance.as_ref())
+            } => provenance_answer(raw_input, expected_messages)?,
+            Request::ItemRewriteField { item } => rewrite_field_answer(item),
+            Request::RewrittenItem { item, rewritten } => {
+                rewritten_item_answer(item, rewritten)?
             }
-            Input::ItemRewriteField { item } => item_rewrite_field(item)
-                .map_or(Value::Null, |field| Value::String(field.to_owned())),
-            Input::RewrittenItem { item, rewritten } => {
-                let patched = rewritten_input_item(item, rewritten).or_value_error()?;
-                patched.map_or(Value::Null, Value::Object)
-            }
-            Input::ToolCallShapes { calls } => shapes_value(&tool_call_shapes(calls)),
-            Input::PostGuardrailShapes {
+            Request::ToolCallShapes { calls } => shapes_value(&tool_call_shapes(calls)),
+            Request::PostGuardrailShapes {
                 returned,
                 pre,
                 guardrail_name,
-            } => {
-                let pre_shapes = tool_call_shapes(pre);
-                let shapes = post_guardrail_tool_call_shapes(
-                    returned.as_deref(),
-                    &pre_shapes,
-                    guardrail_name.as_deref(),
-                );
-                shapes_value(&shapes)
-            }
-            Input::ToolCallRewrite { before, after } => {
-                let before_shape = single_shape(before);
-                let after_shape = single_shape(after);
-                shape_value(&tool_call_rewrite(&before_shape, &after_shape))
-            }
-            Input::UndeliverableReason {
-                call_ids,
-                tool_call_item_count,
-                post_guardrail_tool_call_count,
-                unresolved_argument_event,
-                rewritten_call_ids,
-                event_call_ids,
-            } => undeliverable_reason(
-                call_ids,
-                *tool_call_item_count,
-                *post_guardrail_tool_call_count,
-                *unresolved_argument_event,
-                rewritten_call_ids,
-                event_call_ids,
-            )
-            .map_or(Value::Null, |reason| Value::String(reason.to_string())),
-            Input::ClientToolUse { block } => Value::Bool(is_client_tool_use(block)),
+            } => post_shapes_answer(returned.as_deref(), pre, guardrail_name.as_deref()),
+            Request::ToolCallRewrite { before, after } => rewrite_answer(before, after),
+            Request::UndeliverableReason { .. } => undeliverable_answer(input),
+            Request::ClientToolUse { block } => Value::Bool(is_client_tool_use(block)),
         })
     }
 }
 
+fn provenance_answer(
+    raw_input: &[Value],
+    expected_messages: &[Value],
+) -> HelperResult {
+    let provenance = input_item_provenance(raw_input, expected_messages).or_value_error()?;
+    Ok(provenance_value(provenance.as_ref()))
+}
+
+fn rewrite_field_answer(item: &Map<String, Value>) -> Value {
+    item_rewrite_field(item).map_or(Value::Null, |field| Value::String(field.to_owned()))
+}
+
+fn rewritten_item_answer(
+    item: &Map<String, Value>,
+    rewritten: &Value,
+) -> HelperResult {
+    let patched = rewritten_input_item(item, rewritten).or_value_error()?;
+    Ok(patched.map_or(Value::Null, Value::Object))
+}
+
+fn post_shapes_answer(
+    returned: Option<&[Value]>,
+    pre: &[Value],
+    guardrail_name: Option<&str>,
+) -> Value {
+    let pre_shapes = tool_call_shapes(pre);
+    let shapes = post_guardrail_tool_call_shapes(returned, &pre_shapes, guardrail_name);
+    shapes_value(&shapes)
+}
+
+fn rewrite_answer(before: &Value, after: &Value) -> Value {
+    let before_shape = single_shape(before);
+    let after_shape = single_shape(after);
+    shape_value(&tool_call_rewrite(&before_shape, &after_shape))
+}
+
+fn undeliverable_answer(input: &Request) -> Value {
+    let Request::UndeliverableReason {
+        call_ids,
+        tool_call_item_count,
+        post_guardrail_tool_call_count,
+        unresolved_argument_event,
+        rewritten_call_ids,
+        event_call_ids,
+    } = input
+    else {
+        return Value::Null;
+    };
+    undeliverable_reason(
+        call_ids,
+        *tool_call_item_count,
+        *post_guardrail_tool_call_count,
+        *unresolved_argument_event,
+        rewritten_call_ids,
+        event_call_ids,
+    )
+    .map_or(Value::Null, |reason| Value::String(reason.to_string()))
+}
+
 fn provenance_value(provenance: Option<&InputProvenance>) -> Value {
-    provenance.map_or(Value::Null, |provenance| {
+    provenance.map_or(Value::Null, |found| {
         json!({
-            "item_for_message": provenance.item_for_message,
-            "tainted": provenance.tainted,
+            "item_for_message": found.item_for_message,
+            "tainted": found.tainted,
         })
     })
 }

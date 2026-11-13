@@ -12,7 +12,7 @@ use super::{
     tool_call_output_item_mapping,
 };
 
-fn message_map(value: Value) -> Map<String, Value> {
+fn message_map(value: &Value) -> Map<String, Value> {
     value.as_object().cloned().unwrap()
 }
 
@@ -252,12 +252,12 @@ fn provenance_error_a_converter_failure_is_not_an_untraceable_input() {
 #[case::reasoning(json!({"type": "reasoning"}), None)]
 #[case::number_type(json!({"type": 4, "content": "x"}), None)]
 fn rewrite_field_by_item_type(#[case] item: Value, #[case] field: Option<&str>) {
-    assert_eq!(item_rewrite_field(&message_map(item)), field);
+    assert_eq!(item_rewrite_field(&message_map(&item)), field);
 }
 
 #[test]
 fn rewritten_item_replaces_a_string_content() {
-    let item = message_map(json!({"role": "user", "content": "old"}));
+    let item = message_map(&json!({"role": "user", "content": "old"}));
     let patched = rewritten_input_item(&item, &json!({"content": "new"}))
         .unwrap()
         .unwrap();
@@ -270,7 +270,7 @@ fn rewritten_item_replaces_a_string_content() {
 #[test]
 fn rewritten_item_replaces_a_string_output_and_keeps_the_other_fields() {
     let item =
-        message_map(json!({"type": "function_call_output", "call_id": "c1", "output": "old"}));
+        message_map(&json!({"type": "function_call_output", "call_id": "c1", "output": "old"}));
     let patched = rewritten_item(&item, &json!({"content": "new"}));
     assert_eq!(
         patched,
@@ -280,7 +280,7 @@ fn rewritten_item_replaces_a_string_output_and_keeps_the_other_fields() {
 
 #[test]
 fn rewritten_item_converts_non_string_content() {
-    let item = message_map(json!({
+    let item = message_map(&json!({
         "type": "message",
         "role": "user",
         "content": [{"type": "input_text", "text": "old"}]
@@ -298,7 +298,7 @@ fn rewritten_item_converts_non_string_content() {
 
 #[test]
 fn rewritten_item_converts_a_tool_output() {
-    let item = message_map(json!({
+    let item = message_map(&json!({
         "type": "function_call_output",
         "call_id": "c1",
         "output": [{"type": "input_text", "text": "old"}]
@@ -324,13 +324,13 @@ fn rewritten_item(item: &Map<String, Value>, rewritten: &Value) -> Value {
 
 #[test]
 fn rewritten_item_null_for_a_non_object_rewrite() {
-    let item = message_map(json!({"role": "user", "content": "old"}));
+    let item = message_map(&json!({"role": "user", "content": "old"}));
     assert_eq!(rewritten_input_item(&item, &json!("new")).unwrap(), None);
 }
 
 #[test]
 fn rewritten_item_null_for_an_item_without_a_rewrite_field() {
-    let item = message_map(json!({"type": "function_call", "call_id": "c1"}));
+    let item = message_map(&json!({"type": "function_call", "call_id": "c1"}));
     assert_eq!(
         rewritten_input_item(&item, &json!({"content": "new"})).unwrap(),
         None
@@ -339,7 +339,7 @@ fn rewritten_item_null_for_an_item_without_a_rewrite_field() {
 
 #[test]
 fn rewritten_item_null_when_the_conversion_has_no_matching_field() {
-    let item = message_map(json!({"type": "function_call_output", "output": ["x"]}));
+    let item = message_map(&json!({"type": "function_call_output", "output": ["x"]}));
     assert_eq!(
         rewritten_input_item(&item, &json!({"role": "assistant", "content": "hi"})).unwrap(),
         None
@@ -348,7 +348,7 @@ fn rewritten_item_null_when_the_conversion_has_no_matching_field() {
 
 #[test]
 fn rewritten_item_null_when_the_conversion_produces_no_item() {
-    let item = message_map(json!({"type": "function_call_output", "output": ["x"]}));
+    let item = message_map(&json!({"type": "function_call_output", "output": ["x"]}));
     assert_eq!(
         rewritten_input_item(&item, &json!({"role": "user", "content": null})).unwrap(),
         None
@@ -357,7 +357,7 @@ fn rewritten_item_null_when_the_conversion_produces_no_item() {
 
 #[test]
 fn rewritten_item_error_for_a_row_that_is_not_a_chat_message() {
-    let item = message_map(json!({"type": "function_call_output", "output": ["x"]}));
+    let item = message_map(&json!({"type": "function_call_output", "output": ["x"]}));
     let error = rewritten_input_item(&item, &json!({"role": 5, "content": "x"}));
     assert!(matches!(error, Err(InputProvenanceError::ChatRow { .. })));
 }
