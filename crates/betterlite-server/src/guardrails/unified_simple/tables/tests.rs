@@ -9,11 +9,19 @@ use super::{
     TRANSCRIPTION_CALL_TYPES, VIDEO_CALL_TYPES,
 };
 
+fn wire_names<const LENGTH: usize>(table: [CallType; LENGTH]) -> String {
+    serde_json::to_string(table.as_slice()).unwrap()
+}
+
 #[test]
 fn table_completion_lists_text_completion_then_atext_completion() {
     assert_eq!(
         COMPLETION_CALL_TYPES,
         [CallType::TextCompletion, CallType::AtextCompletion]
+    );
+    assert_eq!(
+        wire_names(COMPLETION_CALL_TYPES),
+        r#"["text_completion","atext_completion"]"#
     );
 }
 
@@ -23,6 +31,10 @@ fn table_embeddings_lists_embedding_then_aembedding() {
         EMBEDDINGS_CALL_TYPES,
         [CallType::Embedding, CallType::Aembedding]
     );
+    assert_eq!(
+        wire_names(EMBEDDINGS_CALL_TYPES),
+        r#"["embedding","aembedding"]"#
+    );
 }
 
 #[test]
@@ -31,11 +43,16 @@ fn table_image_lists_image_generation_then_aimage_generation() {
         IMAGE_CALL_TYPES,
         [CallType::ImageGeneration, CallType::AimageGeneration]
     );
+    assert_eq!(
+        wire_names(IMAGE_CALL_TYPES),
+        r#"["image_generation","aimage_generation"]"#
+    );
 }
 
 #[test]
 fn table_speech_lists_speech_then_aspeech() {
     assert_eq!(SPEECH_CALL_TYPES, [CallType::Speech, CallType::Aspeech]);
+    assert_eq!(wire_names(SPEECH_CALL_TYPES), r#"["speech","aspeech"]"#);
 }
 
 #[test]
@@ -43,6 +60,10 @@ fn table_transcription_lists_transcription_then_atranscription() {
     assert_eq!(
         TRANSCRIPTION_CALL_TYPES,
         [CallType::Transcription, CallType::Atranscription]
+    );
+    assert_eq!(
+        wire_names(TRANSCRIPTION_CALL_TYPES),
+        r#"["transcription","atranscription"]"#
     );
 }
 
@@ -62,6 +83,10 @@ fn table_video_lists_the_ten_pinned_call_types() {
             CallType::VideoExtension,
             CallType::AvideoExtension,
         ]
+    );
+    assert_eq!(
+        wire_names(VIDEO_CALL_TYPES),
+        r#"["video_generation","avideo_generation","create_video","acreate_video","video_remix","avideo_remix","video_edit","avideo_edit","video_extension","avideo_extension"]"#
     );
 }
 

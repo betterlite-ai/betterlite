@@ -4,6 +4,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
@@ -18,6 +19,14 @@ pub trait DynGuardrail: Sync {
         input_type: GuardrailInputType,
         logging_obj: Option<&'call mut GuardrailLogTarget>,
     ) -> Pin<Box<dyn Future<Output = Result<GuardrailApiInputs, GuardrailFailure>> + Send + 'call>>;
+
+    fn get_config_model(&self) -> Option<GuardrailValue>;
+
+    fn get_supported_event_hooks(&self) -> Option<Vec<GuardrailEventHooks>>;
+
+    fn supports_tool_result_scan(&self) -> bool;
+
+    fn messages_cover_full_request(&self) -> bool;
 }
 
 impl<G: GuardrailContract> DynGuardrail for G {
@@ -36,6 +45,22 @@ impl<G: GuardrailContract> DynGuardrail for G {
             input_type,
             logging_obj,
         ))
+    }
+
+    fn get_config_model(&self) -> Option<GuardrailValue> {
+        GuardrailContract::get_config_model(self)
+    }
+
+    fn get_supported_event_hooks(&self) -> Option<Vec<GuardrailEventHooks>> {
+        GuardrailContract::get_supported_event_hooks(self)
+    }
+
+    fn supports_tool_result_scan(&self) -> bool {
+        GuardrailContract::supports_tool_result_scan(self)
+    }
+
+    fn messages_cover_full_request(&self) -> bool {
+        GuardrailContract::messages_cover_full_request(self)
     }
 }
 
@@ -58,4 +83,22 @@ impl GuardrailContract for AnyGuardrail {
                 .await
         }
     }
+
+    fn get_config_model(&self) -> Option<GuardrailValue> {
+        self.0.get_config_model()
+    }
+
+    fn get_supported_event_hooks(&self) -> Option<Vec<GuardrailEventHooks>> {
+        self.0.get_supported_event_hooks()
+    }
+
+    fn supports_tool_result_scan(&self) -> bool {
+        self.0.supports_tool_result_scan()
+    }
+
+    fn messages_cover_full_request(&self) -> bool {
+        self.0.messages_cover_full_request()
+    }
 }
+
+mod tests;
