@@ -53,45 +53,32 @@ fn mantle_api_base(region: &str, cases: &[MantleCase]) -> HelperResult {
     Ok(json!({ "urls": urls }))
 }
 
-fn native_responses(model_cost: &ParamMap, models: &[Option<String>]) -> HelperResult {
-    let results: Vec<Value> = models
-        .iter()
-        .map(|model| {
-            supports_openai_responses(model.as_deref(), model_cost)
-                .map_or_else(|_| json!({"raised": true}), |answer| json!(answer))
-        })
-        .collect();
-    Ok(json!({ "results": results }))
+#[derive(Clone, Copy)]
+enum FlagGate {
+    NativeResponses,
+    CachePoints,
+    ParallelTools,
+    ExtendedCacheTtl,
 }
 
-fn cache_points(model_cost: &ParamMap, models: &[Option<String>]) -> HelperResult {
+fn flag_results(model_cost: &ParamMap, models: &[Option<String>], gate: FlagGate) -> HelperResult {
     let results: Vec<Value> = models
         .iter()
         .map(|model| {
-            accepts_cache_points(model.as_deref(), model_cost)
-                .map_or_else(|_| json!({"raised": true}), |answer| json!(answer))
-        })
-        .collect();
-    Ok(json!({ "results": results }))
-}
-
-fn parallel_tools(model_cost: &ParamMap, models: &[String]) -> HelperResult {
-    let results: Vec<Value> = models
-        .iter()
-        .map(|model| {
-            supports_parallel_tools(model, model_cost)
-                .map_or_else(|_| json!({"raised": true}), |answer| json!(answer))
-        })
-        .collect();
-    Ok(json!({ "results": results }))
-}
-
-fn extended_cache_ttl(model_cost: &ParamMap, models: &[String]) -> HelperResult {
-    let results: Vec<Value> = models
-        .iter()
-        .map(|model| {
-            is_claude_4_5_on_bedrock(model, model_cost)
-                .map_or_else(|_| json!({"raised": true}), |answer| json!(answer))
+            let answer = match gate {
+                FlagGate::NativeResponses => {
+                    supports_openai_responses(model.as_deref(), model_cost)
+                }
+                FlagGate::CachePoints => accepts_cache_points(model.as_deref(), model_cost),
+                // the two strict gates take a name, and their cases never carry null
+                FlagGate::ParallelTools => model
+                    .as_deref()
+                    .map_or(Ok(false), |name| supports_parallel_tools(name, model_cost)),
+                FlagGate::ExtendedCacheTtl => model
+                    .as_deref()
+                    .map_or(Ok(false), |name| is_claude_4_5_on_bedrock(name, model_cost)),
+            };
+            answer.map_or_else(|_| json!({"raised": true}), |value| json!(value))
         })
         .collect();
     Ok(json!({ "results": results }))
@@ -165,12 +152,20 @@ fn tool_search(model_cost: &ParamMap, models: &[String]) -> HelperResult {
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
         Input::MantleApiBase { region, cases } => mantle_api_base(region, cases),
-        Input::NativeResponses { model_cost, models } => native_responses(model_cost, models),
-        Input::CachePointUnknownModel { model_cost, models } => cache_points(model_cost, models),
+        Input::NativeResponses { model_cost, models } => {
+            flag_results(model_cost, models, FlagGate::NativeResponses)
+        }
+        Input::CachePointUnknownModel { model_cost, models } => {
+            flag_results(model_cost, models, FlagGate::CachePoints)
+        }
         Input::StrictToolsFallback { model_cost, models } => strict_tools(model_cost, models),
         Input::ToolSearch { model_cost, models } => tool_search(model_cost, models),
         Input::EffortCeiling { model_cost, cases } => effort_ceiling(model_cost, cases),
-        Input::ParallelTools { model_cost, models } => parallel_tools(model_cost, models),
-        Input::ExtendedCacheTtl { model_cost, models } => extended_cache_ttl(model_cost, models),
+        Input::ParallelTools { model_cost, models } => {
+            flag_results(model_cost, models, FlagGate::ParallelTools)
+        }
+        Input::ExtendedCacheTtl { model_cost, models } => {
+            flag_results(model_cost, models, FlagGate::ExtendedCacheTtl)
+        }
     }
 }

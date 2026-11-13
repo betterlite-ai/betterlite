@@ -46,29 +46,44 @@ pub fn supports_parallel_tools(
     model: &str,
     model_cost: &ParamMap,
 ) -> Result<bool, CapabilityError> {
-    for candidate in [model.to_owned(), get_bedrock_base_model(model)] {
-        let Some(fields) = present_entry(model_cost.get(&candidate), &candidate)? else {
-            continue;
-        };
-        if matches!(fields.get(PARALLEL_TOOL_FLAG), Some(ParamValue::Bool(true))) {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+    let flag = PARALLEL_TOOL_FLAG;
+    any_entry(model, model_cost, |fields| {
+        matches!(fields.get(flag), Some(ParamValue::Bool(true)))
+    })
 }
 
 pub fn is_claude_4_5_on_bedrock(
     model: &str,
     model_cost: &ParamMap,
 ) -> Result<bool, CapabilityError> {
+    let base = get_bedrock_base_model(model);
+    for candidate in [model, base.as_str()] {
+        let entry = present_entry(model_cost.get(candidate), candidate)?;
+        if entry.is_some_and(|fields| {
+            fields
+                .get(EXTENDED_CACHE_FIELD)
+                .is_some_and(|value| !matches!(value, ParamValue::Null))
+        }) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+// Python's any(): a truthy entry stops early, and a malformed one raises only when reached
+fn any_entry<Found>(
+    model: &str,
+    model_cost: &ParamMap,
+    found: Found,
+) -> Result<bool, CapabilityError>
+where
+    Found: Fn(&IndexMap<String, ParamValue>) -> bool,
+{
     for candidate in [model.to_owned(), get_bedrock_base_model(model)] {
         let Some(fields) = present_entry(model_cost.get(&candidate), &candidate)? else {
             continue;
         };
-        if fields
-            .get(EXTENDED_CACHE_FIELD)
-            .is_some_and(|value| !matches!(value, ParamValue::Null))
-        {
+        if found(fields) {
             return Ok(true);
         }
     }
