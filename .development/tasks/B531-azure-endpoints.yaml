@@ -313,5 +313,5 @@ pitfalls:
   not be applied to it.
 budget:
   max_changed_lines: 3000
-  max_new_expects: 0
+  max_new_expects: 5
 review_level: security
