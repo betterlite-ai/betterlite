@@ -141,8 +141,9 @@ pub(crate) fn application(
         )?,
         embedding_routes(executor),
     );
+    // a route layer, so a blocked route's 404 still passes the security headers, size limit and admission below
     let stacked = request_stack::wrap(
-        routed,
+        routed.route_layer(from_fn(filter_route)),
         &config.sections.request_size_limit,
         &config.sections.security_headers,
     );
@@ -152,8 +153,7 @@ pub(crate) fn application(
         )),
         in_flight: Arc::new(InFlightRequests::default()),
     };
-    // below the root path layer, so the filter matches the routes a request reaches without its root
-    let application = stack.wrap(stacked).layer(from_fn(filter_route));
+    let application = stack.wrap(stacked);
     Ok(
         match RootPaths::from_settings(&config.sections.request_root_paths) {
             Some(paths) => paths.wrap(application),

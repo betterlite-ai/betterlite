@@ -73,7 +73,7 @@ async fn wait_until_listening(port: u16) {
     panic!("the server never started listening on {port}");
 }
 
-async fn status_and_body(port: u16, path: &str) -> (u16, String) {
+async fn raw_response(port: u16, path: &str) -> String {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
         .unwrap();
@@ -81,6 +81,11 @@ async fn status_and_body(port: u16, path: &str) -> (u16, String) {
     stream.write_all(request.as_bytes()).await.unwrap();
     let mut response = String::new();
     stream.read_to_string(&mut response).await.unwrap();
+    response
+}
+
+async fn status_and_body(port: u16, path: &str) -> (u16, String) {
+    let response = raw_response(port, path).await;
     let status = response.split(' ').nth(1).unwrap().parse().unwrap();
     let body = response.split_once("\r\n\r\n").unwrap().1.to_owned();
     (status, body)
@@ -172,5 +177,31 @@ async fn shutdown_exits_zero_after_filtering_requests_by_path() {
     let (chat_status, chat_body) = status_and_body(port, "/v1/chat/completions").await;
     assert_eq!(chat_status, 404);
     assert!(chat_body.contains("Not Found"));
+    assert_eq!(terminate(child), Some(0));
+}
+
+#[tokio::test]
+async fn blocked_route_404_carries_the_security_headers() {
+    let (_directory, config) = config_file(EMPTY_CONFIG);
+    let port = free_port();
+    let child = command(&config, port)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    wait_until_listening(port).await;
+    let blocked = raw_response(port, "/v1/chat/completions").await;
+    let missing = raw_response(port, "/not-a-route").await;
+    assert!(blocked.starts_with("HTTP/1.1 404"));
+    assert!(
+        blocked
+            .to_lowercase()
+            .contains("x-content-type-options: nosniff")
+    );
+    assert!(
+        missing
+            .to_lowercase()
+            .contains("x-content-type-options: nosniff")
+    );
     assert_eq!(terminate(child), Some(0));
 }
