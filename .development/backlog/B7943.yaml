@@ -2,7 +2,7 @@ id: B7943
 milestone: M12 python
 title: Python types for MCP and MCP server manager (types/mcp.py, types/mcp_server/*)
 status: todo
-depends_on: [B5657]
+depends_on: [B5657, B9951]
 file: tasks/B7943-types-mcp-types.yaml
 covers:
   - "litellm/types/mcp.py"

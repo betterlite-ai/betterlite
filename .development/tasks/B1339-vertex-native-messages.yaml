@@ -58,7 +58,7 @@ checks:
       run: test -f tools/oracle/helpers/vertex_messages.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The helper invokes provider transformations with fixed credentials rather than a FastAPI handler.
     - id: messages-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_messages*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::vertex_messages::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_messages*')" && cargo nextest run --locked -p betterlite-oracle-core-ops --no-tests=fail -E 'test(/^vertex_messages::/)'
       why: Native provider fixture tags must be exercised by the shared parser.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-messages/deployment-headers-unchanged.yaml
