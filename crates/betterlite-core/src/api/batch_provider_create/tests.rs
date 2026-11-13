@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_config::loader::{ConfigLoader, ConfigError};
+use betterlite_config::loader::{ConfigError, ConfigLoader};
 use betterlite_config::sections::batch_provider_create::Settings;
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
@@ -11,7 +11,9 @@ use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_openai::api::batch_records::CreateBatchRequest;
-use betterlite_openai::batches::records::{BatchEndpoint, BatchObject, CompletionWindow, OutputExpiry};
+use betterlite_openai::batches::records::{
+    BatchEndpoint, BatchObject, CompletionWindow, OutputExpiry,
+};
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -19,9 +21,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use super::error::BatchProviderCreateError;
 use super::transports::BatchCreateTransport;
 use super::{
-    AzureBatchCall, BatchOptionalParams, BatchProvider, BatchProviderCreate, BatchProviderCreateCall,
+    BatchOptionalParams, BatchProvider, BatchProviderCreate, BatchProviderCreateCall,
     BatchProviderCreateInput, DEFAULT_OPENAI_BASE, DEFAULT_TIMEOUT_SECONDS, HttpTimeout,
-    OpenAiBatchCall, RequestTimeout, VertexBatchCall, VertexCredentials, XaiBatchCall,
+    RequestTimeout, VertexCredentials,
 };
 use crate::api::api_boundaries::ApiLimits;
 
@@ -192,7 +194,9 @@ fn preserves_every_create_field() {
     assert_eq!(body.endpoint, Some(BatchEndpoint::ChatCompletions));
     assert_eq!(body.completion_window, Some(CompletionWindow::Day));
     assert_eq!(
-        body.metadata.as_ref().and_then(|fields| fields.get("second")),
+        body.metadata
+            .as_ref()
+            .and_then(|fields| fields.get("second")),
         Some(&"two".to_owned())
     );
     assert_eq!(
@@ -202,7 +206,9 @@ fn preserves_every_create_field() {
         Some(&"b".to_owned())
     );
     assert_eq!(
-        body.extra_body.as_ref().and_then(|fields| fields.get("x-c")),
+        body.extra_body
+            .as_ref()
+            .and_then(|fields| fields.get("x-c")),
         Some(&"d".to_owned())
     );
     assert_eq!(
@@ -219,7 +225,10 @@ fn output_expiry_is_optional() {
     let result = created(&input(BatchProvider::Openai), &Settings::default());
     assert_eq!(body_of(&result.call).output_expires_after, None);
     let encoded = serde_json::to_string(body_of(&result.call)).expect("the body encodes");
-    assert!(encoded.contains(r#""completion_window":"24h""#), "{encoded}");
+    assert!(
+        encoded.contains(r#""completion_window":"24h""#),
+        "{encoded}"
+    );
     assert!(!encoded.contains("output_expires_after"), "{encoded}");
 }
 
@@ -271,7 +280,10 @@ fn provider_config_carries_extra_headers() {
         panic!("a provider config owns the mistral branch");
     };
     assert_eq!(call.model, "mistral-large");
-    assert_eq!(call.headers.get("x-custom").map(String::as_str), Some("value"));
+    assert_eq!(
+        call.headers.get("x-custom").map(String::as_str),
+        Some("value")
+    );
 }
 
 fn limits_bound_the_create_maps() {
@@ -325,9 +337,11 @@ fn outcome_is_overflow(
 
 fn vertex_credentials_accept_fields() {
     let mut request = input(BatchProvider::VertexAi);
-    request.optional_params.vertex_credentials = Some(VertexCredentials::Fields(BTreeMap::from(
-        [("client_email".to_owned(), "svc@example.com".to_owned())],
-    )));
+    request.optional_params.vertex_credentials =
+        Some(VertexCredentials::Fields(BTreeMap::from([(
+            "client_email".to_owned(),
+            "svc@example.com".to_owned(),
+        )])));
     let result = created(&request, &Settings::default());
     let BatchProviderCreateCall::VertexAi(call) = &result.call else {
         panic!("vertex owns its own branch");
@@ -371,7 +385,10 @@ fn completion_window(#[case] endpoint: BatchEndpoint) {
     assert_eq!(body.completion_window, Some(CompletionWindow::Day));
     assert_eq!(body.endpoint, Some(endpoint));
     let encoded = serde_json::to_string(body).expect("the body encodes");
-    assert!(encoded.contains(r#""completion_window":"24h""#), "{encoded}");
+    assert!(
+        encoded.contains(r#""completion_window":"24h""#),
+        "{encoded}"
+    );
     assert!(encoded.contains(&endpoint_wire(endpoint)), "{encoded}");
 }
 
@@ -405,11 +422,7 @@ fn completion_window_rejects_other_values(#[case] window: &str) {
 #[case::client_read_value(client_with_read(Some(5.0)), None, 5.0)]
 #[case::client_without_read_takes_the_default(client_with_read(None), None, 600.0)]
 #[case::client_zero_read_stays_zero(client_with_read(Some(0.0)), None, 0.0)]
-#[case::client_beats_request_timeout(
-    client_with_read(Some(9.0)),
-    Some(7.5),
-    9.0
-)]
+#[case::client_beats_request_timeout(client_with_read(Some(9.0)), Some(7.5), 9.0)]
 fn timeout_precedence(
     #[case] optional: Option<RequestTimeout>,
     #[case] request_timeout: Option<f64>,
@@ -419,10 +432,10 @@ fn timeout_precedence(
     request.optional_params.timeout = optional;
     request.optional_params.request_timeout = request_timeout;
     let result = created(&request, &Settings::default());
-    let BatchProviderCreateCall::Xai(XaiBatchCall { timeout, .. }) = &result.call else {
+    let BatchProviderCreateCall::Xai(call) = &result.call else {
         panic!("xai owns the branch without credentials");
     };
-    assert_eq!(*timeout, expected);
+    assert_eq!(call.timeout, expected);
 }
 
 fn client_with_read(read: Option<f64>) -> Option<RequestTimeout> {
@@ -470,11 +483,10 @@ fn provider_config_routes_the_configured_providers(#[case] provider: BatchProvid
 #[case::litellm_proxy(BatchProvider::LitellmProxy)]
 fn openai_compatible_providers_share_the_branch(#[case] provider: BatchProvider) {
     let result = created(&input(provider), &Settings::default());
-    let BatchProviderCreateCall::OpenAiCompatible(OpenAiBatchCall { api_base, .. }) = &result.call
-    else {
+    let BatchProviderCreateCall::OpenAiCompatible(call) = &result.call else {
         panic!("the openai-compatible set shares one branch");
     };
-    assert_eq!(api_base, DEFAULT_OPENAI_BASE);
+    assert_eq!(call.api_base.as_deref(), Some(DEFAULT_OPENAI_BASE));
 }
 
 #[rstest]
@@ -484,9 +496,9 @@ fn openai_compatible_providers_share_the_branch(#[case] provider: BatchProvider)
 fn other_providers_own_their_branch(#[case] provider: BatchProvider) {
     let result = created(&input(provider), &Settings::default());
     match (provider, &result.call) {
-        (BatchProvider::Azure, BatchProviderCreateCall::Azure(AzureBatchCall { .. })) => {}
-        (BatchProvider::VertexAi, BatchProviderCreateCall::VertexAi(VertexBatchCall { .. })) => {}
-        (BatchProvider::Xai, BatchProviderCreateCall::Xai(XaiBatchCall { .. })) => {}
+        (BatchProvider::Azure, BatchProviderCreateCall::Azure(_)) => {}
+        (BatchProvider::VertexAi, BatchProviderCreateCall::VertexAi(_)) => {}
+        (BatchProvider::Xai, BatchProviderCreateCall::Xai(_)) => {}
         (named, call) => panic!("{named} took the wrong branch: {call:?}"),
     }
 }
@@ -495,7 +507,7 @@ type Probe = fn(&Settings, &BatchProviderCreateCall) -> Option<String>;
 
 fn openai_base(_settings: &Settings, call: &BatchProviderCreateCall) -> Option<String> {
     match call {
-        BatchProviderCreateCall::OpenAiCompatible(call) => Some(call.api_base.clone()),
+        BatchProviderCreateCall::OpenAiCompatible(call) => call.api_base.clone(),
         _other => None,
     }
 }
@@ -537,7 +549,7 @@ fn azure_key(_settings: &Settings, call: &BatchProviderCreateCall) -> Option<Str
 
 fn vertex_base(_settings: &Settings, call: &BatchProviderCreateCall) -> Option<String> {
     match call {
-        BatchProviderCreateCall::VertexAi(call) => Some(call.api_base.clone()),
+        BatchProviderCreateCall::VertexAi(call) => call.api_base.clone(),
         _other => None,
     }
 }

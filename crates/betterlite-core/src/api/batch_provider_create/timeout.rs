@@ -19,8 +19,7 @@ pub struct HttpTimeout {
     pub pool: Option<f64>,
 }
 
-// optional_params.timeout wins over request_timeout and both fall back to 600 seconds; a client
-// timeout contributes its read value, and an explicit zero stays zero
+// optional_params.timeout beats request_timeout, then 600 seconds; a client timeout sends its read value
 pub(super) fn resolve(optional: Option<RequestTimeout>, request_timeout: Option<f64>) -> f64 {
     match optional.or(request_timeout.map(RequestTimeout::Seconds)) {
         Some(RequestTimeout::Seconds(seconds)) => seconds,

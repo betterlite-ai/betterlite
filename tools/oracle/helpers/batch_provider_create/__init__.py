@@ -77,9 +77,10 @@ class Input(TypedDict):
     steps: list[CreateCall]
 
 
-create_batch = cast(
-    Callable[..., LiteLLMBatch], litellm_create_batch
-)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1674
+create_batch = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1674
+    Callable[..., LiteLLMBatch],
+    litellm_create_batch,
+)
 
 
 def apply_module(module: Module) -> None:

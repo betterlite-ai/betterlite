@@ -111,10 +111,10 @@ pub struct BatchProviderCreateInput {
 #[derive(Debug, Clone)]
 pub enum BatchProviderCreateCall {
     ProviderConfig(ProviderConfigCall),
-    Xai(XaiBatchCall),
-    OpenAiCompatible(OpenAiBatchCall),
-    Azure(AzureBatchCall),
-    VertexAi(VertexBatchCall),
+    Xai(ProviderBatchCall),
+    OpenAiCompatible(ProviderBatchCall),
+    Azure(ProviderBatchCall),
+    VertexAi(ProviderBatchCall),
 }
 
 // base_llm_http_handler.create_batch names a provider config instead of a provider
@@ -131,46 +131,18 @@ pub struct ProviderConfigCall {
 }
 
 #[derive(Debug, Clone)]
-pub struct XaiBatchCall {
+pub struct ProviderBatchCall {
     pub body: CreateBatchRequest,
     pub api_base: Option<String>,
-    pub api_key: Option<SecretString>,
-    pub timeout: f64,
-    pub is_async: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct OpenAiBatchCall {
-    pub body: CreateBatchRequest,
-    pub api_base: String,
     pub api_key: Option<SecretString>,
     pub organization: Option<String>,
-    pub timeout: f64,
-    pub max_retries: Option<u32>,
-    pub is_async: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct AzureBatchCall {
-    pub body: CreateBatchRequest,
-    pub api_base: Option<String>,
-    pub api_key: Option<SecretString>,
     pub api_version: Option<String>,
-    pub timeout: f64,
-    pub max_retries: Option<u32>,
-    pub is_async: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct VertexBatchCall {
-    pub body: CreateBatchRequest,
-    pub api_base: String,
     pub vertex_project: Option<String>,
     pub vertex_location: Option<String>,
     pub vertex_credentials: Option<VertexCredentials>,
+    pub custom_endpoint: Option<bool>,
     pub timeout: f64,
     pub max_retries: Option<u32>,
-    pub custom_endpoint: Option<bool>,
     pub is_async: bool,
 }
 
@@ -215,8 +187,5 @@ fn resolved_model(model: &str, resolution: &ResolutionContext<'_>) -> String {
         api_base: None,
         api_key: None,
     };
-    resolve(&request, resolution).map_or_else(
-        |_error| model.to_owned(),
-        |resolved| resolved.model,
-    )
+    resolve(&request, resolution).map_or_else(|_error| model.to_owned(), |resolved| resolved.model)
 }

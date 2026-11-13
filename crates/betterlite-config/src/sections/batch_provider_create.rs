@@ -1,8 +1,8 @@
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
-use crate::resolve::{resolve_secret, resolve_string};
+use crate::resolve::{SecretText, resolve_string};
 use crate::sections::Section;
 
 mod tests;
@@ -60,64 +60,41 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let module = self.litellm_settings;
+        let read = |name: &str| lookup.lookup(name).filter(|value| !value.is_empty());
         Ok(Settings {
-            api_base: text(module.api_base, "api_base", lookup)?,
-            organization: text(module.organization, "organization", lookup)?,
-            api_key: secret(module.api_key, "api_key", lookup)?,
-            openai_key: secret(module.openai_key, "openai_key", lookup)?,
-            api_version: text(module.api_version, "api_version", lookup)?,
-            azure_key: secret(module.azure_key, "azure_key", lookup)?,
-            vertex_project: text(module.vertex_project, "vertex_project", lookup)?,
-            vertex_location: text(module.vertex_location, "vertex_location", lookup)?,
-            openai_base_url: environment(lookup, "OPENAI_BASE_URL"),
-            openai_api_base: environment(lookup, "OPENAI_API_BASE"),
-            openai_organization: environment(lookup, "OPENAI_ORGANIZATION"),
-            openai_api_key: environment_secret(lookup, "OPENAI_API_KEY"),
-            azure_api_base: environment(lookup, "AZURE_API_BASE"),
-            azure_api_version: environment(lookup, "AZURE_API_VERSION"),
-            azure_openai_api_key: environment_secret(lookup, "AZURE_OPENAI_API_KEY"),
-            azure_api_key: environment_secret(lookup, "AZURE_API_KEY"),
-            azure_ad_token: environment_secret(lookup, "AZURE_AD_TOKEN"),
-            vertexai_project: environment(lookup, "VERTEXAI_PROJECT"),
-            vertexai_location: environment(lookup, "VERTEXAI_LOCATION"),
-            vertexai_credentials: environment_secret(lookup, "VERTEXAI_CREDENTIALS"),
+            api_base: value(module.api_base, "api_base", lookup)?,
+            organization: value(module.organization, "organization", lookup)?,
+            api_key: value(module.api_key, "api_key", lookup)?,
+            openai_key: value(module.openai_key, "openai_key", lookup)?,
+            api_version: value(module.api_version, "api_version", lookup)?,
+            azure_key: value(module.azure_key, "azure_key", lookup)?,
+            vertex_project: value(module.vertex_project, "vertex_project", lookup)?,
+            vertex_location: value(module.vertex_location, "vertex_location", lookup)?,
+            openai_base_url: read("OPENAI_BASE_URL"),
+            openai_api_base: read("OPENAI_API_BASE"),
+            openai_organization: read("OPENAI_ORGANIZATION"),
+            openai_api_key: read("OPENAI_API_KEY").map(SecretString::from),
+            azure_api_base: read("AZURE_API_BASE"),
+            azure_api_version: read("AZURE_API_VERSION"),
+            azure_openai_api_key: read("AZURE_OPENAI_API_KEY").map(SecretString::from),
+            azure_api_key: read("AZURE_API_KEY").map(SecretString::from),
+            azure_ad_token: read("AZURE_AD_TOKEN").map(SecretString::from),
+            vertexai_project: read("VERTEXAI_PROJECT"),
+            vertexai_location: read("VERTEXAI_LOCATION"),
+            vertexai_credentials: read("VERTEXAI_CREDENTIALS").map(SecretString::from),
         })
     }
 }
 
 // an os.environ/ reference resolves through the supplied environment, and an empty value counts as unset
-fn text<L>(value: Option<String>, field: &str, lookup: &L) -> Result<Option<String>, ConfigError>
+fn value<T, L>(raw: Option<T>, field: &str, lookup: &L) -> Result<Option<T>, ConfigError>
 where
+    T: SecretText + From<String>,
     L: EnvironmentLookup,
 {
-    let resolved = value
-        .map(|text| resolve_string(text, &format!("{MODULE_PATH}.{field}"), lookup))
-        .transpose()?;
-    Ok(resolved.filter(|text| !text.is_empty()))
-}
-
-fn secret<L>(
-    value: Option<SecretString>,
-    field: &str,
-    lookup: &L,
-) -> Result<Option<SecretString>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let resolved = resolve_secret(value, &format!("{MODULE_PATH}.{field}"), lookup)?;
-    Ok(resolved.filter(|secret| !secret.expose_secret().is_empty()))
-}
-
-fn environment<L>(lookup: &L, name: &str) -> Option<String>
-where
-    L: EnvironmentLookup,
-{
-    lookup.lookup(name).filter(|value| !value.is_empty())
-}
-
-fn environment_secret<L>(lookup: &L, name: &str) -> Option<SecretString>
-where
-    L: EnvironmentLookup,
-{
-    environment(lookup, name).map(SecretString::from)
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let resolved = resolve_string(raw.secret_text(), &format!("{MODULE_PATH}.{field}"), lookup)?;
+    Ok((!resolved.is_empty()).then(|| T::from(resolved)))
 }

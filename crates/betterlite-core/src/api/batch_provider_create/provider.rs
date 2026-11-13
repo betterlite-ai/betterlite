@@ -2,17 +2,147 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::batch_provider_create::Settings;
 use betterlite_openai::api::batch_records::CreateBatchRequest;
+use secrecy::SecretString;
 
 use crate::api::batch_provider_create::error::BatchProviderCreateError;
 use crate::api::batch_provider_create::{
-    AzureBatchCall, BatchProvider, BatchProviderCreateCall, BatchProviderCreateInput,
-    DEFAULT_OPENAI_BASE, OpenAiBatchCall, ProviderConfigCall, VertexBatchCall, VertexCredentials,
-    XaiBatchCall,
+    BatchProvider, BatchProviderCreateCall, BatchProviderCreateInput, DEFAULT_OPENAI_BASE,
+    ProviderBatchCall, ProviderConfigCall, VertexCredentials,
 };
 
-// ProviderConfigManager.get_provider_batches_config answers for these two, and create_batch only asks when a model is set
-const fn has_provider_config(provider: BatchProvider) -> bool {
-    matches!(provider, BatchProvider::Bedrock | BatchProvider::Mistral)
+// the credentials each provider branch falls back through, resolved in LiteLLM's order
+struct Resolved {
+    api_base: Option<String>,
+    api_key: Option<SecretString>,
+    api_version: Option<String>,
+    organization: Option<String>,
+    vertex_project: Option<String>,
+    vertex_location: Option<String>,
+    vertex_credentials: Option<VertexCredentials>,
+}
+
+impl Resolved {
+    const fn empty() -> Self {
+        Self {
+            api_base: None,
+            api_key: None,
+            api_version: None,
+            organization: None,
+            vertex_project: None,
+            vertex_location: None,
+            vertex_credentials: None,
+        }
+    }
+}
+
+fn resolve(
+    provider: BatchProvider,
+    input: &BatchProviderCreateInput,
+    settings: &Settings,
+) -> Resolved {
+    let request = &input.optional_params;
+    match provider {
+        BatchProvider::Openai | BatchProvider::HostedVllm | BatchProvider::LitellmProxy => {
+            Resolved {
+                api_base: [
+                    request.api_base.as_deref(),
+                    settings.api_base.as_deref(),
+                    settings.openai_base_url.as_deref(),
+                    settings.openai_api_base.as_deref(),
+                ]
+                .into_iter()
+                .flatten()
+                .next()
+                .map(str::to_owned),
+                api_key: [
+                    request.api_key.as_ref(),
+                    settings.api_key.as_ref(),
+                    settings.openai_key.as_ref(),
+                    settings.openai_api_key.as_ref(),
+                ]
+                .into_iter()
+                .flatten()
+                .next()
+                .cloned(),
+                organization: [
+                    request.organization.as_deref(),
+                    settings.organization.as_deref(),
+                    settings.openai_organization.as_deref(),
+                ]
+                .into_iter()
+                .flatten()
+                .next()
+                .map(str::to_owned),
+                ..Resolved::empty()
+            }
+        }
+        BatchProvider::Azure => Resolved {
+            api_base: [
+                request.api_base.as_deref(),
+                settings.api_base.as_deref(),
+                settings.azure_api_base.as_deref(),
+            ]
+            .into_iter()
+            .flatten()
+            .next()
+            .map(str::to_owned),
+            api_version: [
+                request.api_version.as_deref(),
+                settings.api_version.as_deref(),
+                settings.azure_api_version.as_deref(),
+            ]
+            .into_iter()
+            .flatten()
+            .next()
+            .map(str::to_owned),
+            api_key: [
+                request.api_key.as_ref(),
+                settings.api_key.as_ref(),
+                settings.azure_key.as_ref(),
+                settings.azure_openai_api_key.as_ref(),
+                settings.azure_api_key.as_ref(),
+            ]
+            .into_iter()
+            .flatten()
+            .next()
+            .cloned(),
+            ..Resolved::empty()
+        },
+        BatchProvider::VertexAi => Resolved {
+            api_base: Some(request.api_base.clone().unwrap_or_default()),
+            vertex_project: [
+                request.vertex_project.as_deref(),
+                settings.vertex_project.as_deref(),
+                settings.vertexai_project.as_deref(),
+            ]
+            .into_iter()
+            .flatten()
+            .next()
+            .map(str::to_owned),
+            vertex_location: [
+                request.vertex_location.as_deref(),
+                settings.vertex_location.as_deref(),
+                settings.vertexai_location.as_deref(),
+            ]
+            .into_iter()
+            .flatten()
+            .next()
+            .map(str::to_owned),
+            vertex_credentials: request.vertex_credentials.clone().or_else(|| {
+                settings
+                    .vertexai_credentials
+                    .clone()
+                    .map(VertexCredentials::Path)
+            }),
+            ..Resolved::empty()
+        },
+        BatchProvider::Xai => Resolved {
+            api_base: request.api_base.clone(),
+            api_key: request.api_key.clone(),
+            ..Resolved::empty()
+        },
+        BatchProvider::Bedrock | BatchProvider::Mistral => Resolved::empty(),
+    }
 }
 
 pub(super) fn build_call(
@@ -23,158 +153,80 @@ pub(super) fn build_call(
     body: CreateBatchRequest,
 ) -> Result<BatchProviderCreateCall, BatchProviderCreateError> {
     if let Some(model) = model
-        && has_provider_config(input.custom_llm_provider)
+        && matches!(
+            input.custom_llm_provider,
+            BatchProvider::Bedrock | BatchProvider::Mistral
+        )
     {
-        return Ok(BatchProviderCreateCall::ProviderConfig(provider_config_call(
-            input, model, timeout, body,
-        )));
-    }
-    match input.custom_llm_provider {
-        BatchProvider::Xai => Ok(BatchProviderCreateCall::Xai(xai_call(
-            input, timeout, body,
-        ))),
-        BatchProvider::Openai | BatchProvider::HostedVllm | BatchProvider::LitellmProxy => Ok(
-            BatchProviderCreateCall::OpenAiCompatible(openai_call(input, settings, timeout, body)),
-        ),
-        BatchProvider::Azure => Ok(BatchProviderCreateCall::Azure(azure_call(
-            input, settings, timeout, body,
-        ))),
-        BatchProvider::VertexAi => Ok(BatchProviderCreateCall::VertexAi(vertex_call(
-            input, settings, timeout, body,
-        ))),
-        BatchProvider::Bedrock | BatchProvider::Mistral => {
-            Err(BatchProviderCreateError::UnsupportedProvider {
+        return Ok(BatchProviderCreateCall::ProviderConfig(
+            ProviderConfigCall {
                 provider: input.custom_llm_provider,
-            })
+                model: model.to_owned(),
+                headers: match &input.extra_headers {
+                    None => BTreeMap::new(),
+                    Some(headers) => headers.clone().into_iter().collect(),
+                },
+                api_base: input.optional_params.api_base.clone(),
+                api_key: input.optional_params.api_key.clone(),
+                body,
+                timeout,
+                is_async: input.is_async,
+            },
+        ));
+    }
+    provider_call(input, settings, timeout, body)
+}
+
+fn provider_call(
+    input: &BatchProviderCreateInput,
+    settings: &Settings,
+    timeout: f64,
+    body: CreateBatchRequest,
+) -> Result<BatchProviderCreateCall, BatchProviderCreateError> {
+    let provider = input.custom_llm_provider;
+    let resolved = resolve(provider, input, settings);
+    let parts = batch_parts(input, resolved, timeout, body);
+    match provider {
+        BatchProvider::Xai => Ok(BatchProviderCreateCall::Xai(parts)),
+        BatchProvider::Openai | BatchProvider::HostedVllm | BatchProvider::LitellmProxy => {
+            Ok(BatchProviderCreateCall::OpenAiCompatible(parts))
+        }
+        BatchProvider::Azure => Ok(BatchProviderCreateCall::Azure(parts)),
+        BatchProvider::VertexAi => Ok(BatchProviderCreateCall::VertexAi(parts)),
+        BatchProvider::Bedrock | BatchProvider::Mistral => {
+            Err(BatchProviderCreateError::UnsupportedProvider { provider })
         }
     }
 }
 
-fn provider_config_call(
+fn batch_parts(
     input: &BatchProviderCreateInput,
-    model: &str,
+    resolved: Resolved,
     timeout: f64,
     body: CreateBatchRequest,
-) -> ProviderConfigCall {
-    ProviderConfigCall {
-        provider: input.custom_llm_provider,
-        model: model.to_owned(),
-        body,
-        headers: match &input.extra_headers {
-            None => BTreeMap::new(),
-            Some(headers) => headers.clone().into_iter().collect(),
+) -> ProviderBatchCall {
+    ProviderBatchCall {
+        api_base: match input.custom_llm_provider {
+            BatchProvider::Openai | BatchProvider::HostedVllm | BatchProvider::LitellmProxy => {
+                Some(
+                    resolved
+                        .api_base
+                        .unwrap_or_else(|| DEFAULT_OPENAI_BASE.to_owned()),
+                )
+            }
+            BatchProvider::VertexAi => Some(resolved.api_base.unwrap_or_default()),
+            _other => resolved.api_base,
         },
-        api_base: input.optional_params.api_base.clone(),
-        api_key: input.optional_params.api_key.clone(),
-        timeout,
-        is_async: input.is_async,
-    }
-}
-
-fn xai_call(input: &BatchProviderCreateInput, timeout: f64, body: CreateBatchRequest) -> XaiBatchCall {
-    XaiBatchCall {
         body,
-        api_base: input.optional_params.api_base.clone(),
-        api_key: input.optional_params.api_key.clone(),
+        api_key: resolved.api_key,
+        organization: resolved.organization,
+        api_version: resolved.api_version,
+        vertex_project: resolved.vertex_project,
+        vertex_location: resolved.vertex_location,
+        vertex_credentials: resolved.vertex_credentials,
+        custom_endpoint: input.optional_params.custom_endpoint,
         timeout,
-        is_async: input.is_async,
-    }
-}
-
-fn openai_call(
-    input: &BatchProviderCreateInput,
-    settings: &Settings,
-    timeout: f64,
-    body: CreateBatchRequest,
-) -> OpenAiBatchCall {
-    let optional = &input.optional_params;
-    OpenAiBatchCall {
-        body,
-        api_base: optional
-            .api_base
-            .clone()
-            .or_else(|| settings.api_base.clone())
-            .or_else(|| settings.openai_base_url.clone())
-            .or_else(|| settings.openai_api_base.clone())
-            .unwrap_or_else(|| DEFAULT_OPENAI_BASE.to_owned()),
-        api_key: optional
-            .api_key
-            .clone()
-            .or_else(|| settings.api_key.clone())
-            .or_else(|| settings.openai_key.clone())
-            .or_else(|| settings.openai_api_key.clone()),
-        organization: optional
-            .organization
-            .clone()
-            .or_else(|| settings.organization.clone())
-            .or_else(|| settings.openai_organization.clone()),
-        timeout,
-        max_retries: optional.max_retries,
-        is_async: input.is_async,
-    }
-}
-
-fn azure_call(
-    input: &BatchProviderCreateInput,
-    settings: &Settings,
-    timeout: f64,
-    body: CreateBatchRequest,
-) -> AzureBatchCall {
-    let optional = &input.optional_params;
-    AzureBatchCall {
-        body,
-        api_base: optional
-            .api_base
-            .clone()
-            .or_else(|| settings.api_base.clone())
-            .or_else(|| settings.azure_api_base.clone()),
-        api_key: optional
-            .api_key
-            .clone()
-            .or_else(|| settings.api_key.clone())
-            .or_else(|| settings.azure_key.clone())
-            .or_else(|| settings.azure_openai_api_key.clone())
-            .or_else(|| settings.azure_api_key.clone()),
-        api_version: optional
-            .api_version
-            .clone()
-            .or_else(|| settings.api_version.clone())
-            .or_else(|| settings.azure_api_version.clone()),
-        timeout,
-        max_retries: optional.max_retries,
-        is_async: input.is_async,
-    }
-}
-
-fn vertex_call(
-    input: &BatchProviderCreateInput,
-    settings: &Settings,
-    timeout: f64,
-    body: CreateBatchRequest,
-) -> VertexBatchCall {
-    let optional = &input.optional_params;
-    VertexBatchCall {
-        body,
-        api_base: optional.api_base.clone().unwrap_or_default(),
-        vertex_project: optional
-            .vertex_project
-            .clone()
-            .or_else(|| settings.vertex_project.clone())
-            .or_else(|| settings.vertexai_project.clone()),
-        vertex_location: optional
-            .vertex_location
-            .clone()
-            .or_else(|| settings.vertex_location.clone())
-            .or_else(|| settings.vertexai_location.clone()),
-        vertex_credentials: optional.vertex_credentials.clone().or_else(|| {
-            settings
-                .vertexai_credentials
-                .clone()
-                .map(VertexCredentials::Path)
-        }),
-        timeout,
-        max_retries: optional.max_retries,
-        custom_endpoint: optional.custom_endpoint,
+        max_retries: input.optional_params.max_retries,
         is_async: input.is_async,
     }
 }

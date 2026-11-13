@@ -207,7 +207,10 @@ fn loads_settings(
 #[test]
 fn loads_every_key_at_once() {
     let loaded = load(ALL_KEYS, &ALL_ENVIRONMENT).unwrap();
-    assert_eq!(loaded.api_base.as_deref(), Some("https://module.example/v1"));
+    assert_eq!(
+        loaded.api_base.as_deref(),
+        Some("https://module.example/v1")
+    );
     assert_eq!(loaded.organization.as_deref(), Some("module-org"));
     assert_eq!(
         revealed(loaded.api_key.as_ref()).as_deref(),
@@ -232,12 +235,18 @@ fn loads_every_key_at_once() {
         loaded.openai_api_base.as_deref(),
         Some("https://api-base.example/v1")
     );
-    assert_eq!(loaded.openai_organization.as_deref(), Some("environment-org"));
+    assert_eq!(
+        loaded.openai_organization.as_deref(),
+        Some("environment-org")
+    );
     assert_eq!(
         revealed(loaded.openai_api_key.as_ref()).as_deref(),
         Some("openai-environment-key")
     );
-    assert_eq!(loaded.azure_api_base.as_deref(), Some("https://azure.example"));
+    assert_eq!(
+        loaded.azure_api_base.as_deref(),
+        Some("https://azure.example")
+    );
     assert_eq!(loaded.azure_api_version.as_deref(), Some("2024-06-01"));
     assert_eq!(
         revealed(loaded.azure_openai_api_key.as_ref()).as_deref(),
@@ -283,7 +292,9 @@ fn defaults_are_unset() {
             loaded.vertexai_project,
             loaded.vertexai_location,
         ],
-        [None, None, None, None, None, None, None, None, None, None, None, None]
+        [
+            None, None, None, None, None, None, None, None, None, None, None, None
+        ]
     );
     assert!(loaded.api_key.is_none());
     assert!(loaded.openai_key.is_none());
@@ -305,7 +316,10 @@ fn module_values_and_environment_stay_separate() {
         ],
     )
     .unwrap();
-    assert_eq!(loaded.api_base.as_deref(), Some("https://module.example/v1"));
+    assert_eq!(
+        loaded.api_base.as_deref(),
+        Some("https://module.example/v1")
+    );
     assert_eq!(
         loaded.openai_base_url.as_deref(),
         Some("https://base-url.example/v1")
@@ -324,10 +338,16 @@ fn module_values_and_environment_stay_separate() {
 fn environment_reference_resolves_through_the_lookup() {
     let loaded = load(
         "litellm_settings:\n  api_base: os.environ/MODULE_BASE\n  api_key: os.environ/MODULE_KEY\n",
-        &[("MODULE_BASE", "https://resolved.example/v1"), ("MODULE_KEY", "resolved-key")],
+        &[
+            ("MODULE_BASE", "https://resolved.example/v1"),
+            ("MODULE_KEY", "resolved-key"),
+        ],
     )
     .unwrap();
-    assert_eq!(loaded.api_base.as_deref(), Some("https://resolved.example/v1"));
+    assert_eq!(
+        loaded.api_base.as_deref(),
+        Some("https://resolved.example/v1")
+    );
     assert_eq!(
         revealed(loaded.api_key.as_ref()).as_deref(),
         Some("resolved-key")

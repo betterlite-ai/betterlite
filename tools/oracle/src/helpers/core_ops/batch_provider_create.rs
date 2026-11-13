@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::sections::batch_provider_create::Settings;
 use betterlite_core::api::api_boundaries::ApiLimits;
-use betterlite_core::api::batch_provider_create::transports::BatchCreateTransport;
 use betterlite_core::api::batch_provider_create::error::BatchProviderCreateError;
+use betterlite_core::api::batch_provider_create::transports::BatchCreateTransport;
 use betterlite_core::api::batch_provider_create::{
     BatchProviderCreate, BatchProviderCreateCall, BatchProviderCreateInput, VertexCredentials,
 };
@@ -53,10 +53,7 @@ fn settings(module: &Module, env: &BTreeMap<String, String>) -> Settings {
             .filter(|value| !value.is_empty()),
         api_key: module.api_key.clone(),
         openai_key: module.openai_key.clone(),
-        api_version: module
-            .api_version
-            .clone()
-            .filter(|value| !value.is_empty()),
+        api_version: module.api_version.clone().filter(|value| !value.is_empty()),
         azure_key: module.azure_key.clone(),
         vertex_project: module
             .vertex_project
@@ -116,13 +113,10 @@ impl BatchCreateTransport for ScriptedTransport {
     }
 }
 
-fn exposed(value: Option<&SecretString>) -> Option<&str> {
-    value.map(ExposeSecret::expose_secret)
-}
-
-fn pairs<'entries>(
-    entries: impl IntoIterator<Item = (&'entries String, &'entries String)>,
-) -> Vec<Value> {
+fn pairs<'entries, Entries>(entries: Entries) -> Vec<Value>
+where
+    Entries: IntoIterator<Item = (&'entries String, &'entries String)>,
+{
     let mut sorted: Vec<(&String, &String)> = entries.into_iter().collect();
     sorted.sort_by(|left, right| left.0.cmp(right.0));
     sorted
@@ -169,7 +163,7 @@ fn call_json(call: &BatchProviderCreateCall) -> Value {
             "body": body_json(&call.body),
             "headers": pairs(&call.headers),
             "api_base": call.api_base,
-            "api_key": exposed(call.api_key.as_ref()),
+            "api_key": call.api_key.as_ref().map(ExposeSecret::expose_secret),
             "timeout": call.timeout,
             "is_async": call.is_async,
         }),
@@ -177,7 +171,7 @@ fn call_json(call: &BatchProviderCreateCall) -> Value {
             "branch": "xai",
             "body": body_json(&call.body),
             "api_base": call.api_base,
-            "api_key": exposed(call.api_key.as_ref()),
+            "api_key": call.api_key.as_ref().map(ExposeSecret::expose_secret),
             "timeout": call.timeout,
             "is_async": call.is_async,
         }),
@@ -185,7 +179,7 @@ fn call_json(call: &BatchProviderCreateCall) -> Value {
             "branch": "openai_compatible",
             "body": body_json(&call.body),
             "api_base": call.api_base,
-            "api_key": exposed(call.api_key.as_ref()),
+            "api_key": call.api_key.as_ref().map(ExposeSecret::expose_secret),
             "organization": call.organization,
             "timeout": call.timeout,
             "max_retries": call.max_retries,
@@ -195,7 +189,7 @@ fn call_json(call: &BatchProviderCreateCall) -> Value {
             "branch": "azure",
             "body": body_json(&call.body),
             "api_base": call.api_base,
-            "api_key": exposed(call.api_key.as_ref()),
+            "api_key": call.api_key.as_ref().map(ExposeSecret::expose_secret),
             "api_version": call.api_version,
             "timeout": call.timeout,
             "max_retries": call.max_retries,

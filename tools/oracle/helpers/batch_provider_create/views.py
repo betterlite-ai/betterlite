@@ -41,7 +41,10 @@ def sample_batch() -> LiteLLMBatch:
 
 
 def pairs(values: Mapping[str, str]) -> list[JsonValue]:
-    return [[key, value] for key, value in sorted(values.items())]
+    return [
+        [key, value]
+        for key, value in sorted(values.items())
+    ]
 
 
 def expiry_json(value: Mapping[str, JsonValue] | None) -> JsonValue:
@@ -74,9 +77,9 @@ def timeout_json(value: float | httpx.Timeout) -> JsonValue:
 
 
 def credentials_json(value: VERTEX_CREDENTIALS_TYPES | None) -> JsonValue:
+    if value is None:
+        return None
     match value:
-        case None:
-            return None
         case str():
             return value
         case dict():

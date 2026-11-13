@@ -11,9 +11,9 @@ pub(super) fn create_request(
     limits: ApiLimits,
 ) -> Result<CreateBatchRequest, BatchProviderCreateError> {
     limits.check(ApiBoundariesInput::Items(ItemsBoundary {
-        known_count: entry_count(&input.metadata)
-            + entry_count(&input.extra_headers)
-            + entry_count(&input.extra_body),
+        known_count: input.metadata.as_ref().map_or(0, IndexMap::len)
+            + input.extra_headers.as_ref().map_or(0, IndexMap::len)
+            + input.extra_body.as_ref().map_or(0, IndexMap::len),
     }))?;
     Ok(CreateBatchRequest {
         completion_window: Some(input.completion_window),
@@ -25,8 +25,4 @@ pub(super) fn create_request(
         extra_body: input.extra_body.clone(),
         timeout: None,
     })
-}
-
-fn entry_count(entries: &Option<IndexMap<String, String>>) -> usize {
-    entries.as_ref().map_or(0, IndexMap::len)
 }
