@@ -1,0 +1,30 @@
+{
+  "kind": "helper",
+  "name": "v2-store-parse-invalid",
+  "call": {
+    "b4656": {
+      "function": "store",
+      "kind": "v2",
+      "payloads": [
+        {
+          "access_token": null,
+          "refresh_token": null,
+          "expires_at": null,
+          "scopes": [],
+          "identity_binding_proof": null
+        },
+        {
+          "access_token": 7,
+          "refresh_token": null,
+          "expires_at": null,
+          "scopes": [],
+          "identity_binding_proof": null
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
