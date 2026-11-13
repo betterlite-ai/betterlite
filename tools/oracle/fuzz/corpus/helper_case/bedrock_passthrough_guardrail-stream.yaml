@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-passthrough-guardrail-stream-seed
+call:
+  b3678:
+    function: stream
+    frames:
+      - {event_type: contentBlockDelta, payload: {delta: {text: hello}}}
+      - {event_type: contentBlockDelta, payload: {delta: {citationContent: {content: [{text: cited}]}}}}
+    replace: {hello: HELLO}
+    trailing_hex: "00ff"
+env: {}
+compare: {ignore: []}
