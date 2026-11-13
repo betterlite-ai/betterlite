@@ -49,5 +49,5 @@ fn config_models_carry_litellm_fields_and_names() {
     assert_eq!(v2.monitor_mode, Some(true));
     assert_eq!(v2.block_failures, Some(false));
     let v2_default: NomaV2GuardrailConfigModel = serde_json::from_str("{}").unwrap();
-    assert_eq!(v2_default, NomaV2GuardrailConfigModel::default());
+    assert!(v2_default == NomaV2GuardrailConfigModel::default());
 }

@@ -9,8 +9,8 @@ use crate::guardrail_records::record::GuardrailStatus;
 use crate::noma_scan_policy::error::{NomaBlockedMessage, NomaError};
 
 use super::support::{
-    CapturedLog, USER_MESSAGES, anonymizing_settings, context, data, mock_noma,
-    monitoring_settings, policy, policy_with, records, response, text_field, value,
+    CapturedLog, USER_MESSAGES, anonymizing_settings, context, data, field, mock_noma,
+    monitoring_settings, policy, policy_with, records, response, value,
 };
 
 #[tokio::test]
@@ -45,8 +45,8 @@ async fn blocked_verdict_returns_a_400_with_the_scan_result() {
     assert_eq!(request_data, original);
     let records = records(&request_data);
     assert_eq!(
-        text_field(&records[0], "guardrail_status").as_deref(),
-        Some("guardrail_intervened")
+        field(&records[0], "guardrail_status"),
+        Some(&GuardrailValue::Text(String::from("guardrail_intervened")))
     );
 }
 
@@ -81,8 +81,8 @@ async fn monitor_mode_logs_without_blocking_or_rewriting() {
     let output = String::from_utf8(captured_log.0.lock().unwrap().clone()).unwrap();
     assert!(output.contains("Noma guardrail blocked user message"));
     assert_eq!(
-        text_field(&records(&request_data)[0], "guardrail_status").as_deref(),
-        Some("guardrail_intervened")
+        field(&records(&request_data)[0], "guardrail_status"),
+        Some(&GuardrailValue::Text(String::from("guardrail_intervened")))
     );
 }
 

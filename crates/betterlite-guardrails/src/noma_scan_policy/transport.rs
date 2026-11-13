@@ -8,7 +8,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::value::RawValue;
 
 use super::error::NomaError;
-use super::request::{application_id, auth_field, call_id, requester_ip};
+use super::request::{application_id, metadata, text};
 use super::wire::{NomaContext, ScanPayload, ScanResponse};
 use super::{DEFAULT_API_BASE, NomaScanPolicy};
 
@@ -28,7 +28,7 @@ impl NomaScanPolicy {
         request_data: &BTreeMap<String, GuardrailValue>,
         target: &ScanTarget<'_>,
     ) -> Result<ScanResponse, NomaError> {
-        let request_call_id = call_id(request_data)?;
+        let request_call_id = text(request_data, "litellm_call_id")?;
         let headers = request_headers(self.settings.api_key.as_ref(), request_call_id)?;
         let noma_context = context(
             request_data,
@@ -108,16 +108,18 @@ fn context(
         target.extra_data,
         configured,
     )?;
-    let ip_address = requester_ip(request_data)?
+    let ip_address = metadata(request_data)?
+        .and_then(|metadata| metadata.get("requester_ip_address"))
+        .filter(|value| !matches!(value, GuardrailValue::Null))
         .cloned()
         .unwrap_or(GuardrailValue::Null);
-    let user_id = match auth_field(target.user_auth, "user_email")? {
+    let user_id = match text(target.user_auth, "user_email")? {
         Some(email) => GuardrailValue::Text(email.to_owned()),
-        None => auth_field(target.user_auth, "user_id")?.map_or(GuardrailValue::Null, |id| {
+        None => text(target.user_auth, "user_id")?.map_or(GuardrailValue::Null, |id| {
             GuardrailValue::Text(id.to_owned())
         }),
     };
-    let session_id = call_id(request_data)?.map_or(GuardrailValue::Null, |id| {
+    let session_id = text(request_data, "litellm_call_id")?.map_or(GuardrailValue::Null, |id| {
         GuardrailValue::Text(id.to_owned())
     });
     let request_id = target.llm_request_id.map_or(GuardrailValue::Null, |id| {

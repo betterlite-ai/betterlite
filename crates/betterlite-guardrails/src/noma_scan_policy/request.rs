@@ -23,68 +23,32 @@ pub(super) fn as_object_mut(
     }
 }
 
-pub(super) fn call_id(
-    request_data: &BTreeMap<String, GuardrailValue>,
-) -> Result<Option<&str>, NomaError> {
-    match request_data.get("litellm_call_id") {
-        None | Some(GuardrailValue::Null) => Ok(None),
-        Some(GuardrailValue::Text(id)) => Ok(Some(id)),
-        Some(_) => Err(NomaError::Field {
-            field: "litellm_call_id",
-        }),
-    }
-}
-
-pub(super) fn auth_field<'data>(
-    user_auth: &'data BTreeMap<String, GuardrailValue>,
+pub(super) fn text<'data>(
+    data: &'data BTreeMap<String, GuardrailValue>,
     name: &'static str,
 ) -> Result<Option<&'data str>, NomaError> {
-    match user_auth.get(name) {
-        None | Some(GuardrailValue::Null) => Ok(None),
-        Some(GuardrailValue::Text(value)) => Ok(Some(value)),
-        Some(_) => Err(NomaError::Field { field: name }),
+    let Some(value) = data.get(name) else {
+        return Ok(None);
+    };
+    match value {
+        GuardrailValue::Text(found) => Ok(Some(found)),
+        GuardrailValue::Null => Ok(None),
+        _ => Err(NomaError::Field { field: name }),
     }
 }
 
-fn metadata(
+pub(super) fn metadata(
     request_data: &BTreeMap<String, GuardrailValue>,
 ) -> Result<Option<&BTreeMap<String, GuardrailValue>>, NomaError> {
-    match request_data.get("metadata") {
-        None | Some(GuardrailValue::Null) => Ok(None),
-        Some(value) => as_object(value)
-            .map(Some)
-            .ok_or(NomaError::Field { field: "metadata" }),
-    }
-}
-
-pub(super) fn application_header(
-    request_data: &BTreeMap<String, GuardrailValue>,
-) -> Result<Option<&GuardrailValue>, NomaError> {
-    let Some(metadata) = metadata(request_data)? else {
+    let Some(value) = request_data
+        .get("metadata")
+        .filter(|value| !matches!(value, GuardrailValue::Null))
+    else {
         return Ok(None);
     };
-    let Some(headers_value) = metadata.get("headers") else {
-        return Ok(None);
-    };
-    let Some(headers) = as_object(headers_value) else {
-        return Err(NomaError::Field {
-            field: "metadata.headers",
-        });
-    };
-    Ok(headers
-        .get("x-noma-application-id")
-        .filter(|value| !matches!(value, GuardrailValue::Null)))
-}
-
-pub(super) fn requester_ip(
-    request_data: &BTreeMap<String, GuardrailValue>,
-) -> Result<Option<&GuardrailValue>, NomaError> {
-    let Some(metadata) = metadata(request_data)? else {
-        return Ok(None);
-    };
-    Ok(metadata
-        .get("requester_ip_address")
-        .filter(|value| !matches!(value, GuardrailValue::Null)))
+    as_object(value)
+        .map(Some)
+        .ok_or(NomaError::Field { field: "metadata" })
 }
 
 pub(super) fn application_id<'data>(
@@ -99,13 +63,26 @@ pub(super) fn application_id<'data>(
     {
         return Ok(value.clone());
     }
-    if let Some(value) = application_header(request_data)? {
-        return Ok(value.clone());
+    if let Some(metadata) = metadata(request_data)? {
+        match metadata.get("headers") {
+            None | Some(GuardrailValue::Null) => {}
+            Some(value) => {
+                let headers = as_object(value).ok_or(NomaError::Field {
+                    field: "metadata.headers",
+                })?;
+                if let Some(header) = headers
+                    .get("x-noma-application-id")
+                    .filter(|value| !matches!(value, GuardrailValue::Null))
+                {
+                    return Ok(header.clone());
+                }
+            }
+        }
     }
     if let Some(configured) = configured {
         return Ok(GuardrailValue::Text(configured.to_owned()));
     }
-    if let Some(alias) = auth_field(user_auth, "key_alias")? {
+    if let Some(alias) = text(user_auth, "key_alias")? {
         return Ok(GuardrailValue::Text(alias.to_owned()));
     }
     Ok(GuardrailValue::Text(DEFAULT_APPLICATION_ID.to_owned()))

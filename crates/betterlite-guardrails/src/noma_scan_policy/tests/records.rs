@@ -1,12 +1,24 @@
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
+use betterlite_http::proxy::base_builder;
 use reqwest::StatusCode;
 
-use crate::noma_scan_policy::ScanCallContext;
+use crate::noma_scan_policy::{NomaScanPolicy, ScanCallContext};
 
 use super::support::{
-    SAFE_REPLY, USER_MESSAGES, context, data, mock_noma, number_field, policy, policy_with,
-    records, response_of, settings, text_field, ticking_policy,
+    SAFE_REPLY, USER_MESSAGES, context, data, field, mock_noma, policy, policy_with, records,
+    response_of, settings, ticking_now,
 };
+
+fn ticking_policy(base: &str) -> NomaScanPolicy {
+    let mut settings = settings();
+    settings.api_base = Some(base.to_owned());
+    NomaScanPolicy {
+        settings,
+        client: base_builder().build().unwrap(),
+        now: ticking_now,
+    }
+}
 
 #[tokio::test]
 async fn a_scan_writes_a_standard_logging_record() {
@@ -23,24 +35,33 @@ async fn a_scan_writes_a_standard_logging_record() {
     assert_eq!(records.len(), 1);
     let record = &records[0];
     assert_eq!(
-        text_field(record, "guardrail_name").as_deref(),
-        Some("noma-test")
+        field(record, "guardrail_name"),
+        Some(&GuardrailValue::Text(String::from("noma-test")))
     );
     assert_eq!(
-        text_field(record, "guardrail_provider").as_deref(),
-        Some("noma")
+        field(record, "guardrail_provider"),
+        Some(&GuardrailValue::Text(String::from("noma")))
     );
     assert_eq!(
-        text_field(record, "guardrail_status").as_deref(),
-        Some("success")
+        field(record, "guardrail_status"),
+        Some(&GuardrailValue::Text(String::from("success")))
     );
     assert_eq!(
-        text_field(record, "guardrail_mode").as_deref(),
-        Some("pre_call")
+        field(record, "guardrail_mode"),
+        Some(&GuardrailValue::Text(String::from("pre_call")))
     );
-    assert_eq!(number_field(record, "start_time"), Some(1_700_000_000.0));
-    assert_eq!(number_field(record, "end_time"), Some(1_700_000_001.0));
-    assert_eq!(number_field(record, "duration"), Some(1.0));
+    assert_eq!(
+        field(record, "start_time"),
+        Some(&GuardrailValue::Decimal(1_700_000_000.0))
+    );
+    assert_eq!(
+        field(record, "end_time"),
+        Some(&GuardrailValue::Decimal(1_700_000_001.0))
+    );
+    assert_eq!(
+        field(record, "duration"),
+        Some(&GuardrailValue::Decimal(1.0))
+    );
     assert_eq!(
         response_of(record),
         &GuardrailValue::Object(data(
@@ -87,7 +108,7 @@ async fn record_mode_falls_back_to_the_configured_event_hook() {
         .await
         .unwrap();
     assert_eq!(
-        text_field(&records(&request_data)[0], "guardrail_mode").as_deref(),
-        Some("post_call")
+        field(&records(&request_data)[0], "guardrail_mode"),
+        Some(&GuardrailValue::Text(String::from("post_call")))
     );
 }

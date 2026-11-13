@@ -192,16 +192,6 @@ pub(crate) fn policy_with(settings: NomaSettings) -> NomaScanPolicy {
     }
 }
 
-pub(crate) fn ticking_policy(base: &str) -> NomaScanPolicy {
-    let mut settings = settings();
-    settings.api_base = Some(base.to_owned());
-    NomaScanPolicy {
-        settings,
-        client: base_builder().build().unwrap(),
-        now: ticking_now,
-    }
-}
-
 pub(crate) fn fixed_now() -> SystemTime {
     UNIX_EPOCH + Duration::from_secs(1_700_000_000)
 }
@@ -246,24 +236,14 @@ pub(crate) fn records(request_data: &BTreeMap<String, GuardrailValue>) -> Vec<Gu
     Vec::new()
 }
 
-pub(crate) fn text_field(record: &GuardrailValue, name: &str) -> Option<String> {
+pub(crate) fn field<'value>(
+    record: &'value GuardrailValue,
+    name: &str,
+) -> Option<&'value GuardrailValue> {
     let GuardrailValue::Object(fields) = record else {
         return None;
     };
-    if let Some(GuardrailValue::Text(text)) = fields.get(name) {
-        return Some(text.clone());
-    }
-    None
-}
-
-pub(crate) fn number_field(record: &GuardrailValue, name: &str) -> Option<f64> {
-    let GuardrailValue::Object(fields) = record else {
-        return None;
-    };
-    if let Some(GuardrailValue::Decimal(value)) = fields.get(name) {
-        return Some(*value);
-    }
-    None
+    fields.get(name)
 }
 
 pub(crate) const USER_MESSAGES: &str = r#"{"messages": [{"role": "user", "content": "hello"}]}"#;

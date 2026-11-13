@@ -53,7 +53,9 @@ impl NomaScanPolicy {
         base.settings
             .guardrail_name
             .clone_from(&self.settings.guardrail_name);
-        base.settings.event_hook.clone_from(&self.settings.event_hook);
+        base.settings
+            .event_hook
+            .clone_from(&self.settings.event_hook);
         let serialized = serde_json::to_value(run.response)
             .map_err(|source| NomaError::RecordJson { source })?;
         let guardrail_response = serde_json::from_value(serialized)

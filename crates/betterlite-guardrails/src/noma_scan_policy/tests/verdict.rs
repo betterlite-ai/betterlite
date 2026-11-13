@@ -4,7 +4,7 @@ use tracing_subscriber::fmt;
 
 use crate::guardrail_records::record::GuardrailStatus;
 use crate::noma_scan_policy::error::NomaError;
-use crate::noma_scan_policy::{MessageRole, NomaScanPolicy};
+use crate::noma_scan_policy::{MessageRole, NomaScanPolicy, NomaSettings};
 
 use super::support::{
     CapturedLog, anonymizing_settings, data, monitoring_settings, policy_with, response, settings,
@@ -73,7 +73,7 @@ fn only_sensitive_data_detectors_allow_anonymization(
     #[case] expected: bool,
 ) {
     assert_eq!(
-        NomaScanPolicy::should_only_sensitive_data_failed(&data(classification)),
+        NomaScanPolicy::only_sensitive_data_failed(&data(classification)),
         expected
     );
 }
@@ -174,9 +174,11 @@ fn should_anonymize_follows_the_verdict_and_the_detectors(
     );
 }
 
-#[test]
-fn monitor_mode_never_anonymizes() {
-    let policy = policy_with(monitoring_settings());
+#[rstest]
+#[case::monitor_mode(monitoring_settings())]
+#[case::disabled(settings())]
+fn anonymization_never_applies_outside_its_flags(#[case] settings: NomaSettings) {
+    let policy = policy_with(settings);
     let reply = r#"{"aggregatedScanResult": false}"#;
     assert!(
         !policy
@@ -185,58 +187,39 @@ fn monitor_mode_never_anonymizes() {
     );
 }
 
-#[test]
-fn disabled_anonymization_never_applies() {
-    let policy = policy_with(settings());
-    let reply = r#"{"aggregatedScanResult": false}"#;
-    assert!(
-        !policy
-            .should_anonymize(&response(reply), MessageRole::User)
-            .unwrap()
-    );
+#[derive(Clone, Copy, Debug)]
+enum VerdictCall {
+    Background,
+    Check,
 }
 
 #[rstest]
-#[case::blocked(
+#[case::background_blocked(
+    VerdictCall::Background,
     r#"{"aggregatedScanResult": true}"#,
     tracing::Level::WARN,
     "Noma guardrail blocked user message: hi"
 )]
-#[case::allowed(
+#[case::background_allowed(
+    VerdictCall::Background,
     r#"{"aggregatedScanResult": false}"#,
     tracing::Level::INFO,
     "Noma guardrail allowed user message: hi"
 )]
-fn background_verdicts_are_logged(
-    #[case] reply: &str,
-    #[case] level: tracing::Level,
-    #[case] expected: &str,
-) {
-    let captured_log = CapturedLog::default();
-    let writer = captured_log.clone();
-    let subscriber = fmt()
-        .with_max_level(level)
-        .with_writer(move || writer.clone())
-        .finish();
-    with_default(subscriber, || {
-        NomaScanPolicy::handle_verdict_background(MessageRole::User, "hi", &response(reply));
-    });
-    let output = String::from_utf8(captured_log.0.lock().unwrap().clone()).unwrap();
-    assert!(output.contains(expected));
-}
-
-#[rstest]
-#[case::blocked(
+#[case::check_blocked(
+    VerdictCall::Check,
     r#"{"aggregatedScanResult": true}"#,
     tracing::Level::WARN,
     "Noma guardrail blocked user message: hi"
 )]
-#[case::allowed(
+#[case::check_allowed(
+    VerdictCall::Check,
     r#"{"aggregatedScanResult": false}"#,
     tracing::Level::INFO,
     "Noma guardrail allowed user message: hi"
 )]
-fn monitor_mode_verdicts_are_logged_and_allowed(
+fn monitor_verdicts_are_logged(
+    #[case] call: VerdictCall,
     #[case] reply: &str,
     #[case] level: tracing::Level,
     #[case] expected: &str,
@@ -248,10 +231,15 @@ fn monitor_mode_verdicts_are_logged_and_allowed(
         .with_max_level(level)
         .with_writer(move || writer.clone())
         .finish();
-    with_default(subscriber, || {
-        policy
-            .check_verdict(MessageRole::User, "hi", &response(reply))
-            .unwrap();
+    with_default(subscriber, || match call {
+        VerdictCall::Background => {
+            NomaScanPolicy::handle_verdict_background(MessageRole::User, "hi", &response(reply));
+        }
+        VerdictCall::Check => {
+            policy
+                .check_verdict(MessageRole::User, "hi", &response(reply))
+                .unwrap();
+        }
     });
     let output = String::from_utf8(captured_log.0.lock().unwrap().clone()).unwrap();
     assert!(output.contains(expected));

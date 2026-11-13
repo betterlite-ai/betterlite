@@ -29,9 +29,7 @@ impl NomaScanPolicy {
 
     // Sensitive data is the only detector whose failures anonymization may resolve
     #[must_use]
-    pub fn should_only_sensitive_data_failed(
-        classification: &BTreeMap<String, GuardrailValue>,
-    ) -> bool {
+    pub fn only_sensitive_data_failed(classification: &BTreeMap<String, GuardrailValue>) -> bool {
         let mut sensitive_detected = false;
         let mut other_detected = false;
         for (key, value) in classification {
@@ -124,7 +122,7 @@ impl NomaScanPolicy {
                     field: "scanResult.results",
                 })?,
             };
-            return Ok(Self::should_only_sensitive_data_failed(results));
+            return Ok(Self::only_sensitive_data_failed(results));
         }
         Ok(false)
     }
