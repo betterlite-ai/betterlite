@@ -67,10 +67,10 @@ impl TeamRecord {
 pub fn decode_team_record(
     record: Option<&TeamRecord>,
 ) -> Result<Option<LiteLLMTeamTable>, TeamRecordError> {
-    let Some(record) = record else {
+    let Some(found) = record else {
         return Ok(None);
     };
-    convert_record(record).map(Some)
+    convert_record(found).map(Some)
 }
 
 pub(super) fn convert_record(record: &TeamRecord) -> Result<LiteLLMTeamTable, TeamRecordError> {
