@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-image-source-unknown
+call: {"messages_content_primitives": {"operation": "image_source_url", "image_source": {"type": "file", "url": "x"}}}
+env: {}
+compare: {ignore: []}
