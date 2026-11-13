@@ -113,9 +113,6 @@ fn start_tool<Counter>(
     branch: &mut Branch,
 ) -> Result<(), ShapeError> {
     let block = &start.content_block;
-    let id = block.id.as_ref().ok_or(ShapeError::Missing {
-        field: "content_block.id",
-    })?;
     let index = converter
         .state
         .tool_index
@@ -124,6 +121,9 @@ fn start_tool<Counter>(
     converter.state.tool_index = index;
     let original = block.name.as_ref().ok_or(ShapeError::Missing {
         field: "content_block.name",
+    })?;
+    let id = block.id.as_ref().ok_or(ShapeError::Missing {
+        field: "content_block.id",
     })?;
     let name = converter
         .state

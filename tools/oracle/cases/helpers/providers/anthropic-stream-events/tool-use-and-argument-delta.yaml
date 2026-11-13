@@ -1,0 +1,27 @@
+kind: helper
+name: anthropic-stream-events-tool-use-and-argument-delta
+call:
+  anthropic_stream_events:
+    json_mode: false
+    tool_name_reverse_map: {get_weather_sanitized: get_weather}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: tool_use, id: t1, name: get_weather_sanitized, input: {unused: true}}}}
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: input_json_delta, partial_json: '{"loc":'}}}
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: input_json_delta, partial_json: '"SF"}'}}}
+      - {function: chunk, chunk: {type: content_block_stop, index: 0}}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: tool_use, id: t2, name: other, input: {}}}}
+      - {function: chunk, chunk: {type: content_block_stop, index: 0}}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: tool_use, id: t3, name: third, input: {}}}}
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: input_json_delta, partial_json: ""}}}
+      - {function: chunk, chunk: {type: content_block_stop, index: 0}}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: server_tool_use, id: s1, name: bash_code_execution, input: {command: ls}}}}
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: input_json_delta, partial_json: '{"command": '}}}
+      - {function: chunk, chunk: {type: content_block_stop, index: 0}}
+      - {function: state}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: server_tool_use, id: s2, name: bash_code_execution, input: {command: pwd}}}}
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: input_json_delta, partial_json: '{"command": "ls -l"}'}}}
+      - {function: chunk, chunk: {type: content_block_stop, index: 0}}
+      - {function: state}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,19 @@
+kind: helper
+name: anthropic-stream-events-json-mode-chunks
+call:
+  anthropic_stream_events:
+    json_mode: true
+    tool_name_reverse_map: {}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: tool_use, id: j1, name: json_tool_call, input: {}}}}
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: input_json_delta, partial_json: ""}}}
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: input_json_delta, partial_json: '{"values": {"a": 1}}'}}}
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: input_json_delta, partial_json: '{"b": 2}'}}}
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: input_json_delta, partial_json: 'not json'}}}
+      - {function: chunk, chunk: {type: content_block_stop, index: 0}}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: tool_use, id: r1, name: real_tool, input: {}}}}
+      - {function: chunk, chunk: {type: message_delta, delta: {stop_reason: tool_use}}}
+      - {function: state}
+env: {}
+compare: {ignore: []}

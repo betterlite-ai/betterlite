@@ -1,0 +1,22 @@
+kind: helper
+name: anthropic-stream-events-compaction-and-container-events
+call:
+  anthropic_stream_events:
+    json_mode: false
+    tool_name_reverse_map: {}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: compaction, content: sum}}}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: compaction}}}
+      - {function: state}
+      - {function: chunk, chunk: {type: message_delta, delta: {stop_reason: end_turn, container: {id: c1}}}}
+      - {function: state}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: bash_code_execution_tool_result, tool_use_id: b1, content: {type: bash_code_execution_result, stdout: hi, stderr: ""}}}}
+      - {function: chunk, chunk: {type: message_delta, delta: {stop_reason: end_turn, container: {id: c9}}}}
+      - {function: state}
+      - {function: chunk, chunk: {type: message_delta, delta: {stop_reason: end_turn, container: null}}}
+      - {function: chunk, chunk: {type: message_delta, delta: {stop_reason: end_turn, container: {}}}}
+      - {function: chunk, chunk: {type: message_delta, delta: {stop_reason: end_turn, container: {type: x}}}}
+      - {function: state}
+env: {}
+compare: {ignore: []}

@@ -586,6 +586,8 @@ fn content_start_required_fields() {
         ))
         .unwrap_err();
     assert!(missing_id.to_string().contains("content_block.id"));
+    // LiteLLM bumps the tool index before it reads the required block fields
+    assert_eq!(converter.state.tool_index, 0);
 }
 
 pub(super) fn content_start_reset() {
