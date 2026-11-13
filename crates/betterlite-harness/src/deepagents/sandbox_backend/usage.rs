@@ -104,7 +104,7 @@ pub(crate) fn record_llm_usage(
                 if let Some(model) = priced_model {
                     ledger.unpriced.insert(model.to_owned());
                     tracing::warn!(
-                        model,
+                        model = %model,
                         "harness deepagents: no cost for this model; counting its calls as zero"
                     );
                 }
