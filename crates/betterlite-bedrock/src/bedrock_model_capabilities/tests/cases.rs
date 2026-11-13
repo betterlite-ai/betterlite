@@ -545,6 +545,8 @@ pub(super) fn parallel_tools() {
             "zero_entry": 0,
             "malformed": 5,
             "text_entry": "",
+            "empty_list": [],
+            "list_entry": [1],
             "anthropic.claude-p-v1:0": {"supports_parallel_tool_use_config": true},
             "us.anthropic.claude-q-v1:0": {"supports_parallel_tool_use_config": true},
             "anthropic.claude-q-v1:0": 5
@@ -576,6 +578,14 @@ pub(super) fn parallel_tools() {
     assert_eq!(
         outcome(supports_parallel_tools("text_entry", &cost)),
         "false"
+    );
+    assert_eq!(
+        outcome(supports_parallel_tools("empty_list", &cost)),
+        "false"
+    );
+    assert_eq!(
+        outcome(supports_parallel_tools("list_entry", &cost)),
+        "malformed"
     );
     assert_eq!(
         outcome(supports_parallel_tools("us.anthropic.claude-p-v1:0", &cost)),

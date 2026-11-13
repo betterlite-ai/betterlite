@@ -60,12 +60,10 @@ pub async fn normalize_opus_effort<Lookup: ModelInfoLookup>(
     let Some(ceiling) = effort_ceiling(model, lookup, packaged).await else {
         return Ok(());
     };
-    if effort > ceiling {
-        fields.insert(
-            EFFORT_FIELD.to_owned(),
-            ParamValue::Text(ceiling.text().to_owned()),
-        );
-    }
+    fields.insert(
+        EFFORT_FIELD.to_owned(),
+        ParamValue::Text(effort.min(ceiling).text().to_owned()),
+    );
     Ok(())
 }
 
