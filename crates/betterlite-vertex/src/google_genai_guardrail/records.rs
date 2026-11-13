@@ -128,17 +128,15 @@ fn response_parts(response: &Object) -> Vec<(Location, String)> {
     };
     let mut parts = Vec::new();
     for (candidate, entry) in candidates.iter().enumerate() {
-        if let Some(content) = field(entry, "content") {
-            append_parts(
-                &mut parts,
-                vec![
-                    Segment::Key("candidates"),
-                    Segment::Index(candidate),
-                    Segment::Key("content"),
-                ],
-                content,
-            );
-        }
+        let Some(content) = field(entry, "content") else {
+            continue;
+        };
+        let path = vec![
+            Segment::Key("candidates"),
+            Segment::Index(candidate),
+            Segment::Key("content"),
+        ];
+        append_parts(&mut parts, path, content);
     }
     parts
 }

@@ -57,7 +57,10 @@ class RecordingGuardrail:
 
 class GoogleHandler(Protocol):
     async def process_input_messages(
-        self, data: Record, guardrail_to_apply: RecordingGuardrail, litellm_logging_obj: Logging | None = None
+        self,
+        data: Record,
+        guardrail_to_apply: RecordingGuardrail,
+        litellm_logging_obj: Logging | None = None,
     ) -> None: ...
 
     async def process_output_response(
@@ -180,7 +183,9 @@ def sse_case(call: SseCall) -> JsonValue:
     guardrail = RecordingGuardrail(None)
     chunks = [chunk_value(chunk) for chunk in call["chunks"]]
     asyncio.run(
-        HANDLER.process_output_streaming_response(responses_so_far=chunks, guardrail_to_apply=guardrail)
+        HANDLER.process_output_streaming_response(
+            responses_so_far=chunks, guardrail_to_apply=guardrail
+        )
     )
     if not guardrail.calls:
         empty: SseResult = {"text": None}
@@ -196,5 +201,7 @@ def resolve(call: Call) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    outcome: dict[str, list[JsonValue]] = {"calls": [resolve(call) for call in input_value["calls"]]}
+    outcome: dict[str, list[JsonValue]] = {
+        "calls": [resolve(call) for call in input_value["calls"]]
+    }
     return JSON.validate_python(outcome)
