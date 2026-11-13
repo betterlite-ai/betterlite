@@ -3,6 +3,7 @@ use betterlite_models::controls::json_value::JsonValue;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Deserializer, Number};
+use serde_with::rust::double_option;
 
 use super::error::ResponsesTransformError;
 use super::input::transform_input;
@@ -45,16 +46,27 @@ struct GenerationConfig {
 // the extra kwargs are the Responses request's own keys, so an absent one differs from an explicit null
 #[derive(Deserialize)]
 struct ExtraFields {
+    #[serde(default, with = "double_option")]
     model: Option<Option<String>>,
+    #[serde(default, with = "double_option")]
     input: Option<Option<JsonValue>>,
+    #[serde(default, with = "double_option")]
     instructions: Option<Option<String>>,
+    #[serde(default, with = "double_option")]
     tools: Option<Option<Vec<JsonValue>>>,
+    #[serde(default, with = "double_option")]
     temperature: Option<Option<Number>>,
+    #[serde(default, with = "double_option")]
     top_p: Option<Option<Number>>,
+    #[serde(default, with = "double_option")]
     max_output_tokens: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
     stream: Option<Option<bool>>,
+    #[serde(default, with = "double_option")]
     store: Option<Option<bool>>,
+    #[serde(default, with = "double_option")]
     metadata: Option<Option<JsonValue>>,
+    #[serde(default, with = "double_option")]
     user: Option<Option<String>>,
 }
 
@@ -120,7 +132,7 @@ fn apply_optional_params(
 ) -> Result<(), ResponsesTransformError> {
     let sent: InteractionFields = request_fields(optional_params)?;
     // LiteLLM only sets instructions for a non-empty system_instruction
-    request.instructions = sent.instructions.filter(|text| !text.is_empty());
+    request.instructions = sent.system_instruction.filter(|text| !text.is_empty());
     let tools = sent.tools.unwrap_or_default();
     // LiteLLM only forwards a non-empty tools list
     request.tools = (!tools.is_empty()).then_some(JsonValue::Array(tools));
@@ -165,7 +177,7 @@ fn apply_extra_fields(
         request.instructions = instructions;
     }
     if let Some(tools) = sent.tools {
-        request.tools = Some(JsonValue::Array(tools));
+        request.tools = tools.map(JsonValue::Array);
     }
     if let Some(temperature) = sent.temperature {
         request.temperature = temperature;

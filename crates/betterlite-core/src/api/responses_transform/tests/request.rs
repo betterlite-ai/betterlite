@@ -66,7 +66,8 @@ fn extras_overwrite_mapped_parameters_and_keep_the_rest() {
         }"#,
         r#"{
             "model": "gpt-4o-mini",
-            "system_instruction": "b",
+            "instructions": "b",
+            "system_instruction": "c",
             "tools": [{"type": "code_execution"}],
             "stream": false,
             "temperature": 0.9,
@@ -90,8 +91,12 @@ fn extras_overwrite_mapped_parameters_and_keep_the_rest() {
         built.passthrough.get("reasoning"),
         Some(&value(r#"{"effort": "low"}"#))
     );
+    assert_eq!(
+        built.passthrough.get("system_instruction"),
+        Some(&value("\"c\""))
+    );
     assert!(!built.passthrough.contains_key("model"));
-    assert!(!built.passthrough.contains_key("system_instruction"));
+    assert!(!built.passthrough.contains_key("instructions"));
     assert!(!built.passthrough.contains_key("tools"));
     assert!(!built.passthrough.contains_key("stream"));
     assert!(!built.passthrough.contains_key("temperature"));
@@ -99,6 +104,41 @@ fn extras_overwrite_mapped_parameters_and_keep_the_rest() {
     assert!(!built.passthrough.contains_key("max_output_tokens"));
     assert!(!built.passthrough.contains_key("store"));
     assert!(!built.passthrough.contains_key("user"));
+}
+
+#[test]
+fn an_explicit_null_in_the_extras_clears_a_mapped_param() {
+    let built = build_request(
+        "m",
+        None,
+        r#"{
+            "system_instruction": "a",
+            "tools": [{"type": "google_search"}],
+            "generation_config": {"temperature": 0.1, "top_p": 0.25, "max_output_tokens": 128},
+            "stream": true,
+            "store": true,
+            "user": "ada"
+        }"#,
+        r#"{
+            "instructions": null,
+            "tools": null,
+            "temperature": null,
+            "top_p": null,
+            "max_output_tokens": null,
+            "stream": null,
+            "store": null,
+            "user": null
+        }"#,
+    );
+    assert_eq!(built.instructions, None);
+    assert_eq!(built.tools, None);
+    assert_eq!(built.temperature, None);
+    assert_eq!(built.top_p, None);
+    assert_eq!(built.max_output_tokens, None);
+    assert_eq!(built.stream, None);
+    assert_eq!(built.store, None);
+    assert_eq!(built.user, None);
+    assert!(built.passthrough.is_empty());
 }
 
 #[test]
