@@ -4,10 +4,10 @@ use betterlite_models::controls::json_value::JsonValue;
 use serde::Deserialize;
 
 use crate::commands::Client;
-use crate::commands::tables::{OutputFormat, write_table};
+use crate::commands::tables::{OutputFormat, write_json_response, write_table};
 
 use super::format::{format_cost_per_1k_tokens, format_iso_datetime_str};
-use super::response::{fetch_data, write_json};
+use super::response::fetch_data;
 use super::value::{cell_text, cost_value, object_value, text_value};
 use super::{GetModelsInfo, ModelsError};
 
@@ -102,7 +102,12 @@ pub(super) fn get_models_info(
 ) -> Result<(), ModelsError> {
     let data = fetch_data(client, INFO_PATH)?;
     if options.format == OutputFormat::Json {
-        return write_json(INFO_PATH, data.get().as_bytes(), stdout);
+        return write_json_response(data.get().as_bytes(), stdout).map_err(|source| {
+            ModelsError::Response {
+                path: INFO_PATH,
+                source,
+            }
+        });
     }
     let mut columns = Vec::new();
     for name in options.columns.split(',') {

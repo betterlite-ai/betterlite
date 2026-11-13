@@ -1361,6 +1361,7 @@ dependencies = [
  "comfy-table",
  "console",
  "dbus-secret-service-keyring-store",
+ "fancy-regex 0.19.2",
  "getrandom 0.4.3",
  "hex",
  "http 1.5.0",

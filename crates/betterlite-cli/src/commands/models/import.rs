@@ -3,8 +3,8 @@ use std::io::Write;
 
 use betterlite_models::controls::json_value::JsonValue;
 use comfy_table::{Attribute, Cell, Table};
+use fancy_regex::Regex;
 use indexmap::IndexMap;
-use regex::Regex;
 use serde::Serialize;
 
 use crate::commands::Client;
@@ -16,6 +16,8 @@ use super::{ImportModels, ModelsError};
 
 const NEW_PATH: &str = "/model/new";
 const MODELS_TITLE: &str = "Models Imported";
+const MODEL_REGEX_FLAG: &str = "--only-models-matching-regex";
+const ACCESS_REGEX_FLAG: &str = "--only-access-groups-matching-regex";
 const DRY_RUN_TITLE: &str = "Models that would be imported if --dry-run was not provided";
 
 #[derive(Serialize)]
@@ -78,14 +80,8 @@ fn import_entries<'entries>(
     client: &Client,
     added: &mut Vec<ModelYamlInfo<'entries>>,
 ) -> Result<IndexMap<String, usize>, ModelsError> {
-    let model_regex = compile(
-        options.model_regex.as_deref(),
-        "--only-models-matching-regex",
-    )?;
-    let access_regex = compile(
-        options.access_group_regex.as_deref(),
-        "--only-access-groups-matching-regex",
-    )?;
+    let model_regex = compile(options.model_regex.as_deref(), MODEL_REGEX_FLAG)?;
+    let access_regex = compile(options.access_group_regex.as_deref(), ACCESS_REGEX_FLAG)?;
     for (index, entry) in entries.iter().enumerate() {
         let JsonValue::Object(model) = entry else {
             return Err(ModelsError::EntryType { index });
@@ -150,7 +146,14 @@ pub(super) fn filter_model(
     let Some(JsonValue::Text(model_id)) = params.get("model") else {
         return Ok(false);
     };
-    if model_regex.is_some_and(|regex| !regex.is_match(model_id)) {
+    if let Some(regex) = model_regex
+        && !regex
+            .is_match(model_id)
+            .map_err(|source| ModelsError::RegexMatch {
+                flag: MODEL_REGEX_FLAG,
+                source,
+            })?
+    {
         return Ok(false);
     }
     let info = match model.get("model_info") {
@@ -169,9 +172,21 @@ pub(super) fn filter_model(
     let Some(JsonValue::Array(groups)) = info.and_then(|info| info.get("access_groups")) else {
         return Ok(false);
     };
-    Ok(groups
-        .iter()
-        .any(|group| matches!(group, JsonValue::Text(text) if access_regex.is_match(text))))
+    for group in groups {
+        let JsonValue::Text(text) = group else {
+            continue;
+        };
+        let matched = access_regex
+            .is_match(text)
+            .map_err(|source| ModelsError::RegexMatch {
+                flag: ACCESS_REGEX_FLAG,
+                source,
+            })?;
+        if matched {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn yaml_info<'model>(
@@ -274,10 +289,7 @@ fn print_models_table(models: &[ModelYamlInfo<'_>], title: &str, stdout: &mut dy
     );
 }
 
-fn print_summary_table(
-    counts: &IndexMap<String, usize>,
-    stdout: &mut dyn Write,
-) -> Result<(), ModelsError> {
+fn summary_table(counts: &IndexMap<String, usize>) -> Result<Table, ModelsError> {
     let mut table = Table::new();
     table.set_header(vec!["Provider", "Count"]);
     for (provider, count) in counts {
@@ -291,6 +303,14 @@ fn print_summary_table(
         Cell::new("Total").add_attribute(Attribute::Bold),
         Cell::new(total).add_attribute(Attribute::Bold),
     ]);
+    Ok(table)
+}
+
+fn print_summary_table(
+    counts: &IndexMap<String, usize>,
+    stdout: &mut dyn Write,
+) -> Result<(), ModelsError> {
+    let table = summary_table(counts)?;
     let _wrote_title = writeln!(stdout, "Model Import Summary");
     let _wrote_table = writeln!(stdout, "{table}");
     Ok(())

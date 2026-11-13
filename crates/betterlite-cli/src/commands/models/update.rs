@@ -4,9 +4,10 @@ use indexmap::IndexMap;
 use serde::Serialize;
 
 use crate::commands::Client;
+use crate::commands::tables::write_json_response;
 
 use super::params::parse_pairs;
-use super::response::{post_json, write_json};
+use super::response::post_json;
 use super::{ModelsError, UpdateModel};
 
 const UPDATE_PATH: &str = "/model/update";
@@ -34,5 +35,8 @@ pub(super) fn update_model(
     })
     .map_err(ModelsError::Encode)?;
     let response = post_json(client, UPDATE_PATH, body)?;
-    write_json(UPDATE_PATH, &response, stdout)
+    write_json_response(&response, stdout).map_err(|source| ModelsError::Response {
+        path: UPDATE_PATH,
+        source,
+    })
 }

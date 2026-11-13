@@ -5,8 +5,9 @@ use serde::Deserialize;
 use serde_json::value::RawValue;
 
 use crate::commands::Client;
+use crate::commands::tables::write_json_response;
 
-use super::response::{fetch_data, write_json};
+use super::response::fetch_data;
 use super::{GetModel, ModelsError};
 
 const INFO_PATH: &str = "/v1/model/info";
@@ -43,7 +44,12 @@ pub(super) fn get_model(
                 source,
             })?;
         if matches_selector(options, &candidate) {
-            return write_json(INFO_PATH, model.get().as_bytes(), stdout);
+            return write_json_response(model.get().as_bytes(), stdout).map_err(|source| {
+                ModelsError::Response {
+                    path: INFO_PATH,
+                    source,
+                }
+            });
         }
     }
     Err(ModelsError::NotFound {

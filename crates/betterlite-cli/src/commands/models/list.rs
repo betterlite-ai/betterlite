@@ -4,10 +4,10 @@ use betterlite_models::controls::json_value::JsonValue;
 use serde::Deserialize;
 
 use crate::commands::Client;
-use crate::commands::tables::{OutputFormat, write_table};
+use crate::commands::tables::{OutputFormat, write_json_response, write_table};
 
 use super::format::{format_iso_datetime_str, format_timestamp};
-use super::response::{fetch_data, write_json};
+use super::response::fetch_data;
 use super::value::cell_text;
 use super::{ListModels, ModelsError};
 
@@ -33,7 +33,12 @@ pub(super) fn list_models(
 ) -> Result<(), ModelsError> {
     let data = fetch_data(client, LIST_PATH)?;
     if options.format == OutputFormat::Json {
-        return write_json(LIST_PATH, data.get().as_bytes(), stdout);
+        return write_json_response(data.get().as_bytes(), stdout).map_err(|source| {
+            ModelsError::Response {
+                path: LIST_PATH,
+                source,
+            }
+        });
     }
     let models: Vec<ListedModel> =
         serde_json::from_str(data.get()).map_err(|source| ModelsError::Response {

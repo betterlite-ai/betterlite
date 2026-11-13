@@ -165,7 +165,13 @@ pub enum ModelsError {
     Regex {
         flag: &'static str,
         #[source]
-        source: regex::Error,
+        source: fancy_regex::Error,
+    },
+    #[error("{flag} could not be matched against a value")]
+    RegexMatch {
+        flag: &'static str,
+        #[source]
+        source: fancy_regex::Error,
     },
     #[error("the {flag} value {value} is not key=value")]
     Pair { flag: &'static str, value: String },

@@ -3,8 +3,9 @@ use std::io::Write;
 use serde::Serialize;
 
 use crate::commands::Client;
+use crate::commands::tables::write_json_response;
 
-use super::response::{post_json, write_json};
+use super::response::post_json;
 use super::{DeleteModel, ModelsError};
 
 const DELETE_PATH: &str = "/model/delete";
@@ -24,5 +25,8 @@ pub(super) fn delete_model(
     })
     .map_err(ModelsError::Encode)?;
     let response = post_json(client, DELETE_PATH, body)?;
-    write_json(DELETE_PATH, &response, stdout)
+    write_json_response(&response, stdout).map_err(|source| ModelsError::Response {
+        path: DELETE_PATH,
+        source,
+    })
 }

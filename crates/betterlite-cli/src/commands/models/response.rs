@@ -1,10 +1,7 @@
-use std::io::Write;
-
 use http::Method;
 use serde::Deserialize;
 use serde_json::value::RawValue;
 
-use crate::commands::tables::write_json_response;
 use crate::commands::{Client, Payload, Request};
 
 use super::ModelsError;
@@ -56,15 +53,4 @@ pub(super) fn post_json(
         });
     }
     Ok(response.body)
-}
-
-pub(super) fn write_json(
-    path: &'static str,
-    body: &[u8],
-    stdout: &mut dyn Write,
-) -> Result<(), ModelsError> {
-    match write_json_response(body, stdout) {
-        Ok(()) => Ok(()),
-        Err(source) => Err(ModelsError::Response { path, source }),
-    }
 }

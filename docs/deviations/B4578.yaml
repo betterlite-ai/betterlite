@@ -61,3 +61,22 @@ deviations:
       The field is declared as an integer, and docs/compatibility.md excludes reading a string into a
       number. A digit string is an error that names the field.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L136-L146
+  - what: >-
+      The per-1000-token cost is rounded as an exact decimal, half to even, so 1.5e-07 per token shows
+      $0.0002 and 2.5e-07 shows $0.0002. LiteLLM multiplies a float by 1000 and formats it with
+      :.4f, so the same two inputs show $0.0001 and $0.0003 because the binary float sits just
+      below or above the midpoint.
+    why: >-
+      The money-is-decimal rule keeps every price a rust_decimal::Decimal, and a float product would
+      bring back the drift that rule exists to stop. The two outputs differ only when the product
+      lands exactly on a half unit of the fourth decimal.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L87-L97
+  - what: >-
+      --only-models-matching-regex and --only-access-groups-matching-regex compile with fancy-regex
+      instead of Python's re. Lookahead, lookbehind and backreferences work, but a pattern fancy-regex
+      refuses is an error that names the flag, a search that passes fancy-regex's backtrack limit is
+      an error too, and a few constructs differ in syntax, such as the inline flag rules.
+    why: >-
+      fancy-regex is the bounded engine the other betterlite crates use for user patterns, so a bad
+      pattern cannot hang the command.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L393-L397

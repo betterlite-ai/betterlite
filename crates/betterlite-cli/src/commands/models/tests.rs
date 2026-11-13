@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use clap::Parser as _;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
@@ -25,6 +26,18 @@ pub(super) fn run(
         String::from_utf8(stdout).unwrap(),
         String::from_utf8(stderr).unwrap(),
     )
+}
+
+#[derive(clap::Parser)]
+struct TestCli {
+    #[command(subcommand)]
+    command: ModelsCommand,
+}
+
+fn parsed(arguments: &[&str]) -> ModelsCommand {
+    let mut argv = vec!["lite"];
+    argv.extend_from_slice(arguments);
+    TestCli::try_parse_from(argv).unwrap().command
 }
 
 fn list(format: OutputFormat) -> ModelsCommand {
@@ -70,6 +83,18 @@ fn list_models_prints_a_row_for_every_model() {
     assert_eq!(requests[0].request_line, "GET /models HTTP/1.1");
     assert_eq!(requests[0].header("authorization"), Some("Bearer sk-test"));
     assert_eq!(requests[0].header("content-type"), None);
+}
+
+#[test]
+fn list_models_defaults_to_the_table_format() {
+    let server = TestServer::start(vec![Answer::json(200, r#"{"data":[{"id":"m1"}]}"#)]);
+
+    let (result, stdout, _stderr) = run(parsed(&["list"]), &server);
+
+    result.unwrap();
+    assert!(stdout.contains("Available Models"), "{stdout}");
+    assert!(stdout.contains("m1"), "{stdout}");
+    server.finish();
 }
 
 #[test]
@@ -386,7 +411,7 @@ fn info_models_prints_the_default_columns() {
         r#"{"data":[{"model_name":"gpt-4o","litellm_params":{"model":"openai/gpt-4o"},"model_info":{"updated_at":"2024-01-02T03:04:05Z"}}]}"#,
     )]);
 
-    let (result, stdout, _stderr) = run(info("public_model,upstream_model,updated_at"), &server);
+    let (result, stdout, _stderr) = run(parsed(&["info"]), &server);
 
     result.unwrap();
     assert!(stdout.contains("Models Information"), "{stdout}");
@@ -467,6 +492,18 @@ fn cost_formats_a_cost_per_thousand_tokens() {
     assert_eq!(
         format_cost_per_1k_tokens(Some(Decimal::new(3, 1)), "input_cost_per_token").unwrap(),
         "$300.0000"
+    );
+}
+
+#[rstest]
+#[case::half_up_to_even(Decimal::new(15, 8), "$0.0002")]
+#[case::half_down_to_even(Decimal::new(25, 8), "$0.0002")]
+#[case::above_the_midpoint(Decimal::new(26, 8), "$0.0003")]
+#[case::below_the_midpoint(Decimal::new(24, 8), "$0.0002")]
+fn cost_rounds_a_midpoint_to_the_even_digit(#[case] cost: Decimal, #[case] expected: &str) {
+    assert_eq!(
+        format_cost_per_1k_tokens(Some(cost), "input_cost_per_token").unwrap(),
+        expected
     );
 }
 
