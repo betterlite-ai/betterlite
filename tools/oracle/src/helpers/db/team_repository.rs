@@ -76,7 +76,10 @@ fn label(error: &TeamRecordError) -> String {
                 | TeamRowError::InvalidUtf8(_)
                 | TeamRowError::Json(_),
         } => "invalid json".to_owned(),
-        TeamRecordError::Record { .. }
+        TeamRecordError::Record {
+            source:
+                TeamRowError::NotAnObject | TeamRowError::MissingIdentity | TeamRowError::MissingTeamId,
+        }
         | TeamRecordError::NotAnObject
         | TeamRecordError::NotAList
         | TeamRecordError::Member { .. } => "invalid model".to_owned(),

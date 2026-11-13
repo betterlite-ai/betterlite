@@ -80,13 +80,13 @@ fn store(pool: &Pool) -> PostgresStore {
 }
 
 fn repository(handle: &PostgresStore) -> TeamRepository<'_> {
-    TeamRepository::new(
-        TeamDatabase {
+    TeamRepository {
+        database: TeamDatabase {
             db: handle,
             writer_db: handle,
         },
-        false,
-    )
+        use_writer: false,
+    }
 }
 
 #[derive(Parser)]
@@ -506,14 +506,16 @@ fn default_db_and_explicit_writer() {
         db: &reader,
         writer_db: &writer,
     };
-    assert!(ptr::eq(
-        TeamRepository::new(database, false).table().store,
-        &raw const reader
-    ));
-    assert!(ptr::eq(
-        TeamRepository::new(database, true).table().store,
-        &raw const writer
-    ));
+    let default = TeamRepository {
+        database,
+        use_writer: false,
+    };
+    assert!(ptr::eq(default.table().store, &raw const reader));
+    let pinned = TeamRepository {
+        database,
+        use_writer: true,
+    };
+    assert!(ptr::eq(pinned.table().store, &raw const writer));
 }
 
 #[tokio::test]

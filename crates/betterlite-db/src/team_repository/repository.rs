@@ -1,7 +1,7 @@
 use crate::postgres_store::errors::{DbError, backend};
 use crate::postgres_store::session::{DbSession, PostgresStore};
 use crate::team_repository::decoder::{
-    TeamRecord, TeamRecordError, decode_locked_roster, decode_team_record,
+    TeamRecord, TeamRecordError, convert_record, decode_locked_roster,
 };
 use crate::team_rows::decoder::parse_data;
 use crate::team_rows::member::Member;
@@ -38,8 +38,8 @@ pub struct TeamDatabase<'database> {
 }
 
 pub struct TeamRepository<'database> {
-    database: TeamDatabase<'database>,
-    use_writer: bool,
+    pub database: TeamDatabase<'database>,
+    pub use_writer: bool,
 }
 
 pub struct TeamTable<'database> {
@@ -47,14 +47,6 @@ pub struct TeamTable<'database> {
 }
 
 impl<'database> TeamRepository<'database> {
-    #[must_use]
-    pub const fn new(database: TeamDatabase<'database>, use_writer: bool) -> Self {
-        Self {
-            database,
-            use_writer,
-        }
-    }
-
     #[must_use]
     pub const fn table(&self) -> TeamTable<'database> {
         TeamTable {
@@ -70,10 +62,12 @@ impl<'database> TeamRepository<'database> {
         &self,
         team_id: &str,
     ) -> Result<Option<LiteLLMTeamTable>, TeamQueryError> {
-        match self.table().find_unique(team_id).await? {
-            Some(record) => Ok(decode_team_record(Some(&record))?),
-            None => Ok(None),
-        }
+        let record = self.table().find_unique(team_id).await?;
+        record
+            .as_ref()
+            .map(convert_record)
+            .transpose()
+            .map_err(TeamQueryError::from)
     }
 
     pub async fn find_by_organization_id(
@@ -86,7 +80,7 @@ impl<'database> TeamRepository<'database> {
             .await?;
         let mut teams = Vec::with_capacity(records.len());
         for record in &records {
-            teams.extend(decode_team_record(Some(record))?);
+            teams.push(convert_record(record)?);
         }
         Ok(teams)
     }
