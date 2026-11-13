@@ -2385,6 +2385,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-core",
  "betterlite-error",
+ "betterlite-guardrails",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-mcp",
