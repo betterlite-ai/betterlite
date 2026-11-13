@@ -1,0 +1,34 @@
+kind: helper
+name: openai-image-edits-filename-and-mime
+call:
+  openai_image_edits:
+    transform:
+      - model: gpt-image-1
+        prompt: null
+        image: [{content_base64: /9j/, name: photo.jpeg}]
+        mask: [{content_base64: /9j/, name: null}]
+        options: {}
+        params: {api_key: sk-test, api_base: 'https://example.test/v1'}
+        globals: {}
+        environment: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+      - model: gpt-image-1
+        prompt: null
+        image: [{content_base64: L2V0Yy9wYXNzd2Q=, name: null}]
+        mask: null
+        options: {}
+        params: {api_key: sk-test, api_base: 'https://example.test/v1'}
+        globals: {}
+        environment: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+      - model: gpt-image-1
+        prompt: null
+        image: [{content_base64: bm90IGFuIGltYWdl, name: null}]
+        mask: null
+        options: {}
+        params: {api_key: sk-test, api_base: 'https://example.test/v1'}
+        globals: {}
+        environment: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+env: {}
+compare: {ignore: []}

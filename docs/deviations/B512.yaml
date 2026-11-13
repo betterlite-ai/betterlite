@@ -1,0 +1,12 @@
+task: B512
+deviations:
+  - what: A 2xx edit reply whose body carries an error object is reported as an error with the object's code (or 422), not as an empty ImageResponse.
+    why: LiteLLM builds ImageResponse from the body with extra fields allowed, so an error body becomes an empty success; a broken
+      provider would look like an empty edit. betterlite reuses B511's decoder, which reports it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_edit/transformation.py#L142-L153
+  - what: An edit reply with no created value takes the supplied clock instead of int(time.time()), and a reply whose usage omits a field decodes it as zero.
+    why: The shared B511 decoder takes the caller's clock and fills missing usage counts; no working OpenAI edit reply omits them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_edit/transformation.py#L142-L153
+  - what: The edit reply's usage always carries prompt_tokens, completion_tokens and prompt_tokens_details, derived from the input and output counts.
+    why: LiteLLM's ImageResponse keeps only the usage fields the provider sent; betterlite reuses B511's decoded image usage so one image reply type serves generation and editing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2596-L2607

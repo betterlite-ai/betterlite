@@ -1,0 +1,16 @@
+kind: helper
+name: openai-image-edits-single-image-and-mask
+call:
+  openai_image_edits:
+    transform:
+      - model: gpt-image-1
+        prompt: change
+        image: [{content_base64: iVBORw0KGgo=, name: baby.png}]
+        mask: [{content_base64: iVBORw0KGgo=, name: mask-src.png}]
+        options: {quality: high, size: 1024x1024}
+        params: {api_key: sk-test, api_base: 'https://example.test/v1'}
+        globals: {}
+        environment: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+env: {}
+compare: {ignore: []}
