@@ -33,7 +33,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 
 use super::call::{DEFAULT_TIMEOUT, PreparedImageVariation, prepare_image_variation};
-use super::client::{ClientKind, SharedSession, SuppliedClient};
+use super::client::{ClientKind, ImageVariationClient, SharedSession};
 use super::error::{ImageVariationSource, OpenAiImageVariationError};
 use super::logging::{
     ImageVariationLogger, PostCallRecord, PreCallRecord, PrePostLogger, data_view,
@@ -41,7 +41,7 @@ use super::logging::{
 use super::request::{
     ImageVariationOutcome, begin_image_variation, finish_image_variation, send_image_variation,
 };
-use super::transform::reply_identity;
+use super::transform::usage_identity;
 use super::transport::ImageVariationTransport;
 use super::wire::outbound_request;
 use super::{
@@ -101,14 +101,15 @@ fn request(image: ImageFile) -> ImageVariationRequest {
     }
 }
 
-fn supplied(kind: ClientKind) -> SuppliedClient {
-    SuppliedClient {
+fn supplied(kind: ClientKind) -> ImageVariationClient {
+    ImageVariationClient {
         kind,
         api_key: Some(SecretString::from("sk-supplied")),
         base_url: String::from("https://supplied.test/v1/"),
         timeout: Some(Duration::from_secs(45)),
         max_retries: 1,
         organization: Some(String::from("org-supplied")),
+        shared_session: false,
     }
 }
 
@@ -822,28 +823,22 @@ fn the_error_class_keeps_the_message_and_headers() {
 #[test]
 fn the_identity_reply_keeps_the_sdk_shape() {
     let reply = decode_image_reply(br#"{"created":7,"data":[]}"#, NOW).unwrap();
-    let identity = reply_identity(reply);
+    let usage = usage_identity(reply.usage);
+    assert!(usage.extra.is_empty());
+    let identity = ImageGenerationReply { usage, ..reply };
     assert_eq!(identity.created, 7);
     let dumped = serde_json::to_string(&identity).unwrap();
     assert!(dumped.contains(r#""background":null"#));
     assert!(dumped.contains(r#""input_tokens":0"#));
     assert!(!dumped.contains("output_tokens_details"));
-    let with_vendor = reply_identity(ImageGenerationReply {
-        created: 7,
-        data: Vec::new(),
-        usage: ImageUsage {
-            input_tokens: 1,
-            input_tokens_details: Default::default(),
-            output_tokens: 2,
-            total_tokens: 3,
-            prompt_tokens: Some(1),
-            completion_tokens: Some(2),
-            extra: IndexMap::from([(String::from("vendor"), Json::Bool(true))]),
-        },
-        background: None,
-        quality: None,
-        output_format: None,
-        size: None,
+    let with_vendor = usage_identity(ImageUsage {
+        input_tokens: 1,
+        input_tokens_details: Default::default(),
+        output_tokens: 2,
+        total_tokens: 3,
+        prompt_tokens: Some(1),
+        completion_tokens: Some(2),
+        extra: IndexMap::from([(String::from("vendor"), Json::Bool(true))]),
     });
     let dumped = serde_json::to_string(&with_vendor).unwrap();
     assert!(!dumped.contains("prompt_tokens"));

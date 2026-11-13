@@ -9,16 +9,8 @@ litellm.suppress_debug_info = True
 
 def empty_answer(supported: list[Json]) -> dict[str, Json]:
     return {
-        "supported": supported,
-        "mapped": None,
-        "data": None,
-        "supplied": None,
-        "kind": None,
-        "calls": [],
-        "result": None,
-        "error": None,
-        "pre_call": None,
-        "post_call": None,
+        "supported": supported, "mapped": None, "data": None, "supplied": None, "kind": None,
+        "calls": [], "result": None, "error": None, "pre_call": None, "post_call": None,
     }
 
 
@@ -33,10 +25,7 @@ def transform_value(probe: Probe) -> Json:
     config = OpenAIImageVariationConfig()
     answer = empty_answer(supported_value(config, probe.model or ""))
     data = config.transform_request_image_variation(
-        model=probe.model,
-        image=file_object(probe),
-        optional_params=dict(probe.optional_params),
-        headers={},
+        model=probe.model, image=file_object(probe), optional_params=dict(probe.optional_params), headers={}
     )
     match data.get("data"):
         case dict() as fields:

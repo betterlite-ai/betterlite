@@ -7,11 +7,13 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_openai::api::image_contracts::records::{ImageFile, ImageHeaders};
-use betterlite_openai::image_variations::client::{ClientKind, SharedSession, SuppliedClient};
+use betterlite_openai::api::image_contracts::records::ImageFile;
+use betterlite_openai::image_variations::client::{
+    ClientKind, ImageVariationClient, SharedSession,
+};
 use betterlite_openai::image_variations::error::OpenAiImageVariationError;
 use betterlite_openai::image_variations::logging::{
-    ImageVariationLogger, PostCallRecord, PreCallRecord, data_view,
+    ImageVariationLogger, PostCallRecord, PreCallRecord,
 };
 use betterlite_openai::image_variations::request::{
     begin_image_variation, finish_image_variation, send_image_variation,
@@ -38,7 +40,7 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        input
+        let values = input
             .probes
             .iter()
             .map(|probe| match input.function {
@@ -50,17 +52,21 @@ impl crate::helpers::Helper for Op {
                 | Function::VariationMissingConfigData
                 | Function::VariationReplyIdentity => support::request_value(probe),
             })
-            .collect::<Result<Vec<Value>, Box<crate::helpers::HelperError>>>()
-            .map(Value::Array)
+            .collect::<Result<Vec<Value>, _>>()?;
+        Ok(Value::Array(values))
     }
 }
 
 pub(super) fn call_for(probe: &Probe) -> ImageVariationRequest {
     ImageVariationRequest {
         model: probe.model.clone(),
-        image: image_for(probe),
+        image: ImageFile {
+            filename: probe.image_filename.clone(),
+            content: probe.image_content.as_bytes().to_vec(),
+            content_type: probe.image_content_type.clone(),
+        },
         optional_params: probe.optional_params.clone(),
-        headers: probe.headers.clone(),
+        headers: None,
         api_key: probe.api_key.clone().map(SecretString::from),
         api_base: probe.api_base.clone(),
         organization: probe.organization.clone(),
@@ -70,7 +76,21 @@ pub(super) fn call_for(probe: &Probe) -> ImageVariationRequest {
         params: ImageVariationParams {
             async_call: probe.async_call,
         },
-        client: probe.client.map(client_kind).map(supplied),
+        client: probe
+            .client
+            .map(|kind| match kind {
+                input::Kind::Sync => ClientKind::Sync,
+                input::Kind::Async => ClientKind::Async,
+            })
+            .map(|kind| ImageVariationClient {
+                kind,
+                api_key: Some(SecretString::from("sk-supplied")),
+                base_url: String::from("https://supplied.test/v1/"),
+                timeout: Some(Duration::from_secs(45)),
+                max_retries: 1,
+                organization: Some(String::from("org-supplied")),
+                shared_session: false,
+            }),
         shared_session: Some(SharedSession),
         config: (!probe.missing_config).then_some(OpenAiImageVariationConfig),
         boundary: String::from("oracle-boundary"),
@@ -78,36 +98,10 @@ pub(super) fn call_for(probe: &Probe) -> ImageVariationRequest {
     }
 }
 
-const fn client_kind(kind: input::Kind) -> ClientKind {
-    match kind {
-        input::Kind::Sync => ClientKind::Sync,
-        input::Kind::Async => ClientKind::Async,
-    }
-}
-
-fn supplied(kind: ClientKind) -> SuppliedClient {
-    SuppliedClient {
-        kind,
-        api_key: Some(SecretString::from("sk-supplied")),
-        base_url: String::from("https://supplied.test/v1/"),
-        timeout: Some(Duration::from_secs(45)),
-        max_retries: 1,
-        organization: Some(String::from("org-supplied")),
-    }
-}
-
-fn image_for(probe: &Probe) -> ImageFile {
-    ImageFile {
-        filename: probe.image_filename.clone(),
-        content: probe.image_content.as_bytes().to_vec(),
-        content_type: probe.image_content_type.clone(),
-    }
-}
-
 pub(super) struct FakeTransport<'probe> {
     probe: &'probe Probe,
     headers: HeaderMap,
-    calls: Mutex<Vec<Value>>,
+    pub(super) calls: Mutex<Vec<Value>>,
 }
 
 impl<'probe> FakeTransport<'probe> {
@@ -176,7 +170,7 @@ impl ImageVariationTransport for FakeTransport<'_> {
         let outcome = match self.probe.failure {
             Some(input::Failure::Timeout | input::Failure::Failed) => Err(TransportError::Closed),
             None => Ok(UpstreamResponse {
-                status: self.probe.reply.status,
+                status: self.probe.reply.status.unwrap_or(200),
                 headers: self.headers.clone(),
                 body: self.probe.reply.body.as_bytes().to_vec(),
             }),
@@ -186,59 +180,30 @@ impl ImageVariationTransport for FakeTransport<'_> {
 }
 
 #[derive(Default)]
-pub(super) struct Recorder {
-    pre: Vec<Value>,
-    post: Vec<Value>,
-}
+pub(super) struct Recorder;
 
 impl ImageVariationLogger for Recorder {
     fn pre_call(
         &mut self,
-        record: PreCallRecord,
+        _record: PreCallRecord,
     ) -> Result<(), betterlite_logging::logging_pre_post::error::PrePostError> {
-        self.pre.push(json!({
-            "input": "",
-            "api_base": record.api_base,
-            "header_names": header_names(record.headers.as_ref()),
-            "body": json!(data_view(&record.data)),
-            "original_response": Value::Null,
-        }));
         Ok(())
     }
 
-    fn post_call(&mut self, record: PostCallRecord) {
-        self.post.push(json!({
-            "input": Value::Null,
-            "api_base": record.api_base,
-            "header_names": header_names(record.headers.as_ref()),
-            "body": Value::Null,
-            "original_response": record.original_response,
-        }));
-    }
-}
-
-fn header_names(headers: Option<&ImageHeaders>) -> Vec<String> {
-    let mut names: Vec<String> = headers
-        .map(|headers| headers.keys().cloned().collect())
-        .unwrap_or_default();
-    names.sort();
-    names
+    fn post_call(&mut self, _record: PostCallRecord) {}
 }
 
 pub(super) fn failure_view(error: &OpenAiImageVariationError) -> Value {
+    let diagnostic = if error.message.contains("provider not found") {
+        Some("provider")
+    } else if error.message.contains("data field is required") {
+        Some("data")
+    } else {
+        None
+    };
     json!({
         "status": error.status_code,
         "headers": error.headers,
-        "diagnostic": diagnostic(&error.message),
+        "diagnostic": diagnostic,
     })
-}
-
-fn diagnostic(message: &str) -> Option<&'static str> {
-    if message.contains("provider not found") {
-        return Some("provider");
-    }
-    if message.contains("data field is required") {
-        return Some("data");
-    }
-    None
 }

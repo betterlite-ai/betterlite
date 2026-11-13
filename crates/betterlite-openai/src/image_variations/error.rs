@@ -1,8 +1,5 @@
-use std::string::FromUtf8Error;
-
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
-use http::header::ToStrError;
 use thiserror::Error;
 
 use crate::api::image_contracts::records::ImageHeaders;
@@ -31,24 +28,11 @@ pub enum ImageVariationSource {
     Transport(#[from] TransportError),
     #[error(transparent)]
     Logging(#[from] PrePostError),
-    #[error("the {status} answer is not UTF-8 text")]
-    StatusBody {
-        status: u16,
-        #[source]
-        source: FromUtf8Error,
-    },
     #[error("{message}")]
     Status {
         status: u16,
         message: String,
         headers: Option<ImageHeaders>,
-    },
-    #[error("the {name} response header is not text")]
-    StatusHeader {
-        status: u16,
-        name: String,
-        #[source]
-        source: ToStrError,
     },
     #[error("{0}")]
     Reply(#[from] ImageReplyError),
@@ -57,12 +41,12 @@ pub enum ImageVariationSource {
 }
 
 impl ImageVariationSource {
-    #[must_use]
-    pub const fn status(&self) -> Option<u16> {
+    // the one place deciding what a failure contributes to LiteLLM's OpenAIError wrapper
+    fn parts(&self) -> (Option<u16>, Option<ImageHeaders>) {
         match self {
-            Self::Status { status, .. }
-            | Self::StatusBody { status, .. }
-            | Self::StatusHeader { status, .. } => Some(*status),
+            Self::Status {
+                status, headers, ..
+            } => (Some(*status), headers.clone()),
             Self::MissingConfig { .. }
             | Self::MissingData
             | Self::MaxRetries
@@ -73,27 +57,7 @@ impl ImageVariationSource {
             | Self::Transport(_)
             | Self::Logging(_)
             | Self::Reply(_)
-            | Self::Header(_) => None,
-        }
-    }
-
-    #[must_use]
-    pub fn headers(&self) -> Option<ImageHeaders> {
-        match self {
-            Self::Status { headers, .. } => headers.clone(),
-            Self::MissingConfig { .. }
-            | Self::MissingData
-            | Self::MaxRetries
-            | Self::MissingApiKey
-            | Self::ClientKind { .. }
-            | Self::Option { .. }
-            | Self::Url(_)
-            | Self::Transport(_)
-            | Self::Logging(_)
-            | Self::StatusBody { .. }
-            | Self::StatusHeader { .. }
-            | Self::Reply(_)
-            | Self::Header(_) => None,
+            | Self::Header(_) => (None, None),
         }
     }
 }
@@ -112,10 +76,9 @@ pub struct OpenAiImageVariationError {
 impl OpenAiImageVariationError {
     #[must_use]
     pub fn wrapped(source: ImageVariationSource) -> Self {
-        let status_code = source.status().unwrap_or(500);
-        let headers = source.headers();
+        let (status, headers) = source.parts();
         Self {
-            status_code,
+            status_code: status.unwrap_or(500),
             message: source.to_string(),
             headers,
             source: Box::new(source),

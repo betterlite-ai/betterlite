@@ -31,22 +31,23 @@ pub struct PostCallRecord {
 // the image is bytes, so a log record names its upload instead of carrying it
 #[must_use]
 pub fn data_view(data: &ImageVariationData) -> IndexMap<String, Json> {
-    let mut image = IndexMap::new();
-    image.insert(
-        String::from("filename"),
-        data.image.filename.clone().map_or(Json::Null, Json::Text),
-    );
-    image.insert(
-        String::from("content_type"),
-        data.image
-            .content_type
-            .clone()
-            .map_or(Json::Null, Json::Text),
-    );
-    image.insert(
-        String::from("size"),
-        Json::Number(serde_json::Number::from(data.image.content.len())),
-    );
+    let image = IndexMap::from([
+        (
+            String::from("filename"),
+            data.image.filename.clone().map_or(Json::Null, Json::Text),
+        ),
+        (
+            String::from("content_type"),
+            data.image
+                .content_type
+                .clone()
+                .map_or(Json::Null, Json::Text),
+        ),
+        (
+            String::from("size"),
+            Json::Number(serde_json::Number::from(data.image.content.len())),
+        ),
+    ]);
     let mut inner = IndexMap::from([(String::from("image"), Json::Object(image))]);
     inner.extend(data.options.clone());
     IndexMap::from([(String::from("data"), Json::Object(inner))])

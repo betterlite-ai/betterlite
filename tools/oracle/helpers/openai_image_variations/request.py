@@ -13,17 +13,15 @@ from litellm.types.utils import ImageResponse, LlmProviders
 from litellm.utils import ProviderConfigManager
 from pydantic import JsonValue as Json
 
-from .probe import DOCUMENT, NOW, Probe, data_view, file_object
+from .probe import DOCUMENT, NOW, Probe, file_object
 from .transform import empty_answer, supported_value
 
 litellm.suppress_debug_info = True
+REAL_CONFIG: Final = ProviderConfigManager.get_provider_image_variation_config
 
 
 def absent_config(model: str, provider: LlmProviders) -> OpenAIImageVariationConfig | None:
     return None
-
-
-REAL_CONFIG: Final = ProviderConfigManager.get_provider_image_variation_config
 
 
 class Upstream:
@@ -46,115 +44,25 @@ class Upstream:
                 )
 
 
-def header_names(fields: dict[str, Json]) -> list[Json]:
-    match fields.get("headers"):
-        case dict() as headers:
-            names: list[Json] = []
-            for name in sorted(DOCUMENT.validate_python(headers)):
-                names.append(name)
-            return names
-        case None | bool() | int() | float() | str() | list():
-            return []
-
-
-def body_view(value: Json, probe: Probe) -> Json:
-    match value:
-        case dict() as fields:
-            typed = DOCUMENT.validate_python(fields)
-            match typed.get("data"):
-                case dict() as data:
-                    return {"data": data_view(DOCUMENT.validate_python(data), probe)}
-                case None | bool() | int() | float() | str() | list():
-                    return None
-        case None | bool() | int() | float() | str() | list():
-            return None
-
-
-def original_view(value: Json) -> Json:
-    match value:
-        case dict() as fields:
-            return DOCUMENT.validate_python(fields)
-        case None | bool() | int() | float() | str() | list():
-            return None
-
-
-def arguments_view(additional: Json, input_value: Json, original: Json, probe: Probe) -> Json:
-    match additional:
-        case dict() as fields:
-            typed = DOCUMENT.validate_python(fields)
-            return {
-                "input": input_value,
-                "api_base": typed.get("api_base"),
-                "header_names": header_names(typed),
-                "body": body_view(typed.get("complete_input_dict"), probe),
-                "original_response": original_view(original),
-            }
-        case None | bool() | int() | float() | str() | list():
-            raise TypeError("the logging additional args are an object")
-
-
 class Recorder:
-    def __init__(self, probe: Probe) -> None:
-        self.probe = probe
-        self.pre: list[Json] = []
-        self.post: list[Json] = []
-
     def pre_call(self, **kwargs: Json) -> None:
-        self.pre.append(
-            arguments_view(
-                kwargs["additional_args"], kwargs["input"], None, self.probe
-            )
-        )
+        pass
 
     def post_call(self, **kwargs: Json) -> None:
-        self.post.append(
-            arguments_view(
-                kwargs["additional_args"],
-                kwargs.get("input"),
-                kwargs["original_response"],
-                self.probe,
-            )
-        )
+        pass
 
 
-def supplied_client(
-    probe: Probe, transport: httpx.MockTransport
-) -> openai.OpenAI | None:
-    match probe.client:
-        case "sync":
-            return openai.OpenAI(
-                api_key="sk-supplied",
-                base_url="https://supplied.test/v1",
-                organization="org-supplied",
-                timeout=45.0,
-                max_retries=1,
-                http_client=httpx.Client(transport=transport),
-            )
-        case "async" | None:
-            return None
-
-
-def call_view(request: httpx.Request) -> Json:
-    return {
-        "url": str(request.url),
-        "authorization": request.headers.get("authorization"),
-        "organization": request.headers.get("openai-organization"),
-        "parts": parts_view(request),
-    }
-
-
-def parts_view(request: httpx.Request) -> list[Json]:
-    content_type = request.headers.get("content-type")
-    if content_type is None:
-        raise ValueError("a multipart request carries a content type")
-    raw = (
-        b"Content-Type: "
-        + content_type.encode()
-        + b"\r\nMIME-Version: 1.0\r\n\r\n"
-        + request.read()
+def supplied_client(probe: Probe, transport: httpx.MockTransport) -> openai.OpenAI | None:
+    if probe.client != "sync":
+        return None
+    return openai.OpenAI(
+        api_key="sk-supplied",
+        base_url="https://supplied.test/v1",
+        organization="org-supplied",
+        timeout=45.0,
+        max_retries=1,
+        http_client=httpx.Client(transport=transport),
     )
-    message = BytesParser(policy=email.policy.default).parsebytes(raw)
-    return [part_view(part) for part in message.iter_parts()]
 
 
 def part_view(part: EmailMessage) -> Json:
@@ -171,25 +79,13 @@ def part_view(part: EmailMessage) -> Json:
     }
 
 
-def error_headers(failure: OpenAIError, probe: Probe) -> Json:
-    headers = failure.headers
-    if headers is None:
-        return None
-    found: dict[str, Json] = {}
-    for name, value in headers.items():
-        if name.lower() in {key.lower() for key in probe.reply.headers}:
-            found[name.lower()] = value
-    return found
-
-
-def diagnostic(failure: OpenAIError) -> Json:
-    match failure.message:
-        case message if "provider not found" in message:
-            return "provider"
-        case message if "data field is required" in message:
-            return "data"
-        case _:
-            return None
+def parts_view(request: httpx.Request) -> list[Json]:
+    content_type = request.headers.get("content-type")
+    if content_type is None:
+        raise ValueError("a multipart request carries a content type")
+    raw = b"Content-Type: " + content_type.encode() + b"\r\nMIME-Version: 1.0\r\n\r\n" + request.read()
+    message = BytesParser(policy=email.policy.default).parsebytes(raw)
+    return [part_view(part) for part in message.iter_parts()]
 
 
 def invoke(probe: Probe, client: openai.OpenAI | None, recorder: Recorder) -> ImageResponse:
@@ -206,14 +102,14 @@ def invoke(probe: Probe, client: openai.OpenAI | None, recorder: Recorder) -> Im
         litellm_params={},
         client=client,
         organization=probe.organization,
-        headers=probe.headers,
+        headers=None,
     )
 
 
 def request_value(probe: Probe) -> Json:
     upstream = Upstream(probe)
     transport = httpx.MockTransport(upstream.handle)
-    recorder = Recorder(probe)
+    recorder = Recorder()
     client = supplied_client(probe, transport)
     previous = litellm.client_session
     if client is None:
@@ -225,12 +121,21 @@ def request_value(probe: Probe) -> Json:
     try:
         response = invoke(probe, client, recorder)
     except OpenAIError as failure:
-        error = {
-            "mapped": True,
-            "status": failure.status_code,
-            "headers": error_headers(failure, probe),
-            "diagnostic": diagnostic(failure),
-        }
+        supplied = {name.lower() for name in probe.reply.headers}
+        found: dict[str, Json] = {}
+        if failure.headers is not None:
+            for name, value in failure.headers.items():
+                if name.lower() in supplied:
+                    found[name.lower()] = value
+        diagnostic: Json = None
+        match failure.message:
+            case message if "provider not found" in message:
+                diagnostic = "provider"
+            case message if "data field is required" in message:
+                diagnostic = "data"
+            case _:
+                diagnostic = None
+        error = {"mapped": True, "status": failure.status_code, "headers": found, "diagnostic": diagnostic}
     else:
         result = DOCUMENT.validate_python(response.model_dump())
     finally:
@@ -239,9 +144,15 @@ def request_value(probe: Probe) -> Json:
     answer = empty_answer(supported_value(OpenAIImageVariationConfig(), probe.model or ""))
     answer["supplied"] = probe.client is not None
     answer["kind"] = "sync"
-    answer["calls"] = [call_view(request) for request in upstream.seen]
+    answer["calls"] = [
+        {
+            "url": str(request.url),
+            "authorization": request.headers.get("authorization"),
+            "organization": request.headers.get("openai-organization"),
+            "parts": parts_view(request),
+        }
+        for request in upstream.seen
+    ]
     answer["result"] = result
     answer["error"] = error
-    answer["pre_call"] = recorder.pre[-1] if recorder.pre else None
-    answer["post_call"] = recorder.post[-1] if recorder.post else None
     return answer

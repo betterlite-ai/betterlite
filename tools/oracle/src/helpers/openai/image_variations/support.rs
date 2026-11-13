@@ -26,19 +26,23 @@ pub(crate) fn invalid(message: String) -> Box<HelperError> {
 
 fn empty_answer() -> Map<String, Value> {
     let mut answer = Map::new();
+    for name in [
+        "mapped",
+        "data",
+        "supplied",
+        "kind",
+        "result",
+        "error",
+        "pre_call",
+        "post_call",
+    ] {
+        answer.insert(String::from(name), Value::Null);
+    }
     answer.insert(
         String::from("supported"),
         json!(OpenAiImageVariationConfig::SUPPORTED_PARAMS),
     );
-    answer.insert(String::from("mapped"), Value::Null);
-    answer.insert(String::from("data"), Value::Null);
-    answer.insert(String::from("supplied"), Value::Null);
-    answer.insert(String::from("kind"), Value::Null);
     answer.insert(String::from("calls"), Value::Array(Vec::new()));
-    answer.insert(String::from("result"), Value::Null);
-    answer.insert(String::from("error"), Value::Null);
-    answer.insert(String::from("pre_call"), Value::Null);
-    answer.insert(String::from("post_call"), Value::Null);
     answer
 }
 
@@ -95,13 +99,5 @@ pub(crate) fn request_value(probe: &Probe) -> HelperResult {
     answer.insert(String::from("calls"), Value::Array(calls));
     answer.insert(String::from("result"), result);
     answer.insert(String::from("error"), error);
-    answer.insert(
-        String::from("pre_call"),
-        recorder.pre.last().cloned().unwrap_or(Value::Null),
-    );
-    answer.insert(
-        String::from("post_call"),
-        recorder.post.last().cloned().unwrap_or(Value::Null),
-    );
     Ok(Value::Object(answer))
 }

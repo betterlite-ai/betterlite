@@ -1,31 +1,20 @@
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::Json;
-use serde::Deserialize;
 
 use super::call::{PreparedImageVariation, prepare_image_variation};
 use super::error::{ImageVariationResult, ImageVariationSource, OpenAiImageVariationError};
 use super::logging::{ImageVariationLogger, PostCallRecord, PreCallRecord};
-use super::transform::reply_identity;
+use super::transform::usage_identity;
 use super::transport::ImageVariationTransport;
 use super::wire::outbound_request;
 use crate::api::image_contracts::records::ImageHeaders;
 use crate::image_generation::decode::{decode_image_reply, original_response};
-use crate::image_generation::reply::ImageGenerationReply;
+use crate::image_generation::reply::{ImageGenerationReply, ImageReplyError};
 
 #[derive(Debug)]
 pub struct ImageVariationOutcome {
     pub reply: ImageGenerationReply,
     pub original_response: Json,
-}
-
-#[derive(Deserialize)]
-struct StatusBody {
-    error: Option<StatusError>,
-}
-
-#[derive(Deserialize)]
-struct StatusError {
-    message: Option<String>,
 }
 
 pub fn begin_image_variation(
@@ -83,20 +72,22 @@ fn checked_reply(
     created_seconds: i64,
 ) -> Result<ImageVariationOutcome, ImageVariationSource> {
     if !(200..=299).contains(&response.status) {
-        let text = String::from_utf8(response.body.clone()).map_err(|source| {
-            ImageVariationSource::StatusBody {
-                status: response.status,
-                source,
-            }
+        let text = String::from_utf8(response.body.clone()).map_err(|_| {
+            ImageVariationSource::Reply(ImageReplyError::Text {
+                field: "status body",
+            })
         })?;
         return Err(ImageVariationSource::Status {
             status: response.status,
-            message: status_message(&text),
-            headers: Some(response_headers(response.status, &response.headers)?),
+            message: text,
+            headers: Some(response_headers(&response.headers)?),
         });
     }
     let reply = match decode_image_reply(&response.body, created_seconds) {
-        Ok(reply) => reply_identity(reply),
+        Ok(reply) => ImageGenerationReply {
+            usage: usage_identity(reply.usage),
+            ..reply
+        },
         Err(error) => return Err(ImageVariationSource::Reply(error)),
     };
     Ok(ImageVariationOutcome {
@@ -105,27 +96,14 @@ fn checked_reply(
     })
 }
 
-fn status_message(text: &str) -> String {
-    serde_json::from_str::<StatusBody>(text)
-        .ok()
-        .and_then(|body| body.error)
-        .and_then(|error| error.message)
-        .unwrap_or_else(|| text.to_owned())
-}
-
-fn response_headers(
-    status: u16,
-    headers: &http::HeaderMap,
-) -> Result<ImageHeaders, ImageVariationSource> {
+fn response_headers(headers: &http::HeaderMap) -> Result<ImageHeaders, ImageVariationSource> {
     let mut found = ImageHeaders::new();
     for (name, value) in headers {
-        let text = value
-            .to_str()
-            .map_err(|source| ImageVariationSource::StatusHeader {
-                status,
-                name: name.as_str().to_owned(),
-                source,
-            })?;
+        let text = value.to_str().map_err(|_| {
+            ImageVariationSource::Reply(ImageReplyError::Text {
+                field: "status headers",
+            })
+        })?;
         found.insert(name.as_str().to_owned(), text.to_owned());
     }
     Ok(found)

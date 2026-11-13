@@ -33,7 +33,14 @@ pub fn outbound_request(
 fn header_options(
     prepared: &PreparedImageVariation,
 ) -> Result<(HeaderMap, IndexMap<String, Json>), ImageVariationSource> {
-    let mut headers = default_headers(prepared)?;
+    let mut headers = HeaderMap::new();
+    if let Some(key) = &prepared.client.api_key {
+        let bearer = format!("Bearer {}", key.expose_secret());
+        insert_header(&mut headers, "authorization", &bearer, true)?;
+    }
+    if let Some(organization) = &prepared.client.organization {
+        insert_header(&mut headers, "openai-organization", organization, false)?;
+    }
     let mut options = prepared.data.options.clone();
     for (name, value) in take_extra(&mut options, "extra_headers")? {
         let Json::Text(text) = value else {
@@ -46,49 +53,25 @@ fn header_options(
     Ok((headers, options))
 }
 
-fn default_headers(prepared: &PreparedImageVariation) -> Result<HeaderMap, ImageVariationSource> {
-    let mut headers = HeaderMap::new();
-    if let Some(key) = &prepared.client.api_key {
-        let bearer = format!("Bearer {}", key.expose_secret());
-        insert_header(&mut headers, "authorization", &bearer, true)?;
-    }
-    if let Some(organization) = &prepared.client.organization {
-        insert_header(&mut headers, "openai-organization", organization, false)?;
-    }
-    Ok(headers)
-}
-
 fn form_parts(
     options: &IndexMap<String, Json>,
     extra_body: &IndexMap<String, Json>,
     prepared: &PreparedImageVariation,
 ) -> Result<Vec<MultipartPart>, ImageVariationSource> {
     let mut parts = Vec::new();
-    for (name, value) in options {
-        push_form(&mut parts, name, value)?;
-    }
-    for (name, value) in extra_body {
-        push_form(&mut parts, name, value)?;
+    for (name, value) in options.iter().chain(extra_body.iter()) {
+        let Some(data) = form_value(name, value)? else {
+            continue;
+        };
+        parts.push(MultipartPart {
+            name: name.clone(),
+            file_name: None,
+            content_type: None,
+            data: data.into_bytes(),
+        });
     }
     parts.push(image_part(prepared));
     Ok(parts)
-}
-
-fn push_form(
-    parts: &mut Vec<MultipartPart>,
-    name: &str,
-    value: &Json,
-) -> Result<(), ImageVariationSource> {
-    let Some(data) = form_value(name, value)? else {
-        return Ok(());
-    };
-    parts.push(MultipartPart {
-        name: name.to_owned(),
-        file_name: None,
-        content_type: None,
-        data: data.into_bytes(),
-    });
-    Ok(())
 }
 
 fn image_part(prepared: &PreparedImageVariation) -> MultipartPart {

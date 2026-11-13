@@ -3,7 +3,7 @@ use std::time::Duration;
 use betterlite_models::decisions::Json;
 use secrecy::SecretString;
 
-use self::client::{SharedSession, SuppliedClient};
+use self::client::{ImageVariationClient, SharedSession};
 use crate::api::image_contracts::records::{ImageFile, ImageHeaders, ImageParams};
 
 pub mod call;
@@ -18,8 +18,6 @@ pub mod wire;
 mod tests;
 
 pub const PROVIDER: &str = "openai";
-
-const MAX_RETRIES: i64 = 2;
 
 // LiteLLM reads only litellm_params.async_call here; every other key belongs to the layers around this call
 #[derive(Debug, Clone, Copy, Default)]
@@ -38,7 +36,7 @@ pub struct ImageVariationRequest {
     pub organization: Option<String>,
     pub timeout: Option<Duration>,
     pub params: ImageVariationParams,
-    pub client: Option<SuppliedClient>,
+    pub client: Option<ImageVariationClient>,
     pub shared_session: Option<SharedSession>,
     pub config: Option<OpenAiImageVariationConfig>,
     pub boundary: String,
@@ -85,7 +83,7 @@ pub(super) fn take_max_retries(
     optional_params: &mut ImageParams,
 ) -> Result<i64, error::ImageVariationSource> {
     match optional_params.shift_remove("max_retries") {
-        None => Ok(MAX_RETRIES),
+        None => Ok(2),
         Some(Json::Number(number)) => number
             .as_i64()
             .ok_or(error::ImageVariationSource::MaxRetries),

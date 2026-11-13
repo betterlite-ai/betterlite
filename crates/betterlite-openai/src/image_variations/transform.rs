@@ -1,17 +1,11 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use crate::image_generation::reply::{ImageGenerationReply, ImageUsage};
-
-// transform_response_image_variation hands back the ImageResponse the SDK parsed, so the reply keeps that shape
-#[must_use]
-pub fn reply_identity(reply: ImageGenerationReply) -> ImageGenerationReply {
-    let usage = usage_identity(reply.usage);
-    ImageGenerationReply { usage, ..reply }
-}
+use crate::image_generation::reply::ImageUsage;
 
 // LiteLLM's ImageResponse has no prompt or completion counts and dumps the SDK's output_tokens_details
-fn usage_identity(usage: ImageUsage) -> ImageUsage {
+#[must_use]
+pub fn usage_identity(usage: ImageUsage) -> ImageUsage {
     if usage.extra.is_empty() {
         return usage;
     }

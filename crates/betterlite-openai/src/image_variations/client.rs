@@ -26,17 +26,7 @@ impl ClientKind {
 #[derive(Debug, Clone)]
 pub struct SharedSession;
 
-// A client the caller already built; image_variations hands it back untouched
-#[derive(Debug, Clone)]
-pub struct SuppliedClient {
-    pub kind: ClientKind,
-    pub api_key: Option<SecretString>,
-    pub base_url: String,
-    pub timeout: Option<Duration>,
-    pub max_retries: i64,
-    pub organization: Option<String>,
-}
-
+// a client the caller already built, or one selected from the call settings; image_variations hands a supplied one back
 #[derive(Debug, Clone)]
 pub struct ImageVariationClient {
     pub kind: ClientKind,
@@ -55,7 +45,7 @@ pub struct ClientSettings<'settings> {
     pub organization: Option<&'settings str>,
     pub timeout: Option<Duration>,
     pub max_retries: i64,
-    pub supplied: Option<&'settings SuppliedClient>,
+    pub supplied: Option<&'settings ImageVariationClient>,
     pub shared_session: bool,
 }
 
@@ -85,13 +75,8 @@ pub fn select_client(
         });
     }
     Ok(ImageVariationClient {
-        kind: settings.kind,
-        api_key: supplied.api_key.clone(),
-        base_url: supplied.base_url.clone(),
-        timeout: supplied.timeout,
-        max_retries: supplied.max_retries,
-        organization: supplied.organization.clone(),
         shared_session: false,
+        ..supplied.clone()
     })
 }
 

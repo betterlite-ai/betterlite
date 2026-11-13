@@ -3,13 +3,13 @@ from dataclasses import dataclass, field
 from typing import Final, Literal
 
 import litellm
+from openai.types.audio.transcription_create_params import FileTypes
 from pydantic import JsonValue as Json
 from pydantic import TypeAdapter
 
 litellm.suppress_debug_info = True
 
 NOW: Final = 1_700_000_000
-SUPPORTED: Final = ["n", "size", "response_format", "user"]
 
 
 @dataclass
@@ -32,7 +32,6 @@ class Probe:
     api_key: str | None = None
     api_base: str | None = None
     organization: str | None = None
-    headers: dict[str, str] | None = None
     timeout: int | None = None
     client: Literal["sync", "async"] | None = None
     reply: Reply = field(default_factory=Reply)
@@ -60,16 +59,14 @@ def image_view(probe: Probe) -> Json:
     }
 
 
-def file_object(probe: Probe) -> Json:
+def file_object(probe: Probe) -> FileTypes:
     content = probe.image_content.encode()
     if probe.image_content_type is not None:
-        return [probe.image_filename or "upload", content, probe.image_content_type]
+        return (probe.image_filename or "upload", content, probe.image_content_type)
     if probe.image_filename is not None:
         return NamedBytesIO(content, probe.image_filename)
     return content
 
 
 def data_view(data: dict[str, Json], probe: Probe) -> Json:
-    return {name: value for name, value in data.items() if name != "image"} | {
-        "image": image_view(probe)
-    }
+    return {name: value for name, value in data.items() if name != "image"} | {"image": image_view(probe)}

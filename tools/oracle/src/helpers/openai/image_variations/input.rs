@@ -28,22 +28,12 @@ pub(crate) enum Failure {
     Failed,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct Reply {
-    pub(crate) status: u16,
+    pub(crate) status: Option<u16>,
     pub(crate) headers: ImageHeaders,
     pub(crate) body: String,
-}
-
-impl Default for Reply {
-    fn default() -> Self {
-        Self {
-            status: 200,
-            headers: ImageHeaders::new(),
-            body: String::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -65,7 +55,6 @@ pub(crate) struct Probe {
     pub(crate) api_key: Option<String>,
     pub(crate) api_base: Option<String>,
     pub(crate) organization: Option<String>,
-    pub(crate) headers: Option<ImageHeaders>,
     pub(crate) timeout: Option<i64>,
     pub(crate) client: Option<Kind>,
     #[serde(default)]
