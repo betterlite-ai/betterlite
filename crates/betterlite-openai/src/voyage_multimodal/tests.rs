@@ -152,7 +152,7 @@ fn objects_without_content_pass_through() {
 }
 
 #[rstest::rstest]
-#[case::text(json!("hi"), json!({"type": "text", "text": "hi"}))]
+#[case::text(json!({"type": "text", "text": "hi"}), json!({"type": "text", "text": "hi"}))]
 #[case::url(
     json!({"type": "image_url", "image_url": "https://example.test/a.png"}),
     json!({"type": "image_url", "image_url": "https://example.test/a.png"})

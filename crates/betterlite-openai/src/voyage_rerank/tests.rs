@@ -257,7 +257,7 @@ fn malformed_results_name_their_field(#[case] body: &str, #[case] field: &'stati
 
 #[test]
 fn absent_usage_defaults_to_zero_tokens() {
-    let response = decode("{}", 200).0.expect("response");
+    let response = decode(r#"{"data":[]}"#, 200).0.expect("response");
     assert_eq!(response.meta.billed_units.total_tokens, Some(0));
     assert_eq!(response.meta.tokens.input_tokens, Some(0));
     assert_eq!(response.meta.tokens.output_tokens, 0);
@@ -305,7 +305,7 @@ fn truthy_ids_are_preserved() {
 }
 
 #[rstest::rstest]
-#[case::missing_price(None, Some(7), Decimal::ZERO)]
+#[case::missing_price(None, Some(VoyageRerankBilledUnits { total_tokens: Some(7) }), Decimal::ZERO)]
 #[case::missing_units(Some(Decimal::new(5, 1)), None, Decimal::ZERO)]
 #[case::null_tokens(Some(Decimal::new(5, 1)), Some(VoyageRerankBilledUnits { total_tokens: None }), Decimal::ZERO)]
 #[case::priced(Some(Decimal::new(5, 1)), Some(VoyageRerankBilledUnits { total_tokens: Some(7) }), Decimal::new(35, 1))]

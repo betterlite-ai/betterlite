@@ -85,7 +85,9 @@ impl From<VoyageEmbeddingError> for Failure {
 impl From<VoyageRerankError> for Failure {
     fn from(error: VoyageRerankError) -> Self {
         match error {
-            VoyageRerankError::MissingApiKey | VoyageRerankError::NoResults => Self { status: None },
+            VoyageRerankError::MissingApiKey | VoyageRerankError::NoResults => {
+                Self { status: None }
+            }
             VoyageRerankError::Status { status } | VoyageRerankError::Decode { status, .. } => {
                 Self {
                     status: Some(status),
@@ -158,7 +160,7 @@ fn multimodal_call(call: &MultimodalCall) -> crate::helpers::HelperResult {
         call.reply.status,
         VoyageEmbeddingVariant::Multimodal,
     )
-    .map_err(|error| top_error(error))?;
+    .map_err(top_error)?;
     Ok(json!({
         "is_multimodal": voyage_multimodal::is_multimodal_embeddings(&call.model),
         "supported_params": voyage_multimodal::SUPPORTED_OPENAI_PARAMS,
@@ -170,10 +172,9 @@ fn multimodal_call(call: &MultimodalCall) -> crate::helpers::HelperResult {
 
 fn rerank_call(call: &RerankCall) -> crate::helpers::HelperResult {
     let uuid = Uuid::parse_str(&call.uuid).or_value_error()?;
-    let headers = voyage_rerank::api_key(call.api_key.as_deref(), |name| {
-        call.env.get(name).cloned()
-    })
-    .map(|key| voyage_rerank::headers(call.headers.clone(), &key));
+    let headers =
+        voyage_rerank::api_key(call.api_key.as_deref(), |name| call.env.get(name).cloned())
+            .map(|key| voyage_rerank::headers(call.headers.clone(), &key));
     let controls = VoyageRerankControls {
         top_n: call.top_n,
         return_documents: call.return_documents,
@@ -190,7 +191,7 @@ fn rerank_call(call: &RerankCall) -> crate::helpers::HelperResult {
         uuid,
         &mut recorder,
     )
-    .map_err(|error| top_error(error))?;
+    .map_err(top_error)?;
     Ok(json!({
         "supported_params": voyage_rerank::SUPPORTED_COHERE_RERANK_PARAMS,
         "headers": outcome(headers)?,
