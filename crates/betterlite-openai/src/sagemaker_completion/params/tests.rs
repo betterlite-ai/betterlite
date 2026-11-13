@@ -136,3 +136,44 @@ fn the_supported_options_keep_the_pinned_order() {
         ]
     );
 }
+
+#[test]
+fn a_falsy_allow_zero_temperature_flag_still_rewrites_a_zero_temperature() {
+    for flag in [
+        json!(null),
+        json!(false),
+        json!(0),
+        json!(0.0),
+        json!(""),
+        json!([]),
+        json!({}),
+    ] {
+        let mut requested = Options::from([
+            (String::from("temperature"), json!(0)),
+            (String::from("aws_sagemaker_allow_zero_temp"), flag.clone()),
+        ]);
+        let mut mapped = Options::new();
+        map_openai_params(&mut requested, &mut mapped);
+        assert_eq!(mapped.get("temperature"), Some(&json!(0.01)), "{flag}");
+    }
+}
+
+#[test]
+fn a_truthy_allow_zero_temperature_flag_keeps_a_zero_temperature() {
+    for flag in [
+        json!(true),
+        json!(1),
+        json!(-0.5),
+        json!("yes"),
+        json!([0]),
+        json!({"k": 0}),
+    ] {
+        let mut requested = Options::from([
+            (String::from("temperature"), json!(0)),
+            (String::from("aws_sagemaker_allow_zero_temp"), flag.clone()),
+        ]);
+        let mut mapped = Options::new();
+        map_openai_params(&mut requested, &mut mapped);
+        assert_eq!(mapped.get("temperature"), Some(&json!(0)), "{flag}");
+    }
+}
