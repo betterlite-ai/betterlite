@@ -1,5 +1,3 @@
-import base64
-import io
 import os
 import time
 from collections.abc import Awaitable
@@ -19,7 +17,7 @@ from openai import BadRequestError
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
-from openai_image_edits.multipart import Call, call_value
+from openai_image_edits.files import Call, FileSpec, call_value, files_value
 
 litellm.suppress_debug_info = True
 time.time = partial(float, 1_700_000_000)
@@ -31,11 +29,6 @@ FAMILIES: Final[dict[str, str]] = {
     "DallE2ImageEditConfig": "dall_e_2",
     "OpenAIImageEditConfig": "openai",
 }
-
-
-class FileSpec(TypedDict):
-    content_base64: str
-    name: str | None
 
 
 class Controls(TypedDict, total=False):
@@ -101,17 +94,6 @@ class EditHandler(Protocol):
     ) -> ImageResponse | Awaitable[ImageResponse]: ...
 
 
-class NamedBuffer(io.BufferedReader):
-    def __init__(self, raw: io.BytesIO, name: str) -> None:
-        super().__init__(raw)
-        self._name = name
-
-    @property
-    @override
-    def name(self) -> str:
-        return self._name
-
-
 class Fixture:
     def __init__(self, reply: Reply) -> None:
         self.reply = reply
@@ -147,22 +129,6 @@ def apply_globals(values: Controls) -> None:
     litellm.api_key = values.get("api_key")
     litellm.openai_key = values.get("openai_key")
     litellm.api_base = values.get("api_base")
-
-
-def file_value(spec: FileSpec | None) -> FileTypes | None:
-    if spec is None:
-        return None
-    data = base64.b64decode(spec["content_base64"])
-    name = spec["name"]
-    if name is None:
-        return data
-    return NamedBuffer(io.BytesIO(data), name)
-
-
-def files_value(specs: list[FileSpec | None] | None) -> list[FileTypes | None] | None:
-    if specs is None:
-        return None
-    return [file_value(spec) for spec in specs]
 
 
 def params_value(params: Controls) -> GenericLiteLLMParams:
