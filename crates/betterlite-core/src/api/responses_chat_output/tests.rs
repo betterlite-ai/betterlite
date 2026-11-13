@@ -505,6 +505,21 @@ fn null_choices_are_empty() {
 }
 
 #[test]
+fn unknown_thinking_block_types_fail() {
+    let error = failure(
+        r#"{"id":"c","created":1,"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":null,
+            "thinking_blocks":[{"type":"unexpected","data":"d"}]}}]}"#,
+    );
+    assert!(matches!(
+        error,
+        ChatOutputError::WrongType {
+            field: "thinking_blocks",
+            ..
+        }
+    ));
+}
+
+#[test]
 fn unsigned_thinking_blocks_make_no_reasoning_item() {
     let response = assemble(
         r#"{"id":"c","created":1,"model":"m","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"hi",
