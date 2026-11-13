@@ -303,6 +303,140 @@ fn batch_removed_403() {
 }
 
 #[test]
+fn per_model_estimate_resent_unchanged_allowed() {
+    let stored = support::fields(&[(
+        ESTIMATE_PER_MODEL_FIELD,
+        support::number_object(&[("gpt-4", 5)]),
+    )]);
+    let set = estimate_fields(&[OutputTokenEstimateField::EstimatePerModel]);
+    let same = support::limits(&[("gpt-4", 5)]);
+    let unchanged = OutputTokenEstimateRequest {
+        metadata: None,
+        estimate: None,
+        estimate_per_model: Some(&same),
+        model_fields_set: &set,
+    };
+    assert!(
+        enforce_estimate_admin_only(
+            &unchanged,
+            Some(&stored),
+            &caller("internal_user"),
+            ManagementEntity::Team,
+        )
+        .is_ok()
+    );
+    let other = support::limits(&[("gpt-4", 6)]);
+    let changed = OutputTokenEstimateRequest {
+        estimate_per_model: Some(&other),
+        ..unchanged
+    };
+    let outcome = enforce_estimate_admin_only(
+        &changed,
+        Some(&stored),
+        &caller("internal_user"),
+        ManagementEntity::Team,
+    );
+    assert!(matches!(
+        outcome.unwrap_err(),
+        AuthLimitInputsError::EstimateAdminOnly {
+            entity: ManagementEntity::Team
+        }
+    ));
+}
+
+#[test]
+fn integral_float_estimate_equals_integer() {
+    let stored = support::fields(&[(ESTIMATED_OUTPUT_TOKENS_FIELD, support::float(2000.0))]);
+    let set = estimate_fields(&[OutputTokenEstimateField::Estimate]);
+    let request = OutputTokenEstimateRequest {
+        metadata: None,
+        estimate: Some(2000),
+        estimate_per_model: None,
+        model_fields_set: &set,
+    };
+    assert!(
+        enforce_estimate_admin_only(
+            &request,
+            Some(&stored),
+            &caller("internal_user"),
+            ManagementEntity::Key,
+        )
+        .is_ok()
+    );
+    let other = OutputTokenEstimateRequest {
+        estimate: Some(2001),
+        ..request
+    };
+    assert!(
+        enforce_estimate_admin_only(
+            &other,
+            Some(&stored),
+            &caller("internal_user"),
+            ManagementEntity::Key,
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn stored_null_estimate_counts_as_absent() {
+    let stored = support::fields(&[(ESTIMATED_OUTPUT_TOKENS_FIELD, JsonData::Null)]);
+    let metadata = BTreeMap::new();
+    let set = estimate_fields(&[OutputTokenEstimateField::Metadata]);
+    let request = OutputTokenEstimateRequest {
+        metadata: Some(&metadata),
+        estimate: None,
+        estimate_per_model: None,
+        model_fields_set: &set,
+    };
+    assert!(
+        enforce_estimate_admin_only(
+            &request,
+            Some(&stored),
+            &caller("internal_user"),
+            ManagementEntity::Key,
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn batch_unsigned_values_compare_exactly() {
+    let large = JsonData::Number(serde_json::Number::from(u64::MAX));
+    let smaller = JsonData::Number(serde_json::Number::from(u64::MAX - 1));
+    let stored = support::fields(&[(BATCH_LIMIT_KEY, large.clone())]);
+    let same = support::fields(&[(BATCH_LIMIT_KEY, large)]);
+    let different = support::fields(&[(BATCH_LIMIT_KEY, smaller)]);
+    let set = batch_fields(&[BatchEnqueuedTokenLimitField::Metadata]);
+    let unchanged = BatchLimitRequest {
+        metadata: Some(&same),
+        model_fields_set: &set,
+    };
+    assert!(
+        enforce_batch_admin_only(
+            &unchanged,
+            Some(&stored),
+            &caller("internal_user"),
+            ManagementEntity::Key,
+        )
+        .is_ok()
+    );
+    let changed = BatchLimitRequest {
+        metadata: Some(&different),
+        model_fields_set: &set,
+    };
+    assert!(
+        enforce_batch_admin_only(
+            &changed,
+            Some(&stored),
+            &caller("internal_user"),
+            ManagementEntity::Key,
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn batch_admin_bypass() {
     let stored = support::fields(&[(BATCH_LIMIT_KEY, support::number(100000))]);
     let metadata = support::fields(&[]);

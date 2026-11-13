@@ -152,14 +152,7 @@ fn pydantic_integer(text: &str) -> Option<i64> {
         return None;
     }
     let digits = integral.strip_prefix(['+', '-']).unwrap_or(integral);
-    let malformed = digits.is_empty()
-        || digits.starts_with('_')
-        || digits.ends_with('_')
-        || digits.contains("__")
-        || !digits
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || byte == b'_');
-    if malformed {
+    if digits.starts_with('_') || digits.ends_with('_') || digits.contains("__") {
         return None;
     }
     integral.replace('_', "").parse::<i64>().ok()

@@ -141,14 +141,7 @@ fn float_limit(number: f64) -> ConvertedLimit {
 fn parsed_integer(text: &str) -> ConvertedLimit {
     let trimmed = text.trim();
     let digits = trimmed.strip_prefix(['+', '-']).unwrap_or(trimmed);
-    let malformed = digits.is_empty()
-        || digits.starts_with('_')
-        || digits.ends_with('_')
-        || digits.contains("__")
-        || !digits
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || byte == b'_');
-    if malformed {
+    if digits.starts_with('_') || digits.ends_with('_') || digits.contains("__") {
         return ConvertedLimit::Skipped;
     }
     match trimmed.replace('_', "").parse::<i64>() {

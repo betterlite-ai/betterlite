@@ -29,6 +29,7 @@ fn estimate(
 #[case::underscored(support::text("1_0"), 10)]
 #[case::whole_float(support::float(12.0), 12)]
 #[case::signed_string(support::text("+12"), 12)]
+#[case::underscored_with_zero_fraction(support::text("1_0.00"), 10)]
 fn positive_int_coercion(value: JsonData, expected: i64) {
     let auth = support::auth(&[("metadata", global_metadata(value))]);
     let (estimate, warnings) = estimate(&auth, None);
@@ -51,6 +52,12 @@ fn zero_negative_invalid_warn(value: JsonData) {
 #[case::text(support::text("abc"))]
 #[case::fraction(support::float(1.5))]
 #[case::padded_fraction(support::text("1.5"))]
+#[case::trailing_dot(support::text("12."))]
+#[case::leading_underscore(support::text("_12"))]
+#[case::trailing_underscore(support::text("12_"))]
+#[case::doubled_underscore(support::text("1__2"))]
+#[case::underscore_in_fraction(support::text("12.0_0"))]
+#[case::sign_only(support::text("+"))]
 #[case::list(JsonData::Array(Vec::new()))]
 #[case::map(JsonData::Object(std::collections::BTreeMap::new()))]
 fn malformed_scalar_warn(value: JsonData) {

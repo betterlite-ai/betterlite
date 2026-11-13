@@ -22,17 +22,24 @@ pub(crate) fn model_limits(
     auth: &UserAPIKeyAuth,
     model_name: Option<&str>,
     catalog: Option<&dyn DeploymentLimitCatalog>,
-    rpm: bool,
 ) -> ModelLimitResult {
-    let query = ModelLimitQuery {
+    get_key_model_rpm_limit(&ModelLimitQuery {
         auth,
         model_name,
         catalog,
-    };
-    if rpm {
-        return get_key_model_rpm_limit(&query);
-    }
-    get_key_model_tpm_limit(&query)
+    })
+}
+
+pub(crate) fn tpm_limits(
+    auth: &UserAPIKeyAuth,
+    model_name: Option<&str>,
+    catalog: Option<&dyn DeploymentLimitCatalog>,
+) -> ModelLimitResult {
+    get_key_model_tpm_limit(&ModelLimitQuery {
+        auth,
+        model_name,
+        catalog,
+    })
 }
 
 pub(crate) fn fields(entries: &[(&str, JsonData)]) -> BTreeMap<String, JsonData> {
