@@ -1,0 +1,11 @@
+task: B1525
+deviations:
+  - what: A Fal reply whose bytes are not JSON, or whose JSON root is not an object, fails with a typed error that keeps the upstream status and headers.
+    why: LiteLLM wraps only the JSON parse in its error construction and raises an unhandled AttributeError on a non-object root, so the client sees a 500 with the upstream status lost. No working Fal setup returns a non-object image reply, so the fix breaks nobody.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/transformation.py#L126-L137
+  - what: A Fal image reply larger than 16 MiB is refused with a typed error that keeps the upstream status and headers.
+    why: LiteLLM reads the reply without a size limit; bounded-inputs requires one on a body that comes from outside, and a reply that large is not an image result any setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/transformation.py#L127
+  - what: A GPT Image size string part that Python's int() reads past i64, such as a 20-digit dimension, keeps its original string instead of becoming an unbounded integer.
+    why: betterlite's decoded dimensions are i64; Python integers are unbounded. No working image request sends a dimension that large.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/gpt_image_2_transformation.py#L32-L36
