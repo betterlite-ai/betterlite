@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-truncate-wide-over
+call: {"messages_content_primitives": {"operation": "truncate_tool_name", "name": "日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日"}}
+env: {}
+compare: {ignore: []}

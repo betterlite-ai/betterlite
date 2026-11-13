@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-consumes-claude
+call: {"messages_content_primitives": {"operation": "consumes_cache_control", "model": "claude-3"}}
+env: {}
+compare: {ignore: []}
