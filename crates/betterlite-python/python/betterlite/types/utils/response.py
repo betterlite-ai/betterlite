@@ -7,6 +7,7 @@ from pydantic import JsonValue, PrivateAttr
 from typing_extensions import override
 
 from betterlite.types.utils.base import (
+    DictJsonObject,
     Dumpable,
     DumpOptions,
     InitValue,
@@ -85,7 +86,7 @@ class ModelResponseBase(ResponseObject):
         return dumped
 
 
-class ModelResponse(ModelResponseBase):
+class ModelResponse(ModelResponseBase, DictJsonObject):
     choices: list[Choices]
 
     @override
@@ -115,7 +116,7 @@ class ModelResponse(ModelResponseBase):
             self._response_headers = dict(_response_headers)
 
 
-class ModelResponseStream(ModelResponseBase):
+class ModelResponseStream(ModelResponseBase, DictJsonObject):
     choices: list[StreamingChoices]
     provider_specific_fields: dict[str, JsonValue] | None = None
 

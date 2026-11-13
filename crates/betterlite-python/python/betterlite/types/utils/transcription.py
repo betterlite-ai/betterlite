@@ -3,7 +3,7 @@ from typing import ClassVar, Literal
 from pydantic import ConfigDict, JsonValue, PrivateAttr
 from typing_extensions import override
 
-from betterlite.types.utils.base import ResponseObject
+from betterlite.types.utils.base import DictJsonObject, ResponseObject
 
 
 class TranscriptionUsageDurationObject(ResponseObject):  # ast-grep-ignore: no-long-names
@@ -32,7 +32,7 @@ class TranscriptionUsageTokensObject(ResponseObject):
     input_token_details: TranscriptionUsageInputTokenDetailsObject
 
 
-class TranscriptionResponse(ResponseObject):
+class TranscriptionResponse(DictJsonObject):
     text: str | None = None
     # ast-grep-ignore: no-long-names
     usage: TranscriptionUsageDurationObject | TranscriptionUsageTokensObject | None = None

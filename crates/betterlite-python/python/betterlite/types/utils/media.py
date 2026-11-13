@@ -7,6 +7,7 @@ from pydantic.main import IncEx
 from typing_extensions import override
 
 from betterlite.types.utils.base import (
+    DictJsonObject,
     InitValue,
     ModelValue,
     ResponseObject,
@@ -17,7 +18,7 @@ from betterlite.types.utils.base import (
 Selection: TypeAlias = IncEx
 
 
-class ImageObject(ResponseObject):
+class ImageObject(DictJsonObject):
     b64_json: str | None = None
     url: str | None = None
     revised_prompt: str | None = None
@@ -47,7 +48,7 @@ class ImageUsage(ResponseObject):
     total_tokens: int
 
 
-class ImageResponse(ResponseObject):
+class ImageResponse(DictJsonObject):
     created: int
     background: Literal["transparent", "opaque"] | None = None
     data: list[ImageObject]

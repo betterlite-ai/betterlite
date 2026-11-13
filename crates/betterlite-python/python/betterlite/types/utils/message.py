@@ -5,6 +5,7 @@ from pydantic import JsonValue
 from typing_extensions import override
 
 from betterlite.types.utils.base import (
+    DictJsonObject,
     Dumpable,
     InitValue,
     ModelValue,
@@ -53,7 +54,7 @@ def add_provider_specific_fields(
             return
 
 
-class Message(ResponseObject):
+class Message(DictJsonObject):
     content: str | None
     role: MessageRole
     tool_calls: list[ChatCompletionMessageToolCall | MessageCustomToolCall] | None

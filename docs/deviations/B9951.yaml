@@ -1,8 +1,8 @@
 task: B9951
 deviations:
-  - what: "json() returns the model_dump dict on every response object, where LiteLLM's Delta, Choices, StreamingChoices, Usage, TextChoices, ChatCompletionMessageToolCall and the other classes that do not define json() inherit pydantic's deprecated json(), which returns a JSON string."
-    why: "The task asks for the json() LiteLLM's classes define, and the classes that define it return the dump; a base method cannot switch on the class, and a caller of Message, ModelResponse or EmbeddingResponse that indexes response.json() has to keep working. A caller that read one of the other classes' json() as text now gets a dict."
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1507
+  - what: "json() returns pydantic's model_dump_json() text without raising pydantic's deprecation warning, where LiteLLM's Delta, Choices, StreamingChoices, Usage, ChatCompletionMessageToolCall and the other classes that do not define json() inherit pydantic's deprecated json(), which returns the same text and warns."
+    why: "The text a caller reads is the same, so json.loads(response.json()) keeps working; a warning is Python runtime noise no working setup relies on, and the wheel's strict type check treats the deprecated call as an error."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1857-L1872
   - what: "A pydantic model inside provider_specific_fields is dumped with exclude_unset=True when the object is built, where LiteLLM stores the model in its dict[str, Any] field and serializes it with the options of the model_dump() call on the parent."
     why: "The declared field type is dict[str, JsonValue], and pydantic rejects a model during validation; dumping at construction reproduces LiteLLM's exclude_unset=True output, and a parent dump without exclude_unset then carries fewer None keys than LiteLLM's."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1644

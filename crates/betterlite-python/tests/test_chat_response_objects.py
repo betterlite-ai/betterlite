@@ -253,8 +253,8 @@ def test_access_dict_parity() -> None:
     assert message.dict() == reference_message.dict()  # pyright: ignore[reportDeprecated]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1499-L1504
     assert message.dict(exclude_none=True) == reference_message.dict(exclude_none=True)  # pyright: ignore[reportDeprecated]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1499-L1504
     usage = betterlite_utils.Usage()
-    dumped_usage: JsonValue = usage.json(exclude_none=True)
-    assert dumped_usage == usage.model_dump()
+    assert parse_object(usage.json(exclude_none=True)) == parse_object(
+        litellm_utils.Usage().model_dump_json(exclude_none=True))
 
 
 def test_dump_message_choices() -> None:

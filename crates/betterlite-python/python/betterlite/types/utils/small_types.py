@@ -5,7 +5,13 @@ from typing import ClassVar, Literal, TypeAlias
 from pydantic import ConfigDict, JsonValue, PrivateAttr
 from typing_extensions import override
 
-from betterlite.types.utils.base import InitValue, ModelValue, ResponseObject, dump_value
+from betterlite.types.utils.base import (
+    DictJsonObject,
+    InitValue,
+    ModelValue,
+    ResponseObject,
+    dump_value,
+)
 from betterlite.types.utils.grader_content import GraderContent, GraderRole
 from betterlite.types.utils.usage import Usage
 
@@ -209,7 +215,7 @@ def error_value(value: JsonValue) -> JsonValue:
 
 
 # ast-grep-ignore: no-long-names
-class LiteLLMRealtimeStreamLoggingObject(ResponseObject):
+class LiteLLMRealtimeStreamLoggingObject(DictJsonObject):
     results: list[JsonValue]
     usage: Usage
     service_tier: str | None = None

@@ -6,6 +6,7 @@ from pydantic import JsonValue, PrivateAttr
 from typing_extensions import override
 
 from betterlite.types.utils.base import (
+    DictJsonObject,
     DumpOptions,
     InitValue,
     ModelValue,
@@ -25,7 +26,7 @@ class Logprobs(ResponseObject):
     top_logprobs: list[dict[str, float] | None] | None
 
 
-class TextChoices(ResponseObject):
+class TextChoices(DictJsonObject):
     finish_reason: ClassVar[FinishReason | None]
     index: ClassVar[int | None]
     text: ClassVar[str | None]
@@ -50,7 +51,7 @@ class TextChoices(ResponseObject):
         )
 
 
-class HiddenParams(ResponseObject):
+class HiddenParams(DictJsonObject):
     original_response: JsonValue = None
     model_id: str | None = None
     api_base: str | None = None

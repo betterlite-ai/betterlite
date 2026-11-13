@@ -132,6 +132,41 @@ class ResponseObject(BaseModel):
         dumped: dict[str, JsonValue] = super().model_dump(**kwargs)
         return dumped
 
+    @override
+    def dict(
+        self, *, include: IncEx | None = None, exclude: IncEx | None = None,
+        by_alias: bool = False, exclude_unset: bool = False,
+        exclude_defaults: bool = False, exclude_none: bool = False,
+    ) -> dict[str, JsonValue]:
+        return self.model_dump(
+            include=include, exclude=exclude, by_alias=by_alias,
+            exclude_unset=exclude_unset, exclude_defaults=exclude_defaults,
+            exclude_none=exclude_none,
+        )
+
+    @override
+    def json(
+        self, *, include: IncEx | None = None, exclude: IncEx | None = None,
+        by_alias: bool = False, exclude_unset: bool = False,
+        exclude_defaults: bool = False, exclude_none: bool = False,
+        encoder: Callable[[JsonValue], JsonValue] | None = None,
+        models_as_dict: bool = False, **dumps_kwargs: JsonValue,
+    ) -> str:
+        # pydantic's json() text without its deprecation warning; the dump classes below override it
+        if encoder is not None or models_as_dict or dumps_kwargs:
+            raise TypeError("json() takes no encoder, models_as_dict or extra arguments")
+        return self.model_dump_json(
+            include=include, exclude=exclude, by_alias=by_alias,
+            exclude_unset=exclude_unset, exclude_defaults=exclude_defaults,
+            exclude_none=exclude_none,
+        )
+
+
+class DictJsonObject(ResponseObject):
+    @override
+    def __init__(self, **data: InitValue) -> None:
+        super().__init__(**data)
+
     @overload
     def json(self, *args: JsonValue) -> dict[str, JsonValue]: ...
 
@@ -146,20 +181,8 @@ class ResponseObject(BaseModel):
 
     @override
     def json(self, *_args: JsonValue, **_kwargs: JsonCallValue) -> JsonValue:
-        # json() dumps like LiteLLM's; the second overload matches pydantic's deprecated signature.
+        # LiteLLM dumps here; the second overload matches pydantic's deprecated signature
         if _args:
             raise TypeError("json() takes no positional arguments")
         dumped: dict[str, JsonValue] = self.model_dump()
         return dumped
-
-    @override
-    def dict(
-        self, *, include: IncEx | None = None, exclude: IncEx | None = None,
-        by_alias: bool = False, exclude_unset: bool = False,
-        exclude_defaults: bool = False, exclude_none: bool = False,
-    ) -> dict[str, JsonValue]:
-        return self.model_dump(
-            include=include, exclude=exclude, by_alias=by_alias,
-            exclude_unset=exclude_unset, exclude_defaults=exclude_defaults,
-            exclude_none=exclude_none,
-        )

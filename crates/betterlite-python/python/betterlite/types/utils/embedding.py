@@ -4,7 +4,14 @@ from typing import Literal
 from pydantic import Field, JsonValue, PrivateAttr
 from typing_extensions import override
 
-from betterlite.types.utils.base import Dumpable, InitValue, ModelValue, ResponseObject, dump_value
+from betterlite.types.utils.base import (
+    DictJsonObject,
+    Dumpable,
+    InitValue,
+    ModelValue,
+    ResponseObject,
+    dump_value,
+)
 from betterlite.types.utils.usage import Usage
 
 
@@ -14,7 +21,7 @@ class Embedding(ResponseObject):
     object: Literal["embedding"]
 
 
-class EmbeddingResponse(ResponseObject):
+class EmbeddingResponse(DictJsonObject):
     model: str | None = None
     data: list[JsonValue]
     object: Literal["list"]
