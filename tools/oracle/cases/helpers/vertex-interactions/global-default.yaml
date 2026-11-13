@@ -1,0 +1,11 @@
+kind: helper
+name: vertex-interactions-global-default
+call:
+  vertex_interactions:
+    mint: {token: minted-token}
+    calls:
+      - {function: url, litellm_params: {vertex_project: project-1}}
+      - {function: url, litellm_params: {vertex_ai_project: alias-project}}
+      - {function: url, litellm_params: {vertex_project: project-1, vertex_location: ""}}
+env: {}
+compare: {ignore: []}

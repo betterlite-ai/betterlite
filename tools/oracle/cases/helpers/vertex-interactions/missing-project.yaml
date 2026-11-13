@@ -1,0 +1,9 @@
+kind: helper
+name: vertex-interactions-missing-project
+call:
+  vertex_interactions:
+    mint: {token: minted-token}
+    calls:
+      - {function: url}
+env: {}
+compare: {ignore: []}

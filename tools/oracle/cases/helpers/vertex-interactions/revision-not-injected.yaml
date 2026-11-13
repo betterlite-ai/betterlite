@@ -1,0 +1,11 @@
+kind: helper
+name: vertex-interactions-revision-not-injected
+call:
+  vertex_interactions:
+    mint: {token: minted-token, project: callback-project}
+    calls:
+      - {function: headers, litellm_params: {vertex_project: project-1}}
+      - {function: identity}
+      - {function: headers}
+env: {}
+compare: {ignore: []}

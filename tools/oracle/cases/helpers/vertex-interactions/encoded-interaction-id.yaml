@@ -1,0 +1,12 @@
+kind: helper
+name: vertex-interactions-encoded-interaction-id
+call:
+  vertex_interactions:
+    mint: {token: minted-token}
+    calls:
+      - {function: lifecycle, action: get, interaction_id: "a/b c?d#e%", litellm_params: {vertex_project: project-1}}
+      - {function: lifecycle, action: delete, interaction_id: "a-b.c_d~e", litellm_params: {vertex_project: project-1}}
+      - {function: lifecycle, action: cancel, interaction_id: "é", litellm_params: {vertex_project: project-1}}
+      - {function: lifecycle, action: get, interaction_id: "project-1", api_base: "https://proxy.example/v1", litellm_params: {vertex_project: project-1, vertex_location: us-central1}}
+env: {}
+compare: {ignore: []}

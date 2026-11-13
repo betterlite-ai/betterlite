@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-interactions-targets-seed
+call:
+  vertex_interactions:
+    mint: {token: minted-token}
+    calls:
+      - {function: url, litellm_params: {vertex_project: project-1}}
+      - {function: url, litellm_params: {vertex_project: project-1, vertex_location: us-central1}, stream: true}
+      - {function: url, litellm_params: {vertex_ai_project: alias-project, vertex_ai_location: eu}, api_base: "https://proxy.example/v1"}
+      - {function: lifecycle, action: get, interaction_id: "a/b c?d#e%", litellm_params: {vertex_project: project-1}}
+      - {function: lifecycle, action: delete, interaction_id: "a-b.c_d~e"}
+      - {function: lifecycle, action: cancel, interaction_id: "é", api_base: ""}
+env: {}
+compare: {ignore: []}
