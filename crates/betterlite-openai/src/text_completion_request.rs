@@ -101,18 +101,11 @@ impl CompletionPrompt {
     // main.py builds one user message per string, or one user message holding the token prompt
     #[must_use]
     pub fn messages(&self) -> Option<Vec<Value>> {
-        match self {
-            Self::Texts(texts) if !texts.is_empty() => Some(
-                texts
-                    .iter()
-                    .map(|text| user_message(Value::String(text.clone())))
-                    .collect(),
-            ),
-            Self::Text(_) | Self::Tokens(_) | Self::TokenLists(_) => {
-                Some(vec![user_message(self.to_value())])
-            }
-            Self::Texts(_) | Self::Unmapped(_) => None,
+        if let Self::Texts(texts) = self {
+            return (!texts.is_empty())
+                .then(|| texts.iter().map(|text| user_message(Value::from(text.as_str()))).collect());
         }
+        (!matches!(self, Self::Unmapped(_))).then(|| vec![user_message(self.to_value())])
     }
 
     #[must_use]
