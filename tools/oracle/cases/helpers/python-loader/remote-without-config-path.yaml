@@ -1,0 +1,9 @@
+kind: helper
+name: remote-without-config-path
+call:
+  b8042:
+    op: load
+    value: s3://bucket/path/module.instance
+    config_file_path: null
+env: {}
+compare: {ignore: []}
