@@ -160,10 +160,10 @@ fn batch_of(response: &Value, local: &LocalTimeContext) -> Result<BatchObject, O
 }
 
 fn list_outcome(page: &Value, local: &LocalTimeContext) -> Value {
-    let Ok(page) = serde_json::from_value::<VertexBatchJobPage>(page.clone()) else {
+    let Ok(decoded) = serde_json::from_value::<VertexBatchJobPage>(page.clone()) else {
         return json!({"ok": false, "status": Value::Null});
     };
-    match to_batch_list(&page, local) {
+    match to_batch_list(&decoded, local) {
         Ok(list) => json!({"ok": true, "page": page_state(&list)}),
         Err(error) => json!({"ok": false, "status": error.status_code()}),
     }
