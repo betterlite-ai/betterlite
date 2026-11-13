@@ -675,12 +675,15 @@ const SEARCH_FAILURES: [Pair; 2] = [
 
 #[test]
 fn hosted_keys_appear_once() {
-    let source = r#"{"type":"web_search_20250305","name":"s","cache_control":null,"function":{"cache_control":{"type":"ephemeral"}},"defer_loading":true}"#;
-    let text = serde_json::to_string(&mapping(source).tools).unwrap();
+    // no nested function, so each key can only come from the hosted tool's own top level
+    let plain = r#"{"type":"web_search_20250305","name":"s","cache_control":{"type":"ephemeral"},"defer_loading":true}"#;
+    let text = serde_json::to_string(&mapping(plain).tools).unwrap();
     assert_eq!(text.matches("\"cache_control\"").count(), 1);
     assert_eq!(text.matches("\"defer_loading\"").count(), 1);
+    // a null top-level value falls back to the nested one, and the copied function keeps its own
+    let nested = r#"{"type":"web_search_20250305","name":"s","cache_control":null,"function":{"cache_control":{"type":"ephemeral"}},"defer_loading":true}"#;
     assert_eq!(
-        as_json(&mapping(source).tools),
+        as_json(&mapping(nested).tools),
         json(
             r#"[{"type":"web_search_20250305","name":"s","cache_control":{"type":"ephemeral"},"function":{"cache_control":{"type":"ephemeral"}},"defer_loading":true}]"#
         )
