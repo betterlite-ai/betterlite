@@ -1,0 +1,11 @@
+task: B1371
+deviations:
+  - what: A batch job response without a usable createTime, or with a state outside Vertex's twelve job states, returns a typed error naming the field instead of an unhandled ValueError or KeyError.
+    why: Vertex always sends createTime and one of the twelve states, so no working setup reaches this path; the source raises out of the transformation and becomes a 500 the caller cannot act on, while betterlite keeps the failure at the transformation with its cause.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/transformation.py#L184-L191
+  - what: A row's tokenCount or promptTokenCount is read only when it is a JSON integer or a string of ASCII digits; a digit string in another script falls back to zero, where Python's str.isdigit and int accept it.
+    why: Token counts are integers in the types LiteLLM declares, and no Vertex response spells a count in another script; docs/compatibility.md leaves Python's runtime string behaviour out of the contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/transformation.py#L22-L26
+  - what: An endpoints/ path component names a tuned model only when it is an ASCII digit string; Python's str.isdigit also accepts digits from other scripts.
+    why: The component is used as a Vertex resource id, which is an ASCII decimal number; a non-ASCII spelling never reaches a working endpoint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/transformation.py#L389-L392

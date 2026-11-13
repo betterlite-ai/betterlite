@@ -1,0 +1,15 @@
+kind: helper
+name: vertex-batch-records-output-prefix-absent
+call:
+  vertex_batch_records:
+    operation: job
+    zone: UTC
+    calls:
+      - response: {name: "projects/p/locations/l/batchPredictionJobs/1", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_SUCCEEDED, inputConfig: {}, outputInfo: {}}
+      - response: {name: "projects/p/locations/l/batchPredictionJobs/2", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_SUCCEEDED, outputInfo: {gcsOutputDirectory: ""}}
+      - response: {name: "projects/p/locations/l/batchPredictionJobs/3", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_SUCCEEDED, outputInfo: {gcsOutputDirectory: "///"}}
+      - response: {createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_SUCCEEDED, inputConfig: {gcsSource: {uris: ["gs://b/in.jsonl", "gs://b/other.jsonl"]}}, outputInfo: {gcsOutputDirectory: "gs://b/out//"}}
+      - response: {name: "projects/p/locations/l/batchPredictionJobs/5", createTime: "2024-01-01T00:00:00.000000Z", state: null}
+      - response: {name: "projects/p/locations/l/batchPredictionJobs/6", state: JOB_STATE_SUCCEEDED}
+env: {TZ: UTC}
+compare: {ignore: []}
