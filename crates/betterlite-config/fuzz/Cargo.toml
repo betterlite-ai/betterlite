@@ -100,3 +100,10 @@ path = "fuzz_targets/tool_prices.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "replicate_price"
+path = "fuzz_targets/replicate_price.rs"
+test = false
+doc = false
+bench = false
