@@ -19,17 +19,13 @@ pub fn map_effort_to_level(
     support: &dyn MinimalEffortSupport,
 ) -> Result<ThinkingConfig, GeminiThinkingError> {
     let base = base_config(effort)?;
-    let minimal_requested = matches!(effort, "minimal" | "disable" | "none");
-    let thinking_level =
-        if minimal_requested && model.is_some_and(|name| supports_minimal_level(name, support)) {
-            ThinkingLevel::Minimal
-        } else if effort == "medium" {
-            ThinkingLevel::Medium
-        } else if effort == "high" {
-            ThinkingLevel::High
-        } else {
-            ThinkingLevel::Low
-        };
+    let minimal = model.is_some_and(|name| supports_minimal_level(name, support));
+    let thinking_level = match effort {
+        "medium" => ThinkingLevel::Medium,
+        "high" => ThinkingLevel::High,
+        "minimal" | "disable" | "none" if minimal => ThinkingLevel::Minimal,
+        _ => ThinkingLevel::Low,
+    };
     Ok(ThinkingConfig {
         thinking_level: Some(thinking_level),
         ..base

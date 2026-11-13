@@ -52,12 +52,7 @@ class ServerFlagsStep(TypedDict):
 
 
 Step: TypeAlias = (
-    ReasoningEffortStep
-    | ThinkingStep
-    | FormatStep
-    | ModalitiesStep
-    | AudioStep
-    | ServerFlagsStep
+    ReasoningEffortStep | ThinkingStep | FormatStep | ModalitiesStep | AudioStep | ServerFlagsStep
 )
 
 
