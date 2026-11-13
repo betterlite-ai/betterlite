@@ -427,7 +427,7 @@ fn aiml_data_base64_uses_the_truthy_fallback_and_keeps_revised_prompt() {
     let response = decode(
         Host::Aiml,
         200,
-        r#"{"data":[{"b64_json":"","image_base64":"fallback","revised_prompt":"paint"},{"b64_json":"direct","image_base64":"other"}]}"#,
+        r#"{"data":[{"b64_json":"","image_base64":"fallback","revised_prompt":"paint"},{"b64_json":"direct","image_base64":"other"},{"b64_json":"alone"},{"image_base64":"only"}]}"#,
     )
     .expect("a data reply");
     assert_eq!(
@@ -435,6 +435,8 @@ fn aiml_data_base64_uses_the_truthy_fallback_and_keeps_revised_prompt() {
         &[
             image(None, Some("fallback"), Some("paint")),
             image(None, Some("direct"), None),
+            image(None, Some("alone"), None),
+            image(None, Some("only"), None),
         ]
     );
 }
@@ -627,6 +629,21 @@ fn a_reply_over_the_body_limit_is_refused() {
     let error = decode_compatible_image_reply(Host::Aiml, &response, ImageResponse::default())
         .expect_err("an oversized reply");
     assert!(matches!(error, CompatibleImageReplyError::TooLarge { .. }));
+}
+
+#[test]
+fn a_reply_at_the_body_limit_is_still_decoded() {
+    let mut body = br#"{"data":[]}"#.to_vec();
+    body.resize(super::reply::MAX_REPLY_BYTES, b' ');
+    let response = ImageHttpResponse {
+        status_code: 200,
+        headers: ImageHeaders::new(),
+        body,
+    };
+    let decoded =
+        decode_compatible_image_reply(Host::CometApi, &response, ImageResponse::default())
+            .expect("a reply of exactly the limit");
+    assert!(images(&decoded).is_empty());
 }
 
 #[test]
