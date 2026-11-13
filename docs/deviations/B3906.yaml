@@ -28,15 +28,6 @@ deviations:
       unmasked, and the metadata key is dropped so it never reaches an attribute.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L695-L711
   - what: >-
-      The proxy request's method, url and scrubbed headers are written to the trace metadata under
-      proxy_server_request. The pin builds the same clean_headers map and then never emits it.
-    why: >-
-      The source reads the method and url and filters authorization, cookie and referer out of the
-      headers, then drops the result, so the task's scrubbed-header contract has no consumer. betterlite
-      attaches the scrubbed copy and drops exactly the three credential headers, so no header the
-      denylist does not name travels raw.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L800-L810
-  - what: >-
       The preset cache key that the cache_key tag falls back to arrives as a caller-supplied
       preset_cache_key instead of being read from litellm.cache._get_preset_cache_key_from_kwargs. The
       owner of the cache leaf passes it; without one the tag reads cache_key:None as the source's own

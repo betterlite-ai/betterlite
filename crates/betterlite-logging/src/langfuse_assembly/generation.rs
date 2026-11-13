@@ -222,9 +222,10 @@ fn prompt_metadata(
     if matches!(stored, Json::Null) {
         return Ok(None);
     }
-    serde_json::from_value(stored.clone())
-        .map(Some)
-        .map_err(AssemblyError::PromptMetadata)
+    let decoded = serde_json::to_value(stored)
+        .and_then(serde_json::from_value::<PromptManagementMetadata>)
+        .map_err(AssemblyError::PromptMetadata)?;
+    Ok(Some(decoded))
 }
 
 fn masked_value(value: Option<&Json>, redacted: bool) -> Option<Json> {

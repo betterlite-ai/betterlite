@@ -13,7 +13,6 @@ use super::AssemblyInput;
 
 pub(super) const DENIED_STEERING_KEYS: [&str; 4] =
     ["headers", "endpoint", "caching_groups", "previous_models"];
-pub(super) const REDACTED_PROXY_HEADERS: [&str; 3] = ["authorization", "cookie", "referer"];
 
 // the metadata fields _log_langfuse_v2 pops out before it builds a trace, and the flags it derives from them
 pub struct Steering {
@@ -113,6 +112,7 @@ fn hidden_cache_key(metadata: &IndexMap<String, Json>) -> Option<String> {
 }
 
 // a Rust masking function cannot fail, so the projection's warning path never fires
+#[must_use]
 pub fn mask(
     masker: Option<&dyn Fn(&Json) -> Json>,
     input: Option<&Json>,
@@ -124,8 +124,11 @@ pub fn mask(
     }
 }
 
+// without a configured function the value travels unmasked, as the source's `else input` branch does
 fn masked_value(masker: Option<&dyn Fn(&Json) -> Json>, value: Option<&Json>) -> Option<Json> {
-    let masker = masker?;
+    let Some(masker) = masker else {
+        return value.cloned();
+    };
     let value = value?;
     let adapter = |node: &Json| -> Result<Json, Infallible> { Ok(masker(node)) };
     Some(apply_masking_function(value, &adapter))

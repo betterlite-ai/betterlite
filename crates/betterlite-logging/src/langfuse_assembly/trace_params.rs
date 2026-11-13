@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 
 use crate::fields::payload::StandardLoggingPayload;
 
-use super::metadata::{Masked, REDACTED_PROXY_HEADERS, Steering};
+use super::metadata::{Masked, Steering};
 use super::trace_ids::CallTrace;
 use super::{AssemblyInput, REDACTED_BY_LITELLM};
 
@@ -41,7 +41,6 @@ pub fn build(
         let values = tags.iter().cloned().map(Json::Text).collect();
         params.insert("tags".to_owned(), Json::List(values));
     }
-    add_proxy_request(&mut params, request.input.trace.litellm_params);
     TraceParams { params }
 }
 
@@ -216,45 +215,4 @@ fn add_proxy_base_tag(request: &TracePlanRequest<'_>, tags: &mut Vec<String>) {
     if let Some(base) = base {
         tags.push(format!("proxy_base_url:{base}"));
     }
-}
-
-// LiteLLM scrubs the three credential headers here; betterlite keeps the scrubbed copy in the trace metadata
-fn add_proxy_request(params: &mut IndexMap<String, Json>, litellm_params: Option<&Json>) {
-    let Some(Json::Object(request)) = super::proxy_request(litellm_params) else {
-        return;
-    };
-    let mut entry = IndexMap::new();
-    entry.insert(
-        "method".to_owned(),
-        request.get("method").cloned().unwrap_or(Json::Null),
-    );
-    entry.insert(
-        "url".to_owned(),
-        request.get("url").cloned().unwrap_or(Json::Null),
-    );
-    entry.insert(
-        "headers".to_owned(),
-        Json::Object(clean_headers(request.get("headers"))),
-    );
-    let mut metadata = match params.shift_remove("metadata") {
-        Some(Json::Object(fields)) => fields,
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-        | None => IndexMap::new(),
-    };
-    metadata.insert("proxy_server_request".to_owned(), Json::Object(entry));
-    params.insert("metadata".to_owned(), Json::Object(metadata));
-}
-
-fn clean_headers(headers: Option<&Json>) -> IndexMap<String, Json> {
-    let Some(Json::Object(headers)) = headers else {
-        return IndexMap::new();
-    };
-    headers
-        .iter()
-        .filter(|(key, _value)| {
-            let lowered = key.to_lowercase();
-            !REDACTED_PROXY_HEADERS.contains(&lowered.as_str())
-        })
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect()
 }

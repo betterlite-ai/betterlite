@@ -248,23 +248,25 @@ fn the_proxy_base_url_tag_needs_the_default_tag() {
 }
 
 #[test]
-fn proxy_headers_lose_the_credential_keys() {
+fn proxy_request_headers_never_reach_an_attribute() {
     let mut case = fixture();
     case.inputs.litellm_params = value(
         r#"{"proxy_server_request": {"method": "POST", "url": "http://proxy/v1/chat",
             "headers": {"Authorization": "Bearer secret", "Cookie": "a=b",
-                        "Referer": "http://elsewhere", "X-Trace": "keep"}}}"#,
+                        "Referer": "http://elsewhere", "X-Api-Key": "sk-leak"}}}"#,
     );
     let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
-    let request = json(generation, "langfuse.trace.metadata.proxy_server_request")
-        .expect("the proxy request metadata");
-    assert_eq!(
-        request,
-        value(
-            r#"{"method": "POST", "url": "http://proxy/v1/chat", "headers": {"X-Trace": "keep"}}"#
-        )
-    );
+    assert!(absent(
+        generation,
+        "langfuse.trace.metadata.proxy_server_request"
+    ));
+    for pair in &generation.attributes {
+        let rendered = format!("{:?}", pair.value);
+        assert!(!rendered.contains("Bearer secret"), "{}", pair.key);
+        assert!(!rendered.contains("sk-leak"), "{}", pair.key);
+        assert!(!rendered.contains("a=b"), "{}", pair.key);
+    }
 }
 
 #[test]
