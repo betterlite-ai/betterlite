@@ -526,7 +526,7 @@ fn a_non_empty_web_search_options_logs_its_sorted_keys() {
     assert!(
         log.contains("Groq web search enabled; ignoring unsupported web_search_options fields")
     );
-    assert!(log.contains("search_context_size"));
+    assert!(log.contains(r#"["search_context_size", "user_location"]"#));
 }
 
 #[test]

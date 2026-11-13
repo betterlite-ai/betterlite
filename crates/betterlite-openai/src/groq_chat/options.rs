@@ -200,10 +200,13 @@ fn add_web_search(
     optional_params: &mut Object,
     web_search: &Value,
 ) -> Result<(), GroqChatError> {
-    if carries_fields(web_search) {
+    // LiteLLM logs only a non-empty value, and an empty object still adds the tool
+    if let Some(fields) = web_search.as_object().filter(|fields| !fields.is_empty()) {
+        let mut keys: Vec<&str> = fields.keys().map(String::as_str).collect();
+        keys.sort_unstable();
         tracing::info!(
             provider = PROVIDER,
-            fields = ?sorted_keys(web_search),
+            fields = ?keys,
             "Groq web search enabled; ignoring unsupported web_search_options fields"
         );
     }
@@ -214,15 +217,6 @@ fn add_web_search(
     Ok(())
 }
 
-fn sorted_keys(value: &Value) -> Vec<&str> {
-    let mut keys: Vec<&str> = value
-        .as_object()
-        .map(|fields| fields.keys().map(String::as_str).collect())
-        .unwrap_or_default();
-    keys.sort_unstable();
-    keys
-}
-
 fn has_browser_search(optional_params: &Object) -> bool {
     let tools = optional_params.get(TOOLS).and_then(Value::as_array);
     tools.is_some_and(|tools| {
@@ -230,16 +224,4 @@ fn has_browser_search(optional_params: &Object) -> bool {
             .iter()
             .any(|tool| tool.get("type").and_then(Value::as_str) == Some(BROWSER_SEARCH))
     })
-}
-
-// LiteLLM logs only a non-empty web_search_options value, and an empty object still adds the tool
-fn carries_fields(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(flag) => *flag,
-        Value::Number(number) => number.as_f64().is_some_and(|parsed| parsed != 0.0_f64),
-        Value::String(text) => !text.is_empty(),
-        Value::Array(items) => !items.is_empty(),
-        Value::Object(fields) => !fields.is_empty(),
-    }
 }
