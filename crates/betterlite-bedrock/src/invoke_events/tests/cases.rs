@@ -104,7 +104,10 @@ pub(super) fn claude3_invoke_stream() {
         &mut decoder,
         r#"{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"plan"}}"#,
     ));
-    assert_eq!(thinking.choices[0].delta.reasoning_content.as_deref(), Some("plan"));
+    assert_eq!(
+        thinking.choices[0].delta.reasoning_content.as_deref(),
+        Some("plan")
+    );
     let signature = anthropic(parse(
         &mut decoder,
         r#"{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig"}}"#,
@@ -215,12 +218,18 @@ pub(super) fn json_mode_stop() {
         r#"{"choices":[{"message":{"content":"hi"},"finish_reason":"weird"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
         None,
     );
-    assert_eq!(unknown.into_iter().next().unwrap().unwrap().finish_reason, "stop");
+    assert_eq!(
+        unknown.into_iter().next().unwrap().unwrap().finish_reason,
+        "stop"
+    );
     let absent = fake(
         r#"{"choices":[{"message":{"content":"hi"},"finish_reason":null}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
         None,
     );
-    assert_eq!(absent.into_iter().next().unwrap().unwrap().finish_reason, "stop");
+    assert_eq!(
+        absent.into_iter().next().unwrap().unwrap().finish_reason,
+        "stop"
+    );
 }
 
 pub(super) fn empty_tool_input() {
@@ -242,7 +251,10 @@ pub(super) fn empty_tool_input() {
     assert_eq!(error.status(), None);
     assert!(error.to_string().starts_with("Failed to decode chunk:"));
 
-    let missing_choices = fake(r#"{"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#, None);
+    let missing_choices = fake(
+        r#"{"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
+        None,
+    );
     let error = missing_choices.into_iter().next().unwrap().unwrap_err();
     assert!(error.to_string().starts_with("Failed to decode chunk:"));
 }
@@ -261,7 +273,10 @@ pub(super) fn deepseek_stream_chunks() {
         thinking.usage,
         Some(serde_json::json!({"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}))
     );
-    assert_eq!(thinking.id, format!("chatcmpl-{}", super::support::fixed_id()));
+    assert_eq!(
+        thinking.id,
+        format!("chatcmpl-{}", super::support::fixed_id())
+    );
     assert_eq!(thinking.created, NOW);
     assert_eq!(thinking.object, "chat.completion.chunk");
     assert_eq!(thinking.model, None);
@@ -279,20 +294,29 @@ pub(super) fn deepseek_stream_chunks() {
     ));
     assert_eq!(answer.choices[0].delta.content.as_deref(), Some("answer"));
     assert_eq!(answer.choices[0].delta.reasoning_content, None);
-    assert_eq!(answer.choices[0].finish_reason.as_deref(), Some("max_tokens"));
+    assert_eq!(
+        answer.choices[0].finish_reason.as_deref(),
+        Some("max_tokens")
+    );
 
     let literal = reply(parse(
         &mut decoder,
         r#"{"generation":"</think>","stop_reason":null,"prompt_token_count":0,"generation_token_count":0}"#,
     ));
-    assert_eq!(literal.choices[0].delta.content.as_deref(), Some("</think>"));
+    assert_eq!(
+        literal.choices[0].delta.content.as_deref(),
+        Some("</think>")
+    );
     assert_eq!(literal.choices[0].finish_reason, None);
 
     let first = reply(parse(
         &mut decoder,
         r#"{"generation":"a</think>","stop_reason":"stop","prompt_token_count":0,"generation_token_count":0}"#,
     ));
-    assert_eq!(first.choices[0].delta.reasoning_content.as_deref(), Some("a</think>"));
+    assert_eq!(
+        first.choices[0].delta.reasoning_content.as_deref(),
+        Some("a</think>")
+    );
 
     let mut negative = stream_decoder(Some("deepseek_r1"), &options(None, false));
     let counted = reply(parse(
@@ -315,33 +339,64 @@ pub(super) fn deepseek_stream_chunks() {
     let mut failures = stream_decoder(Some("deepseek_r1"), &options(None, false));
     assert!(
         failures
-            .chunk_parser(&json(r#"{"generation":"x","prompt_token_count":0,"generation_token_count":0}"#))
+            .chunk_parser(&json(
+                r#"{"generation":"x","prompt_token_count":0,"generation_token_count":0}"#
+            ))
             .is_err()
     );
-    assert!(failures.chunk_parser(&json(r#"{"generation":"x","stop_reason":"stop"}"#)).is_ok());
+    assert!(
+        failures
+            .chunk_parser(&json(r#"{"generation":"x","stop_reason":"stop"}"#))
+            .is_ok()
+    );
 }
 
 pub(super) fn stream_selector_variants() {
-    let probe = json(r#"{"generation":"x","stop_reason":"stop","prompt_token_count":0,"generation_token_count":0}"#);
+    let probe = json(
+        r#"{"generation":"x","stop_reason":"stop","prompt_token_count":0,"generation_token_count":0}"#,
+    );
     let mut explicit = stream_decoder(None, &options(Some(true), false));
     assert_eq!(generic(explicit.chunk_parser(&probe).unwrap()).text, "x");
     let mut legacy = bedrock_event_stream_decoder(None, &options(Some(true), false));
     assert_eq!(generic(legacy.chunk_parser(&probe).unwrap()).text, "x");
 
-    let converse_probe =
-        json(r#"{"start":{"toolUse":{"toolUseId":"j","name":"json_tool_call"}},"contentBlockIndex":0}"#);
+    let converse_probe = json(
+        r#"{"start":{"toolUse":{"toolUseId":"j","name":"json_tool_call"}},"contentBlockIndex":0}"#,
+    );
     let mut explicit_json = stream_decoder(None, &options(Some(true), false));
-    assert!(converse(explicit_json.chunk_parser(&converse_probe).unwrap()).delta.tool_calls.is_none());
+    assert!(
+        converse(explicit_json.chunk_parser(&converse_probe).unwrap())
+            .delta
+            .tool_calls
+            .is_none()
+    );
     let mut legacy_json = bedrock_event_stream_decoder(None, &options(Some(true), false));
-    assert!(converse(legacy_json.chunk_parser(&converse_probe).unwrap()).delta.tool_calls.is_some());
+    assert!(
+        converse(legacy_json.chunk_parser(&converse_probe).unwrap())
+            .delta
+            .tool_calls
+            .is_some()
+    );
 
-    let moonshot = json(r#"{"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}"#);
+    let moonshot =
+        json(r#"{"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}"#);
     let mut explicit_moonshot = stream_decoder(Some("moonshot"), &options(None, false));
-    assert_eq!(reply(explicit_moonshot.chunk_parser(&moonshot).unwrap()).choices[0].delta.content.as_deref(), Some("hi"));
+    assert_eq!(
+        reply(explicit_moonshot.chunk_parser(&moonshot).unwrap()).choices[0]
+            .delta
+            .content
+            .as_deref(),
+        Some("hi")
+    );
     let mut legacy_moonshot = bedrock_event_stream_decoder(Some("moonshot"), &options(None, false));
-    assert_eq!(generic(legacy_moonshot.chunk_parser(&moonshot).unwrap()).text, "");
+    assert_eq!(
+        generic(legacy_moonshot.chunk_parser(&moonshot).unwrap()).text,
+        ""
+    );
 
-    let deepseek = json(r#"{"generation":"x","stop_reason":"stop","prompt_token_count":0,"generation_token_count":0}"#);
+    let deepseek = json(
+        r#"{"generation":"x","stop_reason":"stop","prompt_token_count":0,"generation_token_count":0}"#,
+    );
     let mut explicit_deepseek = stream_decoder(Some("deepseek_r1"), &options(None, false));
     assert_eq!(
         reply(explicit_deepseek.chunk_parser(&deepseek).unwrap()).choices[0]
@@ -350,7 +405,8 @@ pub(super) fn stream_selector_variants() {
             .as_deref(),
         Some("x")
     );
-    let mut legacy_deepseek = bedrock_event_stream_decoder(Some("deepseek_r1"), &options(None, false));
+    let mut legacy_deepseek =
+        bedrock_event_stream_decoder(Some("deepseek_r1"), &options(None, false));
     assert_eq!(
         reply(legacy_deepseek.chunk_parser(&deepseek).unwrap()).choices[0]
             .delta
@@ -359,8 +415,9 @@ pub(super) fn stream_selector_variants() {
         Some("x")
     );
 
-    let anthropic_event =
-        json(r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}"#);
+    let anthropic_event = json(
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}"#,
+    );
     let mut explicit_anthropic = stream_decoder(Some("anthropic"), &options(None, false));
     assert_eq!(
         anthropic(explicit_anthropic.chunk_parser(&anthropic_event).unwrap()).choices[0]
@@ -368,7 +425,8 @@ pub(super) fn stream_selector_variants() {
             .content,
         "hi"
     );
-    let mut legacy_anthropic = bedrock_event_stream_decoder(Some("anthropic"), &options(None, false));
+    let mut legacy_anthropic =
+        bedrock_event_stream_decoder(Some("anthropic"), &options(None, false));
     assert_eq!(
         anthropic(legacy_anthropic.chunk_parser(&anthropic_event).unwrap()).choices[0]
             .delta
@@ -387,23 +445,37 @@ pub(super) fn openai_compatible_invoke_stream() {
     assert_eq!(chunk.created, 5);
     assert_eq!(chunk.model.as_deref(), Some("kimi"));
     assert_eq!(chunk.choices[0].delta.content.as_deref(), Some("hi"));
-    assert_eq!(chunk.choices[0].finish_reason.as_deref(), Some("tool_calls"));
+    assert_eq!(
+        chunk.choices[0].finish_reason.as_deref(),
+        Some("tool_calls")
+    );
     assert_eq!(
         chunk.usage,
         Some(serde_json::json!({"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}))
     );
 
-    let generated = reply(parse(&mut decoder, r#"{"choices":[{"index":0,"delta":{"content":"x"}}]}"#));
-    assert_eq!(generated.id, format!("chatcmpl-{}", super::support::fixed_id()));
+    let generated = reply(parse(
+        &mut decoder,
+        r#"{"choices":[{"index":0,"delta":{"content":"x"}}]}"#,
+    ));
+    assert_eq!(
+        generated.id,
+        format!("chatcmpl-{}", super::support::fixed_id())
+    );
     assert_eq!(generated.created, NOW);
 
-    let failure = error(decoder.chunk_parser(&json(
-        r#"{"error":{"message":"boom","code":400}}"#,
-    )));
+    let failure = error(decoder.chunk_parser(&json(r#"{"error":{"message":"boom","code":400}}"#)));
     assert_eq!(failure.status(), Some(400));
 
     let mut legacy = bedrock_event_stream_decoder(Some("moonshot"), &options(None, false));
-    assert_eq!(generic(parse(&mut legacy, r#"{"choices":[{"index":0,"delta":{"content":"x"}}]}"#)).text, "");
+    assert_eq!(
+        generic(parse(
+            &mut legacy,
+            r#"{"choices":[{"index":0,"delta":{"content":"x"}}]}"#
+        ))
+        .text,
+        ""
+    );
 }
 
 pub(super) fn framing_iteration_and_eof() {
@@ -433,7 +505,10 @@ pub(super) fn framing_iteration_and_eof() {
         .iter_bytes(chunks, Some(headers.clone()), &redactor)
         .collect();
     assert_eq!(outcomes.len(), 1);
-    assert_eq!(generic(outcomes.into_iter().next().unwrap().unwrap()).text, "a");
+    assert_eq!(
+        generic(outcomes.into_iter().next().unwrap().unwrap()).text,
+        "a"
+    );
 
     let mut decoder = stream_decoder(None, &options(None, false));
     let empty = vec![chunk_frame(""), chunk_frame("{}")];
@@ -466,13 +541,20 @@ pub(super) fn framing_iteration_and_eof() {
         .iter_bytes(byte_chunks(&[]), Some(headers.clone()), &redactor)
         .collect();
     assert_eq!(outcomes.len(), 1);
-    assert_eq!(error(outcomes.into_iter().next().unwrap()).status(), Some(502));
+    assert_eq!(
+        error(outcomes.into_iter().next().unwrap()).status(),
+        Some(502)
+    );
 
     let mut decoder = stream_decoder(None, &options(None, false));
     let mut truncated = frames[0].clone();
     truncated.truncate(truncated.len() - 2);
     let outcomes: Vec<_> = decoder
-        .iter_bytes(byte_chunks(&[frames[0].clone(), truncated]), Some(headers.clone()), &redactor)
+        .iter_bytes(
+            byte_chunks(&[frames[0].clone(), truncated]),
+            Some(headers.clone()),
+            &redactor,
+        )
         .collect();
     assert_eq!(outcomes.len(), 2);
     let mut outcomes = outcomes.into_iter();
@@ -526,7 +608,10 @@ pub(super) fn framing_iteration_and_eof() {
         .collect();
     assert_eq!(texts, ["a", "b"]);
 
-    assert_eq!(decode_bedrock_event_json(br#"{"a":1}"#).unwrap(), json(r#"{"a":1}"#));
+    assert_eq!(
+        decode_bedrock_event_json(br#"{"a":1}"#).unwrap(),
+        json(r#"{"a":1}"#)
+    );
     assert!(decode_bedrock_event_json(b"{bad").is_err());
 }
 

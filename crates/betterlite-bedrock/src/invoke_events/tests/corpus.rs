@@ -8,8 +8,7 @@ use crate::invoke_events::framing::decode_bedrock_event_json;
 
 #[test]
 fn replays_the_bedrock_invoke_events_corpus() {
-    let corpus =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/bedrock_invoke_events");
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/bedrock_invoke_events");
     let paths: Vec<PathBuf> = fs::read_dir(corpus)
         .unwrap()
         .map(|entry| entry.unwrap().path())

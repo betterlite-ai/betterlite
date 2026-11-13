@@ -27,6 +27,8 @@ pub mod framing;
 mod ids;
 mod openai_compatible;
 
+mod tests;
+
 #[derive(Clone, Copy)]
 pub struct DecoderClock {
     pub next_id: fn() -> Uuid,

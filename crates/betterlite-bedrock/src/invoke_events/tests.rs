@@ -8,7 +8,8 @@ use rstest::rstest;
 
 use self::cases::{
     claude3_invoke_stream, deepseek_stream_chunks, empty_tool_input, framing_iteration_and_eof,
-    json_mode_stop, json_mode_tool_chunk, openai_compatible_invoke_stream, stream_selector_variants,
+    json_mode_stop, json_mode_tool_chunk, openai_compatible_invoke_stream,
+    stream_selector_variants,
 };
 
 #[rstest]
