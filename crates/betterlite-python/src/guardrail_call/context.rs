@@ -117,7 +117,8 @@ pub(crate) fn record_call(
     data: &str,
     context: &str,
 ) -> Result<RecordUpdate, CallError> {
-    let mut body = convert::data_from_text(data)?;
+    let raw: BTreeMap<String, GuardrailValue> = convert::read("request data", data)?;
+    let mut body = convert::exact_data(raw);
     let mut parts = record_parts(context)?;
     let mut record_context = parts.context(&mut body);
     let outcome = match step {

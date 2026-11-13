@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use pyo3::prelude::*;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -56,7 +58,8 @@ impl NativeGuardrail {
 
     #[staticmethod]
     fn inject_advisory_message(data: &str, message: &str) -> PyResult<(bool, String)> {
-        let mut body = convert::data_from_text(data)?;
+        let raw: BTreeMap<String, GuardrailValue> = convert::read("request data", data)?;
+        let mut body = convert::exact_data(raw);
         let written = inject_advisory_message(&mut body, message);
         let text = convert::write("request data", &body)?;
         Ok((written, text))
@@ -68,7 +71,8 @@ impl NativeGuardrail {
         event_type: &str,
         suppressed: &str,
     ) -> PyResult<bool> {
-        let body = convert::data_from_text(data)?;
+        let raw: BTreeMap<String, GuardrailValue> = convert::read("request data", data)?;
+        let body = convert::exact_data(raw);
         let hook = convert::event_type_from_name(event_type)?;
         let blocked = convert::suppressed_from_text(suppressed)?;
         let answer = self
@@ -85,7 +89,8 @@ impl NativeGuardrail {
     }
 
     fn dynamic_request_body_params(&self, data: &str) -> PyResult<String> {
-        let body = convert::data_from_text(data)?;
+        let raw: BTreeMap<String, GuardrailValue> = convert::read("request data", data)?;
+        let body = convert::exact_data(raw);
         let params = self
             .base
             .dynamic_request_body_params(&body)

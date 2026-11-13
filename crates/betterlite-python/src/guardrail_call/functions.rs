@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -41,8 +42,8 @@ fn tool_cache() -> Result<DualLocalCache, CallError> {
 
 #[pyfunction]
 pub(crate) fn sanitize_guardrail_response(response: &str) -> PyResult<String> {
-    let value: GuardrailValue = convert::read("guardrail response", response)?;
-    let cleaned = sanitize_response(convert::exact_value(value)).map_err(CallError::from)?;
+    let raw: GuardrailValue = convert::read("guardrail response", response)?;
+    let cleaned = sanitize_response(convert::exact_value(raw)).map_err(CallError::from)?;
     Ok(convert::write("guardrail response", &cleaned)?)
 }
 
@@ -63,7 +64,8 @@ pub(crate) fn add_guardrail_record(
 
 #[pyfunction]
 pub(crate) fn sync_log_target(data: &str, target: &str) -> PyResult<String> {
-    let body = convert::data_from_text(data)?;
+    let raw: BTreeMap<String, GuardrailValue> = convert::read("request data", data)?;
+    let body = convert::exact_data(raw);
     let mut logging = log_target_from_text(target)?;
     sync_target(&body, &mut logging);
     Ok(log_target_to_text(&logging)?)
@@ -75,9 +77,11 @@ pub(crate) fn summarize_guardrail_response(
     baseline: Option<&str>,
     event_type: Option<&str>,
 ) -> PyResult<String> {
-    let parsed: GuardrailValue = convert::read("guardrail response", response)?;
-    let kept = convert::present_value(Some(parsed)).map(convert::exact_value);
-    let original = convert::optional_data_from_text(baseline)?;
+    let raw: Option<GuardrailValue> = convert::read("guardrail response", response)?;
+    let kept = raw.map(convert::exact_value);
+    let plain: Option<BTreeMap<String, GuardrailValue>> =
+        convert::read("request data", baseline.unwrap_or("null"))?;
+    let original = plain.map(convert::exact_data);
     let hook = event_type.map(convert::event_type_from_name).transpose()?;
     let summary = summarize_response(kept.as_ref(), original.as_ref(), hook);
     Ok(convert::write("guardrail response", &summary)?)
@@ -88,7 +92,9 @@ pub(crate) fn messages_for_call_type(
     call_type: &str,
     data: Option<&str>,
 ) -> PyResult<Option<String>> {
-    let body = convert::optional_data_from_text(data)?;
+    let raw: Option<BTreeMap<String, GuardrailValue>> =
+        convert::read("request data", data.unwrap_or("null"))?;
+    let body = raw.map(convert::exact_data);
     let cache = tool_cache()?;
     let selected = messages_for_type(call_type, body.as_ref(), &cache).map_err(CallError::from)?;
     let Some(messages) = selected else {

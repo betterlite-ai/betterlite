@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
-use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
 use betterlite_guardrails::guardrail_base::settings::GuardrailSettings;
 use betterlite_guardrails::guardrail_records::invocation::GuardrailHookName;
 use serde::Serialize;
@@ -100,7 +99,7 @@ pub(crate) fn exact_value(value: GuardrailValue) -> GuardrailValue {
     }
 }
 
-pub(super) fn exact_data(
+pub(crate) fn exact_data(
     entries: BTreeMap<String, GuardrailValue>,
 ) -> BTreeMap<String, GuardrailValue> {
     entries
@@ -113,8 +112,7 @@ pub(crate) fn read<T>(field: &'static str, text: &str) -> Result<T, CallError>
 where
     T: DeserializeOwned,
 {
-    let value = serde_json::from_str(text);
-    value.map_err(|source| CallError::Json { field, source })
+    serde_json::from_str(text).map_err(|source| CallError::Json { field, source })
 }
 
 pub(crate) fn write<T>(field: &'static str, value: &T) -> Result<String, CallError>
@@ -125,45 +123,6 @@ where
         Ok(text) => Ok(text),
         Err(source) => Err(CallError::Json { field, source }),
     }
-}
-
-pub(crate) fn optional_from_text<T>(
-    field: &'static str,
-    text: Option<&str>,
-) -> Result<Option<T>, CallError>
-where
-    T: DeserializeOwned,
-{
-    text.map(|given| read(field, given)).transpose()
-}
-
-pub(crate) fn data_from_text(text: &str) -> Result<BTreeMap<String, GuardrailValue>, CallError> {
-    let raw: BTreeMap<String, GuardrailValue> = read("request data", text)?;
-    Ok(exact_data(raw))
-}
-
-pub(crate) fn optional_data_from_text(
-    text: Option<&str>,
-) -> Result<Option<BTreeMap<String, GuardrailValue>>, CallError> {
-    let raw: Option<Option<BTreeMap<String, GuardrailValue>>> =
-        optional_from_text("request data", text)?;
-    Ok(raw.flatten().map(exact_data))
-}
-
-pub(crate) fn present_value(value: Option<GuardrailValue>) -> Option<GuardrailValue> {
-    value.filter(|present| *present != GuardrailValue::Null)
-}
-
-pub(crate) fn response_value(text: Option<&str>) -> Result<Option<GuardrailValue>, CallError> {
-    let raw: Option<Option<GuardrailValue>> = optional_from_text("guardrail response", text)?;
-    Ok(present_value(raw.flatten()).map(exact_value))
-}
-
-pub(crate) fn inputs_from_text(
-    text: Option<&str>,
-) -> Result<Option<GuardrailApiInputs>, CallError> {
-    let raw: Option<Option<GuardrailApiInputs>> = optional_from_text("guardrail inputs", text)?;
-    Ok(raw.flatten())
 }
 
 pub(crate) fn suppressed_from_text(text: &str) -> Result<BTreeSet<String>, CallError> {

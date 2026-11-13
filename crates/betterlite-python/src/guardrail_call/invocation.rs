@@ -1,7 +1,10 @@
+use std::collections::BTreeMap;
 use std::time::SystemTime;
 
 use pyo3::prelude::*;
 
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
 use betterlite_guardrails::guardrail_records::invocation::GuardrailInvocation;
 
 use super::RecordUpdate;
@@ -24,8 +27,10 @@ impl NativeGuardrailInvocation {
         inputs: Option<&str>,
     ) -> PyResult<Py<Self>> {
         let selected_hook = convert::hook_from_name(hook)?;
-        let data = convert::data_from_text(request_data)?;
-        let api_inputs = convert::inputs_from_text(inputs)?;
+        let raw: BTreeMap<String, GuardrailValue> = convert::read("request data", request_data)?;
+        let data = convert::exact_data(raw);
+        let api_inputs: Option<GuardrailApiInputs> =
+            convert::read("guardrail inputs", inputs.unwrap_or("null"))?;
         let invocation = GuardrailInvocation::begin(
             selected_hook,
             &data,
@@ -53,8 +58,9 @@ impl NativeGuardrailInvocation {
         response: Option<&str>,
         context: &str,
     ) -> PyResult<RecordUpdate> {
-        let present = convert::response_value(response)?;
-        let step = RecordStep::Finish(present);
+        let raw: Option<GuardrailValue> =
+            convert::read("guardrail response", response.unwrap_or("null"))?;
+        let step = RecordStep::Finish(raw.map(convert::exact_value));
         Ok(record_call(&mut self.invocation, step, data, context)?)
     }
 }

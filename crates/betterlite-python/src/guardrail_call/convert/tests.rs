@@ -7,15 +7,15 @@ use betterlite_config::sections::guardrail_params::mode::{LitellmParamsMode, Mod
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_guardrails::guardrail_base::GuardrailBase;
+use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
 use betterlite_guardrails::guardrail_records::invocation::GuardrailHookName;
 use betterlite_guardrails::guardrail_records::record::GuardrailStatus;
 use rstest::rstest;
 
 use super::settings::SettingsJson;
 use super::{
-    data_from_text, event_type_from_name, exact_value, hook_from_name, inputs_from_text,
-    optional_data_from_text, read, response_value, settings_from_text, suppressed_from_text,
-    text_context_from_text, write,
+    event_type_from_name, exact_data, exact_value, hook_from_name, read, settings_from_text,
+    suppressed_from_text, text_context_from_text, write,
 };
 use crate::guardrail_call::context::record_parts;
 use crate::guardrail_call::convert::record_input::record_input_from_text;
@@ -260,14 +260,14 @@ fn value_round_trips_through_text() {
 }
 
 #[test]
-fn data_reads_absent_null_and_a_list_wrongly() {
-    assert_eq!(optional_data_from_text(None).unwrap(), None);
-    assert_eq!(optional_data_from_text(Some("null")).unwrap(), None);
-    let body = optional_data_from_text(Some(r#"{"messages": []}"#))
-        .unwrap()
-        .unwrap();
-    assert_eq!(body.len(), 1);
-    let error = optional_data_from_text(Some("[]")).unwrap_err();
+fn data_reads_null_and_a_list_wrongly() {
+    let absent: Option<BTreeMap<String, GuardrailValue>> = read("request data", "null").unwrap();
+    assert_eq!(absent, None);
+    let present: Option<BTreeMap<String, GuardrailValue>> =
+        read("request data", r#"{"messages": []}"#).unwrap();
+    assert_eq!(present.map(exact_data).unwrap().len(), 1);
+    let error: CallError =
+        read::<Option<BTreeMap<String, GuardrailValue>>>("request data", "[]").unwrap_err();
     assert_eq!(error.kind(), "InvalidJson");
     assert_eq!(
         write(
@@ -277,18 +277,18 @@ fn data_reads_absent_null_and_a_list_wrongly() {
         .unwrap(),
         r#"{"score":0.5}"#
     );
-    assert_eq!(
-        data_from_text(r#"{"score": 0.5}"#).unwrap()["score"],
-        GuardrailValue::Decimal(0.5)
-    );
+    let parsed: BTreeMap<String, GuardrailValue> =
+        read("request data", r#"{"score": 0.5}"#).unwrap();
+    assert_eq!(exact_data(parsed)["score"], GuardrailValue::Decimal(0.5));
 }
 
 #[test]
 fn value_absent_reads_none() {
-    assert_eq!(response_value(None).unwrap(), None);
-    assert_eq!(response_value(Some("null")).unwrap(), None);
+    let absent: Option<GuardrailValue> = read("guardrail response", "null").unwrap();
+    assert_eq!(absent, None);
+    let present: Option<GuardrailValue> = read("guardrail response", "\"deny\"").unwrap();
     assert_eq!(
-        response_value(Some("\"deny\"")).unwrap(),
+        present.map(exact_value),
         Some(GuardrailValue::Text("deny".to_owned()))
     );
 }
@@ -466,17 +466,16 @@ fn record_input_requires_a_response() {
 
 #[test]
 fn inputs_read_texts_and_accept_null() {
-    assert_eq!(inputs_from_text(None).unwrap(), None);
-    assert_eq!(inputs_from_text(Some("null")).unwrap(), None);
-    let inputs = inputs_from_text(Some(r#"{"texts": ["a"], "model": "gpt"}"#))
-        .unwrap()
-        .unwrap();
+    let absent: Option<GuardrailApiInputs> = read("guardrail inputs", "null").unwrap();
+    assert_eq!(absent, None);
+    let present: Option<GuardrailApiInputs> =
+        read("guardrail inputs", r#"{"texts": ["a"], "model": "gpt"}"#).unwrap();
+    let inputs = present.unwrap();
     assert_eq!(inputs.texts, Some(vec!["a".to_owned()]));
     assert_eq!(inputs.model.as_deref(), Some("gpt"));
-    assert_eq!(
-        inputs_from_text(Some("[]")).unwrap_err().kind(),
-        "InvalidJson"
-    );
+    let error: CallError =
+        read::<Option<GuardrailApiInputs>>("guardrail inputs", "[]").unwrap_err();
+    assert_eq!(error.kind(), "InvalidJson");
 }
 
 #[test]
