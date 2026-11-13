@@ -336,7 +336,7 @@ async fn governance_databases_are_independent() {
     second.close_async().await.unwrap();
 }
 
-async fn assert_without_governance(admin_url: &SecretString) {
+async fn assert_without_dashboard(admin_url: &SecretString) {
     let baseline = provision(admin_url, &seed_with(None, None)).await;
     let (baseline_client, baseline_driver) = connect(&baseline.options.url).await;
     assert!(
@@ -360,7 +360,9 @@ async fn assert_without_governance(admin_url: &SecretString) {
     );
     disconnect(baseline_client, baseline_driver).await;
     baseline.close_async().await.unwrap();
+}
 
+async fn assert_without_governance(admin_url: &SecretString) {
     let dashboard = provision(admin_url, &seed_with(Some(empty_dashboard()), None)).await;
     let (dashboard_client, dashboard_driver) = connect(&dashboard.options.url).await;
     assert!(
@@ -407,6 +409,7 @@ async fn assert_empty_governance(admin_url: &SecretString) {
 #[tokio::test]
 async fn governance_empty_and_absent() {
     let (_server, admin_url) = postgres_server().await;
+    assert_without_dashboard(&admin_url).await;
     assert_without_governance(&admin_url).await;
     assert_empty_governance(&admin_url).await;
 }

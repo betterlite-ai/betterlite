@@ -58,7 +58,7 @@ fn check_row_limits(governance: &DashboardGovernanceSeed) -> Result<(), Dashboar
     Ok(())
 }
 
-pub(super) fn check_text_with_limit(
+pub(super) const fn check_text_with_limit(
     list: &'static str,
     row: usize,
     field: &'static str,
@@ -77,7 +77,7 @@ pub(super) fn check_text_with_limit(
     Ok(())
 }
 
-pub(super) fn check_counter(
+pub(super) const fn check_counter(
     list: &'static str,
     row: usize,
     field: &'static str,
@@ -94,7 +94,7 @@ pub(super) fn check_counter(
     Ok(())
 }
 
-pub(super) fn check_key(
+pub(super) const fn check_key(
     list: &'static str,
     row: usize,
     key_index: Option<usize>,

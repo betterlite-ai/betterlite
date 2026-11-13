@@ -203,7 +203,7 @@ fn sample_tools() -> Vec<ToolRow> {
     github.origin = Some("user_defined".to_owned());
     github.input_policy = InputPolicy::Blocked;
     github.output_policy = OutputPolicy::Trusted;
-    github.call_count = 42;
+    github.call_count = 42_i32;
     github.key_index = Some(0);
     github.team_id = Some("team-red".to_owned());
     github.key_alias = Some("alice-discovery-key".to_owned());
@@ -471,7 +471,7 @@ pub(super) fn negative_untracked_units() -> FixtureSeed {
 
 pub(super) fn negative_call_count() -> FixtureSeed {
     let mut row = tool("tool-github", "mcp__github/search");
-    row.call_count = -1;
+    row.call_count = -1_i32;
     governance_with_tools(vec![row])
 }
 

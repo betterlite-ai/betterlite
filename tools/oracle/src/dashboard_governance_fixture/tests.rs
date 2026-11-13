@@ -7,7 +7,6 @@ use betterlite_postgres_fixture::dashboard_governance::{
     DashboardGovernanceError, DashboardGovernanceSeed,
 };
 use betterlite_postgres_fixture::error::FixtureError;
-use rstest::rstest;
 
 use crate::OracleError;
 use crate::case::{Case, decode_case};
@@ -92,28 +91,43 @@ fn governance_error(outcome: Result<Case, OracleError>) -> DashboardGovernanceEr
     }
 }
 
-fn assert_failure(error: &DashboardGovernanceError, expected: Rejected) {
-    let matched = match (error, expected) {
-        (DashboardGovernanceError::MissingDashboard, Rejected::MissingDashboard) => true,
-        (DashboardGovernanceError::NegativeCounter { .. }, Rejected::NegativeCounter) => true,
-        (DashboardGovernanceError::DuplicateIdentity { .. }, Rejected::DuplicateIdentity) => true,
-        (DashboardGovernanceError::UnknownLog { .. }, Rejected::UnknownLog) => true,
-        (DashboardGovernanceError::UnknownKey { .. }, Rejected::UnknownKey) => true,
-        (DashboardGovernanceError::MissingTeam { .. }, Rejected::MissingTeam) => true,
-        _ => false,
-    };
-    assert!(matched, "unexpected governance error {error:?}");
+fn assert_failure(case: &str, error: &DashboardGovernanceError, expected: Rejected) {
+    assert!(
+        matches!(
+            (error, expected),
+            (
+                DashboardGovernanceError::MissingDashboard,
+                Rejected::MissingDashboard
+            ) | (
+                DashboardGovernanceError::NegativeCounter { .. },
+                Rejected::NegativeCounter
+            ) | (
+                DashboardGovernanceError::DuplicateIdentity { .. },
+                Rejected::DuplicateIdentity
+            ) | (
+                DashboardGovernanceError::UnknownLog { .. },
+                Rejected::UnknownLog
+            ) | (
+                DashboardGovernanceError::UnknownKey { .. },
+                Rejected::UnknownKey
+            ) | (
+                DashboardGovernanceError::MissingTeam { .. },
+                Rejected::MissingTeam
+            )
+        ),
+        "{case}: unexpected governance error {error:?}"
+    );
 }
 
-fn assert_rejection(outcome: Result<Case, OracleError>, expected: Rejected) {
+fn assert_rejection(case: &str, outcome: Result<Case, OracleError>, expected: Rejected) {
     if matches!(expected, Rejected::Parse) {
         assert!(
             matches!(outcome, Err(OracleError::CaseParse { .. })),
-            "an unknown governance field fails parsing"
+            "{case}: an unknown governance field fails parsing"
         );
         return;
     }
-    assert_failure(&governance_error(outcome), expected);
+    assert_failure(case, &governance_error(outcome), expected);
 }
 
 const WITHOUT_DASHBOARD: &str = "name: governance-fixture\nconfig: config\nenv: {}\nrequest: {method: GET, path: /health/liveliness, headers: {}, body: null}\nupstream: []\ndatabase:\n  seed:\n    users: [{user_id: alice}]\n    dashboard_governance: {}\n";
@@ -122,45 +136,65 @@ fn without_dashboard() -> String {
     format!("{WITHOUT_DASHBOARD}{CASE_SUFFIX}")
 }
 
-#[rstest]
-#[case::missing_dashboard(without_dashboard(), Rejected::MissingDashboard)]
-#[case::negative_counter(
-    case_with(
-        "    dashboard_governance:\n      metrics:\n        - {guardrail_id: gr-pii, date: '2026-01-04', requests_evaluated: -1}\n"
-    ),
-    Rejected::NegativeCounter
-)]
-#[case::duplicate_identity(
-    case_with(
-        "    dashboard_governance:\n      tools:\n        - {tool_id: tool-same, tool_name: first}\n        - {tool_id: tool-same, tool_name: second}\n"
-    ),
-    Rejected::DuplicateIdentity
-)]
-#[case::unknown_log(
-    case_with(
-        "    dashboard_governance:\n      guardrail_index:\n        - {request_id: req-missing, guardrail_id: gr-pii, start_time: '2026-01-04T10:00:00.000'}\n"
-    ),
-    Rejected::UnknownLog
-)]
-#[case::unknown_key(
-    case_with(
-        "    dashboard_governance:\n      tools:\n        - {tool_id: tool-github, tool_name: mcp__github/search, key_index: 7}\n"
-    ),
-    Rejected::UnknownKey
-)]
-#[case::missing_team(
-    case_with(
-        "    dashboard_governance:\n      usage_units:\n        - {guardrail_id: gr-pii, date: '2026-01-04', team_id: team-missing, usage_unit: textUnits, units: 1}\n"
-    ),
-    Rejected::MissingTeam
-)]
-#[case::unknown_field(
-    case_with("    dashboard_governance:\n      metrics: []\n      region: eu\n"),
-    Rejected::Parse
-)]
+fn rejected_cases() -> [(&'static str, String, Rejected); 7] {
+    [
+        (
+            "missing_dashboard",
+            without_dashboard(),
+            Rejected::MissingDashboard,
+        ),
+        (
+            "negative_counter",
+            case_with(
+                "    dashboard_governance:\n      metrics:\n        - {guardrail_id: gr-pii, date: '2026-01-04', requests_evaluated: -1}\n",
+            ),
+            Rejected::NegativeCounter,
+        ),
+        (
+            "duplicate_identity",
+            case_with(
+                "    dashboard_governance:\n      tools:\n        - {tool_id: tool-same, tool_name: first}\n        - {tool_id: tool-same, tool_name: second}\n",
+            ),
+            Rejected::DuplicateIdentity,
+        ),
+        (
+            "unknown_log",
+            case_with(
+                "    dashboard_governance:\n      guardrail_index:\n        - {request_id: req-missing, guardrail_id: gr-pii, start_time: '2026-01-04T10:00:00.000'}\n",
+            ),
+            Rejected::UnknownLog,
+        ),
+        (
+            "unknown_key",
+            case_with(
+                "    dashboard_governance:\n      tools:\n        - {tool_id: tool-github, tool_name: mcp__github/search, key_index: 7}\n",
+            ),
+            Rejected::UnknownKey,
+        ),
+        (
+            "missing_team",
+            case_with(
+                "    dashboard_governance:\n      usage_units:\n        - {guardrail_id: gr-pii, date: '2026-01-04', team_id: team-missing, usage_unit: textUnits, units: 1}\n",
+            ),
+            Rejected::MissingTeam,
+        ),
+        (
+            "unknown_field",
+            case_with("    dashboard_governance:\n      metrics: []\n      region: eu\n"),
+            Rejected::Parse,
+        ),
+    ]
+}
+
 #[test]
-fn governance_case_seed_rejects(#[case] yaml: String, #[case] expected: Rejected) {
-    assert_rejection(decode_case(Path::new("<bytes>"), yaml.as_bytes()), expected);
+fn governance_case_seed_rejects() {
+    for (case, yaml, expected) in rejected_cases() {
+        assert_rejection(
+            case,
+            decode_case(Path::new("<bytes>"), yaml.as_bytes()),
+            expected,
+        );
+    }
 }
 
 fn corpus_paths() -> Vec<PathBuf> {
@@ -197,6 +231,7 @@ fn replay_seed(path: PathBuf) {
         .and_then(|value| value.to_str())
         .expect("the corpus seed is named");
     assert_rejection(
+        name,
         decode_case(Path::new("<bytes>"), &bytes),
         corpus_expectation(name),
     );
