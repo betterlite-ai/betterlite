@@ -1,18 +1,28 @@
 #![cfg(test)]
 
 use std::collections::BTreeSet;
+use std::fs;
+use std::sync::Arc;
 
 use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rstest::rstest;
 use secrecy::SecretString;
+use serde_json::{Map, Value, json};
+use tempfile::NamedTempFile;
+use tracing::Level;
+use tracing::subscriber::with_default;
 
 use super::catalog::{CompletionCatalog, CompletionRoute, route_for};
 use super::failure::wrapped_failure;
+use super::log::TracingCompletionLog;
 use super::transport_request;
 use crate::chat::deployment::{ChatDeployment, OpenAiDefaults, Provider};
 use crate::text_completion_request::CompletionRequest;
 use crate::text_completion_transport::error::{ErrorSource, ErrorStatus, TextCompletionError};
+use crate::text_completion_transport::logging::{
+    CompletionLogger, PostCallRecord, PreCallRecord, ResponseKind, SecretHeaders,
+};
 
 fn deployment(model: &str) -> ChatDeployment {
     let listed = ModelDeployment {
@@ -191,4 +201,45 @@ fn an_unmapped_prompt_fails_before_any_provider_call() {
         .expect_err("unmapped prompt");
     assert_eq!(failure.status, 500);
     assert_eq!(failure.error_type, "internal_server_error");
+}
+
+#[test]
+fn the_route_logger_records_counts_and_never_the_prompt() {
+    let log = NamedTempFile::new().expect("log file");
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_max_level(Level::DEBUG)
+        .with_writer(Arc::new(log.reopen().expect("log handle")))
+        .finish();
+    let defaults = with_default(subscriber, || {
+        let mut logger = TracingCompletionLog;
+        logger
+            .pre_call(PreCallRecord {
+                input: vec![json!({"role": "user", "content": "secret prompt"})],
+                api_key: None,
+                headers: SecretHeaders::default(),
+                api_base: Some(String::from("http://upstream.test/v1")),
+                complete_input_dict: Map::new(),
+            })
+            .expect("pre-call");
+        logger.post_call(PostCallRecord {
+            api_key: None,
+            original_response: Value::Null,
+            kind: ResponseKind::SdkObject,
+            headers: SecretHeaders::default(),
+            api_base: None,
+        });
+        logger.stream_defaults()
+    });
+    let text = fs::read_to_string(log.path()).expect("log text");
+    assert!(text.contains("text completion pre-call"), "{text}");
+    assert!(text.contains("messages=1"), "{text}");
+    assert!(text.contains("http://upstream.test/v1"), "{text}");
+    assert!(text.contains("text completion post-call"), "{text}");
+    assert!(text.contains("SdkObject"), "{text}");
+    assert!(!text.contains("secret prompt"), "{text}");
+    assert!(defaults.stream_options.is_none());
+    assert!(!defaults.merge_reasoning_in_choices);
+    assert!(!defaults.is_function_call);
+    assert!(defaults.base_hidden_params.is_empty());
 }
