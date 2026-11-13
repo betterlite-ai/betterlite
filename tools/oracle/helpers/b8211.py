@@ -1,5 +1,6 @@
 import asyncio
-from typing import Literal, NotRequired, Required, TypedDict
+from collections.abc import Callable
+from typing import Literal, NotRequired, Protocol, Required, TypedDict, TypeVar
 
 import httpx
 from litellm.exceptions import GuardrailRaisedException
@@ -8,8 +9,10 @@ from litellm.proxy.guardrails.guardrail_hooks.promptguard.promptguard import (
 )
 from litellm.types.utils import GenericGuardrailAPIInputs
 from pydantic import JsonValue, TypeAdapter
+from pydantic_core import to_json
 
 JSON = TypeAdapter(JsonValue)
+Mode = Literal["request", "response"]
 
 
 class Answer(TypedDict):
@@ -21,7 +24,7 @@ class Input(TypedDict, total=False):
     api_key: Required[str]
     block_on_error: bool
     inputs: Required[JsonValue]
-    input_type: Required[Literal["request", "response"]]
+    input_type: Required[Mode]
     answer: Required[Answer]
 
 
@@ -86,6 +89,30 @@ def raised_view(captured: Captured, error: GuardrailRaisedException) -> Output:
     return {"request": request_view(captured), "raised": raised}
 
 
+Data_contra = TypeVar("Data_contra", contravariant=True)
+
+
+class Reply(TypedDict, total=False):
+    texts: list[str]
+
+
+class Guard(Protocol[Data_contra]):
+    async def apply_guardrail(
+        self,
+        inputs: GenericGuardrailAPIInputs,
+        request_data: Data_contra,
+        input_type: Mode,
+    ) -> Reply: ...
+
+
+async def scan(
+    guard: Guard[Data_contra], inputs: JsonValue, empty: Callable[[], Data_contra], mode: Mode
+) -> Reply:
+    return await guard.apply_guardrail(
+        TypeAdapter(GenericGuardrailAPIInputs).validate_python(inputs), empty(), mode  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547
+    )
+
+
 def run(input_value: Input) -> JsonValue:
     guardrail = PromptGuardGuardrail(
         api_key=input_value["api_key"],
@@ -97,13 +124,13 @@ def run(input_value: Input) -> JsonValue:
         transport=httpx.MockTransport(transport)
     )
     try:
-        result = asyncio.run(guardrail.apply_guardrail(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547
-            inputs=TypeAdapter(GenericGuardrailAPIInputs).validate_python(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L796-L817
-                input_value["inputs"]
-            ),
-            request_data={},
-            input_type=input_value["input_type"],
-        ))
+        result = asyncio.run(
+            scan(guardrail, input_value["inputs"], dict, input_value["input_type"])
+        )
     except GuardrailRaisedException as error:
         return JSON.validate_python(raised_view(captured, error))
-    return JSON.validate_python({"request": request_view(captured), "inputs": result})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547
+    output: Output = {
+        "request": request_view(captured),
+        "inputs": JSON.validate_json(to_json(result)),
+    }
+    return JSON.validate_python(output)
