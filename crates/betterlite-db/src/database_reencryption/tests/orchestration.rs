@@ -123,6 +123,35 @@ fn outcome_name(outcome: &MigrationOutcome) -> &'static str {
 }
 
 #[tokio::test]
+async fn same_key_with_rows_skips_writes() {
+    let events = events();
+    let storage = FakeStorage::new(&events, vec![credentials()]);
+    let ciphertext = sealed("hunter2", PREVIOUS_KEY, Algorithm::XSalsa20Poly1305);
+    storage.script_rows(vec![legacy_row(&ciphertext)]);
+    let same = SecretString::from(PREVIOUS_KEY);
+    let cipher = cipher(Algorithm::XSalsa20Poly1305);
+    let request = request(Some(&same), Some(&same), false, &cipher);
+    let outcome = migrate_if_requested(
+        &request,
+        || Ok(Some(&storage)),
+        log_into(&events),
+        |_| Ok(()),
+    )
+    .await
+    .expect("the run succeeds")
+    .expect("an outcome");
+    assert!(matches!(
+        outcome,
+        MigrationOutcome::Nothing(NothingToMigrate::NothingLeftToMigrate)
+    ));
+    assert!(storage.replaced().is_empty(), "equal keys never write");
+    assert!(
+        !recorded(&events).iter().any(|event| event == "columns"),
+        "equal keys are checked before the count"
+    );
+}
+
+#[tokio::test]
 async fn connected_callback_runs_before_salt_skip() {
     let events = events();
     let storage = FakeStorage::new(&events, vec![credentials()]);

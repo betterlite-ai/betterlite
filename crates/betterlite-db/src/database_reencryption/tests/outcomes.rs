@@ -81,6 +81,9 @@ fn native_migration_failure_redacts_secrets() {
         &[&previous, &master],
     );
     let debug = format!("{failure:?}");
+    assert!(debug.starts_with("MigrationFailure"), "{debug}");
+    assert!(debug.contains("ReportedError"), "{debug}");
+    assert!(debug.contains("[redacted]"), "{debug}");
     assert!(!debug.contains(PREVIOUS_KEY), "{debug}");
     assert!(!debug.contains(MASTER_KEY), "{debug}");
     let text = describe_outcome(&MigrationOutcome::Failed(failure));
