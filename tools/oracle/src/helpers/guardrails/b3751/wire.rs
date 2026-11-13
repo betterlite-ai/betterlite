@@ -44,7 +44,11 @@ pub(super) fn normalize(payload: AktoPayload) -> crate::helpers::HelperResult {
         "responsePayload": response_payload,
         "ip": payload.ip,
         "destIp": payload.dest_ip,
-        "time": clock_text(&payload.time),
+        "time": if payload.time.chars().all(|character| character.is_ascii_digit()) {
+            String::from("<millis>")
+        } else {
+            payload.time
+        },
         "statusCode": payload.status_code,
         "type": payload.request_type,
         "status": payload.status,
@@ -81,13 +85,6 @@ fn decode_encoded(encoded: &str, response_payload: bool) -> Result<Value, Box<He
         ));
     };
     parse_json(inner)
-}
-
-fn clock_text(text: &str) -> String {
-    if text.chars().all(|character| character.is_ascii_digit()) {
-        return "<millis>".to_owned();
-    }
-    text.to_owned()
 }
 
 pub(super) fn send(input: &Input, fire_and_forget: bool) -> crate::helpers::HelperResult {
