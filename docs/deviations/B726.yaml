@@ -1,0 +1,8 @@
+task: B726
+deviations:
+  - what: Stored managed-batch JSON above 1048576 bytes or depth 64 fails with a typed decode-limit error.
+    why: Bound the database-record parser; native_managed_batch_record_limits tests both boundaries.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/managed_batch_repository.py#L11-L20
+  - what: Repository availability does not enable managed files or batches; without the enterprise-created hook, the executed-batch route keeps 400 invalid_request_error with param null and code '400', even with a configured database.
+    why: Keep the current missing-hook behavior while Max decides whether betterlite should build a native managed service. B086/B087 route parts own its HTTP equality cases.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L89-L105

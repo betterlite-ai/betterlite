@@ -1,0 +1,12 @@
+kind: helper
+name: auxiliary_repository_batch_object
+call:
+  auxiliary_repository:
+    json_strings:
+      - name: json_string_valid
+        json: '{"id":"batch_1","completion_window":"24h","created_at":1,"endpoint":"/v1/chat/completions","input_file_id":"file_1","object":"batch","status":"validating"}'
+    objects:
+      - name: object_valid
+        object: {"id":"batch_2","completion_window":"24h","created_at":2,"endpoint":"/v1/embeddings","input_file_id":"file_2","object":"batch","status":"cancelled"}
+env: {}
+compare: {ignore: []}

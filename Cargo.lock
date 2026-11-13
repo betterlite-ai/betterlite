@@ -1598,6 +1598,7 @@ dependencies = [
  "betterlite-env",
  "betterlite-openai",
  "betterlite-postgres-fixture",
+ "betterlite-redis",
  "betterlite-roi",
  "betterlite-secret-managers",
  "betterlite-secrets",

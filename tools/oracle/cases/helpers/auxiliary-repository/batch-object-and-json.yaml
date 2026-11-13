@@ -1,0 +1,16 @@
+kind: helper
+name: batch_object_and_json_string_validation
+call:
+  auxiliary_repository:
+    json_strings:
+      - name: json_string_valid
+        json: '{"id":"batch_1","completion_window":"24h","created_at":1,"endpoint":"/v1/chat/completions","input_file_id":"file_1","object":"batch","status":"completed"}'
+      - name: json_string_empty_object
+        json: '{}'
+    objects:
+      - name: object_valid
+        object: {"id":"batch_2","completion_window":"24h","created_at":2,"endpoint":"/v1/embeddings","input_file_id":"file_2","object":"batch","status":"in_progress"}
+      - name: object_with_optionals
+        object: {"id":"batch_3","completion_window":"24h","created_at":3,"endpoint":"/v1/chat/completions","input_file_id":"file_3","object":"batch","status":"finalizing","cancelled_at":null,"completed_at":30,"metadata":{"team":"a"},"model":"gpt-5","request_counts":{"completed":1,"failed":0,"total":1},"errors":{"data":[],"object":"list"}}
+env: {}
+compare: {ignore: []}
