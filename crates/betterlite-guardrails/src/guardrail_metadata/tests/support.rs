@@ -93,13 +93,9 @@ pub(super) fn moderation_record(id: &str, status: GuardrailStatus) -> GuardrailL
 
 pub(super) fn failure_record() -> GuardrailLogRecord {
     GuardrailLogRecord {
-        guardrail_name: "moderation".to_owned(),
         guardrail_response: GuardrailResponse::Text("allow".to_owned()),
         guardrail_status: GuardrailStatus::GuardrailFailedToRespond,
-        start_time: 0.0,
-        end_time: 1.0,
-        duration: 1.0,
-        tracing_detail: None,
+        ..moderation_record("unused", GuardrailStatus::GuardrailFailedToRespond)
     }
 }
 

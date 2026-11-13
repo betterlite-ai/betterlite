@@ -8,6 +8,7 @@ mod dedup;
 mod default_limit;
 mod header_errors;
 mod headers;
+mod integer_kinds;
 mod moderation_scan;
 mod pillar;
 mod pillar_errors;

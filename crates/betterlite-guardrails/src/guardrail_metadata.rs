@@ -11,9 +11,9 @@ use crate::openai_moderation::logging::{GuardrailLogRecord, GuardrailResponse};
 use crate::panw_prisma_airs::audit::{GuardrailAudit, Stage};
 use entry::scan_entry_value;
 
-pub const GUARDRAIL_SCAN_IDS_METADATA_KEY: &str = "guardrail_scan_ids";
-pub const GUARDRAIL_SCAN_METADATA_METADATA_KEY: &str = "guardrail_scan_metadata";
-pub const MAX_GUARDRAIL_SCAN_METADATA_HEADER_LENGTH: usize = 2048;
+pub const SCAN_IDS_KEY: &str = "guardrail_scan_ids";
+pub const SCAN_METADATA_KEY: &str = "guardrail_scan_metadata";
+pub const MAX_SCAN_METADATA_LENGTH: usize = 2048;
 
 const APPLIED_GUARDRAILS_KEY: &str = "applied_guardrails";
 const APPLIED_POLICIES_KEY: &str = "applied_policies";
@@ -100,12 +100,12 @@ pub fn record_scan_id(
     };
     append_unique(
         &mut bucket,
-        GUARDRAIL_SCAN_IDS_METADATA_KEY,
+        SCAN_IDS_KEY,
         GuardrailValue::Text(scan_id.to_owned()),
     );
     append_unique(
         &mut bucket,
-        GUARDRAIL_SCAN_METADATA_METADATA_KEY,
+        SCAN_METADATA_KEY,
         scan_entry_value(guardrail, provider, stage, scan_id),
     );
     request_data.insert(key.to_owned(), GuardrailValue::Object(bucket));
@@ -159,11 +159,32 @@ pub fn logging_caching_headers(
     let mut headers = Vec::new();
     projection::push_optional(
         &mut headers,
-        projection::applied_guardrails_header(&merged)?,
+        projection::joined_header(
+            &merged,
+            APPLIED_GUARDRAILS_KEY,
+            "x-litellm-applied-guardrails",
+            projection::EmptyList::Emit,
+        )?,
     );
-    projection::push_optional(&mut headers, projection::scan_ids_header(&merged)?);
+    projection::push_optional(
+        &mut headers,
+        projection::joined_header(
+            &merged,
+            SCAN_IDS_KEY,
+            "x-litellm-guardrail-scan-id",
+            projection::EmptyList::Omit,
+        )?,
+    );
     projection::push_optional(&mut headers, projection::scan_metadata_header(&merged)?);
-    projection::push_optional(&mut headers, projection::applied_policies_header(&merged)?);
+    projection::push_optional(
+        &mut headers,
+        projection::joined_header(
+            &merged,
+            APPLIED_POLICIES_KEY,
+            "x-litellm-applied-policies",
+            projection::EmptyList::Emit,
+        )?,
+    );
     projection::push_optional(&mut headers, projection::policy_sources_header(&merged)?);
     projection::push_optional(
         &mut headers,

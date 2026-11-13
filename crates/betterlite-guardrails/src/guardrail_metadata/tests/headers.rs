@@ -40,6 +40,7 @@ use super::support::{assert_json, data, headers};
     r#"{"metadata": {"semantic-similarity": 1}}"#,
     r#"[["x-litellm-semantic-similarity", "1"]]"#
 )]
+#[case::a_null_similarity_emits_no_header(r#"{"metadata": {"semantic-similarity": null}}"#, "[]")]
 #[case::headers_keep_litellms_order(r#"{"metadata": {"applied_guardrails": ["a"], "guardrail_scan_ids": ["s"], "applied_policies": ["p"], "policy_sources": {"p": "r"}, "semantic-similarity": 0.5}}"#,r#"[["x-litellm-applied-guardrails", "a"], ["x-litellm-guardrail-scan-id", "s"], ["x-litellm-applied-policies", "p"], ["x-litellm-policy-sources", "p=r"], ["x-litellm-semantic-similarity", "0.5"]]"#)]
 fn guardrail_metadata_cases(#[case] request: &str, #[case] expected: &str) {
     assert_json(&headers(&data(request)), expected);
