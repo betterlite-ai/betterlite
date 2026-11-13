@@ -1,0 +1,18 @@
+kind: helper
+name: chat-cache-tier-and-recorded-rates-seed
+call:
+  response_charge:
+    function: response_cost_calculator
+    model: oracle-chat-cache
+    custom_llm_provider: openai
+    region_name: null
+    catalog:
+      oracle-chat-cache: {litellm_provider: openai, mode: chat, input_cost_per_token: 2, output_cost_per_token: 4, cache_read_input_token_cost: 0.5}
+    usage: {prompt_tokens: 10, completion_tokens: 5, cached_tokens: 4}
+    custom_price: null
+    cache_hit: null
+    header_cost: null
+    discount: {}
+    margin: {}
+compare: {ignore: []}
+env: {}

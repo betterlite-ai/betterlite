@@ -1,0 +1,14 @@
+task: B068
+deviations:
+  - what: Final charges are Decimal sums and checked finite amounts. An overflow or a non-finite provider cost returns a typed pricing error instead of NaN or Infinity.
+    why: The shared cost result is the monetary input to budgets and spend persistence.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1862-L1902
+  - what: completion_cost never passes a provider_specific_entry or an inference_geo to the per-token price, so those two stay absent.
+    why: The typed completion input carries neither field, and LiteLLM only fills them from untyped optional params.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1332
+  - what: A numeric string in a built-in tool price cell reads as absent.
+    why: Prices are decimals at the type boundary, and a string is a wrong-typed value that LiteLLM only accepts through Python coercion.
+    link: ""
+  - what: The Replicate per-second price is fixed at 0.0014 and the DEFAULT_REPLICATE_GPU_PRICE_PER_SECOND environment override is not read.
+    why: The cost service takes no process environment, so the constant is the only source.
+    link: ""
