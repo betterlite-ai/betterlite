@@ -131,7 +131,7 @@ pub fn extract_content_from_response(
     response: &CallResponse,
 ) -> Result<String, ResponseContentError> {
     let chat = match response {
-        CallResponse::Model(chat) => chat,
+        CallResponse::Model(model) => model,
         CallResponse::Other => {
             tracing::debug!("Model Armor: Skipping non-ModelResponse type");
             return Ok(String::new());

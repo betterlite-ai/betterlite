@@ -8,6 +8,7 @@ use betterlite_config::sections::guardrail_params::decode::decode_litellm_params
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
+use betterlite_http::proxy::base_builder;
 use reqwest::Client;
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -21,9 +22,7 @@ use crate::model_armor::config::{
 static FACTORY_CALLS: AtomicUsize = AtomicUsize::new(0);
 
 fn client() -> Client {
-    betterlite_http::proxy::base_builder()
-        .build()
-        .expect("test client")
+    base_builder().build().expect("test client")
 }
 
 fn counting_client() -> Client {

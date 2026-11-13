@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::error::Error;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
@@ -176,6 +177,6 @@ fn model_armor_api_error_prints_its_detail() {
     };
     assert_eq!(error.detail, "Model Armor API error (upstream 503)");
     assert_eq!(error.to_string(), "Model Armor API error (upstream 503)");
-    let as_std: &dyn std::error::Error = &error;
+    let as_std: &dyn Error = &error;
     assert_eq!(as_std.to_string(), "Model Armor API error (upstream 503)");
 }
