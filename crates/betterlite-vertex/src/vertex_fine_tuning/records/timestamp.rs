@@ -13,19 +13,15 @@ pub fn created_at(create_time: Option<&str>, local: &LocalTimeContext) -> i64 {
     // LiteLLM replaces every Z with +00:00 before datetime.fromisoformat
     let replaced = text.replace('Z', "+00:00");
     if let Ok(timestamp) = replaced.parse::<Timestamp>() {
-        return whole_seconds(timestamp);
+        // int() truncates toward zero, while a jiff timestamp floors a pre-epoch instant
+        let seconds = timestamp.as_second();
+        return if seconds < 0 && timestamp.subsec_nanosecond() > 0 {
+            seconds.saturating_add(1)
+        } else {
+            seconds
+        };
     }
     local_created_at(&replaced, local).unwrap_or(0)
-}
-
-// int() truncates toward zero, while a jiff timestamp floors a pre-epoch instant
-fn whole_seconds(timestamp: Timestamp) -> i64 {
-    let seconds = timestamp.as_second();
-    if seconds < 0 && timestamp.subsec_nanosecond() > 0 {
-        seconds.saturating_add(1)
-    } else {
-        seconds
-    }
 }
 
 fn local_created_at(text: &str, local: &LocalTimeContext) -> Option<i64> {
@@ -43,7 +39,7 @@ fn local_created_at(text: &str, local: &LocalTimeContext) -> Option<i64> {
                 .map(|date| date.to_datetime(civil::Time::midnight()))
         })
         .ok()?;
-    // CPython keeps microseconds, and the shared vertex decoder applies the injected zone the way mktime does
+    // CPython keeps microseconds, and the shared decoder applies the injected zone the way mktime does
     let micros = datetime
         .subsec_nanosecond()
         .checked_div(NANOSECONDS_PER_MICROSECOND)?;

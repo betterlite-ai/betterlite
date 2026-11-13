@@ -8,7 +8,7 @@ use jiff::tz::TimeZone;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use crate::helpers::{HelperError, OrHelperError as _};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
@@ -54,23 +54,11 @@ fn request_outcome(call: &RequestCall) -> Value {
 }
 
 fn response_outcome(call: &ResponseCall) -> Result<Value, Box<HelperError>> {
-    let zone = TimeZone::get(&call.zone).map_err(|error| invalid_input(format!("{error}")))?;
+    let zone = TimeZone::get(&call.zone).or_value_error()?;
     let local = LocalTimeContext { zone };
-    let bytes =
-        serde_json::to_vec(&call.response).map_err(|error| invalid_input(error.to_string()))?;
+    let bytes = serde_json::to_vec(&call.response).or_value_error()?;
     Ok(match decode_vertex_tuning_job(&bytes, &local) {
         Ok(job) => json!({"ok": true, "job": job}),
         Err(_error) => json!({"ok": false}),
-    })
-}
-
-fn invalid_input(message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "InvalidInput".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
     })
 }

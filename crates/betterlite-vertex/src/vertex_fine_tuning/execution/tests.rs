@@ -19,10 +19,10 @@ use secrecy::SecretString;
 use crate::provider_metadata::timestamp::LocalTimeContext;
 use crate::token_cache::error::CredentialCacheError;
 use crate::token_cache::probe::AccessToken;
+use crate::vertex_fine_tuning::execution::TuningTransport;
 use crate::vertex_fine_tuning::execution::create::{
     TUNING_TIMEOUT, TuningCreateRequest, create_tuning_job,
 };
-use crate::vertex_fine_tuning::execution::transport::TuningTransport;
 use crate::vertex_fine_tuning::records::request::{
     OriginalHyperparameters, SupervisedTuningSpec, VertexHyperparameters, VertexTuningJobCreate,
 };

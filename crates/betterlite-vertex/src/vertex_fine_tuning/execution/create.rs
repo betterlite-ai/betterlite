@@ -21,16 +21,14 @@ use crate::provider_metadata::timestamp::LocalTimeContext;
 use crate::token_cache::error::CredentialCacheError;
 use crate::token_cache::probe::AccessToken;
 use crate::token_refresh::ensure_access_token;
+use crate::vertex_fine_tuning::records::TuningRecordError;
 use crate::vertex_fine_tuning::records::request::{OriginalHyperparameters, to_vertex_request};
 use crate::vertex_fine_tuning::records::response::decode_vertex_tuning_job;
 
-use super::error::TuningExecutionError;
-use super::transport::TuningTransport;
+use super::{TuningExecutionError, TuningTransport};
 
 // LiteLLM builds a sync client with timeout 600 and connect 5, and ignores the one the caller passed
 pub const TUNING_TIMEOUT: Duration = Duration::from_secs(600);
-
-const OK_STATUS: u16 = 200;
 
 pub struct TuningCreateRequest<'request> {
     pub catalog: &'request ModelCatalog,
@@ -58,8 +56,8 @@ where
 {
     let (access, prepared) = resolve_target(request, make_lookup).await?;
     let job = to_vertex_request(request.data, request.original_hyperparameters)?;
-    let body =
-        serde_json::to_vec(&job).map_err(|source| TuningExecutionError::Encoded { source })?;
+    let body = serde_json::to_vec(&job)
+        .map_err(|source| TuningExecutionError::Record(TuningRecordError::Json { source }))?;
     post_tuning_job(transport, request, &prepared, &access.project, body).await
 }
 
@@ -76,8 +74,7 @@ where
         VertexCapabilityProvider::VertexAiBeta,
         make_lookup(request.credentials, request.project),
     )
-    .await
-    .map_err(|source| TuningExecutionError::Credentials { source })?;
+    .await?;
     // B1304 prepares the token and URL; only its auth header is used, since the POST target is the tuningJobs URL
     let prepared = get_token_and_url(
         request.catalog,
@@ -94,8 +91,7 @@ where
             mode: UrlMode::Chat,
             use_psc_endpoint_format: false,
         },
-    )
-    .map_err(|source| TuningExecutionError::Target { source })?;
+    )?;
     Ok((access, prepared))
 }
 
@@ -109,8 +105,7 @@ async fn post_tuning_job<T>(
 where
     T: TuningTransport,
 {
-    let headers = cache_headers(prepared, &BTreeMap::new())
-        .map_err(|source| TuningExecutionError::Header { source })?;
+    let headers = cache_headers(prepared, &BTreeMap::new())?;
     let outbound = OutboundRequest {
         method: Method::POST,
         url: tuning_url(request.location, project)?,
@@ -119,11 +114,8 @@ where
         body: RequestBody::Json(body),
         deadline: TUNING_TIMEOUT,
     };
-    let reply = transport
-        .send(outbound)
-        .await
-        .map_err(|source| TuningExecutionError::Transport { source })?;
-    if reply.status != OK_STATUS {
+    let reply = transport.send(outbound).await?;
+    if reply.status != 200 {
         return Err(TuningExecutionError::Http {
             status: reply.status,
             body: str::from_utf8(&reply.body).map_or_else(
@@ -143,5 +135,5 @@ fn tuning_url(location: Option<&str>, project: &str) -> Result<Url, TuningExecut
     };
     let base = get_vertex_base_url(Some(location))?;
     let text = format!("{base}/v1/projects/{project}/locations/{location}/tuningJobs");
-    Url::parse(&text).map_err(|source| TuningExecutionError::Url { source })
+    Url::parse(&text).map_err(TuningExecutionError::Url)
 }

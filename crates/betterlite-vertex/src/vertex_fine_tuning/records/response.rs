@@ -3,8 +3,7 @@ use betterlite_openai::fine_tuning::job::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::error::TuningRecordError;
-use super::request::AdapterSize;
+use super::TuningRecordError;
 use super::timestamp::created_at;
 use crate::provider_metadata::timestamp::LocalTimeContext;
 
@@ -16,7 +15,7 @@ struct ResponseHyperparameters {
     #[serde(rename = "learning_rate_multiplier")]
     learning_rate_multiplier: Option<f64>,
     #[serde(rename = "adapter_size", with = "serde_with::rust::double_option")]
-    adapter_size: Option<Option<AdapterSize>>,
+    adapter_size: Option<Option<String>>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -54,7 +53,7 @@ struct OpenAiHyperparameters {
     learning_rate_multiplier: Option<f64>,
     n_epochs: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    adapter_size: Option<Option<AdapterSize>>,
+    adapter_size: Option<Option<String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -94,7 +93,6 @@ fn openai_record(
         .as_ref()
         .ok_or(TuningRecordError::MissingState)?;
     let spec = response.supervised_tuning_spec.as_ref();
-    let hyperparameters = spec.and_then(|spec| spec.hyperparameters.as_ref());
     Ok(OpenAiTuningJob {
         id: response.name.clone().unwrap_or_default(),
         created_at: created_at(response.create_time.as_deref(), local),
@@ -103,7 +101,9 @@ fn openai_record(
             None => Some(String::new()),
             Some(value) => value.clone(),
         },
-        hyperparameters: openai_hyperparameters(hyperparameters),
+        hyperparameters: openai_hyperparameters(
+            spec.and_then(|spec| spec.hyperparameters.as_ref()),
+        ),
         model: response.base_model.clone().unwrap_or_default(),
         object: JobObject::FineTuningJob,
         organization_id: String::new(),

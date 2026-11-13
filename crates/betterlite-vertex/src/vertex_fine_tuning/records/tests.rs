@@ -7,7 +7,7 @@ use betterlite_openai::fine_tuning::job::FineTuneCreate;
 use jiff::tz::TimeZone;
 use rstest::rstest;
 
-use super::error::TuningRecordError;
+use super::TuningRecordError;
 use super::request::{OriginalHyperparameters, VertexTuningJobCreate, to_vertex_request};
 use super::response::decode_vertex_tuning_job;
 use super::timestamp::created_at;
@@ -125,18 +125,16 @@ fn adapter_sizes_are_the_declared_literals(#[case] adapter: &str) {
 }
 
 #[test]
-fn an_unknown_adapter_size_names_the_field() {
-    let original = OriginalHyperparameters {
-        adapter_size: Some("ADAPTER_SIZE_TWO".to_owned()),
-    };
-    let error =
-        to_vertex_request(&create(r#"{"model":"m","training_file":"f"}"#), &original).unwrap_err();
-    assert!(matches!(
-        error,
-        TuningRecordError::Hyperparameter {
-            field: "adapter_size"
-        }
-    ));
+fn an_unknown_adapter_size_is_kept_as_sent() {
+    let value = serde_json::to_value(request(
+        r#"{"model":"m","training_file":"f"}"#,
+        Some("ADAPTER_SIZE_TWO"),
+    ))
+    .unwrap();
+    assert_eq!(
+        value["supervisedTuningSpec"]["hyperParameters"]["adapter_size"],
+        serde_json::json!("ADAPTER_SIZE_TWO")
+    );
 }
 
 #[test]

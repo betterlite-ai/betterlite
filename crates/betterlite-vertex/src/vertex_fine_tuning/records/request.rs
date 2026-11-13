@@ -4,44 +4,13 @@ use betterlite_openai::fine_tuning::job::FineTuneCreate;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-use super::error::TuningRecordError;
+use super::TuningRecordError;
 
 // LiteLLM reads adapter_size from the caller's original hyperparameters dict, not the coerced model
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct OriginalHyperparameters {
     pub adapter_size: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-pub enum AdapterSize {
-    #[serde(rename = "ADAPTER_SIZE_UNSPECIFIED")]
-    Unspecified,
-    #[serde(rename = "ADAPTER_SIZE_ONE")]
-    One,
-    #[serde(rename = "ADAPTER_SIZE_FOUR")]
-    Four,
-    #[serde(rename = "ADAPTER_SIZE_EIGHT")]
-    Eight,
-    #[serde(rename = "ADAPTER_SIZE_SIXTEEN")]
-    Sixteen,
-}
-
-impl FromStr for AdapterSize {
-    type Err = TuningRecordError;
-
-    fn from_str(text: &str) -> Result<Self, Self::Err> {
-        match text {
-            "ADAPTER_SIZE_UNSPECIFIED" => Ok(Self::Unspecified),
-            "ADAPTER_SIZE_ONE" => Ok(Self::One),
-            "ADAPTER_SIZE_FOUR" => Ok(Self::Four),
-            "ADAPTER_SIZE_EIGHT" => Ok(Self::Eight),
-            "ADAPTER_SIZE_SIXTEEN" => Ok(Self::Sixteen),
-            _ => Err(TuningRecordError::Hyperparameter {
-                field: "adapter_size",
-            }),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -55,7 +24,7 @@ pub struct VertexHyperparameters {
     )]
     pub learning_rate_multiplier: Option<Decimal>,
     #[serde(rename = "adapter_size", skip_serializing_if = "Option::is_none")]
-    pub adapter_size: Option<AdapterSize>,
+    pub adapter_size: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -100,45 +69,38 @@ pub fn to_vertex_request(
                 )
             }
         };
-        hyperparameters.epoch_count = epoch_count(raw.get("n_epochs").map(describe))?;
-        hyperparameters.learning_rate_multiplier =
-            learning_rate_multiplier(raw.get("learning_rate_multiplier").map(describe))?;
+        hyperparameters.epoch_count =
+            hyperparameter(raw.get("n_epochs").map(describe), "n_epochs")?;
+        hyperparameters.learning_rate_multiplier = hyperparameter(
+            raw.get("learning_rate_multiplier").map(describe),
+            "learning_rate_multiplier",
+        )?;
     }
-    hyperparameters.adapter_size = match original.adapter_size.as_deref() {
-        None | Some("") => None,
-        Some(text) => Some(AdapterSize::from_str(text)?),
-    };
+    hyperparameters.adapter_size = original
+        .adapter_size
+        .clone()
+        .filter(|text| !text.is_empty());
     Ok(vertex_job(create, hyperparameters))
 }
 
-fn epoch_count(value: HyperparameterText) -> Result<Option<i64>, TuningRecordError> {
-    let Some((text, from_text)) = value else {
-        return Ok(None);
-    };
-    if text.is_empty() {
-        return Ok(None);
-    }
-    let count = text
-        .trim()
-        .parse::<i64>()
-        .map_err(|_error| TuningRecordError::Hyperparameter { field: "n_epochs" })?;
-    Ok((from_text || count != 0).then_some(count))
-}
-
-fn learning_rate_multiplier(
+fn hyperparameter<T>(
     value: HyperparameterText,
-) -> Result<Option<Decimal>, TuningRecordError> {
+    field: &'static str,
+) -> Result<Option<T>, TuningRecordError>
+where
+    T: FromStr + Default + PartialEq,
+{
     let Some((text, from_text)) = value else {
         return Ok(None);
     };
     if text.is_empty() {
         return Ok(None);
     }
-    let rate =
-        Decimal::from_str(text.trim()).map_err(|_error| TuningRecordError::Hyperparameter {
-            field: "learning_rate_multiplier",
-        })?;
-    Ok((from_text || !rate.is_zero()).then_some(rate))
+    let parsed = text
+        .trim()
+        .parse::<T>()
+        .map_err(|_error| TuningRecordError::Hyperparameter { field })?;
+    Ok((from_text || parsed != T::default()).then_some(parsed))
 }
 
 fn vertex_job(
