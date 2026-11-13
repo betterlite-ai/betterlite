@@ -1,8 +1,7 @@
 use rstest::rstest;
 
 use crate::health_probe_settings::display::{
-    ADMIN_ONLY_HEALTH_DISPLAY_PARAMS, HEALTH_DISPLAY_PARAMS, MINIMAL_DISPLAY_PARAMS,
-    clean_endpoint_data,
+    ADMIN_ONLY_DISPLAY_PARAMS, HEALTH_DISPLAY_PARAMS, MINIMAL_DISPLAY_PARAMS, clean_endpoint_data,
 };
 use crate::health_probe_settings::tests::support::object;
 
@@ -36,7 +35,7 @@ fn the_display_field_sets_match_litellm() {
     assert_eq!(health, expected);
     assert_eq!(MINIMAL_DISPLAY_PARAMS, ["model", "mode_error"]);
     assert_eq!(
-        ADMIN_ONLY_HEALTH_DISPLAY_PARAMS,
+        ADMIN_ONLY_DISPLAY_PARAMS,
         ["api_base", "api_version", "aws_bedrock_runtime_endpoint"]
     );
 }

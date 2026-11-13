@@ -1,8 +1,6 @@
 use rstest::rstest;
 
-use crate::health_probe_settings::max_tokens::{
-    deployment_model_string_for_health_check, resolve_health_check_max_tokens,
-};
+use crate::health_probe_settings::max_tokens::{probe_model_string, resolve_max_tokens};
 use crate::health_probe_settings::tests::support::{StubModels, health, object, policy};
 
 fn reasoning_models() -> StubModels {
@@ -13,7 +11,7 @@ fn reasoning_models() -> StubModels {
 
 #[test]
 fn the_explicit_override_wins_over_every_other_source() {
-    let tokens = resolve_health_check_max_tokens(
+    let tokens = resolve_max_tokens(
         &health(Some(42), Some(7), Some(8), None),
         &object(r#"{"model":"provider/*"}"#),
         &policy(Some(99), Some(50)),
@@ -24,7 +22,7 @@ fn the_explicit_override_wins_over_every_other_source() {
 
 #[test]
 fn a_reasoning_route_takes_its_reasoning_limit() {
-    let tokens = resolve_health_check_max_tokens(
+    let tokens = resolve_max_tokens(
         &health(None, Some(64), Some(8), None),
         &object(r#"{"model":"reasoning-model"}"#),
         &policy(None, None),
@@ -35,7 +33,7 @@ fn a_reasoning_route_takes_its_reasoning_limit() {
 
 #[test]
 fn a_non_reasoning_route_takes_its_non_reasoning_limit() {
-    let tokens = resolve_health_check_max_tokens(
+    let tokens = resolve_max_tokens(
         &health(None, Some(64), Some(8), None),
         &object(r#"{"model":"plain-model"}"#),
         &policy(None, None),
@@ -46,7 +44,7 @@ fn a_non_reasoning_route_takes_its_non_reasoning_limit() {
 
 #[test]
 fn a_reasoning_route_without_its_own_limit_takes_the_environment_one() {
-    let tokens = resolve_health_check_max_tokens(
+    let tokens = resolve_max_tokens(
         &health(None, None, Some(8), None),
         &object(r#"{"model":"reasoning-model"}"#),
         &policy(None, Some(70)),
@@ -57,7 +55,7 @@ fn a_reasoning_route_without_its_own_limit_takes_the_environment_one() {
 
 #[test]
 fn the_reasoning_environment_skips_non_reasoning_routes() {
-    let tokens = resolve_health_check_max_tokens(
+    let tokens = resolve_max_tokens(
         &health(None, None, None, None),
         &object(r#"{"model":"plain-model"}"#),
         &policy(None, Some(70)),
@@ -68,7 +66,7 @@ fn the_reasoning_environment_skips_non_reasoning_routes() {
 
 #[test]
 fn the_global_environment_applies_to_every_route() {
-    let tokens = resolve_health_check_max_tokens(
+    let tokens = resolve_max_tokens(
         &health(None, None, None, None),
         &object(r#"{"model":"plain-model"}"#),
         &policy(Some(32), None),
@@ -79,7 +77,7 @@ fn the_global_environment_applies_to_every_route() {
 
 #[test]
 fn the_global_environment_reaches_wildcards() {
-    let tokens = resolve_health_check_max_tokens(
+    let tokens = resolve_max_tokens(
         &health(None, None, None, None),
         &object(r#"{"model":"provider/*"}"#),
         &policy(Some(32), None),
@@ -90,7 +88,7 @@ fn the_global_environment_reaches_wildcards() {
 
 #[test]
 fn a_non_wildcard_route_defaults_to_sixteen() {
-    let tokens = resolve_health_check_max_tokens(
+    let tokens = resolve_max_tokens(
         &health(None, None, None, None),
         &object(r#"{"model":"plain-model"}"#),
         &policy(None, None),
@@ -101,7 +99,7 @@ fn a_non_wildcard_route_defaults_to_sixteen() {
 
 #[test]
 fn a_wildcard_route_leaves_max_tokens_unset() {
-    let tokens = resolve_health_check_max_tokens(
+    let tokens = resolve_max_tokens(
         &health(None, None, None, None),
         &object(r#"{"model":"provider/*"}"#),
         &policy(None, None),
@@ -112,7 +110,7 @@ fn a_wildcard_route_leaves_max_tokens_unset() {
 
 #[test]
 fn a_wildcard_route_ignores_the_model_info_limits() {
-    let tokens = resolve_health_check_max_tokens(
+    let tokens = resolve_max_tokens(
         &health(None, Some(64), Some(8), None),
         &object(r#"{"model":"provider/*"}"#),
         &policy(None, None),
@@ -124,7 +122,7 @@ fn a_wildcard_route_ignores_the_model_info_limits() {
 #[test]
 fn the_deployment_model_string_reads_a_text_model() {
     assert_eq!(
-        deployment_model_string_for_health_check(&object(r#"{"model":"openai/gpt"}"#)),
+        probe_model_string(&object(r#"{"model":"openai/gpt"}"#)),
         "openai/gpt"
     );
 }
@@ -134,8 +132,5 @@ fn the_deployment_model_string_reads_a_text_model() {
 #[case::null(r#"{"model":null}"#)]
 #[case::not_text(r#"{"model":5}"#)]
 fn a_missing_model_reads_as_empty(#[case] params: &str) {
-    assert_eq!(
-        deployment_model_string_for_health_check(&object(params)),
-        ""
-    );
+    assert_eq!(probe_model_string(&object(params)), "");
 }

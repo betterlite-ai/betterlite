@@ -11,7 +11,7 @@ fn info_text<'spec>(spec: &'spec DeploymentSpec, key: &str) -> Option<&'spec str
 }
 
 #[must_use]
-pub fn filter_deployments_to_model_groups(
+pub fn filter_to_model_groups(
     model_list: &[DeploymentSpec],
     model_groups: Option<&BTreeSet<String>>,
 ) -> Vec<DeploymentSpec> {

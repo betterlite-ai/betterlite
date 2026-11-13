@@ -8,8 +8,7 @@ use super::model_settings::ModelHealthSettings;
 pub const MAX_TOKEN_SUPPORT_MODES: [&str; 3] = ["chat", "completion", "responses"];
 
 // None is the unresolvable mode, which LiteLLM still forwards reasoning_effort for
-pub const HEALTH_CHECK_MODES_SUPPORTING_REASONING_EFFORT: [Option<&str>; 3] =
-    [None, Some("chat"), Some("completion")];
+pub const REASONING_EFFORT_MODES: [Option<&str>; 3] = [None, Some("chat"), Some("completion")];
 
 #[must_use]
 pub fn resolve_health_check_mode<M>(
@@ -30,10 +29,7 @@ where
 }
 
 #[must_use]
-pub fn should_inject_health_check_max_tokens(
-    health: &ModelHealthSettings,
-    mode: Option<&str>,
-) -> bool {
+pub fn should_inject_max_tokens(health: &ModelHealthSettings, mode: Option<&str>) -> bool {
     if let Some(explicit) = health.supports_max_tokens {
         return explicit;
     }

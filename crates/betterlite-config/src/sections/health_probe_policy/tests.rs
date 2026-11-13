@@ -25,10 +25,10 @@ fn loaded(source: &str, environment: &[(&str, &str)]) -> Settings {
 #[test]
 fn an_empty_config_takes_the_litellm_defaults() {
     let settings = loaded("{}", &[]);
-    assert!(!settings.skip_disabled_background_models);
-    assert!(settings.background_model_groups.is_none());
-    assert!(settings.background_max_tokens.is_none());
-    assert!(settings.background_max_tokens_reasoning.is_none());
+    assert!(!settings.skip_disabled_models);
+    assert!(settings.model_groups.is_none());
+    assert!(settings.max_tokens.is_none());
+    assert!(settings.max_tokens_reasoning.is_none());
     assert_eq!(settings.timeout, Duration::from_secs(60));
     assert_eq!(settings.prompt, "test from litellm");
 }
@@ -37,7 +37,7 @@ fn an_empty_config_takes_the_litellm_defaults() {
 #[case::absent("{}")]
 #[case::explicit_false("general_settings: {health_check_skip_disabled_background_models: false}")]
 fn the_skip_disabled_flag_defaults_to_false(#[case] source: &str) {
-    assert!(!loaded(source, &[]).skip_disabled_background_models);
+    assert!(!loaded(source, &[]).skip_disabled_models);
 }
 
 #[test]
@@ -46,7 +46,7 @@ fn the_skip_disabled_flag_reads_the_general_setting() {
         "general_settings: {health_check_skip_disabled_background_models: true}",
         &[],
     );
-    assert!(settings.skip_disabled_background_models);
+    assert!(settings.skip_disabled_models);
 }
 
 #[test]
@@ -67,7 +67,7 @@ fn a_malformed_skip_disabled_flag_fails_at_startup() {
 #[case::absent("{}")]
 #[case::explicit_null("general_settings: {background_health_check_model_groups: null}")]
 fn unset_model_groups_cover_every_deployment(#[case] source: &str) {
-    assert!(loaded(source, &[]).background_model_groups.is_none());
+    assert!(loaded(source, &[]).model_groups.is_none());
 }
 
 #[test]
@@ -76,7 +76,7 @@ fn an_empty_model_group_list_covers_no_deployment() {
         "general_settings: {background_health_check_model_groups: []}",
         &[],
     );
-    assert_eq!(settings.background_model_groups, Some(BTreeSet::new()));
+    assert_eq!(settings.model_groups, Some(BTreeSet::new()));
 }
 
 #[test]
@@ -89,7 +89,7 @@ fn model_groups_parse_into_a_set_with_duplicates_removed() {
         .into_iter()
         .map(str::to_owned)
         .collect();
-    assert_eq!(settings.background_model_groups, Some(expected));
+    assert_eq!(settings.model_groups, Some(expected));
 }
 
 #[rstest]
@@ -112,13 +112,13 @@ fn malformed_model_groups_fail_at_startup(#[case] source: &str) {
 #[case::blank(&[("BACKGROUND_HEALTH_CHECK_MAX_TOKENS", "")])]
 #[case::not_a_number(&[("BACKGROUND_HEALTH_CHECK_MAX_TOKENS", "many")])]
 fn an_unreadable_token_limit_counts_as_unset(#[case] environment: &[(&str, &str)]) {
-    assert!(loaded("{}", environment).background_max_tokens.is_none());
+    assert!(loaded("{}", environment).max_tokens.is_none());
 }
 
 #[test]
 fn the_token_limit_reads_the_environment() {
     let settings = loaded("{}", &[("BACKGROUND_HEALTH_CHECK_MAX_TOKENS", "32")]);
-    assert_eq!(settings.background_max_tokens, Some(32));
+    assert_eq!(settings.max_tokens, Some(32));
 }
 
 #[test]
@@ -130,8 +130,8 @@ fn the_reasoning_token_limit_reads_its_own_environment() {
             ("BACKGROUND_HEALTH_CHECK_MAX_TOKENS_REASONING", "64"),
         ],
     );
-    assert_eq!(settings.background_max_tokens, Some(32));
-    assert_eq!(settings.background_max_tokens_reasoning, Some(64));
+    assert_eq!(settings.max_tokens, Some(32));
+    assert_eq!(settings.max_tokens_reasoning, Some(64));
 }
 
 #[test]
@@ -140,7 +140,7 @@ fn a_malformed_reasoning_token_limit_counts_as_unset() {
         "{}",
         &[("BACKGROUND_HEALTH_CHECK_MAX_TOKENS_REASONING", "lots")],
     );
-    assert!(settings.background_max_tokens_reasoning.is_none());
+    assert!(settings.max_tokens_reasoning.is_none());
 }
 
 #[rstest]

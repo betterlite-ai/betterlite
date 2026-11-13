@@ -26,8 +26,10 @@ pub struct Raw {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawGeneral {
-    health_check_skip_disabled_background_models: Option<RawFlag>,
-    background_health_check_model_groups: Option<RawGroups>,
+    #[serde(default, rename = "health_check_skip_disabled_background_models")]
+    skip_disabled_models: Option<RawFlag>,
+    #[serde(default, rename = "background_health_check_model_groups")]
+    model_groups: Option<RawGroups>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,10 +48,10 @@ enum RawGroups {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
-    pub skip_disabled_background_models: bool,
-    pub background_model_groups: Option<BTreeSet<String>>,
-    pub background_max_tokens: Option<i64>,
-    pub background_max_tokens_reasoning: Option<i64>,
+    pub skip_disabled_models: bool,
+    pub model_groups: Option<BTreeSet<String>>,
+    pub max_tokens: Option<i64>,
+    pub max_tokens_reasoning: Option<i64>,
     pub timeout: Duration,
     pub prompt: String,
 }
@@ -57,10 +59,10 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            skip_disabled_background_models: false,
-            background_model_groups: None,
-            background_max_tokens: None,
-            background_max_tokens_reasoning: None,
+            skip_disabled_models: false,
+            model_groups: None,
+            max_tokens: None,
+            max_tokens_reasoning: None,
             timeout: DEFAULT_TIMEOUT,
             prompt: DEFAULT_PROMPT.to_owned(),
         }
@@ -75,18 +77,17 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let general = self.general_settings;
-        let skip_disabled_background_models =
-            match general.health_check_skip_disabled_background_models {
-                None => false,
-                Some(RawFlag::Boolean(value)) => value,
-                Some(RawFlag::Other(_)) => {
-                    return Err(ConfigError::InvalidScalar {
-                        path: SKIP_DISABLED_PATH.to_owned(),
-                        value: false,
-                    });
-                }
-            };
-        let background_model_groups = match general.background_health_check_model_groups {
+        let skip_disabled_models = match general.skip_disabled_models {
+            None => false,
+            Some(RawFlag::Boolean(value)) => value,
+            Some(RawFlag::Other(_)) => {
+                return Err(ConfigError::InvalidScalar {
+                    path: SKIP_DISABLED_PATH.to_owned(),
+                    value: false,
+                });
+            }
+        };
+        let model_groups = match general.model_groups {
             None => None,
             Some(RawGroups::Groups(groups)) => Some(groups.into_iter().collect()),
             Some(RawGroups::Other(_)) => {
@@ -106,11 +107,11 @@ impl Section for Raw {
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| DEFAULT_PROMPT.to_owned());
         Ok(Settings {
-            skip_disabled_background_models,
-            background_model_groups,
+            skip_disabled_models,
+            model_groups,
             // LiteLLM's import-time try/except turns a malformed token variable into unset
-            background_max_tokens: token_limit(lookup, MAX_TOKENS_VARIABLE),
-            background_max_tokens_reasoning: token_limit(lookup, MAX_TOKENS_REASONING_VARIABLE),
+            max_tokens: token_limit(lookup, MAX_TOKENS_VARIABLE),
+            max_tokens_reasoning: token_limit(lookup, MAX_TOKENS_REASONING_VARIABLE),
             timeout,
             prompt,
         })

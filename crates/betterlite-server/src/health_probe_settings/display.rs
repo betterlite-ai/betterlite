@@ -1,7 +1,7 @@
 use betterlite_models::model_registration::JsonObject;
 
 // Provider routing fields only a proxy admin sees; the endpoint gates them for other callers
-pub const ADMIN_ONLY_HEALTH_DISPLAY_PARAMS: [&str; 3] =
+pub const ADMIN_ONLY_DISPLAY_PARAMS: [&str; 3] =
     ["api_base", "api_version", "aws_bedrock_runtime_endpoint"];
 
 pub const MINIMAL_DISPLAY_PARAMS: [&str; 2] = ["model", "mode_error"];

@@ -6,7 +6,7 @@ use rstest::rstest;
 use serde_json::Number;
 
 use crate::health_probe_settings::model_settings::HealthSettingsError;
-use crate::health_probe_settings::prepare::update_litellm_params_for_health_check;
+use crate::health_probe_settings::prepare::update_params_for_health_check;
 use crate::health_probe_settings::tests::support::{StubModels, object, policy};
 
 const CHAT_MODEL: &str = "chat-model";
@@ -21,7 +21,7 @@ fn models() -> StubModels {
 
 fn probe(model_info: &str, litellm_params: &str, models: &StubModels) -> JsonObject {
     let mut random = StdRng::seed_from_u64(7);
-    update_litellm_params_for_health_check(
+    update_params_for_health_check(
         &object(model_info),
         &object(litellm_params),
         &policy(None, None),
@@ -50,7 +50,7 @@ fn the_deployment_params_are_never_changed() {
     let litellm_params = object(r#"{"model":"chat-model","temperature":0.2}"#);
     let original = litellm_params.clone();
     let mut random = StdRng::seed_from_u64(7);
-    update_litellm_params_for_health_check(
+    update_params_for_health_check(
         &object(r#"{"mode":"chat"}"#),
         &litellm_params,
         &policy(None, None),
@@ -101,7 +101,7 @@ fn the_probe_carries_litellms_random_user_message() {
     let mut draw = StdRng::seed_from_u64(11);
     let roll = draw.random_range(0..messages.len());
     let mut random = StdRng::seed_from_u64(11);
-    let params = update_litellm_params_for_health_check(
+    let params = update_params_for_health_check(
         &object(r#"{"mode":"chat"}"#),
         &object(r#"{"model":"chat-model"}"#),
         &policy(None, None),
@@ -244,7 +244,7 @@ fn the_model_override_is_stripped_too() {
 #[test]
 fn a_malformed_knob_fails_the_probe() {
     let mut random = StdRng::seed_from_u64(7);
-    let error = update_litellm_params_for_health_check(
+    let error = update_params_for_health_check(
         &object(r#"{"health_check_max_tokens":"many"}"#),
         &object(r#"{"model":"chat-model"}"#),
         &policy(None, None),

@@ -92,15 +92,12 @@ pub(super) fn health(
     }
 }
 
-pub(super) fn policy(
-    background_max_tokens: Option<i64>,
-    background_max_tokens_reasoning: Option<i64>,
-) -> ProbePolicy {
+pub(super) fn policy(max_tokens: Option<i64>, max_tokens_reasoning: Option<i64>) -> ProbePolicy {
     ProbePolicy {
-        skip_disabled_background_models: false,
-        background_model_groups: None,
-        background_max_tokens,
-        background_max_tokens_reasoning,
+        skip_disabled_models: false,
+        model_groups: None,
+        max_tokens,
+        max_tokens_reasoning,
         timeout: Duration::from_secs(60),
         prompt: "test from litellm".to_owned(),
     }

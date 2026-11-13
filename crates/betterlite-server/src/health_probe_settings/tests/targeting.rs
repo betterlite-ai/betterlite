@@ -4,7 +4,7 @@ use betterlite_models::decisions::Json;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 
 use crate::health_probe_settings::targeting::{
-    deployments_targeted_by_name, filter_deployments_by_id, filter_deployments_to_model_groups,
+    deployments_targeted_by_name, filter_deployments_by_id, filter_to_model_groups,
     health_check_eligible, narrow_to_target,
 };
 use crate::health_probe_settings::tests::support::{spec, team_spec};
@@ -27,10 +27,7 @@ fn unset_model_groups_keep_every_deployment() {
         spec("gpt-4o", Some("a"), "openai/gpt-4o"),
         spec("claude", Some("b"), "anthropic/claude"),
     ];
-    assert_eq!(
-        ids(&filter_deployments_to_model_groups(&list, None)),
-        ["a", "b"]
-    );
+    assert_eq!(ids(&filter_to_model_groups(&list, None)), ["a", "b"]);
 }
 
 #[test]
@@ -39,14 +36,14 @@ fn model_groups_narrow_the_list() {
         spec("gpt-4o", Some("a"), "openai/gpt-4o"),
         spec("claude", Some("b"), "anthropic/claude"),
     ];
-    let narrowed = filter_deployments_to_model_groups(&list, Some(&groups(&["claude"])));
+    let narrowed = filter_to_model_groups(&list, Some(&groups(&["claude"])));
     assert_eq!(ids(&narrowed), ["b"]);
 }
 
 #[test]
 fn an_empty_model_group_set_keeps_nothing() {
     let list = vec![spec("gpt-4o", Some("a"), "openai/gpt-4o")];
-    assert!(filter_deployments_to_model_groups(&list, Some(&groups(&[]))).is_empty());
+    assert!(filter_to_model_groups(&list, Some(&groups(&[]))).is_empty());
 }
 
 #[test]

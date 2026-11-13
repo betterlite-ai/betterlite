@@ -1,8 +1,8 @@
 use rstest::rstest;
 
 use crate::health_probe_settings::mode::{
-    HEALTH_CHECK_MODES_SUPPORTING_REASONING_EFFORT, MAX_TOKEN_SUPPORT_MODES,
-    resolve_health_check_mode, should_inject_health_check_max_tokens,
+    MAX_TOKEN_SUPPORT_MODES, REASONING_EFFORT_MODES, resolve_health_check_mode,
+    should_inject_max_tokens,
 };
 use crate::health_probe_settings::tests::support::{StubModels, health, object};
 
@@ -10,7 +10,7 @@ use crate::health_probe_settings::tests::support::{StubModels, health, object};
 fn the_mode_constants_match_litellm() {
     assert_eq!(MAX_TOKEN_SUPPORT_MODES, ["chat", "completion", "responses"]);
     assert_eq!(
-        HEALTH_CHECK_MODES_SUPPORTING_REASONING_EFFORT,
+        REASONING_EFFORT_MODES,
         [None, Some("chat"), Some("completion")]
     );
 }
@@ -69,10 +69,7 @@ fn the_operator_override_wins_over_the_mode(
     #[case] expected: bool,
 ) {
     let health = health(None, None, None, supports_max_tokens);
-    assert_eq!(
-        should_inject_health_check_max_tokens(&health, mode),
-        expected
-    );
+    assert_eq!(should_inject_max_tokens(&health, mode), expected);
 }
 
 #[rstest]
@@ -80,7 +77,7 @@ fn the_operator_override_wins_over_the_mode(
 #[case::completion("completion")]
 #[case::responses("responses")]
 fn chat_style_modes_take_max_tokens(#[case] mode: &str) {
-    assert!(should_inject_health_check_max_tokens(
+    assert!(should_inject_max_tokens(
         &health(None, None, None, None),
         Some(mode)
     ));
@@ -91,7 +88,7 @@ fn chat_style_modes_take_max_tokens(#[case] mode: &str) {
 #[case::audio_speech("audio_speech")]
 #[case::image_generation("image_generation")]
 fn other_modes_do_not_take_max_tokens(#[case] mode: &str) {
-    assert!(!should_inject_health_check_max_tokens(
+    assert!(!should_inject_max_tokens(
         &health(None, None, None, None),
         Some(mode)
     ));
@@ -99,7 +96,7 @@ fn other_modes_do_not_take_max_tokens(#[case] mode: &str) {
 
 #[test]
 fn an_unresolvable_mode_takes_max_tokens_as_chat() {
-    assert!(should_inject_health_check_max_tokens(
+    assert!(should_inject_max_tokens(
         &health(None, None, None, None),
         None
     ));

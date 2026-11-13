@@ -6,10 +6,10 @@ use rand::Rng;
 use rand::RngExt as _;
 use serde_json::Number;
 
-use super::max_tokens::resolve_health_check_max_tokens;
-use super::mode::HEALTH_CHECK_MODES_SUPPORTING_REASONING_EFFORT;
+use super::max_tokens::resolve_max_tokens;
+use super::mode::REASONING_EFFORT_MODES;
 use super::mode::resolve_health_check_mode;
-use super::mode::should_inject_health_check_max_tokens;
+use super::mode::should_inject_max_tokens;
 use super::model_info::HealthCheckModelInfo;
 use super::model_settings::HealthSettingsError;
 use super::model_settings::ModelHealthSettings;
@@ -84,7 +84,7 @@ fn strip_bedrock_region_routing(params: &mut JsonObject) {
     }
 }
 
-pub fn update_litellm_params_for_health_check<M, R>(
+pub fn update_params_for_health_check<M, R>(
     model_info: &JsonObject,
     litellm_params: &JsonObject,
     policy: &ProbePolicy,
@@ -99,12 +99,12 @@ where
     let mode = resolve_health_check_mode(model_info, litellm_params, models);
     let mut params = merged_params(litellm_params, &health);
     params.insert("messages".to_owned(), health_check_message(random));
-    if should_inject_health_check_max_tokens(&health, mode.as_deref())
-        && let Some(tokens) = resolve_health_check_max_tokens(&health, &params, policy, models)
+    if should_inject_max_tokens(&health, mode.as_deref())
+        && let Some(tokens) = resolve_max_tokens(&health, &params, policy, models)
     {
         params.insert("max_tokens".to_owned(), Json::Number(Number::from(tokens)));
     }
-    if HEALTH_CHECK_MODES_SUPPORTING_REASONING_EFFORT.contains(&mode.as_deref())
+    if REASONING_EFFORT_MODES.contains(&mode.as_deref())
         && let Some(effort) = &health.reasoning_effort
     {
         params.insert("reasoning_effort".to_owned(), effort.clone());
