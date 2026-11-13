@@ -37,6 +37,7 @@ IMAGE_COUNT = 2
 AUDIO_TOKENS = 1
 TEXT_TOKENS = 2
 FUNCTION_VALUES: dict[str, JsonValue] = {"name": "f", "arguments": "{}"}
+PROVIDER: dict[str, JsonValue] = {"a": 1}
 
 
 class Dumpable(Protocol):
@@ -93,6 +94,14 @@ class AsyncChunkStream:
         return self.chunks.pop(0)
 
 
+class FailingStream:
+    def __iter__(self) -> "FailingStream":
+        return self
+
+    def __next__(self) -> JsonValue:
+        raise RuntimeError("the provider stream failed")
+
+
 class ByteStream:
     chunks: list[bytes]
 
@@ -117,6 +126,8 @@ def assert_same(label: str, reference: Dumpable, ours: Dumpable) -> None:
     assert ours.model_dump() == reference.model_dump(), label
     assert ours.model_dump(exclude_unset=True) == reference.model_dump(exclude_unset=True), label
     assert ours.model_dump(exclude_none=True) == reference.model_dump(exclude_none=True), label
+
+
 
 
 def test_embedding_defaults() -> None:
@@ -145,7 +156,6 @@ def test_embedding_values() -> None:
 
 
 def test_embedding_response() -> None:
-    reference = litellm_utils.EmbeddingResponse()
     ours = betterlite_utils.EmbeddingResponse()
     assert ours.object == "list"
     assert ours.model is None
@@ -153,7 +163,7 @@ def test_embedding_response() -> None:
     assert ours.usage == betterlite_utils.Usage()
     assert ours.get("data") == []
     assert "model" in ours
-    assert_same("embedding response empty", reference, ours)
+    assert_same("embedding response empty", litellm_utils.EmbeddingResponse(), ours)
 
 
 def test_embedding_response_data() -> None:
@@ -173,7 +183,15 @@ def test_embedding_response_data() -> None:
         usage=betterlite_utils.Usage(prompt_tokens=PROMPT_TOKENS, total_tokens=PROMPT_TOKENS),
     )
     assert ours.model == "m"
-    assert len(ours.data) == 1
+    stored = ours.data[0]
+    match stored:
+        case betterlite_utils.Embedding():
+            assert stored.embedding == embedding_values
+        case (
+            betterlite_utils.ResponseObject() | dict() | list()
+            | bool() | int() | float() | str() | None
+        ):
+            raise AssertionError("the response kept a dump, not the Embedding it was built with")
     assert ours.usage is not None
     assert ours.usage.prompt_tokens == PROMPT_TOKENS
     assert_same("embedding response data", reference, ours)
@@ -444,6 +462,15 @@ def test_image_response() -> None:
     )
     assert dict_ours.data[0].url == "u3"
     assert_same("image dict data", dict_reference, dict_ours)
+    provider_reference = litellm_utils.ImageResponse(
+        created=CREATED, quality="hd", size="1792x1024",
+    )
+    provider_ours = betterlite_utils.ImageResponse(
+        created=CREATED, quality="hd", size="1792x1024",
+    )
+    assert provider_ours.model_dump()["quality"] == "hd"
+    assert provider_ours.model_dump()["size"] == "1792x1024"
+    assert_same("image provider options", provider_reference, provider_ours)
 
 
 def test_image_model_data() -> None:
@@ -557,6 +584,10 @@ def test_adapter_stream_sync() -> None:
         asynchronous = AdapterCompletionStreamWrapper(AsyncChunkStream([]))
         with pytest.raises(TypeError):
             _ = next(asynchronous)
+        with pytest.raises(TypeError):
+            _ = next(AdapterCompletionStreamWrapper(None))
+        with pytest.raises(RuntimeError):
+            _ = next(AdapterCompletionStreamWrapper(FailingStream()))
     finally:
         logger.removeHandler(handler)
         logger.setLevel(previous_level)
@@ -589,6 +620,8 @@ async def adapter_stream_async_case() -> None:
     synchronous = AdapterCompletionStreamWrapper(ChunkStream([]))
     with pytest.raises(TypeError):
         _ = await synchronous.__anext__()
+    with pytest.raises(TypeError):
+        _ = await AdapterCompletionStreamWrapper(None).__anext__()
 
 
 def test_adapter_stream_decoder() -> None:
@@ -600,41 +633,38 @@ def test_adapter_stream_decoder() -> None:
 
 
 def test_small_types_budget() -> None:
-    reference = litellm_utils.BudgetConfig()
-    ours = betterlite_utils.BudgetConfig()
-    assert ours.max_budget is None
-    assert_same("budget empty", reference, ours)
+    assert betterlite_utils.BudgetConfig().max_budget is None
+    assert_same("budget empty", litellm_utils.BudgetConfig(), betterlite_utils.BudgetConfig())
     values: dict[str, JsonValue] = {
         "max_budget": BUDGET_MAX,
         "budget_duration": "1d",
         "tpm_limit": BUDGET_TPM,
         "rpm_limit": BUDGET_LIMIT,
     }
-    values_reference = litellm_utils.BudgetConfig(**values)
     values_ours = betterlite_utils.BudgetConfig(**values)
     assert values_ours.max_budget == BUDGET_MAX
     assert values_ours.tpm_limit == BUDGET_TPM
-    assert_same("budget values", values_reference, values_ours)
+    assert_same("budget values", litellm_utils.BudgetConfig(**values), values_ours)
     aliases: dict[str, JsonValue] = {"time_period": "2h", "budget_limit": BUDGET_LIMIT}
-    alias_reference = litellm_utils.BudgetConfig(**aliases)
     alias_ours = betterlite_utils.BudgetConfig(**aliases)
     assert alias_ours.budget_duration == "2h"
     assert alias_ours.max_budget == BUDGET_LIMIT
-    assert_same("budget aliases", alias_reference, alias_ours)
+    assert_same("budget aliases", litellm_utils.BudgetConfig(**aliases), alias_ours)
     both: dict[str, JsonValue] = {
         "time_period": "2h",
         "budget_duration": "1d",
         "budget_limit": BUDGET_LIMIT,
         "max_budget": OTHER_BUDGET,
     }
-    both_reference = litellm_utils.BudgetConfig(**both)
     both_ours = betterlite_utils.BudgetConfig(**both)
     assert both_ours.budget_duration == "2h"
     assert both_ours.max_budget == BUDGET_LIMIT
-    assert_same("budget both", both_reference, both_ours)
-    unknown_reference = litellm_utils.BudgetConfig(unknown="x")
-    unknown_ours = betterlite_utils.BudgetConfig(unknown="x")
-    assert_same("budget unknown", unknown_reference, unknown_ours)
+    assert_same("budget both", litellm_utils.BudgetConfig(**both), both_ours)
+    assert_same(
+        "budget unknown",
+        litellm_utils.BudgetConfig(unknown="x"),
+        betterlite_utils.BudgetConfig(unknown="x"),
+    )
 
 
 def test_small_types_logging() -> None:
@@ -657,43 +687,41 @@ def fine_tuning_job() -> dict[str, JsonValue]:
     }
 
 
+def fine_tuning_pair(
+    **kwargs: JsonValue,
+) -> tuple[pydantic.BaseModel, betterlite_utils.ResponseObject]:
+    job = fine_tuning_job()
+    reference = litellm_utils.LiteLLMFineTuningJob(**job, **kwargs)
+    return reference, betterlite_utils.LiteLLMFineTuningJob(**job, **kwargs)
+
+
 def test_small_types_fine_tuning() -> None:
     job = fine_tuning_job()
-    reference = litellm_utils.LiteLLMFineTuningJob(**job)
     ours = betterlite_utils.LiteLLMFineTuningJob(**job)
     assert ours.seed is None
     assert ours.hyperparameters.n_epochs == EPOCHS
-    assert_same("fine tuning job", reference, ours)
+    assert_same("fine tuning job", *fine_tuning_pair())
     error_none: dict[str, JsonValue] = {"code": None, "message": None, "param": None}
-    none_reference = litellm_utils.LiteLLMFineTuningJob(**job, error=error_none)
-    none_ours = betterlite_utils.LiteLLMFineTuningJob(**job, error=error_none)
-    assert none_ours.error is None
-    assert_same("fine tuning error none", none_reference, none_ours)
+    assert betterlite_utils.LiteLLMFineTuningJob(**job, error=error_none).error is None
+    assert_same("fine tuning error none", *fine_tuning_pair(error=error_none))
     error: dict[str, JsonValue] = {"code": "c", "message": "m"}
-    error_reference = litellm_utils.LiteLLMFineTuningJob(**job, error=error)
-    error_ours = betterlite_utils.LiteLLMFineTuningJob(**job, error=error)
-    kept = error_ours.error
+    kept = betterlite_utils.LiteLLMFineTuningJob(**job, error=error).error
     assert kept is not None
     assert kept.code == "c"
-    assert_same("fine tuning error", error_reference, error_ours)
-    seeded_reference = litellm_utils.LiteLLMFineTuningJob(**job, seed=SEED)
-    seeded_ours = betterlite_utils.LiteLLMFineTuningJob(**job, seed=SEED)
-    assert seeded_ours.seed == SEED
-    assert_same("fine tuning seed", seeded_reference, seeded_ours)
+    assert_same("fine tuning error", *fine_tuning_pair(error=error))
+    assert betterlite_utils.LiteLLMFineTuningJob(**job, seed=SEED).seed == SEED
+    assert_same("fine tuning seed", *fine_tuning_pair(seed=SEED))
     hidden = betterlite_utils.LiteLLMFineTuningJob(**job, _hidden_params={"a": 1})
     assert hidden._hidden_params == {"a": 1}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4307-L4317
     assert betterlite_utils.LiteLLMFineTuningJob(**job)._hidden_params == {}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4308
     empty_error: dict[str, JsonValue] = {}
-    empty_reference = litellm_utils.LiteLLMFineTuningJob(**job, error=empty_error)
-    empty_ours = betterlite_utils.LiteLLMFineTuningJob(**job, error=empty_error)
-    assert empty_ours.error is None
-    assert_same("fine tuning error empty", empty_reference, empty_ours)
+    assert betterlite_utils.LiteLLMFineTuningJob(**job, error=empty_error).error is None
+    assert_same("fine tuning error empty", *fine_tuning_pair(error=empty_error))
     with pytest.raises(ValueError, match="validation error"):
         _ = betterlite_utils.LiteLLMFineTuningJob(id="x")
 
 
 def test_small_types_method() -> None:
-    job = fine_tuning_job()
     method: dict[str, JsonValue] = {
         "type": "supervised",
         "supervised": {"hyperparameters": {"n_epochs": EPOCHS}},
@@ -701,20 +729,12 @@ def test_small_types_method() -> None:
     integrations: list[JsonValue] = [
         {"type": "wandb", "wandb": {"project": "p", "tags": ["a"]}},
     ]
-    method_reference = litellm_utils.LiteLLMFineTuningJob(
-        **job, method=method, integrations=integrations,
-    )
-    method_ours = betterlite_utils.LiteLLMFineTuningJob(
-        **job, method=method, integrations=integrations,
-    )
-    assert_same("fine tuning method", method_reference, method_ours)
+    assert_same("fine tuning method", *fine_tuning_pair(method=method, integrations=integrations))
     dpo_method: dict[str, JsonValue] = {
         "type": "dpo",
         "dpo": {"hyperparameters": {"beta": "auto"}},
     }
-    dpo_reference = litellm_utils.LiteLLMFineTuningJob(**job, method=dpo_method)
-    dpo_ours = betterlite_utils.LiteLLMFineTuningJob(**job, method=dpo_method)
-    assert_same("fine tuning dpo", dpo_reference, dpo_ours)
+    assert_same("fine tuning dpo", *fine_tuning_pair(method=dpo_method))
     string_grader: dict[str, JsonValue] = {
         "type": "string_check",
         "name": "g",
@@ -726,13 +746,7 @@ def test_small_types_method() -> None:
         "type": "reinforcement",
         "reinforcement": {"grader": string_grader, "hyperparameters": {"n_epochs": "auto"}},
     }
-    reinforcement_reference = litellm_utils.LiteLLMFineTuningJob(
-        **job, method=reinforcement_method,
-    )
-    reinforcement_ours = betterlite_utils.LiteLLMFineTuningJob(
-        **job, method=reinforcement_method,
-    )
-    assert_same("fine tuning reinforcement", reinforcement_reference, reinforcement_ours)
+    assert_same("fine tuning reinforcement", *fine_tuning_pair(method=reinforcement_method))
     python_grader: dict[str, JsonValue] = {
         "type": "python",
         "name": "g",
@@ -742,9 +756,7 @@ def test_small_types_method() -> None:
         "type": "reinforcement",
         "reinforcement": {"grader": python_grader},
     }
-    python_reference = litellm_utils.LiteLLMFineTuningJob(**job, method=python_method)
-    python_ours = betterlite_utils.LiteLLMFineTuningJob(**job, method=python_method)
-    assert_same("fine tuning python grader", python_reference, python_ours)
+    assert_same("fine tuning python grader", *fine_tuning_pair(method=python_method))
     score_grader: dict[str, JsonValue] = {
         "type": "score_model",
         "name": "g",
@@ -757,9 +769,7 @@ def test_small_types_method() -> None:
         "type": "reinforcement",
         "reinforcement": {"grader": score_grader},
     }
-    score_reference = litellm_utils.LiteLLMFineTuningJob(**job, method=score_method)
-    score_ours = betterlite_utils.LiteLLMFineTuningJob(**job, method=score_method)
-    assert_same("fine tuning score grader", score_reference, score_ours)
+    assert_same("fine tuning score grader", *fine_tuning_pair(method=score_method))
     content_grader: dict[str, JsonValue] = {
         "type": "score_model",
         "name": "g",
@@ -776,9 +786,7 @@ def test_small_types_method() -> None:
         "type": "reinforcement",
         "reinforcement": {"grader": content_grader},
     }
-    content_reference = litellm_utils.LiteLLMFineTuningJob(**job, method=content_method)
-    content_ours = betterlite_utils.LiteLLMFineTuningJob(**job, method=content_method)
-    assert_same("fine tuning image content", content_reference, content_ours)
+    assert_same("fine tuning image content", *fine_tuning_pair(method=content_method))
     multi_grader: dict[str, JsonValue] = {
         "type": "multi",
         "name": "g",
@@ -789,9 +797,7 @@ def test_small_types_method() -> None:
         "type": "reinforcement",
         "reinforcement": {"grader": multi_grader},
     }
-    multi_reference = litellm_utils.LiteLLMFineTuningJob(**job, method=multi_method)
-    multi_ours = betterlite_utils.LiteLLMFineTuningJob(**job, method=multi_method)
-    assert_same("fine tuning multi grader", multi_reference, multi_ours)
+    assert_same("fine tuning multi grader", *fine_tuning_pair(method=multi_method))
 
 
 def test_small_types_realtime() -> None:
@@ -838,37 +844,23 @@ def test_small_types_realtime() -> None:
 
 def test_small_types_prompt_params() -> None:
     ours = betterlite_utils.DynamicPromptManagementParamLiteral.list_all_params()
-    assert ours == [
-        "cache_control_injection_points", "knowledge_bases", "vector_store_ids",
-    ]
+    assert ours == ["cache_control_injection_points", "knowledge_bases", "vector_store_ids"]
     member = betterlite_utils.DynamicPromptManagementParamLiteral.KNOWLEDGE_BASES
     assert member.value == "knowledge_bases"
     assert member == "knowledge_bases"
 
 
 def test_small_types_exports() -> None:
-    names = [
-        "AdapterCompletionStreamWrapper",
-        "BudgetConfig",
-        "CustomStreamingDecoder",
-        "DynamicPromptManagementParamLiteral",
-        "Embedding",
-        "EmbeddingResponse",
-        "ImageObject",
-        "ImageResponse",
-        "ImageUsage",
-        "ImageUsageInputTokensDetails",
-        "LiteLLMFineTuningJob",
-        "LiteLLMLoggingBaseClass",
-        "LiteLLMRealtimeStreamLoggingObject",
-        "Logprobs",
-        "TextChoices",
-        "TextCompletionResponse",
-        "TranscriptionResponse",
-        "TranscriptionUsageDurationObject",
-        "TranscriptionUsageInputTokenDetailsObject",
+    names = (
+        "AdapterCompletionStreamWrapper", "BudgetConfig", "CustomStreamingDecoder",
+        "DynamicPromptManagementParamLiteral", "Embedding", "EmbeddingResponse",
+        "ImageObject", "ImageResponse", "ImageUsage", "ImageUsageInputTokensDetails",
+        "LiteLLMFineTuningJob", "LiteLLMLoggingBaseClass",
+        "LiteLLMRealtimeStreamLoggingObject", "Logprobs", "TextChoices",
+        "TextCompletionResponse", "TranscriptionResponse",
+        "TranscriptionUsageDurationObject", "TranscriptionUsageInputTokenDetailsObject",
         "TranscriptionUsageTokensObject",
-    ]
+    )
     for name in names:
         assert name in betterlite_utils.__all__
 
@@ -914,47 +906,38 @@ def test_transcription_extras() -> None:
     duration_reference = litellm_utils.TranscriptionUsageDurationObject.model_validate(
         duration_values,
     )
-    duration_ours = betterlite_utils.TranscriptionUsageDurationObject.model_validate(
-        duration_values,
-    )
-    assert_same("transcription duration ignore", duration_reference, duration_ours)
+    assert_same("transcription duration ignore", duration_reference,
+                betterlite_utils.TranscriptionUsageDurationObject.model_validate(duration_values))
     details_values: dict[str, JsonValue] = {
         "audio_tokens": AUDIO_TOKENS, "text_tokens": TEXT_TOKENS, "foo": 1,
     }
     details_reference = litellm_utils.TranscriptionUsageInputTokenDetailsObject.model_validate(
         details_values,
     )
-    details_ours = betterlite_utils.TranscriptionUsageInputTokenDetailsObject.model_validate(
-        details_values,
-    )
-    assert_same("transcription details ignore", details_reference, details_ours)
+    assert_same("transcription details ignore", details_reference,
+                betterlite_utils.TranscriptionUsageInputTokenDetailsObject.model_validate(
+                    details_values))
     tokens_values: dict[str, JsonValue] = {
         "type": "tokens", "input_tokens": PROMPT_TOKENS,
         "output_tokens": COMPLETION_TOKENS, "total_tokens": TOTAL_TOKENS,
         "input_token_details": details_values, "foo": 1,
     }
     tokens_reference = litellm_utils.TranscriptionUsageTokensObject.model_validate(tokens_values)
-    tokens_ours = betterlite_utils.TranscriptionUsageTokensObject.model_validate(tokens_values)
-    assert_same("transcription tokens ignore", tokens_reference, tokens_ours)
+    assert_same("transcription tokens ignore", tokens_reference,
+                betterlite_utils.TranscriptionUsageTokensObject.model_validate(tokens_values))
 
 
-def pydantic_pairs() -> tuple[tuple[pydantic.BaseModel, pydantic.BaseModel], ...]:
-    pairs: list[tuple[pydantic.BaseModel, pydantic.BaseModel]] = [
-        (
-            betterlite_utils.ModelResponse(id="i", created=5),
-            litellm_utils.ModelResponse(id="i", created=5),
-        ),
-        (betterlite_utils.Message(content="x"), litellm_utils.Message(content="x")),
-        (betterlite_utils.EmbeddingResponse(), litellm_utils.EmbeddingResponse()),
-        (betterlite_utils.Delta(), litellm_utils.Delta()),
-        (betterlite_utils.StreamingChoices(), litellm_utils.StreamingChoices()),
-        (betterlite_utils.TextChoices(), litellm_utils.TextChoices()),
-        (
-            betterlite_utils.ChatCompletionMessageToolCall(function=FUNCTION_VALUES),
-            litellm_utils.ChatCompletionMessageToolCall(function=FUNCTION_VALUES),
-        ),
-    ]
-    return tuple(pairs)
+PYDANTIC_PAIRS: tuple[tuple[pydantic.BaseModel, pydantic.BaseModel], ...] = (
+    (betterlite_utils.ModelResponse(id="i", created=5),
+     litellm_utils.ModelResponse(id="i", created=5)),
+    (betterlite_utils.Message(content="x"), litellm_utils.Message(content="x")),
+    (betterlite_utils.EmbeddingResponse(), litellm_utils.EmbeddingResponse()),
+    (betterlite_utils.Delta(), litellm_utils.Delta()),
+    (betterlite_utils.StreamingChoices(), litellm_utils.StreamingChoices()),
+    (betterlite_utils.TextChoices(), litellm_utils.TextChoices()),
+    (betterlite_utils.ChatCompletionMessageToolCall(function=FUNCTION_VALUES),
+     litellm_utils.ChatCompletionMessageToolCall(function=FUNCTION_VALUES)),
+)
 
 
 def schema_properties(item: pydantic.BaseModel) -> dict[str, JsonValue]:
@@ -970,7 +953,7 @@ def schema_properties(item: pydantic.BaseModel) -> dict[str, JsonValue]:
 
 
 def test_pydantic_isinstance() -> None:
-    for item, _reference in pydantic_pairs():
+    for item, _reference in PYDANTIC_PAIRS:
         item_type = type(item)
         base = [found for found in item_type.__mro__ if found.__name__ == "BaseModel"]
         assert [found.__module__ for found in base] == ["pydantic.main"]
@@ -988,10 +971,25 @@ def test_pydantic_model_validate() -> None:
 
 
 def test_pydantic_model_fields() -> None:
-    for ours, reference in pydantic_pairs():
+    for ours, reference in PYDANTIC_PAIRS:
         assert sorted(type(ours).model_fields) == sorted(type(reference).model_fields)
 
 
 def test_pydantic_json_schema() -> None:
-    for ours, reference in pydantic_pairs():
+    for ours, reference in PYDANTIC_PAIRS:
         assert sorted(schema_properties(ours)) == sorted(type(reference).model_fields)
+
+
+def test_pydantic_fields_set() -> None:
+    pairs = (
+        *PYDANTIC_PAIRS,
+        (betterlite_utils.Message(content="x", audio=None, images=None),
+         litellm_utils.Message(content="x", audio=None, images=None)),
+        (betterlite_utils.Usage(prompt_tokens=PROMPT_TOKENS),
+         litellm_utils.Usage(prompt_tokens=PROMPT_TOKENS)),
+        (betterlite_utils.Message(content="x", provider_specific_fields=PROVIDER),
+         litellm_utils.Message(content="x", provider_specific_fields=PROVIDER)),
+        (betterlite_utils.Choices(), litellm_utils.Choices()),
+    )
+    for ours, reference in pairs:
+        assert ours.model_fields_set == reference.model_fields_set

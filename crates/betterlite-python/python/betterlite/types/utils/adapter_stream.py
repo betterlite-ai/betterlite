@@ -11,10 +11,11 @@ class AdapterStreamError(Exception): ...
 
 
 class AdapterCompletionStreamWrapper:
-    completion_stream: Iterable[JsonValue] | AsyncIterable[JsonValue]
+    # LiteLLM stores whatever it is given; a None stream fails when it is first read
+    completion_stream: Iterable[JsonValue] | AsyncIterable[JsonValue] | None
 
     def __init__(
-        self, completion_stream: Iterable[JsonValue] | AsyncIterable[JsonValue],
+        self, completion_stream: Iterable[JsonValue] | AsyncIterable[JsonValue] | None,
     ) -> None:
         self.completion_stream = completion_stream
 
@@ -28,14 +29,14 @@ class AdapterCompletionStreamWrapper:
         match self.completion_stream:
             case Iterable():
                 return self._next_chunk(self.completion_stream)
-            case AsyncIterable():
+            case AsyncIterable() | None:
                 raise TypeError("the stream is not synchronous")
 
     async def __anext__(self) -> JsonValue:
         match self.completion_stream:
             case AsyncIterable():
                 return await self._anext_chunk(self.completion_stream)
-            case Iterable():
+            case Iterable() | None:
                 raise TypeError("the stream is not asynchronous")
 
     def _next_chunk(self, stream: Iterable[JsonValue]) -> JsonValue:

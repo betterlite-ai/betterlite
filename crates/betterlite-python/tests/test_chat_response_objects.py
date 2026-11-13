@@ -365,6 +365,11 @@ def test_dump_delta_parity() -> None:
     ]
     for label, reference, item in cases:
         assert_same(label, reference, item)
+    stored_call = ours(function_call=FUNCTION_CALL).function_call
+    assert stored_call == betterlite_utils.FunctionCall(name="f", arguments="{}")
+    stored_reference = litellm_utils.Delta(function_call=FUNCTION_CALL).function_call
+    assert stored_reference is not None
+    assert stored_reference.name == "f"
     reasoned = betterlite_utils.Delta(reasoning="r")
     reference_reasoned = litellm_utils.Delta(reasoning="r")
     assert reasoned.reasoning_content == reference_reasoned.reasoning_content
@@ -423,9 +428,8 @@ def test_dump_usage_parity() -> None:
 
 
 def test_dump_unset_default() -> None:
-    reference = litellm_utils.ModelResponse(id="i", created=5)
-    ours = betterlite_utils.ModelResponse(id="i", created=5)
-    assert_same("response", reference, ours)
+    assert_same("response", litellm_utils.ModelResponse(id="i", created=5),
+                betterlite_utils.ModelResponse(id="i", created=5))
     stream_reference = litellm_utils.ModelResponseStream(id="i", created=5)
     stream_ours = betterlite_utils.ModelResponseStream(id="i", created=5)
     assert "model" not in parse_object(stream_ours.model_dump_json(exclude_unset=True))
@@ -567,10 +571,9 @@ def test_message_none_fields() -> None:
 
 def test_choices_native_reason() -> None:
     ours = betterlite_utils.Choices(finish_reason="tool_use")
-    reference = litellm_utils.Choices(finish_reason="tool_use")
     assert ours.finish_reason == "tool_calls"
     assert ours.provider_specific_fields == {"native_finish_reason": "tool_use"}
-    assert_same("native reason", reference, ours)
+    assert_same("native reason", litellm_utils.Choices(finish_reason="tool_use"), ours)
     mapped = betterlite_utils.Choices(finish_reason="stop")
     assert "provider_specific_fields" not in mapped
 
@@ -767,10 +770,9 @@ def test_usage_token_details() -> None:
 
 def test_model_response_defaults() -> None:
     ours = betterlite_utils.ModelResponse(id="x", created=1)
-    reference = litellm_utils.ModelResponse(id="x", created=1)
     assert ours.object == "chat.completion"
     assert ours.model is None
-    assert_same("response defaults", reference, ours)
+    assert_same("response defaults", litellm_utils.ModelResponse(id="x", created=1), ours)
     forced = betterlite_utils.ModelResponse(id="i", created=5, object="text_completion")
     assert forced.object == "chat.completion"
     generated = betterlite_utils.ModelResponse()
@@ -780,8 +782,8 @@ def test_model_response_defaults() -> None:
 
 def test_model_response_usage() -> None:
     ours = betterlite_utils.ModelResponse(id="i", created=5, usage=USAGE_VALUES)
-    reference = litellm_utils.ModelResponse(id="i", created=5, usage=USAGE_VALUES)
-    assert_same("response usage", reference, ours)
+    assert_same("response usage",
+                litellm_utils.ModelResponse(id="i", created=5, usage=USAGE_VALUES), ours)
     empty = betterlite_utils.ModelResponse(id="i", created=5)
     assert "usage" not in parse_object(empty.model_dump_json())
 
@@ -815,29 +817,25 @@ def test_model_response_headers() -> None:
 
 def test_model_response_stream() -> None:
     ours = betterlite_utils.ModelResponseStream(id="i", created=5, model="m")
-    reference = litellm_utils.ModelResponseStream(id="i", created=5, model="m")
     assert ours.object == "chat.completion.chunk"
     assert ours.provider_specific_fields is None
     assert "provider_specific_fields" in ours
-    assert_same("stream", reference, ours)
+    assert_same("stream", litellm_utils.ModelResponseStream(id="i", created=5, model="m"), ours)
     empty = betterlite_utils.ModelResponseStream(id="i", created=5, choices=EMPTY_LIST)
     assert empty.choices == []
 
 
 def test_model_response_choices() -> None:
     ours = betterlite_utils.ModelResponse(id="i", created=5, choices=CHOICES)
-    reference = litellm_utils.ModelResponse(id="i", created=5, choices=CHOICES)
     assert ours.choices[0].finish_reason == "length"
-    assert_same("response choices", reference, ours)
+    assert_same("response choices",
+                litellm_utils.ModelResponse(id="i", created=5, choices=CHOICES), ours)
     assert len(betterlite_utils.ModelResponse(id="i", created=5).choices) == 1
 
 
 def test_model_response_chunk() -> None:
     chunk: dict[str, JsonValue] = {
-        "id": "i",
-        "created": 5,
-        "model": "m",
-        "object": "chat.completion.chunk",
+        "id": "i", "created": 5, "model": "m", "object": "chat.completion.chunk",
         "choices": [
             {
                 "index": 0,

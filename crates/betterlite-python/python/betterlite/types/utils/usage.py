@@ -9,7 +9,6 @@ from betterlite.types.utils.base import (
     InitValue,
     ModelValue,
     ResponseObject,
-    drop_none_fields,
     dump_value,
 )
 
@@ -105,7 +104,9 @@ class PromptTokensDetailsWrapper(ResponseObject):
         if write is None and "cache_creation_input_tokens" in data:
             write = int_value(data["cache_creation_input_tokens"])
         self.cache_write_tokens = write
-        drop_none_fields(self, DROP_WHEN_NONE)
+        for name in DROP_WHEN_NONE:
+            if name in self and self[name] is None:
+                del self[name]
 
 
 class Usage(ResponseObject):
@@ -128,15 +129,16 @@ class Usage(ResponseObject):
         server_tool_use: ModelValue | Mapping[str, JsonValue] = None,
         cost: JsonValue = None, **params: InitValue,
     ) -> None:
-        super().__init__(
-            prompt_tokens=token_count(prompt_tokens),
-            completion_tokens=token_count(completion_tokens),
-            total_tokens=token_count(total_tokens),
-            completion_tokens_details=dump_value(completion_tokens_details),
-            prompt_tokens_details=dump_value(prompt_tokens_details),
-            server_tool_use=server_tool_use,
-            cost=cost,
-        )
+        counts: dict[str, InitValue] = {
+            "prompt_tokens": token_count(prompt_tokens),
+            "completion_tokens": token_count(completion_tokens),
+            "total_tokens": token_count(total_tokens),
+            "completion_tokens_details": dump_value(completion_tokens_details),
+            "prompt_tokens_details": dump_value(prompt_tokens_details),
+            "server_tool_use": server_tool_use,
+            "cost": cost,
+        }
+        super().__init__(**counts)
         if reasoning_tokens is not None:
             self.completion_tokens_details = reasoning_details(
                 self.completion_tokens_details, reasoning_tokens, completion_tokens,
@@ -147,13 +149,17 @@ class Usage(ResponseObject):
             if cached is not None:
                 prompt_details = token_details(prompt_details, cached, kind)
         self.prompt_tokens_details = prompt_details
+        # LiteLLM leaves these two unset rather than passing them, and a reader sees the same fields
+        for name in ("server_tool_use", "cost"):
+            if self[name] is None:
+                del self[name]
+                self.model_fields_set.discard(name)
         for name, target in PRIVATE_CACHE_PARAMS:
             value = int_param(params, name)
             if value is not None:
                 self[target] = value
         for name, item in params.items():
             self[name] = item
-        drop_none_fields(self, ("server_tool_use", "cost"))
 
 
 def int_value(value: InitValue) -> int | None:

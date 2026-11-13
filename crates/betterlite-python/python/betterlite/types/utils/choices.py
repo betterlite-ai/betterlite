@@ -10,7 +10,6 @@ from betterlite.types.utils.base import (
     InitValue,
     ModelValue,
     ResponseObject,
-    drop_none_fields,
     dump_value,
 )
 from betterlite.types.utils.message import Delta, Message
@@ -84,15 +83,17 @@ class Choices(ResponseObject):
                         selected = native_finish_reason(selected, finish_reason)
                 case bool() | int() | float() | list() | dict():
                     mapped = finish_reason
-        if selected is not None:
-            params["provider_specific_fields"] = selected
         super().__init__(
             finish_reason=mapped, index=0 if index is None else index,
-            message=message_value(message), logprobs=logprobs_value(logprobs), **params,
+            message=message_value(message), logprobs=logprobs_value(logprobs),
+            provider_specific_fields=selected, **params,
         )
         if enhancements is not None:
             self["enhancements"] = enhancements
-        drop_none_fields(self, ("logprobs", "provider_specific_fields"))
+        if self.logprobs is None:
+            del self.logprobs
+        if self.provider_specific_fields is None:
+            del self.provider_specific_fields
 
 
 class StreamingChoices(ResponseObject):

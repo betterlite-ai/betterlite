@@ -1,7 +1,7 @@
 from collections.abc import Mapping, Sequence
 from typing import Literal
 
-from pydantic import Field, JsonValue, PrivateAttr
+from pydantic import Field, JsonValue, PrivateAttr, SerializeAsAny
 from typing_extensions import override
 
 from betterlite.types.utils.base import (
@@ -23,7 +23,8 @@ class Embedding(ResponseObject):
 
 class EmbeddingResponse(DictJsonObject):
     model: str | None = None
-    data: list[JsonValue]
+    # LiteLLM keeps the Embedding models the caller sends, so a reader can still reach their fields
+    data: list[JsonValue | SerializeAsAny[ResponseObject]]
     object: Literal["list"]
     usage: Usage | None = None
     _hidden_params: dict[str, JsonValue] = PrivateAttr(default_factory=dict)
@@ -39,7 +40,7 @@ class EmbeddingResponse(DictJsonObject):
         **_params: InitValue,
     ) -> None:
         super().__init__(
-            model=model, object="list", data=data_values(data),
+            model=model, object="list", data=embedding_items(data),
             usage=Usage() if usage is None else dump_value(usage),
         )
         if hidden_params is not None:
@@ -49,17 +50,18 @@ class EmbeddingResponse(DictJsonObject):
         self._response_ms = response_ms
 
 
-def data_values(data: Sequence[ModelValue] | None) -> list[JsonValue]:
+def embedding_items(
+    data: Sequence[ModelValue] | None,
+) -> list[JsonValue | ResponseObject]:
     if data is None:
         return []
-    values: list[JsonValue] = []
+    items: list[JsonValue | ResponseObject] = []
     for item in data:
-        if item is None:
-            continue
         match item:
+            case ResponseObject():
+                items.append(item)
             case Dumpable():
-                dumped: dict[str, JsonValue] = item.model_dump()
-                values.append(dumped)
-            case dict() | list() | bool() | int() | float() | str():
-                values.append(item)
-    return values
+                items.append(item.model_dump())
+            case dict() | list() | bool() | int() | float() | str() | None:
+                items.append(item)
+    return items

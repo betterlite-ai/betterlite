@@ -10,7 +10,6 @@ from betterlite.types.utils.base import (
     InitValue,
     ModelValue,
     ResponseObject,
-    drop_none_fields,
     dump_value,
 )
 from betterlite.types.utils.tool_calls import (
@@ -78,17 +77,27 @@ class Message(DictJsonObject):
         annotations: Sequence[JsonValue] | None = None, **params: InitValue,
     ) -> None:
         selected_role = "assistant" if role is None or role == "" else role
-        super().__init__(
-            content=content, role=selected_role, function_call=function_call,
-            tool_calls=message_tool_calls(tool_calls), audio=audio,
-            images=None if images is None else list(images),
-            annotations=None if annotations is None else list(annotations),
-            reasoning_content=reasoning_content,
-            thinking_blocks=None if thinking_blocks is None else list(thinking_blocks),
-            reasoning_items=None if reasoning_items is None else list(reasoning_items),
-            **params,
-        )
-        drop_none_fields(self, MESSAGE_OPTIONAL)
+        fields: dict[str, InitValue] = {
+            "content": content, "role": selected_role, "function_call": function_call,
+            "tool_calls": message_tool_calls(tool_calls),
+        }
+        if audio is not None:
+            fields["audio"] = audio
+        if images is not None:
+            fields["images"] = list(images)
+        if annotations is not None:
+            fields["annotations"] = list(annotations)
+        if reasoning_content is not None:
+            fields["reasoning_content"] = reasoning_content
+        if thinking_blocks is not None:
+            fields["thinking_blocks"] = list(thinking_blocks)
+        if reasoning_items is not None:
+            fields["reasoning_items"] = list(reasoning_items)
+        super().__init__(**fields, **params)
+        # LiteLLM drops each optional field it was not given, so no null key reaches the wire
+        for name in MESSAGE_OPTIONAL:
+            if name not in fields:
+                del self[name]
         add_provider_specific_fields(self, provider_specific_fields)
 
 
@@ -119,22 +128,35 @@ class Delta(ResponseObject):
             selected_reasoning = params.pop("reasoning")
         provider_fields: InitValue = params.pop("provider_specific_fields", None)
         extras: dict[str, InitValue] = {
-            "content": content, "role": role, "function_call": function_call,
+            "content": content, "role": role,
+            "function_call": function_call_value(function_call),
             "tool_calls": delta_tool_calls(tool_calls), "audio": audio,
         }
         if images is not None and len(images) > 0:
             extras["images"] = list(images)
         if annotations is not None:
             extras["annotations"] = list(annotations)
-        super().__init__(
-            reasoning_content=selected_reasoning,
-            thinking_blocks=None if thinking_blocks is None else list(thinking_blocks),
-            reasoning_items=None if reasoning_items is None else list(reasoning_items),
-            **params,
-            **extras,
-        )
+        if selected_reasoning is not None:
+            extras["reasoning_content"] = selected_reasoning
+        if thinking_blocks is not None:
+            extras["thinking_blocks"] = list(thinking_blocks)
+        if reasoning_items is not None:
+            extras["reasoning_items"] = list(reasoning_items)
+        super().__init__(**params, **extras)
+        for name in DELTA_DROPPED:
+            if name not in extras:
+                del self[name]
+        # LiteLLM marks both names set while building a delta, then leaves their values out
+        self.model_fields_set.update(("images", "annotations"))
         add_provider_specific_fields(self, provider_fields)
-        drop_none_fields(self, DELTA_DROPPED)
+
+
+def function_call_value(function_call: ModelValue) -> ModelValue:
+    match function_call:
+        case Mapping():
+            return FunctionCall.model_validate(function_call)
+        case Dumpable() | list() | bool() | int() | float() | str() | None:
+            return function_call
 
 
 def message_tool_calls(tool_calls: Sequence[ModelValue] | None) -> list[ModelValue] | None:

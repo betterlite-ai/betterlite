@@ -1,4 +1,4 @@
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import (
     ClassVar,
     Literal,
@@ -53,12 +53,6 @@ ModelValue: TypeAlias = JsonValue | Dumpable
 InitValue: TypeAlias = (
     JsonValue | Dumpable | Sequence["InitValue"] | Mapping[str, "InitValue"]
 )
-
-
-def drop_none_fields(item: "ResponseObject", names: Collection[str]) -> None:
-    for name in names:
-        if name in item and item[name] is None:
-            del item[name]
 
 
 def dump_value(value: InitValue, *, exclude_unset: bool = False) -> InitValue:

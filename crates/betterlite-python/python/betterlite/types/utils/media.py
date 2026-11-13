@@ -1,6 +1,6 @@
 import time
 from collections.abc import Mapping, Sequence
-from typing import Literal, TypeAlias
+from typing import TypeAlias
 
 from pydantic import JsonValue, PrivateAttr
 from pydantic.main import IncEx
@@ -50,11 +50,12 @@ class ImageUsage(ResponseObject):
 
 class ImageResponse(DictJsonObject):
     created: int
-    background: Literal["transparent", "opaque"] | None = None
+    # a provider names its own background, format, quality and size, and LiteLLM keeps that string
+    background: str | None = None
     data: list[ImageObject]
-    output_format: Literal["png", "webp", "jpeg"] | None = None
-    quality: Literal["low", "medium", "high"] | None = None
-    size: Literal["1024x1024", "1024x1536", "1536x1024"] | None = None
+    output_format: str | None = None
+    quality: str | None = None
+    size: str | None = None
     usage: ImageUsage | None = None
     _hidden_params: dict[str, JsonValue] = PrivateAttr(default_factory=dict)
 
@@ -63,8 +64,8 @@ class ImageResponse(DictJsonObject):
         self, created: JsonValue = None, data: Sequence[ModelValue] | None = None,
         response_ms: float | None = None, usage: ModelValue = None,
         hidden_params: Mapping[str, JsonValue] | None = None,
-        background: JsonValue = None, quality: JsonValue = None,
-        output_format: JsonValue = None, size: JsonValue = None,
+        background: str | None = None, quality: str | None = None,
+        output_format: str | None = None, size: str | None = None,
         **_params: InitValue,
     ) -> None:
         images: list[ImageObject] = (
@@ -82,8 +83,12 @@ class ImageResponse(DictJsonObject):
             selected_usage = dump_value(usage)
         super().__init__(
             created=int(time.time()) if created is None else created,
-            background=background, data=images, output_format=output_format,
-            quality=quality, size=size, usage=selected_usage,
+            data=images, usage=selected_usage,
         )
+        # LiteLLM assigns these after the model is built, so a provider's own strings pass
+        self.background = background
+        self.quality = quality
+        self.output_format = output_format
+        self.size = size
         if hidden_params is not None:
             self._hidden_params = dict(hidden_params)
