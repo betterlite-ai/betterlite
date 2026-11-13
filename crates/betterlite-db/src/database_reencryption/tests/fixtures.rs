@@ -10,11 +10,14 @@ use betterlite_secrets::secret_codec::{
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::Notify;
 
-use crate::database_reencryption::MigrationError;
 use crate::database_reencryption::registry::{SecretColumn, registered_columns};
 use crate::database_reencryption::runner::MigrationRequest;
 use crate::database_reencryption::storage::{SecretRow, SecretStorage};
+use deadpool_postgres::PoolError;
+
+use crate::database_reencryption::MigrationError;
 use crate::encryption_scan::{MigrationJson, decode_migration_json, iter_encrypted_strings};
+use crate::postgres_store::diagnostics::PoolFailure;
 use crate::stored_cipher::DbCipher;
 
 pub(crate) const PREVIOUS_KEY: &str = "sk-previous-rotation-key";
@@ -113,13 +116,13 @@ impl FakeStorage {
             .push_back(Ok(rows));
     }
 
-    pub(crate) fn script_error(&self, message: &str) {
+    pub(crate) fn script_unavailable(&self) {
         self.batches
             .lock()
             .expect("the batches lock")
-            .push_back(Err(MigrationError::Reported {
-                message: message.to_owned(),
-            }));
+            .push_back(Err(MigrationError::Connect(PoolFailure {
+                driver: PoolError::Closed,
+            })));
     }
 
     pub(crate) fn script_update(&self, updated: bool) {

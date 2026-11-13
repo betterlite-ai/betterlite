@@ -83,34 +83,40 @@ impl SecretStorage for Client {
     }
 }
 
-fn invalid_row(column: &SecretColumn, source: tokio_postgres::Error) -> MigrationError {
-    MigrationError::InvalidRow {
-        table: column.table.to_owned(),
-        column: column.column.to_owned(),
-        source: Some(source),
-    }
-}
-
 fn decode_row(record: &Row, column: &SecretColumn) -> Result<SecretRow, MigrationError> {
     let key: Option<String> = record
         .try_get(0)
-        .map_err(|source| invalid_row(column, source))?;
+        .map_err(|source| MigrationError::InvalidRow {
+            table: column.table.to_owned(),
+            column: column.column.to_owned(),
+            source: Some(source),
+        })?;
     let primary_key = key.ok_or_else(|| MigrationError::InvalidRow {
         table: column.table.to_owned(),
         column: column.column.to_owned(),
         source: None,
     })?;
     let value = if column.is_json {
-        let raw: Option<String> = record
-            .try_get(1)
-            .map_err(|source| invalid_row(column, source))?;
+        let raw: Option<String> =
+            record
+                .try_get(1)
+                .map_err(|source| MigrationError::InvalidRow {
+                    table: column.table.to_owned(),
+                    column: column.column.to_owned(),
+                    source: Some(source),
+                })?;
         raw.map(|text| decode_migration_json(text.as_bytes()))
             .transpose()
             .map_err(MigrationError::Decode)?
     } else {
-        let raw: Option<String> = record
-            .try_get(1)
-            .map_err(|source| invalid_row(column, source))?;
+        let raw: Option<String> =
+            record
+                .try_get(1)
+                .map_err(|source| MigrationError::InvalidRow {
+                    table: column.table.to_owned(),
+                    column: column.column.to_owned(),
+                    source: Some(source),
+                })?;
         raw.map(|text| MigrationJson::String(SecretText(SecretString::from(text))))
     };
     Ok(SecretRow { primary_key, value })

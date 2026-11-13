@@ -162,9 +162,7 @@ fn child_error_stops_traversal() {
     let mut replacement = |text: &str| {
         calls.lock().expect("the calls lock").push(text.to_owned());
         if text == "fail" {
-            return Err(MigrationError::Reported {
-                message: "boom".to_owned(),
-            });
+            return Err(MigrationError::NotText);
         }
         Ok(Some(String::from("ok")))
     };
@@ -174,7 +172,7 @@ fn child_error_stops_traversal() {
         0,
         100,
     );
-    assert!(matches!(result, Err(MigrationError::Reported { .. })));
+    assert!(matches!(result, Err(MigrationError::NotText)));
     assert_eq!(
         calls.into_inner().expect("the calls lock"),
         vec!["first", "fail"]

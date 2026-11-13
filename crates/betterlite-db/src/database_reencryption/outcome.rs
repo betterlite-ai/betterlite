@@ -92,7 +92,9 @@ const fn error_class(error: &MigrationError) -> &'static str {
         MigrationError::NotText => "ScalarNotString",
         MigrationError::Encrypt(_) => "SecretEncryptionError",
         MigrationError::Json(_) => "StoredValueJsonError",
-        MigrationError::Reported { .. } => "ReportedError",
+        MigrationError::Connect(_) => "ConnectError",
+        MigrationError::Logger(_) => "LoggerError",
+        MigrationError::Unrebuildable => "RebuildError",
     }
 }
 

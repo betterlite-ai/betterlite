@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use betterlite_secrets::secret_codec::Algorithm;
+use deadpool_postgres::PoolError;
 use secrecy::SecretString;
 use tokio::sync::Notify;
 use tokio::task::{JoinSet, yield_now};
@@ -12,6 +13,7 @@ use crate::database_reencryption::counting::{
     count_encrypted_or_none, count_values_encrypted_with,
 };
 use crate::database_reencryption::registry::SecretColumn;
+use crate::postgres_store::diagnostics::PoolFailure;
 
 fn credentials() -> SecretColumn {
     column("LiteLLM_CredentialsTable", "credential_values")
@@ -21,7 +23,7 @@ fn credentials() -> SecretColumn {
 async fn unreadable_count_returns_none_not_zero() {
     let events = events();
     let storage = FakeStorage::new(&events, vec![credentials()]);
-    storage.script_error("the database is down");
+    storage.script_unavailable();
     let key = SecretString::from(PREVIOUS_KEY);
     let connects = Arc::new(AtomicUsize::new(0));
     let handle = Arc::clone(&connects);
@@ -43,9 +45,9 @@ async fn unreadable_connect_returns_none() {
     let key = SecretString::from(PREVIOUS_KEY);
     let counted = count_encrypted_or_none(
         || {
-            Err::<FakeStorage, _>(MigrationError::Reported {
-                message: "no connection".to_owned(),
-            })
+            Err::<FakeStorage, _>(MigrationError::Connect(PoolFailure {
+                driver: PoolError::Closed,
+            }))
         },
         &key,
         100,

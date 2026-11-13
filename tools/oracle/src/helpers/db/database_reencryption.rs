@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io;
 
 use betterlite_db::database_reencryption::MigrationError;
 use betterlite_db::database_reencryption::outcome::{
@@ -90,9 +91,7 @@ impl OutcomeInput {
                 remaining: self.remaining,
             },
             OutcomeKind::Failed => MigrationOutcome::Failed(MigrationFailure {
-                cause: MigrationError::Reported {
-                    message: self.error_message.clone(),
-                },
+                cause: MigrationError::Logger(io::Error::other(self.error_message.clone())),
                 class: self.error_class.clone(),
                 message: self.error_message.clone(),
             }),

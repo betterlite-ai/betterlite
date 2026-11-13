@@ -86,9 +86,7 @@ impl Builder {
 
     fn finish(mut self) -> Result<(MigrationJson, usize), MigrationError> {
         let (Some(rebuilt), true) = (self.results.pop(), self.results.is_empty()) else {
-            return Err(MigrationError::Reported {
-                message: "the stored value could not be rebuilt".to_owned(),
-            });
+            return Err(MigrationError::Unrebuildable);
         };
         Ok((rebuilt, self.count))
     }

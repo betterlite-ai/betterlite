@@ -1,7 +1,9 @@
+use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use betterlite_secrets::secret_codec::Algorithm;
+use deadpool_postgres::PoolError;
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::sync::Notify;
@@ -16,6 +18,7 @@ use crate::database_reencryption::outcome::{MigrationFailure, MigrationOutcome, 
 use crate::database_reencryption::registry::SecretColumn;
 use crate::database_reencryption::runner::migrate_if_requested;
 use crate::database_reencryption::storage::SecretRow;
+use crate::postgres_store::diagnostics::PoolFailure;
 
 fn credentials() -> SecretColumn {
     column("LiteLLM_CredentialsTable", "credential_values")
@@ -40,7 +43,7 @@ async fn absent_key_skips_database_callback() {
             Ok(Some(&storage))
         },
         log_into(&events),
-        |_| Ok(()),
+        Ok,
     )
     .await;
     assert!(outcome.expect("the run succeeds").is_none());
@@ -56,15 +59,10 @@ async fn empty_previous_key_is_request() {
     let empty = SecretString::from("");
     let cipher = cipher(Algorithm::XSalsa20Poly1305);
     let request = request(Some(&empty), Some(&master), false, &cipher);
-    let outcome = migrate_if_requested(
-        &request,
-        || Ok(Some(&storage)),
-        log_into(&events),
-        |_| Ok(()),
-    )
-    .await
-    .expect("the run succeeds")
-    .expect("an empty variable is still a request");
+    let outcome = migrate_if_requested(&request, || Ok(Some(&storage)), log_into(&events), Ok)
+        .await
+        .expect("the run succeeds")
+        .expect("an empty variable is still a request");
     assert!(matches!(
         outcome,
         MigrationOutcome::Nothing(NothingToMigrate::NothingLeftToMigrate)
@@ -91,16 +89,10 @@ async fn salt_before_database_before_same_key(#[case] scenario: &str) {
     let cipher = cipher(Algorithm::XSalsa20Poly1305);
     let request = request(Some(&previous), Some(&master), salt, &cipher);
     let outcome = if database {
-        migrate_if_requested(
-            &request,
-            || Ok(Some(&storage)),
-            log_into(&events),
-            |_| Ok(()),
-        )
-        .await
+        migrate_if_requested(&request, || Ok(Some(&storage)), log_into(&events), Ok).await
     } else {
         let missing: Option<&FakeStorage> = None;
-        migrate_if_requested(&request, || Ok(missing), log_into(&events), |_| Ok(())).await
+        migrate_if_requested(&request, || Ok(missing), log_into(&events), Ok).await
     };
     let produced = outcome.expect("the run succeeds").expect("an outcome");
     let expected = match scenario {
@@ -131,15 +123,10 @@ async fn same_key_with_rows_skips_writes() {
     let same = SecretString::from(PREVIOUS_KEY);
     let cipher = cipher(Algorithm::XSalsa20Poly1305);
     let request = request(Some(&same), Some(&same), false, &cipher);
-    let outcome = migrate_if_requested(
-        &request,
-        || Ok(Some(&storage)),
-        log_into(&events),
-        |_| Ok(()),
-    )
-    .await
-    .expect("the run succeeds")
-    .expect("an outcome");
+    let outcome = migrate_if_requested(&request, || Ok(Some(&storage)), log_into(&events), Ok)
+        .await
+        .expect("the run succeeds")
+        .expect("an outcome");
     assert!(matches!(
         outcome,
         MigrationOutcome::Nothing(NothingToMigrate::NothingLeftToMigrate)
@@ -169,7 +156,7 @@ async fn connected_callback_runs_before_salt_skip() {
             Ok(Some(stored))
         },
         log_into(&events),
-        |_| Ok(()),
+        Ok,
     )
     .await
     .expect("the run succeeds")
@@ -194,15 +181,10 @@ async fn count_write_recount_order() {
     let (previous, master) = keys();
     let cipher = cipher(Algorithm::XSalsa20Poly1305);
     let request = request(Some(&previous), Some(&master), false, &cipher);
-    let outcome = migrate_if_requested(
-        &request,
-        || Ok(Some(&storage)),
-        log_into(&events),
-        |_| Ok(()),
-    )
-    .await
-    .expect("the run succeeds")
-    .expect("an outcome");
+    let outcome = migrate_if_requested(&request, || Ok(Some(&storage)), log_into(&events), Ok)
+        .await
+        .expect("the run succeeds")
+        .expect("an outcome");
     assert!(matches!(
         outcome,
         MigrationOutcome::Migrated {
@@ -232,15 +214,10 @@ async fn no_old_ciphertexts_skip_write() {
     let (previous, master) = keys();
     let cipher = cipher(Algorithm::XSalsa20Poly1305);
     let request = request(Some(&previous), Some(&master), false, &cipher);
-    let outcome = migrate_if_requested(
-        &request,
-        || Ok(Some(&storage)),
-        log_into(&events),
-        |_| Ok(()),
-    )
-    .await
-    .expect("the run succeeds")
-    .expect("an outcome");
+    let outcome = migrate_if_requested(&request, || Ok(Some(&storage)), log_into(&events), Ok)
+        .await
+        .expect("the run succeeds")
+        .expect("an outcome");
     assert!(matches!(
         outcome,
         MigrationOutcome::Nothing(NothingToMigrate::NothingLeftToMigrate)
@@ -264,15 +241,10 @@ async fn other_worker_finished_zero_zero() {
     let (previous, master) = keys();
     let cipher = cipher(Algorithm::XSalsa20Poly1305);
     let request = request(Some(&previous), Some(&master), false, &cipher);
-    let outcome = migrate_if_requested(
-        &request,
-        || Ok(Some(&storage)),
-        log_into(&events),
-        |_| Ok(()),
-    )
-    .await
-    .expect("the run succeeds")
-    .expect("an outcome");
+    let outcome = migrate_if_requested(&request, || Ok(Some(&storage)), log_into(&events), Ok)
+        .await
+        .expect("the run succeeds")
+        .expect("an outcome");
     assert!(matches!(
         outcome,
         MigrationOutcome::Nothing(NothingToMigrate::NothingLeftToMigrate)
@@ -292,15 +264,10 @@ async fn remaining_count_no_retry() {
     let (previous, master) = keys();
     let cipher = cipher(Algorithm::XSalsa20Poly1305);
     let request = request(Some(&previous), Some(&master), false, &cipher);
-    let outcome = migrate_if_requested(
-        &request,
-        || Ok(Some(&storage)),
-        log_into(&events),
-        |_| Ok(()),
-    )
-    .await
-    .expect("the run succeeds")
-    .expect("an outcome");
+    let outcome = migrate_if_requested(&request, || Ok(Some(&storage)), log_into(&events), Ok)
+        .await
+        .expect("the run succeeds")
+        .expect("an outcome");
     assert!(matches!(
         outcome,
         MigrationOutcome::Migrated {
@@ -330,15 +297,7 @@ async fn progress_then_outcome_log() {
     let (previous, master) = keys();
     let cipher = cipher(Algorithm::XSalsa20Poly1305);
     let request = request(Some(&previous), Some(&master), false, &cipher);
-    drop(
-        migrate_if_requested(
-            &request,
-            || Ok(Some(&storage)),
-            log_into(&events),
-            |_| Ok(()),
-        )
-        .await,
-    );
+    drop(migrate_if_requested(&request, || Ok(Some(&storage)), log_into(&events), Ok).await);
     let logs: Vec<String> = recorded(&events)
         .into_iter()
         .filter(|event| event.starts_with("log:"))
@@ -357,7 +316,7 @@ async fn progress_then_outcome_log() {
 async fn outcome_before_failure_policy() {
     let events = events();
     let storage = FakeStorage::new(&events, vec![credentials()]);
-    storage.script_error("the database is down");
+    storage.script_unavailable();
     let (previous, master) = keys();
     let cipher = cipher(Algorithm::XSalsa20Poly1305);
     let request = request(Some(&previous), Some(&master), false, &cipher);
@@ -367,13 +326,13 @@ async fn outcome_before_failure_policy() {
         &request,
         || Ok(Some(&storage)),
         log_into(&events),
-        |failure| {
+        |failure: MigrationFailure| {
             policy_events
                 .lock()
                 .expect("the events lock")
                 .push("policy".to_owned());
             *seen.lock().expect("the seen lock") = Some(failure.message.clone());
-            Ok(())
+            Ok(failure)
         },
     )
     .await
@@ -386,7 +345,7 @@ async fn outcome_before_failure_policy() {
     );
     assert_eq!(
         seen.lock().expect("the seen lock").as_deref(),
-        Some("the database is down")
+        Some("the database connection is unavailable")
     );
 }
 
@@ -394,24 +353,43 @@ async fn outcome_before_failure_policy() {
 async fn tolerated_failure_returned() {
     let events = events();
     let storage = FakeStorage::new(&events, vec![credentials()]);
-    storage.script_error("still down");
+    storage.script_unavailable();
     let (previous, master) = keys();
     let cipher = cipher(Algorithm::XSalsa20Poly1305);
     let request = request(Some(&previous), Some(&master), false, &cipher);
-    let outcome = migrate_if_requested(
-        &request,
-        || Ok(Some(&storage)),
-        log_into(&events),
-        |_| Ok(()),
-    )
-    .await
-    .expect("the policy tolerates the failure")
-    .expect("an outcome");
+    let outcome = migrate_if_requested(&request, || Ok(Some(&storage)), log_into(&events), Ok)
+        .await
+        .expect("the policy tolerates the failure")
+        .expect("an outcome");
     let MigrationOutcome::Failed(failure) = outcome else {
         panic!("the run failed")
     };
-    assert_eq!(failure.class, "ReportedError");
-    assert_eq!(failure.message, "still down");
+    assert_eq!(failure.class, "ConnectError");
+    assert_eq!(failure.message, "the database connection is unavailable");
+}
+
+#[tokio::test]
+async fn rejected_failure_propagates_the_original_cause() {
+    let events = events();
+    let storage = FakeStorage::new(&events, vec![credentials()]);
+    storage.script_unavailable();
+    let (previous, master) = keys();
+    let cipher = cipher(Algorithm::XSalsa20Poly1305);
+    let request = request(Some(&previous), Some(&master), false, &cipher);
+    let seen = Mutex::new(String::new());
+    let policy = |failure: MigrationFailure| {
+        *seen.lock().expect("the seen lock") = format!("{failure:?}");
+        Err(failure)
+    };
+    let returned = migrate_if_requested(&request, || Ok(Some(&storage)), log_into(&events), policy)
+        .await
+        .expect_err("a rejected failure escapes");
+    assert!(matches!(returned.cause, MigrationError::Connect(_)));
+    assert_eq!(
+        format!("{returned:?}"),
+        *seen.lock().expect("the seen lock"),
+        "the policy hands back the very same cause"
+    );
 }
 
 #[tokio::test]
@@ -425,13 +403,7 @@ async fn cancellation_not_captured() {
         let (previous, master) = keys();
         let cipher = cipher(Algorithm::XSalsa20Poly1305);
         let request = request(Some(&previous), Some(&master), false, &cipher);
-        migrate_if_requested(
-            &request,
-            || Ok(Some(&storage)),
-            log_into(&task_events),
-            |_| Ok(()),
-        )
-        .await
+        migrate_if_requested(&request, || Ok(Some(&storage)), log_into(&task_events), Ok).await
     });
     let started = wait_for_read(&events).await;
     assert!(started, "the migration blocks inside the read");
@@ -473,33 +445,36 @@ async fn callback_and_final_log_errors_escape() {
         &request,
         || {
             Err::<Option<&FakeStorage>, _>(MigrationFailure::from_cause(
-                MigrationError::Reported {
-                    message: "cannot connect".to_owned(),
-                },
+                MigrationError::Connect(PoolFailure {
+                    driver: PoolError::Closed,
+                }),
                 &[],
             ))
         },
         log_into(&events),
-        |_| Ok(()),
+        Ok,
     )
     .await
     .expect_err("a connect failure escapes");
-    assert_eq!(connect_error.message, "cannot connect");
+    assert_eq!(
+        connect_error.message,
+        "the database connection is unavailable"
+    );
     assert!(recorded(&events).is_empty());
 
     let log_error = migrate_if_requested(
         &request,
         || Ok(Some(&storage)),
-        |_| {
-            Err(MigrationError::Reported {
-                message: "the logger broke".to_owned(),
-            })
-        },
+        |_| Err(MigrationError::Logger(io::Error::other("the logger broke"))),
         |_| panic!("the policy never sees a log failure"),
     )
     .await
     .expect_err("a final log failure escapes");
-    assert_eq!(log_error.message, "the logger broke");
+    assert!(
+        log_error.message.contains("the logger broke"),
+        "{}",
+        log_error.message
+    );
 }
 
 #[tokio::test]
@@ -515,9 +490,9 @@ async fn progress_log_error_captured() {
     let seen = Mutex::new(None);
     let log = move |message: &str| {
         if message.starts_with("Re-encrypting") {
-            return Err(MigrationError::Reported {
-                message: "the progress logger broke".to_owned(),
-            });
+            return Err(MigrationError::Logger(io::Error::other(
+                "the progress logger broke",
+            )));
         }
         captured
             .lock()
@@ -525,9 +500,9 @@ async fn progress_log_error_captured() {
             .push(format!("log:{message}"));
         Ok(())
     };
-    let policy = |failure: &MigrationFailure| {
+    let policy = |failure: MigrationFailure| {
         *seen.lock().expect("the seen lock") = Some(failure.message.clone());
-        Ok(())
+        Ok(failure)
     };
     let outcome = migrate_if_requested(&request, || Ok(Some(&storage)), log, policy)
         .await
@@ -536,7 +511,7 @@ async fn progress_log_error_captured() {
     assert!(matches!(outcome, MigrationOutcome::Failed(_)));
     assert_eq!(
         seen.lock().expect("the seen lock").as_deref(),
-        Some("the progress logger broke")
+        Some("the migration logger failed: the progress logger broke")
     );
     let logged = recorded(&events);
     assert!(

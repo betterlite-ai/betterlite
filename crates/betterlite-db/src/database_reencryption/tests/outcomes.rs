@@ -1,3 +1,5 @@
+use std::io;
+
 use secrecy::SecretString;
 
 use super::fixtures::{MASTER_KEY, PREVIOUS_KEY};
@@ -58,15 +60,11 @@ fn advice_remaining_restart() {
 
 #[test]
 fn advice_failed_unreadable() {
-    let failure = MigrationFailure::from_cause(
-        MigrationError::Reported {
-            message: "boom".to_owned(),
-        },
-        &[],
-    );
+    let failure =
+        MigrationFailure::from_cause(MigrationError::Logger(std::io::Error::other("boom")), &[]);
     assert_eq!(
         describe_outcome(&MigrationOutcome::Failed(failure)),
-        "Could not migrate stored values from the LITELLM_MIGRATE_FROM_MASTER_KEY key (ReportedError: boom). Values still encrypted with the previous key cannot be read until the migration succeeds. Keep LITELLM_MIGRATE_FROM_MASTER_KEY set and restart the proxy once the database is reachable."
+        "Could not migrate stored values from the LITELLM_MIGRATE_FROM_MASTER_KEY key (LoggerError: the migration logger failed: boom). Values still encrypted with the previous key cannot be read until the migration succeeds. Keep LITELLM_MIGRATE_FROM_MASTER_KEY set and restart the proxy once the database is reachable."
     );
 }
 
@@ -75,14 +73,14 @@ fn native_migration_failure_redacts_secrets() {
     let previous = SecretString::from(PREVIOUS_KEY);
     let master = SecretString::from(MASTER_KEY);
     let failure = MigrationFailure::from_cause(
-        MigrationError::Reported {
-            message: format!("the old {PREVIOUS_KEY} and the new {MASTER_KEY} both leaked"),
-        },
+        MigrationError::Logger(std::io::Error::other(format!(
+            "the old {PREVIOUS_KEY} and the new {MASTER_KEY} both leaked"
+        ))),
         &[&previous, &master],
     );
     let debug = format!("{failure:?}");
     assert!(debug.starts_with("MigrationFailure"), "{debug}");
-    assert!(debug.contains("ReportedError"), "{debug}");
+    assert!(debug.contains("LoggerError"), "{debug}");
     assert!(debug.contains("[redacted]"), "{debug}");
     assert!(!debug.contains(PREVIOUS_KEY), "{debug}");
     assert!(!debug.contains(MASTER_KEY), "{debug}");
@@ -95,23 +93,26 @@ fn native_migration_failure_redacts_secrets() {
 #[test]
 fn failure_cause_limit_300_characters() {
     let message = "x".repeat(400);
-    let truncated: String = format!("ReportedError: {message}")
+    let truncated: String = format!("LoggerError: the migration logger failed: {message}")
         .chars()
         .take(300)
         .collect();
     let expected = format!(
         "Could not migrate stored values from the LITELLM_MIGRATE_FROM_MASTER_KEY key ({truncated}). Values still encrypted with the previous key cannot be read until the migration succeeds. Keep LITELLM_MIGRATE_FROM_MASTER_KEY set and restart the proxy once the database is reachable."
     );
-    let ascii = MigrationFailure::from_cause(MigrationError::Reported { message }, &[]);
+    let ascii =
+        MigrationFailure::from_cause(MigrationError::Logger(std::io::Error::other(message)), &[]);
     assert_eq!(describe_outcome(&MigrationOutcome::Failed(ascii)), expected);
     let multibyte = "\u{e9}".repeat(400);
-    let limited: String = format!("ReportedError: {multibyte}")
+    let limited: String = format!("LoggerError: the migration logger failed: {multibyte}")
         .chars()
         .take(300)
         .collect();
     assert_eq!(limited.chars().count(), 300);
-    let unicode =
-        MigrationFailure::from_cause(MigrationError::Reported { message: multibyte }, &[]);
+    let unicode = MigrationFailure::from_cause(
+        MigrationError::Logger(std::io::Error::other(multibyte)),
+        &[],
+    );
     assert!(
         describe_outcome(&MigrationOutcome::Failed(unicode)).contains(&limited),
         "the bound counts characters, not bytes"

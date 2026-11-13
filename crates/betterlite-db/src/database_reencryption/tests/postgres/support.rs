@@ -166,13 +166,7 @@ pub(crate) async fn migrate(
         cipher,
         max_depth: 100,
     };
-    migrate_if_requested(
-        &request,
-        || Ok(Some(&database.client)),
-        |_| Ok(()),
-        |_| Ok(()),
-    )
-    .await
+    migrate_if_requested(&request, || Ok(Some(&database.client)), Ok, Ok).await
 }
 
 pub(crate) fn stored_value(text: &str, is_json: bool) -> MigrationJson {

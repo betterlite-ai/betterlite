@@ -1,8 +1,9 @@
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
-use super::counting::{count_values_encrypted_with, reencrypt_stored_values};
+use super::counting::count_values_encrypted_with;
 use super::outcome::{MigrationFailure, MigrationOutcome, NothingToMigrate, describe_outcome};
+use super::reencrypt::reencrypt_stored_values;
 use super::storage::SecretStorage;
 use super::{MigrationError, PREVIOUS_KEY_VARIABLE};
 use crate::stored_cipher::DbCipher;
@@ -33,7 +34,7 @@ where
     D: SecretStorage + Sync + 'database,
     Q: FnOnce() -> Result<Option<&'database D>, MigrationFailure> + Send,
     L: Fn(&str) -> Result<(), MigrationError> + Send + Sync,
-    T: Fn(&MigrationFailure) -> Result<(), MigrationFailure> + Send,
+    T: FnOnce(MigrationFailure) -> Result<MigrationFailure, MigrationFailure> + Send,
 {
     let (Some(previous_master_key), Some(master_key)) =
         (request.previous_master_key, request.master_key)
@@ -48,11 +49,13 @@ where
         max_depth: request.max_depth,
     };
     let database = connected_database()?;
-    let outcome = migrate_from_previous_key(&plan, database, &log).await?;
-    if let MigrationOutcome::Failed(failure) = &outcome {
-        raise_unless_tolerated(failure)?;
+    match migrate_from_previous_key(&plan, database, &log).await? {
+        MigrationOutcome::Failed(failure) => {
+            let failure = raise_unless_tolerated(failure)?;
+            Ok(Some(MigrationOutcome::Failed(failure)))
+        }
+        outcome => Ok(Some(outcome)),
     }
-    Ok(Some(outcome))
 }
 
 pub async fn migrate_from_previous_key<D, L>(

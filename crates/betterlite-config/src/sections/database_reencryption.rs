@@ -53,11 +53,9 @@ fn depth_from_env<L: EnvironmentLookup>(lookup: &L) -> Result<i64, ConfigError> 
     let Some(text) = lookup.lookup(RECURSE_DEPTH_VARIABLE) else {
         return Ok(DEFAULT_RECURSE_DEPTH);
     };
-    betterlite_env::number::<i64>(RECURSE_DEPTH_VARIABLE, &text)?.ok_or_else(invalid_depth)
-}
-
-fn invalid_depth() -> ConfigError {
-    ConfigError::from(betterlite_env::EnvError::Number {
-        name: RECURSE_DEPTH_VARIABLE.to_owned(),
+    betterlite_env::number::<i64>(RECURSE_DEPTH_VARIABLE, &text)?.ok_or_else(|| {
+        ConfigError::from(betterlite_env::EnvError::Number {
+            name: RECURSE_DEPTH_VARIABLE.to_owned(),
+        })
     })
 }

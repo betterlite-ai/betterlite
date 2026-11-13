@@ -1,9 +1,13 @@
+use std::io;
+
 use betterlite_secrets::error::SecretError;
 
 use crate::encryption_scan::ScanError;
+use crate::postgres_store::diagnostics::PoolFailure;
 
 pub mod counting;
 pub mod outcome;
+pub mod reencrypt;
 pub mod registry;
 pub mod runner;
 pub mod storage;
@@ -37,6 +41,10 @@ pub enum MigrationError {
     Encrypt(#[source] SecretError),
     #[error("serializing a stored value failed")]
     Json(#[source] serde_json::Error),
-    #[error("{message}")]
-    Reported { message: String },
+    #[error("the database connection is unavailable")]
+    Connect(#[source] PoolFailure),
+    #[error("the migration logger failed: {0}")]
+    Logger(#[source] io::Error),
+    #[error("the stored value could not be rebuilt")]
+    Unrebuildable,
 }

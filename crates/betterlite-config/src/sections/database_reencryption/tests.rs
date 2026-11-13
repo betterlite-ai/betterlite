@@ -6,9 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use betterlite_db::database_reencryption::MigrationError;
-use betterlite_db::database_reencryption::outcome::{
-    MigrationFailure, MigrationOutcome, NothingToMigrate,
-};
+use betterlite_db::database_reencryption::outcome::{MigrationOutcome, NothingToMigrate};
 use betterlite_db::database_reencryption::registry::SecretColumn;
 use betterlite_db::database_reencryption::runner::{MigrationRequest, migrate_if_requested};
 use betterlite_db::database_reencryption::storage::{SecretRow, SecretStorage};
@@ -131,7 +129,7 @@ async fn outcome_for(
             Ok(Some(database))
         },
         |_| Ok::<(), MigrationError>(()),
-        |_| Ok::<(), MigrationFailure>(()),
+        Ok,
     )
     .await;
     Run {
