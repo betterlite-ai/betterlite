@@ -1,0 +1,129 @@
+kind: helper
+name: messages-stream-split-continuation-and-multichoice-passthrough
+call:
+  messages_stream_split:
+    steps:
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 3
+        chunks:
+          - id: chunk-1
+            created: 7
+            model: m
+            choices: []
+            usage: {prompt_tokens: 5, completion_tokens: 2, total_tokens: 7}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 3
+        chunks:
+          - id: chunk-2
+            created: 8
+            model: m
+            choices:
+              - index: 0
+                delta: {content: T, reasoning_content: R}
+              - index: 1
+                delta: {content: U, reasoning_content: S}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 3
+        chunks:
+          - id: chunk-3
+            created: 9
+            model: m
+            choices:
+              - index: 0
+                finish_reason: stop
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 3
+        chunks:
+          - id: chunk-4
+            created: 10
+            model: m
+            choices:
+              - index: 0
+                delta: {content: T}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 3
+        chunks:
+          - id: chunk-5
+            created: 11
+            model: m
+            choices:
+              - index: 0
+                delta:
+                  content: T
+                  reasoning_content: R
+                  tool_calls:
+                    - {index: 0, id: call-1, type: function, function: {name: null, arguments: '{"a"'}}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 3
+        chunks:
+          - id: chunk-6
+            created: 12
+            model: m
+            choices:
+              - index: 0
+                delta:
+                  content: T
+                  tool_calls:
+                    - {index: 0, id: call-1, type: function, function: {name: null, arguments: '{"a"'}}
+                    - {index: 1, id: call-2, type: function, function: {name: lookup, arguments: "{}"}}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 3
+        chunks:
+          - id: chunk-7
+            created: 13
+            model: m
+            choices:
+              - index: 0
+                delta: {content: "", reasoning_content: R, tool_calls: []}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 3
+        chunks:
+          - id: chunk-8
+            created: 14
+            model: m
+            choices:
+              - index: 0
+                delta: {content: Hello, reasoning_content: R}
+                finish_reason: ""
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+env: {}
+compare: {ignore: []}

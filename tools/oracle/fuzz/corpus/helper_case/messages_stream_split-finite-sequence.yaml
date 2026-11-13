@@ -1,0 +1,22 @@
+kind: helper
+name: messages_stream_split-finite-sequence
+call:
+  messages_stream_split:
+    steps:
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 3
+        chunks:
+          - id: chunk-1
+            created: 7
+            model: m
+            choices:
+              - index: 0
+                delta: {role: assistant, reasoning_content: R, content: T}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - {function: delta_payload_field, delta_type: thinking_delta}
+env: {}
+compare: {ignore: []}

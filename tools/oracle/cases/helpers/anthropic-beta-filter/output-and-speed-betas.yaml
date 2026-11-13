@@ -1,0 +1,64 @@
+kind: helper
+name: output-and-speed-betas
+call:
+  anthropic_beta_filter:
+    matrix:
+      anthropic: {}
+    calls:
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params:
+          output_format: {}
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params:
+          output_config:
+            format: {}
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params:
+          output_config:
+            format: null
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params:
+          output_config: {}
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params:
+          speed: fast
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params:
+          speed: standard
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params: {}
+        messages:
+          - role: user
+            content: hi
+            output_config: null
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params:
+          output_config:
+            format: {}
+            effort: high
+        messages: []
+env: {}
+compare:
+  ignore: []

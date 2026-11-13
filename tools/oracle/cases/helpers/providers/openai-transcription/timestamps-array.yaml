@@ -1,0 +1,17 @@
+kind: helper
+name: openai-transcription-timestamps-array
+call:
+  openai_transcription:
+    function: exchange
+    probes:
+      - model: whisper-1
+        provider: whisper
+        optional_params: {timestamp_granularities: [word, segment], response_format: verbose_json}
+        api_key: sk-fixture
+        api_base: 'https://transcription.test/v1'
+        reply:
+          status: 200
+          headers: {content-type: application/json}
+          body: '{"text":"hi","words":[{"word":"hi","start":0.0,"end":1.0}],"segments":[]}'
+env: {}
+compare: {ignore: []}

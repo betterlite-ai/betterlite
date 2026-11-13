@@ -385,6 +385,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openai_transcription"
+path = "fuzz_targets/openai_transcription.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "huggingface_embedding_response"
 path = "fuzz_targets/huggingface_embedding_response.rs"
 test = false
