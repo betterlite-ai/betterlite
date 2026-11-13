@@ -1,0 +1,25 @@
+kind: helper
+name: file-defaults-and-list-purpose
+call:
+  mistral_resources:
+    operation: files
+    env: {}
+    calls:
+      - api_base: null
+        api_key: Key
+        now: 1704153600
+        uploads:
+          - file: {filename: null, content_type: null, content: [1, 2, 3]}
+            purpose: batch
+          - file: {filename: notes.txt, content_type: null, content: [4]}
+            purpose: batch
+          - file: {filename: data.bin, content_type: application/x-custom, content: [5]}
+            purpose: fine-tune
+        list_purposes: [null, "", batch, fine-tune]
+        bodies: []
+        deleted:
+          - {id: file_4}
+          - {id: file_5, deleted: false}
+        file_ids: [file-1, "a b/c", "..", ""]
+env: {}
+compare: {ignore: []}

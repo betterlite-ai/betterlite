@@ -1,0 +1,1 @@
+{"id":"job-2","endpoint":"/v1/ocr","status":"SUCCESS","created_at":100,"completed_at":200,"output_file":"out","error_file":"err","errors":[{"message":"bad","count":2}],"metadata":{"team":"a"}}

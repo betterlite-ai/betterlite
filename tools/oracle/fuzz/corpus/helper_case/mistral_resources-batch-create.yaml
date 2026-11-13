@@ -1,0 +1,13 @@
+kind: helper
+name: mistral-resources-batch-create-seed
+call:
+  mistral_resources:
+    operation: batch_create
+    env: {}
+    calls:
+      - model: mistral-small-latest
+        api_base: null
+        api_key: explicit
+        data: {input_file_id: file-1, endpoint: /v1/chat/completions}
+env: {}
+compare: {ignore: []}
