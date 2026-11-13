@@ -104,6 +104,26 @@ fn dumps_the_reply_like_the_sdk_model(
     assert_eq!(reply.original_response, expected);
 }
 
+#[test]
+fn keeps_dump_nulls_out_of_the_response() {
+    let reply = decode_transcription_reply(
+        br#"{"text":"hi"}"#,
+        Some("application/json"),
+        ReplyFormat::Verbose,
+    )
+    .expect("the body decodes");
+    assert_eq!(reply.response.text.as_deref(), Some("hi"));
+    assert!(
+        reply.response.extra.is_empty(),
+        "{:?}",
+        reply.response.extra
+    );
+    let Json::Object(dumped) = &reply.original_response else {
+        panic!("the dump is an object");
+    };
+    assert_eq!(dumped.get("language"), Some(&Json::Null));
+}
+
 #[rstest]
 #[case::absent(None, ReplyFormat::Transcription)]
 #[case::json(Some("json"), ReplyFormat::Transcription)]

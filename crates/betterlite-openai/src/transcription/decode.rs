@@ -213,7 +213,8 @@ fn response_from_object(
 ) -> Result<TranscriptionResponse, TranscriptionError> {
     let mut extra = Object::new();
     for name in ["language", "task", "duration", "words", "segments"] {
-        if let Some(value) = fields.get(name) {
+        // a field the dump filled with null is None in LiteLLM's response, and absent here
+        if let Some(value) = fields.get(name).filter(|value| **value != Json::Null) {
             let kept = serde_json::to_value(value)
                 .map_err(|source| TranscriptionError::Json { source })?;
             extra.insert(String::from(name), kept);
