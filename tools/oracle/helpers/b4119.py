@@ -1,15 +1,19 @@
 import asyncio
-from collections.abc import Mapping
-from typing import Literal, NotRequired, TypedDict
+from collections.abc import Awaitable, Callable, Mapping
+from typing import Final, Literal, NotRequired, Protocol, TypedDict
 
 import litellm
 from litellm.integrations.websearch_interception.handler import WebSearchInterceptionLogger
+from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.llms.base_llm.search.transformation import SearchResponse
 from litellm.types.integrations.custom_logger import AgenticLoopPlan
 from litellm.types.integrations.websearch_interception import RichWebSearchInput
 from litellm.types.utils import ModelResponse
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
+
+# the case never streams a follow-up call, and LiteLLM's `stream` is a positional parameter
+NO_STREAM: Final = False
 
 
 class SearchScript(TypedDict):
@@ -62,6 +66,54 @@ class RecordedSearch(TypedDict):
     rich: JsonValue
 
 
+ChatPlan = Callable[
+    [
+        dict[str, JsonValue],
+        str,
+        list[dict[str, JsonValue]],
+        None,
+        dict[str, JsonValue],
+        None,
+        bool,
+        dict[str, JsonValue],
+    ],
+    Awaitable[AgenticLoopPlan],
+]
+ChatRun = Callable[
+    [
+        dict[str, JsonValue],
+        str,
+        list[dict[str, JsonValue]],
+        None,
+        dict[str, JsonValue],
+        None,
+        bool,
+        dict[str, JsonValue],
+    ],
+    Awaitable[ModelResponse | CustomStreamWrapper],
+]
+
+
+class ChatBuilder(Protocol):
+    searches: list[RecordedSearch]
+
+    @property
+    # ast-grep-ignore: no-long-names
+    def async_build_chat_completion_agentic_loop_plan(self) -> ChatPlan: ...
+
+    @property
+    # ast-grep-ignore: no-long-names
+    def async_run_chat_completion_agentic_loop(self) -> ChatRun: ...
+
+
+class ResponsesBuilder(Protocol):
+    searches: list[RecordedSearch]
+
+    @property
+    # ast-grep-ignore: no-long-names
+    def async_build_responses_agentic_loop_plan(self) -> ChatPlan: ...
+
+
 Input = ChatCase | ResponsesCase
 
 PLAN: TypeAdapter[PlanDump] = TypeAdapter(PlanDump)
@@ -76,10 +128,11 @@ class ScriptedLogger(WebSearchInterceptionLogger):
         self.searches: list[RecordedSearch] = []
 
     @override
-    async def _execute_search(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1523-L1528
+    async def _execute_search(
         self,
         query: str,
-        kwargs: Mapping[str, JsonValue] | None = None,
+        # ast-grep-ignore: no-loose-types
+        kwargs: Mapping[str, object] | None = None,
         rich: RichWebSearchInput | None = None,
     ) -> tuple[str, SearchResponse | None]:
         del kwargs
@@ -131,75 +184,78 @@ def plan_value(plan: AgenticLoopPlan) -> JsonValue:
     }
 
 
-async def build_chat_plan(
-    logger: ScriptedLogger,
-    input_value: ChatCase,
-) -> JsonValue:
+# LiteLLM types these messages as a list, so a string carries the user item its runtime builds
+def responses_messages(input_value: ResponsesCase) -> list[dict[str, JsonValue]]:
+    match input_value["input"]:
+        case str() as text:
+            item: dict[str, JsonValue] = {"role": "user", "content": text}
+            return [item]
+        case list() as items:
+            return items
+
+
+async def build_chat_plan(builder: ChatBuilder, input_value: ChatCase) -> JsonValue:
     tools: dict[str, JsonValue] = {
         "tool_calls": JSON.validate_python(input_value["tool_calls"]),
     }
     response_format = input_value.get("response_format")
     if response_format is not None:
         tools["response_format"] = response_format
-    plan = await logger.async_build_chat_completion_agentic_loop_plan(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1127-L1145
-        tools=tools,
-        model=input_value["model"],
-        messages=input_value["messages"],
-        response=None,
-        optional_params=input_value["optional_params"],
-        logging_obj=None,
-        stream=False,
-        kwargs=input_value["kwargs"],
+    plan = await builder.async_build_chat_completion_agentic_loop_plan(
+        tools,
+        input_value["model"],
+        input_value["messages"],
+        None,
+        input_value["optional_params"],
+        None,
+        NO_STREAM,
+        input_value["kwargs"],
     )
     return {
         "result": plan_value(plan),
-        "searches": JSON.validate_python(logger.searches),
+        "searches": JSON.validate_python(builder.searches),
     }
 
 
 async def build_responses_plan(
-    logger: ScriptedLogger,
-    input_value: ResponsesCase,
+    builder: ResponsesBuilder, input_value: ResponsesCase
 ) -> JsonValue:
     tools: dict[str, JsonValue] = {
         "tool_calls": JSON.validate_python(input_value["tool_calls"]),
     }
-    plan = await logger.async_build_responses_agentic_loop_plan(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1154-L1177
-        tools=tools,
-        model=input_value["model"],
-        messages=input_value["input"],  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1154-L1162
-        response=None,
-        optional_params=input_value["optional_params"],
-        logging_obj=None,
-        stream=False,
-        kwargs=input_value["kwargs"],
+    plan = await builder.async_build_responses_agentic_loop_plan(
+        tools,
+        input_value["model"],
+        responses_messages(input_value),
+        None,
+        input_value["optional_params"],
+        None,
+        NO_STREAM,
+        input_value["kwargs"],
     )
     return {
         "result": plan_value(plan),
-        "searches": JSON.validate_python(logger.searches),
+        "searches": JSON.validate_python(builder.searches),
     }
 
 
-async def build_chat_rerun(
-    logger: ScriptedLogger,
-    input_value: ChatCase,
-) -> JsonValue:
+async def build_chat_rerun(builder: ChatBuilder, input_value: ChatCase) -> JsonValue:
     tools: dict[str, JsonValue] = {
         "tool_calls": JSON.validate_python(input_value["tool_calls"]),
     }
-    await logger.async_run_chat_completion_agentic_loop(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1092-L1125
-        tools=tools,
-        model=input_value["model"],
-        messages=input_value["messages"],
-        response=None,
-        optional_params=input_value["optional_params"],
-        logging_obj=None,
-        stream=False,
-        kwargs=input_value["kwargs"],
+    await builder.async_run_chat_completion_agentic_loop(
+        tools,
+        input_value["model"],
+        input_value["messages"],
+        None,
+        input_value["optional_params"],
+        None,
+        NO_STREAM,
+        input_value["kwargs"],
     )
     return {
         "result": RECORDED[-1] if RECORDED else None,
-        "searches": JSON.validate_python(logger.searches),
+        "searches": JSON.validate_python(builder.searches),
     }
 
 
@@ -208,7 +264,8 @@ async def record_acompletion(
     messages: list[JsonValue],
     **kwargs: JsonValue,
 ) -> ModelResponse:
-    RECORDED.append({"model": model, "messages": list(messages), **kwargs})
+    entry: dict[str, JsonValue] = {"model": model, "messages": list(messages), **kwargs}
+    RECORDED.append(entry)
     return ModelResponse()
 
 
