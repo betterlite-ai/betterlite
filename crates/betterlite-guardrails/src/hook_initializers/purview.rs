@@ -4,7 +4,7 @@ use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::error::HookInitError;
-use super::{required_name, required_text, text};
+use super::{read, required_name, required_text};
 
 mod tests;
 
@@ -32,7 +32,7 @@ pub fn initialize_purview(
     let extra = &params.base.extra.0;
     let tenant_id = required_text(extra, VENDOR, "tenant_id")?;
     let client_id = required_text(extra, VENDOR, "client_id")?;
-    let configured_secret = text(extra, VENDOR, "client_secret")?;
+    let configured_secret = read::<String>(extra, VENDOR, "client_secret")?;
     let client_secret = params
         .base
         .fields
@@ -46,10 +46,10 @@ pub fn initialize_purview(
         })
         .ok_or(HookInitError::PurviewClientSecretRequired)?;
     let guardrail_name = required_name(guardrail_name, VENDOR)?;
-    let purview_app_name = text(extra, VENDOR, "purview_app_name")?
+    let purview_app_name = read::<String>(extra, VENDOR, "purview_app_name")?
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| DEFAULT_APP_NAME.to_owned());
-    let user_id_field = text(extra, VENDOR, "user_id_field")?
+    let user_id_field = read::<String>(extra, VENDOR, "user_id_field")?
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| DEFAULT_USER_ID_FIELD.to_owned());
     Ok(PurviewArgs {

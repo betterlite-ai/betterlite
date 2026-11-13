@@ -77,13 +77,13 @@ pub(crate) fn required_name(
     guardrail_name: Option<&str>,
     vendor: &'static str,
 ) -> Result<String, HookInitError> {
-    match guardrail_name.filter(|name| !name.is_empty()) {
-        Some(name) => Ok(name.to_owned()),
-        None => Err(HookInitError::Required {
+    guardrail_name
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .ok_or(HookInitError::Required {
             vendor,
             setting: "guardrail_name",
-        }),
-    }
+        })
 }
 
 pub(crate) fn required_text(
@@ -91,94 +91,76 @@ pub(crate) fn required_text(
     vendor: &'static str,
     setting: &'static str,
 ) -> Result<String, HookInitError> {
-    text(map, vendor, setting)?
-        .filter(|value| !value.is_empty())
-        .ok_or(HookInitError::Required { vendor, setting })
-}
-
-pub(crate) fn text(
-    map: &ParamMap,
-    vendor: &'static str,
-    key: &str,
-) -> Result<Option<String>, HookInitError> {
-    match map.get(key) {
-        None | Some(GuardrailValue::Null) => Ok(None),
-        Some(GuardrailValue::Text(value)) => Ok(Some(value.clone())),
-        Some(_wrong) => Err(HookInitError::InvalidField {
-            vendor,
-            field: key.to_owned(),
-        }),
+    let Some(value) = read::<String>(map, vendor, setting)? else {
+        return Err(HookInitError::Required { vendor, setting });
+    };
+    if value.is_empty() {
+        return Err(HookInitError::Required { vendor, setting });
     }
+    Ok(value)
 }
 
-pub(crate) fn optional_flag(
-    map: &ParamMap,
-    vendor: &'static str,
-    key: &str,
-) -> Result<Option<GuardrailFlag>, HookInitError> {
-    match map.get(key) {
-        None | Some(GuardrailValue::Null) => Ok(None),
-        Some(GuardrailValue::Boolean(value)) => Ok(Some(*value)),
-        Some(_wrong) => Err(HookInitError::InvalidField {
-            vendor,
-            field: key.to_owned(),
-        }),
-    }
+// the declared type of each param LiteLLM reads; a wrong variant is an error naming the field
+pub(crate) trait ParamKind: Sized {
+    fn read(value: &GuardrailValue) -> Option<Self>;
 }
 
-pub(crate) fn number(
-    map: &ParamMap,
-    vendor: &'static str,
-    key: &str,
-) -> Result<Option<f64>, HookInitError> {
-    match map.get(key) {
-        None | Some(GuardrailValue::Null) => Ok(None),
-        Some(GuardrailValue::SignedInteger(value)) => Ok(serde_json::Number::from(*value).as_f64()),
-        Some(GuardrailValue::UnsignedInteger(value)) => {
-            Ok(serde_json::Number::from(*value).as_f64())
+impl ParamKind for String {
+    fn read(value: &GuardrailValue) -> Option<Self> {
+        match value {
+            GuardrailValue::Text(text) => Some(text.clone()),
+            _ => None,
         }
-        Some(GuardrailValue::Decimal(value)) => Ok(Some(*value)),
-        Some(_wrong) => Err(HookInitError::InvalidField {
-            vendor,
-            field: key.to_owned(),
-        }),
     }
 }
 
-pub(crate) fn integer(
+impl ParamKind for GuardrailFlag {
+    fn read(value: &GuardrailValue) -> Option<Self> {
+        match value {
+            GuardrailValue::Boolean(flag) => Some(*flag),
+            _ => None,
+        }
+    }
+}
+
+impl ParamKind for f64 {
+    fn read(value: &GuardrailValue) -> Option<Self> {
+        match value {
+            GuardrailValue::SignedInteger(number) => serde_json::Number::from(*number).as_f64(),
+            GuardrailValue::UnsignedInteger(number) => serde_json::Number::from(*number).as_f64(),
+            GuardrailValue::Decimal(number) => Some(*number),
+            _ => None,
+        }
+    }
+}
+
+impl ParamKind for i64 {
+    fn read(value: &GuardrailValue) -> Option<Self> {
+        serde_json::to_value(value).ok()?.as_i64()
+    }
+}
+
+impl ParamKind for ParamMap {
+    fn read(value: &GuardrailValue) -> Option<Self> {
+        match value {
+            GuardrailValue::Object(map) => Some(map.clone()),
+            _ => None,
+        }
+    }
+}
+
+pub(crate) fn read<T: ParamKind>(
     map: &ParamMap,
     vendor: &'static str,
     key: &str,
-) -> Result<Option<i64>, HookInitError> {
+) -> Result<Option<T>, HookInitError> {
     match map.get(key) {
         None | Some(GuardrailValue::Null) => Ok(None),
-        Some(GuardrailValue::SignedInteger(value)) => Ok(Some(*value)),
-        Some(GuardrailValue::UnsignedInteger(value)) => {
-            i64::try_from(*value)
-                .map(Some)
-                .map_err(|_overflow| HookInitError::InvalidField {
-                    vendor,
-                    field: key.to_owned(),
-                })
-        }
-        Some(_wrong) => Err(HookInitError::InvalidField {
-            vendor,
-            field: key.to_owned(),
-        }),
-    }
-}
-
-pub(crate) fn object<'a>(
-    map: &'a ParamMap,
-    vendor: &'static str,
-    key: &str,
-) -> Result<Option<&'a ParamMap>, HookInitError> {
-    match map.get(key) {
-        None | Some(GuardrailValue::Null) => Ok(None),
-        Some(GuardrailValue::Object(value)) => Ok(Some(value)),
-        Some(_wrong) => Err(HookInitError::InvalidField {
-            vendor,
-            field: key.to_owned(),
-        }),
+        Some(value) => T::read(value)
+            .map(Some)
+            .ok_or_else(|| HookInitError::InvalidField {
+                vendor,
+                field: key.to_owned(),
+            }),
     }
 }

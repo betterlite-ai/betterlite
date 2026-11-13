@@ -5,7 +5,7 @@ use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use secrecy::SecretString;
 
 use super::error::HookInitError;
-use super::{ParamMap, integer, object, optional_flag, params_extras, required_name};
+use super::{ParamMap, params_extras, read, required_name};
 
 mod tests;
 
@@ -34,7 +34,7 @@ pub fn initialize_openai(
 ) -> Result<OpenAiArgs, HookInitError> {
     let guardrail_name = required_name(guardrail_name, VENDOR)?;
     let extra = &params.base.extra.0;
-    let optional = object(extra, VENDOR, "optional_params")?;
+    let optional = read::<ParamMap>(extra, VENDOR, "optional_params")?;
     let api_key = params.base.fields.api_key.clone();
     let api_base = params.base.fields.api_base.clone();
     let default_on = params.base.fields.default_on.unwrap_or_default();
@@ -46,9 +46,14 @@ pub fn initialize_openai(
         api_base.as_deref(),
         default_on,
     )?;
-    let streaming_end_of_stream_only =
-        get_config_value(optional, extra, END_OF_STREAM_ONLY, optional_flag)?;
-    let streaming_sampling_rate = get_config_value(optional, extra, SAMPLING_RATE, integer)?;
+    let streaming_end_of_stream_only = get_config_value(
+        optional.as_ref(),
+        extra,
+        END_OF_STREAM_ONLY,
+        read::<GuardrailFlag>,
+    )?;
+    let streaming_sampling_rate =
+        get_config_value(optional.as_ref(), extra, SAMPLING_RATE, read::<i64>)?;
     Ok(OpenAiArgs {
         guardrail_name,
         api_key,

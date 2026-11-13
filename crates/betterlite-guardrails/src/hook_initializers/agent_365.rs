@@ -6,7 +6,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use super::error::HookInitError;
 use super::secret_lookup::SecretLookup;
-use super::{ParamMap, required_name, text};
+use super::{ParamMap, read, required_name};
 
 mod tests;
 
@@ -108,7 +108,7 @@ fn credentials(
             setting: "client_id",
         },
     )?;
-    let client_secret = text(extra, VENDOR, "client_secret")?
+    let client_secret = read::<String>(extra, VENDOR, "client_secret")?
         .filter(|value| !value.is_empty())
         .map(SecretString::from)
         .or_else(|| {
@@ -130,7 +130,7 @@ fn text_or_secret(
     lookup: &dyn SecretLookup,
     env: &str,
 ) -> Result<Option<String>, HookInitError> {
-    Ok(text(map, VENDOR, key)?
+    Ok(read::<String>(map, VENDOR, key)?
         .filter(|value| !value.is_empty())
         .or_else(|| {
             lookup

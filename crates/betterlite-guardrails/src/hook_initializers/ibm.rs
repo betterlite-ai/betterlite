@@ -6,7 +6,7 @@ use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use secrecy::SecretString;
 
 use super::error::HookInitError;
-use super::{ParamMap, number, object, optional_flag, required_name, required_text};
+use super::{ParamMap, read, required_name, required_text};
 
 mod tests;
 
@@ -51,12 +51,13 @@ pub fn initialize_ibm(
         auth_token,
         base_url,
         detector_id,
-        is_detector_server: optional_flag(extra, VENDOR, "is_detector_server")?.unwrap_or(true),
+        is_detector_server: read::<GuardrailFlag>(extra, VENDOR, "is_detector_server")?
+            .unwrap_or(true),
         detector_params: optional.detector_params,
         extra_headers: optional.extra_headers,
         score_threshold: optional.score_threshold,
         block_on_detection: optional.block_on_detection,
-        verify_ssl: optional_flag(extra, VENDOR, "verify_ssl")?.unwrap_or(true),
+        verify_ssl: read::<GuardrailFlag>(extra, VENDOR, "verify_ssl")?.unwrap_or(true),
         default_on: params.base.fields.default_on.unwrap_or_default(),
         event_hook: params.mode.clone(),
         timeout: params.base.fields.timeout,
@@ -64,7 +65,7 @@ pub fn initialize_ibm(
 }
 
 fn optional_params(extra: &ParamMap) -> Result<OptionalParams, HookInitError> {
-    let Some(optional) = object(extra, VENDOR, "optional_params")? else {
+    let Some(optional) = read::<ParamMap>(extra, VENDOR, "optional_params")? else {
         return Ok(OptionalParams {
             detector_params: BTreeMap::new(),
             extra_headers: BTreeMap::new(),
@@ -73,13 +74,11 @@ fn optional_params(extra: &ParamMap) -> Result<OptionalParams, HookInitError> {
         });
     };
     Ok(OptionalParams {
-        detector_params: object(optional, VENDOR, "detector_params")?
-            .cloned()
+        detector_params: read::<ParamMap>(&optional, VENDOR, "detector_params")?
             .unwrap_or_default(),
-        extra_headers: object(optional, VENDOR, "extra_headers")?
-            .cloned()
-            .unwrap_or_default(),
-        score_threshold: number(optional, VENDOR, "score_threshold")?,
-        block_on_detection: optional_flag(optional, VENDOR, "block_on_detection")?.unwrap_or(true),
+        extra_headers: read::<ParamMap>(&optional, VENDOR, "extra_headers")?.unwrap_or_default(),
+        score_threshold: read::<f64>(&optional, VENDOR, "score_threshold")?,
+        block_on_detection: read::<GuardrailFlag>(&optional, VENDOR, "block_on_detection")?
+            .unwrap_or(true),
     })
 }
