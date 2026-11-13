@@ -1,0 +1,13 @@
+kind: helper
+name: voyage-media-rank-image-url-null-empty-and-data-prefix
+call:
+  voyage_media_rank:
+    multimodal:
+      - {model: voyage-multimodal-3, input: [{content: [{type: image_url, image_url: null}]}], options: {}, base: null, api_key: null, env: {}, reply: {status: 200, body: '{"model":"m","data":[],"object":"list","usage":{"total_tokens":3}}'}}
+      - {model: voyage-multimodal-3, input: [{content: [{type: image_url, image_url: {url: ""}}]}], options: {}, base: null, api_key: null, env: {}, reply: {status: 200, body: '{"model":"m","data":[],"object":"list","usage":{"total_tokens":3}}'}}
+      - {model: voyage-multimodal-3, input: [{content: [{type: image_url, image_url: "data:image/png;base64,AAAA"}]}], options: {}, base: null, api_key: null, env: {}, reply: {status: 200, body: '{"model":"m","data":[],"object":"list","usage":{"total_tokens":3}}'}}
+      - {model: voyage-multimodal-3, input: [{content: [{type: image_url, image_url: "data:image/png;base64"}]}], options: {}, base: null, api_key: null, env: {}, reply: {status: 200, body: '{"model":"m","data":[],"object":"list","usage":{"total_tokens":3}}'}}
+      - {model: voyage-multimodal-3, input: [{content: [{type: image_url, image_url: "https://example.test/a.png"}]}], options: {}, base: null, api_key: null, env: {}, reply: {status: 200, body: '{"model":"m","data":[],"object":"list","usage":{"total_tokens":3}}'}}
+    rerank: []
+env: {}
+compare: {ignore: []}

@@ -169,6 +169,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "voyage_rerank"
+path = "fuzz_targets/voyage_rerank.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vector_store_records"
 path = "fuzz_targets/vector_store_records.rs"
 test = false

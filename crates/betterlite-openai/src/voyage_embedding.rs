@@ -7,6 +7,7 @@ use thiserror::Error;
 pub enum VoyageEmbeddingVariant {
     Text,
     Contextual,
+    Multimodal,
 }
 
 impl VoyageEmbeddingVariant {
@@ -16,6 +17,24 @@ impl VoyageEmbeddingVariant {
             Self::Contextual
         } else {
             Self::Text
+        }
+    }
+
+    #[must_use]
+    pub const fn synthetic_url(self) -> &'static str {
+        match self {
+            Self::Text => "https://api.voyageai.com/v1/embeddings",
+            Self::Contextual => "https://api.voyageai.com/v1/contextualizedembeddings",
+            Self::Multimodal => "https://api.voyageai.com/v1/multimodalembeddings",
+        }
+    }
+
+    // LiteLLM raises its multimodal exception class for multimodal reply failures, not VoyageError
+    #[must_use]
+    pub const fn error_class(self) -> &'static str {
+        match self {
+            Self::Text | Self::Contextual => "VoyageError",
+            Self::Multimodal => "VoyageMultimodalEmbeddingError",
         }
     }
 }
@@ -48,6 +67,7 @@ pub fn endpoint(base: Option<&str>, variant: VoyageEmbeddingVariant) -> String {
     let suffix = match variant {
         VoyageEmbeddingVariant::Text => "/embeddings",
         VoyageEmbeddingVariant::Contextual => "/contextualizedembeddings",
+        VoyageEmbeddingVariant::Multimodal => "/multimodalembeddings",
     };
     match base {
         Some(supplied) if !supplied.is_empty() => {
@@ -57,12 +77,7 @@ pub fn endpoint(base: Option<&str>, variant: VoyageEmbeddingVariant) -> String {
                 format!("{supplied}{suffix}")
             }
         }
-        _ => match variant {
-            VoyageEmbeddingVariant::Text => "https://api.voyageai.com/v1/embeddings".to_owned(),
-            VoyageEmbeddingVariant::Contextual => {
-                "https://api.voyageai.com/v1/contextualizedembeddings".to_owned()
-            }
-        },
+        Some(_) | None => variant.synthetic_url().to_owned(),
     }
 }
 
@@ -126,20 +141,27 @@ pub fn voyage_headers(
     headers
 }
 
+// an explicit key never falls back to the environment, and each alias is skipped when empty
+#[must_use]
+pub fn voyage_api_key<F>(explicit: Option<&str>, lookup: F) -> Option<String>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    match explicit {
+        Some(key) => Some(key.to_owned()),
+        None => lookup("VOYAGE_API_KEY")
+            .filter(|value| !value.is_empty())
+            .or_else(|| lookup("VOYAGE_AI_API_KEY").filter(|value| !value.is_empty()))
+            .or_else(|| lookup("VOYAGE_AI_TOKEN").filter(|value| !value.is_empty())),
+    }
+}
+
+#[must_use]
 pub fn voyage_credentials<F>(api_key: Option<&str>, lookup: F) -> String
 where
     F: Fn(&str) -> Option<String>,
 {
-    let key = api_key.map_or_else(
-        || {
-            lookup("VOYAGE_API_KEY")
-                .filter(|value| !value.is_empty())
-                .or_else(|| lookup("VOYAGE_AI_API_KEY").filter(|value| !value.is_empty()))
-                .or_else(|| lookup("VOYAGE_AI_TOKEN").filter(|value| !value.is_empty()))
-                .unwrap_or_else(|| "None".to_owned())
-        },
-        str::to_owned,
-    );
+    let key = voyage_api_key(api_key, lookup).unwrap_or_else(|| "None".to_owned());
     format!("Bearer {key}")
 }
 
@@ -151,13 +173,7 @@ pub fn decode_voyage_embedding_reply(
     let parsed: Value =
         serde_json::from_slice(bytes).map_err(|source| VoyageEmbeddingError::Decode {
             status,
-            url: match variant {
-                VoyageEmbeddingVariant::Text => "https://api.voyageai.com/v1/embeddings",
-                VoyageEmbeddingVariant::Contextual => {
-                    "https://api.voyageai.com/v1/contextualizedembeddings"
-                }
-            }
-            .to_owned(),
+            url: variant.synthetic_url().to_owned(),
             message: str::from_utf8(bytes).map_or_else(|_| source.to_string(), str::to_owned),
             source,
         })?;

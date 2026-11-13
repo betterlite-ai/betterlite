@@ -1,0 +1,1 @@
+{"id":"rerank-1","data":[{"index":0,"relevance_score":0.875,"document":"first"},{"index":1,"relevance_score":0.25,"document":{"text":"second","page":2}}],"usage":{"total_tokens":11}}

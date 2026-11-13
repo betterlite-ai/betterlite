@@ -80,6 +80,7 @@ fn credentials_fall_through_in_alias_order() {
 #[rstest::rstest]
 #[case::text(VoyageEmbeddingVariant::Text)]
 #[case::contextual(VoyageEmbeddingVariant::Contextual)]
+#[case::multimodal(VoyageEmbeddingVariant::Multimodal)]
 fn replays_the_voyage_embedding_reply_corpus(
     #[case] variant: VoyageEmbeddingVariant,
     #[files("fuzz/corpus/voyage_embedding_reply/*")] path: PathBuf,
@@ -118,6 +119,10 @@ fn detects_context_anywhere_after_lowercasing(
 #[case::contextual(
     VoyageEmbeddingVariant::Contextual,
     "https://api.voyageai.com/v1/contextualizedembeddings"
+)]
+#[case::multimodal(
+    VoyageEmbeddingVariant::Multimodal,
+    "https://api.voyageai.com/v1/multimodalembeddings"
 )]
 fn malformed_reply_keeps_status_and_variant_url(
     #[case] variant: VoyageEmbeddingVariant,

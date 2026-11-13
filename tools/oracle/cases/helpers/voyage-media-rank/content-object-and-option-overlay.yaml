@@ -1,0 +1,11 @@
+kind: helper
+name: voyage-media-rank-content-object-and-option-overlay
+call:
+  voyage_media_rank:
+    multimodal:
+      - {model: voyage-multimodal-3, input: [{id: doc-1, content: [hello, {type: image_url, image_url: "https://example.test/a.png"}]}], options: {}, base: "https://example.test/v1", api_key: null, env: {VOYAGE_API_KEY: first}, reply: {status: 200, body: '{"model":"returned","data":[{"embedding":[1,2],"index":0}],"object":"list","usage":{"total_tokens":4}}'}}
+      - {model: voyage-multimodal-3, input: "hello", options: {dimensions: 8, model: other, inputs: ["replacement"]}, base: null, api_key: null, env: {}, reply: {status: 200, body: '{"model":null,"object":null,"data":null,"usage":{"total_tokens":null}}'}}
+      - {model: voyage-3, input: [7], options: {}, base: null, api_key: null, env: {}, reply: {status: 200, body: '{}'}}
+    rerank: []
+env: {}
+compare: {ignore: []}
