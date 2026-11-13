@@ -1,0 +1,20 @@
+kind: helper
+name: system-instructions
+call:
+  bedrock_services_realtime_session:
+    case: system_instructions
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+      - 00000000-0000-4000-8000-000000000004
+    updates:
+      - session:
+          instructions: You are a helpful assistant.
+      - session:
+          instructions: ""
+      - session:
+          instructions: null
+      - session: {}
+env: {}
+compare: {ignore: []}

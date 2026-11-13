@@ -1,0 +1,26 @@
+kind: helper
+name: explicit-sample-rate
+call:
+  bedrock_services_realtime_session:
+    case: explicit_sample_rate
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+    updates:
+      - session:
+          output_sample_rate_hertz: 48000
+          input_sample_rate_hertz: 22050
+      - session:
+          output_sample_rate_hertz: 0
+          input_sample_rate_hertz: 0
+      - session:
+          output_sample_rate_hertz: null
+          input_sample_rate_hertz: null
+      - session:
+          output_audio_format: g711_ulaw
+          output_sample_rate_hertz: 12345
+      - session:
+          output_sample_rate_hertz: 24000
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,21 @@
+kind: helper
+name: pcm16-input-output-rates
+call:
+  bedrock_services_realtime_session:
+    case: pcm16_input_output_rates
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+    updates:
+      - session:
+          output_audio_format: pcm16
+          input_audio_format: pcm16
+      - session:
+          output_audio_format: opus
+          input_audio_format: opus
+      - session:
+          output_audio_format: null
+          input_audio_format: null
+env: {}
+compare: {ignore: []}

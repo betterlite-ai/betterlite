@@ -1,0 +1,31 @@
+kind: helper
+name: created-updated-events
+call:
+  bedrock_services_realtime_session:
+    case: created_updated_events
+    ids:
+      - 00000000-0000-4000-8000-000000000011
+      - 00000000-0000-4000-8000-000000000012
+      - 00000000-0000-4000-8000-000000000013
+      - 00000000-0000-4000-8000-000000000014
+      - 00000000-0000-4000-8000-000000000015
+    model: amazon.nova-2-sonic-v1:0
+    trace_id: trace-realtime-1
+    urls:
+      - null
+      - ""
+      - https://bedrock.example
+    modalities:
+      - text
+    models:
+      - ""
+    headers:
+      - [x-a, "1"]
+      - [b, "2"]
+    error:
+      message: the request is not valid
+      status: 429
+      headers:
+        - [x-err, "1"]
+env: {}
+compare: {ignore: []}

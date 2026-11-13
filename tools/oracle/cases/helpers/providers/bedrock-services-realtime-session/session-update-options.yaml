@@ -1,0 +1,38 @@
+kind: helper
+name: session-update-options
+call:
+  bedrock_services_realtime_session:
+    case: session_update_options
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+      - 00000000-0000-4000-8000-000000000004
+    updates:
+      - type: session.update
+      - session: {}
+      - session:
+          max_response_output_tokens: 2048
+          temperature: 1.1
+          voice: amy
+          top_p: 0.5
+      - session: {}
+      - session:
+          max_response_output_tokens: null
+          temperature: null
+          voice: ""
+      - session:
+          max_response_output_tokens: "inf"
+      - session:
+          unknown_field: 1
+          tools: []
+          instructions: ""
+      - session:
+          instructions: be helpful
+      - session:
+          instructions: ""
+      - session:
+          instructions: null
+      - session: {}
+env: {}
+compare: {ignore: []}

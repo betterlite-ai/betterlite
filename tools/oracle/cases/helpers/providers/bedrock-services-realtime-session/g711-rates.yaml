@@ -1,0 +1,18 @@
+kind: helper
+name: g711-rates
+call:
+  bedrock_services_realtime_session:
+    case: g711_rates
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+    updates:
+      - session:
+          output_audio_format: g711_ulaw
+          input_audio_format: g711_ulaw
+      - session:
+          output_audio_format: g711_alaw
+          input_audio_format: g711_alaw
+env: {}
+compare: {ignore: []}

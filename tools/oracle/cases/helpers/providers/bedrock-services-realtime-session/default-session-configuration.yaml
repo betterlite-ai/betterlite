@@ -1,0 +1,12 @@
+kind: helper
+name: default-session-configuration
+call:
+  bedrock_services_realtime_session:
+    case: default_session_configuration
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+    model: amazon.nova-2-sonic-v1:0
+env: {}
+compare: {ignore: []}
