@@ -88,10 +88,7 @@ pub(super) fn transcription_request_value(
         Ok(file) => file,
         Err(failure) => return failure,
     };
-    match provider {
-        AudioProvider::Ovhcloud => ovhcloud_transcription_value(call, &file),
-        AudioProvider::Scaleway => scaleway_transcription_value(call, &file),
-    }
+    transcription_value(provider, call, &file)
 }
 
 // both transcription requests answer with the url, the headers, the ordered form and the file tuple
@@ -110,25 +107,34 @@ fn form_answer(
     })
 }
 
-fn ovhcloud_transcription_value(call: &TranscriptionCall, file: &ProcessedAudioFile) -> Value {
-    let from_env = env_key(&call.env, "OVHCLOUD_API_KEY");
-    let headers = ovhcloud_audio_headers(&Headers::new(), None, from_env.as_ref());
-    let request = ovhcloud_form(&call.model, file, &call.optional_params);
-    form_answer(
-        ovhcloud_audio_url(call.api_base.as_deref()),
-        headers,
-        &request.fields,
-        &request.file,
-    )
-}
-
-fn scaleway_transcription_value(call: &TranscriptionCall, file: &ProcessedAudioFile) -> Value {
-    let url = scaleway_url(call.api_base.as_deref());
-    let from_env = env_key(&call.env, "SCW_SECRET_KEY");
-    let Ok(headers) = scaleway_headers(&Headers::new(), None, from_env.as_ref()) else {
-        return json!({"url": url, "ok": false, "status": 401});
+fn transcription_value(
+    provider: AudioProvider,
+    call: &TranscriptionCall,
+    file: &ProcessedAudioFile,
+) -> Value {
+    let url = match provider {
+        AudioProvider::Ovhcloud => ovhcloud_audio_url(call.api_base.as_deref()),
+        AudioProvider::Scaleway => scaleway_url(call.api_base.as_deref()),
     };
-    let request = scaleway_form(&call.model, file, &call.optional_params);
+    let headers = match provider {
+        AudioProvider::Ovhcloud => {
+            let from_env = env_key(&call.env, "OVHCLOUD_API_KEY");
+            ovhcloud_audio_headers(&Headers::new(), None, from_env.as_ref())
+        }
+        AudioProvider::Scaleway => {
+            let from_env = env_key(&call.env, "SCW_SECRET_KEY");
+            match scaleway_headers(&Headers::new(), None, from_env.as_ref()) {
+                Ok(headers) => headers,
+                Err(error) => {
+                    return json!({"url": url, "ok": false, "status": error.status_code});
+                }
+            }
+        }
+    };
+    let request = match provider {
+        AudioProvider::Ovhcloud => ovhcloud_form(&call.model, file, &call.optional_params),
+        AudioProvider::Scaleway => scaleway_form(&call.model, file, &call.optional_params),
+    };
     form_answer(url, headers, &request.fields, &request.file)
 }
 
