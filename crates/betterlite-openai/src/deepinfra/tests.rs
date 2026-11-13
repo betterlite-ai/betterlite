@@ -690,6 +690,9 @@ fn a_failing_post_call_hook_falls_back_without_a_warning() {
 #[test]
 fn the_byte_decoder_is_bounded_and_returns_json() {
     assert!(decode_deepinfra_rerank(b"{\"scores\": []}", limits()).is_ok());
+    assert!(
+        decode_deepinfra_rerank(b"{\"scores\": []}", RerankLimits { max_body_bytes: 14 }).is_ok()
+    );
     assert!(matches!(
         decode_deepinfra_rerank(b"{\"scores\": []}", RerankLimits { max_body_bytes: 2 }),
         Err(RerankDecodeError::BodyTooLarge)
@@ -721,6 +724,15 @@ fn error_extraction_swallows_a_message_past_the_byte_limit() {
     assert_eq!(
         decode_deepinfra_error(message, RerankLimits { max_body_bytes: 2 }),
         message
+    );
+    assert_eq!(
+        decode_deepinfra_error(
+            message,
+            RerankLimits {
+                max_body_bytes: message.len()
+            }
+        ),
+        "boom"
     );
 }
 
