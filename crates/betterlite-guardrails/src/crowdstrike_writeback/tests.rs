@@ -272,10 +272,16 @@ fn _writeback_messages_skipping_enabled() {
     let structured = [message("user", "u")];
     let request_data = BTreeMap::from([(
         "messages".to_owned(),
-        GuardrailValue::Array(vec![GuardrailValue::Object(BTreeMap::from([
-            ("role".to_owned(), GuardrailValue::Text("user".to_owned())),
-            ("content".to_owned(), GuardrailValue::Text("u".to_owned())),
-        ]))]),
+        GuardrailValue::Array(vec![
+            GuardrailValue::Object(BTreeMap::from([
+                ("role".to_owned(), GuardrailValue::Text("system".to_owned())),
+                ("content".to_owned(), GuardrailValue::Text("sys".to_owned())),
+            ])),
+            GuardrailValue::Object(BTreeMap::from([
+                ("role".to_owned(), GuardrailValue::Text("user".to_owned())),
+                ("content".to_owned(), GuardrailValue::Text("u".to_owned())),
+            ])),
+        ]),
     )]);
     let output = guard_input(vec![output("masked")]);
     let rebuilt = writeback_messages(
@@ -289,8 +295,13 @@ fn _writeback_messages_skipping_enabled() {
         },
     )
     .expect("the request message list aligns");
+    assert_eq!(rebuilt.len(), 2);
     assert_eq!(
         content_of(&rebuilt[0]),
+        &GuardrailValue::Text("sys".to_owned())
+    );
+    assert_eq!(
+        content_of(&rebuilt[1]),
         &GuardrailValue::Text("masked".to_owned())
     );
 }
