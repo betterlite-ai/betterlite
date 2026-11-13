@@ -89,49 +89,41 @@ impl Helper for Op {
 }
 
 fn options_value(call: &OptionsCall) -> Value {
-    let supported = supported_params(call.host, &call.model);
     let mut optional = call.optional_params.clone();
-    match map_openai_params(
+    let outcome = map_openai_params(
         call.host,
         &call.non_default_params,
         &mut optional,
         &call.model,
         call.drop_params,
-    ) {
+    );
+    match outcome {
         Ok(()) => json!({
             "ok": true,
             "status": null,
-            "value": {"supported": supported, "mapped": optional},
+            "value": {"supported": supported_params(call.host, &call.model), "mapped": optional},
         }),
         Err(_) => json!({"ok": false, "status": null, "value": null}),
     }
 }
 
-fn settings(env: &BTreeMap<String, String>) -> Option<Settings> {
-    let loaded = ConfigLoader {
-        lookup: env.clone(),
-    }
-    .load("");
-    match loaded {
-        Ok(config) => Some(config.sections.compatible_image_credentials),
-        Err(_error) => None,
-    }
-}
-
 fn request_value(call: &RequestCall) -> Value {
-    let Some(settings) = settings(&call.env) else {
+    let Ok(config) = (ConfigLoader {
+        lookup: call.env.clone(),
+    })
+    .load("") else {
         return json!({"ok": false, "status": null, "value": null});
     };
+    let settings: Settings = config.sections.compatible_image_credentials;
     let url = complete_url(call.host, &settings, call.api_base.as_deref());
     let key = call.api_key.as_deref().map(SecretString::from);
-    let headers =
-        match validate_environment(call.host, &settings, key.as_ref(), &ImageHeaders::new()) {
-            Ok(headers) => headers,
-            Err(_) => return json!({"ok": false, "status": null, "value": null}),
-        };
-    let body = match request_body(call.host, &call.model, &call.prompt, &call.optional_params) {
-        Ok(body) => body,
-        Err(_) => return json!({"ok": false, "status": null, "value": null}),
+    let Ok(headers) =
+        validate_environment(call.host, &settings, key.as_ref(), &ImageHeaders::new())
+    else {
+        return json!({"ok": false, "status": null, "value": null});
+    };
+    let Ok(body) = request_body(call.host, &call.model, &call.prompt, &call.optional_params) else {
+        return json!({"ok": false, "status": null, "value": null});
     };
     let reply = ImageHttpResponse {
         status_code: call.reply.status,
@@ -143,7 +135,18 @@ fn request_value(call: &RequestCall) -> Value {
     }
     match decode_compatible_image_reply(call.host, &reply, ImageResponse::default()) {
         Ok(response) => {
-            let data: Vec<Value> = response.data.iter().flatten().map(image_view).collect();
+            let data: Vec<Value> = response
+                .data
+                .iter()
+                .flatten()
+                .map(|image| {
+                    json!({
+                        "url": image.url,
+                        "b64_json": image.b64_json,
+                        "revised_prompt": image.revised_prompt,
+                    })
+                })
+                .collect();
             json!({
                 "ok": true,
                 "status": null,
@@ -169,16 +172,17 @@ fn header(headers: &ImageHeaders, name: &str) -> Value {
         .map_or(Value::Null, |(_key, value)| Value::from(value.clone()))
 }
 
-fn image_view(image: &ImageData) -> Value {
-    json!({
-        "url": image.url,
-        "b64_json": image.b64_json,
-        "revised_prompt": image.revised_prompt,
-    })
-}
-
 fn price_value(call: &PriceCall) -> Value {
-    let response = billed(call.images);
+    let image = ImageData {
+        b64_json: None,
+        revised_prompt: None,
+        url: Some(String::from(GENERATED)),
+    };
+    let response = ImageResponse {
+        created: 0,
+        data: Some(vec![image; call.images]),
+        usage: None,
+    };
     let lookup = FixtureLookup {
         entries: &call.prices,
     };
@@ -195,19 +199,6 @@ fn price_value(call: &PriceCall) -> Value {
             "value": {"cost": cost.normalize().to_string()},
         }),
         Err(_) => json!({"ok": false, "status": null, "value": null}),
-    }
-}
-
-fn billed(count: usize) -> ImageResponse {
-    let image = ImageData {
-        b64_json: None,
-        revised_prompt: None,
-        url: Some(String::from(GENERATED)),
-    };
-    ImageResponse {
-        created: 0,
-        data: Some(vec![image; count]),
-        usage: None,
     }
 }
 

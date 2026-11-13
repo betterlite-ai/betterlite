@@ -1,7 +1,7 @@
 import asyncio
 import os
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Final, Literal, NotRequired, Protocol, TypedDict, TypeVar
+from typing import Final, Literal, Protocol, TypedDict
 
 import httpx
 import litellm
@@ -19,10 +19,8 @@ from typing_extensions import override
 
 litellm.suppress_debug_info = True
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
-EMPTY: Final[dict[str, JsonValue]] = {}
 GENERATED: Final = "https://example.invalid/generated.png"
 NO_FAKE_STREAM: Final = False
-T = TypeVar("T")
 Object = dict[str, JsonValue]
 HostName = Literal["aiml", "cometapi"]
 Config = AimlImageGenerationConfig | CometAPIImageGenerationConfig
@@ -57,13 +55,14 @@ class PriceCall(TypedDict):
     host: HostName
     model: str
     images: int
+    prices: dict[str, Object]
 
 
 class Input(TypedDict):
     function: Literal["options", "request", "price"]
-    options: NotRequired[list[OptionsCall]]
-    requests: NotRequired[list[RequestCall]]
-    prices: NotRequired[list[PriceCall]]
+    options: list[OptionsCall]
+    requests: list[RequestCall]
+    prices: list[PriceCall]
 
 
 class OptionMapper(Protocol):
@@ -80,20 +79,8 @@ class ImageHandler(Protocol):
         self,
     ) -> Callable[
         [
-            str,
-            str,
-            BaseImageGenerationConfig,
-            Object,
-            str,
-            Object,
-            Logging,
-            float,
-            None,
-            None,
-            AsyncHTTPHandler,
-            bool,
-            None,
-            str | None,
+            str, str, BaseImageGenerationConfig, Object, str, Object, Logging, float,
+            None, None, AsyncHTTPHandler, bool, None, str | None,
         ],
         Awaitable[ImageResponse],
     ]: ...
@@ -125,7 +112,7 @@ class ImageLogging(Logging):
         input: str,
         api_key: str,
         model: str | None = None,
-        additional_args: dict[str, JsonValue] | None = None,
+        additional_args: Object | None = None,
     ) -> None:
         ...
 
@@ -145,12 +132,6 @@ class RecordingTransport:
         self.content_type = request.headers["content-type"]
         self.body = JSON.validate_json(request.content)
         return httpx.Response(self.status, text=self.reply_body, request=request)
-
-
-def required(value: T | None, name: str) -> T:
-    if value is None:
-        raise ValueError(f"{name} is required")
-    return value
 
 
 def apply_env(env: dict[str, str]) -> None:
@@ -235,11 +216,8 @@ def price_value(call: PriceCall) -> JsonValue:
 def run(input_value: Input) -> JsonValue:
     function = input_value["function"]
     if function == "options":
-        return [
-            options_value(call)
-            for call in required(input_value.get("options"), "options")
-        ]
+        return [options_value(call) for call in input_value["options"]]
     if function == "request":
-        requests = required(input_value.get("requests"), "requests")
+        requests = input_value["requests"]
         return [asyncio.run(request_call(call)) for call in requests]
-    return [price_value(call) for call in required(input_value.get("prices"), "prices")]
+    return [price_value(call) for call in input_value["prices"]]
