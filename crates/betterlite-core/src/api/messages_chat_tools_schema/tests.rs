@@ -303,37 +303,37 @@ fn strict_is_python_truthiness(#[case] strict: &str, #[case] expected: bool) {
 }
 
 #[rstest]
-#[case::top_level_true(r#"{"name": "a", "eager_input_streaming": true}"#)]
-#[case::nested_true(r#"{"name": "a", "function": {"eager_input_streaming": true}}"#)]
-fn eager_input_streaming_stays_at_the_tool_level(#[case] declaration: &str) {
+#[case::top_level_true(
+    r#"{"name": "a", "eager_input_streaming": true}"#,
+    r#"[{"type": "function", "function": {"name": "a"}, "eager_input_streaming": true}]"#
+)]
+#[case::top_level_false(
+    r#"{"name": "a", "eager_input_streaming": false}"#,
+    r#"[{"type": "function", "function": {"name": "a"}, "eager_input_streaming": false}]"#
+)]
+fn eager_input_streaming_stays_at_the_tool_level(
+    #[case] declaration: &str,
+    #[case] expected: &str,
+) {
     let input = format!("[{declaration}]");
-    let translated_tools = translated(&input, None);
-    let Json::List(tools) = translated_tools else {
-        panic!("a tool list answers");
-    };
-    let Some(converted) = tools.first().and_then(Json::as_object) else {
-        panic!("one tool answers");
-    };
-    assert_eq!(
-        converted.get("eager_input_streaming"),
-        Some(&Json::Bool(true))
-    );
-    let Some(Json::Object(function)) = converted.get("function") else {
-        panic!("a function chunk answers");
-    };
-    assert_eq!(function.get("eager_input_streaming"), None);
+    assert_eq!(translated(&input, None), json(expected));
 }
 
-#[test]
-fn a_top_level_false_flag_wins_over_the_nested_one() {
-    let input = r#"[{"name": "a", "eager_input_streaming": false, "function": {"eager_input_streaming": true}}]"#;
-    let Json::List(tools) = translated(input, None) else {
-        panic!("a tool list answers");
-    };
-    let Some(tool) = tools.first().and_then(Json::as_object) else {
-        panic!("one tool answers");
-    };
-    assert_eq!(tool.get("eager_input_streaming"), Some(&Json::Bool(false)));
+#[rstest]
+#[case::nested_true(
+    r#"{"name": "a", "function": {"eager_input_streaming": true}}"#,
+    r#"[{"type": "function", "function": {"name": "a", "parameters": {"function": {"eager_input_streaming": true}}}, "eager_input_streaming": true}]"#
+)]
+#[case::top_level_false_wins(
+    r#"{"name": "a", "eager_input_streaming": false, "function": {"eager_input_streaming": true}}"#,
+    r#"[{"type": "function", "function": {"name": "a", "parameters": {"function": {"eager_input_streaming": true}}}, "eager_input_streaming": false}]"#
+)]
+fn a_nested_eager_flag_is_read_while_a_function_key_becomes_a_parameter(
+    #[case] declaration: &str,
+    #[case] expected: &str,
+) {
+    let input = format!("[{declaration}]");
+    assert_eq!(translated(&input, None), json(expected));
 }
 
 #[test]
@@ -347,28 +347,26 @@ fn a_non_boolean_eager_flag_is_an_unsupported_parameter() {
 }
 
 #[rstest]
-#[case::claude(Some("anthropic/claude-3-opus"), Some(r#"{"type": "ephemeral"}"#))]
-#[case::bare_claude(Some("claude-3-opus"), Some(r#"{"type": "ephemeral"}"#))]
-#[case::gemini(Some("gemini/gemini-2.0-flash"), Some(r#"{"type": "ephemeral"}"#))]
+#[case::claude(Some("anthropic/claude-3-opus"), true)]
+#[case::bare_claude(Some("claude-3-opus"), true)]
+#[case::gemini(Some("gemini/gemini-2.0-flash"), true)]
 #[case::bedrock_arn(
     Some("bedrock/arn:aws:bedrock:us-east-1:1:application-inference-profile/x"),
-    Some(r#"{"type": "ephemeral"}"#)
+    true
 )]
-#[case::openai(Some("gpt-4o"), None)]
-#[case::absent(None, None)]
-#[case::empty(Some(""), None)]
-fn cache_control_follows_the_target_model(
-    #[case] model: Option<&str>,
-    #[case] expected: Option<&str>,
-) {
+#[case::openai(Some("gpt-4o"), false)]
+#[case::absent(None, false)]
+#[case::empty(Some(""), false)]
+fn cache_control_follows_the_target_model(#[case] model: Option<&str>, #[case] copied: bool) {
+    let expected = if copied {
+        json(
+            r#"[{"type": "function", "function": {"name": "a"}, "cache_control": {"type": "ephemeral"}}]"#,
+        )
+    } else {
+        json(r#"[{"type": "function", "function": {"name": "a"}}]"#)
+    };
     let input = r#"[{"name": "a", "cache_control": {"type": "ephemeral"}}]"#;
-    let Json::List(tools) = translated(input, model) else {
-        panic!("a tool list answers");
-    };
-    let Some(tool) = tools.first().and_then(Json::as_object) else {
-        panic!("one tool answers");
-    };
-    assert_eq!(tool.get("cache_control").cloned(), expected.map(json));
+    assert_eq!(translated(input, model), expected);
 }
 
 #[rstest]
@@ -376,13 +374,10 @@ fn cache_control_follows_the_target_model(
 #[case::null(r#"{"name": "a", "cache_control": null}"#)]
 fn a_falsey_cache_control_is_not_copied(#[case] declaration: &str) {
     let input = format!("[{declaration}]");
-    let Json::List(tools) = translated(&input, Some("claude-3-opus")) else {
-        panic!("a tool list answers");
-    };
-    let Some(converted) = tools.first().and_then(Json::as_object) else {
-        panic!("one tool answers");
-    };
-    assert_eq!(converted.get("cache_control"), None);
+    assert_eq!(
+        translated(&input, Some("claude-3-opus")),
+        json(r#"[{"type": "function", "function": {"name": "a"}}]"#)
+    );
 }
 
 #[test]
