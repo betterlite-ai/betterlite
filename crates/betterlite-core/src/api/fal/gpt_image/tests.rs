@@ -21,7 +21,10 @@ const CATALOG: &str = r#"{
     "fal_ai/low/1024-x-768/openai/gpt-image-2": {"litellm_provider": "fal_ai"},
     "fal_ai/medium/1024-x-768/gpt-image-2": {"litellm_provider": "fal_ai"},
     "fal_ai/high/1024-x-768/openai/gpt-image-2/edit": {"litellm_provider": "fal_ai"},
-    "fal_ai/high/1024-x-768/openai/elsewhere": {"litellm_provider": "fal_ai"}
+    "fal_ai/high/1024-x-768/openai/elsewhere": {"litellm_provider": "fal_ai"},
+    "fal_ai/short": {"litellm_provider": "fal_ai"},
+    "fal_ai/ultra/1024x768/openai/gpt-image-2": {"litellm_provider": "fal_ai"},
+    "other/medium/1024-x-768/openai/gpt-image-2": {"litellm_provider": "other"}
 }"#;
 
 fn catalog() -> ModelCatalog {
