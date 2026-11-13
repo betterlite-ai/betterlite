@@ -16,7 +16,7 @@ const USER_BY_ID_SQL: &str =
     "SELECT row_to_json(entry)::text FROM \"LiteLLM_UserTable\" AS entry WHERE \"user_id\" = $1";
 const USER_DELETE_SQL: &str = "DELETE FROM \"LiteLLM_UserTable\" AS entry WHERE \"user_id\" = $1 RETURNING row_to_json(entry)::text";
 const USER_ALL_SQL: &str = "SELECT row_to_json(entry)::text FROM \"LiteLLM_UserTable\" AS entry";
-const USER_MEMBERSHIP_SQL: &str = "SELECT row_to_json(entry)::text FROM \"LiteLLM_UserTable\" AS entry WHERE entry.\"user_email\" = ANY($1::text[])";
+const USER_MEMBERSHIP_SQL: &str = "SELECT row_to_json(entry)::text FROM \"LiteLLM_UserTable\" AS entry WHERE entry.\"user_id\" = ANY($1::text[])";
 const USER_COUNT_SQL: &str = "SELECT count(*) FROM \"LiteLLM_UserTable\"";
 const USER_EMAIL_PAGE_SQL: &str = "SELECT row_to_json(entry)::text FROM \"LiteLLM_UserTable\" AS entry WHERE LOWER(entry.\"user_email\") IN (SELECT LOWER(candidate) FROM unnest($1::text[]) AS candidate)";
 const USER_SCIM_DEACTIVATED_SQL: &str = "SELECT count(*) FROM \"LiteLLM_UserTable\" WHERE \"metadata\" -> 'scim_active' = 'false'::jsonb";

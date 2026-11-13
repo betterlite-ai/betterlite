@@ -6,11 +6,13 @@ use super::projection::{
     MAX_USER_FIELD_BYTES, MAX_USER_JSON_DEPTH, UserRecordError, decode_user_record,
     user_record_to_model,
 };
-use super::tables::{ORGANIZATION_TABLE, PROJECT_TABLE};
+use super::tables::{ORGANIZATION_TABLE, PROJECT_TABLE, USER_TABLE};
 use super::{OrganizationRepository, ProjectRepository, RowDecodeError, UserRepository};
 use crate::budget_permission_rows::JsonData;
 use crate::identity_rows::user::LiteLLMUserTable;
 use crate::postgres_store::errors::DbError;
+use crate::postgres_store::repository::Repository;
+use crate::postgres_store::rows::KeyColumn;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Client, GenericClient, Manager, Pool};
@@ -474,6 +476,33 @@ fn email_five_thousand_page_boundary() {
     let doubled = email_pages(&addresses(2 * EMAIL_PAGE_SIZE));
     assert_eq!(doubled.len(), 2);
     assert_eq!(doubled[1].len(), EMAIL_PAGE_SIZE);
+}
+
+#[tokio::test]
+async fn native_user_membership_lookup() {
+    let database = Database::start().await;
+    let client = database.connect().await;
+    client
+        .batch_execute(
+            r#"INSERT INTO "LiteLLM_UserTable" (user_id) VALUES ('alpha'), ('bravo'), ('charlie')"#,
+        )
+        .await
+        .unwrap();
+    let users = Repository {
+        client: Some(&client),
+        table: USER_TABLE,
+    }
+    .find_many_in(
+        KeyColumn::Id,
+        vec!["alpha".to_owned(), "bravo".to_owned(), "missing".to_owned()],
+    )
+    .await
+    .unwrap();
+    let mut found = ids(&users);
+    found.sort_unstable();
+    assert_eq!(found, vec!["alpha", "bravo"]);
+    drop(client);
+    database.close().await;
 }
 
 #[tokio::test]
