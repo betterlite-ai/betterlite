@@ -1,0 +1,20 @@
+kind: helper
+name: foundry-vector-stores-search-query-fields-seed
+call:
+  foundry_vector_stores:
+    search_query_fields:
+      searches:
+        - vector_store_id: seed-store
+          query: seed query
+          api_base: https://seed.search.example
+          optional_params: {top_k: 4}
+          litellm_params:
+            litellm_embedding_model: openai/text-embedding-3-small
+          extra_body: {top_k: 99}
+          embedding: [0.25, 0.5]
+        - vector_store_id: seed-missing-model
+          query: [seed, query]
+          api_base: https://seed.search.example
+          litellm_params: {}
+env: {}
+compare: {ignore: []}

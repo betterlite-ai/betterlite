@@ -1,0 +1,5 @@
+model_list:
+  - model_name: foundry-vector
+    litellm_params:
+      model: azure_ai/text-embedding-3-small
+      azure_search_service_name: foundry-search

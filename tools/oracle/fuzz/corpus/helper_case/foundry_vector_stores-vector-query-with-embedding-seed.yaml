@@ -1,0 +1,15 @@
+kind: helper
+name: foundry-vector-stores-vector-query-with-embedding-seed
+call:
+  foundry_vector_stores:
+    vector_query_with_embedding:
+      scenarios:
+        - vector_store_id: seed-store
+          query: seed async
+          api_base: https://seed.search.example
+          litellm_params:
+            litellm_embedding_model: openai/text-embedding-3-small
+          embedding: [0.5, 0.25]
+          asynchronous: true
+env: {}
+compare: {ignore: []}
