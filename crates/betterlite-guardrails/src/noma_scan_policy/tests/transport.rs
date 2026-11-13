@@ -11,7 +11,7 @@ use crate::noma_scan_policy::{DEFAULT_APPLICATION_ID, ScanCallContext};
 
 use super::support::{
     SAFE_REPLY, USER_MESSAGES, captured, captured_headers, captured_path, context, data, mock_noma,
-    parts, policy, policy_with, request_count, settings, slow_noma, value,
+    parts, policy, policy_with, records, request_count, settings, slow_noma, value,
 };
 
 #[tokio::test]
@@ -411,4 +411,72 @@ async fn malformed_responses_name_the_field(#[case] body: &str) {
         error,
         NomaError::ResponseField { .. } | NomaError::Field { .. }
     ));
+}
+
+#[rstest]
+#[case::top_level_nulls(
+    r#"{"messages": [{"role": "user", "content": "hello"}], "litellm_call_id": null, "metadata": null}"#,
+    r#"{"application_id": null}"#
+)]
+#[case::null_header(
+    r#"{"messages": [{"role": "user", "content": "hello"}], "metadata": {"headers": {"x-noma-application-id": null}}}"#,
+    "{}"
+)]
+#[tokio::test]
+async fn null_request_fields_fall_through_like_absent_ones(
+    #[case] body: &str,
+    #[case] extra: &str,
+) {
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let policy = policy(&mock.base);
+    let mut request_data = data(body);
+    let user_auth = data(r#"{"user_email": null, "user_id": "user-1"}"#);
+    let extra_data = data(extra);
+    policy
+        .process_user_message_check(&mut request_data, context(&user_auth, &extra_data))
+        .await
+        .unwrap();
+    let seen = captured(&mock);
+    assert_eq!(seen.context.application_id.as_deref(), Some("test-app"));
+    assert_eq!(seen.context.user_id.as_deref(), Some("user-1"));
+    assert_eq!(seen.context.session_id, None);
+    assert_eq!(seen.context.ip_address, None);
+    assert!(!captured_headers(&mock).contains_key("x-noma-request-id"));
+}
+
+#[tokio::test]
+async fn a_large_scan_answer_within_one_mebibyte_is_read() {
+    let padding = "a".repeat(100_000);
+    let reply = format!("{{\"aggregatedScanResult\": false, \"padding\": \"{padding}\"}}");
+    let mock = mock_noma(StatusCode::OK, &reply).await;
+    let policy = policy(&mock.base);
+    let mut request_data = data(USER_MESSAGES);
+    let user_auth = data("{}");
+    let extra_data = data("{}");
+    let outcome = policy
+        .process_user_message_check(&mut request_data, context(&user_auth, &extra_data))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(outcome.status, GuardrailStatus::Success);
+}
+
+#[tokio::test]
+async fn a_scan_answer_over_one_mebibyte_is_refused() {
+    let padding = "a".repeat(1_048_577);
+    let reply = format!("{{\"aggregatedScanResult\": false, \"padding\": \"{padding}\"}}");
+    let mock = mock_noma(StatusCode::OK, &reply).await;
+    let policy = policy(&mock.base);
+    let mut request_data = data(USER_MESSAGES);
+    let user_auth = data("{}");
+    let extra_data = data("{}");
+    let error = policy
+        .process_user_message_check(&mut request_data, context(&user_auth, &extra_data))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        NomaError::ResponseTooLarge { limit: 1_048_576 }
+    ));
+    assert!(records(&request_data).is_empty());
 }

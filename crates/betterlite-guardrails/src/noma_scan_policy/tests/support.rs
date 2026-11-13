@@ -156,6 +156,11 @@ pub(crate) fn data(text: &str) -> BTreeMap<String, GuardrailValue> {
     serde_json::from_value(parsed).unwrap()
 }
 
+pub(crate) fn value(text: &str) -> GuardrailValue {
+    let parsed = serde_json::from_str(text).unwrap();
+    serde_json::from_value(parsed).unwrap()
+}
+
 pub(crate) fn response(text: &str) -> ScanResponse {
     let parsed = serde_json::from_str(text).unwrap();
     serde_json::from_value(parsed).unwrap()
