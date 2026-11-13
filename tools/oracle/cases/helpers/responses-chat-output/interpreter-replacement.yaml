@@ -1,0 +1,30 @@
+kind: helper
+name: responses-chat-output-interpreter-replacement
+call:
+  responses_chat_output:
+    request_input: hi
+    responses_api_request:
+      tools:
+        - {type: custom, name: edit, description: Edits a file}
+    chat_completion_response:
+      _hidden_params: {}
+      id: chat_e
+      created: 5
+      model: m
+      choices:
+        - finish_reason: tool_calls
+          message:
+            role: assistant
+            content: null
+            tool_calls:
+              - {id: c, type: function, function: {name: f, arguments: '{}'}}
+              - {id: d, type: function, function: {name: g, arguments: '{}'}}
+              - {id: f, type: function, function: {name: edit, arguments: '{}'}}
+            provider_specific_fields:
+              code_interpreter_results:
+                - {type: code_interpreter_call, id: c, status: completed, code: x, container_id: null, outputs: null}
+                - {type: code_interpreter_call, id: c, status: failed, code: y, container_id: ct, outputs: []}
+                - {type: code_interpreter_call, id: f, status: completed, code: z, container_id: null, outputs: null}
+                - {type: code_interpreter_call, id: g, status: completed, code: w, container_id: null, outputs: null}
+env: {}
+compare: {ignore: []}
