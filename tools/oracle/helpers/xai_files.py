@@ -139,20 +139,19 @@ FILE_ANSWER: Final[TypeAdapter[FileAnswer]] = TypeAdapter(FileAnswer)
 DELETED_ANSWER: Final[TypeAdapter[DeletedAnswer]] = TypeAdapter(DeletedAnswer)
 
 
-def file_view(reply: Reply) -> FileAnswer | Raised:
-    response = httpx.Response(reply["status"], content=reply["body"].encode())
-    try:
-        file = CONFIG.transform_create_file_response(
-            model=None, raw_response=response, logging_obj=LOG, litellm_params={}
-        )
-    except ValueError:
-        return {"raised": "reply"}
-    return FILE_ANSWER.validate_json(file.model_dump_json(exclude_none=True))
-
-
 def upload_call(call: UploadCall) -> UploadAnswer:
     time.time = partial(float, call["now"])
     supported: list[str] = [str(name) for name in CONFIG.get_supported_openai_params("")]
+    response = httpx.Response(call["reply"]["status"], content=call["reply"]["body"].encode())
+    file: FileAnswer | Raised
+    try:
+        created = CONFIG.transform_create_file_response(
+            model=None, raw_response=response, logging_obj=LOG, litellm_params={}
+        )
+    except ValueError:
+        file = {"raised": "reply"}
+    else:
+        file = FILE_ANSWER.validate_json(created.model_dump_json(exclude_none=True))
     headers = CONFIG.validate_environment(
         headers={},
         model="",
@@ -180,7 +179,7 @@ def upload_call(call: UploadCall) -> UploadAnswer:
             litellm_params={},
         ),
         "authorization": headers.get("Authorization"),
-        "file": file_view(call["reply"]),
+        "file": file,
     }
 
 
@@ -206,17 +205,6 @@ def file_target(
     return {"url": url}
 
 
-def delete_view(reply: Reply) -> DeletedAnswer | Raised:
-    response = httpx.Response(reply["status"], content=reply["body"].encode())
-    try:
-        deleted = CONFIG.transform_delete_file_response(
-            raw_response=response, logging_obj=LOG, litellm_params={}
-        )
-    except ValueError:
-        return {"raised": "reply"}
-    return DELETED_ANSWER.validate_json(deleted.model_dump_json(exclude_none=True))
-
-
 def content_view(spec: ContentSpec) -> ContentAnswer:
     headers = [(name, value) for name, value in spec["headers"]]
     response = httpx.Response(spec["status"], content=bytes(spec["body"]), headers=headers)
@@ -234,10 +222,21 @@ def content_view(spec: ContentSpec) -> ContentAnswer:
 
 
 def files_call(call: FileCall) -> FileEntry:
+    reply = call["delete_reply"]
+    response = httpx.Response(reply["status"], content=reply["body"].encode())
+    deleted: DeletedAnswer | Raised
+    try:
+        removed = CONFIG.transform_delete_file_response(
+            raw_response=response, logging_obj=LOG, litellm_params={}
+        )
+    except ValueError:
+        deleted = {"raised": "reply"}
+    else:
+        deleted = DELETED_ANSWER.validate_json(removed.model_dump_json(exclude_none=True))
     return {
         "delete": file_target(call["params_api_base"], call["file_id"], content=False),
         "content": file_target(call["params_api_base"], call["file_id"], content=True),
-        "deleted": delete_view(call["delete_reply"]),
+        "deleted": deleted,
         "content_reply": content_view(call["content_reply"]),
     }
 
