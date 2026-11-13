@@ -14,9 +14,9 @@ from litellm.proxy.hooks.batch_enqueued_tokens import (
 )
 from litellm.proxy.utils import InternalUsageCache
 from opentelemetry.trace import Span
+from pydantic import JsonValue
 from typing_extensions import override
 
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 ScriptStep: TypeAlias = int | list[int] | str
 LOGGER_NAME: Final = "LiteLLM Proxy"
 SCRIPT_KINDS: Final = ("reserve", "refund", "save", "pop")
@@ -48,7 +48,7 @@ class Input(TypedDict):
 
 class _Trace:
     def __init__(self) -> None:
-        self.events: list[Json] = []
+        self.events: list[JsonValue] = []
 
 
 class _ScriptRunner:
@@ -135,15 +135,7 @@ class _WarningCollector(logging.Handler):
         self._trace.events.append({"event": "warning", "level": record.levelname.lower()})
 
 
-class _Caller:
-    def __init__(self, principal: Principal) -> None:
-        self.api_key = principal["api_key"]
-        self.team_id = principal["team_id"]
-        self.metadata = principal["metadata"]
-        self.team_metadata = principal["team_metadata"]
-
-
-def outcome_projection(outcome: BatchEnqueuedTokenOutcome) -> dict[str, Json]:
+def outcome_projection(outcome: BatchEnqueuedTokenOutcome) -> dict[str, JsonValue]:
     match outcome:
         case BatchEnqueuedTokenReservation():
             return {
@@ -165,14 +157,21 @@ def outcome_projection(outcome: BatchEnqueuedTokenOutcome) -> dict[str, Json]:
             }
 
 
-def run(input_value: Input) -> Json:
+def run(input_value: Input) -> JsonValue:
     trace = _Trace()
     redis_spec = input_value["redis"]
     redis = None if redis_spec is None else _FakeRedis(trace, redis_spec)
     fake = _FakeUsageCache(redis, input_value["memory"]["seed"])
     cache = cast(InternalUsageCache, fake)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L378
     store = BatchEnqueuedTokenStore(internal_usage_cache=cache)
-    caller = cast(UserAPIKeyAuth, _Caller(input_value["principal"]))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_enqueued_tokens.py#L131
+    principal = input_value["principal"]
+    caller = UserAPIKeyAuth()
+    caller.api_key = principal["api_key"]
+    caller.team_id = principal["team_id"]
+    if principal["metadata"] is not None:
+        # metadata is a bare dict; an absent map keeps the {} default that reads as no limit
+        caller.metadata = principal["metadata"]
+    caller.team_metadata = principal["team_metadata"]
     logger = logging.getLogger(LOGGER_NAME)
     collector = _WarningCollector(trace)
     logger.addHandler(collector)
@@ -183,7 +182,7 @@ def run(input_value: Input) -> Json:
         )
     finally:
         logger.removeHandler(collector)
-    memory: dict[str, Json] = {
+    memory: dict[str, JsonValue] = {
         key: fake.values.get(key) for key in input_value["memory"]["read"]
     }
     return {
