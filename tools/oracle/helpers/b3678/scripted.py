@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from typing import ClassVar, Final, Literal
+from typing import ClassVar, Final, Literal, cast
 
 from litellm.integrations.custom_guardrail import CustomGuardrail
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -42,7 +42,9 @@ class Synthetic(TypedDict):
 SYNTHETIC: Final[TypeAdapter[Synthetic]] = TypeAdapter(Synthetic)
 
 
-class ScriptedGuardrail(CustomGuardrail):
+class ScriptedGuardrail(
+    cast("type[CustomGuardrail]", CustomGuardrail)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L209
+):
     # ast-grep-ignore: no-long-names
     records_own_guardrail_information: ClassVar[bool] = True
     # ast-grep-ignore: no-long-names
@@ -63,7 +65,7 @@ class ScriptedGuardrail(CustomGuardrail):
         self.skip_tool_message_in_guardrail = skip_tool
 
     @override
-    async def apply_guardrail(
+    async def apply_guardrail(  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1312-L1318
         self,
         inputs: ScanInputs,
         request_data: dict[str, JsonValue],
@@ -85,13 +87,13 @@ class ScriptedHook(ProxyLogging):
         self.replace = replace
 
     @override
-    async def post_call_success_hook(
+    async def post_call_success_hook(  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3494-L3499
         self,
         data: Mapping[str, JsonValue],
         response: LLMResponseTypes,
         user_api_key_dict: UserAPIKeyAuth,
     ) -> JsonValue:
-        synthetic = SYNTHETIC.validate_python(response)
+        synthetic = SYNTHETIC.validate_python(response)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3494-L3499
         for block in synthetic["output"]["message"]["content"]:
             replacement = self.replace.get(block["text"])
             if replacement is not None:

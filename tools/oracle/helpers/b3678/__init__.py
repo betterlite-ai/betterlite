@@ -166,7 +166,7 @@ def input_texts(input_value: InputTextsInput) -> JsonValue:
     )
     data = dict(input_value["data"])
     data["endpoint"] = input_value["endpoint"]
-    result = asyncio.run(HANDLER.process_input_messages(data=data, guardrail_to_apply=guardrail))
+    result = asyncio.run(HANDLER.process_input_messages(data=data, guardrail_to_apply=guardrail))  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/guardrail_translation/handler.py#L423-L427
     answer: dict[str, JsonValue] = {
         "texts": JSON.validate_python(guardrail.texts),
         "model": guardrail.model,
@@ -183,7 +183,7 @@ def output_texts(input_value: OutputTextsInput) -> JsonValue:
     if request_data is not None:
         request_data = {**request_data, "endpoint": input_value["endpoint"]}
     result = asyncio.run(
-        HANDLER.process_output_response(
+        HANDLER.process_output_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/guardrail_translation/handler.py#L468-L472
             response=input_value["response"],
             guardrail_to_apply=guardrail,
             request_data=request_data,
@@ -202,7 +202,7 @@ def stream(input_value: StreamInput) -> JsonValue:
     hook = scripted.ScriptedHook(input_value["replace"])
     empty: dict[str, JsonValue] = {}
     rewritten = asyncio.run(
-        HANDLER.de_anonymize_event_stream(
+        HANDLER.de_anonymize_event_stream(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/guardrail_translation/handler.py#L268-L273
             body_bytes=body,
             proxy_logging_obj=hook,
             user_api_key_dict=UserAPIKeyAuth(),
