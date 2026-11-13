@@ -11,6 +11,7 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 
 class Call(TypedDict):
     tools: Json
+    functions: Json
     web_search_options: Json
     tool_choice: Json
     service_tier: Json
@@ -40,6 +41,7 @@ def run(input_value: Input) -> Json:
         optional_params["toolConfig"] = call["tool_config"]
     non_default: dict[str, Json] = {
         "tools": call["tools"],
+        "functions": call["functions"],
         "tool_choice": call["tool_choice"],
         "web_search_options": call["web_search_options"],
         "service_tier": call["service_tier"],

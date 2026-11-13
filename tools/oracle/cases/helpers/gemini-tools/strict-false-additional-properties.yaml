@@ -9,6 +9,7 @@ call:
             nested:
               strict: true
               additionalProperties: true
+      functions: []
       web_search_options: null
       tool_choice: null
       service_tier: STANDARD

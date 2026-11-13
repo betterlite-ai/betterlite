@@ -16,6 +16,7 @@ call:
               mode: MODE_DYNAMIC
         - google_search:
             searchType: SEARCH_TYPE_MEDIA
+      functions: []
       web_search_options: null
       tool_choice: required
       service_tier: null

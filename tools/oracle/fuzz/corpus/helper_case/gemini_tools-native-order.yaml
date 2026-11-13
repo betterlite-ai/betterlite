@@ -18,6 +18,7 @@ call:
             latitude: 1.5
             longitude: 2.5
             languageCode: en
+      functions: []
       web_search_options: {}
       tool_choice: auto
       service_tier: auto

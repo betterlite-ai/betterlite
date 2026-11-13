@@ -10,6 +10,7 @@ call:
             parameters:
               type: object
         - googleSearch: {}
+      functions: []
       web_search_options: {}
       tool_choice: null
       service_tier: null

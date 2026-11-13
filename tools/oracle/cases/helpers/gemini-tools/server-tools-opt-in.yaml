@@ -8,6 +8,7 @@ call:
           function:
             name: f
         - googleSearch: {}
+      functions: []
       web_search_options: {}
       tool_choice:
         type: function

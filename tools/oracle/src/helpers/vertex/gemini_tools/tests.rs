@@ -72,6 +72,7 @@ fn the_adapter_maps_native_tools_choices_and_tiers() {
             {"google_search": {"searchType": "SEARCH_TYPE_MEDIA"}},
             {"googleMaps": {"latitude": 1.5_f64, "longitude": 2.5_f64, "languageCode": "en"}}
         ],
+        "functions": [],
         "web_search_options": null,
         "tool_choice": "auto",
         "service_tier": "AUTO",
@@ -101,6 +102,7 @@ fn the_adapter_reports_the_search_conflict_warning() {
             {"type": "function", "function": {"name": "f"}},
             {"googleSearch": {}}
         ],
+        "functions": [],
         "web_search_options": {},
         "tool_choice": null,
         "service_tier": null,
@@ -121,9 +123,48 @@ fn the_adapter_reports_the_search_conflict_warning() {
 }
 
 #[test]
+fn the_adapter_leaves_functions_list_parameters_unshaped() {
+    let input = input(&json!({
+        "tools": [],
+        "functions": [{
+            "name": "f",
+            "parameters": {
+                "type": "object",
+                "$defs": {"City": {"type": "string"}},
+                "properties": {"city": {"$ref": "#/$defs/City"}}
+            }
+        }],
+        "web_search_options": null,
+        "tool_choice": null,
+        "service_tier": null,
+        "server_side_invocations": false,
+        "tool_config": null
+    }));
+    let output = Op::run(&input).expect("adapter should map the functions");
+    assert_eq!(
+        output,
+        json!({
+            "tools": [{"function_declarations": [{
+                "name": "f",
+                "parameters": {
+                    "type": "object",
+                    "$defs": {"City": {"type": "string"}},
+                    "properties": {"city": {"$ref": "#/$defs/City"}}
+                }
+            }]}],
+            "tool_choice": null,
+            "toolConfig": null,
+            "service_tier": null,
+            "warnings": 0_usize
+        })
+    );
+}
+
+#[test]
 fn the_adapter_reports_an_unsupported_tool_choice_with_status_400() {
     let input = input(&json!({
         "tools": [],
+        "functions": [],
         "web_search_options": null,
         "tool_choice": "mandatory",
         "service_tier": null,

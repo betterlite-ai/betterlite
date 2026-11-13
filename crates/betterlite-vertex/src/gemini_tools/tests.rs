@@ -9,7 +9,9 @@ use serde::de::DeserializeOwned;
 use super::assembly::{MappedTools, map_tools};
 use super::cleanup::remove_unsupported_fields;
 use super::error::GeminiToolsError;
-use super::options::{drop_mixed_search_tools, map_service_tier, map_tool_choice};
+use super::options::{
+    drop_mixed_search_tools, map_service_tier, map_tool_choice, map_web_search_options,
+};
 use super::records::{CallingMode, FunctionCallingConfig, FunctionDeclaration, Tool, ToolConfig};
 use super::specials::{extract_maps, transform_computer_use, transform_type};
 use super::tool_lookup::{tool_value, underscore_name};
@@ -428,9 +430,48 @@ fn function_parameters_are_shaped_for_vertex() {
 }
 
 #[test]
+fn a_tools_list_entry_gets_its_parameters_shaped() {
+    let input: Vec<Object> = parse(
+        r##"[{"type": "function", "function": {"name": "f", "parameters": {"type": "object", "$defs": {"City": {"type": "string"}}, "properties": {"city": {"$ref": "#/$defs/City"}}}}}]"##,
+    );
+    let mapped = mapped(&input);
+    assert_eq!(
+        as_json(&mapped.tools),
+        parse::<Json>(
+            r#"[{"function_declarations": [{"name": "f", "parameters": {"type": "object", "properties": {"city": {"type": "string"}}}}]}]"#
+        )
+    );
+}
+
+#[test]
+fn a_functions_list_entry_keeps_its_parameters_unshaped() {
+    let parameters = r##"{"type": "object", "$defs": {"City": {"type": "string"}}, "properties": {"city": {"$ref": "#/$defs/City"}, "unit": {"type": ["string", "null"]}}}"##;
+    let input: Vec<Object> = parse(&format!(r#"[{{"name": "f", "parameters": {parameters}}}]"#));
+    let mapped = mapped(&input);
+    assert_eq!(
+        as_json(&mapped.tools),
+        parse::<Json>(&format!(
+            r#"[{{"function_declarations": [{{"name": "f", "parameters": {parameters}}}]}}]"#
+        ))
+    );
+}
+
+#[test]
 fn empty_parameters_become_an_object_schema() {
     let input: Vec<Object> =
         parse(r#"[{"type": "function", "function": {"name": "f", "parameters": ""}}]"#);
+    let mapped = mapped(&input);
+    assert_eq!(
+        as_json(&mapped.tools),
+        parse::<Json>(
+            r#"[{"function_declarations": [{"name": "f", "parameters": {"type": "object"}}]}]"#
+        )
+    );
+}
+
+#[test]
+fn a_functions_list_entry_with_empty_parameters_becomes_an_object_schema() {
+    let input: Vec<Object> = parse(r#"[{"name": "f", "parameters": ""}]"#);
     let mapped = mapped(&input);
     assert_eq!(
         as_json(&mapped.tools),
@@ -470,6 +511,59 @@ fn a_null_search_value_emits_no_tool() {
 fn a_null_maps_value_emits_no_tool() {
     let mapped = mapped(&tools(r#"[{"googleMaps": null}]"#));
     assert!(mapped.tools.is_empty());
+}
+
+#[rstest]
+#[case::search(r#"{"googleSearch": {"first": true}}"#, r#"{"googleSearch": null}"#)]
+#[case::snake_search(r#"{"google_search": {"first": true}}"#, r#"{"google_search": null}"#)]
+#[case::retrieval(
+    r#"{"googleSearchRetrieval": {"dynamicRetrievalConfig": {}}}"#,
+    r#"{"googleSearchRetrieval": null}"#
+)]
+#[case::enterprise(r#"{"enterpriseWebSearch": {}}"#, r#"{"enterpriseWebSearch": null}"#)]
+#[case::url_context(r#"{"url_context": {}}"#, r#"{"url_context": null}"#)]
+#[case::code_execution(r#"{"code_execution": {}}"#, r#"{"code_execution": null}"#)]
+fn a_null_special_value_after_an_earlier_entry_emits_no_tool(
+    #[case] earlier: &str,
+    #[case] later: &str,
+) {
+    let input: Vec<Object> = parse(&format!("[{earlier}, {later}]"));
+    let mapped = mapped(&input);
+    assert!(mapped.tools.is_empty());
+    assert_eq!(mapped.warnings, 0);
+}
+
+#[test]
+fn a_null_maps_value_keeps_the_earlier_maps_tool() {
+    let input: Vec<Object> =
+        parse(r#"[{"googleMaps": {"enableWidget": true}}, {"googleMaps": null}]"#);
+    let mapped = mapped(&input);
+    assert_eq!(
+        as_json(&mapped.tools),
+        parse::<Json>(r#"[{"googleMaps": {"enableWidget": true}}]"#)
+    );
+}
+
+#[test]
+fn a_null_computer_use_value_after_an_earlier_entry_uses_the_defaults() {
+    let input: Vec<Object> =
+        parse(r#"[{"computerUse": {"environment": "browser"}}, {"computerUse": null}]"#);
+    let mapped = mapped(&input);
+    assert_eq!(
+        as_json(&mapped.tools),
+        parse::<Json>(r#"[{"computerUse": {}}]"#)
+    );
+}
+
+#[test]
+fn web_search_options_become_an_empty_google_search_tool() {
+    let options = parse::<Object>(
+        r#"{"user_location": {"type": "approximate"}, "search_context_size": "high"}"#,
+    );
+    assert_eq!(
+        as_json(&map_web_search_options(&options)),
+        parse::<Json>(r#"{"googleSearch": {}}"#)
+    );
 }
 
 fn declaration_error(source: &str) -> GeminiToolsError {

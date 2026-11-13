@@ -6,7 +6,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_vertex::gemini_tools::assembly::map_tools;
 use betterlite_vertex::gemini_tools::error::GeminiToolsError;
 use betterlite_vertex::gemini_tools::options::{
-    drop_mixed_search_tools, map_service_tier, map_tool_choice,
+    drop_mixed_search_tools, map_service_tier, map_tool_choice, map_web_search_options,
 };
 use betterlite_vertex::gemini_tools::records::{Tool, ToolConfig};
 use serde::Deserialize;
@@ -24,6 +24,7 @@ pub(crate) struct Input {
 #[derive(Debug, Deserialize)]
 pub(crate) struct Call {
     tools: Vec<Object>,
+    functions: Vec<Object>,
     web_search_options: Option<Object>,
     tool_choice: Option<Json>,
     service_tier: Option<String>,
@@ -43,17 +44,24 @@ struct Sources {
     warnings: usize,
 }
 fn map_sources(call: &Call, settings: &Settings) -> Result<Sources, Box<HelperError>> {
-    let mapped = map_tools(
-        &call.tools,
-        call.server_side_invocations,
-        call.tool_config.clone(),
-        settings,
-    )
-    .or_value_error()?;
+    // LiteLLM maps the tools list and the functions list in separate calls, then appends one result to the other
+    let mut tools: Option<Vec<Tool>> = None;
+    let mut tool_config = call.tool_config.clone();
+    let mut warnings = 0_usize;
+    for source in [&call.tools, &call.functions] {
+        if source.is_empty() {
+            continue;
+        }
+        let mapped = map_tools(source, call.server_side_invocations, tool_config, settings)
+            .or_value_error()?;
+        warnings = warnings.saturating_add(mapped.warnings);
+        tool_config = mapped.tool_config;
+        tools.get_or_insert_with(Vec::new).extend(mapped.tools);
+    }
     Ok(Sources {
-        tools: (!call.tools.is_empty()).then_some(mapped.tools),
-        tool_config: mapped.tool_config,
-        warnings: mapped.warnings,
+        tools,
+        tool_config,
+        warnings,
     })
 }
 fn measure(call: &Call, settings: &Settings) -> Result<Value, Box<HelperError>> {
@@ -68,11 +76,10 @@ fn measure(call: &Call, settings: &Settings) -> Result<Value, Box<HelperError>> 
         .map(map_tool_choice)
         .transpose()
         .map_err(|error| choice_failure(&error))?;
-    if call.web_search_options.is_some() {
-        let search = Tool::GoogleSearch {
-            google_search: Object::new(),
-        };
-        tools.get_or_insert_with(Vec::new).push(search);
+    if let Some(options) = &call.web_search_options {
+        tools
+            .get_or_insert_with(Vec::new)
+            .push(map_web_search_options(options));
     }
     if let Some(existing) = &mut tools {
         warnings = warnings.saturating_add(usize::from(drop_mixed_search_tools(

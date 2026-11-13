@@ -8,6 +8,7 @@ call:
           environment: bogus
           excluded_predefined_functions:
             - x
+      functions: []
       web_search_options: null
       tool_choice: null
       service_tier: null

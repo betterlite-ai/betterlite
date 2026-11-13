@@ -9,6 +9,7 @@ call:
             latitude: 12.5
             longitude: -7.25
             languageCode: en-GB
+      functions: []
       web_search_options: null
       tool_choice: null
       service_tier: null
