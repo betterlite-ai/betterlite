@@ -13,7 +13,7 @@ use super::super::error::{LegacyPredictionError, PredictionError};
 use super::super::invocation::{LegacyInvocation, remove_instance_stream, remove_stream_option};
 use super::super::records::{LegacyChunk, Prediction, PredictionsReply, strip_output_separator};
 use super::super::streamer::TextStreamer;
-use super::scope::{RpcScope, endpoint_path, require_custom, resolve_scope};
+use super::scope::{RpcScope, require_custom, resolve_scope};
 use super::{LegacyChunkStream, LegacyContext, StreamFailure};
 
 pub(super) async fn stream_inner<C, Lookup>(
@@ -86,7 +86,7 @@ where
             prompt,
             mut options,
         } => {
-            remove_stream_option(&mut options);
+            options.shift_remove("stream");
             let request = PublisherPredictRequest {
                 token: scope.token,
                 project: scope.project,
@@ -102,7 +102,7 @@ where
             prompt,
             mut options,
         } => {
-            remove_stream_option(&mut options);
+            options.shift_remove("stream");
             let request = PublisherPredictRequest {
                 token: scope.token,
                 project: scope.project,
@@ -134,8 +134,11 @@ where
             mut options,
             ..
         } => {
-            remove_stream_option(&mut options);
-            let endpoint = endpoint_path(&scope.project, &scope.location, &model);
+            options.shift_remove("stream");
+            let endpoint = format!(
+                "projects/{}/locations/{}/endpoints/{}",
+                scope.project, scope.location, model
+            );
             let request = EndpointPredictRequest {
                 token: scope.token,
                 location: scope.location,
@@ -150,7 +153,7 @@ where
             mut options,
             ..
         } => {
-            remove_stream_option(&mut options);
+            options.shift_remove("stream");
             remove_instance_stream(&mut instances);
             let request = EndpointPredictRequest {
                 token: scope.token,

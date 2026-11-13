@@ -56,11 +56,6 @@ impl LegacyInvocation {
     }
 }
 
-// The source pops stream only once it knows the call streams, so a stream request never carries it
-pub fn remove_stream_option(options: &mut Extra) {
-    options.shift_remove("stream");
-}
-
 pub fn remove_instance_stream(instances: &mut [Json]) {
     let Some(Json::Object(instance)) = instances.first_mut() else {
         return;

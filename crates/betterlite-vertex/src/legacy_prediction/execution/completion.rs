@@ -11,7 +11,7 @@ use super::super::invocation::LegacyInvocation;
 use super::super::projection::{LegacyResult, ProjectionInput, project};
 use super::super::records::{Prediction, ReplyMeta, strip_output_separator};
 use super::LegacyContext;
-use super::scope::{RpcScope, endpoint_path, require_custom, resolve_scope};
+use super::scope::{RpcScope, require_custom, resolve_scope};
 
 pub(super) async fn complete_inner<C, Lookup>(
     client: &C,
@@ -150,7 +150,10 @@ where
             instances,
             ..
         } => {
-            let endpoint = endpoint_path(&scope.project, &scope.location, &model);
+            let endpoint = format!(
+                "projects/{}/locations/{}/endpoints/{}",
+                scope.project, scope.location, model
+            );
             let request = EndpointPredictRequest {
                 token: scope.token,
                 location: scope.location,

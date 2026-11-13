@@ -84,33 +84,40 @@ struct StreamingBody {
 pub fn chat_predict_body(prompt: &str, options: &Extra) -> Result<Vec<u8>, PredictionError> {
     let instance = chat_instance(prompt);
     let parameters = parameters(options, PredictCall::Chat)?;
-    encode(&PredictBody {
+    serde_json::to_vec(&PredictBody {
         instances: slice::from_ref(&instance),
         parameters: &parameters,
     })
+    .map_err(|source| PredictionError::Serialize { source })
 }
 
 pub fn text_predict_body(prompt: &str, options: &Extra) -> Result<Vec<u8>, PredictionError> {
     let instance = text_instance(prompt);
     let parameters = parameters(options, PredictCall::Text)?;
-    encode(&PredictBody {
+    serde_json::to_vec(&PredictBody {
         instances: slice::from_ref(&instance),
         parameters: &parameters,
     })
+    .map_err(|source| PredictionError::Serialize { source })
 }
 
 pub fn chat_streaming_body(prompt: &str, options: &Extra) -> Result<Vec<u8>, PredictionError> {
-    let parameters = parameters(options, PredictCall::ChatStreaming)?;
-    streaming_body(&chat_instance(prompt), &parameters)
+    streaming_body(
+        &chat_instance(prompt),
+        &parameters(options, PredictCall::ChatStreaming)?,
+    )
 }
 
 pub fn text_streaming_body(prompt: &str, options: &Extra) -> Result<Vec<u8>, PredictionError> {
-    let parameters = parameters(options, PredictCall::TextStreaming)?;
-    streaming_body(&text_instance(prompt), &parameters)
+    streaming_body(
+        &text_instance(prompt),
+        &parameters(options, PredictCall::TextStreaming)?,
+    )
 }
 
 pub fn endpoint_predict_body(instances: &[Json]) -> Result<Vec<u8>, PredictionError> {
-    encode(&EndpointBody { instances })
+    serde_json::to_vec(&EndpointBody { instances })
+        .map_err(|source| PredictionError::Serialize { source })
 }
 
 fn chat_instance(prompt: &str) -> Json {
@@ -137,15 +144,9 @@ fn streaming_body(instance: &Json, parameters: &Extra) -> Result<Vec<u8>, Predic
     } else {
         Some(Tensor::of_json(&Json::Object(parameters.clone()))?)
     };
-    encode(&StreamingBody {
+    serde_json::to_vec(&StreamingBody {
         inputs: vec![Tensor::of_json(instance)?],
         parameters,
     })
-}
-
-fn encode<T>(body: &T) -> Result<Vec<u8>, PredictionError>
-where
-    T: Serialize,
-{
-    serde_json::to_vec(body).map_err(|source| PredictionError::Serialize { source })
+    .map_err(|source| PredictionError::Serialize { source })
 }

@@ -15,7 +15,9 @@ impl TextStreamer {
     pub fn new(text: &str) -> Self {
         Self {
             words: text
-                .split(source_space)
+                .split(|character: char| {
+                    character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
+                })
                 .filter(|word| !word.is_empty())
                 .map(str::to_owned)
                 .collect(),
@@ -40,9 +42,4 @@ impl Stream for TextStreamer {
     fn poll_next(mut self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         Poll::Ready(self.next())
     }
-}
-
-// Python's str.split() splits on the separator-or-Other whitespace Rust omits
-fn source_space(character: char) -> bool {
-    character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
 }

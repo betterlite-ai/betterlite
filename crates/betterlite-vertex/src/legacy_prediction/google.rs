@@ -245,8 +245,8 @@ impl Stream for PredictionChunks {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(None) => {
                     this.finished = true;
-                    if this.frames.unfinished() {
-                        return Poll::Ready(Some(Err(PredictionError::StreamUnfinished)));
+                    if let Err(error) = this.frames.finish() {
+                        return Poll::Ready(Some(Err(error)));
                     }
                 }
                 Poll::Ready(Some(Err(source))) => {

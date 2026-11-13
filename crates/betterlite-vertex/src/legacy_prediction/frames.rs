@@ -22,9 +22,11 @@ impl PredictionFrames {
         Ok(ready)
     }
 
-    #[must_use]
-    pub const fn unfinished(&self) -> bool {
-        self.level > 0
+    pub fn finish(&self) -> Result<(), PredictionError> {
+        match self.level {
+            0 => Ok(()),
+            _ => Err(PredictionError::StreamUnfinished),
+        }
     }
 
     fn step(&mut self, byte: u8, ready: &mut Vec<Vec<u8>>) -> Result<(), PredictionError> {

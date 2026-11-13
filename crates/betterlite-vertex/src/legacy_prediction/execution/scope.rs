@@ -51,7 +51,3 @@ fn location_of(context: &LegacyContext<'_, '_>) -> Result<String, PredictionErro
         .map(str::to_owned)
         .ok_or(PredictionError::MissingField { field: "location" })
 }
-
-pub(super) fn endpoint_path(project: &str, location: &str, model: &str) -> String {
-    format!("projects/{project}/locations/{location}/endpoints/{model}")
-}
