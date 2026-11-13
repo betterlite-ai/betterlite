@@ -155,41 +155,38 @@ fn preset_keeps_the_base_capture_mode_when_the_flag_is_unset() {
     );
 }
 
+#[derive(Clone, Copy)]
+enum Rejection {
+    Value,
+    Parser,
+}
+
 #[rstest]
-#[case::empty("")]
-#[case::padded(" true ")]
-fn preset_rejects_an_unparsable_record_content_flag(#[case] value: &str) {
+#[case::empty("", Rejection::Value)]
+#[case::padded(" true ", Rejection::Value)]
+#[case::word("sometimes", Rejection::Parser)]
+#[case::number("2", Rejection::Parser)]
+fn preset_rejects_an_unparsable_record_content_flag(
+    #[case] value: &str,
+    #[case] rejection: Rejection,
+) {
     let error = build(
         &[("NEW_RELIC_AI_MONITORING_RECORD_CONTENT_ENABLED", value)],
         CaptureMessageContent::NoContent,
     )
     .expect_err("an unparsable flag fails the preset");
-    assert!(
-        matches!(
+    let matched = match rejection {
+        Rejection::Value => matches!(
             &error,
             PresetError::Newrelic(NewrelicPresetError::RecordContent { value: rejected })
                 if rejected.as_str() == value
         ),
-        "unexpected error {error:?}"
-    );
-}
-
-#[rstest]
-#[case::word("sometimes")]
-#[case::number("2")]
-fn preset_rejects_a_flag_the_bool_parser_cannot_read(#[case] value: &str) {
-    let error = build(
-        &[("NEW_RELIC_AI_MONITORING_RECORD_CONTENT_ENABLED", value)],
-        CaptureMessageContent::NoContent,
-    )
-    .expect_err("an unparsable flag fails the preset");
-    assert!(
-        matches!(
+        Rejection::Parser => matches!(
             &error,
             PresetError::Newrelic(NewrelicPresetError::RecordContentEnvironment(_))
         ),
-        "unexpected error {error:?}"
-    );
+    };
+    assert!(matched, "unexpected error {error:?}");
 }
 
 #[test]

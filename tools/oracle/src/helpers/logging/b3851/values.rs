@@ -5,23 +5,20 @@ use betterlite_logging::otel::config::{
 use serde_json::{Value, json};
 
 pub(crate) fn settings_value(settings: &Settings) -> Value {
+    let capture = match settings.capture_message_content {
+        CaptureMessageContent::NoContent => "no_content",
+        CaptureMessageContent::SpanOnly => "span_only",
+        CaptureMessageContent::EventOnly => "event_only",
+        CaptureMessageContent::SpanAndEvent => "span_and_event",
+    };
     json!({
         "exporters": settings.exporters.iter().map(exporter_value).collect::<Vec<Value>>(),
         "mapper_names": &settings.mapper_names,
         "resource_attributes": &settings.resource_attributes,
         "service_name": &settings.service_name,
         "deployment_environment": &settings.deployment_environment,
-        "capture_message_content": capture_name(settings.capture_message_content),
+        "capture_message_content": capture,
     })
-}
-
-const fn capture_name(capture: CaptureMessageContent) -> &'static str {
-    match capture {
-        CaptureMessageContent::NoContent => "no_content",
-        CaptureMessageContent::SpanOnly => "span_only",
-        CaptureMessageContent::EventOnly => "event_only",
-        CaptureMessageContent::SpanAndEvent => "span_and_event",
-    }
 }
 
 fn exporter_value(spec: &ExporterSpec) -> Value {
