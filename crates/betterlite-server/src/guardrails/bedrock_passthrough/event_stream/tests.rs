@@ -400,6 +400,20 @@ fn a_sixteen_byte_frame_that_ends_the_body_is_still_parsed() {
     assert!(parsed.trailing.is_empty());
 }
 
+#[tokio::test]
+async fn a_bad_length_before_a_valid_frame_keeps_it_in_the_trailing_bytes() {
+    let tail = delta_frame(r#"{"toolUse": {"input": "body"}}"#);
+    let mut trailing = 8_u32.to_be_bytes().to_vec();
+    trailing.extend_from_slice(&tail);
+    let body = [delta_frame(r#"{"text": "body"}"#), trailing.clone()].concat();
+    let parsed = parse_event_stream(&body);
+    assert_eq!(parsed.frames.len(), 1);
+    assert_eq!(parsed.trailing, trailing);
+    let hook = Hook::replacing(&[("body", "BODY")]);
+    let output = anonymize_with(&body, &hook).await;
+    assert!(output.ends_with(&trailing));
+}
+
 #[test]
 fn value_type_name_names_each_json_kind() {
     assert_eq!(value_type_name(&GuardrailValue::Null), "null");
