@@ -1,10 +1,13 @@
-from typing import Literal, TypeAlias, TypedDict
+from typing import Literal, Protocol, TypeAlias, TypedDict, runtime_checkable
 
+from litellm.proxy.hooks import PROXY_HOOKS
 from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     RateLimitedModel,
     fail_closed_rate_limit_enforcement_enabled,
 )
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
+
+LimitType: TypeAlias = Literal["requests", "tokens", "max_parallel_requests"]
 
 
 class FlagConfig(TypedDict):
@@ -15,7 +18,7 @@ class CounterKeysInput(TypedDict):
     function: Literal["counter_keys"]
     key: str
     value: str
-    rate_limit_type: Literal["requests", "tokens", "max_parallel_requests"]
+    rate_limit_type: LimitType
 
 
 class SiblingCounterKeysInput(TypedDict):
@@ -40,7 +43,24 @@ Input: TypeAlias = (
 )
 
 
+@runtime_checkable
+class KeyBuilder(Protocol):
+    def create_rate_limit_keys(
+        self, key: str, value: str, rate_limit_type: LimitType
+    ) -> str: ...
+
+
 def run(input_value: Input) -> dict[str, JsonValue]:
+    if input_value["function"] == "counter_keys":
+        hook_class = TypeAdapter(type[KeyBuilder]).validate_python(
+            PROXY_HOOKS["parallel_request_limiter"]
+        )
+        limiter = object.__new__(hook_class)
+        return {
+            "counter_key": limiter.create_rate_limit_keys(
+                input_value["key"], input_value["value"], input_value["rate_limit_type"]
+            )
+        }
     if input_value["function"] == "model_limit":
         model = RateLimitedModel(
             requested=input_value["requested"], group=input_value["group"]
@@ -53,5 +73,5 @@ def run(input_value: Input) -> dict[str, JsonValue]:
             )
         }
     raise ValueError(
-        "the key helpers have no public LiteLLM entry, so a case cannot compare them"
+        "no public LiteLLM entry reaches the sibling counter key helper"
     )
