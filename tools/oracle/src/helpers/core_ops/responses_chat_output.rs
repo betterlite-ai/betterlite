@@ -33,6 +33,9 @@ impl crate::helpers::Helper for Op {
             },
         )
         .or_value_error()?;
-        Ok(json!(assembled.response))
+        Ok(json!({
+            "response": assembled.response,
+            "hidden_params": assembled.hidden_params,
+        }))
     }
 }

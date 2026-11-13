@@ -48,8 +48,7 @@ where
     let mut items = reasoning::reasoning_items(&chat.choices, &mut uuid)?;
     items.extend(messages::message_items(&chat.choices, &mut uuid));
     let tool_records: Vec<ChoiceRecord> = chat.choices.iter().map(choice_record).collect();
-    let request_tools = request.tools.as_deref().unwrap_or_default();
-    let tools = tool_outputs(&tool_records, request_tools, limits)?;
+    let tools = tool_outputs(&tool_records, &request.tools, limits)?;
     items.extend(tools.items.into_iter().map(OutputItem::Tool));
     let interpreter = output::interpreter_results(&chat.choices)?;
     if !interpreter.is_empty() {
@@ -88,7 +87,7 @@ fn response_record(
     response.store = None;
     response.output = output;
     overridden_fields(&mut response, chat, request)?;
-    let hidden_params = chat.hidden_params.clone().unwrap_or_default();
+    let hidden_params = chat.hidden_params.clone();
     let surfaced = hidden_params
         .get("provider_specific_fields")
         .filter(|value| has_value(value));
@@ -115,8 +114,8 @@ fn overridden_fields(
         .map_or(Some(false), |value| *value);
     response.temperature = match &chat.temperature {
         None => Some(Decimal::new(0, 1)),
-        Some(Json::Null) => None,
-        Some(value) => Some(decimal_field(value, "temperature")?),
+        Some(None) => None,
+        Some(Some(value)) => Some(decimal_field(value, "temperature")?),
     };
     response.tool_choice = Some(tool_choice(request)?);
     response.tools = chat.tools.as_ref().map_or_else(
@@ -144,8 +143,7 @@ fn first_finish(chat: &ChatCompletionResponse) -> Option<&str> {
 }
 
 fn tool_choice(request: &RequestFields) -> Result<ToolChoice, ChatOutputError> {
-    let absent = Json::Null;
-    let normalized = responses_tool_choice(request.tool_choice.as_ref().unwrap_or(&absent));
+    let normalized = responses_tool_choice(&request.tool_choice);
     let text = serde_json::to_string(&normalized).map_err(|source| ChatOutputError::Json {
         field: "tool_choice",
         source,

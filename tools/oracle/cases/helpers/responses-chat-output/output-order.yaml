@@ -7,6 +7,7 @@ call:
       tools:
         - {type: function, name: f, parameters: {}}
     chat_completion_response:
+      _hidden_params: {}
       id: chat_c
       created: 3
       model: m
@@ -30,9 +31,9 @@ call:
 env: {}
 compare:
   ignore:
-    - pointer: /value/output/0/id
+    - pointer: /value/response/output/0/id
       why: The reasoning id is a random UUID.
-    - pointer: /value/output/1/id
+    - pointer: /value/response/output/1/id
       why: The message id is a random UUID.
-    - pointer: /value/output/2/id
+    - pointer: /value/response/output/2/id
       why: The image id is a random UUID.

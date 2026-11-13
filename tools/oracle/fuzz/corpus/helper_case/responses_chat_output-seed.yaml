@@ -5,6 +5,7 @@ call:
     request_input: hi
     responses_api_request: {}
     chat_completion_response:
+      _hidden_params: {}
       id: chat_seed
       created: 9
       model: m
@@ -14,5 +15,5 @@ call:
 env: {}
 compare:
   ignore:
-    - pointer: /value/output/0/id
+    - pointer: /value/response/output/0/id
       why: The message id is a random UUID.

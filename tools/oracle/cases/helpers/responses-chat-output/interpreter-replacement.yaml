@@ -7,6 +7,7 @@ call:
       tools:
         - {type: custom, name: edit, description: Edits a file}
     chat_completion_response:
+      _hidden_params: {}
       id: chat_e
       created: 5
       model: m

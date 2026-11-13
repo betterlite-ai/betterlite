@@ -6,19 +6,23 @@ use betterlite_openai::api::responses_objects::{ResponsesApiResponse, ResponsesA
 use betterlite_openai::api::responses_shapes::FunctionCallStatus;
 use indexmap::IndexMap;
 use serde::Deserialize;
+use serde_with::{DefaultOnNull, serde_as};
 
 use crate::api::responses_output_details::{ChatAnnotation, ImageItem};
 use crate::api::responses_tool_namespaces::records::CacheWrite;
 
 // only the two request keys assembly reads; every other Responses parameter belongs to B908
+#[serde_as]
 #[derive(Debug, Deserialize)]
 pub struct RequestFields {
+    #[serde(default = "default_tool_choice")]
+    pub tool_choice: Json,
     #[serde(default)]
-    pub tool_choice: Option<Json>,
-    #[serde(default)]
-    pub tools: Option<Vec<Json>>,
+    #[serde_as(as = "DefaultOnNull")]
+    pub tools: Vec<Json>,
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 pub struct ChatCompletionResponse {
     pub id: String,
@@ -26,6 +30,7 @@ pub struct ChatCompletionResponse {
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
     pub choices: Vec<ChatChoice>,
     #[serde(default)]
     pub usage: Option<Json>,
@@ -39,8 +44,8 @@ pub struct ChatCompletionResponse {
     pub metadata: Option<Option<BTreeMap<String, Json>>>,
     #[serde(default, with = "serde_with::rust::double_option")]
     pub parallel_tool_calls: Option<Option<bool>>,
-    #[serde(default)]
-    pub temperature: Option<Json>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub temperature: Option<Option<Json>>,
     #[serde(default, with = "serde_with::rust::double_option")]
     pub tools: Option<Option<ResponseTools>>,
     #[serde(default)]
@@ -53,8 +58,9 @@ pub struct ChatCompletionResponse {
     pub truncation: Option<ResponsesApiTruncation>,
     #[serde(default)]
     pub user: Option<String>,
-    #[serde(default)]
-    pub hidden_params: Option<BTreeMap<String, Json>>,
+    #[serde(default, rename = "_hidden_params")]
+    #[serde_as(as = "DefaultOnNull")]
+    pub hidden_params: BTreeMap<String, Json>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -64,22 +70,27 @@ pub struct ChatChoice {
     pub message: ChatMessage,
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 pub struct ChatMessage {
     pub role: String,
     #[serde(default)]
     pub content: Option<String>,
     #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
     pub images: Vec<ImageItem>,
     #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
     pub annotations: Vec<ChatAnnotation>,
     #[serde(default)]
     pub reasoning_content: Option<String>,
     #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
     pub thinking_blocks: Vec<IndexMap<String, Json>>,
     #[serde(default)]
     pub provider_specific_fields: Option<IndexMap<String, Json>>,
     #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
     pub tool_calls: Vec<ChatToolCall>,
 }
 
@@ -111,4 +122,8 @@ pub struct AssembledResponse {
     pub response: ResponsesApiResponse,
     pub hidden_params: BTreeMap<String, Json>,
     pub cache_writes: Vec<CacheWrite>,
+}
+
+const fn default_tool_choice() -> Json {
+    Json::Null
 }

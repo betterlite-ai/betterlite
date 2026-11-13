@@ -8,11 +8,19 @@ call:
       id: chat_a
       created: 1
       model: m
+      _hidden_params:
+        provider_specific_fields: {trace: abc}
       choices:
         - finish_reason: stop
-          message: {role: assistant, content: hi}
+          message:
+            role: assistant
+            content: hi
+            tool_calls: null
+            annotations: null
+            images: null
+            thinking_blocks: null
 env: {}
 compare:
   ignore:
-    - pointer: /value/output/0/id
+    - pointer: /value/response/output/0/id
       why: The message id is a random UUID.

@@ -8,6 +8,8 @@ call:
       id: chat_b
       created: 2
       model: m
+      _hidden_params:
+        provider_specific_fields: {}
       incomplete_details: {reason: content_filter}
       metadata: null
       parallel_tool_calls: null
@@ -28,7 +30,7 @@ call:
 env: {}
 compare:
   ignore:
-    - pointer: /value/output/0/id
+    - pointer: /value/response/output/0/id
       why: The message id is a random UUID.
-    - pointer: /value/output/1/id
+    - pointer: /value/response/output/1/id
       why: The message id is a random UUID.

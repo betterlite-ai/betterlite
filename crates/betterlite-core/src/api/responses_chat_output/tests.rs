@@ -66,8 +66,8 @@ fn failure(chat_text: &str) -> ChatOutputError {
     assemble_response(
         &Json::Null,
         &RequestFields {
-            tool_choice: None,
-            tools: None,
+            tool_choice: Json::Null,
+            tools: Vec::new(),
         },
         &chat,
         ApiLimits::default(),
@@ -93,8 +93,8 @@ const CHAT_A: &str = r#"{"id":"chat_a","created":1,"model":"m","choices":[{"fini
 fn request_input_does_not_change_the_response() {
     let chat: ChatCompletionResponse = serde_json::from_str(CHAT_A).unwrap();
     let request = RequestFields {
-        tool_choice: None,
-        tools: None,
+        tool_choice: Json::Null,
+        tools: Vec::new(),
     };
     let text = assemble_response(
         &Json::Text("hello".to_owned()),
@@ -473,6 +473,35 @@ fn text_only_reasoning_drops_the_null_cipher_on_serialization() {
         &parse("[{\"type\":\"output_text\",\"text\":\"why\",\"annotations\":[]}]")
     );
     assert!(matches!(field(reasoning, "status"), Json::Text(status) if status == "completed"));
+    let Json::Object(fields) = reasoning else {
+        panic!("a JSON object was expected");
+    };
+    assert!(!fields.contains_key("encrypted_content"));
+}
+
+#[test]
+fn null_collections_are_empty() {
+    let response = assemble(
+        r#"{"id":"c","created":1,"model":"m","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"hi",
+            "reasoning_content":"why","tool_calls":null,"annotations":null,"images":null,"thinking_blocks":null}}]}"#,
+    );
+    let ResponseOutputItem::Message(reasoning) = &response.response.output[0] else {
+        panic!("a reasoning item was expected");
+    };
+    assert_eq!(reasoning.id, "rs_1");
+    let ResponseOutputItem::Message(message) = &response.response.output[1] else {
+        panic!("a message item was expected");
+    };
+    assert_eq!(message.id, "msg_2");
+    assert_eq!(message.content[0].text.as_deref(), Some("hi"));
+    assert!(response.cache_writes.is_empty());
+}
+
+#[test]
+fn null_choices_are_empty() {
+    let response = assemble(r#"{"id":"c","created":1,"model":"m","choices":null}"#);
+    assert_eq!(response.response.status.as_deref(), Some("completed"));
+    assert!(response.response.output.is_empty());
 }
 
 #[test]
@@ -572,7 +601,7 @@ fn malformed_interpreter_results_fail() {
 fn hidden_params_are_copied_and_provider_fields_surface() {
     let response = assemble(
         r#"{"id":"c","created":1,"model":"m","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"hi"}}],
-            "hidden_params":{"model_id":"mid","provider_specific_fields":{"trace":"abc"}}}"#,
+            "_hidden_params":{"model_id":"mid","provider_specific_fields":{"trace":"abc"}}}"#,
     );
     assert_eq!(
         response.hidden_params.get("model_id"),
@@ -588,7 +617,7 @@ fn hidden_params_are_copied_and_provider_fields_surface() {
 fn empty_hidden_provider_fields_stay_private() {
     let response = assemble(
         r#"{"id":"c","created":1,"model":"m","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"hi"}}],
-            "hidden_params":{"provider_specific_fields":{}}}"#,
+            "_hidden_params":{"provider_specific_fields":{}}}"#,
     );
     assert!(
         !response
