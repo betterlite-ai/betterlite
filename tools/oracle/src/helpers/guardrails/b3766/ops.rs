@@ -9,9 +9,11 @@ use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
 use tokio::runtime::Runtime;
 
+use betterlite_config::sections::guardrail_params::params::LitellmParams;
+
 use super::support::{
-    applied_guardrails, constructor_args, dependencies, fail, handler, input_type, outcome,
-    parse_params, projection, recorded_call, streaming_json,
+    applied_guardrails, constructor_args, dependencies, fail, input_type, outcome, projection,
+    recorded_call, streaming_json,
 };
 use super::{ApplyInput, ConstructInput, StreamingInput};
 use crate::helpers::{HelperError, HelperResult};
@@ -22,7 +24,8 @@ pub(super) fn apply(args: &ApplyInput) -> HelperResult {
     let (mock, base) = start_mock(args)?;
     let mut constructor = constructor_args(&args.settings);
     constructor.api_base = Some(base);
-    let guardrail = handler(&constructor, &args.environment)?;
+    let guardrail = CrowdStrikeAidr::new(&constructor, &args.environment, dependencies())
+        .map_err(|error| fail(error.to_string()))?;
     let mut request_data = args.request_data.clone();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -106,8 +109,11 @@ pub(super) fn construct(args: &ConstructInput) -> HelperResult {
 }
 
 pub(super) fn streaming_params(args: &StreamingInput) -> HelperResult {
-    let mut guardrail = handler(&constructor_args(&args.settings), &args.environment)?;
-    let params = parse_params(&args.params)?;
+    let constructor = constructor_args(&args.settings);
+    let mut guardrail = CrowdStrikeAidr::new(&constructor, &args.environment, dependencies())
+        .map_err(|error| fail(error.to_string()))?;
+    let params: LitellmParams =
+        serde_json::from_value(args.params.clone()).map_err(|error| fail(error.to_string()))?;
     guardrail
         .update_in_memory_params(&params)
         .map_err(|error| fail(error.to_string()))?;

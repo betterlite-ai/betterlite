@@ -20,7 +20,10 @@ pub fn normalize_content(raw: &GuardrailValue) -> Result<Option<MessageContent>,
         | GuardrailValue::SignedInteger(_)
         | GuardrailValue::UnsignedInteger(_)
         | GuardrailValue::Decimal(_)
-        | GuardrailValue::Object(_)) => Ok(Some(MessageContent::Text(json_text(other)?))),
+        | GuardrailValue::Object(_)) => Ok(Some(MessageContent::Text(
+            serde_json::to_string(other)
+                .map_err(|source| CrowdStrikeError::JsonEncode { source })?,
+        ))),
     }
 }
 
@@ -30,7 +33,8 @@ fn normalize_parts(items: &[GuardrailValue]) -> Result<Vec<ContentPart>, CrowdSt
         let GuardrailValue::Object(block) = item else {
             parts.push(ContentPart::Text(TextContentPart {
                 part_type: TextPartType::Text,
-                text: json_text(item)?,
+                text: serde_json::to_string(item)
+                    .map_err(|source| CrowdStrikeError::JsonEncode { source })?,
             }));
             continue;
         };
@@ -153,10 +157,6 @@ pub fn merge_metadata_bags(
         }
     }
     present.then_some(merged)
-}
-
-fn json_text(value: &GuardrailValue) -> Result<String, CrowdStrikeError> {
-    serde_json::to_string(value).map_err(|source| CrowdStrikeError::JsonEncode { source })
 }
 
 mod tests;

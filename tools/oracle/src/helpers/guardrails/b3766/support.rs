@@ -1,11 +1,8 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_guardrails::crowdstrike_aidr::error::CrowdStrikeError;
-use betterlite_guardrails::crowdstrike_aidr::handler::{
-    ConstructorArgs, CrowdStrikeAidr, Dependencies,
-};
+use betterlite_guardrails::crowdstrike_aidr::handler::{ConstructorArgs, Dependencies};
 use betterlite_guardrails::crowdstrike_streaming::{StreamingParams, StreamingSettings};
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
@@ -37,10 +34,10 @@ pub(super) fn constructor_args(settings: &SettingsFields) -> ConstructorArgs {
         api_base: settings.api_base.clone(),
         fail_on_error: settings.fail_on_error,
         streaming: StreamingParams {
-            buffer_until_moderated: settings.streaming_buffer_until_moderated,
-            buffer_release_on_scan: settings.streaming_buffer_release_on_scan,
-            end_of_stream_only: settings.streaming_end_of_stream_only,
-            sampling_rate: settings.streaming_sampling_rate,
+            buffer_until_moderated: settings.buffer_until_moderated,
+            buffer_release_on_scan: settings.buffer_release_on_scan,
+            end_of_stream_only: settings.end_of_stream_only,
+            sampling_rate: settings.sampling_rate,
         },
         timeout: settings.timeout,
     }
@@ -60,17 +57,6 @@ pub(super) fn dependencies() -> Dependencies {
         sink: Box::new(DiscardSink),
         now: std::time::SystemTime::now,
     }
-}
-
-pub(super) fn handler(
-    args: &ConstructorArgs,
-    environment: &BTreeMap<String, String>,
-) -> Result<CrowdStrikeAidr, Box<HelperError>> {
-    CrowdStrikeAidr::new(args, environment, dependencies()).map_err(|error| fail(error.to_string()))
-}
-
-pub(super) fn parse_params(value: &Value) -> Result<LitellmParams, Box<HelperError>> {
-    serde_json::from_value(value.clone()).map_err(|error| fail(error.to_string()))
 }
 
 pub(super) fn input_type(name: &str) -> GuardrailInputType {

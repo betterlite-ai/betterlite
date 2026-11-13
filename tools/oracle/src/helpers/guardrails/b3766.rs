@@ -28,13 +28,13 @@ pub(crate) struct SettingsFields {
     #[serde(default)]
     timeout: Option<f64>,
     #[serde(default)]
-    streaming_buffer_until_moderated: Option<bool>,
+    buffer_until_moderated: Option<bool>,
     #[serde(default)]
-    streaming_buffer_release_on_scan: Option<bool>,
+    buffer_release_on_scan: Option<bool>,
     #[serde(default)]
-    streaming_end_of_stream_only: Option<bool>,
+    end_of_stream_only: Option<bool>,
     #[serde(default)]
-    streaming_sampling_rate: Option<u64>,
+    sampling_rate: Option<u64>,
 }
 
 #[derive(Deserialize)]

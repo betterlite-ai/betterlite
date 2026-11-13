@@ -4,12 +4,14 @@ from typing import Literal, NotRequired, Protocol, Required, TypedDict
 import httpx
 from fastapi import HTTPException
 from litellm.proxy.guardrails.guardrail_hooks.crowdstrike_aidr.crowdstrike_aidr import (
-    CrowdStrikeAIDRGuardrailMissingSecrets,
+    CrowdStrikeAIDRGuardrailMissingSecrets as MissingSecrets,
+)
+from litellm.proxy.guardrails.guardrail_hooks.crowdstrike_aidr.crowdstrike_aidr import (
     CrowdStrikeAIDRHandler,
 )
 from litellm.types.guardrails import LitellmParams
 from litellm.types.proxy.guardrails.guardrail_hooks.crowdstrike_aidr import (
-    CrowdStrikeAIDRGuardrailConfigModelOptionalParams,
+    CrowdStrikeAIDRGuardrailConfigModelOptionalParams as OptionalParams,
 )
 from litellm.types.utils import GenericGuardrailAPIInputs
 from pydantic import JsonValue, TypeAdapter, ValidationError
@@ -31,10 +33,10 @@ class SettingsFields(TypedDict, total=False):
     api_base: str
     fail_on_error: bool
     timeout: float
-    streaming_buffer_until_moderated: bool
-    streaming_buffer_release_on_scan: bool
-    streaming_end_of_stream_only: bool
-    streaming_sampling_rate: int
+    buffer_until_moderated: bool
+    buffer_release_on_scan: bool
+    end_of_stream_only: bool
+    sampling_rate: int
 
 
 class Answer(TypedDict):
@@ -121,10 +123,10 @@ def make_handler(settings: SettingsFields) -> CrowdStrikeAIDRHandler:
         api_key=settings.get("api_key"),
         api_base=settings.get("api_base"),
         fail_on_error=settings.get("fail_on_error"),
-        streaming_buffer_until_moderated=settings.get("streaming_buffer_until_moderated"),
-        streaming_buffer_release_on_scan=settings.get("streaming_buffer_release_on_scan"),
-        streaming_end_of_stream_only=settings.get("streaming_end_of_stream_only"),
-        streaming_sampling_rate=settings.get("streaming_sampling_rate"),
+        streaming_buffer_until_moderated=settings.get("buffer_until_moderated"),
+        streaming_buffer_release_on_scan=settings.get("buffer_release_on_scan"),
+        streaming_end_of_stream_only=settings.get("end_of_stream_only"),
+        streaming_sampling_rate=settings.get("sampling_rate"),
     )
 
 
@@ -175,7 +177,8 @@ async def run_entry(
     request_data: dict[str, JsonValue],
     input_type: Literal["request", "response"],
 ) -> GenericGuardrailAPIInputs:
-    return await entry.apply_guardrail(inputs, request_data, input_type, None)
+    call = entry.apply_guardrail
+    return await call(inputs, request_data, input_type, None)
 
 
 def apply(args: Input) -> ApplyOutput:
@@ -210,7 +213,7 @@ def apply(args: Input) -> ApplyOutput:
 def construct(args: Input) -> Construction | MissingSecret:
     try:
         handler = make_handler(args["settings"])
-    except CrowdStrikeAIDRGuardrailMissingSecrets:
+    except MissingSecrets:
         return {"tag": "missing_secret"}
     return {
         "api_key": handler.api_key,
@@ -222,13 +225,12 @@ def construct(args: Input) -> Construction | MissingSecret:
 
 
 def litellm_params(value: dict[str, JsonValue]) -> LitellmParams:
-    fields: dict[str, object] = {}
-    fields.update(value.items())
     nested = value.get("optional_params")
-    if nested is not None:
-        model = CrowdStrikeAIDRGuardrailConfigModelOptionalParams.model_validate(nested)
-        fields["optional_params"] = model
-    return LitellmParams.model_validate(fields)
+    if nested is None:
+        return LitellmParams.model_validate(value)
+    model = OptionalParams.model_validate(nested)
+    merged = {**value, "optional_params": model}
+    return LitellmParams.model_validate(merged)
 
 
 def streaming_params(args: Input) -> StreamingFields:

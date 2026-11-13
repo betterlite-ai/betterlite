@@ -33,7 +33,7 @@ pub struct Settings {
 }
 
 // What LiteLLM's CrowdStrikeAIDRHandler.__init__ takes before it reads the environment
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct ConstructorArgs {
     pub guardrail_name: Option<String>,
     pub api_key: Option<String>,
@@ -148,7 +148,7 @@ impl CrowdStrikeAidr {
 }
 
 // LiteLLM's CrowdStrikeAIDRGuardrailConfigModel, shortened to the identifier limit
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct CrowdStrikeAidrConfig {
     pub api_key: Option<String>,
