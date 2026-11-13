@@ -1,0 +1,48 @@
+kind: helper
+name: image-request-options-optional-size-full-match-and-unicode-digits
+call:
+  image_request_options:
+    calls:
+      - function: size
+        optional_params:
+          size: 1024x1024
+      - function: size
+        optional_params:
+          size: 1024-x-768
+      - function: size
+        optional_params:
+          size: "١٢٣x٤٥٦"
+      - function: size
+        optional_params:
+          size: "１０x２０"
+      - function: size
+        optional_params:
+          size: 1024x1024 extra
+      - function: size
+        optional_params:
+          size: extra 1024x1024
+      - function: size
+        optional_params:
+          size: "1024x1024\n"
+      - function: size
+        optional_params:
+          size: 1024X1024
+      - function: size
+        optional_params:
+          size: 1024-x768
+      - function: size
+        optional_params:
+          size: 1024x
+      - function: size
+        optional_params:
+          size: ""
+      - function: size
+        optional_params:
+          size: 1024
+      - function: size
+        optional_params: {}
+      - function: size
+        optional_params: null
+env: {}
+compare:
+  ignore: []
