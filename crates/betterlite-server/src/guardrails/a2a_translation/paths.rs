@@ -15,41 +15,30 @@ pub fn extract_texts_from_result(result: &BTreeMap<String, GuardrailValue>) -> V
     if let Some(parts) = result.get("parts") {
         collect_text_parts(parts, &["parts".to_owned()], &mut placements);
     }
-    collect_contained_parts(result, "message", &mut placements);
-    collect_contained_parts(result, "artifact", &mut placements);
-    collect_status_parts(result, &mut placements);
+    collect_nested_parts(result, &["message"], &mut placements);
+    collect_nested_parts(result, &["artifact"], &mut placements);
+    collect_nested_parts(result, &["status", "message"], &mut placements);
     collect_artifact_parts(result, &mut placements);
     placements
 }
 
-fn collect_contained_parts(
+fn collect_nested_parts(
     result: &BTreeMap<String, GuardrailValue>,
-    key: &str,
+    keys: &[&str],
     placements: &mut Vec<TextPlacement>,
 ) {
-    let Some(GuardrailValue::Object(container)) = result.get(key) else {
+    let mut current = result;
+    for key in keys {
+        let Some(GuardrailValue::Object(container)) = current.get(*key) else {
+            return;
+        };
+        current = container;
+    }
+    let Some(parts) = current.get("parts") else {
         return;
     };
-    let Some(parts) = container.get("parts") else {
-        return;
-    };
-    collect_text_parts(parts, &[key.to_owned(), "parts".to_owned()], placements);
-}
-
-fn collect_status_parts(
-    result: &BTreeMap<String, GuardrailValue>,
-    placements: &mut Vec<TextPlacement>,
-) {
-    let Some(GuardrailValue::Object(status)) = result.get("status") else {
-        return;
-    };
-    let Some(GuardrailValue::Object(message)) = status.get("message") else {
-        return;
-    };
-    let Some(parts) = message.get("parts") else {
-        return;
-    };
-    let path = ["status", "message", "parts"].map(str::to_owned);
+    let mut path: Vec<String> = keys.iter().map(|key| (*key).to_owned()).collect();
+    path.push("parts".to_owned());
     collect_text_parts(parts, &path, placements);
 }
 
