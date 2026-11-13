@@ -236,7 +236,7 @@ async fn max_token_option_precedence() {
     }
 }
 
-const REASONING_CASES: [MapCase; 8] = [
+const REASONING_CASES: [MapCase; 11] = [
     (
         "plain-model",
         r#"{"reasoning_effort":"none"}"#,
@@ -279,6 +279,24 @@ const REASONING_CASES: [MapCase; 8] = [
         r#"{"reasoning_effort":"none"}"#,
         r#"{"output_config":{"effort":"max"}}"#,
         "{}",
+    ),
+    (
+        "adaptive-model",
+        r#"{"reasoning_effort":"medium"}"#,
+        "{}",
+        r#"{"thinking":{"type":"adaptive","display":"summarized"},"output_config":{"effort":"medium"}}"#,
+    ),
+    (
+        "adaptive-model",
+        r#"{"reasoning_effort":"high"}"#,
+        "{}",
+        r#"{"thinking":{"type":"adaptive","display":"summarized"},"output_config":{"effort":"high"}}"#,
+    ),
+    (
+        "adaptive-model",
+        r#"{"reasoning_effort":"max"}"#,
+        "{}",
+        r#"{"thinking":{"type":"adaptive","display":"summarized"},"output_config":{"effort":"max"}}"#,
     ),
 ];
 

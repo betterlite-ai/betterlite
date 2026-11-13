@@ -57,7 +57,7 @@ pub fn apply_small(
     global_drop: bool,
 ) -> Result<(), ParamsError> {
     match param {
-        "stop" if matches!(value, Json::Text(_) | Json::List(_)) => {
+        "stop" => {
             let Some(sequences) = map_stop_sequences(value, global_drop)? else {
                 return Ok(());
             };
@@ -75,7 +75,7 @@ pub fn apply_small(
             metadata.insert("user_id".to_owned(), Json::Text(user_id.to_owned()));
             optional_params.insert("metadata".to_owned(), Json::Object(metadata));
         }
-        "context_management" if matches!(value, Json::List(_) | Json::Object(_)) => {
+        "context_management" => {
             if let Some(mapped) = map_context_management(value)? {
                 optional_params.insert("context_management".to_owned(), Json::Object(mapped));
             }
