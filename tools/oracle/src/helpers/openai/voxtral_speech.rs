@@ -78,7 +78,10 @@ fn probe_view(probe: &Probe) -> Result<Value, Box<HelperError>> {
     )
     .map_err(|error| failure(&error))
 }
-fn probe_value(probe: &Probe, reply: Option<&UpstreamResponse>) -> Result<Value, MistralAudioError> {
+fn probe_value(
+    probe: &Probe,
+    reply: Option<&UpstreamResponse>,
+) -> Result<Value, MistralAudioError> {
     let (voice, params) =
         map_openai_params(&probe.optional_params, probe.voice.as_ref(), &probe.kwargs);
     let response = match reply {
