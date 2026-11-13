@@ -498,20 +498,18 @@ fn redistribute_rounds_halves_to_even() {
 
 #[test]
 fn redistribute_counts_characters_not_bytes() {
+    // "é" is one character over two bytes, so a byte count gives the first member two of three characters
     let frames = vec![Frame {
         raw: Vec::new(),
         texts: vec![
             (GroupKey::Text, "\u{e9}".to_owned()),
-            (GroupKey::Text, "a".to_owned()),
+            (GroupKey::Text, "ab".to_owned()),
         ],
     }];
     let groups = group_texts(&frames);
     assert_eq!(
-        redistribute(&groups, &["\u{f1}\u{f1}\u{f1}".to_owned()]).expect("shares"),
-        BTreeMap::from([
-            ((0, 0), "\u{f1}\u{f1}".to_owned()),
-            ((0, 1), "\u{f1}".to_owned())
-        ])
+        redistribute(&groups, &["xyz".to_owned()]).expect("shares"),
+        BTreeMap::from([((0, 0), "x".to_owned()), ((0, 1), "yz".to_owned())])
     );
 }
 
