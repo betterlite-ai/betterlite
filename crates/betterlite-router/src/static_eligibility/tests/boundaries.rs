@@ -81,6 +81,9 @@ enum Boundary {
     ParamsBaseModelFromModelInfo,
     ParamsBaseModelFromParams,
     ParamsWithoutASupportedList,
+    ChecksOffSkipContextAndParams,
+    ContextCauseNamesTheDeploymentModel,
+    WebSearchNullFlagIsSupported,
 }
 
 #[rstest]
@@ -102,6 +105,9 @@ enum Boundary {
 #[case::params_model_info_base_model(Boundary::ParamsBaseModelFromModelInfo)]
 #[case::params_params_base_model(Boundary::ParamsBaseModelFromParams)]
 #[case::params_no_supported_list(Boundary::ParamsWithoutASupportedList)]
+#[case::checks_off(Boundary::ChecksOffSkipContextAndParams)]
+#[case::context_cause_model(Boundary::ContextCauseNamesTheDeploymentModel)]
+#[case::web_search_null_flag(Boundary::WebSearchNullFlagIsSupported)]
 fn static_eligibility_boundaries(#[case] boundary: Boundary) {
     match boundary {
         Boundary::ContextAtTheLimitIsKept => context_at_the_limit_is_kept(),
@@ -118,11 +124,14 @@ fn static_eligibility_boundaries(#[case] boundary: Boundary) {
             &["info"],
         ),
         Boundary::OrderParamsWinsOverModelInfo => order_source(
-            vec![with_param(
-                spec("gpt", "both", "openai/gpt-4o", r#"{"order":5}"#),
-                "order",
-                number(1),
-            )],
+            vec![
+                with_param(
+                    spec("gpt", "both", "openai/gpt-4o", r#"{"order":5}"#),
+                    "order",
+                    number(1),
+                ),
+                with_param(spec("gpt", "low", "openai/gpt-4o", ""), "order", number(3)),
+            ],
             &["both"],
         ),
         Boundary::EnvironmentNotAList => environment_not_a_list(),
@@ -144,6 +153,9 @@ fn static_eligibility_boundaries(#[case] boundary: Boundary) {
             Json::Text("gpt-4".to_owned()),
         )),
         Boundary::ParamsWithoutASupportedList => params_without_a_supported_list(),
+        Boundary::ChecksOffSkipContextAndParams => checks_off_skip_context_and_params(),
+        Boundary::ContextCauseNamesTheDeploymentModel => context_cause_names_the_deployment_model(),
+        Boundary::WebSearchNullFlagIsSupported => web_search_null_flag_is_supported(),
     }
 }
 
@@ -405,6 +417,99 @@ fn params_base_model(deployment: DeploymentSpec) {
     )
     .unwrap();
     assert!(dropped.deployments.is_empty());
+}
+
+fn checks_off_skip_context_and_params() {
+    let mut facts = counted(9);
+    facts.response_format = true;
+    let result = run(
+        Candidates::Pool(vec![windowed("tiny", 1)]),
+        &facts,
+        false,
+        &Support {
+            resolves: true,
+            supported: Some(Vec::new()),
+        },
+    )
+    .unwrap();
+    assert_eq!(ids(&result.deployments), ["tiny"]);
+    assert!(result.causes.is_empty());
+}
+
+fn context_cause_names_the_deployment_model() {
+    let rows = [
+        (
+            spec(
+                "gpt",
+                "info",
+                "openai/gpt-4o",
+                r#"{"max_input_tokens":1,"base_model":"from-info"}"#,
+            ),
+            "Model=from-info",
+        ),
+        (
+            with_param(
+                windowed("params", 1),
+                "base_model",
+                Json::Text("from-params".to_owned()),
+            ),
+            "Model=from-params",
+        ),
+        (
+            with_param(
+                spec(
+                    "gpt",
+                    "empty",
+                    "openai/gpt-4o",
+                    r#"{"max_input_tokens":1,"base_model":""}"#,
+                ),
+                "base_model",
+                Json::Text("ignored".to_owned()),
+            ),
+            "Model=openai/gpt-4o",
+        ),
+        (windowed("plain", 1), "Model=openai/gpt-4o"),
+        (
+            with_param(windowed("nameless", 1), "model", Json::Text(String::new())),
+            "Model=gpt,",
+        ),
+    ];
+    for (deployment, expected) in rows {
+        let result = run(
+            Candidates::Pool(vec![deployment]),
+            &counted(9),
+            true,
+            &supports(),
+        );
+        match result {
+            Err(EligibilityError::ContextWindow(window)) => {
+                assert!(
+                    window.causes.starts_with(expected),
+                    "{} does not start with {expected}",
+                    window.causes
+                );
+            }
+            other => panic!("expected a context window error, got {other:?}"),
+        }
+    }
+}
+
+fn web_search_null_flag_is_supported() {
+    let mut facts = empty_facts();
+    facts.tools = vec![serde_json::from_str(r#"{"type":"web_search_preview"}"#).unwrap()];
+    let result = run(
+        Candidates::Pool(vec![spec(
+            "gpt",
+            "d1",
+            "openai/gpt-4o",
+            r#"{"supports_web_search":null}"#,
+        )]),
+        &facts,
+        false,
+        &supports(),
+    )
+    .unwrap();
+    assert_eq!(ids(&result.deployments), ["d1"]);
 }
 
 fn params_without_a_supported_list() {

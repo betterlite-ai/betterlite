@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 use super::support::{
-    Cooldown, FixedCounter, InfoLimits, Support, facts as empty_facts, ids, spec, with_param,
+    Check, Cooldown, FixedCounter, InfoLimits, Support, facts as empty_facts, ids, spec, with_param,
 };
 use crate::deployment_catalog::types::Candidates;
 use crate::deployment_identity::spec::DeploymentSpec;
@@ -11,7 +11,7 @@ use crate::static_eligibility::filter::{
     Cause, EligibilityInput, EligibilityResult, EligibilityServices, eligible,
 };
 use crate::static_eligibility::optional::{
-    CooldownRecorder, DeploymentPreCallCheck, EnabledChecks, OptionalPreCallCheck, PreCallError,
+    DeploymentPreCallCheck, EnabledChecks, OptionalPreCallCheck, PreCallError,
     async_routing_strategy_checks, routing_strategy_checks,
 };
 use crate::static_eligibility::request::RequestFacts;
@@ -505,7 +505,7 @@ fn optional_checks_union_and_toggle() {
 }
 
 fn pre_call_checks_propagate_the_failure() {
-    let check = Checked {
+    let check = Check {
         outcome: Err(PreCallError::Failed {
             message: "over budget".to_owned(),
         }),
@@ -520,24 +520,9 @@ fn pre_call_checks_propagate_the_failure() {
     );
 }
 
-struct Checked {
-    outcome: Result<(), PreCallError>,
-}
-
-#[async_trait::async_trait]
-impl DeploymentPreCallCheck for Checked {
-    fn check(&self, _deployment: &DeploymentSpec) -> Result<(), PreCallError> {
-        self.outcome.clone()
-    }
-
-    async fn async_check(&self, _deployment: &DeploymentSpec) -> Result<(), PreCallError> {
-        self.outcome.clone()
-    }
-}
-
 #[tokio::test]
 async fn async_pre_call_checks_record_the_cooldown_then_fail() {
-    let check = Checked {
+    let check = Check {
         outcome: Err(PreCallError::RateLimited {
             deployment_id: "d1".to_owned(),
             status: 429,
@@ -660,15 +645,54 @@ async fn count_for_pre_call_checks_swallows_a_counter_failure() {
     );
 }
 
+#[tokio::test]
+async fn count_request_tokens_counts_a_system_block_list_once() {
+    let counter = FixedCounter { count: 0 };
+    let messages: Vec<Json> = vec![message("hello")];
+    let blocks: Json = serde_json::from_str(r#"[{"type":"text","text":"be brief"}]"#).unwrap();
+    let listed = TokenPayload {
+        messages: Some(&messages),
+        system: Some(&blocks),
+        tools: &[],
+    };
+    assert_eq!(count_request_tokens(&listed, &counter).await.unwrap(), 2);
+    let none = Json::List(Vec::new());
+    let empty = TokenPayload {
+        messages: Some(&messages),
+        system: Some(&none),
+        tools: &[],
+    };
+    assert_eq!(count_request_tokens(&empty, &counter).await.unwrap(), 1);
+}
+
 #[test]
-fn cooldown_recorder_is_usable_directly() {
-    let cooldown = Cooldown::default();
-    cooldown.record_rate_limit("d1", 429);
-    assert_eq!(
-        *cooldown
-            .recorded
-            .lock()
-            .unwrap_or_else(|error| error.into_inner()),
-        [(String::from("d1"), 429)]
-    );
+fn optional_check_names_map_to_their_checks() {
+    let names = [
+        (
+            "deployment_affinity",
+            OptionalPreCallCheck::DeploymentAffinity,
+        ),
+        (
+            "responses_api_deployment_check",
+            OptionalPreCallCheck::ResponsesApiDeploymentCheck,
+        ),
+        ("session_affinity", OptionalPreCallCheck::SessionAffinity),
+        (
+            "encrypted_content_affinity",
+            OptionalPreCallCheck::EncryptedContentAffinity,
+        ),
+        ("prompt_caching", OptionalPreCallCheck::PromptCaching),
+        (
+            "router_budget_limiting",
+            OptionalPreCallCheck::RouterBudgetLimiting,
+        ),
+        (
+            "enforce_model_rate_limits",
+            OptionalPreCallCheck::EnforceModelRateLimits,
+        ),
+    ];
+    for (name, check) in names {
+        assert_eq!(OptionalPreCallCheck::from_name(name), Some(check));
+    }
+    assert_eq!(OptionalPreCallCheck::from_name("unknown"), None);
 }

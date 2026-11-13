@@ -1,11 +1,11 @@
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
-use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::error::CountError;
-use betterlite_tokenizer::count::request::{Message, TokenRequest};
+use betterlite_tokenizer::count::request::Message;
 
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::static_eligibility::filter::Cause;
+use crate::static_eligibility::params::declared_model;
 
 // The deployment's declared context window, resolved over the catalog and its model_info override.
 pub trait TokenLimits {
@@ -29,28 +29,6 @@ pub trait TokenCounter {
         messages: &[Message],
         tools: &[Json],
     ) -> Result<usize, TokenCountError>;
-}
-
-// The production counter is B013's; the empty model is what litellm.token_counter gets from _count_pre_call_check_tokens.
-#[async_trait]
-impl TokenCounter for Counter {
-    async fn count_messages(
-        &self,
-        messages: &[Message],
-        tools: &[Json],
-    ) -> Result<usize, TokenCountError> {
-        let request = TokenRequest {
-            model: "",
-            custom_tokenizer: None,
-            text: None,
-            messages: Some(messages),
-            count_response_tokens: Some(false),
-            tools: Some(tools).filter(|entries| !entries.is_empty()),
-            tool_choice: None,
-        };
-        let counted = self.count(&request).await?;
-        Ok(counted)
-    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -148,46 +126,6 @@ pub struct ContextWindowExceeded {
     pub causes: String,
 }
 
-fn cause_model<'deployment>(
-    spec: &'deployment DeploymentSpec,
-    model: &'deployment str,
-) -> &'deployment str {
-    match spec.model_info.get("base_model") {
-        Some(Json::Text(text)) if !text.is_empty() => text.as_str(),
-        Some(
-            Json::Null
-            | Json::Bool(_)
-            | Json::Number(_)
-            | Json::Text(_)
-            | Json::List(_)
-            | Json::Object(_),
-        )
-        | None => match spec.litellm_params.get("base_model") {
-            Some(Json::Text(text)) if !text.is_empty() => text.as_str(),
-            Some(
-                Json::Null
-                | Json::Bool(_)
-                | Json::Number(_)
-                | Json::Text(_)
-                | Json::List(_)
-                | Json::Object(_),
-            )
-            | None => match spec.litellm_params.get("model") {
-                Some(Json::Text(text)) if !text.is_empty() => text.as_str(),
-                Some(
-                    Json::Null
-                    | Json::Bool(_)
-                    | Json::Number(_)
-                    | Json::Text(_)
-                    | Json::List(_)
-                    | Json::Object(_),
-                )
-                | None => model,
-            },
-        },
-    }
-}
-
 // The context-window arm of _pre_call_checks: an over-window deployment is out, and no deployment left is the error.
 pub fn filter_context_window<L>(
     model: &str,
@@ -214,7 +152,7 @@ where
                 });
                 rejected.push(format!(
                     "Model={}, Max Input Tokens={maximum}, Got={input_tokens}",
-                    cause_model(&deployment, model)
+                    declared_model(&deployment).unwrap_or(model)
                 ));
             }
             Some(_) | None => kept.push(deployment),

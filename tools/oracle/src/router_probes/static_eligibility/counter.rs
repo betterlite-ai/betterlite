@@ -90,7 +90,7 @@ impl TokenCounter for ProbeCounter {
             max_exact_chars: self.settings.max_exact_chars,
         };
         let params = message_params("", &self.catalog);
-        let mut total = count_messages(&texter, params, messages).await?;
+        let total = count_messages(&texter, params, messages).await?;
         let includes_system = messages.iter().any(|message| message.role == "system");
         let extra = count_extra(
             &texter,

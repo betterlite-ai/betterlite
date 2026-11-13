@@ -21,15 +21,13 @@ fn text(value: Option<&Json>) -> Option<&str> {
     }
 }
 
-// _deployment_model: the deployment's base_model, from model_info first, then its own model.
+// _deployment_model: base_model from model_info, else from the params, else the deployment's own model; an empty base_model falls to the model.
 pub(crate) fn declared_model(spec: &DeploymentSpec) -> Option<&str> {
-    match text(spec.model_info.get("base_model")) {
-        Some(model) => Some(model),
-        None => match text(spec.litellm_params.get("base_model")) {
-            Some(model) => Some(model),
-            None => text(spec.litellm_params.get("model")),
-        },
-    }
+    let base = match spec.model_info.get("base_model") {
+        None | Some(Json::Null) => spec.litellm_params.get("base_model"),
+        other => other,
+    };
+    text(base).or_else(|| text(spec.litellm_params.get("model")))
 }
 
 // The response_format half of _pre_call_checks: a deployment whose provider does not support the param is not a candidate.

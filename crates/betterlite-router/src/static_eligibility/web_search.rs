@@ -22,9 +22,9 @@ fn is_web_search_tool(tool: &Json) -> bool {
 
 fn supports_web_search(spec: &DeploymentSpec) -> Result<bool, WebSearchError> {
     match spec.model_info.get("supports_web_search") {
-        None => Ok(true),
+        None | Some(Json::Null) => Ok(true),
         Some(Json::Bool(supported)) => Ok(*supported),
-        Some(Json::Null | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+        Some(Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
             Err(WebSearchError::NotBoolean)
         }
     }
