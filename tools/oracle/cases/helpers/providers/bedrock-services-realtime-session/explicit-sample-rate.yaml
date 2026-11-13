@@ -7,6 +7,9 @@ call:
       - 00000000-0000-4000-8000-000000000001
       - 00000000-0000-4000-8000-000000000002
       - 00000000-0000-4000-8000-000000000003
+      - 00000000-0000-4000-8000-000000000004
+    model: amazon.nova-2-sonic-v1:0
+    trace_id: trace-realtime-1
     updates:
       - session:
           output_sample_rate_hertz: 48000
@@ -22,5 +25,10 @@ call:
           output_sample_rate_hertz: 12345
       - session:
           output_sample_rate_hertz: 24000
+    urls: []
+    modalities: null
+    models: []
+    headers: []
+    error: null
 env: {}
 compare: {ignore: []}

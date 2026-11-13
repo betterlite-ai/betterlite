@@ -8,6 +8,8 @@ call:
       - 00000000-0000-4000-8000-000000000002
       - 00000000-0000-4000-8000-000000000003
       - 00000000-0000-4000-8000-000000000004
+    model: amazon.nova-2-sonic-v1:0
+    trace_id: trace-realtime-1
     updates:
       - type: session.update
       - session: {}
@@ -34,5 +36,10 @@ call:
       - session:
           instructions: null
       - session: {}
+    urls: []
+    modalities: null
+    models: []
+    headers: []
+    error: null
 env: {}
 compare: {ignore: []}

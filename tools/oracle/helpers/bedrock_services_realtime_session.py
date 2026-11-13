@@ -2,12 +2,14 @@ import json
 import uuid
 from datetime import UTC, datetime
 from typing import Literal, NotRequired, Protocol, Required, TypedDict
-from unittest import mock
+from uuid import UUID
 
-from litellm._uuid import uuid as fast_uuid
+import fastuuid
+import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.bedrock.realtime.transformation import BedrockRealtimeConfig
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import ReadOnly
 
 JsonObject = dict[str, JsonValue]
 Frames = TypeAdapter(list[JsonObject])
@@ -15,15 +17,15 @@ JsonAdapter: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
 
 class SessionView(TypedDict):
-    id: Required[str]
-    modalities: NotRequired[list[str]]
-    model: NotRequired[str]
+    id: ReadOnly[Required[str]]
+    modalities: ReadOnly[NotRequired[list[str]]]
+    model: ReadOnly[NotRequired[str]]
 
 
 class EventView(TypedDict):
-    event_id: str
-    type: Literal["session.created", "session.updated"]
-    session: SessionView
+    event_id: ReadOnly[str]
+    type: ReadOnly[Literal["session.created", "session.updated"]]
+    session: ReadOnly[SessionView]
 
 
 class InputSchemaWire(TypedDict):
@@ -54,6 +56,9 @@ class PromptStartEnvelope(TypedDict):
     event: PromptStartBody
 
 
+PromptStartAdapter: TypeAdapter[PromptStartEnvelope] = TypeAdapter(PromptStartEnvelope)
+
+
 class ErrorRun(TypedDict):
     message: str
     status: int
@@ -72,14 +77,14 @@ class Input(TypedDict):
         "created_updated_events",
     ]
     ids: list[str]
-    model: NotRequired[str]
-    trace_id: NotRequired[str]
-    updates: NotRequired[list[JsonObject]]
-    urls: NotRequired[list[str | None]]
-    modalities: NotRequired[list[str] | None]
-    models: NotRequired[list[str]]
-    headers: NotRequired[list[tuple[str, str]]]
-    error: NotRequired[ErrorRun]
+    model: str
+    trace_id: str
+    updates: list[JsonObject]
+    urls: list[str | None]
+    modalities: list[str] | None
+    models: list[str]
+    headers: list[tuple[str, str]]
+    error: ErrorRun | None
 
 
 class ErrorView(Protocol):
@@ -117,12 +122,33 @@ class RealtimeConfig(Protocol):
     ) -> dict[str, str]: ...
 
     def get_error_class(
-        self, error_message: str, status_code: int, headers: dict[str, str]
+        self, error_message: str, status_code: int, headers: httpx.Headers
     ) -> ErrorView: ...
 
 
-def build(config_type: type[RealtimeConfig]) -> RealtimeConfig:
-    return config_type()
+CONFIG_TYPE: type[RealtimeConfig] = BedrockRealtimeConfig
+
+
+class FixedStd:
+    def __init__(self, values: list[str]) -> None:
+        self.values = [UUID(value) for value in values]
+        self.index = 0
+
+    def __call__(self) -> UUID:
+        value = self.values[self.index]
+        self.index += 1
+        return value
+
+
+class FixedFast:
+    def __init__(self, values: list[str]) -> None:
+        self.values = [fastuuid.UUID(value) for value in values]
+        self.index = 0
+
+    def __call__(self) -> fastuuid.UUID:
+        value = self.values[self.index]
+        self.index += 1
+        return value
 
 
 def make_logging(trace_id: str) -> Logging:
@@ -153,7 +179,7 @@ def apply_updates(config: RealtimeConfig, updates: list[JsonObject]) -> list[Jso
 
 
 def prompt_start_tools(frame: JsonValue) -> JsonObject:
-    envelope = PromptStartEnvelope.validate_json(json.dumps(frame))
+    envelope = PromptStartAdapter.validate_json(json.dumps(frame))
     prompt_start = envelope["event"]["promptStart"]
     result: JsonObject = {"prompt_name": prompt_start["promptName"]}
     if "toolUseOutputConfiguration" in prompt_start:
@@ -179,7 +205,10 @@ def tool_updates(config: RealtimeConfig, updates: list[JsonObject]) -> list[Json
 
 def session_view(event: EventView) -> JsonObject:
     session = event["session"]
-    modalities: list[JsonValue] = list(session["modalities"])
+    carried = session.get("modalities")
+    if carried is None:
+        raise ValueError("the session event carries no modalities")
+    modalities: list[JsonValue] = list(carried)
     view: JsonObject = {"id": session["id"], "modalities": modalities}
     if "model" in session:
         view["model"] = session["model"]
@@ -187,7 +216,11 @@ def session_view(event: EventView) -> JsonObject:
 
 
 def event_view(event: EventView) -> JsonObject:
-    return {"event_id": event["event_id"], "type": event["type"], "session": session_view(event)}
+    return {
+        "event_id": event["event_id"],
+        "type": event["type"],
+        "session": session_view(event),
+    }
 
 
 def validated_headers(
@@ -202,9 +235,9 @@ def validated_headers(
 
 
 def run_default(input_value: Input) -> JsonValue:
-    with mock.patch.object(uuid, "uuid4", side_effect=input_value["ids"]):
-        config = build(BedrockRealtimeConfig)
-        marker = config.session_configuration_request(input_value["model"])
+    uuid.uuid4 = FixedStd(input_value["ids"])
+    config = CONFIG_TYPE()
+    marker = config.session_configuration_request(input_value["model"])
     configuration = JsonAdapter.validate_json(marker)
     return {
         "prompt_name": config.prompt_name,
@@ -218,21 +251,24 @@ def run_default(input_value: Input) -> JsonValue:
 
 
 def run_created_updated(input_value: Input) -> JsonValue:
-    config = build(BedrockRealtimeConfig)
+    config = CONFIG_TYPE()
     model = input_value["model"]
     logging_obj = make_logging(input_value["trace_id"])
-    with mock.patch.object(fast_uuid, "uuid4", side_effect=input_value["ids"]):
-        created = config.session_created_event(model, logging_obj)
-        updated_default = config.session_updated_event(model, logging_obj)
-        updated_empty = config.session_updated_event(model, logging_obj, [])
-        updated_explicit = config.session_updated_event(
-            model, logging_obj, input_value["modalities"]
-        )
-        model_event = config.session_created_event(input_value["models"][0], logging_obj)
+    fastuuid.uuid4 = FixedFast(input_value["ids"])
+    created = config.session_created_event(model, logging_obj)
+    updated_default = config.session_updated_event(model, logging_obj)
+    updated_empty = config.session_updated_event(model, logging_obj, [])
+    updated_explicit = config.session_updated_event(
+        model, logging_obj, input_value["modalities"]
+    )
+    model_event = config.session_created_event(input_value["models"][0], logging_obj)
+    error_input = input_value["error"]
+    if error_input is None:
+        raise ValueError("the created_updated_events case needs an error fixture")
     error = config.get_error_class(
-        input_value["error"]["message"],
-        input_value["error"]["status"],
-        dict(input_value["error"]["headers"]),
+        error_input["message"],
+        error_input["status"],
+        httpx.Headers(error_input["headers"]),
     )
     urls: list[JsonValue] = [
         config.get_complete_url(url, model) for url in input_value["urls"]
@@ -257,12 +293,12 @@ def run(input_value: Input) -> JsonValue:
         return run_created_updated(input_value)
     if case == "default_session_configuration":
         return run_default(input_value)
-    with mock.patch.object(uuid, "uuid4", side_effect=input_value["ids"]):
-        config = build(BedrockRealtimeConfig)
-        if case == "tool_configuration":
-            results = tool_updates(config, input_value["updates"])
-        else:
-            results = apply_updates(config, input_value["updates"])
+    uuid.uuid4 = FixedStd(input_value["ids"])
+    config = CONFIG_TYPE()
+    if case == "tool_configuration":
+        results = tool_updates(config, input_value["updates"])
+    else:
+        results = apply_updates(config, input_value["updates"])
     return {
         "updates": results,
         "prompt_name": config.prompt_name,
