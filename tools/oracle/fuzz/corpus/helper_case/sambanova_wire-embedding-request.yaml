@@ -1,0 +1,15 @@
+kind: helper
+name: sambanova-wire-embedding-request-seed
+call:
+  b6413:
+    chat_supported: []
+    chat_params: []
+    embedding_urls: [{api_base: "https://api.sambanova.ai/v1/"}, {api_base: null}]
+    embedding_headers:
+      - {api_key: "sk-seed", headers: {Authorization: "Basic seed"}}
+    embedding_requests:
+      - {model: sambanova/embed, input: ["a"], optional: {dimensions: 2}}
+    embedding_replies: []
+    embedding_errors: []
+env: {}
+compare: {ignore: []}

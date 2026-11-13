@@ -1,0 +1,33 @@
+kind: helper
+name: sambanova-embedding-url-headers-body
+call:
+  b6413:
+    chat_supported: []
+    chat_params: []
+    embedding_urls:
+      - {api_base: "https://api.sambanova.ai/v1"}
+      - {api_base: "https://api.sambanova.ai/v1///"}
+      - {api_base: "https://api.sambanova.ai/v1/embeddings"}
+      - {api_base: "https://api.sambanova.ai/v1/embeddings/"}
+      - {api_base: ""}
+      - {api_base: null}
+    embedding_headers:
+      - {api_key: "sk-explicit", headers: {}}
+      - {api_key: null, headers: {}}
+      - {api_key: "sk-explicit", headers: {Authorization: "Basic abc", x-trace: "1"}}
+      - {api_key: null, headers: {authorization: "Basic abc", accept: "text/plain"}}
+      - {api_key: "", headers: {}}
+    embedding_requests:
+      - model: sambanova/embed
+        input: ["hello", "world"]
+        optional: {}
+      - model: sambanova/embed
+        input: "hello"
+        optional: {dimensions: 3}
+      - model: sambanova/embed
+        input: ["hello"]
+        optional: {model: other, input: text}
+    embedding_replies: []
+    embedding_errors: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+task: B6413
+deviations:
+  - what: A missing api_base in the embedding URL is a typed SambaNovaEmbeddingError with LiteLLM's message, not a Python ValueError.
+    why: Rust has no ValueError; the message stays "api_base is required for SambaNova embeddings" and B184 decides how the proxy reports it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sambanova/embedding/transformation.py#L33-L34
+  - what: An embedding reply whose data entries are not embedding records (or whose usage is not an object) is a typed shape error, not a copy of the body value.
+    why: LiteLLM copies the raw data list into EmbeddingResponse and only fails later when the response object is validated; a working setup only sends well-formed records, and a typed decode keeps the failure at the boundary.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sambanova/embedding/transformation.py#L123-L130
