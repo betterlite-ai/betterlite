@@ -10,10 +10,16 @@ if [[ ${GATE_DISPATCHED:-} == 1 ]]; then
     break
   done
   listing=0
-  for word in "$@"; do [[ ${word} == --list ]] && listing=1; done
+  asking=0
+  # a version or help flag before -- builds nothing, and the gate's tools check asks cargo nextest, llvm-cov and mutants for their versions
+  for word in "$@"; do
+    [[ ${word} == -- ]] && break
+    [[ ${word} == --list ]] && listing=1
+    [[ ${word} == --version || ${word} == -V || ${word} == --help || ${word} == -h ]] && asking=1
+  done
   case ${command} in
     build | b | check | c | clippy | test | t | nextest | run | r | bench | doc | d | llvm-cov | rustc | rustdoc | fix | mutants)
-      if [[ ${command} != mutants || ${listing} == 0 ]]; then
+      if [[ ${asking} == 0 ]] && [[ ${command} != mutants || ${listing} == 0 ]]; then
         printf 'cargo %s: a dispatched run builds nothing on this machine (stage 3). Run cargo fmt and the checks that cargo gate list <ID> --local prints; CI runs clippy, the tests and mutants on the pull request.\n' "${command}" >&2
         exit 1
       fi
