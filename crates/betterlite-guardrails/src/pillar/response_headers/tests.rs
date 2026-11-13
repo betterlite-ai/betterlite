@@ -130,3 +130,16 @@ fn the_session_header_uses_the_response_version_not_the_persisted_one() {
     );
     assert_eq!(metadata.get("pillar_session_id"), Some(&text("sent")));
 }
+
+#[test]
+fn evidence_between_one_kib_and_the_full_budget_is_not_truncated() {
+    let long = "x".repeat(2_000);
+    let evidence = GuardrailValue::Array(vec![GuardrailValue::Object(
+        [("evidence".to_owned(), text(&long))].into_iter().collect(),
+    )]);
+    let mut metadata = store(&[("pillar_evidence", evidence.clone())]);
+    let headers = build_pillar_response_headers(&mut metadata);
+    assert!(headers.contains_key("x-pillar-evidence"));
+    assert_eq!(metadata.get("pillar_evidence"), Some(&evidence));
+    assert!(!metadata.contains_key("pillar_evidence_truncated"));
+}

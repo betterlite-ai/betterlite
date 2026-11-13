@@ -177,6 +177,19 @@ fn an_empty_object_is_empty() {
 }
 
 #[tokio::test]
+async fn a_body_over_one_mib_is_rejected_before_it_is_parsed() {
+    let padded = "x".repeat(1024 * 1024 + 512);
+    let body = format!("{{\"pad\":\"{padded}\"}}");
+    let (base, _receiver, mut server) = serve(StatusCode::OK, body).await;
+    let client = reqwest::Client::new();
+    let error = call_pillar_api(&client, &pillar_settings(&base), &headers(), &payload())
+        .await
+        .expect_err("a body over the cap is an error");
+    assert!(matches!(error, PillarError::ResponseTooLarge { .. }));
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn a_refused_connection_is_a_request_error() {
     let settings = pillar_settings("http://127.0.0.1:1");
     let client = reqwest::Client::builder()
