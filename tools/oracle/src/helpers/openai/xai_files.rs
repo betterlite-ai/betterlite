@@ -133,18 +133,6 @@ pub(super) fn authorization(
     }))
 }
 
-fn url_step(step: &UrlStep, settings: &Settings) -> Result<Value, Box<HelperError>> {
-    let id = step.file_id.as_deref().unwrap_or("");
-    let target = match step.target {
-        Target::Collection => FilesTarget::Collection,
-        Target::File => FilesTarget::File(id),
-        Target::Content => FilesTarget::Content(id),
-    };
-    outcome(
-        files_url(step.api_base.as_deref(), target, settings).map_err(|error| error.status_code()),
-    )
-}
-
 fn reply_step(step: &ReplyStep, settings: &Settings) -> Result<Value, Box<HelperError>> {
     let url =
         files_url(step.api_base.as_deref(), FilesTarget::Collection, settings).or_config_error()?;
@@ -173,7 +161,16 @@ fn step(step: &Step, settings: &Settings) -> Result<Value, Box<HelperError>> {
             let headers = get_xai_auth_headers(HeaderMap::new(), key.as_ref(), settings);
             authorization(headers.map_err(|error| error.status_code()))
         }
-        Step::Url(url) => url_step(url, settings),
+        Step::Url(url) => {
+            let id = url.file_id.as_deref().unwrap_or("");
+            let files_target = match url.target {
+                Target::Collection => FilesTarget::Collection,
+                Target::File => FilesTarget::File(id),
+                Target::Content => FilesTarget::Content(id),
+            };
+            let resolved = files_url(url.api_base.as_deref(), files_target, settings);
+            outcome(resolved.map_err(|error| error.status_code()))
+        }
         Step::Reply(reply) => reply_step(reply, settings),
         Step::Content {
             status,
