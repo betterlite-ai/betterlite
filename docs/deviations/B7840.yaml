@@ -1,8 +1,5 @@
 task: B7840
 deviations:
-  - what: The classes are not pydantic models, so model_validate, model_fields and model_json_schema are missing on them.
-    why: The wheel depends only on python-dotenv and typing-extensions. They keep attributes, item access, model_dump and the defaults.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/responses/main.py#L14
   - what: "build_web_search_call returns a ResponseObject, where LiteLLM returns openai's ResponseFunctionWebSearch."
     why: The wheel does not depend on the openai package. The dumped dict is the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/responses/main.py#L44-L72
@@ -10,7 +7,7 @@ deviations:
     why: openai is not a wheel dependency, no other package carries this function, and it is about 70 lines.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L203
   - what: "type_to_response_format_param accepts any class with a callable model_json_schema, where LiteLLM requires a pydantic BaseModel subclass."
-    why: The wheel cannot import pydantic. A pydantic model passes either check.
+    why: The parameter is typed by a protocol, and a runtime subclass check would need issubclass, which the Python rules forbid. A pydantic model passes either check.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L179-L212
   - what: A ResponsesAPIResponse output item given as a dict dumps as given, where pydantic validates a message item into openai's ResponseOutputMessage and ResponseOutputText, whose dumps add phase null and logprobs null, and exclude_none drops null values inside a plain dict in LiteLLM but not here.
     why: The wheel has no openai models and the declared output union includes dict, which the shared response base keeps; the mock builder passes phase and logprobs as null in its literal so the mock's model_dump matches LiteLLM's value for value.
