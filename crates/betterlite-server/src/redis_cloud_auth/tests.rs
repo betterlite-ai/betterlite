@@ -62,7 +62,7 @@ use super::azure_production::SdkAzureGrants;
 use super::azure_runtime::{ProductionClock, ProductionHost, ThreadScheduler};
 use super::gcp::{AdcTokenSource, IamTokenError, IamTokenFetcher, decode_iam_token};
 use super::gcp_production::VertexAdcTokenSource;
-use super::production_cloud_redis_auth;
+use super::production::production_cloud_redis_auth;
 use super::{
     AWS_REFRESH_AFTER, AZURE_REFRESH_AFTER, CloudRedisAuthDeps, GCP_REFRESH_AFTER, cloud_redis_auth,
 };
