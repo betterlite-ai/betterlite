@@ -80,9 +80,7 @@ def validate_answer(call: ValidateCall) -> JsonValue:
 
 
 def admin_answer(call: AdminCall) -> JsonValue:
-    if is_proxy_admin(caller_of(call["caller"])):
-        return {"ok": True, "status": None, "value": None}
-    return {"ok": False, "status": 403, "value": None}
+    return {"ok": is_proxy_admin(caller_of(call["caller"])), "status": None, "value": None}
 
 
 def visibility_answer(call: VisibilityCall) -> JsonValue:

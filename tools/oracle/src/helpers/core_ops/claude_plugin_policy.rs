@@ -4,8 +4,7 @@ use betterlite_auth::auth_identity::records::{
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, map_role};
 use betterlite_core::api::claude_plugin_policy::source::{PluginSource, validate_plugin_source};
 use betterlite_core::api::claude_plugin_policy::{
-    ClaudePluginPolicyError, PluginCaller, PluginObjectPermission, PluginRecord,
-    require_proxy_admin, skill_visibility,
+    PluginCaller, PluginObjectPermission, PluginRecord, require_proxy_admin, skill_visibility,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -58,22 +57,20 @@ impl crate::helpers::Helper for Op {
 
 fn answer(call: &Call) -> Value {
     match call {
-        Call::ValidateSource { source } => guard_answer(validate_plugin_source(source)),
-        Call::RequireAdmin { caller } => {
-            guard_answer(require_proxy_admin(Some(&plugin_caller(caller))))
-        }
-        Call::Visibility { caller, plugins } => visibility_answer(caller.as_ref(), plugins),
-    }
-}
-
-fn guard_answer(guard: Result<(), ClaudePluginPolicyError>) -> Value {
-    match guard {
-        Ok(()) => json!({ "ok": true, "status": null, "value": null }),
-        Err(error) => json!({
-            "ok": false,
-            "status": error.fields().status_code,
+        Call::ValidateSource { source } => match validate_plugin_source(source) {
+            Ok(()) => json!({ "ok": true, "status": null, "value": null }),
+            Err(error) => json!({
+                "ok": false,
+                "status": error.fields().status_code,
+                "value": null,
+            }),
+        },
+        Call::RequireAdmin { caller } => json!({
+            "ok": require_proxy_admin(Some(&plugin_caller(caller))).is_ok(),
+            "status": null,
             "value": null,
         }),
+        Call::Visibility { caller, plugins } => visibility_answer(caller.as_ref(), plugins),
     }
 }
 
