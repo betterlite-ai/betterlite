@@ -3,6 +3,6 @@ name: gateway-allowed-exact-path
 call:
   b4471:
     component: gateway
-    path: /docs
+    paths: [/docs]
 env: {}
 compare: {ignore: []}

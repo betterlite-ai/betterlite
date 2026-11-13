@@ -1,13 +1,13 @@
 use betterlite_backend::BACKEND_ROUTES;
 use betterlite_gateway::routes::GATEWAY_ROUTES;
-use betterlite_gateway::serve::matches_path;
+use betterlite_server::server::filter::matches_path;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     component: Component,
-    path: String,
+    paths: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -27,8 +27,12 @@ impl crate::helpers::Helper for Op {
             Component::Gateway => GATEWAY_ROUTES,
             Component::Backend => BACKEND_ROUTES,
         };
-        serde_json::to_value(matches_path(&input.path, routes))
-            .map_err(|error| helper_error(error.to_string()))
+        let allowed: Vec<bool> = input
+            .paths
+            .iter()
+            .map(|path| matches_path(path, routes))
+            .collect();
+        serde_json::to_value(allowed).map_err(|error| helper_error(error.to_string()))
     }
 }
 

@@ -3,6 +3,6 @@ name: backend-allowed-path-prefix
 call:
   b4471:
     component: backend
-    path: /key/list
+    paths: [/key/list, /github/authorize]
 env: {}
 compare: {ignore: []}

@@ -3,6 +3,6 @@ name: backend-blocked-unrelated-prefix
 call:
   b4471:
     component: backend
-    path: /v1/chat/completions
+    paths: [/v1/chat/completions]
 env: {}
 compare: {ignore: []}

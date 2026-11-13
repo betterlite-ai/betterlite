@@ -3,6 +3,6 @@ name: gateway-allowed-mount-exact
 call:
   b4471:
     component: gateway
-    path: /metrics
+    paths: [/metrics]
 env: {}
 compare: {ignore: []}

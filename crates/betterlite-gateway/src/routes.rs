@@ -1,4 +1,4 @@
-use crate::serve::ComponentRoutes;
+use betterlite_server::server::filter::ComponentRoutes;
 
 pub const GATEWAY_ROUTES: ComponentRoutes = ComponentRoutes {
     prefixes: betterlite_routes::GATEWAY_PATH_PREFIXES,

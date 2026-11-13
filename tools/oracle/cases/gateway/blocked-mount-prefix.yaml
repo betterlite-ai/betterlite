@@ -3,6 +3,6 @@ name: gateway-blocked-mount-prefix
 call:
   b4471:
     component: gateway
-    path: /metricsz
+    paths: [/metricsz]
 env: {}
 compare: {ignore: []}

@@ -1216,17 +1216,14 @@ dependencies = [
 name = "betterlite-backend"
 version = "0.1.0"
 dependencies = [
- "axum",
- "betterlite-config",
- "betterlite-openai",
  "betterlite-routes",
  "betterlite-server",
  "clap",
- "rand 0.10.3",
+ "nix",
  "serde",
+ "serde_json",
+ "tempfile",
  "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -1765,17 +1762,14 @@ dependencies = [
 name = "betterlite-gateway"
 version = "0.1.0"
 dependencies = [
- "axum",
- "betterlite-config",
- "betterlite-openai",
  "betterlite-routes",
  "betterlite-server",
  "clap",
- "rand 0.10.3",
+ "nix",
  "serde",
+ "serde_json",
+ "tempfile",
  "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -2503,10 +2497,12 @@ dependencies = [
  "base64 0.23.1",
  "betterlite",
  "betterlite-auth",
+ "betterlite-backend",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
  "betterlite-db",
+ "betterlite-gateway",
  "betterlite-guardrails",
  "betterlite-http",
  "betterlite-mcp",
@@ -3169,6 +3165,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry_sdk",
  "percent-encoding",
+ "phf",
  "rand 0.10.3",
  "rcgen",
  "regex",

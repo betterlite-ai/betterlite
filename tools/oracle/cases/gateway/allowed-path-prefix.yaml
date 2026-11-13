@@ -3,6 +3,6 @@ name: gateway-allowed-path-prefix
 call:
   b4471:
     component: gateway
-    path: /v1/chat/completions
+    paths: [/v1/chat/completions, /openai/v1/files, /acme/v1/files]
 env: {}
 compare: {ignore: []}

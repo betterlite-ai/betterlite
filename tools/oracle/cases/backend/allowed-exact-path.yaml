@@ -3,6 +3,6 @@ name: backend-allowed-exact-path
 call:
   b4471:
     component: backend
-    path: /docs
+    paths: [/docs]
 env: {}
 compare: {ignore: []}

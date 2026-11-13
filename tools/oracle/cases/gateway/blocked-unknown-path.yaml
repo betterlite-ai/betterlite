@@ -3,6 +3,6 @@ name: gateway-blocked-unknown-path
 call:
   b4471:
     component: gateway
-    path: /not-a-route
+    paths: [/not-a-route]
 env: {}
 compare: {ignore: []}

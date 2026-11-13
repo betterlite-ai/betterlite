@@ -1,7 +1,7 @@
 pub mod cli;
 
-use betterlite_gateway::serve::ComponentRoutes;
-use betterlite_gateway::serve::serve_component;
+use betterlite_server::server::component::serve_component;
+use betterlite_server::server::filter::ComponentRoutes;
 use cli::Cli;
 use std::process::ExitCode;
 

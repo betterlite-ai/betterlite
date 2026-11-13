@@ -287,6 +287,8 @@ pub(crate) fn failure(
     (status, headers, Json(body)).into_response()
 }
 
+pub mod component;
+pub mod filter;
 pub mod inputs;
 pub mod listener;
 mod tests;

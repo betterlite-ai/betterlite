@@ -3,6 +3,6 @@ name: gateway-blocked-unrelated-prefix
 call:
   b4471:
     component: gateway
-    path: /v1/access_group
+    paths: [/v1/access_group]
 env: {}
 compare: {ignore: []}

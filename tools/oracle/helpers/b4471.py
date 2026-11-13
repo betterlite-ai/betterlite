@@ -5,7 +5,7 @@ import litellm
 
 class Input(TypedDict):
     component: Literal["gateway", "backend"]
-    path: str
+    paths: list[str]
 
 
 GATEWAY_PATH_PREFIXES: Final[tuple[str, ...]] = (
@@ -268,8 +268,23 @@ ROUTES: Final[dict[str, tuple[tuple[str, ...], frozenset[str], frozenset[str]]]]
 }
 
 
-def run(input_value: Input) -> bool:
+def prefix_matches(path: str, prefix: str) -> bool:
+    if "{" not in prefix:
+        return path.startswith(prefix)
+    segments = [segment for segment in path.split("/") if segment]
+    parts = [part for part in prefix.split("/") if part]
+    for index, part in enumerate(parts):
+        if index >= len(segments):
+            return False
+        if not (part.startswith("{") and part.endswith("}")) and segments[index] != part:
+            return False
+    return not prefix.endswith("/") or len(segments) > len(parts)
+
+
+def run(input_value: Input) -> list[bool]:
     _ = litellm.__name__
     prefixes, exact, mounts = ROUTES[input_value["component"]]
-    path = input_value["path"]
-    return path in mounts or path in exact or any(path.startswith(prefix) for prefix in prefixes)
+    return [
+        path in mounts or path in exact or any(prefix_matches(path, prefix) for prefix in prefixes)
+        for path in input_value["paths"]
+    ]
