@@ -108,6 +108,29 @@ fn set_custom_id_labels_writes_the_raw_chunks(
 }
 
 #[test]
+fn set_custom_id_labels_numbers_every_chunk_after_the_first() {
+    let custom_id = "x".repeat(74);
+    let written = written_labels(&custom_id);
+    let payloads: Vec<String> = [
+        RAW_LABEL,
+        "litellm_custom_id_raw_1",
+        "litellm_custom_id_raw_2",
+    ]
+    .iter()
+    .map(|name| label_text(&written, name))
+    .collect();
+    assert_eq!(
+        payloads,
+        vec![
+            "b32_pb4hq6dypb4hq6dypb4hq6dypb4hq6dypb4hq6dypb4hq6dypb4hq6dypb4",
+            "b32_hq6dypb4hq6dypb4hq6dypb4hq6dypb4hq6dypb4hq6dypb4hq6dypb4hq6",
+            "b32_a",
+        ]
+    );
+    assert_eq!(custom_id_from_labels(&written).unwrap(), custom_id);
+}
+
+#[test]
 fn set_custom_id_labels_splits_payloads_after_the_prefix() {
     let written = written_labels(&"x".repeat(40));
     let first = label_text(&written, RAW_LABEL);
@@ -201,10 +224,11 @@ fn custom_id_from_labels_reports_unknown_without_any_label() {
 #[test]
 fn custom_id_from_labels_orders_numbered_chunks_numerically() {
     let written = labels(&[
-        (RAW_LABEL, "b32_jbswy3dp"),
-        ("litellm_custom_id_raw_10", "b32_mzxw6"),
+        (RAW_LABEL, "b32_"),
+        ("litellm_custom_id_raw_10", "b32_mzxw6ztf"),
+        ("litellm_custom_id_raw_2", "b32_jbswy3dp"),
     ]);
-    assert_eq!(custom_id_from_labels(&written).unwrap(), "Hellofoo");
+    assert_eq!(custom_id_from_labels(&written).unwrap(), "Hellofoofe");
 }
 
 #[test]
@@ -620,9 +644,11 @@ fn embedding_values_that_are_missing_are_refused() {
     );
 }
 
-#[test]
-fn a_prompt_token_count_past_u32_is_refused() {
-    let rows = embedding_rows(&[("id#0/1", "[1]", r#", "tokenCount": 4294967296"#)]);
+#[rstest]
+#[case::past_u32(r#", "tokenCount": 4294967296"#)]
+#[case::negative(r#", "tokenCount": -5"#)]
+fn a_prompt_token_count_outside_u32_is_refused(#[case] usage: &str) {
+    let rows = embedding_rows(&[("id#0/1", "[1]", usage)]);
     let error = regroup_embeddings(&rows, None, &mut ids()).unwrap_err();
     assert!(
         matches!(error, BatchRowsError::Shape(custom_id, field) if custom_id == "id" && field == "usage")

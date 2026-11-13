@@ -9,5 +9,6 @@ call:
       - ""
       - İstanbul
       - a%23b
+      - xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 env: {}
 compare: {ignore: []}
