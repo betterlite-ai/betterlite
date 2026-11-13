@@ -4,11 +4,11 @@ use betterlite_redact::structured::mask_credentials_in_payload;
 use super::error::GuardrailRecordError;
 use crate::xecguard_primitives::redaction::redact_match_and_regex_keys;
 
-const MAX_NULL_DROP_DEPTH: usize = 20;
+pub(super) const MAX_NULL_DROP_DEPTH: usize = 20;
 const SECRET_FIELDS_KEY: &str = "secret_fields";
 
 // LiteLLM's filter_exceptions_from_params: the root is level 0 and a value at level 20 is kept whole
-fn drop_nulls(value: GuardrailValue, levels_left: usize) -> GuardrailValue {
+pub(super) fn drop_nulls(value: GuardrailValue, levels_left: usize) -> GuardrailValue {
     if levels_left == 0 {
         return value;
     }

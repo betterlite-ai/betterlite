@@ -6,13 +6,13 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use serde::ser::Error as SerializeError;
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 
 use super::error::GuardrailSpanError;
 use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::inputs::GuardrailLogTarget;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GuardrailStatus {
     Success,
