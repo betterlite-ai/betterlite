@@ -1,0 +1,5 @@
+task: B8212
+deviations:
+  - what: The initializer returns QohashArgs and registers nothing.
+    why: B3682 owns the registry and the registration, as with B3681.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qohash/__init__.py#L26-L36
