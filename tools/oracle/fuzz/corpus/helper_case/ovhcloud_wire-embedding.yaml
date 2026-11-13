@@ -1,0 +1,15 @@
+kind: helper
+name: ovhcloud-wire-seed-embedding
+call:
+  b6412:
+    function: embedding
+    headers:
+      - {api_key: null, headers: {}, env: {}}
+    requests:
+      - {model: m, input: hi, non_default_params: {dimensions: 3}}
+    replies:
+      - body: '{"model":"up","data":[],"object":"list","usage":{"prompt_tokens":3,"total_tokens":4}}'
+        status: 200
+        headers: {}
+env: {}
+compare: {ignore: []}

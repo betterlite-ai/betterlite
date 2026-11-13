@@ -1,0 +1,30 @@
+kind: helper
+name: ovhcloud-wire-embedding-headers-body-and-reply
+call:
+  b6412:
+    function: embedding
+    headers:
+      - {api_key: null, headers: {}, env: {}}
+      - {api_key: null, headers: {}, env: {OVHCLOUD_API_KEY: env-key}}
+      - {api_key: explicit, headers: {}, env: {OVHCLOUD_API_KEY: env-key}}
+      - {api_key: "", headers: {}, env: {OVHCLOUD_API_KEY: env-key}}
+      - {api_key: null, headers: {Authorization: "Bearer caller"}, env: {}}
+      - {api_key: null, headers: {authorization: lower}, env: {}}
+      - {api_key: null, headers: {accept: text/plain, Content-Type: text/xml, x-extra: "1"}, env: {}}
+    requests:
+      - {model: m, input: hi, non_default_params: {}}
+      - {model: m, input: [hi, there], non_default_params: {dimensions: 3, user: u}}
+      - {model: m, input: [[1, 2], [3]], non_default_params: {encoding_format: base64}}
+    replies:
+      - body: '{"model":"up","data":[{"object":"embedding","embedding":[1,2],"index":0}],"object":"list","usage":{"prompt_tokens":3,"total_tokens":4}}'
+        status: 200
+        headers: {}
+      - {body: '{"model":null,"data":null,"object":null}', status: 200, headers: {}}
+      - {body: '{"usage":{"prompt_tokens":3}}', status: 200, headers: {}}
+      - {body: '{"usage":{"total_tokens":4}}', status: 200, headers: {}}
+      - {body: '{"usage":{}}', status: 200, headers: {}}
+      - {body: '{}', status: 200, headers: {}}
+      - {body: 'not json', status: 502, headers: {X-Request-Id: req-1}}
+      - {body: '', status: 500, headers: {}}
+env: {}
+compare: {ignore: []}

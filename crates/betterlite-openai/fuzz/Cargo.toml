@@ -473,3 +473,10 @@ path = "fuzz_targets/xai_uploads.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "ovhcloud_reply"
+path = "fuzz_targets/ovhcloud_reply.rs"
+test = false
+doc = false
+bench = false

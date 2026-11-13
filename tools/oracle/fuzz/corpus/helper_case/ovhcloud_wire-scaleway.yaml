@@ -1,0 +1,13 @@
+kind: helper
+name: ovhcloud-wire-seed-scaleway
+call:
+  b6412:
+    function: scaleway_key
+    calls:
+      - {api_key: null, headers: {}, env: {}}
+    replies:
+      - body: '{"text":"hi","language":"fr"}'
+        status: 200
+        headers: {content-type: application/json}
+env: {}
+compare: {ignore: []}

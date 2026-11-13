@@ -1,0 +1,11 @@
+kind: helper
+name: ovhcloud-wire-seed-chunks
+call:
+  b6412:
+    function: chunks
+    chunks:
+      - {id: a, created: 1, model: m, choices: [{index: 0, delta: {reasoning: why}}]}
+      - {error: {message: boom, code: 429}}
+      - {id: a, created: 1}
+env: {}
+compare: {ignore: []}
