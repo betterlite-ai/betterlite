@@ -1,0 +1,10 @@
+kind: helper
+name: rate-limit-records-model-limit-group-fallback
+call:
+  b3031:
+    function: model_limit
+    requested: gpt4
+    group: gpt-4
+    limits: {gpt-4: 100}
+env: {}
+compare: {ignore: []}

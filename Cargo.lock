@@ -1102,6 +1102,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
  "sha2 0.11.1",
  "thiserror",
  "tokio",
@@ -1503,11 +1504,13 @@ dependencies = [
  "betterlite-auth",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-cost",
  "betterlite-db",
  "betterlite-env",
  "betterlite-error",
  "betterlite-foundry",
  "betterlite-http",
+ "betterlite-interactions",
  "betterlite-logging",
  "betterlite-mcp",
  "betterlite-models",
@@ -1593,6 +1596,7 @@ dependencies = [
  "aws-types",
  "base64 0.23.1",
  "betterlite-env",
+ "betterlite-openai",
  "betterlite-postgres-fixture",
  "betterlite-roi",
  "betterlite-secret-managers",
@@ -1652,7 +1656,11 @@ name = "betterlite-db-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-db",
+ "betterlite-openai",
+ "betterlite-secrets",
  "libfuzzer-sys",
+ "secrecy",
+ "uuid",
 ]
 
 [[package]]
@@ -1980,6 +1988,7 @@ dependencies = [
  "betterlite-env",
  "betterlite-error",
  "betterlite-http",
+ "betterlite-interactions",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-privacy-openai",
@@ -2234,6 +2243,7 @@ dependencies = [
 name = "betterlite-openai-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-http",
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-tokenizer",
@@ -2452,6 +2462,8 @@ name = "betterlite-oracle-server"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-smithy-eventstream",
+ "aws-smithy-types",
  "axum",
  "base64 0.23.1",
  "betterlite",
@@ -2641,6 +2653,7 @@ dependencies = [
  "async-trait",
  "aws-lc-rs",
  "base64 0.23.1",
+ "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-bedrock",
  "betterlite-config",
@@ -2783,8 +2796,17 @@ dependencies = [
 name = "betterlite-rate-limit"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-config",
+ "betterlite-core",
+ "betterlite-redis",
+ "rstest",
  "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2892,6 +2914,7 @@ dependencies = [
 name = "betterlite-router"
 version = "0.1.0"
 dependencies = [
+ "arc-swap",
  "async-trait",
  "betterlite-config",
  "betterlite-context",
@@ -3058,6 +3081,8 @@ version = "0.1.0"
 dependencies = [
  "aho-corasick",
  "async-trait",
+ "aws-smithy-eventstream",
+ "aws-smithy-types",
  "axum",
  "base64 0.23.1",
  "betterlite-auth",
@@ -3087,6 +3112,7 @@ dependencies = [
  "caseless",
  "chrono",
  "clap",
+ "crc32fast",
  "deadpool-postgres",
  "email_address",
  "encoding_rs",
@@ -3104,6 +3130,7 @@ dependencies = [
  "jiff",
  "multipart-rs",
  "mutants",
+ "num-traits",
  "opentelemetry",
  "opentelemetry_sdk",
  "percent-encoding",
