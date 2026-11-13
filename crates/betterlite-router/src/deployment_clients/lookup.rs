@@ -1,0 +1,261 @@
+use std::collections::BTreeMap;
+
+use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
+use sha2::{Digest as _, Sha256};
+use thiserror::Error;
+
+use crate::catalog_updates::catalog::DeploymentCatalog;
+use crate::deployment_identity::spec::DeploymentSpec;
+
+// CredentialLiteLLMParams, in its declared order, so a dump keeps the same fields LiteLLM's model keeps.
+pub const CREDENTIAL_FIELDS: [&str; 41] = [
+    "api_key",
+    "api_base",
+    "api_version",
+    "azure_ad_token",
+    "tenant_id",
+    "client_id",
+    "client_secret",
+    "azure_scope",
+    "azure_username",
+    "azure_password",
+    "vertex_project",
+    "vertex_location",
+    "vertex_credentials",
+    "region_name",
+    "gcs_bucket_name",
+    "bucket_name",
+    "aws_access_key_id",
+    "aws_secret_access_key",
+    "aws_session_token",
+    "aws_region_name",
+    "aws_session_name",
+    "aws_profile_name",
+    "aws_role_name",
+    "aws_web_identity_token",
+    "aws_sts_endpoint",
+    "aws_external_id",
+    "aws_session_tags",
+    "aws_bedrock_runtime_endpoint",
+    "aws_bedrock_project_id",
+    "s3_bucket_name",
+    "s3_endpoint_url",
+    "s3_region_name",
+    "s3_access_key_id",
+    "s3_secret_access_key",
+    "s3_encryption_key_id",
+    "s3_bucket_owner",
+    "aws_batch_role_arn",
+    "s3_output_bucket_name",
+    "bedrock_tags",
+    "watsonx_region_name",
+    "litellm_credential_name",
+];
+
+// Fields pydantic validates as str | dict, or as a list, keep more than plain text.
+const TEXT_OR_OBJECT: [&str; 1] = ["vertex_credentials"];
+const TEXT_OR_LIST: [&str; 2] = ["aws_session_tags", "bedrock_tags"];
+
+#[derive(Debug, Error)]
+pub enum CredentialError {
+    #[error("the deployment credential field {field} is not {expected}")]
+    FieldType {
+        field: String,
+        expected: &'static str,
+    },
+    #[error("the deployment has no model to hand its credentials to")]
+    MissingModel,
+    #[error("the deployment credentials could not be written as JSON: {source}")]
+    Encode {
+        #[source]
+        source: serde_json::Error,
+    },
+}
+
+// CredentialLiteLLMParams.model_validate(...).model_dump(exclude_none=True): declared fields only, nulls gone.
+pub fn credential_params(litellm_params: &JsonObject) -> Result<JsonObject, CredentialError> {
+    let mut credentials = JsonObject::new();
+    for field in CREDENTIAL_FIELDS {
+        let Some(value) = litellm_params
+            .get(field)
+            .filter(|value| !matches!(value, Json::Null))
+        else {
+            continue;
+        };
+        let accepted = match value {
+            Json::Text(_) => true,
+            Json::Object(_) => TEXT_OR_OBJECT.contains(field),
+            Json::List(_) => TEXT_OR_LIST.contains(field),
+            Json::Null | Json::Bool(_) | Json::Number(_) => false,
+        };
+        if !accepted {
+            return Err(CredentialError::FieldType {
+                field: (*field).to_owned(),
+                expected: "a string, an object or a list",
+            });
+        }
+        credentials.insert((*field).to_owned(), value.clone());
+    }
+    Ok(credentials)
+}
+
+fn blocked(deployment: &DeploymentSpec) -> bool {
+    matches!(deployment.model_info.get("blocked"), Some(Json::Bool(true)))
+}
+
+fn team_owner(deployment: &DeploymentSpec) -> Option<&str> {
+    match deployment.model_info.get("team_id") {
+        Some(Json::Text(team)) => Some(team),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
+        | None => None,
+    }
+}
+
+// _deployment_usable_by_team: a team deployment serves only its own team, an unowned one is shared
+fn usable_by_team(deployment: &DeploymentSpec, team_id: Option<&str>) -> bool {
+    match (team_owner(deployment), team_id) {
+        (None, _) => true,
+        (Some(_owner), None) => false,
+        (Some(owner), Some(caller)) => owner == caller,
+    }
+}
+
+fn by_id<'catalog>(
+    catalog: &'catalog DeploymentCatalog,
+    model_id: &str,
+) -> Option<&'catalog DeploymentSpec> {
+    let index = catalog.id_index.get(model_id)?;
+    catalog.models.get(*index)
+}
+
+fn first_usable<'catalog>(
+    catalog: &'catalog DeploymentCatalog,
+    indices: Option<&Vec<usize>>,
+    team_id: Option<&str>,
+) -> Option<&'catalog DeploymentSpec> {
+    let usable = indices?
+        .iter()
+        .filter_map(|index| catalog.models.get(*index))
+        .find(|deployment| usable_by_team(deployment, team_id));
+    usable
+}
+
+// get_credential_deployment: by id, then model name, then the team's public name, then a wildcard pattern
+// (the team's own patterns before a global one), and nothing when the match is paused.
+#[must_use]
+pub fn credential_deployment<'catalog>(
+    catalog: &'catalog DeploymentCatalog,
+    model_id: &str,
+    team_id: Option<&str>,
+) -> Option<&'catalog DeploymentSpec> {
+    let deployment = by_id(catalog, model_id)
+        .or_else(|| first_usable(catalog, catalog.name_index.get(model_id), team_id))
+        .or_else(|| {
+            let team = team_id?;
+            let indices = catalog
+                .team_index
+                .get(&(team.to_owned(), model_id.to_owned()))?;
+            indices.first().and_then(|index| catalog.models.get(*index))
+        })
+        .or_else(|| wildcard_deployment(catalog, model_id, team_id))?;
+    if blocked(deployment) {
+        return None;
+    }
+    Some(deployment)
+}
+
+fn wildcard_deployment<'catalog>(
+    catalog: &'catalog DeploymentCatalog,
+    model_id: &str,
+    team_id: Option<&str>,
+) -> Option<&'catalog DeploymentSpec> {
+    if let Some(patterns) = team_id.and_then(|team| catalog.team_pattern_routers.get(team)) {
+        if let Some(candidate) = patterns
+            .router
+            .route(model_id, None)
+            .and_then(|matched| matched.into_iter().next())
+        {
+            return candidate
+                .model_id
+                .as_deref()
+                .and_then(|id| by_id(catalog, id));
+        }
+    }
+    let matched = catalog.pattern_router.route(model_id, None)?;
+    let usable = matched.into_iter().find(|candidate| {
+        candidate
+            .model_id
+            .as_deref()
+            .and_then(|id| by_id(catalog, id))
+            .is_some_and(|deployment| usable_by_team(deployment, team_id))
+    })?;
+    usable.model_id.as_deref().and_then(|id| by_id(catalog, id))
+}
+
+// get_deployment_credentials: the credentials of an exact deployment id, and nothing for a paused one.
+pub fn deployment_credentials(
+    catalog: &DeploymentCatalog,
+    model_id: &str,
+) -> Result<Option<JsonObject>, CredentialError> {
+    let Some(deployment) = by_id(catalog, model_id) else {
+        return Ok(None);
+    };
+    if blocked(deployment) {
+        return Ok(None);
+    }
+    credential_params(&deployment.litellm_params).map(Some)
+}
+
+// get_deployment_credentials_with_provider: the credentials plus the model and provider a passthrough call needs.
+pub fn deployment_credentials_with_provider(
+    catalog: &DeploymentCatalog,
+    model_id: &str,
+    team_id: Option<&str>,
+    stored: &BTreeMap<String, JsonObject>,
+) -> Result<Option<JsonObject>, CredentialError> {
+    let Some(deployment) = credential_deployment(catalog, model_id, team_id) else {
+        return Ok(None);
+    };
+    let params = &deployment.litellm_params;
+    let mut credentials = credential_params(params)?;
+    if let Some(Json::Text(name)) = credentials.get("litellm_credential_name").cloned() {
+        let values = stored.get(&name).filter(|values| !values.is_empty());
+        match values {
+            Some(values) => {
+                credentials.extend(
+                    values
+                        .iter()
+                        .map(|(key, value)| (key.clone(), value.clone())),
+                );
+            }
+            None => tracing::warn!(
+                credential = %name,
+                "a deployment names a stored credential that the credential list does not hold"
+            ),
+        }
+        credentials.shift_remove("litellm_credential_name");
+    }
+    let model = match params.get("model") {
+        Some(Json::Text(model)) => model.clone(),
+        _ => return Err(CredentialError::MissingModel),
+    };
+    let provider = match params.get("custom_llm_provider") {
+        Some(Json::Text(declared)) => declared.clone(),
+        _ => match model.split_once('/') {
+            Some((prefix, _rest)) => prefix.to_owned(),
+            None => String::from("openai"),
+        },
+    };
+    credentials.insert("model".to_owned(), Json::Text(model));
+    credentials.insert("custom_llm_provider".to_owned(), Json::Text(provider));
+    Ok(Some(credentials))
+}
+
+// get_litellm_params_sensitive_credential_hash: a stable digest of the credential fields, never the values.
+pub fn sensitive_credential_hash(litellm_params: &JsonObject) -> Result<String, CredentialError> {
+    let credentials = credential_params(litellm_params)?;
+    let encoded = serde_json::to_vec(&Json::Object(credentials))
+        .map_err(|source| CredentialError::Encode { source })?;
+    Ok(hex::encode(Sha256::digest(encoded)))
+}

@@ -1,0 +1,14 @@
+router_settings:
+  client_ttl: 3600
+  default_max_parallel_requests: 8
+model_list:
+  - model_name: gpt
+    litellm_params:
+      model: openai/gpt-4o
+      max_parallel_requests: 2
+      rpm: 60
+      tpm: 90000
+  - model_name: claude
+    litellm_params:
+      model: anthropic/claude-sonnet-5
+      max_parallel_requests: 3
