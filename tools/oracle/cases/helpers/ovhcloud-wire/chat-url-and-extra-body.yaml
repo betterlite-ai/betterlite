@@ -1,0 +1,19 @@
+kind: helper
+name: ovhcloud-wire-chat-url-and-extra-body
+call:
+  b6412:
+    function: chat_request
+    requests:
+      - {api_base: null, model: m, optional_params: {}}
+      - {api_base: "https://proxy.example/v1/", model: m, optional_params: {}}
+      - {api_base: "", model: m, optional_params: {}}
+      - {api_base: "https://proxy.example/v1///", model: m, optional_params: {temperature: 0.5}}
+      - api_base: null
+        model: m
+        optional_params:
+          temperature: 0.5
+          extra_body: {model: over, messages: [], top_k: 4}
+      - {api_base: null, model: m, optional_params: {extra_body: {}}}
+      - {api_base: null, model: m, optional_params: {extra_body: {temperature: 1}}}
+env: {}
+compare: {ignore: []}

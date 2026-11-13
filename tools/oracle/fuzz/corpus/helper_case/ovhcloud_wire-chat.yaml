@@ -1,0 +1,13 @@
+kind: helper
+name: ovhcloud-wire-seed-chat
+call:
+  b6412:
+    function: chat_request
+    requests:
+      - {api_base: null, model: m, optional_params: {}}
+      - api_base: null
+        model: m
+        optional_params:
+          extra_body: {model: over, messages: []}
+env: {}
+compare: {ignore: []}

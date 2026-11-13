@@ -1,0 +1,29 @@
+kind: helper
+name: ovhcloud-wire-chat-stream-chunks
+call:
+  b6412:
+    function: chunks
+    chunks:
+      - id: a
+        created: 1
+        model: m
+        choices:
+          - {index: 0, delta: {reasoning: first, content: x}}
+          - {index: 1, delta: {reasoning: null, reasoning_content: old}}
+          - {index: 2, delta: {content: plain}}
+          - {index: 3, delta: {reasoning: kept, reasoning_content: old}}
+          - {index: 4, delta: {reasoning: new, reasoning_content: null}}
+          - {index: 5, finish_reason: stop}
+      - {id: b, created: 2, model: null, choices: [], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}}
+      - {id: c, created: 3, model: m, choices: [], usage: null}
+      - {id: d, created: 4, model: m, choices: []}
+      - {error: {message: boom, code: 429, choices: []}}
+      - {error: {message: boom}}
+      - {error: {code: 500}}
+      - {error: {message: null, code: null}}
+      - {id: a, created: 1, model: m}
+      - {id: a, created: 1, choices: []}
+      - {id: a, model: m, choices: []}
+      - {created: 1, model: m, choices: []}
+env: {}
+compare: {ignore: []}
