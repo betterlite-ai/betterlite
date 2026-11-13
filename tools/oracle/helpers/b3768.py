@@ -1,6 +1,6 @@
 import asyncio
 import os
-from typing import Literal, TypedDict
+from typing import Literal, Protocol, TypedDict
 
 import httpx
 from litellm.caching.caching import DualCache
@@ -8,7 +8,7 @@ from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.dynamoai.dynamoai import DynamoAIGuardrails
 from litellm.types.proxy.guardrails.guardrail_hooks.dynamoai import DynamoAIResponse
-from litellm.types.utils import Choices, GuardrailStatus, ModelResponse
+from litellm.types.utils import CallTypesLiteral, Choices, GuardrailStatus, ModelResponse
 from pydantic import JsonValue, TypeAdapter
 
 BODY_ADAPTER: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
@@ -43,6 +43,15 @@ class RequestRecord(TypedDict):
     body: JsonValue
 
 
+class RecordedInfo(TypedDict):
+    guardrail_status: GuardrailStatus
+
+
+class HookData(TypedDict, total=False):
+    messages: list[dict[str, str]]
+    metadata: dict[str, list[RecordedInfo]]
+
+
 class Output(TypedDict):
     created: bool
     api_base: str | None
@@ -67,6 +76,38 @@ class Input(TypedDict):
     answer: Answer
 
 
+class Guardrail(Protocol):
+    async_handler: AsyncHTTPHandler
+    api_base: str
+    model_id: str
+    policy_ids: list[str]
+
+    async def async_pre_call_hook(
+        self,
+        *,
+        user_api_key_dict: UserAPIKeyAuth,
+        cache: DualCache,
+        data: HookData,
+        call_type: CallTypesLiteral,
+    ) -> Exception | str | dict[str, JsonValue] | None: ...
+
+    async def async_moderation_hook(
+        self,
+        *,
+        data: HookData,
+        user_api_key_dict: UserAPIKeyAuth,
+        call_type: CallTypesLiteral,
+    ) -> None: ...
+
+    async def async_post_call_success_hook(
+        self,
+        *,
+        data: HookData,
+        user_api_key_dict: UserAPIKeyAuth,
+        response: ModelResponse,
+    ) -> None: ...
+
+
 class Script:
     def __init__(self, answer: Answer) -> None:
         self.answer = answer
@@ -84,7 +125,7 @@ class Script:
         return httpx.Response(self.answer["status"], json=self.answer["body"], request=request)
 
 
-def build_guardrail(call: Input) -> DynamoAIGuardrails:
+def build_guardrail(call: Input) -> Guardrail:
     for name in CLEARED_ENVIRONMENT:
         if name in os.environ:
             del os.environ[name]
@@ -110,14 +151,10 @@ def build_response(choices: list[Choice]) -> ModelResponse:
         )
         for choice in choices
     ]
-    return ModelResponse(choices=built)
+    return ModelResponse(choices=built)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2146
 
 
-def call_hook(
-    guardrail: DynamoAIGuardrails,
-    call: Input,
-    data: dict[str, list[dict[str, str]]],
-) -> None:
+def call_hook(guardrail: Guardrail, call: Input, data: HookData) -> None:
     if call["mode"] == "pre_call":
         asyncio.run(
             guardrail.async_pre_call_hook(
@@ -145,6 +182,19 @@ def call_hook(
         )
 
 
+def recorded_status(data: HookData) -> GuardrailStatus | None:
+    metadata = data.get("metadata")
+    if metadata is None:
+        return None
+    recorded = metadata.get("standard_logging_guardrail_information")
+    if recorded is None:
+        return None
+    status: GuardrailStatus | None = None
+    for info in recorded:
+        status = info["guardrail_status"]
+    return status
+
+
 def run(input_value: Input) -> Output:
     try:
         guardrail = build_guardrail(input_value)
@@ -162,17 +212,14 @@ def run(input_value: Input) -> Output:
         }
     script = Script(input_value["answer"])
     guardrail.async_handler = AsyncHTTPHandler(transport=httpx.MockTransport(script))
+    data: HookData = {"messages": input_value["messages"]}
     raised = False
     if input_value["mode"] != "constructor":
         try:
-            call_hook(guardrail, input_value, {"messages": input_value["messages"]})
+            call_hook(guardrail, input_value, data)
         except ValueError:
             raised = True
-    hooks = [hook.value for hook in DynamoAIGuardrails.get_supported_event_hooks()]
-    status: GuardrailStatus | None = None
-    if script.calls:
-        body = input_value["answer"]["body"]
-        status = guardrail._determine_guardrail_status(body)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/dynamoai/dynamoai.py#L224
+    hooks = [hook.name for hook in DynamoAIGuardrails.get_supported_event_hooks()]
     return {
         "created": True,
         "api_base": guardrail.api_base,
@@ -180,7 +227,7 @@ def run(input_value: Input) -> Output:
         "model_id": guardrail.model_id,
         "event_hooks": hooks,
         "requests": script.calls,
-        "status": status,
+        "status": recorded_status(data) if script.calls else None,
         "raised": raised,
         "error": None,
     }
