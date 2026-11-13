@@ -79,14 +79,12 @@ pub(super) async fn minted(input: &MintInput) -> HelperResult {
             Err(error) => json!({"op": "get", "error": error.to_string()}),
         });
     }
-    let post_calls = {
+    let post_calls: Vec<Value> = {
         let calls = post.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        Value::Array(
-            calls
-                .iter()
-                .map(|(url, form)| json!({"url": url, "form": form}))
-                .collect(),
-        )
+        calls
+            .iter()
+            .map(|(url, form)| json!({"url": url, "form": form}))
+            .collect()
     };
     Ok(json!({"results": results, "post_calls": post_calls}))
 }

@@ -87,8 +87,7 @@ Input = GrantInput | MintInput | BearerInput
 
 
 class ManualClock:
-    def __init__(self) -> None:
-        self.now_ms = 1_000_000
+    now_ms = 1_000_000
 
     def __call__(self) -> float:
         return self.now_ms / 1000
