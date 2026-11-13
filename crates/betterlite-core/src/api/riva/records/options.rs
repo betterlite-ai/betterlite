@@ -82,10 +82,9 @@ pub fn map_openai_params(non_default_params: &Object) -> Result<Object, RecordsE
     Ok(optional_params)
 }
 
-pub(super) fn text_option(
-    params: &Object,
-    field: &'static str,
-) -> Result<Option<String>, RecordsError> {
+type Optional<T> = Result<Option<T>, RecordsError>;
+
+pub(super) fn text_option(params: &Object, field: &'static str) -> Optional<String> {
     match params.get(field) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(text)) => Ok(Some(text.clone())),
@@ -93,10 +92,7 @@ pub(super) fn text_option(
     }
 }
 
-pub(super) fn bool_option(
-    params: &Object,
-    field: &'static str,
-) -> Result<Option<bool>, RecordsError> {
+pub(super) fn bool_option(params: &Object, field: &'static str) -> Optional<bool> {
     match params.get(field) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::Bool(flag)) => Ok(Some(*flag)),
@@ -104,10 +100,7 @@ pub(super) fn bool_option(
     }
 }
 
-pub(super) fn integer_option(
-    params: &Object,
-    field: &'static str,
-) -> Result<Option<u32>, RecordsError> {
+pub(super) fn integer_option(params: &Object, field: &'static str) -> Optional<u32> {
     match params.get(field) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::Number(number)) => integer_number(number, field).map(Some),
@@ -115,10 +108,7 @@ pub(super) fn integer_option(
     }
 }
 
-pub(super) fn granularity_option(
-    params: &Object,
-    field: &'static str,
-) -> Result<Option<Vec<String>>, RecordsError> {
+pub(super) fn granularity_option(params: &Object, field: &'static str) -> Optional<Vec<String>> {
     match params.get(field) {
         None | Some(Value::Null) => Ok(None),
         Some(value) => granularities(value, field).map(Some),

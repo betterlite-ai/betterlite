@@ -82,9 +82,9 @@ pub struct RivaException {
     pub message: String,
 }
 
-// only a callable code whose name is a string names a status; every other shape is ignored
-fn status_name(observation: &GrpcErrorObservation) -> Option<&str> {
-    match &observation.code {
+// only a callable code whose name is a string names a status; a nonempty details string wins over str(error)
+fn describe(observation: &GrpcErrorObservation) -> (Option<&str>, &str) {
+    let name = match &observation.code {
         CodeAttribute::Returns {
             name: Json::Text(name),
         } => Some(name.as_str()),
@@ -92,12 +92,8 @@ fn status_name(observation: &GrpcErrorObservation) -> Option<&str> {
         | CodeAttribute::NotCallable
         | CodeAttribute::Raises
         | CodeAttribute::Returns { name: _ } => None,
-    }
-}
-
-// a nonempty string from details() wins over str(error); anything else falls back to the exception text
-fn detail(observation: &GrpcErrorObservation) -> &str {
-    match &observation.details {
+    };
+    let detail = match &observation.details {
         DetailsAttribute::Returns {
             value: Json::Text(text),
         } if !text.is_empty() => text.as_str(),
@@ -105,7 +101,8 @@ fn detail(observation: &GrpcErrorObservation) -> &str {
         | DetailsAttribute::NotCallable
         | DetailsAttribute::Raises
         | DetailsAttribute::Returns { value: _ } => observation.text.as_str(),
-    }
+    };
+    (name, detail)
 }
 
 fn http_status(name: &str) -> Option<u16> {
@@ -120,11 +117,11 @@ fn http_status(name: &str) -> Option<u16> {
 
 #[must_use]
 pub fn grpc_error_to_exception(observation: &GrpcErrorObservation) -> RivaException {
-    let name = status_name(observation).filter(|name| !name.is_empty());
+    let (name, detail) = describe(observation);
+    let name = name.filter(|name| !name.is_empty());
     let status_code = name
         .and_then(http_status)
         .unwrap_or(DEFAULT_GRPC_HTTP_STATUS);
-    let detail = detail(observation);
     let message = match name {
         Some(name) => format!("NVIDIA Riva gRPC error ({name}): {detail}"),
         None => format!("NVIDIA Riva error: {detail}"),

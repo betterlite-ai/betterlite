@@ -75,8 +75,28 @@ fn run_call(call: &Call) -> Result<Value, Failure> {
         | Function::TimingFlags
         | Function::EndpointingPrecedence
         | Function::EmptyModel => request_payload(call),
-        Function::ConcatenatedFinals | Function::VerboseWords => transcription_response(call),
-        Function::GrpcErrorTable => grpc_exception(call),
+        Function::ConcatenatedFinals | Function::VerboseWords => {
+            let built = build_transcription_response(
+                &call.final_results,
+                &call.response_format,
+                call.duration_seconds,
+                call.timestamp_granularities.as_deref(),
+            )
+            .map_err(failure)?;
+            serde_json::to_value(built).map_err(failure)
+        }
+        Function::GrpcErrorTable => {
+            let Some(spec) = &call.error else {
+                return Err(failure("error is required"));
+            };
+            let observation = GrpcErrorObservation {
+                code: spec.code.clone(),
+                details: spec.details.clone(),
+                text: spec.text.clone(),
+            };
+            let exception = grpc_error_to_exception(&observation);
+            Ok(json!({"status": exception.status_code, "message": exception.message}))
+        }
     }
 }
 
@@ -85,30 +105,6 @@ fn request_payload(call: &Call) -> Result<Value, Failure> {
     let request = transform_request(&optional_params).map_err(failure)?;
     let data = request.request_data().map_err(failure)?;
     serde_json::to_value(data.data).map_err(failure)
-}
-
-fn transcription_response(call: &Call) -> Result<Value, Failure> {
-    let built = build_transcription_response(
-        &call.final_results,
-        &call.response_format,
-        call.duration_seconds,
-        call.timestamp_granularities.as_deref(),
-    )
-    .map_err(failure)?;
-    serde_json::to_value(built).map_err(failure)
-}
-
-fn grpc_exception(call: &Call) -> Result<Value, Failure> {
-    let Some(spec) = &call.error else {
-        return Err(failure("error is required"));
-    };
-    let observation = GrpcErrorObservation {
-        code: spec.code.clone(),
-        details: spec.details.clone(),
-        text: spec.text.clone(),
-    };
-    let exception = grpc_error_to_exception(&observation);
-    Ok(json!({"status": exception.status_code, "message": exception.message}))
 }
 
 fn failure<Error>(error: Error) -> Failure

@@ -223,21 +223,10 @@ fn server_vad_chunking_becomes_endpointing(#[case] value: Value, #[case] expecte
 #[case::auto(json!({"chunking_strategy": "auto"}))]
 #[case::null(json!({"chunking_strategy": null}))]
 #[case::empty_server_vad(json!({"chunking_strategy": {"type": "server_vad"}}))]
-fn empty_or_auto_chunking_omits_endpointing(#[case] value: Value) {
-    let built = payload(value);
-    assert!(
-        !built["recognition_config"]
-            .as_object()
-            .expect("a recognition config")
-            .contains_key("endpointing_config")
-    );
-}
-
-#[rstest]
 #[case::semantic(json!({"chunking_strategy": {"type": "semantic_vad"}}))]
 #[case::text(json!({"chunking_strategy": "fixed"}))]
 #[case::number(json!({"chunking_strategy": 5}))]
-fn a_non_server_vad_chunking_sets_no_endpointing(#[case] value: Value) {
+fn chunking_that_derives_nothing_omits_endpointing(#[case] value: Value) {
     let built = payload(value);
     assert!(
         !built["recognition_config"]
