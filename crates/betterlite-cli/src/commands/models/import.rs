@@ -86,21 +86,21 @@ fn import_entries<'entries>(
         options.access_group_regex.as_deref(),
         "--only-access-groups-matching-regex",
     )?;
-    let mut counts: IndexMap<String, usize> = IndexMap::new();
     for (index, entry) in entries.iter().enumerate() {
         let JsonValue::Object(model) = entry else {
             return Err(ModelsError::EntryType { index });
         };
-        if !filter_model(model, model_regex.as_ref(), access_regex.as_ref(), index)? {
-            continue;
+        if filter_model(model, model_regex.as_ref(), access_regex.as_ref(), index)? {
+            added.push(yaml_info(model, index)?);
         }
-        let info = yaml_info(model, index)?;
+    }
+    let mut counts: IndexMap<String, usize> = IndexMap::new();
+    for info in added.iter() {
         if !options.dry_run {
-            send_new_model(client, &info)?;
+            send_new_model(client, info)?;
         }
         let count = counts.entry(info.provider.to_owned()).or_insert(0);
         *count = count.checked_add(1).ok_or(ModelsError::Count)?;
-        added.push(info);
     }
     Ok(counts)
 }
@@ -226,14 +226,15 @@ fn access_group_names<'model>(
     model_info: Option<&'model ModelObject>,
     index: usize,
 ) -> Result<Vec<&'model str>, ModelsError> {
-    let Some(groups) = model_info.and_then(|info| info.get("access_groups")) else {
-        return Ok(Vec::new());
-    };
-    let JsonValue::Array(groups) = groups else {
-        return Err(ModelsError::EntryField {
-            index,
-            field: "access_groups",
-        });
+    let groups = match model_info.and_then(|info| info.get("access_groups")) {
+        None | Some(JsonValue::Null) => return Ok(Vec::new()),
+        Some(JsonValue::Array(groups)) => groups,
+        Some(_) => {
+            return Err(ModelsError::EntryField {
+                index,
+                field: "access_groups",
+            });
+        }
     };
     groups
         .iter()
