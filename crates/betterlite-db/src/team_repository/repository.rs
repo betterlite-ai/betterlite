@@ -12,6 +12,7 @@ const FIND_BY_ID_SQL: &str =
     r#"SELECT row_to_json(team)::TEXT FROM "LiteLLM_TeamTable" team WHERE team_id = $1"#;
 const FIND_BY_ORGANIZATION_SQL: &str =
     r#"SELECT row_to_json(team)::TEXT FROM "LiteLLM_TeamTable" team WHERE organization_id = $1"#;
+// no FOR UPDATE: the caller's advisory lock serializes the roster, and a team-row-first lock deadlocks access-group endpoints
 const MEMBERS_WITH_ROLES_SQL: &str =
     r#"SELECT members_with_roles::TEXT FROM "LiteLLM_TeamTable" WHERE team_id = $1"#;
 
