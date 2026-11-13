@@ -1,0 +1,18 @@
+kind: helper
+name: bedrock-passthrough-stream-citation-groups
+call:
+  b3678:
+    function: stream
+    frames:
+      - event_type: contentBlockDelta
+        payload: {delta: {text: answer}}
+      - event_type: contentBlockDelta
+        payload: {delta: {toolUse: {input: tool}}}
+      - event_type: contentBlockDelta
+        payload: {delta: {reasoningContent: {text: thought, signature: signature}}}
+      - event_type: contentBlockDelta
+        payload: {delta: {citationsContent: {content: [{text: first}, skip, {text: third}]}}}
+    replace: {answer: ANSWER, tool: TOOL, thought: THOUGHT, first: FIRST, third: THIRD}
+    trailing_hex: ""
+env: {}
+compare: {ignore: []}
