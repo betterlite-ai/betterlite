@@ -1,8 +1,10 @@
 from collections.abc import Iterable
-from typing import ClassVar, Literal, Required, TypeAlias, TypedDict
+from typing import Literal, Required, TypeAlias, TypedDict
 
-from betterlite.types.utils.base import ResponseObject
-from betterlite.types.utils.values import JsonValue, StoredValue
+from pydantic import Field, JsonValue
+from typing_extensions import override
+
+from betterlite.types.utils.base import InitValue, ResponseObject
 
 
 # ast-grep-ignore: no-long-names
@@ -94,29 +96,32 @@ ChatCompletionMessageParam: TypeAlias = (
 
 class CompletionRequest(ResponseObject):
     model: str
-    messages: list[ChatCompletionMessageParam]
-    timeout: float | int | None
-    temperature: float | None
-    top_p: float | None
-    n: int | None
-    stream: bool | None
-    stop: dict[str, JsonValue] | None
-    max_tokens: int | None
-    presence_penalty: float | None
-    frequency_penalty: float | None
-    logit_bias: dict[str, JsonValue] | None
-    user: str | None
-    response_format: dict[str, JsonValue] | None
-    seed: int | None
-    tools: list[str] | None
-    tool_choice: str | None
-    logprobs: bool | None
-    top_logprobs: int | None
-    deployment_id: str | None
-    functions: list[str] | None
-    function_call: str | None
-    base_url: str | None
-    api_version: str | None
-    api_key: str | None
-    model_list: list[str] | None
-    defaults: ClassVar[dict[str, StoredValue]] = {"messages": []}
+    messages: list[ChatCompletionMessageParam] = Field(default_factory=list)
+    timeout: float | int | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+    n: int | None = None
+    stream: bool | None = None
+    stop: dict[str, JsonValue] | None = None
+    max_tokens: int | None = None
+    presence_penalty: float | None = None
+    frequency_penalty: float | None = None
+    logit_bias: dict[str, JsonValue] | None = None
+    user: str | None = None
+    response_format: dict[str, JsonValue] | None = None
+    seed: int | None = None
+    tools: list[str] | None = None
+    tool_choice: str | None = None
+    logprobs: bool | None = None
+    top_logprobs: int | None = None
+    deployment_id: str | None = None
+    functions: list[str] | None = None
+    function_call: str | None = None
+    base_url: str | None = None
+    api_version: str | None = None
+    api_key: str | None = None
+    model_list: list[str] | None = None
+
+    @override
+    def __init__(self, **data: InitValue) -> None:
+        super().__init__(**data)

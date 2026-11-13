@@ -1,0 +1,26 @@
+kind: helper
+name: key-repository-row-validation-errors
+call:
+  key_repository:
+    cases:
+      none_record_stays_none:
+        records:
+          - null
+          - mapping: {token: e1}
+      malformed_json_propagates:
+        records:
+          - mapping: {token: e2, aliases: '{not json'}
+          - mapping: {token: e3, metadata: '{"a": 1'}
+      record_projection_uses_base_precedence:
+        records:
+          - model_dump: {token: e4, key_alias: from-dump}
+            dict: {token: e4, key_alias: from-dict}
+            mapping: {token: e4, key_alias: from-mapping}
+            pairs: [[token, e4], [key_alias, from-pairs]]
+          - dict: {token: e5, key_alias: from-dict}
+            mapping: {token: e5, key_alias: from-mapping}
+          - mapping: {token: e6, key_alias: from-mapping}
+            pairs: [[token, e6], [key_alias, from-pairs]]
+          - pairs: [[token, e7], [key_alias, first], [key_alias, second]]
+env: {}
+compare: {ignore: []}

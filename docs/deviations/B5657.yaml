@@ -1,14 +1,5 @@
 task: B5657
 deviations:
-  - what: "Response classes are plain Python classes deriving from ResponseObject, so isinstance against pydantic.BaseModel, model_validate, model_json_schema and model_fields are not there."
-    why: "The wheel depends only on python-dotenv and typing-extensions, and pydantic would be a heavy runtime dependency for field holders. Attribute, item and dump access stay the same."
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1390
-  - what: "A field value is checked against its annotation only where the type carries behavior; a non-optional field passed None and a missing required field both raise, a model field converts a mapping or keeps an instance of that model, a list or mapping field checks its container, and Base64Str and AwareDatetime convert their input. Any other non-None value of the wrong type is stored and dumped as given, where pydantic would raise a validation error naming the field."
-    why: "A full pydantic-style validator is outside this base; keeping the value is the smaller surprise for a field holder the B167 tasks build on, and the values the chat classes receive are their declared types."
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1390-L1453
-  - what: "A validation error message names the model and the fields, then the reason, where pydantic prints a multi-line report with the error type and a link."
-    why: "The class name, the field names and the reason are what a caller branches on; pydantic's wording names a library betterlite is not."
-    link: ""
   - what: "Every response object answers the in operator with its stored field names, where LiteLLM's Message has no __contains__ and Python falls back to iterating its pydantic field values."
     why: "The task asks the base for __contains__, and field membership is what the callers of the classes that do define it, Choices, Delta, Usage and ModelResponse, already get."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1487-L1497
@@ -21,6 +12,3 @@ deviations:
   - what: "ModelResponse keeps the hidden_params and _response_headers it is built with, where LiteLLM assigns them before pydantic's __init__ resets the private attributes, so it ends with {} and None."
     why: "Losing both values is lost data no working setup can rely on; the attributes the task asks the base to carry stay readable and out of model_dump."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2237-L2245
-  - what: "model_dump, model_dump_json and dict take include and exclude as flat sets of top-level field names, where pydantic also takes nested dict selectors and applies them to child models, and none of them take exclude_defaults, by_alias, round_trip, warnings, context, serialize_as_any, fallback or indent; json takes only exclude_unset, where pydantic's takes include and exclude too."
-    why: "The response classes are not pydantic models, so the options that only make sense for pydantic serialization or nested selectors are not built; exclude_defaults would drop fields LiteLLM stores as pydantic extras and keeps."
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2096-L2100
