@@ -1,0 +1,8 @@
+task: B3692
+deviations:
+  - what: Phrase patterns go through fancy-regex first and then the linear regex crate after a textual rewrite of Python's (?a flag to (?-u), so the literal text "(?a" inside a character class, a (?#...) comment or after a backslash is rewritten too and that pattern can change meaning or be skipped, where Python's re compiles it literally.
+    why: No Rust engine offers Python's scoped ASCII and Unicode mode switching, so the global and scoped flag forms are rewritten and the literal forms are not modelled.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L145-L191
+  - what: Phrase patterns Python's re rejects but fancy-regex accepts, such as Oniguruma named groups (?<name>...), subroutine calls (?P>name) and the absent operator (?~...), are compiled and matched, where LiteLLM logs a warning and skips the pattern.
+    why: The first engine is the backtracking fancy-regex crate, chosen for lookarounds and backreferences, and it implements more syntax than Python's re.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L145-L191
