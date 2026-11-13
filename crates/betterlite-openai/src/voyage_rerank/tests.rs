@@ -287,6 +287,19 @@ fn null_total_tokens_stay_null() {
 }
 
 #[rstest::rstest]
+#[case::fraction(r#"{"data":[],"usage":{"total_tokens":1.5}}"#)]
+#[case::text(r#"{"data":[],"usage":{"total_tokens":"7"}}"#)]
+fn non_integer_total_tokens_are_rejected(#[case] body: &str) {
+    let (result, _) = decode(body, 200);
+    assert!(matches!(
+        result,
+        Err(VoyageRerankError::ResponseField {
+            field: "usage.total_tokens"
+        })
+    ));
+}
+
+#[rstest::rstest]
 #[case::absent(r#"{"data":[]}"#)]
 #[case::empty(r#"{"data":[],"id":""}"#)]
 #[case::null(r#"{"data":[],"id":null}"#)]
