@@ -55,7 +55,7 @@ enum Call<'scenario> {
 }
 
 impl<'scenario> Call<'scenario> {
-    fn reply(&self) -> Option<&'scenario Vec<String>> {
+    const fn reply(&self) -> Option<&'scenario Vec<String>> {
         match self {
             Self::Input(scenario) => scenario.reply.as_ref(),
             Self::Output(scenario) => scenario.reply.as_ref(),
@@ -70,7 +70,7 @@ struct ScriptedGuardrail {
 }
 
 impl ScriptedGuardrail {
-    fn new(reply: Option<Vec<String>>) -> Self {
+    const fn new(reply: Option<Vec<String>>) -> Self {
         Self {
             reply,
             calls: Mutex::new(Vec::new()),
