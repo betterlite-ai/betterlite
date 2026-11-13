@@ -130,7 +130,9 @@ fn preset_adds_the_deployment_environment_only_when_given(
     #[case] variables: &[(&str, &str)],
     #[case] expected: Option<&str>,
 ) {
+    // The base's deployment.environment survives unless AGENTOPS_ENVIRONMENT is set
     let mut expected_attributes = BTreeMap::from([
+        ("deployment.environment".to_owned(), "staging".to_owned()),
         ("service.name".to_owned(), "agentops".to_owned()),
         ("telemetry.sdk.name".to_owned(), "agentops".to_owned()),
     ]);

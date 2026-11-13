@@ -108,7 +108,10 @@ fn langfuse_defaults_to_the_us_cloud_endpoint() {
     assert_eq!(fields.endpoint, US_CLOUD);
     assert_eq!(
         fields.headers,
-        BTreeMap::from([("Authorization".to_owned(), langfuse_basic())])
+        BTreeMap::from([
+            ("Authorization".to_owned(), langfuse_basic()),
+            ("x-langfuse-ingestion-version".to_owned(), "4".to_owned()),
+        ])
     );
     assert_eq!(fields.callback_name.as_deref(), Some("langfuse_otel"));
     assert_eq!(fields.protocol, None);

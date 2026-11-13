@@ -26,8 +26,9 @@ from litellm.integrations.otel.presets.signoz import (
     signoz_dynamic_headers,
     signoz_preset,
 )
+from pydantic import JsonValue as Json
 
-from .types import BaseInput, Environment, Fields, Input, Json
+from .types import BaseInput, Environment, Fields, Input
 
 _PRESET_FUNCTIONS = frozenset(
     {"agentops_preset", "newrelic_preset", "signoz_preset", "langfuse_preset"}

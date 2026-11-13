@@ -1,8 +1,8 @@
 from typing import Literal, NotRequired, TypeAlias, TypedDict
 
 from litellm.types.utils import StandardCallbackDynamicParams
+from pydantic import JsonValue as Json
 
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Fields: TypeAlias = dict[str, Json]
 Environment: TypeAlias = dict[str, str]
 
