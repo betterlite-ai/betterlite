@@ -120,17 +120,15 @@ impl HookObject {
         deadline: Duration,
         call: RawMethodCall<'_>,
     ) -> Result<Py<PyAny>, HookError> {
-        self.require_method(host, call.name)?
+        let Some(handle) = self.method(host, call.name) else {
+            return Err(HookError::NoSuchMethod {
+                name: call.name.to_owned(),
+            });
+        };
+        handle
             .call_raw(host, tracker, deadline, call.args, call.kwargs)
             .await
             .map_err(HookError::Call)
-    }
-
-    fn require_method(&self, host: &PythonHost, name: &str) -> Result<CallableHandle, HookError> {
-        self.method(host, name)
-            .ok_or_else(|| HookError::NoSuchMethod {
-                name: name.to_owned(),
-            })
     }
 
     pub fn construct(
