@@ -140,6 +140,7 @@ fn upstream_201_rejection() {
         panic!("a 201 is rejected");
     };
     assert_eq!(error.status_code(), 201);
+    assert_eq!(error.to_string(), format!("Request failed: {VALID_REPLY}"));
     assert!(run.wrapped.is_empty());
     assert_eq!(run.events, [Event::Posted(String::from(PREDICT_URL))]);
 }

@@ -46,6 +46,7 @@ where
     if reply.status != ACCEPTED_STATUS {
         return Err(GemmaCallError::Status {
             status: reply.status,
+            body: String::from_utf8_lossy(&reply.body).into_owned(),
         });
     }
     let mut response = decode_gemma_reply(&reply.body, call.identifier, call.clock)?;

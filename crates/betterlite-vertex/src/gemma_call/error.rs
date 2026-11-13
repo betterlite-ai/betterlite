@@ -44,8 +44,8 @@ where
         source: serde_json::Error,
     },
     // the outer handler re-raises a status-bearing failure and turns every other one into a Vertex 500
-    #[error("the Gemma endpoint answered with status {status}")]
-    Status { status: u16 },
+    #[error("Request failed: {body}")]
+    Status { status: u16, body: String },
     #[error(transparent)]
     Transport(#[from] PostFailure<ClientFailure, PooledFailure>),
 }
@@ -62,7 +62,7 @@ where
             Self::Envelope(source) => source.status_code(),
             Self::Reply(source) => source.status_code(),
             Self::Encode { .. } | Self::Transport(_) => 500,
-            Self::Status { status } => *status,
+            Self::Status { status, .. } => *status,
         }
     }
 }
