@@ -1,5 +1,5 @@
 id: B8808
-milestone: M0 foundation
+milestone: R1 cleanup and refactoring
 title: Oracle helper group core_ops as its own crate
 status: done
 depends_on: [B8807]

@@ -88,7 +88,7 @@ checks:
       run: test -f tools/oracle/helpers/vertex_partner_factory.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Factory comparisons call the pinned package selector and project its returned config kind without HTTP.
     - id: partner-factory-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_partner_factory*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::vertex_partner_factory::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_partner_factory*')" && cargo nextest run --locked -p betterlite-oracle-core-ops --no-tests=fail -E 'test(/^vertex_partner_factory::/)'
       why: New HelperCase seeds must select call.vertex_partner_factory and reach the production selector.
 oracle_cases:
   - tools/oracle/cases/chat/vertex-partner/claude.yaml

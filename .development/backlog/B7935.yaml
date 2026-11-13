@@ -2,7 +2,7 @@ id: B7935
 milestone: M12 python
 title: Python types for guardrail hooks panw_prisma_airs to straiker (types/proxy/guardrails/guardrail_hooks)
 status: todo
-depends_on: [B5657, B7930, B7932]
+depends_on: [B5657, B7930, B7932, B9951]
 file: tasks/B7935-types-guardrail-hooks-d.yaml
 covers:
   - "litellm/types/proxy/guardrails/guardrail_hooks/panw_prisma_airs.py"
