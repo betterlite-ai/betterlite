@@ -471,6 +471,15 @@ async fn an_unparsable_expires_in_leaves_the_expiry_absent() {
     assert_eq!(backend.write_ttls(), vec![Duration::from_secs(300)]);
 }
 
+#[test]
+fn an_expires_in_past_the_clock_range_saturates_the_expiry() {
+    let source = source_with(
+        ScriptedPost::granting(0),
+        Arc::new(RecordingBackend::default()),
+    );
+    assert_eq!(source.expiry(i64::MAX), DateTime::<Utc>::MAX_UTC);
+}
+
 #[tokio::test]
 async fn refetch_returns_a_token_another_caller_already_replaced() {
     let post = ScriptedPost::granting(1);
