@@ -1,7 +1,6 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
-use serde::Serializer as Wire;
 
 // the four optional blocks every mapped tool may carry
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -132,8 +131,11 @@ pub struct MappedServer {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_configuration: Option<ToolConfiguration>,
-    #[serde(skip_serializing_if = "absent", serialize_with = "secret")]
-    pub authorization_token: Authorization,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serde_with::As::<Option<serde_with::FromIntoRef<ExposedToken>>>::serialize"
+    )]
+    pub authorization_token: Option<SecretString>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -141,25 +143,12 @@ pub struct ToolConfiguration {
     pub allowed_tools: Vec<String>,
 }
 
-// the token stays a secrecy type here and only the serializer writes it out
-#[derive(Clone)]
-pub struct Authorization(pub(crate) Option<SecretString>);
+// serializes the plain token so the descriptor can leave the process, while the secret's Debug stays redacted
+#[derive(Serialize)]
+struct ExposedToken(String);
 
-#[must_use]
-pub const fn absent(authorization: &Authorization) -> bool {
-    if authorization.0.is_some() {
-        return false;
-    }
-    true
-}
-
-// secrecy serializes nothing by default, so the wire boundary is the one place the token is exposed
-fn secret<S>(authorization: &Authorization, state: S) -> Result<S::Ok, S::Error>
-where
-    S: Wire,
-{
-    match &authorization.0 {
-        Some(token) => state.serialize_str(token.expose_secret()),
-        None => state.serialize_none(),
+impl From<&SecretString> for ExposedToken {
+    fn from(secret: &SecretString) -> Self {
+        Self(secret.expose_secret().to_owned())
     }
 }

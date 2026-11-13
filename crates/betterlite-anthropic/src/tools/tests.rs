@@ -23,7 +23,6 @@ fn mcp_token(server: &McpServerTool) -> Option<String> {
     match server {
         McpServerTool::Mapped(mapped) => mapped
             .authorization_token
-            .0
             .as_ref()
             .map(|token| token.expose_secret().to_owned()),
         McpServerTool::Descriptor(fields) => fields
@@ -89,7 +88,7 @@ fn tools_secret_safe_failure() {
     let McpServerTool::Mapped(mapped) = &server else {
         panic!("the fixture maps to a server");
     };
-    let debug = format!("{:?}", mapped.authorization_token.0);
+    let debug = format!("{:?}", mapped.authorization_token);
     assert!(debug.contains("REDACTED"));
     assert!(!debug.contains(FIXTURE_SECRET));
     assert!(
