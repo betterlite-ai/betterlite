@@ -2,13 +2,13 @@ kind: helper
 name: compatible-api-selection-native-collision
 call:
   compatible_api_selection:
-    calls:
-      - family: responses
-        provider: openai
-        identity: name
-        native: openai
-        providers:
-          - provider: openai
-            supported_endpoints: ["/v1/responses"]
+    - family: responses
+      provider: openai
+      model: gpt-4o
+      identity: name
+      native: openai
+      providers:
+        - provider: openai
+          supported_endpoints: ["/v1/responses"]
 env: {}
 compare: {ignore: []}

@@ -6,10 +6,9 @@ use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::{
-    EmbeddingApiPolicy, ImageGenerationApiPolicy, MESSAGES_ENDPOINT, MessagesApiPolicy,
-    ProviderIdentity, RESPONSES_ENDPOINT, RerankApiPolicy, ResponsesApiPolicy,
-    embedding_api_policy, image_generation_api_policy, messages_api_policy, rerank_api_policy,
-    responses_api_policy,
+    CompatibleApiPolicy, MESSAGES_ENDPOINT, MessagesApiPolicy, ProviderIdentity,
+    RESPONSES_ENDPOINT, ResponsesApiPolicy, embedding_api_policy, image_generation_api_policy,
+    messages_api_policy, rerank_api_policy, responses_api_policy,
 };
 use crate::identity::provider_id::ProviderId;
 use crate::json_provider_registry::{
@@ -138,54 +137,57 @@ fn messages_json_reports_the_json_class_name() {
 }
 
 #[rstest]
-#[case::cometapi(ProviderId::Cometapi, Some(EmbeddingApiPolicy::Cometapi))]
+#[case::cometapi(ProviderId::Cometapi, Some(CompatibleApiPolicy::CometapiEmbedding))]
 #[case::openai(ProviderId::Openai, None)]
 #[case::deepinfra(ProviderId::Deepinfra, None)]
 fn embedding_policy_selects_only_cometapi(
     #[case] provider: ProviderId,
-    #[case] expected: Option<EmbeddingApiPolicy>,
+    #[case] expected: Option<CompatibleApiPolicy>,
 ) {
     assert_eq!(embedding_api_policy(provider), expected);
 }
 
-#[test]
-fn embedding_policy_reports_the_cometapi_class_name() {
-    let policy = embedding_api_policy(ProviderId::Cometapi).unwrap();
-    assert_eq!(policy.class_name(), "CometAPIEmbeddingConfig");
-}
-
 #[rstest]
-#[case::deepinfra(ProviderId::Deepinfra, Some(RerankApiPolicy::Deepinfra))]
+#[case::deepinfra(ProviderId::Deepinfra, Some(CompatibleApiPolicy::DeepinfraRerank))]
 #[case::cometapi(ProviderId::Cometapi, None)]
 #[case::cohere(ProviderId::Cohere, None)]
 fn rerank_policy_selects_only_deepinfra(
     #[case] provider: ProviderId,
-    #[case] expected: Option<RerankApiPolicy>,
+    #[case] expected: Option<CompatibleApiPolicy>,
 ) {
     assert_eq!(rerank_api_policy(provider), expected);
 }
 
-#[test]
-fn rerank_policy_reports_the_deepinfra_class_name() {
-    let policy = rerank_api_policy(ProviderId::Deepinfra).unwrap();
-    assert_eq!(policy.class_name(), "DeepinfraRerankConfig");
-}
-
 #[rstest]
-#[case::aiml(ProviderId::Aiml, Some(ImageGenerationApiPolicy::Aiml))]
-#[case::cometapi(ProviderId::Cometapi, Some(ImageGenerationApiPolicy::Cometapi))]
+#[case::aiml(ProviderId::Aiml, Some(CompatibleApiPolicy::AimlImageGeneration))]
+#[case::cometapi(
+    ProviderId::Cometapi,
+    Some(CompatibleApiPolicy::CometapiImageGeneration)
+)]
 #[case::openai(ProviderId::Openai, None)]
 fn image_generation_policy_selects_both_factories(
     #[case] provider: ProviderId,
-    #[case] expected: Option<ImageGenerationApiPolicy>,
+    #[case] expected: Option<CompatibleApiPolicy>,
 ) {
     assert_eq!(image_generation_api_policy(provider), expected);
 }
 
 #[test]
-fn image_generation_policy_reports_each_factory_class_name() {
-    let aiml = image_generation_api_policy(ProviderId::Aiml).unwrap();
-    let cometapi = image_generation_api_policy(ProviderId::Cometapi).unwrap();
-    assert_eq!(aiml.class_name(), "AimlImageGenerationConfig");
-    assert_eq!(cometapi.class_name(), "CometAPIImageGenerationConfig");
+fn compatible_policies_report_each_config_class_name() {
+    assert_eq!(
+        CompatibleApiPolicy::CometapiEmbedding.class_name(),
+        "CometAPIEmbeddingConfig"
+    );
+    assert_eq!(
+        CompatibleApiPolicy::DeepinfraRerank.class_name(),
+        "DeepinfraRerankConfig"
+    );
+    assert_eq!(
+        CompatibleApiPolicy::AimlImageGeneration.class_name(),
+        "AimlImageGenerationConfig"
+    );
+    assert_eq!(
+        CompatibleApiPolicy::CometapiImageGeneration.class_name(),
+        "CometAPIImageGenerationConfig"
+    );
 }

@@ -5,12 +5,12 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use super::{Input, Op};
+use super::{Call, Op};
 use crate::case::{HelperCase, helper::validate_helper};
 use crate::helpers::Helper as _;
 
 fn answer(calls: Value) -> Value {
-    let input: Input = serde_json::from_value(json!({ "calls": calls })).unwrap();
+    let input: Vec<Call> = serde_json::from_value(calls).unwrap();
     Op::run(&input).unwrap()
 }
 

@@ -1,14 +1,10 @@
-use std::collections::BTreeMap;
-
 use betterlite_models::compatible_api_selection::{
-    EmbeddingApiPolicy, ImageGenerationApiPolicy, MessagesApiPolicy, ProviderIdentity,
-    RerankApiPolicy, ResponsesApiPolicy, embedding_api_policy, image_generation_api_policy,
-    messages_api_policy, rerank_api_policy, responses_api_policy,
+    CompatibleApiPolicy, MessagesApiPolicy, ProviderIdentity, ResponsesApiPolicy,
+    embedding_api_policy, image_generation_api_policy, messages_api_policy, rerank_api_policy,
+    responses_api_policy,
 };
 use betterlite_models::identity::provider_id::ProviderId;
-use betterlite_models::json_provider_registry::{
-    BaseClass, Constraints, JSONProviderRegistry, ProviderConfig, ProviderDescriptor,
-};
+use betterlite_models::json_provider_registry::{JSONProviderRegistry, ProviderDescriptor};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::Value;
@@ -18,45 +14,25 @@ use crate::helpers::{Helper, HelperError, HelperResult};
 mod tests;
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Input {
-    calls: Vec<Call>,
+struct Call {
+    family: Family,
+    provider: String,
+    #[serde(default)]
+    identity: IdentityKind,
+    #[serde(default)]
+    native: Option<ProviderId>,
+    #[serde(default)]
+    providers: Vec<Descriptor>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(tag = "family", rename_all = "snake_case", deny_unknown_fields)]
-enum Call {
-    Responses {
-        provider: String,
-        #[serde(default)]
-        identity: IdentityKind,
-        #[serde(default)]
-        native: Option<ProviderId>,
-        #[serde(default)]
-        providers: Vec<Descriptor>,
-    },
-    Messages {
-        provider: ProviderId,
-        #[serde(rename = "model")]
-        _model: String,
-        #[serde(default)]
-        providers: Vec<Descriptor>,
-    },
-    Embedding {
-        provider: ProviderId,
-        #[serde(rename = "model")]
-        _model: String,
-    },
-    Rerank {
-        provider: ProviderId,
-        #[serde(rename = "model")]
-        _model: String,
-    },
-    ImageGeneration {
-        provider: ProviderId,
-        #[serde(rename = "model")]
-        _model: String,
-    },
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Family {
+    Responses,
+    Messages,
+    Embedding,
+    Rerank,
+    ImageGeneration,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -78,108 +54,88 @@ struct Descriptor {
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = Input;
+    type Input = Vec<Call>;
 
     fn run(input: &Self::Input) -> HelperResult {
         let reports = input
-            .calls
             .iter()
             .map(report)
             .collect::<Result<Vec<_>, Box<HelperError>>>()?;
         Ok(Value::Array(reports))
     }
 }
-
 fn report(call: &Call) -> Result<Value, Box<HelperError>> {
-    match call {
-        Call::Responses {
-            provider,
-            identity,
-            native,
-            providers,
-        } => responses_report(provider, identity, *native, providers),
-        Call::Messages {
-            provider,
-            providers,
-            ..
-        } => Ok(option_name(
-            messages_api_policy(*provider, &registry(providers)).map(MessagesApiPolicy::class_name),
-        )),
-        Call::Embedding { provider, .. } => Ok(option_name(
-            embedding_api_policy(*provider).map(EmbeddingApiPolicy::class_name),
-        )),
-        Call::Rerank { provider, .. } => Ok(option_name(
-            rerank_api_policy(*provider).map(RerankApiPolicy::class_name),
-        )),
-        Call::ImageGeneration { provider, .. } => Ok(option_name(
-            image_generation_api_policy(*provider).map(ImageGenerationApiPolicy::class_name),
-        )),
-    }
-}
-
-fn responses_report(
-    provider: &str,
-    identity: &IdentityKind,
-    native: Option<ProviderId>,
-    providers: &[Descriptor],
-) -> Result<Value, Box<HelperError>> {
-    let identity = match identity {
-        IdentityKind::Name => ProviderIdentity::Name(provider),
-        IdentityKind::Enum => match provider.parse() {
-            Ok(parsed) => ProviderIdentity::Enum(parsed),
-            Err(error) => {
-                return Err(invalid(format!(
-                    "{provider} is not a provider identity: {error}"
-                )));
-            }
-        },
+    let value = match call.family {
+        Family::Responses => responses_report(call)?,
+        Family::Messages => plain(
+            messages_api_policy(provider(call)?, &registry(call)?)
+                .map(MessagesApiPolicy::class_name),
+        ),
+        Family::Embedding => {
+            plain(embedding_api_policy(provider(call)?).map(CompatibleApiPolicy::class_name))
+        }
+        Family::Rerank => {
+            plain(rerank_api_policy(provider(call)?).map(CompatibleApiPolicy::class_name))
+        }
+        Family::ImageGeneration => {
+            plain(image_generation_api_policy(provider(call)?).map(CompatibleApiPolicy::class_name))
+        }
     };
+    Ok(value)
+}
+fn responses_report(call: &Call) -> Result<Value, Box<HelperError>> {
+    let identity = match call.identity {
+        IdentityKind::Name => ProviderIdentity::Name(&call.provider),
+        IdentityKind::Enum => ProviderIdentity::Enum(provider(call)?),
+    };
+    let native = call.native;
     let selector = |known: Option<ProviderId>| {
         (native == known && known.is_some()).then_some(ResponsesApiPolicy::Native)
     };
-    Ok(
-        match responses_api_policy(identity, selector, &registry(providers)) {
-            None => Value::Null,
-            Some(ResponsesApiPolicy::Native) => Value::String(String::from("native")),
-            Some(ResponsesApiPolicy::Json(provider)) => Value::String(format!("json:{provider}")),
-        },
-    )
+    let value = match responses_api_policy(identity, selector, &registry(call)?) {
+        None => Value::Null,
+        Some(ResponsesApiPolicy::Native) => Value::String(String::from("native")),
+        Some(ResponsesApiPolicy::Json(provider)) => Value::String(format!("json:{provider}")),
+    };
+    Ok(value)
 }
-
-fn option_name(value: Option<&'static str>) -> Value {
+fn provider(call: &Call) -> Result<ProviderId, Box<HelperError>> {
+    call.provider.parse().map_err(|error| {
+        invalid(format!(
+            "{} is not a provider identity: {error}",
+            call.provider
+        ))
+    })
+}
+fn plain(value: Option<&'static str>) -> Value {
     match value {
         Some(name) => Value::String(name.to_owned()),
         None => Value::Null,
     }
 }
-
-fn registry(descriptors: &[Descriptor]) -> JSONProviderRegistry {
-    let providers: IndexMap<ProviderId, ProviderDescriptor> = descriptors
-        .iter()
-        .map(|descriptor| {
-            let provider = descriptor.provider;
-            let entry = ProviderDescriptor {
-                provider,
-                config: ProviderConfig {
-                    base_url: String::new(),
-                    api_key_env: String::new(),
-                    api_base_env: None,
-                    base_class: BaseClass::default(),
-                    param_mappings: BTreeMap::new(),
-                    constraints: Constraints::default(),
-                    special_handling: BTreeMap::new(),
-                    supported_endpoints: descriptor.supported_endpoints.clone(),
-                },
-            };
-            (provider, entry)
-        })
-        .collect();
-    JSONProviderRegistry {
+fn registry(call: &Call) -> Result<JSONProviderRegistry, Box<HelperError>> {
+    let mut providers: IndexMap<ProviderId, ProviderDescriptor> = IndexMap::new();
+    for entry in &call.providers {
+        let fixture = serde_json::json!({
+            "base_url": "",
+            "api_key_env": "",
+            "supported_endpoints": &entry.supported_endpoints,
+        });
+        let config = serde_json::from_value(fixture)
+            .map_err(|error| invalid(format!("the descriptor fixture is invalid: {error}")))?;
+        providers.insert(
+            entry.provider,
+            ProviderDescriptor {
+                provider: entry.provider,
+                config,
+            },
+        );
+    }
+    Ok(JSONProviderRegistry {
         providers,
         loaded: true,
-    }
+    })
 }
-
 fn invalid(message: String) -> Box<HelperError> {
     Box::new(HelperError {
         class: String::from("InvalidInput"),

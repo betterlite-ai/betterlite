@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use async_trait::async_trait;
 use betterlite_config::sections::compatible_embedding_settings::{Globals, Settings};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
@@ -32,8 +31,6 @@ mod tests;
 #[derive(Debug, thiserror::Error)]
 pub enum CompatibleEmbeddingError {
     #[error(transparent)]
-    Shared(#[from] EmbeddingError),
-    #[error(transparent)]
     Operation(#[from] OperationError),
     #[error(transparent)]
     Url(#[source] url::ParseError),
@@ -61,7 +58,6 @@ pub struct SharedEmbedding<'source> {
 }
 
 impl SharedEmbedding<'_> {
-    // a nonempty caller headers map overwrites optional_params.extra_headers; an absent or empty one leaves it alone
     #[must_use]
     pub fn handler_call(&self) -> EmbeddingCall {
         let (api_base, api_key) =
@@ -87,53 +83,20 @@ impl SharedEmbedding<'_> {
             mode: self.mode,
         }
     }
-
-    pub async fn execute<Handler>(
-        &self,
-        handler: &Handler,
-        state: &mut LoggingState,
-        env: &PrePostEnv<'_>,
-    ) -> Result<EmbeddingResponse, CompatibleEmbeddingError>
-    where
-        Handler: SharedEmbeddingHandler,
-    {
-        handler
-            .embedding(self.handler_call(), state, env)
-            .await
-            .map_err(CompatibleEmbeddingError::from)
-    }
-}
-
-#[async_trait]
-pub trait SharedEmbeddingHandler: Send + Sync {
-    async fn embedding(
-        &self,
-        call: EmbeddingCall,
-        state: &mut LoggingState,
-        env: &PrePostEnv<'_>,
-    ) -> Result<EmbeddingResponse, EmbeddingError>;
 }
 
 // B1425's handler: plan the original input, timeout and mode, send through the pooled client, then finish the hooks
-pub struct OpenAiLikeEmbeddingHandler<'client> {
-    pub client: &'client ProxiedClient,
+pub async fn shared_embedding(
+    call: EmbeddingCall,
+    client: &ProxiedClient,
+    state: &mut LoggingState,
+    env: &PrePostEnv<'_>,
+) -> Result<EmbeddingResponse, EmbeddingError> {
+    let plan = plan_embedding(call, state, env)?;
+    let sent = send_embedding(client, &plan).await;
+    finish_embedding(&plan, sent, state, env)
 }
 
-#[async_trait]
-impl SharedEmbeddingHandler for OpenAiLikeEmbeddingHandler<'_> {
-    async fn embedding(
-        &self,
-        call: EmbeddingCall,
-        state: &mut LoggingState,
-        env: &PrePostEnv<'_>,
-    ) -> Result<EmbeddingResponse, EmbeddingError> {
-        let plan = plan_embedding(call, state, env)?;
-        let sent = send_embedding(self.client, &plan).await;
-        finish_embedding(&plan, sent, state, env)
-    }
-}
-
-// main.py's CometAPI arm: B1437's config over B010's prepared embedding execution, with no caller headers
 pub struct CometapiEmbedding<'source> {
     pub model: &'source str,
     pub input: &'source PromptJson,
@@ -178,8 +141,7 @@ impl CometapiEmbedding<'_> {
         &self,
         client: &ProxiedClient,
     ) -> Result<EmbeddingResponse, CompatibleEmbeddingError> {
-        let prepared = self.prepared()?;
-        let upstream = prepared.send(client).await?;
+        let upstream = self.prepared()?.send(client).await?;
         let Upstream::Buffered(response) = upstream else {
             return Err(CompatibleEmbeddingError::Streamed);
         };

@@ -1,7 +1,6 @@
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
-use crate::sections::cometapi_embedding_credentials;
-use crate::sections::openai_like_settings;
+use crate::sections::{cometapi_embedding_credentials, openai_like_settings};
 use secrecy::SecretString;
 
 pub const DEFAULT_COMETAPI_API_BASE: &str = "https://api.cometapi.com/v1";
@@ -12,7 +11,7 @@ pub struct Raw {
     _unused: (),
 }
 
-// litellm.api_base, litellm.api_key, litellm.openai_like_key and litellm.cometapi_key: process-wide values the dispatch supplies
+// litellm.api_base, litellm.api_key, litellm.openai_like_key and litellm.cometapi_key, supplied by the dispatch
 #[derive(Debug, Clone, Default)]
 pub struct Globals {
     pub api_base: Option<String>,
@@ -78,12 +77,12 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
+        let openai_like = openai_like_settings::Raw::default().convert(lookup)?;
+        let cometapi_credentials =
+            cometapi_embedding_credentials::Raw::default().convert(lookup)?;
         Ok(Settings {
-            openai_like: Section::convert(openai_like_settings::Raw::default(), lookup)?,
-            cometapi_credentials: Section::convert(
-                cometapi_embedding_credentials::Raw::default(),
-                lookup,
-            )?,
+            openai_like,
+            cometapi_credentials,
             cometapi_api_base: lookup
                 .lookup("COMETAPI_API_BASE")
                 .filter(|value| !value.is_empty()),

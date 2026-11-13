@@ -1,4 +1,4 @@
-from typing import Literal, TypeAlias, TypedDict
+from typing import Literal, TypedDict
 from unittest.mock import patch
 
 from litellm.llms.openai_like.json_loader import JSONProviderRegistry, SimpleProviderConfig
@@ -12,32 +12,13 @@ class Descriptor(TypedDict):
     supported_endpoints: list[str]
 
 
-class ResponsesCall(TypedDict):
-    family: Literal["responses"]
+class Call(TypedDict):
+    family: Literal["responses", "messages", "embedding", "rerank", "image_generation"]
     provider: str
     identity: Literal["name", "enum"]
     native: str | None
     providers: list[Descriptor]
-
-
-class MessagesCall(TypedDict):
-    family: Literal["messages"]
-    provider: str
     model: str
-    providers: list[Descriptor]
-
-
-class PlainCall(TypedDict):
-    family: Literal["embedding", "rerank", "image_generation"]
-    provider: str
-    model: str
-
-
-Call: TypeAlias = ResponsesCall | MessagesCall | PlainCall
-
-
-class Input(TypedDict):
-    calls: list[Call]
 
 
 class Registry:
@@ -71,14 +52,11 @@ class Registry:
         )
 
 
-def _provider(identity: str, provider: str) -> LlmProviders | str:
-    if identity == "enum":
-        return LlmProviders(provider)
-    return provider
-
-
-def _responses_answer(call: ResponsesCall) -> JsonValue:
+def _responses_answer(call: Call) -> JsonValue:
     registry = Registry(call["providers"])
+    provider: LlmProviders | str = call["provider"]
+    if call["identity"] == "enum":
+        provider = LlmProviders(call["provider"])
     with (
         patch.object(JSONProviderRegistry, "exists", registry.exists),
         patch.object(
@@ -88,9 +66,7 @@ def _responses_answer(call: ResponsesCall) -> JsonValue:
         ),
         patch.object(JSONProviderRegistry, "get", registry.get),
     ):
-        selected = ProviderConfigManager.get_provider_responses_api_config(
-            _provider(call["identity"], call["provider"])
-        )
+        selected = ProviderConfigManager.get_provider_responses_api_config(provider)
     if selected is None:
         return None
     if registry.selected is None:
@@ -98,37 +74,23 @@ def _responses_answer(call: ResponsesCall) -> JsonValue:
     return f"json:{registry.selected}"
 
 
-def _messages_answer(call: MessagesCall) -> JsonValue:
-    registry = Registry(call["providers"])
-    with patch.object(JSONProviderRegistry, "get", registry.get):
-        selected = ProviderConfigManager.get_provider_anthropic_messages_config(
-            call["model"], LlmProviders(call["provider"])
-        )
-    if selected is None:
-        return None
-    return type(selected).__name__
-
-
-def _embedding_answer(call: PlainCall) -> JsonValue:
-    selected = ProviderConfigManager.get_provider_embedding_config(
-        call["model"], LlmProviders(call["provider"])
-    )
-    if selected is None:
-        return None
-    return type(selected).__name__
-
-
-def _rerank_answer(call: PlainCall) -> JsonValue:
-    selected = ProviderConfigManager.get_provider_rerank_config(
-        call["model"], LlmProviders(call["provider"]), None, []
-    )
-    return type(selected).__name__
-
-
-def _image_answer(call: PlainCall) -> JsonValue:
-    selected = ProviderConfigManager.get_provider_image_generation_config(
-        call["model"], LlmProviders(call["provider"])
-    )
+def _plain_answer(call: Call) -> JsonValue:
+    provider = LlmProviders(call["provider"])
+    match call["family"]:
+        case "embedding":
+            selected = ProviderConfigManager.get_provider_embedding_config(
+                call["model"], provider
+            )
+        case "rerank":
+            selected = ProviderConfigManager.get_provider_rerank_config(
+                call["model"], provider, None, []
+            )
+        case "image_generation":
+            selected = ProviderConfigManager.get_provider_image_generation_config(
+                call["model"], provider
+            )
+        case _:
+            raise ValueError(f"unknown family {call['family']}")
     if selected is None:
         return None
     return type(selected).__name__
@@ -139,15 +101,18 @@ def _answer(call: Call) -> JsonValue:
         case "responses":
             return _responses_answer(call)
         case "messages":
-            return _messages_answer(call)
-        case "embedding":
-            return _embedding_answer(call)
-        case "rerank":
-            return _rerank_answer(call)
-        case "image_generation":
-            return _image_answer(call)
+            registry = Registry(call["providers"])
+            with patch.object(JSONProviderRegistry, "get", registry.get):
+                selected = ProviderConfigManager.get_provider_anthropic_messages_config(
+                    call["model"], LlmProviders(call["provider"])
+                )
+            if selected is None:
+                return None
+            return type(selected).__name__
+        case _:
+            return _plain_answer(call)
 
 
-def run(input_value: Input) -> JsonValue:
-    answers: list[JsonValue] = [_answer(call) for call in input_value["calls"]]
-    return {"calls": answers}
+def run(input_value: list[Call]) -> JsonValue:
+    answers: list[JsonValue] = [_answer(call) for call in input_value]
+    return answers

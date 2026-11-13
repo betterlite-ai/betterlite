@@ -1,10 +1,9 @@
 use crate::identity::provider_id::ProviderId;
-use crate::json_provider_registry::JSONProviderRegistry;
+use crate::json_provider_registry::{JSONProviderRegistry, ProviderDescriptor};
 
 pub const RESPONSES_ENDPOINT: &str = "/v1/responses";
 pub const MESSAGES_ENDPOINT: &str = "/v1/messages";
 
-// LiteLLM accepts the enum or its wire name; a name that parses to no member still reaches the registry lookup
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProviderIdentity<'source> {
     Enum(ProviderId),
@@ -45,7 +44,6 @@ where
         .map(|descriptor| ResponsesApiPolicy::Json(descriptor.provider))
 }
 
-// DeepSeek answers Messages natively whatever the registry says; the JSON tail needs the exact endpoint, after that arm
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MessagesApiPolicy {
     Deepseek,
@@ -75,76 +73,52 @@ pub fn messages_api_policy(
         .map(|descriptor| MessagesApiPolicy::Json(descriptor.provider))
 }
 
+// the embedding, rerank and image-generation arms each name the one config class they return
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EmbeddingApiPolicy {
-    Cometapi,
+pub enum CompatibleApiPolicy {
+    CometapiEmbedding,
+    DeepinfraRerank,
+    AimlImageGeneration,
+    CometapiImageGeneration,
 }
 
-impl EmbeddingApiPolicy {
+impl CompatibleApiPolicy {
     #[must_use]
     pub const fn class_name(self) -> &'static str {
         match self {
-            Self::Cometapi => "CometAPIEmbeddingConfig",
+            Self::CometapiEmbedding => "CometAPIEmbeddingConfig",
+            Self::DeepinfraRerank => "DeepinfraRerankConfig",
+            Self::AimlImageGeneration => "AimlImageGenerationConfig",
+            Self::CometapiImageGeneration => "CometAPIImageGenerationConfig",
         }
     }
 }
 
-pub fn embedding_api_policy(provider: ProviderId) -> Option<EmbeddingApiPolicy> {
+pub fn embedding_api_policy(provider: ProviderId) -> Option<CompatibleApiPolicy> {
     if provider == ProviderId::Cometapi {
-        return Some(EmbeddingApiPolicy::Cometapi);
+        return Some(CompatibleApiPolicy::CometapiEmbedding);
     }
     None
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RerankApiPolicy {
-    Deepinfra,
-}
-
-impl RerankApiPolicy {
-    #[must_use]
-    pub const fn class_name(self) -> &'static str {
-        match self {
-            Self::Deepinfra => "DeepinfraRerankConfig",
-        }
-    }
-}
-
-pub fn rerank_api_policy(provider: ProviderId) -> Option<RerankApiPolicy> {
+pub fn rerank_api_policy(provider: ProviderId) -> Option<CompatibleApiPolicy> {
     if provider == ProviderId::Deepinfra {
-        return Some(RerankApiPolicy::Deepinfra);
+        return Some(CompatibleApiPolicy::DeepinfraRerank);
     }
     None
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ImageGenerationApiPolicy {
-    Aiml,
-    Cometapi,
-}
-
-impl ImageGenerationApiPolicy {
-    #[must_use]
-    pub const fn class_name(self) -> &'static str {
-        match self {
-            Self::Aiml => "AimlImageGenerationConfig",
-            Self::Cometapi => "CometAPIImageGenerationConfig",
-        }
-    }
-}
-
-// both image factories ignore the model and return their one config class
-pub fn image_generation_api_policy(provider: ProviderId) -> Option<ImageGenerationApiPolicy> {
+pub fn image_generation_api_policy(provider: ProviderId) -> Option<CompatibleApiPolicy> {
     if provider == ProviderId::Aiml {
-        return Some(ImageGenerationApiPolicy::Aiml);
+        return Some(CompatibleApiPolicy::AimlImageGeneration);
     }
     if provider == ProviderId::Cometapi {
-        return Some(ImageGenerationApiPolicy::Cometapi);
+        return Some(CompatibleApiPolicy::CometapiImageGeneration);
     }
     None
 }
 
-fn lists(descriptor: &crate::json_provider_registry::ProviderDescriptor, endpoint: &str) -> bool {
+fn lists(descriptor: &ProviderDescriptor, endpoint: &str) -> bool {
     descriptor
         .config
         .supported_endpoints

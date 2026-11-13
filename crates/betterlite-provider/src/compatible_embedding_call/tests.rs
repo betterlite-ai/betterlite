@@ -1,50 +1,27 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::compatible_embedding_settings::{Globals, Settings};
-use betterlite_logging::logging_pre_post::env::{
-    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
-};
-use betterlite_logging::logging_privacy::request::Decision;
-use betterlite_logging::logging_state::correlation::{
-    CorrelationContext, CorrelationSettings, CorrelationSetup,
-};
-use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
-use betterlite_openai::compatible_embedding::error::EmbeddingError;
-use betterlite_openai::compatible_embedding::{EmbeddingCall, Mode};
-use betterlite_openai::embedding::{EmbeddingResponse, EmbeddingUsage};
+use betterlite_openai::compatible_embedding::Mode;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
-use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use chrono::DateTime;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::{CometapiEmbedding, SharedEmbedding, SharedEmbeddingHandler};
+use super::{CometapiEmbedding, SharedEmbedding};
 use crate::prepared::PreparedRequest;
 
-const INIT: &str = r#"{"model":"gpt-4o","call_type":"embedding","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 const ENVIRONMENT: &[(&str, &str)] = &[
     ("OPENAI_LIKE_API_BASE", "http://env.example/v1"),
     ("OPENAI_LIKE_API_KEY", "sk-env"),
     ("COMETAPI_API_BASE", "https://comet.example/v1"),
     ("COMETAPI_KEY", "sk-cometapi-env"),
 ];
-
-struct Sink(Mutex<Vec<LogRecord>>);
-
-impl LogSink for Sink {
-    fn emit(&self, record: LogRecord) {
-        self.0.lock().unwrap().push(record);
-    }
-}
 
 fn settings(environment: &[(&str, &str)]) -> Settings {
     let lookup = environment
@@ -60,36 +37,6 @@ fn settings(environment: &[(&str, &str)]) -> Settings {
 
 fn exposed(value: Option<&SecretString>) -> Option<String> {
     value.map(|secret| secret.expose_secret().to_owned())
-}
-
-fn handler_response() -> EmbeddingResponse {
-    EmbeddingResponse {
-        object: String::from("list"),
-        data: Vec::new(),
-        model: String::from("m"),
-        usage: EmbeddingUsage {
-            prompt_tokens: 0,
-            completion_tokens: 0,
-            completion_tokens_details: None,
-            prompt_tokens_details: None,
-            total_tokens: 0,
-        },
-    }
-}
-
-struct Capture(Mutex<Option<EmbeddingCall>>);
-
-#[async_trait]
-impl SharedEmbeddingHandler for Capture {
-    async fn embedding(
-        &self,
-        call: EmbeddingCall,
-        _state: &mut LoggingState,
-        _env: &PrePostEnv<'_>,
-    ) -> Result<EmbeddingResponse, EmbeddingError> {
-        *self.0.lock().unwrap() = Some(call);
-        Ok(handler_response())
-    }
 }
 
 #[rstest]
@@ -239,35 +186,8 @@ fn caller_headers_only_replace_extra_headers_when_nonempty(
     }
 }
 
-#[tokio::test]
-async fn the_handler_receives_the_original_input_timeout_mode_and_endpoint_flag() {
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let mut state = LoggingState::new(
-        serde_json::from_str::<LoggingInit>(INIT).unwrap(),
-        CorrelationSetup {
-            context: &mut CorrelationContext::default(),
-            settings: CorrelationSettings::default(),
-        },
-        &redactor,
-        || String::from("trace"),
-        Duration::default,
-    )
-    .unwrap();
-    let sink = Sink(Mutex::new(Vec::new()));
-    let env = PrePostEnv {
-        debug: DebugSettings::default(),
-        globals: GlobalFlags::default(),
-        decision: Decision {
-            content: false,
-            key_info: false,
-        },
-        redactor: &redactor,
-        log: &sink,
-        input_callbacks: &[],
-        sentry: None,
-        logger_fn: None,
-        now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").unwrap(),
-    };
+#[test]
+fn the_call_keeps_the_original_input_timeout_mode_and_endpoint_flag() {
     let input = Json::List(vec![Json::Text(String::from("a"))]);
     let options = IndexMap::new();
     let globals = Globals::default();
@@ -286,10 +206,7 @@ async fn the_handler_receives_the_original_input_timeout_mode_and_endpoint_flag(
         globals: &globals,
         settings: &settings,
     };
-    let capture = Capture(Mutex::new(None));
-    let response = embedding.execute(&capture, &mut state, &env).await.unwrap();
-    assert_eq!(response, handler_response());
-    let call = capture.0.lock().unwrap().take().expect("the handler ran");
+    let call = embedding.handler_call();
     assert_eq!(call.model, "m");
     assert_eq!(call.input, input);
     assert_eq!(call.timeout, Duration::from_secs(7));

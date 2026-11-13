@@ -2,12 +2,17 @@ kind: helper
 name: comet-embedding-deepinfra-rerank
 call:
   compatible_api_selection:
-    calls:
-      - family: embedding
-        provider: cometapi
-        model: comet-embed-v1
-      - family: rerank
-        provider: deepinfra
-        model: rerank-v1
+    - family: embedding
+      provider: cometapi
+      model: comet-embed-v1
+      identity: name
+      native: null
+      providers: []
+    - family: rerank
+      provider: deepinfra
+      model: rerank-v1
+      identity: name
+      native: null
+      providers: []
 env: {}
 compare: {ignore: []}

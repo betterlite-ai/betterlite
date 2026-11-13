@@ -2,18 +2,21 @@ kind: helper
 name: deepseek-messages-native
 call:
   compatible_api_selection:
-    calls:
-      - family: messages
-        provider: deepseek
-        model: deepseek-chat
-        providers:
-          - provider: deepseek
-            supported_endpoints: ["/v1/messages"]
-      - family: messages
-        provider: groq
-        model: groq-llama
-        providers:
-          - provider: groq
-            supported_endpoints: ["/v1/chat/completions"]
+    - family: messages
+      provider: deepseek
+      model: deepseek-chat
+      identity: name
+      native: null
+      providers:
+        - provider: deepseek
+          supported_endpoints: ["/v1/messages"]
+    - family: messages
+      provider: groq
+      model: groq-llama
+      identity: name
+      native: null
+      providers:
+        - provider: groq
+          supported_endpoints: ["/v1/chat/completions"]
 env: {}
 compare: {ignore: []}
