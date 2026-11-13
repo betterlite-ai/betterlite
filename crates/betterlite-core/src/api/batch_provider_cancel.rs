@@ -46,20 +46,6 @@ impl CancelProvider {
             other => Self::Other(other.to_owned()),
         }
     }
-
-    #[must_use]
-    pub const fn name(&self) -> &str {
-        match self {
-            Self::Openai => "openai",
-            Self::HostedVllm => "hosted_vllm",
-            Self::LitellmProxy => "litellm_proxy",
-            Self::Azure => "azure",
-            Self::VertexAi => "vertex_ai",
-            Self::Bedrock => "bedrock",
-            Self::Xai => "xai",
-            Self::Other(name) => name.as_str(),
-        }
-    }
 }
 
 impl From<String> for CancelProvider {

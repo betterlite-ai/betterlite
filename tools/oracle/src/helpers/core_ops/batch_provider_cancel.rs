@@ -109,15 +109,6 @@ impl Scripted {
             .push(call);
     }
 
-    fn record_answer(
-        &self,
-        call: Value,
-    ) -> impl Future<Output = Result<BatchObject, ScriptFailure>> + Send {
-        self.record(call);
-        let reply = self.reply();
-        async move { reply }
-    }
-
     fn reply(&self) -> Result<BatchObject, ScriptFailure> {
         if let Some(message) = &self.script.error {
             return Err(ScriptFailure {
@@ -130,90 +121,73 @@ impl Scripted {
     }
 }
 
-fn recorded_request(request: &BatchIdRequest) -> Value {
-    json!({
-        "batch_id": request.batch_id,
-        "extra_headers": request.extra_headers,
-        "extra_body": request.extra_body,
-    })
+// the five provider branches differ only in their recorded fields, so one macro keeps them one shape
+macro_rules! scripted_branches {
+    ($(
+        $method:ident($call_type:ident): $branch:literal => {
+            $($key:literal: $value:expr),* $(,)?
+        };
+    )*) => {
+        impl BatchCancelDispatch for Scripted {
+            type Error = ScriptFailure;
+
+            $(
+                fn $method(
+                    &self,
+                    call: $call_type<'_>,
+                ) -> impl Future<Output = Result<BatchObject, ScriptFailure>> + Send {
+                    self.record(json!({
+                        "branch": $branch,
+                        $($key: $value,)*
+                    }));
+                    let reply = self.reply();
+                    async move { reply }
+                }
+            )*
+        }
+    };
 }
 
-impl BatchCancelDispatch for Scripted {
-    type Error = ScriptFailure;
-
-    fn openai(
-        &self,
-        call: OpenAiCancelCall<'_>,
-    ) -> impl Future<Output = Result<BatchObject, ScriptFailure>> + Send {
-        self.record_answer(json!({
-            "branch": "openai",
-            "is_async": call.is_async,
-            "request": recorded_request(call.request),
-            "api_base": call.api_base,
-            "api_key": call.api_key.map(|key| key.expose_secret()),
-            "organization": call.organization,
-            "timeout": call.timeout,
-            "max_retries": call.max_retries,
-        }))
-    }
-
-    fn azure(
-        &self,
-        call: AzureCancelCall<'_>,
-    ) -> impl Future<Output = Result<BatchObject, ScriptFailure>> + Send {
-        self.record_answer(json!({
-            "branch": "azure",
-            "is_async": call.is_async,
-            "request": recorded_request(call.request),
-            "api_base": call.api_base,
-            "api_key": call.api_key.map(|key| key.expose_secret()),
-            "api_version": call.api_version,
-            "timeout": call.timeout,
-            "max_retries": call.max_retries,
-        }))
-    }
-
-    fn vertex(
-        &self,
-        call: VertexCancelCall<'_>,
-    ) -> impl Future<Output = Result<BatchObject, ScriptFailure>> + Send {
-        self.record_answer(json!({
-            "branch": "vertex",
-            "is_async": call.is_async,
-            "batch_id": call.batch_id,
-            "api_base": call.api_base,
-            "vertex_project": call.vertex_project,
-            "vertex_location": call.vertex_location,
-            "vertex_credentials": call.vertex_credentials.map(|token| token.expose_secret()),
-            "timeout": call.timeout,
-            "max_retries": call.max_retries,
-        }))
-    }
-
-    fn xai(
-        &self,
-        call: XaiCancelCall<'_>,
-    ) -> impl Future<Output = Result<BatchObject, ScriptFailure>> + Send {
-        self.record_answer(json!({
-            "branch": "xai",
-            "is_async": call.is_async,
-            "batch_id": call.batch_id,
-            "api_base": call.api_base,
-            "api_key": call.api_key.map(|key| key.expose_secret()),
-            "timeout": call.timeout,
-        }))
-    }
-
-    fn bedrock(
-        &self,
-        call: BedrockCancelCall<'_>,
-    ) -> impl Future<Output = Result<BatchObject, ScriptFailure>> + Send {
-        self.record_answer(json!({
-            "branch": "bedrock",
-            "batch_id": call.batch_id,
-            "params": call.params,
-        }))
-    }
+scripted_branches! {
+    openai(OpenAiCancelCall): "openai" => {
+        "is_async": call.is_async,
+        "request": recorded_request(call.request),
+        "api_base": call.api_base,
+        "api_key": call.api_key.map(|key| key.expose_secret()),
+        "organization": call.organization,
+        "timeout": call.timeout,
+        "max_retries": call.max_retries,
+    };
+    azure(AzureCancelCall): "azure" => {
+        "is_async": call.is_async,
+        "request": recorded_request(call.request),
+        "api_base": call.api_base,
+        "api_key": call.api_key.map(|key| key.expose_secret()),
+        "api_version": call.api_version,
+        "timeout": call.timeout,
+        "max_retries": call.max_retries,
+    };
+    vertex(VertexCancelCall): "vertex" => {
+        "is_async": call.is_async,
+        "batch_id": call.batch_id,
+        "api_base": call.api_base,
+        "vertex_project": call.vertex_project,
+        "vertex_location": call.vertex_location,
+        "vertex_credentials": call.vertex_credentials.map(|token| token.expose_secret()),
+        "timeout": call.timeout,
+        "max_retries": call.max_retries,
+    };
+    xai(XaiCancelCall): "xai" => {
+        "is_async": call.is_async,
+        "batch_id": call.batch_id,
+        "api_base": call.api_base,
+        "api_key": call.api_key.map(|key| key.expose_secret()),
+        "timeout": call.timeout,
+    };
+    bedrock(BedrockCancelCall): "bedrock" => {
+        "batch_id": call.batch_id,
+        "params": call.params,
+    };
 }
 
 fn helper_error(
