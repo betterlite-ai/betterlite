@@ -3,8 +3,6 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use rstest::rstest;
-
 use betterlite_config::sections::content_filter_records::ConfidenceThreshold;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
@@ -82,19 +80,16 @@ fn init_rejects_the_two_api_paths_together() {
     );
 }
 
-#[rstest]
-#[case::identifier_only(Some("gr-1"), None)]
-#[case::version_only(None, Some("1"))]
-fn init_rejects_checks_with_either_half_of_the_identity(
-    #[case] identifier: Option<&str>,
-    #[case] version: Option<&str>,
-) {
-    let mut init = guardrail_init();
-    init.guardrail_identifier = identifier.map(str::to_owned);
-    init.guardrail_version = version.map(str::to_owned);
-    init.checks = Some(sample_checks());
-    let error = BedrockGuardrail::__init__(init).expect_err("both API paths");
-    assert!(matches!(error, BedrockGuardrailError::BothApiPaths));
+#[test]
+fn init_rejects_checks_with_either_half_of_the_identity() {
+    for (identifier, version) in [(Some("gr-1"), None), (None, Some("1"))] {
+        let mut init = guardrail_init();
+        init.guardrail_identifier = identifier.map(str::to_owned);
+        init.guardrail_version = version.map(str::to_owned);
+        init.checks = Some(sample_checks());
+        let error = BedrockGuardrail::__init__(init).expect_err("both API paths");
+        assert!(matches!(error, BedrockGuardrailError::BothApiPaths));
+    }
 }
 
 #[test]

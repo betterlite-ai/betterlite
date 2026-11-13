@@ -27,3 +27,10 @@ fn error_parsing_keeps_the_status_code() {
     let (status, _message) = parse_error_response(429, br#"{"message":"throttled"}"#);
     assert_eq!(status, 429);
 }
+
+#[test]
+fn error_parsing_reads_a_top_level_error_string() {
+    let (status, message) = parse_error_response(403, br#"{"error":"forbidden"}"#);
+    assert_eq!(status, 403);
+    assert_eq!(message, "forbidden");
+}
