@@ -190,10 +190,14 @@ fn key_list(detail: &IndexMap<String, GuardrailValue>) -> Vec<&str> {
 }
 
 fn plain_settings() -> GuardrailSettings {
-    super::initialized_settings(
-        &params(r#"{"guardrail": "tool_policy", "mode": "pre_call"}"#),
-        "tool_policy",
+    initialized(
+        None,
+        true,
+        r#"{"guardrail": "tool_policy", "mode": "pre_call"}"#,
     )
+    .unwrap()
+    .base
+    .settings
 }
 
 #[tokio::test]

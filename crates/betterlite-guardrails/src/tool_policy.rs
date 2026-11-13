@@ -49,37 +49,6 @@ pub struct ToolPolicyGuardrail {
     pub names: Arc<dyn RequestToolNames + Send + Sync>,
 }
 
-// The settings LiteLLM's initialize_guardrail passes: a name, the mode and default_on, nothing else
-fn initialized_settings(params: &LitellmParams, name: &str) -> GuardrailSettings {
-    GuardrailSettings {
-        guardrail_name: Some(name.to_owned()),
-        supported_event_hooks: None,
-        event_hook: Some(params.mode.clone()),
-        default_on: params.base.fields.default_on.unwrap_or_default(),
-        mask_request_content: false,
-        mask_response_content: false,
-        violation_message_template: None,
-        end_session_after_n_fails: None,
-        on_violation: None,
-        realtime_violation_message: None,
-        on_sensitive_data: None,
-        sensitive_data_route_to_model: None,
-        sticky_session_routing: true,
-        run_in_parallel: false,
-        scan_raw_request: false,
-        only_scan_new_messages: false,
-        timeout: None,
-        switches: GuardrailSwitches {
-            use_native_during_call_hook: false,
-            use_native_lifecycle_hooks: false,
-            records_own_information: false,
-            // ToolPolicyGuardrail defines apply_guardrail, so LiteLLM accepts logging_only here
-            uses_apply_guardrail_interface: true,
-            deny_text_on_error: false,
-        },
-    }
-}
-
 pub fn initialize_tool_policy(
     params: &LitellmParams,
     guardrail_name: Option<&str>,
@@ -88,8 +57,35 @@ pub fn initialize_tool_policy(
     names: Arc<dyn RequestToolNames + Send + Sync>,
 ) -> Result<ToolPolicyGuardrail, ToolPolicyError> {
     let name = guardrail_name.unwrap_or(DEFAULT_GUARDRAIL_NAME);
+    // LiteLLM's initialize_guardrail passes a name, the mode and default_on, and nothing else
     ToolPolicyGuardrail::new(
-        initialized_settings(params, name),
+        GuardrailSettings {
+            guardrail_name: Some(name.to_owned()),
+            supported_event_hooks: None,
+            event_hook: Some(params.mode.clone()),
+            default_on: params.base.fields.default_on.unwrap_or_default(),
+            mask_request_content: false,
+            mask_response_content: false,
+            violation_message_template: None,
+            end_session_after_n_fails: None,
+            on_violation: None,
+            realtime_violation_message: None,
+            on_sensitive_data: None,
+            sensitive_data_route_to_model: None,
+            sticky_session_routing: true,
+            run_in_parallel: false,
+            scan_raw_request: false,
+            only_scan_new_messages: false,
+            timeout: None,
+            switches: GuardrailSwitches {
+                use_native_during_call_hook: false,
+                use_native_lifecycle_hooks: false,
+                records_own_information: false,
+                // ToolPolicyGuardrail defines apply_guardrail, so LiteLLM accepts logging_only here
+                uses_apply_guardrail_interface: true,
+                deny_text_on_error: false,
+            },
+        },
         strict_modes,
         policies,
         names,
