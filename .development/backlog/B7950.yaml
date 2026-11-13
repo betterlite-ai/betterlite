@@ -2,7 +2,7 @@ id: B7950
 milestone: M12 python
 title: Python types for litellm_params, services, caching, tags, tools and other small core files
 status: todo
-depends_on: [B5657]
+depends_on: [B5657, B9951]
 file: tasks/B7950-types-core-small-types.yaml
 covers:
   - "litellm/types/litellm_params.py"

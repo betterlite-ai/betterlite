@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-chat-tool-nested-false
+call: {"messages_content_primitives": {"operation": "chat_tool_param", "function": {"name": "weather"}, "tool": {"function": {"eager_input_streaming": false}}}}
+env: {}
+compare: {ignore: []}

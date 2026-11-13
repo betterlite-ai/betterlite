@@ -1,0 +1,9 @@
+kind: helper
+name: import-stdlib-function
+call:
+  b8042:
+    op: load
+    value: json.dumps
+    config_file_path: null
+env: {}
+compare: {ignore: []}

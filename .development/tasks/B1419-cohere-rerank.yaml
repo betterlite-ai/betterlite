@@ -81,7 +81,7 @@ checks:
       run: test -f tools/oracle/helpers/cohere_rerank_plan.py && test -f tools/oracle/helpers/rerank_guardrail_fields.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The two adapters must call the actual config and guardrail translation methods.
     - id: rerank-helper-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/cohere_rerank_plan*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/rerank_guardrail_fields*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::cohere_rerank_plan::/) | test(/^helpers::core_ops::rerank_guardrail_fields::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/cohere_rerank_plan*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/rerank_guardrail_fields*')" && cargo nextest run --locked -p betterlite-oracle-core-ops --no-tests=fail -E 'test(/^cohere_rerank_plan::/) | test(/^rerank_guardrail_fields::/)'
       why: Neither a config-only seed nor a guardrail-only seed proves both operations are wired.
 oracle_cases:
   - tools/oracle/cases/helpers/cohere-rerank-plan/versioned-limits-and-suffix.yaml
