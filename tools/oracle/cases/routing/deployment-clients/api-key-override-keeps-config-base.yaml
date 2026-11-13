@@ -5,6 +5,9 @@ probes:
     samples: []
     operation:
       deployment_clients:
+        calculate: []
+        limits: []
+        cached: []
         credentials:
           - model_group: gpt
             config: {model: openai/gpt-4o, api_base: "https://configured.example/v1"}

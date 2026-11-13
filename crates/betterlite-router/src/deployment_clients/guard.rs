@@ -36,11 +36,9 @@ pub struct MaxParallelRequestsLimit {
     in_flight: AtomicI64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LimitSnapshot {
     pub max_parallel_requests: i64,
-    pub model_id: String,
-    pub model_group: String,
     pub in_flight: i64,
 }
 
@@ -108,8 +106,6 @@ impl MaxParallelRequestsLimit {
     pub fn snapshot(&self) -> LimitSnapshot {
         LimitSnapshot {
             max_parallel_requests: self.max_parallel_requests,
-            model_id: self.model_id.clone(),
-            model_group: self.model_group.clone(),
             in_flight: self.in_flight.load(Ordering::SeqCst),
         }
     }

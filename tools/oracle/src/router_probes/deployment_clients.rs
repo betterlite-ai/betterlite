@@ -23,13 +23,9 @@ use crate::router_probes::random::InjectedRandom;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
-    #[serde(default)]
     pub calculate: Vec<CalculateInput>,
-    #[serde(default)]
     pub limits: Vec<LimitInput>,
-    #[serde(default)]
     pub cached: Vec<CachedInput>,
-    #[serde(default)]
     pub credentials: Vec<CredentialInput>,
 }
 
@@ -71,7 +67,6 @@ pub struct CachedInput {
     pub rpm: Option<i64>,
     pub tpm: Option<i64>,
     pub default_max_parallel_requests: Option<i64>,
-    #[serde(default)]
     pub lookups: u32,
 }
 
@@ -88,7 +83,6 @@ pub struct CredentialInput {
 pub struct RequestFields {
     pub api_key: Option<String>,
     pub api_base: Option<String>,
-    pub base_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -269,7 +263,6 @@ fn credential_outcome(input: &CredentialInput) -> CredentialObservation {
     for (key, value) in [
         ("api_key", &input.request.api_key),
         ("api_base", &input.request.api_base),
-        ("base_url", &input.request.base_url),
     ] {
         if let Some(text) = value {
             request_kwargs.insert((*key).to_owned(), Json::Text(text.clone()));
@@ -279,7 +272,7 @@ fn credential_outcome(input: &CredentialInput) -> CredentialObservation {
     let request = ClientsideCredentials {
         api_key: input.request.api_key.clone().map(SecretString::from),
         api_base: input.request.api_base.clone(),
-        base_url: input.request.base_url.clone(),
+        base_url: None,
     };
     let params = dynamic_litellm_params(input.config.clone(), &request);
     let model_id = input

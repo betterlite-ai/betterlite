@@ -1,4 +1,4 @@
-from typing import Final, Literal, NoReturn, TypeAlias
+from typing import Final, Literal, NoReturn
 
 from litellm.exceptions import RateLimitError
 from litellm.router import Router
@@ -11,7 +11,7 @@ from litellm.router_utils.clientside_credential_handler import (
     is_clientside_credential,
 )
 from litellm.utils import calculate_max_parallel_requests
-from pydantic import Field, JsonValue, SerializeAsAny, TypeAdapter
+from pydantic import Field, JsonValue, TypeAdapter
 from typing_extensions import override
 
 from probes.protocol import Operation, Strict
@@ -28,28 +28,16 @@ class CalculateInput(Strict):
     default_max_parallel_requests: int | None = None
 
 
-class AcquireStep(Strict):
-    kind: Literal["acquire"]
-
-
-class ReleaseStep(Strict):
-    kind: Literal["release"]
-
-
-class EnterExitStep(Strict):
-    kind: Literal["enter_exit"]
+class Step(Strict):
+    kind: Literal["acquire", "release", "enter_exit"]
     fail: bool = False
-
-
-Step: TypeAlias = AcquireStep | ReleaseStep | EnterExitStep
-StepField: TypeAlias = SerializeAsAny[Step]
 
 
 class LimitInput(Strict):
     max_parallel_requests: int
     model_id: str
     model_group: str
-    steps: list[StepField]
+    steps: list[Step]
 
 
 class CachedInput(Strict):

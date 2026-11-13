@@ -9,49 +9,7 @@ use crate::catalog_updates::catalog::DeploymentCatalog;
 use crate::deployment_identity::spec::DeploymentSpec;
 
 // CredentialLiteLLMParams, in its declared order, so a dump keeps the same fields LiteLLM's model keeps.
-pub const CREDENTIAL_FIELDS: [&str; 41] = [
-    "api_key",
-    "api_base",
-    "api_version",
-    "azure_ad_token",
-    "tenant_id",
-    "client_id",
-    "client_secret",
-    "azure_scope",
-    "azure_username",
-    "azure_password",
-    "vertex_project",
-    "vertex_location",
-    "vertex_credentials",
-    "region_name",
-    "gcs_bucket_name",
-    "bucket_name",
-    "aws_access_key_id",
-    "aws_secret_access_key",
-    "aws_session_token",
-    "aws_region_name",
-    "aws_session_name",
-    "aws_profile_name",
-    "aws_role_name",
-    "aws_web_identity_token",
-    "aws_sts_endpoint",
-    "aws_external_id",
-    "aws_session_tags",
-    "aws_bedrock_runtime_endpoint",
-    "aws_bedrock_project_id",
-    "s3_bucket_name",
-    "s3_endpoint_url",
-    "s3_region_name",
-    "s3_access_key_id",
-    "s3_secret_access_key",
-    "s3_encryption_key_id",
-    "s3_bucket_owner",
-    "aws_batch_role_arn",
-    "s3_output_bucket_name",
-    "bedrock_tags",
-    "watsonx_region_name",
-    "litellm_credential_name",
-];
+const CREDENTIAL_FIELDS: &str = "api_key api_base api_version azure_ad_token tenant_id client_id client_secret azure_scope azure_username azure_password vertex_project vertex_location vertex_credentials region_name gcs_bucket_name bucket_name aws_access_key_id aws_secret_access_key aws_session_token aws_region_name aws_session_name aws_profile_name aws_role_name aws_web_identity_token aws_sts_endpoint aws_external_id aws_session_tags aws_bedrock_runtime_endpoint aws_bedrock_project_id s3_bucket_name s3_endpoint_url s3_region_name s3_access_key_id s3_secret_access_key s3_encryption_key_id s3_bucket_owner aws_batch_role_arn s3_output_bucket_name bedrock_tags watsonx_region_name litellm_credential_name";
 
 // Fields pydantic validates as str | dict, or as a list, keep more than plain text.
 const TEXT_OR_OBJECT: [&str; 1] = ["vertex_credentials"];
@@ -76,7 +34,7 @@ pub enum CredentialError {
 // CredentialLiteLLMParams.model_validate(...).model_dump(exclude_none=True): declared fields only, nulls gone.
 pub fn credential_params(litellm_params: &JsonObject) -> Result<JsonObject, CredentialError> {
     let mut credentials = JsonObject::new();
-    for field in CREDENTIAL_FIELDS {
+    for field in CREDENTIAL_FIELDS.split(' ') {
         let Some(value) = litellm_params
             .get(field)
             .filter(|value| !matches!(value, Json::Null))
@@ -85,17 +43,17 @@ pub fn credential_params(litellm_params: &JsonObject) -> Result<JsonObject, Cred
         };
         let accepted = match value {
             Json::Text(_) => true,
-            Json::Object(_) => TEXT_OR_OBJECT.contains(field),
-            Json::List(_) => TEXT_OR_LIST.contains(field),
+            Json::Object(_) => TEXT_OR_OBJECT.contains(&field),
+            Json::List(_) => TEXT_OR_LIST.contains(&field),
             Json::Null | Json::Bool(_) | Json::Number(_) => false,
         };
         if !accepted {
             return Err(CredentialError::FieldType {
-                field: (*field).to_owned(),
+                field: field.to_owned(),
                 expected: "a string, an object or a list",
             });
         }
-        credentials.insert((*field).to_owned(), value.clone());
+        credentials.insert(field.to_owned(), value.clone());
     }
     Ok(credentials)
 }
@@ -242,10 +200,10 @@ pub fn deployment_credentials_with_provider(
     };
     let provider = match params.get("custom_llm_provider") {
         Some(Json::Text(declared)) => declared.clone(),
-        _ => match model.split_once('/') {
-            Some((prefix, _rest)) => prefix.to_owned(),
-            None => String::from("openai"),
-        },
+        _ => model.split_once('/').map_or_else(
+            || String::from("openai"),
+            |(prefix, _rest)| prefix.to_owned(),
+        ),
     };
     credentials.insert("model".to_owned(), Json::Text(model));
     credentials.insert("custom_llm_provider".to_owned(), Json::Text(provider));

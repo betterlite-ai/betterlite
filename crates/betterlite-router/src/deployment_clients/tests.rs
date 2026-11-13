@@ -191,7 +191,6 @@ fn deployment_clients_behaviors_a_cached_limit_is_reused_for_the_same_model_id()
         second.limit.expect("a limit"),
     );
     assert!(Arc::ptr_eq(&first_limit, &second_limit));
-    assert_eq!(clients.snapshot().limits.len(), 1);
 }
 
 #[test]
@@ -233,7 +232,6 @@ fn deployment_clients_behaviors_no_configured_limit_leaves_the_cache_empty() {
     let lookup = clients.max_parallel_requests("d1", "gpt", LimitSource::default());
     assert!(lookup.initialized);
     assert!(lookup.limit.is_none());
-    assert!(clients.snapshot().limits.is_empty());
 }
 
 #[rstest]
@@ -311,9 +309,6 @@ fn deployment_clients_behaviors_a_request_key_never_reuses_the_configured_client
         ClientCredential::Overridden(hex::encode(sha2::Sha256::digest(b"sk-caller")))
     );
     assert_eq!(overridden.api_base, "https://configured.example/v1");
-    let stored = clients.snapshot().clients;
-    assert_eq!(stored.len(), 1);
-    assert_eq!(stored[0].credential, ClientCredential::Configured);
 }
 
 #[rstest]

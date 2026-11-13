@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime};
 use secrecy::{ExposeSecret as _, SecretString};
 use sha2::{Digest as _, Sha256};
 
-use super::guard::{LimitSnapshot, LimitSource, MaxParallelRequestsLimit, installable_limit};
+use super::guard::{LimitSource, MaxParallelRequestsLimit, installable_limit};
 
 // RouterConfig.client_ttl: how long a cached client may serve before it is rebuilt
 pub const CLIENT_TTL_SECONDS: u64 = 3600;
@@ -47,12 +47,6 @@ pub struct CachedClient {
     pub api_base: String,
     pub stream: bool,
     pub credential: ClientCredential,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct ClientsSnapshot {
-    pub limits: Vec<LimitSnapshot>,
-    pub clients: Vec<CachedClient>,
 }
 
 struct Timed<T> {
@@ -185,19 +179,6 @@ impl CachedClients {
             api_base: deployment.api_base.to_owned(),
             stream: lookup.stream,
             credential,
-        }
-    }
-
-    #[must_use]
-    pub fn snapshot(&self) -> ClientsSnapshot {
-        let limits = Self::lock(&self.limits);
-        let clients = Self::lock(&self.clients);
-        ClientsSnapshot {
-            limits: limits
-                .values()
-                .map(|entry| entry.value.snapshot())
-                .collect(),
-            clients: clients.values().map(|entry| entry.value.clone()).collect(),
         }
     }
 }
