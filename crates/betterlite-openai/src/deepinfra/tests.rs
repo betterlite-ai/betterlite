@@ -14,14 +14,11 @@ use super::chat::{
     BASE_OPENAI_PARAMS, ChatTransform, DeepInfraChatSettings, MapRequest, map_openai_params,
     supported_openai_params, transform_request,
 };
-use super::rerank::error::{BaseLlmException, decode_deepinfra_error, get_error_class};
-use super::rerank::response::{
-    LoggingFailure, RerankDecodeError, RerankLogging, ResponseRequest, decode_deepinfra_rerank,
-    transform_rerank_response,
-};
 use super::rerank::{
-    EnvironmentRequest, Headers, MapRequest as RerankMapRequest, Params, RerankError, RerankLimits,
-    SUPPORTED_RERANK_PARAMS, complete_url, map_cohere_rerank_params, transform_rerank_request,
+    BaseLlmException, EnvironmentRequest, Headers, LoggingFailure, MapRequest as RerankMapRequest,
+    Params, RerankDecodeError, RerankError, RerankLimits, RerankLogging, ResponseRequest,
+    SUPPORTED_RERANK_PARAMS, complete_url, decode_deepinfra_error, decode_deepinfra_rerank,
+    get_error_class, map_cohere_rerank_params, transform_rerank_request, transform_rerank_response,
     validate_environment,
 };
 use crate::api::rerank_contracts::records::{RerankDocument, RerankResponse};

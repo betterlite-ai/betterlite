@@ -5,17 +5,16 @@ use betterlite_openai::api::rerank_contracts::records::{RerankDocument, RerankRe
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat_content::{Mode, RefuseDownloads};
 use betterlite_openai::deepinfra::chat::{self, ChatTransform, MapRequest};
-use betterlite_openai::deepinfra::rerank::error::get_error_class;
-use betterlite_openai::deepinfra::rerank::response::{
-    LoggingFailure, RerankLogging, ResponseRequest, transform_rerank_response,
-};
 use betterlite_openai::deepinfra::rerank::{
-    EnvironmentRequest, Headers, MapRequest as RerankMapRequest, Params, RerankLimits,
-    complete_url, map_cohere_rerank_params, transform_rerank_request, validate_environment,
+    EnvironmentRequest, Headers, LoggingFailure, MapRequest as RerankMapRequest, Params,
+    RerankLimits, RerankLogging, ResponseRequest, complete_url, get_error_class,
+    map_cohere_rerank_params, transform_rerank_request, transform_rerank_response,
+    validate_environment,
 };
 use betterlite_openai::reasoning_models::DropParams;
 use secrecy::SecretString;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -31,60 +30,6 @@ pub(crate) enum Input {
     RerankRequest { params: Value },
     RerankResponse { params: Value },
     ErrorExtraction { params: Value },
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct Case {
-    #[serde(default)]
-    model: String,
-    #[serde(default)]
-    params: Value,
-    #[serde(default)]
-    optional_params: Value,
-    #[serde(default)]
-    minimum_temperature: f64,
-    #[serde(default)]
-    messages: Value,
-    #[serde(default)]
-    api_base: Option<String>,
-    #[serde(default)]
-    headers: Value,
-    #[serde(default)]
-    api_key: Option<String>,
-    #[serde(default)]
-    environment_key: Option<String>,
-    #[serde(default)]
-    query: String,
-    #[serde(default)]
-    documents: Vec<Value>,
-    #[serde(default)]
-    non_default: Value,
-    #[serde(default)]
-    body: String,
-    #[serde(default)]
-    message: String,
-    #[serde(default)]
-    status_code: u16,
-    #[serde(flatten)]
-    request_flags: RequestFlags,
-    #[serde(flatten)]
-    model_flags: ModelFlags,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct RequestFlags {
-    #[serde(default)]
-    drop_params: bool,
-    #[serde(default)]
-    fail_logging: bool,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct ModelFlags {
-    #[serde(default)]
-    global_drop_params: bool,
-    #[serde(default)]
-    supports_reasoning: bool,
 }
 
 struct Recording {
@@ -128,29 +73,54 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn cases(params: &Value) -> Result<Vec<Case>, String> {
-    serde_json::from_value(params.clone()).map_err(|error| error.to_string())
+fn list(params: &Value) -> Result<&[Value], String> {
+    params
+        .as_array()
+        .map(Vec::as_slice)
+        .ok_or_else(|| String::from("params must be a list of cases"))
+}
+
+fn text<'value>(case: &'value Value, name: &str) -> Result<&'value str, String> {
+    case[name]
+        .as_str()
+        .ok_or_else(|| format!("{name} must be a string"))
+}
+
+fn flag(case: &Value, name: &str) -> Result<bool, String> {
+    case[name]
+        .as_bool()
+        .ok_or_else(|| format!("{name} must be a boolean"))
+}
+
+fn number(case: &Value, name: &str) -> Result<f64, String> {
+    case[name]
+        .as_f64()
+        .ok_or_else(|| format!("{name} must be a number"))
 }
 
 fn object(value: &Value) -> Result<betterlite_prompts::arguments::json::Object, String> {
+    from_value(value)
+}
+
+fn from_value<Decoded: DeserializeOwned>(value: &Value) -> Result<Decoded, String> {
     serde_json::from_value(value.clone()).map_err(|error| error.to_string())
 }
 
 fn chat_map(params: &Value) -> Result<Value, String> {
     let mut results = Vec::new();
-    for case in cases(params)? {
-        let non_default = object(&case.params)?;
-        let mut optional = object(&case.optional_params)?;
+    for case in list(params)? {
+        let non_default = object(&case["params"])?;
+        let mut optional = object(&case["optional_params"])?;
         let outcome = chat::map_openai_params(MapRequest {
-            model: &case.model,
+            model: text(case, "model")?,
             non_default_params: &non_default,
             optional_params: &mut optional,
             drop_params: DropParams {
-                global: case.model_flags.global_drop_params,
-                request: case.request_flags.drop_params,
+                global: flag(case, "global_drop_params")?,
+                request: flag(case, "drop_params")?,
             },
-            minimum_temperature: case.minimum_temperature,
-            supports_reasoning: case.model_flags.supports_reasoning,
+            minimum_temperature: number(case, "minimum_temperature")?,
+            supports_reasoning: flag(case, "supports_reasoning")?,
         });
         results.push(match outcome {
             Ok(()) => serde_json::json!({ "ok": true, "mapped": optional }),
@@ -162,14 +132,13 @@ fn chat_map(params: &Value) -> Result<Value, String> {
 
 fn tool_content(params: &Value) -> Result<Value, String> {
     let mut results = Vec::new();
-    for case in cases(params)? {
-        let messages: Vec<ChatMessage> =
-            serde_json::from_value(case.messages).map_err(|error| error.to_string())?;
-        let optional = object(&case.optional_params)?;
+    for case in list(params)? {
+        let messages: Vec<ChatMessage> = from_value(&case["messages"])?;
+        let optional = object(&case["optional_params"])?;
         let environment: BTreeMap<String, String> = BTreeMap::new();
         let body = chat::transform_request(
             &ChatTransform {
-                model: &case.model,
+                model: text(case, "model")?,
                 messages: &messages,
                 optional_params: &optional,
                 environment: &environment,
@@ -186,26 +155,23 @@ fn tool_content(params: &Value) -> Result<Value, String> {
 
 fn rerank_request(params: &Value) -> Result<Value, String> {
     let mut results = Vec::new();
-    for case in cases(params)? {
-        let explicit = case.api_key.as_ref().map(SecretString::from);
-        let environment = case.environment_key.as_ref().map(SecretString::from);
-        let headers: Headers =
-            serde_json::from_value(case.headers).map_err(|error| error.to_string())?;
+    for case in list(params)? {
+        let explicit = case["api_key"].as_str().map(SecretString::from);
+        let fallback = case["environment_key"].as_str().map(SecretString::from);
+        let headers: Headers = from_value(&case["headers"])?;
         let merged = validate_environment(&EnvironmentRequest {
             headers: &headers,
             api_key: explicit.as_ref(),
-            environment_key: environment.as_ref(),
+            environment_key: fallback.as_ref(),
         })
         .map_err(|error| error.to_string())?;
-        let url = complete_url(case.api_base.as_deref(), &case.model)
+        let url = complete_url(case["api_base"].as_str(), text(case, "model")?)
             .map_err(|error| error.to_string())?;
-        let non_default: Params =
-            serde_json::from_value(case.non_default).map_err(|error| error.to_string())?;
-        let documents: Vec<RerankDocument> = serde_json::from_value(Value::Array(case.documents))
-            .map_err(|error| error.to_string())?;
+        let non_default: Params = from_value(&case["non_default"])?;
+        let documents: Vec<RerankDocument> = from_value(&case["documents"])?;
         let mapped = map_cohere_rerank_params(&RerankMapRequest {
             non_default_params: &non_default,
-            query: &case.query,
+            query: text(case, "query")?,
             documents: &documents,
         });
         let request = transform_rerank_request(Some(&mapped));
@@ -221,16 +187,16 @@ fn rerank_request(params: &Value) -> Result<Value, String> {
 
 fn rerank_response(params: &Value) -> Result<Value, String> {
     let mut results = Vec::new();
-    for case in cases(params)? {
+    for case in list(params)? {
         let mut recording = Recording {
             calls: Vec::new(),
-            fail: case.request_flags.fail_logging,
+            fail: flag(case, "fail_logging")?,
         };
         let projected = transform_rerank_response(
             RerankResponse::default(),
             ResponseRequest {
-                model: &case.model,
-                body: case.body.as_bytes(),
+                model: text(case, "model")?,
+                body: text(case, "body")?.as_bytes(),
                 logging: &mut recording,
                 generated: Uuid::from_u128(1),
                 limits: RerankLimits {
@@ -248,12 +214,16 @@ fn rerank_response(params: &Value) -> Result<Value, String> {
 
 fn error_extraction(params: &Value) -> Result<Value, String> {
     let mut results = Vec::new();
-    for case in cases(params)? {
-        let headers: BTreeMap<String, Json> =
-            serde_json::from_value(case.headers).map_err(|error| error.to_string())?;
+    for case in list(params)? {
+        let headers: BTreeMap<String, Json> = from_value(&case["headers"])?;
+        let raw = case["status_code"]
+            .as_u64()
+            .ok_or_else(|| String::from("status_code must be an integer"))?;
+        let status =
+            u16::try_from(raw).map_err(|_source| String::from("status_code is out of range"))?;
         let raised = get_error_class(
-            &case.message,
-            case.status_code,
+            text(case, "message")?,
+            status,
             headers,
             RerankLimits {
                 max_body_bytes: LIMIT,
