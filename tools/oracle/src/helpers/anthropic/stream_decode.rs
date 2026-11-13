@@ -139,15 +139,15 @@ where
 {
     outcomes
         .into_iter()
-        .try_fold((Vec::new(), 0usize), |(mut items, errors), outcome| {
-            let errors = match outcome {
+        .try_fold((Vec::new(), 0_usize), |(mut items, errors), outcome| {
+            let next_errors = match outcome {
                 Ok(chunk) => {
                     items.push(decoded_value(&chunk));
                     errors
                 }
                 Err(error) => errors.saturating_add(count_error(&error)?),
             };
-            Ok::<(Vec<Value>, usize), Box<HelperError>>((items, errors))
+            Ok::<(Vec<Value>, usize), Box<HelperError>>((items, next_errors))
         })
 }
 
@@ -248,15 +248,15 @@ fn decoded_value(chunk: &DecodedChunk) -> Value {
 
 fn event_value(chunk: &StreamEventChunk) -> Value {
     let choice = chunk.choices.first();
-    let delta = choice.map(|choice| &choice.delta);
+    let delta = choice.map(|selected| &selected.delta);
     json!({
         "id": &chunk.id,
         "model": &chunk.model,
         "usage": &chunk.usage,
-        "content": delta.map_or_else(String::new, |delta| delta.content.clone()),
-        "finish_reason": choice.and_then(|choice| choice.finish_reason.clone()),
-        "tool_calls": delta.and_then(|delta| delta.tool_calls.as_ref()),
-        "provider_specific_fields": delta.and_then(|delta| delta.provider_specific_fields.as_ref()),
+        "content": delta.map_or_else(String::new, |part| part.content.clone()),
+        "finish_reason": choice.and_then(|selected| selected.finish_reason.clone()),
+        "tool_calls": delta.and_then(|part| part.tool_calls.as_ref()),
+        "provider_specific_fields": delta.and_then(|part| part.provider_specific_fields.as_ref()),
     })
 }
 
