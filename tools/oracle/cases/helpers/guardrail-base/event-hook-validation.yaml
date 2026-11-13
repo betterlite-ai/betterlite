@@ -1,0 +1,6 @@
+kind: helper
+name: event-hook-validation
+call:
+  b5471: {"function": "validate_hook", "supported": ["pre_call"], "event_hook": "post_call", "event_hooks": null, "mode_tags": null, "mode_default": null}
+env: {}
+compare: {ignore: []}

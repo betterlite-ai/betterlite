@@ -1,13 +1,13 @@
 id: B8808
 milestone: M0 foundation
 title: Oracle helper group core_ops as its own crate
-status: todo
+status: done
 depends_on: [B8807]
 file: tasks/B8808-oracle-core-ops-group-crate.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1479
