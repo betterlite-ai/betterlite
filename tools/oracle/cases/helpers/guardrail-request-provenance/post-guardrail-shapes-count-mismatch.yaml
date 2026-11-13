@@ -1,0 +1,13 @@
+kind: helper
+name: post-guardrail-shapes-count-mismatch
+call:
+  b3670:
+    function: post_guardrail_shapes
+    returned:
+      - {"function": {"name": "search", "arguments": "b"}}
+      - {"function": {"name": "other", "arguments": "c"}}
+    pre:
+      - {"id": "c1", "type": "function", "function": {"name": "lookup", "arguments": "a"}, "index": 0}
+    guardrail_name: pii
+env: {}
+compare: {ignore: []}

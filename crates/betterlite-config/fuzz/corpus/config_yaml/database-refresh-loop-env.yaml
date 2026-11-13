@@ -1,0 +1,2 @@
+model_list: []
+# DATABASE_HOST, DATABASE_USER, DATABASE_NAME, DATABASE_PORT and DATABASE_SCHEMA are read from the environment when a token refresh reassembles the connection URL

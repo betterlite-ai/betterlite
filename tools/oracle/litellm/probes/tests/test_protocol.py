@@ -1,13 +1,12 @@
 import random
 import time
+from collections.abc import Callable, MutableSequence
 from io import BytesIO, StringIO
 
 import pytest
 
 from probes.protocol import MAX_MESSAGE_BYTES, serve
 from probes.registry import OPERATIONS
-
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
 
 CLOCK = '"clock":{"unix_millis":1700000000123,"monotonic_millis":42000}'
 OPERATION = '"operation":{"echo":{"text":"ping","draws":2,"warnings":["stale health snapshot"]}}'
@@ -24,9 +23,12 @@ def run(request: str) -> str:
 
 
 def test_echo_sees_the_injected_clock_and_samples_then_restores_them() -> None:
-    originals = (time.time, random.random, random.choice)
+    originals = (time.time, time.monotonic, random.random, random.choices, random.choice)
+    shuffle_original: Callable[[MutableSequence[int]], None] = random.shuffle
     assert run(REQUEST) == REPLY
-    assert (time.time, random.random, random.choice) == originals
+    assert (time.time, time.monotonic, random.random, random.choices, random.choice) == originals
+    shuffle_restored: Callable[[MutableSequence[int]], None] = random.shuffle
+    assert shuffle_restored == shuffle_original
 
 
 @pytest.mark.parametrize(

@@ -1,0 +1,11 @@
+task: B508
+deviations:
+  - what: A created_at outside the i64 range is unconvertible and uses the injected current time, where LiteLLM keeps Python's arbitrary-precision integer.
+    why: betterlite models created_at as i64 on the wire; a timestamp past i64 is not a value a working setup sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L74-L99
+  - what: The reply lax-validation debug line names the validation error and omits the response payload, where LiteLLM logs the whole raw_response_json.
+    why: A provider response can carry credentials, and betterlite never writes a response body into a log line.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L578-L587
+  - what: The streaming decoder never logs a raw event chunk, and the native-streaming lookup failure logs only the model, where LiteLLM logs the chunk and the lookup exception.
+    why: A streaming chunk or a catalog lookup exception can carry credentials, and betterlite never writes one into a log line.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L750-L751

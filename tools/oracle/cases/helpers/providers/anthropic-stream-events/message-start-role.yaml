@@ -1,0 +1,17 @@
+kind: helper
+name: anthropic-stream-events-message-start-role
+call:
+  anthropic_stream_events:
+    json_mode: false
+    tool_name_reverse_map: {}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: chunk, chunk: {type: message_start, message: {id: msg_1, type: message, role: assistant, model: claude-x, content: [], usage: {input_tokens: 10, output_tokens: 1}}}}
+      - {function: chunk, chunk: {type: ping}}
+      - {function: chunk, chunk: {type: message_start, message: {id: msg_2}}}
+      - {function: state}
+      - {function: chunk, chunk: {type: message_start, message: {model: null}}}
+      - {function: chunk, chunk: {type: message_delta, delta: {stop_reason: end_turn}, usage: {output_tokens: 5}}}
+      - {function: state}
+env: {}
+compare: {ignore: []}

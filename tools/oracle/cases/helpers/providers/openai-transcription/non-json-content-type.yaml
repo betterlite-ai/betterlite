@@ -1,0 +1,16 @@
+kind: helper
+name: openai-transcription-non-json-content-type
+call:
+  openai_transcription:
+    function: response
+    probes:
+      - model: whisper-1
+        bodies:
+          - {body: '{"text":"hi"}', content_type: application/json}
+          - {body: 'not json at all', content_type: text/plain}
+          - {body: 'not json at all', content_type: 'Application/JSON; charset=utf-8'}
+          - {body: '{"foo":"bar"}', content_type: text/plain}
+          - {body: '{"text":"hi"}', content_type: text/plain}
+          - {body: 'not json at all', content_type: TEXT/HTML}
+env: {}
+compare: {ignore: []}

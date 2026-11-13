@@ -1,0 +1,14 @@
+task: B3246
+deviations:
+  - what: The discard warning goes through tracing with the guardrail and reason as fields, not through verbose_proxy_logger with a formatted message.
+    why: betterlite logs structured events through tracing, and verbose_proxy_logger is a Python logger.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L292-L304
+  - what: The step runner takes the add_guardrail_to_applied_guardrails_header function as an argument instead of importing it.
+    why: Callback utilities belong to another task, and betterlite-core cannot depend on the crate that will own them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L483-L484
+  - what: The hook capability checks read a HookSurface the guardrail reports, not type(callback).__dict__ and method identity against CustomLogger.
+    why: Rust has no class dictionaries, so each guardrail states which hooks it overrides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L600-L616
+  - what: Tool calls are JSON values already, so the model_dump step of the tool call shape read is not needed.
+    why: betterlite carries tool calls as plain JSON from the start, where LiteLLM mixes pydantic models and dicts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L61-L65

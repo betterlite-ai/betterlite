@@ -22,6 +22,7 @@ betterlite-mcp = { path = "../betterlite-mcp" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-paths = { path = "../betterlite-paths" }
+betterlite-policy = { path = "../betterlite-policy" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redact = { path = "../betterlite-redact" }
 betterlite-streaming = { path = "../betterlite-streaming" }

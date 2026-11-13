@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-events-seed-url
+call:
+  openai_response_events:
+    responses_base_url:
+      probes:
+        - {api_base: https://seed.example/v1/, litellm_api_base: null, env_base_url: null, env_api_base: null}
+env: {}
+compare: {ignore: []}
