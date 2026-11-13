@@ -2,6 +2,8 @@
 
 use std::sync::Mutex;
 
+use rstest::rstest;
+
 use super::estimate::{TokenEstimateRequest, estimate_precise_input_tokens};
 use super::support::{
     FixedCounter, FixedResponses, FixedTranslation, RecordingCounter, SeenCount, chat_reply,
@@ -300,24 +302,28 @@ async fn translated_google_messages_reach_the_counter() {
     assert_eq!(total, 9);
 }
 
+#[rstest]
+#[case::rerank("rerank")]
+#[case::text_completion("text_completion")]
+#[case::embedding("embedding")]
 #[tokio::test]
-async fn rerank_text_completion_and_embedding_requests_do_not_forward_messages() {
-    for call_type in ["rerank", "text_completion", "embedding"] {
-        let data = request(
-            r#"{"messages":[{"role":"user","content":"hi"}],"input":"x","prompt":"p","query":"q"}"#,
-        );
-        let counter = recording_counter(Some(5));
-        let _total = estimate_precise_input_tokens(
-            &no_translation(),
-            &FixedResponses {
-                messages: Vec::new(),
-            },
-            &counter,
-            &estimate_with(&data, Some(call_type), None),
-        )
-        .await;
-        assert_eq!(first_count(&counter).messages, None, "{call_type}");
-    }
+async fn rerank_text_completion_and_embedding_requests_do_not_forward_messages(
+    #[case] call_type: &str,
+) {
+    let data = request(
+        r#"{"messages":[{"role":"user","content":"hi"}],"input":"x","prompt":"p","query":"q"}"#,
+    );
+    let counter = recording_counter(Some(5));
+    let _total = estimate_precise_input_tokens(
+        &no_translation(),
+        &FixedResponses {
+            messages: Vec::new(),
+        },
+        &counter,
+        &estimate_with(&data, Some(call_type), None),
+    )
+    .await;
+    assert_eq!(first_count(&counter).messages, None);
 }
 
 #[tokio::test]
