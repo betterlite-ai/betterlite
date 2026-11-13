@@ -11,6 +11,7 @@ use crate::postgres_store::errors::DbError;
 use rust_decimal::Decimal;
 use secrecy::ExposeSecret as _;
 use std::collections::BTreeMap;
+use std::fmt;
 use tokio_postgres::Row;
 use tokio_postgres::types::ToSql;
 
@@ -48,8 +49,14 @@ pub struct TokenFilter(pub Vec<(TokenColumn, TokenValue)>);
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TokenWrite(pub BTreeMap<TokenColumn, TokenValue>);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct RawTokenRow(pub JsonData);
+
+impl fmt::Debug for RawTokenRow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("RawTokenRow([REDACTED])")
+    }
+}
 
 impl RawTokenRow {
     pub fn from_row(row: &Row) -> Result<Self, TokenDecodeError> {

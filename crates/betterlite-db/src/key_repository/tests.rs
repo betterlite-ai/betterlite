@@ -3,7 +3,9 @@
 use super::decode::{MAX_FIELD_BYTES, TokenDecodeError, decode_token_record, to_model};
 use super::record::DbRecord;
 use super::table::columns::TokenColumn;
-use super::table::{TOKEN_TABLE_ATTRIBUTE, TokenFilter, TokenTableError, TokenValue, TokenWrite};
+use super::table::{
+    RawTokenRow, TOKEN_TABLE_ATTRIBUTE, TokenFilter, TokenTableError, TokenValue, TokenWrite,
+};
 use super::{TokenRepositoryError, VerificationTokenRepository};
 use crate::budget_permission_rows::JsonData;
 use crate::database_refresh::handle::{PoolFuture, PoolTransport};
@@ -298,6 +300,15 @@ fn record_projection_uses_base_precedence() {
         ]),
     };
     assert_eq!(pairs.project().get("source"), Some(&data("2")));
+}
+
+#[test]
+fn raw_token_row_debug_redacts_the_stored_identifier() {
+    let row = RawTokenRow(JsonData::Object(map(&[(
+        "token",
+        data(r#""legacy-literal""#),
+    )])));
+    assert_eq!(format!("{row:?}"), "RawTokenRow([REDACTED])");
 }
 
 #[test]

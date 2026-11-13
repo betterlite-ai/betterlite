@@ -62,11 +62,11 @@ impl ToSql for KeyHash {
         ty: &Type,
         out: &mut BytesMut,
     ) -> Result<IsNull, Box<dyn Error + Send + Sync>> {
-        String::from(self.0.expose_secret()).to_sql(ty, out)
+        self.0.expose_secret().to_sql(ty, out)
     }
 
     fn accepts(ty: &Type) -> bool {
-        <String as ToSql>::accepts(ty)
+        <&str as ToSql>::accepts(ty)
     }
 
     to_sql_checked!();
