@@ -61,7 +61,12 @@ fn without_encrypted_reasoning(item: Record) -> Option<Record> {
 
 fn has_readable_text(value: &Record) -> bool {
     match value {
-        Record::Scalar(Json::Text(text)) => !text.trim().is_empty(),
+        // Python's str.strip() counts U+001C to U+001F as whitespace too, so they read as unreadable
+        Record::Scalar(Json::Text(text)) => !text
+            .trim_matches(|character: char| {
+                character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
+            })
+            .is_empty(),
         Record::List(blocks) => blocks.iter().any(|block| match block {
             Record::Dict(dict) => dict.values.get("text").is_some_and(Record::has_value),
             Record::Object { .. } | Record::List(_) | Record::Scalar(_) => false,

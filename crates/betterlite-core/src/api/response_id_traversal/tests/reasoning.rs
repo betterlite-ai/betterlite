@@ -58,6 +58,8 @@ fn keeps_a_readable_content_string() {
 #[case::string_block(list(vec![text("block")]), false)]
 #[case::object_block(list(vec![object(vec![("text", text(" "))], &[])]), false)]
 #[case::whitespace_string(text(" "), false)]
+#[case::unit_separator(text("\u{1f}"), false)]
+#[case::separator_run(text("\u{1c} \u{1d}"), false)]
 #[case::visible_string(text("visible"), true)]
 fn summary_readability(#[case] summary: Record, #[case] readable: bool) {
     let summary_value = summary.clone();

@@ -25,21 +25,34 @@ pub fn encode_container_id(
     custom_llm_provider: Option<&str>,
     model_id: Option<&str>,
 ) {
+    // a mapping assignment cannot fail, so only an object's refusal to take the id is logged
+    let item_is_mapping = matches!(item, Record::Dict(_));
     let encoded = item
         .field("container_id")
         .and_then(Record::as_text)
         .and_then(|container_id| maybe_encode(container_id, custom_llm_provider, model_id));
-    if let Some(wrapped) = encoded
-        && item.set_text("container_id", wrapped).is_err()
-    {
-        tracing::debug!("Could not set container_id on streaming output item");
+    if let Some(wrapped) = encoded {
+        let written = item.set_text("container_id", wrapped);
+        if !item_is_mapping && written.is_err() {
+            tracing::debug!("Could not set container_id on streaming output item");
+        }
     }
-    // a mapping's nested call is visited only when it is a mapping; an object's attribute is visited whatever it holds
-    let parent_is_mapping = matches!(item, Record::Dict(_));
-    if let Some(nested) = item.field_mut("code_interpreter_call")
-        && (!parent_is_mapping || matches!(nested, Record::Dict(_)))
-    {
-        encode_container_id(nested, custom_llm_provider, model_id);
+    // an object's nested attribute is walked whatever it holds; a mapping's nested call is one level only
+    if let Some(nested) = item.field_mut("code_interpreter_call") {
+        if item_is_mapping {
+            if let Record::Dict(_) = nested
+                && let Some(wrapped) = nested
+                    .field("container_id")
+                    .and_then(Record::as_text)
+                    .and_then(|container_id| {
+                        maybe_encode(container_id, custom_llm_provider, model_id)
+                    })
+            {
+                let _nested_write = nested.set_text("container_id", wrapped);
+            }
+        } else {
+            encode_container_id(nested, custom_llm_provider, model_id);
+        }
     }
     if matches!(
         item.field("type").and_then(Record::as_text),
@@ -112,11 +125,7 @@ fn collect_from_item<'record>(item: &'record Record, collected: &mut Vec<&'recor
         {
             push_unique(collected, container_id);
         }
-        if let Some(nested) = current.field("code_interpreter_call")
-            && (!matches!(current, Record::Dict(_)) || matches!(nested, Record::Dict(_)))
-        {
-            pending.push(nested);
-        }
+        collect_nested(current, collected, &mut pending);
         if matches!(
             current.field("type").and_then(Record::as_text),
             Some("message")
@@ -124,6 +133,29 @@ fn collect_from_item<'record>(item: &'record Record, collected: &mut Vec<&'recor
         {
             pending_annotations(content, &mut pending);
         }
+    }
+}
+
+// an object's nested attribute is walked next; a mapping's nested call contributes one id and stops there
+fn collect_nested<'record>(
+    current: &'record Record,
+    collected: &mut Vec<&'record str>,
+    pending: &mut Vec<&'record Record>,
+) {
+    let Some(nested) = current.field("code_interpreter_call") else {
+        return;
+    };
+    if !matches!(current, Record::Dict(_)) {
+        pending.push(nested);
+        return;
+    }
+    if let Record::Dict(_) = nested
+        && let Some(container_id) = nested
+            .field("container_id")
+            .and_then(Record::as_text)
+            .filter(|text| !text.is_empty())
+    {
+        push_unique(collected, container_id);
     }
 }
 

@@ -125,6 +125,12 @@ impl CapturedLogs {
 struct Message(String);
 
 impl Visit for Message {
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "message" {
+            value.clone_into(&mut self.0);
+        }
+    }
+
     fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
             self.0 = format!("{value:?}");

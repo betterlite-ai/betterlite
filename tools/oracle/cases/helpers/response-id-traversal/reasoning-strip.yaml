@@ -66,6 +66,16 @@ call:
                 id: r
                 encrypted_content: cipher
               readonly: []
+      - input:
+          - type: reasoning
+            id: r
+            encrypted_content: cipher
+            summary: "\u001f"
+      - input:
+          - type: reasoning
+            id: r
+            encrypted_content: cipher
+            summary: "\u001c \u001d"
 env: {}
 compare:
   ignore: []

@@ -100,6 +100,45 @@ call:
         litellm_metadata:
           model_info:
             id: dep_a
+      - response:
+          id: resp_YQ==
+          output:
+            - code_interpreter_call:
+                container_id: c2
+                code_interpreter_call:
+                  container_id: c9
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_YQ==
+          output:
+            - code_interpreter_call:
+                type: message
+                container_id: c2
+                content:
+                  - annotations:
+                      - container_id: c3
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_YQ==
+          output:
+            - __object__:
+                fields:
+                  code_interpreter_call:
+                    type: message
+                    content:
+                      - annotations:
+                          - container_id: c3
+                readonly: []
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: dep_a
 env: {}
 compare:
   ignore: []

@@ -167,6 +167,51 @@ fn does_not_descend_into_an_object_nested_in_a_mapping() {
 }
 
 #[test]
+fn collects_only_the_one_nested_mapping_id() {
+    let inner = dict(vec![("container_id", text("c9"))]);
+    let nested = dict(vec![
+        ("container_id", text("c2")),
+        ("code_interpreter_call", inner),
+    ]);
+    let response = output(vec![dict(vec![("code_interpreter_call", nested)])]);
+    assert_eq!(
+        collect_container_ids(Some(&response)),
+        vec!["c2".to_owned()]
+    );
+}
+
+#[test]
+fn ignores_a_nested_mappings_message_annotations() {
+    let part = dict(vec![(
+        "annotations",
+        list(vec![dict(vec![("container_id", text("c3"))])]),
+    )]);
+    let nested = dict(vec![
+        ("type", text("message")),
+        ("content", list(vec![part])),
+    ]);
+    let response = output(vec![dict(vec![("code_interpreter_call", nested)])]);
+    assert_eq!(collect_container_ids(Some(&response)), Vec::<String>::new());
+}
+
+#[test]
+fn reads_a_mapping_nested_in_an_object_through_its_message_content() {
+    let part = dict(vec![(
+        "annotations",
+        list(vec![dict(vec![("container_id", text("c3"))])]),
+    )]);
+    let nested = dict(vec![
+        ("type", text("message")),
+        ("content", list(vec![part])),
+    ]);
+    let response = output(vec![object(vec![("code_interpreter_call", nested)], &[])]);
+    assert_eq!(
+        collect_container_ids(Some(&response)),
+        vec!["c3".to_owned()]
+    );
+}
+
+#[test]
 fn ignores_scalar_items() {
     let response = output(vec![text("plain"), list(vec![text("c1")])]);
     assert_eq!(collect_container_ids(Some(&response)), Vec::<String>::new());

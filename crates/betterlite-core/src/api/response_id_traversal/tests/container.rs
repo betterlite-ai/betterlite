@@ -7,7 +7,7 @@ use crate::api::response_id_traversal::record::Record;
 
 use super::fixtures::{
     annotation_container_of, capture, container_of, dict, list, message_with_annotation,
-    nested_call, nested_container_of, null, number, object, output, text,
+    nested_call, nested_container_of, null, number, object, output, text, text_field,
 };
 
 const PROVIDER: Option<&str> = Some("openai");
@@ -162,6 +162,73 @@ fn descends_into_a_mapping_nested_in_an_object() {
         nested_container_of(&item_at(&response, 0)),
         Some(encoded("c2"))
     );
+}
+
+#[test]
+fn does_not_walk_a_mapping_nested_in_a_mapping() {
+    let inner = dict(vec![("container_id", text("c9"))]);
+    let nested = dict(vec![
+        ("container_id", text("c2")),
+        ("code_interpreter_call", inner),
+    ]);
+    let mut response = output(vec![dict(vec![("code_interpreter_call", nested)])]);
+    encode_containers(&mut response, PROVIDER, &settings());
+    let item = item_at(&response, 0);
+    assert_eq!(nested_container_of(&item), Some(encoded("c2")));
+    let Some(deeper) = item
+        .field("code_interpreter_call")
+        .and_then(|call| call.field("code_interpreter_call"))
+    else {
+        panic!("the second nested call should stay");
+    };
+    assert_eq!(text_field(deeper, "container_id"), Some("c9".to_owned()));
+}
+
+#[test]
+fn does_not_encode_a_nested_mappings_message_annotations() {
+    let part = dict(vec![(
+        "annotations",
+        list(vec![dict(vec![("container_id", text("c3"))])]),
+    )]);
+    let nested = dict(vec![
+        ("type", text("message")),
+        ("content", list(vec![part])),
+    ]);
+    let mut response = output(vec![dict(vec![("code_interpreter_call", nested)])]);
+    let original = response.clone();
+    encode_containers(&mut response, PROVIDER, &settings());
+    assert_eq!(response, original);
+}
+
+#[test]
+fn walks_a_mapping_nested_in_an_object_as_a_mapping() {
+    let annotation_part = dict(vec![(
+        "annotations",
+        list(vec![dict(vec![("container_id", text("c3"))])]),
+    )]);
+    let nested = dict(vec![
+        ("type", text("message")),
+        ("content", list(vec![annotation_part])),
+    ]);
+    let mut response = output(vec![object(vec![("code_interpreter_call", nested)], &[])]);
+    encode_containers(&mut response, PROVIDER, &settings());
+    let item = item_at(&response, 0);
+    let Some(annotation) = item
+        .field("code_interpreter_call")
+        .and_then(|call| call.field("content"))
+        .and_then(|content| match content {
+            Record::List(parts) => parts.first(),
+            Record::Dict(_) | Record::Object { .. } | Record::Scalar(_) => None,
+        })
+        .and_then(|content_part| content_part.field("annotations"))
+        .and_then(|annotations| match annotations {
+            Record::List(items) => items.first(),
+            Record::Dict(_) | Record::Object { .. } | Record::Scalar(_) => None,
+        })
+    else {
+        panic!("the annotation should stay");
+    };
+    assert_eq!(text_field(annotation, "container_id"), Some(encoded("c3")));
 }
 
 #[test]

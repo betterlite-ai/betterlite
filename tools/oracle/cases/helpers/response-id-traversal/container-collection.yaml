@@ -51,6 +51,18 @@ call:
           - type: message
             content:
               - annotations: not-a-list
+      - output:
+          - code_interpreter_call:
+              container_id: c2
+              code_interpreter_call:
+                container_id: c9
+      - output:
+          - code_interpreter_call:
+              type: message
+              container_id: c2
+              content:
+                - annotations:
+                    - container_id: c3
 env: {}
 compare:
   ignore: []
