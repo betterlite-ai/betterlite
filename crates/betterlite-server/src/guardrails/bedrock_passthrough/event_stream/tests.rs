@@ -203,23 +203,23 @@ async fn anonymize_with(body: &[u8], hook: &Hook) -> Vec<u8> {
 #[tokio::test]
 async fn a_text_delta_is_rewritten_with_correct_proportional_slices() {
     let body = [
-        delta_frame(r#"{"text": "Hel"}"#),
-        delta_frame(r#"{"text": "lo"}"#),
+        delta_frame(r#"{"text": "abc"}"#),
+        delta_frame(r#"{"text": "de"}"#),
     ]
     .concat();
-    let hook = Hook::replacing(&[("Hello", "HELLO!")]);
+    let hook = Hook::replacing(&[("abcde", "ABCDEF")]);
     let output = anonymize_with(&body, &hook).await;
     let parsed = parse_event_stream(&output);
     assert_eq!(parsed.frames.len(), 2);
-    assert_eq!(frame_texts(&parsed.frames), vec![vec!["HELL"], vec!["O!"]]);
+    assert_eq!(frame_texts(&parsed.frames), vec![vec!["ABCD"], vec!["EF"]]);
     assert!(parsed.trailing.is_empty());
 }
 
 #[tokio::test]
 async fn split_fragments_are_joined_before_the_hook_sees_them() {
     let body = [
-        delta_frame(r#"{"text": "Hel"}"#),
-        delta_frame(r#"{"text": "lo"}"#),
+        delta_frame(r#"{"text": "abc"}"#),
+        delta_frame(r#"{"text": "de"}"#),
     ]
     .concat();
     let hook = Hook::with_mode(Mode::PassThrough);
@@ -229,7 +229,7 @@ async fn split_fragments_are_joined_before_the_hook_sees_them() {
         blocks_of(&seen),
         vec![GuardrailValue::Object(BTreeMap::from([(
             "text".to_owned(),
-            GuardrailValue::Text("Hello".to_owned()),
+            GuardrailValue::Text("abcde".to_owned()),
         )]))]
     );
 }
@@ -557,12 +557,12 @@ fn replay(body: &[u8]) {
 #[test]
 fn replays_the_bedrock_event_stream_corpus() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/bedrock_event_stream");
-    let mut count = 0_usize;
-    for entry in fs::read_dir(&root).expect("corpus folder") {
-        let path = entry.expect("corpus entry").path();
-        let bytes = fs::read(&path).expect("corpus file");
-        replay(&bytes);
-        count = count.saturating_add(1);
-    }
+    let count = fs::read_dir(&root)
+        .expect("corpus folder")
+        .map(|entry| {
+            let path = entry.expect("corpus entry").path();
+            replay(&fs::read(&path).expect("corpus file"));
+        })
+        .count();
     assert!(count > 0);
 }

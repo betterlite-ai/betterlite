@@ -236,12 +236,14 @@ fn collect_strings(
     }
 }
 
-fn collect_child_strings<'value>(
-    children: impl Iterator<Item = (PathStep, &'value GuardrailValue)>,
+fn collect_child_strings<'value, Children>(
+    children: Children,
     path: &[PathStep],
     stack: &mut Vec<(&'value GuardrailValue, Vec<PathStep>)>,
     holders: &mut Vec<(TextPath, String)>,
-) {
+) where
+    Children: Iterator<Item = (PathStep, &'value GuardrailValue)>,
+{
     for (step, value) in children {
         let mut child = path.to_vec();
         child.push(step);
