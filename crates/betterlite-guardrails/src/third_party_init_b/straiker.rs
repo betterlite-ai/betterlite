@@ -75,7 +75,7 @@ pub fn initialize_straiker(
         api_version: known_api_version(decode("api_version", view.merged.get("api_version"))?),
         agent_ref: decode("agent_ref", view.merged.get("agent_ref"))?,
         client: decode("client", view.merged.get("client"))?,
-        format_hint: checked_format_hint(value_at(view.merged.get("format_hint"), "format_hint")?)?,
+        format_hint: checked_format_hint(decode("format_hint", view.merged.get("format_hint"))?)?,
     })
 }
 
