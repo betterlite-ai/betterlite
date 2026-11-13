@@ -46,13 +46,14 @@ pub(super) struct Script {
 
 impl Script {
     pub(super) fn answering(replies: &[(u16, &str)]) -> Self {
-        let script = Self::default();
-        script.replies.lock().unwrap().extend(
-            replies
-                .iter()
-                .map(|(status, body)| (*status, (*body).to_owned())),
-        );
-        script
+        let queued: VecDeque<(u16, String)> = replies
+            .iter()
+            .map(|(status, body)| (*status, (*body).to_owned()))
+            .collect();
+        Self {
+            replies: Arc::new(Mutex::new(queued)),
+            sent: Arc::default(),
+        }
     }
 
     pub(super) fn sent(&self) -> Vec<Sent> {
