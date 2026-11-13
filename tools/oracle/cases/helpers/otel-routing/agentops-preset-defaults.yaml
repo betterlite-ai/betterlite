@@ -1,0 +1,18 @@
+kind: helper
+name: agentops-preset-defaults
+call:
+  b3851:
+    function: agentops_preset
+    environment: {}
+    base:
+      exporters:
+        - kind: otlp_http
+          endpoint: https://collector.example/v1/traces
+          headers: x-collector=1
+      mapper_names: [openinference]
+      resource_attributes:
+        deployment.environment: test
+        service.name: proxy
+env: {}
+compare:
+  ignore: []

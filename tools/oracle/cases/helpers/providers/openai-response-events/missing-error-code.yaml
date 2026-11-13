@@ -1,0 +1,12 @@
+kind: helper
+name: openai-response-events-missing-error-code
+env: {}
+compare: {ignore: []}
+call:
+  openai_response_events:
+    missing_error_code:
+      probes:
+        - {event: {type: error, sequence_number: 1, error: {type: invalid_request_error, message: bad}}}
+        - {event: {type: error, sequence_number: 1, error: {type: invalid_request_error, code: null, message: bad}}}
+        - {event: {type: error, sequence_number: 1, error: {type: invalid_request_error, code: bad_request, message: bad}}}
+        - {event: {type: error, sequence_number: 1, error: oops}}

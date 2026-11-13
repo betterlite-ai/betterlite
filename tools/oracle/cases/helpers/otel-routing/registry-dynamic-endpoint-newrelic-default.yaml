@@ -1,0 +1,12 @@
+kind: helper
+name: registry-dynamic-endpoint-newrelic-default
+call:
+  b3851:
+    function: dynamic_otlp_endpoint
+    callback_name: newrelic
+    params:
+      newrelic_api_key: key-1
+    allowed_hosts: []
+env: {}
+compare:
+  ignore: []
