@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use rstest::rstest;
 
-use super::{Clock, ReportContext, build_report};
+use super::{Clock, ReportContext, SystemClock, build_report};
 use crate::commands::debug::error::DebugError;
 use crate::commands::debug::wire::{RequestResponsePayload, SpendLogRow};
 
@@ -201,6 +201,16 @@ fn render_lists_the_sorted_distinct_models() {
     );
 
     assert!(rendered.contains("\n- models: ?, alpha, mid, zeta\n"));
+}
+
+#[test]
+fn render_system_clock_reads_the_current_time() {
+    let before = Utc::now();
+
+    let read = SystemClock.now();
+
+    let after = Utc::now();
+    assert!(before <= read && read <= after);
 }
 
 #[rstest]
