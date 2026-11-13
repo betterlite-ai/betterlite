@@ -91,19 +91,19 @@ impl BflError {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct BflSample {
     #[serde(default)]
     pub sample: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct BflResource {
     #[serde(default)]
     pub url: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum BflImageEntry {
     Url(String),
@@ -111,7 +111,7 @@ pub enum BflImageEntry {
     Other(IgnoredAny),
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum BflResult {
     Sample(BflSample),
@@ -123,7 +123,7 @@ fn default_result() -> BflResult {
     BflResult::Other(IgnoredAny)
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct BflReply {
     #[serde(default)]
     pub status: Option<String>,

@@ -8,7 +8,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
 use serde_json::Number;
 
-use crate::api::bfl::common::{BflError, BflImageEntry, BflReply, BflResult, DEFAULT_API_BASE};
+use crate::api::bfl::common::{
+    BflError, BflImageEntry, BflReply, BflResult, DEFAULT_API_BASE, IMAGE_GENERATION_MODELS,
+};
 
 mod tests;
 
@@ -69,7 +71,7 @@ pub struct BflImageResponse {
 pub fn generation_endpoint(model: &str) -> Result<&'static str, BflError> {
     let lowered = model.to_lowercase();
     let name = lowered.rsplit('/').next().unwrap_or_default();
-    crate::api::bfl::common::IMAGE_GENERATION_MODELS
+    IMAGE_GENERATION_MODELS
         .iter()
         .find_map(|(candidate, endpoint)| (*candidate == name).then_some(*endpoint))
         .ok_or_else(|| BflError::UnknownModel {
@@ -169,7 +171,7 @@ fn map_size(value: &Json, optional_params: &mut IndexMap<String, Json>) -> Resul
     }
     if let Some((_, width, height)) = SIZE_MAPPING
         .iter()
-        .find(|(candidate, _, _)| candidate == size)
+        .find(|(candidate, _, _)| *candidate == size.as_str())
     {
         optional_params.insert("width".to_owned(), Json::Number(Number::from(*width)));
         optional_params.insert("height".to_owned(), Json::Number(Number::from(*height)));
