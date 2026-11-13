@@ -7,6 +7,7 @@ from litellm.caching.dual_cache import DualCache
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.dynamoai.dynamoai import DynamoAIGuardrails
+from litellm.types.guardrails import GuardrailEventHooks
 from litellm.types.utils import CallTypesLiteral, Choices, GuardrailStatus, ModelResponse
 from pydantic import JsonValue, TypeAdapter
 
@@ -106,6 +107,9 @@ class Guardrail(Protocol):
         response: ModelResponse,
     ) -> None: ...
 
+    @classmethod
+    def get_supported_event_hooks(cls) -> list[GuardrailEventHooks]: ...
+
 
 class Script:
     def __init__(self, answer: Answer) -> None:
@@ -151,7 +155,7 @@ def build_response(choices: list[Choice]) -> ModelResponse:
         built.append(
             Choices(message=message, index=choice["index"], finish_reason="stop")
         )
-    return ModelResponse.model_construct(choices=built)
+    return ModelResponse(choices=built)
 
 
 def call_hook(guardrail: Guardrail, call: Input, data: HookData) -> None:
@@ -219,7 +223,7 @@ def run(input_value: Input) -> Output:
             call_hook(guardrail, input_value, data)
         except ValueError:
             raised = True
-    hooks = [hook.name for hook in DynamoAIGuardrails.get_supported_event_hooks()]
+    hooks = [hook.name for hook in guardrail.get_supported_event_hooks()]
     return {
         "created": True,
         "api_base": guardrail.api_base,
