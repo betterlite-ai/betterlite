@@ -1,11 +1,37 @@
+from litellm.router import Router
+from pydantic import JsonValue
 from typing_extensions import override
 
-from probes.protocol import Operation, ProbeError, Strict
+from probes.protocol import Operation, Strict
 
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
 
 
+class Output(Strict):
+    id: str
+    created: bool
+    raised: bool
+
+
 class DeploymentIdentity(Operation):
+    model_name: str
+    litellm_params: dict[str, JsonValue]
+    ignore_invalid_deployments: bool
+
     @override
-    def run(self) -> Strict:
-        raise ProbeError("unknown_operation", "deployment_identity is not built")
+    def run(self) -> Output:
+        generated = Router.generate_model_id(  # pyright: ignore[reportUnknownMemberType]  # LiteLLM types the dict bare
+            self.model_name, dict(self.litellm_params)
+        )
+        router = Router(model_list=[], ignore_invalid_deployments=self.ignore_invalid_deployments)
+        try:
+            # litellm/router.py L8942: the deployment builder behind set_model_list, with the router's ignore setting
+            deployment = router._create_deployment(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
+                deployment_info={},
+                _model_name=self.model_name,
+                _litellm_params=dict(self.litellm_params),
+                _model_info={},
+            )
+        except Exception:  # noqa: BLE001  # the probe reports that LiteLLM raised, not the message
+            return Output(id=generated, created=False, raised=True)
+        return Output(id=generated, created=deployment is not None, raised=False)
