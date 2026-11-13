@@ -6,9 +6,6 @@ deviations:
   - what: A reply body or chunk value of an undeclared shape gives a typed error instead of escaping as a Python exception. That covers a reply body that parses as JSON but is not an object, a non-object choice or delta, and an id, created, model, error message or error code of the wrong type.
     why: LiteLLM reaches .get and the model constructor with those values and a TypeError or AttributeError escapes as a 500. Betterlite returns the OVHCloud or Scaleway exception with the body text and the upstream status for a reply body, and an error without a status for a chunk field, so the caller sees a typed failure rather than a crash.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ovhcloud/embedding/transformation.py#L97-L108
-  - what: A reply body over 64 MiB is rejected with a typed error before it is decoded, on every reply decoder this task builds.
-    why: The decoders see bytes a provider chose the size of, and every inbound body needs a bound; LiteLLM parses whatever length it receives.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ovhcloud/audio_transcription/transformation.py#L132-L146
   - what: The api key and the OVHCLOUD_API_KEY or SCW_SECRET_KEY value arrive as plain arguments, so validate_environment never reads the environment itself.
     why: Provider modules take their outside dependencies as arguments, which keeps tests free of process state; the caller that wires the config reads the variable, and an empty value counts as unset.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/scaleway/audio_transcription/transformation.py#L71-L98

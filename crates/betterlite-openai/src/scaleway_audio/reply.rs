@@ -3,7 +3,6 @@ use serde_json::{Map, Value};
 use crate::api::transcription_contract::TranscriptionResponse;
 use crate::openai_base_config::{Headers, Object};
 
-use super::MAX_REPLY_BYTES;
 use super::error::ScalewayAudioError;
 
 // LiteLLM keeps the whole reply body as hidden params beside the response it builds from it
@@ -55,16 +54,6 @@ pub fn decode_transcription_reply(
                 extra: Object::new(),
             },
             hidden: Object::new(),
-        });
-    }
-    if body.len() > MAX_REPLY_BYTES {
-        return Err(ScalewayAudioError {
-            message: format!(
-                "the Scaleway transcription reply is {} bytes, over the {MAX_REPLY_BYTES} byte limit",
-                body.len()
-            ),
-            status_code: status,
-            headers: Headers::new(),
         });
     }
     let fields = serde_json::from_slice::<Object>(body).map_err(|_error| ScalewayAudioError {

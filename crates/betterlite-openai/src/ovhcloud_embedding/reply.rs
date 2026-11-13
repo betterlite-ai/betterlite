@@ -4,8 +4,6 @@ use serde::{Deserialize, Serialize};
 use crate::openai_base_config::Headers;
 use crate::ovhcloud_chat::error::OvhCloudError;
 
-use super::MAX_REPLY_BYTES;
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct EmbeddingReply {
     pub model: Option<Json>,
@@ -53,16 +51,6 @@ pub fn decode_embedding_reply(
     status: u16,
     headers: &Headers,
 ) -> Result<EmbeddingReply, OvhCloudError> {
-    if body.len() > MAX_REPLY_BYTES {
-        return Err(OvhCloudError {
-            message: format!(
-                "the OVHCloud embedding reply is {} bytes, over the {MAX_REPLY_BYTES} byte limit",
-                body.len()
-            ),
-            status_code: None,
-            headers: Headers::new(),
-        });
-    }
     let reply = serde_json::from_slice::<WireReply>(body).map_err(|_error| OvhCloudError {
         message: String::from_utf8_lossy(body).into_owned(),
         status_code: Some(status),

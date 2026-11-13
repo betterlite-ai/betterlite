@@ -4,8 +4,6 @@ use crate::api::transcription_contract::TranscriptionResponse;
 use crate::openai_base_config::{Headers, Object};
 use crate::ovhcloud_chat::error::OvhCloudError;
 
-use super::MAX_REPLY_BYTES;
-
 // LiteLLM keeps the whole reply body as hidden params beside the response it builds from it
 #[derive(Debug, Clone, PartialEq)]
 pub struct Transcription {
@@ -41,16 +39,6 @@ pub fn decode_transcription_reply(
     status: u16,
     headers: &Headers,
 ) -> Result<Transcription, OvhCloudError> {
-    if body.len() > MAX_REPLY_BYTES {
-        return Err(OvhCloudError {
-            message: format!(
-                "the OVHCloud transcription reply is {} bytes, over the {MAX_REPLY_BYTES} byte limit",
-                body.len()
-            ),
-            status_code: None,
-            headers: Headers::new(),
-        });
-    }
     let mut fields = serde_json::from_slice::<Object>(body).map_err(|_error| OvhCloudError {
         message: String::from_utf8_lossy(body).into_owned(),
         status_code: Some(status),

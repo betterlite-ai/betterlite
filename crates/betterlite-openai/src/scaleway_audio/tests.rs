@@ -213,9 +213,3 @@ fn a_json_reply_that_is_not_an_object_carries_the_status() {
     assert_eq!(error.status_code, 200);
 }
 
-#[test]
-fn a_reply_over_the_size_limit_is_rejected_on_the_json_branch() {
-    let body = vec![b' '; super::MAX_REPLY_BYTES + 1];
-    let error = decode_transcription_reply(&body, 200, &json_headers()).expect_err("an error");
-    assert_eq!(error.status_code, 200);
-}

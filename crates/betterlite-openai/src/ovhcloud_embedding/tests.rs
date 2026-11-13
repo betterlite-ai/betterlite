@@ -196,13 +196,6 @@ fn decode_embedding_reply_reports_a_json_body_that_is_not_an_object() {
     assert_eq!(error.status_code, Some(200));
 }
 
-#[test]
-fn decode_embedding_reply_reports_a_reply_over_the_size_limit() {
-    let body = vec![b' '; super::MAX_REPLY_BYTES + 1];
-    let error = decode_embedding_reply(&body, 200, &Headers::new()).expect_err("an error");
-    assert_eq!(error.status_code, None);
-}
-
 #[rstest]
 fn replays_the_ovhcloud_reply_corpus(#[files("fuzz/corpus/ovhcloud_reply/*")] path: PathBuf) {
     let bytes = fs::read(path).expect("a corpus file");
