@@ -64,6 +64,11 @@ class Output(TypedDict):
     scenarios: list[ScenarioOutput]
 
 
+def reported_headers(headers: httpx.Headers) -> dict[str, str | None]:
+    seen = dict(headers)
+    return {name: seen.get(name) for name in REPORTED_HEADERS}
+
+
 class Script:
     def __init__(self, answer: Answer | None) -> None:
         self.answer = answer
@@ -73,7 +78,7 @@ class Script:
         self.calls.append(
             {
                 "path": request.url.path,
-                "headers": {name: request.headers.get(name) for name in REPORTED_HEADERS},
+                "headers": reported_headers(request.headers),
                 "body": JSON_ADAPTER.validate_json(request.content),
             }
         )
