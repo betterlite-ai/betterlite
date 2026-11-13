@@ -5,10 +5,10 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1960-L2093
   - what: Web search pricing for gemini, xai, groq and Vertex Gemini, and Google Maps pricing, return no price.
     why: The model info the tool fee policy receives has none of the fields those formulas read, such as the billing unit and the per-query Maps rate.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L113-L123
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/__init__.py#L17-L85
   - what: The Vertex Claude check reads a model key given to the policy per request, because the tool model info has no key field.
     why: LiteLLM reads the key entry of its model info dict; the typed model info here does not carry it.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L113-L123
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/__init__.py#L48-L62
   - what: An arithmetic failure in the Anthropic web search formula is logged and gives no price instead of raising.
     why: The tool price policy trait returns an option and cannot carry an error.
-    link: ""
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/cost_calculation.py#L102-L130
