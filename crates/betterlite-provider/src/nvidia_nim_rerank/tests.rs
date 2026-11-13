@@ -444,6 +444,30 @@ fn validate_environment_adds_the_default_headers_and_lets_the_caller_override_th
 }
 
 #[test]
+fn ranking_validate_environment_builds_the_same_headers_as_the_retrieval_config() {
+    let call_key = SecretString::from("call");
+    let request = EnvironmentRequest {
+        headers: &Headers::new(),
+        model: "ranking/meta/llama",
+        api_key: Some(&call_key),
+        optional_params: None,
+        litellm_params: None,
+    };
+    let headers = ranking().validate_environment(request).unwrap();
+    assert_eq!(
+        headers,
+        Headers::from([
+            (String::from("Authorization"), String::from("Bearer call")),
+            (String::from("accept"), String::from("application/json")),
+            (
+                String::from("content-type"),
+                String::from("application/json")
+            ),
+        ])
+    );
+}
+
+#[test]
 fn transform_rerank_request_needs_a_query_and_documents() {
     assert!(matches!(
         request(&config(), "meta/llama", &Params::new()).unwrap_err(),
