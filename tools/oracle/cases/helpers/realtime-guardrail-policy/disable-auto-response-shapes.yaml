@@ -1,0 +1,8 @@
+kind: helper
+name: realtime-guardrail-disable-auto-response-shapes
+call:
+  realtime_guardrail_policy:
+    function: disable_auto_response_shapes
+    backend_uses_beta_protocol: [true, false]
+env: {}
+compare: {ignore: []}
