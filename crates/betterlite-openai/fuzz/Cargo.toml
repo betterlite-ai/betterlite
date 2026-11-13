@@ -475,6 +475,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openai_response_resources"
+path = "fuzz_targets/openai_response_resources.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "ovhcloud_reply"
 path = "fuzz_targets/ovhcloud_reply.rs"
 test = false

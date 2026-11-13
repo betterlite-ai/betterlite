@@ -1,0 +1,5 @@
+kind: helper
+name: bedrock-passthrough-guardrail-routing-seed
+call: {b3678: {function: routing, endpoint: model/x/converse, content_type: application/vnd.amazon.eventstream}}
+env: {}
+compare: {ignore: []}
