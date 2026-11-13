@@ -1513,6 +1513,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-paths",
+ "betterlite-policy",
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-streaming",
@@ -2383,6 +2384,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-oracle",
  "betterlite-oracle-helper-api",
+ "betterlite-policy",
  "betterlite-prompts",
  "betterlite-provider",
  "betterlite-redact",
@@ -2661,6 +2663,7 @@ dependencies = [
  "http 1.5.0",
  "image",
  "indexmap 2.14.2",
+ "jiff",
  "jsonwebtoken",
  "mutants",
  "pem",
@@ -3314,15 +3317,20 @@ dependencies = [
 name = "betterlite-vertex"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64 0.23.1",
  "betterlite-bedrock",
+ "betterlite-cache",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-core",
  "betterlite-error",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-redact",
  "betterlite-tokenizer",
  "google-cloud-auth",
  "google-cloud-gax",
@@ -3340,10 +3348,12 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_with",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-subscriber",
  "url",
  "uuid",
 ]
@@ -3353,10 +3363,12 @@ name = "betterlite-vertex-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-bedrock",
+ "betterlite-models",
  "betterlite-vertex",
  "indexmap 2.14.2",
  "jiff",
  "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]

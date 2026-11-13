@@ -1,0 +1,19 @@
+kind: helper
+name: messages-chat-tools-schema-hosted-and-native-tools
+call:
+  messages_chat_tools_schema:
+    operation: request
+    request:
+      model: gpt-4o
+      messages: []
+      tools:
+        - {type: bash_20250124, name: bash}
+        - {type: text_editor_20250728, name: editor}
+        - {type: code_execution_20250825, name: code}
+        - {type: web_fetch_20250910, name: fetch}
+        - {type: memory_20250818, name: memory}
+        - {type: tool_search_tool_regex_20251119, name: search}
+        - {type: function, function: {name: f}}
+        - {googleSearch: {}}
+env: {}
+compare: {ignore: []}

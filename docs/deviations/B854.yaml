@@ -1,0 +1,11 @@
+task: B854
+deviations:
+  - what: Rotated writer/reader credentials update an owned runtime snapshot rather than process environment variables.
+    why: Native pool ownership follows B713 and the decided typed configuration design; replacement failure restores that snapshot with the same timing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L432-L450
+  - what: "The refresh endpoint resolves DATABASE_USER and the DATABASE_USERNAME alias, and case-insensitive names, the same way startup's DatabaseURLSettings does."
+    why: "LiteLLM's refresh reads exact-case DATABASE_USER only, so with DATABASE_USERNAME set and IAM_TOKEN_DB_AUTH on, startup accepts the alias and every refresh then raises \"Cannot mint a database token: DATABASE_USER unset\". A working setup relies on the alias at startup, so betterlite keeps it through the refresh."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L453-L476
+  - what: "An Entra expiry outside the timestamp range counts as expired and triggers a refresh."
+    why: "LiteLLM lets the OverflowError/ValueError from datetime.fromtimestamp propagate, so every database access through __getattr__ raises; treating it as expired fixes that bug instead of copying it."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L417-L430

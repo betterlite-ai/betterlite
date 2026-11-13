@@ -1,0 +1,75 @@
+kind: helper
+name: response-rewrite
+call:
+  response_id_traversal:
+    operation: response_rewrite
+    scenarios:
+      - response:
+          id: resp_a
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_a
+        litellm_metadata:
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_a
+        custom_llm_provider: openai
+        litellm_metadata: null
+      - response:
+          id: resp_a
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info: null
+      - response:
+          id: resp_a
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info: {}
+      - response:
+          id: resp_a
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: ""
+      - response:
+          id: ""
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: dep_a
+      - response:
+          output:
+            - id: rs_a
+              encrypted_content: cipher
+              container_id: c1
+        litellm_metadata:
+          encrypted_content_affinity_enabled: true
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpkZXBfYTtyZXNwb25zZV9pZDpyZXNwX2E=
+          output:
+            - id: rs_a
+              encrypted_content: cipher
+              container_id: c1
+        custom_llm_provider: openai
+        litellm_metadata:
+          encrypted_content_affinity_enabled: true
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_a
+          output:
+            - id: rs_a
+              encrypted_content: cipher
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: dep_a
+env: {}
+compare:
+  ignore: []

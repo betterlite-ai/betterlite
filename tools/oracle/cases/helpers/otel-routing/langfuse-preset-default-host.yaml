@@ -1,0 +1,21 @@
+kind: helper
+name: langfuse-preset-default-host
+call:
+  b3851:
+    function: langfuse_preset
+    environment:
+      LANGFUSE_PUBLIC_KEY: pk-lf-1
+      LANGFUSE_SECRET_KEY: sk-lf-1
+    base:
+      exporters:
+        - kind: otlp_http
+          endpoint: https://collector.example/v1/traces
+      mapper_names: [genai]
+      resource_attributes:
+        service.name: proxy
+    allow_missing_credentials: false
+env:
+  LANGFUSE_PUBLIC_KEY: pk-lf-1
+  LANGFUSE_SECRET_KEY: sk-lf-1
+compare:
+  ignore: []

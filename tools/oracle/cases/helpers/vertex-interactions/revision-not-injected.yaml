@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-interactions-revision-not-injected
+call:
+  vertex_interactions:
+    mint: {token: minted-token, project: callback-project}
+    calls:
+      - {function: headers, api_base: "", stream: false, interaction_id: "", params: {vertex_project: project-1}, headers: {}}
+      - {function: headers, api_base: "", stream: false, interaction_id: "", params: {}, headers: {}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,67 @@
+kind: helper
+name: request-guardrail-policy-order
+call:
+  request_guardrail_policy:
+    calls:
+      - data: {model: gpt-4, metadata: {}, guardrails: [body-a], include_guardrail_response: true, guardrail_config: {pii: redact}}
+        key_metadata: {guardrails: [key-a]}
+        team_metadata: {}
+        project_metadata: {}
+        team_alias: null
+        key_alias: null
+        metadata_variable_name: metadata
+        premium_user: true
+        policies: {}
+        attachments: []
+      - data: {model: gpt-4}
+        key_metadata: {policies: [p1]}
+        team_metadata: {}
+        project_metadata: {}
+        team_alias: null
+        key_alias: null
+        metadata_variable_name: metadata
+        premium_user: true
+        policies: {p1: {guardrails: {add: [audit]}}}
+        attachments: []
+      - data: {model: gpt-4, guardrails: [body-a]}
+        key_metadata: {}
+        team_metadata: {}
+        project_metadata: {}
+        team_alias: team-a
+        key_alias: null
+        metadata_variable_name: metadata
+        premium_user: true
+        policies: {p2: {guardrails: {add: [pii]}}}
+        attachments: [{policy: p2, teams: [team-a]}]
+      - data: {model: gpt-4, metadata: {guardrails: [existing]}, guardrails: [body-a]}
+        key_metadata: {}
+        team_metadata: {}
+        project_metadata: {}
+        team_alias: null
+        key_alias: null
+        metadata_variable_name: metadata
+        premium_user: true
+        policies: {}
+        attachments: []
+      - data: {model: gpt-4, policies: [p2]}
+        key_metadata: {policies: [p1]}
+        team_metadata: {}
+        project_metadata: {}
+        team_alias: null
+        key_alias: null
+        metadata_variable_name: metadata
+        premium_user: true
+        policies: {p1: {guardrails: {add: [audit]}}, p2: {guardrails: {add: [pii]}}}
+        attachments: []
+      - data: {model: gpt-4, metadata: {tags: [release]}}
+        key_metadata: {}
+        team_metadata: {}
+        project_metadata: {}
+        team_alias: null
+        key_alias: null
+        metadata_variable_name: metadata
+        premium_user: true
+        policies: {tagged: {guardrails: {add: [pii]}}}
+        attachments: [{policy: tagged, tags: [release]}]
+env: {}
+compare: {ignore: []}

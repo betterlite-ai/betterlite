@@ -1,0 +1,39 @@
+kind: helper
+name: response-id-traversal-seed
+call:
+  response_id_traversal:
+    operation: response_rewrite
+    scenarios:
+      - response:
+          id: resp_a
+          output:
+            - id: rs_a
+              encrypted_content: cipher
+              container_id: c1
+            - __object__:
+                fields:
+                  container_id: c2
+                readonly:
+                  - container_id
+        custom_llm_provider: openai
+        litellm_metadata:
+          encrypted_content_affinity_enabled: true
+          model_info:
+            id: dep_a
+      - response:
+          output:
+            - container_id: c1
+      - response:
+          id: resp_YQ==
+          output:
+            - type: message
+              content:
+                - annotations:
+                    - container_id: c3
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: dep_a
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,22 @@
+kind: helper
+name: server-tools-opt-in
+call:
+  gemini_tools:
+    call:
+      tools:
+        - type: function
+          function:
+            name: f
+        - googleSearch: {}
+      functions: []
+      web_search_options: {}
+      tool_choice:
+        type: function
+        function:
+          name: f
+      service_tier: AUTO
+      server_side_invocations: true
+      tool_config: null
+    settings: {}
+env: {}
+compare: {ignore: []}

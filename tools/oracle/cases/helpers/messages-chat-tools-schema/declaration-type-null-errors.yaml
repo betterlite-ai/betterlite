@@ -1,0 +1,12 @@
+kind: helper
+name: messages-chat-tools-schema-declaration-type-null-errors
+call:
+  messages_chat_tools_schema:
+    operation: request
+    request:
+      model: gpt-4o
+      messages: []
+      tools:
+        - {type: null, name: lookup}
+env: {}
+compare: {ignore: []}
