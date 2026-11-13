@@ -35,19 +35,6 @@ pub const HANDLER_DEFAULT_TIMEOUT: Timeout = Timeout {
     connect: Duration::from_secs(5),
 };
 
-// LiteLLM's two handler classes; only the text facade tests which one a caller handed it
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ClientKind {
-    Sync,
-    Async,
-}
-
-#[derive(Clone, Copy)]
-pub struct SuppliedPost<'client> {
-    pub kind: ClientKind,
-    pub post: &'client dyn EmbeddingPost,
-}
-
 pub struct PostRequest<'request> {
     pub url: &'request str,
     pub headers: &'request BTreeMap<String, SecretString>,
@@ -67,12 +54,8 @@ pub trait EmbeddingPost: Send + Sync {
 
 #[derive(Debug, Error)]
 pub enum PostError {
-    #[error("{url} is not a URL the request can be sent to: {source}")]
-    Url {
-        url: String,
-        #[source]
-        source: url::ParseError,
-    },
+    #[error("the request URL is not valid: {source}")]
+    Url(#[source] url::ParseError),
     #[error("the {name} header name is not valid: {source}")]
     HeaderName {
         name: String,
@@ -94,22 +77,14 @@ pub enum PostError {
     },
 }
 
-// The pooled handler every Vertex embedding call posts through; the caller builds it with its configured limits
-pub struct HttpPost {
-    pub client: ProxiedClient,
-}
-
-impl EmbeddingPost for HttpPost {
+impl EmbeddingPost for ProxiedClient {
     fn post<'request>(&'request self, request: PostRequest<'request>) -> PostFuture<'request> {
         Box::pin(async move {
-            let url = Url::parse(request.url).map_err(|source| PostError::Url {
-                url: request.url.to_owned(),
-                source,
-            })?;
+            let url = Url::parse(request.url).map_err(PostError::Url)?;
             let headers = header_map(request.headers)?;
             let deadline = match request.timeout {
                 ClientTimeout::Explicit(timeout) => timeout.total,
-                ClientTimeout::HandlerDefault => self.client.limits.read_timeout,
+                ClientTimeout::HandlerDefault => self.limits.read_timeout,
             };
             let outbound = OutboundRequest {
                 method: Method::POST,
@@ -119,7 +94,7 @@ impl EmbeddingPost for HttpPost {
                 body: RequestBody::Json(request.body.to_vec()),
                 deadline,
             };
-            match self.client.send_buffered(outbound).await {
+            match self.send_buffered(outbound).await {
                 Ok(response) => Ok(PostReply {
                     status: response.status,
                     body: response.body,

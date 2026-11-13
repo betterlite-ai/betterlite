@@ -45,8 +45,8 @@ pub enum VertexEmbeddingCallError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the Vertex endpoint answered with status {status}: {message}")]
-    Status { status: u16, message: String },
+    #[error("the Vertex endpoint answered with status {status}")]
+    Status { status: u16, body: Vec<u8> },
     #[error("Timeout error occurred.")]
     Timeout,
     #[error("the Vertex endpoint could not be reached: {source}")]
@@ -57,18 +57,6 @@ pub enum VertexEmbeddingCallError {
 }
 
 impl VertexEmbeddingCallError {
-    #[must_use]
-    pub fn from_status(status: u16, body: &[u8]) -> Self {
-        let message = match String::from_utf8(body.to_vec()) {
-            Ok(text) => text,
-            Err(error) => format!(
-                "{} bytes of a body that is not UTF-8",
-                error.as_bytes().len()
-            ),
-        };
-        Self::Status { status, message }
-    }
-
     // The text and async multimodal branches turn a timeout into Vertex's legacy 408; the sync multimodal branch does not catch it
     #[must_use]
     pub fn from_post(source: PostError) -> Self {

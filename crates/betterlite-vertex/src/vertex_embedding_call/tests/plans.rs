@@ -11,9 +11,7 @@ use crate::vertex_embedding_call::multimodal::{
     DEFAULT_TIMEOUT, MULTIMODAL_EMBEDDING_MODELS, MultimodalClients, multimodal_embedding,
     multimodal_timeout,
 };
-use crate::vertex_embedding_call::post::{
-    ClientKind, ClientTimeout, HANDLER_DEFAULT_TIMEOUT, SuppliedPost, Timeout,
-};
+use crate::vertex_embedding_call::post::{ClientTimeout, HANDLER_DEFAULT_TIMEOUT, Timeout};
 use crate::vertex_embedding_call::text::{TextClients, text_client_timeout, text_embedding};
 
 use super::support::{
@@ -117,10 +115,7 @@ async fn plans_text_async_client_omitted() {
     let fixture = auth();
     let clients = TextClients {
         pooled: pooled.as_ref(),
-        caller: Some(SuppliedPost {
-            kind: ClientKind::Async,
-            post: caller.as_ref(),
-        }),
+        caller: Some(caller.as_ref()),
     };
     text_embedding(&call, &catalog(), &text_auth(&fixture), &clients)
         .await

@@ -21,9 +21,7 @@ use crate::vertex_text_embeddings::response::transform_response;
 use super::decode::decode_vertex_embedding;
 use super::error::VertexEmbeddingCallError;
 use super::logging;
-use super::post::{
-    ClientKind, ClientTimeout, EmbeddingPost, PostReply, PostRequest, SuppliedPost, Timeout,
-};
+use super::post::{ClientTimeout, EmbeddingPost, PostReply, PostRequest, Timeout};
 use super::target::{self, TargetRequest};
 
 pub struct TextCall<'call> {
@@ -49,7 +47,7 @@ pub struct TextAuth<'auth> {
 
 pub struct TextClients<'clients> {
     pub pooled: &'clients dyn EmbeddingPost,
-    pub caller: Option<SuppliedPost<'clients>>,
+    pub caller: Option<&'clients dyn EmbeddingPost>,
 }
 
 struct Prepared {
@@ -95,7 +93,7 @@ pub async fn text_embedding(
         // LiteLLM's outer handoff never passes the client it was given, so the caller's handler cannot be posted through
         return async_text_embedding(call, catalog, auth.refresh, clients.pooled, None).await;
     }
-    let post = caller_post(clients.caller, ClientKind::Sync, clients.pooled);
+    let post = clients.caller.unwrap_or(clients.pooled);
     let lookup = auth.cache.get_access_token(call.credentials, call.project);
     run(call, catalog, lookup, post).await
 }
@@ -105,9 +103,9 @@ pub async fn async_text_embedding(
     catalog: &ModelCatalog,
     refresh: &CredentialRefresh,
     pooled: &dyn EmbeddingPost,
-    caller: Option<SuppliedPost<'_>>,
+    caller: Option<&dyn EmbeddingPost>,
 ) -> Result<EmbeddingResponse, VertexEmbeddingCallError> {
-    let post = caller_post(caller, ClientKind::Async, pooled);
+    let post = caller.unwrap_or(pooled);
     run(
         call,
         catalog,
@@ -115,17 +113,6 @@ pub async fn async_text_embedding(
         post,
     )
     .await
-}
-
-// A supplied handler is posted through only when it is the class the branch expects; otherwise the pooled one is used
-fn caller_post<'client>(
-    caller: Option<SuppliedPost<'client>>,
-    kind: ClientKind,
-    pooled: &'client dyn EmbeddingPost,
-) -> &'client dyn EmbeddingPost {
-    caller
-        .filter(|client| client.kind == kind)
-        .map_or(pooled, |client| client.post)
 }
 
 async fn run<Lookup>(
@@ -199,7 +186,7 @@ async fn send(
     timeout: ClientTimeout,
     post: &dyn EmbeddingPost,
 ) -> Result<EmbeddingResponse, VertexEmbeddingCallError> {
-    logging::request(logging::TEXT, &prepared.url, model, prepared.body.len());
+    logging::request(&prepared.url, model, prepared.body.len());
     let reply = post
         .post(PostRequest {
             url: &prepared.url,
@@ -209,16 +196,16 @@ async fn send(
         })
         .await
         .map_err(VertexEmbeddingCallError::from_post)?;
-    logging::answer(logging::TEXT, model, &reply);
-    embedded(&reply, model)
+    logging::answer(model, &reply);
+    embedded(reply, model)
 }
 
-fn embedded(reply: &PostReply, model: &str) -> Result<EmbeddingResponse, VertexEmbeddingCallError> {
+fn embedded(reply: PostReply, model: &str) -> Result<EmbeddingResponse, VertexEmbeddingCallError> {
     if !(200..300).contains(&reply.status) {
-        return Err(VertexEmbeddingCallError::from_status(
-            reply.status,
-            &reply.body,
-        ));
+        return Err(VertexEmbeddingCallError::Status {
+            status: reply.status,
+            body: reply.body,
+        });
     }
     let decoded = decode_vertex_embedding(&reply.body)?;
     transform_response(&decoded, model)

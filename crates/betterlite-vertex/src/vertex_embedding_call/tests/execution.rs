@@ -15,7 +15,6 @@ use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::vertex_embedding_call::decode::decode_vertex_embedding;
 use crate::vertex_embedding_call::error::VertexEmbeddingCallError;
 use crate::vertex_embedding_call::multimodal::{MultimodalClients, multimodal_embedding};
-use crate::vertex_embedding_call::post::{ClientKind, SuppliedPost};
 use crate::vertex_embedding_call::text::{TextClients, async_text_embedding, text_embedding};
 
 use super::support::{
@@ -48,11 +47,11 @@ async fn execution_text_preserves_status(#[case] status: u16) {
         .await
         .unwrap_err();
     assert_eq!(error.status_code(), status);
-    assert!(matches!(
-        error,
-        VertexEmbeddingCallError::Status { status: sent, .. } if sent == status
-    ));
-    assert!(error.to_string().contains(r#"{"error":"upstream"}"#));
+    let VertexEmbeddingCallError::Status { status: sent, body } = &error else {
+        panic!("a {status} answer is not a status error: {error}");
+    };
+    assert_eq!(*sent, status);
+    assert_eq!(body.as_slice(), br#"{"error":"upstream"}"#);
 }
 
 #[rstest]
@@ -326,10 +325,7 @@ async fn execution_text_sync_client_used() {
     let fixture = auth();
     let clients = TextClients {
         pooled: pooled.as_ref(),
-        caller: Some(SuppliedPost {
-            kind: ClientKind::Sync,
-            post: caller.as_ref(),
-        }),
+        caller: Some(caller.as_ref()),
     };
     text_embedding(&call, &catalog(), &text_auth(&fixture), &clients)
         .await
@@ -351,39 +347,12 @@ async fn execution_direct_async_client_used() {
         &catalog(),
         &fixture.refresh,
         pooled.as_ref(),
-        Some(SuppliedPost {
-            kind: ClientKind::Async,
-            post: caller.as_ref(),
-        }),
+        Some(caller.as_ref()),
     )
     .await
     .unwrap();
     assert_eq!(caller.recorded().len(), 1);
     assert!(pooled.recorded().is_empty());
-}
-
-#[tokio::test]
-async fn execution_incompatible_client_replaced() {
-    let optional = json("{}");
-    let input = EmbeddingInput::Text(String::from("hello"));
-    let call = text_call(&input, &optional);
-    let caller = Arc::new(PostRecorder::scripted(vec![reply(200, TEXT_ANSWER)]));
-    let pooled = Arc::new(PostRecorder::scripted(vec![reply(200, TEXT_ANSWER)]));
-    let fixture = auth();
-    async_text_embedding(
-        &call,
-        &catalog(),
-        &fixture.refresh,
-        pooled.as_ref(),
-        Some(SuppliedPost {
-            kind: ClientKind::Sync,
-            post: caller.as_ref(),
-        }),
-    )
-    .await
-    .unwrap();
-    assert!(caller.recorded().is_empty());
-    assert_eq!(pooled.recorded().len(), 1);
 }
 
 #[tokio::test]

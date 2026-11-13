@@ -15,9 +15,7 @@ use crate::token_refresh::ensure_access_token;
 
 use super::error::VertexEmbeddingCallError;
 use super::logging;
-use super::post::{
-    ClientTimeout, EmbeddingPost, HANDLER_DEFAULT_TIMEOUT, PostRequest, SuppliedPost, Timeout,
-};
+use super::post::{ClientTimeout, EmbeddingPost, HANDLER_DEFAULT_TIMEOUT, PostRequest, Timeout};
 use super::target::{self, TargetRequest};
 
 // multimodal_embedding's signature defaults timeout to 300 seconds, and main.py passes none
@@ -44,7 +42,7 @@ pub struct MultimodalCall<'call> {
 
 pub struct MultimodalClients<'clients> {
     pub pooled: &'clients dyn EmbeddingPost,
-    pub caller: Option<SuppliedPost<'clients>>,
+    pub caller: Option<&'clients dyn EmbeddingPost>,
 }
 
 // The posted call both branches read: the forced headers and body, and the payload the reply's usage is calculated from
@@ -138,8 +136,8 @@ async fn sync_embedding(
     timeout: Option<Duration>,
     clients: &MultimodalClients<'_>,
 ) -> Result<MultimodalEmbeddingAnswer, VertexEmbeddingCallError> {
-    let post = clients.caller.map_or(clients.pooled, |client| client.post);
-    logging::request(logging::MULTIMODAL, &request.url, model, request.body.len());
+    let post = clients.caller.unwrap_or(clients.pooled);
+    logging::request(&request.url, model, request.body.len());
     // The sync branch never checks the status itself, so every transport failure is its generic 500
     let reply = post
         .post(PostRequest {
@@ -150,7 +148,7 @@ async fn sync_embedding(
         })
         .await
         .map_err(|source| VertexEmbeddingCallError::Transport { source })?;
-    logging::answer(logging::MULTIMODAL, model, &reply);
+    logging::answer(model, &reply);
     transform_response(reply.status, &reply.body, &request.payload, model)
         .map_err(VertexEmbeddingCallError::Multimodal)
 }
@@ -159,11 +157,11 @@ pub async fn async_multimodal_embedding(
     request: &MultimodalRequest,
     model: &str,
     timeout: Option<Duration>,
-    caller: Option<SuppliedPost<'_>>,
+    caller: Option<&dyn EmbeddingPost>,
     pooled: &dyn EmbeddingPost,
 ) -> Result<MultimodalEmbeddingAnswer, VertexEmbeddingCallError> {
-    let post = caller.map_or(pooled, |client| client.post);
-    logging::request(logging::MULTIMODAL, &request.url, model, request.body.len());
+    let post = caller.unwrap_or(pooled);
+    logging::request(&request.url, model, request.body.len());
     let reply = post
         .post(PostRequest {
             url: &request.url,
@@ -173,12 +171,12 @@ pub async fn async_multimodal_embedding(
         })
         .await
         .map_err(VertexEmbeddingCallError::from_post)?;
-    logging::answer(logging::MULTIMODAL, model, &reply);
+    logging::answer(model, &reply);
     if !(200..300).contains(&reply.status) {
-        return Err(VertexEmbeddingCallError::from_status(
-            reply.status,
-            &reply.body,
-        ));
+        return Err(VertexEmbeddingCallError::Status {
+            status: reply.status,
+            body: reply.body,
+        });
     }
     // A 2xx that is not 200 still reaches the transformation, which refuses it with its own 500
     transform_response(reply.status, &reply.body, &request.payload, model)
