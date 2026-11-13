@@ -27,12 +27,14 @@ pub fn apply_stop(
     if !matches!(value, Json::Text(_) | Json::List(_)) {
         return Ok(());
     }
-    let Some(sequences) = map_stop_sequences(value, global_drop)? else {
-        return Ok(());
-    };
-    let mapped = sequences.into_iter().map(Json::Text).collect();
-    optional_params.insert("stop_sequences".to_owned(), Json::List(mapped));
-    Ok(())
+    match map_stop_sequences(value, global_drop)? {
+        Some(sequences) => {
+            let mapped = sequences.into_iter().map(Json::Text).collect();
+            optional_params.insert("stop_sequences".to_owned(), Json::List(mapped));
+            Ok(())
+        }
+        None => Ok(()),
+    }
 }
 
 pub fn apply_sampling(
@@ -46,14 +48,17 @@ pub fn apply_sampling(
     } else {
         SamplingParam::TopP
     };
-    let sampling = SamplingRequest {
-        model: request.model,
-        param: sampling_param,
-        value,
-        drop: request.drop,
-    };
-    if let Some(kept) = apply_sampling_param(&sampling, request.catalogs)? {
-        optional_params.insert(param.to_owned(), kept);
+    let kept = apply_sampling_param(
+        &SamplingRequest {
+            model: request.model,
+            param: sampling_param,
+            value,
+            drop: request.drop,
+        },
+        request.catalogs,
+    )?;
+    if let Some(kept) = kept {
+        optional_params.insert(sampling_param.key().to_owned(), kept);
     }
     Ok(())
 }
@@ -103,10 +108,13 @@ pub fn apply_speed(
         drop: request.drop,
         custom_llm_provider: Some(request.provider),
     };
-    if maybe_drop_speed_param(&speed, request.catalogs)? == SpeedDecision::Drop {
-        optional_params.shift_remove("speed");
+    match maybe_drop_speed_param(&speed, request.catalogs)? {
+        SpeedDecision::Keep => Ok(()),
+        SpeedDecision::Drop => {
+            optional_params.shift_remove("speed");
+            Ok(())
+        }
     }
-    Ok(())
 }
 
 pub fn apply_cache_control(optional_params: &mut IndexMap<String, Json>, value: &Json) {

@@ -27,13 +27,13 @@ pub const fn as_object(value: &Json) -> Option<&IndexMap<String, Json>> {
 // LiteLLM's `a or b` picks the second value unless the first is null, false, zero or empty
 #[must_use]
 pub fn is_set(value: &Json) -> bool {
-    match value {
-        Json::Null | Json::Bool(false) => false,
-        Json::Bool(true) => true,
-        Json::Number(number) => number.as_f64().is_some_and(|parsed| parsed != 0.0_f64),
-        Json::Text(text) => !text.is_empty(),
-        Json::List(items) => !items.is_empty(),
-        Json::Object(fields) => !fields.is_empty(),
+    !match value {
+        Json::Null | Json::Bool(false) => true,
+        Json::Bool(true) => false,
+        Json::Number(number) => number.as_f64() == Some(0.0_f64),
+        Json::Text(text) => text.is_empty(),
+        Json::List(items) => items.is_empty(),
+        Json::Object(fields) => fields.is_empty(),
     }
 }
 
