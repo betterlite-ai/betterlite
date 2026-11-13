@@ -118,6 +118,7 @@ struct OrderCase {
     key: &'static [&'static str],
     team: &'static [&'static str],
     project: &'static [&'static str],
+    team_alias: Option<&'static str>,
     data: &'static str,
     policies: &'static str,
     attachments: &'static str,
@@ -129,6 +130,7 @@ struct OrderCase {
     key: &["key-a"],
     team: &["team-a"],
     project: &["proj-a"],
+    team_alias: None,
     data: r#"{"model": "gpt-4"}"#,
     policies: "{}",
     attachments: "[]",
@@ -138,6 +140,7 @@ struct OrderCase {
     key: &["key-a"],
     team: &[],
     project: &[],
+    team_alias: None,
     data: r#"{"model": "gpt-4"}"#,
     policies: r#"{"p1": {"guardrails": {"add": ["pii"]}}}"#,
     attachments: "[]",
@@ -147,6 +150,7 @@ struct OrderCase {
     key: &["key-a"],
     team: &[],
     project: &[],
+    team_alias: Some("team-a"),
     data: r#"{"model": "gpt-4"}"#,
     policies: r#"{"p2": {"guardrails": {"add": ["audit"]}}}"#,
     attachments: r#"[{"policy": "p2", "teams": ["team-a"]}]"#,
@@ -156,6 +160,7 @@ struct OrderCase {
     key: &[],
     team: &[],
     project: &[],
+    team_alias: None,
     data: r#"{"model": "gpt-4", "guardrails": ["body-a", "body-b"]}"#,
     policies: r#"{"p2": {"guardrails": {"add": ["audit"]}}}"#,
     attachments: r#"[{"policy": "p2", "scope": "*"}]"#,
@@ -165,6 +170,7 @@ struct OrderCase {
     key: &[],
     team: &[],
     project: &[],
+    team_alias: None,
     data: r#"{"model": "gpt-4", "metadata": {"guardrails": ["existing"]}, "guardrails": ["body-a"]}"#,
     policies: "{}",
     attachments: "[]",
@@ -174,6 +180,7 @@ struct OrderCase {
     key: &["key-a"],
     team: &[],
     project: &[],
+    team_alias: None,
     data: r#"{"model": "gpt-4", "metadata": {"guardrails": ["existing"]}}"#,
     policies: "{}",
     attachments: "[]",
@@ -182,6 +189,7 @@ struct OrderCase {
 fn guardrail_policy_order(#[case] case: OrderCase) {
     let world = world(case.policies, case.attachments);
     let mut input = request(data(case.data));
+    input.principal.team_alias = case.team_alias.map(str::to_owned);
     input.key_metadata = metadata(case.key, &[]);
     input.team_metadata = metadata(case.team, &[]);
     input.project_metadata = metadata(case.project, &[]);
@@ -278,7 +286,7 @@ const NOT_PREMIUM: GuardrailPolicyErrorFacts = GuardrailPolicyErrorFacts {
     GuardrailMetadata { guardrails: names(&["key-a"]), policies: Vec::new() },
     Some(NOT_PREMIUM),
 )]
-#[case::policies_from_team(
+#[case::policies_from_key(
     GuardrailMetadata { guardrails: Vec::new(), policies: names(&["p1"]) },
     Some(NOT_PREMIUM),
 )]
@@ -562,7 +570,7 @@ fn metadata_policies_skip_a_model_that_does_not_match() {
     input.key_metadata = metadata(&[], &["conditional"]);
     let result = resolve(&world, &input).unwrap();
     assert!(guardrails(&result).is_empty());
-    assert_eq!(applied_policies(&result), names(&["conditional"]));
+    assert!(applied_policies(&result).is_empty());
 }
 
 #[derive(Clone, Default)]
