@@ -480,3 +480,10 @@ path = "fuzz_targets/openai_response_resources.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "dashscope_embedding_reply"
+path = "fuzz_targets/dashscope_embedding_reply.rs"
+test = false
+doc = false
+bench = false

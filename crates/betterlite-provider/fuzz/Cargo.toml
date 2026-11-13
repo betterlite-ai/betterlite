@@ -113,3 +113,10 @@ path = "fuzz_targets/manus_files_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "dashscope_rerank_reply"
+path = "fuzz_targets/dashscope_rerank_reply.rs"
+test = false
+doc = false
+bench = false

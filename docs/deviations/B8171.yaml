@@ -1,0 +1,14 @@
+task: B8171
+deviations:
+  - what: A rerank result without index or relevance_score fails with a typed DashscopeError that names the field, status 500, where LiteLLM raises a raw KeyError.
+    why: The Rust decoder returns an error instead of panicking. 500 is the status LiteLLM's generic exception mapping gives an unclassified exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/rerank/transformation.py#L212-L217
+  - what: A rerank reply whose results is not a list, whose result is not an object, whose index or relevance_score has the wrong type, whose document object has no text, or whose usage.total_tokens is not an integer fails with a typed DashscopeError, status 500.
+    why: LiteLLM raises a raw TypeError or pydantic ValidationError on those shapes, which no working setup can rely on. The typed records cannot hold them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/rerank/transformation.py#L200-L236
+  - what: An embedding reply whose data entry, model, id, usage or token count cannot fill the shared EmbeddingResponse records fails with a typed DashscopeError that names the field, status 500.
+    why: LiteLLM assigns the body's values onto the response model without validating them, so a malformed reply reaches the client as sent. The typed records reject it instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/embed/transformation.py#L157-L177
+  - what: When the rerank body has no usage or no total_tokens, meta.billed_units.total_tokens and meta.tokens.input_tokens are absent from the reply, where LiteLLM writes them as null.
+    why: The task text asks for absent fields, and the typed RerankResponse records skip an unset field instead of serializing null.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/rerank/transformation.py#L226-L236

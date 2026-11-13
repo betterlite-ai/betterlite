@@ -1,0 +1,22 @@
+kind: helper
+name: dashscope-embedding-params-and-url
+call:
+  b8171:
+    function: embedding_params_and_url
+    non_default_params:
+      dimensions: 128
+      user: max
+      encoding_format: null
+      top_k: 5
+    optional_params:
+      user: old
+    api_base: https://proxy.internal.test/v1
+    env_base: https://env.internal.test/v1
+    api_key: sk-dash
+    env_key: sk-env-dash
+    caller_headers:
+      x-trace: abc
+env:
+  DASHSCOPE_API_BASE: https://env.internal.test/v1
+  DASHSCOPE_API_KEY: sk-env-dash
+compare: {ignore: []}

@@ -1,0 +1,15 @@
+kind: helper
+name: dashscope-rerank-url-and-headers
+call:
+  b8171:
+    function: rerank_url_and_headers
+    api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+    env_value: ''
+    default_rerank_url: https://dashscope.aliyuncs.com/compatible-api/v1/reranks
+    api_key: null
+    env_key: sk-rerank
+    caller_headers:
+      x-caller: kept
+env:
+  DASHSCOPE_API_KEY: sk-rerank
+compare: {ignore: []}
