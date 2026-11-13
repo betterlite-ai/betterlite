@@ -108,17 +108,14 @@ where
         Ok(schedule) => schedule,
         Err(error) => return error_sleep(prefix, label, &error, stop).await,
     };
-    // the 30-second floor keeps the wait positive; the source still guards the sleep
-    if schedule.wait > Duration::ZERO {
-        tracing::info!(
-            "{prefix}{label} refresh scheduled in {:.0} seconds ({:.1} minutes)",
-            schedule.seconds,
-            schedule.seconds.mul_add(MINUTE_FRACTION, 0.0_f64)
-        );
-        if sleep_or_stop(schedule.wait, stop).await {
-            tracing::info!("{prefix}{label} refresh loop cancelled");
-            return LoopStep::Stop;
-        }
+    tracing::info!(
+        "{prefix}{label} refresh scheduled in {:.0} seconds ({:.1} minutes)",
+        schedule.seconds,
+        schedule.seconds.mul_add(MINUTE_FRACTION, 0.0_f64)
+    );
+    if sleep_or_stop(schedule.wait, stop).await {
+        tracing::info!("{prefix}{label} refresh loop cancelled");
+        return LoopStep::Stop;
     }
     tracing::info!("{prefix}Proactively refreshing {label}...");
     match refresh_or_stop(port, stop).await {
@@ -144,12 +141,10 @@ async fn refresh_loop<P, M, C>(
     tracing::info!(
         "{prefix}{label} refresh loop started. Tokens will be refreshed {TOKEN_REFRESH_BUFFER_SECONDS}s before expiration."
     );
-    loop {
-        match iteration(port.as_ref(), &prefix, label, &stop).await {
-            LoopStep::Continue => {}
-            LoopStep::Stop => return,
-        }
-    }
+    while matches!(
+        iteration(port.as_ref(), &prefix, label, &stop).await,
+        LoopStep::Continue
+    ) {}
 }
 
 impl<P, M, C> DatabaseRefreshLoop<P, M, C>

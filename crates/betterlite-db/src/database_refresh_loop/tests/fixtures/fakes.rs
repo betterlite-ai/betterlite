@@ -12,6 +12,11 @@ use crate::database_refresh::endpoint::DatabaseUrlSlot;
 use crate::database_refresh::handle::{PoolFuture, PoolHandle, PoolProvider, PoolTransport};
 use crate::database_refresh_loop::clock::RefreshClock;
 use crate::database_tokens::endpoint::QUOTE_SET;
+use crate::database_tokens::provider::{
+    AzureProviderFactory, AzureTokenProvider, RdsTokenProvider,
+};
+use crate::rds_credentials::RdsEndpoint;
+use crate::rds_credentials::error::RdsCredentialsError;
 
 pub(crate) const EXPIRY_900: &str = "X-Amz-Date=20240101T000000Z&X-Amz-Expires=900";
 pub(crate) const EXPIRY_100: &str = "X-Amz-Date=20240101T000000Z&X-Amz-Expires=100";
@@ -194,5 +199,34 @@ impl PoolProvider for FakeProvider {
             script: Arc::clone(&self.script),
             connected: AtomicBool::new(false),
         })
+    }
+}
+
+pub(crate) struct FakeRdsProvider;
+
+impl RdsTokenProvider for FakeRdsProvider {
+    fn mint(&self, _endpoint: &RdsEndpoint<'_>) -> Result<SecretString, RdsCredentialsError> {
+        Ok(secret("minted-token"))
+    }
+}
+
+pub(crate) struct UnusedAzureProvider;
+
+impl AzureTokenProvider for UnusedAzureProvider {
+    type Error = FakeError;
+
+    fn token(&self) -> Result<SecretString, Self::Error> {
+        Err(FakeError::Mint)
+    }
+}
+
+pub(crate) struct UnusedAzureFactory;
+
+impl AzureProviderFactory for UnusedAzureFactory {
+    type Provider = UnusedAzureProvider;
+    type Error = FakeError;
+
+    fn build(&self, _scope: &str) -> Result<Arc<Self::Provider>, Self::Error> {
+        Ok(Arc::new(UnusedAzureProvider))
     }
 }

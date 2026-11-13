@@ -1,19 +1,24 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::Utc;
+use secrecy::ExposeSecret as _;
 use tokio::sync::Notify;
 use tokio::task::{JoinSet, yield_now};
 use tracing::subscriber::set_default;
 
 use super::fixtures::fakes::{
-    ConnectStep, EXPIRY_100, EXPIRY_900, FakeError, UNPARSABLE_TOKEN_URL, lock, naive, slot_url,
-    token_url, utc,
+    ConnectStep, EXPIRY_100, EXPIRY_900, FakeError, FakeRdsProvider, UNPARSABLE_TOKEN_URL,
+    UnusedAzureFactory, lock, naive, slot_url, token_url, utc,
 };
 use super::fixtures::logs::capture_logs;
 use super::fixtures::loops::{LoopSpec, MintOutcome, build_loop, wait_for_event};
 use crate::database_refresh::access::RefreshTrigger;
 use crate::database_refresh::handle::PoolHandle as _;
 use crate::database_refresh::replacement::ReplacementError;
+use crate::database_refresh_loop::clock::{RefreshClock as _, SystemClock};
+use crate::database_refresh_loop::lifecycle::LoopTask;
+use crate::database_refresh_loop::minting::{DatabaseTokenMinter, TokenMinter as _};
 use crate::database_refresh_loop::port::RefreshError;
 use crate::database_refresh_loop::schedule::{
     FALLBACK_REFRESH_SECONDS, RefreshQuery, is_token_expired, seconds_until_refresh,
@@ -21,6 +26,7 @@ use crate::database_refresh_loop::schedule::{
 };
 use crate::database_tokens::endpoint::IAMEndpoint;
 use crate::database_tokens::expiry::TokenAuthKind::Rds;
+use crate::database_tokens::strategy::{DatabaseTokenAuth, RdsIamTokenAuth};
 
 #[test]
 fn expiry_buffer() {
@@ -509,4 +515,164 @@ async fn writer_refresh_leaves_reader() {
         "db.example"
     );
     assert_eq!(reader.mint.endpoint_count(), 0);
+}
+
+#[test]
+fn system_clock_reads_utc_now() {
+    let clock = SystemClock;
+    let before = Utc::now();
+    let now = clock.now();
+    let after = Utc::now();
+    assert!(now >= before && now <= after);
+}
+
+#[test]
+fn disabled_minter_returns_none() {
+    let minter = DatabaseTokenMinter::<UnusedAzureFactory> { auth: None };
+    let endpoint = IAMEndpoint {
+        host: "db.example".to_owned(),
+        port: "5432".to_owned(),
+        user: "user".to_owned(),
+        name: "litellm".to_owned(),
+        schema: None,
+    };
+    assert!(
+        minter
+            .token(&endpoint)
+            .expect("disabled minting succeeds")
+            .is_none()
+    );
+}
+
+#[test]
+fn enabled_minter_returns_token() {
+    let minter = DatabaseTokenMinter::<UnusedAzureFactory> {
+        auth: Some(DatabaseTokenAuth::Rds(RdsIamTokenAuth {
+            provider: Arc::new(FakeRdsProvider),
+        })),
+    };
+    let endpoint = IAMEndpoint {
+        host: "db.example".to_owned(),
+        port: "5432".to_owned(),
+        user: "user".to_owned(),
+        name: "litellm".to_owned(),
+        schema: None,
+    };
+    let token = minter
+        .token(&endpoint)
+        .expect("the token mints")
+        .expect("a token is minted");
+    assert_eq!(token.expose_secret(), "minted-token");
+}
+
+#[tokio::test]
+async fn token_expired_reports_fresh_token() {
+    let setup = build_loop(LoopSpec {
+        token_auth: Some(Rds),
+        log_prefix: String::new(),
+        iam_endpoint: None,
+        initial_url: Some(token_url(EXPIRY_900)),
+        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        on_replaced: None,
+    })
+    .await;
+    assert!(!RefreshTrigger::token_expired(setup.built.port.as_ref()));
+}
+
+#[tokio::test]
+async fn token_expired_reports_missing_url() {
+    let setup = build_loop(LoopSpec {
+        token_auth: Some(Rds),
+        log_prefix: String::new(),
+        iam_endpoint: None,
+        initial_url: None,
+        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        on_replaced: None,
+    })
+    .await;
+    assert!(RefreshTrigger::token_expired(setup.built.port.as_ref()));
+}
+
+#[tokio::test]
+async fn minted_url_publishes_token() {
+    let setup = build_loop(LoopSpec {
+        token_auth: Some(Rds),
+        log_prefix: String::new(),
+        iam_endpoint: None,
+        initial_url: Some(token_url(EXPIRY_100)),
+        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        on_replaced: None,
+    })
+    .await;
+    let before = slot_url(&setup.slot);
+    let minted = RefreshTrigger::minted_url(setup.built.port.as_ref())
+        .expect("the token mints")
+        .expect("a token is minted");
+    assert!(!minted.expose_secret().is_empty());
+    assert_eq!(
+        slot_url(&setup.slot),
+        Some(minted.expose_secret().to_owned())
+    );
+    assert_ne!(slot_url(&setup.slot), before);
+}
+
+#[test]
+fn expired_only_after_expiry() {
+    let token = token_url("X-Amz-Date=20240101T000000Z&X-Amz-Expires=1");
+    let at_expiry = is_token_expired(&RefreshQuery {
+        kind: Some(Rds),
+        token_url: Some(&token),
+        now: naive("2024-01-01T00:00:01"),
+    })
+    .expect("the token parses");
+    assert!(!at_expiry);
+    let after_expiry = is_token_expired(&RefreshQuery {
+        kind: Some(Rds),
+        token_url: Some(&token),
+        now: naive("2024-01-01T00:00:02"),
+    })
+    .expect("the token parses");
+    assert!(after_expiry);
+}
+
+#[test]
+fn fresh_only_over_buffer() {
+    let at_buffer = token_url("X-Amz-Date=20240101T000000Z&X-Amz-Expires=180");
+    let not_fresh = token_refresh_not_needed(&RefreshQuery {
+        kind: Some(Rds),
+        token_url: Some(&at_buffer),
+        now: naive("2024-01-01T00:00:00"),
+    })
+    .expect("the token parses");
+    assert!(!not_fresh);
+    let over_buffer = token_url("X-Amz-Date=20240101T000000Z&X-Amz-Expires=181");
+    let fresh = token_refresh_not_needed(&RefreshQuery {
+        kind: Some(Rds),
+        token_url: Some(&over_buffer),
+        now: naive("2024-01-01T00:00:00"),
+    })
+    .expect("the token parses");
+    assert!(fresh);
+}
+
+#[tokio::test(start_paused = true)]
+async fn stop_propagates_task_errors() {
+    let setup = build_loop(LoopSpec {
+        token_auth: Some(Rds),
+        log_prefix: String::new(),
+        iam_endpoint: None,
+        initial_url: Some(token_url(EXPIRY_900)),
+        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        on_replaced: None,
+    })
+    .await;
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async { panic!("the refresh task crashed") });
+    *lock(&setup.built.task) = Some(LoopTask {
+        stop: Arc::new(Notify::new()),
+        tasks,
+    });
+    let outcome = setup.built.stop().await;
+    assert!(outcome.is_err());
+    assert!(!setup.built.has_task());
 }
