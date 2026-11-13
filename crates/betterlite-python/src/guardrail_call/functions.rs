@@ -18,7 +18,6 @@ use super::context::{RecordStep, log_target_from_text, log_target_to_text, recor
 use super::convert;
 use super::error::CallError;
 
-#[cfg(test)]
 mod tests;
 
 fn tool_cache() -> Result<DualLocalCache, CallError> {
