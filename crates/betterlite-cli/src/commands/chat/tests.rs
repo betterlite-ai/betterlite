@@ -82,6 +82,11 @@ fn models_picker_shows_the_table_and_picks_by_index() {
     assert!(terminal.stdout.contains("Owned By"), "{}", terminal.stdout);
     assert!(terminal.stdout.contains("gpt-4o"), "{}", terminal.stdout);
     assert!(terminal.stdout.contains("anthropic"), "{}", terminal.stdout);
+    assert!(
+        !terminal.stdout.contains("more models"),
+        "{}",
+        terminal.stdout
+    );
     let requests = server.finish();
     assert_eq!(requests[0].request_line, "GET /models HTTP/1.1");
     assert_eq!(requests[0].header("authorization"), Some("Bearer sk-test"));
@@ -151,6 +156,23 @@ fn models_type_a_name_uses_it_directly() {
 }
 
 #[test]
+fn models_a_model_without_an_id_is_no_selection() {
+    let server = server_with_models(&[("", "openai")]);
+    let args = chat_args(None);
+    let mut store = FakeStore::default();
+
+    let (result, terminal) = run_once(&args, &server, &[""], &mut store);
+
+    result.unwrap();
+    assert!(
+        terminal.stdout.contains("No model selected. Exiting."),
+        "{}",
+        terminal.stdout
+    );
+    assert_eq!(server.finish().len(), 1);
+}
+
+#[test]
 fn models_end_of_input_cancels_the_selection() {
     let server = server_with_models(&[("gpt-4o", "openai")]);
     let args = chat_args(None);
@@ -172,13 +194,15 @@ fn models_end_of_input_cancels_the_selection() {
     assert_eq!(server.finish().len(), 1);
 }
 
-#[test]
-fn models_blank_name_prompt_returns_no_model() {
+#[rstest]
+#[case::blank("")]
+#[case::whitespace("   ")]
+fn models_blank_name_prompt_returns_no_model(#[case] answer: &str) {
     let server = TestServer::start(vec![Answer::json(200, r#"{"data":[]}"#)]);
     let args = chat_args(None);
     let mut store = FakeStore::default();
 
-    let (result, terminal) = run_once(&args, &server, &[""], &mut store);
+    let (result, terminal) = run_once(&args, &server, &[answer], &mut store);
 
     result.unwrap();
     assert!(
@@ -269,9 +293,11 @@ fn models_data_that_is_not_an_array_is_silently_empty(#[case] models: &str) {
     );
 }
 
-#[test]
-fn models_table_caps_at_two_hundred_rows() {
-    let models: Vec<(String, String)> = (1..=205)
+#[rstest]
+#[case::at_the_cap(200, false)]
+#[case::past_the_cap(205, true)]
+fn models_table_caps_at_two_hundred_rows(#[case] count: usize, #[case] expects_more: bool) {
+    let models: Vec<(String, String)> = (1..=count)
         .map(|index| (format!("m-{index}"), String::from("owner")))
         .collect();
     let entries: Vec<(&str, &str)> = models
@@ -290,11 +316,19 @@ fn models_table_caps_at_two_hundred_rows() {
     result.unwrap();
     assert!(terminal.stdout.contains("m-200"), "{}", terminal.stdout);
     assert!(!terminal.stdout.contains("m-201"), "{}", terminal.stdout);
-    assert!(
-        terminal.stdout.contains("... and 5 more models"),
+    assert_eq!(
+        terminal.stdout.contains("more models"),
+        expects_more,
         "{}",
         terminal.stdout
     );
+    if expects_more {
+        assert!(
+            terminal.stdout.contains("... and 5 more models"),
+            "{}",
+            terminal.stdout
+        );
+    }
 }
 
 #[rstest]
@@ -517,12 +551,17 @@ fn commands_quit_variants_end_the_session(#[case] command: &str) {
     let args = chat_args(Some("gpt-4o"));
     let mut store = FakeStore::default();
 
-    let (result, terminal) = run_once(&args, &server, &[command], &mut store);
+    let (result, terminal) = run_once(&args, &server, &[command, "hi"], &mut store);
 
     result.unwrap();
     assert_eq!(
         terminal.stdout.matches("Chat session ended.").count(),
         1,
+        "{}",
+        terminal.stdout
+    );
+    assert!(
+        !terminal.stdout.contains("Assistant:"),
         "{}",
         terminal.stdout
     );
@@ -744,16 +783,24 @@ fn stream_rejects_a_line_that_is_not_utf8() {
     assert!(matches!(error, StreamLineError::NotUtf8), "{error:?}");
 }
 
-#[test]
-fn stream_caps_an_unterminated_line() {
+#[rstest]
+#[case::at_the_cap(MAX_LINE_BYTES, true)]
+#[case::past_the_cap(MAX_LINE_BYTES + 1, false)]
+fn stream_caps_an_unterminated_line(#[case] size: usize, #[case] accepted: bool) {
     let mut lines = StreamLines::default();
 
-    let error = lines.push(&vec![b'x'; MAX_LINE_BYTES + 1]).unwrap_err();
+    let result = lines.push(&vec![b'x'; size]);
 
-    assert!(
-        matches!(error, StreamLineError::TooLarge { limit } if limit == MAX_LINE_BYTES),
-        "{error:?}"
-    );
+    assert_eq!(result.is_ok(), accepted, "{result:?}");
+    if !accepted {
+        assert!(
+            matches!(
+                result,
+                Err(StreamLineError::TooLarge { limit }) if limit == MAX_LINE_BYTES
+            ),
+            "{result:?}"
+        );
+    }
 }
 
 #[test]
