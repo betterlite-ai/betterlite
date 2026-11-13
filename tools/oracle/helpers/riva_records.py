@@ -35,8 +35,11 @@ class FinalResult(TypedDict):
     words: list[Word]
 
 
+AttributeKind = Literal["missing", "not_callable", "raises", "returns"]
+
+
 class Attribute(TypedDict, total=False):
-    kind: Required[Literal["missing", "not_callable", "raises", "returns"]]
+    kind: Required[AttributeKind]
     name: JsonValue
     value: JsonValue
 
@@ -126,21 +129,9 @@ class FakeError(Exception):
     details: JsonValue | Returns | Raises = None
 
 
-def attribute_value(attribute: Attribute) -> JsonValue | Returns | Raises:
-    kind = attribute["kind"]
+def attribute_value(kind: AttributeKind, payload: JsonValue) -> JsonValue | Returns | Raises:
     if kind == "returns":
-        return Returns(attribute.get("name"))
-    if kind == "raises":
-        return Raises("the attribute raised")
-    if kind == "not_callable":
-        return "not callable"
-    return None
-
-
-def details_value(attribute: Attribute) -> JsonValue | Returns | Raises:
-    kind = attribute["kind"]
-    if kind == "returns":
-        return Returns(attribute.get("value"))
+        return Returns(payload)
     if kind == "raises":
         return Raises("the attribute raised")
     if kind == "not_callable":
@@ -150,8 +141,10 @@ def details_value(attribute: Attribute) -> JsonValue | Returns | Raises:
 
 def fake_error(spec: ErrorSpec) -> FakeError:
     error = FakeError(spec["text"])
-    error.code = attribute_value(spec["code"])
-    error.details = details_value(spec["details"])
+    code = spec["code"]
+    details = spec["details"]
+    error.code = attribute_value(code["kind"], code.get("name"))
+    error.details = attribute_value(details["kind"], details.get("value"))
     return error
 
 
