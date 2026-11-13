@@ -1,0 +1,31 @@
+kind: helper
+name: gemini-thinking-minimal-efforts
+call:
+  gemini_thinking:
+    settings:
+      budgets:
+        minimal: 128
+        minimal_flash: 1
+        minimal_pro: 128
+        minimal_flash_lite: 512
+        low: 1024
+        medium: 2048
+        high: 4096
+        disable: 0
+      default_thinking_level_low: false
+      max_recurse_depth: 100
+    catalog:
+      gemini-3-flash-preview: false
+    steps:
+      - {op: reasoning_effort, effort: minimal, model: "gemini-2.5-flash-lite", optional_params: {}}
+      - {op: reasoning_effort, effort: minimal, model: "gemini-2.5-pro", optional_params: {}}
+      - {op: reasoning_effort, effort: minimal, model: "gemini-3-flash-preview", optional_params: {}}
+      - {op: thinking, thinking: {type: enabled, budget_tokens: 0}, model: "gemini-3-pro-preview", optional_params: {}}
+      - {op: thinking, thinking: {type: enabled, budget_tokens: 500}, model: "gemini-2.5-flash", optional_params: {}}
+      - {op: format, model: "gemini-2.5-flash", optional_params: {}, response_format: {type: json_object}}
+      - {op: modalities, modalities: [text, audio, unknown]}
+      - {op: audio, audio: {format: pcm16, voice: alloy, language_code: en-US}}
+      - {op: server_flags, non_default_params: {includeServerSideToolInvocations: true}, optional_params: {}}
+env: {}
+compare:
+  ignore: []

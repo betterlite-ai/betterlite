@@ -1,0 +1,31 @@
+kind: helper
+name: gemini-thinking-pcm16-voice
+call:
+  gemini_thinking:
+    settings:
+      budgets:
+        minimal: 128
+        minimal_flash: 1
+        minimal_pro: 128
+        minimal_flash_lite: 512
+        low: 1024
+        medium: 2048
+        high: 4096
+        disable: 0
+      default_thinking_level_low: false
+      max_recurse_depth: 100
+    catalog: {}
+    steps:
+      - {op: audio, audio: {format: pcm16, voice: alloy, language_code: en-US}}
+      - {op: audio, audio: {format: null, voice: alloy, language_code: null}}
+      - {op: audio, audio: {format: pcm16, voice: null, language_code: en-GB}}
+      - {op: audio, audio: {}}
+      - {op: audio, audio: {format: mp3, voice: alloy, language_code: en-US}}
+      - {op: audio, audio: {format: wav}}
+      - {op: audio, audio: {format: "", voice: alloy}}
+      - {op: modalities, modalities: [text, image, audio, video]}
+      - {op: modalities, modalities: [text, embedding, TEXT]}
+      - {op: modalities, modalities: []}
+env: {}
+compare:
+  ignore: []

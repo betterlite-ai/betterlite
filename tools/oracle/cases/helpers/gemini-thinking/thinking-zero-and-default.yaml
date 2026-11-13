@@ -1,0 +1,34 @@
+kind: helper
+name: gemini-thinking-thinking-zero-and-default
+call:
+  gemini_thinking:
+    settings:
+      budgets:
+        minimal: 128
+        minimal_flash: 1
+        minimal_pro: 128
+        minimal_flash_lite: 512
+        low: 1024
+        medium: 2048
+        high: 4096
+        disable: 0
+      default_thinking_level_low: false
+      max_recurse_depth: 100
+    catalog: {}
+    steps:
+      - {op: thinking, thinking: {type: enabled, budget_tokens: 0}, model: "gemini-3-pro-preview", optional_params: {}}
+      - {op: thinking, thinking: {type: enabled, budget_tokens: null}, model: "gemini-3-pro-preview", optional_params: {}}
+      - {op: thinking, thinking: {type: enabled, budget_tokens: 2000}, model: "gemini-3-pro-preview", optional_params: {}}
+      - {op: thinking, thinking: {type: disabled, budget_tokens: 0}, model: "gemini-3-pro-preview", optional_params: {}}
+      - {op: thinking, thinking: {type: disabled, budget_tokens: null}, model: "gemini-3-pro-preview", optional_params: {}}
+      - {op: thinking, thinking: {type: adaptive, budget_tokens: null}, model: "gemini-3-pro-preview", optional_params: {}}
+      - {op: thinking, thinking: {budget_tokens: 5}, model: "gemini-3-pro-preview", optional_params: {}}
+      - {op: thinking, thinking: {type: enabled, budget_tokens: 0}, model: "gemini-2.5-flash", optional_params: {}}
+      - {op: thinking, thinking: {type: enabled, budget_tokens: 500}, model: "gemini-2.5-flash", optional_params: {}}
+      - {op: thinking, thinking: {type: enabled, budget_tokens: null}, model: "gemini-2.5-flash", optional_params: {}}
+      - {op: thinking, thinking: {type: disabled, budget_tokens: 500}, model: "gemini-2.5-flash", optional_params: {}}
+      - {op: thinking, thinking: {type: disabled, budget_tokens: null}, model: "gemini-2.5-flash", optional_params: {}}
+      - {op: thinking, thinking: {type: enabled, budget_tokens: null}, model: null, optional_params: {}}
+env: {}
+compare:
+  ignore: []

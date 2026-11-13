@@ -1,0 +1,84 @@
+kind: helper
+name: gemini-thinking-legacy-vs-json-schema
+call:
+  gemini_thinking:
+    settings:
+      budgets:
+        minimal: 128
+        minimal_flash: 1
+        minimal_pro: 128
+        minimal_flash_lite: 512
+        low: 1024
+        medium: 2048
+        high: 4096
+        disable: 0
+      default_thinking_level_low: false
+      max_recurse_depth: 100
+    catalog: {}
+    steps:
+      - op: format
+        model: "gemini-2.5-flash"
+        optional_params: {}
+        response_format:
+          type: json_schema
+          json_schema:
+            name: plan
+            strict: true
+            schema:
+              $defs:
+                Step:
+                  type: object
+                  properties:
+                    name: {type: string}
+                  additionalProperties: false
+              type: object
+              properties:
+                step: {$ref: "#/$defs/Step"}
+                note: {type: string}
+              additionalProperties: false
+              strict: true
+      - op: format
+        model: "gemini-1.5-pro"
+        optional_params: {}
+        response_format:
+          type: json_schema
+          json_schema:
+            name: plan
+            strict: true
+            schema:
+              $defs:
+                Step:
+                  type: object
+                  properties:
+                    name: {type: string}
+                  additionalProperties: false
+              type: object
+              properties:
+                step: {$ref: "#/$defs/Step"}
+                note: {type: string}
+              additionalProperties: false
+              strict: true
+      - op: format
+        model: "gemini-2.5-flash"
+        optional_params: {}
+        response_format:
+          type: json_schema
+          response_schema:
+            type: object
+            properties:
+              chosen: {type: string}
+          json_schema:
+            schema:
+              type: object
+              properties:
+                ignored: {type: string}
+      - {op: format, model: "gemini-2.5-flash", optional_params: {}, response_format: {type: json_object}}
+      - {op: format, model: "gemini-1.5-pro", optional_params: {}, response_format: {type: text}}
+      - {op: format, model: "gemini-2.5-flash", optional_params: {}, response_format: {type: text, response_schema: {}}}
+      - {op: format, model: "gemini-2.5-flash", optional_params: {}, response_format: {type: json_schema, json_schema: {schema: "not an object"}}}
+      - {op: format, model: "gemini-2.5-flash", optional_params: {}, response_format: {type: json_schema, json_schema: {name: plan}}}
+      - {op: format, model: "gemini-2.5-flash", optional_params: {temperature: 1}, response_format: {type: json_object}}
+      - {op: format, model: "gemini-2.0-flash", optional_params: {}, response_format: {type: audio}}
+env: {}
+compare:
+  ignore: []
