@@ -1,4 +1,5 @@
 import asyncio
+import json
 from typing import Literal, TypedDict
 
 import httpx
@@ -87,15 +88,6 @@ def alice_result(
     return result
 
 
-def vendor_call(
-    args: AliceApply | ConductRequestPayload,
-    inputs: dict[str, JsonValue],
-    guardrail: AliceGuardrail | None,
-    texts: list[str],
-) -> JsonValue:
-    return TypeAdapter(JsonValue).validate_python(dict(request_payload(inputs=inputs, request_data=args["request_data"], input_type=args["input_type"]))) if guardrail is None and args["input_type"] == "request" else (None if guardrail is None else asyncio.run(guardrail.apply_guardrail(inputs={"texts": texts}, request_data=args["request_data"], input_type=args["input_type"])))  # type: ignore[misc, arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547  # noqa: E501
-
-
 def alice_apply(args: AliceApply) -> JsonValue:
     handler = Handler(args["answer"], args["failure"])
     guardrail = AliceGuardrail(
@@ -111,8 +103,11 @@ def alice_apply(args: AliceApply) -> JsonValue:
         return alice_result(
             texts, handler, raised=False, status=None, blocked_content=None
         )
+    kind = args["input_type"]
     try:
-        vendor_call(args, {}, guardrail, texts)
+        asyncio.run(
+            guardrail.apply_guardrail({"texts": texts}, args["request_data"], kind)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547
+        )
     except GuardrailRaisedException as error:
         return alice_result(
             [],
@@ -141,8 +136,9 @@ def conduct_inputs(args: ConductRequestPayload) -> dict[str, JsonValue]:
 
 
 def conduct_request_payload(args: ConductRequestPayload) -> JsonValue:
-    payload = vendor_call(args, conduct_inputs(args), None, [])
-    return {"payload": payload}
+    kind = args["input_type"]
+    payload = request_payload(conduct_inputs(args), args["request_data"], kind)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547
+    return {"payload": TypeAdapter(JsonValue).validate_json(json.dumps(payload, default=dict))}
 
 
 def run(input_value: Input) -> JsonValue:
