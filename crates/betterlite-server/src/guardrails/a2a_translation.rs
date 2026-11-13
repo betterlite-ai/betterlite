@@ -14,8 +14,6 @@ pub enum A2aTranslationError {
     Guardrail(#[from] GuardrailFailure),
     #[error(transparent)]
     Text(#[from] A2aTextError),
-    #[error("the A2A message role is not a string")]
-    MessageRole,
     #[error("A2A JSON could not be read: {source}")]
     Json {
         #[source]
