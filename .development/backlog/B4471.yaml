@@ -1,7 +1,7 @@
 id: B4471
 milestone: M8 platform
 title: Gateway and backend application route filtering
-status: todo
+status: done
 depends_on: [B4470, B003, B710, B711, B712]
 file: tasks/B4471-component-applications.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "backend/main.py"
 parent: B131
 split_from: B131
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1594
