@@ -6,6 +6,7 @@ use betterlite_azure::azure_arc_identity::{ArcHost, ArcPlatform};
 use betterlite_azure::azure_client_secret::transport::Clock as TokenClock;
 use betterlite_azure::azure_managed_identity::runtime::Scheduler;
 use betterlite_azure::oidc_exchange::transport::Clock as OidcClock;
+use tokio::runtime::Handle;
 
 pub struct ProductionClock;
 
@@ -34,11 +35,13 @@ impl OidcClock for ProductionClock {
     }
 }
 
-pub struct ThreadScheduler;
+pub struct ThreadScheduler {
+    pub runtime: Handle,
+}
 
 impl Scheduler for ThreadScheduler {
     fn sleep(&self, delay: Duration) {
-        std::thread::sleep(delay);
+        self.runtime.block_on(tokio::time::sleep(delay));
     }
 }
 

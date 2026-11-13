@@ -34,10 +34,9 @@ async fn gcp_the_request_carries_the_service_account_body_and_bearer() {
     );
     assert_eq!(seen[0].authorization.as_deref(), Some("Bearer adc-token"));
     assert_eq!(seen[0].content_type.as_deref(), Some("application/json"));
-    let body: serde_json::Value = serde_json::from_str(&seen[0].body).unwrap();
     assert_eq!(
-        body,
-        serde_json::json!({"scope": ["https://www.googleapis.com/auth/cloud-platform"]})
+        seen[0].body,
+        r#"{"scope":["https://www.googleapis.com/auth/cloud-platform"]}"#
     );
 }
 

@@ -13,6 +13,7 @@ use betterlite_azure::azure_username_password::transport::{
     HttpRequest as PasswordRequest, Transport as PasswordTransport,
 };
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use http::Method;
 use http::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
@@ -51,35 +52,53 @@ impl<T> AzureIo for T where
 {
 }
 
+pub struct Exchange<'url> {
+    pub method: Method,
+    pub url: &'url str,
+    pub query: Vec<(String, String)>,
+    pub headers: HeaderMap,
+    pub body: RequestBody,
+    pub deadline: Duration,
+}
+
 pub struct AzureHttp {
     pub runtime: Handle,
     pub client: ProxiedClient,
 }
 
 impl AzureHttp {
-    fn execute(
-        &self,
-        method: Method,
-        url: &str,
-        query: Vec<(String, String)>,
-        headers: HeaderMap,
-        body: RequestBody,
-        deadline: Duration,
-    ) -> io::Result<betterlite_http::proxy::UpstreamResponse> {
-        let url = Url::parse(url)
+    fn exchange(&self, request: Exchange<'_>) -> io::Result<UpstreamResponse> {
+        let url = Url::parse(request.url)
             .map_err(|source| io::Error::new(io::ErrorKind::InvalidInput, source))?;
-        let request = OutboundRequest {
-            method,
+        let outbound = OutboundRequest {
+            method: request.method,
             url,
-            query,
-            headers,
-            body,
-            deadline,
+            query: request.query,
+            headers: request.headers,
+            body: request.body,
+            deadline: request.deadline,
         };
         self.runtime
-            .block_on(self.client.send_buffered(request))
+            .block_on(self.client.send_buffered(outbound))
             .map_err(io::Error::other)
     }
+
+    fn form_exchange(&self, request: Exchange<'_>) -> io::Result<HttpReply> {
+        let response = self.exchange(request)?;
+        let (status, body) = text_reply(response.status, response.body)?;
+        Ok(HttpReply { status, body })
+    }
+}
+
+fn password_exchange(request: &PasswordRequest) -> io::Result<Exchange<'_>> {
+    Ok(Exchange {
+        method: request_method(request.method),
+        url: &request.url,
+        query: request.query.clone(),
+        headers: header_map(request.headers.clone())?,
+        body: form_body(&request.form),
+        deadline: TOKEN_TIMEOUT,
+    })
 }
 
 fn header_map(headers: Vec<(String, String)>) -> io::Result<HeaderMap> {
@@ -123,7 +142,7 @@ fn header_pairs(headers: &HeaderMap) -> Vec<(String, String)> {
     pairs
 }
 
-fn request_method(method: HttpMethod) -> Method {
+const fn request_method(method: HttpMethod) -> Method {
     match method {
         HttpMethod::Get => Method::GET,
         HttpMethod::Post => Method::POST,
@@ -140,65 +159,60 @@ fn secret_headers(headers: Vec<(&'static str, SecretString)>) -> Vec<(String, St
 impl ClientSecretTransport for AzureHttp {
     fn send(&self, request: &HttpRequest) -> io::Result<HttpReply> {
         let headers = header_map(request.headers.clone())?;
-        let response = self.execute(
-            request_method(request.method),
-            &request.url,
-            request.query.clone(),
+        // authority discovery is a GET and carries no form, so it sends no body at all
+        let body = match request.method {
+            HttpMethod::Get => RequestBody::Empty,
+            HttpMethod::Post => form_body(&request.form),
+        };
+        self.form_exchange(Exchange {
+            method: request_method(request.method),
+            url: &request.url,
+            query: request.query.clone(),
             headers,
-            form_body(&request.form),
-            TOKEN_TIMEOUT,
-        )?;
-        let (status, body) = text_reply(response.status, response.body)?;
-        Ok(HttpReply { status, body })
+            body,
+            deadline: TOKEN_TIMEOUT,
+        })
     }
 }
 
 impl PasswordTransport for AzureHttp {
     fn send(&self, request: &PasswordRequest) -> io::Result<HttpReply> {
-        let headers = header_map(request.headers.clone())?;
-        let response = self.execute(
-            request_method(request.method),
-            &request.url,
-            request.query.clone(),
-            headers,
-            form_body(&request.form),
-            TOKEN_TIMEOUT,
-        )?;
-        let (status, body) = text_reply(response.status, response.body)?;
-        Ok(HttpReply { status, body })
+        let exchange = password_exchange(request)?;
+        self.form_exchange(exchange)
     }
 }
 
 impl OidcTransport for AzureHttp {
     fn post_form(&self, url: &str, form: &[(String, SecretString)]) -> io::Result<OidcReply> {
-        let form: Vec<(String, String)> = form
+        let fields: Vec<(String, String)> = form
             .iter()
             .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
             .collect();
-        let response = self.execute(
-            Method::POST,
+        let reply = self.form_exchange(Exchange {
+            method: Method::POST,
             url,
-            Vec::new(),
-            HeaderMap::new(),
-            form_body(&form),
-            TOKEN_TIMEOUT,
-        )?;
-        let (status, body) = text_reply(response.status, response.body)?;
-        Ok(OidcReply { status, body })
+            query: Vec::new(),
+            headers: HeaderMap::new(),
+            body: form_body(&fields),
+            deadline: TOKEN_TIMEOUT,
+        })?;
+        Ok(OidcReply {
+            status: reply.status,
+            body: reply.body,
+        })
     }
 }
 
 impl ImdsTransport for AzureHttp {
     fn get(&self, request: &ImdsRequest) -> io::Result<ImdsResponse> {
-        let headers = header_map(request.headers.clone())?;
-        let response = self.execute(
-            Method::GET,
-            &request.url,
-            request.query.clone(),
-            headers,
-            RequestBody::Empty,
-            Duration::from_secs(request.timeout_seconds),
-        )?;
+        let response = self.exchange(Exchange {
+            method: Method::GET,
+            url: &request.url,
+            query: request.query.clone(),
+            headers: header_map(request.headers.clone())?,
+            body: RequestBody::Empty,
+            deadline: Duration::from_secs(request.timeout_seconds),
+        })?;
         let (status, body) = text_reply(response.status, response.body)?;
         Ok(ImdsResponse {
             status,
@@ -215,18 +229,20 @@ impl ArcTransport for AzureHttp {
             .iter()
             .map(|(name, value)| ((*name).to_owned(), value.clone()))
             .collect();
-        let response = self.execute(
-            Method::GET,
-            &request.url,
+        let headers = header_map(secret_headers(request.headers.clone()))?;
+        let response = self.exchange(Exchange {
+            method: Method::GET,
+            url: &request.url,
             query,
-            header_map(secret_headers(request.headers.clone()))?,
-            RequestBody::Empty,
-            METADATA_TIMEOUT,
-        )?;
+            headers,
+            body: RequestBody::Empty,
+            deadline: METADATA_TIMEOUT,
+        })?;
         let (status, body) = text_reply(response.status, response.body)?;
+        let headers = header_pairs(&response.headers);
         Ok(ArcResponse {
             status,
-            headers: header_pairs(&response.headers),
+            headers,
             body,
         })
     }
@@ -234,18 +250,18 @@ impl ArcTransport for AzureHttp {
 
 impl HostedTransport for AzureHttp {
     fn send(&self, request: &HostedRequest) -> io::Result<HostedResponse> {
-        let response = self.execute(
-            request_method(request.method),
-            &request.url,
-            request.query.clone(),
-            header_map(secret_headers(request.headers.clone()))?,
-            form_body(&request.form),
-            METADATA_TIMEOUT,
-        )?;
-        let (status, body) = text_reply(response.status, response.body)?;
-        if status != 200 {
+        let response = self.exchange(Exchange {
+            method: request_method(request.method),
+            url: &request.url,
+            query: request.query.clone(),
+            headers: header_map(secret_headers(request.headers.clone()))?,
+            body: form_body(&request.form),
+            deadline: METADATA_TIMEOUT,
+        })?;
+        if response.status != 200 {
             return Err(io::Error::other(format!(
-                "the managed identity endpoint returned HTTP status {status}"
+                "the managed identity endpoint returned HTTP status {}",
+                response.status
             )));
         }
         let content_type = response
@@ -253,6 +269,7 @@ impl HostedTransport for AzureHttp {
             .get(CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned);
+        let (_status, body) = text_reply(response.status, response.body)?;
         Ok(HostedResponse { content_type, body })
     }
 }

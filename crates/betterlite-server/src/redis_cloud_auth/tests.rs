@@ -45,9 +45,9 @@ use super::{
 mod support;
 
 use support::{
-    FailingGrants, FakeIo, FixedAdc, GrantCall, RecordingGrants, Reply, aws_settings,
-    aws_sourced_settings, azure_settings, azure_sourced_settings, deps, gcp_settings, iam_server,
-    proxied_client, static_aws_provider,
+    FakeIo, FixedAdc, GrantCall, RecordingGrants, Reply, aws_provider, aws_settings,
+    azure_provider, azure_settings, deps, gcp_provider, iam_server, proxied_client,
+    sourced_settings, static_aws_provider,
 };
 
 include!("tests/gcp.rs");

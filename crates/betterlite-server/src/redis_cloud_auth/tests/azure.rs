@@ -2,6 +2,63 @@ fn azure_fetcher(settings: AzureSettings, grants: Arc<dyn AzureGrants>) -> Azure
     AzureRedisTokens { settings, grants }
 }
 
+fn production_io() -> Arc<FakeIo> {
+    let openid = r#"{"issuer":"https://login.microsoftonline.com/tenant/v2.0","authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}"#;
+    Arc::new(FakeIo::new(vec![
+        Reply {
+            url_contains: "well-known/openid-configuration",
+            status: 200,
+            body: openid,
+        },
+        Reply {
+            url_contains: "/oauth2/v2.0/token",
+            status: 200,
+            body: r#"{"access_token":"fixture-token","expires_in":3600}"#,
+        },
+    ]))
+}
+
+fn production_grants(io: &Arc<FakeIo>) -> SdkAzureGrants<FakeIo> {
+    let clock = Arc::new(ProductionClock);
+    let oidc_transport: Arc<dyn betterlite_azure::oidc_exchange::transport::Transport> =
+        Arc::clone(io);
+    let oidc_clock: Arc<dyn betterlite_azure::oidc_exchange::transport::Clock> = Arc::clone(&clock);
+    let exchange = AzureOidcExchange::new(
+        OidcSettings::default(),
+        BTreeMap::new(),
+        oidc_transport,
+        oidc_clock,
+    )
+    .unwrap();
+    let transport: Arc<dyn betterlite_azure::azure_client_secret::transport::Transport> =
+        Arc::clone(io);
+    let client_clock: Arc<dyn betterlite_azure::azure_client_secret::transport::Clock> =
+        Arc::clone(&clock);
+    SdkAzureGrants::<FakeIo> {
+        http: Arc::clone(io),
+        clock,
+        files: StdFiles,
+        ids: Arc::new(RandomIds),
+        token_files: FsTokenFiles,
+        scheduler: ThreadScheduler {
+            runtime: Handle::current(),
+        },
+        host: ProductionHost {
+            environment: BTreeMap::new(),
+        },
+        redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap(),
+        environment: ManagedIdentityEnvironment::default(),
+        chain_environment: ChainEnvironment::default(),
+        exchange,
+        authority_host: None,
+        client_secrets: Mutex::new(ProviderCache::new(
+            transport,
+            client_clock,
+            ClientSecretSettings::default(),
+        )),
+    }
+}
+
 #[test]
 fn azure_client_secret_kind_uses_the_client_secret_grant() {
     let grants = Arc::new(RecordingGrants::new("azure-token"));
@@ -66,7 +123,7 @@ fn azure_default_kind_uses_the_default_credential_grant() {
 fn azure_a_missing_client_secret_setting_is_an_error() {
     let mut settings = azure_settings(AzureCredential::ClientSecret);
     settings.client_secret = None;
-    let fetcher = azure_fetcher(settings, Arc::new(FailingGrants));
+    let fetcher = azure_fetcher(settings, Arc::new(RecordingGrants::refusing()));
     let error = fetcher
         .fetch_token(AzureCredential::ClientSecret, AZURE_REDIS_SCOPE)
         .unwrap_err();
@@ -83,7 +140,7 @@ fn azure_a_missing_client_secret_setting_is_an_error() {
 fn azure_a_grant_failure_is_reported() {
     let fetcher = azure_fetcher(
         azure_settings(AzureCredential::ManagedIdentity),
-        Arc::new(FailingGrants),
+        Arc::new(RecordingGrants::refusing()),
     );
     let error = fetcher
         .fetch_token(AzureCredential::ManagedIdentity, AZURE_REDIS_SCOPE)
@@ -125,55 +182,8 @@ fn azure_ad_provider_returns_the_username_and_token() {
 
 #[test]
 fn azure_the_client_secret_credential_is_built_once() {
-    let openid = r#"{"issuer":"https://login.microsoftonline.com/tenant/v2.0","authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}"#;
-    let io = Arc::new(FakeIo::new(vec![
-        Reply {
-            url_contains: "well-known/openid-configuration",
-            status: 200,
-            body: openid,
-        },
-        Reply {
-            url_contains: "/oauth2/v2.0/token",
-            status: 200,
-            body: r#"{"access_token":"fixture-token","expires_in":3600}"#,
-        },
-    ]));
-    let clock = Arc::new(ProductionClock);
-    let oidc_transport: Arc<dyn betterlite_azure::oidc_exchange::transport::Transport> =
-        Arc::clone(&io);
-    let oidc_clock: Arc<dyn betterlite_azure::oidc_exchange::transport::Clock> = Arc::clone(&clock);
-    let exchange = AzureOidcExchange::new(
-        OidcSettings::default(),
-        BTreeMap::new(),
-        oidc_transport,
-        oidc_clock,
-    )
-    .unwrap();
-    let transport: Arc<dyn betterlite_azure::azure_client_secret::transport::Transport> =
-        Arc::clone(&io);
-    let client_clock: Arc<dyn betterlite_azure::azure_client_secret::transport::Clock> =
-        Arc::clone(&clock);
-    let grants = SdkAzureGrants::<FakeIo> {
-        http: Arc::clone(&io),
-        clock,
-        files: StdFiles,
-        ids: Arc::new(RandomIds),
-        token_files: FsTokenFiles,
-        scheduler: ThreadScheduler,
-        host: ProductionHost {
-            environment: BTreeMap::new(),
-        },
-        redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap(),
-        environment: ManagedIdentityEnvironment::default(),
-        chain_environment: ChainEnvironment::default(),
-        exchange,
-        authority_host: None,
-        client_secrets: Mutex::new(ProviderCache::new(
-            transport,
-            client_clock,
-            ClientSecretSettings::default(),
-        )),
-    };
+    let io = production_io();
+    let grants = production_grants(&io);
     let client_secret = SecretString::from("secret".to_owned());
     let first = grants
         .client_secret("tenant", "client", &client_secret, AZURE_REDIS_SCOPE)

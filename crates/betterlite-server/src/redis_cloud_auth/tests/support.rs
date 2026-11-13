@@ -131,14 +131,22 @@ pub enum GrantCall {
 }
 
 pub struct RecordingGrants {
-    pub token: String,
+    // None makes every grant refuse, so a test can assert how a failure surfaces
+    pub token: Option<&'static str>,
     pub calls: Mutex<Vec<GrantCall>>,
 }
 
 impl RecordingGrants {
-    pub fn new(token: &str) -> Self {
+    pub fn new(token: &'static str) -> Self {
         Self {
-            token: token.to_owned(),
+            token: Some(token),
+            calls: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub fn refusing() -> Self {
+        Self {
+            token: None,
             calls: Mutex::new(Vec::new()),
         }
     }
@@ -159,15 +167,22 @@ impl AzureGrants for RecordingGrants {
         _client_secret: &SecretString,
         scope: &str,
     ) -> Result<SecretString, AzureGrantError> {
+        let call = GrantCall::ClientSecret {
+            tenant_id: tenant_id.to_owned(),
+            client_id: client_id.to_owned(),
+            scope: scope.to_owned(),
+        };
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(GrantCall::ClientSecret {
-                tenant_id: tenant_id.to_owned(),
-                client_id: client_id.to_owned(),
-                scope: scope.to_owned(),
-            });
-        Ok(SecretString::from(self.token.clone()))
+            .push(call);
+        match self.token {
+            Some(token) => Ok(SecretString::from(token)),
+            None => Err(AzureGrantError::Build {
+                kind: "client secret",
+                message: "the test grant refuses".to_owned(),
+            }),
+        }
     }
 
     fn managed_identity(
@@ -175,59 +190,36 @@ impl AzureGrants for RecordingGrants {
         client_id: &str,
         scope: &str,
     ) -> Result<SecretString, AzureGrantError> {
+        let call = GrantCall::ManagedIdentity {
+            client_id: client_id.to_owned(),
+            scope: scope.to_owned(),
+        };
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(GrantCall::ManagedIdentity {
-                client_id: client_id.to_owned(),
-                scope: scope.to_owned(),
-            });
-        Ok(SecretString::from(self.token.clone()))
+            .push(call);
+        self.token.map_or_else(
+            || {
+                Err(AzureGrantError::ManagedIdentity {
+                    source: betterlite_azure::azure_managed_identity::error::ManagedIdentityError::NoEndpoint,
+                })
+            },
+            |token| Ok(SecretString::from(token)),
+        )
     }
 
     fn default_credential(&self, scope: &str) -> Result<SecretString, AzureGrantError> {
+        let token = self.token.ok_or_else(|| AzureGrantError::Build {
+            kind: "default",
+            message: "the test grant refuses".to_owned(),
+        })?;
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(GrantCall::Default {
                 scope: scope.to_owned(),
             });
-        Ok(SecretString::from(self.token.clone()))
-    }
-}
-
-pub struct FailingGrants;
-
-impl AzureGrants for FailingGrants {
-    fn client_secret(
-        &self,
-        _tenant_id: &str,
-        _client_id: &str,
-        _client_secret: &SecretString,
-        _scope: &str,
-    ) -> Result<SecretString, AzureGrantError> {
-        Err(AzureGrantError::Build {
-            kind: "client secret",
-            message: "the test grant refuses".to_owned(),
-        })
-    }
-
-    fn managed_identity(
-        &self,
-        _client_id: &str,
-        _scope: &str,
-    ) -> Result<SecretString, AzureGrantError> {
-        Err(AzureGrantError::ManagedIdentity {
-            source:
-                betterlite_azure::azure_managed_identity::error::ManagedIdentityError::NoEndpoint,
-        })
-    }
-
-    fn default_credential(&self, _scope: &str) -> Result<SecretString, AzureGrantError> {
-        Err(AzureGrantError::Build {
-            kind: "default",
-            message: "the test grant refuses".to_owned(),
-        })
+        Ok(SecretString::from(token))
     }
 }
 
@@ -246,22 +238,26 @@ pub fn deps(
     }
 }
 
-pub fn gcp_settings() -> Settings {
+pub fn sourced_settings(provider: Provider) -> Settings {
     Settings {
-        provider: Some(Provider::Gcp(GcpSettings {
-            service_account: SecretString::from(
-                "projects/-/serviceAccounts/sa@project.iam.gserviceaccount.com".to_owned(),
-            ),
-            ssl_ca_certs: None,
-            token_ttl_seconds: 3300,
-            token_cache: Arc::new(GcpTokenCache::default()),
-        })),
+        provider: Some(provider),
         url: None,
         username: None,
         password: None,
         warnings: Vec::new(),
         environment_snapshot: BTreeMap::new(),
     }
+}
+
+pub fn gcp_provider() -> Provider {
+    Provider::Gcp(GcpSettings {
+        service_account: SecretString::from(
+            "projects/-/serviceAccounts/sa@project.iam.gserviceaccount.com".to_owned(),
+        ),
+        ssl_ca_certs: None,
+        token_ttl_seconds: 3300,
+        token_cache: Arc::new(GcpTokenCache::default()),
+    })
 }
 
 pub fn azure_settings(credential: AzureCredential) -> AzureSettings {
@@ -274,15 +270,8 @@ pub fn azure_settings(credential: AzureCredential) -> AzureSettings {
     }
 }
 
-pub fn azure_sourced_settings(credential: AzureCredential) -> Settings {
-    Settings {
-        provider: Some(Provider::Azure(azure_settings(credential))),
-        url: None,
-        username: None,
-        password: None,
-        warnings: Vec::new(),
-        environment_snapshot: BTreeMap::new(),
-    }
+pub fn azure_provider(credential: AzureCredential) -> Provider {
+    Provider::Azure(azure_settings(credential))
 }
 
 pub fn aws_settings() -> AwsSettings {
@@ -295,15 +284,8 @@ pub fn aws_settings() -> AwsSettings {
     }
 }
 
-pub fn aws_sourced_settings() -> Settings {
-    Settings {
-        provider: Some(Provider::Aws(aws_settings())),
-        url: None,
-        username: None,
-        password: None,
-        warnings: Vec::new(),
-        environment_snapshot: BTreeMap::new(),
-    }
+pub fn aws_provider() -> Provider {
+    Provider::Aws(aws_settings())
 }
 
 pub fn static_aws_provider() -> aws_credential_types::provider::SharedCredentialsProvider {

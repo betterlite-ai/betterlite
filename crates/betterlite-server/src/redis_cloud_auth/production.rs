@@ -55,6 +55,15 @@ pub async fn production_cloud_redis_auth(
     if config.sections.redis_credentials.provider.is_none() {
         return Ok(None);
     }
+    let deps = production_deps(config, environment, http).await?;
+    Ok(cloud_redis_auth(&config.sections.redis_credentials, &deps))
+}
+
+async fn production_deps(
+    config: &Config,
+    environment: &BTreeMap<String, String>,
+    http: ProxiedClient,
+) -> Result<CloudRedisAuthDeps, CloudRedisAuthSetupError> {
     let runtime = Handle::current();
     let adc: Arc<dyn AdcTokenSource> = Arc::new(VertexAdcTokenSource {
         runtime: runtime.clone(),
@@ -65,31 +74,44 @@ pub async fn production_cloud_redis_auth(
             policy: HttpPolicy::default(),
         },
     });
+    let azure = azure_grants(config, environment, &http, &runtime)?;
+    let aws = load_default_provider()
+        .await
+        .ok_or(CloudRedisAuthSetupError::AwsCredentialsMissing)?;
+    Ok(CloudRedisAuthDeps {
+        runtime,
+        http,
+        adc,
+        azure,
+        aws,
+    })
+}
+
+fn azure_grants(
+    config: &Config,
+    environment: &BTreeMap<String, String>,
+    http: &ProxiedClient,
+    runtime: &Handle,
+) -> Result<Arc<dyn AzureGrants>, CloudRedisAuthSetupError> {
     let azure_http = Arc::new(AzureHttp {
         runtime: runtime.clone(),
         client: http.clone(),
     });
     let clock = Arc::new(ProductionClock);
-    let oidc_transport: Arc<dyn OidcTransport> = Arc::clone(&azure_http);
-    let oidc_clock: Arc<dyn OidcClock> = Arc::clone(&clock);
-    let exchange = AzureOidcExchange::new(
-        config.sections.azure_oidc_exchange.clone(),
-        environment.clone(),
-        oidc_transport,
-        oidc_clock,
-    )
-    .map_err(|source| CloudRedisAuthSetupError::OidcExchange { source })?;
+    let exchange = oidc_exchange(config, environment, &azure_http, &clock)?;
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
         .map_err(|source| CloudRedisAuthSetupError::Redactor { source })?;
     let transport: Arc<dyn ClientSecretTransport> = Arc::clone(&azure_http);
     let client_clock: Arc<dyn TokenClock> = Arc::clone(&clock);
-    let azure: Arc<dyn AzureGrants> = Arc::new(SdkAzureGrants::<AzureHttp> {
+    Ok(Arc::new(SdkAzureGrants::<AzureHttp> {
         http: azure_http,
         clock,
         files: StdFiles,
         ids: Arc::new(RandomIds),
         token_files: FsTokenFiles,
-        scheduler: ThreadScheduler,
+        scheduler: ThreadScheduler {
+            runtime: runtime.clone(),
+        },
         host: ProductionHost {
             environment: environment.clone(),
         },
@@ -106,16 +128,22 @@ pub async fn production_cloud_redis_auth(
             client_clock,
             config.sections.azure_client_secret.clone(),
         )),
-    });
-    let aws = load_default_provider()
-        .await
-        .ok_or(CloudRedisAuthSetupError::AwsCredentialsMissing)?;
-    let deps = CloudRedisAuthDeps {
-        runtime,
-        http,
-        adc,
-        azure,
-        aws,
-    };
-    Ok(cloud_redis_auth(&config.sections.redis_credentials, &deps))
+    }))
+}
+
+fn oidc_exchange(
+    config: &Config,
+    environment: &BTreeMap<String, String>,
+    http: &Arc<AzureHttp>,
+    clock: &Arc<ProductionClock>,
+) -> Result<AzureOidcExchange, CloudRedisAuthSetupError> {
+    let transport: Arc<dyn OidcTransport> = Arc::clone(http);
+    let oidc_clock: Arc<dyn OidcClock> = Arc::clone(clock);
+    AzureOidcExchange::new(
+        config.sections.azure_oidc_exchange.clone(),
+        environment.clone(),
+        transport,
+        oidc_clock,
+    )
+    .map_err(|source| CloudRedisAuthSetupError::OidcExchange { source })
 }
