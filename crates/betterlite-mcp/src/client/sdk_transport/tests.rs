@@ -537,7 +537,7 @@ async fn a_comment_line_does_not_count_toward_the_event_limit() {
 async fn a_cr_delimited_event_at_the_size_limit_is_accepted() {
     let prefix = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"";
     let suffix = "\"}}";
-    let padding = 1_048_555 - prefix.len() - suffix.len();
+    let padding = 1_048_556 - prefix.len() - suffix.len();
     let json = format!("{prefix}{}{suffix}", "x".repeat(padding));
     let server = TestServer::start(move |_| {
         streamed(vec![Bytes::from(format!(

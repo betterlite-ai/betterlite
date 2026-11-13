@@ -215,7 +215,7 @@ async fn an_sse_response_rewrites_the_id_and_reconnects_with_last_event_id() {
 #[tokio::test]
 async fn an_sse_event_over_the_limit_fails_the_request() {
     let server = TestServer::start(|_| {
-        let payload = format!("event: message\ndata: {}\n\n", "x".repeat(1024 * 1024 + 16));
+        let payload = format!("event: message\ndata: {}\n\n", "x".repeat(1_048_557));
         streamed(vec![Bytes::from(payload)])
     })
     .await;
@@ -343,7 +343,7 @@ async fn a_get_stream_delivers_server_messages() {
 async fn an_sse_event_at_the_size_limit_is_accepted() {
     let prefix = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"";
     let suffix = "\"}}";
-    let padding = 1_048_555 - prefix.len() - suffix.len();
+    let padding = 1_048_556 - prefix.len() - suffix.len();
     let json = format!("{prefix}{}{suffix}", "x".repeat(padding));
     let server = TestServer::start(move |_| {
         let event = format!("event: message\ndata: {json}\n\n");
@@ -363,7 +363,7 @@ async fn an_sse_event_at_the_size_limit_is_accepted() {
 async fn an_sse_event_with_crlf_at_the_size_limit_is_accepted() {
     let prefix = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"";
     let suffix = "\"}}";
-    let padding = 1_048_555 - prefix.len() - suffix.len();
+    let padding = 1_048_556 - prefix.len() - suffix.len();
     let json = format!("{prefix}{}{suffix}", "x".repeat(padding));
     let server = TestServer::start(move |_| {
         let event = format!("event: message\r\ndata: {json}\r\n\r\n");

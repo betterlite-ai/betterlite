@@ -28,14 +28,6 @@ pub enum SdkError {
     AlreadyOpen,
     #[error("the MCP session is closed")]
     SessionClosed,
-    #[error("the SSE endpoint URL is not valid")]
-    EndpointUrl(#[source] url::ParseError),
-    #[error("the SSE stream ended before its endpoint event")]
-    EndpointMissing,
-    #[error("the streamable HTTP transport is already open")]
-    AlreadyOpen,
-    #[error("the MCP session is closed")]
-    SessionClosed,
     #[error("Endpoint origin does not match connection origin: {endpoint_url}")]
     OriginMismatch { endpoint_url: String },
     #[error("{message}")]

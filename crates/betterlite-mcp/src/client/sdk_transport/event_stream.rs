@@ -109,7 +109,7 @@ impl Limiter {
         if self.line == 0 {
             self.retained = 0;
         } else if !self.comment {
-            self.retained = self.retained.saturating_add(self.line).saturating_add(1);
+            self.retained = self.retained.saturating_add(self.line);
         }
         self.line = 0;
         self.comment = false;

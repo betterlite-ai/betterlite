@@ -42,9 +42,7 @@ enum Received {
 }
 fn endpoint_of(base: &Url, sse: &Sse) -> Result<Url, SdkError> {
     let data = sse.data.as_deref().unwrap_or_default();
-    let endpoint = base
-        .join(data)
-        .map_err(|source| SdkError::EndpointUrl { source })?;
+    let endpoint = base.join(data).map_err(SdkError::EndpointUrl)?;
     let same_origin = endpoint.scheme() == base.scheme()
         && endpoint.host_str() == base.host_str()
         && endpoint.port() == base.port();
