@@ -1,0 +1,11 @@
+task: B3997
+deviations:
+  - what: >-
+      LiteLLM's delete_gcs_object checks `(response.status_code != 200) or (response.status_code != 204)`,
+      which is always true, so it logs an error even after a successful delete. Betterlite treats 200 and 204
+      as success and logs an error only for any other status.
+    why: >-
+      The condition is a bug no working setup can rely on: both statuses mean the delete succeeded (POST-style
+      200 and the 204 GCS returns for DELETE). This task does not build delete_gcs_object, since it has no caller
+      at the pin; the deviation records the rule its owner must follow.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_base.py#L273
