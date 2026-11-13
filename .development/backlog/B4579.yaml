@@ -1,14 +1,14 @@
 id: B4579
 milestone: M8 platform
 title: CLI key management, migration and encryption commands
-status: todo
+status: done
 depends_on: [B4560, B4580]
 file: tasks/B4579-cli-key-management.yaml
 covers:
   - "litellm/proxy/client/cli/commands/{keys,encryption}.py"
 parent: B134
 split_from: B134
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1625
