@@ -187,6 +187,17 @@ fn configured_points_are_removed_from_the_params() {
 }
 
 #[test]
+fn a_null_configured_list_falls_back_to_defaults() {
+    let mut injection = Inject {
+        params: object(r#"{"cache_control_injection_points": null}"#),
+        ..Inject::claude()
+    };
+    let placed = run_injection(&mut injection, &Facts::claude());
+    assert_eq!(wire(&placed.messages), json(MARKED_USER));
+    assert_eq!(wire(&injection.params), json("{}"));
+}
+
+#[test]
 fn a_tool_config_point_is_written_back_for_downstream_transforms() {
     let params = r#"{"cache_control_injection_points": [{"location": "tool_config", "control": {"type": "ephemeral"}}]}"#;
     let mut injection = Inject {
