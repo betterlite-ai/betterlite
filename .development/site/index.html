@@ -15,13 +15,17 @@
 <body>
 <header class="masthead">
   <div class="wrap">
-    <a class="brand" href="#overview">betterlite <span>progress</span></a>
+    <div class="masthead-id">
+      <a class="brand" href="#overview">betterlite <span>progress</span></a>
+      <span class="built" id="built"></span>
+    </div>
     <nav aria-label="Sections">
       <a href="#overview">Overview</a>
       <a href="#history">History</a>
       <a href="#milestones">Milestones</a>
       <a href="#deviations">Deviations</a>
     </nav>
+    <a class="repo" href="https://github.com/betterlite-ai/betterlite" aria-label="betterlite on GitHub" title="betterlite on GitHub"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.625.75-2.188-.203-.515-.172-1.609.063-2.062.625-.078 1.468.25 1.968.703.594-.187 1.219-.281 1.985-.281.765 0 1.39.094 1.953.265.484-.437 1.344-.765 1.969-.687.218.422.25 1.515.046 2.047.5.593.766 1.39.766 2.203 0 1.922-1.453 3.375-3.547 3.64.531.344.89 1.094.89 1.954v1.625c0 .468.391.734.86.547C13.781 14.359 16 11.53 16 8.03 16 3.61 12.406 0 7.984 0 3.563 0 0 3.61 0 8.031a7.88 7.88 0 0 0 5.172 7.422c.422.156.828-.125.828-.547v-1.25c-.219.094-.5.156-.75.156-1.031 0-1.64-.562-2.078-1.609-.172-.422-.36-.672-.719-.719-.187-.015-.25-.093-.25-.187 0-.188.313-.328.625-.328.453 0 .844.281 1.25.86.313.452.64.655 1.031.655s.641-.14 1-.5c.266-.265.47-.5.657-.656"/></svg></a>
   </div>
 </header>
 
@@ -37,7 +41,7 @@
     <div class="block">
       <header>
         <h3>Milestones</h3>
-        <p>Tasks merged in each milestone. A milestone groups related work, not a build order: many tasks depend on work in later milestones.</p>
+        <p>Tasks merged in each milestone. A milestone groups related work, not a build order: many tasks depend on work in later milestones. R milestones hold cleanup and refactoring of code already ported, so the porting counts leave them out.</p>
       </header>
       <div class="table-scroll" id="milestone-table"></div>
     </div>
@@ -282,7 +286,6 @@
 
 <footer>
   <div class="wrap">
-    <p id="built"></p>
     <p>Data: the task list in <a href="https://github.com/betterlite-ai/betterlite/tree/main/.development/backlog">.development/backlog</a> and the logs in <a href="https://github.com/betterlite-ai/betterlite/tree/main/docs/deviations">docs/deviations</a>. Pull requests and CI runs are read from GitHub at every deploy. Agent runs and the build machine come from the snapshot in <a href="https://github.com/betterlite-ai/betterlite/tree/main/.development/site/stats">.development/site/stats</a>. Source of this page: <a href="https://github.com/betterlite-ai/betterlite/tree/main/.development/site">.development/site</a>.</p>
   </div>
 </footer>

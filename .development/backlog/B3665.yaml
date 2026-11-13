@@ -1,7 +1,7 @@
 id: B3665
 milestone: M6 guardrails
 title: Guardrail lifecycle selection and trusted opt-outs
-status: todo
+status: done
 depends_on: [B3660, B3662, B5471]
 file: tasks/B3665-guardrail-lifecycle-selection.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/proxy/guardrails/auto_router_compression.py"
 parent: B104
 split_from: B104
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1507

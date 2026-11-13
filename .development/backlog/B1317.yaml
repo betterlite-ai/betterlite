@@ -1,7 +1,7 @@
 id: B1317
 milestone: M3 providers
 title: Gemini cache prefixes, TTL and system instructions
-status: todo
+status: done
 depends_on: [B1301, B1306, B1312, B171]
 file: tasks/B1317-gemini-cache-prefix.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/types/llms/vertex_ai.py"
 parent: B031
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1475

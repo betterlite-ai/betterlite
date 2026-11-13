@@ -1,0 +1,16 @@
+kind: helper
+name: completed-output-id
+call:
+  xai_batches:
+    operation: batch
+    calls:
+      - endpoint: null
+        batch: {batch_id: batch_done, state: {num_requests: 2, num_success: 2}}
+      - endpoint: null
+        batch: {batch_id: batch_running, state: {num_requests: 2, num_pending: 1}}
+      - endpoint: null
+        batch: {batch_id: batch_empty, state: {num_requests: 0}}
+      - endpoint: null
+        batch: {batch_id: batch_cancelled, cancel_time: "2024-01-02"}
+env: {}
+compare: {ignore: []}

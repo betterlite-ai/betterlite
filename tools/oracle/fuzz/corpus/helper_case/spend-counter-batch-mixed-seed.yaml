@@ -1,0 +1,15 @@
+kind: helper
+name: spend-counter-batch-mixed-seed
+call:
+  spend_counter_batch:
+    function: post_call_counter_keys
+    token: 12
+    team_id: ""
+    user_id: ""
+    org_id: false
+    end_user_id: null
+    project_id: ""
+    tags: ["", dup, dup, 5, null, true, x]
+    model_access_groups: ["", g, g, 7]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,79 @@
+kind: helper
+name: responses-parameters-prompt-input
+call:
+  responses_parameters:
+    action: prompt
+    steps:
+      - {original_input: null, merged: []}
+      - {original_input: hi, merged: []}
+      - original_input:
+          - {type: function_call, name: f}
+          - {role: user, content: hi}
+          - {type: reasoning, id: r}
+          - {role: assistant, content: ok}
+        merged: []
+      - original_input:
+          - {role: user, content: hi}
+          - {role: assistant, content: ok}
+        merged:
+          - {source: 0, message: {role: user, content: hi}}
+          - {source: 1, message: {role: assistant, content: ok}}
+      - original_input:
+          - {type: function_call, name: f}
+        merged:
+          - {source: null, message: {role: user, content: hi}}
+      - original_input:
+          - {type: function_call, name: f}
+          - {role: user, content: hi, id: u}
+          - {type: reasoning, id: r}
+          - {role: assistant, content: ok, id: a}
+        merged:
+          - {source: null, message: {role: user, content: changed, id: u}}
+          - {source: null, message: {role: assistant, content: done, id: a}}
+      - original_input:
+          - {type: function_call, name: f}
+          - {role: user, content: hi}
+          - {type: reasoning, id: r}
+          - {role: assistant, content: ok}
+          - {type: function_call_output, output: x}
+        merged:
+          - {source: null, message: {role: system, content: rules}}
+          - {source: 0, message: {role: user, content: hi}}
+          - {source: 1, message: {role: assistant, content: ok}}
+      - original_input:
+          - {type: function_call, name: f}
+          - {role: user, content: hi}
+          - {type: reasoning, id: r}
+          - {role: assistant, content: ok}
+          - {type: function_call_output, output: x}
+        merged:
+          - {source: null, message: {role: system, content: rules}}
+          - {source: null, message: {role: user, content: hi}}
+          - {source: null, message: {role: assistant, content: ok}}
+      - original_input:
+          - {type: function_call, name: f}
+          - {role: user, content: [{type: text, text: a}, {type: image_url, image_url: {url: u}}]}
+        merged:
+          - {source: 0, message: {role: user, content: [{type: text, text: a}, {type: image_url, image_url: {url: u}}]}}
+      - original_input:
+          - {type: function_call, name: f}
+          - {role: user, content: hi, id: u}
+        merged:
+          - {source: null, message: {role: user, content: hi, id: v}}
+      - original_input:
+          - {type: function_call, name: f}
+          - {role: user, content: hi}
+        merged:
+          - {source: null, message: {role: user, content: hi, id: v}}
+      - original_input: []
+        merged:
+          - {source: null, message: {role: user, content: hi}}
+      - original_input: hi
+        merged:
+          - {source: null, message: {role: user, content: hello}}
+      - original_input:
+          - {type: function_call, name: f}
+        merged:
+          - {source: 4, message: {role: user, content: hi}}
+env: {}
+compare: {ignore: []}

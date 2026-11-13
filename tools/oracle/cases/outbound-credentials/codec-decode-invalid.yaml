@@ -1,0 +1,15 @@
+{
+  "kind": "helper",
+  "name": "codec-decode-invalid",
+  "call": {
+    "b4656": {
+      "function": "codec",
+      "operation": "decode",
+      "plaintext": "litellm-bound-oauth-v1:{not-json"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

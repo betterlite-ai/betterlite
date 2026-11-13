@@ -34,6 +34,7 @@ pub(crate) fn run_builtin(id: BuiltinId, context: &Context<'_>) -> Result<Vec<St
         BuiltinId::ExpectBudget => Ok(expect_budget::check(
             context.task.budget.max_new_expects,
             &context.facts.added_rust_lines,
+            &context.facts.added_python_lines,
         )),
         BuiltinId::FileSize => file_size::check(context),
         BuiltinId::Crates => crates::check(&context.development.root),

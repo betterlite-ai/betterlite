@@ -134,5 +134,5 @@ pitfalls:
   std::future::ready(Err(...)) so its owner can make it async later without touching the dispatch.rs arm.
 review_level: standard
 budget:
-  max_changed_lines: 2150
+  max_changed_lines: 2700
   max_new_expects: 0

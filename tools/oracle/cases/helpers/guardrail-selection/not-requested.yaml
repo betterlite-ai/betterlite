@@ -1,0 +1,6 @@
+kind: helper
+name: not-requested
+call:
+  b3665: {"function": "should_run_guardrail", "guardrail_name": "g", "event_hook": "pre_call", "default_on": false, "data": {}, "event_type": "pre_call", "suppressed": []}
+env: {}
+compare: {ignore: []}

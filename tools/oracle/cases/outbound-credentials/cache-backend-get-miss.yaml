@@ -1,0 +1,22 @@
+{
+  "kind": "helper",
+  "name": "cache-backend-get-miss",
+  "call": {
+    "b4656": {
+      "function": "store",
+      "kind": "cache",
+      "operations": [
+        {
+          "op": "get",
+          "user_id": "user",
+          "server_id": "server",
+          "now_ms": 1000000
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
