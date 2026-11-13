@@ -27,7 +27,7 @@ use super::route::{ImageCall, route_image_cost};
 #[error("the recording policy refused")]
 struct Refused;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 struct Seen {
     label: &'static str,
     size: Option<String>,
@@ -35,6 +35,7 @@ struct Seen {
     image_count: Option<i64>,
     provider: Option<String>,
     price_keys: Option<Vec<String>>,
+    image_price: Option<Scalar>,
     has_params: bool,
 }
 
@@ -61,105 +62,102 @@ impl Recording {
 }
 
 impl Seen {
-    fn new(label: &'static str) -> Self {
+    fn new(label: &'static str, prices: Option<&PriceRecord>) -> Self {
         Self {
             label,
             size: None,
             quality: None,
             image_count: None,
             provider: None,
-            price_keys: None,
+            price_keys: prices.map(|record| record.keys().cloned().collect()),
+            image_price: prices.and_then(|record| record.get("output_cost_per_image").cloned()),
             has_params: false,
         }
     }
-
-    fn with_prices(mut self, prices: Option<&PriceRecord>) -> Self {
-        self.price_keys = prices.map(|record| record.keys().cloned().collect());
-        self
-    }
 }
 
-fn labelled(label: &'static str, prices: Option<&PriceRecord>) -> Seen {
-    Seen::new(label).with_prices(prices)
-}
-
-fn bedrock_seen(route: &ImageRoute<'_>) -> Seen {
-    let mut seen = Seen::new("bedrock");
-    if let ImageRoute::Bedrock {
-        size,
-        optional_params,
-        ..
-    } = route
-    {
-        seen.size = Some((*size).to_owned());
-        seen.has_params = optional_params.is_some();
+fn route_prices<'route>(route: &'route ImageRoute<'_>) -> Option<&'route PriceRecord> {
+    match route {
+        ImageRoute::Bedrock { .. } => None,
+        ImageRoute::VertexAi(image)
+        | ImageRoute::Recraft(image)
+        | ImageRoute::Aiml(image)
+        | ImageRoute::Cometapi(image)
+        | ImageRoute::Gemini(image)
+        | ImageRoute::GeminiEdit(image)
+        | ImageRoute::Runwayml(image)
+        | ImageRoute::AzureAi { image, .. }
+        | ImageRoute::FalAi { image, .. }
+        | ImageRoute::GptImage { image, .. }
+        | ImageRoute::Default { image, .. } => image.prices,
     }
-    seen
-}
-
-fn azure_seen(route: &ImageRoute<'_>) -> Seen {
-    let mut seen = Seen::new("azure_ai");
-    if let ImageRoute::AzureAi {
-        image,
-        size,
-        image_count,
-        optional_params,
-    } = route
-    {
-        seen.size = Some((*size).to_owned());
-        seen.image_count = Some(*image_count);
-        seen.has_params = optional_params.is_some();
-        seen = seen.with_prices(image.prices);
-    }
-    seen
-}
-
-fn default_seen(route: &ImageRoute<'_>) -> Seen {
-    let mut seen = Seen::new("default");
-    if let ImageRoute::Default {
-        image,
-        provider,
-        quality,
-        image_count,
-        size,
-        optional_params,
-    } = route
-    {
-        seen.size = Some((*size).to_owned());
-        seen.quality = Some((*quality).to_owned());
-        seen.image_count = Some(*image_count);
-        seen.provider = provider.map(str::to_owned);
-        seen.has_params = optional_params.is_some();
-        seen = seen.with_prices(image.prices);
-    }
-    seen
 }
 
 fn describe(route: &ImageRoute<'_>) -> Seen {
+    let label = if matches!(route, ImageRoute::GeminiEdit(_)) {
+        "gemini_edit"
+    } else {
+        route.adapter()
+    };
+    let mut seen = Seen::new(label, route_prices(route));
     match route {
-        ImageRoute::VertexAi(image) => labelled("vertex_ai", image.prices),
-        ImageRoute::Recraft(image) => labelled("recraft", image.prices),
-        ImageRoute::Aiml(image) => labelled("aiml", image.prices),
-        ImageRoute::Cometapi(image) => labelled("cometapi", image.prices),
-        ImageRoute::Gemini(image) => labelled("gemini", image.prices),
-        ImageRoute::GeminiEdit(image) => labelled("gemini_edit", image.prices),
-        ImageRoute::Runwayml(image) => labelled("runwayml", image.prices),
-        ImageRoute::FalAi {
-            image,
+        ImageRoute::Bedrock {
+            size,
             optional_params,
+            ..
+        }
+        | ImageRoute::AzureAi {
+            size,
+            optional_params,
+            ..
+        }
+        | ImageRoute::Default {
+            size,
+            optional_params,
+            ..
         } => {
-            let mut seen = labelled("fal_ai", image.prices);
+            seen.size = Some((*size).to_owned());
             seen.has_params = optional_params.is_some();
-            seen
         }
-        ImageRoute::GptImage { image, provider } => {
-            let mut seen = labelled("gpt_image", image.prices);
-            seen.provider = Some((*provider).to_owned());
-            seen
+        ImageRoute::FalAi {
+            optional_params, ..
+        } => seen.has_params = optional_params.is_some(),
+        ImageRoute::VertexAi(_)
+        | ImageRoute::Recraft(_)
+        | ImageRoute::Aiml(_)
+        | ImageRoute::Cometapi(_)
+        | ImageRoute::Gemini(_)
+        | ImageRoute::GeminiEdit(_)
+        | ImageRoute::Runwayml(_)
+        | ImageRoute::GptImage { .. } => {}
+    }
+    note_billing_fields(&mut seen, route);
+    seen
+}
+
+fn note_billing_fields(seen: &mut Seen, route: &ImageRoute<'_>) {
+    match route {
+        ImageRoute::AzureAi { image_count, .. } => seen.image_count = Some(*image_count),
+        ImageRoute::Default {
+            provider,
+            quality,
+            image_count,
+            ..
+        } => {
+            seen.quality = Some((*quality).to_owned());
+            seen.image_count = Some(*image_count);
+            seen.provider = provider.map(str::to_owned);
         }
-        ImageRoute::Bedrock { .. } => bedrock_seen(route),
-        ImageRoute::AzureAi { .. } => azure_seen(route),
-        ImageRoute::Default { .. } => default_seen(route),
+        ImageRoute::GptImage { provider, .. } => seen.provider = Some((*provider).to_owned()),
+        ImageRoute::Bedrock { .. }
+        | ImageRoute::FalAi { .. }
+        | ImageRoute::VertexAi(_)
+        | ImageRoute::Recraft(_)
+        | ImageRoute::Aiml(_)
+        | ImageRoute::Cometapi(_)
+        | ImageRoute::Gemini(_)
+        | ImageRoute::GeminiEdit(_)
+        | ImageRoute::Runwayml(_) => {}
     }
 }
 
@@ -517,31 +515,13 @@ fn a_deployment_without_prices_passes_no_price_record() {
     assert_eq!(run(&bare).1[0].price_keys, None);
 }
 
-struct Capture<'capture>(&'capture Mutex<Option<Scalar>>);
-
-impl ImagePricePolicy for Capture<'_> {
-    type Error = Refused;
-
-    fn image_cost(&self, route: &ImageRoute<'_>) -> Result<Decimal, Refused> {
-        if let ImageRoute::Recraft(image) = route {
-            *self.0.lock().unwrap_or_else(PoisonError::into_inner) = image
-                .prices
-                .and_then(|record| record.get("output_cost_per_image").cloned());
-        }
-        Ok(Decimal::ZERO)
-    }
-}
-
 #[test]
 fn deployment_prices_are_exact_numbers() {
     let info: ModelInfo = serde_json::from_str(r#"{"output_cost_per_image":"0.0400"}"#).unwrap();
     let response = billing(1, None, None);
     let mut priced = call(Some("recraft"), &response);
     priced.model_info = Some(&info);
-    let pattern = SizePattern::new().unwrap();
-    let captured = Mutex::new(None);
-    route_image_cost(&Capture(&captured), &pattern, &priced).unwrap();
-    let Some(Scalar::Number(number)) = captured.into_inner().unwrap() else {
+    let Some(Scalar::Number(number)) = run(&priced).1[0].image_price.clone() else {
         panic!("the price is not a number");
     };
     assert_eq!(number.to_string(), "0.04");

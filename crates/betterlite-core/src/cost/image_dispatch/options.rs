@@ -33,10 +33,8 @@ impl SizePattern {
         &self,
         optional_params: Option<&'params OptionalParams>,
     ) -> Option<&'params str> {
-        match requested_image_param(optional_params, "size") {
-            Some(size) if self.0.is_match(size) => Some(size),
-            Some(_) | None => None,
-        }
+        requested_image_param(optional_params, "size")
+            .and_then(|size| self.0.is_match(size).then_some(size))
     }
 }
 

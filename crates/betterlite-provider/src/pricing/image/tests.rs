@@ -101,16 +101,20 @@ fn empty() -> Catalog {
 }
 
 #[rstest]
-#[case::returned_count(None, "0.08")]
-#[case::explicit_count(Some(5), "0.20")]
-#[case::explicit_zero(Some(0), "0.00")]
-fn the_default_calculator_prices_the_resolved_count(
+#[case::default_returned_count("stability", "sdxl", None, "0.08")]
+#[case::default_explicit_count("stability", "sdxl", Some(5), "0.20")]
+#[case::default_explicit_zero("stability", "sdxl", Some(0), "0.00")]
+#[case::azure_ai_returned_count("azure_ai", "flux", None, "0.08")]
+#[case::azure_ai_explicit_count("azure_ai", "flux", Some(5), "0.20")]
+fn the_resolved_count_is_billed_at_the_deployment_price(
+    #[case] provider: &str,
+    #[case] model: &str,
     #[case] count: Option<i64>,
     #[case] expected: &str,
 ) {
     let info = deployment("0.04");
     let response = billing(2);
-    let mut call = image_call("stability", "sdxl", ImageResponseView::Image(&response));
+    let mut call = image_call(provider, model, ImageResponseView::Image(&response));
     call.model_info = Some(&info);
     call.image_count = count;
     assert_eq!(
@@ -147,24 +151,6 @@ fn a_gpt_image_model_without_deployment_prices_costs_zero() {
     let response = billing(2);
     let call = image_call("azure", "gpt-image-1", ImageResponseView::Image(&response));
     assert_eq!(price(&call, &empty()).unwrap(), Decimal::ZERO);
-}
-
-#[rstest]
-#[case::returned_count(None, "0.08")]
-#[case::explicit_count(Some(5), "0.20")]
-fn azure_ai_bills_the_resolved_count_at_the_flat_price(
-    #[case] count: Option<i64>,
-    #[case] expected: &str,
-) {
-    let info = deployment("0.04");
-    let response = billing(2);
-    let mut call = image_call("azure_ai", "flux", ImageResponseView::Image(&response));
-    call.model_info = Some(&info);
-    call.image_count = count;
-    assert_eq!(
-        price(&call, &empty()).unwrap(),
-        expected.parse::<Decimal>().unwrap()
-    );
 }
 
 #[test]
