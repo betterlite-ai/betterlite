@@ -2,9 +2,9 @@ kind: helper
 name: batch-none-versus-empty
 call:
   mistral_resources:
-    operation: batch_create
     env: {}
-    calls:
+    files: null
+    creates:
       - model: mistral-small-latest
         api_base: null
         api_key: Key
@@ -25,5 +25,7 @@ call:
         api_base: null
         api_key: null
         data: {input_file_id: f, endpoint: /v1/responses}
+    jobs: []
+    retrieve: []
 env: {}
 compare: {ignore: []}

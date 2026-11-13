@@ -1,28 +1,23 @@
-use betterlite_config::sections::mistral_resources::Settings;
-use betterlite_http::url_path::encode_segment;
-use http::Method;
-use secrecy::SecretString;
-use serde_json::Map;
-
-use crate::api::batch_records::{BatchFailure, BatchFailures, CreateBatchRequest, RequestCounts};
-use crate::batches::records::{BatchObject, BatchObjectKind, BatchStatus};
-use crate::mistral_identity::{auth_headers, base_url};
-use crate::openai_base_config::Headers;
-
 use super::error::MistralBatchesError;
 use super::records::{
     MistralBatchError, MistralBatchJob, MistralBatchStatus, MistralCreateBatchJobRequest,
     MistralGetRequest,
 };
-
+use crate::api::batch_records::{BatchFailure, BatchFailures, CreateBatchRequest, RequestCounts};
+use crate::batches::records::{BatchObject, BatchObjectKind, BatchStatus};
+use crate::mistral_identity::{auth_headers, base_url};
+use crate::openai_base_config::Headers;
+use betterlite_config::sections::mistral_resources::Settings;
+use betterlite_http::url_path::encode_segment;
+use http::Method;
+use secrecy::SecretString;
+use serde_json::Map;
 const COMPLETION_WINDOW: &str = "24h";
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BatchCreatePlan {
     pub url: String,
     pub body: MistralCreateBatchJobRequest,
 }
-
 pub fn create_batch(
     data: &CreateBatchRequest,
     model: &str,
@@ -48,7 +43,6 @@ pub fn create_batch(
         },
     })
 }
-
 pub fn retrieve_batch(
     batch_id: &str,
     api_base: Option<&str>,
@@ -65,7 +59,6 @@ pub fn retrieve_batch(
         headers,
     })
 }
-
 #[must_use]
 pub const fn openai_status(status: MistralBatchStatus) -> BatchStatus {
     match status {
@@ -78,7 +71,6 @@ pub const fn openai_status(status: MistralBatchStatus) -> BatchStatus {
         MistralBatchStatus::Cancelled => BatchStatus::Cancelled,
     }
 }
-
 fn to_batch_errors(errors: &[MistralBatchError]) -> Option<BatchFailures> {
     if errors.is_empty() {
         return None;
@@ -102,11 +94,11 @@ fn to_batch_errors(errors: &[MistralBatchError]) -> Option<BatchFailures> {
         object: Some(String::from("list")),
     })
 }
-
 #[must_use]
 pub fn to_batch_object(job: &MistralBatchJob) -> BatchObject {
     let status = openai_status(job.status);
     let terminal_at = job.completed_at;
+    let terminal = |candidate: BatchStatus| (status == candidate).then_some(terminal_at).flatten();
     BatchObject {
         id: job.id.clone(),
         completion_window: COMPLETION_WINDOW.to_owned(),
@@ -115,22 +107,14 @@ pub fn to_batch_object(job: &MistralBatchJob) -> BatchObject {
         input_file_id: job.input_files.first().cloned().unwrap_or_default(),
         object: BatchObjectKind::Batch,
         status,
-        cancelled_at: (status == BatchStatus::Cancelled)
-            .then_some(terminal_at)
-            .flatten(),
+        cancelled_at: terminal(BatchStatus::Cancelled),
         cancelling_at: None,
-        completed_at: (status == BatchStatus::Completed)
-            .then_some(terminal_at)
-            .flatten(),
+        completed_at: terminal(BatchStatus::Completed),
         error_file_id: job.error_file.clone(),
         errors: to_batch_errors(&job.errors),
-        expired_at: (status == BatchStatus::Expired)
-            .then_some(terminal_at)
-            .flatten(),
+        expired_at: terminal(BatchStatus::Expired),
         expires_at: None,
-        failed_at: (status == BatchStatus::Failed)
-            .then_some(terminal_at)
-            .flatten(),
+        failed_at: terminal(BatchStatus::Failed),
         finalizing_at: None,
         in_progress_at: job.started_at,
         metadata: job.metadata.clone(),

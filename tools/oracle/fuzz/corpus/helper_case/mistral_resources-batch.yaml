@@ -1,9 +1,0 @@
-kind: helper
-name: mistral-resources-batch-seed
-call:
-  mistral_resources:
-    operation: batch
-    calls:
-      - batch: {id: job-1, endpoint: /v1/chat/completions, status: QUEUED, created_at: 1}
-env: {}
-compare: {ignore: []}

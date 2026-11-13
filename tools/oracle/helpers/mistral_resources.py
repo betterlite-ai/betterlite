@@ -1,7 +1,6 @@
 import json
 import os
 import time
-from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import partial
 from typing import Final, Literal, TypeAlias, TypedDict
@@ -29,65 +28,41 @@ BATCHES: Final = MistralBatchesConfig()
 JSON: Final = TypeAdapter(JsonValue)
 
 
-class UploadFile(TypedDict):
+class Upload(TypedDict):
     filename: str | None
     content_type: str | None
     content: list[int]
-
-
-class Upload(TypedDict):
-    file: UploadFile
     purpose: Literal["assistants", "batch", "fine-tune", "messages"]
 
 
-class FilesCall(TypedDict):
+class Files(TypedDict):
     api_base: str | None
     api_key: str | None
     now: int
     uploads: list[Upload]
     list_purposes: list[str | None]
     bodies: list[JsonValue]
-    deleted: list[JsonValue]
-    file_ids: list[str]
 
 
-class FilesInput(TypedDict):
-    operation: Literal["files"]
-    env: dict[str, str]
-    calls: list[FilesCall]
-
-
-class BatchCreateCall(TypedDict):
-    model: str
+class Create(TypedDict):
     api_base: str | None
     api_key: str | None
+    model: str
     data: CreateBatchRequest
 
 
-class BatchCreateInput(TypedDict):
-    operation: Literal["batch_create"]
-    env: dict[str, str]
-    calls: list[BatchCreateCall]
-
-
-class BatchInput(TypedDict):
-    operation: Literal["batch"]
-    calls: list[JsonValue]
-
-
-class RetrieveCall(TypedDict):
+class Retrieve(TypedDict):
     batch_id: str
     api_base: str | None
     api_key: str | None
 
 
-class RetrieveInput(TypedDict):
-    operation: Literal["retrieve"]
+class Input(TypedDict):
     env: dict[str, str]
-    calls: list[RetrieveCall]
-
-
-Input: TypeAlias = FilesInput | BatchCreateInput | BatchInput | RetrieveInput
+    files: Files | None
+    creates: list[Create]
+    jobs: list[JsonValue]
+    retrieve: list[Retrieve]
 
 
 class UploadParts(TypedDict):
@@ -98,29 +73,7 @@ class UploadParts(TypedDict):
 UPLOAD_PARTS = TypeAdapter(UploadParts)
 
 
-def apply_environment(environment: dict[str, str]) -> None:
-    os.environ.clear()
-    os.environ.update(environment)
-
-
-def validated_headers(
-    transform: Callable[..., dict[str, str]],
-    api_key: str | None,
-    api_base: str | None,
-    litellm_params: dict[str, JsonValue],
-) -> dict[str, str]:
-    return transform(
-        headers={},
-        model="",
-        messages=[],
-        optional_params={},
-        litellm_params=litellm_params,
-        api_key=api_key,
-        api_base=api_base,
-    )
-
-
-def file_value(upload: UploadFile) -> FileValue:
+def file_value(upload: Upload) -> FileValue:
     content = bytes(upload["content"])
     content_type = upload["content_type"]
     filename = upload["filename"]
@@ -131,24 +84,23 @@ def file_value(upload: UploadFile) -> FileValue:
     return content
 
 
-def upload_outcome(
-    upload: Upload, call: FilesCall, litellm_params: dict[str, JsonValue]
-) -> JsonValue:
+def upload_outcome(upload: Upload, call: Files) -> JsonValue:
+    params: dict[str, JsonValue] = {"api_base": call["api_base"]}
     url = FILES.get_complete_url(
         api_base=call["api_base"],
         api_key=call["api_key"],
         model="",
         optional_params={},
-        litellm_params=litellm_params,
+        litellm_params=params,
     )
     try:
         body = FILES.transform_create_file_request(
             model="",
             create_file_data=CreateFileRequest(
-                file=file_value(upload["file"]), purpose=upload["purpose"]
+                file=file_value(upload), purpose=upload["purpose"]
             ),
             optional_params={},
-            litellm_params=litellm_params,
+            litellm_params=params,
         )
     except BaseLLMException as error:
         return {"ok": False, "status": error.status_code}
@@ -164,27 +116,15 @@ def upload_outcome(
     }
 
 
-def list_outcome(purpose: str | None, litellm_params: dict[str, JsonValue]) -> JsonValue:
+def list_outcome(purpose: str | None, call: Files) -> JsonValue:
     try:
         url, query = FILES.transform_list_files_request(
-            purpose=purpose, optional_params={}, litellm_params=litellm_params
+            purpose=purpose,
+            optional_params={},
+            litellm_params={"api_base": call["api_base"]},
         )
     except BaseLLMException as error:
         return {"ok": False, "status": error.status_code}
-    return {"ok": True, "url": url, "query": [[name, value] for name, value in query.items()]}
-
-
-def request_outcome(
-    transform: Callable[..., tuple[str, dict[str, str]]],
-    file_id: str,
-    litellm_params: dict[str, JsonValue],
-) -> JsonValue:
-    try:
-        url, query = transform(
-            file_id=file_id, optional_params={}, litellm_params=litellm_params
-        )
-    except ValueError:
-        return {"ok": False, "status": None}
     return {"ok": True, "url": url, "query": [[name, value] for name, value in query.items()]}
 
 
@@ -197,19 +137,16 @@ def file_response(body: JsonValue, now: int) -> JsonValue:
     return JSON.validate_json(file.model_dump_json())
 
 
-def delete_response(body: JsonValue) -> JsonValue:
-    response = httpx.Response(200, content=json.dumps(body).encode())
-    deleted = FILES.transform_delete_file_response(
-        raw_response=response, logging_obj=LOGGING, litellm_params={}
-    )
-    return JSON.validate_json(deleted.model_dump_json())
-
-
-def files_call(call: FilesCall) -> JsonValue:
-    litellm_params: dict[str, JsonValue] = {"api_base": call["api_base"]}
+def files_outcome(call: Files) -> JsonValue:
     try:
-        headers = validated_headers(
-            FILES.validate_environment, call["api_key"], call["api_base"], litellm_params
+        headers = FILES.validate_environment(
+            headers={},
+            model="",
+            messages=[],
+            optional_params={},
+            litellm_params={"api_base": call["api_base"]},
+            api_key=call["api_key"],
+            api_base=call["api_base"],
         )
     except ValueError:
         return {"ok": False, "status": None}
@@ -217,36 +154,37 @@ def files_call(call: FilesCall) -> JsonValue:
     return {
         "ok": True,
         "authorization": headers["Authorization"],
-        "uploads": [upload_outcome(upload, call, litellm_params) for upload in call["uploads"]],
-        "list": [list_outcome(purpose, litellm_params) for purpose in call["list_purposes"]],
+        "uploads": [upload_outcome(upload, call) for upload in call["uploads"]],
+        "list": [list_outcome(purpose, call) for purpose in call["list_purposes"]],
         "bodies": [file_response(body, call["now"]) for body in call["bodies"]],
-        "deleted": [delete_response(body) for body in call["deleted"]],
-        "delete": [
-            request_outcome(FILES.transform_delete_file_request, file_id, litellm_params)
-            for file_id in call["file_ids"]
-        ],
     }
 
 
-def batch_create_call(call: BatchCreateCall) -> JsonValue:
-    litellm_params: dict[str, JsonValue] = {"api_base": call["api_base"]}
+def create_outcome(call: Create) -> JsonValue:
+    params: dict[str, JsonValue] = {"api_base": call["api_base"]}
     try:
-        headers = validated_headers(
-            BATCHES.validate_environment, call["api_key"], call["api_base"], litellm_params
+        headers = BATCHES.validate_environment(
+            headers={},
+            model="",
+            messages=[],
+            optional_params={},
+            litellm_params=params,
+            api_key=call["api_key"],
+            api_base=call["api_base"],
         )
         url = BATCHES.get_complete_batch_url(
             api_base=call["api_base"],
             api_key=call["api_key"],
             model=call["model"],
             optional_params={},
-            litellm_params=litellm_params,
+            litellm_params=params,
             data=call["data"],
         )
         body = BATCHES.transform_create_batch_request(
             model=call["model"],
             create_batch_data=call["data"],
             optional_params={},
-            litellm_params=litellm_params,
+            litellm_params=params,
         )
     except ValueError:
         return {"ok": False, "status": None}
@@ -258,15 +196,15 @@ def batch_create_call(call: BatchCreateCall) -> JsonValue:
     }
 
 
-def batch_call(batch: JsonValue) -> JsonValue:
-    response = httpx.Response(200, content=json.dumps(batch).encode())
-    job = BATCHES.transform_create_batch_response(
+def job_outcome(job: JsonValue) -> JsonValue:
+    response = httpx.Response(200, content=json.dumps(job).encode())
+    batch = BATCHES.transform_create_batch_response(
         model=None, raw_response=response, logging_obj=LOGGING, litellm_params={}
     )
-    return {"ok": True, "batch": JSON.validate_json(job.model_dump_json())}
+    return {"ok": True, "batch": JSON.validate_json(batch.model_dump_json())}
 
 
-def retrieve_call(call: RetrieveCall) -> JsonValue:
+def retrieve_outcome(call: Retrieve) -> JsonValue:
     try:
         request = BATCHES.transform_retrieve_batch_request(
             batch_id=call["batch_id"],
@@ -286,15 +224,12 @@ def retrieve_call(call: RetrieveCall) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    match input_value["operation"]:
-        case "files":
-            apply_environment(input_value["env"])
-            return {"calls": [files_call(call) for call in input_value["calls"]]}
-        case "batch_create":
-            apply_environment(input_value["env"])
-            return {"calls": [batch_create_call(call) for call in input_value["calls"]]}
-        case "batch":
-            return {"calls": [batch_call(call["batch"]) for call in input_value["calls"]]}
-        case "retrieve":
-            apply_environment(input_value["env"])
-            return {"calls": [retrieve_call(call) for call in input_value["calls"]]}
+    os.environ.clear()
+    os.environ.update(input_value["env"])
+    files = None if input_value["files"] is None else files_outcome(input_value["files"])
+    return {
+        "files": files,
+        "create": [create_outcome(call) for call in input_value["creates"]],
+        "jobs": [job_outcome(job) for job in input_value["jobs"]],
+        "retrieve": [retrieve_outcome(call) for call in input_value["retrieve"]],
+    }

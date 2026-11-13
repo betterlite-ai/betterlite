@@ -6,10 +6,10 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 use rstest::rstest;
 
 use super::super::error::MistralFilesError;
-use super::super::records::{MistralFile, MistralFileDeleted, MistralFileList, MistralPurpose};
+use super::super::records::{MistralFile, MistralFileDeleted, MistralPurpose};
 use super::super::transformation::{
-    FileUploadRequest, SUPPORTED_OPENAI_PARAMS, content_url, create_upload, file_url, list_request,
-    openai_purpose, to_file_deleted, to_file_object, to_file_objects, upload_purpose,
+    FileUploadRequest, create_upload, file_url, list_request, openai_purpose, to_file_deleted,
+    to_file_object, upload_purpose,
 };
 use super::settings;
 use crate::files::records::{BinaryContent, FileKind, FileStatus, FilesPurpose};
@@ -59,11 +59,6 @@ fn upload_rejects_purposes_mistral_lacks(#[case] purpose: &str) {
     for supported in ["fine-tune", "batch", "ocr", "user_data"] {
         assert!(text.contains(supported), "{text} names {supported}");
     }
-}
-
-#[test]
-fn the_only_supported_create_option_is_purpose() {
-    assert_eq!(SUPPORTED_OPENAI_PARAMS, ["purpose"]);
 }
 
 #[test]
@@ -146,33 +141,34 @@ fn file_urls_resolve_the_mistral_origin_and_suffix(
     #[case] expected: &str,
     #[case] suffix: &str,
 ) {
-    let url = file_url("file-1", suffix, api_base, &settings(None, None)).expect("a URL");
+    let url = file_url(Some("file-1"), suffix, api_base, &settings(None, None)).expect("a URL");
     assert_eq!(url, expected);
 }
 
 #[test]
 fn file_urls_encode_each_id_as_one_segment() {
-    let url = file_url("a b/c", "", None, &settings(None, None)).expect("a URL");
+    let url = file_url(Some("a b/c"), "", None, &settings(None, None)).expect("a URL");
     assert_eq!(url, "https://api.mistral.ai/v1/files/a%20b%2Fc");
 }
 
 #[rstest]
-#[case("")]
-#[case("..")]
-fn file_urls_reject_an_absent_or_dot_id(#[case] file_id: &str) {
+#[case(None)]
+#[case(Some(""))]
+#[case(Some(".."))]
+fn file_urls_reject_an_absent_or_dot_id(#[case] file_id: Option<&str>) {
     let error = file_url(file_id, "", None, &settings(None, None)).expect_err("no URL");
     assert_eq!(error.status_code(), None);
 }
 
 #[test]
 fn content_requires_a_file_id() {
-    let error = content_url(None, None, &settings(None, None)).expect_err("no URL");
+    let error = file_url(None, "/content", None, &settings(None, None)).expect_err("no URL");
     assert!(matches!(error, MistralFilesError::FileIdRequired));
 }
 
 #[test]
 fn content_appends_the_content_suffix() {
-    let url = content_url(Some("file-1"), None, &settings(None, None)).expect("a URL");
+    let url = file_url(Some("file-1"), "/content", None, &settings(None, None)).expect("a URL");
     assert_eq!(url, "https://api.mistral.ai/v1/files/file-1/content");
 }
 
@@ -238,18 +234,6 @@ fn readback_keeps_a_supplied_creation_time_and_expiry() {
     assert_eq!(object.created_at, 7);
     assert_eq!(object.expires_at, Some(9));
     assert_eq!(object.purpose, FilesPurpose::Batch);
-}
-
-#[test]
-fn list_readback_maps_every_row() {
-    let list: MistralFileList =
-        serde_json::from_str(r#"{"data": [{"id": "a", "purpose": "ocr"}, {"id": "b"}]}"#)
-            .expect("a native list");
-    let objects = to_file_objects(&list, 42);
-    assert_eq!(objects.len(), 2);
-    assert_eq!(objects[0].purpose, FilesPurpose::UserData);
-    assert_eq!(objects[1].purpose, FilesPurpose::Batch);
-    assert_eq!(objects[1].created_at, 42);
 }
 
 #[test]

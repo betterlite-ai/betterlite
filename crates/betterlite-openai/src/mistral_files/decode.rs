@@ -1,8 +1,6 @@
 use serde::de::DeserializeOwned;
 use thiserror::Error;
-
 use crate::api::batch_records::{BatchRecordsError, WireDecodeLimits};
-
 #[derive(Debug, Error)]
 pub enum MistralDecodeError {
     #[error(transparent)]
@@ -13,7 +11,6 @@ pub enum MistralDecodeError {
         source: serde_json::Error,
     },
 }
-
 pub fn decode_mistral_resource<R>(
     bytes: &[u8],
     limits: &WireDecodeLimits,

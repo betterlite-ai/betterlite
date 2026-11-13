@@ -1,14 +1,11 @@
 use http::Method;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-
 use crate::api::batch_records::BatchEndpoint;
 use crate::openai_base_config::Headers;
-
 fn default_count() -> i64 {
     1
 }
-
 // The native spellings of LiteLLM's MistralBatchStatus literal
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -21,14 +18,12 @@ pub enum MistralBatchStatus {
     CancellationRequested,
     Cancelled,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct MistralBatchError {
     pub message: String,
     #[serde(default = "default_count")]
     pub count: i64,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct MistralBatchJob {
     pub id: String,
@@ -60,7 +55,6 @@ pub struct MistralBatchJob {
     #[serde(default)]
     pub metadata: Option<IndexMap<String, String>>,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MistralCreateBatchJobRequest {
     pub input_files: Vec<String>,
@@ -69,7 +63,6 @@ pub struct MistralCreateBatchJobRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<IndexMap<String, String>>,
 }
-
 // The GET request retrieval sends as-is, credentials included
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MistralGetRequest {

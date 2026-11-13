@@ -1,11 +1,9 @@
 #![no_main]
-
 use betterlite_openai::api::batch_records::WireDecodeLimits;
 use betterlite_openai::mistral_batches::records::MistralBatchJob;
 use betterlite_openai::mistral_files::decode::decode_mistral_resource;
 use betterlite_openai::mistral_files::records::{MistralFile, MistralFileDeleted, MistralFileList};
 use libfuzzer_sys::fuzz_target;
-
 fuzz_target!(|bytes: &[u8]| {
     let limits = WireDecodeLimits {
         max_json_bytes: 0x0010_0000,

@@ -1,11 +1,8 @@
 use betterlite_http::error::HttpError;
 use betterlite_prompts::media_metadata::error::MediaMetadataError;
 use thiserror::Error;
-
 use crate::mistral_identity::error::MistralIdentityError;
-
 use super::decode::MistralDecodeError;
-
 #[derive(Debug, Error)]
 pub enum MistralFilesError {
     #[error(transparent)]
@@ -29,7 +26,6 @@ pub enum MistralFilesError {
     #[error(transparent)]
     Decode(#[from] MistralDecodeError),
 }
-
 impl MistralFilesError {
     #[must_use]
     pub const fn status_code(&self) -> Option<u16> {

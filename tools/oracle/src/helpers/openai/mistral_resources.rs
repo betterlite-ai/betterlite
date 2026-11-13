@@ -1,96 +1,67 @@
-use std::collections::BTreeMap;
-
 use betterlite_config::sections::mistral_resources::Settings;
 use betterlite_openai::api::batch_records::CreateBatchRequest;
+use betterlite_openai::files::records::FileObject;
 use betterlite_openai::mistral_batches::records::MistralBatchJob;
-use betterlite_openai::mistral_files::records::{MistralFile, MistralFileDeleted};
+use betterlite_openai::mistral_batches::transformation::{
+    create_batch, retrieve_batch, to_batch_object,
+};
+use betterlite_openai::mistral_files::records::MistralFile;
+use betterlite_openai::mistral_files::transformation::{
+    FileUploadRequest, create_upload, list_request, to_file_object,
+};
+use betterlite_openai::mistral_identity::auth_headers;
+use betterlite_openai::openai_base_config::Headers;
+use betterlite_prompts::media_metadata::{FileBody, FileData};
+use http::header::AUTHORIZATION;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
-
-mod batches;
-mod files;
+use std::collections::BTreeMap;
 mod tests;
-
 #[derive(Debug, Deserialize)]
-#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum Input {
-    Files {
-        #[serde(default)]
-        env: BTreeMap<String, String>,
-        calls: Vec<FilesCall>,
-    },
-    BatchCreate {
-        #[serde(default)]
-        env: BTreeMap<String, String>,
-        calls: Vec<BatchCreateCall>,
-    },
-    Batch {
-        calls: Vec<BatchCall>,
-    },
-    Retrieve {
-        #[serde(default)]
-        env: BTreeMap<String, String>,
-        calls: Vec<RetrieveCall>,
-    },
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct FilesCall {
-    pub(super) api_base: Option<String>,
-    pub(super) api_key: Option<String>,
-    pub(super) now: i64,
+pub(crate) struct Input {
     #[serde(default)]
-    pub(super) uploads: Vec<UploadCall>,
+    env: BTreeMap<String, String>,
+    files: Option<FilesSection>,
     #[serde(default)]
-    pub(super) list_purposes: Vec<Option<String>>,
+    creates: Vec<CreateSection>,
     #[serde(default)]
-    pub(super) bodies: Vec<MistralFile>,
+    jobs: Vec<MistralBatchJob>,
     #[serde(default)]
-    pub(super) deleted: Vec<MistralFileDeleted>,
+    retrieve: Vec<RetrieveCall>,
+}
+#[derive(Debug, Deserialize)]
+struct FilesSection {
+    api_base: Option<String>,
+    api_key: Option<String>,
+    now: i64,
     #[serde(default)]
-    pub(super) file_ids: Vec<String>,
+    uploads: Vec<Upload>,
+    #[serde(default)]
+    list_purposes: Vec<Option<String>>,
+    #[serde(default)]
+    bodies: Vec<MistralFile>,
 }
-
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct UploadCall {
-    pub(super) file: UploadFile,
-    pub(super) purpose: String,
+struct Upload {
+    filename: Option<String>,
+    content_type: Option<String>,
+    content: Vec<u8>,
+    purpose: String,
 }
-
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct UploadFile {
-    pub(super) filename: Option<String>,
-    pub(super) content_type: Option<String>,
-    pub(super) content: Vec<u8>,
+struct CreateSection {
+    api_base: Option<String>,
+    api_key: Option<String>,
+    model: String,
+    data: CreateBatchRequest,
 }
-
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct BatchCreateCall {
-    pub(super) model: String,
-    pub(super) api_base: Option<String>,
-    pub(super) api_key: Option<String>,
-    pub(super) data: CreateBatchRequest,
+struct RetrieveCall {
+    batch_id: String,
+    api_base: Option<String>,
+    api_key: Option<String>,
 }
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct BatchCall {
-    pub(super) batch: MistralBatchJob,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct RetrieveCall {
-    pub(super) batch_id: String,
-    pub(super) api_base: Option<String>,
-    pub(super) api_key: Option<String>,
-}
-
 fn resource_settings(env: &BTreeMap<String, String>) -> Settings {
     Settings {
         api_base: env
@@ -103,43 +74,115 @@ fn resource_settings(env: &BTreeMap<String, String>) -> Settings {
             .map(|value| SecretString::from(value.as_str())),
     }
 }
-
+fn file_data(upload: &Upload) -> FileData {
+    let content = FileBody::Bytes(upload.content.clone());
+    if let Some(content_type) = &upload.content_type {
+        return FileData::Tuple3 {
+            filename: upload.filename.clone(),
+            content,
+            content_type: Some(content_type.clone()),
+        };
+    }
+    if let Some(filename) = &upload.filename {
+        return FileData::Tuple2 {
+            filename: Some(filename.clone()),
+            content,
+        };
+    }
+    FileData::Direct(content)
+}
+fn file_view(file: &FileObject) -> Value {
+    json!({"id": file.id, "bytes": file.bytes, "created_at": file.created_at, "filename": file.filename, "object": file.object, "purpose": file.purpose, "status": file.status, "expires_at": file.expires_at, "status_details": file.status_details})
+}
+fn upload_outcome(upload: &Upload, section: &FilesSection, settings: &Settings) -> Value {
+    let request = FileUploadRequest {
+        file: file_data(upload),
+        purpose: Some(upload.purpose.clone()),
+    };
+    match create_upload(&request, section.now, section.api_base.as_deref(), settings) {
+        Ok(created) => {
+            json!({"ok": true, "url": created.url, "filename": created.filename, "content_type": created.content_type, "content": created.content, "purpose": created.purpose.wire_name()})
+        }
+        Err(error) => json!({"ok": false, "status": error.status_code()}),
+    }
+}
+fn list_outcome(purpose: Option<&str>, section: &FilesSection, settings: &Settings) -> Value {
+    match list_request(purpose, section.api_base.as_deref(), settings) {
+        Ok((url, query)) => json!({"ok": true, "url": url, "query": query}),
+        Err(error) => json!({"ok": false, "status": error.status_code()}),
+    }
+}
+fn files_outcome(section: &FilesSection, settings: &Settings) -> Value {
+    let key = section.api_key.as_deref().map(SecretString::from);
+    let Ok(headers) = auth_headers(&Headers::new(), key.as_ref(), settings) else {
+        return json!({"ok": false, "status": null});
+    };
+    let mut uploads = Vec::with_capacity(section.uploads.len());
+    for upload in &section.uploads {
+        uploads.push(upload_outcome(upload, section, settings));
+    }
+    let mut listed = Vec::with_capacity(section.list_purposes.len());
+    for purpose in &section.list_purposes {
+        listed.push(list_outcome(purpose.as_deref(), section, settings));
+    }
+    let mut bodies = Vec::with_capacity(section.bodies.len());
+    for body in &section.bodies {
+        bodies.push(file_view(&to_file_object(body, section.now)));
+    }
+    json!({"ok": true, "authorization": headers.get(AUTHORIZATION.as_str()), "uploads": uploads, "list": listed, "bodies": bodies})
+}
+fn create_outcome(section: &CreateSection, settings: &Settings) -> Value {
+    let key = section.api_key.as_deref().map(SecretString::from);
+    let Ok(headers) = auth_headers(&Headers::new(), key.as_ref(), settings) else {
+        return json!({"ok": false, "status": null});
+    };
+    match create_batch(
+        &section.data,
+        &section.model,
+        section.api_base.as_deref(),
+        settings,
+    ) {
+        Ok(plan) => {
+            json!({"ok": true, "url": plan.url, "authorization": headers.get(AUTHORIZATION.as_str()), "body": plan.body})
+        }
+        Err(error) => json!({"ok": false, "status": error.status_code()}),
+    }
+}
+fn retrieve_outcome(call: &RetrieveCall, settings: &Settings) -> Value {
+    let key = call.api_key.as_deref().map(SecretString::from);
+    match retrieve_batch(
+        &call.batch_id,
+        call.api_base.as_deref(),
+        key.as_ref(),
+        settings,
+    ) {
+        Ok(request) => {
+            json!({"ok": true, "method": request.method.as_str(), "url": request.url, "headers": request.headers})
+        }
+        Err(error) => json!({"ok": false, "status": error.status_code()}),
+    }
+}
 pub(crate) struct Op;
-
 impl crate::helpers::Helper for Op {
     type Input = Input;
-
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        match input {
-            Input::Files { env, calls } => {
-                let settings = resource_settings(env);
-                let outcomes: Vec<Value> = calls
-                    .iter()
-                    .map(|call| files::outcome(call, &settings))
-                    .collect();
-                Ok(json!({"calls": outcomes}))
-            }
-            Input::BatchCreate { env, calls } => {
-                let settings = resource_settings(env);
-                let outcomes: Vec<Value> = calls
-                    .iter()
-                    .map(|call| batches::create(call, &settings))
-                    .collect();
-                Ok(json!({"calls": outcomes}))
-            }
-            Input::Batch { calls } => {
-                let outcomes: Vec<Value> =
-                    calls.iter().map(|call| batches::job(&call.batch)).collect();
-                Ok(json!({"calls": outcomes}))
-            }
-            Input::Retrieve { env, calls } => {
-                let settings = resource_settings(env);
-                let outcomes: Vec<Value> = calls
-                    .iter()
-                    .map(|call| batches::retrieve(call, &settings))
-                    .collect();
-                Ok(json!({"calls": outcomes}))
-            }
+        let settings = resource_settings(&input.env);
+        let files = input
+            .files
+            .as_ref()
+            .map(|section| files_outcome(section, &settings));
+        let mut create = Vec::with_capacity(input.creates.len());
+        for section in &input.creates {
+            create.push(create_outcome(section, &settings));
         }
+        let mut jobs = Vec::with_capacity(input.jobs.len());
+        for job in &input.jobs {
+            jobs.push(json!({"ok": true, "batch": to_batch_object(job)}));
+        }
+        let mut retrieve = Vec::with_capacity(input.retrieve.len());
+        for call in &input.retrieve {
+            retrieve.push(retrieve_outcome(call, &settings));
+        }
+        Ok(json!({"files": files, "create": create, "jobs": jobs, "retrieve": retrieve}))
     }
 }

@@ -1,13 +1,10 @@
 use serde::Deserialize;
-
 fn default_purpose() -> String {
     String::from("batch")
 }
-
 fn default_deleted() -> bool {
     true
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct MistralFile {
     pub id: String,
@@ -22,20 +19,17 @@ pub struct MistralFile {
     #[serde(default)]
     pub expires_at: Option<i64>,
 }
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct MistralFileList {
     #[serde(default)]
     pub data: Vec<MistralFile>,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct MistralFileDeleted {
     pub id: String,
     #[serde(default = "default_deleted")]
     pub deleted: bool,
 }
-
 // Mistral's upload endpoint takes only these purposes; everything else is rejected
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MistralPurpose {
@@ -43,7 +37,6 @@ pub enum MistralPurpose {
     Batch,
     Ocr,
 }
-
 impl MistralPurpose {
     #[must_use]
     pub const fn wire_name(self) -> &'static str {
@@ -54,7 +47,6 @@ impl MistralPurpose {
         }
     }
 }
-
 // The multipart a Mistral upload sends: the file part plus the purpose form field
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileUpload {

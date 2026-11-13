@@ -1,24 +1,16 @@
+use super::error::MistralFilesError;
+use super::records::{FileUpload, MistralFile, MistralFileDeleted, MistralPurpose};
+use crate::files::records::{FileDeleted, FileKind, FileObject, FileStatus, FilesPurpose};
+use crate::mistral_identity::base_url;
 use betterlite_config::sections::mistral_resources::Settings;
 use betterlite_http::url_path::encode_segment;
 use betterlite_prompts::media_metadata::{FileData, extract_file_data};
-
-use crate::files::records::{FileDeleted, FileKind, FileObject, FileStatus, FilesPurpose};
-use crate::mistral_identity::base_url;
-
-use super::error::MistralFilesError;
-use super::records::{
-    FileUpload, MistralFile, MistralFileDeleted, MistralFileList, MistralPurpose,
-};
-
-pub const SUPPORTED_OPENAI_PARAMS: [&str; 1] = ["purpose"];
-
 // LiteLLM's CreateFileRequest: the purpose is the caller's create-file purpose, before mapping
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileUploadRequest {
     pub file: FileData,
     pub purpose: Option<String>,
 }
-
 #[must_use]
 pub fn upload_purpose(purpose: Option<&str>) -> Result<MistralPurpose, MistralFilesError> {
     match purpose {
@@ -31,7 +23,6 @@ pub fn upload_purpose(purpose: Option<&str>) -> Result<MistralPurpose, MistralFi
         None => Ok(MistralPurpose::Batch),
     }
 }
-
 pub fn create_upload(
     request: &FileUploadRequest,
     now: i64,
@@ -52,13 +43,15 @@ pub fn create_upload(
         purpose,
     })
 }
-
 pub fn file_url(
-    file_id: &str,
+    file_id: Option<&str>,
     suffix: &str,
     api_base: Option<&str>,
     settings: &Settings,
 ) -> Result<String, MistralFilesError> {
+    let Some(file_id) = file_id else {
+        return Err(MistralFilesError::FileIdRequired);
+    };
     let encoded =
         encode_segment(file_id, "file_id").map_err(|source| MistralFilesError::Path { source })?;
     Ok(format!(
@@ -66,18 +59,6 @@ pub fn file_url(
         base_url(api_base, settings)
     ))
 }
-
-pub fn content_url(
-    file_id: Option<&str>,
-    api_base: Option<&str>,
-    settings: &Settings,
-) -> Result<String, MistralFilesError> {
-    match file_id {
-        Some(file_id) => file_url(file_id, "/content", api_base, settings),
-        None => Err(MistralFilesError::FileIdRequired),
-    }
-}
-
 // An absent or empty purpose sends no filter, as LiteLLM's transform does
 pub fn list_request(
     purpose: Option<&str>,
@@ -94,7 +75,6 @@ pub fn list_request(
         vec![(String::from("purpose"), mapped.wire_name().to_owned())],
     ))
 }
-
 #[must_use]
 pub fn openai_purpose(purpose: &str) -> FilesPurpose {
     match purpose {
@@ -103,7 +83,6 @@ pub fn openai_purpose(purpose: &str) -> FilesPurpose {
         _ => FilesPurpose::UserData,
     }
 }
-
 #[must_use]
 pub fn to_file_object(file: &MistralFile, now: i64) -> FileObject {
     FileObject {
@@ -118,16 +97,6 @@ pub fn to_file_object(file: &MistralFile, now: i64) -> FileObject {
         status_details: None,
     }
 }
-
-#[must_use]
-pub fn to_file_objects(list: &MistralFileList, now: i64) -> Vec<FileObject> {
-    let mut objects = Vec::with_capacity(list.data.len());
-    for file in &list.data {
-        objects.push(to_file_object(file, now));
-    }
-    objects
-}
-
 #[must_use]
 pub fn to_file_deleted(deleted: &MistralFileDeleted) -> FileDeleted {
     FileDeleted {
