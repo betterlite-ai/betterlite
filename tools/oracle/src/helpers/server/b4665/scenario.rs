@@ -201,14 +201,9 @@ fn result_view(result: CredResult<OAuthToken>) -> Value {
     }
 }
 
-fn step_server(step: &StepSpec, input: &Input, config: &ConfigSpec) -> ServerSpec {
-    let server_id = step
-        .server_id
-        .clone()
-        .or_else(|| input.server_id.clone())
-        .unwrap_or_else(|| DEFAULT_SERVER_ID.to_owned());
+fn step_server(config: &ConfigSpec) -> ServerSpec {
     ServerSpec {
-        server_id,
+        server_id: DEFAULT_SERVER_ID.to_owned(),
         resource: String::new(),
         config: AuthConfig::TokenExchange(token_config(config)),
     }
@@ -314,7 +309,7 @@ async fn run_step(
         clock.set(now_ms)?;
     }
     let config_spec = step.config.as_ref().unwrap_or(&input.config);
-    let server = step_server(step, input, config_spec);
+    let server = step_server(config_spec);
     let config = token_config(config_spec);
     let tenant = step.tenant_id.clone().unwrap_or_default();
     prepare_step(exchanger, events, step);

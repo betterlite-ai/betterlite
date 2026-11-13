@@ -81,8 +81,6 @@ pub(super) struct StepSpec {
     #[serde(default)]
     pub(super) now_ms: Option<i64>,
     #[serde(default)]
-    pub(super) server_id: Option<String>,
-    #[serde(default)]
     pub(super) config: Option<ConfigSpec>,
     #[serde(default)]
     pub(super) responses: Vec<ResponseSpec>,
@@ -94,8 +92,6 @@ pub(super) struct StepSpec {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     pub(super) config: ConfigSpec,
-    #[serde(default)]
-    pub(super) server_id: Option<String>,
     #[serde(default)]
     pub(super) default_ttl_ms: Option<u64>,
     #[serde(default)]

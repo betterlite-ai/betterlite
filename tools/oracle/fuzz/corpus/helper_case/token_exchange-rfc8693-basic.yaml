@@ -1,0 +1,54 @@
+{
+  "kind": "helper",
+  "name": "token-exchange-rfc8693-basic",
+  "call": {
+    "b4665": {
+      "config": {
+        "token_exchange_endpoint": "https://idp.example.com/token",
+        "client_id": "cid",
+        "client_secret": "csec"
+      },
+      "steps": [
+        {
+          "op": "exchange",
+          "subject_token": "caller-jwt",
+          "now_ms": 1000000,
+          "responses": [
+            {
+              "kind": "body",
+              "body": {
+                "access_token": "exchanged",
+                "expires_in": 3600,
+                "token_type": "Bearer"
+              }
+            }
+          ]
+        },
+        {
+          "op": "exchange",
+          "subject_token": "caller-jwt",
+          "now_ms": 1000001
+        },
+        {
+          "op": "concurrent",
+          "subject_token": "caller-jwt-2",
+          "now_ms": 1000002,
+          "count": 3,
+          "responses": [
+            {
+              "kind": "body",
+              "body": {
+                "access_token": "shared",
+                "expires_in": 120
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

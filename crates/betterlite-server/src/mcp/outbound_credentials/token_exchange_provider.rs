@@ -40,7 +40,9 @@ pub trait ExchangeTransport: Send + Sync {
 #[async_trait]
 impl ExchangeTransport for ProxiedClient {
     async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
-        self.send_buffered(request).await
+        // LiteLLM's httpx client follows redirects, so each hop is followed and re-checked and the body stays capped.
+        let response = self.send_following(request).await?;
+        response.buffered(self.limits.body_bytes).await
     }
 }
 
