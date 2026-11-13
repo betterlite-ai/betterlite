@@ -5,11 +5,12 @@ use betterlite_openai::api::rerank_contracts::records::{RerankDocument, RerankRe
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat_content::{Mode, RefuseDownloads};
 use betterlite_openai::deepinfra::chat::{self, ChatTransform, MapRequest};
+use betterlite_openai::deepinfra::rerank::response::{
+    LoggingFailure, RerankLogging, ResponseRequest, get_error_class, transform_rerank_response,
+};
 use betterlite_openai::deepinfra::rerank::{
-    EnvironmentRequest, Headers, LoggingFailure, MapRequest as RerankMapRequest, Params,
-    RerankLimits, RerankLogging, ResponseRequest, complete_url, get_error_class,
-    map_cohere_rerank_params, transform_rerank_request, transform_rerank_response,
-    validate_environment,
+    EnvironmentRequest, Headers, MapRequest as RerankMapRequest, Params, RerankLimits,
+    complete_url, map_cohere_rerank_params, transform_rerank_request, validate_environment,
 };
 use betterlite_openai::reasoning_models::DropParams;
 use secrecy::SecretString;

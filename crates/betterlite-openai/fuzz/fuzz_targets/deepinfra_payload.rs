@@ -1,7 +1,8 @@
 #![no_main]
 
-use betterlite_openai::deepinfra::rerank::{
-    RerankLimits, decode_deepinfra_error, decode_deepinfra_rerank,
+use betterlite_openai::deepinfra::rerank::RerankLimits;
+use betterlite_openai::deepinfra::rerank::response::{
+    decode_deepinfra_error, decode_deepinfra_rerank,
 };
 use libfuzzer_sys::fuzz_target;
 
