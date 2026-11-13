@@ -572,6 +572,11 @@ fn rejects_a_non_ascii_audio_content() {
 #[case::spaces_are_skipped(r#"{"audioContent": "Q Q = ="}"#, &b"A"[..])]
 #[case::newlines_are_skipped(r#"{"audioContent": "QUJD\nRA=="}"#, &b"ABCD"[..])]
 #[case::extra_padding(r#"{"audioContent": "AAAA==="}"#, &b"\x00\x00\x00"[..])]
+#[case::three_with_padding(r#"{"audioContent": "QUJ="}"#, &b"AB"[..])]
+#[case::lowercase(r#"{"audioContent": "qujd"}"#, &b"\xaa\xe8\xdd"[..])]
+#[case::digits(r#"{"audioContent": "0123"}"#, &b"\xd3\x5d\xb7"[..])]
+#[case::plus(r#"{"audioContent": "++=="}"#, &b"\xfb"[..])]
+#[case::slash(r#"{"audioContent": "//=="}"#, &b"\xff"[..])]
 fn decodes_permissive_base64(#[case] body: &str, #[case] expected: &[u8]) {
     assert_eq!(decode(body).unwrap().bytes.as_slice(), expected);
 }
@@ -579,6 +584,7 @@ fn decodes_permissive_base64(#[case] body: &str, #[case] expected: &[u8]) {
 #[rstest]
 #[case::no_padding(r#"{"audioContent": "QQ"}"#)]
 #[case::short_group(r#"{"audioContent": "QUJDRA"}"#)]
+#[case::three_characters(r#"{"audioContent": "QUJ"}"#)]
 fn rejects_base64_without_final_padding(#[case] body: &str) {
     assert!(matches!(
         decode(body),
@@ -619,6 +625,164 @@ fn rejects_a_response_over_the_limit() {
         decode_vertex_speech_audio(&body, &sniff_x),
         Err(VertexSpeechError::ResponseTooLarge { .. })
     ));
+}
+
+#[test]
+fn keeps_a_body_of_exactly_the_limit() {
+    let body = vec![b' '; MAX_RESPONSE_BYTES];
+    assert!(matches!(
+        decode_vertex_speech_audio(&body, &sniff_x),
+        Err(VertexSpeechError::ResponseJson(_))
+    ));
+}
+
+#[test]
+fn maps_the_alloy_voice_to_the_studio_voice() {
+    let mapped = map_openai_params(
+        Some(&named_voice("alloy")),
+        &SpeechOptionalParams::default(),
+        &SpeechKwargs::default(),
+    );
+    assert_eq!(mapped.voice.as_deref(), Some("alloy"));
+    assert_eq!(
+        mapped.voice_dict,
+        Some(settings_object("en-US", "en-US-Studio-O"))
+    );
+}
+
+#[test]
+fn extracts_a_two_component_language() {
+    assert_eq!(voice_language("de-DE-Standard-A"), "de-DE");
+    assert_eq!(voice_language("custom"), "en-US");
+}
+
+#[test]
+fn maps_mp3_to_the_mp3_encoding() {
+    let optional = SpeechOptionalParams {
+        response_format: Some("mp3".to_owned()),
+        speed: None,
+    };
+    assert_eq!(
+        mapping(optional, SpeechKwargs::default()).audio_encoding,
+        "MP3"
+    );
+}
+
+#[test]
+fn defaults_to_the_synthesis_endpoint() {
+    assert_eq!(complete_url(None), TTS_API_URL);
+}
+
+#[test]
+fn treats_an_empty_base_as_unset() {
+    assert_eq!(complete_url(Some("")), TTS_API_URL);
+}
+
+#[test]
+fn keeps_a_plain_text_input() {
+    let input = validated(Some("hello"), None, false).unwrap();
+    assert_eq!(input.text.as_deref(), Some("hello"));
+    assert_eq!(input.ssml, None);
+}
+
+#[test]
+fn forces_text_into_ssml_when_use_ssml_is_set() {
+    let input = validated(Some("hi"), None, true).unwrap();
+    assert_eq!(input.ssml.as_deref(), Some("hi"));
+    assert_eq!(input.text, None);
+}
+
+#[test]
+fn moves_a_speak_text_into_ssml() {
+    let input = validated(Some("<speak>x"), None, false).unwrap();
+    assert_eq!(input.ssml.as_deref(), Some("<speak>x"));
+    assert_eq!(input.text, None);
+}
+
+#[test]
+fn rejects_an_empty_audio_content() {
+    assert!(matches!(
+        decode(r#"{"audioContent": ""}"#),
+        Err(VertexSpeechError::MissingAudioContent)
+    ));
+}
+
+#[test]
+fn decodes_one_padded_quad() {
+    assert_eq!(
+        decode(r#"{"audioContent": "QQ=="}"#)
+            .unwrap()
+            .bytes
+            .as_slice(),
+        b"A"
+    );
+}
+
+#[test]
+fn rejects_two_characters_without_padding() {
+    assert!(matches!(
+        decode(r#"{"audioContent": "QQ"}"#),
+        Err(VertexSpeechError::Base64(Base64Error::MissingPadding))
+    ));
+}
+
+#[test]
+fn rejects_three_characters_without_padding() {
+    assert!(matches!(
+        decode(r#"{"audioContent": "QUJ"}"#),
+        Err(VertexSpeechError::Base64(Base64Error::MissingPadding))
+    ));
+}
+
+#[test]
+fn decodes_a_three_character_group() {
+    assert_eq!(
+        decode(r#"{"audioContent": "QUJ="}"#)
+            .unwrap()
+            .bytes
+            .as_slice(),
+        b"AB"
+    );
+}
+
+#[test]
+fn decodes_lowercase() {
+    assert_eq!(
+        decode(r#"{"audioContent": "qujd"}"#)
+            .unwrap()
+            .bytes
+            .as_slice(),
+        b"\xaa\xe8\xdd"
+    );
+}
+
+#[test]
+fn decodes_digits() {
+    assert_eq!(
+        decode(r#"{"audioContent": "0123"}"#)
+            .unwrap()
+            .bytes
+            .as_slice(),
+        b"\xd3\x5d\xb7"
+    );
+}
+
+#[test]
+fn decodes_plus_and_slash() {
+    assert_eq!(
+        decode(r#"{"audioContent": "++=="}"#)
+            .unwrap()
+            .bytes
+            .as_slice(),
+        b"\xfb"
+    );
+    assert_eq!(
+        decode(r#"{"audioContent": "//=="}"#)
+            .unwrap()
+            .bytes
+            .as_slice(),
+        b"\xff"
+    );
 }
 
 #[rstest]
