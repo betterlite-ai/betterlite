@@ -1,0 +1,19 @@
+kind: helper
+name: database-refresh-loop-clock-seed
+call:
+  database_refresh_loop:
+    function: batch
+    calls:
+      - function: parse_expiration
+        auth: rds
+        token: "t?X-Amz-Date=20240101T000000Z&X-Amz-Expires=900"
+      - function: seconds_until_refresh
+        auth: rds
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h/d"
+        now: "2024-01-01T00:00:00"
+      - function: token_refresh_not_needed
+        auth: disabled
+        url: "postgresql://u:p@h/d"
+        now: "2024-01-01T00:00:00"
+env: {}
+compare: {ignore: []}

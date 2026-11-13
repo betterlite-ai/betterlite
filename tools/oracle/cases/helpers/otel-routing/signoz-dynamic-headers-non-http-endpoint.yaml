@@ -1,0 +1,12 @@
+kind: helper
+name: signoz-dynamic-headers-non-http-endpoint
+call:
+  b3851:
+    function: signoz_dynamic_headers
+    params:
+      signoz_ingestion_endpoint: collector.example:4318
+      signoz_ingestion_key: key-1
+    allowed_hosts: [collector.example]
+env: {}
+compare:
+  ignore: []

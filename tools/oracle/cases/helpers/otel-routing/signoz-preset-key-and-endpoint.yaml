@@ -1,0 +1,20 @@
+kind: helper
+name: signoz-preset-key-and-endpoint
+call:
+  b3851:
+    function: signoz_preset
+    environment:
+      SIGNOZ_INGESTION_ENDPOINT: https://collector.example:4318/v1/traces
+      SIGNOZ_INGESTION_KEY: key-1
+    base:
+      exporters:
+        - kind: otlp_http
+          endpoint: https://collector.example/v1/traces
+      mapper_names: [openinference]
+      resource_attributes:
+        service.name: proxy
+env:
+  SIGNOZ_INGESTION_ENDPOINT: https://collector.example:4318/v1/traces
+  SIGNOZ_INGESTION_KEY: key-1
+compare:
+  ignore: []
