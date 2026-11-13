@@ -130,14 +130,14 @@ impl AsyncCache for FakeCache {
     }
 
     async fn async_delete_cache(&self, key: &str) -> Result<(), CacheUnavailable> {
-        if self.delete_error {
-            return Err(CacheUnavailable);
+        if !self.delete_error {
+            self.stored
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(key);
+            return Ok(());
         }
-        self.stored
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(key);
-        Ok(())
+        Err(CacheUnavailable)
     }
 }
 

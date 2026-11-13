@@ -1,5 +1,8 @@
+mod codec;
+mod coordinator;
 mod ops;
 mod support;
+mod token;
 
 use std::collections::VecDeque;
 
@@ -18,9 +21,9 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input.get("function").and_then(Value::as_str) {
-            Some("token") => ops::token(input),
-            Some("codec") => ops::codec(input),
-            Some("coordinator") => ops::coordinator(input),
+            Some("token") => token::token(input),
+            Some("codec") => codec::codec(input),
+            Some("coordinator") => coordinator::coordinator(input),
             Some("store") => ops::store(input),
             _ => Err(value_error("unknown function".to_owned())),
         }
@@ -95,29 +98,24 @@ pub(super) fn parse_token(value: &Value) -> Result<OAuthToken, Box<HelperError>>
 }
 
 pub(super) fn outcome(value: &Value) -> Result<StoreResult, Box<HelperError>> {
-    match value.get("kind").and_then(Value::as_str) {
-        Some("absent") => Ok(Ok(None)),
-        Some("unavailable") => Ok(Err(TokenStoreUnavailable {
-            detail: "unavailable".to_owned(),
-        })),
-        _ => Ok(Ok(Some(parse_token(
-            value.get("token").unwrap_or(&Value::Null),
-        )?))),
+    let kind = value.get("kind").and_then(Value::as_str);
+    if kind == Some("absent") {
+        return Ok(Ok(None));
     }
+    if kind == Some("unavailable") {
+        return Ok(Err(TokenStoreUnavailable {
+            detail: "unavailable".to_owned(),
+        }));
+    }
+    let token = parse_token(value.get("token").unwrap_or(&Value::Null))?;
+    Ok(Ok(Some(token)))
 }
 
 pub(super) fn outcomes(value: Option<&Value>) -> Result<VecDeque<StoreResult>, Box<HelperError>> {
-    value
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .map(outcome)
-                .collect::<Result<VecDeque<_>, _>>()
-        })
-        .transpose()
-        .map(Option::unwrap_or_default)
-        .map_err(|error: Box<HelperError>| error)
+    let Some(items) = value.and_then(Value::as_array) else {
+        return Ok(VecDeque::new());
+    };
+    items.iter().map(outcome).collect()
 }
 
 pub(super) fn view(token: &OAuthToken) -> Value {

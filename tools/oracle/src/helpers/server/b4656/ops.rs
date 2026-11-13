@@ -1,140 +1,22 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use betterlite_server::mcp::outbound_credentials::cache_codec::OAuthTokenCacheCodec;
 use betterlite_server::mcp::outbound_credentials::cached_store::CachedOAuthTokenStore;
 use betterlite_server::mcp::outbound_credentials::dual_cache::DualCacheTokenCacheBackend;
-use betterlite_server::mcp::outbound_credentials::presented_store::PresentedOAuthTokenStore;
-use betterlite_server::mcp::outbound_credentials::refresh_store::{
-    InProcessRefreshCoordinator, RefreshingTokenStore,
-};
+use betterlite_server::mcp::outbound_credentials::refresh_store::RefreshingTokenStore;
 use betterlite_server::mcp::outbound_credentials::v2_store::V2PerUserTokenStore;
 use betterlite_server::mcp::outbound_credentials::{
-    BOUND_PREFIX, DEFAULT_EXPIRY_SKEW, DEFAULT_MAX_SIZE, InMemoryTokenCacheBackend, OAuthToken,
-    OAuthTokenStore as _, RefreshCoordinator as _, RefreshStep, TokenCacheBackend,
-    TokenCacheEntries, TokenKey, TokenStoreUnavailable,
+    DEFAULT_EXPIRY_SKEW, DEFAULT_MAX_SIZE, InMemoryTokenCacheBackend, OAuthTokenStore as _,
+    TokenCacheBackend, TokenCacheEntries, TokenKey,
 };
 use serde_json::Value;
-use tokio::task::yield_now;
 
+use super::codec::fake_codec;
+use super::coordinator::Coordinator;
 use super::support::{FakeCache, ManualClock, PayloadReader, ScriptedStore};
-use super::{
-    StoreResult, number, outcome, parse_token, result_view, runtime, text, value_error, view,
-};
+use super::{number, parse_token, result_view, runtime, text};
 use crate::helpers::{HelperError, HelperResult};
-
-type Coordinator = InProcessRefreshCoordinator<Option<OAuthToken>, TokenStoreUnavailable>;
-type Step<'call> = RefreshStep<'call, Option<OAuthToken>, TokenStoreUnavailable>;
-
-fn fake_codec() -> OAuthTokenCacheCodec {
-    OAuthTokenCacheCodec {
-        encrypt: Box::new(|value: &str| format!("enc:{value}")),
-        decrypt: Box::new(|blob: &str| blob.strip_prefix("enc:").map(str::to_owned)),
-    }
-}
-
-pub(super) fn token(input: &Value) -> HelperResult {
-    let minted = parse_token(input.get("token").unwrap_or(&Value::Null))?;
-    let rendered = format!("{minted:?}");
-    let visible = minted
-        .refresh_token
-        .as_ref()
-        .is_some_and(|secret| rendered.contains(secret));
-    let store = PresentedOAuthTokenStore {
-        token: minted.clone(),
-    };
-    runtime()?.block_on(async {
-        let fetched = store
-            .fetch("user", "server")
-            .await
-            .map_err(|error| value_error(error.to_string()))?;
-        Ok(serde_json::json!({
-            "token": view(&minted),
-            "access_token_in_debug": rendered.contains(&minted.access_token),
-            "refresh_token_in_debug": visible,
-            "has_refresh_token_marker": rendered.contains("has_refresh_token: true"),
-            "presented": fetched.as_ref().map(view),
-        }))
-    })
-}
-
-pub(super) fn codec(input: &Value) -> HelperResult {
-    let codec = fake_codec();
-    if input.get("operation").and_then(Value::as_str) != Some("encode") {
-        let plaintext = text(input, "plaintext")?;
-        return Ok(serde_json::json!({
-            "decoded": codec.decode(&(codec.encrypt)(plaintext)).as_ref().map(view),
-        }));
-    }
-    let minted = parse_token(input.get("token").unwrap_or(&Value::Null))?;
-    let encoded = codec
-        .encode(&minted)
-        .map_err(|error| value_error(error.to_string()))?;
-    let plaintext = (codec.decrypt)(&encoded);
-    Ok(serde_json::json!({
-        "bound": plaintext.is_some_and(|text| text.starts_with(BOUND_PREFIX)),
-        "decoded": codec.decode(&encoded).as_ref().map(view),
-    }))
-}
-
-fn refresh_step<'call>(calls: &'call AtomicUsize, result: &'call StoreResult) -> Step<'call> {
-    Box::new(move || {
-        Box::pin(async move {
-            calls.fetch_add(1, Ordering::SeqCst);
-            yield_now().await;
-            result.clone()
-        })
-    })
-}
-
-fn reread_step(calls: &AtomicUsize) -> Step<'_> {
-    Box::new(move || {
-        Box::pin(async move {
-            calls.fetch_add(1, Ordering::SeqCst);
-            Ok(None)
-        })
-    })
-}
-
-async fn coordinated_call(
-    flight: &Coordinator,
-    key: &TokenKey,
-    refreshes: &AtomicUsize,
-    rereads: &AtomicUsize,
-    result: &StoreResult,
-) -> StoreResult {
-    flight
-        .run(
-            key.clone(),
-            refresh_step(refreshes, result),
-            reread_step(rereads),
-        )
-        .await
-}
-
-pub(super) fn coordinator(input: &Value) -> HelperResult {
-    let result = outcome(input.get("refresh").unwrap_or(&Value::Null))?;
-    let flight = Coordinator::default();
-    let refreshes = AtomicUsize::new(0);
-    let rereads = AtomicUsize::new(0);
-    let key = TokenKey {
-        user_id: "user".to_owned(),
-        server_id: "server".to_owned(),
-    };
-    runtime()?.block_on(async {
-        let (first, second, third) = tokio::join!(
-            coordinated_call(&flight, &key, &refreshes, &rereads, &result),
-            coordinated_call(&flight, &key, &refreshes, &rereads, &result),
-            coordinated_call(&flight, &key, &refreshes, &rereads, &result),
-        );
-        Ok(serde_json::json!({
-            "results": [result_view(first), result_view(second), result_view(third)],
-            "refresh_calls": refreshes.load(Ordering::SeqCst),
-            "reread_calls": rereads.load(Ordering::SeqCst),
-        }))
-    })
-}
 
 fn duration_ms(millis: i64) -> Duration {
     if millis <= 0 {
@@ -178,20 +60,26 @@ enum Store {
 
 impl Store {
     async fn step(&self, operation: &Value) -> Result<Value, Box<HelperError>> {
-        let user_id = text(operation, "user_id")?;
-        let server_id = text(operation, "server_id")?;
         match self {
             Self::Cache(cache) => cache_step(cache, operation).await,
             Self::Dual(cache) => cache_step(cache, operation).await,
-            Self::Cached(store) => Ok(serde_json::json!({
-                "result": result_view(store.fetch(user_id, server_id).await),
-                "inner_reads": store.inner.calls.load(Ordering::SeqCst),
-            })),
-            Self::Refreshing(store) => Ok(serde_json::json!({
-                "result": result_view(store.fetch(user_id, server_id).await),
-                "inner_reads": store.inner.calls.load(Ordering::SeqCst),
-                "refresh_calls": store.refresher.calls.load(Ordering::SeqCst),
-            })),
+            Self::Cached(store) => {
+                let user_id = text(operation, "user_id")?;
+                let server_id = text(operation, "server_id")?;
+                Ok(serde_json::json!({
+                    "result": result_view(store.fetch(user_id, server_id).await),
+                    "inner_reads": store.inner.calls.load(Ordering::SeqCst),
+                }))
+            }
+            Self::Refreshing(store) => {
+                let user_id = text(operation, "user_id")?;
+                let server_id = text(operation, "server_id")?;
+                Ok(serde_json::json!({
+                    "result": result_view(store.fetch(user_id, server_id).await),
+                    "inner_reads": store.inner.calls.load(Ordering::SeqCst),
+                    "refresh_calls": store.refresher.calls.load(Ordering::SeqCst),
+                }))
+            }
         }
     }
 }
