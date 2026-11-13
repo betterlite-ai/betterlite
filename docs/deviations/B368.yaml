@@ -1,0 +1,47 @@
+task: B368
+deviations:
+  - what: >-
+      A raise-mode upsert_deployment that fails while adding the new deployment returns the failure and
+      leaves the previous deployment in the catalog and the indexes. The oracle case
+      raise-mode-failed-upsert pins both states.
+    why: >-
+      LiteLLM pops the old deployment before it builds the new one and, without ignore_invalid_deployments,
+      re-raises without putting it back, so a failed update deletes a deployment that was serving. The
+      catalog is published as one snapshot, so a failed update leaves the earlier snapshot untouched.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9953-L9993
+  - what: >-
+      A set_model_list that fails on one entry publishes nothing: the earlier catalog stays as it was. The
+      oracle case raise-mode-failed-set pins both states.
+    why: >-
+      LiteLLM clears the model list, the indexes and the pattern routers first and then adds the entries one
+      by one, so an invalid entry leaves a half-built router that serves a partial model list. Building the
+      new catalog aside and publishing it on success gives every reader either the old or the new list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9519-L9609
+  - what: >-
+      When restoring the previous deployment after an ignored upsert failure itself fails, the original
+      catalog is kept, a warning is logged and the upsert returns no deployment. The oracle case
+      failed-restore-keeps-snapshot reaches this with a deployment that is refused on its second admission.
+    why: >-
+      LiteLLM logs the same warning and returns none, but by then it has already popped the previous
+      deployment, so the deployment stays missing from the model list. Keeping the earlier snapshot loses
+      nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9995-L10021
+  - what: >-
+      A router-level rpm or tpm is copied into litellm_params of a deployment added through add_deployment
+      or upsert_deployment, and the catalog stores the copy, the same as it does for set_model_list. The
+      unit cases an_added_deployment_gets_the_limits and an_upserted_deployment_gets_the_limits pin it.
+    why: >-
+      LiteLLM snapshots the model list entry before _add_deployment copies the limits, so an added or
+      upserted deployment is listed without them while the set path lists them. The limits are a
+      router-level setting that is meant to apply to every deployment, so the added one gets them too.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9796-L9803
+  - what: >-
+      set_model_list drops the wildcard routes and the default deployment ids of the earlier list, so a
+      request that matches a pattern from a list that no longer holds it finds no deployment. The unit cases
+      set_drops_the_wildcards_of_the_earlier_list and set_drops_the_team_wildcards_of_the_earlier_list pin it.
+    why: >-
+      LiteLLM resets the model list and the team routers on a reload but never clears pattern_router or
+      provider_default_deployment_ids, so after a config reload a removed wildcard deployment keeps
+      receiving requests through the early pattern resolution. The new catalog is built aside from the
+      earlier one, so nothing carries over.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9519-L9535
