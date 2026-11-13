@@ -107,7 +107,7 @@ fn place_messages(
     let after = count_request_marks(&placed.messages, placed.system.as_ref());
     let added = i32::try_from(after.saturating_sub(before)).unwrap_or(i32::MAX);
     record_gateway_injection(injection.params, added, false);
-    if openai_dialect && added > 0 {
+    if openai_dialect && added > 0_i32 {
         set_explicit_mode(injection.params);
     }
     write_remaining(injection.params, &placed.remaining)?;

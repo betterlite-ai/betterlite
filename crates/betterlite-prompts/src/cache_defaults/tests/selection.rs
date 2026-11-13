@@ -103,14 +103,17 @@ fn defaults_stand_down_for_a_model_without_prompt_caching() {
 }
 
 #[rstest]
-#[case::not_claude("anthropic/llama-3-70b")]
-#[case::unroutable("somewhere/unknown-model")]
-fn defaults_stand_down_for_a_model_that_is_not_claude(#[case] model: &str) {
+#[case::not_claude(
+    "anthropic/llama-3-70b",
+    Facts::routed("anthropic/llama-3-70b", "anthropic")
+)]
+#[case::unroutable("somewhere/unknown-model", Facts::claude())]
+fn defaults_stand_down_for_a_model_that_is_not_claude(#[case] model: &str, #[case] facts: Facts) {
     let setup = Setup {
         model: model.to_owned(),
         ..Setup::claude()
     };
-    assert!(defaults(&setup, &Facts::claude()).is_empty());
+    assert!(defaults(&setup, &facts).is_empty());
 }
 
 #[test]

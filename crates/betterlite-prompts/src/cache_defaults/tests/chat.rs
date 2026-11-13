@@ -325,10 +325,9 @@ fn configured_points_are_never_replaced_by_defaults() {
     let params = format!(r#"{{"cache_control_injection_points": {CONFIGURED}}}"#);
     let mut seeding = Seeding {
         params: object(&params),
-        global: false,
         ..Seeding::defaults()
     };
-    let seeded = seeded_params(&mut seeding, &Facts::none());
+    let seeded = seeded_params(&mut seeding, &Facts::claude());
     let expected = format!(r#"{{"cache_control_injection_points": {CONFIGURED}}}"#);
     assert_eq!(wire(&seeded), json(&expected));
 }
