@@ -218,13 +218,11 @@ def type_to_response_format_param(
             return _dict_to_response_format_helper(response_format, ref_template)
         case int() | float() | str() | datetime() | list():
             raise TypeError(f"Unsupported response_format type - {response_format}")
-        case type():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L179-L212
-            return {
-                "type": "json_schema",
-                "json_schema": {
-                    "schema": _class_schema(response_format, ref_template),
-                    "name": response_format.__name__,
-                    "strict": True,
-                },
-            }
-    raise TypeError(f"Unsupported response_format type - {response_format}")
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "schema": _class_schema(response_format, ref_template),
+            "name": response_format.__name__,
+            "strict": True,
+        },
+    }
