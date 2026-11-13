@@ -10,17 +10,11 @@ from pydantic import JsonValue
 
 litellm.suppress_debug_info = True
 
-Object: TypeAlias = dict[str, JsonValue]
 HeadersBuilder: TypeAlias = Callable[[Mapping[str, str], str, GenericLiteLLMParams], dict[str, str]]
 LifecycleBuilder: TypeAlias = Callable[
-    [str, str, GenericLiteLLMParams, Mapping[str, str]], tuple[str, Object]
+    [str, str, GenericLiteLLMParams, Mapping[str, str]], tuple[str, dict[str, JsonValue]]
 ]
 NO_HEADERS: Final[Mapping[str, str]] = {}
-
-
-class Mint(TypedDict):
-    token: str
-    project: NotRequired[str]
 
 
 class Call(TypedDict):
@@ -34,7 +28,7 @@ class Call(TypedDict):
 
 
 class Input(TypedDict):
-    mint: Mint
+    mint: dict[str, str]
     calls: list[Call]
 
 

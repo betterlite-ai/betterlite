@@ -39,7 +39,7 @@ struct Call {
     stream: bool,
     params: BTreeMap<String, String>,
     interaction_id: String,
-    headers: BTreeMap<String, String>,
+    headers: IndexMap<String, String>,
     #[serde(default)]
     action: Option<Lifecycle>,
 }
@@ -119,13 +119,6 @@ fn interaction_call<'call>(
     }
 }
 
-fn caller_headers(headers: &BTreeMap<String, String>) -> IndexMap<String, String> {
-    headers
-        .iter()
-        .map(|(name, value)| (name.clone(), value.clone()))
-        .collect()
-}
-
 fn rendered_headers(headers: &IndexMap<String, SecretString>) -> IndexMap<String, String> {
     headers
         .iter()
@@ -160,7 +153,7 @@ async fn resolve(
         }
         Function::Headers => {
             let headers = config
-                .headers(&given, &caller_headers(&call.headers))
+                .headers(&given, &call.headers)
                 .await
                 .or_value_error()?;
             Ok(json!({ "headers": rendered_headers(&headers) }))

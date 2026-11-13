@@ -7,9 +7,7 @@ use crate::token_cache::error::CredentialCacheError;
 
 #[derive(Debug, Error)]
 pub enum VertexInteractionsError {
-    #[error(
-        "a Vertex AI project is required; set vertex_project or litellm_settings.vertex_project"
-    )]
+    #[error("a Vertex AI project is required; set vertex_project")]
     MissingProject,
     #[error("the Vertex AI access token could not be minted")]
     Mint(#[source] CredentialCacheError),
