@@ -28,8 +28,8 @@ pub enum Infinite {
     Inf,
 }
 
+// LiteLLM's configuration marker keeps its snake_case keys around the camelCase event payloads
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SessionConfiguration {
     pub session_start: SessionStartEvent,
     pub prompt_start: PromptStartEvent,
