@@ -1,0 +1,52 @@
+kind: helper
+name: header-body-removal
+call:
+  anthropic_beta_filter:
+    matrix:
+      anthropic:
+        effort-2025-11-24: effort-2025-11-24
+        computer-use-2025-01-24: computer-use-2025-01-24
+        unsupported-token: null
+    calls:
+      - function: matrix_filter
+        provider: anthropic
+        tokens: null
+        headers:
+          anthropic-beta: "unknown,, "
+          X-Keep: "yes"
+          Anthropic-Beta: kept
+        body:
+          anthropic_beta: [unknown]
+          keep: true
+      - function: matrix_filter
+        provider: anthropic
+        tokens: null
+        headers:
+          X-Keep: "yes"
+        body:
+          anthropic_beta: [effort-2025-11-24, unsupported-token, computer-use-2025-01-24]
+          keep: 1
+      - function: matrix_filter
+        provider: anthropic
+        tokens: null
+        headers:
+          anthropic-beta: null
+          X-Keep: "yes"
+        body:
+          anthropic_beta: null
+      - function: matrix_filter
+        provider: anthropic
+        tokens: null
+        headers:
+          anthropic-beta: ""
+        body:
+          anthropic_beta: []
+      - function: matrix_filter
+        provider: anthropic
+        tokens: null
+        headers:
+          anthropic-beta: "effort-2025-11-24, computer-use-2025-01-24,effort-2025-11-24"
+        body: null
+env: {}
+compare:
+  ignore: []
