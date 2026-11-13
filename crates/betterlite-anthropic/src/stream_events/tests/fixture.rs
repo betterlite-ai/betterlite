@@ -47,6 +47,7 @@ pub(super) fn converter_with(
     StreamEventConverter {
         state,
         counter: Counter,
+        json_could_close: false,
     }
 }
 

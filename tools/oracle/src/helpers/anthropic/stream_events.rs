@@ -56,6 +56,7 @@ impl crate::helpers::Helper for Op {
         let mut converter = StreamEventConverter {
             state,
             counter: TokenizerCounter,
+            json_could_close: false,
         };
         let mut steps = Vec::with_capacity(input.steps.len());
         for step in &input.steps {

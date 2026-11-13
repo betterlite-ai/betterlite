@@ -225,7 +225,11 @@ fn server_tool_stop_inputs() {
     );
     chunk(
         &mut converter,
-        r#"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\": \"ls -l\"}"}}"#,
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\": "}}"#,
+    );
+    chunk(
+        &mut converter,
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\"ls -l\"}"}}"#,
     );
     let stop = chunk(&mut converter, TOOL_STOP);
     assert_eq!(tool_calls(&stop), None);
@@ -288,12 +292,44 @@ fn server_tool_stop_assembles_only_input_json() {
     );
 }
 
+fn tool_stop_ignores_a_cited_text_block() {
+    let mut converter = new_converter();
+    chunk(
+        &mut converter,
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"cited"}}"#,
+    );
+    chunk(
+        &mut converter,
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","url":"https://q"}}}"#,
+    );
+    let stop = chunk(&mut converter, TOOL_STOP);
+    assert_eq!(tool_calls(&stop), None);
+    assert_eq!(content(&stop), "");
+}
+
+fn server_tool_stop_without_deltas() {
+    let mut converter = new_converter();
+    chunk(
+        &mut converter,
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"s11","name":"bash_code_execution","input":{"command":"kept"}}}"#,
+    );
+    let stop = chunk(&mut converter, TOOL_STOP);
+    assert_eq!(tool_calls(&stop), None);
+    assert_eq!(
+        as_json(converter.state.server_tool_inputs.get("s11").unwrap()),
+        parse(r#"{"command":"kept"}"#)
+    );
+    assert_eq!(converter.state.current_server_tool_id, None);
+}
+
 pub(super) fn tool_use_and_argument_delta() {
     tool_start_and_deltas();
     tool_stop_arguments();
     server_tool_stop_inputs();
     server_tool_stop_assembles_only_input_json();
+    server_tool_stop_without_deltas();
     tool_stop_pending_server_id();
+    tool_stop_ignores_a_cited_text_block();
 }
 
 fn thinking_delta_events() {
@@ -480,10 +516,52 @@ fn json_mode_name_recognition() {
     assert!(tool_calls(&untouched).is_some());
 }
 
+fn json_mode_recognition_resets_by_name() {
+    let mut converter = converter_with(Some(true), IndexMap::new());
+    chunk(
+        &mut converter,
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"j2","name":"json_tool_call","input":{}}}"#,
+    );
+    assert!(converter.state.is_response_format_tool);
+    let real = chunk(
+        &mut converter,
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"r2","name":"real_tool","input":{}}}"#,
+    );
+    assert!(!converter.state.is_response_format_tool);
+    assert_eq!(
+        tool_calls(&real).unwrap(),
+        parse(
+            r#"[{"id":"r2","type":"function","function":{"name":"real_tool","arguments":""},"index":1}]"#
+        )
+    );
+}
+
+fn json_mode_empty_delta_stop_fragment() {
+    let mut converter = converter_with(Some(true), IndexMap::new());
+    chunk(
+        &mut converter,
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"j3","name":"json_tool_call","input":{}}}"#,
+    );
+    chunk(
+        &mut converter,
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":""}}"#,
+    );
+    let stop = chunk(&mut converter, TOOL_STOP);
+    assert_eq!(content(&stop), "");
+    assert_eq!(
+        tool_calls(&stop).unwrap(),
+        parse(
+            r#"[{"id":null,"type":"function","function":{"name":null,"arguments":"{}"},"index":0}]"#
+        )
+    );
+}
+
 pub(super) fn json_mode_chunks() {
     json_mode_start_and_fragments();
     json_mode_stop_and_real_tool();
     json_mode_name_recognition();
+    json_mode_recognition_resets_by_name();
+    json_mode_empty_delta_stop_fragment();
 }
 
 pub(super) fn ping_no_content() {

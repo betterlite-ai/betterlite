@@ -30,6 +30,8 @@ pub enum ShapeError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("the Anthropic server tool block assembled no argument text")]
+    NoArguments,
     #[error("the Anthropic tool arguments could not be decoded as JSON")]
     Decode {
         #[source]

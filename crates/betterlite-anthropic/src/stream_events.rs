@@ -20,6 +20,8 @@ use error::StreamEventError;
 pub struct StreamEventConverter<Counter> {
     pub state: StreamState,
     pub counter: Counter,
+    // LiteLLM tracks the buffer's closing byte as fragments arrive rather than rescanning the buffer
+    pub json_could_close: bool,
 }
 
 impl<Counter> StreamEventConverter<Counter>
@@ -53,17 +55,16 @@ where
         is_final: bool,
     ) -> Result<Option<StreamEventChunk>, StreamEventError<Counter::Failure>> {
         self.state.json_buffer.append(data);
-        if !is_final && !accumulated::could_close_json(&self.state.json_buffer) {
+        self.json_could_close = accumulated::updated_could_close(self.json_could_close, data);
+        if !is_final && !self.json_could_close {
             return Ok(None);
         }
-        loop {
-            let Some(value) = accumulated::pop_next_value(&mut self.state.json_buffer) else {
-                return Ok(None);
-            };
-            if matches!(value, Json::Object(_)) {
-                return self.chunk_parser(&value).map(Some);
-            }
-        }
+        let Some(value) =
+            accumulated::pop_next_value(&mut self.state.json_buffer, &mut self.json_could_close)
+        else {
+            return Ok(None);
+        };
+        self.chunk_parser(&value).map(Some)
     }
 
     fn assemble(&self, branch: Branch) -> StreamEventChunk {
@@ -88,10 +89,10 @@ where
     }
 }
 
-// The block-start input stays in place when the assembled arguments are empty or not JSON.
+// The block-start input stays in place when no argument text arrived or the text is not JSON.
 pub fn decode_stream_tool_arguments(arguments: &str) -> Result<Json, error::ShapeError> {
-    match serde_json::from_str(arguments) {
-        Ok(value) => Ok(value),
-        Err(source) => Err(error::ShapeError::Decode { source }),
+    if arguments.is_empty() {
+        return Err(error::ShapeError::NoArguments);
     }
+    serde_json::from_str(arguments).map_err(|source| error::ShapeError::Decode { source })
 }
