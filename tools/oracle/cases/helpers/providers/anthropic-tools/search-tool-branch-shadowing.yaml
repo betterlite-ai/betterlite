@@ -9,6 +9,7 @@ call:
           - {type: tool_search_tool_bm25_20251119, name: ''}
           - {type: tool_search_tool_regex_20251119, name: nested-only, function: {cache_control: {type: ephemeral}, defer_loading: true, allowed_callers: [direct]}}
           - {type: tool_search_tool_bm25_20251119, name: nested-bm25, function: {defer_loading: true}}
+          - {type: tool_search_tool_bm25_20251119, name: b, function: {cache_control: {type: ephemeral}}}
       - function: tools
         tools:
           - {type: tool_search_tool_regex_20251119, function: {}}

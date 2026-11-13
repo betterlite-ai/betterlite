@@ -13,6 +13,7 @@ call:
           - {type: custom, function: {name: eager-false, eager_input_streaming: false}}
           - {type: computer_20241022, function: {parameters: {display_width_px: 1, display_height_px: 2}, defer_loading: true, allowed_callers: [direct]}}
           - {type: computer_20241023, function: {parameters: {display_width_px: 1, display_height_px: 2}, defer_loading: true}}
+          - {type: computer_20250124, function: {parameters: {display_width_px: 1, display_height_px: 2}, defer_loading: true, allowed_callers: [direct]}}
           - {type: web_search_20250305, name: search, defer_loading: true, allowed_callers: [direct]}
           - {type: bash_20250124, name: shell, eager_input_streaming: yes-please}
       - function: tools

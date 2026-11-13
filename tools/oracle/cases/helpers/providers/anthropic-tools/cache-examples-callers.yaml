@@ -16,6 +16,9 @@ call:
           - {type: function, function: {name: ignored}, input_examples: {bad: true}}
           - {type: computer_20251124, function: {parameters: {display_width_px: 1, display_height_px: 2}, allowed_callers: [direct], defer_loading: true}}
           - {type: computer_20241022, cache_control: {type: ephemeral}, function: {parameters: {display_width_px: 1, display_height_px: 2}, defer_loading: true}}
+          - {type: advisor_20260301, model: claude-sonnet-4-5, input_examples: [{q: 1}]}
+          - {type: computer_20251124, function: {parameters: {display_width_px: 1, display_height_px: 2}, input_examples: [{q: 1}]}}
+          - {type: function, function: {name: string-cache, cache_control: ephemeral}}
       - function: tools
         tools:
           - {type: function, function: {name: bad-callers, allowed_callers: [1]}}

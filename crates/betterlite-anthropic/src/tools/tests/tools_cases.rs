@@ -430,7 +430,7 @@ fn case_6_advisor_tool() {
     check_errors(&ADVISOR_FAILURES);
 }
 
-const CACHE_PRECEDENCE: [Pair; 4] = [
+const CACHE_PRECEDENCE: [Pair; 5] = [
     (
         r#"{"type":"function","function":{"name":"cached","cache_control":{"ttl":"1h"}},"cache_control":{"type":"ephemeral"}}"#,
         r#"[{"name":"cached","input_schema":{"type":"object","properties":{}},"type":"custom","cache_control":{"type":"ephemeral"}}]"#,
@@ -447,6 +447,10 @@ const CACHE_PRECEDENCE: [Pair; 4] = [
         r#"{"type":"computer_20241022","cache_control":{"type":"ephemeral"},"function":{"parameters":{"display_width_px":1,"display_height_px":2},"defer_loading":true}}"#,
         r#"[{"type":"computer_20241022","name":"computer","display_width_px":1,"display_height_px":2,"cache_control":{"type":"ephemeral"}}]"#,
     ),
+    (
+        r#"{"type":"function","function":{"name":"string-cache","cache_control":"ephemeral"}}"#,
+        r#"[{"name":"string-cache","input_schema":{"type":"object","properties":{}},"type":"custom"}]"#,
+    ),
 ];
 
 const CALLER_PRECEDENCE: [Pair; 2] = [
@@ -460,7 +464,7 @@ const CALLER_PRECEDENCE: [Pair; 2] = [
     ),
 ];
 
-const EXAMPLE_PRECEDENCE: [Pair; 3] = [
+const EXAMPLE_PRECEDENCE: [Pair; 5] = [
     (
         r#"{"type":"function","function":{"name":"fallback","input_examples":[{"q":1}]},"input_examples":{"bad":1}}"#,
         r#"[{"name":"fallback","input_schema":{"type":"object","properties":{}},"type":"custom","input_examples":[{"q":1}]}]"#,
@@ -472,6 +476,14 @@ const EXAMPLE_PRECEDENCE: [Pair; 3] = [
     (
         r#"{"type":"function","function":{"name":"ignored"},"input_examples":{"bad":1}}"#,
         r#"[{"name":"ignored","input_schema":{"type":"object","properties":{}},"type":"custom"}]"#,
+    ),
+    (
+        r#"{"type":"advisor_20260301","model":"claude-sonnet-4-5","input_examples":[{"q":1}]}"#,
+        r#"[{"type":"advisor_20260301","name":"advisor","model":"claude-sonnet-4-5"}]"#,
+    ),
+    (
+        r#"{"type":"computer_20251124","function":{"parameters":{"display_width_px":1,"display_height_px":2},"input_examples":[{"q":1}]}}"#,
+        r#"[{"type":"computer_20251124","name":"computer","display_width_px":1,"display_height_px":2}]"#,
     ),
 ];
 
@@ -509,7 +521,7 @@ const DEFER_PRECEDENCE: [Pair; 3] = [
     ),
 ];
 
-const DEFER_SUPPRESSION: [Pair; 4] = [
+const DEFER_SUPPRESSION: [Pair; 5] = [
     (
         r#"{"type":"computer_20241022","function":{"parameters":{"display_width_px":1,"display_height_px":2},"defer_loading":true,"allowed_callers":["direct"]}}"#,
         r#"[{"type":"computer_20241022","name":"computer","display_width_px":1,"display_height_px":2}]"#,
@@ -525,6 +537,10 @@ const DEFER_SUPPRESSION: [Pair; 4] = [
     (
         r#"{"type":"bash_20250124","name":"shell","eager_input_streaming":"yes"}"#,
         r#"[{"type":"bash_20250124","name":"shell","eager_input_streaming":"yes"}]"#,
+    ),
+    (
+        r#"{"type":"computer_20250124","function":{"parameters":{"display_width_px":1,"display_height_px":2},"defer_loading":true,"allowed_callers":["direct"]}}"#,
+        r#"[{"type":"computer_20250124","name":"computer","display_width_px":1,"display_height_px":2}]"#,
     ),
 ];
 
@@ -635,10 +651,16 @@ const SEARCH_HOSTED: [Pair; 2] = [
     ),
 ];
 
-const SEARCH_SUPPRESSED: [Pair; 1] = [(
-    r#"{"type":"tool_search_tool_regex_20251119","name":"search","function":{"cache_control":{"type":"ephemeral"},"defer_loading":true,"allowed_callers":["direct"]}}"#,
-    r#"[{"type":"tool_search_tool_regex_20251119","name":"search","function":{"cache_control":{"type":"ephemeral"},"defer_loading":true,"allowed_callers":["direct"]}}]"#,
-)];
+const SEARCH_SUPPRESSED: [Pair; 2] = [
+    (
+        r#"{"type":"tool_search_tool_regex_20251119","name":"search","function":{"cache_control":{"type":"ephemeral"},"defer_loading":true,"allowed_callers":["direct"]}}"#,
+        r#"[{"type":"tool_search_tool_regex_20251119","name":"search","function":{"cache_control":{"type":"ephemeral"},"defer_loading":true,"allowed_callers":["direct"]}}]"#,
+    ),
+    (
+        r#"{"type":"tool_search_tool_bm25_20251119","name":"b","function":{"cache_control":{"type":"ephemeral"}}}"#,
+        r#"[{"type":"tool_search_tool_bm25_20251119","name":"b","function":{"cache_control":{"type":"ephemeral"}}}]"#,
+    ),
+];
 
 const SEARCH_FAILURES: [Pair; 2] = [
     (
