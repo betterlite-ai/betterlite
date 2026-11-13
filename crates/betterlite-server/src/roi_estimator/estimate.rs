@@ -1,13 +1,14 @@
 use betterlite_models::model_capability_predicates::CapabilityPredicates;
 use betterlite_roi::estimator::evidence::metadata_evidence;
-use betterlite_roi::estimator::json::python_json;
+use betterlite_roi::estimator::extraction::first_json_object;
+use betterlite_roi::estimator::json::json_dumps_text;
 use betterlite_roi::estimator::models::{
     MAX_EVIDENCE_CHARS, REASONING_MAX_CHARS, RESPONSE_CONTRACT, ROICompletionMessage,
     ROICompletionMetadata, ROICompletionRequest, ROICompletionResponse, ROICompletionRole,
     ROIResponseFormat, ROIResponseFormatType, ReasoningEffort,
 };
 use betterlite_roi::estimator::options::estimator_options;
-use betterlite_roi::estimator::result::parse_estimator_result;
+use betterlite_roi::estimator::result::ROIEstimatorResult;
 use betterlite_roi::records::{ROIEstimate, ROIEstimateStatus, ROIPullEvidence};
 use serde_json::Value;
 
@@ -28,9 +29,10 @@ impl Estimator {
     where
         Predicates: CapabilityPredicates + Send,
     {
-        let evidence = python_json(&metadata_evidence(pull)).map_err(|source| EstimatorError {
-            source: CompletionFailure::Evidence { source },
-        })?;
+        let evidence =
+            json_dumps_text(&metadata_evidence(pull)).map_err(|source| EstimatorError {
+                source: CompletionFailure::Evidence { source },
+            })?;
         if pull.incomplete_metadata {
             return Ok(ROIEstimate {
                 status: ROIEstimateStatus::NeedsReview,
@@ -114,9 +116,10 @@ fn estimate_from_completion(value: Value, model: &str) -> Result<ROIEstimate, Es
         .ok_or_else(|| EstimatorError {
             source: CompletionFailure::Incomplete,
         })?;
-    let result = parse_estimator_result(content).map_err(|source| EstimatorError {
-        source: CompletionFailure::Estimate { source },
-    })?;
+    let result: ROIEstimatorResult =
+        serde_json::from_str(first_json_object(content)).map_err(|source| EstimatorError {
+            source: CompletionFailure::Estimate { source },
+        })?;
     Ok(ROIEstimate {
         status: ROIEstimateStatus::Estimated,
         hours: Some(result.hours),

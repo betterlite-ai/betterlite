@@ -12,27 +12,32 @@ pub enum JsonError {
 }
 
 // LiteLLM hashes and sends json.dumps output, whose default separators carry one space after each comma and colon
-struct PythonFormatter;
+struct DumpsFormatter;
 
-impl serde_json::ser::Formatter for PythonFormatter {
+fn write_separator<W>(writer: &mut W, first: bool) -> io::Result<()>
+where
+    W: ?Sized + io::Write,
+{
+    if first {
+        Ok(())
+    } else {
+        writer.write_all(b", ")
+    }
+}
+
+impl serde_json::ser::Formatter for DumpsFormatter {
     fn begin_array_value<W>(&mut self, writer: &mut W, first: bool) -> io::Result<()>
     where
         W: ?Sized + io::Write,
     {
-        if first {
-            return Ok(());
-        }
-        writer.write_all(b", ")
+        write_separator(writer, first)
     }
 
     fn begin_object_key<W>(&mut self, writer: &mut W, first: bool) -> io::Result<()>
     where
         W: ?Sized + io::Write,
     {
-        if first {
-            return Ok(());
-        }
-        writer.write_all(b", ")
+        write_separator(writer, first)
     }
 
     fn begin_object_value<W>(&mut self, writer: &mut W) -> io::Result<()>
@@ -43,12 +48,12 @@ impl serde_json::ser::Formatter for PythonFormatter {
     }
 }
 
-pub fn python_json<T>(value: &T) -> Result<String, JsonError>
+pub fn json_dumps_text<T>(value: &T) -> Result<String, JsonError>
 where
     T: ?Sized + Serialize,
 {
     let mut bytes = Vec::new();
-    let mut serializer = serde_json::Serializer::with_formatter(&mut bytes, PythonFormatter);
+    let mut serializer = serde_json::Serializer::with_formatter(&mut bytes, DumpsFormatter);
     value
         .serialize(&mut serializer)
         .map_err(|source| JsonError::Serialize { source })?;

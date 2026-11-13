@@ -3,8 +3,9 @@
 use rstest::rstest;
 use serde_json::json;
 
+use crate::estimator::extraction::first_json_object;
 use crate::estimator::result::{
-    ROIEstimatorResult, ResultError, parse_estimator_result, validate_hours, validate_reasoning,
+    ROIEstimatorResult, ResultError, validate_hours, validate_reasoning,
 };
 
 #[rstest]
@@ -71,9 +72,9 @@ fn parse_is_strict(#[case] value: serde_json::Value) {
 
 #[test]
 fn parse_extracts_the_first_complete_object() {
-    let result = parse_estimator_result(
+    let result: ROIEstimatorResult = serde_json::from_str(first_json_object(
         "Sure:\n```json\n{\"hours\": 1, \"reasoning\": \"first\"}\n```\n{\"hours\": 2, \"reasoning\": \"second\"}",
-    )
+    ))
     .unwrap();
     assert_eq!(result.hours, 1.0);
     assert_eq!(result.reasoning, "first");
@@ -81,7 +82,8 @@ fn parse_extracts_the_first_complete_object() {
 
 #[test]
 fn parse_strips_prose_without_an_object() {
-    assert!(parse_estimator_result("  no json here  ").is_err());
+    let content = first_json_object("  no json here  ");
+    assert!(serde_json::from_str::<ROIEstimatorResult>(content).is_err());
 }
 
 #[test]

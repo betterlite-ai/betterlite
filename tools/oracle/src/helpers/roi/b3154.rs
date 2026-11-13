@@ -7,9 +7,10 @@ use betterlite_models::model_capability_predicates::{
 };
 use betterlite_roi::estimator::cache::cache_context;
 use betterlite_roi::estimator::evidence::metadata_evidence;
+use betterlite_roi::estimator::extraction::first_json_object;
 use betterlite_roi::estimator::models::{EstimatorModel, ROICompletionRequest, configured_models};
 use betterlite_roi::estimator::options::estimator_options;
-use betterlite_roi::estimator::result::parse_estimator_result;
+use betterlite_roi::estimator::result::ROIEstimatorResult;
 use betterlite_roi::records::ROIPullEvidence;
 use betterlite_roi::settings::ROISettings;
 use betterlite_server::roi_estimator::{CompletionCaller, CompletionFuture, Estimator};
@@ -115,8 +116,19 @@ where
 
 async fn run(input: &Input) -> HelperResult {
     match input.operation.as_str() {
-        "metadata_evidence" => evidence(input),
-        "estimator_options" => options(input).await,
+        "metadata_evidence" => serde_json::to_value(metadata_evidence(pull_of(input)?))
+            .map_err(|error| helper_error("ValueError", error.to_string())),
+        "estimator_options" => {
+            let Some(models) = input.models.as_ref() else {
+                return Err(helper_error(
+                    "ValueError",
+                    "estimator_options needs models".to_owned(),
+                ));
+            };
+            let options = estimator_options(&mut support_of(input), models).await;
+            serde_json::to_value(options)
+                .map_err(|error| helper_error("ValueError", error.to_string()))
+        }
         "configured_models" => models(input),
         "cache_context" => context(input).await,
         "estimate" => estimate(input).await,
@@ -151,22 +163,6 @@ fn support_of(input: &Input) -> ModelSupport {
         supported: input.supported.clone(),
         seen: Vec::new(),
     }
-}
-
-fn evidence(input: &Input) -> HelperResult {
-    let evidence = metadata_evidence(pull_of(input)?);
-    serde_json::to_value(evidence).map_err(|error| helper_error("ValueError", error.to_string()))
-}
-
-async fn options(input: &Input) -> HelperResult {
-    let Some(models) = input.models.as_ref() else {
-        return Err(helper_error(
-            "ValueError",
-            "estimator_options needs models".to_owned(),
-        ));
-    };
-    let options = estimator_options(&mut support_of(input), models).await;
-    serde_json::to_value(options).map_err(|error| helper_error("ValueError", error.to_string()))
 }
 
 fn models(input: &Input) -> HelperResult {
@@ -223,7 +219,7 @@ fn validate(input: &Input) -> HelperResult {
         .raw
         .as_ref()
         .ok_or_else(|| helper_error("ValueError", "validate_result needs raw JSON".to_owned()))?;
-    let result = parse_estimator_result(raw)
+    let result: ROIEstimatorResult = serde_json::from_str(first_json_object(raw))
         .map_err(|error| helper_error("ValueError", error.to_string()))?;
     Ok(json!({"hours": result.hours, "reasoning": result.reasoning}))
 }

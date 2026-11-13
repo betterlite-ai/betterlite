@@ -1,7 +1,5 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
-
-use super::extraction::first_json_object;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ResultError {
@@ -12,32 +10,28 @@ pub enum ResultError {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "RawEstimatorResult")]
 pub struct ROIEstimatorResult {
-    #[serde(deserialize_with = "deserialize_hours")]
     pub hours: f64,
-    #[serde(deserialize_with = "deserialize_reasoning")]
     pub reasoning: String,
 }
 
-fn deserialize_hours<'de, DeserializerType>(
-    deserializer: DeserializerType,
-) -> Result<f64, DeserializerType::Error>
-where
-    DeserializerType: Deserializer<'de>,
-{
-    let hours = f64::deserialize(deserializer)?;
-    validate_hours(hours).map_err(serde::de::Error::custom)
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawEstimatorResult {
+    hours: f64,
+    reasoning: String,
 }
 
-fn deserialize_reasoning<'de, DeserializerType>(
-    deserializer: DeserializerType,
-) -> Result<String, DeserializerType::Error>
-where
-    DeserializerType: Deserializer<'de>,
-{
-    let reasoning = String::deserialize(deserializer)?;
-    validate_reasoning(reasoning).map_err(serde::de::Error::custom)
+impl TryFrom<RawEstimatorResult> for ROIEstimatorResult {
+    type Error = ResultError;
+
+    fn try_from(raw: RawEstimatorResult) -> Result<Self, ResultError> {
+        Ok(Self {
+            hours: validate_hours(raw.hours)?,
+            reasoning: validate_reasoning(raw.reasoning)?,
+        })
+    }
 }
 
 pub fn validate_hours(hours: f64) -> Result<f64, ResultError> {
@@ -52,8 +46,4 @@ pub fn validate_reasoning(reasoning: String) -> Result<String, ResultError> {
         return Err(ResultError::Reasoning);
     }
     Ok(reasoning)
-}
-
-pub fn parse_estimator_result(content: &str) -> Result<ROIEstimatorResult, serde_json::Error> {
-    serde_json::from_str(first_json_object(content))
 }

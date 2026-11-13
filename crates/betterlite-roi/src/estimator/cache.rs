@@ -3,7 +3,7 @@ use sha2::{Digest, Sha256};
 
 use crate::settings::ROISettings;
 
-use super::json::{JsonError, python_json};
+use super::json::{JsonError, json_dumps_text};
 use super::models::{ESTIMATE_VERSION, EstimatorModel, RESPONSE_CONTRACT};
 use super::options::{configured_models, estimator_options};
 
@@ -24,6 +24,6 @@ where
         RESPONSE_CONTRACT,
         options,
     ]);
-    let text = python_json(&context)?;
+    let text = json_dumps_text(&context)?;
     Ok(hex::encode(Sha256::digest(text.as_bytes())))
 }

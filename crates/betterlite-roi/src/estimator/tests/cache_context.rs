@@ -4,7 +4,7 @@ use rstest::rstest;
 use serde_json::json;
 
 use crate::estimator::cache::cache_context;
-use crate::estimator::json::python_json;
+use crate::estimator::json::json_dumps_text;
 use crate::estimator::models::EstimatorModel;
 
 use super::support::{ModelSupport, settings};
@@ -85,9 +85,9 @@ async fn cache_context_changes_when_the_configuration_changes() {
 #[case::array(json!([1, "x", null]), r#"[1, "x", null]"#)]
 #[case::object(json!({"a": true, "b": {}}), r#"{"a": true, "b": {}}"#)]
 #[case::unicode(json!({"title": "café"}), "{\"title\": \"café\"}")]
-fn python_json_matches_json_dumps_default_separators(
+fn json_dumps_text_matches_json_dumps_default_separators(
     #[case] value: serde_json::Value,
     #[case] expected: &str,
 ) {
-    assert_eq!(python_json(&value).unwrap(), expected);
+    assert_eq!(json_dumps_text(&value).unwrap(), expected);
 }

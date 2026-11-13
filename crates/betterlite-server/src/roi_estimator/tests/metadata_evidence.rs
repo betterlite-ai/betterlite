@@ -1,19 +1,19 @@
 #![cfg(test)]
 
 use betterlite_roi::estimator::evidence::metadata_evidence;
-use betterlite_roi::estimator::json::python_json;
+use betterlite_roi::estimator::json::json_dumps_text;
 
 use super::support::{EVIDENCE, pull};
 
 #[test]
 fn metadata_evidence_maps_pull_fields_in_litellm_order() {
     let evidence = metadata_evidence(&pull());
-    assert_eq!(python_json(&evidence).unwrap(), EVIDENCE);
+    assert_eq!(json_dumps_text(&evidence).unwrap(), EVIDENCE);
 }
 
 #[test]
 fn metadata_evidence_leaves_out_fields_the_litellm_model_does_not_carry() {
-    let evidence = python_json(&metadata_evidence(&pull())).unwrap();
+    let evidence = json_dumps_text(&metadata_evidence(&pull())).unwrap();
     assert!(!evidence.contains("\"url\""));
     assert!(!evidence.contains("\"login\""));
     assert!(!evidence.contains("\"emails\""));

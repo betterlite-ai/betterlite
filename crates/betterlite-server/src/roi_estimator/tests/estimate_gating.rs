@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use betterlite_roi::estimator::evidence::metadata_evidence;
-use betterlite_roi::estimator::json::python_json;
+use betterlite_roi::estimator::json::json_dumps_text;
 use betterlite_roi::estimator::models::MAX_EVIDENCE_CHARS;
 use betterlite_roi::records::{ROIEstimateStatus, ROIPullEvidence};
 use serde_json::json;
@@ -21,13 +21,13 @@ fn pull_with_body(length: usize) -> ROIPullEvidence {
 
 #[tokio::test]
 async fn estimate_scores_evidence_at_exactly_the_character_limit() {
-    let base = python_json(&metadata_evidence(&pull_with_body(0)))
+    let base = json_dumps_text(&metadata_evidence(&pull_with_body(0)))
         .unwrap()
         .chars()
         .count();
     let pull = pull_with_body(MAX_EVIDENCE_CHARS - base);
     assert_eq!(
-        python_json(&metadata_evidence(&pull))
+        json_dumps_text(&metadata_evidence(&pull))
             .unwrap()
             .chars()
             .count(),
@@ -45,7 +45,7 @@ async fn estimate_scores_evidence_at_exactly_the_character_limit() {
 
 #[tokio::test]
 async fn estimate_refuses_one_character_over_the_limit_without_calling_the_model() {
-    let base = python_json(&metadata_evidence(&pull_with_body(0)))
+    let base = json_dumps_text(&metadata_evidence(&pull_with_body(0)))
         .unwrap()
         .chars()
         .count();
