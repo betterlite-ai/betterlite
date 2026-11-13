@@ -78,6 +78,29 @@ fn credentials_fall_through_in_alias_order() {
 }
 
 #[rstest::rstest]
+#[case::text(VoyageEmbeddingVariant::Text, "VoyageError")]
+#[case::contextual(VoyageEmbeddingVariant::Contextual, "VoyageError")]
+#[case::multimodal(VoyageEmbeddingVariant::Multimodal, "VoyageMultimodalEmbeddingError")]
+fn reply_failures_name_the_litellm_exception_class(
+    #[case] variant: VoyageEmbeddingVariant,
+    #[case] expected: &str,
+) {
+    assert_eq!(variant.error_class(), expected);
+}
+
+#[test]
+fn synthetic_urls_match_each_variants_endpoint() {
+    assert_eq!(
+        VoyageEmbeddingVariant::Multimodal.synthetic_url(),
+        "https://api.voyageai.com/v1/multimodalembeddings"
+    );
+    assert_eq!(
+        VoyageEmbeddingVariant::Text.synthetic_url(),
+        "https://api.voyageai.com/v1/embeddings"
+    );
+}
+
+#[rstest::rstest]
 #[case::text(VoyageEmbeddingVariant::Text)]
 #[case::contextual(VoyageEmbeddingVariant::Contextual)]
 #[case::multimodal(VoyageEmbeddingVariant::Multimodal)]

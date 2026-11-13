@@ -284,10 +284,13 @@ fn null_total_tokens_stay_null() {
 }
 
 #[rstest::rstest]
-#[case::absent("""{"data":[]}""")]
+#[case::absent(r#"{"data":[]}"#)]
 #[case::empty(r#"{"data":[],"id":""}"#)]
 #[case::null(r#"{"data":[],"id":null}"#)]
 #[case::zero(r#"{"data":[],"id":0}"#)]
+#[case::no(r#"{"data":[],"id":false}"#)]
+#[case::empty_list(r#"{"data":[],"id":[]}"#)]
+#[case::empty_object(r#"{"data":[],"id":{}}"#)]
 fn falsey_ids_use_the_injected_uuid(#[case] body: &str) {
     let response = decode(body, 200).0.expect("response");
     assert_eq!(response.id, INJECTED.to_string());

@@ -213,26 +213,18 @@ fn response_id(root: &IndexMap<String, Json>, uuid: Uuid) -> Result<String, Voya
     let Some(value) = root.get("id").filter(|value| is_truthy(*value)) else {
         return Ok(uuid.to_string());
     };
-    match value {
-        Json::Text(text) => Ok(text.clone()),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            Err(VoyageRerankError::ResponseField { field: "id" })
-        }
-    }
+    let Json::Text(text) = value else {
+        return Err(VoyageRerankError::ResponseField { field: "id" });
+    };
+    Ok(text.clone())
 }
 
 fn results(root: &IndexMap<String, Json>) -> Result<Vec<VoyageRerankResult>, VoyageRerankError> {
-    let Some(data) = root.get("data") else {
-        return Err(VoyageRerankError::NoResults);
-    };
-    let Json::List(items) = data else {
-        return Err(if *data == Json::Null {
-            VoyageRerankError::NoResults
-        } else {
-            VoyageRerankError::ResponseField { field: "data" }
-        });
-    };
-    items.iter().map(result).collect()
+    match root.get("data") {
+        None | Some(Json::Null) => Err(VoyageRerankError::NoResults),
+        Some(Json::List(items)) => items.iter().map(result).collect(),
+        Some(_) => Err(VoyageRerankError::ResponseField { field: "data" }),
+    }
 }
 
 fn result(item: &Json) -> Result<VoyageRerankResult, VoyageRerankError> {
