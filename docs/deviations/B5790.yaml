@@ -3,7 +3,7 @@ deviations:
   - what: The TypedDicts use typing.TypedDict with the optional keys in a total=False base class, and no key is marked read-only.
     why: The wheel supports Python 3.10, where Required, NotRequired and ReadOnly are not in typing; the task keeps typing_extensions out of this package, and ReadOnly is a type-checker hint with no runtime effect.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/exceptions/exceptions.py#L22-L45
-  - what: AnthropicErrorDetail.message is typed as Json rather than str.
+  - what: AnthropicErrorDetail.message is typed as JsonValue rather than str.
     why: The Bedrock branch returns detail.message exactly as parsed, which LiteLLM types as str but can be any JSON value; coercing it would change the body the caller reads, so the annotation says what the code returns.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/exceptions/exception_mapping_utils.py#L85-L86
   - what: JSON parsing catches ValueError and RecursionError, where LiteLLM's safe_json_loads catches every Exception.

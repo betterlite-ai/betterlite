@@ -1,15 +1,17 @@
 import json
 import typing
-from typing import Final, TypeGuard, cast
+from typing import Final, TypeGuard
 
-from .exceptions import AnthropicErrorDetail, AnthropicErrorResponse, AnthropicErrorType, Json
+from betterlite.types.utils.values import JsonValue
+
+from .exceptions import AnthropicErrorDetail, AnthropicErrorResponse, AnthropicErrorType
 
 
-def _is_json_object(value: Json) -> TypeGuard[dict[str, Json]]:
+def _is_json_object(value: JsonValue) -> TypeGuard[dict[str, JsonValue]]:
     match value:
-        case dict():
+        case {}:
             return True
-        case None | bool() | int() | float() | str() | list():
+        case _:
             return False
 
 
@@ -36,7 +38,7 @@ class AnthropicExceptionMapping:
     @staticmethod
     def create_error_response(
         status_code: int,
-        message: Json,
+        message: JsonValue,
         request_id: str | None = None,
     ) -> AnthropicErrorResponse:
         error_type = AnthropicExceptionMapping.get_error_type(status_code)
@@ -49,16 +51,16 @@ class AnthropicExceptionMapping:
         return response
 
     @staticmethod
-    def extract_error_message(raw_message: str) -> Json:
+    def extract_error_message(raw_message: str) -> JsonValue:
         parsed = AnthropicExceptionMapping._parse_json_object(raw_message)
         if parsed is None:
             return raw_message
         return AnthropicExceptionMapping._extract_message_from_dict(parsed, raw_message)
 
     @staticmethod
-    def _parse_json_object(raw_message: str) -> dict[str, Json] | None:
+    def _parse_json_object(raw_message: str) -> dict[str, JsonValue] | None:
         try:
-            parsed = cast(Json, json.loads(raw_message))  # https://github.com/python/cpython/blob/986a4e1b6fcae7fe7a1d0a26aea446107dd58dd2/Lib/json/__init__.py
+            parsed: JsonValue = json.loads(raw_message)
         except (ValueError, RecursionError):
             return None
         if _is_json_object(parsed):
@@ -66,7 +68,7 @@ class AnthropicExceptionMapping:
         return None
 
     @staticmethod
-    def _is_anthropic_error_dict(parsed: dict[str, Json]) -> TypeGuard[AnthropicErrorResponse]:
+    def _is_anthropic_error_dict(parsed: dict[str, JsonValue]) -> TypeGuard[AnthropicErrorResponse]:
         match parsed.get("error"):
             case {"message": _, "type": _}:
                 return parsed.get("type") == "error"
@@ -74,7 +76,7 @@ class AnthropicExceptionMapping:
                 return False
 
     @staticmethod
-    def _extract_message_from_dict(parsed: dict[str, Json], raw_message: str) -> Json:
+    def _extract_message_from_dict(parsed: dict[str, JsonValue], raw_message: str) -> JsonValue:
         detail = parsed.get("detail")
         if _is_json_object(detail):
             if "message" not in detail:

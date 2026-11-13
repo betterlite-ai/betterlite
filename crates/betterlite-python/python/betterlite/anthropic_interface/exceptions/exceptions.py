@@ -1,7 +1,7 @@
 from collections.abc import Mapping
-from typing import Literal, TypeAlias, TypedDict
+from typing import Literal, TypedDict
 
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+from betterlite.types.utils.values import JsonValue
 
 AnthropicErrorType = Literal[
     "invalid_request_error",
@@ -16,13 +16,13 @@ AnthropicErrorType = Literal[
 
 
 class OptionalDetailFields(TypedDict, total=False):
-    provider_specific_fields: Mapping[str, Json]
+    provider_specific_fields: Mapping[str, JsonValue]
     litellm_call_id: str
 
 
 class AnthropicErrorDetail(OptionalDetailFields):
     type: AnthropicErrorType
-    message: Json
+    message: JsonValue
 
 
 class OptionalResponseFields(TypedDict, total=False):
