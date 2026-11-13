@@ -7,17 +7,17 @@ use deadpool_postgres::PoolError;
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::sync::Notify;
-use tokio::task::{yield_now, JoinSet};
+use tokio::task::{JoinSet, yield_now};
 
 use super::fixtures::{
-    cipher, column, decrypted_leaves, events, json, keys, log_into, recorded, request, row, sealed,
-    steps, Events, FakeStorage, MASTER_KEY, PREVIOUS_KEY,
+    Events, FakeStorage, MASTER_KEY, PREVIOUS_KEY, cipher, column, decrypted_leaves, events, json,
+    keys, log_into, recorded, request, row, sealed, steps,
 };
+use crate::database_reencryption::MigrationError;
 use crate::database_reencryption::outcome::{MigrationFailure, MigrationOutcome, NothingToMigrate};
 use crate::database_reencryption::registry::SecretColumn;
 use crate::database_reencryption::runner::migrate_if_requested;
 use crate::database_reencryption::storage::SecretRow;
-use crate::database_reencryption::MigrationError;
 use crate::postgres_store::diagnostics::PoolFailure;
 
 fn credentials() -> SecretColumn {
@@ -514,7 +514,9 @@ async fn progress_log_error_captured() {
         Some("the migration logger failed: the progress logger broke")
     );
     let logged = recorded(&events);
-    assert!(logged
-        .iter()
-        .any(|event| event.starts_with("log:Could not migrate")));
+    assert!(
+        logged
+            .iter()
+            .any(|event| event.starts_with("log:Could not migrate"))
+    );
 }

@@ -1,18 +1,18 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use betterlite_secrets::secret_codec::Algorithm;
 use deadpool_postgres::PoolError;
 use secrecy::SecretString;
 use tokio::sync::Notify;
-use tokio::task::{yield_now, JoinSet};
+use tokio::task::{JoinSet, yield_now};
 
-use super::fixtures::{column, events, recorded, row, sealed, Events, FakeStorage, PREVIOUS_KEY};
+use super::fixtures::{Events, FakeStorage, PREVIOUS_KEY, column, events, recorded, row, sealed};
+use crate::database_reencryption::MigrationError;
 use crate::database_reencryption::counting::{
     count_encrypted_or_none, count_values_encrypted_with,
 };
 use crate::database_reencryption::registry::SecretColumn;
-use crate::database_reencryption::MigrationError;
 use crate::postgres_store::diagnostics::PoolFailure;
 
 fn credentials() -> SecretColumn {

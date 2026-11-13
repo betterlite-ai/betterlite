@@ -1,22 +1,22 @@
 use std::collections::VecDeque;
-use std::future::{ready, Future};
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{
-    decrypt_if_encrypted_with, Algorithm, CipherSettings, OsNonces, StoredValue,
-    CALLBACK_VAR_ENCRYPTED_PREFIX,
+    Algorithm, CALLBACK_VAR_ENCRYPTED_PREFIX, CipherSettings, OsNonces, StoredValue,
+    decrypt_if_encrypted_with,
 };
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::Notify;
 
-use crate::database_reencryption::registry::{registered_columns, SecretColumn};
+use crate::database_reencryption::registry::{SecretColumn, registered_columns};
 use crate::database_reencryption::runner::MigrationRequest;
 use crate::database_reencryption::storage::{SecretRow, SecretStorage};
 use deadpool_postgres::PoolError;
 
 use crate::database_reencryption::MigrationError;
-use crate::encryption_scan::{decode_migration_json, iter_encrypted_strings, MigrationJson};
+use crate::encryption_scan::{MigrationJson, decode_migration_json, iter_encrypted_strings};
 use crate::postgres_store::diagnostics::PoolFailure;
 use crate::stored_cipher::DbCipher;
 

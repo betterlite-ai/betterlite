@@ -1,6 +1,6 @@
 use betterlite_secrets::secret_codec::Algorithm;
 
-use super::super::fixtures::{cipher, column, sealed, MASTER_KEY, PREVIOUS_KEY};
+use super::super::fixtures::{MASTER_KEY, PREVIOUS_KEY, cipher, column, sealed};
 use super::support::{database, master, migrate, plaintexts, previous};
 use crate::database_reencryption::counting::count_values_encrypted_with;
 use crate::database_reencryption::outcome::MigrationOutcome;

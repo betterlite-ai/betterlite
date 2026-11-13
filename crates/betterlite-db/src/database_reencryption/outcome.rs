@@ -2,7 +2,7 @@ use std::fmt;
 
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::{MigrationError, MAX_CAUSE_CHARS, PREVIOUS_KEY_VARIABLE, SALT_KEY_ENV_VAR};
+use super::{MAX_CAUSE_CHARS, MigrationError, PREVIOUS_KEY_VARIABLE, SALT_KEY_ENV_VAR};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NothingToMigrate {

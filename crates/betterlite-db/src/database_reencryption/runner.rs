@@ -2,7 +2,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
 use super::counting::count_values_encrypted_with;
-use super::outcome::{describe_outcome, MigrationFailure, MigrationOutcome, NothingToMigrate};
+use super::outcome::{MigrationFailure, MigrationOutcome, NothingToMigrate, describe_outcome};
 use super::reencrypt::reencrypt_stored_values;
 use super::storage::SecretStorage;
 use super::{MigrationError, PREVIOUS_KEY_VARIABLE};
