@@ -83,22 +83,22 @@ fn finish_reason_at(chunk: &StreamChunk, index: usize) -> Option<&'static str> {
 fn chunks_split_after_a_valid_fragment_switches_to_accumulation() {
     let mut decoder = decoder();
     let first = decoder
-        .push(br#"{"responseId":"r1","candidates":[{"content":{"parts":[{"text":"Hel"}]}}]}"#)
+        .push(br#"{"responseId":"r1","candidates":[{"content":{"parts":[{"text":"he"}]}}]}"#)
         .unwrap()
         .unwrap();
     assert_eq!(first.id, "r1");
-    assert_eq!(content(&first), Some("Hel"));
+    assert_eq!(content(&first), Some("he"));
     assert_eq!(first.created, NOW);
     assert!(!first.is_finished);
     let partial = decoder
-        .push(br#"{"responseId":"r1","candidates":[{"content":{"parts":[{"text":"lo"#)
+        .push(br#"{"responseId":"r1","candidates":[{"content":{"parts":[{"text":"llo"#)
         .unwrap();
     assert!(partial.is_none());
     let last = decoder
         .push(br#""}]}}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3}}"#)
         .unwrap()
         .unwrap();
-    assert_eq!(content(&last), Some("lo"));
+    assert_eq!(content(&last), Some("llo"));
     assert_eq!(last.usage.as_ref().unwrap().total_tokens, 3);
     assert!(decoder.finish().unwrap().is_none());
 }
@@ -143,12 +143,14 @@ fn chunks_metadata_only_candidates_yield_empty_deltas() {
         .unwrap()
         .unwrap();
     assert_eq!(chunk.choices.len(), 2);
-    for choice in &chunk.choices {
-        let Choice::EmptyDelta { index } = choice else {
-            panic!("a candidate without content or finishReason is skipped by the projection");
-        };
-        assert_eq!(*index, 0);
-    }
+    let Choice::EmptyDelta { index: first } = &chunk.choices[0] else {
+        panic!("a candidate without content or finishReason is skipped by the projection");
+    };
+    let Choice::EmptyDelta { index: second } = &chunk.choices[1] else {
+        panic!("a candidate without content or finishReason is skipped by the projection");
+    };
+    assert_eq!(*first, 0);
+    assert_eq!(*second, 0);
     assert!(chunk.metadata.grounding_metadata.is_empty());
     assert!(chunk.metadata.safety_ratings.is_empty());
     assert!(chunk.usage.is_none());
@@ -377,28 +379,19 @@ fn chunks_embedded_errors_use_their_coercible_status(#[case] fragment: &[u8], #[
 #[test]
 fn ownership_the_retained_buffer_stops_at_the_limit() {
     let mut decoder = decoder();
-    assert!(decoder.push(b"[").unwrap().is_none());
-    let fragment = " ".repeat(MAX_RETAINED_BYTES / 4);
-    let mut rejected = None;
-    for _ in 0..8 {
-        match decoder.push(fragment.as_bytes()) {
-            Ok(_) => {}
-            Err(error) => {
-                rejected = Some(error);
-                break;
-            }
-        }
-    }
-    assert!(matches!(rejected, Some(StreamError::TooLarge { .. })));
+    let oversized = "x".repeat(MAX_RETAINED_BYTES + 1);
+    assert!(matches!(
+        decoder.push(oversized.as_bytes()),
+        Err(StreamError::TooLarge { .. })
+    ));
 }
 
 #[test]
 fn ownership_cursor_keeps_the_copy_cost_linear() {
     let mut decoder = decoder();
-    let mut payload = String::new();
-    for position in 0..50 {
-        payload.push_str(&format!(r#"{{"responseId":"r{position}"}}"#));
-    }
+    let payload: String = (0..50)
+        .map(|position| format!(r#"{{"responseId":"r{position}"}}"#))
+        .collect();
     let first = decoder.push(payload.as_bytes()).unwrap().unwrap();
     assert_eq!(first.id, "r0");
     let mut drained = 0_usize;

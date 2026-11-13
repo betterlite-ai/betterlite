@@ -1,9 +1,14 @@
 from dataclasses import dataclass
-from typing import Final, TypedDict, cast
+from typing import Final, Protocol, TypedDict, cast
 
 from litellm.llms.vertex_ai.gemini import vertex_and_google_ai_studio_gemini as gemini
 from litellm.types.utils import ModelResponseStream
 from pydantic import JsonValue, TypeAdapter
+
+
+class StreamIterator(Protocol):
+    def __iter__(self) -> "StreamIterator": ...
+    def __next__(self) -> ModelResponseStream | None: ...
 
 
 class Input(TypedDict):
@@ -77,25 +82,24 @@ def _state(chunk: ModelResponseStream) -> JsonValue:
 def _chunks(
     input_value: Input, optional_params: dict[str, JsonValue]
 ) -> tuple[list[JsonValue], list[JsonValue]]:
-    iterator = iter(
-        gemini.ModelResponseIterator(
-            streaming_response=iter(input_value["fragments"]),
-            sync_stream=True,
-            logging_obj=cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L109
-                "gemini.LoggingClass", Logging(optional_params=optional_params)
-            ),
-            response_headers=input_value["headers"],
-            response=None,
-        )
+    iterator: StreamIterator = gemini.ModelResponseIterator(
+        streaming_response=iter(input_value["fragments"]),
+        sync_stream=True,
+        logging_obj=cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L109
+            "gemini.LoggingClass", Logging(optional_params=optional_params)
+        ),
+        response_headers=input_value["headers"],
+        response=None,
     )
+    running = iter(iterator)
     chunks: list[JsonValue] = []
     for _ in range(len(input_value["fragments"])):
-        chunk = next(iterator)
+        chunk = next(running)
         chunks.append(None if chunk is None else _state(chunk))
     drained: list[JsonValue] = []
     while True:
         try:
-            extra = next(iterator)
+            extra = next(running)
         except StopIteration:
             break
         drained.append(None if extra is None else _state(extra))
