@@ -4,9 +4,10 @@ use super::support::{
     Cache, Inputs, KeyedCache, Run, Script, get_client, initialize, initialize_result,
 };
 use crate::credentials::headers::{ClientAuthParams, get_azure_request_auth_headers};
-use crate::credentials::source::TokenReply;
+use crate::credentials::source::{SourceFailure, TokenReply};
 use crate::endpoints::get_client::ClientCache as _;
 use crate::endpoints::identity::client_identity;
+use crate::endpoints::initialize::EndpointError;
 use crate::endpoints::projection::{AzureClientInputs, ClientKind};
 
 fn secret(text: &str) -> SecretString {
@@ -127,6 +128,17 @@ fn error_debug_redacts() {
     assert_no_secrets(&format!("{error:?}"));
 }
 
+fn error_reports_status() {
+    let rejected = EndpointError::Source(SourceFailure {
+        class: "AzureOpenAIError".to_owned(),
+        status: Some(401),
+        message: "OIDC token could not be retrieved".to_owned(),
+    });
+    assert_eq!(rejected.status(), Some(401));
+    assert_eq!(EndpointError::MissingApiVersion.status(), None);
+    assert_eq!(EndpointError::MissingApiVersion.class(), "KeyError");
+}
+
 fn outcome_debug_redacts() {
     let inputs = secret_inputs();
     let key = secret("fixture-api-key");
@@ -151,5 +163,6 @@ fn outcome_debug_redacts() {
 pub(crate) fn secret_safe_failure() {
     inputs_debug_redacts();
     error_debug_redacts();
+    error_reports_status();
     outcome_debug_redacts();
 }

@@ -180,6 +180,11 @@ fn cloudflare_api_key_wins() {
         Some("fixture-api-key")
     );
     assert!(client.azure_ad_token.is_none());
+    let rendered = format!("{client:?}");
+    assert!(rendered.starts_with(
+        "CloudflareClient { base_url: \"https://gateway.example/azure/gpt-4o\", api_version: \"2024-02-01\""
+    ));
+    assert!(!rendered.contains("fixture-api-key"));
 }
 
 fn cloudflare_plain_token() {
@@ -766,6 +771,50 @@ fn passed_provider_is_used() {
         &value.token_provider.as_ref().unwrap().0,
         &passed.provider
     ));
+    assert!(format!("{value:?}").contains("token_provider: Some(TokenProvider)"));
+}
+
+fn refresh_skipped_with_key_or_provider() {
+    let inputs = Inputs::default();
+    let key = secret("api-key");
+    let keyed = initialize(&inputs, &Run::default().with_key(&key).refresh());
+    assert!(keyed.token_provider.is_none());
+    let passed = callable(Script::Token("passed-token".to_owned()), 3);
+    let provided = initialize(&inputs, &Run::default().with_provider(&passed).refresh());
+    assert!(Arc::ptr_eq(
+        &provided.token_provider.as_ref().unwrap().0,
+        &passed.provider
+    ));
+    assert!(inputs.sources.calls().is_empty());
+}
+
+fn oidc_token_skips_refresh() {
+    let inputs = Inputs::default().with_ad_token(&secret("oidc/assertion"));
+    let value = initialize(&inputs, &Run::default().refresh());
+    assert!(value.token_provider.is_none());
+    assert_eq!(inputs.sources.calls().len(), 1);
+    assert!(matches!(inputs.sources.calls()[0], SourceCall::Oidc { .. }));
+}
+
+fn entra_runs_before_oidc() {
+    let inputs = credentialed().with_ad_token(&secret("oidc/assertion"));
+    initialize(&inputs, &Run::default());
+    assert_eq!(
+        inputs.sources.calls(),
+        vec![
+            SourceCall::ClientSecret {
+                tenant_id: "tenant".to_owned(),
+                client_id: "client".to_owned(),
+                scope: DEFAULT_SCOPE.to_owned(),
+            },
+            SourceCall::Oidc {
+                azure_ad_token: "oidc/assertion".to_owned(),
+                client_id: Some("client".to_owned()),
+                tenant_id: Some("tenant".to_owned()),
+                scope: Some(DEFAULT_SCOPE.to_owned()),
+            },
+        ]
+    );
 }
 
 pub(crate) fn azure_initializer_credentials() {
@@ -784,6 +833,9 @@ pub(crate) fn azure_initializer_credentials() {
     oidc_exchange_with_identity();
     plain_token_still_refreshes();
     passed_provider_is_used();
+    refresh_skipped_with_key_or_provider();
+    oidc_token_skips_refresh();
+    entra_runs_before_oidc();
 }
 
 fn v1_inputs<'data>(value: &'data ClientOutcome<'data>) -> &'data OpenAiV1ClientInputs<'data> {
@@ -805,6 +857,10 @@ fn v1_key_precedence() {
         V1Key::Provider { .. } => panic!("the api key lost to the token"),
     }
     assert_eq!(
+        format!("{:?}", v1_inputs(&outcome).key),
+        "Some(Static([REDACTED]))"
+    );
+    assert_eq!(
         v1_inputs(&outcome).base_url.as_deref(),
         Some("https://example.openai.azure.com/openai/v1/")
     );
@@ -825,6 +881,10 @@ fn v1_provider_key() {
         V1Key::Provider { offload, .. } => assert!(!offload),
         V1Key::Static(_) => panic!("the provider lost to the token"),
     }
+    assert_eq!(
+        format!("{:?}", v1_inputs(&outcome).key),
+        "Some(Provider { offload: false })"
+    );
     let mut async_cache = Cache::empty();
     let mut async_run = Run::for_client()
         .with_version(Some("latest"))

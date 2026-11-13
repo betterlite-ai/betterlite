@@ -68,8 +68,8 @@ pub fn initialize_azure_sdk_client<'data>(
         .azure_scope
         .clone()
         .unwrap_or_else(|| DEFAULT_SCOPE.to_owned());
-    let (token, exchanged) = exchange_oidc_token(request, &environment, &scope)?;
     let mut provider = resolve_provider(request, &environment, &scope)?;
+    let (token, exchanged) = exchange_oidc_token(request, &environment, &scope)?;
     let key_absent = request
         .api_key
         .as_ref()
