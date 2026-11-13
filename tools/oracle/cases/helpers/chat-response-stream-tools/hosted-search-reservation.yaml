@@ -1,0 +1,41 @@
+kind: helper
+name: chat-response-stream-tools-hosted-search-reservation
+call:
+  chat_response_stream_tools:
+    model: gpt-4o-mini
+    request_value: hi
+    responses_api_request:
+      tools:
+        - {type: function, name: web_search}
+    custom_llm_provider: null
+    litellm_metadata: null
+    logging_marker: ctx
+    steps:
+      - kind: reserve
+        provider_fields:
+          web_search_calls:
+            a: {id: ws_call_x, type: web_search_call, status: searching, action: {type: open_page}}
+      - kind: deltas
+        tool_calls:
+          - {id: call_x, index: 0, function: {name: web_search, arguments: "abcdefghijkl"}}
+      - kind: reserve
+        provider_fields:
+          web_search_calls:
+            later: {id: ws_call_x, type: web_search_call, status: in_progress, action: {type: search, query: q}}
+      - kind: reserve
+        provider_fields:
+          web_search_calls:
+            - {id: ws_two, type: web_search_call, status: completed, action: {type: find_in_page, pattern: p, url: "https://example.com"}}
+            - {status: completed}
+            - {id: "", status: completed}
+            - text
+      - kind: reserve
+        provider_fields: null
+      - kind: final
+        tool_calls:
+          - {id: call_x, function: {name: web_search, arguments: "{}"}}
+          - {id: two, function: {name: web_search, arguments: "{}"}}
+          - {id: call_x, function: {name: web_search, arguments: "{}"}}
+env: {}
+compare:
+  ignore: []

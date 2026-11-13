@@ -1,0 +1,22 @@
+kind: helper
+name: anthropic-stream-state-usage-start-and-delta
+call:
+  anthropic_stream_state:
+    json_mode: false
+    speed: fast
+    sync_stream: true
+    tool_name_reverse_map: {}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: usage, usage: {input_tokens: 10, output_tokens: 1}}
+      - {function: usage, usage: {output_tokens: 5}}
+      - {function: usage, usage: {input_tokens: null}}
+      - {function: usage, usage: {output_tokens_details: {thinking_tokens: 2}}}
+      - {function: usage, usage: {output_tokens_details: {}}}
+      - {function: usage, usage: {}}
+      - {function: delta, chunk: {type: content_block_delta, index: 0, delta: {type: thinking_delta, thinking: hello world}}}
+      - {function: usage, usage: {input_tokens: 3, output_tokens: 10}}
+      - {function: usage, usage: {output_tokens: 4, speed: slow}}
+      - {function: state}
+env: {}
+compare: {ignore: []}

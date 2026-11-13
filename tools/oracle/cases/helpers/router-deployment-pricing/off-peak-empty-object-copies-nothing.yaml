@@ -1,0 +1,8 @@
+kind: helper
+name: router-deployment-pricing-off-peak-empty-object-copies-nothing
+call:
+  b9710:
+    deployment: {"model_name": "alias", "litellm_params": {"model": "openrouter/deepseek/deepseek-v4-pro-0813"}, "model_info": {"id": "dep-9", "off_peak_pricing": {}}}
+    shared_before: null
+compare: {ignore: []}
+env: {}

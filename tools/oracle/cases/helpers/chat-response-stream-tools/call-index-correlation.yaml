@@ -1,0 +1,37 @@
+kind: helper
+name: chat-response-stream-tools-call-index-correlation
+call:
+  chat_response_stream_tools:
+    model: gpt-4o-mini
+    request_value: hi
+    responses_api_request:
+      tools: []
+    custom_llm_provider: null
+    litellm_metadata: {}
+    logging_marker: ctx
+    steps:
+      - kind: correlate
+        calls:
+          - {index: " +2 ", id: a}
+          - {index: true, id: b}
+          - {index: 2.9, id: c}
+          - {index: -3, id: d}
+          - {index: null, id: e}
+          - {index: x, id: f}
+          - {index: 0}
+          - {}
+          - {id: ""}
+          - {id: g}
+      - kind: correlate
+        calls:
+          - {index: 0, id: a}
+          - {index: 0}
+          - {index: 0, id: b}
+          - {index: 0}
+          - {index: 0, id: c}
+          - {index: 0}
+      - kind: assign
+        call_ids: [g, g, h]
+env: {}
+compare:
+  ignore: []

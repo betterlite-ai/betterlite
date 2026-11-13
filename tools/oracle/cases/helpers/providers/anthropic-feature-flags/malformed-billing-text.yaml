@@ -1,0 +1,25 @@
+kind: helper
+name: malformed-billing-text
+call:
+  anthropic_feature_flags:
+    fixture: {model_cost: {}}
+    calls:
+      - function: billing_fields
+        texts:
+          - "x-anthropic-billing-header: cc_is_subagent=true"
+          - " \t x-anthropic-billing-header: a=1 ; b = 2 \n"
+          - "x-anthropic-billing-header: ;;a=1;"
+          - "x-anthropic-billing-header:a=1"
+          - "x-anthropic-billing-header: a=b=c"
+          - "x-anthropic-billing-header: a=1;cc_is_subagent=true"
+          - "x-anthropic-billing-header: a=1\nb=2"
+          - "x-anthropic-billing-header: a=1\rb=2"
+          - "a=1"
+          - "x-anthropic-billing-header:"
+          - "x-anthropic-billing-header: a"
+          - "x-anthropic-billing-header: =1"
+          - "x-anthropic-billing-header: a="
+          - "x-anthropic-billing-header: a=  "
+          - ""
+env: {}
+compare: {ignore: []}

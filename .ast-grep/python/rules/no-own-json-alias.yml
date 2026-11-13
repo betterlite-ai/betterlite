@@ -1,0 +1,109 @@
+id: no-own-json-alias
+language: python
+severity: error
+message: JSON has one type already; an oracle helper imports JsonValue from pydantic, which LiteLLM pins in uv.lock, and the wheel imports JsonValue from betterlite.types.utils.values
+ignores:
+  - crates/betterlite-python/python/betterlite/types/utils/values.py
+  # files that had their own alias on 2026-11-13; cleanup tasks take them off
+  - crates/betterlite-python/tests/test_package.py
+  - tools/oracle/helpers/anthropic_beta_config.py
+  - tools/oracle/helpers/anthropic_option_primitives.py
+  - tools/oracle/helpers/anthropic_pricing.py
+  - tools/oracle/helpers/anthropic_stream_state/records.py
+  - tools/oracle/helpers/audio_file_input.py
+  - tools/oracle/helpers/auth_cache.py
+  - tools/oracle/helpers/azure_credentials/fixtures.py
+  - tools/oracle/helpers/azure_default_chain/fakes.py
+  - tools/oracle/helpers/azure_urls.py
+  - tools/oracle/helpers/b122.py
+  - tools/oracle/helpers/b3456/__init__.py
+  - tools/oracle/helpers/b3661.py
+  - tools/oracle/helpers/b3662.py
+  - tools/oracle/helpers/b3663/usage.py
+  - tools/oracle/helpers/b3809.py
+  - tools/oracle/helpers/b3910.py
+  - tools/oracle/helpers/b3937.py
+  - tools/oracle/helpers/b3940.py
+  - tools/oracle/helpers/b3971.py
+  - tools/oracle/helpers/b3993.py
+  - tools/oracle/helpers/b3994.py
+  - tools/oracle/helpers/b4002.py
+  - tools/oracle/helpers/b4293.py
+  - tools/oracle/helpers/b4300.py
+  - tools/oracle/helpers/b5361/__init__.py
+  - tools/oracle/helpers/b5362/__init__.py
+  - tools/oracle/helpers/b5363/__init__.py
+  - tools/oracle/helpers/b5364/stubs.py
+  - tools/oracle/helpers/b5365/registration.py
+  - tools/oracle/helpers/b5367/markers.py
+  - tools/oracle/helpers/b5471/__init__.py
+  - tools/oracle/helpers/b8101/views.py
+  - tools/oracle/helpers/b8105/views.py
+  - tools/oracle/helpers/b8156/support.py
+  - tools/oracle/helpers/b9710/__init__.py
+  - tools/oracle/helpers/bedrock_aws_settings.py
+  - tools/oracle/helpers/bedrock_converse_events.py
+  - tools/oracle/helpers/bedrock_dispatch_contract.py
+  - tools/oracle/helpers/bedrock_invoke_primitives/models.py
+  - tools/oracle/helpers/bedrock_services_agentcore_request.py
+  - tools/oracle/helpers/bedrock_services_batch_status.py
+  - tools/oracle/helpers/bedrock_services_vector_stores.py
+  - tools/oracle/helpers/billing_text.py
+  - tools/oracle/helpers/call_helpers.py
+  - tools/oracle/helpers/chat_response_stream_tools.py
+  - tools/oracle/helpers/claude_platform_inputs/types.py
+  - tools/oracle/helpers/database_tokens.py
+  - tools/oracle/helpers/deepgram_listen_metadata.py
+  - tools/oracle/helpers/deepseek_request_policy.py
+  - tools/oracle/helpers/file_contracts.py
+  - tools/oracle/helpers/full_model_metadata.py
+  - tools/oracle/helpers/gemini_embedding_records.py
+  - tools/oracle/helpers/google_pricing.py
+  - tools/oracle/helpers/jwt_claims.py
+  - tools/oracle/helpers/managed_resource_ids.py
+  - tools/oracle/helpers/mistral_options.py
+  - tools/oracle/helpers/model_capability_predicates.py
+  - tools/oracle/helpers/multimodal_embedding_records.py
+  - tools/oracle/helpers/openai_chat_choices/support.py
+  - tools/oracle/helpers/openai_reasoning_models.py
+  - tools/oracle/helpers/openai_response_params.py
+  - tools/oracle/helpers/openai_speech/types.py
+  - tools/oracle/helpers/realtime_contracts.py
+  - tools/oracle/helpers/request_body.py
+  - tools/oracle/helpers/request_destination.py
+  - tools/oracle/helpers/rerank_contracts.py
+  - tools/oracle/helpers/response_chat_history.py
+  - tools/oracle/helpers/response_id_codecs.py
+  - tools/oracle/helpers/responses_chat_options.py
+  - tools/oracle/helpers/responses_codex_tools.py
+  - tools/oracle/helpers/responses_input_messages.py
+  - tools/oracle/helpers/responses_parameters.py
+  - tools/oracle/helpers/responses_provider_contract.py
+  - tools/oracle/helpers/responses_tool_namespaces.py
+  - tools/oracle/helpers/responses_tool_repair.py
+  - tools/oracle/helpers/responses_tool_results.py
+  - tools/oracle/helpers/speech_provider_contract.py
+  - tools/oracle/helpers/spend_counter_batch.py
+  - tools/oracle/helpers/studio_identity.py
+  - tools/oracle/helpers/studio_interactions.py
+  - tools/oracle/helpers/tool_fees.py
+  - tools/oracle/helpers/tool_signals.py
+  - tools/oracle/helpers/transcription_contract.py
+  - tools/oracle/helpers/vertex_aws_federation.py
+  - tools/oracle/helpers/vertex_gcs_access.py
+  - tools/oracle/helpers/vertex_schema.py
+  - tools/oracle/helpers/xai_batches.py
+rule:
+  kind: assignment
+  has:
+    field: left
+    kind: identifier
+    regex: ^(Json|JsonValue)$
+  not:
+    has:
+      field: right
+      kind: call
+  inside:
+    kind: expression_statement
+    inside:
+      kind: module
