@@ -38,6 +38,20 @@ fn python_ascii_patterns_are_retained(#[case] source: &str, #[case] text: &str) 
 #[case::dot(r"(?a)danger.*zone", "DANGER middle ZONE", "danger\nzone")]
 #[case::negated_space(r"(?a)\S+", "abc", " \t ")]
 #[case::negated_class(r"(?a)[^x]", "a", "x")]
+#[case::ascii_dot_is_one_character(r"(?a)^.$", "\u{e9}", "ab")]
+#[case::scoped_ascii_dot(r"^(?a:.)$", "\u{e9}", "ab")]
+#[case::ascii_dot_counted(r"(?a)a.{2}b", "a\u{e9}\u{e9}b", "a\u{e9}b")]
+#[case::ascii_non_space(r"(?a)^\S$", "\u{e9}", " ")]
+#[case::ascii_non_word_ignores_case(r"(?a)^\W$", "\u{17f}", "s")]
+#[case::ascii_non_digit(r"(?a)^\D$", "\u{e9}", "1")]
+#[case::unicode_non_word_after_flag_group(r"(?m)^\W$", "!", "\u{e9}")]
+#[case::unicode_non_digit(r"^\D$", "a", "\u{663}")]
+#[case::unicode_non_space(r"^\S$", "a", "\u{a0}")]
+#[case::multiline_lines(r"(?m)^foo$", "foo\nbar", "foox\nbar")]
+#[case::multiline_before_newline(r"(?m)foo$", "foo\n", "foox\n")]
+#[case::ascii_multiline(r"(?am)^foo$", "foo\nbar", "foox\nbar")]
+#[case::multiline_scope_ends(r"(?m:a$)\nb$", "a\nb\n", "a\nb\nc")]
+#[case::multiline_turned_off(r"(?m)(?-m:a$)", "a\n", "a\nb")]
 #[case::end_of_text(r"foo$", "foo", "foo\nbar")]
 #[case::before_final_newline(r"foo$", "foo\n", "foo\nbar")]
 #[case::absolute_end(r"foo\Z", "foo", "foo\n")]
@@ -67,6 +81,21 @@ fn python_flag_removals_python_rejects_are_skipped(#[case] source: &str) {
     data.phrase_patterns.push(source.to_owned());
     let category = super::model::CategoryConfig::from_data(data).unwrap();
     assert!(category.phrase_patterns.is_empty(), "{source}");
+}
+
+#[rstest]
+#[case::negated_class(r"(?a)^[^x]$", "a")]
+#[case::non_word_in_class(r"(?a)^[\W]$", "!")]
+fn python_ascii_classes_match_single_bytes_of_non_ascii_text(
+    #[case] source: &str,
+    #[case] ascii: &str,
+) {
+    let mut data: CategoryFileData = serde_saphyr::from_str("keywords: []").unwrap();
+    data.phrase_patterns.push(source.to_owned());
+    let category = super::model::CategoryConfig::from_data(data).unwrap();
+    let pattern = &category.phrase_patterns[0];
+    assert!(pattern.regex.is_match(ascii).unwrap(), "{source}");
+    assert!(!pattern.regex.is_match("\u{e9}").unwrap(), "{source}");
 }
 
 #[test]

@@ -6,6 +6,9 @@ deviations:
   - what: Phrase patterns Python's re rejects but fancy-regex accepts, such as Oniguruma named groups (?<name>...), subroutine calls (?P>name) and the absent operator (?~...), are compiled and matched, where LiteLLM logs a warning and skips the pattern.
     why: The first engine is the backtracking fancy-regex crate, chosen for lookarounds and backreferences, and it implements more syntax than Python's re.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L145-L191
+  - what: Under Python's (?a) flag a character class that can match non-ASCII text, a negated class such as [^x] or a class holding \W, \S or \D, matches a single byte of a non-ASCII character, so (?a)^[^x]$ does not match "é" and (?a)a[^x]{2}b matches "aéb", where Python's re counts é as one character. Outside a class, ., \D, \S and \W still match one whole character.
+    why: (?a) patterns run on the linear regex crate under (?-u) to get ASCII-only case folding. The dot and the escapes outside a class are rewritten to one-character Unicode forms, but splitting a class into a byte part and a non-ASCII part needs a parser for Python's class syntax.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L186-L191
   - what: A JSON category entry whose match is neither a string nor null is skipped with the rest of the file still loading, where LiteLLM raises and drops the whole category.
     why: The entry type is an untagged enum whose fallback variant skips a non-object entry, and the same fallback also swallows a malformed match field.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L682-L716
