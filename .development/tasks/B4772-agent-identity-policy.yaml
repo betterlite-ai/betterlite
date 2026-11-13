@@ -15,6 +15,7 @@ description: >-
 
 scope:
   paths:
+    - "crates/betterlite-auth/src/agent_identity*"
     - crates/betterlite-auth/src/agent_identity.rs
     - crates/betterlite-auth/src/agent_identity/**
     - crates/betterlite-auth/src/agent_identity/tests.rs
