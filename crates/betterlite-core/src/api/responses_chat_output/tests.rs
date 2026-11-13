@@ -395,6 +395,25 @@ fn thinking_blocks_with_signature_or_data_are_encoded() {
 }
 
 #[test]
+fn thinking_blocks_use_each_variant_declaration_order() {
+    let response = assemble(
+        r#"{"id":"c","created":1,"model":"m","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"hi",
+            "thinking_blocks":[
+                {"cache_control":{"ttl":1},"signature":"sig","thinking":"t","type":"thinking"},
+                {"cache_control":{"ttl":2},"data":"d","type":"redacted_thinking"}]}}]}"#,
+    );
+    let ResponseOutputItem::Message(reasoning) = &response.response.output[0] else {
+        panic!("a reasoning item was expected");
+    };
+    assert_eq!(
+        reasoning.extra.get("encrypted_content"),
+        Some(&parse(
+            r#""[{\"type\":\"thinking\",\"thinking\":\"t\",\"signature\":\"sig\",\"cache_control\":{\"ttl\":1}},{\"type\":\"redacted_thinking\",\"data\":\"d\",\"cache_control\":{\"ttl\":2}}]""#
+        ))
+    );
+}
+
+#[test]
 fn thinking_blocks_keep_declared_keys_first_and_extras_after() {
     let response = assemble(
         r#"{"id":"c","created":1,"model":"m","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"hi",
