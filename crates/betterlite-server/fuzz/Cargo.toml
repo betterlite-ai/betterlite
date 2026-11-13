@@ -156,3 +156,10 @@ path = "fuzz_targets/request_body.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "bedrock_event_stream"
+path = "fuzz_targets/bedrock_event_stream.rs"
+test = false
+doc = false
+bench = false
