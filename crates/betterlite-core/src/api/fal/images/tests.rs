@@ -30,7 +30,11 @@ fn url_image(url: &str) -> FalImage {
     }
 }
 
-fn provider(width: Option<u64>, height: Option<u64>, content_type: Option<&str>) -> Option<FalImageProviderSpecificFields> {
+fn provider(
+    width: Option<u64>,
+    height: Option<u64>,
+    content_type: Option<&str>,
+) -> Option<FalImageProviderSpecificFields> {
     Some(FalImageProviderSpecificFields {
         width,
         height,
@@ -279,8 +283,8 @@ fn generic_mapping_copies_supported_params() {
 fn generic_mapping_keeps_an_existing_optional_param() {
     let non_default = params(&[("n", number(2))]);
     let optional = params(&[("n", number(4))]);
-    let mapped = map_openai_params(&non_default, optional, "fal-ai/flux", false)
-        .expect("an existing param");
+    let mapped =
+        map_openai_params(&non_default, optional, "fal-ai/flux", false).expect("an existing param");
     assert_eq!(mapped.get("n"), Some(&number(4)));
 }
 
@@ -288,10 +292,7 @@ fn generic_mapping_keeps_an_existing_optional_param() {
 fn generic_mapping_rejects_an_unsupported_param() {
     let non_default = params(&[("seed", number(1))]);
     match map_openai_params(&non_default, ImageParams::new(), "fal-ai/flux", false) {
-        Err(FalImageError::UnsupportedParameters {
-            parameters,
-            model,
-        }) => {
+        Err(FalImageError::UnsupportedParameters { parameters, model }) => {
             assert_eq!(parameters, ["seed"]);
             assert_eq!(model, "fal-ai/flux");
         }
@@ -301,10 +302,7 @@ fn generic_mapping_rejects_an_unsupported_param() {
 
 #[test]
 fn generic_mapping_drops_unsupported_params_with_drop_params() {
-    let non_default = params(&[
-        ("seed", number(1)),
-        ("n", number(2)),
-    ]);
+    let non_default = params(&[("seed", number(1)), ("n", number(2))]);
     let mapped =
         map_openai_params(&non_default, ImageParams::new(), "fal-ai/flux", true).expect("dropped");
     assert_eq!(mapped, params(&[("n", number(2))]));
@@ -314,34 +312,25 @@ fn generic_mapping_drops_unsupported_params_with_drop_params() {
 fn generic_mapping_keeps_an_unsupported_param_that_is_already_present() {
     let non_default = params(&[("seed", number(1))]);
     let optional = params(&[("seed", number(9))]);
-    let mapped = map_openai_params(&non_default, optional, "fal-ai/flux", false)
-        .expect("an existing param");
+    let mapped =
+        map_openai_params(&non_default, optional, "fal-ai/flux", false).expect("an existing param");
     assert_eq!(mapped.get("seed"), Some(&number(9)));
 }
 
 #[test]
 fn generic_body_puts_provider_options_over_the_prompt() {
-    let optional = params(&[
-        ("prompt", Json::Text("a dog".to_owned())),
-        ("n", number(2)),
-    ]);
+    let optional = params(&[("prompt", Json::Text("a dog".to_owned())), ("n", number(2))]);
     let body = image_generation_body("a cat", optional);
     assert_eq!(
         body,
-        params(&[
-            ("prompt", Json::Text("a dog".to_owned())),
-            ("n", number(2)),
-        ])
+        params(&[("prompt", Json::Text("a dog".to_owned())), ("n", number(2)),])
     );
 }
 
 #[test]
 fn generic_body_starts_with_the_prompt() {
     let body = image_generation_body("a cat", ImageParams::new());
-    assert_eq!(
-        body,
-        params(&[("prompt", Json::Text("a cat".to_owned()))])
-    );
+    assert_eq!(body, params(&[("prompt", Json::Text("a cat".to_owned()))]));
 }
 
 #[test]
@@ -368,7 +357,10 @@ fn complete_url_uses_an_explicit_base_before_the_environment_base() {
         settings.complete_url(Some(""), "endpoint"),
         "https://environment.test/fal/endpoint"
     );
-    assert_eq!(settings.complete_url(None, ""), "https://environment.test/fal");
+    assert_eq!(
+        settings.complete_url(None, ""),
+        "https://environment.test/fal"
+    );
 }
 
 #[test]
@@ -404,7 +396,9 @@ fn authorize_prefers_an_explicit_key_and_overwrites_authorization() {
         explicit.get("x-request-id").map(String::as_str),
         Some("req-1")
     );
-    let from_environment = settings.authorize(&supplied, None).expect("an environment key");
+    let from_environment = settings
+        .authorize(&supplied, None)
+        .expect("an environment key");
     assert_eq!(
         from_environment.get("Authorization").map(String::as_str),
         Some("Key environment-key")

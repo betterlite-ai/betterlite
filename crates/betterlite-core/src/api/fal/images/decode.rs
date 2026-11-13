@@ -86,11 +86,12 @@ pub fn decode_fal_image_reply(
             limit: MAX_FAL_REPLY_BYTES,
         });
     }
-    let value: Json = serde_json::from_slice(body).map_err(|source| FalImageError::ReplyDecode {
-        status,
-        headers: headers.clone(),
-        source,
-    })?;
+    let value: Json =
+        serde_json::from_slice(body).map_err(|source| FalImageError::ReplyDecode {
+            status,
+            headers: headers.clone(),
+            source,
+        })?;
     let Json::Object(fields) = value else {
         return Err(FalImageError::ReplyNotAnObject {
             status,

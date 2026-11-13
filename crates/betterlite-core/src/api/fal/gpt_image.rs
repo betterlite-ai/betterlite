@@ -7,7 +7,8 @@ use crate::api::fal::images::settings::FalImageSettings;
 
 pub const MODEL_PREFIX: &str = "openai/";
 
-pub const GPT_OPENAI_PARAMS: [&str; 5] = ["n", "output_format", "quality", "response_format", "size"];
+pub const GPT_OPENAI_PARAMS: [&str; 5] =
+    ["n", "output_format", "quality", "response_format", "size"];
 
 pub const PARAM_TRANSLATION: [(&str, &str); 4] = [
     ("n", "num_images"),

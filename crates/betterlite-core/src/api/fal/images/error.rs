@@ -6,7 +6,10 @@ pub enum FalImageError {
     #[error("FAL_AI_API_KEY is not set")]
     MissingApiKey,
     #[error("parameters {parameters:?} are not supported for model {model}")]
-    UnsupportedParameters { parameters: Vec<String>, model: String },
+    UnsupportedParameters {
+        parameters: Vec<String>,
+        model: String,
+    },
     #[error("the Fal reply at HTTP {status} is larger than {limit} bytes")]
     ReplyTooLarge {
         status: u16,
@@ -21,8 +24,5 @@ pub enum FalImageError {
         source: serde_json::Error,
     },
     #[error("the Fal reply at HTTP {status} is not a JSON object")]
-    ReplyNotAnObject {
-        status: u16,
-        headers: ImageHeaders,
-    },
+    ReplyNotAnObject { status: u16, headers: ImageHeaders },
 }

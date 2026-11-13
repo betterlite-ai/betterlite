@@ -73,7 +73,11 @@ fn gpt_url_prepends_the_openai_prefix_once() {
 #[test]
 fn gpt_url_trims_the_base_and_prefers_an_explicit_one() {
     assert_eq!(
-        complete_url(&settings(), Some("https://proxy.test/fal///"), "gpt-image-2"),
+        complete_url(
+            &settings(),
+            Some("https://proxy.test/fal///"),
+            "gpt-image-2"
+        ),
         "https://proxy.test/fal/openai/gpt-image-2"
     );
     let environment = FalImageSettings {
@@ -191,8 +195,14 @@ fn gpt_mapping_translates_n_size_and_output_format() {
         ("size", text("1024x768")),
         ("output_format", text("png")),
     ]);
-    let mapped = map_openai_params(&non_default, ImageParams::new(), "gpt-image-2", false, &catalog())
-        .expect("supported params");
+    let mapped = map_openai_params(
+        &non_default,
+        ImageParams::new(),
+        "gpt-image-2",
+        false,
+        &catalog(),
+    )
+    .expect("supported params");
     assert_eq!(
         mapped,
         params(&[
@@ -222,19 +232,28 @@ fn gpt_mapping_checks_the_translated_destination() {
 #[test]
 fn gpt_mapping_advertises_response_format_without_translating_it() {
     let non_default = params(&[("response_format", text("url"))]);
-    let mapped = map_openai_params(&non_default, ImageParams::new(), "gpt-image-2", false, &catalog())
-        .expect("an advertised param");
+    let mapped = map_openai_params(
+        &non_default,
+        ImageParams::new(),
+        "gpt-image-2",
+        false,
+        &catalog(),
+    )
+    .expect("an advertised param");
     assert!(mapped.is_empty());
 }
 
 #[test]
 fn gpt_mapping_rejects_unsupported_params_without_drop_params() {
     let non_default = params(&[("seed", number(1)), ("user", text("alice"))]);
-    match map_openai_params(&non_default, ImageParams::new(), "gpt-image-2", false, &catalog()) {
-        Err(FalImageError::UnsupportedParameters {
-            parameters,
-            model,
-        }) => {
+    match map_openai_params(
+        &non_default,
+        ImageParams::new(),
+        "gpt-image-2",
+        false,
+        &catalog(),
+    ) {
+        Err(FalImageError::UnsupportedParameters { parameters, model }) => {
             assert_eq!(parameters, ["seed", "user"]);
             assert_eq!(model, "gpt-image-2");
         }
@@ -245,8 +264,14 @@ fn gpt_mapping_rejects_unsupported_params_without_drop_params() {
 #[test]
 fn gpt_mapping_drops_unsupported_params_with_drop_params() {
     let non_default = params(&[("seed", number(1)), ("n", number(2))]);
-    let mapped = map_openai_params(&non_default, ImageParams::new(), "gpt-image-2", true, &catalog())
-        .expect("dropped params");
+    let mapped = map_openai_params(
+        &non_default,
+        ImageParams::new(),
+        "gpt-image-2",
+        true,
+        &catalog(),
+    )
+    .expect("dropped params");
     assert_eq!(mapped, params(&[("num_images", number(2))]));
 }
 
@@ -262,8 +287,14 @@ fn gpt_mapping_keeps_an_unsupported_param_that_is_already_present() {
 #[test]
 fn gpt_mapping_translates_quality_through_the_catalog() {
     let non_default = params(&[("quality", text("hd"))]);
-    let mapped = map_openai_params(&non_default, ImageParams::new(), "gpt-image-2", false, &catalog())
-        .expect("a translated quality");
+    let mapped = map_openai_params(
+        &non_default,
+        ImageParams::new(),
+        "gpt-image-2",
+        false,
+        &catalog(),
+    )
+    .expect("a translated quality");
     assert_eq!(mapped.get("quality"), Some(&text("high")));
     let with_existing = map_openai_params(
         &non_default,

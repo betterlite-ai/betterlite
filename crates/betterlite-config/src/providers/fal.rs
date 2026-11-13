@@ -13,9 +13,7 @@ const API_BASE_VARIABLE: &str = "FAL_AI_API_BASE";
 )]
 impl Sections {
     #[must_use]
-    pub fn fal_image_environment(
-        lookup: &dyn EnvironmentLookup,
-    ) -> (Option<SecretString>, String) {
+    pub fn fal_image_environment(lookup: &dyn EnvironmentLookup) -> (Option<SecretString>, String) {
         let present = |name: &str| lookup.lookup(name).filter(|value| !value.is_empty());
         (
             present(API_KEY_VARIABLE).map(SecretString::from),
