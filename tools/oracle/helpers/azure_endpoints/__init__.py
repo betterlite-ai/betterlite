@@ -6,7 +6,7 @@ from pydantic import JsonValue as Json
 
 from azure_endpoints.cloudflare import cloudflare_step
 from azure_endpoints.dynamic import dynamic_step
-from azure_endpoints.fixtures import identity_params, session
+from azure_endpoints.fixtures import session
 from azure_endpoints.reports import ClientParams, client_report, initialize_report
 from azure_endpoints.sdk import (
     STATE,
@@ -148,19 +148,18 @@ def step_api_version(step: InitializeStep | ClientStep) -> str | None:
 def initialize_step(step: InitializeStep) -> Json:
     is_async = is_async_of(step)
     with session(
-        environment=environment_of(step),
-        sources=sources_of(step),
-        refresh=refresh_of(step),
-        shared_session=shared_of(step),
-        defaults=defaults_of(step),
-        provider=provider_of(step),
-        cached=None,
-        supplied=None,
+        {
+            "environment": environment_of(step),
+            "sources": sources_of(step),
+            "refresh": refresh_of(step),
+            "shared_session": shared_of(step),
+            "defaults": defaults_of(step),
+            "provider": provider_of(step),
+            "cached": None,
+            "supplied": None,
+        }
     ):
-        report = run_initialize(step, is_async=is_async)
-        return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L672-L696
-            Json, report
-        )
+        return run_initialize(step, is_async=is_async)
 
 
 def run_initialize(step: InitializeStep, *, is_async: bool) -> dict[str, Json]:
@@ -192,19 +191,18 @@ def client_step(step: ClientStep) -> Json:
     if "supplied" in step:
         supplied = step["supplied"]
     with session(
-        environment=environment_of(step),
-        sources=sources_of(step),
-        refresh=refresh_of(step),
-        shared_session=shared_of(step),
-        defaults=defaults_of(step),
-        provider=provider_of(step),
-        cached=cached,
-        supplied=supplied,
+        {
+            "environment": environment_of(step),
+            "sources": sources_of(step),
+            "refresh": refresh_of(step),
+            "shared_session": shared_of(step),
+            "defaults": defaults_of(step),
+            "provider": provider_of(step),
+            "cached": cached,
+            "supplied": supplied,
+        }
     ):
-        report = run_client(step, is_async=is_async)
-        return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L480-L600
-            Json, report
-        )
+        return run_client(step, is_async=is_async)
 
 
 def run_client(step: ClientStep, *, is_async: bool) -> dict[str, Json]:
@@ -217,7 +215,7 @@ def run_client(step: ClientStep, *, is_async: bool) -> dict[str, Json]:
         _is_async=is_async,
         model="gpt-4o",
     )
-    return client_report(step, returned, is_async=is_async, identity=identity_params())
+    return client_report(step, returned, is_async=is_async, identity=STATE.identity_params)
 
 
 def run(argument: Input) -> Json:

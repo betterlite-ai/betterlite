@@ -2,13 +2,14 @@ import asyncio
 import os
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from typing import Literal, TypedDict, cast
+from typing import Literal, TypedDict
 
 import httpx
 import litellm
 from litellm.llms.azure import common_utils
 from litellm.llms.openai.common_utils import BaseOpenAILLM
 from pydantic import JsonValue as Json
+from pydantic import TypeAdapter
 
 from azure_endpoints.sdk import (
     STATE,
@@ -18,6 +19,7 @@ from azure_endpoints.sdk import (
     FixtureAsyncOpenAI,
     FixtureAzureOpenAI,
     FixtureOpenAI,
+    IdentityParams,
     OtherClient,
     ProviderScript,
     RaiseScript,
@@ -31,10 +33,18 @@ COMMON = "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ce
 ACCESSORS = "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/common_utils.py#L211-L259"
 
 
-class IdentityParams(TypedDict, total=False):
-    is_async: bool
-    azure_ad_token: str | None
-    azure_ad_token_provider: str
+IDENTITY = TypeAdapter(IdentityParams)
+
+
+class SessionConfig(TypedDict):
+    environment: dict[str, str]
+    sources: SourceScripts
+    refresh: bool
+    shared_session: bool
+    defaults: Defaults | None
+    provider: ProviderScript | None
+    cached: str | None
+    supplied: SuppliedStep | None
 
 
 def cached_client(kind: str) -> CachedClient | OtherClient | None:
@@ -169,7 +179,7 @@ def get_cached(
     client_type: Literal["openai", "azure"],
 ) -> CachedClient | OtherClient | None:
     _ = client_type
-    STATE.identity_params = dict(client_initialization_params)
+    STATE.identity_params = IDENTITY.validate_python(client_initialization_params)
     STATE.cache_hits += 1
     return STATE.cached_client
 
@@ -182,7 +192,7 @@ def set_cached(
     litellm_owned_client: bool = False,
 ) -> None:
     _ = (openai_client, client_type)
-    STATE.identity_params = dict(client_initialization_params)
+    STATE.identity_params = IDENTITY.validate_python(client_initialization_params)
     STATE.cache_owned = litellm_owned_client
 
 
@@ -211,24 +221,17 @@ def case_environment(values: dict[str, str]) -> Generator[None]:
 
 
 @contextmanager
-def session(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L602-L696
-    *,
-    environment: dict[str, str],
-    sources: SourceScripts,
-    refresh: bool,
-    shared_session: bool,
-    defaults: Defaults | None,
-    provider: ProviderScript | None,
-    cached: str | None,
-    supplied: SuppliedStep | None,
-) -> Generator[None]:
+def session(config: SessionConfig) -> Generator[None]:
     STATE.reset()
-    apply_sources(sources)
+    apply_sources(config["sources"])
+    provider = config["provider"]
     if provider is not None:
         STATE.provider = ScriptedProvider(provider["script"])
         STATE.provider_id = provider["identity"]
+    cached = config["cached"]
     if cached is not None:
         STATE.cached_client = cached_client(cached)
+    supplied = config["supplied"]
     if supplied is not None:
         custom_query: dict[str, str] = {}
         if "custom_query" in supplied:
@@ -237,13 +240,14 @@ def session(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1
     STATE.constructors.clear()
     max_retries = 2
     api_version = "2025-02-01-preview"
+    defaults = config["defaults"]
     if defaults is not None:
         max_retries = defaults["default_max_retries"]
         api_version = defaults["azure_default_api_version"]
-    sync_client = httpx.Client() if shared_session else None
-    async_client = httpx.AsyncClient() if shared_session else None
-    with case_environment(environment):
-        litellm.enable_azure_ad_token_refresh = refresh
+    sync_client = httpx.Client() if config["shared_session"] else None
+    async_client = httpx.AsyncClient() if config["shared_session"] else None
+    with case_environment(config["environment"]):
+        litellm.enable_azure_ad_token_refresh = config["refresh"]
         litellm.client_session = sync_client
         litellm.aclient_session = async_client
         litellm.AZURE_DEFAULT_API_VERSION = api_version
@@ -266,9 +270,3 @@ def session(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1
                 sync_client.close()
             if async_client is not None:
                 asyncio.run(async_client.aclose())
-
-
-def identity_params() -> IdentityParams:
-    return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/common_utils.py#L261-L292
-        IdentityParams, STATE.identity_params
-    )

@@ -1,7 +1,5 @@
-from typing import cast
-
 from litellm.llms.azure.common_utils import BaseAzureLLM
-from openai import AsyncAzureOpenAI, AzureOpenAI
+from openai import AsyncAzureOpenAI, AsyncOpenAI, AzureOpenAI, OpenAI
 from pydantic import JsonValue as Json
 
 from azure_endpoints.fixtures import session
@@ -56,15 +54,24 @@ def cloudflare_step(step: CloudflareStep) -> Json:
     if "provider" in step:
         provider = step["provider"]
     with session(
-        environment=environment,
-        sources=sources,
-        refresh=False,
-        shared_session=shared,
-        defaults=None,
-        provider=provider,
-        cached=None,
-        supplied=supplied,
+        {
+            "environment": environment,
+            "sources": sources,
+            "refresh": False,
+            "shared_session": shared,
+            "defaults": None,
+            "provider": provider,
+            "cached": None,
+            "supplied": supplied,
+        }
     ):
+        client: AzureOpenAI | AsyncAzureOpenAI | None = None
+        if STATE.supplied_client is not None:
+            match STATE.supplied_client:
+                case AzureOpenAI() | AsyncAzureOpenAI() as supplied_client:
+                    client = supplied_client
+                case OpenAI() | AsyncOpenAI():
+                    raise ValueError("cloudflare cases supply an Azure client")
         returned = BaseAzureLLM()._init_azure_client_for_cloudflare_ai_gateway(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L698-L750
             api_base=step["api_base"],
             model=step["model"],
@@ -76,11 +83,6 @@ def cloudflare_step(step: CloudflareStep) -> Json:
             azure_ad_token=cloudflare_provider(step),
             azure_ad_token_provider=STATE.provider,
             acompletion=is_async,
-            client=cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L710
-                AzureOpenAI | AsyncAzureOpenAI | None, STATE.supplied_client
-            ),
+            client=client,
         )
-        report = cloudflare_report(step, returned)
-        return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L698-L750
-            Json, report
-        )
+        return cloudflare_report(step, returned)

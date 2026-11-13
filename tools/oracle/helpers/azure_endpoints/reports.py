@@ -1,12 +1,11 @@
 from collections.abc import Callable
-from typing import NotRequired, TypedDict, cast
+from typing import NotRequired, TypedDict
 
 import httpx
 import litellm
 from openai import AsyncAzureOpenAI, AsyncOpenAI, AzureOpenAI, OpenAI
 from pydantic import JsonValue as Json
 
-from azure_endpoints.fixtures import IdentityParams
 from azure_endpoints.sdk import (
     STATE,
     CachedClient,
@@ -14,15 +13,9 @@ from azure_endpoints.sdk import (
     CloudflareStep,
     FixtureAsyncAzureOpenAI,
     FixtureAzureOpenAI,
+    IdentityParams,
     SuppliedStep,
 )
-
-
-def calls_json(calls: list[dict[str, Json]]) -> Json:
-    value: Json = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L534
-        Json, calls
-    )
-    return value
 
 
 class ClientParams(TypedDict):
@@ -118,6 +111,7 @@ def initialize_report(
         "azure_endpoint": azure_endpoint,
         "base_url": base_url,
     }
+    recorded: list[Json] = list(calls)
     report: dict[str, Json] = {
         "api_version": params["api_version"],
         "max_retries": params["max_retries"],
@@ -133,22 +127,18 @@ def initialize_report(
         "provider": provider_kind(
             provider_was_passed=provider_was_passed, calls=calls
         ),
-        "calls": calls_json(calls),
+        "calls": recorded,
     }
     return report
 
 
-def custom_query_of(step: SuppliedStep, client: CachedClient | None) -> Json:
-    if client is None:
-        return None
-    if step["kind"] in ("open_ai", "async_open_ai"):
-        return None
-    azure_client = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L517
-        FixtureAzureOpenAI | FixtureAsyncAzureOpenAI, client
-    )
-    return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L517
-        Json, dict(azure_client.custom_query)
-    )
+def custom_query_of(client: CachedClient | None) -> Json:
+    match client:
+        case FixtureAzureOpenAI() | FixtureAsyncAzureOpenAI():
+            query: dict[str, Json] = dict(client.custom_query)
+            return query
+        case OpenAI() | AsyncOpenAI() | None:
+            return None
 
 
 def client_source(step: ClientStep, returned: CachedClient | None) -> str:
@@ -172,7 +162,8 @@ def client_report(
         kind = kind_name(returned)
     query: Json = None
     if "supplied" in step:
-        query = custom_query_of(step["supplied"], returned)
+        query = custom_query_of(returned)
+    calls: list[Json] = list(STATE.calls)
     report: dict[str, Json] = {
         "source": source,
         "kind": kind,
@@ -180,7 +171,7 @@ def client_report(
         "cache_owned": STATE.cache_owned,
         "identity": identity_json(identity),
         "inputs": inputs_json(source=source, returned=returned, is_async=is_async),
-        "calls": calls_json(list(STATE.calls)),
+        "calls": calls,
     }
     return report
 
@@ -228,13 +219,13 @@ def cloudflare_report(
     step: CloudflareStep,
     returned: AzureOpenAI | AsyncAzureOpenAI,
 ) -> dict[str, Json]:
-    calls = list(STATE.calls)
+    calls: list[Json] = list(STATE.calls)
     if "client" in step:
         report: dict[str, Json] = {
             "kind": "supplied",
             "supplied": supplied_json(step["client"], returned),
             "client": None,
-            "calls": calls_json(calls),
+            "calls": calls,
         }
         return report
     record = STATE.constructors[-1]
@@ -242,16 +233,14 @@ def cloudflare_report(
         "kind": "constructed",
         "supplied": None,
         "client": constructed_json(record),
-        "calls": calls_json(calls),
+        "calls": calls,
     }
 
 
 def supplied_json(step: SuppliedStep, returned: CachedClient) -> dict[str, Json]:
-    query: Json = None
+    query: dict[str, Json] | None = None
     if "custom_query" in step:
-        query = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L731
-            Json, dict(step["custom_query"])
-        )
+        query = dict(step["custom_query"])
     report: dict[str, Json] = {
         "kind": kind_name(returned),
         "custom_query": query,

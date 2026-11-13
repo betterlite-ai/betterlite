@@ -142,11 +142,17 @@ class OpenAiInit(TypedDict, total=False):
     http_client: httpx.Client | httpx.AsyncClient | None
 
 
+class IdentityParams(TypedDict, total=False):
+    is_async: bool
+    azure_ad_token: str | None
+    azure_ad_token_provider: str
+
+
 class Capture:
     def __init__(self) -> None:
         self.calls: list[dict[str, Json]] = []
         self.constructors: list[dict[str, Json]] = []
-        self.identity_params: dict[str, Json] = {}
+        self.identity_params: IdentityParams = {}
         self.cache_owned: bool | None = None
         self.cache_hits = 0
         self.provider_calls = 0
@@ -173,11 +179,6 @@ class Capture:
 class OtherClient:
     def __init__(self) -> None:
         self.marker = "other"
-
-
-class QueryClient:
-    def __init__(self, custom_query: dict[str, str]) -> None:
-        self._custom_query = custom_query
 
 
 STATE = Capture()
