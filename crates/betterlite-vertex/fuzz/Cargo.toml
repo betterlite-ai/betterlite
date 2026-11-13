@@ -105,6 +105,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vertex_batch_rows"
+path = "fuzz_targets/vertex_batch_rows.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vertex_embedding"
 path = "fuzz_targets/vertex_embedding.rs"
 test = false
