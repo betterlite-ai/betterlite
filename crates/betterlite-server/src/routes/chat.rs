@@ -76,11 +76,9 @@ pub(crate) struct ErrorLayer {
 
 impl ErrorLayer {
     pub(crate) fn new() -> Result<Self, EnvelopeError> {
-        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?;
-        let normalizer = Normalizer::new()?;
         Ok(Self {
-            redactor,
-            normalizer,
+            redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?,
+            normalizer: Normalizer::new()?,
         })
     }
 

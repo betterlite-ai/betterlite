@@ -325,15 +325,12 @@ where
     chat_request_from(body, call_id, model_id, calls)
 }
 
-pub(crate) fn chat_request_from<Calls>(
+pub(crate) fn chat_request_from(
     body: &[u8],
     call_id: &str,
     model_id: &str,
-    calls: Arc<Calls>,
-) -> ChatRequest
-where
-    Calls: ChatCall + 'static,
-{
+    calls: Arc<dyn ChatCall>,
+) -> ChatRequest {
     let request = Box::new(ClientChatRequest::parse(body).expect("chat request"));
     ChatRequest {
         request,
