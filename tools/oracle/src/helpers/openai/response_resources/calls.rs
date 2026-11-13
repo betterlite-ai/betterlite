@@ -64,7 +64,10 @@ fn request_value(probe: &Probe) -> Result<Value, Box<HelperError>> {
 }
 
 fn request_of(probe: &Probe, api_base: &str) -> Result<ResourceRequest, Box<HelperError>> {
-    match endpoint(probe)? {
+    match probe
+        .endpoint
+        .ok_or_else(|| invalid_input(String::from("a probe needs endpoint")))?
+    {
         Endpoint::Compact => {
             let input = probe.input.as_ref().ok_or_else(|| {
                 invalid_input(String::from("a compact request probe needs input"))
@@ -125,7 +128,9 @@ fn query_of(probe: &Probe) -> ListInputItemsQuery {
 }
 
 fn response_value(probe: &Probe, redactor: &Redactor) -> Result<Value, Box<HelperError>> {
-    let endpoint = endpoint(probe)?;
+    let endpoint = probe
+        .endpoint
+        .ok_or_else(|| invalid_input(String::from("a probe needs endpoint")))?;
     let body = probe
         .body
         .as_deref()
@@ -248,13 +253,6 @@ fn headers_of(probe: &Probe) -> IndexMap<String, String> {
         .flatten()
         .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
         .collect()
-}
-
-fn endpoint(probe: &Probe) -> Result<Endpoint, Box<HelperError>> {
-    probe.endpoint.map_or_else(
-        || Err(invalid_input(String::from("a probe needs endpoint"))),
-        Ok,
-    )
 }
 
 fn request_output(request: &ResourceRequest) -> Value {

@@ -34,18 +34,6 @@ fn reply_failure(result: Result<ResponsesReply, OpenAiError>) -> OpenAiError {
     }
 }
 
-fn raw_reply<'reply>(
-    headers: &'reply IndexMap<String, String>,
-    text: &'reply str,
-    status: u16,
-) -> RawResponse<'reply> {
-    RawResponse {
-        status,
-        headers,
-        text,
-    }
-}
-
 fn payload_of(query: &ListInputItemsQuery) -> Value {
     let request = list_input_items_request("resp_1", "https://api.openai.com/v1", query).unwrap();
     serde_json::to_value(&request.payload).unwrap()
@@ -60,21 +48,6 @@ fn include_payload(include: Option<Vec<String>>) -> Value {
         order: Some(InputItemsOrder::Desc),
     };
     payload_of(&query)
-}
-
-fn compact_request_of<'request>(
-    model: &'request str,
-    input: &'request ResponsesInput,
-    options: &'request Object,
-    provider: ProviderId,
-) -> CompactRequest<'request> {
-    CompactRequest {
-        model,
-        input,
-        options,
-        provider,
-        model_info: None,
-    }
 }
 
 fn input_of(text: &str) -> ResponsesInput {
@@ -185,25 +158,29 @@ pub(super) fn delete_result() {
 
 fn delete_values() {
     let headers = IndexMap::new();
-    let reply = raw_reply(
-        &headers,
-        r#"{"id":"resp_1","object":"response","deleted":true}"#,
-        200,
-    );
+    let reply = RawResponse {
+        status: 200,
+        headers: &headers,
+        text: r#"{"id":"resp_1","object":"response","deleted":true}"#,
+    };
     let deleted = decode_record::<DeleteResponseResult>(&reply).unwrap();
     assert_eq!(deleted.id.as_deref(), Some("resp_1"));
     assert_eq!(deleted.object.as_deref(), Some("response"));
     assert_eq!(deleted.deleted, Some(true));
-    let nullable = raw_reply(&headers, r#"{"id":null,"object":null,"deleted":null}"#, 200);
+    let nullable = RawResponse {
+        status: 200,
+        headers: &headers,
+        text: r#"{"id":null,"object":null,"deleted":null}"#,
+    };
     let empty = decode_record::<DeleteResponseResult>(&nullable).unwrap();
     assert_eq!(empty.id, None);
     assert_eq!(empty.object, None);
     assert_eq!(empty.deleted, None);
-    let extra = raw_reply(
-        &headers,
-        r#"{"id":"resp_2","object":"response","deleted":false,"vendor":{"n":1}}"#,
-        200,
-    );
+    let extra = RawResponse {
+        status: 200,
+        headers: &headers,
+        text: r#"{"id":"resp_2","object":"response","deleted":false,"vendor":{"n":1}}"#,
+    };
     let kept = decode_record::<DeleteResponseResult>(&extra).unwrap();
     assert_eq!(kept.deleted, Some(false));
     assert_eq!(
@@ -214,26 +191,38 @@ fn delete_values() {
 
 fn delete_rejections() {
     let headers = IndexMap::new();
-    let missing = raw_reply(&headers, r#"{"id":"resp_3","object":"response"}"#, 200);
+    let missing = RawResponse {
+        status: 200,
+        headers: &headers,
+        text: r#"{"id":"resp_3","object":"response"}"#,
+    };
     assert!(matches!(
         decode_record::<DeleteResponseResult>(&missing),
         Err(ResponseResourceError::Record { .. })
     ));
-    let wrong = raw_reply(
-        &headers,
-        r#"{"id":7,"object":"response","deleted":true}"#,
-        200,
-    );
+    let wrong = RawResponse {
+        status: 200,
+        headers: &headers,
+        text: r#"{"id":7,"object":"response","deleted":true}"#,
+    };
     assert!(matches!(
         decode_record::<DeleteResponseResult>(&wrong),
         Err(ResponseResourceError::Record { .. })
     ));
-    let list = raw_reply(&headers, "[]", 200);
+    let list = RawResponse {
+        status: 200,
+        headers: &headers,
+        text: "[]",
+    };
     assert!(matches!(
         decode_record::<DeleteResponseResult>(&list),
         Err(ResponseResourceError::Record { .. })
     ));
-    let broken = raw_reply(&headers, "not-json", 503);
+    let broken = RawResponse {
+        status: 503,
+        headers: &headers,
+        text: "not-json",
+    };
     let error = decode_record::<DeleteResponseResult>(&broken).unwrap_err();
     assert_eq!(error.http_status(), Some(503));
     assert_eq!(provider_failure(&error), (503, String::from("not-json")));
@@ -243,6 +232,22 @@ pub(super) fn get_strict_response() {
     get_typed_reply();
     get_rejections();
     get_content_type();
+    get_large_image_reply();
+}
+
+fn get_large_image_reply() {
+    let headers = IndexMap::new();
+    let image = "a".repeat(2 * 1024 * 1024);
+    let body = format!(
+        r#"{{"id":"resp_big","created_at":9,"output":[{{"type":"image_generation_call","id":"ig_1","result":"{image}","status":"completed"}}]}}"#
+    );
+    let typed = response_reply(&RawResponse {
+        status: 200,
+        headers: &headers,
+        text: &body,
+    })
+    .unwrap();
+    assert_eq!(typed.response.id, "resp_big");
 }
 
 fn get_typed_reply() {
@@ -252,11 +257,11 @@ fn get_typed_reply() {
         ("llm_provider-x-custom", "keep"),
         ("x-test-header", "value"),
     ]);
-    let reply = raw_reply(
-        &headers,
-        r#"{"id":"resp_1","created_at":9,"output":[],"status":"completed","model":"gpt-4o"}"#,
-        200,
-    );
+    let reply = RawResponse {
+        status: 200,
+        headers: &headers,
+        text: r#"{"id":"resp_1","created_at":9,"output":[],"status":"completed","model":"gpt-4o"}"#,
+    };
     let typed = response_reply(&reply).unwrap();
     assert_eq!(typed.response.id, "resp_1");
     assert_eq!(typed.response.created_at, 9);
@@ -274,11 +279,11 @@ fn get_typed_reply() {
             r#"{"x-ratelimit-remaining-requests":"9","llm_provider-x-custom":"keep","llm_provider-x-request-id":"req-1","llm_provider-x-ratelimit-remaining-requests":"9","llm_provider-x-test-header":"value"}"#
         )
     );
-    let minimal = raw_reply(
-        &headers,
-        r#"{"id":"resp_2","created_at":5,"output":[],"store":true}"#,
-        200,
-    );
+    let minimal = RawResponse {
+        status: 200,
+        headers: &headers,
+        text: r#"{"id":"resp_2","created_at":5,"output":[],"store":true}"#,
+    };
     let plain = response_reply(&minimal).unwrap();
     assert_eq!(plain.response.status, None);
     assert_eq!(plain.response.model, None);
@@ -286,37 +291,49 @@ fn get_typed_reply() {
 
 fn get_rejections() {
     let headers = IndexMap::new();
-    let lax_only = raw_reply(&headers, r#"{"id":7,"created_at":5,"output":"bad"}"#, 200);
+    let lax_only = RawResponse {
+        status: 200,
+        headers: &headers,
+        text: r#"{"id":7,"created_at":5,"output":"bad"}"#,
+    };
     assert!(matches!(
         response_reply(&lax_only),
         Err(ResponseResourceError::Record { .. })
     ));
-    let text_timestamp = raw_reply(
-        &headers,
-        r#"{"id":"resp_3","created_at":"3.9","output":[]}"#,
-        200,
-    );
+    let text_timestamp = RawResponse {
+        status: 200,
+        headers: &headers,
+        text: r#"{"id":"resp_3","created_at":"3.9","output":[]}"#,
+    };
     assert!(matches!(
         response_reply(&text_timestamp),
         Err(ResponseResourceError::Record { .. })
     ));
-    let list = raw_reply(&headers, "[]", 200);
+    let list = RawResponse {
+        status: 200,
+        headers: &headers,
+        text: "[]",
+    };
     assert!(matches!(
         response_reply(&list),
         Err(ResponseResourceError::Record { .. })
     ));
-    let broken = raw_reply(&headers, "{oops", 400);
+    let broken = RawResponse {
+        status: 400,
+        headers: &headers,
+        text: "{oops",
+    };
     let error = response_reply(&broken).unwrap_err();
     assert_eq!(provider_failure(&error), (400, String::from("{oops")));
 }
 
 fn get_content_type() {
     let content_type = header_map(&[("content-type", "application/json")]);
-    let progress = raw_reply(
-        &content_type,
-        r#"{"id":"resp_4","created_at":9,"output":[],"status":"in_progress"}"#,
-        200,
-    );
+    let progress = RawResponse {
+        status: 200,
+        headers: &content_type,
+        text: r#"{"id":"resp_4","created_at":9,"output":[],"status":"in_progress"}"#,
+    };
     let typed = response_reply(&progress).unwrap();
     assert_eq!(
         serde_json::to_value(&typed.additional_headers).unwrap(),
@@ -433,11 +450,11 @@ pub(super) fn cancel_response() {
 
 fn cancel_value() {
     let headers = header_map(&[("x-request-id", "req-1")]);
-    let reply = raw_reply(
-        &headers,
-        r#"{"id":"resp_1","created_at":9,"output":[],"status":"cancelled"}"#,
-        200,
-    );
+    let reply = RawResponse {
+        status: 200,
+        headers: &headers,
+        text: r#"{"id":"resp_1","created_at":9,"output":[],"status":"cancelled"}"#,
+    };
     let typed = response_reply(&reply).unwrap();
     assert_eq!(typed.response.status.as_deref(), Some("cancelled"));
     assert_eq!(
@@ -448,16 +465,20 @@ fn cancel_value() {
 
 fn cancel_rejections() {
     let headers = IndexMap::new();
-    let lax_only = raw_reply(
-        &headers,
-        r#"{"id":"resp_2","created_at":5,"output":"bad"}"#,
-        200,
-    );
+    let lax_only = RawResponse {
+        status: 200,
+        headers: &headers,
+        text: r#"{"id":"resp_2","created_at":5,"output":"bad"}"#,
+    };
     assert!(matches!(
         response_reply(&lax_only),
         Err(ResponseResourceError::Record { .. })
     ));
-    let broken = raw_reply(&headers, "not json", 502);
+    let broken = RawResponse {
+        status: 502,
+        headers: &headers,
+        text: "not json",
+    };
     let error = response_reply(&broken).unwrap_err();
     assert_eq!(provider_failure(&error), (502, String::from("not json")));
 }
@@ -470,7 +491,13 @@ pub(super) fn compact_keeps_query() {
 fn compact_paths() {
     let input = ResponsesInput::Text(String::from("hi"));
     let options = Object::new();
-    let request = compact_request_of("gpt-4o", &input, &options, ProviderId::Openai);
+    let request = CompactRequest {
+        model: "gpt-4o",
+        input: &input,
+        options: &options,
+        provider: ProviderId::Openai,
+        model_info: None,
+    };
     let plain = compact_request(&request, "https://api.openai.com/v1").unwrap();
     assert_eq!(plain.url, "https://api.openai.com/v1/compact");
     assert_eq!(
@@ -496,7 +523,13 @@ fn compact_paths() {
 fn compact_options() {
     let input = ResponsesInput::Text(String::from("hi"));
     let options = options_of(r#"{"temperature":1}"#);
-    let request = compact_request_of("gpt-4o", &input, &options, ProviderId::Openai);
+    let request = CompactRequest {
+        model: "gpt-4o",
+        input: &input,
+        options: &options,
+        provider: ProviderId::Openai,
+        model_info: None,
+    };
     let compacted = compact_request(
         &request,
         "https://host.example/openai/v1/?api-version=2025-01-01&x=1",
@@ -681,19 +714,31 @@ pub(super) fn resource_json_error_status() {
 
 fn json_error_statuses() {
     let headers = IndexMap::new();
-    let delete_broken = raw_reply(&headers, "not json", 400);
+    let delete_broken = RawResponse {
+        status: 400,
+        headers: &headers,
+        text: "not json",
+    };
     let delete_error = decode_record::<DeleteResponseResult>(&delete_broken).unwrap_err();
     assert_eq!(
         provider_failure(&delete_error),
         (400, String::from("not json"))
     );
-    let get_broken = raw_reply(&headers, r#"{"id":"#, 503);
+    let get_broken = RawResponse {
+        status: 503,
+        headers: &headers,
+        text: r#"{"id":"#,
+    };
     let get_error = response_reply(&get_broken).unwrap_err();
     assert_eq!(
         provider_failure(&get_error),
         (503, String::from(r#"{"id":"#))
     );
-    let list_broken = raw_reply(&headers, "not json", 401);
+    let list_broken = RawResponse {
+        status: 401,
+        headers: &headers,
+        text: "not json",
+    };
     let list_error = json_body(&list_broken).unwrap_err();
     assert_eq!(
         provider_failure(&list_error),
@@ -705,7 +750,11 @@ fn json_error_statuses() {
 
 fn cancel_json_failure() {
     let headers = IndexMap::new();
-    let cancel_broken = raw_reply(&headers, "{}x", 500);
+    let cancel_broken = RawResponse {
+        status: 500,
+        headers: &headers,
+        text: "{}x",
+    };
     let cancel_error = response_reply(&cancel_broken).unwrap_err();
     assert_eq!(provider_failure(&cancel_error), (500, String::from("{}x")));
 }
@@ -716,16 +765,20 @@ fn compact_json_failure() {
 
 fn list_without_validation() {
     let headers = IndexMap::new();
-    let items = raw_reply(&headers, "[1,2,3]", 200);
+    let items = RawResponse {
+        status: 200,
+        headers: &headers,
+        text: "[1,2,3]",
+    };
     assert_eq!(
         serde_json::to_value(json_body(&items).unwrap()).unwrap(),
         value("[1,2,3]")
     );
-    let page = raw_reply(
-        &headers,
-        r#"{"data":[{"id":"item_1"}],"has_more":false}"#,
-        200,
-    );
+    let page = RawResponse {
+        status: 200,
+        headers: &headers,
+        text: r#"{"data":[{"id":"item_1"}],"has_more":false}"#,
+    };
     assert_eq!(
         serde_json::to_value(json_body(&page).unwrap()).unwrap(),
         value(r#"{"data":[{"id":"item_1"}],"has_more":false}"#)

@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::super::error::ResponseResourceError;
-use super::super::response::decode_response_resource;
+use super::super::response::{MAX_BODY_BYTES, decode_response_resource};
 
 fn replays(path: &Path) -> bool {
     let bytes = fs::read(path).unwrap();
@@ -37,9 +37,9 @@ fn decode_response_resource_refuses_oversized_inputs() {
         decode_response_resource(&too_many),
         Err(ResponseResourceError::Decode { .. })
     ));
-    let too_large = format!("\"{}\"", "a".repeat(0x0010_0000));
+    let too_large = vec![b'a'; MAX_BODY_BYTES.saturating_add(1)];
     assert!(matches!(
-        decode_response_resource(too_large.as_bytes()),
+        decode_response_resource(&too_large),
         Err(ResponseResourceError::Decode { .. })
     ));
 }

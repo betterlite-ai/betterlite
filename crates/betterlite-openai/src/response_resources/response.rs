@@ -6,15 +6,20 @@ use indexmap::IndexMap;
 use serde::de::DeserializeOwned;
 
 use crate::api::responses_objects::ResponsesApiResponse;
-use crate::api::responses_shapes::wire::{WireDecodeLimits, decode_responses_shapes};
+use crate::api::responses_shapes::wire::{
+    ShapeDecodeError, WireDecodeLimits, decode_responses_shapes,
+};
 use crate::error::{OpenAiError, ProviderError, ProviderErrorParts};
 use crate::response_events::RawResponse;
 
 use super::error::ResponseResourceError;
 
+// a retrieved response can carry a base64 image over 1 MiB, so the cap matches the crate's other large readers
+pub(super) const MAX_BODY_BYTES: usize = 0x400_0000;
+
 const DECODE_LIMITS: WireDecodeLimits = WireDecodeLimits {
-    max_json_bytes: 0x0010_0000,
-    max_event_bytes: 0x0010_0000,
+    max_json_bytes: MAX_BODY_BYTES,
+    max_event_bytes: MAX_BODY_BYTES,
     max_items: 0x4000,
 };
 
@@ -35,17 +40,23 @@ pub fn decode_response_resource(bytes: &[u8]) -> Result<Json, ResponseResourceEr
 pub fn json_body(reply: &RawResponse<'_>) -> Result<Json, ResponseResourceError> {
     match decode_response_resource(reply.text.as_bytes()) {
         Ok(decoded) => Ok(decoded),
-        Err(_decode) => Err(ResponseResourceError::Provider(OpenAiError::Provider(
-            Box::new(ProviderError::from(ProviderErrorParts {
-                status_code: reply.status,
-                message: reply.text.to_owned(),
-                headers: None,
-                request: None,
-                response: None,
-                body: None,
-                status_code_is_synthesized: false,
-            })),
-        ))),
+        Err(ResponseResourceError::Decode { source }) => match source {
+            ShapeDecodeError::Json(_) => Err(ResponseResourceError::Provider(
+                OpenAiError::Provider(Box::new(ProviderError::from(ProviderErrorParts {
+                    status_code: reply.status,
+                    message: reply.text.to_owned(),
+                    headers: None,
+                    request: None,
+                    response: None,
+                    body: None,
+                    status_code_is_synthesized: false,
+                }))),
+            )),
+            ShapeDecodeError::JsonTooLarge
+            | ShapeDecodeError::TooManyItems
+            | ShapeDecodeError::TooDeep => Err(ResponseResourceError::Decode { source }),
+        },
+        Err(other) => Err(other),
     }
 }
 
