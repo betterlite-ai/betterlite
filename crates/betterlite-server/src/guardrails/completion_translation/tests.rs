@@ -68,15 +68,15 @@ impl GuardrailContract for FakeGuardrail {
         _logging_obj: Option<&mut GuardrailLogTarget>,
     ) -> impl Future<Output = Result<GuardrailApiInputs, GuardrailFailure>> + Send {
         self.calls.lock().unwrap().push(Recorded {
-            inputs: inputs.clone(),
+            inputs,
             input_type,
             request_data: request_data.clone(),
         });
         let reply = self.reply.clone();
         let failure = self.failure.clone();
         async move {
-            if let Some(failure) = failure {
-                return Err(failure);
+            if let Some(blocked) = failure {
+                return Err(blocked);
             }
             Ok(GuardrailApiInputs {
                 texts: reply,

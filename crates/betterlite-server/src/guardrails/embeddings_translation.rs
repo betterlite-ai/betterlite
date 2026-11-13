@@ -177,3 +177,5 @@ const fn value_type_name(value: &GuardrailValue) -> &'static str {
         GuardrailValue::Object(_) => "dict",
     }
 }
+
+mod tests;

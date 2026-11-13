@@ -63,15 +63,10 @@ where
     let mut fresh_request_data = BTreeMap::new();
     let prepared_request_data = request_data.unwrap_or(&mut fresh_request_data);
     add_response_context(prepared_request_data, response, user_api_key_dict);
-    let inputs = GuardrailApiInputs {
-        texts: Some(choices.iter().map(|(_index, text)| text.clone()).collect()),
-        images: None,
-        tools: None,
-        tool_calls: None,
-        structured_messages: None,
-        model: non_empty_text(object_field(response, "model")),
-        stream_holdback_chars: None,
-    };
+    let inputs = text_inputs(
+        choices.iter().map(|(_index, text)| text.clone()).collect(),
+        non_empty_text(object_field(response, "model")),
+    );
     let guardrailed = guardrail
         .apply_guardrail(
             inputs,
@@ -96,15 +91,7 @@ where
     G: GuardrailContract,
 {
     let original_length = prompt.chars().count();
-    let inputs = GuardrailApiInputs {
-        texts: Some(vec![prompt.clone()]),
-        images: None,
-        tools: None,
-        tool_calls: None,
-        structured_messages: None,
-        model: non_empty_text(data.get("model")),
-        stream_holdback_chars: None,
-    };
+    let inputs = text_inputs(vec![prompt.clone()], non_empty_text(data.get("model")));
     let guardrailed = guardrail
         .apply_guardrail(inputs, data, GuardrailInputType::Request, logging_obj)
         .await?;
@@ -135,27 +122,33 @@ where
     if collected.is_empty() {
         return Ok(());
     }
-    let inputs = GuardrailApiInputs {
-        texts: Some(
-            collected
-                .iter()
-                .map(|(_index, text)| text.clone())
-                .collect(),
-        ),
-        images: None,
-        tools: None,
-        tool_calls: None,
-        structured_messages: None,
-        model: non_empty_text(data.get("model")),
-        stream_holdback_chars: None,
-    };
+    let inputs = text_inputs(
+        collected
+            .iter()
+            .map(|(_index, text)| text.clone())
+            .collect(),
+        non_empty_text(data.get("model")),
+    );
     let guardrailed = guardrail
         .apply_guardrail(inputs, data, GuardrailInputType::Request, logging_obj)
         .await?;
     let Some(returned) = guardrailed.texts else {
         return Ok(());
     };
-    rewrite_prompts(data, &collected, &returned);
+    let Some(GuardrailValue::Array(slots)) = data.get_mut("prompt") else {
+        return Ok(());
+    };
+    for ((prompt_index, original), rewritten) in collected.iter().zip(returned.iter()) {
+        let Some(slot) = slots.get_mut(*prompt_index) else {
+            continue;
+        };
+        *slot = GuardrailValue::Text(rewritten.clone());
+        tracing::debug!(
+            "OpenAI Text Completion: Applied guardrail to prompt[{prompt_index}]. Original length: {}, New length: {}",
+            original.chars().count(),
+            rewritten.chars().count()
+        );
+    }
     Ok(())
 }
 
@@ -192,18 +185,15 @@ fn object_field<'value>(
     fields.get(key)
 }
 
-fn rewrite_prompts(
-    data: &mut BTreeMap<String, GuardrailValue>,
-    collected: &[(usize, String)],
-    returned: &[String],
-) {
-    for ((prompt_index, original), rewritten) in collected.iter().zip(returned.iter()) {
-        write_prompt_at(data, *prompt_index, rewritten);
-        tracing::debug!(
-            "OpenAI Text Completion: Applied guardrail to prompt[{prompt_index}]. Original length: {}, New length: {}",
-            original.chars().count(),
-            rewritten.chars().count()
-        );
+const fn text_inputs(texts: Vec<String>, model: Option<String>) -> GuardrailApiInputs {
+    GuardrailApiInputs {
+        texts: Some(texts),
+        images: None,
+        tools: None,
+        tool_calls: None,
+        structured_messages: None,
+        model,
+        stream_holdback_chars: None,
     }
 }
 
@@ -220,16 +210,6 @@ fn rewrite_choices(
             rewritten.chars().count()
         );
     }
-}
-
-fn write_prompt_at(data: &mut BTreeMap<String, GuardrailValue>, index: usize, text: &str) {
-    let Some(GuardrailValue::Array(prompts)) = data.get_mut("prompt") else {
-        return;
-    };
-    let Some(slot) = prompts.get_mut(index) else {
-        return;
-    };
-    *slot = GuardrailValue::Text(text.to_owned());
 }
 
 fn write_choice_text(response: &mut GuardrailValue, choice_index: usize, text: &str) {
@@ -263,3 +243,5 @@ const fn value_type_name(value: &GuardrailValue) -> &'static str {
         GuardrailValue::Object(_) => "dict",
     }
 }
+
+mod tests;
