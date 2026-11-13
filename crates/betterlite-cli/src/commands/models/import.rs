@@ -295,3 +295,5 @@ fn print_summary_table(
     let _wrote_table = writeln!(stdout, "{table}");
     Ok(())
 }
+
+mod tests;
