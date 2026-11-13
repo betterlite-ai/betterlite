@@ -54,7 +54,7 @@ enum Run {
 }
 
 impl Run {
-    fn done(&self) -> bool {
+    const fn done(&self) -> bool {
         match self {
             Self::Sync(run) => run.collected.ended || run.collected.error.is_some(),
             Self::Async(run) => run.collected.ended || run.collected.error.is_some(),
@@ -130,20 +130,20 @@ fn runs(step: &SplitStep, failure: Option<&StreamFailure>) -> Vec<Run> {
 async fn drive(step: &SplitStep, failure: Option<&StreamFailure>) -> SplitView {
     let mut runs = runs(step, failure);
     for _ in 0..step.rounds {
-        for run in &mut runs {
-            if run.done() {
+        for instance in &mut runs {
+            if instance.done() {
                 continue;
             }
-            match run {
-                Run::Sync(run) => match run.splitter.next() {
-                    Some(Ok(piece)) => run.collected.pieces.push(chunk_view(&piece)),
-                    Some(Err(failure)) => run.collected.error = Some(status_view(&failure)),
-                    None => run.collected.ended = true,
+            match instance {
+                Run::Sync(state) => match state.splitter.next() {
+                    Some(Ok(piece)) => state.collected.pieces.push(chunk_view(&piece)),
+                    Some(Err(error)) => state.collected.error = Some(status_view(&error)),
+                    None => state.collected.ended = true,
                 },
-                Run::Async(run) => match next_split_chunk(&mut run.splitter).await {
-                    Ok(Some(piece)) => run.collected.pieces.push(chunk_view(&piece)),
-                    Ok(None) => run.collected.ended = true,
-                    Err(failure) => run.collected.error = Some(status_view(&failure)),
+                Run::Async(state) => match next_split_chunk(&mut state.splitter).await {
+                    Ok(Some(piece)) => state.collected.pieces.push(chunk_view(&piece)),
+                    Ok(None) => state.collected.ended = true,
+                    Err(error) => state.collected.error = Some(status_view(&error)),
                 },
             }
         }
