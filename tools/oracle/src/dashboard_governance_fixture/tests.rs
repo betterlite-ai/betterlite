@@ -10,7 +10,7 @@ use self::seed::case_with;
 
 mod digest;
 mod digest_discovery;
-#[path = "case/seed.rs"]
+#[path = "case/tests/seed.rs"]
 mod seed;
 
 const VALID_GOVERNANCE: &str = "    dashboard_governance:\n      metrics:\n        - {guardrail_id: gr-pii, date: '2026-01-04', requests_evaluated: 10, passed_count: 7, blocked_count: 2, flagged_count: 1, avg_score: '0.875', avg_latency_ms: '12.5'}\n        - {guardrail_id: gr-config, date: '2026-01-04', requests_evaluated: 3, passed_count: 3}\n      usage_units:\n        - {guardrail_id: gr-pii, date: '2026-01-04', team_id: team-red, key_index: 0, usage_unit: contentPolicyUnits, units: 5, cost: '0.25', untracked_units: 0}\n        - {guardrail_id: gr-pii, date: '2026-01-04', usage_unit: textUnits, units: 3, untracked_units: 3}\n      guardrail_index:\n        - {request_id: req-blocked, guardrail_id: gr-pii, policy_id: policy-eu, start_time: '2026-01-04T10:00:00.000'}\n        - {request_id: req-blocked, guardrail_id: gr-config, start_time: '2026-01-04T10:00:00.000'}\n      tool_index:\n        - {request_id: req-tools, tool_name: mcp__github/search, start_time: '2026-01-04T11:00:00.000'}\n      tools:\n        - {tool_id: tool-github, tool_name: mcp__github/search, origin: user_defined, input_policy: blocked, output_policy: trusted, call_count: 42, key_index: 0, team_id: team-red, key_alias: alice-discovery-key, user_agent: openai-python/1.0, last_used_at: '2026-01-04T11:00:01.000'}\n        - {tool_id: tool-weather, tool_name: get_weather}\n";
