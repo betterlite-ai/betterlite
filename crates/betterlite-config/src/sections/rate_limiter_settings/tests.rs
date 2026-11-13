@@ -110,8 +110,8 @@ fn the_fail_closed_flag_reads_bools_and_strings(#[case] source: String, #[case] 
 }
 
 #[rstest]
-#[case::integer(flag_source("1"), "1")]
-#[case::float(flag_source("1.5"), "1.5")]
+#[case::unreadable_number(flag_source("2"), "2")]
+#[case::out_of_range_float(flag_source("1.5"), "1.5")]
 #[case::list(flag_source("[true]"), "a list or a map")]
 #[case::map(flag_source("{a: 1}"), "a list or a map")]
 #[case::unreadable_string(flag_source("\"maybe\""), "maybe")]
@@ -126,6 +126,21 @@ fn a_value_outside_the_declared_type_warns_and_disables(
     assert!(text.contains(&format!(
         "general_settings.fail_closed_rate_limit_enforcement={rendered} is not a boolean, treating it as disabled"
     )));
+}
+
+#[rstest]
+#[case::one(flag_source("1"), true)]
+#[case::whole_float(flag_source("1.0"), true)]
+#[case::zero(flag_source("0"), false)]
+#[case::zero_float(flag_source("0.0"), false)]
+fn the_lax_numeric_flags_are_read_without_a_warning(
+    #[case] source: String,
+    #[case] expected: bool,
+) {
+    let text = capture(|| {
+        assert_eq!(settings(&source, &[]).fail_closed, expected);
+    });
+    assert!(!text.contains("fail_closed_rate_limit_enforcement"));
 }
 
 #[test]

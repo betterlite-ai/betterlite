@@ -78,8 +78,10 @@ where
 {
     match raw {
         RawFlag::Bool(value) => value,
-        RawFlag::Absent | RawFlag::Null(()) => false,
+        RawFlag::Absent | RawFlag::Null(()) | RawFlag::Integer(0) | RawFlag::Float(0.0) => false,
         RawFlag::Text(text) => text_flag(&text, lookup),
+        // pydantic's lax bool reads the integers 1 and 0 and the floats 1.0 and 0.0
+        RawFlag::Integer(1) | RawFlag::Float(1.0) => true,
         other @ (RawFlag::Integer(_) | RawFlag::Float(_) | RawFlag::Other(_)) => {
             warn_not_boolean(&rendered(&other));
             false
