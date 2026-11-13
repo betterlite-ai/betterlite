@@ -187,5 +187,5 @@ pitfalls:
   - The ranking config sorts only when there are more results than top_n, and a top_n of 0 in optional_params falls back to the kept value.
   - get_complete_url in the ranking config tests endswith /ranking, so a base already ending in /v1/ranking is used as is.
   - without_repeated_version_prefix drops the query from the base and compares only the last base segment with the first native segment, case-sensitive and only for v followed by digits.
-budget: {max_changed_lines: 1500, max_new_expects: 6}
+budget: {max_changed_lines: 1850, max_new_expects: 6}
 review_level: standard
