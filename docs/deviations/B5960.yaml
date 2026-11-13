@@ -4,5 +4,7 @@ deviations:
     why: LiteLLM's membership and subscript checks accept a string and answer an empty completion, which is Python duck typing and no working TGI endpoint produces. betterlite names the reply as unreadable instead.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/transformation.py#L225-L250
   - what: A model whose prompt factory yields no prompt, such as a falcon name without "instruct", fails the request with a named error instead of sending inputs null.
-    why: LiteLLM falls off prompt_factory's if/elif chain with None and sends {"inputs": null}, and every later reply fails on the prompt comparison. An error at request time is the same outcome for the caller, named earlier.
+    why: >-
+      LiteLLM falls off prompt_factory's if/elif chain with None and sends an inputs value of null, and every later reply
+      fails on the prompt comparison. An error at request time is the same outcome for the caller, named earlier.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5325-L5385
