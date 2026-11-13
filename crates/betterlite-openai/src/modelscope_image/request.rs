@@ -24,8 +24,10 @@ pub fn validate_environment(
     api_key: Option<&SecretString>,
     environment_api_key: Option<&SecretString>,
 ) -> Result<Headers, ModelScopeImageError> {
-    let key = api_key
-        .or(environment_api_key)
+    let key = [api_key, environment_api_key]
+        .into_iter()
+        .flatten()
+        .find(|key| !key.expose_secret().is_empty())
         .ok_or(ModelScopeImageError::MissingApiKey)?;
     let mut merged = headers.clone();
     merged.insert(

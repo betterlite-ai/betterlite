@@ -12,16 +12,16 @@ pub enum MinimaxSpeechError {
     },
     #[error("the {name} option holds a value MiniMax cannot use")]
     Option { name: &'static str },
-    #[error("the MiniMax speech reply is not JSON")]
+    #[error("Failed to parse MiniMax response: {source}")]
     Decode {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the MiniMax speech reply is not a JSON object")]
+    #[error("Error processing MiniMax response: the reply is not a JSON object")]
     NotObject,
-    #[error("the MiniMax speech reply has a {field} field of the wrong type")]
+    #[error("Error processing MiniMax response: the {field} field has the wrong type")]
     Field { field: &'static str },
-    #[error("the MiniMax speech reply audio is neither hex nor base64")]
+    #[error("Failed to decode audio data: {source}")]
     Audio {
         #[source]
         source: base64::DecodeError,

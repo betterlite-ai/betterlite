@@ -137,6 +137,18 @@ fn a_missing_key_names_the_environment_variable() {
     assert_missing_key(&error);
 }
 
+#[test]
+fn an_empty_api_key_falls_to_the_environment_key_and_then_to_the_error() {
+    let empty = SecretString::from("");
+    let environment = SecretString::from("environment");
+    let headers = validate_environment(&Headers::new(), Some(&empty), Some(&environment))
+        .expect("the environment key is set");
+    assert_eq!(headers["Authorization"], "Bearer environment");
+    let error = validate_environment(&Headers::new(), Some(&empty), Some(&empty))
+        .expect_err("both keys are empty");
+    assert_missing_key(&error);
+}
+
 fn assert_missing_key(error: &ModelScopeImageError) {
     assert_eq!(error.status_code(), None);
     assert!(error.to_string().contains("MODELSCOPE_API_KEY is not set"));

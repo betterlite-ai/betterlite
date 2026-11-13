@@ -26,5 +26,14 @@ call:
       - kind: speech_reply
         status: 401
         body: '{"status": 2, "ced": "invalid api key"}'
+      - kind: speech_reply
+        status: 400
+        body: '{"status": 2}'
+      - kind: speech_reply
+        status: 400
+        body: '{"status": 2, "ced": ""}'
+      - kind: speech_reply
+        status: 400
+        body: '{"status": 2, "ced": null}'
 env: {}
 compare: {ignore: []}

@@ -52,8 +52,10 @@ fn check_status(fields: &Object, raw_status: u16) -> Result<(), MinimaxSpeechErr
         return Ok(());
     }
     let detail = match fields.get("ced") {
+        None => String::from("Unknown error"),
         Some(Value::String(text)) if !text.is_empty() => text.clone(),
-        _ => format!("API returned status {number}"),
+        Some(Value::Null | Value::String(_)) => format!("API returned status {number}"),
+        Some(_) => return Err(MinimaxSpeechError::Field { field: "ced" }),
     };
     Err(MinimaxSpeechError::Reply {
         status: raw_status,

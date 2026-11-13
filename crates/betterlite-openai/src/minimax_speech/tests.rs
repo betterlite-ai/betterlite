@@ -413,6 +413,24 @@ async fn an_empty_ced_names_the_status() {
 }
 
 #[tokio::test]
+async fn a_null_ced_names_the_status() {
+    let headers = HeaderMap::new();
+    let error = decode(r#"{"status": 3, "ced": null}"#, 400, &headers)
+        .await
+        .expect_err("status 3 is an error");
+    assert!(error.to_string().contains("API returned status 3"));
+}
+
+#[tokio::test]
+async fn a_ced_of_the_wrong_type_is_an_error() {
+    let headers = HeaderMap::new();
+    let error = decode(r#"{"status": 3, "ced": 7}"#, 400, &headers)
+        .await
+        .expect_err("a numeric ced cannot be used");
+    assert_eq!(error.status_code(), Some(500));
+}
+
+#[tokio::test]
 async fn a_missing_ced_is_unknown() {
     let headers = HeaderMap::new();
     let error = decode(r#"{"status": 2}"#, 400, &headers)

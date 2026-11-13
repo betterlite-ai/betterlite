@@ -37,7 +37,7 @@ pub enum ModelScopeImageError {
     MissingApiKey,
     #[error("parameter {name} is not supported for model {model}; set drop_params to drop it")]
     UnsupportedParam { name: String, model: String },
-    #[error("the ModelScope image reply is not JSON")]
+    #[error("Error parsing ModelScope response: {source}")]
     Decode {
         class: ErrorClass,
         #[source]
