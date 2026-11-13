@@ -15,6 +15,7 @@ base64 = "0.23.1"
 betterlite = { path = "../../../../../crates/betterlite" }
 betterlite-auth = { path = "../../../../../crates/betterlite-auth" }
 betterlite-config = { path = "../../../../../crates/betterlite-config" }
+betterlite-context = { path = "../../../../../crates/betterlite-context" }
 betterlite-core = { path = "../../../../../crates/betterlite-core" }
 betterlite-db = { path = "../../../../../crates/betterlite-db" }
 betterlite-guardrails = { path = "../../../../../crates/betterlite-guardrails" }
@@ -22,6 +23,7 @@ betterlite-http = { path = "../../../../../crates/betterlite-http" }
 betterlite-mcp = { path = "../../../../../crates/betterlite-mcp" }
 betterlite-ocr = { path = "../../../../../crates/betterlite-ocr" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
+betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-roi = { path = "../../../../../crates/betterlite-roi" }
 betterlite-semantic = { path = "../../../../../crates/betterlite-semantic" }
 betterlite-server = { path = "../../../../../crates/betterlite-server" }

@@ -1,0 +1,28 @@
+kind: helper
+name: database-refresh-loop-fresh-strictly-over-buffer
+call:
+  database_refresh_loop:
+    function: batch
+    calls:
+      - function: token_refresh_not_needed
+        auth: rds
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:12:00"
+      - function: token_refresh_not_needed
+        auth: rds
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:11:59.999999"
+      - function: token_refresh_not_needed
+        auth: rds
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:12:00.000001"
+      - function: token_refresh_not_needed
+        auth: rds
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:00:00"
+      - function: token_refresh_not_needed
+        auth: rds
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:15:00"
+env: {}
+compare: {ignore: []}

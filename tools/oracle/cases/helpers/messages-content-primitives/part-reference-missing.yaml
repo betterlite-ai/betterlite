@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-part-reference-missing
+call: {"messages_content_primitives": {"operation": "tool_result_part", "item": {"type": "tool_reference"}}}
+env: {}
+compare: {ignore: []}

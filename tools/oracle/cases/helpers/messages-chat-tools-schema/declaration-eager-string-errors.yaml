@@ -1,0 +1,12 @@
+kind: helper
+name: messages-chat-tools-schema-declaration-eager-string-errors
+call:
+  messages_chat_tools_schema:
+    operation: request
+    request:
+      model: gpt-4o
+      messages: []
+      tools:
+        - {name: lookup, eager_input_streaming: "true"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+kind: helper
+name: metadata-list-hides-litellm-metadata
+call:
+  b3665: {"function": "should_run_guardrail", "guardrail_name": "g", "event_hook": "pre_call", "default_on": false, "data": {"metadata": {"guardrails": []}, "litellm_metadata": {"guardrails": ["g"]}}, "event_type": "pre_call", "suppressed": []}
+env: {}
+compare: {ignore: []}

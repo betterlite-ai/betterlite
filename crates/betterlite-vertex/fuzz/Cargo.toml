@@ -13,14 +13,30 @@ cargo-fuzz = true
 
 [dependencies]
 betterlite-bedrock = { path = "../../betterlite-bedrock" }
+betterlite-models = { path = "../../betterlite-models" }
 betterlite-vertex = { path = ".." }
 indexmap = "2.14.2"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 libfuzzer-sys = "0.4.9"
+serde_json = "1.0.154"
+
+[[bin]]
+name = "cache_created"
+path = "fuzz_targets/cache_created.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "cache_page"
 path = "fuzz_targets/cache_page.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cache_ttl"
+path = "fuzz_targets/cache_ttl.rs"
 test = false
 doc = false
 bench = false
@@ -47,6 +63,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "studio_file_metadata"
+path = "fuzz_targets/studio_file_metadata.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "studio_interaction"
 path = "fuzz_targets/studio_interaction.rs"
 test = false
@@ -63,6 +86,13 @@ bench = false
 [[bin]]
 name = "thinking_part"
 path = "fuzz_targets/thinking_part.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_batch_records"
+path = "fuzz_targets/vertex_batch_records.rs"
 test = false
 doc = false
 bench = false

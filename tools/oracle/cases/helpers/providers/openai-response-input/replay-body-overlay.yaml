@@ -1,0 +1,13 @@
+kind: helper
+name: openai-response-input-replay-body-overlay
+call:
+  openai_response_input:
+    probes:
+    - {model: gpt-4o, input: hi, params: {}}
+    - {model: gpt-4o, input: [{role: user, content: x}], params: {temperature: 1, stream: true, metadata: {a: 1}}}
+    - {model: gpt-4o, input: hi, params: {tools: []}}
+    - {model: gpt-4o, input: hi, params: {tools: null}}
+    - {model: gpt-4o, input: hi, params: {tools: [{type: function, name: f, parameters: '{"type":"object"}'}]}}
+    - {model: gpt-4o, input: hi, params: {tool_choice: auto, tools: [{type: function, name: g, parameters: {type: object}}]}}
+env: {}
+compare: {ignore: []}
