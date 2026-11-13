@@ -38,11 +38,7 @@ impl Helper for Op {
         measure(&input.call, &settings)
     }
 }
-struct Sources {
-    tools: Option<Vec<Tool>>,
-    tool_config: Option<ToolConfig>,
-    warnings: usize,
-}
+type Sources = (Option<Vec<Tool>>, Option<ToolConfig>, usize);
 fn map_sources(call: &Call, settings: &Settings) -> Result<Sources, Box<HelperError>> {
     // LiteLLM maps the tools list and the functions list in separate calls, then appends one result to the other
     let mut tools: Option<Vec<Tool>> = None;
@@ -58,14 +54,10 @@ fn map_sources(call: &Call, settings: &Settings) -> Result<Sources, Box<HelperEr
         tool_config = mapped.tool_config;
         tools.get_or_insert_with(Vec::new).extend(mapped.tools);
     }
-    Ok(Sources {
-        tools,
-        tool_config,
-        warnings,
-    })
+    Ok((tools, tool_config, warnings))
 }
 fn measure(call: &Call, settings: &Settings) -> Result<Value, Box<HelperError>> {
-    let mut sources = map_sources(call, settings)?;
+    let (mut tools, tool_config, mut warnings) = map_sources(call, settings)?;
     let tool_choice = call
         .tool_choice
         .as_ref()
@@ -73,37 +65,31 @@ fn measure(call: &Call, settings: &Settings) -> Result<Value, Box<HelperError>> 
         .transpose()
         .map_err(|error| choice_failure(&error))?;
     if let Some(options) = &call.web_search_options {
-        sources
-            .tools
+        tools
             .get_or_insert_with(Vec::new)
             .push(map_web_search_options(options));
     }
-    if let Some(existing) = &mut sources.tools {
-        sources.warnings = sources
-            .warnings
-            .saturating_add(usize::from(drop_mixed_search_tools(
-                existing,
-                call.server_side_invocations,
-            )));
+    if let Some(existing) = &mut tools {
+        let dropped = drop_mixed_search_tools(existing, call.server_side_invocations);
+        warnings = warnings.saturating_add(usize::from(dropped));
     }
     let service_tier = call.service_tier.as_deref().map(map_service_tier);
     Ok(json!({
-        "tools": sources.tools,
+        "tools": tools,
         "tool_choice": tool_choice,
-        "toolConfig": sources.tool_config,
+        "toolConfig": tool_config,
         "service_tier": service_tier,
-        "warnings": sources.warnings,
+        "warnings": warnings,
     }))
 }
 fn choice_failure(error: &GeminiToolsError) -> Box<HelperError> {
     let unsupported = matches!(error, GeminiToolsError::UnsupportedToolChoice);
-    let class = if unsupported {
-        "UnsupportedParamsError"
-    } else {
-        "ValueError"
-    };
     Box::new(HelperError {
-        class: class.to_owned(),
+        class: String::from(if unsupported {
+            "UnsupportedParamsError"
+        } else {
+            "ValueError"
+        }),
         status: unsupported.then_some(400),
         error_type: None,
         param: None,
