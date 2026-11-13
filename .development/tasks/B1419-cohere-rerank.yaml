@@ -36,6 +36,16 @@ description: >-
   and 100 configuration/export lines, maximum 800.
 scope:
   paths:
+    - "tools/oracle/src/helpers/guardrails/b3664.rs"
+    - "crates/betterlite-redact/**"
+    - "crates/betterlite-prompts/**"
+    - "crates/betterlite-models/**"
+    - "crates/betterlite-http/**"
+    - "crates/betterlite-guardrails/**"
+    - "crates/betterlite-env/**"
+    - "crates/betterlite-core/**"
+    - "crates/betterlite-context/**"
+    - "crates/betterlite-config/**"
     - crates/betterlite-openai/src/cohere_rerank.rs
     - crates/betterlite-openai/src/cohere_rerank/**
     - crates/betterlite-core/src/cohere_rerank_guardrail.rs
