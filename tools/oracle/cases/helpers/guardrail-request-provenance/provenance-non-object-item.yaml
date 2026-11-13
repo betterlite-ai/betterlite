@@ -1,0 +1,12 @@
+kind: helper
+name: provenance-non-object-item
+call:
+  b3670:
+    function: input_item_provenance
+    raw_input:
+      - {"role": "user", "content": "u"}
+      - 5
+    expected_messages:
+      - {"role": "user", "content": "u"}
+env: {}
+compare: {ignore: []}

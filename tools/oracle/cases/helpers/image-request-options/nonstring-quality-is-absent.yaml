@@ -1,0 +1,55 @@
+kind: helper
+name: image-request-options-nonstring-quality-is-absent
+call:
+  image_request_options:
+    calls:
+      - function: param
+        key: quality
+        optional_params:
+          quality: hd
+      - function: param
+        key: quality
+        optional_params:
+          quality: ""
+      - function: param
+        key: quality
+        optional_params:
+          quality: 1
+      - function: param
+        key: quality
+        optional_params:
+          quality: 0
+      - function: param
+        key: quality
+        optional_params:
+          quality: true
+      - function: param
+        key: quality
+        optional_params:
+          quality: null
+      - function: param
+        key: quality
+        optional_params:
+          quality: [hd]
+      - function: param
+        key: quality
+        optional_params:
+          quality:
+            level: hd
+      - function: param
+        key: quality
+        optional_params:
+          size: 1024x1024
+      - function: param
+        key: size
+        optional_params:
+          size: 1024x1024
+      - function: param
+        key: quality
+        optional_params: {}
+      - function: param
+        key: quality
+        optional_params: null
+env: {}
+compare:
+  ignore: []

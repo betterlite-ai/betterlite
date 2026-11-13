@@ -1,0 +1,11 @@
+kind: helper
+name: vertex-interactions-streaming-collection
+call:
+  vertex_interactions:
+    mint: {token: minted-token}
+    calls:
+      - {function: url, api_base: "", stream: true, interaction_id: "", headers: {}, params: {vertex_project: project-1}}
+      - {function: url, api_base: "", stream: false, interaction_id: "", headers: {}, params: {vertex_project: project-1}}
+      - {function: url, api_base: "https://proxy.example/v1", stream: true, interaction_id: "", headers: {}, params: {vertex_project: project-1, vertex_location: us-central1}}
+env: {}
+compare: {ignore: []}

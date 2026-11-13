@@ -1,0 +1,25 @@
+kind: helper
+name: vertex-batch-records-pricing-failure-zero
+call:
+  vertex_batch_records:
+    operation: row
+    calls:
+      - row:
+          request: {contents: []}
+          response:
+            candidates: []
+            usageMetadata: {promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5}
+            modelVersion: gemini-1.5-flash-001
+        model_name: null
+        model_info: null
+        pricing: failure
+      - row:
+          request: {contents: []}
+          response:
+            candidates: []
+            usageMetadata: {promptTokenCount: 4, totalTokenCount: 4}
+        model_name: my-deployment
+        model_info: null
+        pricing: failure
+env: {}
+compare: {ignore: []}
