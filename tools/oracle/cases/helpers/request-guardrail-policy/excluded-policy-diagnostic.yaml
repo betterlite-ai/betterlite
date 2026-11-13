@@ -1,0 +1,27 @@
+kind: helper
+name: request-guardrail-policy-excluded-policy-diagnostic
+call:
+  request_guardrail_policy:
+    calls:
+      - data: {model: gpt-4}
+        key_metadata: {policies: [missing]}
+        team_metadata: {}
+        project_metadata: {}
+        team_alias: null
+        key_alias: null
+        metadata_variable_name: metadata
+        premium_user: true
+        policies: {present: {guardrails: {add: [pii]}}}
+        attachments: []
+      - data: {model: gpt-4}
+        key_metadata: {policies: [present]}
+        team_metadata: {}
+        project_metadata: {}
+        team_alias: null
+        key_alias: null
+        metadata_variable_name: metadata
+        premium_user: true
+        policies: {present: {guardrails: {add: [pii]}}}
+        attachments: []
+env: {}
+compare: {ignore: []}

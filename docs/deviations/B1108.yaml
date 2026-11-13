@@ -1,0 +1,67 @@
+task: B1108
+deviations:
+  - what: >-
+      Key, team and project guardrails keep first-seen order (key, then team, then project) instead of
+      the iteration order of Python's set.
+    why: >-
+      LiteLLM builds the list from a set, whose iteration order changes between Python processes, so
+      no working setup can depend on it; the function's own contract says key first, then team and
+      project.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3004-L3026
+  - what: >-
+      Guardrails resolved from key, team and project policies keep the order of first appearance
+      (existing metadata guardrails, then each policy's resolved guardrails sorted) instead of a
+      Python set's iteration order.
+    why: >-
+      Same reason: the set order changes between processes. The order inside one policy follows the
+      sorted order documented for B3240's resolver.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3096-L3130
+  - what: >-
+      applied_policies lists key, team and project policy names in first-seen order instead of a
+      Python set's iteration order.
+    why: The set order changes between processes; first-seen order is the only stable reading of the code.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3058
+  - what: >-
+      Guardrails resolved for the request keep the resolver's sorted order rather than the iteration
+      order of the set it is collected in.
+    why: The set order changes between processes, so betterlite uses the sorted order B3240's resolver already returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolver.py#L187
+  - what: The _guardrail_pipelines metadata field holds [policy_name, pipeline] pairs as JSON, not Python model objects.
+    why: >-
+      A request metadata map in betterlite is typed JSON; the consuming hook code reads the same
+      fields from the serialized pipeline.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3348
+  - what: The _pipeline_managed_guardrails metadata field is a sorted list, not a set.
+    why: LiteLLM stores a Python set, which cannot be written to the JSON metadata map; membership is all the consumers read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3347-L3349
+  - what: >-
+      A request whose metadata bucket is absent or is not an object gets a JSON object bucket instead
+      of a KeyError or TypeError.
+    why: >-
+      LiteLLM indexes data[metadata_variable_name] and assumes the caller created it; that is an
+      internal invariant, and a missing bucket is a 500 no working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3214-L3221
+  - what: >-
+      A null request-body guardrails or guardrail_config next to an existing list or object leaves
+      the existing value alone instead of raising TypeError.
+    why: LiteLLM calls extend/update with None there, a 500 on input no working setup sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3219-L3229
+  - what: >-
+      A metadata guardrails or applied_policies value that is not a list of strings is a 400 that
+      names the field instead of a later TypeError or AttributeError.
+    why: >-
+      LiteLLM appends to whatever the client put there and fails with a 500; the field is named so
+      the client can fix it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L637-L651
+  - what: >-
+      Request-body policies, guardrails, guardrail_config and include_guardrail_response are typed:
+      a value of another type is a 400 naming the field, where LiteLLM ignores it or coerces it.
+    why: >-
+      LiteLLM reads the fields out of an untyped request dict and skips or truth-tests what it does
+      not expect; docs/compatibility.md rejects a value of the wrong type at the boundary instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3398-L3442
+  - what: A request-body policies list longer than ApiLimits.max_items is a 400 with code too_many_items.
+    why: >-
+      LiteLLM processes any length; the list is client input and betterlite caps every inbound list
+      so one request cannot make the proxy allocate without bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3432-L3442
