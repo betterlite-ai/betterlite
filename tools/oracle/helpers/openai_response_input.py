@@ -1,19 +1,34 @@
 import io
 from contextlib import redirect_stdout
-from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
+from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict
 
 import litellm
-from litellm.llms.azure.responses.transformation import AzureOpenAIResponsesAPIConfig
-from litellm.llms.hosted_vllm.responses.transformation import HostedVLLMResponsesAPIConfig
-from litellm.llms.openai.responses.transformation import OpenAIResponsesAPIConfig
+from litellm.llms.base_llm.responses.transformation import BaseResponsesAPIConfig
 from litellm.types.router import GenericLiteLLMParams
+from litellm.types.utils import LlmProviders
+from litellm.utils import ProviderConfigManager
 from openai.types.responses.response_input_param import ResponseInputParam
+from pydantic import JsonValue, TypeAdapter
 
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-Object: TypeAlias = dict[str, Json]
+Object: TypeAlias = dict[str, JsonValue]
 Provider: TypeAlias = Literal["openai", "azure", "hosted_vllm"]
 
 litellm.suppress_debug_info = True
+
+BODY: Final = TypeAdapter(JsonValue)
+
+
+class ResponsesTransform(Protocol):
+    # ast-grep-ignore: no-long-names
+    def transform_responses_api_request(
+        self,
+        model: str,
+        input_value: str | ResponseInputParam,
+        params: dict[str, JsonValue],
+        litellm_params: GenericLiteLLMParams,
+        headers: dict[str, str],
+        /,
+    ) -> dict[str, JsonValue]: ...
 
 
 class Probe(TypedDict):
@@ -28,13 +43,20 @@ class Probes(TypedDict):
     probes: list[Probe]
 
 
-def config_of(probe: Probe) -> OpenAIResponsesAPIConfig:
+def responses_config(provider: LlmProviders) -> BaseResponsesAPIConfig:
+    config = ProviderConfigManager.get_provider_responses_api_config(provider)
+    if config is None:
+        raise ValueError(f"no Responses API config for {provider.value}")
+    return config
+
+
+def config_of(probe: Probe) -> BaseResponsesAPIConfig:
     provider = probe.get("provider")
     if provider is None or provider == "openai":
-        return OpenAIResponsesAPIConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L105
+        return responses_config(LlmProviders.OPENAI)
     if provider == "azure":
-        return AzureOpenAIResponsesAPIConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/responses/transformation.py#L25
-    return HostedVLLMResponsesAPIConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/responses/transformation.py#L17
+        return responses_config(LlmProviders.AZURE)
+    return responses_config(LlmProviders.HOSTED_VLLM)
 
 
 def params_of(probe: Probe) -> Object:
@@ -42,20 +64,17 @@ def params_of(probe: Probe) -> Object:
     return {} if params is None else dict(params)
 
 
-def run_probe(probe: Probe) -> Json:
-    config = config_of(probe)
+def transform_body(config: ResponsesTransform, probe: Probe) -> JsonValue:
     headers: dict[str, str] = {}
     litellm_params = GenericLiteLLMParams(model_info=probe.get("model_info"))
-    body = config.transform_responses_api_request(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L311
-        model=probe["model"],
-        input=probe["input"],
-        response_api_optional_request_params=params_of(probe),
-        litellm_params=litellm_params,
-        headers=headers,
+    body = config.transform_responses_api_request(
+        probe["model"], probe["input"], params_of(probe), litellm_params, headers
     )
-    return cast("Json", body)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L311
+    return BODY.validate_python(body)
 
 
-def run(input_value: Probes) -> Json:
+def run(input_value: Probes) -> JsonValue:
     with redirect_stdout(io.StringIO()):
-        return [run_probe(probe) for probe in input_value["probes"]]
+        return [
+            transform_body(config_of(probe), probe) for probe in input_value["probes"]
+        ]
