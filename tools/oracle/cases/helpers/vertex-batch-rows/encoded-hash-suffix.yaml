@@ -12,5 +12,6 @@ call:
       - {key: plain}
       - {key: ""}
       - request: {labels: {litellm_custom_id_raw: b32_jbswy3dp}}
+      - request: {labels: {litellm_custom_id_raw: "b32_mestem3c", litellm_custom_id: a_23b}}
 env: {}
 compare: {ignore: []}
