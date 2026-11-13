@@ -1,0 +1,13 @@
+kind: helper
+name: foundry-anthropic-messages-projection
+call:
+  foundry_anthropic_messages:
+    function: projection
+    request:
+      model: claude-sonnet-4-5
+      system: plain system
+      messages:
+        - role: user
+          content: hi
+env: {}
+compare: {ignore: []}

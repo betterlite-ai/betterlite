@@ -1,0 +1,89 @@
+kind: helper
+name: foundry-anthropic-messages-x-api-key-rename
+call:
+  foundry_anthropic_messages:
+    function: environment
+    calls:
+      - headers: {api-key: header-key}
+        litellm_params: {}
+        api_key: null
+        api_base: null
+        optional_params: {}
+        messages: []
+        globals: {api_key: null, azure_key: null}
+        environment: {}
+      - headers: {}
+        litellm_params: {}
+        api_key: arg-key
+        api_base: null
+        optional_params: {}
+        messages: []
+        globals: {api_key: null, azure_key: null}
+        environment: {}
+      - headers: {api-key: a, x-api-key: x}
+        litellm_params: {}
+        api_key: null
+        api_base: null
+        optional_params: {}
+        messages: []
+        globals: {api_key: null, azure_key: null}
+        environment: {}
+      - headers: {Api-Key: cased}
+        litellm_params: {}
+        api_key: arg-key
+        api_base: null
+        optional_params: {}
+        messages: []
+        globals: {api_key: null, azure_key: null}
+        environment: {}
+      - headers: {}
+        litellm_params: {api_key: null}
+        api_key: arg-key
+        api_base: null
+        optional_params: {}
+        messages: []
+        globals: {api_key: glob-key, azure_key: null}
+        environment: {}
+      - headers: {}
+        litellm_params: {api_key: param-key}
+        api_key: arg-key
+        api_base: null
+        optional_params: {}
+        messages: []
+        globals: {api_key: null, azure_key: null}
+        environment: {}
+      - headers: {}
+        litellm_params: {}
+        api_key: ""
+        api_base: null
+        optional_params: {}
+        messages: []
+        globals: {api_key: null, azure_key: azure-global-key}
+        environment: {}
+      - headers: {}
+        litellm_params: {}
+        api_key: null
+        api_base: null
+        optional_params: {}
+        messages: []
+        globals: {api_key: null, azure_key: null}
+        environment: {AZURE_API_KEY: env-key}
+      - headers: {}
+        litellm_params: {azure_ad_token: ad-token}
+        api_key: null
+        api_base: null
+        optional_params: {}
+        messages: []
+        globals: {api_key: null, azure_key: null}
+        environment: {}
+      - headers: {}
+        litellm_params: {}
+        api_key: null
+        api_base: null
+        optional_params: {}
+        messages: []
+        globals: {api_key: null, azure_key: null}
+        environment: {}
+env: {}
+compare:
+  ignore: []

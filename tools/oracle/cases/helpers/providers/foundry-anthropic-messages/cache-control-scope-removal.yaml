@@ -1,0 +1,46 @@
+kind: helper
+name: foundry-anthropic-messages-cache-control-scope-removal
+call:
+  foundry_anthropic_messages:
+    function: transform
+    request:
+      model: claude-sonnet-4-5
+      system:
+        - type: text
+          text: a
+          cache_control: {type: ephemeral, ttl: 1h, scope: global, extra: kept}
+        - type: text
+          text: b
+          cache_control: {scope: global}
+        - type: text
+          text: c
+          cache_control: scope
+        - type: text
+          text: d
+          cache_control: null
+        - type: text
+          text: e
+      messages:
+        - role: user
+          content:
+            - type: text
+              text: x
+              cache_control: {type: ephemeral, scope: global}
+            - type: tool_result
+              tool_use_id: t
+              content:
+                - type: text
+                  text: nested
+                  cache_control: {type: ephemeral, scope: global}
+            - type: text
+              text: y
+              cache_control: [scope]
+        - role: assistant
+          content: string content
+          cache_control: {scope: global}
+      tools:
+        - name: tool
+          cache_control: {type: ephemeral, scope: global}
+env: {}
+compare:
+  ignore: []

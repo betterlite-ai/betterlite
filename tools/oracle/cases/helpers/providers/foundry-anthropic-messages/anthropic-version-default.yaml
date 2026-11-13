@@ -1,0 +1,50 @@
+kind: helper
+name: foundry-anthropic-messages-anthropic-version-default
+call:
+  foundry_anthropic_messages:
+    function: environment
+    calls:
+      - headers: {}
+        litellm_params: {}
+        api_key: key
+        api_base: https://base.services.ai.azure.com
+        optional_params: {}
+        messages: []
+        globals: {api_key: null, azure_key: null}
+        environment: {}
+      - headers: {anthropic-version: "", content-type: ""}
+        litellm_params: {}
+        api_key: key
+        api_base: null
+        optional_params: {}
+        messages: []
+        globals: {api_key: null, azure_key: null}
+        environment: {}
+      - headers: {Anthropic-Version: "2024-01-01", Content-Type: text/plain}
+        litellm_params: {}
+        api_key: key
+        api_base: null
+        optional_params: {}
+        messages: []
+        globals: {api_key: null, azure_key: null}
+        environment: {}
+      - headers: {anthropic-version: "2020-01-01", content-type: text/plain}
+        litellm_params: {}
+        api_key: key
+        api_base: https://base.services.ai.azure.com/anthropic
+        optional_params: {}
+        messages: []
+        globals: {api_key: null, azure_key: null}
+        environment: {}
+      - headers: {anthropic-beta: " tools-x , ,other-y"}
+        litellm_params: {}
+        api_key: key
+        api_base: null
+        optional_params:
+          speed: fast
+        messages: []
+        globals: {api_key: null, azure_key: null}
+        environment: {}
+env: {}
+compare:
+  ignore: []
