@@ -6,9 +6,8 @@ from litellm.anthropic_beta_headers_manager import filter_and_transform_beta_hea
 from litellm.llms.anthropic.pass_through.messages.transformation import (
     AnthropicMessagesConfig,
 )
+from pydantic import JsonValue as Json
 from typing_extensions import override
-
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 UNKNOWN_PREFIX: Final = "Dropping unknown beta header '"
 UNSUPPORTED_PREFIX: Final = "Dropping unsupported beta header '"
@@ -35,7 +34,7 @@ Call: TypeAlias = MatrixFilterCall | NativeInjectionCall
 
 
 class Input(TypedDict):
-    matrix: Json
+    matrix: dict[str, Json]
     calls: list[Call]
 
 
@@ -58,13 +57,8 @@ class NativeUpdater(Protocol):
     ) -> dict[str, Json]: ...
 
 
-UPDATE_REQUEST: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_beta_headers_manager.py#L359
-    RequestUpdateFn, anthropic_beta_headers_manager.update_request_with_filtered_beta
-)
-NATIVE_BETAS: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L611
-    NativeUpdater,
-    AnthropicMessagesConfig._update_headers_with_anthropic_beta,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L611
-)
+UPDATE_REQUEST: Final = cast(RequestUpdateFn, anthropic_beta_headers_manager.update_request_with_filtered_beta)  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_beta_headers_manager.py#L359
+NATIVE_BETAS: Final = cast(NativeUpdater, AnthropicMessagesConfig._update_headers_with_anthropic_beta)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L611
 
 
 class DropRecorder(logging.Handler):
@@ -84,8 +78,7 @@ class DropRecorder(logging.Handler):
 
 
 def run(input_value: Input) -> Json:
-    matrix = cast("dict[str, Json]", input_value["matrix"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_beta_headers_manager.py#L162
-    anthropic_beta_headers_manager._BETA_HEADERS_CONFIG = matrix  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_beta_headers_manager.py#L35
+    anthropic_beta_headers_manager._BETA_HEADERS_CONFIG = input_value["matrix"]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_beta_headers_manager.py#L35
     logger = logging.getLogger("LiteLLM")
     recorder = DropRecorder()
     previous_handlers = logger.handlers
