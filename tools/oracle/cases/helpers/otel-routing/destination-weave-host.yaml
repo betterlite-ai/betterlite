@@ -1,0 +1,17 @@
+kind: helper
+name: destination-weave-host
+call:
+  b3851:
+    function: destination_for
+    environment:
+      WANDB_HOST: weave.example
+    allowed_hosts: []
+    callback_name: weave_otel
+    params:
+      wandb_api_key: key-1
+      weave_project_id: entity/project
+    service_name: null
+env:
+  WANDB_HOST: weave.example
+compare:
+  ignore: []

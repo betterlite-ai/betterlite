@@ -1,0 +1,5 @@
+task: B507
+deviations:
+  - what: "A tools[i].parameters JSON string larger than 1 MiB or nested deeper than 64 levels is rejected with the tools[index].parameters BadRequestError; LiteLLM decodes any size with json.loads."
+    why: "betterlite decodes every caller-supplied JSON string through the shared bounded loader, so a schema is measured and depth-checked before parsing; a schema that large is outside what a provider validator accepts anyway."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_loads.py#L8-L16"

@@ -1,0 +1,21 @@
+kind: helper
+name: openai-response-events-created-at-conversion
+env: {}
+compare: {ignore: []}
+call:
+  openai_response_events:
+    created_at_conversion:
+      probes:
+        - {body: '{"id":"r1","created_at":null,"output":[]}', status: 200, headers: {}, now: 1700000000}
+        - {body: '{"id":"r2","created_at":12.9,"output":[]}', status: 200, headers: {}, now: 1700000000}
+        - {body: '{"id":"r3","created_at":-12.9,"output":[]}', status: 200, headers: {}, now: 1700000000}
+        - {body: '{"id":"r4","created_at":"12.9","output":[]}', status: 200, headers: {}, now: 1700000000}
+        - {body: '{"id":"r5","created_at":" 12.9 ","output":[]}', status: 200, headers: {}, now: 1700000000}
+        - {body: '{"id":"r6","created_at":"abc","output":[]}', status: 200, headers: {}, now: 1700000000}
+        - {body: '{"id":"r7","created_at":"","output":[]}', status: 200, headers: {}, now: 1700000000}
+        - {body: '{"id":"r8","created_at":7,"output":[]}', status: 200, headers: {}, now: 1700000000}
+        - {body: '{"id":"r10","created_at":"nan","output":[]}', status: 200, headers: {}, now: 1700000000}
+        - {body: '{"id":"r11","created_at":"inf","output":[]}', status: 400, headers: {}, now: 1700000000}
+        - {body: '{"id":"r12","output":[]}', status: 400, headers: {}, now: 1700000000}
+        - {body: '{not json', status: 502, headers: {}, now: 1700000000}
+        - {body: '[]', status: 400, headers: {}, now: 1700000000}

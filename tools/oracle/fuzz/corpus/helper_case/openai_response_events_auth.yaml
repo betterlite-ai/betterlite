@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-events-seed-auth
+call:
+  openai_response_events:
+    responses_auth_headers:
+      probes:
+        - {headers: {}, api_key: seed-key, litellm_api_key: null, litellm_openai_key: null, env_api_key: null, api_base: null, identity: false}
+env: {}
+compare: {ignore: []}

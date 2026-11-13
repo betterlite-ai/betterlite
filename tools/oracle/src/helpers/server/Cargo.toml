@@ -25,6 +25,7 @@ betterlite-http = { path = "../../../../../crates/betterlite-http" }
 betterlite-mcp = { path = "../../../../../crates/betterlite-mcp" }
 betterlite-ocr = { path = "../../../../../crates/betterlite-ocr" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
+betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-roi = { path = "../../../../../crates/betterlite-roi" }
 betterlite-semantic = { path = "../../../../../crates/betterlite-semantic" }
 betterlite-server = { path = "../../../../../crates/betterlite-server" }

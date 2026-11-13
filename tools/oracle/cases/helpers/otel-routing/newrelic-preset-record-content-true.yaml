@@ -1,0 +1,15 @@
+kind: helper
+name: newrelic-preset-record-content-true
+call:
+  b3851:
+    function: newrelic_preset
+    environment:
+      NEW_RELIC_AI_MONITORING_RECORD_CONTENT_ENABLED: "true"
+    base:
+      exporters: []
+      mapper_names: []
+      resource_attributes: {}
+env:
+  NEW_RELIC_AI_MONITORING_RECORD_CONTENT_ENABLED: "true"
+compare:
+  ignore: []
