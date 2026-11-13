@@ -66,7 +66,7 @@ impl CostPerToken for FakePrices {
         if self.fail {
             return Err(CostError::Unpriced {
                 model: model.to_owned(),
-                source: CallPriceError::NullModel,
+                source: Box::new(CallPriceError::NullModel),
             });
         }
         let units = input_tokens.saturating_add(output_tokens);
@@ -658,7 +658,7 @@ fn endpoint_rejects_a_missing_or_wrong_token() {
     let token = endpoint.token.expose_secret().to_owned();
     partial.insert(
         AUTHORIZATION,
-        HeaderValue::from_str(&token.get(1..).unwrap()).unwrap(),
+        HeaderValue::from_str(token.get(1..).unwrap()).unwrap(),
     );
     assert!(!endpoint.authorized(&partial));
 }

@@ -14,7 +14,7 @@ pub enum CostError {
     Unpriced {
         model: String,
         #[source]
-        source: CallPriceError,
+        source: Box<CallPriceError>,
     },
     #[error("the token count {tokens} does not fit the price lookup")]
     CountOverflow { tokens: u64 },

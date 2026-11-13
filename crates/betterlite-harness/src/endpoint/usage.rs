@@ -20,7 +20,7 @@ impl UsageTracker {
     }
 
     #[must_use]
-    pub fn snapshot(&self) -> Usage {
+    pub const fn snapshot(&self) -> Usage {
         Usage {
             input_tokens: self.input_tokens,
             output_tokens: self.output_tokens,

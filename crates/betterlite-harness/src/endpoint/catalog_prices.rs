@@ -159,7 +159,7 @@ impl CostPerToken for CatalogPrices {
         )
         .map_err(|source| CostError::Unpriced {
             model: model.to_owned(),
-            source,
+            source: Box::new(source),
         })?;
         costs
             .prompt_cost
