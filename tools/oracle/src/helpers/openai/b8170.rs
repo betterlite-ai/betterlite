@@ -11,7 +11,6 @@ use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
-use serde::de::IgnoredAny;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
@@ -75,17 +74,9 @@ struct ModelInfoStep {
     #[serde(default, rename = "output_cost_per_reasoning_token")]
     reasoning: Option<Scalar>,
     #[serde(default)]
-    tiered_pricing: Option<TieredPricingField>,
+    tiered_pricing: Option<Vec<Tier>>,
     #[serde(default)]
     off_peak_pricing: Option<OffPeakBlockEntry>,
-}
-
-// a tiered_pricing value that is not a list is ignored, so it decodes to the Other arm instead of failing
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum TieredPricingField {
-    List(Vec<Tier>),
-    Other(IgnoredAny),
 }
 
 #[derive(Debug, Deserialize)]
@@ -121,46 +112,57 @@ fn execute(step: &Step) -> HelperResult {
             model,
             chat_models,
             text_models,
-        } => {
-            let catalog = CatalogCapabilities {
-                chat_models: chat_models.iter().cloned().collect(),
-                text_models: text_models.iter().cloned().collect(),
-            };
-            let params = DashscopeChatConfig::supported_params(model, &catalog);
-            Ok(Value::Array(
-                params
-                    .into_iter()
-                    .map(|name| Value::String(name.to_owned()))
-                    .collect(),
-            ))
-        }
+        } => Ok(supported_params_value(model, chat_models, text_models)),
         Step::ProviderInfo {
             policy,
             api_base,
             api_key,
             env_api_key,
-        } => {
-            let given_key = api_key
-                .as_deref()
-                .map(|value| SecretString::from(value.to_owned()));
-            let info = config(policy, env_api_key.as_deref())
-                .provider_info(api_base.as_deref(), given_key.as_ref());
-            let mut value = Map::new();
-            value.insert(String::from("api_base"), Value::String(info.api_base));
-            value.insert(
-                String::from("api_key"),
-                info.api_key.map_or(Value::Null, |key| {
-                    Value::String(key.expose_secret().to_owned())
-                }),
-            );
-            Ok(Value::Object(value))
-        }
+        } => Ok(provider_info_value(
+            policy,
+            api_base.as_deref(),
+            api_key.as_deref(),
+            env_api_key.as_deref(),
+        )),
         Step::Cost {
             model_info,
             usage,
             current_time,
         } => cost_value(model_info, usage, current_time),
     }
+}
+
+fn supported_params_value(model: &str, chat_models: &[String], text_models: &[String]) -> Value {
+    let catalog = CatalogCapabilities {
+        chat_models: chat_models.iter().cloned().collect(),
+        text_models: text_models.iter().cloned().collect(),
+    };
+    let params = DashscopeChatConfig::supported_params(model, &catalog);
+    Value::Array(
+        params
+            .into_iter()
+            .map(|name| Value::String(name.to_owned()))
+            .collect(),
+    )
+}
+
+fn provider_info_value(
+    policy: &PolicyStep,
+    api_base: Option<&str>,
+    api_key: Option<&str>,
+    env_api_key: Option<&str>,
+) -> Value {
+    let given_key = api_key.map(|value| SecretString::from(value.to_owned()));
+    let info = config(policy, env_api_key).provider_info(api_base, given_key.as_ref());
+    let mut value = Map::new();
+    value.insert(String::from("api_base"), Value::String(info.api_base));
+    value.insert(
+        String::from("api_key"),
+        info.api_key.map_or(Value::Null, |key| {
+            Value::String(key.expose_secret().to_owned())
+        }),
+    );
+    Value::Object(value)
 }
 
 fn config(policy: &PolicyStep, env_api_key: Option<&str>) -> DashscopeChatConfig {
@@ -175,10 +177,7 @@ fn config(policy: &PolicyStep, env_api_key: Option<&str>) -> DashscopeChatConfig
 }
 
 fn priced(step: &ModelInfoStep) -> PricedModel {
-    let tiered_pricing = match step.tiered_pricing.as_ref() {
-        Some(TieredPricingField::List(tiers)) => tiers.clone(),
-        Some(TieredPricingField::Other(_)) | None => Vec::new(),
-    };
+    let tiered_pricing = step.tiered_pricing.clone().unwrap_or_default();
     let mut record = ModelInfo::new();
     for (name, value) in [
         ("input_cost_per_token", &step.input_cost_per_token),

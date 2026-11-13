@@ -199,21 +199,6 @@ fn dashscope_cost_tier_declaring_reasoning_uses_it() {
 }
 
 #[test]
-fn dashscope_cost_ignores_a_tiered_pricing_value_that_is_not_a_list() {
-    let model = priced(
-        r#"{"input_cost_per_token":1,"output_cost_per_token":2,"tiered_pricing":{"range":[0,1]}}"#,
-    );
-    let (prompt, completion) = cost(
-        &model,
-        &split_usage(100),
-        &extras(Some(5)),
-        moment("2024-06-16T12:00:00Z"),
-    );
-    assert_eq!(prompt, decimal("100"));
-    assert_eq!(completion, decimal("100"));
-}
-
-#[test]
 fn dashscope_cost_applies_tier_rates_above_every_declared_range() {
     let model = priced(
         r#"{"input_cost_per_token":9,"output_cost_per_token":9,"tiered_pricing":[

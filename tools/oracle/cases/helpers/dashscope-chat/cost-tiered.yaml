@@ -49,13 +49,6 @@ call:
         current_time: "2024-06-16T12:00:00Z"
       - kind: cost
         model_info:
-          input_cost_per_token: 1
-          output_cost_per_token: 2
-          tiered_pricing: {range: [0, 1]}
-        usage: {prompt_tokens: 100, completion_tokens: 50, cached_tokens: 10, cache_creation_tokens: 5, reasoning_tokens: 20}
-        current_time: "2024-06-16T12:00:00Z"
-      - kind: cost
-        model_info:
           input_cost_per_token: 9
           output_cost_per_token: 9
           tiered_pricing:

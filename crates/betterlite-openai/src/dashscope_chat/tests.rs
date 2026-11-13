@@ -5,10 +5,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use betterlite_prompts::arguments::json::Object;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use serde_json::json;
 
-use super::{ChatBasePolicy, DEFAULT_BASE, DashscopeChatConfig};
+use super::{ChatBasePolicy, DEFAULT_BASE, DashscopeChatConfig, TransformInput};
 use crate::chat::ChatMessage;
-use crate::chat_content::{ChatContent, Mode, RefuseDownloads};
+use crate::chat_content::{Mode, RefuseDownloads};
 use crate::openai_base_config::CatalogCapabilities;
 
 const COMPLETE_DEFAULT: &str = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
@@ -169,35 +170,37 @@ fn dashscope_chat_provider_info_skips_empty_values() {
 }
 
 #[test]
-fn dashscope_chat_keeps_cache_control_where_the_base_transform_strips_it() {
-    let preserves = DashscopeChatConfig::PRESERVES_CACHE_CONTROL;
-    assert!(preserves);
+fn dashscope_chat_keeps_cache_control_for_messages_and_tools() {
     let messages: Vec<ChatMessage> = serde_json::from_str(
         r#"[{"role":"user","content":[{"type":"text","text":"hi","cache_control":{"type":"ephemeral"}}]}]"#,
     )
     .expect("the cached messages");
     let optional_params: Object = serde_json::from_str(
-        r#"{"tools":[{"type":"function","function":{"name":"f","parameters":{}},"cache_control":{"type":"ephemeral"}}]}"#,
+        r#"{"tools":[{"type":"function","function":{"name":"f","parameters":{"type":"object","properties":{"name":{"type":"string","pattern":"\\p{L}+"}}},"cache_control":{"type":"ephemeral"}}]}"#,
     )
     .expect("the cached tools");
     let environment = BTreeMap::new();
-    let content = ChatContent {
+    let input = TransformInput {
         model: "qwen-plus",
         messages: &messages,
         optional_params: &optional_params,
-        provider: Some("dashscope"),
-        api_base: None,
-        global_api_base: None,
-        openai_system_messages_first: false,
         environment: &environment,
         downloads: &RefuseDownloads,
     };
-    let body = content.transform(Mode::Sync).expect("the base transform");
-    let value = serde_json::to_value(body.to_body().expect("the body")).expect("the rendered body");
-    assert!(
-        value["messages"][0]["content"][0]
-            .get("cache_control")
-            .is_none()
+    let body = plain_config(None, None)
+        .transform_request(&input, Mode::Sync)
+        .expect("the dashscope transform");
+    let value = serde_json::to_value(body).expect("the rendered body");
+    assert_eq!(
+        value["messages"][0]["content"][0]["cache_control"],
+        json!({"type": "ephemeral"})
     );
-    assert!(value["tools"][0].get("cache_control").is_none());
+    assert_eq!(
+        value["tools"][0]["cache_control"],
+        json!({"type": "ephemeral"})
+    );
+    assert_eq!(
+        value["tools"][0]["function"]["parameters"]["properties"]["name"]["pattern"],
+        "\\p{L}+"
+    );
 }
