@@ -109,3 +109,17 @@ path = "fuzz_targets/team_record.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "user_record"
+path = "fuzz_targets/user_record.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "token_record"
+path = "fuzz_targets/token_record.rs"
+test = false
+doc = false
+bench = false
