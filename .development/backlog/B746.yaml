@@ -1,7 +1,7 @@
 id: B746
 milestone: M4 keys, spend and management
 title: Resolve requested models before authorization
-status: todo
+status: done
 depends_on: [B001, B003, B171, B302, B732, B856, B1016, B1019, B2324, B1100]
 file: tasks/B746-auth-request-models.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/auth/user_api_key_auth.py"
 parent: B052
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1647
