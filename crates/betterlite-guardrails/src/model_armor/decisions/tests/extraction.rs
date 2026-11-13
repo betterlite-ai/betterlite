@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use super::response;
 use crate::model_armor::decisions::extract_content_from_response;
 

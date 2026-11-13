@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::any::TypeId;
 use std::sync::atomic::{AtomicUsize, Ordering};
 

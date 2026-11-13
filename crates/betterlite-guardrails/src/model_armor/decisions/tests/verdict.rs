@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
 
@@ -138,6 +140,8 @@ fn get_sanitized_content_falls_back_to_the_root_fields() {
     );
     let empty = response(r#"{"sanitizedText":""}"#);
     assert_eq!(get_sanitized_content(&empty), None);
+    let empty_text = response(r#"{"text":""}"#);
+    assert_eq!(get_sanitized_content(&empty_text), None);
     assert_eq!(get_sanitized_content(&response("{}")), None);
 }
 
