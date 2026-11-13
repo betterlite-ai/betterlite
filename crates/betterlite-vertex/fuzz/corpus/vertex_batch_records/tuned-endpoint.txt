@@ -1,0 +1,1 @@
+gs://bucket/endpoints/111/endpoints/222/file.jsonl
