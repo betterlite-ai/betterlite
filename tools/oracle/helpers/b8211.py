@@ -20,7 +20,7 @@ class Answer(TypedDict):
 class Input(TypedDict, total=False):
     api_key: Required[str]
     block_on_error: bool
-    inputs: Required[GenericGuardrailAPIInputs]
+    inputs: Required[JsonValue]
     input_type: Required[Literal["request", "response"]]
     answer: Required[Answer]
 
@@ -97,11 +97,15 @@ def run(input_value: Input) -> JsonValue:
         transport=httpx.MockTransport(transport)
     )
     try:
-        result = asyncio.run(guardrail.apply_guardrail(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547
-            inputs=input_value["inputs"],  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L796-L817
-            request_data={},
-            input_type=input_value["input_type"],
-        ))
+        result = asyncio.run(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547
+            guardrail.apply_guardrail(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1580
+                inputs=TypeAdapter(GenericGuardrailAPIInputs).validate_python(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L796-L817
+                    input_value["inputs"]
+                ),
+                request_data={},
+                input_type=input_value["input_type"],
+            )
+        )
     except GuardrailRaisedException as error:
         return JSON.validate_python(raised_view(captured, error))
     return JSON.validate_python({"request": request_view(captured), "inputs": result})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547
