@@ -170,9 +170,9 @@ pub(crate) fn assert_byte_and_depth_limits() {
         decode_with(&oversized, &cipher),
         Err(ManagedRowsDecodeError::TooLarge { len: 0x0010_0001 })
     ));
-    for (levels, fits) in [(62_usize, true), (63, false)] {
+    for (levels, fits) in [(61_usize, true), (62, false)] {
         let nested = format!(
-            r#"{{"kind":"tag","row":{{"tag_name":"t","model_info":{}0{}}}}}"#,
+            r#"{{"kind":"tag","row":{{"tag_name":"t","model_info":{{"a":{}0{}}}}}}}"#,
             "[".repeat(levels),
             "]".repeat(levels)
         );
@@ -352,7 +352,14 @@ pub(crate) async fn assert_pinned_rows(client: &tokio_postgres::Client) {
     assert_mcp_server(&row_value(&server_json, "mcp_server"));
     let router_json = row_json(client, "LiteLLM_AutoRouterSession", "session_id = 'r1'").await;
     assert_autorouter(&row_value(&router_json, "autorouter_session"));
-    let spend_json = row_json(client, "LiteLLM_SpendLogs", "request_id = 'p1'").await;
+    let spend_json: String = client
+        .query_one(
+            "SELECT (to_jsonb(row) || jsonb_build_object('metadata', row.metadata::TEXT, 'request_tags', row.request_tags::TEXT))::TEXT FROM \"LiteLLM_SpendLogs\" row WHERE row.request_id = 'p1'",
+            &[],
+        )
+        .await
+        .unwrap()
+        .get(0);
     assert_spend_log(&row_value(&spend_json, "spend_log"));
     let error_json = row_json(client, "LiteLLM_ErrorLogs", "request_id = 'e1'").await;
     assert_error_log(&row_value(&error_json, "error_log"));
@@ -470,9 +477,9 @@ INSERT INTO "LiteLLM_MCPServerTable" (server_id, mcp_access_groups)
 VALUES ('s1', ARRAY[]::TEXT[]);
 INSERT INTO "LiteLLM_AutoRouterSession" (api_key, session_id, router_name, router_type, first_turn_at, last_turn_at, last_model, turns, spend)
 VALUES ('k', 'r1', 'router', 'complexity', '2026-01-01T00:00:00', '2026-01-01T00:00:00', 'm', 2, 0.5);
-INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, startTime, endTime, model, metadata)
+INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, "startTime", "endTime", model, metadata)
 VALUES ('p1', 'completion', 'k', '2026-01-01T00:00:00', '2026-01-01T00:00:00', 'm', '{"trace": "t"}');
-INSERT INTO "LiteLLM_ErrorLogs" (request_id, startTime, endTime, status_code, request_kwargs)
+INSERT INTO "LiteLLM_ErrorLogs" (request_id, "startTime", "endTime", status_code, request_kwargs)
 VALUES ('e1', '2026-01-01T00:00:00', '2026-01-01T00:00:00', '500', '{"error": "boom"}');
 INSERT INTO "LiteLLM_TagTable" (tag_name) VALUES ('t1');
 INSERT INTO "LiteLLM_SkillsTable" (skill_id, file_content, updated_at) VALUES ('k1', '\x610062', '2026-01-01T00:00:00');

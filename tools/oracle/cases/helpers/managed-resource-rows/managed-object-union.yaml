@@ -16,7 +16,4 @@ call:
       - name: managed_object_non_object
         stored: '{"kind":"managed_object","row":{"unified_object_id":"o","model_object_id":"m","file_purpose":"batch","file_object":"batch"}}'
 env: {}
-compare:
-  ignore:
-    - pointer: /value/rows/1/row/file_object/suffix
-      why: B014's FineTuneJob record has no suffix field, so the Rust dump omits it while pydantic writes null
+compare: {ignore: []}

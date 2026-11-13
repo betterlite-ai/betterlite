@@ -12,6 +12,7 @@ from litellm.models.skills import LiteLLM_SkillsTable as SkillRow
 from litellm.models.spend_logs import LiteLLM_ErrorLogs as ErrorRow
 from litellm.models.spend_logs import LiteLLM_SpendLogs as SpendRow
 from litellm.models.tag import LiteLLM_TagTable as TagRow
+from litellm.proxy.common_utils.encrypt_decrypt_utils import SecretMapDecodeError
 from pydantic import BaseModel, JsonValue, TypeAdapter
 
 DUMP = TypeAdapter(dict[str, JsonValue])
@@ -130,7 +131,7 @@ def run(input_value: Input) -> dict[str, list[JsonValue]]:
         try:
             stored = STORED.validate_json(call["stored"])
             row = READERS[stored["kind"]](stored["kind"], stored["row"])
-        except (ValueError, KeyError):
+        except (ValueError, KeyError, SecretMapDecodeError):
             results.append({"name": call["name"], "ok": False})
             continue
         entry: dict[str, JsonValue] = {"name": call["name"], "ok": True, "row": row}

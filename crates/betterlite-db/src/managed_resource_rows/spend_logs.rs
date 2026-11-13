@@ -37,8 +37,10 @@ pub struct SpendLog {
     #[serde(default = "default_completion_tokens")]
     pub completion_tokens: Option<i64>,
     #[serde(rename = "startTime")]
+    #[serde(deserialize_with = "Deserialize::deserialize")]
     pub start_time: Option<String>,
     #[serde(rename = "endTime")]
+    #[serde(deserialize_with = "Deserialize::deserialize")]
     pub end_time: Option<String>,
     #[serde(default = "default_user")]
     pub user: Option<String>,
@@ -52,7 +54,9 @@ pub struct SpendLog {
     pub request_tags: Option<JsonData>,
     #[serde(default)]
     pub requester_ip_address: Option<String>,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
     pub messages: Option<LogPayload>,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
     pub response: Option<LogPayload>,
     #[serde(default)]
     pub created_at: Option<RowTimestamp>,
@@ -125,8 +129,10 @@ pub struct ErrorLog {
     #[serde(default = "default_exception_string")]
     pub exception_string: Option<String>,
     #[serde(rename = "startTime")]
+    #[serde(deserialize_with = "Deserialize::deserialize")]
     pub start_time: Option<String>,
     #[serde(rename = "endTime")]
+    #[serde(deserialize_with = "Deserialize::deserialize")]
     pub end_time: Option<String>,
 }
 
