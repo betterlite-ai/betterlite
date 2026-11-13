@@ -1,0 +1,8 @@
+kind: helper
+name: core-bedrock
+call:
+  b6560:
+    model: bedrock
+env: {}
+compare:
+  ignore: []
