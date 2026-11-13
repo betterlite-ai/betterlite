@@ -1,16 +1,16 @@
 use std::collections::BTreeMap;
 use std::str::FromStr as _;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
 
 use betterlite_config::sections::budget_windows as config;
-use betterlite_router::budget_windows::keys::WindowKeys;
+use betterlite_context::local_ttl_cache::LocalTtlCache;
+use betterlite_router::budget_increment::dual::DualWindowCache;
+use betterlite_router::budget_increment::redis_cache_window::RedisCacheWindow;
 use betterlite_router::budget_windows::service::{BudgetWindows, should_init_budget_limiter};
-use betterlite_router::budget_windows::test_support::MemoryStore;
-use betterlite_router::budget_windows::window::{
-    NewWindow, get_or_set_budget_start_time, handle_new_budget_window,
-};
+use betterlite_router::budget_windows::window::init_provider_budget_in_cache;
 use betterlite_server::routing::budget_windows::{PeriodParser, budget_windows};
 use chrono::{DateTime, Utc};
+use indexmap::IndexMap;
 use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -20,10 +20,14 @@ use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
 
+mod steps;
+
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub deployments: Vec<Deployment>,
+    #[serde(default)]
+    pub provider_budget_config: Option<BTreeMap<String, Provider>>,
     #[serde(default)]
     pub tag_budget_config: Option<BTreeMap<String, Tag>>,
     pub steps: Vec<Step>,
@@ -41,6 +45,15 @@ pub struct Deployment {
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct Provider {
+    #[serde(default)]
+    pub budget_limit: Option<String>,
+    #[serde(default)]
+    pub time_period: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Tag {
     #[serde(default)]
     pub max_budget: Option<String>,
@@ -52,6 +65,7 @@ pub struct Tag {
 #[serde(rename_all = "lowercase")]
 pub enum StepKind {
     Build,
+    Init,
     Start,
     Reset,
 }
@@ -71,7 +85,7 @@ pub struct Step {
     #[serde(default)]
     pub response_cost: Option<String>,
     #[serde(default)]
-    pub ttl_seconds: Option<i64>,
+    pub ttl_seconds: Option<u64>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -90,6 +104,8 @@ pub struct StepOutput {
     pub window_started: Option<bool>,
     pub spend: Option<String>,
 }
+
+type ProbeCache = DualWindowCache<RedisCacheWindow>;
 
 pub(crate) fn run(
     input: &Input,
@@ -131,162 +147,62 @@ async fn run_steps(input: &Input) -> Result<Output, String> {
         resolved.tag_budget_config,
         &resolved.deployments,
     );
-    let store = MemoryStore::default();
-    let mut steps = Vec::with_capacity(input.steps.len());
-    for step in &input.steps {
-        let output = match step.kind {
-            StepKind::Build => build_step(&windows, initialized),
-            StepKind::Start => start_step(step, &windows, &store).await?,
-            StepKind::Reset => reset_step(step, &store).await?,
-        };
-        steps.push(output);
+    let memory = LocalTtlCache::with_clock(None, None, None, 1024, Arc::new(|| 0.0_f64))
+        .map_err(|error| error.to_string())?;
+    let cache = Arc::new(DualWindowCache {
+        memory: Arc::new(Mutex::new(memory)),
+        redis: None,
+    });
+    // _init_provider_budgets starts every provider window when the limiter is built
+    for (provider, budget) in windows.provider.iter().flatten() {
+        init_provider_budget_in_cache(cache.as_ref(), provider, budget, 0.0).await;
     }
-    Ok(Output { steps })
+    let mut outputs = Vec::with_capacity(input.steps.len());
+    for step in &input.steps {
+        outputs.push(steps::run_step(step, &windows, &cache, initialized).await?);
+    }
+    Ok(Output { steps: outputs })
 }
 
 fn section(input: &Input) -> Result<config::Settings, String> {
     let mut deployments = Vec::with_capacity(input.deployments.len());
     for deployment in &input.deployments {
         deployments.push(config::DeploymentBudgetConfig {
-            max_budget: money(&deployment.max_budget)?,
+            max_budget: money(deployment.max_budget.as_deref())?,
             budget_duration: deployment.budget_duration.clone(),
         });
     }
-    let tag_budget_config = match &input.tag_budget_config {
-        None => None,
-        Some(tags) => {
-            let mut resolved = indexmap::IndexMap::with_capacity(tags.len());
-            for (name, tag) in tags {
-                resolved.insert(
-                    name.clone(),
-                    config::BudgetValues {
-                        limit: money(&tag.max_budget)?,
-                        duration: tag.budget_duration.clone(),
-                    },
-                );
-            }
-            Some(resolved)
+    let mut provider_budget_config = None;
+    if let Some(providers) = &input.provider_budget_config {
+        let mut resolved = IndexMap::with_capacity(providers.len());
+        for (name, provider) in providers {
+            let limit = money(provider.budget_limit.as_deref())?;
+            let duration = provider.time_period.clone();
+            resolved.insert(name.clone(), config::BudgetValues { limit, duration });
         }
-    };
+        provider_budget_config = Some(resolved);
+    }
+    let mut tag_budget_config = None;
+    if let Some(tags) = &input.tag_budget_config {
+        let mut resolved = IndexMap::with_capacity(tags.len());
+        for (name, tag) in tags {
+            let limit = money(tag.max_budget.as_deref())?;
+            let duration = tag.budget_duration.clone();
+            resolved.insert(name.clone(), config::BudgetValues { limit, duration });
+        }
+        tag_budget_config = Some(resolved);
+    }
     Ok(config::Settings {
-        provider_budget_config: None,
+        provider_budget_config,
         tag_budget_config,
         deployments,
     })
 }
 
-fn money(value: &Option<String>) -> Result<Option<Decimal>, String> {
+fn money(value: Option<&str>) -> Result<Option<Decimal>, String> {
     value
-        .as_deref()
         .map(|text| Decimal::from_str(text).map_err(|error| error.to_string()))
         .transpose()
-}
-
-fn build_step(windows: &BudgetWindows, initialized: bool) -> StepOutput {
-    StepOutput {
-        kind: StepKind::Build,
-        should_init: Some(initialized),
-        limiter: Some(initialized),
-        tags: windows
-            .tag
-            .as_ref()
-            .map(|configs| configs.keys().cloned().collect()),
-        window_started: None,
-        spend: None,
-    }
-}
-
-// LiteLLM's success event starts the window with the deployment's own duration as the ttl
-async fn start_step(
-    step: &Step,
-    windows: &BudgetWindows,
-    store: &MemoryStore,
-) -> Result<StepOutput, String> {
-    let model_id = step
-        .model_id
-        .as_deref()
-        .ok_or("the start step needs a model_id")?;
-    let start_time_key = step
-        .start_time_key
-        .as_deref()
-        .ok_or("the start step needs a start_time_key")?;
-    let current_time = current_time(step)?;
-    if let Some(budget) = windows.deployment_budget(model_id) {
-        get_or_set_budget_start_time(
-            store,
-            start_time_key,
-            current_time,
-            Some(budget.period.seconds),
-        )
-        .await;
-    }
-    Ok(StepOutput {
-        kind: StepKind::Start,
-        should_init: None,
-        limiter: None,
-        tags: None,
-        window_started: Some(store.observe(start_time_key, start_time_key).started),
-        spend: None,
-    })
-}
-
-async fn reset_step(step: &Step, store: &MemoryStore) -> Result<StepOutput, String> {
-    let spend_key = step
-        .spend_key
-        .as_deref()
-        .ok_or("the reset step needs a spend_key")?;
-    let start_time_key = step
-        .start_time_key
-        .as_deref()
-        .ok_or("the reset step needs a start_time_key")?;
-    let current_time = current_time(step)?;
-    let ttl_seconds = step.ttl_seconds.ok_or("the reset step needs ttl_seconds")?;
-    let ttl = duration(ttl_seconds)?;
-    let cost = Decimal::from_str(
-        step.response_cost
-            .as_deref()
-            .ok_or("the reset step needs response_cost")?,
-    )
-    .map_err(|error| error.to_string())?;
-    store.seed_start(start_time_key, 0.0, ttl);
-    let keys = WindowKeys {
-        spend: spend_key.to_owned(),
-        start_time: start_time_key.to_owned(),
-    };
-    handle_new_budget_window(
-        store,
-        NewWindow {
-            keys: &keys,
-            current_time,
-            response_cost: cost,
-            ttl: Some(ttl),
-        },
-    )
-    .await;
-    let observed = store.observe(start_time_key, spend_key);
-    Ok(StepOutput {
-        kind: StepKind::Reset,
-        should_init: None,
-        limiter: None,
-        tags: None,
-        window_started: Some(observed.started),
-        spend: observed.spend.map(|spend| spend.normalize().to_string()),
-    })
-}
-
-fn current_time(step: &Step) -> Result<f64, String> {
-    f64::from_str(
-        step.current_time
-            .as_deref()
-            .ok_or("the step needs current_time")?,
-    )
-    .map_err(|error| error.to_string())
-}
-
-fn duration(seconds: i64) -> Result<Duration, String> {
-    u64::try_from(seconds)
-        .map(Duration::from_secs)
-        .map_err(|_source| format!("the ttl of {seconds} seconds is negative"))
 }
 
 fn invalid(message: &str) -> OperationError {

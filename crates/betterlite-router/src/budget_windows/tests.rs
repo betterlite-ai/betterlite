@@ -1,7 +1,11 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use async_trait::async_trait;
+use betterlite_context::local_ttl_cache::{CacheValue, LocalTtlCache};
 use indexmap::IndexMap;
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -9,13 +13,85 @@ use rust_decimal::Decimal;
 use super::budget::{
     BudgetDeployment, BudgetPeriod, DeploymentBudget, DeploymentLimits, ProviderBudget, TagBudget,
 };
-use super::keys::{WindowKeys, deployment_keys, period_label, provider_keys, tag_keys};
+use super::keys::{deployment_keys, period_label, provider_keys, tag_keys};
 use super::service::{BudgetWindows, should_init_budget_limiter};
-use super::test_support::{MemoryEntry, MemoryStore};
-use super::window::{
-    BudgetWindowStore as _, NewWindow, WindowWrite, get_or_set_budget_start_time,
-    handle_new_budget_window, init_provider_budget_in_cache,
-};
+use super::window::{get_or_set_budget_start_time, has_spend, init_provider_budget_in_cache};
+use crate::budget_increment::dual::DualWindowCache;
+use crate::budget_increment::error::IncrementError;
+use crate::budget_increment::increment::BudgetIncrement;
+use crate::budget_increment::queue::QueuedIncrement;
+use crate::budget_increment::window::{BudgetConfig, WindowCache as _, WindowRedis};
+
+#[derive(Default)]
+struct FakeRedis {
+    floats: Mutex<BTreeMap<String, f64>>,
+    spend_writes: Mutex<Vec<(String, Decimal)>>,
+    fail_reads: bool,
+}
+
+#[async_trait]
+impl WindowRedis for FakeRedis {
+    async fn read_start_time(&self, key: &str) -> Result<Option<f64>, IncrementError> {
+        if self.fail_reads {
+            return Err(IncrementError::InvalidCacheValue {
+                key: key.to_owned(),
+            });
+        }
+        Ok(self.floats.lock().unwrap().get(key).copied())
+    }
+
+    async fn write_start_time(&self, key: &str, start_time: f64, _ttl: Duration) {
+        self.floats
+            .lock()
+            .unwrap()
+            .insert(key.to_owned(), start_time);
+    }
+
+    async fn write_spend(&self, key: &str, cost: Decimal, _ttl: Duration) {
+        self.spend_writes
+            .lock()
+            .unwrap()
+            .push((key.to_owned(), cost));
+    }
+
+    async fn write_increments(&self, _operations: &[QueuedIncrement]) -> bool {
+        true
+    }
+}
+
+fn failing_redis() -> FakeRedis {
+    FakeRedis {
+        floats: Mutex::default(),
+        spend_writes: Mutex::default(),
+        fail_reads: true,
+    }
+}
+
+fn redis_with(key: &str, value: f64) -> FakeRedis {
+    let redis = FakeRedis::default();
+    redis.floats.lock().unwrap().insert(key.to_owned(), value);
+    redis
+}
+
+fn window_cache(clock: f64, redis: Option<FakeRedis>) -> DualWindowCache<FakeRedis> {
+    let memory =
+        LocalTtlCache::with_clock(None, None, None, 1024, Arc::new(move || clock)).unwrap();
+    DualWindowCache {
+        memory: Arc::new(Mutex::new(memory)),
+        redis,
+    }
+}
+
+fn stored(cache: &DualWindowCache<FakeRedis>, key: &str) -> Option<CacheValue> {
+    cache.memory.lock().unwrap().get(key).unwrap()
+}
+
+fn spend_value(text: &str) -> CacheValue {
+    CacheValue::Object(BTreeMap::from([(
+        "spend".to_owned(),
+        CacheValue::Text(text.to_owned()),
+    )]))
+}
 
 fn day() -> BudgetPeriod {
     BudgetPeriod {
@@ -42,10 +118,6 @@ fn provider_config() -> IndexMap<String, ProviderBudget> {
         },
     );
     configs
-}
-
-fn entry(store: &MemoryStore, key: &str) -> Option<MemoryEntry> {
-    store.entries.lock().unwrap().get(key).cloned()
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -201,128 +273,121 @@ fn key_table() {
 }
 
 async fn start_window() {
-    let store = MemoryStore::default();
+    let cache = window_cache(0.0, None);
     let key = provider_keys("openai", &None).start_time;
-    let start =
-        get_or_set_budget_start_time(&store, &key, 100.0, Some(Duration::from_secs(60))).await;
+    let start = get_or_set_budget_start_time(&cache, &key, 100.0, Duration::from_secs(60)).await;
     assert!(start.total_cmp(&100.0).is_eq());
+    assert_eq!(stored(&cache, &key), Some(CacheValue::Float(100.0)));
     assert_eq!(
-        entry(&store, &key),
-        Some(MemoryEntry {
-            start: Some(100.0),
-            spend: None,
-            ttl: Some(Duration::from_secs(60)),
-        })
+        cache.memory.lock().unwrap().ttl_entries(),
+        vec![(key.clone(), 60.0_f64)]
     );
-    let cached = get_or_set_budget_start_time(&store, &key, 500.0, None).await;
+    let cached = get_or_set_budget_start_time(&cache, &key, 500.0, Duration::from_secs(60)).await;
     assert!(cached.total_cmp(&100.0).is_eq());
-    assert_eq!(
-        entry(&store, &key).and_then(|entry| entry.start),
-        Some(100.0)
-    );
-    let observed = store.observe(&key, &key);
-    assert!(observed.started);
-    assert!(observed.spend.is_none());
-    let pushed = MemoryStore::default();
-    pushed.seed_start(&key, 0.0, Duration::from_secs(10));
-    let zero = get_or_set_budget_start_time(&pushed, &key, 500.0, None).await;
+    assert_eq!(stored(&cache, &key), Some(CacheValue::Float(100.0)));
+    let pushed = window_cache(0.0, Some(redis_with(&key, 0.0)));
+    let zero = get_or_set_budget_start_time(&pushed, &key, 500.0, Duration::from_secs(60)).await;
     assert!(zero.total_cmp(&0.0).is_eq());
-    assert_eq!(
-        entry(&pushed, &key).and_then(|entry| entry.start),
-        Some(0.0)
-    );
+    cache
+        .memory
+        .lock()
+        .unwrap()
+        .set(&key, CacheValue::Text("broken".to_owned()), None)
+        .unwrap();
+    let restarted = get_or_set_budget_start_time(&cache, &key, 7.0, Duration::from_secs(60)).await;
+    assert!(restarted.total_cmp(&7.0).is_eq());
+    assert_eq!(stored(&cache, &key), Some(CacheValue::Float(7.0)));
 }
 
+// _handle_new_budget_window lives in the shared increment service, which an expired start sends there
 async fn reset_window() {
-    let store = MemoryStore::default();
+    let cache = Arc::new(window_cache(0.0, None));
     let names = deployment_keys("d1", &day());
-    let start = handle_new_budget_window(
-        &store,
-        NewWindow {
-            keys: &names,
-            current_time: 100.0,
-            response_cost: Decimal::from(2),
-            ttl: Some(Duration::from_secs(30)),
-        },
-    )
-    .await;
-    assert!(start.total_cmp(&100.0).is_eq());
-    assert_eq!(
-        entry(&store, &names.spend).and_then(|entry| entry.spend),
-        Some(Decimal::from(2))
-    );
-    assert_eq!(
-        entry(&store, &names.start_time).and_then(|entry| entry.start),
-        Some(100.0)
-    );
-    let observed = store.observe(&names.start_time, &names.spend);
-    assert!(observed.started);
-    assert_eq!(observed.spend, Some(Decimal::from(2)));
-    let untimed = MemoryStore::default();
-    let untimed_keys = WindowKeys {
-        spend: "spend".to_owned(),
-        start_time: "start".to_owned(),
+    cache
+        .write_start_time(&names.start_time, 0.0, day().seconds)
+        .await
+        .unwrap();
+    cache
+        .reset_spend(&names.spend, Decimal::from(9), day().seconds)
+        .await
+        .unwrap();
+    let increment = BudgetIncrement {
+        cache: Arc::clone(&cache),
+        clock: Arc::new(|| 100_000.0_f64),
+        queue: Arc::default(),
+        flush_lock: Arc::default(),
     };
-    handle_new_budget_window(
-        &untimed,
-        NewWindow {
-            keys: &untimed_keys,
-            current_time: 1.0,
-            response_cost: Decimal::ONE,
-            ttl: None,
-        },
-    )
-    .await;
-    assert_eq!(entry(&untimed, "spend").and_then(|entry| entry.ttl), None);
+    let config = BudgetConfig {
+        max_budget: Some(Decimal::from(10)),
+        budget_duration: Some(day().seconds),
+    };
+    increment
+        .increment_spend_for_key(&config, &names.spend, &names.start_time, Decimal::from(2))
+        .await
+        .unwrap();
+    assert_eq!(stored(&cache, &names.spend), Some(spend_value("2")));
+    assert_eq!(
+        stored(&cache, &names.start_time),
+        Some(CacheValue::Float(100_000.0))
+    );
 }
 
 async fn provider_init() {
-    let store = MemoryStore::default();
+    let cache = window_cache(0.0, None);
     let budget = ProviderBudget {
         budget_limit: Some(Decimal::from(3)),
         period: Some(day()),
     };
-    init_provider_budget_in_cache(&store, "openai", &budget, 100.0).await;
+    init_provider_budget_in_cache(&cache, "openai", &budget, 100.0).await;
     let names = provider_keys("openai", &Some(day()));
+    assert_eq!(stored(&cache, &names.spend), Some(spend_value("0")));
     assert_eq!(
-        entry(&store, &names.spend).and_then(|entry| entry.spend),
-        Some(Decimal::ZERO)
+        stored(&cache, &names.start_time),
+        Some(CacheValue::Float(100.0))
     );
-    assert_eq!(
-        entry(&store, &names.start_time).and_then(|entry| entry.start),
-        Some(100.0)
-    );
-    store
-        .write(
-            &names.spend,
-            WindowWrite::Spend(Decimal::from(7)),
-            Some(Duration::from_secs(5)),
-        )
+    cache
+        .reset_spend(&names.spend, Decimal::from(7), day().seconds)
         .await
         .unwrap();
-    init_provider_budget_in_cache(&store, "openai", &budget, 999.0).await;
+    init_provider_budget_in_cache(&cache, "openai", &budget, 999.0).await;
     assert_eq!(
-        entry(&store, &names.start_time).and_then(|entry| entry.start),
-        Some(100.0)
+        stored(&cache, &names.start_time),
+        Some(CacheValue::Float(100.0))
     );
-    assert_eq!(
-        entry(&store, &names.spend).and_then(|entry| entry.spend),
-        Some(Decimal::from(7))
-    );
-    let untimed = MemoryStore::default();
+    assert_eq!(stored(&cache, &names.spend), Some(spend_value("7")));
+    let cold = window_cache(0.0, Some(redis_with(&names.spend, 7.0)));
+    init_provider_budget_in_cache(&cold, "openai", &budget, 100.0).await;
+    assert_eq!(stored(&cold, &names.spend), None);
+    let cold_writes = cold
+        .redis
+        .as_ref()
+        .unwrap()
+        .spend_writes
+        .lock()
+        .unwrap()
+        .clone();
+    assert!(cold_writes.is_empty());
+    let failing = window_cache(0.0, Some(failing_redis()));
+    init_provider_budget_in_cache(&failing, "openai", &budget, 100.0).await;
+    assert_eq!(stored(&failing, &names.spend), Some(spend_value("0")));
+    let failing_writes = failing
+        .redis
+        .as_ref()
+        .unwrap()
+        .spend_writes
+        .lock()
+        .unwrap()
+        .clone();
+    assert_eq!(failing_writes, vec![(names.spend.clone(), Decimal::ZERO)]);
+    let untimed = window_cache(0.0, None);
     let timeless = ProviderBudget {
-        budget_limit: None,
+        budget_limit: Some(Decimal::from(3)),
         period: None,
     };
     init_provider_budget_in_cache(&untimed, "azure", &timeless, 7.0).await;
-    assert_eq!(
-        entry(&untimed, &provider_keys("azure", &None).spend).and_then(|entry| entry.spend),
-        Some(Decimal::ZERO)
-    );
-    assert_eq!(
-        entry(&untimed, &provider_keys("azure", &None).spend).and_then(|entry| entry.ttl),
-        None
-    );
+    let azure = provider_keys("azure", &None);
+    assert_eq!(stored(&untimed, &azure.spend), None);
+    assert_eq!(stored(&untimed, &azure.start_time), None);
 }
 
 fn registration() {
@@ -401,7 +466,7 @@ async fn budget_windows_boundaries(#[case] boundary: Boundary) {
     match boundary {
         Boundary::ExactKeys => exact_keys(),
         Boundary::ZeroBudgets => zero_budgets().await,
-        Boundary::EmptyAndMissing => empty_and_missing(),
+        Boundary::EmptyAndMissing => empty_and_missing().await,
     }
 }
 
@@ -453,16 +518,16 @@ async fn zero_budgets() {
             .map(|budget| budget.max_budget),
         Some(Decimal::ZERO)
     );
-    let store = MemoryStore::default();
-    let start = get_or_set_budget_start_time(&store, "start", 5.0, Some(Duration::ZERO)).await;
+    let cache = window_cache(0.0, None);
+    let start = get_or_set_budget_start_time(&cache, "start", 5.0, Duration::ZERO).await;
     assert!(start.total_cmp(&5.0).is_eq());
     assert_eq!(
-        entry(&store, "start").and_then(|entry| entry.ttl),
-        Some(Duration::ZERO)
+        cache.memory.lock().unwrap().ttl_entries(),
+        vec![("start".to_owned(), 0.0_f64)]
     );
 }
 
-fn empty_and_missing() {
+async fn empty_and_missing() {
     let windows = BudgetWindows::new(None, Some(IndexMap::new()), &[]);
     assert!(windows.provider.as_ref().is_none());
     assert!(
@@ -474,13 +539,6 @@ fn empty_and_missing() {
     assert!(windows.deployment.as_ref().is_none());
     assert!(windows.deployment_budget("missing").is_none());
     assert!(windows.provider_budget("missing").is_none());
-    assert!(
-        windows
-            .tag
-            .as_ref()
-            .and_then(|configs| configs.get("missing"))
-            .is_none()
-    );
     let output = windows.cache_keys(&[], &["missing".to_owned()]);
     assert!(output.keys.is_empty());
     assert!(output.deployment_providers.is_empty());
@@ -495,4 +553,25 @@ fn empty_and_missing() {
         period: day(),
     };
     assert_eq!(budget.period.spec, "1d");
+    assert!(
+        !has_spend(&window_cache(0.0, Some(FakeRedis::default())), "spend")
+            .await
+            .unwrap()
+    );
+    assert!(
+        has_spend(&window_cache(0.0, Some(redis_with("spend", 0.0))), "spend")
+            .await
+            .unwrap()
+    );
+    assert!(
+        has_spend(&window_cache(0.0, Some(failing_redis())), "spend")
+            .await
+            .is_err()
+    );
+    let broken = window_cache(f64::NAN, None);
+    assert!(has_spend(&broken, "spend").await.is_err());
+    let start = get_or_set_budget_start_time(&broken, "start", 3.0, Duration::from_secs(1)).await;
+    assert!(start.total_cmp(&3.0).is_eq());
+    init_provider_budget_in_cache(&broken, "openai", &provider_config()["openai"], 3.0).await;
+    assert!(broken.memory.lock().unwrap().ttl_entries().is_empty());
 }
