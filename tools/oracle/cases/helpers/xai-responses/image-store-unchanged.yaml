@@ -1,0 +1,27 @@
+kind: helper
+name: image-store-unchanged
+call:
+  xai_responses:
+    env: {}
+    xai_key: null
+    generic_key: null
+    steps:
+      - step: tools
+        params:
+          input:
+            - type: message
+              role: user
+              content:
+                - {type: input_image, image_url: "https://example.test/image.png"}
+          store: false
+      - step: tools
+        params:
+          input:
+            - type: message
+              role: user
+              content:
+                - {type: input_image, image_url: "https://example.test/image.png"}
+      - step: tools
+        params: {input: [], store: true}
+env: {}
+compare: {ignore: []}

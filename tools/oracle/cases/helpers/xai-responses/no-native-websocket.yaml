@@ -1,0 +1,12 @@
+kind: helper
+name: no-native-websocket
+call:
+  xai_responses:
+    env: {}
+    xai_key: null
+    generic_key: null
+    steps:
+      - step: capability
+      - step: capability
+env: {}
+compare: {ignore: []}

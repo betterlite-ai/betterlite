@@ -1,0 +1,23 @@
+kind: helper
+name: single-tool-and-null-metadata
+call:
+  xai_responses:
+    env: {}
+    xai_key: null
+    generic_key: null
+    steps:
+      - step: tools
+        params:
+          metadata: null
+          store: true
+          model: grok-4
+          tools: {type: web_search, allowed_domains: [one.example]}
+      - step: tools
+        params:
+          tools: plain
+      - step: tools
+        params: {tools: [], metadata: {source: fixture}}
+      - step: tools
+        params: {tools: 0, metadata: null}
+env: {}
+compare: {ignore: []}

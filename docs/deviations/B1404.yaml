@@ -1,0 +1,5 @@
+task: B1404
+deviations:
+  - what: A terminal Responses event whose payload fails validation keeps its fields as sent, while LiteLLM's lax model_construct leaves response a plain dict and the xAI override raises AttributeError on event.response.usage.
+    why: A provider reply that already fails LiteLLM's validation must not turn into an unhandled 500; betterlite keeps the lax event and skips the cost it cannot read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/responses/transformation.py#L287

@@ -1,0 +1,52 @@
+kind: helper
+name: terminal-cost-only
+call:
+  xai_responses:
+    env: {}
+    xai_key: null
+    generic_key: null
+    steps:
+      - step: reply
+        status: 200
+        now: 0
+        body: '{"id": "resp-1", "created_at": 7, "output": [], "usage": {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3, "cost_in_usd_ticks": 12500000000}}'
+      - step: reply
+        status: 200
+        now: 0
+        body: '{"id": "resp-2", "created_at": 7, "output": [], "usage": {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3, "cost": 0.25, "cost_in_usd_ticks": 12500000000}}'
+      - step: reply
+        status: 200
+        now: 0
+        body: '{"id": "resp-3", "created_at": 7, "output": [], "usage": {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3, "cost": 0.25, "cost_in_usd_ticks": -5}}'
+      - step: reply
+        status: 200
+        now: 0
+        body: '{"id": "resp-4", "output": [], "usage": {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3, "cost_in_usd_ticks": 12500000000}}'
+      - step: event
+        event:
+          type: response.completed
+          response:
+            id: resp-5
+            created_at: 7
+            output: []
+            usage: {input_tokens: 1, output_tokens: 2, total_tokens: 3, cost_in_usd_ticks: 5000000000}
+      - step: event
+        event:
+          type: response.incomplete
+          response:
+            id: resp-6
+            created_at: 7
+            output: []
+            usage: {input_tokens: 1, output_tokens: 2, total_tokens: 3, cost_in_usd_ticks: 2500000000}
+      - step: event
+        event:
+          type: response.created
+          response:
+            id: resp-7
+            created_at: 7
+            output: []
+            usage: {input_tokens: 1, output_tokens: 2, total_tokens: 3, cost_in_usd_ticks: 5000000000}
+      - step: event
+        event: {type: response.shell_call.in_progress, item_id: item-1}
+env: {}
+compare: {ignore: []}
