@@ -168,25 +168,19 @@ pub fn transform_rerank_request(
     let documents = params
         .get("documents")
         .ok_or(CohereRerankError::Required { name: "documents" })?;
+    let (max_chunks_per_doc, max_tokens_per_doc) = match version {
+        RerankVersion::V1 => (optional(params, "max_chunks_per_doc")?, None),
+        RerankVersion::V2 => (None, optional(params, "max_tokens_per_doc")?),
+    };
     let request = RerankRequest {
         model: model.to_owned(),
         query: field("query", query)?,
-        top_n: optional("top_n", params.get("top_n"))?,
+        top_n: optional(params, "top_n")?,
         documents: field("documents", documents)?,
-        rank_fields: optional("rank_fields", params.get("rank_fields"))?,
-        return_documents: optional("return_documents", params.get("return_documents"))?,
-        max_chunks_per_doc: version_limit(
-            version,
-            RerankVersion::V1,
-            params,
-            "max_chunks_per_doc",
-        )?,
-        max_tokens_per_doc: version_limit(
-            version,
-            RerankVersion::V2,
-            params,
-            "max_tokens_per_doc",
-        )?,
+        rank_fields: optional(params, "rank_fields")?,
+        return_documents: optional(params, "return_documents")?,
+        max_chunks_per_doc,
+        max_tokens_per_doc,
         instruction: None,
         truncate_prompt_tokens: None,
         truncation_side: None,
@@ -232,19 +226,6 @@ fn response_text(body: &[u8]) -> String {
     )
 }
 
-fn version_limit(
-    version: RerankVersion,
-    target: RerankVersion,
-    params: &RerankParams,
-    name: &'static str,
-) -> Result<Option<i64>, CohereRerankError> {
-    if version == target {
-        optional(name, params.get(name))
-    } else {
-        Ok(None)
-    }
-}
-
 // the pydantic dump drops every field the request left None, so only set options reach the wire
 fn project(request: &RerankRequest) -> Result<RerankParams, CohereRerankError> {
     let encoded = serde_json::to_value(request).map_err(|source| CohereRerankError::Field {
@@ -270,12 +251,12 @@ where
         .map_err(|source| CohereRerankError::Field { name, source })
 }
 
-fn optional<T>(name: &'static str, value: Option<&Json>) -> Result<Option<T>, CohereRerankError>
-where
-    T: DeserializeOwned,
-{
-    value
-        .filter(|present| **present != Json::Null)
-        .map(|present| field(name, present))
-        .transpose()
+fn optional<T: DeserializeOwned>(
+    params: &RerankParams,
+    name: &'static str,
+) -> Result<Option<T>, CohereRerankError> {
+    match params.get(name) {
+        None | Some(Json::Null) => Ok(None),
+        Some(present) => field(name, present).map(Some),
+    }
 }
