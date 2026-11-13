@@ -22,10 +22,11 @@ pub fn field_mut<'value>(
     value: &'value mut GuardrailValue,
     name: &str,
 ) -> Option<&'value mut GuardrailValue> {
-    let GuardrailValue::Object(fields) = value else {
-        return None;
-    };
-    fields.get_mut(name)
+    if let GuardrailValue::Object(fields) = value {
+        fields.get_mut(name)
+    } else {
+        None
+    }
 }
 
 // A choice with neither a message nor a delta is not a choice type LiteLLM reads.

@@ -122,6 +122,5 @@ fn an_unplaceable_response_is_an_error(
     #[case] mappings: &[TextMapping],
     #[case] expected: ApplyError,
 ) {
-    let (result, _) = rewrite(messages, responses, mappings);
-    assert_eq!(result, Err(expected));
+    assert_eq!(rewrite(messages, responses, mappings).0, Err(expected));
 }
