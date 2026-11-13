@@ -2,15 +2,12 @@ import base64
 import io
 import os
 import time
-from collections.abc import Generator
-from contextlib import contextmanager
 from functools import partial
 from typing import Final, Protocol, TypedDict
 
 import httpx
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.llms.base_llm.image_edit.transformation import BaseImageEditConfig
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
 from litellm.llms.openai.image_edit import get_openai_image_edit_config
@@ -24,7 +21,6 @@ litellm.suppress_debug_info = True
 time.time = partial(float, 1_700_000_000)
 
 JSON: Final = TypeAdapter(JsonValue)
-NOW: Final = 1_700_000_000
 TIMEOUT: Final = 30.0
 OPENAI: Final = "openai"
 HEADER_NAMES: Final = ("authorization", "openai-organization")
@@ -39,16 +35,11 @@ class FileSpec(TypedDict):
     name: str | None
 
 
-class Params(TypedDict, total=False):
+class Controls(TypedDict, total=False):
     api_key: str
     api_base: str
     organization: str
-
-
-class Globals(TypedDict, total=False):
-    api_key: str
     openai_key: str
-    api_base: str
 
 
 class Reply(TypedDict):
@@ -62,15 +53,14 @@ class Probe(TypedDict):
     image: list[FileSpec | None] | None
     mask: list[FileSpec | None] | None
     options: dict[str, JsonValue]
-    params: Params
-    globals: Globals
+    params: Controls
+    globals: Controls
     environment: dict[str, str]
     reply: Reply
 
 
 class Input(TypedDict, total=False):
     transform: list[Probe]
-    environment: list[Probe]
     reply: list[Probe]
 
 
@@ -141,19 +131,7 @@ class Logger(Logging):
         del additional_args
 
 
-@contextmanager
-def environment(values: dict[str, str]) -> Generator[None, None, None]:
-    saved = dict(os.environ)
-    os.environ.clear()
-    os.environ.update(values)
-    try:
-        yield
-    finally:
-        os.environ.clear()
-        os.environ.update(saved)
-
-
-def apply_globals(values: Globals) -> None:
+def apply_globals(values: Controls) -> None:
     litellm.api_key = values.get("api_key")
     litellm.openai_key = values.get("openai_key")
     litellm.api_base = values.get("api_base")
@@ -175,7 +153,7 @@ def files_value(specs: list[FileSpec | None] | None) -> list[FileTypes | None] |
     return [file_value(spec) for spec in specs]
 
 
-def params_value(params: Params) -> GenericLiteLLMParams:
+def params_value(params: Controls) -> GenericLiteLLMParams:
     return GenericLiteLLMParams(
         api_key=params.get("api_key"),
         api_base=params.get("api_base"),
@@ -238,14 +216,10 @@ def call_value(fixture: Fixture) -> Call:
     return Call(url=str(request.url), headers=headers, data=data, parts=files)
 
 
-def supported_value(config: BaseImageEditConfig, model: str) -> list[str]:
-    params: ParamsConfig = config
-    return params.get_supported_openai_params(model)
-
-
 def request_value(probe: Probe) -> Outcome:
     config = get_openai_image_edit_config(probe["model"])
-    supported = supported_value(config, probe["model"])
+    params: ParamsConfig = config
+    supported = params.get_supported_openai_params(probe["model"])
     mask = files_value(probe["mask"])
     options: dict[str, object] = dict(probe["options"])
     if mask is not None:
@@ -253,26 +227,29 @@ def request_value(probe: Probe) -> Outcome:
     apply_globals(probe["globals"])
     fixture = Fixture(probe["reply"])
     client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(fixture)))
+    os.environ.clear()
+    os.environ.update(probe["environment"])
     try:
-        with environment(probe["environment"]):
-            BaseLLMHTTPHandler().image_edit_handler(
-                model=probe["model"],
-                image=files_value(probe["image"]),
-                prompt=probe["prompt"],
-                image_edit_provider_config=config,
-                image_edit_optional_request_params=options,
-                custom_llm_provider=OPENAI,
-                litellm_params=params_value(probe["params"]),
-                logging_obj=Logger(),
-                timeout=TIMEOUT,
-                client=client,
-            )
+        BaseLLMHTTPHandler().image_edit_handler(
+            model=probe["model"],
+            image=files_value(probe["image"]),
+            prompt=probe["prompt"],
+            image_edit_provider_config=config,
+            image_edit_optional_request_params=options,
+            custom_llm_provider=OPENAI,
+            litellm_params=params_value(probe["params"]),
+            logging_obj=Logger(),
+            timeout=TIMEOUT,
+            client=client,
+        )
     except BadRequestError as failure:
         return Outcome(
             family=FAMILIES[type(config).__name__],
             supported=supported,
             call=None,
-            error=error_value("bad_request", failure.status_code),
+            error=JSON.validate_python(
+                {"kind": "bad_request", "status": failure.status_code}
+            ),
         )
     return Outcome(
         family=FAMILIES[type(config).__name__],
@@ -288,24 +265,12 @@ def transform_value(probe: Probe) -> JsonValue:
     value: dict[str, JsonValue] = {
         "family": found["family"],
         "supported": JSON.validate_python(found["supported"]),
+        "url": JSON.validate_python(None if call is None else call["url"]),
+        "headers": JSON.validate_python(None if call is None else call["headers"]),
         "data": JSON.validate_python(None if call is None else call["data"]),
         "files": JSON.validate_python(None if call is None else call["parts"]),
         "error": found["error"],
     }
-    return JSON.validate_python(value)
-
-
-def environment_value(probe: Probe) -> JsonValue:
-    found = request_value(probe)
-    call = found["call"]
-    value: dict[str, JsonValue] = {
-        "url": JSON.validate_python(None if call is None else call["url"]),
-        "headers": JSON.validate_python(None if call is None else call["headers"]),
-        "error": found["error"],
-    }
-    return JSON.validate_python(value)
-def error_value(kind: str, status: int | None) -> JsonValue:
-    value: dict[str, JsonValue] = {"kind": kind, "status": status}
     return JSON.validate_python(value)
 
 
@@ -330,10 +295,5 @@ def run(input_value: Input) -> JsonValue:
             transform_value(probe) for probe in input_value["transform"]
         ]
         return JSON.validate_python(transforms)
-    if "environment" in input_value:
-        environments: list[JsonValue] = [
-            environment_value(probe) for probe in input_value["environment"]
-        ]
-        return JSON.validate_python(environments)
     replies: list[JsonValue] = [reply_value(probe) for probe in input_value["reply"]]
     return JSON.validate_python(replies)

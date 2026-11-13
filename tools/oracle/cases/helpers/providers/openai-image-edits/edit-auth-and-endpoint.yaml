@@ -2,7 +2,7 @@ kind: helper
 name: openai-image-edits-edit-auth-and-endpoint
 call:
   openai_image_edits:
-    environment:
+    transform:
       - model: gpt-image-1
         prompt: change
         image: [{content_base64: iVBORw0KGgo=, name: null}]
