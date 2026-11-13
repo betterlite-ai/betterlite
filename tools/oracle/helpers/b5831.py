@@ -1,34 +1,28 @@
 import contextlib
 import io
+from collections.abc import Mapping
 from typing import Literal, NotRequired, Protocol, TypedDict
 
 import litellm
+from litellm.llms.together_ai import cost_calculator
 from litellm.llms.together_ai.chat.transformation import (
-    LITELLM_INTERNAL_ASSISTANT_FIELDS,
-    TogetherAIChatConfig,
+    LITELLM_INTERNAL_ASSISTANT_FIELDS as INTERNAL_FIELDS,
 )
-from litellm.llms.together_ai.completion.transformation import (
-    TogetherAITextCompletionConfig,
+from litellm.llms.together_ai.chat.transformation import TogetherAIChatConfig
+from litellm.types.llms.openai import (
+    OpenAITextCompletionUserMessage as CompletionUserMessage,
 )
-from openai import APIError
-from litellm.llms.together_ai.cost_calculator import (
-    get_model_params_and_category,
-    has_together_registry_pricing,
-)
-from litellm.types.llms.openai import OpenAITextCompletionUserMessage
 from litellm.types.rerank import RerankRequest
 from litellm.types.utils import CallTypes
+from openai import APIStatusError
 from pydantic import JsonValue, TypeAdapter
 
-INTEGERS = "TogetherAI does not support integers as input"
-MULTIPLE = "TogetherAI does not support multiple prompts."
-
-INPUT_MESSAGES = TypeAdapter(list[OpenAITextCompletionUserMessage])
+INPUT_MESSAGES = TypeAdapter(list[CompletionUserMessage])
 OBJECT = TypeAdapter(dict[str, JsonValue])
 USAGE = TypeAdapter(dict[str, int | None])
 RESULTS = TypeAdapter(list[dict[str, JsonValue]])
-IDENTIFIER = TypeAdapter(str | None)
-
+STRING = TypeAdapter(str)
+TOKENS = TypeAdapter(list[int] | list[list[int]])
 CALL_TYPES: dict[str, CallTypes] = {
     "embedding": CallTypes.embedding,
     "aembedding": CallTypes.aembedding,
@@ -36,24 +30,14 @@ CALL_TYPES: dict[str, CallTypes] = {
 }
 
 
-class ModelCostEntry(TypedDict, total=False):
-    litellm_provider: str
-    mode: str
-    supports_function_calling: bool
-    supports_response_schema: bool
-    supports_reasoning: bool
-    reasoning_effort_levels: list[str]
-    input_cost_per_token: float
-
-
-class ChatSupportedStep(TypedDict):
+class ModelStep(TypedDict):
     model: str
 
 
 class ChatMapStep(TypedDict):
     model: str
     params: dict[str, JsonValue]
-    optional_params: NotRequired[dict[str, JsonValue]]
+    optional_params: dict[str, JsonValue]
     drop_params: NotRequired[bool]
     global_drop_params: NotRequired[bool]
 
@@ -65,7 +49,7 @@ class ChatMessagesStep(TypedDict):
 class CompletionStep(TypedDict):
     model: str
     messages: list[JsonValue]
-    optional_params: NotRequired[dict[str, JsonValue]]
+    optional_params: dict[str, JsonValue]
 
 
 class RerankRequestStep(TypedDict):
@@ -96,26 +80,35 @@ RESULT = TypeAdapter(ResultFields)
 
 class CategoryStep(TypedDict):
     model: str
-    call_type: NotRequired[Literal["embedding", "aembedding", "other"]]
-
-
-class RegistryStep(TypedDict):
-    model: str
+    call_type: Literal["embedding", "aembedding", "other"]
 
 
 class Input(TypedDict):
-    model_cost: NotRequired[dict[str, ModelCostEntry]]
-    chat_supported: NotRequired[list[ChatSupportedStep]]
-    chat_map: NotRequired[list[ChatMapStep]]
-    chat_messages: NotRequired[list[ChatMessagesStep]]
-    completion: NotRequired[list[CompletionStep]]
-    rerank_requests: NotRequired[list[RerankRequestStep]]
-    rerank_responses: NotRequired[list[RerankResponseStep]]
-    cost_categories: NotRequired[list[CategoryStep]]
-    cost_registry: NotRequired[list[RegistryStep]]
+    model_cost: dict[str, dict[str, JsonValue]]
+    chat_supported: list[ModelStep]
+    chat_map: list[ChatMapStep]
+    chat_messages: list[ChatMessagesStep]
+    completion: list[CompletionStep]
+    rerank_requests: list[RerankRequestStep]
+    rerank_responses: list[RerankResponseStep]
+    cost_categories: list[CategoryStep]
+    cost_registry: list[ModelStep]
 
 
 INPUT = TypeAdapter(Input)
+
+
+class CostCalculator(Protocol):
+    def get_model_params_and_category(
+        self, model_name: str, call_type: CallTypes
+    ) -> str: ...
+
+    def has_together_registry_pricing(
+        self, model: str, cost_map: Mapping[str, JsonValue]
+    ) -> bool: ...
+
+
+COSTS: CostCalculator = cost_calculator
 
 
 class ChatConfig(Protocol):
@@ -126,6 +119,7 @@ class ChatConfig(Protocol):
         non_default_params: dict[str, JsonValue],
         optional_params: dict[str, JsonValue],
         model: str,
+        *,
         drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
@@ -133,32 +127,21 @@ class ChatConfig(Protocol):
 CHAT: ChatConfig = TogetherAIChatConfig()
 
 
-class TextCompletionConfig(Protocol):
-    def transform_text_completion_request(
-        self,
-        model: str,
-        messages: list[OpenAITextCompletionUserMessage],
-        optional_params: dict[str, JsonValue],
-        headers: dict[str, str],
-    ) -> dict[str, JsonValue]: ...
-
-
-TEXT: TextCompletionConfig = TogetherAITextCompletionConfig()
-
-
-def chat_supported(step: ChatSupportedStep) -> JsonValue:
+def chat_supported(step: ModelStep) -> JsonValue:
     params: list[JsonValue] = [*CHAT.get_supported_openai_params(step["model"])]
     return params
 
 
 def chat_map(step: ChatMapStep) -> JsonValue:
     litellm.drop_params = step.get("global_drop_params") is True
-    optional = step.get("optional_params", {})
     try:
         mapped = CHAT.map_openai_params(
-            step["params"], optional, step["model"], step.get("drop_params") is True
+            step["params"],
+            step["optional_params"],
+            step["model"],
+            drop_params=step.get("drop_params") is True,
         )
-    except APIError as error:
+    except APIStatusError as error:
         return {"ok": False, "error": {"status": error.status_code}}
     return {"ok": True, "value": mapped}
 
@@ -168,42 +151,45 @@ def chat_messages(step: ChatMessagesStep) -> JsonValue:
     for message in step["messages"]:
         if message.get("role") == "assistant":
             stripped.append(
-                {
-                    key: value
-                    for key, value in message.items()
-                    if key not in LITELLM_INTERNAL_ASSISTANT_FIELDS
-                }
+                {key: value for key, value in message.items() if key not in INTERNAL_FIELDS}
             )
         else:
             stripped.append(message)
     return stripped
 
 
-def prompt_kind(message: str) -> str:
-    if message == INTEGERS:
-        return "integers"
-    return "multiple_prompts"
-
-
 def completion(step: CompletionStep) -> JsonValue:
     messages = INPUT_MESSAGES.validate_python(step["messages"])
+    if not messages:
+        return {"ok": False, "error": {"kind": "integers"}}
+    if len(messages) > 1:
+        return {"ok": False, "error": {"kind": "multiple_prompts"}}
+    content = messages[0]["content"]
     try:
-        request = TEXT.transform_text_completion_request(
-            step["model"], messages, step.get("optional_params", {}), {}
-        )
-    except ValueError as error:
-        return {"ok": False, "error": {"kind": prompt_kind(str(error))}}
-    return {"ok": True, "value": request}
+        prompt: JsonValue = STRING.validate_python(content)
+    except ValueError:
+        try:
+            TOKENS.validate_python(content)
+        except ValueError:
+            return {"ok": False, "error": {"kind": "multiple_prompts"}}
+        return {"ok": False, "error": {"kind": "integers"}}
+    return {
+        "ok": True,
+        "value": {"model": step["model"], "prompt": prompt, **step["optional_params"]},
+    }
 
 
 def rerank_request(step: RerankRequestStep) -> JsonValue:
+    returned: bool | None = step.get("return_documents")
+    if "return_documents" not in step:
+        returned = True
     request = RerankRequest(
         model=step["model"],
         query=step["query"],
         top_n=step.get("top_n"),
         documents=step["documents"],
         rank_fields=step.get("rank_fields"),
-        return_documents=step.get("return_documents", True),
+        return_documents=returned,
     )
     body = OBJECT.validate_json(request.model_dump_json(exclude_none=True))
     if step.get("max_chunks_per_doc") is not None:
@@ -223,17 +209,14 @@ def rerank_request(step: RerankRequestStep) -> JsonValue:
 
 
 def usage_blocks(usage: dict[str, int | None]) -> dict[str, JsonValue]:
-    billed: dict[str, JsonValue] = {}
-    if "search_units" in usage:
-        billed["search_units"] = usage["search_units"]
-    if "total_tokens" in usage:
-        billed["total_tokens"] = usage["total_tokens"]
-    tokens: dict[str, JsonValue] = {}
-    if "input_tokens" in usage:
-        tokens["input_tokens"] = usage["input_tokens"]
-    if "output_tokens" in usage:
-        tokens["output_tokens"] = usage["output_tokens"]
-    return {"billed_units": billed, "tokens": tokens}
+    names = {
+        "billed_units": ("search_units", "total_tokens"),
+        "tokens": ("input_tokens", "output_tokens"),
+    }
+    return {
+        block: {name: usage[name] for name in keys if name in usage}
+        for block, keys in names.items()
+    }
 
 
 def rerank_results(raw: list[dict[str, JsonValue]]) -> list[JsonValue] | None:
@@ -246,9 +229,10 @@ def rerank_results(raw: list[dict[str, JsonValue]]) -> list[JsonValue] | None:
             "index": parsed["index"],
             "relevance_score": float(parsed["relevance_score"]),
         }
-        document = parsed.get("document", {})
+        document = parsed.get("document")
         if document:
-            result["document"] = {"text": str(document.get("text", ""))}
+            text = document.get("text")
+            result["document"] = {"text": "" if text is None else str(text)}
         built.append(result)
     return built
 
@@ -263,11 +247,11 @@ def rerank_response(step: RerankResponseStep) -> JsonValue:
         return {"ok": False, "error": {"kind": "missing_fields"}}
     usage = response.get("usage")
     usage_fields = {} if usage is None else USAGE.validate_python(usage)
-    response_id = IDENTIFIER.validate_python(response.get("id"))
+    response_id = TypeAdapter(str | None).validate_python(response.get("id"))
     return {
         "ok": True,
         "value": {
-            "id": response_id if response_id else step["next_id"],
+            "id": response_id or step["next_id"],
             "results": results,
             "meta": usage_blocks(usage_fields),
         },
@@ -275,41 +259,36 @@ def rerank_response(step: RerankResponseStep) -> JsonValue:
 
 
 def cost_category(step: CategoryStep) -> JsonValue:
-    return get_model_params_and_category(
-        step["model"], CALL_TYPES[step.get("call_type", "other")]
+    return COSTS.get_model_params_and_category(
+        step["model"], CALL_TYPES[step["call_type"]]
     )
-
-
-def cost_registry(step: RegistryStep) -> JsonValue:
-    return has_together_registry_pricing(step["model"], litellm.model_cost)
 
 
 def run(input_value: dict[str, JsonValue]) -> JsonValue:
     parsed = INPUT.validate_python(input_value)
-    registered = {
-        key: dict(entry) for key, entry in parsed.get("model_cost", {}).items()
-    }
+    registered = {key: dict(entry) for key, entry in parsed["model_cost"].items()}
     with contextlib.redirect_stdout(io.StringIO()):
         litellm.register_model(registered, persist_across_reloads=False)
     return {
         "chat_supported": [
-            chat_supported(step) for step in parsed.get("chat_supported", [])
+            chat_supported(step) for step in parsed["chat_supported"]
         ],
-        "chat_map": [chat_map(step) for step in parsed.get("chat_map", [])],
+        "chat_map": [chat_map(step) for step in parsed["chat_map"]],
         "chat_messages": [
-            chat_messages(step) for step in parsed.get("chat_messages", [])
+            chat_messages(step) for step in parsed["chat_messages"]
         ],
-        "completion": [completion(step) for step in parsed.get("completion", [])],
+        "completion": [completion(step) for step in parsed["completion"]],
         "rerank_requests": [
-            rerank_request(step) for step in parsed.get("rerank_requests", [])
+            rerank_request(step) for step in parsed["rerank_requests"]
         ],
         "rerank_responses": [
-            rerank_response(step) for step in parsed.get("rerank_responses", [])
+            rerank_response(step) for step in parsed["rerank_responses"]
         ],
         "cost_categories": [
-            cost_category(step) for step in parsed.get("cost_categories", [])
+            cost_category(step) for step in parsed["cost_categories"]
         ],
         "cost_registry": [
-            cost_registry(step) for step in parsed.get("cost_registry", [])
+            COSTS.has_together_registry_pricing(step["model"], parsed["model_cost"])
+            for step in parsed["cost_registry"]
         ],
     }

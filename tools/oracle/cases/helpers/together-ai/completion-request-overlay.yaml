@@ -2,13 +2,25 @@ kind: helper
 name: completion-request-overlay
 call:
   b5831:
+    model_cost: {}
+    chat_supported: []
+    chat_map: []
+    chat_messages: []
     completion:
-      - model: together/llama
-        messages: [{role: user, content: hello}]
-        optional_params: {temperature: 0.5, stop: ["\n"]}
-      - model: together/llama
-        messages: [{role: user, content: hello}]
-        optional_params: {model: together/other, prompt: other prompt}
-
+    - model: together/llama
+      messages:
+      - {role: user, content: hello}
+      optional_params:
+        temperature: 0.5
+        stop: [</s>]
+    - model: together/llama
+      messages:
+      - {role: user, content: hello}
+      optional_params: {model: together/other, prompt: other prompt}
+    rerank_requests: []
+    rerank_responses: []
+    cost_categories: []
+    cost_registry: []
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []
