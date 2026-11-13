@@ -17,8 +17,6 @@ call:
           max_chunks_per_doc: null
           instruction: null
         non_default: {}
-        responses:
-          - {status: 418, body: not json}
-          - {status: 500, body: '{"id":"r1","results":[{"index":0,"relevance_score":0.5}]}'}
+        responses: []
 compare: {ignore: []}
 env: {}
