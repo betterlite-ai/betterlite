@@ -32,3 +32,12 @@ deviations:
       the response is untrusted provider JSON and the pooled transport already caps a reply at 16 MiB, so the cap
       bounds memory without refusing a working reply.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py#L420-L426
+  - what: >-
+      A 2xx create reply whose name is missing, null or empty leaves the request uncached: betterlite returns the
+      original messages with no cachedContent and puts back the tools and tool_choice it removed for the lookup.
+      LiteLLM returns only the uncached messages with a null cache name.
+    why: >-
+      LiteLLM's result then carries neither the cached prefix nor its tools, so the generation request loses the system
+      instruction, the marked turns and the tool definitions. An unusable name cannot be a working cache reference, so
+      the request goes out uncached and complete instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py#L427-L435

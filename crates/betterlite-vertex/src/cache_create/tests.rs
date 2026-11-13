@@ -436,7 +436,7 @@ async fn miss_posts_only_the_cached_block() {
 #[tokio::test]
 async fn missing_name_is_not_repaired() {
     let harness = eligible("gemini-2.5-pro", SHORT_MARKED);
-    let mut options = CacheCreateOptions::default();
+    let mut options = with_tools();
     let transport = ScriptedTransport::new(vec![
         empty_list_page(),
         page(r#"{"displayName":"cache-key","model":"models/gemini-2.5-pro"}"#),
@@ -445,7 +445,18 @@ async fn missing_name_is_not_repaired() {
         .run(&transport, &mut options)
         .await
         .expect("the create");
+    assert_eq!(outcome.messages, harness.messages);
     assert_eq!(outcome.cached_content, None);
+    assert_eq!(options, with_tools());
+    let mut empty_options = with_tools();
+    let empty = ScriptedTransport::new(vec![empty_list_page(), page(r#"{"name":""}"#)]);
+    let empty_outcome = harness
+        .run(&empty, &mut empty_options)
+        .await
+        .expect("the create");
+    assert_eq!(empty_outcome.messages, harness.messages);
+    assert_eq!(empty_outcome.cached_content, None);
+    assert_eq!(empty_options, with_tools());
 }
 
 #[tokio::test]

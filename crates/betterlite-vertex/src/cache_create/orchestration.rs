@@ -119,10 +119,33 @@ where
             cached_content: Some(name),
         });
     }
+    create_or_find(transport, request, options, plan, non_cached).await
+}
+
+async fn create_or_find<T, F>(
+    transport: &T,
+    request: &CacheCreateRequest<'_, F>,
+    options: &mut CacheCreateOptions,
+    plan: CachePlan<'_>,
+    non_cached: Vec<Message>,
+) -> Result<CacheCreateOutcome, CacheCreateError>
+where
+    T: CacheTransport,
+    F: RemoteMediaFetcher + Sync,
+{
     let created = post_create(transport, request, &plan).await?;
+    // LiteLLM returns the uncached messages for an unusable name, which drops the prefix and the tools it removed; betterlite sends the request uncached and complete
+    let Some(name) = created.name.filter(|name| !name.is_empty()) else {
+        options.tools = plan.tools;
+        options.tool_choice = plan.tool_choice;
+        return Ok(CacheCreateOutcome {
+            messages: request.messages.to_vec(),
+            cached_content: None,
+        });
+    };
     Ok(CacheCreateOutcome {
         messages: non_cached,
-        cached_content: created.name,
+        cached_content: Some(name),
     })
 }
 
