@@ -1,0 +1,28 @@
+kind: helper
+name: tencent-url
+call:
+  b8173:
+    steps:
+      - kind: tencent_url
+      - kind: tencent_url
+        api_base: "https://host.test/v1"
+      - kind: tencent_url
+        api_base: "https://host.test"
+      - kind: tencent_url
+        api_base: "https://host.test/"
+      - kind: tencent_url
+        api_base: "https://host.test/v1///"
+      - kind: tencent_url
+        api_base: "https://host.test/v1/chat/completions"
+      - kind: tencent_url
+        api_base: "https://host.test/v1/chat/completions/"
+      - kind: tencent_url
+        api_base: ""
+      - kind: tencent_params
+        model: "b8173-tencent-reasons"
+        supports_reasoning: true
+      - kind: tencent_params
+        model: "b8173-tencent-plain"
+        supports_reasoning: false
+env: {}
+compare: {ignore: []}
