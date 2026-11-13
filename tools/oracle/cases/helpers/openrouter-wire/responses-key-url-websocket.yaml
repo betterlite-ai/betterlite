@@ -19,6 +19,21 @@ call:
           OPENROUTER_API_KEY: sk-env
         api_base: null
         global_api_base: null
+      - headers: {}
+        api_key: ""
+        global_api_key: sk-global
+        environment:
+          OPENROUTER_API_KEY: sk-env
+          OPENROUTER_API_BASE: https://env.example
+        api_base: ""
+        global_api_base: https://global.example//
+      - headers: {}
+        api_key: null
+        global_api_key: ""
+        environment:
+          OR_API_KEY: sk-or
+        api_base: https://explicit.example/v1/
+        global_api_base: https://global.example
 env: {}
 compare:
   ignore: []

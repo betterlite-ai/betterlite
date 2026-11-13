@@ -1,9 +1,13 @@
 import os
-from typing import Literal, Protocol, TypeAlias, TypedDict
+from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict
 
 import litellm
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
-from litellm.llms.openrouter.chat.transformation import OpenrouterConfig
+from litellm.llms.openrouter.chat.transformation import (
+    OpenRouterChatCompletionStreamingHandler,
+    OpenrouterConfig,
+)
+from litellm.llms.openrouter.common_utils import OpenRouterException
 from litellm.llms.openrouter.decisions.transformation import OpenRouterDecisionsConfig
 from litellm.llms.openrouter.embedding.transformation import OpenrouterEmbeddingConfig
 from litellm.llms.openrouter.responses.transformation import OpenRouterResponsesAPIConfig
@@ -19,6 +23,14 @@ JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 class ChatConfig(Protocol):
     def get_supported_openai_params(self, model: str) -> list[str]: ...
 
+    def map_openai_params(
+        self,
+        non_default_params: dict[str, object],
+        optional_params: dict[str, JsonValue],
+        model: str,
+        drop_params: bool,
+    ) -> dict[str, JsonValue]: ...
+
     def get_error_class(
         self, error_message: str, status_code: int, headers: dict[str, str]
     ) -> BaseLLMException: ...
@@ -26,6 +38,43 @@ class ChatConfig(Protocol):
 
 class EmbeddingConfig(Protocol):
     def get_supported_openai_params(self, model: str) -> list[str]: ...
+
+    def validate_environment(
+        self,
+        headers: dict[str, str],
+        model: str,
+        messages: list[JsonValue],
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+        api_key: str | None = None,
+        api_base: str | None = None,
+    ) -> dict[str, str]: ...
+
+    def get_complete_url(
+        self,
+        api_base: str | None,
+        api_key: str | None,
+        model: str,
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+        stream: bool | None = None,
+    ) -> str: ...
+
+    def transform_embedding_request(
+        self,
+        model: str,
+        input: str | list[str] | list[int] | list[list[int]],
+        optional_params: dict[str, JsonValue],
+        headers: dict[str, str],
+    ) -> dict[str, JsonValue]: ...
+
+    def map_openai_params(
+        self,
+        non_default_params: dict[str, object],
+        optional_params: dict[str, JsonValue],
+        model: str,
+        drop_params: bool,
+    ) -> dict[str, JsonValue]: ...
 
 
 class ResponsesConfig(Protocol):
@@ -57,8 +106,57 @@ class SupportedInput(TypedDict):
     models: list[str]
 
 
+class ChatParamsCase(TypedDict):
+    model: str
+    requested: dict[str, object]
+
+
+class ChatParamsInput(TypedDict):
+    op: Literal["chat_params"]
+    cases: list[ChatParamsCase]
+
+
+class ChunkCase(TypedDict):
+    chunk: dict[str, object]
+
+
+class ChunkInput(TypedDict):
+    op: Literal["chunk"]
+    cases: list[ChunkCase]
+
+
+class DeltaOut(TypedDict):
+    content: str | None
+    reasoning_content: NotRequired[str | None]
+
+
+class ChoiceOut(TypedDict):
+    index: int
+    delta: DeltaOut
+
+
+class ChunkOut(TypedDict):
+    id: str
+    object: str
+    created: int
+    model: str
+    choices: list[ChoiceOut]
+
+
+class EmbeddingCase(TypedDict):
+    headers: dict[str, str]
+    api_key: str | None
+    environment: dict[str, str]
+    api_base: str | None
+    model: str
+    input: str | list[str] | list[int] | list[list[int]]
+    optional_params: dict[str, JsonValue]
+    non_default_params: dict[str, object]
+
+
 class EmbeddingInput(TypedDict):
     op: Literal["embedding"]
+    cases: list[EmbeddingCase]
 
 
 class ResponsesCase(TypedDict):
@@ -96,8 +194,58 @@ class ErrorInput(TypedDict):
 
 
 Input: TypeAlias = (
-    SupportedInput | EmbeddingInput | ResponsesInput | DecisionsInput | ErrorInput
+    SupportedInput
+    | ChatParamsInput
+    | ChunkInput
+    | EmbeddingInput
+    | ResponsesInput
+    | DecisionsInput
+    | ErrorInput
 )
+
+CHUNK_OUT: TypeAdapter[ChunkOut] = TypeAdapter(ChunkOut)
+
+
+def chat_params(case: ChatParamsCase) -> dict[str, JsonValue]:
+    return CHAT.map_openai_params(dict(case["requested"]), {}, case["model"], False)
+
+
+def chunk(case: ChunkCase) -> JsonValue:
+    handler = OpenRouterChatCompletionStreamingHandler(iter([]), True)
+    try:
+        parsed = handler.chunk_parser(dict(case["chunk"]))
+    except OpenRouterException as error:
+        failure: dict[str, JsonValue] = {
+            "message": error.message,
+            "status": error.status_code,
+        }
+        return {"error": failure}
+    return JSON.validate_python(CHUNK_OUT.validate_json(parsed.model_dump_json()))
+
+
+def embedding(case: EmbeddingCase) -> JsonValue:
+    for name in ("OR_SITE_URL", "OR_APP_NAME"):
+        os.environ.pop(name, None)
+    for name, value in case["environment"].items():
+        os.environ[name] = value
+    headers = EMBEDDING.validate_environment(
+        dict(case["headers"]), case["model"], [], {}, {}, case["api_key"], case["api_base"]
+    )
+    url = EMBEDDING.get_complete_url(case["api_base"], case["api_key"], case["model"], {}, {})
+    request = EMBEDDING.transform_embedding_request(
+        case["model"], case["input"], case["optional_params"], headers
+    )
+    params = EMBEDDING.map_openai_params(
+        dict(case["non_default_params"]), {}, case["model"], False
+    )
+    result: dict[str, JsonValue] = {
+        "supported": JSON.validate_python(EMBEDDING.get_supported_openai_params(case["model"])),
+        "headers": JSON.validate_python(headers),
+        "url": url,
+        "request": request,
+        "params": params,
+    }
+    return result
 
 
 def responses(case: ResponsesCase) -> JsonValue:
@@ -156,8 +304,12 @@ def run(input_value: Input) -> JsonValue:
         return JSON.validate_python(
             [CHAT.get_supported_openai_params(model) for model in input_value["models"]]
         )
+    if input_value["op"] == "chat_params":
+        return JSON.validate_python([chat_params(case) for case in input_value["cases"]])
+    if input_value["op"] == "chunk":
+        return JSON.validate_python([chunk(case) for case in input_value["cases"]])
     if input_value["op"] == "embedding":
-        return JSON.validate_python(EMBEDDING.get_supported_openai_params(MODEL))
+        return JSON.validate_python([embedding(case) for case in input_value["cases"]])
     if input_value["op"] == "responses":
         return JSON.validate_python([responses(case) for case in input_value["cases"]])
     if input_value["op"] == "decisions":

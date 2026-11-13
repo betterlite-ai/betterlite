@@ -3,6 +3,31 @@ name: openrouter-wire-embedding-params-and-response
 call:
   b6080:
     op: embedding
+    cases:
+      - headers: {}
+        api_key: sk-1
+        environment: {}
+        api_base: null
+        model: m
+        input: x
+        optional_params: {}
+        non_default_params:
+          timeout: 30
+          dimensions: 8
+          encoding_format: float
+          user: u1
+          temperature: 0.2
+          input: ignored
+      - headers: {}
+        api_key: sk-1
+        environment: {}
+        api_base: null
+        model: m
+        input: x
+        optional_params: {}
+        non_default_params:
+          dimensions: null
+          user: ""
 env: {}
 compare:
   ignore: []

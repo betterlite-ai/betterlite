@@ -1,77 +1,24 @@
-use std::collections::{BTreeMap, BTreeSet};
-
 use betterlite_models::decisions::ir::{DecisionResponse, DecisionUsage};
 use betterlite_models::decisions::{Extra, Json as ModelJson, TokenCount};
-use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig;
-use betterlite_openai::openai_base_config::{
-    CatalogCapabilities, ConfigFamily, Headers, Object, OpenAiConfig, OpenAiSettings,
-};
-use betterlite_openai::openrouter_chat::error::{OpenRouterError, get_error_class};
-use betterlite_openai::openrouter_chat::policy::{BaseRequest, ChatPolicy};
-use betterlite_openai::openrouter_chat::OpenrouterConfig;
 use betterlite_openai::openrouter_decisions::OpenRouterDecisionsConfig;
-use betterlite_openai::openrouter_embedding::SUPPORTED_OPENAI_PARAMS;
+use betterlite_openai::openrouter_embedding::{
+    SUPPORTED_OPENAI_PARAMS, get_complete_url as embedding_url, map_openai_params,
+    transform_embedding_request, validate_environment as embedding_headers,
+};
 use betterlite_openai::openrouter_responses::{
     PROVIDER, SUPPORTS_NATIVE_WEBSOCKET, get_complete_url as responses_url,
     validate_environment as responses_headers,
 };
-use serde_json::{Map, Number, Value, json};
+use betterlite_prompts::arguments::json::Object;
+use rust_decimal::prelude::ToPrimitive as _;
+use secrecy::SecretString;
+use serde_json::{Number, Value, json};
 
 use crate::helpers::{HelperResult, OrHelperError as _};
 
-use super::input::{DecisionsCase, ErrorCase, Input, ResponsesCase};
-
-struct OpenAiPolicy;
-
-impl ChatPolicy for OpenAiPolicy {
-    fn supported_params(&self, model: &str) -> Vec<&'static str> {
-        openai_config().supported_params(model, &empty_catalog())
-    }
-
-    fn map_params(&self, _model: &str, _requested: &Object, _optional_params: &mut Object) {}
-
-    fn remove_cache_control(&self, _messages: &mut Vec<ChatMessage>, _optional_params: &mut Object) {}
-
-    fn request_body(&self, _request: BaseRequest<'_>) -> Result<Object, OpenRouterError> {
-        Err(unavailable())
-    }
-
-    fn response_body(&self, _raw: &[u8]) -> Result<Value, OpenRouterError> {
-        Err(unavailable())
-    }
-}
-
-fn unavailable() -> OpenRouterError {
-    OpenRouterError {
-        message: String::from("this helper operation does not build a request"),
-        status_code: 500,
-        headers: Headers::new(),
-    }
-}
-
-// B668's GPT base list; ConfigFamily::Other keeps the OpenAIConfig-only unknown-model reasoning_effort out
-fn openai_config() -> OpenAiConfig {
-    OpenAiConfig {
-        family: ConfigFamily::Other,
-        api_key: None,
-        headers: Headers::new(),
-        settings: OpenAiSettings::default(),
-    }
-}
-
-fn empty_catalog() -> CatalogCapabilities {
-    CatalogCapabilities {
-        chat_models: BTreeSet::new(),
-        text_models: BTreeSet::new(),
-    }
-}
-
-fn config() -> OpenrouterConfig<OpenAiPolicy> {
-    OpenrouterConfig {
-        policy: OpenAiPolicy,
-    }
-}
+use super::chat::{chat_params, chunks, config, error_class, prompt_object};
+use super::input::{DecisionsCase, EmbeddingCase, Input, ResponsesCase};
 
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
@@ -81,22 +28,51 @@ pub(super) fn run(input: &Input) -> HelperResult {
                 .map(|model| config().supported_params(model))
                 .collect::<Vec<_>>()
         )),
-        Input::Embedding => Ok(json!({"supported": SUPPORTED_OPENAI_PARAMS})),
+        Input::ChatParams { cases } => chat_params(cases),
+        Input::Chunk { cases } => Ok(chunks(cases)),
+        Input::Embedding { cases } => embedding(cases),
         Input::Responses { cases } => responses(cases),
         Input::Decisions { cases } => Ok(decisions(cases)),
         Input::ErrorClass { cases } => Ok(Value::Array(cases.iter().map(error_class).collect())),
     }
 }
 
+fn embedding(cases: &[EmbeddingCase]) -> HelperResult {
+    let mut results = Vec::with_capacity(cases.len());
+    for case in cases {
+        let key = case.api_key.clone().map(SecretString::from);
+        let headers = embedding_headers(
+            case.headers.clone(),
+            key.as_ref(),
+            case.environment.get("OR_SITE_URL").map(String::as_str),
+            case.environment.get("OR_APP_NAME").map(String::as_str),
+        );
+        let request = transform_embedding_request(
+            &case.model,
+            &case.input,
+            &prompt_object(&case.optional_params),
+        );
+        let mut params = Object::new();
+        map_openai_params(&prompt_object(&case.non_default_params), &mut params);
+        results.push(json!({
+            "supported": SUPPORTED_OPENAI_PARAMS,
+            "headers": headers,
+            "url": embedding_url(case.api_base.as_deref()),
+            "request": serde_json::to_value(&request).or_value_error()?,
+            "params": serde_json::to_value(&params).or_value_error()?,
+        }));
+    }
+    Ok(Value::Array(results))
+}
+
 fn responses(cases: &[ResponsesCase]) -> HelperResult {
     let mut results = Vec::with_capacity(cases.len());
     for case in cases {
-        let environment: BTreeMap<String, String> = case.environment.clone();
         let headers = responses_headers(
             case.headers.clone(),
             case.api_key.as_deref(),
             case.global_api_key.as_deref(),
-            &environment,
+            &case.environment,
         )
         .or_value_error()?;
         results.push(json!({
@@ -104,7 +80,7 @@ fn responses(cases: &[ResponsesCase]) -> HelperResult {
             "url": responses_url(
                 case.api_base.as_deref(),
                 case.global_api_base.as_deref(),
-                &environment,
+                &case.environment,
             ),
             "provider": PROVIDER.to_string(),
             "websocket": SUPPORTS_NATIVE_WEBSOCKET,
@@ -162,12 +138,4 @@ fn model_json(value: &Value) -> ModelJson {
                 .collect(),
         ),
     }
-}
-
-fn error_class(case: &ErrorCase) -> Value {
-    let error = get_error_class(&case.message, case.status, case.headers.clone());
-    let mut result = Map::new();
-    result.insert(String::from("message"), Value::String(error.message));
-    result.insert(String::from("status"), Value::from(error.status_code));
-    Value::Object(result)
 }

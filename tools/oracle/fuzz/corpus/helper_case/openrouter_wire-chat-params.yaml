@@ -2,11 +2,33 @@ kind: helper
 name: openrouter-wire-chat-params-and-extra-body
 call:
   b6080:
-    op: supported
-    models:
-      - openai/gpt-4o
-      - anthropic/claude-3.5-sonnet
-      - z-ai/glm-4.5
+    op: chat_params
+    cases:
+      - model: openai/gpt-4o
+        requested:
+          temperature: 0.2
+          max_tokens: 10
+          transforms: [middle-out]
+          models: [anthropic/claude-3.5-sonnet]
+          route: fallback
+          not_a_param: 1
+      - model: openai/gpt-4o
+        requested:
+          reasoning_effort: max
+      - model: openai/gpt-4o
+        requested:
+          reasoning_effort: high
+          thinking:
+            type: enabled
+            budget_tokens: 1024
+      - model: openai/gpt-4o
+        requested: {}
+      - model: anthropic/claude-3.5-sonnet
+        requested:
+          temperature: 1
+          transforms: []
+          models: null
+          route: null
 env: {}
 compare:
   ignore: []

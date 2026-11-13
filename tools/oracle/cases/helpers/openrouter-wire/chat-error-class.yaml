@@ -1,5 +1,5 @@
 kind: helper
-name: openrouter-wire-chat-cache-control-move
+name: openrouter-wire-chat-error-class
 call:
   b6080:
     op: error_class
@@ -8,7 +8,7 @@ call:
         status: 400
         headers:
           Content-Type: application/json
-      - message: "Message: rate limited, Metadata: {}, User ID:"
+      - message: "Message: rate limited, Metadata: {}, User ID: "
         status: 429
         headers:
           Retry-After: "5"

@@ -1,3 +1,4 @@
+mod chat;
 mod input;
 mod ops;
 
