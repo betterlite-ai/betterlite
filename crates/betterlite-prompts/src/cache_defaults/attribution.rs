@@ -4,19 +4,24 @@ use betterlite_context::request_records::GatewayCacheAttribution;
 use betterlite_context::request_records::record::RequestRecord;
 
 use crate::arguments::json::{Json, Object};
+use crate::cache_accounting::constants::{
+    GATEWAY_CACHE_METADATA_KEY, INJECTED_FOR_EVERY_DEPLOYMENT,
+};
 
-const MARKER: &str = "litellm_gateway_injected_cache";
 const BUCKETS: [&str; 2] = ["litellm_metadata", "metadata"];
 
 // Attribution reads a RequestRecord; this hands it the two keys its mark reads, not the whole payload.
-pub fn record_gateway_injection(params: &mut Object, added: usize) {
-    let count = i32::try_from(added).unwrap_or(i32::MAX);
-    if count <= 0_i32 {
+pub fn record_gateway_injection(
+    params: &mut Object,
+    added: i32,
+    injected_for_every_deployment: bool,
+) {
+    if added <= 0_i32 {
         return;
     }
     let deployment = model_info_id(params).cloned();
     let mut record = attribution_view(params, deployment.as_ref());
-    GatewayCacheAttribution::record(&mut record, count, false);
+    GatewayCacheAttribution::record(&mut record, added, injected_for_every_deployment);
     write_back(params, &record, deployment.as_ref());
 }
 
@@ -34,8 +39,8 @@ fn attribution_view(params: &Object, deployment: Option<&Json>) -> RequestRecord
             continue;
         };
         let mut view = BTreeMap::new();
-        if let Some(marker) = bucket.get(MARKER) {
-            view.insert(MARKER.to_owned(), record_value(marker));
+        if let Some(marker) = bucket.get(GATEWAY_CACHE_METADATA_KEY) {
+            view.insert(GATEWAY_CACHE_METADATA_KEY.to_owned(), record_value(marker));
         }
         fields.insert(name.to_owned(), RequestRecord::Object(view));
     }
@@ -56,19 +61,21 @@ fn write_back(params: &mut Object, record: &RequestRecord, deployment: Option<&J
         let Some(RequestRecord::Object(view)) = fields.get(name) else {
             continue;
         };
-        let Some(marker) = view.get(MARKER) else {
+        let Some(marker) = view.get(GATEWAY_CACHE_METADATA_KEY) else {
             continue;
         };
-        let sentinel = matches!(marker, RequestRecord::String(text) if text.is_empty());
+        let sentinel = matches!(marker, RequestRecord::String(text) if text.as_str() == INJECTED_FOR_EVERY_DEPLOYMENT);
         let written = if sentinel {
-            Json::Text(String::new())
+            Json::Text(INJECTED_FOR_EVERY_DEPLOYMENT.to_owned())
         } else {
-            deployment.cloned().unwrap_or(Json::Text(String::new()))
+            deployment
+                .cloned()
+                .unwrap_or(Json::Text(INJECTED_FOR_EVERY_DEPLOYMENT.to_owned()))
         };
         let Some(Json::Object(bucket)) = params.get_mut(name) else {
             continue;
         };
-        bucket.insert(MARKER.to_owned(), written);
+        bucket.insert(GATEWAY_CACHE_METADATA_KEY.to_owned(), written);
         return;
     }
 }
@@ -96,5 +103,5 @@ fn number_record(number: &serde_json::Number) -> RequestRecord {
     if let Some(value) = number.as_u64() {
         return RequestRecord::Unsigned(value);
     }
-    serde_json::from_value(serde_json::Value::Number(number.clone())).unwrap_or(RequestRecord::Null)
+    serde_json::from_str::<RequestRecord>(&number.to_string()).unwrap_or(RequestRecord::Null)
 }

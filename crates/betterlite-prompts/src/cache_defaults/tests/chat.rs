@@ -19,7 +19,7 @@ const CONFIGURED: &str = r#"[
     {"location": "message", "role": "user", "index": null, "control": {"type": "ephemeral"}}
 ]"#;
 
-fn policy(global: bool, ttl: Option<&str>) -> CachePolicy<'_> {
+const fn policy(global: bool, ttl: Option<&str>) -> CachePolicy<'_> {
     CachePolicy {
         global_enabled: global,
         ttl,

@@ -93,7 +93,32 @@ fn place_messages(
     cache_control: Option<&Json>,
     facts: &dyn CacheFacts,
 ) -> Result<PlacedMessages, DefaultsError> {
-    let openai_dialect = injection.model.is_some_and(|model| {
+    let openai_dialect = openai_dialect_for(injection, facts);
+    let before = count_request_marks(injection.messages, injection.system);
+    let wire = request_view(injection.params);
+    let external = count_route_breakpoints(injection.tools, cache_control, Some(&wire));
+    let placed = apply_messages_route(
+        injection.messages,
+        injection.system,
+        points,
+        openai_dialect,
+        external,
+    );
+    let after = count_request_marks(&placed.messages, placed.system.as_ref());
+    let added = i32::try_from(after.saturating_sub(before)).unwrap_or(i32::MAX);
+    record_gateway_injection(injection.params, added, false);
+    if openai_dialect && added > 0 {
+        set_explicit_mode(injection.params);
+    }
+    write_remaining(injection.params, &placed.remaining)?;
+    Ok(PlacedMessages {
+        messages: placed.messages,
+        system: placed.system,
+    })
+}
+
+fn openai_dialect_for(injection: &MessagesInjection<'_>, facts: &dyn CacheFacts) -> bool {
+    injection.model.is_some_and(|model| {
         targets_openai_breakpoint(
             &DialectInputs {
                 model,
@@ -106,33 +131,19 @@ fn place_messages(
             },
             facts,
         )
-    });
-    let before = count_request_marks(injection.messages, injection.system);
-    let wire = request_view(injection.params);
-    let external = count_route_breakpoints(injection.tools, cache_control, Some(&wire));
-    let placed = apply_messages_route(
-        injection.messages,
-        injection.system,
-        points,
-        openai_dialect,
-        external,
-    );
-    let after = count_request_marks(&placed.messages, placed.system.as_ref());
-    let added = after.saturating_sub(before);
-    record_gateway_injection(injection.params, added);
-    if openai_dialect && added > 0 {
-        set_explicit_mode(injection.params);
-    }
-    if !placed.remaining.is_empty() {
-        let encoded = encode_points(&placed.remaining)?;
-        injection
-            .params
-            .insert(INJECTION_POINTS.to_owned(), encoded);
-    }
-    Ok(PlacedMessages {
-        messages: placed.messages,
-        system: placed.system,
     })
+}
+
+fn write_remaining(
+    params: &mut Object,
+    remaining: &[CacheControlInjectionPoint],
+) -> Result<(), DefaultsError> {
+    if remaining.is_empty() {
+        return Ok(());
+    }
+    let encoded = encode_points(remaining)?;
+    params.insert(INJECTION_POINTS.to_owned(), encoded);
+    Ok(())
 }
 
 fn take_enable_prompt_caching(params: &mut Object) -> Result<Option<bool>, DefaultsError> {
