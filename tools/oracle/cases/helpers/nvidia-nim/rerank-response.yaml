@@ -9,30 +9,49 @@ call:
         status: 200
         body: '{"id": "reply", "rankings": [{"index": 1, "logit": 0.25}, {"index": 0, "logit": 0.5}], "usage": {"total_tokens": 4}}'
         headers: {}
+        optional: {}
         request_data: {passages: [{text: first}, {text: second}]}
       - config: retrieval
         model: nvidia/llama
         status: 200
         body: '{"id": "reply", "rankings": [{"index": 0, "logit": 0.5}], "usage": {"total_tokens": 0}}'
         headers: {}
+        optional: {}
         request_data: {passages: []}
       - config: retrieval
         model: nvidia/llama
         status: 502
         body: not json
         headers: {x-request: "1"}
+        optional: {}
         request_data: {}
       - config: ranking
         model: ranking/nvidia/llama
         status: 200
         body: '{"id": "reply", "rankings": [{"index": -1, "logit": 0.5}, {"index": 5, "logit": 0.25}]}'
         headers: {}
+        optional: {}
         request_data: {passages: [{text: first}, {text: last}]}
       - config: retrieval
         model: nvidia/llama
         status: 200
         body: '{"rankings": [{"index": 0}]}'
         headers: {}
+        optional: {}
         request_data: {}
+      - config: ranking
+        model: ranking/nvidia/llama
+        status: 200
+        body: '{"id": "reply", "rankings": [{"index": 0, "logit": 0.25}, {"index": 1, "logit": 0.75}, {"index": 2, "logit": 0.5}]}'
+        headers: {}
+        optional: {top_n: 2}
+        request_data: {passages: [{text: a}, {text: b}, {text: c}]}
+      - config: ranking
+        model: ranking/nvidia/llama
+        status: 200
+        body: '{"id": "reply", "rankings": [{"index": 0, "logit": 0.25}, {"index": 1, "logit": 0.75}]}'
+        headers: {}
+        optional: {top_n: 2}
+        request_data: {passages: [{text: a}, {text: b}]}
 env: {}
 compare: {ignore: []}

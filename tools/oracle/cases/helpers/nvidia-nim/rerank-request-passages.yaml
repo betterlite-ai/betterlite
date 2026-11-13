@@ -6,7 +6,7 @@ call:
     cases:
       - config: retrieval
         model: nvidia_nim/meta/llama-3_2
-        non_default: null
+        non_default: {}
         top_n: null
         query: q
         documents:

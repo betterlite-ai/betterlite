@@ -172,7 +172,7 @@ fn one_response(case: &Case) -> Value {
         body: case.body.as_bytes().to_vec(),
     };
     let mut logging = RerankLogging::default();
-    let optional = Params::new();
+    let optional = case.optional.clone().unwrap_or_default();
     let litellm_params = Params::new();
     let request = ResponseTransform {
         model: &case.model,

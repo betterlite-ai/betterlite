@@ -22,7 +22,7 @@ pub(crate) struct Input {
     #[serde(default)]
     cases: Vec<Case>,
     #[serde(default)]
-    urls: Vec<UrlCase>,
+    urls: Vec<Case>,
     #[serde(default)]
     headers: Vec<Case>,
 }
@@ -47,6 +47,14 @@ pub(crate) struct Case {
     #[serde(default)]
     pub(crate) documents: Vec<RerankDocument>,
     #[serde(default)]
+    pub(crate) api_base: Option<String>,
+    #[serde(default)]
+    pub(crate) env_base: Option<String>,
+    #[serde(default)]
+    pub(crate) endpoint: String,
+    #[serde(default)]
+    pub(crate) model_group: Option<String>,
+    #[serde(default)]
     pub(crate) api_key: Option<String>,
     #[serde(default)]
     pub(crate) env_key: Option<String>,
@@ -64,19 +72,6 @@ pub(crate) struct Case {
     pub(crate) request_data: Params,
 }
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct UrlCase {
-    #[serde(default)]
-    pub(crate) api_base: Option<String>,
-    #[serde(default)]
-    pub(crate) env_base: Option<String>,
-    #[serde(default)]
-    pub(crate) model: String,
-    #[serde(default)]
-    pub(crate) model_group: Option<String>,
-}
-
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
@@ -89,7 +84,7 @@ impl crate::helpers::Helper for Op {
             "rerank_params" => Ok(rerank::params(&input.cases, &input.headers)),
             "rerank_request" => Ok(rerank::request(&input.cases)),
             "rerank_response" => Ok(rerank::response(&input.cases)),
-            "passthrough_url" => Ok(passthrough::urls(&input.urls)),
+            "passthrough_url" => Ok(passthrough::urls(&input.cases)),
             "passthrough_credentials" => Ok(passthrough::credentials(&input.cases)),
             _ => Self::not_built(&input.kind),
         }

@@ -1,7 +1,7 @@
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use super::{Case, UrlCase};
+use super::Case;
 use betterlite_openai::nvidia_nim_passthrough::{
     NvidiaNimPassthroughConfig, validate_environment as merge_headers,
 };
@@ -21,7 +21,7 @@ fn metadata(model_group: Option<&str>) -> Object {
     params
 }
 
-pub(crate) fn urls(cases: &[UrlCase]) -> Value {
+pub(crate) fn urls(cases: &[Case]) -> Value {
     let urls: Vec<Value> = cases
         .iter()
         .map(|case| {
@@ -62,7 +62,7 @@ pub(crate) fn credentials(cases: &[Case]) -> Value {
             super::object(json!({"stream": case.stream.clone().unwrap_or(Value::Null)}));
         headers.push(json!(merged));
         streaming.push(json!(
-            config.is_streaming_request(&case.endpoint, &request_data)
+            config.is_streaming_request("chat/completions", &request_data)
         ));
     }
     json!({"headers": headers, "streaming": streaming})

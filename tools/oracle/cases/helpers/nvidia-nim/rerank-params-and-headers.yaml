@@ -4,7 +4,7 @@ call:
   b5837:
     kind: rerank_params
     cases:
-      - {config: retrieval, model: meta/llama, non_default: null, top_n: 3, query: q, documents: [a, {text: b}]}
+      - {config: retrieval, model: meta/llama, non_default: {}, top_n: 3, query: q, documents: [a, {text: b}]}
       - {config: retrieval, model: meta/llama, non_default: {truncate: END, query: other}, top_n: null, query: q, documents: [{text: b}]}
       - {config: ranking, model: ranking/meta/llama, non_default: {top_k: 9}, top_n: 4, query: q, documents: [a]}
       - {config: ranking, model: ranking/meta/llama, non_default: {top_n: 2}, top_n: null, query: q, documents: [a]}
