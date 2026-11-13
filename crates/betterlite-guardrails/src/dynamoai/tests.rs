@@ -239,6 +239,27 @@ fn dynamoai_guardrail_unknown_policy_name_falls_back_to_unknown() {
     );
 }
 
+#[rstest]
+#[case::success(GuardrailStatus::Success, "success")]
+#[case::intervened(GuardrailStatus::Intervened, "guardrail_intervened")]
+#[case::failed(GuardrailStatus::FailedToRespond, "guardrail_failed_to_respond")]
+fn dynamoai_guardrail_status_names_match_litellm(
+    #[case] status: GuardrailStatus,
+    #[case] expected: &str,
+) {
+    assert_eq!(status.as_str(), expected);
+}
+
+#[test]
+fn dynamoai_guardrail_error_message_skips_empty_details() {
+    let response = parse(
+        r#"{"finalAction":"BLOCK","appliedPolicies":[{"policy":{"name":"toxicity","description":""},"outputs":{"action":"BLOCK"}}]}"#,
+    );
+    let message = create_error_message(&process_response(&response));
+    assert!(message.contains("  Action: BLOCK\n"));
+    assert!(!message.contains("Description"));
+}
+
 #[test]
 fn dynamoai_guardrail_error_message_lists_the_violation_details() {
     let response = parse(
@@ -295,6 +316,27 @@ async fn delayed(body: String, delay: Duration) -> (String, Server) {
     let mut server = JoinSet::new();
     server.spawn(axum::serve(listener, router).into_future());
     (base, server)
+}
+
+#[tokio::test]
+async fn dynamoai_guardrail_reads_an_answer_larger_than_a_few_kilobytes() {
+    let padding = "x".repeat(10_000);
+    let body = format!(r#"{{"finalAction":"NONE","padding":"{padding}"}}"#);
+    let (base, _server) = answering(StatusCode::OK, body).await;
+    let result = guardrail(&base).call_moderation(&[user_message()]).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn dynamoai_guardrail_an_answer_over_a_mebibyte_is_rejected() {
+    let padding = "x".repeat(1024 * 1024);
+    let body = format!(r#"{{"finalAction":"NONE","padding":"{padding}"}}"#);
+    let (base, _server) = answering(StatusCode::OK, body).await;
+    let result = guardrail(&base).call_moderation(&[user_message()]).await;
+    assert!(matches!(
+        result,
+        Err(DynamoAiError::ResponseTooLarge { limit: 1_048_576 })
+    ));
 }
 
 #[tokio::test]
@@ -400,12 +442,15 @@ async fn dynamoai_guardrail_post_call_forwards_role_and_content() {
     );
 }
 
+#[rstest]
+#[case::absent(None)]
+#[case::empty(Some(String::new()))]
 #[tokio::test]
-async fn dynamoai_guardrail_post_call_defaults_the_role_to_assistant() {
+async fn dynamoai_guardrail_post_call_defaults_the_role_to_assistant(#[case] role: Option<String>) {
     let (base, captured, _server) = capturing(r#"{"finalAction":"NONE"}"#.to_owned()).await;
     let choices = vec![ResponseChoice {
         message: ResponseMessage {
-            role: None,
+            role,
             content: Some(text("an answer")),
         },
     }];
@@ -583,6 +628,49 @@ fn dynamoai_config_defaults_the_timeout_when_absent() {
     .unwrap();
     assert_eq!(settings.guardrails[0].timeout, DEFAULT_GUARDRAIL_TIMEOUT);
     assert_eq!(DEFAULT_GUARDRAIL_TIMEOUT, Duration::from_secs(600));
+}
+
+#[test]
+fn dynamoai_config_empty_parameters_fall_back_to_the_environment() {
+    let settings = convert(
+        &entry("dynamoai", r#","api_key":"","api_base":"","model_id":"""#),
+        &env(&[
+            ("DYNAMOAI_API_KEY", "env-key"),
+            ("DYNAMOAI_API_BASE", "http://env.test"),
+            ("DYNAMOAI_MODEL_ID", "env-model"),
+        ]),
+    )
+    .unwrap();
+    let configured = &settings.guardrails[0];
+    assert_eq!(configured.api_key.expose_secret(), "env-key");
+    assert_eq!(configured.api_base, "http://env.test");
+    assert_eq!(configured.model_id, "env-model");
+}
+
+#[test]
+fn dynamoai_config_empty_environment_api_base_uses_the_default() {
+    let settings = convert(
+        &entry("dynamoai", ""),
+        &env(&[("DYNAMOAI_API_KEY", "env-key"), ("DYNAMOAI_API_BASE", "")]),
+    )
+    .unwrap();
+    assert_eq!(settings.guardrails[0].api_base, DEFAULT_API_BASE);
+}
+
+#[test]
+fn dynamoai_config_empty_environment_api_key_is_missing() {
+    let error = convert(&entry("dynamoai", ""), &env(&[("DYNAMOAI_API_KEY", "")])).unwrap_err();
+    assert!(matches!(error, ConfigError::MissingEnvironment { .. }));
+}
+
+#[test]
+fn dynamoai_config_rejects_a_negative_timeout() {
+    let error = convert(
+        &entry("dynamoai", r#","api_key":"param-key","timeout":-1"#),
+        &BTreeMap::new(),
+    )
+    .unwrap_err();
+    assert!(matches!(error, ConfigError::Yaml { .. }));
 }
 
 #[test]
