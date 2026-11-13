@@ -1,0 +1,38 @@
+kind: helper
+name: cost-off-peak
+call:
+  b8170:
+    steps:
+      - kind: cost
+        model_info:
+          input_cost_per_token: 1
+          output_cost_per_token: 2
+          off_peak_pricing: {hours_utc: "11:00-13:00", input_cost_per_token: 10, output_cost_per_token: 20}
+        usage: {prompt_tokens: 10, completion_tokens: 5, reasoning_tokens: 2}
+        current_time: "2024-06-16T12:00:00Z"
+      - kind: cost
+        model_info:
+          input_cost_per_token: 1
+          output_cost_per_token: 2
+          off_peak_pricing: {hours_utc: "11:00-13:00", input_cost_per_token: 10, output_cost_per_token: 20}
+        usage: {prompt_tokens: 10, completion_tokens: 5, reasoning_tokens: 2}
+        current_time: "2024-06-16T14:00:00Z"
+      - kind: cost
+        model_info:
+          input_cost_per_token: 1
+          output_cost_per_token: 2
+          tiered_pricing:
+            - {range: [0, 100000], input_cost_per_token: 1, output_cost_per_token: 4}
+          off_peak_pricing: {hours_utc: "11:00-13:00", output_cost_per_token: 20}
+        usage: {prompt_tokens: 10, completion_tokens: 5, reasoning_tokens: 2}
+        current_time: "2024-06-16T12:00:00Z"
+      - kind: cost
+        model_info:
+          input_cost_per_token: 1
+          output_cost_per_token: 2
+          output_cost_per_reasoning_token: 2
+          off_peak_pricing: {hours_utc: "11:00-13:00", output_cost_per_token: 20, output_cost_per_reasoning_token: 5}
+        usage: {prompt_tokens: 10, completion_tokens: 5, reasoning_tokens: 2}
+        current_time: "2024-06-16T12:00:00Z"
+env: {}
+compare: {ignore: []}
