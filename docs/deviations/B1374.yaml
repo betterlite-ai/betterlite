@@ -6,3 +6,6 @@ deviations:
   - what: Numbered raw-label chunks and the fan-out suffix of a key are read as ASCII digits with 64-bit chunk numbers and 32-bit positions, where LiteLLM's isdigit and \d accept every Unicode digit and its ints are unbounded.
     why: A generated label or key only ever carries ASCII digits, and a position past the bound cannot address an element of the batch.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L408
+  - what: A summed embedding prompt token count past 4294967295 is refused with a typed error, where LiteLLM keeps the unbounded integer in the usage.
+    why: The B006 embedding usage record holds 32-bit token counts, and a count past them cannot come from a real batch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L467
