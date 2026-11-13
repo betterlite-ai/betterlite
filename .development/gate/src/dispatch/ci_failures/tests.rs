@@ -1,11 +1,13 @@
 #![cfg(test)]
 
 use std::fs;
+use std::path::PathBuf;
+
+use tempfile::TempDir;
 
 use crate::git::git;
 
-#[test]
-fn ci_failures_reach_the_fix_turn_only_for_the_reviewed_head() {
+fn reviewed_checkout() -> (TempDir, PathBuf, PathBuf, String) {
     let folder = tempfile::tempdir().unwrap();
     let worktree = folder.path().join("task");
     let journal = folder.path().join("journal");
@@ -20,12 +22,18 @@ fn ci_failures_reach_the_fix_turn_only_for_the_reviewed_head() {
     )
     .unwrap();
     let head = git(&worktree, &["rev-parse", "HEAD"]).unwrap();
+    (folder, worktree, journal, head.trim().to_owned())
+}
+
+#[test]
+fn ci_failures_reach_the_fix_turn_only_for_the_reviewed_head() {
+    let (_folder, worktree, journal, head) = reviewed_checkout();
     let report = journal.join("ci-failures");
     assert!(super::take(&journal, &worktree).unwrap().is_empty());
 
     fs::write(
         &report,
-        format!("{}\nCI run 7 failed: FAIL task (3s)\n", head.trim()),
+        format!("{head}\nCI run 7 failed: FAIL task (3s)\n"),
     )
     .unwrap();
     assert_eq!(
@@ -41,4 +49,19 @@ fn ci_failures_reach_the_fix_turn_only_for_the_reviewed_head() {
     .unwrap();
     assert!(super::take(&journal, &worktree).unwrap().is_empty());
     assert!(!report.exists());
+}
+
+#[test]
+fn ci_failures_reach_a_fix_turn_that_committed_on_top_of_the_reviewed_head() {
+    let (_folder, worktree, journal, head) = reviewed_checkout();
+    git(&worktree, &["commit", "-q", "--allow-empty", "-m", "fix"]).unwrap();
+    fs::write(
+        journal.join("ci-failures"),
+        format!("{head}\nCI run 8 failed: FAIL task (4s)\n"),
+    )
+    .unwrap();
+    assert_eq!(
+        super::take(&journal, &worktree).unwrap(),
+        vec!["CI run 8 failed: FAIL task (4s)".to_owned()]
+    );
 }
