@@ -25,6 +25,7 @@ betterlite-paths = { path = "../betterlite-paths" }
 betterlite-policy = { path = "../betterlite-policy" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redact = { path = "../betterlite-redact" }
+betterlite-streaming = { path = "../betterlite-streaming" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }

@@ -591,10 +591,8 @@ tools/oracle/litellm/probes/passthrough_request_policies.py
 tools/oracle/litellm/probes/passthrough_selection.py
 tools/oracle/litellm/probes/pre_routing_registry.py
 tools/oracle/litellm/probes/prompt_affinity.py
-tools/oracle/litellm/probes/protocol.py
 tools/oracle/litellm/probes/quality_router.py
 tools/oracle/litellm/probes/redis_failure_policy.py
-tools/oracle/litellm/probes/registry.py
 tools/oracle/litellm/probes/request_batch.py
 tools/oracle/litellm/probes/request_scheduler.py
 tools/oracle/litellm/probes/responses_stream_fallback.py

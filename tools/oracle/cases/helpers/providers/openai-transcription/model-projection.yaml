@@ -1,0 +1,45 @@
+kind: helper
+name: openai-transcription-model-projection
+call:
+  openai_transcription:
+    function: exchange
+    probes:
+      - model: whisper-1
+        provider: whisper
+        api_key: sk-fixture
+        api_base: 'https://transcription.test/v1'
+        reply:
+          status: 200
+          headers: {content-type: application/json}
+          body: '{"text":"hi"}'
+      - model: whisper-1
+        provider: whisper
+        atranscription: true
+        api_key: sk-fixture
+        api_base: 'https://transcription.test/v1'
+        reply:
+          status: 200
+          headers: {content-type: application/json}
+          body: '{"text":"hi"}'
+      - model: whisper-1
+        provider: whisper
+        atranscription: true
+        data_model: gpt-4o-transcribe
+        api_key: sk-fixture
+        api_base: 'https://transcription.test/v1'
+        reply:
+          status: 200
+          headers: {content-type: application/json}
+          body: '{"text":"hi"}'
+      - model: whisper-1
+        provider: whisper
+        atranscription: true
+        data_model_null: true
+        api_key: sk-fixture
+        api_base: 'https://transcription.test/v1'
+        reply:
+          status: 200
+          headers: {content-type: application/json}
+          body: '{"text":"hi"}'
+env: {}
+compare: {ignore: []}
