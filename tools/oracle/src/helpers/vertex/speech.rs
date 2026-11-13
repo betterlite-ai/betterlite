@@ -2,16 +2,15 @@ use std::future::ready;
 use std::io::Error as IoError;
 
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
+use betterlite_prompts::arguments::json::Object;
 use betterlite_vertex::token_cache::probe::AccessToken;
 use betterlite_vertex::vertex_interactions::mint::{MintAccessToken, MintFuture};
 use betterlite_vertex::vertex_speech::audio::decode_vertex_speech_audio;
 use betterlite_vertex::vertex_speech::error::VertexSpeechError;
-use betterlite_prompts::arguments::json::Object;
 use betterlite_vertex::vertex_speech::mapping::{
-    SpeechAudioConfig, SpeechKwargs, SpeechMapping, SpeechOptionalParams, SpeechVoice,
-    map_openai_params,
+    SpeechKwargs, SpeechMapping, SpeechOptionalParams, SpeechVoice, map_openai_params,
 };
-use betterlite_vertex::vertex_speech::request::{SpeechCall, SpeechRequest, prepare_request};
+use betterlite_vertex::vertex_speech::request::{SpeechCall, prepare_request};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde_json::{Value, json};
@@ -46,18 +45,16 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = Builder::new_current_thread()
-            .build()
-            .map_err(failure)?;
-        match input {
-            Input::AlloyVoice { voices } => Ok(alloy_voice(voices)),
-            Input::CustomVoiceLanguage { voices } => Ok(custom_voice_language(voices)),
-            Input::AacMapsMp3 { formats } => Ok(aac_maps_mp3(formats)),
-            Input::SsmlSubstring { cases } => Ok(ssml_substring(&runtime, cases)),
-            Input::FullAudioConfig { cases } => Ok(full_audio_config(&runtime, cases)),
-            Input::VoiceDictPrecedence { cases } => Ok(voice_dict_precedence(&runtime, cases)),
-            Input::DecodedStatus200 { bodies } => Ok(decoded_status_200(bodies)),
-        }
+        let runtime = Builder::new_current_thread().build().map_err(failure)?;
+        Ok(match input {
+            Input::AlloyVoice { voices } => alloy_voice(voices),
+            Input::CustomVoiceLanguage { voices } => custom_voice_language(voices),
+            Input::AacMapsMp3 { formats } => aac_maps_mp3(formats),
+            Input::SsmlSubstring { cases } => ssml_substring(&runtime, cases),
+            Input::FullAudioConfig { cases } => full_audio_config(&runtime, cases),
+            Input::VoiceDictPrecedence { cases } => voice_dict_precedence(&runtime, cases),
+            Input::DecodedStatus200 { bodies } => decoded_status_200(bodies),
+        })
     }
 }
 
@@ -72,8 +69,15 @@ fn failure(error: IoError) -> Box<HelperError> {
     })
 }
 
+struct PreparedCase<'case> {
+    mapping: SpeechMapping,
+    input: &'case str,
+    voice_dict: Option<&'case Object>,
+    voice: Option<String>,
+}
+
 fn alloy_voice(voices: &[Option<SpeechVoice>]) -> Value {
-    let mapped_voices: Vec<Value> = voices
+    let views: Vec<Value> = voices
         .iter()
         .map(|voice| {
             let mapping = map_openai_params(
@@ -84,23 +88,21 @@ fn alloy_voice(voices: &[Option<SpeechVoice>]) -> Value {
             json!({"voice": mapping.voice, "dict": mapping.voice_dict})
         })
         .collect();
-    json!({"voices": mapped_voices})
+    json!({"voices": views})
+}
+
+fn mapped_voice(name: &str) -> Option<Object> {
+    let voice = SpeechVoice::Name(name.to_owned());
+    map_openai_params(
+        Some(&voice),
+        &SpeechOptionalParams::default(),
+        &SpeechKwargs::default(),
+    )
+    .voice_dict
 }
 
 fn custom_voice_language(voices: &[String]) -> Value {
-    let languages: Vec<Value> = voices
-        .iter()
-        .map(|name| {
-            let voice = SpeechVoice::Name(name.clone());
-            let mapping = map_openai_params(
-                Some(&voice),
-                &SpeechOptionalParams::default(),
-                &SpeechKwargs::default(),
-            );
-            json!(mapping.voice_dict)
-        })
-        .collect();
-    json!({"voices": languages})
+    json!({"voices": voices.iter().map(|name| mapped_voice(name)).collect::<Vec<_>>()})
 }
 
 fn aac_maps_mp3(formats: &[Option<String>]) -> Value {
@@ -117,23 +119,112 @@ fn aac_maps_mp3(formats: &[Option<String>]) -> Value {
     json!({"encodings": encodings})
 }
 
-fn prepared(
-    runtime: &Runtime,
-    mapping: &SpeechMapping,
-    input: &str,
-    voice_dict: Option<&Object>,
-    voice: Option<&str>,
-) -> Result<SpeechRequest, VertexSpeechError> {
-    let call = SpeechCall {
-        input,
-        voice,
-        mapping,
-        voice_dict,
-        credentials: None,
-        project: None,
-        location: None,
+fn views(runtime: &Runtime, prepared: &[PreparedCase<'_>], wrapper: &str, field: &str) -> Vec<Value> {
+    prepared
+        .iter()
+        .map(|case| {
+            let call = SpeechCall {
+                input: case.input,
+                voice: case.voice.as_deref(),
+                mapping: &case.mapping,
+                voice_dict: case.voice_dict,
+                credentials: None,
+                project: None,
+                location: None,
+            };
+            match runtime.block_on(prepare_request(&FixedMint, &call, &IndexMap::new())) {
+                Ok(request) => project(json!(request.body), wrapper, field),
+                Err(error) => json!({"error": error_code(&error)}),
+            }
+        })
+        .collect()
+}
+
+fn project(view: Value, wrapper: &str, field: &str) -> Value {
+    if view.get("error").is_some() {
+        return view;
+    }
+    let value = view.get(field).cloned().unwrap_or(Value::Null);
+    if wrapper.is_empty() {
+        return value;
+    }
+    json!({wrapper: value})
+}
+
+fn ssml_case(case: &SsmlCase) -> PreparedCase<'_> {
+    let kwargs = SpeechKwargs {
+        audio_config: None,
+        use_ssml: case.use_ssml,
     };
-    runtime.block_on(prepare_request(&FixedMint, &call, &IndexMap::new()))
+    PreparedCase {
+        mapping: map_openai_params(None, &SpeechOptionalParams::default(), &kwargs),
+        input: &case.input,
+        voice_dict: None,
+        voice: None,
+    }
+}
+
+fn audio_case(case: &AudioCase) -> PreparedCase<'_> {
+    let optional = SpeechOptionalParams {
+        response_format: case.response_format.clone(),
+        speed: case.speed,
+    };
+    let kwargs = SpeechKwargs {
+        audio_config: case.audio_config.clone(),
+        use_ssml: false,
+    };
+    PreparedCase {
+        mapping: map_openai_params(None, &optional, &kwargs),
+        input: "hi",
+        voice_dict: None,
+        voice: None,
+    }
+}
+
+fn voice_case(case: &VoiceDictCase) -> PreparedCase<'_> {
+    let voice = case.voice.clone().map(SpeechVoice::Name);
+    let mut mapping = map_openai_params(
+        voice.as_ref(),
+        &SpeechOptionalParams::default(),
+        &SpeechKwargs::default(),
+    );
+    if let Some(dict) = &case.mapped_voice {
+        mapping.voice_dict = Some(dict.clone());
+    }
+    PreparedCase {
+        voice: mapping.voice.clone(),
+        mapping,
+        input: "hi",
+        voice_dict: case.litellm_voice.as_ref(),
+    }
+}
+
+fn ssml_substring(runtime: &Runtime, cases: &[SsmlCase]) -> Value {
+    json!({"inputs": views(runtime, &cases.iter().map(ssml_case).collect::<Vec<_>>(), "input", "input")})
+}
+
+fn full_audio_config(runtime: &Runtime, cases: &[AudioCase]) -> Value {
+    json!({"configs": views(runtime, &cases.iter().map(audio_case).collect::<Vec<_>>(), "", "audioConfig")})
+}
+
+fn voice_dict_precedence(runtime: &Runtime, cases: &[VoiceDictCase]) -> Value {
+    json!({"voices": views(runtime, &cases.iter().map(voice_case).collect::<Vec<_>>(), "voice", "voice")})
+}
+
+fn decoded_status_200(bodies: &[String]) -> Value {
+    let sniff = |audio: &[u8]| (audio.first() == Some(&b'X')).then_some("audio/x-test".to_owned());
+    let decoded: Vec<Value> = bodies
+        .iter()
+        .map(|body| match decode_vertex_speech_audio(body.as_bytes(), &sniff) {
+            Ok(audio) => json!({
+                "status": audio.status,
+                "contentType": audio.content_type,
+                "bytes": audio.bytes,
+            }),
+            Err(error) => json!({"error": error_code(&error)}),
+        })
+        .collect();
+    json!({"bodies": decoded})
 }
 
 // the helper reports only the kind of failure, without comparing an error's class or message
@@ -154,91 +245,4 @@ fn error_code(error: &VertexSpeechError) -> &'static str {
         VertexSpeechError::UnknownVoiceField { .. } => "other",
         VertexSpeechError::VoiceFieldType { .. } => "other",
     }
-}
-
-fn case_body(
-    runtime: &Runtime,
-    mapping: &SpeechMapping,
-    voice_dict: Option<&Object>,
-    voice: Option<&str>,
-    input: &str,
-) -> Value {
-    match prepared(runtime, mapping, input, voice_dict, voice) {
-        Ok(request) => json!(request.body),
-        Err(error) => json!({"error": error_code(&error)}),
-    }
-}
-
-fn project(view: Value, wrapper: &str, field: &str) -> Value {
-    if view.get("error").is_some() {
-        return view;
-    }
-    if wrapper.is_empty() {
-        return view[field].clone();
-    }
-    json!({wrapper: view[field]})
-}
-
-fn ssml_substring(runtime: &Runtime, cases: &[SsmlCase]) -> Value {
-    let inputs: Vec<Value> = cases
-        .iter()
-        .map(|case| {
-            let kwargs = SpeechKwargs { audio_config: None, use_ssml: case.use_ssml };
-            let mapping = map_openai_params(None, &SpeechOptionalParams::default(), &kwargs);
-            project(case_body(runtime, &mapping, None, None, &case.input), "input", "input")
-        })
-        .collect();
-    json!({"inputs": inputs})
-}
-
-fn full_audio_config(runtime: &Runtime, cases: &[AudioCase]) -> Value {
-    let configs: Vec<Value> = cases
-        .iter()
-        .map(|case| {
-            let optional = SpeechOptionalParams {
-                response_format: case.response_format.clone(),
-                speed: case.speed,
-            };
-            let kwargs = SpeechKwargs { audio_config: case.audio_config.clone(), use_ssml: false };
-            let mapping = map_openai_params(None, &optional, &kwargs);
-            project(case_body(runtime, &mapping, None, None, "hi"), "", "audioConfig")
-        })
-        .collect();
-    json!({"configs": configs})
-}
-
-fn voice_dict_precedence(runtime: &Runtime, cases: &[VoiceDictCase]) -> Value {
-    let voices: Vec<Value> = cases
-        .iter()
-        .map(|case| {
-            let voice = case.voice.clone().map(SpeechVoice::Name);
-            let mut mapping = map_openai_params(
-                voice.as_ref(),
-                &SpeechOptionalParams::default(),
-                &SpeechKwargs::default(),
-            );
-            if let Some(dict) = &case.mapped_voice {
-                mapping.voice_dict = Some(dict.clone());
-            }
-            let view = case_body(runtime, &mapping, case.litellm_voice.as_ref(), mapping.voice.as_deref(), "hi");
-            project(view, "voice", "voice")
-        })
-        .collect();
-    json!({"voices": voices})
-}
-
-fn decoded_status_200(bodies: &[String]) -> Value {
-    let sniff = |audio: &[u8]| (audio.first() == Some(&b'X')).then_some("audio/x-test".to_owned());
-    let decoded: Vec<Value> = bodies
-        .iter()
-        .map(|body| match decode_vertex_speech_audio(body.as_bytes(), &sniff) {
-            Ok(audio) => json!({
-                "status": audio.status,
-                "contentType": audio.content_type,
-                "bytes": audio.bytes,
-            }),
-            Err(error) => json!({"error": error_code(&error)}),
-        })
-        .collect();
-    json!({"bodies": decoded})
 }
