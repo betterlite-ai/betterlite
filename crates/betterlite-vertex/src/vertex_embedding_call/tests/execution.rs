@@ -441,18 +441,18 @@ async fn execution_posts_through_the_pooled_client() {
         .await
         .unwrap();
     assert_eq!(response.model, TEXT_MODEL);
-    let sent = timeout(Duration::from_secs(5), server.join_next())
+    let received = timeout(Duration::from_secs(5), server.join_next())
         .await
         .unwrap()
         .unwrap()
         .unwrap();
-    let sent = String::from_utf8(sent).unwrap();
-    assert!(sent.starts_with(
+    let request = String::from_utf8(received).unwrap();
+    assert!(request.starts_with(
         "POST /v1/projects/project-p/locations/us-central1/publishers/google/models/text-embedding-005:predict HTTP/1.1"
     ));
-    assert!(sent.contains(&format!("authorization: Bearer {TOKEN}")));
-    assert!(sent.contains("content-type: application/json"));
-    assert!(sent.ends_with(r#"{"instances":[{"content":"hello"}],"parameters":{}}"#));
+    assert!(request.contains(&format!("authorization: Bearer {TOKEN}")));
+    assert!(request.contains("content-type: application/json"));
+    assert!(request.ends_with(r#"{"instances":[{"content":"hello"}],"parameters":{}}"#));
 }
 
 async fn answer_embedding(listener: TcpListener) -> Vec<u8> {
