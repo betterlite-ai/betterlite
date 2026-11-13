@@ -112,6 +112,12 @@ fn evaluate_flattens_a_list_result_from_each_wildcard_item() {
 }
 
 #[test]
+fn evaluate_returns_none_when_no_wildcard_item_matches() {
+    let data = json(r#"{"items": [{"name": "a"}]}"#);
+    assert_eq!(evaluate(&data, "items[*].missing"), None);
+}
+
+#[test]
 fn evaluate_skips_wildcard_items_that_are_not_objects() {
     let data = json(r#"{"items": [{"name": "a"}, "text", {"name": "b"}]}"#);
     assert_eq!(evaluate(&data, "items[*].name"), Some(many(&["a", "b"])));
