@@ -1,0 +1,6 @@
+kind: helper
+name: event-hook-logging-only-needs-apply-interface
+call:
+  b5471: {"function": "validate_hook", "supported": ["pre_call"], "event_hook": "logging_only", "event_hooks": null, "mode_tags": null, "mode_default": null}
+env: {}
+compare: {ignore: []}

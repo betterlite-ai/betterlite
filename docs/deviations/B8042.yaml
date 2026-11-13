@@ -1,0 +1,26 @@
+task: B8042
+deviations:
+  - what: A local value whose dot-separated module parts are empty or start with a path separator is refused with the "Could not import {instance} from {module}" ImportError before the folder is read. LiteLLM joins the parts into a path and can execute a Python file outside the config folder, or an absolute one such as /etc/passwd.py.
+    why: Config text is untrusted input, and a path that leaves the config folder is a traversal no working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L41
+  - what: A value with no dot has an empty module name, so the file LiteLLM would look for in the config folder (`.py`) is never executed and the load goes straight to importlib.import_module("") and its ValueError.
+    why: An unnamed module is not a working setup, and every folder without a `.py` file fails the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L43
+  - what: A failed bucket download is the fetcher's own error type, held through ModuleFetcher::Error as the source of the "Failed to download ..." ImportError. LiteLLM's download returns False, so the cause is lost.
+    why: The cause stays attached, typed, for the caller. The text a user reads is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L158-L159
+  - what: A module load that runs longer than 60 seconds returns a timeout. Python cannot stop the thread, and the pool counts the job as abandoned until it ends.
+    why: A module that blocks at import would otherwise hold the caller and a Tokio worker forever.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L9
+  - what: The downloaded module lives in an owned temp folder that is removed when the load ends, on success and on failure, and a removal failure is not logged.
+    why: The folder owns its cleanup. LiteLLM removes the named temp file explicitly and logs a warning when that fails.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L172-L176
+  - what: The bucket-load debug and info lines carry betterlite's wording, with the same fields, instead of "Loading custom logger from ...".
+    why: Log text is not part of what a config or client can rely on, and betterlite logs its own way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L129-L135
+  - what: The AttributeError for a missing instance name carries Python's own text, which the oracle does not compare.
+    why: The text comes from the runtime (docs/compatibility.md).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L170
+  - what: Modules are imported with the interpreter that pyo3 linked, so hook dependencies are installed into that interpreter.
+    why: The proxy embeds its interpreter instead of running inside the one that started LiteLLM.
+    link: ""

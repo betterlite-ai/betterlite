@@ -1,0 +1,6 @@
+kind: helper
+name: event-hook-supported-single
+call:
+  b5471: {"function": "validate_hook", "supported": ["pre_call"], "event_hook": "pre_call", "event_hooks": null, "mode_tags": null, "mode_default": null}
+env: {}
+compare: {ignore: []}

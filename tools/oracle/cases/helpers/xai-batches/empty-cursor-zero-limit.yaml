@@ -1,0 +1,15 @@
+kind: helper
+name: empty-cursor-zero-limit
+call:
+  xai_batches:
+    operation: params
+    env: {}
+    xai_key: null
+    calls:
+      - {api_base: null, api_key: Key, after: "", limit: 0}
+      - {api_base: null, api_key: Key, after: null, limit: null}
+      - {api_base: "https://proxy.example/v1/", api_key: Key, after: "tok-1", limit: 5}
+      - {api_base: null, api_key: Key, after: null, limit: -1}
+      - {api_base: null, api_key: null, after: null, limit: null}
+env: {}
+compare: {ignore: []}

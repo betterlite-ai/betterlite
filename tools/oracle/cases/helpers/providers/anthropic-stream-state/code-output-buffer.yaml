@@ -1,0 +1,22 @@
+kind: helper
+name: anthropic-stream-state-code-output-buffer
+call:
+  anthropic_stream_state:
+    json_mode: false
+    speed: null
+    sync_stream: true
+    tool_name_reverse_map: {}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: setup, fields: {container_id: c-1, server_tool_inputs: {c1: {command: ls -la}, c3: {}}, tool_results: [{type: bash_code_execution_tool_result, tool_use_id: c1, content: {stdout: out, stderr: err}}, {type: web_search_tool_result, tool_use_id: c2, content: []}, {type: bash_code_execution_tool_result, tool_use_id: c3, content: {}}, {type: bash_code_execution_tool_result, tool_use_id: c4, content: {stdout: only}}]}}
+      - {function: code_results}
+      - {function: setup, fields: {server_tool_inputs: {c1: {command: ls -la}, c4: {command: 5}}, tool_results: [{type: bash_code_execution_tool_result, tool_use_id: c1, content: {stdout: out, stderr: err}}, {type: bash_code_execution_tool_result, tool_use_id: c4, content: {}}]}}
+      - {function: code_results}
+      - {function: setup, fields: {tool_results: [{type: bash_code_execution_tool_result, content: {}}]}}
+      - {function: code_results}
+      - {function: setup, fields: {server_tool_inputs: {c5: not-an-object}, tool_results: [{type: bash_code_execution_tool_result, tool_use_id: c5, content: raw}]}}
+      - {function: code_results}
+      - {function: setup, fields: {server_tool_inputs: {c6: {command: ""}}, tool_results: [{type: bash_code_execution_tool_result, tool_use_id: c6, content: {stdout: out, stderr: ""}}]}}
+      - {function: code_results}
+env: {}
+compare: {ignore: []}

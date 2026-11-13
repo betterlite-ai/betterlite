@@ -28,6 +28,8 @@ description: >-
   As in B5657, a test builds each class from both packages with the same arguments and compares `model_dump()`.
 scope:
   paths:
+  - "crates/betterlite-python/python/betterlite/types/utils/transcription.py"
+  - "crates/betterlite-python/python/betterlite/types/utils/grader_content.py"
   - crates/betterlite-python/python/betterlite/types/utils/__init__.py
   - crates/betterlite-python/python/betterlite/types/utils/embedding.py
   - crates/betterlite-python/python/betterlite/types/utils/text_completion.py

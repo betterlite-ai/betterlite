@@ -1,0 +1,26 @@
+kind: helper
+name: request-destination-missing-model-source-error
+call:
+  request_destination:
+    calls:
+      - {function: resolve_inference_model, body_model: null, settings: {}, cli_model: null, endpoint_model: null, kind: completion}
+      - {function: resolve_inference_model, body_model: null, settings: {}, cli_model: null, endpoint_model: null, kind: image_generation}
+      - {function: resolve_inference_model, body_model: null, settings: {}, cli_model: null, endpoint_model: null, kind: image_edit}
+      - {function: resolve_inference_model, body_model: null, settings: {}, cli_model: null, endpoint_model: null, kind: moderation}
+      - {function: resolve_inference_model, body_model: null, settings: {}, cli_model: null, endpoint_model: null, kind: speech}
+      - {function: resolve_inference_model, body_model: null, settings: {}, cli_model: null, endpoint_model: null, kind: body}
+      - {function: resolve_inference_model, body_model: null, settings: {}, cli_model: null, endpoint_model: null, kind: path}
+      - {function: tags_from_request_body, request_body: {metadata: {tags: [a, 1]}, tags: [b, a]}}
+      - {function: tags_from_request_body, request_body: {litellm_metadata: null, metadata: {tags: [outer]}, tags: [body]}}
+      - {function: tags_from_request_body, request_body: {metadata: "[1,2]", tags: [b]}}
+      - {function: tags_from_request_body, request_body: {metadata: "not json", tags: [b]}}
+      - {function: tags_from_request_body, request_body: {metadata: {tags: [a, a]}, tags: [a, b]}}
+      - {function: populate_request_parameters, request_data: {model: m}, query_params: {k: v, k2: v2}, route_path: "/v1/chat/completions"}
+      - {function: populate_request_parameters, request_data: {vector_store_ids: [a]}, path_params: {vector_store_id: b, other: o}, route_path: "/x"}
+      - {function: populate_request_parameters, request_data: {vector_store_ids: [a], vector_store_id: mine}, route_path: "/v1/vector_stores/vs_123/files"}
+      - {function: populate_request_parameters, request_data: {}, route_path: "/v1/vector_stores/vs_123"}
+      - {function: populate_request_parameters, request_data: {vector_store_ids: not-a-list}, path_params: {vector_store_id: vs_1}, route_path: "/x"}
+      - {function: populate_request_parameters, request_data: {model: body}, query_params: {model: query}, route_path: "/v1/chat/completions"}
+      - {function: populate_request_parameters, request_data: {}, query_params: {q: "a&b=c", space: "x y%"}, route_path: "/v1/chat/completions"}
+env: {}
+compare: {ignore: []}

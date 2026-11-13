@@ -156,7 +156,7 @@ deviations:
 - what: "`client` and `shared_session` raise `UnsupportedCallArgument`."
   why: A Python HTTP client can't drive the Rust call, and ignoring it could send a request past a caller's proxy or custom TLS.
 - what: A stream is one `BaseResponsesAPIStreamingIterator` for both paths, and its events are `ResponseObject` values, not the per-event pydantic classes.
-  why: The wheel has no pydantic, and the event classes belong to B167. The dumped dict of each event is the same.
+  why: The event classes belong to B167. The dumped dict of each event is the same.
 - what: The retry wrappers run without tenacity, so "tenacity import failed please run `pip install tenacity`" never appears.
   why: A plain loop needs no optional package.
 - what: "`litellm.responses.dispatch` and its rust_bridge selector do not exist."

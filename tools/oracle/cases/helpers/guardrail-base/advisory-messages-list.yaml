@@ -1,0 +1,6 @@
+kind: helper
+name: advisory-messages-list
+call:
+  b5471: {"function": "advisory", "data": {"messages": [{"role": "user", "content": "hi"}]}, "message": "careful"}
+env: {}
+compare: {ignore: []}

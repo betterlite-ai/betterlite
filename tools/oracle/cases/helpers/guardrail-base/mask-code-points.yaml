@@ -1,0 +1,6 @@
+kind: helper
+name: mask-code-points
+call:
+  b5471: {"function": "mask", "content": "h\u00e9llo \u4e16\u754c", "mask": "***", "start": 1, "end": 2}
+env: {}
+compare: {ignore: []}

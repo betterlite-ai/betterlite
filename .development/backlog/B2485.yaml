@@ -2,7 +2,7 @@ id: B2485
 milestone: M5 API families
 title: Vector-store HTTP create, retrieve and list
 status: todo
-depends_on: [B173, B1058, B1131, B527, B012, B171, B2402, B2401]
+depends_on: [B173, B1058, B1131, B527, B012, B171, B2402, B2401, B9952]
 file: tasks/B2485-vector-store-http-create-read.yaml
 covers:
   - "litellm/llms/custom_httpx/llm_http_handler.py"

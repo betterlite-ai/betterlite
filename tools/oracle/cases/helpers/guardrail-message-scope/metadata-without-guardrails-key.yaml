@@ -1,0 +1,6 @@
+kind: helper
+name: metadata-without-guardrails-key
+call:
+  b3663: {"function": "proceed", "data": {"metadata": {"user": "u"}}, "guardrail_name": "presidio", "callbacks": {}}
+env: {}
+compare: {ignore: []}

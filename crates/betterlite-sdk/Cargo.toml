@@ -7,11 +7,13 @@ publish.workspace = true
 
 [dependencies]
 async-trait = "0.1.92"
+betterlite-context = { path = "../betterlite-context" }
 betterlite-core = { path = "../betterlite-core" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
+betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redact = { path = "../betterlite-redact" }
 chrono.workspace = true
 hex.workspace = true
@@ -28,7 +30,9 @@ url = "2.5.8"
 
 [dev-dependencies]
 betterlite-config = { path = "../betterlite-config" }
+betterlite-openai = { path = "../betterlite-openai" }
 rstest = "=0.27.0"
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true
