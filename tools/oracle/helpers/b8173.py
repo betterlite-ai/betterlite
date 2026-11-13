@@ -34,8 +34,25 @@ class ChatConfig(Protocol):
     ) -> str: ...
 
 
+class MinimaxConfig(ChatConfig, Protocol):
+    @staticmethod
+    def get_api_base(api_base: str | None = None) -> str: ...
+
+    @staticmethod
+    def get_api_key(api_key: str | None = None) -> str | None: ...
+
+
+class ModelEntry(TypedDict):
+    litellm_provider: str
+    mode: str
+    supports_reasoning: bool
+    supports_adaptive_thinking: bool
+    input_cost_per_token: float
+    output_cost_per_token: float
+
+
 AI21: ChatConfig = AI21ChatConfig()
-MINIMAX: ChatConfig = MinimaxChatConfig()
+MINIMAX: MinimaxConfig = MinimaxChatConfig()
 MODELSCOPE: ChatConfig = ModelScopeChatConfig()
 TENCENT: ChatConfig = TencentChatConfig()
 
@@ -122,18 +139,16 @@ class Input(TypedDict):
 
 
 def register(provider: str, model: str, *, reasoning: bool, adaptive: bool) -> None:
-    litellm.register_model(
-        {
-            model: {
-                "litellm_provider": provider,
-                "mode": "chat",
-                "supports_reasoning": reasoning,
-                "supports_adaptive_thinking": adaptive,
-                "input_cost_per_token": 0.000001,
-                "output_cost_per_token": 0.000002,
-            }
-        }
-    )
+    entry: ModelEntry = {
+        "litellm_provider": provider,
+        "mode": "chat",
+        "supports_reasoning": reasoning,
+        "supports_adaptive_thinking": adaptive,
+        "input_cost_per_token": 0.000001,
+        "output_cost_per_token": 0.000002,
+    }
+    cost_map: dict[str, ModelEntry] = {model: entry}
+    litellm.register_model(cost_map)
 
 
 def optional_params(step: Ai21Map | TencentMap) -> JsonObject:
@@ -174,8 +189,8 @@ def answer(step: Step) -> JsonValue:
     elif step["kind"] == "minimax_info":
         litellm.api_key = step.get("global_key")
         result = {
-            "base": MinimaxChatConfig.get_api_base(step.get("api_base")),
-            "key": MinimaxChatConfig.get_api_key(step.get("api_key")),
+            "base": MINIMAX.get_api_base(step.get("api_base")),
+            "key": MINIMAX.get_api_key(step.get("api_key")),
         }
     elif step["kind"] == "minimax_url":
         result = MINIMAX.get_complete_url(step.get("api_base"), None, "", {}, {})
