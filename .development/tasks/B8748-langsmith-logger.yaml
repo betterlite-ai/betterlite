@@ -63,6 +63,10 @@ scope:
     - crates/betterlite-server/src/trace_lifecycle/tests/support.rs
     - tools/oracle/src/helpers/logging/b3933.rs
     - tools/oracle/src/helpers/logging/b3944.rs
+    - crates/betterlite-logging/src/datadog/cost_management/datadog_cost_management/tests/callback_logger.rs
+    - tools/oracle/src/helpers/logging/b3938/datadog_llm_observability/support.rs
+    - tools/oracle/src/helpers/logging/b3940.rs
+    - tools/oracle/src/helpers/logging/b3971.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L42-L99
