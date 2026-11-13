@@ -1,0 +1,9 @@
+task: B746
+deviations:
+  - what: >-
+      A model candidate that is a JSON list or object is stringified as its JSON text, while LiteLLM
+      calls Python's str() and gets single-quoted repr text for the same value.
+    why: >-
+      docs/compatibility.md excludes repr text from parity. Declared model values are strings, and a
+      list is read as a sequence of candidates, so only container items differ.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1731-L1743
