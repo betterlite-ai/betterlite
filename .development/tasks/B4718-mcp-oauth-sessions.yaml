@@ -4,7 +4,7 @@ description: >-
   Build the short-lived MCP server session that the admin "Authorize and fetch token" flow runs on, the lookup that finds it again, and the one route that creates it: POST /v1/mcp/server/oauth/session (add_session_mcp_server). A session is a server the admin has not saved yet. The browser then calls /register, /authorize and /token for it, and those calls can land on any worker or replica, so the session has to be findable from all of them. B4719 builds those three routes on top of the lookup from this task.
 
 
-  Code goes in betterlite-server, module mcp::oauth_sessions: crates/betterlite-server/src/mcp/oauth_sessions.rs, oauth_sessions/store.rs, oauth_sessions/redis_copy.rs, oauth_sessions/record.rs, oauth_sessions/route.rs and a tests.rs beside each file. The skeleton adds the dependencies on betterlite-mcp and betterlite-cache to betterlite-server; this task does not edit Cargo.toml. Nothing here keeps global state: the process-local table, the clock, the cipher, the optional Redis backend and the database port are all fields of one struct, SessionStore, built by B8622 and shared behind the caller's own pointer. LiteLLM's module-level dict _temporary_mcp_servers becomes the private field `local: Mutex<HashMap<String, LocalEntry>>`, where LocalEntry { server: MCPServer, expires_at: DateTime<Utc> } is LiteLLM's _TemporaryMCPServerEntry.
+  Code goes in betterlite-server, module mcp::oauth_sessions: crates/betterlite-server/src/mcp/oauth_sessions.rs, oauth_sessions/store.rs, oauth_sessions/redis_copy.rs, oauth_sessions/record.rs, oauth_sessions/route.rs and a tests.rs beside each file. The skeleton adds the dependencies on betterlite-mcp and betterlite-cache to betterlite-server; this task does not edit Cargo.toml. Nothing here keeps global state: the process-local table, the clock, the cipher, the optional Redis backend, the database port and the server access check (B4731's ServerAccessCheck, a generic field) are all fields of one struct, SessionStore, built by B8622 and shared behind the caller's own pointer. LiteLLM's module-level dict _temporary_mcp_servers becomes the private field `local: Mutex<HashMap<String, LocalEntry>>`, where LocalEntry { server: MCPServer, expires_at: DateTime<Utc> } is LiteLLM's _TemporaryMCPServerEntry.
 
 
   Constants, spelled as in LiteLLM: TEMPORARY_MCP_SERVER_TTL_SECONDS = 300 and TEMPORARY_MCP_SERVER_REDIS_KEY_PREFIX = "litellm:mcp:temporary_server". Neither is configurable.
@@ -28,11 +28,11 @@ description: >-
 
   8. route.rs, `add_session_server` (`add_session_mcp_server`) for POST /v1/mcp/server/oauth/session, wrapped by B865's management_endpoint_wrapper like every management route, status 200, authenticated with the normal user_api_key_auth dependency (the cookie fallback of _mcp_oauth_user_api_key_auth belongs to B4719). The body is NewMCPServerRequest. The optional litellm-changed-by header is declared and never read. Steps in this exact order: (a) B4716's validate_and_normalize_mcp_server_payload (400 on a bad name); (b) B4716's stamp_omitted_oauth2_flow; (c) a caller whose user_role is not PROXY_ADMIN gets 403 with body {"detail": {"error": "User does not have permission to create temporary mcp servers. You can only create temporary mcp servers if you are a PROXY_ADMIN."}}, so PROXY_ADMIN_VIEW_ONLY is refused too; (d) created_by is the caller's user_id, else "default_user_id" (LITELLM_PROXY_ADMIN_NAME); (e) B4717's inherit_credentials_from_existing_server on the request; (f) resolve_session_id and build_temporary_record; (g) inside one error scope: build_mcp_server_from_table(record, credentials_are_encrypted = false), then cache_local, then persist_draft, then write_redis_copy, in that order; any error in this scope is logged and becomes 500 with detail {"error": "Error caching temporary mcp server: <error text>"}. The id lookup in (f) runs before that scope, so its errors are not wrapped in that message. The response body is B4717's redact_mcp_credentials applied to the record from (f), so scopes and admin config survive and every secret is dropped.
 
-  9. store.rs, `cached_temporary_server_or_404` (`_get_cached_temporary_mcp_server_or_404`), inputs: server_id, the caller's auth, and the optional request. The client ip is B743's get_mcp_client_ip(request), None when there is no request. It calls B4731's resolve_server with this store as the temp lookup, no database lookup, id_client_ip None, name_client_ip the client ip and match_name true. Then authorize_server with is_admin_view from B2314's user_api_key_has_admin_view, not_found_detail {"error": "MCP server <id> not found"}, forbidden_detail {"error": "Access denied to MCP server <id>"} and non_admin_missing NotFound. It returns the runtime MCPServer. A resolution without a runtime cannot happen with these two sources; return a typed error variant for it instead of an assert, and the route layer maps it to 500.
+  9. store.rs, `cached_temporary_server_or_404` (`_get_cached_temporary_mcp_server_or_404`), inputs: server_id, the caller's auth, and the optional request. The client ip is B743's get_mcp_client_ip(request), None when there is no request. It calls B4731's resolve_server with this store as the temp lookup, no database lookup, id_client_ip None, name_client_ip the client ip and match_name true. Then authorize_server with the caller's auth, the store's access check, is_admin_view from B2314's user_api_key_has_admin_view, not_found_detail {"error": "MCP server <id> not found"}, forbidden_detail {"error": "Access denied to MCP server <id>"} and non_admin_missing NotFound. AuthorizeError::Access is returned in its own typed variant, not as a 404 or 403. It returns the runtime MCPServer. A resolution without a runtime cannot happen with these two sources; return a typed error variant for it instead of an assert, and the route layer maps it to 500.
 
   Errors: one SessionError enum (thiserror) in oauth_sessions.rs with a variant per failure above, wrapping the upstream error types with #[from] where they exist, and a status mapping used by the route.
 
-  Tests use synthetic servers (ids like test-session-1, urls like https://mcp.example.test/sse), a fake clock, a fake Redis backend that can be set to fail each operation, a fake cipher that can fail, and an in-memory fake for the database port. The HTTP cases run the booted proxy with a master key and no database and no response cache, so they cover the in-memory path only.
+  Tests use synthetic servers (ids like test-session-1, urls like https://mcp.example.test/sse), a fake clock, a fake Redis backend that can be set to fail each operation, a fake cipher that can fail, and an in-memory fake for the database port. The route answers over HTTP only once B8702 mounts it, so its five HTTP cases live in B8702 (tools/oracle/cases/http/mcp-oauth-session/), written from this task's route steps and DoD: the booted proxy with a master key, no database and no response cache, so they cover the in-memory path only. Here the route is tested through the handler with fakes.
 
 scope:
   paths:
@@ -40,7 +40,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/mcp/oauth_sessions.rs
     - crates/betterlite-server/src/mcp/oauth_sessions/**
-    - tools/oracle/cases/mcp-oauth-session/**
     - tools/oracle/helpers/b4718.py
     - tools/oracle/helpers/b4718/**
     - tools/oracle/src/helpers/server/b4718.rs
@@ -107,14 +106,14 @@ dod:
       POST /v1/mcp/server/oauth/session answers 200 with the credential-redacted record for a master-key caller, keeps a
       supplied server_id when there is no database, mints a new id when none is supplied, and keeps scopes while dropping
       auth_value and client_secret from the response.
-    proof: [oracle]
+    proof: [session-tests]
   - text: >-
       The route validates the payload before the role check (a bad name gives 400 even for a non-admin), answers 403 with the
-      exact error text for any role except PROXY_ADMIN, answers 401 without credentials, and wraps an error from the caching
+      exact error text for any role except PROXY_ADMIN, and wraps an error from the caching
       step as 500 "Error caching temporary mcp server: <error>".
-    proof: [oracle, session-tests]
+    proof: [session-tests]
   - text: >-
-      Every default, error text and ignore-and-continue path a user can observe is in a named test or oracle case with a literal
+      Every default, error text and ignore-and-continue path a user can observe is in a named test with a literal
       input and outcome.
     proof: [session-tests]
 
@@ -126,12 +125,7 @@ checks:
       why: the session store, the three-source lookup, the Redis copy, the id rule and the route steps have no passing behavior tests
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth_sessions::/)'
 
-oracle_cases:
-  - tools/oracle/cases/mcp-oauth-session/session-supplied-id-kept.yaml
-  - tools/oracle/cases/mcp-oauth-session/session-generated-id.yaml
-  - tools/oracle/cases/mcp-oauth-session/session-credentials-redacted.yaml
-  - tools/oracle/cases/mcp-oauth-session/session-requires-auth.yaml
-  - tools/oracle/cases/mcp-oauth-session/session-invalid-name-400.yaml
+oracle_cases: []
 
 deviations:
   - what: The Redis copy is skipped when no backend is configured, like LiteLLM when litellm.cache is None; there is no check for a missing method on the backend.

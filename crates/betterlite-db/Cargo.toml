@@ -17,6 +17,7 @@ aws-sigv4 = "1.6.2"
 aws-smithy-async = "=1.3.1"
 aws-smithy-runtime-api = { version = "=1.19.2", features = ["client"] }
 aws-types = "=1.6.0"
+base64 = "0.23.1"
 betterlite-env = { path = "../betterlite-env" }
 betterlite-roi = { path = "../betterlite-roi" }
 betterlite-secret-managers = { path = "../betterlite-secret-managers" }
@@ -25,6 +26,7 @@ chrono.workspace = true
 deadpool-postgres.workspace = true
 futures-util = { version = "0.3.34", default-features = false }
 hex.workspace = true
+indexmap = { version = "2.14.2", features = ["serde"] }
 percent-encoding.workspace = true
 rand = { version = "0.10.3", default-features = false, features = ["std_rng", "sys_rng"] }
 regex.workspace = true
@@ -47,6 +49,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 aws-smithy-types = "=1.9.1"
+betterlite-openai = { path = "../betterlite-openai" }
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }

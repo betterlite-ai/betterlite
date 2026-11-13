@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 betterlite-config = { path = "../betterlite-config" }
+betterlite-context = { path = "../betterlite-context" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
@@ -22,10 +23,12 @@ regex.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
+serde_with = "3.24.0"
 sha2 = "0.11.1"
 thiserror.workspace = true
 tracing.workspace = true
 url = "2.5.8"
+uuid.workspace = true
 
 [dev-dependencies]
 rstest = "=0.27.0"

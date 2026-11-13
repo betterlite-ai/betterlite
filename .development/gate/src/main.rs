@@ -54,7 +54,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     #[command(
-        about = "Print the nextest package flags for the packages a change against GATE_BASE can affect: --workspace, -p flags, or nothing; GATE_ALL_TESTS set prints --workspace"
+        about = "Print the nextest package flags for the packages a change against GATE_BASE can affect: --workspace, -p flags, or nothing; GATE_ALL_TESTS set takes every package"
     )]
     Affected {
         #[arg(
@@ -62,6 +62,8 @@ enum Command {
             help = "Print only the packages the change edits, without the ones that depend on them"
         )]
         edited: bool,
+        #[command(flatten)]
+        shard: affected::Shard,
     },
     #[command(
         about = "Validate every spec file under .development/ and the committed JSON Schemas"
@@ -94,6 +96,12 @@ enum Command {
             help = "Leave these check ids out (repeatable or comma-separated)"
         )]
         skip: Vec<String>,
+        #[arg(
+            long,
+            value_delimiter = ',',
+            help = "Start these check ids at once, one after another, while the other checks run (repeatable or comma-separated)"
+        )]
+        beside: Vec<String>,
     },
     #[command(
         about = "Write the JSON Schemas generated from the format types into .development/schema/"
@@ -230,12 +238,24 @@ fn dispatch_command(command: Command) -> Result<(Vec<String>, bool), GateError> 
     run_command(command, &Development::open(&directory)?)
 }
 
+fn run_selection(
+    development: &Development,
+    id: &str,
+    selection: &Selection,
+) -> Result<(Vec<String>, bool), GateError> {
+    let task = development.task(id)?;
+    let verdict = checks::run(development, &task, selection)?;
+    Ok((verdict.lines, verdict.passed))
+}
+
 fn run_command(
     command: Command,
     development: &Development,
 ) -> Result<(Vec<String>, bool), GateError> {
     match command {
-        Command::Affected { edited } => Ok((affected::affected(&development.root, edited)?, true)),
+        Command::Affected { edited, shard } => {
+            Ok((affected::affected(&development.root, edited, shard)?, true))
+        }
         Command::Availability => {
             dispatch::availability(development)?;
             Ok((vec!["a worker vendor is available".to_owned()], true))
@@ -253,14 +273,12 @@ fn run_command(
             let verdict = checks::run(development, &task, &selection)?;
             Ok((verdict.lines, verdict.passed))
         }
-        Command::Run { task, only, skip } => {
-            let verdict = checks::run(
-                development,
-                &development.task(&task)?,
-                &Selection { only, skip },
-            )?;
-            Ok((verdict.lines, verdict.passed))
-        }
+        Command::Run {
+            task,
+            only,
+            skip,
+            beside,
+        } => run_selection(development, &task, &Selection { only, skip, beside }),
         Command::Schema => Ok((schema::write(&development.root)?, true)),
         Command::Dispatch { task, notes, grant } => {
             Ok((dispatch::dispatch(development, &task, notes, grant)?, true))

@@ -12,10 +12,10 @@ on:
 permissions: {}
 
 env:
-  # three runners take main's whole suite from 13.5 to 10 minutes
-  TEST_SHARDS: 3
-  # cargo mutants tests one mutant at a time, so a task pull request splits them over three runners
-  MUTANTS_SHARDS: 3
+  # cargo gate affected --shard packs whole packages onto the shards by their test seconds; six took 9.6 to 17.1 minutes on 11-13 (run 43471939068) against 20 to 28 for three hash shards
+  TEST_SHARDS: 6
+  # cargo mutants tests one mutant at a time, so a task pull request splits them over six runners; three took a median 20 and a p90 38 minutes on 11-13
+  MUTANTS_SHARDS: 6
 
 concurrency:
   group: gate-${{ github.event.pull_request.number || github.event.merge_group.head_ref || github.ref }}
@@ -41,7 +41,7 @@ jobs:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2
+          fetch-depth: 0 # a queued group's base lies as many commits back as the group holds pull requests
           persist-credentials: false
 
       - name: Find the base, the task and the parts to run
@@ -57,7 +57,7 @@ jobs:
           if [[ $EVENT == merge_group ]]; then
             base=$QUEUE_BASE
             number=$(sed -E 's#^refs/heads/gh-readonly-queue/[^/]+/pr-([0-9]+)-.*$#\1#' <<<"$QUEUE_REF")
-            branch=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPOSITORY/pulls/$number" | jq -r .head.ref)
+            branch=$(curl -fsS --retry 3 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPOSITORY/pulls/$number" | jq -r .head.ref)
           else
             base=$(git rev-parse HEAD^1)
             branch=$PR_BRANCH
@@ -70,10 +70,27 @@ jobs:
           if [[ $EVENT == pull_request ]]; then
             parts='["lint"]'
             if [[ -n $task ]]; then
-              parts=$(jq -cn --argjson shards "$MUTANTS_SHARDS" '["lint","task"] + [range(1; $shards + 1) | "mutants-\(.)"]')
+              parts='["lint","task"]'
+              # a mutants runner took 2.7 minutes to print that its task has no mutants check, so the task file decides here
+              task_files=(.development/tasks/"$task"-*.yaml)
+              optional=$(yq '.checks.optional[]' "${task_files[0]}")
+              if grep -qx mutants <<<"$optional"; then
+                parts=$(jq -cn --argjson shards "$MUTANTS_SHARDS" '["lint","task"] + [range(1; $shards + 1) | "mutants-\(.)"]')
+              fi
             fi
           elif [[ $EVENT == merge_group && -n $task ]]; then
             parts='["lint","task"]'
+          elif [[ $EVENT == merge_group ]]; then
+            # a tests runner took 2.8 minutes to print that the change affects no package, so the paths rules.toml marks for no package decide here
+            changed=$(git diff --name-only --no-renames "$base" HEAD)
+            rules=$(yq -p toml -o json '.' .development/gate/src/affected/rules.toml)
+            if jq -en --arg changed "$changed" --argjson rules "$rules" '[$rules["path-rule"][] | select(.["mark-changed"] == []) | .globs[]] as $inert | $changed | split("\n") | all(. as $path | $inert | any(. as $glob | if endswith("/**") then $path | startswith($glob[:-2]) else $path == $glob end))' > /dev/null; then
+              parts='["lint"]'
+            fi
+          fi
+          # a tests part builds only its own packages, so on main one part builds every test target for the cache
+          if [[ $EVENT == push ]]; then
+            parts=$(jq -c '. + ["cache"]' <<<"$parts")
           fi
           echo "branch $branch, base $base, task ${task:-none}, parts $parts"
           printf 'base=%s\ntask=%s\nparts=%s\n' "$base" "$task" "$parts" >> "$GITHUB_OUTPUT"
@@ -163,12 +180,12 @@ jobs:
       - name: Add Rust components
         run: rustup component add clippy rustfmt llvm-tools-preview
 
-      # clippy keeps check builds and the tests keep full builds, so each kind has its own cache, and only the first test shard saves it
+      # clippy keeps check builds and the tests keep full builds, so each kind has its own cache, and main's cache part saves the test one
       - name: Restore the cargo cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: gate-${{ matrix.part == 'lint' && 'lint' || 'tests' }}
-          save-if: ${{ github.ref == 'refs/heads/main' && (matrix.part == 'lint' || matrix.part == 'tests-1') }}
+          save-if: ${{ github.ref == 'refs/heads/main' && (matrix.part == 'lint' || matrix.part == 'cache') }}
           workspaces: |
             .development/gate -> target
             . -> target
@@ -252,6 +269,14 @@ jobs:
           key: oracle-answers-${{ github.sha }}
           restore-keys: oracle-answers-
 
+      # a task's own checks may run node (B9090's do), and the image has none; 24.19.0 is what LiteLLM's ui/litellm-dashboard/.nvmrc pins
+      - name: Set up Node
+        if: matrix.part == 'task'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.19.0
+          package-manager-cache: false
+
       # lint and task split every check between them, so a check added to checks.yaml runs in task
       - name: Run the gate's ${{ matrix.part }} checks on the merged result
         if: github.event_name != 'pull_request' || needs.find.outputs.task != ''
@@ -260,25 +285,42 @@ jobs:
           GATE_BASE: ${{ needs.find.outputs.base }}
           GATE_ALL_TESTS: ${{ github.event_name == 'push' && 'true' || '' }}
           PART: ${{ matrix.part }}
+          PARTS: ${{ needs.find.outputs.parts }}
           TASK: ${{ needs.find.outputs.task }}
         run: |
           lint=(fmt clippy deny shear hooks similarity file-size module-tree case-ignores workflows)
           if [[ -n $TASK ]]; then
             local_checks=$(cargo gate list "$TASK" --local) || exit 1
             mapfile -t lint < <(awk '/^[^ ]/ {print $1}' <<<"$local_checks")
+            # a dispatch no longer runs clippy on the laptop (stage 3), so the lint part adds it to the task's local checks
+            lint+=(clippy)
           fi
           # coverage runs with the task's tests on the pull request, so the queue leaves it out
           later=(mutants)
           if [[ $EVENT != pull_request ]]; then later+=(coverage); fi
           selection=()
           case $PART in
-            lint) for id in "${lint[@]}"; do selection+=(--only "$id"); done ;;
+            lint)
+              for id in "${lint[@]}"; do selection+=(--only "$id"); done
+              # clippy starts at once, so hooks and similarity run while it builds
+              selection+=(--beside clippy)
+              # find reads rules.toml without the gate, so a queued change that got no tests part must affect no package
+              if [[ $EVENT == merge_group && -z $TASK && $PARTS != *tests-1* ]]; then
+                affected=$(cargo gate affected) || exit 1
+                if [[ -n $affected ]]; then echo "the change affects $affected, but find started no tests part"; exit 1; fi
+              fi ;;
             tests-*)
-              affected=$(cargo gate affected) || exit 1
-              if [[ -z $affected ]]; then echo "the change affects no package"; exit 0; fi
+              affected=$(cargo gate affected --shard "${PART#tests-}" --shards "$TEST_SHARDS") || exit 1
+              if [[ -z $affected ]]; then echo "no package the change affects falls in this shard"; exit 0; fi
               read -r -a packages <<< "$affected"
+              # the oracle library and its unit-test build need about 8 GB each, so they take turns on a 16 GB runner
+              export RUSTC_WRAPPER="$GITHUB_WORKSPACE/.github/scripts/oracle-rustc-turns.sh"
               # the tests use LiteLLM but not its dev tools, about 330 MB
-              UV_NO_DEV=1 exec cargo nextest run --locked --no-tests=warn --partition "hash:${PART#tests-}/$TEST_SHARDS" "${packages[@]}" ;;
+              # a shard that stops at its first failure hides the rest: on 11-13 shard 3 ran 30 of 22702 tests in run 43451345497
+              UV_NO_DEV=1 exec cargo nextest run --locked --no-tests=warn --max-fail 20 "${packages[@]}" ;;
+            cache)
+              export RUSTC_WRAPPER="$GITHUB_WORKSPACE/.github/scripts/oracle-rustc-turns.sh"
+              exec cargo test --locked --no-run --workspace ;;
             task)
               export NEXTEST_PROFILE=task
               for id in "${lint[@]}" "${later[@]}"; do selection+=(--skip "$id"); done ;;
@@ -291,6 +333,11 @@ jobs:
           esac
           if [[ $PART == task ]]; then
             checks=$(cargo gate list "$TASK")
+            # find reads the task file without the gate, so a task with a mutants check must have got its mutants parts
+            if [[ $EVENT == pull_request && $PARTS != *mutants-1* ]] && awk '$1 == "mutants" {found = 1} END {exit !found}' <<<"$checks"; then
+              echo "the task has a mutants check, but find started no mutants part"
+              exit 1
+            fi
             if ! awk -v skipped=" ${lint[*]} ${later[*]} " '/^[^ ]/ && !index(skipped, " "$1" "){remaining=1} END{exit !remaining}' <<<"$checks"; then
               echo "every task check belongs to another gate part"
               exit 0

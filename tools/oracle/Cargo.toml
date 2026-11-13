@@ -41,14 +41,17 @@ betterlite-models = { path = "../../crates/betterlite-models" }
 betterlite-ocr = { path = "../../crates/betterlite-ocr" }
 betterlite-openai = { path = "../../crates/betterlite-openai" }
 betterlite-openapi = { path = "../../crates/betterlite-openapi" }
+betterlite-oracle-core-ops = { path = "src/helpers/core_ops" }
 betterlite-oracle-helper-api = { path = "helper-api" }
 betterlite-oracle-redact = { path = "src/helpers/redact" }
+betterlite-oracle-server = { path = "src/helpers/server" }
 betterlite-paths = { path = "../../crates/betterlite-paths" }
 betterlite-policy = { path = "../../crates/betterlite-policy" }
 betterlite-postgres-fixture = { path = "../postgres-fixture" }
 betterlite-prompts = { path = "../../crates/betterlite-prompts" }
 betterlite-provider = { path = "../../crates/betterlite-provider" }
 betterlite-proxy = { path = "../../crates/betterlite-proxy" }
+betterlite-pyhost = { path = "../../crates/betterlite-pyhost" }
 betterlite-rag = { path = "../../crates/betterlite-rag" }
 betterlite-rate-limit = { path = "../../crates/betterlite-rate-limit" }
 betterlite-redact = { path = "../../crates/betterlite-redact" }
@@ -71,6 +74,8 @@ clap = { version = "4.6.7", features = ["derive", "env"] }
 cookie_store = "0.22.0"
 flate2 = "1.1.5"
 futures-util = { version = "0.3.34", default-features = false }
+google-cloud-speech-v2 = "=1.15.0"
+google-cloud-wkt = "=1.11.0"
 hex = "0.4.3"
 http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
@@ -79,6 +84,7 @@ opentelemetry = { version = "0.33.1", default-features = false }
 opentelemetry-http = { version = "0.33.1", default-features = false }
 opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["trace", "testing"] }
 percent-encoding.workspace = true
+pyo3 = "0.30.1"
 quick-xml.workspace = true
 rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng", "sys_rng"] }
 redis.workspace = true

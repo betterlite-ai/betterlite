@@ -1,0 +1,24 @@
+kind: helper
+name: v1-image-resource-reset
+call:
+  azure_urls:
+    v1_image_resource_reset:
+      - api_base: "https://example.openai.azure.com/openai/deployments/deployment/images/generations?api-version=2024-02-01"
+        api_version: 2024-02-01
+        route: /openai/v1/images/generations
+      - api_base: https://example.openai.azure.com/openai/deployments/deployment/images/generations
+        route: /openai/v1/images/generations
+      - api_base: "https://example.openai.azure.com/openai/deployments/deployment/images/generations?api-version=2024-02-01"
+        api_version: v1
+        route: /openai/v1/images/generations
+      - api_base: "https://example.openai.azure.com/openai/deployments/deployment/images/generations?keep=1&api-version=2024-02-01&api-version=2024-03-01&z=2"
+        api_version: preview
+        route: /openai/v1/images/generations
+      - api_base: "https://example.openai.azure.com/prefix/openai/deployments?api-version=1&keep=1"
+        api_version: latest
+        route: /openai/v1/images/generations
+      - api_base: https://example.openai.azure.com/images
+        api_version: v1
+        route: /openai/v1/images/generations
+env: {}
+compare: {ignore: []}

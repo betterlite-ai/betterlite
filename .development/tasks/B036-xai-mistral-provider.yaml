@@ -127,7 +127,7 @@ checks:
       run: test -f tools/oracle/helpers/mistral_ocr_translation.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The guardrail fixture must invoke OCRHandler and retain its input/output distinction.
     - id: mistral-ocr-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mistral_ocr_translation*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::mistral_ocr_translation::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mistral_ocr_translation*')" && cargo nextest run --locked -p betterlite-oracle-core-ops --no-tests=fail -E 'test(/^mistral_ocr_translation::/)'
       why: The adapter test parses fresh seeds and asserts call.mistral_ocr_translation with a nonzero count.
 oracle_cases:
   - tools/oracle/cases/providers/xai-mistral/chat-and-embedding-aliases.yaml

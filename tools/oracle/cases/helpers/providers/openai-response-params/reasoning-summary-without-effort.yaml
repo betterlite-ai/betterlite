@@ -1,0 +1,17 @@
+kind: helper
+name: openai-response-params-reasoning-summary-without-effort
+call:
+  openai_response_params:
+    reasoning_summary_without_effort:
+      probes:
+      - {model: gpt-5.2, params: {reasoning: {summary: auto}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: false, supports_none_reasoning_effort: true, default_reasoning_effort: none}}}
+      - {model: gpt-5.2, params: {reasoning: {summary: auto, generate_summary: auto}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: false, supports_none_reasoning_effort: true, default_reasoning_effort: none}}}
+      - {model: gpt-5.2, params: {reasoning: high}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: false, supports_none_reasoning_effort: true, default_reasoning_effort: none}}}
+      - {model: gpt-5.2, params: {reasoning: [1, 2]}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: false, supports_none_reasoning_effort: true, default_reasoning_effort: none}}}
+      - {model: gpt-5.2, params: {reasoning: {summary: auto}, temperature: 2}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: false, supports_none_reasoning_effort: true, default_reasoning_effort: none}}}
+      - {model: gpt-5, params: {reasoning: {summary: auto}, temperature: 2}, model_cost: {gpt-5: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: false}}}
+      - {model: gpt-5.2, params: {reasoning: {summary: auto, effort: high}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: false, supports_none_reasoning_effort: true, default_reasoning_effort: none}}}
+      - {model: gpt-5, params: {reasoning: {summary: auto}, top_p: 0.9}, model_cost: {gpt-5: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: false}}}
+      - {model: gpt-5.2, params: {reasoning: {summary: auto}, top_p: 0.9}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: false, supports_none_reasoning_effort: true, default_reasoning_effort: none}}}
+env: {}
+compare: {ignore: []}

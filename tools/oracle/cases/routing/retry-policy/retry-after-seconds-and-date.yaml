@@ -1,0 +1,105 @@
+kind: probe
+name: retry-policy-retry-after-seconds-and-date
+probes:
+  # now_unix_millis matches the probe clock, which is the time the reference reads
+  - clock: {unix_millis: 1445412420000, monotonic_millis: 0}
+    samples: [0, 0, 0, 0, 0, 0, 4503599627370496, 0, 0, 0, 0, 0, 0]
+    operation:
+      retry_policy:
+        function: sleep
+        sleep:
+          now_unix_millis: 1445412420000
+          steps:
+            - healthy_deployments: 0
+              all_deployments: 2
+              retry_after_header: "5"
+              remaining_retries: 2
+              max_retries: 2
+              min_timeout: 0
+            - healthy_deployments: 0
+              all_deployments: 2
+              retry_after_header: "Wed, 21 Oct 2015 07:28:00 GMT"
+              remaining_retries: 2
+              max_retries: 2
+              min_timeout: 0
+            - healthy_deployments: 0
+              all_deployments: 2
+              retry_after_header: "Wed, 21 Oct 2015 07:27:00 GMT"
+              remaining_retries: 2
+              max_retries: 2
+              min_timeout: 0
+            - healthy_deployments: 0
+              all_deployments: 2
+              retry_after_header: "soon"
+              remaining_retries: 2
+              max_retries: 2
+              min_timeout: 0
+            - healthy_deployments: 0
+              all_deployments: 2
+              retry_after_header: null
+              remaining_retries: 2
+              max_retries: 2
+              min_timeout: 0
+            - healthy_deployments: 0
+              all_deployments: 2
+              retry_after_header: "0"
+              remaining_retries: 2
+              max_retries: 2
+              min_timeout: 0
+            - healthy_deployments: 0
+              all_deployments: 2
+              retry_after_header: "5"
+              remaining_retries: 2
+              max_retries: 2
+              min_timeout: 0
+            - healthy_deployments: 0
+              all_deployments: 2
+              retry_after_header: "Wed, 21 Oct 2015 09:27:30 +0200"
+              remaining_retries: 2
+              max_retries: 2
+              min_timeout: 0
+            - healthy_deployments: 0
+              all_deployments: 2
+              retry_after_header: "21 Oct 2015 07:27:40 GMT"
+              remaining_retries: 2
+              max_retries: 2
+              min_timeout: 0
+            - healthy_deployments: 0
+              all_deployments: 2
+              retry_after_header: "Fri, 21 Oct 2015 07:27:50 GMT"
+              remaining_retries: 2
+              max_retries: 2
+              min_timeout: 0
+            - healthy_deployments: 0
+              all_deployments: 2
+              retry_after_header: "Wed, 21 Oct 2015 02:27:20 EST"
+              remaining_retries: 2
+              max_retries: 2
+              min_timeout: 0
+            - healthy_deployments: 0
+              all_deployments: 2
+              retry_after_header: "Wed, 21 Oct 2015 07:27:45"
+              remaining_retries: 2
+              max_retries: 2
+              min_timeout: 0
+            - healthy_deployments: 0
+              all_deployments: 2
+              retry_after_header: "21 Oct 10000 07:28:00 GMT"
+              remaining_retries: 2
+              max_retries: 2
+              min_timeout: 0
+  # a one-digit day, read the way parsedate_tz reads it, 30 seconds after this clock
+  - clock: {unix_millis: 1443657600000, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      retry_policy:
+        function: sleep
+        sleep:
+          now_unix_millis: 1443657600000
+          steps:
+            - healthy_deployments: 0
+              all_deployments: 2
+              retry_after_header: "Thu, 1 Oct 2015 00:00:30 GMT"
+              remaining_retries: 2
+              max_retries: 2
+              min_timeout: 0

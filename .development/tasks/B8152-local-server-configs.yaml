@@ -24,8 +24,6 @@ scope:
     - tools/oracle/cases/helpers/local-server-configs/**
     - tools/oracle/helpers/b8152.py
     - tools/oracle/helpers/b8152/**
-    - tools/oracle/src/helpers/provider/b8152.rs
-    - tools/oracle/src/helpers/provider/b8152/**
     - tools/oracle/src/helpers/openai/b8152.rs
     - tools/oracle/src/helpers/openai/b8152/**
   lint_tables: false

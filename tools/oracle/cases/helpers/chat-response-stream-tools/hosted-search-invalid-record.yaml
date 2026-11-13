@@ -1,0 +1,23 @@
+kind: helper
+name: chat-response-stream-tools-hosted-search-invalid-record
+call:
+  chat_response_stream_tools:
+    model: gpt-4o-mini
+    request_value: hi
+    responses_api_request:
+      tools:
+        - {type: function, name: web_search}
+    custom_llm_provider: null
+    litellm_metadata: null
+    logging_marker: ctx
+    steps:
+      - kind: reserve
+        provider_fields:
+          web_search_calls:
+            a: {id: ws_call_x, status: searching, action: {type: open_page}}
+      - kind: final
+        tool_calls:
+          - {id: call_x, function: {name: web_search, arguments: "{}"}}
+env: {}
+compare:
+  ignore: []

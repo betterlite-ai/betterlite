@@ -1,0 +1,16 @@
+kind: helper
+name: session-token-codec-cli-session-expiry
+call:
+  session_token_codec:
+    salt_key: salt-one
+    master_key: null
+    env: {CLI_JWT_EXPIRATION_HOURS: "6"}
+    nonce_hex: "000102030405060708090a0b0c0d0e0f"
+    now: "2026-11-12T17:50:00.123456+00:00"
+    steps:
+      - op: cli_token
+        user: {user_id: user-1, user_role: internal_user, models: [gpt-4o], teams: [team-a]}
+      - op: cli_token
+        user: {user_id: user-2, user_role: proxy_admin, models: [gpt-4o, claude], teams: []}
+env: {CLI_JWT_EXPIRATION_HOURS: "6"}
+compare: {ignore: []}

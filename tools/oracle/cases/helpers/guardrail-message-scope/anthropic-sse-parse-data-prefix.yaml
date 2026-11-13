@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-sse-parse-data-prefix
+call:
+  b3663: {"function": "blocked_usage", "shape": "response", "original": {"kind": "stream", "items": [{"kind": "bytes", "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":11,\"output_tokens\":1}}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":42}}\n\n"}, {"kind": "bytes", "text": "  data:   [DONE]  \n\n"}, {"kind": "json", "value": {"type": "message_delta", "usage": {"output_tokens": 50}}}]}}
+env: {}
+compare: {ignore: []}

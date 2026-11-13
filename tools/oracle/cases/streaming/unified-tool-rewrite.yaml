@@ -1,0 +1,19 @@
+kind: helper
+name: unified-tool-rewrite
+call:
+  b3246:
+    guardrail:
+      kind: unified
+      name: tools
+      texts_out: null
+      tool_calls_out:
+        - {id: call_1, type: function, function: {name: lookup, arguments: '{"id": "[masked]"}'}}
+      hook: {mode: nothing, response: null}
+    translation:
+      delivers: true
+      tool_calls:
+        - {id: call_1, type: function, function: {name: lookup, arguments: '{"id": "42"}'}}
+      rescans: true
+    chunks: ["calling lookup"]
+env: {}
+compare: {ignore: []}

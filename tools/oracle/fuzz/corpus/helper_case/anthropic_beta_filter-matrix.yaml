@@ -1,0 +1,18 @@
+kind: helper
+name: anthropic-beta-filter-matrix
+call:
+  anthropic_beta_filter:
+    matrix:
+      bedrock:
+        advanced-tool-use-2025-11-20: tool-search-tool-2025-10-19
+    calls:
+      - function: matrix_filter
+        provider: bedrock
+        tokens: ["advanced-tool-use-2025-11-20"]
+        headers:
+          anthropic-beta: unknown
+        body:
+          anthropic_beta: [unknown]
+env: {}
+compare:
+  ignore: []

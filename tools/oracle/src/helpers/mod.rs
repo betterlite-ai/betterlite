@@ -32,7 +32,6 @@ mod cache;
 mod cli;
 mod config;
 mod context;
-mod core_ops;
 mod cost;
 mod db;
 mod error;
@@ -63,7 +62,6 @@ mod router;
 mod sdk;
 mod secret_managers;
 mod secrets;
-mod server;
 mod streaming;
 mod tokenizer;
 mod vertex;
@@ -84,53 +82,7 @@ use answers::Answers;
 use python::python_stdout;
 
 pub(crate) use crate::compare::helper::{HelperError, HelperOutput};
-
-pub(crate) trait OrHelperError<T> {
-    fn or_config_error(self) -> Result<T, Box<HelperError>>;
-    fn or_value_error(self) -> Result<T, Box<HelperError>>;
-}
-
-enum ErrorClass {
-    Config,
-    Value,
-}
-
-fn map_helper_error<T, E>(result: Result<T, E>, class: &ErrorClass) -> Result<T, Box<HelperError>>
-where
-    E: std::fmt::Display,
-{
-    result.map_err(|error| {
-        let message = error.to_string();
-        Box::new(match class {
-            ErrorClass::Config => HelperError {
-                class: "ConfigError".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message,
-            },
-            ErrorClass::Value => HelperError {
-                class: "ValueError".to_owned(),
-                status: None,
-                error_type: Some(None),
-                param: Some(None),
-                code: Some(None),
-                message,
-            },
-        })
-    })
-}
-
-impl<T, E: std::fmt::Display> OrHelperError<T> for Result<T, E> {
-    fn or_config_error(self) -> Result<T, Box<HelperError>> {
-        map_helper_error(self, &ErrorClass::Config)
-    }
-
-    fn or_value_error(self) -> Result<T, Box<HelperError>> {
-        map_helper_error(self, &ErrorClass::Value)
-    }
-}
+pub(crate) use betterlite_oracle_helper_api::error::OrHelperError;
 
 const GROUPS: [Group; 46] = [
     a2a::GROUP,
@@ -142,7 +94,7 @@ const GROUPS: [Group; 46] = [
     cli::GROUP,
     config::GROUP,
     context::GROUP,
-    core_ops::GROUP,
+    betterlite_oracle_core_ops::GROUP,
     cost::GROUP,
     db::GROUP,
     error::GROUP,
@@ -174,7 +126,7 @@ const GROUPS: [Group; 46] = [
     sdk::GROUP,
     secret_managers::GROUP,
     secrets::GROUP,
-    server::GROUP,
+    betterlite_oracle_server::GROUP,
     streaming::GROUP,
     tokenizer::GROUP,
     vertex::GROUP,

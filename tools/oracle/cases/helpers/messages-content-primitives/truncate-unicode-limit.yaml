@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-truncate-unicode-limit
+call: {"messages_content_primitives": {"operation": "truncate_tool_name", "name": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"}}
+env: {}
+compare: {ignore: []}

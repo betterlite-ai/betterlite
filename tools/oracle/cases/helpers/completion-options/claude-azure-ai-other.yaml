@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-claude-azure-ai-other
+call:
+  b5650: {function: claude_target, custom_llm_provider: azure_ai, model: mistral-large}
+env: {}
+compare: {ignore: []}

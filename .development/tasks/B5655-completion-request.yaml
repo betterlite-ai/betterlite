@@ -139,5 +139,5 @@ pitfalls:
 - 'A router call ends with `max_retries` 0 even when the caller passed `num_retries`, because the `elif` never runs.'
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1800
   max_new_expects: 0

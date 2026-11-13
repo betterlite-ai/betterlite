@@ -1,0 +1,6 @@
+kind: helper
+name: session-litellm-metadata
+call:
+  b5471: {"function": "session", "request_data": {"litellm_metadata": {"session_id": "s3"}}}
+env: {}
+compare: {ignore: []}

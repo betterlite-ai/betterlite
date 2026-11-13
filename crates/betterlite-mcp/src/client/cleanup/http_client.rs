@@ -3,18 +3,41 @@ use std::future::Future;
 use std::mem::take;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use http::Method;
+use std::fmt;
+
+use http::{HeaderMap, HeaderName, Method};
 use thiserror::Error;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
+
+use crate::client::http_transport::capture::CaptureRecord;
 
 use super::bounded::{CleanupError, run_bounded_cleanup};
 use super::recording::{ErrorRecorder, RecordingBody, ResponseBody};
 
 pub struct HttpResponse<Body> {
     pub status: u16,
+    pub headers: HeaderMap,
+    pub capture: Option<CaptureRecord>,
     pub body: Body,
+}
+
+pub struct ResponseHead {
+    pub status: u16,
+    pub headers: HeaderMap,
+    pub capture: Option<CaptureRecord>,
+}
+
+impl fmt::Debug for ResponseHead {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let names: Vec<&str> = self.headers.keys().map(HeaderName::as_str).collect();
+        f.debug_struct("ResponseHead")
+            .field("status", &self.status)
+            .field("headers", &names)
+            .field("capture", &self.capture)
+            .finish()
+    }
 }
 
 pub trait Transport: Send + Sync + 'static {
@@ -31,7 +54,7 @@ pub trait Transport: Send + Sync + 'static {
         stream: bool,
     ) -> impl Future<Output = Result<HttpResponse<Self::Body>, Self::Error>> + Send;
 
-    fn status_error(&self, status: u16) -> Self::Error;
+    fn status_error(&self, head: ResponseHead) -> Self::Error;
 }
 
 #[derive(Clone, Debug)]
@@ -179,7 +202,12 @@ impl<Client: Transport> McpHttpClient<Client> {
         };
         if is_post && (400..600).contains(&response.status) && response.status != 404 {
             response.body.close().await?;
-            return Err(self.transport.status_error(response.status));
+            let head = ResponseHead {
+                status: response.status,
+                headers: response.headers,
+                capture: response.capture,
+            };
+            return Err(self.transport.status_error(head));
         }
         let body = match buffered {
             Some(content) => ClientBody::Buffered(content),
@@ -187,6 +215,8 @@ impl<Client: Transport> McpHttpClient<Client> {
         };
         Ok(HttpResponse {
             status: response.status,
+            headers: response.headers,
+            capture: response.capture,
             body,
         })
     }
@@ -205,6 +235,8 @@ where
     let content = response.body.read_all().await?;
     Ok(HttpResponse {
         status: response.status,
+        headers: response.headers,
+        capture: response.capture,
         body: ClientBody::Buffered(content),
     })
 }

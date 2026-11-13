@@ -7,7 +7,11 @@ description: >-
 
   Emit both semantic log events depending on semconv opt-in state. When OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental is active (the opt-in path, lines 1906-1914), emit a single consolidated gen_ai.client.inference.operation.details event with operation name, provider, and input/output messages (when _capture_in_event() is true). When the opt-in is false (the default path, lines 1916-1975), emit legacy per-message gen_ai.content.prompt and per-choice gen_ai.content.completion events with role/id/finish_reason attributes and content inclusion gated on _capture_in_event(). Both paths serialize messages/choices to JSON and bind to the inference span via parent context. Log events use OTel SDK's LogRecord type (location varies across SDK versions: opentelemetry.sdk._logs before 1.39.0, opentelemetry.sdk._logs._internal after 1.39.0).
 
-  Supply four content projection functions for Langfuse root-span input/output: request_input (user/system messages as JSON turns), response_output (ModelResponse/ResponsesAPIResponse/Anthropic message choices), stream_output (streaming chunks dispatched by is_raw_sse_stream and assemble_anthropic_sse_stream, stream_chunk_builder, or final ResponseCompletedEvent), and helpers _system_turns/_user_turns. Anthropic SSE assembly is a runtime dependency on guardrail code (B3669 supplies the functions); on parse failure, projections return None and are dropped from event content.
+  Supply four content projection functions for Langfuse root-span input/output: request_input (user/system messages as JSON turns), response_output (ModelResponse/ResponsesAPIResponse/Anthropic message choices), stream_output (relayed stream chunks, below), and helpers _system_turns/_user_turns. B8250's Langfuse root stamp is their only caller.
+
+  stream_output assembles a finished stream through a port, because the two assemblers it needs sit in crates that depend on betterlite-logging: B3669 builds assemble_anthropic_sse_stream in betterlite-server and B2227 builds stream_chunk_builder in betterlite-streaming, so this crate can call neither. Declare in content_projections `pub trait StreamOutputAssembler: Send + Sync` with `assemble_sse(&self, frames: &[Vec<u8>]) -> Option<OtelModelValue>` and `assemble_chat(&self, chunks: &[OtelModelValue], messages: Option<&[OtelModelValue]>) -> Option<OtelModelValue>`; each returns the assembled chat ModelResponse as a JSON object, or None when assembly fails. OtelModelValue is otel::model::utils::coercion's value type. Also declare `pub enum RelayedChunk` with Raw(Vec<u8>) for an unparsed SSE frame (a text frame as its UTF-8 bytes), Chat(OtelModelValue) for a ModelResponseStream chunk, Completed(OtelModelValue) for a ResponseCompletedEvent holding its response, and Other(OtelModelValue) for any other typed chunk. The signature is `stream_output(chunks: &[RelayedChunk], data, assembler: &dyn StreamOutputAssembler) -> Option<String>`, where data is the same request data request_input reads. It follows request_io.py L69-L90: no chunks give None. One Raw chunk anywhere makes the stream raw (LiteLLM's is_raw_sse_stream), and then only the Raw frames, in arrival order, go to assemble_sse. When every chunk is Chat, the chunk values and the request's messages (None when absent or null) go to assemble_chat. Otherwise the response of the last Completed chunk is used. A ModelResponse from either port method is projected the way response_output projects a ModelResponse, a completed response the way it projects a ResponsesAPIResponse, and a None from the port or a stream without a Completed chunk gives None. B110 builds the production assembler over B3669 and B2227 and B8250 passes it in, so this task names nothing either of them builds in production code.
+
+  Tests in a stream_output module use a fake assembler that records the frames, chunks and messages it was given and returns a fixed ModelResponse or None: raw frames mixed with Chat and Completed chunks reach assemble_sse alone and in order, assemble_chat is never called for a raw stream, absent and null messages both reach assemble_chat as None, the last of two Completed chunks wins, and an empty slice or a None from the port gives None. The oracle helper implements the port for its cases: assemble_chat calls B2227's stream_chunk_builder with the chunks and messages, mapped through serde, and returns None on its error. The helper's stream_output input accepts typed chunks only (chat, completed, other), never raw frames, so its assemble_sse returns None and no raw-frame case runs here; B110's native boot test covers the Anthropic SSE path with the production assembler.
 scope:
   paths:
     - crates/betterlite-logging/src/otel/legacy_metrics.rs
@@ -26,6 +30,8 @@ references:
     why: "Response/usage view TypedDicts for projection and metric recording"
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L137-L226
     why: "Metric metadata keys, allowlist names, OTELMetricAttributeFilter dataclass, _build_metric_attribute_filter and _resolve_metric_attribute_filter"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L395-L415
+    why: "OpenTelemetry.__init__ turns the attributes setting into config.attributes (L395, L402-L403), starts the metric filter unresolved and resolves it at once when config.attributes is set (L407-L415)"
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1628-L1709
     why: "_ensure_metric_attribute_filter with proxy callback_settings fallback, _filter_metric_attributes, _metric_attribute_allowed, _record_metrics with histogram recording, unbilled-call skip for TPOT"
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1731-L1975
@@ -36,12 +42,23 @@ references:
     why: "_build_inference_details_attrs and _emit_inference_details_event for the opt-in consolidated event"
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/request_io.py#L13-L90
     why: "request_input, _system_turns, _user_turns, response_output, _anthropic_message_output, stream_output with SSE/stream/completion dispatch, _assembled_chat_stream, _completed_response"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/anthropic_sse.py#L31-L44
+    why: "Not owned (B3669). is_raw_sse_stream is any() over str and bytes chunks, and _joined_sse_stream keeps only those frames in order: the rule stream_output keeps before it calls assemble_sse"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/anthropic_sse.py#L84-L122
+    why: "Not owned (B3669). assemble_anthropic_sse_stream with restore_identity off, what the production StreamOutputAssembler.assemble_sse stands for: a ModelResponse, or None without message_start or when assembly fails"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/langfuse_logger.py#L48-L58
+    why: "Not owned (B8250). The only stream_output caller: it keeps the relayed chunks and renders them once the stream ends"
 dod:
   - text: Metric metadata keys METRIC_METADATA_KEYS and VALID_METRIC_ATTRIBUTE_NAMES (gen_ai.operation.name, provider.name, system, request.model, framework, hidden_params plus metadata.<key> variants) are defined.
     proof: [metric-recording-tests]
   - text: OTELMetricAttributeFilter dataclass with include_list/exclude_list is defined; _build_metric_attribute_filter accepts Filter/dict/invalid and returns Filter; _resolve_metric_attribute_filter returns (include, exclude) tuples.
     proof: [metric-recording-tests]
   - text: _ensure_metric_attribute_filter resolves config.attributes once per handler, with fallback to proxy callback_settings.otel.attributes when callback_name is None/"otel" and attributes is None; caches result.
+    proof: [metric-recording-tests]
+  - text: >-
+      The metric filter state starts unresolved and resolves when it is built if OpenTelemetryConfig.attributes is set, so a
+      bad otel.attributes (not a mapping, both lists, gen_ai.token.type, an unknown name) fails at construction; with
+      attributes unset it resolves on the first record.
     proof: [metric-recording-tests]
   - text: _filter_metric_attributes calls _metric_attribute_allowed for each key; unknown names are silently dropped, not errored (source behavior).
     proof: [metric-recording-tests]
@@ -69,8 +86,10 @@ dod:
     proof: [request-io-tests]
   - text: response_output handles ModelResponse (tuple of choice.message), ResponsesAPIResponse (.output field), and Anthropic messages (validates _AnthropicMessage schema) and returns JSON-serialized or None.
     proof: [request-io-tests]
-  - text: stream_output dispatches chunks via is_raw_sse_stream (Anthropic SSE, calls assemble_anthropic_sse_stream) or all-ModelResponseStream (calls stream_chunk_builder on messages) or ResponseCompletedEvent (last chunk's .response); returns response_output() or None on failure.
-    proof: [request-io-tests]
+  - text: stream_output takes a StreamOutputAssembler and gives None for no chunks; with any Raw chunk it passes only the Raw frames, in arrival order, to assemble_sse and never calls assemble_chat; when every chunk is Chat it passes the chunk values and the request's messages (None when absent or null) to assemble_chat; otherwise it uses the response of the last Completed chunk.
+    proof: [stream-output-tests]
+  - text: stream_output projects a ModelResponse from either port method the way response_output projects a ModelResponse and the last completed response the way it projects a ResponsesAPIResponse, and gives None when the port returns None or no Completed chunk exists.
+    proof: [stream-output-tests, oracle, helper-python]
 checks:
   optional: []
   commands:
@@ -86,6 +105,9 @@ checks:
     - id: request-io-tests
       why: Request/response/stream content projection tests fail, do not exist, or assertions were not accepted
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::content_projections|otel::legacy_metrics)::(.*::)?request_io::/)' && grep -q 'fn request_input\|fn response_output\|fn stream_output' crates/betterlite-logging/src/otel/content_projections.rs
+    - id: stream-output-tests
+      why: The StreamOutputAssembler port is missing, or the stream_output dispatch tests with a fake assembler fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::content_projections::(.*::)?stream_output::/)' && grep -rqs 'trait StreamOutputAssembler' crates/betterlite-logging/src/otel/content_projections.rs crates/betterlite-logging/src/otel/content_projections
     - id: helper-python
       why: The independently invoked MIT helper semantics must match the production functions
       run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3857::/)'
@@ -112,14 +134,10 @@ oracle_cases:
   - tools/oracle/cases/helpers/metric-recording/response-output-chat-completion.yaml
   - tools/oracle/cases/helpers/metric-recording/response-output-responses-api.yaml
   - tools/oracle/cases/helpers/metric-recording/response-output-anthropic-message.yaml
-  - tools/oracle/cases/helpers/metric-recording/stream-output-anthropic-sse-assembly.yaml
   - tools/oracle/cases/helpers/metric-recording/stream-output-chunk-builder.yaml
   - tools/oracle/cases/helpers/metric-recording/stream-output-completion-event.yaml
-  - tools/oracle/cases/helpers/metric-recording/stream-output-parse-failure-fallback.yaml
+  - tools/oracle/cases/helpers/metric-recording/stream-output-no-completed-event.yaml
 deviations:
-  - what: stream_output calls assemble_anthropic_sse_stream and is_raw_sse_stream from B3669 (guardrail/anthropic_sse.py) for Anthropic SSE parsing. If B3669 has not landed, these calls are behind a try-catch fallback that returns None/empty content, so B3857 compiles and degrades gracefully without a depends_on edge.
-    why: Anthropic SSE assembly is a specialized parser owned by the guardrail module; delegating to B3669 avoids duplication and maintains parser ownership. The fallback ensures the task can be scheduled independently and metrics/events continue with empty stream content on B3669 unavailability.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/request_io.py#L70-L90
   - what: Timestamp parsing handles datetime, float/int seconds, and ISO strings with microsecond fallback; differs from some Python datetime libraries that require strict format.
     why: Multiple time formats appear in LiteLLM payloads (datetime objects from inference, float seconds from metrics, ISO strings from external sources); unified parsing reduces error handling at call sites.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1711-L1729
@@ -133,8 +151,9 @@ out_of_scope:
   - safe_set_attribute and primitive-type casting (B3844)
   - is_unbilled_non_inference_call_from_params (B188)
   - safe_dumps JSON serialization (B192)
-  - stream_chunk_builder (B2227)
-  - Anthropic SSE parser (B3669 owns assemble_anthropic_sse_stream and is_raw_sse_stream)
+  - stream_chunk_builder (B2227); stream_output reaches it only through StreamOutputAssembler.assemble_chat, and the oracle helper's port calls it
+  - Anthropic SSE detection and assembly (B3669 owns is_raw_sse_stream and assemble_anthropic_sse_stream in betterlite-server); stream_output reaches assembly only through StreamOutputAssembler.assemble_sse
+  - The production StreamOutputAssembler over B3669 and B2227 (B110), and handing it to stream_output (B8250)
   - Message and choice transforms (B3845); legacy attribute dispatch (B3856)
   - _capture_in_event predicate (B3854)
   - drop_none and json_or_none serialization helpers (B3845)
@@ -149,6 +168,9 @@ pitfalls:
   - "Inference-details event name is a single constant _INFERENCE_DETAILS_EVENT_NAME, not a per-message/per-choice template; both branches use one event name and emit once per request."
   - "Per-message prompt events carry role (from message['role'], default 'user') and conditionally id (from message['id'] if role=='tool'); per-choice completion events carry index (choice index), finish_reason, and role (from message.role, default 'assistant')."
   - "Content capture (_capture_in_event()) gates both the attrs['gen_ai.prompt'/'message.content'] attribute and the body copy; drop_none removes null/None attributes before emit."
+  - "is_raw_sse_stream is any(), not all(): one str or bytes frame among typed chunks makes the whole stream raw, and _joined_sse_stream then drops the typed chunks, so assemble_sse gets only the Raw frames and assemble_chat is never tried."
+  - "_completed_response walks reversed(chunks), so the last ResponseCompletedEvent wins when a stream carries two, and a Responses stream without response.completed renders nothing."
+  - "Both port methods return a ModelResponse, so their result goes through response_output's ModelResponse branch (each choice's message without null fields), never the Anthropic-message fallback that type: message gates."
 review_level: standard
 budget:
   max_changed_lines: 1500

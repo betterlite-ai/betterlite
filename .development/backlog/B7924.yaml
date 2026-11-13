@@ -2,7 +2,7 @@ id: B7924
 milestone: M12 python
 title: Python types for Bedrock embeddings, images, rerank, batches, AgentCore and Invoke Agent (types/llms/bedrock L495-L1261 and two agent files)
 status: todo
-depends_on: [B5657]
+depends_on: [B5657, B9951]
 file: tasks/B7924-types-bedrock-invoke-agents.yaml
 covers:
   - "litellm/types/llms/bedrock.py"

@@ -1,0 +1,2 @@
+# DEFAULT_REASONING_EFFORT_*_THINKING_BUDGET is read from the process environment
+model_list: []

@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-router-deployment-id-first-wins
+call:
+  b5650: {function: deployment_id, kwargs: {litellm_metadata: {model_info: {id: first}}, metadata: {model_info: {id: second}}}}
+env: {}
+compare: {ignore: []}

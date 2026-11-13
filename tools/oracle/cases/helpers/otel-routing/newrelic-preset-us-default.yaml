@@ -1,0 +1,16 @@
+kind: helper
+name: newrelic-preset-us-default
+call:
+  b3851:
+    function: newrelic_preset
+    environment: {}
+    base:
+      exporters:
+        - kind: otlp_http
+          endpoint: https://collector.example/v1/traces
+      mapper_names: [openinference]
+      resource_attributes:
+        service.name: proxy
+env: {}
+compare:
+  ignore: []

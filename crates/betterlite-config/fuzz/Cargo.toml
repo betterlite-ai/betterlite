@@ -79,3 +79,31 @@ path = "fuzz_targets/policy_settings.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "vertex_credentials"
+path = "fuzz_targets/vertex_credentials.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "guardrail_params"
+path = "fuzz_targets/guardrail_params.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tool_prices"
+path = "fuzz_targets/tool_prices.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "replicate_price"
+path = "fuzz_targets/replicate_price.rs"
+test = false
+doc = false
+bench = false

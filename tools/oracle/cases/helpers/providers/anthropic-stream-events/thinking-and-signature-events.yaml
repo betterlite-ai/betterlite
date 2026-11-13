@@ -1,0 +1,17 @@
+kind: helper
+name: anthropic-stream-events-thinking-and-signature-events
+call:
+  anthropic_stream_events:
+    json_mode: false
+    tool_name_reverse_map: {}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: thinking, thinking: ""}}}
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: thinking_delta, thinking: hmm}}}
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: thinking_delta, thinking: " more"}}}
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: signature_delta, signature: sig-abc}}}
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: signature_delta, signature: ""}}}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: redacted_thinking, data: opaque}}}
+      - {function: state}
+env: {}
+compare: {ignore: []}

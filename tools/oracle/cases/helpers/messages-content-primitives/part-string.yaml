@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-part-string
+call: {"messages_content_primitives": {"operation": "tool_result_part", "item": "hello"}}
+env: {}
+compare: {ignore: []}

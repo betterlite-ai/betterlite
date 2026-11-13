@@ -1,0 +1,6 @@
+kind: helper
+name: mask-reversed-range
+call:
+  b5471: {"function": "mask", "content": "hello", "mask": "***", "start": 3, "end": 1}
+env: {}
+compare: {ignore: []}

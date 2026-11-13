@@ -1,0 +1,12 @@
+kind: helper
+name: response-chat-history-leading-system
+call:
+  response_chat_history:
+    operation: leading_system_instructions
+    histories:
+      - - {role: system, content: a}
+        - {role: system, content: b}
+        - {role: user, content: c}
+        - {role: system, content: d}
+env: {}
+compare: {ignore: []}

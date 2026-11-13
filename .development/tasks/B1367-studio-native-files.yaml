@@ -87,5 +87,5 @@ pitfalls:
   - A full URL file ID contributes only an encoded identifier, never a destination host.
   - File creation returns the provider uri as its OpenAI file ID rather than the name field.
   - HTTP 204 is not treated as a successful delete by this transformer.
-budget: {max_changed_lines: 800, max_new_expects: 1}
+budget: {max_changed_lines: 1100, max_new_expects: 4}
 review_level: standard

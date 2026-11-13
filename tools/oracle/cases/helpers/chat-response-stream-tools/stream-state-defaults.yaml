@@ -1,0 +1,36 @@
+kind: helper
+name: chat-response-stream-tools-stream-state-defaults
+call:
+  chat_response_stream_tools:
+    model: gpt-4o-mini
+    request_value: hi
+    responses_api_request:
+      tools:
+        - {type: custom, name: patch}
+        - type: namespace
+          name: ns
+          tools:
+            - {type: function, name: f}
+    custom_llm_provider: openai
+    litellm_metadata: null
+    logging_marker: wrapper-context
+    steps:
+      - kind: assign
+        call_ids: [c, c, d]
+      - {kind: signed_thinking, deltas: [{thinking_blocks: [{signature: s}]}, {thinking_blocks: [{data: 1}]}, {thinking_blocks: [{signature: "", data: 0}]}, {thinking_blocks: [{}, {signature: sig}]}, {thinking_blocks: signature}, {}]}
+      - kind: replace_items
+        item_type: message
+        item_id: msg_new
+        items:
+          - {kind: dict, item: {type: message, id: dict_1}}
+          - {kind: typed, item: {type: message, id: msg_1, content: [], role: assistant, status: in_progress}}
+          - {kind: typed, item: {type: message, id: msg_2, content: [], role: assistant, status: in_progress}}
+      - kind: replace_items
+        item_type: message
+        item_id: null
+        items:
+          - {kind: typed, item: {type: message, id: msg_1, content: [], role: assistant, status: in_progress}}
+          - {kind: dict, item: {type: message, id: dict_1}}
+env: {}
+compare:
+  ignore: []
