@@ -41,6 +41,7 @@ betterlite-models = { path = "../../crates/betterlite-models" }
 betterlite-ocr = { path = "../../crates/betterlite-ocr" }
 betterlite-openai = { path = "../../crates/betterlite-openai" }
 betterlite-openapi = { path = "../../crates/betterlite-openapi" }
+betterlite-oracle-core-ops = { path = "src/helpers/core_ops" }
 betterlite-oracle-helper-api = { path = "helper-api" }
 betterlite-oracle-redact = { path = "src/helpers/redact" }
 betterlite-oracle-server = { path = "src/helpers/server" }

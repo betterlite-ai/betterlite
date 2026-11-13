@@ -32,9 +32,9 @@ out_of_scope:
   The Rust handling of Interactions is B7845. This task adds only Python classes.
 pitfalls:
 - >-
-  `ResponseObject` (B5657) has no `RootModel`. A `RootModel[str]` option type must behave like a string wrapper: construct from a str, dump to that str. Name the gap in the notes if it needs a new base.
+  A `RootModel[str]` option type is pydantic's `RootModel`, as in LiteLLM: it builds from a str and dumps to that str.
 - >-
-  `generated.py` uses `AwareDatetime` and `Base64Str` from pydantic. Use the ones B5657 builds, with the same field types and no deviation.
+  `generated.py` uses `AwareDatetime` and `Base64Str` from pydantic. Import them from pydantic too, with the same field types and no deviation.
 dod:
 - text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
   proof: [names]
@@ -51,8 +51,8 @@ checks:
     run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
 oracle_cases: []
 deviations:
-- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
-  why: The wheel depends only on python-dotenv.
+- what: Names imported from the openai or httpx packages are replaced by local equivalents or left out.
+  why: The wheel does not depend on openai or httpx.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

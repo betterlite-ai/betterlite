@@ -2,7 +2,7 @@ id: B7954
 milestone: M12 python
 title: Python types for the ROI calculator, memory management and model insights
 status: todo
-depends_on: [B5657]
+depends_on: [B5657, B9951]
 file: tasks/B7954-types-roi-memory-insights.yaml
 covers:
   - "litellm/types/roi_calculator.py"

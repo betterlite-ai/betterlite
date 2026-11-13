@@ -1,0 +1,50 @@
+kind: helper
+name: responses-parameters-requested-params
+call:
+  responses_parameters:
+    action: requested
+    steps:
+      - params: {store: false, temperature: null, unknown: 5, input: hi, model: m}
+        text_format: null
+        text: null
+      - params: {custom_llm_provider: openai, kwargs: {}, additional_drop_params: [], store: true}
+        text_format: null
+        text: null
+      - params: {reasoning: {effort: high, summary: auto}, additional_drop_params: [reasoning.summary]}
+        text_format: null
+        text: null
+      - params: {store: true, additional_drop_params: [store]}
+        text_format: null
+        text: null
+      - params: {previous_response_id: "resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDptO3Jlc3BvbnNlX2lkOnJlc3BfYQ=="}
+        text_format: null
+        text: null
+      - params: {previous_response_id: resp_a}
+        text_format: null
+        text: null
+      - params: {metadata: {a: x, hidden_params: {k: v}, n: 3, b: y}}
+        text_format: null
+        text: null
+      - params: {metadata: nope}
+        text_format: null
+        text: null
+      - params: {metadata: {}}
+        text_format: null
+        text: null
+      - params: {}
+        text_format: {type: json_schema, json_schema: {name: X, schema: {type: object}, strict: true}}
+        text: null
+      - params: {}
+        text_format: {type: json_schema, json_schema: {name: X, schema: {type: object}, strict: true}}
+        text: {}
+      - params: {}
+        text_format: null
+        text: {}
+      - params: {}
+        text_format: {type: json_schema}
+        text: null
+      - params: {}
+        text_format: {type: json_schema, json_schema: {schema: {}, strict: true}}
+        text: null
+env: {}
+compare: {ignore: []}

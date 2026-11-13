@@ -1,0 +1,10 @@
+kind: helper
+name: xai-batches-jsonl-seed
+call:
+  xai_batches:
+    operation: jsonl
+    calls:
+      - results:
+          - {batch_request_id: seed, batch_result: {error: {code: 1, message: "seed"}}}
+env: {}
+compare: {ignore: []}

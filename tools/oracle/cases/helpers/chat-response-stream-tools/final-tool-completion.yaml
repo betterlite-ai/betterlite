@@ -1,0 +1,33 @@
+kind: helper
+name: chat-response-stream-tools-final-tool-completion
+call:
+  chat_response_stream_tools:
+    model: gpt-4o-mini
+    request_value: hi
+    responses_api_request:
+      tools:
+        - {type: custom, name: patch}
+    custom_llm_provider: null
+    litellm_metadata: null
+    logging_marker: ctx
+    steps:
+      - kind: deltas
+        tool_calls:
+          - {id: c, index: 0, function: {name: f, arguments: ab}}
+      - kind: deltas
+        tool_calls:
+          - {id: patchy, index: 1, function: {name: patch, arguments: '{"content":"x"}'}}
+      - kind: final
+        tool_calls:
+          - {id: c, function: {name: f, arguments: XYZ}}
+          - {id: n, function: {name: f, arguments: "12345678901"}}
+          - {id: e, function: {name: f, arguments: ""}}
+          - {id: patchy, function: {name: patch, arguments: '{"content":"xy"}'}}
+      - kind: final
+        tool_calls:
+          - {id: later, function: {name: f, arguments: z}}
+      - kind: final
+        tool_calls: {a: 1}
+env: {}
+compare:
+  ignore: []

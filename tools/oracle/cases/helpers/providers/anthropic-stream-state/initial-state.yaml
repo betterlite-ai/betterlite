@@ -1,0 +1,15 @@
+kind: helper
+name: anthropic-stream-state-initial
+call:
+  anthropic_stream_state:
+    json_mode: true
+    speed: fast
+    sync_stream: true
+    tool_name_reverse_map: {old: new}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: state}
+      - {function: setup, fields: {accumulated_json: "abc"}}
+      - {function: state}
+env: {}
+compare: {ignore: []}

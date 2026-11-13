@@ -1,0 +1,30 @@
+kind: helper
+name: create-name-and-missing-input
+call:
+  xai_batches:
+    operation: create
+    env: {}
+    xai_key: null
+    calls:
+      - api_base: null
+        api_key: Key
+        data: {input_file_id: file-1, endpoint: "/v1/embeddings", metadata: {name: team-batch}}
+        endpoint: /v1/embeddings
+        batch: {batch_id: batch_1, name: team-batch, input_file_id: file-1, state: {num_requests: 2, num_success: 2}}
+      - api_base: "https://proxy.example/v1"
+        api_key: Key
+        data: {input_file_id: file-2}
+        endpoint: null
+        batch: {batch_id: batch_2, input_file_id: file-2}
+      - api_base: null
+        api_key: Key
+        data: {metadata: {name: no-file}}
+        endpoint: null
+        batch: {batch_id: batch_3}
+      - api_base: null
+        api_key: null
+        data: {input_file_id: file-4}
+        endpoint: null
+        batch: {batch_id: batch_4}
+env: {}
+compare: {ignore: []}

@@ -121,7 +121,7 @@ deviations:
 - what: "`client` and `shared_session` raise `UnsupportedCallArgument`."
   why: A Python HTTP client can't drive the Rust call, and ignoring it could send a request past a caller's proxy or custom TLS.
 - what: Results and stream events are `ResponseObject` values, not the generated pydantic classes.
-  why: The wheel has no pydantic, and the generated classes have no Python owner at this pin. The dumped dict is the same.
+  why: The generated classes have no Python owner at this pin. The dumped dict is the same.
 out_of_scope:
 - Provider choice, the Responses bridge, stream decoding, billing and the background cost poll run in Rust (B3499, B3495, B3500 and their parts).
 - "`litellm.interactions.agents` (provider-side agent creation) is not part of this task."

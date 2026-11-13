@@ -45,8 +45,8 @@ checks:
     run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
 oracle_cases: []
 deviations:
-- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
-  why: The wheel depends only on python-dotenv.
+- what: Names imported from the openai or httpx packages are replaced by local equivalents or left out.
+  why: The wheel does not depend on openai or httpx.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
