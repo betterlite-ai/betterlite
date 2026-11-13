@@ -1,0 +1,6 @@
+kind: helper
+name: riva-records-empty-model
+call:
+  riva_records: {"calls": [{"function": "empty_model", "params": {"riva_model_name": "parakeet"}, "final_results": [], "response_format": "", "duration_seconds": null, "timestamp_granularities": null, "error": {"code": {"kind": "missing"}, "details": {"kind": "missing"}, "text": ""}}, {"function": "empty_model", "params": {}, "final_results": [], "response_format": "", "duration_seconds": null, "timestamp_granularities": null, "error": {"code": {"kind": "missing"}, "details": {"kind": "missing"}, "text": ""}}, {"function": "empty_model", "params": {"model": "openai/whisper-1"}, "final_results": [], "response_format": "", "duration_seconds": null, "timestamp_granularities": null, "error": {"code": {"kind": "missing"}, "details": {"kind": "missing"}, "text": ""}}, {"function": "empty_model", "params": {"riva_model_name": ""}, "final_results": [], "response_format": "", "duration_seconds": null, "timestamp_granularities": null, "error": {"code": {"kind": "missing"}, "details": {"kind": "missing"}, "text": ""}}, {"function": "empty_model", "params": {"riva_model_name": "x", "model": "ignored"}, "final_results": [], "response_format": "", "duration_seconds": null, "timestamp_granularities": null, "error": {"code": {"kind": "missing"}, "details": {"kind": "missing"}, "text": ""}}]}
+compare: {ignore: []}
+env: {}
