@@ -1,0 +1,11 @@
+task: B3664
+deviations:
+  - what: A clock that steps back between the start and the end of a hook gives a duration of 0.0 in the record.
+    why: LiteLLM subtracts two wall-clock readings and logs the negative number. A negative duration is not a time anyone can use, and std::time reports the step as an error that we turn into zero.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1651
+  - what: Copying records into a logging target whose metadata is not an object, or whose record entry is not a list, skips that target and logs a warning.
+    why: LiteLLM raises an AttributeError from inside the hook's finally block and hides the hook's own result. A logging copy must not fail a request, and a working setup never has these shapes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1519-L1528
+  - what: A finish whose request has a truthy non-object metadata bucket copies no records, where LiteLLM raises AttributeError from the hook's finally block.
+    why: LiteLLM calls .get on the bucket before checking its type, so a string or a non-empty list there replaces the hook's own result with a failure. A logging copy must not fail a request, and a working setup never has that shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1544

@@ -1,0 +1,10 @@
+kind: helper
+name: openai-transcription-seed-duration
+call:
+  openai_transcription:
+    function: duration
+    probes:
+      - model: whisper-1
+        texts: ["00:00:01,500", "no timestamps"]
+env: {}
+compare: {ignore: []}

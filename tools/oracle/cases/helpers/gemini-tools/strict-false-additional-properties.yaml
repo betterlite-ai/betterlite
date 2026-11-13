@@ -1,0 +1,20 @@
+kind: helper
+name: strict-false-additional-properties
+call:
+  gemini_tools:
+    call:
+      tools:
+        - googleSearch:
+            additionalProperties: false
+            nested:
+              strict: true
+              additionalProperties: true
+      functions: []
+      web_search_options: null
+      tool_choice: null
+      service_tier: STANDARD
+      server_side_invocations: false
+      tool_config: null
+    settings: {}
+env: {}
+compare: {ignore: []}
