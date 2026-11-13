@@ -2,10 +2,11 @@ import asyncio
 from typing import Literal, NotRequired, Protocol, TypedDict
 
 from litellm.integrations.custom_guardrail import CustomGuardrail
-from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.cohere.rerank.guardrail_translation.handler import CohereRerankHandler
 from litellm.types.rerank import RerankResponse
 from pydantic import JsonValue, TypeAdapter
+
+Fields = dict[str, JsonValue]
 
 
 class RerankHandler(Protocol):
@@ -27,14 +28,8 @@ class Scripted(Protocol):
 
 
 async def scripted_apply(
-    self: Scripted,
-    *,
-    inputs: dict[str, JsonValue],
-    request_data: dict[str, JsonValue],
-    input_type: str,
-    logging_obj: Logging | None,
-) -> dict[str, JsonValue]:
-    del logging_obj
+    self: Scripted, inputs: Fields, request_data: Fields, input_type: str, **_call: JsonValue
+) -> Fields:
     request_data["guardrail_seen"] = True
     self.calls.append(
         {
@@ -44,9 +39,7 @@ async def scripted_apply(
             "request_data": dict(request_data),
         }
     )
-    if self.texts is None:
-        return inputs
-    return {**inputs, "texts": self.texts}
+    return inputs if self.texts is None else {**inputs, "texts": self.texts}
 
 
 class InputCall(TypedDict):
@@ -78,13 +71,11 @@ def scripted_guardrail(texts: list[JsonValue] | None, calls: list[JsonValue]) ->
 
 async def drive(call: InputCall | OutputCall) -> JsonValue:
     calls: list[JsonValue] = []
-    guardrail = scripted_guardrail(
-        call.get("texts") if call["operation"] == "input" else None, calls
-    )
     if call["operation"] == "input":
-        data = dict(call["data"])
-        await HANDLER.process_input_messages(data, guardrail)
-        return {"data": data, "calls": calls}
+        guardrail = scripted_guardrail(call.get("texts"), calls)
+        await HANDLER.process_input_messages(call["data"], guardrail)
+        return {"data": call["data"], "calls": calls}
+    guardrail = scripted_guardrail(None, calls)
     response = TypeAdapter(RerankResponse).validate_python(call["output"])
     returned = await HANDLER.process_output_response(response, guardrail)
     return {"same": returned is response, "calls": calls}

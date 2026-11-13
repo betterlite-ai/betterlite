@@ -33,7 +33,6 @@ MapParams = Callable[
 ]
 
 
-# the pinned methods take bare dicts, so this shape names only the JSON they return
 class RerankConfig(Protocol):
     @property
     def map_cohere_rerank_params(self) -> MapParams: ...
