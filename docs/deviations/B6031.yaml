@@ -1,0 +1,11 @@
+task: B6031
+deviations:
+  - what: >-
+      A JSON object whose only key is "$serde_json::private::Number" and whose value spells a number reaches the
+      guardrail Rust code as that number, so request data or a guardrail response carrying that key as data keeps
+      the number where LiteLLM keeps the object.
+    why: >-
+      serde_json's arbitrary_precision feature, on for the whole workspace, hands every JSON number to an untagged
+      value as that one-key object, and the bridge reads it back as the number it was. Nothing in a working LiteLLM
+      setup sends that key as data.
+    link: ""
