@@ -1,21 +1,25 @@
 import asyncio
 import threading
-from collections.abc import Callable, Coroutine
-from datetime import datetime
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict, TypeVar
 
 import httpx
 from litellm.interactions.streaming_iterator import (
     InteractionsAPIStreamingIterator,
     SyncInteractionsAPIStreamingIterator,
 )
+from litellm.interactions.utils import get_provider_interactions_api_config
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.llms.gemini.interactions.transformation import GoogleAIStudioInteractionsConfig
-from litellm.types.interactions.generated import InteractionsAPIStreamingResponse
+from litellm.llms.base_llm.interactions.transformation import BaseInteractionsAPIConfig
+from litellm.types.interactions.generated import (
+    InteractionsAPIStreamingResponse as StreamEvent,
+)
 from pydantic import JsonValue as Json
 from pydantic import TypeAdapter
+from typing_extensions import override
 
+T = TypeVar("T")
 JSON: TypeAdapter[Json] = TypeAdapter(Json)
+EVENT: TypeAdapter[StreamEvent | None] = TypeAdapter(StreamEvent | None)
 
 DISPATCH_TIMEOUT_SECONDS = 10.0
 
@@ -30,8 +34,8 @@ class Input(TypedDict):
 class Dispatch(TypedDict):
     handler: str
     result: Json
-    cache_hit: bool | None
-    prefer_async_handlers: bool | None
+    cache_hit: Json
+    prefer_async_handlers: Json
 
 
 class Output(TypedDict):
@@ -41,83 +45,52 @@ class Output(TypedDict):
     dispatches: list[Dispatch]
 
 
-def dump(response: InteractionsAPIStreamingResponse | None) -> Json:
+def dump(response: StreamEvent | None) -> Json:
     if response is None:
         return None
     return JSON.validate_json(response.model_dump_json())
 
 
 class _Logging(Logging):
-    dispatch_success_handlers: Callable[..., Coroutine[None, None, None]]
-    async_success_handler: Callable[..., Coroutine[None, None, None]]
-    success_handler: Callable[..., None]
-
-    def __init__(self, litellm_params: dict[str, Json], handled: threading.Event) -> None:
+    def __init__(self, litellm_params: dict[str, Json]) -> None:
         self.model_call_details = {"litellm_params": litellm_params}
         self.dispatches: list[Dispatch] = []
-        self.handled = handled
-        self.dispatch_success_handlers = self._record_dispatch
-        self.async_success_handler = self._record_async
-        self.success_handler = self._record_sync
+        self.handled = threading.Event()
 
-    async def _record_dispatch(
-        self,
-        result: InteractionsAPIStreamingResponse | None = None,
-        start_time: datetime | None = None,
-        end_time: datetime | None = None,
-        cache_hit: bool | None = None,
-        prefer_async_handlers: bool = False,
-        **kwargs: Json,
-    ) -> None:
-        del start_time, end_time, kwargs
+    def _record(self, handler: str, result: T | None, flags: dict[str, T]) -> None:
         dispatch: Dispatch = {
-            "handler": "dispatch_success_handlers",
-            "result": dump(result),
-            "cache_hit": cache_hit,
-            "prefer_async_handlers": prefer_async_handlers,
+            "handler": handler,
+            "result": dump(EVENT.validate_python(result)),
+            "cache_hit": JSON.validate_python(flags.get("cache_hit")),
+            "prefer_async_handlers": JSON.validate_python(flags.get("prefer_async_handlers")),
         }
         self.dispatches.append(dispatch)
 
-    async def _record_async(
-        self,
-        result: InteractionsAPIStreamingResponse | None = None,
-        start_time: datetime | None = None,
-        end_time: datetime | None = None,
-        cache_hit: bool | None = None,
-        **kwargs: Json,
+    @override
+    async def dispatch_success_handlers(
+        self, result: T | None = None, *args: T, **kwargs: T
     ) -> None:
-        del start_time, end_time, kwargs
-        dispatch: Dispatch = {
-            "handler": "async_success_handler",
-            "result": dump(result),
-            "cache_hit": cache_hit,
-            "prefer_async_handlers": None,
-        }
-        self.dispatches.append(dispatch)
+        del args
+        self._record("dispatch_success_handlers", result, kwargs)
 
-    def _record_sync(
-        self,
-        result: InteractionsAPIStreamingResponse | None = None,
-        start_time: datetime | None = None,
-        end_time: datetime | None = None,
-        cache_hit: bool | None = None,
-        **kwargs: Json,
+    @override
+    async def async_success_handler(
+        self, result: T | None = None, *args: T, **kwargs: T
     ) -> None:
-        del start_time, end_time, kwargs
-        dispatch: Dispatch = {
-            "handler": "success_handler",
-            "result": dump(result),
-            "cache_hit": cache_hit,
-            "prefer_async_handlers": None,
-        }
-        self.dispatches.append(dispatch)
+        del args
+        self._record("async_success_handler", result, kwargs)
+
+    @override
+    def success_handler(self, result: T | None = None, *args: T, **kwargs: T) -> None:
+        del args
+        self._record("success_handler", result, kwargs)
         self.handled.set()
 
 
 async def collect_async(
     response: httpx.Response,
     model: str | None,
-    config: GoogleAIStudioInteractionsConfig,
+    config: BaseInteractionsAPIConfig,
     logging_obj: _Logging,
 ) -> Output:
     iterator = InteractionsAPIStreamingIterator(response, model, config, logging_obj)
@@ -141,7 +114,7 @@ async def collect_async(
 def collect_sync(
     response: httpx.Response,
     model: str | None,
-    config: GoogleAIStudioInteractionsConfig,
+    config: BaseInteractionsAPIConfig,
     logging_obj: _Logging,
 ) -> Output:
     iterator = SyncInteractionsAPIStreamingIterator(response, model, config, logging_obj)
@@ -168,10 +141,11 @@ def run(input_value: Input) -> Json:
     lines = input_value["lines"]
     content = "" if not lines else "\n".join(lines) + "\n"
     response = httpx.Response(200, content=content.encode("utf-8"))
-    config = GoogleAIStudioInteractionsConfig()
+    config = get_provider_interactions_api_config("gemini")
+    if config is None:
+        raise RuntimeError("LiteLLM has no gemini interactions config")
     params = input_value.get("litellm_params")
-    handled = threading.Event()
-    logging_obj = _Logging({} if params is None else params, handled)
+    logging_obj = _Logging({} if params is None else params)
     model = input_value.get("model")
     if input_value["mode"] == "async":
         output = asyncio.run(collect_async(response, model, config, logging_obj))
