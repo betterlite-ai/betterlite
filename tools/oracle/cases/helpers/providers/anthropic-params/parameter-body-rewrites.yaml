@@ -1,0 +1,18 @@
+kind: helper
+name: parameter-body-rewrites
+call:
+  anthropic_params:
+    fixture:
+      model_cost:
+        plain-model: {litellm_provider: anthropic}
+      packaged: {}
+      budgets: {minimal: 128, low: 1024, medium: 2048, high: 4096, xhigh: 8192, max: 16384}
+    default_max_tokens: 4096
+    steps:
+      - {function: map_openai_params, model: plain-model, non_default_params: {tools: [{type: function, function: {name: a, parameters: {type: object, properties: {}}}}], tool_choice: required, parallel_tool_calls: false, stream: true, stop: END, temperature: 0.5, top_p: 0.9, user: user-1, extra_headers: {x: "1"}, cache_control: {type: ephemeral}, context_management: [{type: compaction, compact_threshold: 1000}]}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {stream: false, user: someone@example.com, extra_headers: null, cache_control: ephemeral}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {web_search_options: {search_context_size: low}}, optional_params: {tools: [{name: a, input_schema: {type: object}}]}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {tools: [{type: mcp, server_url: "https://mcp.example", server_label: tools}], mcp_servers: []}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {stop: ["END", "  "]}, optional_params: {}, drop_params: false, global_drop_params: true}
+env: {}
+compare: {ignore: []}

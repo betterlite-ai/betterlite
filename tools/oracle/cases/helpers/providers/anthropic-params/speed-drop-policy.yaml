@@ -1,0 +1,19 @@
+kind: helper
+name: speed-drop-policy
+call:
+  anthropic_params:
+    fixture:
+      model_cost:
+        fast-model: {litellm_provider: anthropic, supports_speed: true}
+        plain-model: {litellm_provider: anthropic}
+      packaged: {}
+      budgets: {minimal: 128, low: 1024, medium: 2048, high: 4096, xhigh: 8192, max: 16384}
+    default_max_tokens: 4096
+    steps:
+      - {function: map_openai_params, model: plain-model, non_default_params: {speed: fast}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {speed: fast}, optional_params: {}, drop_params: true, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {speed: fast}, optional_params: {}, drop_params: false, global_drop_params: true}
+      - {function: map_openai_params, model: fast-model, non_default_params: {speed: fast}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {speed: 5}, optional_params: {}, drop_params: false, global_drop_params: false}
+env: {}
+compare: {ignore: []}

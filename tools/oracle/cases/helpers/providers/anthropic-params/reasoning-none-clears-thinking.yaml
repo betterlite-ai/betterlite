@@ -1,0 +1,21 @@
+kind: helper
+name: reasoning-none-clears-thinking
+call:
+  anthropic_params:
+    fixture:
+      model_cost:
+        adaptive-model: {litellm_provider: anthropic, supports_adaptive_thinking: true}
+        plain-model: {litellm_provider: anthropic}
+      packaged: {}
+      budgets: {minimal: 128, low: 1024, medium: 2048, high: 4096, xhigh: 8192, max: 16384}
+    default_max_tokens: 4096
+    steps:
+      - {function: map_openai_params, model: plain-model, non_default_params: {reasoning_effort: none}, optional_params: {thinking: {type: enabled, budget_tokens: 1024}, output_config: {effort: high}}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {reasoning_effort: {effort: low}}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {reasoning_effort: 42}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: adaptive-model, non_default_params: {reasoning_effort: minimal}, optional_params: {output_config: {format: {type: json_schema}}}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: adaptive-model, non_default_params: {reasoning_effort: xhigh}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: adaptive-model, non_default_params: {reasoning_effort: bogus}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {reasoning_effort: bogus}, optional_params: {}, drop_params: false, global_drop_params: false}
+env: {}
+compare: {ignore: []}
