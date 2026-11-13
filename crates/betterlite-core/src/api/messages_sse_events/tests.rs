@@ -62,7 +62,8 @@ fn expected_frames(pairs: &[(&str, &str)]) -> Vec<String> {
 #[case::missing_final_boundary(b"event: ping".as_slice(), &[])]
 #[case::split_ping(b"event: pi".as_slice(), &[])]
 #[case::single_newline_boundary(b"event: ping\n".as_slice(), &[])]
-#[case::vertical_tab_boundary(b"event: ping\x0b".as_slice(), &[])]
+#[case::trailing_vertical_tab(b"event: ping\x0b".as_slice(), &[])]
+#[case::ping_joined_by_vertical_tab(b"event: ping\x0bevent: ping\n\n".as_slice(), &[])]
 #[case::message_stop_line(b"event: message_stop\n".as_slice(), &[ChunkFlag::MessageStop, ChunkFlag::Terminal])]
 #[case::message_stop_without_frame(b"event: message_stop".as_slice(), &[ChunkFlag::MessageStop, ChunkFlag::Terminal])]
 #[case::message_stop_padded(b"event: message_stop \n".as_slice(), &[])]
@@ -129,10 +130,34 @@ fn data_line_stripping(#[case] input: &[u8], #[case] expected: Option<&str>) {
 fn data_line_decodes_byte_order_marks(#[case] encoding: &str) {
     let document = r#"{"type": "stop"}"#;
     let encoded = match encoding {
-        "utf-16-le" => with_bom(&[0xFF, 0xFE], &utf16(document, false)),
-        "utf-16-be" => with_bom(&[0xFE, 0xFF], &utf16(document, true)),
-        "utf-32-le" => with_bom(&[0xFF, 0xFE, 0x00, 0x00], &utf32(document, false)),
-        "utf-32-be" => with_bom(&[0x00, 0x00, 0xFE, 0xFF], &utf32(document, true)),
+        "utf-16-le" => with_bom(
+            &[0xFF, 0xFE],
+            &document
+                .encode_utf16()
+                .flat_map(u16::to_le_bytes)
+                .collect::<Vec<u8>>(),
+        ),
+        "utf-16-be" => with_bom(
+            &[0xFE, 0xFF],
+            &document
+                .encode_utf16()
+                .flat_map(u16::to_be_bytes)
+                .collect::<Vec<u8>>(),
+        ),
+        "utf-32-le" => with_bom(
+            &[0xFF, 0xFE, 0x00, 0x00],
+            &document
+                .chars()
+                .flat_map(|character| u32::from(character).to_le_bytes())
+                .collect::<Vec<u8>>(),
+        ),
+        "utf-32-be" => with_bom(
+            &[0x00, 0x00, 0xFE, 0xFF],
+            &document
+                .chars()
+                .flat_map(|character| u32::from(character).to_be_bytes())
+                .collect::<Vec<u8>>(),
+        ),
         other => panic!("unexpected encoding {other}"),
     };
     let mut input = b"data: ".to_vec();
@@ -151,30 +176,6 @@ fn data_line_decodes_byte_order_marks(#[case] encoding: &str) {
 fn with_bom(bom: &[u8], encoded: &[u8]) -> Vec<u8> {
     let mut bytes = bom.to_vec();
     bytes.extend_from_slice(encoded);
-    bytes
-}
-
-fn utf16(text: &str, big_endian: bool) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    for unit in text.encode_utf16() {
-        if big_endian {
-            bytes.extend_from_slice(&unit.to_be_bytes());
-        } else {
-            bytes.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-    bytes
-}
-
-fn utf32(text: &str, big_endian: bool) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    for character in text.chars() {
-        if big_endian {
-            bytes.extend_from_slice(&u32::from(character).to_be_bytes());
-        } else {
-            bytes.extend_from_slice(&u32::from(character).to_le_bytes());
-        }
-    }
     bytes
 }
 

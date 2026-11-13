@@ -43,63 +43,72 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input.action {
-            Action::RawChunkClassifiers => {
-                let chunk = decode(input)?;
-                Ok(json!({
-                    "message_stop": chunk.flags.contains(&ChunkFlag::MessageStop),
-                    "ping": chunk.flags.contains(&ChunkFlag::Ping),
-                    "content_delta": chunk.flags.contains(&ChunkFlag::ContentDelta),
-                    "provider_error": chunk.flags.contains(&ChunkFlag::ProviderError),
-                    "terminal": chunk.flags.contains(&ChunkFlag::Terminal),
-                }))
-            }
-            Action::DataLineExtraction => {
-                let event = input.event.as_deref().ok_or_else(|| {
-                    helper_error("ValueError", "the event field is required".to_owned())
-                })?;
-                let chunk = decode(input)?;
-                serde_json::to_value(chunk.payload(event))
-                    .map_err(|error| helper_error("ValueError", error.to_string()))
-            }
-            Action::ErrorProjection => {
-                let chunk = decode(input)?;
-                let error = chunk.messages_error().map(|error| {
-                    json!({
-                        "type": error.error_type,
-                        "message": error.message,
-                        "status": error.status,
-                    })
-                });
-                Ok(json!({
-                    "terminal": chunk.flags.contains(&ChunkFlag::Terminal),
-                    "error": error,
-                    "refusal_stop_details": chunk.refusal_stop_details(),
-                }))
-            }
-            Action::ResponseAsSseEvents => {
-                let response = input.response.as_ref().ok_or_else(|| {
-                    helper_error("ValueError", "the response field is required".to_owned())
-                })?;
-                let frames = response_as_sse_events(response)
-                    .map_err(|error| helper_error("ValueError", error.to_string()))?;
-                let mut encoded = Vec::with_capacity(frames.len());
-                for frame in frames {
-                    encoded.push(
-                        str::from_utf8(&frame)
-                            .map_err(|error| helper_error("UnicodeDecodeError", error.to_string()))?
-                            .to_owned(),
-                    );
-                }
-                Ok(json!(encoded))
-            }
-            Action::IncompleteErrorLiteral => {
-                let frame = incomplete_error_sse_event();
-                let literal = str::from_utf8(&frame)
-                    .map_err(|error| helper_error("UnicodeDecodeError", error.to_string()))?;
-                Ok(json!(literal))
-            }
+            Action::RawChunkClassifiers => Ok(classify(&decode(input)?)),
+            Action::DataLineExtraction => extract(input, &decode(input)?),
+            Action::ErrorProjection => Ok(project(&decode(input)?)),
+            Action::ResponseAsSseEvents => render(input),
+            Action::IncompleteErrorLiteral => literal(),
         }
     }
+}
+
+fn classify(chunk: &DecodedMessagesChunk) -> serde_json::Value {
+    json!({
+        "message_stop": chunk.flags.contains(&ChunkFlag::MessageStop),
+        "ping": chunk.flags.contains(&ChunkFlag::Ping),
+        "content_delta": chunk.flags.contains(&ChunkFlag::ContentDelta),
+        "provider_error": chunk.flags.contains(&ChunkFlag::ProviderError),
+        "terminal": chunk.flags.contains(&ChunkFlag::Terminal),
+    })
+}
+
+fn extract(input: &Input, chunk: &DecodedMessagesChunk) -> crate::helpers::HelperResult {
+    let event = input
+        .event
+        .as_deref()
+        .ok_or_else(|| helper_error("ValueError", "the event field is required".to_owned()))?;
+    serde_json::to_value(chunk.payload(event))
+        .map_err(|error| helper_error("ValueError", error.to_string()))
+}
+
+fn project(chunk: &DecodedMessagesChunk) -> serde_json::Value {
+    let error = chunk.messages_error().map(|error| {
+        json!({
+            "type": error.error_type,
+            "message": error.message,
+            "status": error.status,
+        })
+    });
+    json!({
+        "terminal": chunk.flags.contains(&ChunkFlag::Terminal),
+        "error": error,
+        "refusal_stop_details": chunk.refusal_stop_details(),
+    })
+}
+
+fn render(input: &Input) -> crate::helpers::HelperResult {
+    let response = input
+        .response
+        .as_ref()
+        .ok_or_else(|| helper_error("ValueError", "the response field is required".to_owned()))?;
+    let frames = response_as_sse_events(response)
+        .map_err(|error| helper_error("ValueError", error.to_string()))?;
+    let mut encoded = Vec::with_capacity(frames.len());
+    for frame in frames {
+        encoded.push(
+            str::from_utf8(&frame)
+                .map_err(|error| helper_error("UnicodeDecodeError", error.to_string()))?
+                .to_owned(),
+        );
+    }
+    Ok(json!(encoded))
+}
+
+fn literal() -> crate::helpers::HelperResult {
+    let frame = incomplete_error_sse_event();
+    let literal = str::from_utf8(&frame)
+        .map_err(|error| helper_error("UnicodeDecodeError", error.to_string()))?;
+    Ok(json!(literal))
 }
 
 fn decode(input: &Input) -> Result<DecodedMessagesChunk, Box<HelperError>> {

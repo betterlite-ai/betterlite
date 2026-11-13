@@ -5,8 +5,8 @@ const UTF16_LE_BOM: [u8; 2] = [0xFF, 0xFE];
 const UTF16_BE_BOM: [u8; 2] = [0xFE, 0xFF];
 const UTF32_LE_BOM: [u8; 4] = [0xFF, 0xFE, 0x00, 0x00];
 const UTF32_BE_BOM: [u8; 4] = [0x00, 0x00, 0xFE, 0xFF];
-// the ASCII boundaries bytes.splitlines() splits on
-const LINE_BREAKS: [u8; 7] = [b'\r', b'\n', 0x0b, 0x0c, 0x1c, 0x1d, 0x1e];
+// bytes.splitlines() splits only on \r, \n and \r\n; the \r\n pair is folded in split_lines
+const LINE_BREAKS: [u8; 2] = *b"\r\n";
 // bytes.strip() drops the whitespace bytes.isspace() accepts
 const STRIPPED: [u8; 6] = [b' ', b'\t', b'\n', b'\r', 0x0b, 0x0c];
 
@@ -16,18 +16,9 @@ enum Order {
     Big,
 }
 
-pub(super) fn is_message_stop_bytes(bytes: &[u8]) -> bool {
+pub(super) fn has_event_line(bytes: &[u8], event: &[u8]) -> bool {
     for line in split_lines(bytes) {
-        if line == b"event: message_stop" {
-            return true;
-        }
-    }
-    false
-}
-
-pub(super) fn is_content_delta_bytes(bytes: &[u8]) -> bool {
-    for line in split_lines(bytes) {
-        if line == b"event: content_block_delta" {
+        if line == event {
             return true;
         }
     }
@@ -126,33 +117,39 @@ fn decode_text_bytes(bytes: &[u8]) -> Option<String> {
     }
 }
 
-fn decode_utf16(bytes: &[u8], order: Order) -> Option<String> {
-    let (pairs, remainder) = bytes.as_chunks::<2>();
-    if !remainder.is_empty() {
-        return None;
+fn chunks<const N: usize>(bytes: &[u8]) -> Option<&[[u8; N]]> {
+    if bytes.len().checked_rem(N) == Some(0) {
+        return Some(bytes.as_chunks::<N>().0);
     }
-    let units: Vec<u16> = pairs
+    None
+}
+
+const fn u16_unit(pair: [u8; 2], order: Order) -> u16 {
+    match order {
+        Order::Little => u16::from_le_bytes(pair),
+        Order::Big => u16::from_be_bytes(pair),
+    }
+}
+
+const fn u32_unit(quad: [u8; 4], order: Order) -> u32 {
+    match order {
+        Order::Little => u32::from_le_bytes(quad),
+        Order::Big => u32::from_be_bytes(quad),
+    }
+}
+
+fn decode_utf16(bytes: &[u8], order: Order) -> Option<String> {
+    let units: Vec<u16> = chunks::<2>(bytes)?
         .iter()
-        .map(|pair| match order {
-            Order::Little => u16::from_le_bytes(*pair),
-            Order::Big => u16::from_be_bytes(*pair),
-        })
+        .map(|pair| u16_unit(*pair, order))
         .collect();
     String::from_utf16(&units).ok()
 }
 
 fn decode_utf32(bytes: &[u8], order: Order) -> Option<String> {
-    let (quads, remainder) = bytes.as_chunks::<4>();
-    if !remainder.is_empty() {
-        return None;
-    }
     let mut text = String::new();
-    for quad in quads {
-        let value = match order {
-            Order::Little => u32::from_le_bytes(*quad),
-            Order::Big => u32::from_be_bytes(*quad),
-        };
-        text.push(char::from_u32(value)?);
+    for quad in chunks::<4>(bytes)? {
+        text.push(char::from_u32(u32_unit(*quad, order))?);
     }
     Some(text)
 }

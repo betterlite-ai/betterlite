@@ -5,7 +5,7 @@ use betterlite_models::decisions::Json;
 use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimitError, ApiLimits, EventBoundary};
 
 use chunk::{ChunkFlag, DecodedMessagesChunk};
-use raw_bytes::{data_line_payloads, is_content_delta_bytes, is_message_stop_bytes, is_ping_bytes};
+use raw_bytes::{data_line_payloads, has_event_line, is_ping_bytes};
 
 pub mod chunk;
 mod raw_bytes;
@@ -21,13 +21,13 @@ pub fn decode_messages_sse_chunk(
         known_bytes: bytes.len(),
     }))?;
     let mut flags = BTreeSet::new();
-    if is_message_stop_bytes(bytes) {
+    if has_event_line(bytes, b"event: message_stop") {
         flags.insert(ChunkFlag::MessageStop);
     }
     if is_ping_bytes(bytes) {
         flags.insert(ChunkFlag::Ping);
     }
-    if is_content_delta_bytes(bytes) {
+    if has_event_line(bytes, b"event: content_block_delta") {
         flags.insert(ChunkFlag::ContentDelta);
     }
     Ok(DecodedMessagesChunk::new(flags, data_line_payloads(bytes)))
