@@ -1,0 +1,8 @@
+kind: helper
+name: return-none-function
+call:
+  b8042:
+    op: check_return
+    fixture: none_argument
+env: {}
+compare: {ignore: []}
