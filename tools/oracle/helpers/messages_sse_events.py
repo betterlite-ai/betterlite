@@ -1,4 +1,4 @@
-from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
+from typing import Literal, NotRequired, TypeAlias, TypedDict
 
 from litellm.llms.anthropic.pass_through.messages.streaming_iterator import (
     _anthropic_event_payload,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L94
@@ -13,8 +13,12 @@ from litellm.llms.anthropic.pass_through.messages.streaming_iterator import (
     parse_anthropic_refusal_stop_details,
 )
 from pydantic import JsonValue as Json
+from pydantic import TypeAdapter
 
 Chunk: TypeAlias = bytes | Json
+
+# LiteLLM hands back Mapping[str, object]; this checks it as JSON instead of casting it
+JSON: TypeAdapter[Json] = TypeAdapter(Json)
 
 Action: TypeAlias = Literal[
     "raw_chunk_classifiers",
@@ -51,13 +55,6 @@ def classify(chunk: Chunk) -> Json:
     return result
 
 
-def event_payload(chunk: Chunk, event: str) -> Json:
-    payload = _anthropic_event_payload(chunk, event)
-    return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L94
-        Json, payload
-    )
-
-
 def error_projection(chunk: Chunk) -> Json:
     parsed = parse_anthropic_error_event(chunk)
     error: Json = (
@@ -65,13 +62,11 @@ def error_projection(chunk: Chunk) -> Json:
         if parsed is None
         else {"type": parsed[0], "message": parsed[1], "status": parsed[2]}
     )
-    details = parse_anthropic_refusal_stop_details(chunk)
+    details = JSON.validate_python(parse_anthropic_refusal_stop_details(chunk))
     result: Json = {
         "terminal": _is_terminal_stream_chunk(chunk),
         "error": error,
-        "refusal_stop_details": cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L114
-            Json, details
-        ),
+        "refusal_stop_details": details,
     }
     return result
 
@@ -104,7 +99,7 @@ def run(input_value: Input) -> Json:
         event = input_value.get("event")
         if event is None:
             raise ValueError("the event field is required")
-        return event_payload(chunk, event)
+        return JSON.validate_python(_anthropic_event_payload(chunk, event))
     if action == "native_error_and_refusal_projection":
         return error_projection(chunk)
     raise ValueError(f"unknown messages_sse_events action: {action}")
