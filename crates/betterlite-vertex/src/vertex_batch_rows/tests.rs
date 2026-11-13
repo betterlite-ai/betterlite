@@ -246,7 +246,7 @@ fn custom_id_from_labels_rejects_a_non_text_raw_label() {
         Json::Number(serde_json::Number::from(5_i32)),
     );
     let error = custom_id_from_labels(&written).unwrap_err();
-    assert!(matches!(error, BatchRowsError::Label { label } if label == RAW_LABEL));
+    assert!(matches!(error, BatchRowsError::Label(label) if label == RAW_LABEL));
 }
 
 #[test]
@@ -254,7 +254,7 @@ fn custom_id_from_labels_rejects_a_non_text_ordinary_label() {
     let mut written = IndexMap::new();
     written.insert(String::from("litellm_custom_id"), Json::Null);
     let error = custom_id_from_labels(&written).unwrap_err();
-    assert!(matches!(error, BatchRowsError::Label { label } if label == "litellm_custom_id"));
+    assert!(matches!(error, BatchRowsError::Label(label) if label == "litellm_custom_id"));
 }
 
 #[test]
@@ -262,7 +262,7 @@ fn custom_id_from_labels_rejects_a_non_text_numbered_chunk() {
     let mut written = labels(&[(RAW_LABEL, "b32_jbswy3dp")]);
     written.insert(String::from("litellm_custom_id_raw_1"), Json::Bool(true));
     let error = custom_id_from_labels(&written).unwrap_err();
-    assert!(matches!(error, BatchRowsError::Label { label } if label == "litellm_custom_id_raw_1"));
+    assert!(matches!(error, BatchRowsError::Label(label) if label == "litellm_custom_id_raw_1"));
 }
 
 #[test]
@@ -270,7 +270,7 @@ fn custom_id_from_labels_rejects_a_chunk_number_past_u64() {
     let chunk = "litellm_custom_id_raw_99999999999999999999999";
     let written = labels(&[(RAW_LABEL, "b32_jbswy3dp"), (chunk, "b32_orugs")]);
     let error = custom_id_from_labels(&written).unwrap_err();
-    assert!(matches!(error, BatchRowsError::Label { label } if label == chunk));
+    assert!(matches!(error, BatchRowsError::Label(label) if label == chunk));
 }
 
 #[test]
@@ -590,7 +590,7 @@ fn an_embedding_row_without_a_response_is_refused() {
     let source = r#"{"key": "id#0/1", "request": {}, "status": ""}"#;
     let error = regroup_embeddings(&[row(source)], None, &mut ids()).unwrap_err();
     assert!(
-        matches!(error, BatchRowsError::Shape { custom_id, field } if custom_id == "id" && field == "response")
+        matches!(error, BatchRowsError::Shape(custom_id, field) if custom_id == "id" && field == "response")
     );
 }
 
@@ -599,7 +599,7 @@ fn embedding_values_that_are_not_numbers_are_refused() {
     let rows = embedding_rows(&[("id#0/1", r#"["a"]"#, "")]);
     let error = regroup_embeddings(&rows, None, &mut ids()).unwrap_err();
     assert!(
-        matches!(error, BatchRowsError::Shape { custom_id, field } if custom_id == "id" && field == "embedding.values")
+        matches!(error, BatchRowsError::Shape(custom_id, field) if custom_id == "id" && field == "embedding.values")
     );
 }
 
@@ -608,7 +608,7 @@ fn embedding_values_that_are_missing_are_refused() {
     let source = r#"{"key": "id#0/1", "request": {}, "status": "", "response": {"embedding": {}}}"#;
     let error = regroup_embeddings(&[row(source)], None, &mut ids()).unwrap_err();
     assert!(
-        matches!(error, BatchRowsError::Shape { custom_id, field } if custom_id == "id" && field == "embedding.values")
+        matches!(error, BatchRowsError::Shape(custom_id, field) if custom_id == "id" && field == "embedding.values")
     );
 }
 
@@ -617,7 +617,7 @@ fn a_prompt_token_count_past_u32_is_refused() {
     let rows = embedding_rows(&[("id#0/1", "[1]", r#", "tokenCount": 4294967296"#)]);
     let error = regroup_embeddings(&rows, None, &mut ids()).unwrap_err();
     assert!(
-        matches!(error, BatchRowsError::Shape { custom_id, field } if custom_id == "id" && field == "usage")
+        matches!(error, BatchRowsError::Shape(custom_id, field) if custom_id == "id" && field == "usage")
     );
 }
 

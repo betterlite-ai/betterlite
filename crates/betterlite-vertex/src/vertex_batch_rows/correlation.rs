@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::str::from_utf8;
 
 use percent_encoding::percent_decode;
@@ -14,22 +13,14 @@ pub enum CorrelationInput<'input> {
 
 pub fn decode_batch_correlation(input: CorrelationInput<'_>) -> Result<String, BatchRowsError> {
     match input {
-        CorrelationInput::Key(bytes) => percent_decode(bytes)
-            .decode_utf8()
-            .map(Cow::into_owned)
-            .map_err(|source| BatchRowsError::Utf8 {
-                field: "key",
-                source,
-            }),
+        CorrelationInput::Key(bytes) => String::from_utf8(percent_decode(bytes).collect())
+            .map_err(|error| BatchRowsError::Utf8("key", error.utf8_error())),
         CorrelationInput::LabelChunks(chunks) => {
             let texts = chunks
                 .iter()
                 .map(|chunk| from_utf8(chunk))
                 .collect::<Result<Vec<_>, _>>()
-                .map_err(|source| BatchRowsError::Utf8 {
-                    field: RAW_LABEL,
-                    source,
-                })?;
+                .map_err(|source| BatchRowsError::Utf8(RAW_LABEL, source))?;
             let Some(first) = texts.first() else {
                 return Ok(String::new());
             };

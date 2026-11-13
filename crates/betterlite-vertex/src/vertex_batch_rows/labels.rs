@@ -64,9 +64,7 @@ pub fn custom_id_from_labels(labels: &IndexMap<String, Json>) -> Result<String, 
     let label = |name: &str| match labels.get(name) {
         None => Ok(None),
         Some(Json::Text(text)) => Ok(Some(text.as_str())),
-        Some(_) => Err(BatchRowsError::Label {
-            label: name.to_owned(),
-        }),
+        Some(_) => Err(BatchRowsError::Label(name.to_owned())),
     };
     let Some(raw) = label(RAW_LABEL)?.filter(|raw| !raw.is_empty()) else {
         return Ok(label(ORDINARY_LABEL)?.unwrap_or(UNKNOWN_ID).to_owned());
@@ -79,9 +77,9 @@ pub fn custom_id_from_labels(labels: &IndexMap<String, Json>) -> Result<String, 
         if suffix.is_empty() || !suffix.bytes().all(|byte| byte.is_ascii_digit()) {
             continue;
         }
-        let number: u64 = suffix.parse().map_err(|_error| BatchRowsError::Label {
-            label: name.clone(),
-        })?;
+        let number: u64 = suffix
+            .parse()
+            .map_err(|_error| BatchRowsError::Label(name.clone()))?;
         numbered.push((number, label(name)?.unwrap_or_default()));
     }
     numbered.sort_by_key(|(number, _chunk)| *number);

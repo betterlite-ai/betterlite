@@ -67,13 +67,10 @@ fn embedding_body(
     group: &[(BatchKey, &VertexBatchRow)],
     model: Option<&str>,
 ) -> Result<IndexMap<String, Json>, BatchRowsError> {
-    let shape = |field| BatchRowsError::Shape {
-        custom_id: custom_id.to_owned(),
-        field,
-    };
+    let shape = |field| BatchRowsError::Shape(custom_id.to_owned(), field);
     let mut data = Vec::with_capacity(group.len());
     let mut tokens = 0_i64;
-    for (position, (_key, row)) in group.iter().enumerate() {
+    for (key, row) in group {
         let response = row.response.object().ok_or_else(|| shape("response"))?;
         let found = match response.get("embedding") {
             Some(Json::Object(fields)) => fields.get("values"),
@@ -86,7 +83,7 @@ fn embedding_body(
         data.push(EmbeddingRecord {
             object: String::from("embedding"),
             embedding,
-            index: u32::try_from(position).map_err(|_error| shape("index"))?,
+            index: key.index,
         });
         tokens = tokens
             .checked_add(embedding_prompt_token_count(response))

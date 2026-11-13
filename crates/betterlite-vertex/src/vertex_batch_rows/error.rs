@@ -8,16 +8,10 @@ pub enum BatchRowsError {
     Decode(#[from] serde_json::Error),
     #[error("a vertex batch row is a JSON array, where an object is expected")]
     NotAnObject,
-    #[error("the {field} of a vertex batch row is not UTF-8: {source}")]
-    Utf8 {
-        field: &'static str,
-        source: Utf8Error,
-    },
-    #[error("the {label} label of a vertex batch row is not a string")]
-    Label { label: String },
-    #[error("the {field} of the batch entry {custom_id} is not the shape LiteLLM reads")]
-    Shape {
-        custom_id: String,
-        field: &'static str,
-    },
+    #[error("the {0} of a vertex batch row is not UTF-8: {1}")]
+    Utf8(&'static str, #[source] Utf8Error),
+    #[error("the {0} label of a vertex batch row is not a string")]
+    Label(String),
+    #[error("the {1} of the batch entry {0} is not the shape LiteLLM reads")]
+    Shape(String, &'static str),
 }
