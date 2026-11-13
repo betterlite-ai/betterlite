@@ -68,13 +68,22 @@ fn application_claims() -> Payload {
 }
 
 fn delegated_claims(scope: &str) -> Payload {
-    claims(&[
-        ("iss", text(ISSUER)),
-        ("tid", text("tenant")),
-        ("azp", text("client")),
-        ("oid", text("user")),
-        ("scp", text(scope)),
-    ])
+    let mut token = application_claims();
+    token.0.insert(String::from("oid"), text("user"));
+    token.0.insert(String::from("scp"), text(scope));
+    token
+}
+
+fn claims_with(oid: &str, idtyp: Option<&str>, scope: Option<&str>) -> Payload {
+    let mut token = application_claims();
+    token.0.insert(String::from("oid"), text(oid));
+    if let Some(value) = scope {
+        token.0.insert(String::from("scp"), text(value));
+    }
+    if let Some(claim) = idtyp {
+        token.0.insert(String::from("idtyp"), text(claim));
+    }
+    token
 }
 
 fn failure_of(result: Result<AgentSubject, AgentIdentityFailure>) -> AgentIdentityFailure {
@@ -194,15 +203,34 @@ fn managed_classify_rejects_non_text_facet() {
 }
 
 #[rstest]
-#[case::delegated(AgentExecutionMode::Delegated)]
-#[case::both(AgentExecutionMode::Both)]
-fn managed_classify_delegated_subject(#[case] mode: AgentExecutionMode) {
-    let identity = binding(&["user_impersonation"], &[], Some("sp"));
-    let token = delegated_claims("other user_impersonation");
+#[case::delegated(AgentExecutionMode::Delegated, true)]
+#[case::delegated_both(AgentExecutionMode::Both, true)]
+#[case::application(AgentExecutionMode::Autonomous, false)]
+#[case::application_both(AgentExecutionMode::Both, false)]
+fn managed_classify_subject_kind(#[case] mode: AgentExecutionMode, #[case] delegated: bool) {
+    let identity = binding(&["user_impersonation"], &["admin"], Some("sp"));
+    let token = if delegated {
+        delegated_claims("other user_impersonation")
+    } else {
+        let mut application = application_claims();
+        application
+            .0
+            .insert(String::from("roles"), list(vec![text("admin")]));
+        application
+    };
     let subject = subject_of(classify_agent_subject(&identity, &token, &mode));
-    assert_eq!(subject.kind, SubjectKind::DelegatedSubject);
-    assert_eq!(subject.oid, "user");
-    assert_eq!(subject.mode, SubjectMode::Delegated);
+    let (kind, subject_mode, oid) = if delegated {
+        (
+            SubjectKind::DelegatedSubject,
+            SubjectMode::Delegated,
+            "user",
+        )
+    } else {
+        (SubjectKind::Application, SubjectMode::Autonomous, "sp")
+    };
+    assert_eq!(subject.kind, kind);
+    assert_eq!(subject.mode, subject_mode);
+    assert_eq!(subject.oid, oid);
 }
 
 #[test]
@@ -217,22 +245,59 @@ fn managed_classify_delegated_accepts_empty_required_scopes() {
 }
 
 #[rstest]
-#[case::autonomous_mode(AgentExecutionMode::Autonomous, "user", None)]
-#[case::principal_oid(AgentExecutionMode::Delegated, "sp", None)]
-#[case::idtyp_app(AgentExecutionMode::Delegated, "user", Some("app"))]
-fn managed_classify_rejects_delegated_contradictions(
+#[case::delegated_autonomous_mode(
+    AgentExecutionMode::Autonomous,
+    "user",
+    None,
+    Some("user_impersonation"),
+    DELEGATED_CONTRADICTION
+)]
+#[case::delegated_principal_oid(
+    AgentExecutionMode::Delegated,
+    "sp",
+    None,
+    Some("user_impersonation"),
+    DELEGATED_CONTRADICTION
+)]
+#[case::delegated_idtyp_app(
+    AgentExecutionMode::Delegated,
+    "user",
+    Some("app"),
+    Some("user_impersonation"),
+    DELEGATED_CONTRADICTION
+)]
+#[case::application_delegated_mode(
+    AgentExecutionMode::Delegated,
+    "sp",
+    None,
+    None,
+    APPLICATION_CONTRADICTION
+)]
+#[case::application_other_oid(
+    AgentExecutionMode::Autonomous,
+    "other",
+    None,
+    None,
+    APPLICATION_CONTRADICTION
+)]
+#[case::application_idtyp_user(
+    AgentExecutionMode::Autonomous,
+    "sp",
+    Some("user"),
+    None,
+    APPLICATION_CONTRADICTION
+)]
+fn managed_classify_rejects_contradictions(
     #[case] mode: AgentExecutionMode,
     #[case] oid: &str,
     #[case] idtyp: Option<&str>,
+    #[case] scope: Option<&str>,
+    #[case] expected: &'static str,
 ) {
     let identity = binding(&["user_impersonation"], &[], Some("sp"));
-    let mut token = delegated_claims("user_impersonation");
-    token.0.insert(String::from("oid"), text(oid));
-    if let Some(claimed) = idtyp {
-        token.0.insert(String::from("idtyp"), text(claimed));
-    }
+    let token = claims_with(oid, idtyp, scope);
     let failure = failure_of(classify_agent_subject(&identity, &token, &mode));
-    assert_eq!(failure.message, DELEGATED_CONTRADICTION);
+    assert_eq!(failure.message, expected);
 }
 
 #[rstest]
@@ -266,22 +331,6 @@ fn managed_classify_rejects_non_text_scope() {
     assert_eq!(failure.message, INVALID_SCOPE);
 }
 
-#[rstest]
-#[case::plain(AgentExecutionMode::Autonomous)]
-#[case::both(AgentExecutionMode::Both)]
-fn managed_classify_application_subject(#[case] mode: AgentExecutionMode) {
-    let identity = binding(&[], &["admin"], Some("sp"));
-    let mut token = application_claims();
-    token.0.insert(
-        String::from("roles"),
-        list(vec![text("admin"), text("other")]),
-    );
-    let subject = subject_of(classify_agent_subject(&identity, &token, &mode));
-    assert_eq!(subject.kind, SubjectKind::Application);
-    assert_eq!(subject.oid, "sp");
-    assert_eq!(subject.mode, SubjectMode::Autonomous);
-}
-
 #[test]
 fn managed_classify_application_accepts_no_required_roles() {
     let identity = binding(&[], &[], Some("sp"));
@@ -291,25 +340,6 @@ fn managed_classify_application_accepts_no_required_roles() {
         &AgentExecutionMode::Autonomous,
     ));
     assert_eq!(subject.kind, SubjectKind::Application);
-}
-
-#[rstest]
-#[case::delegated_mode(AgentExecutionMode::Delegated, "sp", None)]
-#[case::other_oid(AgentExecutionMode::Autonomous, "other", None)]
-#[case::idtyp_user(AgentExecutionMode::Autonomous, "sp", Some("user"))]
-fn managed_classify_rejects_application_contradictions(
-    #[case] mode: AgentExecutionMode,
-    #[case] oid: &str,
-    #[case] idtyp: Option<&str>,
-) {
-    let identity = binding(&[], &[], Some("sp"));
-    let mut token = application_claims();
-    token.0.insert(String::from("oid"), text(oid));
-    if let Some(claimed) = idtyp {
-        token.0.insert(String::from("idtyp"), text(claimed));
-    }
-    let failure = failure_of(classify_agent_subject(&identity, &token, &mode));
-    assert_eq!(failure.message, APPLICATION_CONTRADICTION);
 }
 
 #[test]

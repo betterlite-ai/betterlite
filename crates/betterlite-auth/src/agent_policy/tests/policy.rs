@@ -116,32 +116,28 @@ fn policy_actor_context_mismatch_fails(#[case] input: &str) {
 }
 
 #[rstest]
-#[case::autonomous_with_delegated("autonomous", "delegated")]
-#[case::delegated_with_autonomous("delegated", "autonomous")]
-fn policy_actor_mode_mismatch_fails(#[case] agent_mode: &str, #[case] context_mode: &str) {
-    let policy = agent(AgentState::Ready, agent_mode);
-    let admitted = context(&format!(
-        r#"{{"agent_id":"agent","binding_revision":"rev-1","mode":"{context_mode}","user_id":"user"}}"#
-    ));
-    let failure = actor_admission_failure(&policy, Some(&admitted)).unwrap();
-    assert_eq!(
-        failure.message,
-        "Agent is not enabled for this execution mode"
-    );
-}
-
-#[rstest]
-#[case::both_with_autonomous("both", "autonomous")]
-#[case::both_with_delegated("both", "delegated")]
-fn policy_actor_both_mode_accepts_context_mode(
+#[case::autonomous_with_delegated("autonomous", "delegated", false)]
+#[case::delegated_with_autonomous("delegated", "autonomous", false)]
+#[case::both_with_autonomous("both", "autonomous", true)]
+#[case::both_with_delegated("both", "delegated", true)]
+fn policy_actor_mode_compatibility(
     #[case] agent_mode: &str,
     #[case] context_mode: &str,
+    #[case] accepted: bool,
 ) {
     let policy = agent(AgentState::Ready, agent_mode);
     let admitted = context(&format!(
         r#"{{"agent_id":"agent","binding_revision":"rev-1","mode":"{context_mode}","user_id":"user"}}"#
     ));
-    assert!(actor_admission_failure(&policy, Some(&admitted)).is_none());
+    let result = actor_admission_failure(&policy, Some(&admitted));
+    if accepted {
+        assert!(result.is_none());
+    } else {
+        assert_eq!(
+            result.unwrap().message,
+            "Agent is not enabled for this execution mode"
+        );
+    }
 }
 
 #[test]

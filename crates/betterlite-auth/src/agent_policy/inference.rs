@@ -89,25 +89,35 @@ pub fn resolve_inference_model<'model>(
 pub fn managed_inference_request(
     request: &ManagedInferenceRequest<'_>,
 ) -> Result<IndexMap<String, Json>, AgentIdentityError> {
-    if MANAGED_REALTIME_ROUTES.contains(&request.route) {
-        return realtime_request(request);
-    }
-    let model_route = MANAGED_MODEL_ROUTES.contains(&request.route)
-        || check_route_access(request.route, MANAGED_MODEL_PATHS);
-    if !model_route {
-        return Ok(request.body.clone());
-    }
-    model_route_request(request)
+    let model = if MANAGED_REALTIME_ROUTES.contains(&request.route) {
+        request
+            .query_model
+            .or_else(|| body_text(request.body, "model"))
+    } else {
+        let model_route = MANAGED_MODEL_ROUTES.contains(&request.route)
+            || check_route_access(request.route, MANAGED_MODEL_PATHS);
+        if !model_route {
+            return Ok(request.body.clone());
+        }
+        let endpoint_model = request
+            .path_model
+            .or_else(|| query_model_fallback(request.route, request.query_model));
+        resolve_inference_model(
+            body_text(request.body, "model"),
+            request.settings,
+            request.cli_model,
+            endpoint_model,
+            route_kind(request.route),
+        )
+    };
+    resolved_body(request.body, model)
 }
 
-fn realtime_request(
-    request: &ManagedInferenceRequest<'_>,
+fn resolved_body(
+    body: &IndexMap<String, Json>,
+    model: Option<&str>,
 ) -> Result<IndexMap<String, Json>, AgentIdentityError> {
-    let model = request
-        .query_model
-        .or_else(|| body_text(request.body, "model"))
-        .filter(|model| !model.is_empty());
-    let Some(selected_model) = model else {
+    let Some(selected_model) = model.filter(|candidate| !candidate.is_empty()) else {
         return Err(raise_identity_failure(
             AgentIdentityFailure {
                 code: FailureCode::IdentityDenied,
@@ -116,33 +126,7 @@ fn realtime_request(
             IDENTITY_DENIED_STATUS,
         ));
     };
-    Ok(augmented_body(request.body, selected_model))
-}
-
-fn model_route_request(
-    request: &ManagedInferenceRequest<'_>,
-) -> Result<IndexMap<String, Json>, AgentIdentityError> {
-    let endpoint_model = request
-        .path_model
-        .or_else(|| query_model_fallback(request.route, request.query_model));
-    let effective = resolve_inference_model(
-        body_text(request.body, "model"),
-        request.settings,
-        request.cli_model,
-        endpoint_model,
-        route_kind(request.route),
-    )
-    .filter(|model| !model.is_empty());
-    let Some(selected_model) = effective else {
-        return Err(raise_identity_failure(
-            AgentIdentityFailure {
-                code: FailureCode::IdentityDenied,
-                message: String::from(MANAGED_MODEL_REQUIRED),
-            },
-            IDENTITY_DENIED_STATUS,
-        ));
-    };
-    Ok(augmented_body(request.body, selected_model))
+    Ok(augmented_body(body, selected_model))
 }
 
 fn route_kind(route: &str) -> InferenceModelKind {

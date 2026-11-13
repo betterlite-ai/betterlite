@@ -89,33 +89,17 @@ fn route_inference_realtime_uses_body_model() {
 }
 
 #[rstest]
-#[case::missing("{}")]
-#[case::empty(r#"{"model":""}"#)]
-#[case::non_text(r#"{"model":5}"#)]
-#[case::null(r#"{"model":null}"#)]
-fn route_inference_realtime_requires_model(#[case] input: &str) {
+#[case::realtime_missing("/realtime", "{}")]
+#[case::realtime_empty("/realtime", r#"{"model":""}"#)]
+#[case::realtime_non_text("/realtime", r#"{"model":5}"#)]
+#[case::realtime_null("/realtime", r#"{"model":null}"#)]
+#[case::completions_missing("/v1/chat/completions", "{}")]
+#[case::completions_empty("/v1/chat/completions", r#"{"model":""}"#)]
+#[case::completions_non_text("/v1/chat/completions", r#"{"model":5}"#)]
+fn route_inference_requires_model(#[case] route: &str, #[case] input: &str) {
     let body = object(input);
     let defaults = settings(None, None, None);
-    let failure = failure_of(managed_inference_request(&request(
-        "/realtime",
-        &body,
-        &defaults,
-    )));
-    assert_eq!(failure.status, 403);
-    assert_eq!(failure.message, MODEL_REQUIRED);
-}
-
-#[rstest]
-#[case::missing("{}")]
-#[case::empty(r#"{"model":""}"#)]
-fn route_inference_model_route_requires_model(#[case] input: &str) {
-    let body = object(input);
-    let defaults = settings(None, None, None);
-    let failure = failure_of(managed_inference_request(&request(
-        "/v1/chat/completions",
-        &body,
-        &defaults,
-    )));
+    let failure = failure_of(managed_inference_request(&request(route, &body, &defaults)));
     assert_eq!(failure.status, 403);
     assert_eq!(failure.message, MODEL_REQUIRED);
 }

@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::Payload;
 
@@ -9,10 +11,10 @@ pub fn classify_agent_subject(
     claims: &Payload,
     allowed_mode: &AgentExecutionMode,
 ) -> Result<AgentSubject, AgentIdentityFailure> {
-    let issuer_matches = claim_text(claims, "iss") == Some(binding.issuer.as_str());
-    let tenant_matches = claim_text(claims, "tid") == Some(binding.tenant_id.as_str());
-    let client_matches = claim_text(claims, "azp") == Some(binding.client_id.as_str());
-    if !issuer_matches || !tenant_matches || !client_matches {
+    let registered = claim_text(claims, "iss") == Some(binding.issuer.as_str())
+        && claim_text(claims, "tid") == Some(binding.tenant_id.as_str())
+        && claim_text(claims, "azp") == Some(binding.client_id.as_str());
+    if !registered {
         return Err(AgentIdentityFailure {
             code: FailureCode::IdentityDenied,
             message: String::from("Token does not match the registered Entra application"),
@@ -25,20 +27,7 @@ pub fn classify_agent_subject(
         });
     };
     reject_native_user_facet(claims)?;
-    match claims.0.get("scp") {
-        Some(JsonData::String(scope)) if !scope.is_empty() => {
-            delegated_subject(binding, claims, oid, scope, allowed_mode)
-        }
-        Some(JsonData::String(_) | JsonData::Null) | None => {
-            application_subject(binding, claims, oid, allowed_mode)
-        }
-        Some(
-            JsonData::Bool(_) | JsonData::Number(_) | JsonData::Array(_) | JsonData::Object(_),
-        ) => Err(AgentIdentityFailure {
-            code: FailureCode::IdentityDenied,
-            message: String::from("Invalid delegated scope claim"),
-        }),
-    }
+    scope_subject(binding, claims, oid, allowed_mode)
 }
 
 fn claim_text<'claims>(claims: &'claims Payload, name: &str) -> Option<&'claims str> {
@@ -76,76 +65,128 @@ fn reject_native_user_facet(claims: &Payload) -> Result<(), AgentIdentityFailure
     }
 }
 
-fn delegated_subject(
+#[derive(Clone, Copy)]
+enum TokenKind {
+    Delegated,
+    Application,
+}
+
+impl TokenKind {
+    const fn subject_kind(self) -> SubjectKind {
+        match self {
+            Self::Delegated => SubjectKind::DelegatedSubject,
+            Self::Application => SubjectKind::Application,
+        }
+    }
+
+    const fn subject_mode(self) -> SubjectMode {
+        match self {
+            Self::Delegated => SubjectMode::Delegated,
+            Self::Application => SubjectMode::Autonomous,
+        }
+    }
+}
+
+fn scope_subject(
     binding: &AgentIdentityBinding,
     claims: &Payload,
     oid: &str,
-    scope: &str,
     allowed_mode: &AgentExecutionMode,
 ) -> Result<AgentSubject, AgentIdentityFailure> {
-    if *allowed_mode == AgentExecutionMode::Autonomous
-        || binding.service_principal_id.as_deref() == Some(oid)
-        || claim_text(claims, "idtyp") == Some("app")
-    {
+    let scope = match claims.0.get("scp") {
+        Some(JsonData::String(scope)) if !scope.is_empty() => Some(scope.as_str()),
+        Some(JsonData::String(_) | JsonData::Null) | None => None,
+        Some(
+            JsonData::Bool(_) | JsonData::Number(_) | JsonData::Array(_) | JsonData::Object(_),
+        ) => {
+            return Err(AgentIdentityFailure {
+                code: FailureCode::IdentityDenied,
+                message: String::from("Invalid delegated scope claim"),
+            });
+        }
+    };
+    let kind = match scope {
+        Some(_) => TokenKind::Delegated,
+        None => TokenKind::Application,
+    };
+    if let Some(message) = contradiction(kind, binding, claims, oid, allowed_mode) {
         return Err(AgentIdentityFailure {
             code: FailureCode::IdentityDenied,
-            message: String::from(
-                "Delegated token contradicts the configured agent identity or mode",
-            ),
+            message: String::from(message),
         });
     }
-    let granted: Vec<&str> = scope.split_whitespace().collect();
-    let covers_required_scopes = binding
-        .required_scopes
-        .0
-        .iter()
-        .all(|required| granted.contains(&required.as_str()));
-    if granted.is_empty() || !covers_required_scopes {
+    if let Some(message) = requirement_missing(kind, binding, claims, scope)? {
         return Err(AgentIdentityFailure {
             code: FailureCode::IdentityDenied,
-            message: String::from("Token lacks the required delegated scopes"),
+            message: String::from(message),
         });
     }
     Ok(AgentSubject {
-        kind: SubjectKind::DelegatedSubject,
+        kind: kind.subject_kind(),
         oid: oid.to_owned(),
-        mode: SubjectMode::Delegated,
+        mode: kind.subject_mode(),
     })
 }
 
-fn application_subject(
+fn contradiction(
+    kind: TokenKind,
     binding: &AgentIdentityBinding,
     claims: &Payload,
     oid: &str,
     allowed_mode: &AgentExecutionMode,
-) -> Result<AgentSubject, AgentIdentityFailure> {
-    if *allowed_mode == AgentExecutionMode::Delegated
-        || binding.service_principal_id.as_deref() != Some(oid)
-        || claim_text(claims, "idtyp") == Some("user")
+) -> Option<&'static str> {
+    let (rejected_mode, conflict_when_matched, rejected_idtyp, message) = match kind {
+        TokenKind::Delegated => (
+            AgentExecutionMode::Autonomous,
+            true,
+            "app",
+            "Delegated token contradicts the configured agent identity or mode",
+        ),
+        TokenKind::Application => (
+            AgentExecutionMode::Delegated,
+            false,
+            "user",
+            "Application token contradicts the configured agent identity or mode",
+        ),
+    };
+    let principal_matches = binding.service_principal_id.as_deref() == Some(oid);
+    let idtyp_conflict = claim_text(claims, "idtyp").is_some_and(|claim| claim == rejected_idtyp);
+    if *allowed_mode == rejected_mode
+        || principal_matches == conflict_when_matched
+        || idtyp_conflict
     {
-        return Err(AgentIdentityFailure {
-            code: FailureCode::IdentityDenied,
-            message: String::from(
-                "Application token contradicts the configured agent identity or mode",
-            ),
-        });
+        return Some(message);
     }
-    let roles = application_roles(claims)?;
-    let covers_required_roles = binding
-        .required_roles
-        .iter()
-        .all(|required| roles.contains(&required.as_str()));
-    if !covers_required_roles {
-        return Err(AgentIdentityFailure {
-            code: FailureCode::IdentityDenied,
-            message: String::from("Token lacks the required application roles"),
-        });
+    None
+}
+
+fn requirement_missing(
+    kind: TokenKind,
+    binding: &AgentIdentityBinding,
+    claims: &Payload,
+    scope: Option<&str>,
+) -> Result<Option<&'static str>, AgentIdentityFailure> {
+    match kind {
+        TokenKind::Delegated => {
+            let granted: BTreeSet<&str> = scope.unwrap_or_default().split_whitespace().collect();
+            let required: BTreeSet<&str> = binding
+                .required_scopes
+                .0
+                .iter()
+                .map(String::as_str)
+                .collect();
+            let missing = granted.is_empty() || !required.is_subset(&granted);
+            Ok(missing.then_some("Token lacks the required delegated scopes"))
+        }
+        TokenKind::Application => {
+            let roles = application_roles(claims)?;
+            let missing = binding
+                .required_roles
+                .iter()
+                .any(|required| !roles.contains(&required.as_str()));
+            Ok(missing.then_some("Token lacks the required application roles"))
+        }
     }
-    Ok(AgentSubject {
-        kind: SubjectKind::Application,
-        oid: oid.to_owned(),
-        mode: SubjectMode::Autonomous,
-    })
 }
 
 fn application_roles(claims: &Payload) -> Result<Vec<&str>, AgentIdentityFailure> {
