@@ -14,7 +14,9 @@ betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
+betterlite-streaming = { path = "../betterlite-streaming" }
 chrono.workspace = true
+futures-util = { version = "0.3.34", default-features = false }
 hex = "0.4.3"
 http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }

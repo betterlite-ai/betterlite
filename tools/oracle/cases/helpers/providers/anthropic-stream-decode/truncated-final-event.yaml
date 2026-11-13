@@ -1,0 +1,13 @@
+kind: helper
+name: anthropic-stream-decode-truncated-final-event
+call:
+  anthropic_stream_decode:
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - function: text
+        value: 'data: {"type":"ping"}{"type":"message_stop"}'
+      - function: text
+        value: 'data: {"type":"content_block_stop","index":0}{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"t"}}'
+    passthrough: []
+env: {}
+compare: {ignore: []}

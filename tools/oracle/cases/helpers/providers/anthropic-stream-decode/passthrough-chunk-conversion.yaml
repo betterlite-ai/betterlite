@@ -1,0 +1,29 @@
+kind: helper
+name: anthropic-stream-decode-passthrough-chunk-conversion
+call:
+  anthropic_stream_decode:
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps: []
+    passthrough:
+      - function: text
+        value: 'hello'
+      - function: bytes
+        value: [104, 101, 108, 108, 111]
+      - function: text
+        value: 'xyzdata:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"p"}}'
+      - function: bytes
+        value: [100, 97, 116, 97, 58, 32, 123, 34, 116, 121, 112, 101, 34, 58, 34, 99, 111, 110, 116, 101, 110, 116, 95, 98, 108, 111, 99, 107, 95, 100, 101, 108, 116, 97, 34, 44, 34, 105, 110, 100, 101, 120, 34, 58, 48, 44, 34, 100, 101, 108, 116, 97, 34, 58, 123, 34, 116, 121, 112, 101, 34, 58, 34, 116, 101, 120, 116, 95, 100, 101, 108, 116, 97, 34, 44, 34, 116, 101, 120, 116, 34, 58, 34, 113, 34, 125, 125]
+      - function: text
+        value: 'data: nope'
+      - function: text
+        value: 'data: [1]'
+      - function: text
+        value: 'data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"r"}}{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"s"}}'
+      - function: text
+        value: 'dataX u'
+      - function: text
+        value: ''
+      - function: bytes
+        value: [255]
+env: {}
+compare: {ignore: []}

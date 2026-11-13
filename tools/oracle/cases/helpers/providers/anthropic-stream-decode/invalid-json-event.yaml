@@ -1,0 +1,25 @@
+kind: helper
+name: anthropic-stream-decode-invalid-json-event
+call:
+  anthropic_stream_decode:
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - function: text
+        value: 'data: [1,2]'
+      - function: text
+        value: 'data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"i"}}'
+      - function: text
+        value: 'data: {"type":"content_block_delta"'
+      - function: text
+        value: 'data: [1,2]'
+      - function: bytes
+        value: [255, 254]
+      - function: value_error
+        message: 'bad read'
+      - function: other_error
+        message: 'connection reset'
+      - function: text
+        value: 'data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"j"}}'
+    passthrough: []
+env: {}
+compare: {ignore: []}
