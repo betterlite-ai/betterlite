@@ -65,10 +65,24 @@ pub async fn run(
     host: &str,
     port: u16,
 ) -> Result<(), ServerError> {
+    run_with(config, chat, host, port, |application| application).await
+}
+
+// a component binary wraps the built router, so a path filter runs before any route matches
+pub async fn run_with<F>(
+    config: Config,
+    chat: ChatExecutor,
+    host: &str,
+    port: u16,
+    wrap: F,
+) -> Result<(), ServerError>
+where
+    F: FnOnce(Router) -> Router,
+{
     let shutdown_signal = build_shutdown_signal()?;
     let shutting_down = Arc::new(AtomicBool::new(false));
     let outbound = chat.client.clone();
-    let application = application(&config, chat, Arc::clone(&shutting_down))?;
+    let application = wrap(application(&config, chat, Arc::clone(&shutting_down))?);
     let address = format!("{host}:{port}");
     let listener = TcpListener::bind((host, port))
         .await

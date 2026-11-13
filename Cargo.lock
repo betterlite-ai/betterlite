@@ -1213,6 +1213,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-backend"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "betterlite-config",
+ "betterlite-openai",
+ "betterlite-routes",
+ "betterlite-server",
+ "clap",
+ "rand 0.10.3",
+ "serde",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "betterlite-bedrock"
 version = "0.1.0"
 dependencies = [
@@ -1741,6 +1758,23 @@ dependencies = [
  "betterlite",
  "chrono",
  "libfuzzer-sys",
+]
+
+[[package]]
+name = "betterlite-gateway"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "betterlite-config",
+ "betterlite-openai",
+ "betterlite-routes",
+ "betterlite-server",
+ "clap",
+ "rand 0.10.3",
+ "serde",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
