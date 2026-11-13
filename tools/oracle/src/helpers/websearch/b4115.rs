@@ -69,7 +69,7 @@ pub(crate) struct ScriptedError {
 #[serde(rename_all = "snake_case")]
 enum ErrorKind {
     RateLimit,
-    BadRequest,
+    ContextWindow,
     Unavailable,
 }
 

@@ -7,7 +7,7 @@ use betterlite_websearch::execution::rich_input::rich_search_input;
 use betterlite_websearch::execution::short_circuit::ShortCircuitRequest;
 use betterlite_websearch::records::RichWebSearchInput;
 use serde::Serialize;
-use tokio::runtime::{Builder, Runtime};
+use tokio::runtime::Builder;
 
 use super::fakes::{self, RecordedCall};
 use super::{Input, Operation};
@@ -29,7 +29,8 @@ pub(super) fn run_search(input: &Input) -> crate::helpers::HelperResult {
                 custom_llm_provider: input.custom_llm_provider.as_deref(),
             };
             let execution = fakes::build(input);
-            let response = runtime()?
+            let runtime = Builder::new_current_thread().build().map_err(failure)?;
+            let response = runtime
                 .block_on(execution.try_short_circuit_search(&request, input.kwargs.as_ref()));
             serde_json::to_value(response).map_err(failure)
         }
@@ -39,7 +40,8 @@ pub(super) fn run_search(input: &Input) -> crate::helpers::HelperResult {
                 .first()
                 .and_then(|raw| rich_search_input(&ToolInput::from(raw.clone())));
             let execution = fakes::build(input);
-            let outcome = runtime()?.block_on(execution.execute_search(
+            let runtime = Builder::new_current_thread().build().map_err(failure)?;
+            let outcome = runtime.block_on(execution.execute_search(
                 &input.query,
                 input.kwargs.as_ref(),
                 rich.as_ref(),
@@ -76,13 +78,6 @@ pub(super) fn provider_supports(input: &Input) -> crate::helpers::HelperResult {
         results.push(execution.provider_supports_rich_search(provider.as_deref()));
     }
     serde_json::to_value(results).map_err(failure)
-}
-
-fn runtime() -> Result<Runtime, Box<crate::helpers::HelperError>> {
-    match Builder::new_current_thread().build() {
-        Ok(runtime) => Ok(runtime),
-        Err(error) => Err(failure(error)),
-    }
 }
 
 fn failure<Source>(error: Source) -> Box<crate::helpers::HelperError>

@@ -198,8 +198,8 @@ impl ScriptedError {
                 dimension: None,
                 headers: BTreeMap::new(),
             })),
-            ErrorKind::BadRequest => {
-                ErrorClass::BadRequest(Box::new(ResponseDetails::from(context)))
+            ErrorKind::ContextWindow => {
+                ErrorClass::ContextWindowExceeded(Box::new(ResponseDetails::from(context)))
             }
             ErrorKind::Unavailable => ErrorClass::Unclassified(Box::new(context)),
         };

@@ -17,6 +17,11 @@
       "search_tools": [
         {"search_tool_name": "restricted", "litellm_params": {"search_provider": "tavily"}}
       ],
+      "search_response": {
+        "results": [
+          {"title": "Rust", "url": "https://www.rust-lang.org/", "snippet": "A language empowering everyone."}
+        ]
+      },
       "kwargs": {"metadata": {"user_api_key_auth": {"team_id": null}}},
       "caller": true,
       "deny_search_tool": true

@@ -11,9 +11,14 @@
       "tools": [
         {"type": "web_search_20250305", "name": "web_search"}
       ],
-      "custom_llm_provider": "anthropic",
+      "custom_llm_provider": "github_copilot",
       "enabled_providers": ["bedrock"],
-      "native_providers": ["anthropic"]
+      "native_providers": [],
+      "search_response": {
+        "results": [
+          {"title": "Rust", "url": "https://www.rust-lang.org/", "snippet": "A language empowering everyone."}
+        ]
+      }
     }
   },
   "env": {},

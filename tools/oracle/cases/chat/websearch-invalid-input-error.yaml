@@ -14,7 +14,7 @@
       "custom_llm_provider": "github_copilot",
       "enabled_providers": ["github_copilot"],
       "native_providers": [],
-      "search_error": {"kind": "bad_request", "message": "bad query"}
+      "search_error": {"kind": "context_window", "message": "bad query"}
     }
   },
   "env": {},

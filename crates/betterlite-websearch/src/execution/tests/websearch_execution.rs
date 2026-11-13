@@ -16,7 +16,6 @@ use crate::call_transformation::outcome::SearchFailure;
 use crate::call_transformation::wire::Input;
 use crate::execution::WebSearchExecution;
 use crate::execution::capabilities::ProviderCapabilities;
-use crate::execution::empty_result::create_empty_search_result;
 use crate::execution::response::{
     AssistantRole, MessageKind, ServerToolUseBlock, StopReason, SyntheticContentBlock,
     SyntheticSearchResponse, TextBlock, TextKind,
@@ -722,7 +721,12 @@ async fn execute_search_builds_metadata_only_when_a_caller_is_present() {
 #[tokio::test]
 async fn execute_search_fails_before_the_search_when_the_grant_is_denied() {
     let search = denied_execution(vec![search_tool("main", "tavily", "")]);
-    let failure = search.execute_search("rust", None, None).await.unwrap_err();
+    let kwargs: SearchHookKwargs =
+        serde_json::from_str(r#"{"metadata":{"user_api_key_auth":{"team_id":null}}}"#).unwrap();
+    let failure = search
+        .execute_search("rust", Some(&kwargs), None)
+        .await
+        .unwrap_err();
     assert_eq!(failure.message, "search tool access denied");
     assert_eq!(
         search_error_code(&failure.class),
@@ -907,11 +911,4 @@ fn rich_search_input_returns_none_when_nothing_valid_remains() {
         rich_search_input(&input_json(r#"{"search_queries":[]}"#)),
         None
     );
-}
-
-#[test]
-fn empty_search_result_carries_the_fixed_text() {
-    let (text, response) = create_empty_search_result();
-    assert_eq!(text, "No search query provided");
-    assert!(response.is_none());
 }

@@ -1,5 +1,4 @@
 pub mod capabilities;
-pub mod empty_result;
 pub mod response;
 pub mod rich_input;
 pub mod runner;
