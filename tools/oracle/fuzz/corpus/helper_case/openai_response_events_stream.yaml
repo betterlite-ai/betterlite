@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-events-seed-stream
+call:
+  openai_response_events:
+    non_native_streaming_model:
+      probes:
+        - {model: gpt-4o, stream: true, provider: openai, native: 'false'}
+env: {}
+compare: {ignore: []}
