@@ -1,0 +1,19 @@
+kind: helper
+name: fireworks-ai-chat-params-supported-list-gates
+call:
+  b6071:
+    catalog:
+      - {key: "fireworks_ai/accounts/fireworks/models/gate-all", model_info: {litellm_provider: fireworks_ai, supports_function_calling: true, supports_tool_choice: true, supports_reasoning: true}}
+      - {key: "fireworks_ai/accounts/fireworks/models/gate-tools", model_info: {litellm_provider: fireworks_ai, supports_function_calling: true}}
+      - {key: "fireworks_ai/accounts/fireworks/models/gate-choice", model_info: {litellm_provider: fireworks_ai, supports_tool_choice: true}}
+      - {key: "fireworks_ai/accounts/fireworks/models/gate-reasoning", model_info: {litellm_provider: fireworks_ai, supports_reasoning: true}}
+      - {key: "fireworks_ai/accounts/fireworks/models/gate-bare", model_info: {litellm_provider: fireworks_ai, supports_function_calling: false, supports_tool_choice: false, supports_reasoning: false}}
+    steps:
+      - {op: supported_params, model: "gate-all"}
+      - {op: supported_params, model: "gate-tools"}
+      - {op: supported_params, model: "gate-choice"}
+      - {op: supported_params, model: "gate-reasoning"}
+      - {op: supported_params, model: "gate-bare"}
+      - {op: supported_params, model: "unknown-model"}
+env: {}
+compare: {ignore: []}

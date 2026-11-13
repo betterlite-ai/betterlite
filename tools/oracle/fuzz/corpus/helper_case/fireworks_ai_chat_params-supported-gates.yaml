@@ -1,0 +1,15 @@
+kind: helper
+name: fireworks-ai-chat-params-seed-supported-gates
+call:
+  b6071:
+    catalog:
+      - {key: "fireworks_ai/accounts/fireworks/models/all-gates", model_info: {litellm_provider: fireworks_ai, supports_function_calling: true, supports_tool_choice: true, supports_reasoning: true}}
+      - {key: "fireworks_ai/accounts/fireworks/models/no-gates", model_info: {litellm_provider: fireworks_ai, supports_function_calling: false}}
+    steps:
+      - {op: supported_params, model: "all-gates"}
+      - {op: supported_params, model: "no-gates"}
+      - {op: supported_params, model: "missing-model"}
+      - {op: map_params, model: "all-gates", non_default_params: {tool_choice: "required", max_completion_tokens: 5, reasoning_effort: "auto"}}
+      - {op: config, settings: {temperature: 0, stop: ["x"], context_length_exceeded_behavior: error}}
+env: {}
+compare: {ignore: []}
