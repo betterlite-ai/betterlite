@@ -276,7 +276,9 @@ fn dispatch_route_first_call_type_without_entry_is_none() {
         "/completions",
         vec![CallType::TextCompletion, CallType::Completion],
     )]);
-    assert!(resolve_endpoint_translation(&registry, &routes, Some("/completions"), None).is_none());
+    let resolved =
+        resolve_endpoint_translation(&registry, &routes, Some("/completions"), Some(&chunk("hi")));
+    assert!(resolved.is_none());
 }
 
 #[test]
@@ -507,6 +509,23 @@ fn emit_block_starts_a_new_message_when_the_stream_did_not_start() {
 }
 
 #[test]
+fn emit_block_continues_the_message_when_the_stream_started() {
+    let translation = ProbeTranslation {
+        block: BlockBehavior::Summary,
+        error_items: None,
+    };
+    let so_far = [chunk("hi"), chunk("there")];
+    let chunks = handle_streaming_block(
+        &translation,
+        GuardrailFailure::Other("blocked".to_owned()),
+        true,
+        &so_far,
+    )
+    .unwrap();
+    assert_eq!(chunks, vec![b"started=true;items=2".to_vec()]);
+}
+
+#[test]
 fn emit_block_gives_back_the_failure_when_the_translation_has_none() {
     let failure = GuardrailFailure::Other("blocked".to_owned());
     let error = handle_streaming_block(&probe(), failure.clone(), true, &[]).unwrap_err();
@@ -539,6 +558,33 @@ fn emit_http_error_returns_the_a2a_chunk_before_the_stream_starts() {
         r#"{"jsonrpc": "2.0", "id": 9, "error": {"code": -32603, "message": "blocked", "data": {}}}"#,
     );
     assert_eq!(items.first(), Some(&expected));
+}
+
+#[test]
+fn emit_http_error_a2a_wins_over_a_started_stream_translation() {
+    let translation = ProbeTranslation {
+        block: BlockBehavior::Missing,
+        error_items: Some(vec![text("translation")]),
+    };
+    let error = StreamHttpError {
+        status_code: 400,
+        detail: HttpErrorDetail::Text("blocked".to_owned()),
+    };
+    let so_far = [parsed(r#"{"id": 9}"#)];
+    let request_data = BTreeMap::new();
+    let emission = StreamErrorEmission {
+        call_type: Some(CallType::AsendMessage),
+        responses_so_far: &so_far,
+        request_data: &request_data,
+        translation: Some(&translation),
+        stream_started: true,
+        responses_yielded: None,
+    };
+    let items = emit_streaming_http_error(error, &emission).unwrap();
+    let expected = parsed(
+        r#"{"jsonrpc": "2.0", "id": 9, "error": {"code": -32603, "message": "blocked", "data": {}}}"#,
+    );
+    assert_eq!(items, vec![expected]);
 }
 
 #[test]
