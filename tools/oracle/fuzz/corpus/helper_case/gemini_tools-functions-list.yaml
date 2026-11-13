@@ -1,0 +1,25 @@
+kind: helper
+name: gemini-tools-functions-list
+call:
+  gemini_tools:
+    call:
+      tools: []
+      functions:
+        - name: lookup
+          description: Find a city
+          parameters:
+            type: object
+            $defs:
+              City:
+                type: string
+            properties:
+              city:
+                $ref: "#/$defs/City"
+      web_search_options: null
+      tool_choice: required
+      service_tier: null
+      server_side_invocations: false
+      tool_config: null
+    settings: {}
+env: {}
+compare: {ignore: []}

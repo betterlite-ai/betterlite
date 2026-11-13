@@ -1,0 +1,6 @@
+kind: helper
+name: logging-sync
+call:
+  b3664: {"function": "record", "guardrail_name": "pii", "event_hook": "post_call", "event_type": null, "guardrail_response": {}, "guardrail_status": "success", "start_time": 1.5, "end_time": 2.0, "duration": 0.5, "masked_entity_count": null, "guardrail_provider": null, "request_data": {"model": "m", "litellm_metadata": {"standard_logging_guardrail_information": [{"guardrail_name": "earlier"}]}}, "litellm_params": {"metadata": {"standard_logging_guardrail_information": [{"guardrail_name": "earlier"}]}}, "model_call_params": {"metadata": {"keep": 1}}}
+env: {}
+compare: {ignore: []}

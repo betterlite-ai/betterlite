@@ -1,0 +1,10 @@
+kind: helper
+name: provenance-conversion-mismatch
+call:
+  b3670:
+    function: input_item_provenance
+    raw_input:
+      - {"role": "user", "content": "u"}
+    expected_messages: []
+env: {}
+compare: {ignore: []}

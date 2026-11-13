@@ -1,0 +1,16 @@
+kind: helper
+name: langfuse-preset-missing-keys-error
+call:
+  b3851:
+    function: langfuse_preset
+    environment:
+      LANGFUSE_PUBLIC_KEY: pk-lf-1
+    base:
+      exporters: []
+      mapper_names: []
+      resource_attributes: {}
+    allow_missing_credentials: false
+env:
+  LANGFUSE_PUBLIC_KEY: pk-lf-1
+compare:
+  ignore: []

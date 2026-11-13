@@ -1,0 +1,17 @@
+kind: helper
+name: destination-newrelic-eu
+call:
+  b3851:
+    function: destination_for
+    environment:
+      NEW_RELIC_REGION: us
+    allowed_hosts: []
+    callback_name: newrelic
+    params:
+      newrelic_api_key: key-1
+      newrelic_region: eu
+    service_name: null
+env:
+  NEW_RELIC_REGION: us
+compare:
+  ignore: []

@@ -1,0 +1,14 @@
+kind: helper
+name: destination-arize-missing-space-id
+call:
+  b3851:
+    function: destination_for
+    environment: {}
+    allowed_hosts: []
+    callback_name: arize
+    params:
+      arize_api_key: key-1
+    service_name: null
+env: {}
+compare:
+  ignore: []

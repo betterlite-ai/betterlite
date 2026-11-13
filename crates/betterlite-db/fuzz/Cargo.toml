@@ -30,6 +30,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "refresh_password"
+path = "fuzz_targets/refresh_password.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "migration_json"
 path = "fuzz_targets/migration_json.rs"
 test = false

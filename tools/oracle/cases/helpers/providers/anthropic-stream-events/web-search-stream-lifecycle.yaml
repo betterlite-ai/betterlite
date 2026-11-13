@@ -1,0 +1,25 @@
+kind: helper
+name: anthropic-stream-events-web-search-stream-lifecycle
+call:
+  anthropic_stream_events:
+    json_mode: false
+    tool_name_reverse_map: {sanitized_search: web_search}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: server_tool_use, id: ws1, name: web_search, input: {query: cats}}}}
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: input_json_delta, partial_json: '{"query": "dogs"}'}}}
+      - {function: chunk, chunk: {type: content_block_stop, index: 0}}
+      - {function: state}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: web_search_tool_result, tool_use_id: ws1, content: [{type: web_search_result, url: "https://e.x", title: t}]}}}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: web_search_tool_result, tool_use_id: other, content: []}}}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: web_fetch_tool_result, tool_use_id: wf1, content: {type: web_fetch_result, url: "https://y"}}}}
+      - {function: state}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: bash_code_execution_tool_result, tool_use_id: b1, content: {type: bash_code_execution_result, stdout: hi, stderr: ""}}}}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: tool_search_tool_result, tool_use_id: ts1, content: []}}}
+      - {function: state}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: server_tool_use, id: ws2, name: web_fetch, input: {url: "https://z"}}}}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: server_tool_use, id: rs1, name: sanitized_search, input: {query: birds}}}}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: server_tool_use, id: ws3, name: web_search}}}
+      - {function: state}
+env: {}
+compare: {ignore: []}

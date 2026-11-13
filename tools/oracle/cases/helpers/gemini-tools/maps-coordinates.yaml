@@ -1,0 +1,22 @@
+kind: helper
+name: maps-coordinates
+call:
+  gemini_tools:
+    call:
+      tools:
+        - googleMaps:
+            enableWidget: true
+            latitude: 12.5
+            longitude: -7.25
+            languageCode: en-GB
+      functions: []
+      web_search_options: null
+      tool_choice: null
+      service_tier: null
+      server_side_invocations: false
+      tool_config:
+        functionCallingConfig:
+          mode: ANY
+    settings: {}
+env: {}
+compare: {ignore: []}
