@@ -28,8 +28,16 @@ const NESTED_CATALOG: &[u8] = br#"{
   "minimax-m2.1": {"litellm_provider": "minimax", "mode": "chat", "supports_reasoning": false}
 }"#;
 
+const FIREWORKS_CATALOG: &[u8] = br#"{
+  "fireworks_ai/deepseek-r1": {"litellm_provider": "fireworks_ai", "mode": "chat", "supports_reasoning": true}
+}"#;
+
 fn nested_catalog() -> ModelCatalog {
     ModelCatalog::parse(NESTED_CATALOG, UnknownFields::Reject).unwrap()
+}
+
+fn fireworks_catalog() -> ModelCatalog {
+    ModelCatalog::parse(FIREWORKS_CATALOG, UnknownFields::Reject).unwrap()
 }
 
 fn catalog() -> ModelCatalog {
@@ -120,4 +128,19 @@ fn the_bare_entry_matches_without_case() {
     let catalog = nested_catalog();
     let info = CatalogModelInfo { catalog: &catalog };
     assert!(info.supports_reasoning("novita/minimax/minimax-m2.1"));
+}
+
+#[test]
+fn an_unmapped_fireworks_fine_tune_reads_the_provider_index() {
+    let catalog = fireworks_catalog();
+    let models = CatalogModelInfo { catalog: &catalog };
+    assert!(models.supports_reasoning("fireworks_ai/deepseek-r1-custom"));
+    assert!(!models.supports_reasoning("openai/mystery"));
+    let tokens = resolve_max_tokens(
+        &health(None, None, None, None),
+        &object(r#"{"model":"fireworks_ai/deepseek-r1-custom"}"#),
+        &policy(None, Some(2048)),
+        &models,
+    );
+    assert_eq!(tokens, Some(2048));
 }
