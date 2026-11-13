@@ -34,8 +34,8 @@ pub fn keeps_route(template: &str, routes: ComponentRoutes) -> bool {
 
 // the routes arrive as a request extension, so betterlite itself runs this layer with no allowlist and keeps every route
 pub async fn filter_route(request: Request, next: Next) -> Response {
-    let routes = request.extensions().get::<ComponentRoutes>().copied();
-    if let (Some(routes), Some(matched)) = (routes, request.extensions().get::<MatchedPath>())
+    let allowlist = request.extensions().get::<ComponentRoutes>().copied();
+    if let (Some(routes), Some(matched)) = (allowlist, request.extensions().get::<MatchedPath>())
         && !keeps_route(matched.as_str(), routes)
     {
         return (

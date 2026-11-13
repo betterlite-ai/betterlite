@@ -20,6 +20,7 @@ use axum::{Json, Router};
 use betterlite_config::types::Config;
 use betterlite_error::envelope::EnvelopeError;
 use betterlite_error::envelope::error_body_call_id;
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatError;
 use betterlite_openai::chat::execution::ChatExecutor;
@@ -67,24 +68,34 @@ pub async fn run(
     host: &str,
     port: u16,
 ) -> Result<(), ServerError> {
-    run_with(config, chat, host, port, |application| application).await
+    let serving = prepare(&config, chat)?;
+    Box::pin(serve(serving, host, port)).await
 }
 
-// a component binary wraps the built router to hand its allowlist to the route filter
-pub async fn run_with<F>(
-    config: Config,
-    chat: ChatExecutor,
-    host: &str,
-    port: u16,
-    wrap: F,
-) -> Result<(), ServerError>
-where
-    F: FnOnce(Router) -> Router,
-{
-    let shutdown_signal = build_shutdown_signal()?;
+struct Serving {
+    application: Router,
+    shutting_down: Arc<AtomicBool>,
+    outbound: ProxiedClient,
+}
+
+fn prepare(config: &Config, chat: ChatExecutor) -> Result<Serving, ServerError> {
     let shutting_down = Arc::new(AtomicBool::new(false));
     let outbound = chat.client.clone();
-    let application = wrap(application(&config, chat, Arc::clone(&shutting_down))?);
+    let application = application(config, chat, Arc::clone(&shutting_down))?;
+    Ok(Serving {
+        application,
+        shutting_down,
+        outbound,
+    })
+}
+
+async fn serve(serving: Serving, host: &str, port: u16) -> Result<(), ServerError> {
+    let Serving {
+        application,
+        shutting_down,
+        outbound,
+    } = serving;
+    let shutdown_signal = build_shutdown_signal()?;
     let address = format!("{host}:{port}");
     let listener = TcpListener::bind((host, port))
         .await

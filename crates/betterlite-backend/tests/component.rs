@@ -138,11 +138,9 @@ async fn stderr_json_lines_on_a_bad_config() {
     assert_eq!(output.status.code(), Some(1));
     let lines = stderr_lines(output.stderr);
     assert!(!lines.is_empty());
-    for line in lines {
-        assert!(!line.timestamp.is_empty());
-        assert!(!line.level.is_empty());
-        assert!(!line.message.is_empty());
-    }
+    assert!(lines.iter().all(|line| {
+        !line.timestamp.is_empty() && !line.level.is_empty() && !line.message.is_empty()
+    }));
 }
 
 #[tokio::test]

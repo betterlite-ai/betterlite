@@ -1,6 +1,6 @@
 use super::chat_setup::chat_executor;
 use super::filter::ComponentRoutes;
-use super::run_with;
+use super::{prepare, serve};
 use axum::Extension;
 use betterlite_config::loader::startup::{load_config, process_environment};
 use betterlite_config::types::Config;
@@ -8,7 +8,7 @@ use betterlite_openai::chat::execution::ChatExecutor;
 use rand::SeedableRng as _;
 use rand::rngs::{StdRng, SysRng};
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 use tokio::runtime::{Builder, Runtime};
 
@@ -58,8 +58,8 @@ pub fn startup(config_path: &Path) -> Option<Startup> {
 
 // a component binary owns only its CLI defaults, its path lists and main; the serve runs here once
 pub fn serve_component(
-    config_path: PathBuf,
-    host: String,
+    config_path: &Path,
+    host: &str,
     port: u16,
     routes: ComponentRoutes,
 ) -> ExitCode {
@@ -67,13 +67,16 @@ pub fn serve_component(
         runtime,
         config,
         chat,
-    }) = startup(&config_path)
+    }) = startup(config_path)
     else {
         return ExitCode::FAILURE;
     };
-    match runtime.block_on(run_with(config, chat, &host, port, |application| {
-        application.layer(Extension(routes))
-    })) {
+    let result = runtime.block_on(async {
+        let mut serving = prepare(&config, chat)?;
+        serving.application = serving.application.layer(Extension(routes));
+        Box::pin(serve(serving, host, port)).await
+    });
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             tracing::error!(error = ?error, "server startup failed");
