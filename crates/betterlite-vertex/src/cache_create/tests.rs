@@ -449,6 +449,36 @@ async fn missing_name_is_not_repaired() {
 }
 
 #[tokio::test]
+async fn create_reply_limit_is_enforced_before_decoding() {
+    let harness = eligible("gemini-2.5-pro", SHORT_MARKED);
+    let mut at_limit_options = CacheCreateOptions::default();
+    let at_limit = ScriptedTransport::new(vec![
+        empty_list_page(),
+        page(&" ".repeat(CREATED_CACHE_LIMIT)),
+    ]);
+    let at_limit_error = harness
+        .run(&at_limit, &mut at_limit_options)
+        .await
+        .expect_err("the create");
+    assert!(matches!(at_limit_error, CacheCreateError::Decode { .. }));
+    let mut over_limit_options = CacheCreateOptions::default();
+    let over_limit = ScriptedTransport::new(vec![
+        empty_list_page(),
+        page(&" ".repeat(CREATED_CACHE_LIMIT + 1)),
+    ]);
+    let over_limit_error = harness
+        .run(&over_limit, &mut over_limit_options)
+        .await
+        .expect_err("the create");
+    assert!(matches!(
+        over_limit_error,
+        CacheCreateError::TooLarge {
+            limit: CREATED_CACHE_LIMIT
+        }
+    ));
+}
+
+#[tokio::test]
 async fn create_status_is_preserved() {
     let harness = eligible("gemini-2.5-pro", SHORT_MARKED);
     let mut options = CacheCreateOptions::default();
