@@ -6,7 +6,8 @@ worktrees=${BETTERLITE_WORKTREES:-$(dirname "${main}")/betterlite-worktrees}
 L=${worktrees}/logs
 export BETTERLITE_LOGS=${L}
 events=${L}/flow-events.log
-cap=${BETTERLITE_MAX_FLOWS:-40}
+# since stage 3 a dispatch builds nothing, so RAM, disk and the vendor seats hold one back in next-slot.sh, and this cap only bounds the open checkouts (about 0.5 GB each)
+cap=${BETTERLITE_MAX_FLOWS:-200}
 mkdir -p "${L}/flows"
 while [[ ! -f "${L}/feeder.STOP" ]]; do
   while [[ -e "${main}/.git/betterlite/maintenance" ]] || [[ -e "${L}/maintenance.STOP" ]]; do sleep 60; done

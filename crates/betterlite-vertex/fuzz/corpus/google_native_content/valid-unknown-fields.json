@@ -1,0 +1,1 @@
+{"candidates":[{"xUnknown":{"deep":[1,2]},"content":{"role":"model","parts":[{"text":"hi"}],"contentExtra":true},"citationMetadata":"not-an-object","finishReason":"STOP","index":0}],"candidatesExtra":1,"unknownTop":{"a":null},"promptFeedback":{"blockReason":"SAFETY","extra":1},"usageMetadata":{"promptTokenCount":1,"xCounter":2},"modelVersion":"gemini-2.5-flash","responseId":"r1"}

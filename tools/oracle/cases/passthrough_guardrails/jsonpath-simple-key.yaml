@@ -1,0 +1,13 @@
+kind: helper
+name: jsonpath-simple-key
+call:
+  b3601:
+    calls:
+      - function: evaluate
+        data: {query: "hello world"}
+        expression: query
+      - function: extract_fields
+        data: {query: "hello world"}
+        expressions: [query]
+env: {}
+compare: {ignore: []}
