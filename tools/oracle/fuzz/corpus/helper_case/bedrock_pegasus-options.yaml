@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-pegasus-options
+call:
+  bedrock_pegasus:
+    function: pegasus_options
+    non_default: {max_completion_tokens: 12, temperature: null, top_k: 4}
+    optional_params: {custom: kept}
+    messages: [{content: fuzz}]
+env: {}
+compare: {ignore: []}

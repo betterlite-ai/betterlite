@@ -1,0 +1,14 @@
+kind: helper
+name: segments-and-response
+call:
+  bedrock_pegasus:
+    function: segments_and_response
+    body: '{"message":"A cat walks across the room.","finishReason":"length","segments":[{"start":0.0,"end":1.5,"text":"A cat"}],"response":"ignored alias","usage":{"prompt_tokens":99,"completion_tokens":99,"total_tokens":198}}'
+    status: 200
+    headers: [["x-amzn-bedrock-input-token-count", "3"], ["x-amzn-bedrock-output-token-count", "5"]]
+    model: twelvelabs.pegasus-1-2-v1:0
+    messages: []
+    now: 1700000000.5
+    response: {id: chatcmpl-pegasus, choices: [{index: 0, finish_reason: stop, message: {role: assistant, content: null}}, {index: 1, finish_reason: length, message: {role: assistant, content: kept}}]}
+env: {}
+compare: {ignore: []}
