@@ -1,0 +1,6 @@
+kind: helper
+name: uninitialized-store
+call:
+  b3814: {"initialized": false, "input_policies": {"dangerous": "blocked"}, "output_policies": {"dangerous": "untrusted"}, "blocked_by_permission": {}, "inputs": {"tools": [{"type": "function", "function": {"name": "dangerous"}}]}, "input_type": "request", "request_data": {"model": "gpt-4"}}
+env: {}
+compare: {ignore: []}
