@@ -72,12 +72,7 @@ pub fn to_response(
         .filter(|tokens| *tokens > 0)
         .unwrap_or(counted);
     Ok(RerankResponse {
-        id: Some(
-            reply
-                .id
-                .clone()
-                .unwrap_or_else(|| (new_id)().to_string()),
-        ),
+        id: Some(reply.id.clone().unwrap_or_else(|| (new_id)().to_string())),
         results: Some(results),
         meta: Some(RerankResponseMeta {
             api_version: None,
@@ -96,11 +91,12 @@ fn passage_text<'passages>(
     index: i64,
 ) -> Result<Option<&'passages str>, NvidiaNimRerankError> {
     let position = if index < 0 {
-        let offset = usize::try_from(index.unsigned_abs())
-            .map_err(|_| NvidiaNimRerankError::RankingIndex {
+        let offset = usize::try_from(index.unsigned_abs()).map_err(|_| {
+            NvidiaNimRerankError::RankingIndex {
                 index,
                 passages: passages.len(),
-            })?;
+            }
+        })?;
         passages
             .len()
             .checked_sub(offset)

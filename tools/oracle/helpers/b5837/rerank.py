@@ -17,7 +17,6 @@ from .types import (
     JsonObject,
     Kind,
     RerankCase,
-    RerankHeaders,
     RerankParams,
     RerankRequest,
     RerankResponseCase,
@@ -105,12 +104,8 @@ def rerank_select(input_value: RerankSelect) -> JsonValue:
 
 def rerank_params(input_value: RerankParams) -> JsonValue:
     mapped = [mapped_params(provider(call["config"]), call) for call in input_value["cases"]]
-    return ADAPTER.validate_python({"mapped": mapped})
-
-
-def rerank_headers(input_value: RerankHeaders) -> JsonValue:
     results: list[JsonValue] = []
-    for call in input_value["cases"]:
+    for call in input_value["headers"]:
         set_env("NVIDIA_NIM_API_KEY", call["env_key"])
         litellm.api_key = call["global_key"]
         try:
@@ -123,7 +118,7 @@ def rerank_headers(input_value: RerankHeaders) -> JsonValue:
         results.append({"ok": True, "headers": headers})
     set_env("NVIDIA_NIM_API_KEY", None)
     litellm.api_key = None
-    return ADAPTER.validate_python({"headers": results})
+    return ADAPTER.validate_python({"mapped": mapped, "headers": results})
 
 
 def rerank_request(input_value: RerankRequest) -> JsonValue:
@@ -178,15 +173,13 @@ def rerank_response(input_value: RerankResponseCase) -> JsonValue:
 
 
 def run_rerank(
-    input_value: RerankSelect | RerankParams | RerankHeaders | RerankRequest | RerankResponseCase,
+    input_value: RerankSelect | RerankParams | RerankRequest | RerankResponseCase,
 ) -> JsonValue:
     match input_value["kind"]:
         case "rerank_select":
             return rerank_select(input_value)
         case "rerank_params":
             return rerank_params(input_value)
-        case "rerank_headers":
-            return rerank_headers(input_value)
         case "rerank_request":
             return rerank_request(input_value)
         case "rerank_response":

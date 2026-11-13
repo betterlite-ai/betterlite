@@ -4,8 +4,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 use uuid::Uuid;
 
-use super::request::rerank_body;
 use super::reply::{decode_nvidia_nim_rerank_reply, to_response};
+use super::request::rerank_body;
 use super::{
     DEFAULT_NIM_RERANK_API_BASE, NVIDIA_NIM_PREFIX, NvidiaNimRerankError, SUPPORTED_COHERE_PARAMS,
     TEXT_PASSAGE_FIELDS,
@@ -66,7 +66,10 @@ impl NvidiaNimRerankConfig {
 impl BaseRerankConfig for NvidiaNimRerankConfig {
     type Error = NvidiaNimRerankError;
 
-    fn validate_environment(&self, request: EnvironmentRequest<'_>) -> Result<Headers, Self::Error> {
+    fn validate_environment(
+        &self,
+        request: EnvironmentRequest<'_>,
+    ) -> Result<Headers, Self::Error> {
         Self::validate_environment_with_keys(
             request.headers.clone(),
             request.api_key,

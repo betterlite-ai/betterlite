@@ -1,0 +1,11 @@
+kind: helper
+name: nvidia-nim-ranking-top-n
+call:
+  b5837:
+    kind: rerank_request
+    cases:
+      - {config: ranking, model: ranking/meta/llama, non_default: null, top_n: 0, query: q, documents: [a]}
+      - {config: ranking, model: ranking/meta/llama, non_default: null, top_n: 1, query: q, documents: [a]}
+      - {config: ranking, model: ranking/meta/llama, non_default: {top_k: 9, truncate: END}, top_n: null, query: q, documents: [a]}
+env: {}
+compare: {ignore: []}

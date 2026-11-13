@@ -1,0 +1,17 @@
+kind: helper
+name: nvidia-nim-rerank-selector-and-url
+call:
+  b5837:
+    kind: rerank_select
+    models:
+      - ranking/nvidia/llama-3.2-nv-rerankqa-1b-v2
+      - nvidia/llama-3.2-nv-rerankqa-1b-v2
+      - nvidia_nim/ranking/nvidia/llama-3.2-nv-rerankqa-1b-v2
+    urls:
+      - {model: nvidia/llama-3.2-nv-rerankqa-1b-v2, api_base: null}
+      - {model: nvidia/llama-3.2-nv-rerankqa-1b-v2, api_base: "https://h/v1"}
+      - {model: nvidia/llama-3.2-nv-rerankqa-1b-v2, api_base: "https://h/v1/retrieval/m/reranking"}
+      - {model: nvidia_nim/nvidia/llama-3_2-nv-rerankqa-1b-v2, api_base: "https://h"}
+      - {model: nvidia/llama, api_base: ""}
+env: {}
+compare: {ignore: []}

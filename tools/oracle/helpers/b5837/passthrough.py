@@ -58,7 +58,7 @@ def passthrough_url(input_value: PassthroughUrl) -> JsonValue:
             api_base=call["api_base"],
             api_key=None,
             model=call["model"],
-            endpoint="chat/completions",
+            endpoint=call["endpoint"],
             request_query_params=None,
             litellm_params=litellm_params,
         )

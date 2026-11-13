@@ -20,13 +20,7 @@ def run(input_value: Input) -> JsonValue:
     match input_value["kind"]:
         case "chat_supported" | "chat_map" | "embedding_map":
             return run_chat(input_value)
-        case (
-            "rerank_select"
-            | "rerank_params"
-            | "rerank_headers"
-            | "rerank_request"
-            | "rerank_response"
-        ):
+        case "rerank_select" | "rerank_params" | "rerank_request" | "rerank_response":
             return run_rerank(input_value)
         case "passthrough_url" | "passthrough_credentials":
             return run_passthrough(input_value)

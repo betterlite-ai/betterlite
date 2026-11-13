@@ -1,0 +1,23 @@
+kind: helper
+name: nvidia-nim-rerank-request-passages
+call:
+  b5837:
+    kind: rerank_request
+    cases:
+      - config: retrieval
+        model: nvidia_nim/meta/llama-3_2
+        non_default: null
+        top_n: null
+        query: q
+        documents:
+          - a
+          - {text: b, image: c}
+      - config: ranking
+        model: nvidia_nim/ranking/meta/llama-3_2
+        non_default: {top_k: 9}
+        top_n: null
+        query: q
+        documents:
+          - {text: a, image: b}
+env: {}
+compare: {ignore: []}

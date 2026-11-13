@@ -1,0 +1,13 @@
+kind: helper
+name: nvidia-nim-ranking-url-and-model
+call:
+  b5837:
+    kind: rerank_select
+    models: [ranking/nvidia/llama]
+    urls:
+      - {model: ranking/nvidia/llama, api_base: null}
+      - {model: ranking/nvidia/llama, api_base: "https://h/v1"}
+      - {model: ranking/nvidia/llama, api_base: "https://h/v1/ranking"}
+      - {model: ranking/nvidia/llama, api_base: "https://h/"}
+env: {}
+compare: {ignore: []}

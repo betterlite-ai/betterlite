@@ -38,7 +38,10 @@ impl Default for NvidiaNimRankingConfig {
 impl BaseRerankConfig for NvidiaNimRankingConfig {
     type Error = NvidiaNimRerankError;
 
-    fn validate_environment(&self, request: EnvironmentRequest<'_>) -> Result<Headers, Self::Error> {
+    fn validate_environment(
+        &self,
+        request: EnvironmentRequest<'_>,
+    ) -> Result<Headers, Self::Error> {
         self.retrieval.validate_environment(request)
     }
 
@@ -138,7 +141,9 @@ impl BaseRerankConfig for NvidiaNimRankingConfig {
             Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_))
             | None => None,
         };
-        let mut response = self.retrieval.transform_rerank_response(model_response, request)?;
+        let mut response = self
+            .retrieval
+            .transform_rerank_response(model_response, request)?;
         let kept = *self.top_n.lock().unwrap_or_else(PoisonError::into_inner);
         let Some(top_n) = from_params.or(kept) else {
             return Ok(response);

@@ -1,0 +1,19 @@
+kind: helper
+name: nvidia-nim-rerank-params-and-headers
+call:
+  b5837:
+    kind: rerank_params
+    cases:
+      - {config: retrieval, model: meta/llama, non_default: null, top_n: 3, query: q, documents: [a, {text: b}]}
+      - {config: retrieval, model: meta/llama, non_default: {truncate: END, query: other}, top_n: null, query: q, documents: [{text: b}]}
+      - {config: ranking, model: ranking/meta/llama, non_default: {top_k: 9}, top_n: 4, query: q, documents: [a]}
+      - {config: ranking, model: ranking/meta/llama, non_default: {top_n: 2}, top_n: null, query: q, documents: [a]}
+    headers:
+      - {api_key: call-key, env_key: env-key, global_key: global-key, headers: {}}
+      - {api_key: null, env_key: env-key, global_key: global-key, headers: {}}
+      - {api_key: null, env_key: null, global_key: global-key, headers: {}}
+      - {api_key: null, env_key: null, global_key: null, headers: {}}
+      - {api_key: "", env_key: env-key, global_key: global-key, headers: {}}
+      - {api_key: call-key, env_key: null, global_key: null, headers: {Authorization: caller, accept: text/plain, x-extra: "1"}}
+env: {}
+compare: {ignore: []}

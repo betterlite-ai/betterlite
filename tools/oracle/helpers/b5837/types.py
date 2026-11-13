@@ -54,11 +54,6 @@ class RerankCase(TypedDict):
     documents: list[Document]
 
 
-class RerankParams(TypedDict):
-    kind: Literal["rerank_params"]
-    cases: list[RerankCase]
-
-
 class HeaderCase(TypedDict):
     api_key: str | None
     env_key: str | None
@@ -66,9 +61,10 @@ class HeaderCase(TypedDict):
     headers: dict[str, str]
 
 
-class RerankHeaders(TypedDict):
-    kind: Literal["rerank_headers"]
-    cases: list[HeaderCase]
+class RerankParams(TypedDict):
+    kind: Literal["rerank_params"]
+    cases: list[RerankCase]
+    headers: list[HeaderCase]
 
 
 class RerankRequest(TypedDict):
@@ -83,9 +79,6 @@ class ResponseCase(TypedDict):
     body: str
     headers: dict[str, str]
     request_data: JsonObject
-    top_n: int | None
-    query: str
-    documents: list[Document]
 
 
 class RerankResponseCase(TypedDict):
@@ -97,6 +90,7 @@ class UrlCase(TypedDict):
     api_base: str | None
     env_base: str | None
     model: str
+    endpoint: str
     model_group: str | None
 
 
@@ -123,7 +117,6 @@ Input: TypeAlias = (
     | EmbeddingMap
     | RerankSelect
     | RerankParams
-    | RerankHeaders
     | RerankRequest
     | RerankResponseCase
     | PassthroughUrl

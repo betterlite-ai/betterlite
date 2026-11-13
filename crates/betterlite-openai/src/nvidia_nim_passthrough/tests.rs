@@ -9,11 +9,11 @@ use super::{
     without_repeated_version_prefix,
 };
 use crate::openai_base_config::{Headers, Object};
+use crate::passthrough::transformation::BasePassthroughConfig;
 use crate::passthrough::transformation::types::{
     PassthroughError, PassthroughLogging, PassthroughTarget, PassthroughUrlRequest, RelayCallType,
     RelayedBody, RelayedResponse,
 };
-use crate::passthrough::transformation::BasePassthroughConfig;
 
 fn object(value: Value) -> Object {
     match value {
@@ -119,7 +119,9 @@ fn get_api_key_prefers_the_argument() {
     };
     let argument = SecretString::from("argument-key");
     assert_eq!(
-        config.get_api_key(Some(&argument)).map(|key| key.expose_secret()),
+        config
+            .get_api_key(Some(&argument))
+            .map(|key| key.expose_secret()),
         Some("argument-key")
     );
     assert_eq!(
@@ -279,10 +281,7 @@ impl PassthroughLogging for NoLogging {
 #[test]
 fn logging_non_streaming_response_relays_a_json_object() {
     let body = relayed(br#"{"id": "reply"}"#).unwrap();
-    assert_eq!(
-        body,
-        RelayedBody::Json(object(json!({"id": "reply"})))
-    );
+    assert_eq!(body, RelayedBody::Json(object(json!({"id": "reply"}))));
 }
 
 #[test]

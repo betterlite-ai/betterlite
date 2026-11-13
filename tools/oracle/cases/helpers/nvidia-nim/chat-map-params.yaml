@@ -1,0 +1,17 @@
+kind: helper
+name: nvidia-nim-chat-map-params
+call:
+  b5837:
+    kind: chat_map
+    cases:
+      - model: nvidia/nemotron-4-340b-reward
+        non_default: {max_completion_tokens: 7, seed: 3, stream: true}
+        optional: {max_tokens: 99, extra: kept}
+      - model: google/gemma-2-9b-it
+        non_default: {temperature: 0.2}
+        optional: {}
+      - model: meta/llama3-70b-instruct
+        non_default: {max_completion_tokens: 2, max_tokens: 1, tools: []}
+        optional: {}
+env: {}
+compare: {ignore: []}

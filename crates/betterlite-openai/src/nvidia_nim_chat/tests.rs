@@ -17,7 +17,14 @@ fn mapped(model: &str, non_default: Value, optional: Value) -> Object {
     NvidiaNimConfig::map_params(model, &object(non_default), object(optional))
 }
 
-const GEMMA: &[&str] = &["stream", "temperature", "top_p", "max_tokens", "stop", "seed"];
+const GEMMA: &[&str] = &[
+    "stream",
+    "temperature",
+    "top_p",
+    "max_tokens",
+    "stop",
+    "seed",
+];
 const DEFAULT: &[&str] = &[
     "stream",
     "temperature",

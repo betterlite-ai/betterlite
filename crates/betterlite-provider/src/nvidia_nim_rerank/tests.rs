@@ -94,7 +94,11 @@ fn map_ranking(
         .unwrap()
 }
 
-fn request(config: &NvidiaNimRerankConfig, model: &str, optional: &Params) -> Result<Params, NvidiaNimRerankError> {
+fn request(
+    config: &NvidiaNimRerankConfig,
+    model: &str,
+    optional: &Params,
+) -> Result<Params, NvidiaNimRerankError> {
     config.transform_rerank_request(model, optional, &Headers::new(), None)
 }
 
@@ -193,11 +197,31 @@ fn select_nvidia_nim_rerank_config_returns_a_config_of_the_matching_family() {
 }
 
 #[rstest]
-#[case::default_base(None, "meta/llama", "https://ai.api.nvidia.com/v1/retrieval/meta/llama/reranking")]
-#[case::empty_base(Some(""), "meta/llama", "https://ai.api.nvidia.com/v1/retrieval/meta/llama/reranking")]
-#[case::trailing_slash(Some("https://h/"), "meta/llama", "https://h/v1/retrieval/meta/llama/reranking")]
-#[case::v1_trimmed(Some("https://h/v1"), "meta/llama", "https://h/v1/retrieval/meta/llama/reranking")]
-#[case::v1_slash(Some("https://h/v1/"), "meta/llama", "https://h/v1/retrieval/meta/llama/reranking")]
+#[case::default_base(
+    None,
+    "meta/llama",
+    "https://ai.api.nvidia.com/v1/retrieval/meta/llama/reranking"
+)]
+#[case::empty_base(
+    Some(""),
+    "meta/llama",
+    "https://ai.api.nvidia.com/v1/retrieval/meta/llama/reranking"
+)]
+#[case::trailing_slash(
+    Some("https://h/"),
+    "meta/llama",
+    "https://h/v1/retrieval/meta/llama/reranking"
+)]
+#[case::v1_trimmed(
+    Some("https://h/v1"),
+    "meta/llama",
+    "https://h/v1/retrieval/meta/llama/reranking"
+)]
+#[case::v1_slash(
+    Some("https://h/v1/"),
+    "meta/llama",
+    "https://h/v1/retrieval/meta/llama/reranking"
+)]
 #[case::full_url_kept(
     Some("https://h/v1/retrieval/meta/llama/reranking"),
     "meta/llama",
@@ -213,7 +237,11 @@ fn select_nvidia_nim_rerank_config_returns_a_config_of_the_matching_family() {
     "ranking/meta/llama",
     "https://h/v1/retrieval/ranking/meta/llama/reranking"
 )]
-fn callback_retrieval_url(#[case] api_base: Option<&str>, #[case] model: &str, #[case] expected: &str) {
+fn callback_retrieval_url(
+    #[case] api_base: Option<&str>,
+    #[case] model: &str,
+    #[case] expected: &str,
+) {
     assert_eq!(url(&config(), api_base, model), expected);
 }
 
@@ -273,9 +301,7 @@ fn map_cohere_rerank_params_overlays_the_non_default_params() {
     let documents = documents(r#"["a"]"#);
     assert_eq!(
         map_retrieval(&mut non_default, &documents, Some(3)),
-        params(
-            r#"{"query": "other", "documents": ["z"], "truncate": "END", "top_k": 3}"#
-        )
+        params(r#"{"query": "other", "documents": ["z"], "truncate": "END", "top_k": 3}"#)
     );
 }
 
@@ -439,7 +465,10 @@ fn validate_environment_adds_the_default_headers_and_lets_the_caller_override_th
         Headers::from([
             (String::from("Authorization"), String::from("caller")),
             (String::from("accept"), String::from("text/plain")),
-            (String::from("content-type"), String::from("application/json")),
+            (
+                String::from("content-type"),
+                String::from("application/json")
+            ),
             (String::from("x-extra"), String::from("kept")),
         ])
     );
@@ -491,7 +520,10 @@ fn transform_rerank_request_drops_truncate_values_other_than_none_and_end() {
 fn transform_rerank_request_keeps_truncate_none() {
     let optional = params(r#"{"query": "q", "documents": [], "truncate": "NONE"}"#);
     let body = request(&config(), "m", &optional).unwrap();
-    assert_eq!(body.get("truncate"), Some(&Json::Text(String::from("NONE"))));
+    assert_eq!(
+        body.get("truncate"),
+        Some(&Json::Text(String::from("NONE")))
+    );
 }
 
 #[test]
@@ -532,9 +564,17 @@ fn transform_rerank_request_keeps_the_image_only_for_the_ranking_config() {
 fn transform_rerank_request_strips_the_ranking_prefix_from_the_body_model() {
     let optional = params(r#"{"query": "q", "documents": []}"#);
     let body = ranking()
-        .transform_rerank_request("nvidia_nim/ranking/meta/llama-3_2", &optional, &Headers::new(), None)
+        .transform_rerank_request(
+            "nvidia_nim/ranking/meta/llama-3_2",
+            &optional,
+            &Headers::new(),
+            None,
+        )
         .unwrap();
-    assert_eq!(body.get("model"), Some(&Json::Text(String::from("meta.llama-3.2"))));
+    assert_eq!(
+        body.get("model"),
+        Some(&Json::Text(String::from("meta.llama-3.2")))
+    );
 }
 
 #[test]
@@ -553,14 +593,15 @@ fn transform_rerank_request_removes_top_n_and_top_k_from_the_ranking_body() {
 #[case::text(r#"{"top_n": "3"}"#)]
 #[case::boolean(r#"{"top_n": true}"#)]
 #[case::fractional(r#"{"top_n": 1.5}"#)]
-fn transform_rerank_request_rejects_a_top_n_that_is_not_a_positive_integer(
-    #[case] source: &str,
-) {
+fn transform_rerank_request_rejects_a_top_n_that_is_not_a_positive_integer(#[case] source: &str) {
     let optional = params_with(source);
     let error = ranking()
         .transform_rerank_request("ranking/m", &optional, &Headers::new(), None)
         .unwrap_err();
-    assert!(matches!(error, NvidiaNimRerankError::TopNNotPositive { .. }));
+    assert!(matches!(
+        error,
+        NvidiaNimRerankError::TopNNotPositive { .. }
+    ));
 }
 
 fn params_with(source: &str) -> Params {
@@ -618,8 +659,14 @@ fn transform_rerank_response_reports_a_body_that_is_not_json() {
 #[case::text_logit(r#"{"rankings": [{"index": 0, "logit": "0.5"}]}"#)]
 #[case::null_rankings(r#"{"rankings": null}"#)]
 fn transform_rerank_response_reports_a_body_of_the_wrong_shape(#[case] body: &str) {
-    let error = response(&config(), 200, body.as_bytes(), &Params::new(), &Params::new())
-        .unwrap_err();
+    let error = response(
+        &config(),
+        200,
+        body.as_bytes(),
+        &Params::new(),
+        &Params::new(),
+    )
+    .unwrap_err();
     assert!(matches!(error, NvidiaNimRerankError::ReplyShape { .. }));
 }
 
@@ -661,8 +708,14 @@ fn transform_rerank_response_counts_the_results_when_the_usage_is_zero() {
 #[test]
 fn transform_rerank_response_counts_the_results_without_a_usage_field() {
     let body = br#"{"rankings": [{"index": 0, "logit": 0.5}]}"#;
-    let response = response(&config(), 200, body, &params(r#"{"passages": []}"#), &Params::new())
-        .unwrap();
+    let response = response(
+        &config(),
+        200,
+        body,
+        &params(r#"{"passages": []}"#),
+        &Params::new(),
+    )
+    .unwrap();
     let billed = response.meta.unwrap().billed_units.unwrap().unwrap();
     assert_eq!(billed.total_tokens, Some(Some(1)));
 }
@@ -671,7 +724,10 @@ fn transform_rerank_response_counts_the_results_without_a_usage_field() {
 fn transform_rerank_response_generates_an_id_when_the_body_has_none() {
     let body = br#"{"rankings": []}"#;
     let response = response(&config(), 200, body, &Params::new(), &Params::new()).unwrap();
-    assert_eq!(response.id.as_deref(), Some("00000000-0000-0000-0000-000000000007"));
+    assert_eq!(
+        response.id.as_deref(),
+        Some("00000000-0000-0000-0000-000000000007")
+    );
 }
 
 #[test]
@@ -791,10 +847,7 @@ fn ranking_response_uses_the_request_top_n_when_it_is_truthy() {
         .unwrap();
     let body = br#"{"rankings": [{"index": 0, "logit": 0.1}, {"index": 1, "logit": 0.9}, {"index": 2, "logit": 0.5}]}"#;
     let request_optional = params(r#"{"top_n": 2}"#);
-    assert_eq!(
-        ranking_results(&config, body, &request_optional),
-        [1, 2]
-    );
+    assert_eq!(ranking_results(&config, body, &request_optional), [1, 2]);
 }
 
 #[test]
@@ -806,20 +859,14 @@ fn ranking_response_falls_back_to_the_kept_top_n_for_a_zero_request_top_n() {
         .unwrap();
     let body = br#"{"rankings": [{"index": 0, "logit": 0.1}, {"index": 1, "logit": 0.9}, {"index": 2, "logit": 0.5}]}"#;
     let request_optional = params(r#"{"top_n": 0}"#);
-    assert_eq!(
-        ranking_results(&config, body, &request_optional),
-        [1, 2]
-    );
+    assert_eq!(ranking_results(&config, body, &request_optional), [1, 2]);
 }
 
 #[test]
 fn ranking_response_leaves_every_result_without_a_top_n() {
     let config = ranking();
     let body = br#"{"rankings": [{"index": 0, "logit": 0.1}, {"index": 1, "logit": 0.9}]}"#;
-    assert_eq!(
-        ranking_results(&config, body, &Params::new()),
-        [0, 1]
-    );
+    assert_eq!(ranking_results(&config, body, &Params::new()), [0, 1]);
 }
 
 #[test]
@@ -834,7 +881,9 @@ fn ranking_response_reads_the_top_n_a_fresh_request_carries() {
 }
 
 #[rstest]
-fn replays_the_nvidia_nim_rerank_reply_corpus(#[files("fuzz/corpus/nvidia_nim_rerank_reply/*")] path: PathBuf) {
+fn replays_the_nvidia_nim_rerank_reply_corpus(
+    #[files("fuzz/corpus/nvidia_nim_rerank_reply/*")] path: PathBuf,
+) {
     let body = fs::read(path).unwrap();
     let _decoded = decode_nvidia_nim_rerank_reply(&body);
 }
