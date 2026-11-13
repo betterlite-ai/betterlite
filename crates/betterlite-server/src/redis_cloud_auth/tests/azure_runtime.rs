@@ -11,6 +11,15 @@ fn azure_runtime_the_clocks_read_the_wall_clock() {
     assert!(ArcHost::now_unix_seconds(&host) > WALL_CLOCK_FLOOR);
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn azure_runtime_the_host_reports_its_platform() {
+    let host = ProductionHost {
+        environment: BTreeMap::new(),
+    };
+    assert_eq!(host.platform(), ArcPlatform::Linux);
+}
+
 #[test]
 fn azure_runtime_the_host_reads_its_environment() {
     let host = ProductionHost {

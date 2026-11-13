@@ -15,7 +15,7 @@ use axum::extract::State;
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::any;
-use betterlite_azure::azure_arc_identity::{ArcHost, ArcRequest, ArcTransport};
+use betterlite_azure::azure_arc_identity::{ArcHost, ArcPlatform, ArcRequest, ArcTransport};
 use betterlite_azure::azure_certificate::assertion::RandomIds;
 use betterlite_azure::azure_certificate::credential::StdFiles;
 use betterlite_azure::azure_client_secret::transport::{
