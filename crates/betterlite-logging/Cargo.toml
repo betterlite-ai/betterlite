@@ -60,7 +60,7 @@ strum = { version = "0.28.0", features = ["derive"] }
 subtle.workspace = true
 tempfile = "3.27.0"
 thiserror.workspace = true
-tokio = { workspace = true, features = ["time"] }
+tokio = { workspace = true, features = ["sync", "time"] }
 tokio-util = { version = "0.7.20", features = ["rt"] }
 tonic = { version = "0.14.9", default-features = false }
 tracing.workspace = true

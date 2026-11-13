@@ -1,0 +1,15 @@
+kind: helper
+name: langfuse-preset-missing-keys-allowed
+call:
+  b3851:
+    function: langfuse_preset
+    environment: {}
+    base:
+      exporters:
+        - {}
+      mapper_names: [genai]
+      resource_attributes: {}
+    allow_missing_credentials: true
+env: {}
+compare:
+  ignore: []
