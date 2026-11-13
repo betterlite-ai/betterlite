@@ -2451,6 +2451,7 @@ dependencies = [
  "betterlite",
  "betterlite-auth",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-core",
  "betterlite-db",
  "betterlite-guardrails",
@@ -3351,8 +3352,10 @@ dependencies = [
 name = "betterlite-websearch"
 version = "0.1.0"
 dependencies = [
+ "betterlite-anthropic",
  "betterlite-error",
  "betterlite-openai",
+ "betterlite-prompts",
  "indexmap 2.14.2",
  "serde",
  "serde_json",
