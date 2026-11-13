@@ -58,6 +58,7 @@ fn field(
 #[case::float_notation(Scenario::Id { group: "g", params: r#"{"a":1e16,"b":1.5e-7,"c":0.0001,"d":123456789.0,"e":-0.0}"# }, Ok(r#""c5672a02d9f04eca5d5a856a4d56e4f5bc07d914531ca506fcb73b34951d65b1""#))]
 #[case::text_escapes(Scenario::Id { group: "g", params: r#"{"a":"x\ny","b":"\ud83d\ude00","c":"q\"q"}"# }, Ok(r#""90f904ed90f8583fa6f978109ba356e0b81d126adaf44d214b533bbcc696b43f""#))]
 #[case::control_characters(Scenario::Id { group: "g", params: r#"{"d":{"k":"a\u007fb\u001fc\bd\fe/f\u2028g","\u007f":1}}"# }, Ok(r#""3dbcc1058fa8a05dc59669bab3bdc87bd1c3171241c180141a9c3ffc33ef60bc""#))]
+#[case::list_text_escapes(Scenario::Id { group: "g", params: r#"{"l":["a\\b\tc\nd\re","q'\"r","x y","\u007f\u0085\u2028\u00a0\udb40\udc01\udbff\udffd\udbff\udfff\u200b\u00e9"]}"# }, Ok(r#""0eee72666cb28b13bea520abd0a1d794269aca9c63adb85a90c04890192e5124""#))]
 #[case::nested_values(Scenario::Id { group: "g", params: r#"{"d":{"k":[1,"a",null,true],"e":{}},"l":[]}"# }, Ok(r#""980ca0ed50bd71f841a95fc98239b51511a65fb07e017abfcebcf63164c78a15""#))]
 #[case::plain_deployment(Scenario::Create(PLAIN, DEFAULT), Ok(concat!(r#"{"model_name":"gpt","litellm_params":{"model":"openai/gpt-4o","api_key":"sk-1","#, flags!(), r#"},"model_info":{"id":"generated-id","db_model":false,"member_auto_router":false}}"#)))]
 #[case::declared_id_kept(Scenario::Create(r#"{"model_name":"g","litellm_params":{"model":"m"},"model_info":{"id":"dep-7"}}"#, DEFAULT), Ok(concat!(r#"{"model_name":"g","litellm_params":{"model":"m","#, flags!(), r#"},"model_info":{"id":"dep-7","db_model":false,"member_auto_router":false}}"#)))]
@@ -265,6 +266,15 @@ const PTU_DUPLICATE: Options = Options {
     Scenario::Create(PTU_NO_ID, PTU_ON),
     Err(
         "PTU configuration on model 'g' is invalid: model_info.id is required when PTU fields are set. Without one the deployment is identified by a hash of its litellm_params, so rotating a credential bills the reservation a second time under the new identity. Set it to the id this deployment already uses, shown by GET /model/info, so the flat cost already written stays under one identity; any other value starts a second one"
+    )
+)]
+#[case::ptu_names_the_current_id(
+    Scenario::Create(
+        r#"{"model_name":"g","litellm_params":{"model":"azure/x"},"model_info":{"id":"live-1","team_id":"t","ptu_count":10,"cost_per_ptu_per_hour":2,"ptu_effective_from":"2026-01-01T00:00:00Z"},"declared_id":""}"#,
+        PTU_ON
+    ),
+    Err(
+        "PTU configuration on model 'g' is invalid: model_info.id is required when PTU fields are set. Without one the deployment is identified by a hash of its litellm_params, so rotating a credential bills the reservation a second time under the new identity. Set it to the id this deployment already uses, live-1, so the flat cost already written stays under one identity; any other value starts a second one"
     )
 )]
 #[case::ptu_without_an_id_is_fine_while_off(
