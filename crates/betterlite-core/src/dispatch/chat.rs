@@ -1,21 +1,19 @@
 use std::pin::Pin;
 use std::task::{Context as TaskContext, Poll};
 
-use betterlite_config::sections::mock_response::UsageDefaults;
 use betterlite_context::call_context::CallContext;
 use betterlite_http::error::HttpError;
 use betterlite_openai::chat::ChatRequest as ClientChatRequest;
 use betterlite_openai::chat::MessageContent;
-use betterlite_openai::stream::chunk::{Choice, Chunk, Delta};
 use futures_util::stream::{BoxStream, Stream, StreamExt as _};
-
-use crate::mock::stream::{StreamSpec, chunks, usage_chunk};
 
 use super::error::DispatchError;
 use super::log::CallOutcome;
 use super::terminal::Terminal;
 use super::{Dispatch, Entry};
 use crate::operation::chat::{ChatCallInput, ChatRequest, ChatResult, ChatStreamAnswer};
+
+pub mod mock_stream;
 
 pub async fn execute<Metadata, Client>(
     dispatch: &Dispatch,
@@ -73,10 +71,11 @@ where
     }
 }
 
-// LiteLLM concatenates the string contents of every message, and only when the first one carries content
+// LiteLLM concatenates the string contents of every message when the list is not empty
 fn rules_input(request: &ClientChatRequest) -> Option<String> {
-    let first = request.messages.first()?;
-    first.content.as_ref()?;
+    if request.messages.is_empty() {
+        return None;
+    }
     let mut buffer = String::new();
     for message in &request.messages {
         if let Some(MessageContent::Text(text)) = &message.content {
@@ -144,53 +143,3 @@ impl Drop for TerminalStream {
 }
 
 mod tests;
-
-// LiteLLM's stream wrapper keeps the role on the first delta and on choices after the first
-pub fn mock_frames(
-    spec: &StreamSpec<'_>,
-    request: &ClientChatRequest,
-    prompt_tokens: Option<u64>,
-    usage: UsageDefaults,
-) -> Result<Vec<Vec<u8>>, serde_json::Error> {
-    let mut frames = Vec::new();
-    for (position, mut chunk) in chunks(spec).enumerate() {
-        if let Some(first) = chunk.choices.first_mut().filter(|_| position > 0) {
-            first.delta.role = None;
-        }
-        // the wrapper drops a chunk with no choice, which is every content chunk when n is zero
-        if chunk.choices.is_empty() {
-            continue;
-        }
-        frames.push(sse_frame(&chunk)?);
-    }
-    frames.push(sse_frame(&Chunk {
-        id: spec.id.to_owned(),
-        object: String::from("chat.completion.chunk"),
-        created: spec.created,
-        model: spec.model.to_owned(),
-        choices: vec![Choice {
-            index: 0,
-            delta: Delta::default(),
-            finish_reason: Some(String::from("stop")),
-            logprobs: None,
-        }],
-        usage: None,
-        system_fingerprint: None,
-        service_tier: None,
-    })?);
-    let with_usage = request
-        .stream_options
-        .as_ref()
-        .is_some_and(|options| options.include_usage);
-    if with_usage || prompt_tokens.is_some() {
-        let count = prompt_tokens.unwrap_or(usage.prompt_tokens);
-        frames.push(sse_frame(&usage_chunk(spec, count, usage))?);
-    }
-    frames.push(b"data: [DONE]\n\n".to_vec());
-    Ok(frames)
-}
-
-pub fn sse_frame(chunk: &Chunk) -> Result<Vec<u8>, serde_json::Error> {
-    let text = serde_json::to_string(chunk)?;
-    Ok(format!("data: {text}\n\n").into_bytes())
-}

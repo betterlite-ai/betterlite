@@ -9,7 +9,7 @@ use axum::http::HeaderMap;
 use axum::response::{IntoResponse as _, Response};
 use betterlite_config::sections::mock_response::failure::MockError;
 use betterlite_config::sections::mock_response::selection::{MockPlan, resolve_mock};
-use betterlite_core::dispatch::chat::mock_frames;
+use betterlite_core::dispatch::chat::mock_stream::mock_frames;
 use betterlite_core::mock::chat::{ChatAnswer, answer};
 use betterlite_core::mock::stream::StreamSpec;
 use betterlite_core::operation::chat::{

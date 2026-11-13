@@ -4,18 +4,12 @@ use std::str;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use betterlite_config::sections::mock_response::UsageDefaults;
 use betterlite_context::call_context::BillingPolicy;
-use betterlite_openai::chat::ChatRequest as ClientChatRequest;
 use betterlite_openai::chat::{ChatMessage, MessageContent, Role};
-use betterlite_openai::stream::chunk::Chunk;
 use futures_util::StreamExt as _;
 use indexmap::IndexMap;
 use rstest::rstest;
 use uuid::Uuid;
-
-use super::mock_frames;
-use crate::mock::stream::StreamSpec;
 
 use crate::dispatch::error::DispatchError;
 use crate::dispatch::log::CallOutcome;
@@ -389,8 +383,15 @@ async fn the_rules_read_the_joined_message_text() {
     assert_eq!(trace.steps(), ["rules", "prepare", "complete", "success"]);
 }
 
+#[rstest]
+#[case::first_message_without_content(true, &[""], &["rules", "prepare", "complete", "success"])]
+#[case::no_messages(false, &[], &["prepare", "complete", "success"])]
 #[tokio::test]
-async fn a_first_message_without_content_skips_the_rules() {
+async fn the_rules_run_for_any_non_empty_message_list(
+    #[case] with_message: bool,
+    #[case] inputs: &[&str],
+    #[case] steps: &[&str],
+) {
     let (trace, log, rules) = fixtures(None);
     let calls = Arc::new(FakeChat::new(trace.clone(), StreamEnd::Ends));
     let dispatch = Dispatch::new(
@@ -400,101 +401,22 @@ async fn a_first_message_without_content_skips_the_rules() {
     );
     let context = context(None, SystemTime::UNIX_EPOCH);
     let mut request = chat_request("rules-2", MODEL_ID, calls, false);
-    request.request.messages = vec![ChatMessage {
-        role: Role::Tool,
-        content: None,
-        name: None,
-        tool_calls: None,
-        tool_call_id: Some(String::from("call-0")),
-        passthrough: IndexMap::new(),
-    }];
+    request.request.messages = if with_message {
+        vec![ChatMessage {
+            role: Role::Tool,
+            content: None,
+            name: None,
+            tool_calls: None,
+            tool_call_id: Some(String::from("call-0")),
+            passthrough: IndexMap::new(),
+        }]
+    } else {
+        Vec::new()
+    };
     dispatch
         .execute(Operation::Chat(request), &context)
         .await
         .expect("chat call");
-    assert!(rules.inputs().is_empty());
-    assert_eq!(trace.steps(), ["prepare", "complete", "success"]);
-}
-
-const PLAIN: &[u8] = br#"{"model":"g","messages":[]}"#;
-const WITH_USAGE: &[u8] =
-    br#"{"model":"g","messages":[],"stream":true,"stream_options":{"include_usage":true}}"#;
-const DONE: &[u8] = b"data: [DONE]\n\n";
-
-// every frame before the closing [DONE], decoded as the chunk it carries
-fn mock_stream_chunks(
-    body: &[u8],
-    prompt_tokens: Option<u64>,
-    choice_count: Option<u32>,
-) -> Vec<Chunk> {
-    let request = ClientChatRequest::parse(body).expect("mock request");
-    let spec = StreamSpec {
-        content: "abcdefg",
-        choice_count,
-        model: "g",
-        id: "chatcmpl-1",
-        created: 7,
-    };
-    let usage = UsageDefaults {
-        prompt_tokens: 10,
-        completion_tokens: 20,
-    };
-    let mut frames = mock_frames(&spec, &request, prompt_tokens, usage).expect("frames");
-    assert_eq!(frames.pop().as_deref(), Some(DONE));
-    frames
-        .iter()
-        .map(|frame| {
-            let text = str::from_utf8(frame).expect("utf-8 frame");
-            let json = text
-                .strip_prefix("data: ")
-                .and_then(|rest| rest.strip_suffix("\n\n"))
-                .expect("sse frame");
-            serde_json::from_str(json).expect("chunk")
-        })
-        .collect()
-}
-
-#[test]
-fn mock_frames_slice_the_content_and_keep_the_role_on_the_first_delta() {
-    let chunks = mock_stream_chunks(PLAIN, None, None);
-    assert_eq!(chunks.len(), 4);
-    let deltas: Vec<_> = chunks[..3]
-        .iter()
-        .map(|chunk| &chunk.choices[0].delta)
-        .collect();
-    assert_eq!(deltas[0].role.as_deref(), Some("assistant"));
-    assert_eq!(deltas[0].content.as_deref(), Some("abc"));
-    assert_eq!(deltas[1].role, None);
-    assert_eq!(deltas[1].content.as_deref(), Some("def"));
-    assert_eq!(deltas[2].role, None);
-    assert_eq!(deltas[2].content.as_deref(), Some("g"));
-    assert_eq!(chunks[3].choices[0].finish_reason.as_deref(), Some("stop"));
-    assert_eq!(chunks[3].id, "chatcmpl-1");
-    assert_eq!(chunks[3].created, 7);
-}
-
-#[rstest]
-#[case::asked_for(WITH_USAGE, None, Some((10, 30)))]
-#[case::prompt_count_from_the_plan(PLAIN, Some(7), Some((7, 27)))]
-#[case::not_asked_for(PLAIN, None, None)]
-fn mock_frames_end_with_a_usage_chunk_only_when_asked_for(
-    #[case] body: &[u8],
-    #[case] prompt_tokens: Option<u64>,
-    #[case] expected: Option<(u64, u64)>,
-) {
-    let chunks = mock_stream_chunks(body, prompt_tokens, None);
-    let usage = chunks[3..].last().and_then(|chunk| chunk.usage.as_ref());
-    assert_eq!(
-        usage.map(|counts| (counts.prompt_tokens, counts.total_tokens)),
-        expected
-    );
-    assert_eq!(chunks.len(), expected.map_or(4, |_| 5));
-    assert!(chunks[..4].iter().all(|chunk| chunk.usage.is_none()));
-}
-
-#[test]
-fn mock_frames_drop_the_content_chunks_when_no_choice_is_asked_for() {
-    let chunks = mock_stream_chunks(PLAIN, None, Some(0));
-    assert_eq!(chunks.len(), 1);
-    assert_eq!(chunks[0].choices[0].finish_reason.as_deref(), Some("stop"));
+    assert_eq!(rules.inputs(), inputs);
+    assert_eq!(trace.steps(), steps);
 }
