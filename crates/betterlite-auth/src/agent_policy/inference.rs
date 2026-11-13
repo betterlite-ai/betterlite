@@ -1,5 +1,6 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use serde::Deserialize;
 
 use super::routes::{MANAGED_MODEL_PATHS, MANAGED_MODEL_ROUTES, MANAGED_REALTIME_ROUTES};
 use crate::agent_identity::error::{
@@ -11,25 +12,36 @@ use crate::route_match::templates::check_route_access;
 pub const MANAGED_MODEL_REQUIRED: &str =
     "Managed inference requires an explicit or configured model";
 
-const COMPLETION_KIND: &str = "completion";
+// betterlite-core imports this enum for its resolver, so the seven kinds have one definition
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InferenceModelKind {
+    Completion,
+    ImageGeneration,
+    ImageEdit,
+    Moderation,
+    Speech,
+    Body,
+    Path,
+}
 
-// the kind names are LiteLLM's Literal values, matched by route suffix in _MODEL_ROUTE_KINDS
-const MODEL_ROUTE_KINDS: &[(&str, &str)] = &[
-    ("/images/generations", "image_generation"),
-    ("/images/edits", "image_edit"),
-    ("/moderations", "moderation"),
-    ("/audio/transcriptions", "moderation"),
-    ("/audio/speech", "speech"),
-    ("/rerank", "body"),
-    ("/decisions", "body"),
-    ("/systemone", "body"),
-    ("/messages/count_tokens", "body"),
-    (":countTokens", "path"),
+// LiteLLM's _MODEL_ROUTE_KINDS: the route suffix decides the kind, and an unlisted route is completion
+const MODEL_ROUTE_KINDS: &[(&str, InferenceModelKind)] = &[
+    ("/images/generations", InferenceModelKind::ImageGeneration),
+    ("/images/edits", InferenceModelKind::ImageEdit),
+    ("/moderations", InferenceModelKind::Moderation),
+    ("/audio/transcriptions", InferenceModelKind::Moderation),
+    ("/audio/speech", InferenceModelKind::Speech),
+    ("/rerank", InferenceModelKind::Body),
+    ("/decisions", InferenceModelKind::Body),
+    ("/systemone", InferenceModelKind::Body),
+    ("/messages/count_tokens", InferenceModelKind::Body),
+    (":countTokens", InferenceModelKind::Path),
 ];
 
 // betterlite-core owns resolve_inference_model, so its single copy is handed in at the call site
-pub type ModelResolver<'resolver> =
-    dyn Fn(Option<&str>, Option<&str>, Option<&str>, &str) -> Option<String> + 'resolver;
+pub type ModelResolver<'resolver> = dyn Fn(Option<&str>, Option<&str>, Option<&str>, InferenceModelKind) -> Option<String>
+    + 'resolver;
 
 pub struct ManagedInferenceRequest<'request> {
     pub route: &'request str,
@@ -84,13 +96,13 @@ fn resolved_body(
     Ok(augmented)
 }
 
-fn route_kind(route: &str) -> &'static str {
+fn route_kind(route: &str) -> InferenceModelKind {
     match MODEL_ROUTE_KINDS
         .iter()
         .find(|(suffix, _)| route.ends_with(suffix))
     {
-        Some((_, kind)) => kind,
-        None => COMPLETION_KIND,
+        Some((_, kind)) => *kind,
+        None => InferenceModelKind::Completion,
     }
 }
 

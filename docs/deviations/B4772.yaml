@@ -15,6 +15,6 @@ deviations:
   - what: The managed route sets, the model-path patterns and the model-route kind map are compile-time tables, and route matching uses the crate's existing synchronous check_route_access.
     why: The tables never change while the process runs, so building them once removes per-request work and reuses the matcher the rest of the auth layer already uses.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/managed_authorization.py#L14-L45
-  - what: managed_inference_request takes the model resolver as a parameter and names the route kind by the string LiteLLM's kind map holds, instead of calling resolve_inference_model and passing a Rust enum.
-    why: betterlite-core already owns the only port of resolve_inference_model and betterlite-auth cannot depend on betterlite-core, so the caller hands the resolver in. This keeps one implementation of the precedence and one list of kind names instead of a second copy in the auth layer.
+  - what: managed_inference_request takes the model resolver as a parameter instead of calling resolve_inference_model itself, and passes the InferenceModelKind enum that betterlite-auth defines and betterlite-core imports.
+    why: betterlite-core already owns the only port of resolve_inference_model and betterlite-auth cannot depend on betterlite-core, so the caller hands the resolver in. Sharing one enum keeps one implementation of the precedence and one closed set of kinds, so a misspelled or added kind fails at build time instead of at runtime.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L32-L63

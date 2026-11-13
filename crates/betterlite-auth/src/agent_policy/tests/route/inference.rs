@@ -3,7 +3,9 @@ use indexmap::IndexMap;
 use rstest::rstest;
 
 use crate::agent_identity::error::AgentIdentityError;
-use crate::agent_policy::inference::{ManagedInferenceRequest, managed_inference_request};
+use crate::agent_policy::inference::{
+    InferenceModelKind, ManagedInferenceRequest, managed_inference_request,
+};
 
 const MODEL_REQUIRED: &str = "Managed inference requires an explicit or configured model";
 
@@ -48,7 +50,7 @@ fn resolved(
     input: &ManagedInferenceRequest<'_>,
 ) -> Result<IndexMap<String, Json>, AgentIdentityError> {
     managed_inference_request(input, &|body, cli, endpoint, kind| {
-        Some(format!("{kind}|{body:?}|{cli:?}|{endpoint:?}"))
+        Some(format!("{kind:?}|{body:?}|{cli:?}|{endpoint:?}"))
     })
 }
 
@@ -120,7 +122,7 @@ fn route_inference_completion_passes_body_model_and_kind() {
     let result = resolved(&request("/v1/chat/completions", &body)).unwrap();
     assert_eq!(
         model_of(&result),
-        r#"completion|Some("body-model")|None|None"#
+        r#"Completion|Some("body-model")|None|None"#
     );
 }
 
@@ -132,7 +134,7 @@ fn route_inference_passes_cli_model() {
     let result = resolved(&input).unwrap();
     assert_eq!(
         model_of(&result),
-        r#"completion|Some("body-model")|Some("cli-model")|None"#
+        r#"Completion|Some("body-model")|Some("cli-model")|None"#
     );
 }
 
@@ -144,27 +146,27 @@ fn route_inference_image_generation_uses_query_model() {
     let result = resolved(&input).unwrap();
     assert_eq!(
         model_of(&result),
-        r#"image_generation|None|None|Some("query-model")"#
+        r#"ImageGeneration|None|None|Some("query-model")"#
     );
 }
 
 #[rstest]
-#[case::image_edit("/images/edits", "image_edit")]
-#[case::moderations("/v1/moderations", "moderation")]
-#[case::transcriptions("/v1/audio/transcriptions", "moderation")]
-#[case::speech("/v1/audio/speech", "speech")]
-#[case::rerank("/v1/rerank", "body")]
-#[case::decisions("/v1/decisions", "body")]
-#[case::systemone("/v1/systemone", "body")]
-#[case::messages_count_tokens("/v1/messages/count_tokens", "body")]
-#[case::messages("/v1/messages", "completion")]
-#[case::responses("/v1/responses", "completion")]
-fn route_inference_kind_per_route(#[case] route: &str, #[case] kind: &str) {
+#[case::image_edit("/images/edits", InferenceModelKind::ImageEdit)]
+#[case::moderations("/v1/moderations", InferenceModelKind::Moderation)]
+#[case::transcriptions("/v1/audio/transcriptions", InferenceModelKind::Moderation)]
+#[case::speech("/v1/audio/speech", InferenceModelKind::Speech)]
+#[case::rerank("/v1/rerank", InferenceModelKind::Body)]
+#[case::decisions("/v1/decisions", InferenceModelKind::Body)]
+#[case::systemone("/v1/systemone", InferenceModelKind::Body)]
+#[case::messages_count_tokens("/v1/messages/count_tokens", InferenceModelKind::Body)]
+#[case::messages("/v1/messages", InferenceModelKind::Completion)]
+#[case::responses("/v1/responses", InferenceModelKind::Completion)]
+fn route_inference_kind_per_route(#[case] route: &str, #[case] kind: InferenceModelKind) {
     let body = object(r#"{"model":"body-model"}"#);
     let result = resolved(&request(route, &body)).unwrap();
     assert_eq!(
         model_of(&result),
-        format!(r#"{kind}|Some("body-model")|None|None"#)
+        format!(r#"{kind:?}|Some("body-model")|None|None"#)
     );
 }
 
@@ -174,7 +176,7 @@ fn route_inference_count_tokens_uses_path_kind() {
     let mut input = request("/v1beta/models/gemini-pro:countTokens", &body);
     input.path_model = Some("gemini-pro");
     let result = resolved(&input).unwrap();
-    assert_eq!(model_of(&result), r#"path|None|None|Some("gemini-pro")"#);
+    assert_eq!(model_of(&result), r#"Path|None|None|Some("gemini-pro")"#);
 }
 
 #[test]
@@ -186,7 +188,7 @@ fn route_inference_path_model_wins_over_query_model() {
     let result = resolved(&input).unwrap();
     assert_eq!(
         model_of(&result),
-        r#"completion|None|None|Some("deployment-model")"#
+        r#"Completion|None|None|Some("deployment-model")"#
     );
 }
 
@@ -198,7 +200,7 @@ fn route_inference_query_model_fills_endpoint_model() {
     let result = resolved(&input).unwrap();
     assert_eq!(
         model_of(&result),
-        r#"completion|None|None|Some("query-model")"#
+        r#"Completion|None|None|Some("query-model")"#
     );
 }
 
@@ -209,7 +211,7 @@ fn route_inference_query_model_ignored_where_litellm_ignores_it() {
     input.query_model = Some("query-model");
     input.path_model = None;
     let result = resolved(&input).unwrap();
-    assert_eq!(model_of(&result), "completion|None|None|None");
+    assert_eq!(model_of(&result), "Completion|None|None|None");
 }
 
 #[test]
@@ -223,16 +225,16 @@ fn route_inference_templated_path_uses_suffix_kind() {
     let result = resolved(&input).unwrap();
     assert_eq!(
         model_of(&result),
-        r#"image_generation|Some("body-model")|None|Some("query-model")"#
+        r#"ImageGeneration|Some("body-model")|None|Some("query-model")"#
     );
 }
 
 #[rstest]
-#[case::embeddings("/v1/embeddings", "completion")]
-#[case::image_edits("/v1/images/edits", "image_edit")]
+#[case::embeddings("/v1/embeddings", InferenceModelKind::Completion)]
+#[case::image_edits("/v1/images/edits", InferenceModelKind::ImageEdit)]
 fn route_inference_query_model_fills_endpoint_for_every_fallback_suffix(
     #[case] route: &str,
-    #[case] kind: &str,
+    #[case] kind: InferenceModelKind,
 ) {
     let body = object("{}");
     let mut input = request(route, &body);
@@ -240,7 +242,7 @@ fn route_inference_query_model_fills_endpoint_for_every_fallback_suffix(
     let result = resolved(&input).unwrap();
     assert_eq!(
         model_of(&result),
-        format!(r#"{kind}|None|None|Some("query-model")"#)
+        format!(r#"{kind:?}|None|None|Some("query-model")"#)
     );
 }
 
@@ -250,7 +252,7 @@ fn route_inference_does_not_mutate_input() {
     let result = resolved(&request("/v1/chat/completions", &body)).unwrap();
     assert_eq!(
         model_of(&result),
-        r#"completion|Some("body-model")|None|None"#
+        r#"Completion|Some("body-model")|None|None"#
     );
     assert_eq!(model_of(&body), "body-model");
 }
