@@ -93,17 +93,15 @@ fn warn_about_returned(guardrail_name: Option<&str>, count: &str, scanned: usize
 
 fn returned_tool_call_shape(tool_call: &Value) -> Option<ToolCallShape> {
     let function = tool_call.as_object()?.get("function")?.as_object()?;
-    let name = match function.get("name") {
-        None | Some(Value::Null) => None,
-        Some(Value::String(name)) => Some(name.clone()),
+    match function.get("name") {
+        None | Some(Value::Null | Value::String(_)) => {}
         Some(_) => return None,
-    };
-    let arguments = match function.get("arguments") {
-        None => String::new(),
-        Some(Value::String(arguments)) => arguments.clone(),
+    }
+    match function.get("arguments") {
+        None | Some(Value::String(_)) => {}
         Some(_) => return None,
-    };
-    Some(ToolCallShape { name, arguments })
+    }
+    Some(tool_call_shape(tool_call))
 }
 
 #[must_use]
