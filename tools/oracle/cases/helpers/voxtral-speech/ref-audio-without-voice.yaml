@@ -1,0 +1,27 @@
+kind: helper
+name: voxtral-speech-ref-audio-without-voice
+call:
+  voxtral_speech:
+    probes:
+      - model: voxtral-small-latest
+        input: hello
+        optional_params:
+          response_format: opus
+          ref_audio: data:audio/ogg;base64,AAAA
+        environment_api_key: environment-key
+        reply:
+          status: 200
+          headers: {content-type: application/json}
+          body: '{"audio_data":"aGVsbG8="}'
+      - model: voxtral-small-latest
+        input: hello
+        optional_params:
+          response_format: wav
+          ref_audio: 5
+        environment_api_key: environment-key
+        reply:
+          status: 200
+          headers: {content-type: application/json}
+          body: '{"audio_data":"aGVsbG8="}'
+env: {}
+compare: {ignore: []}

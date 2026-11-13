@@ -1,0 +1,49 @@
+kind: helper
+name: voxtral-speech-invalid-json-and-base64
+call:
+  voxtral_speech:
+    probes:
+      - model: voxtral-small-latest
+        input: hello
+        environment_api_key: environment-key
+        reply:
+          status: 404
+          headers: {content-type: text/plain}
+          body: not json
+      - model: voxtral-small-latest
+        input: hello
+        environment_api_key: environment-key
+        reply:
+          status: 502
+          headers: {content-type: application/json}
+          body: '{"audio_data":'
+      - model: voxtral-small-latest
+        input: hello
+        environment_api_key: environment-key
+        reply:
+          status: 200
+          headers: {content-type: application/json}
+          body: '{"audio_data":"@@@"}'
+      - model: voxtral-small-latest
+        input: hello
+        environment_api_key: environment-key
+        reply:
+          status: 200
+          headers: {content-type: application/json}
+          body: '{"audio_data":"aGk=="}'
+      - model: voxtral-small-latest
+        input: hello
+        environment_api_key: environment-key
+        reply:
+          status: 200
+          headers: {content-type: application/json}
+          body: '{"audio_data":""}'
+      - model: voxtral-small-latest
+        input: hello
+        environment_api_key: environment-key
+        reply:
+          status: 200
+          headers: {content-type: application/json}
+          body: '{"text":"no audio"}'
+env: {}
+compare: {ignore: []}

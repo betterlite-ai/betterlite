@@ -1,0 +1,25 @@
+kind: helper
+name: voxtral-transcription-missing-key-and-caller-headers
+call:
+  voxtral_transcription:
+    probes:
+      - model: voxtral-small-latest
+        filename: clip.wav
+        content: abc
+        headers: {Authorization: "Bearer mine", x: trace}
+      - model: voxtral-small-latest
+        filename: clip.wav
+        content: abc
+        headers: {authorization: lower}
+        api_key: explicit-key
+      - model: voxtral-small-latest
+        filename: clip.wav
+        content: abc
+        environment_api_key: environment-key
+      - model: voxtral-small-latest
+        filename: clip.wav
+        content: abc
+        api_key: explicit-key
+        environment_api_key: environment-key
+env: {}
+compare: {ignore: []}

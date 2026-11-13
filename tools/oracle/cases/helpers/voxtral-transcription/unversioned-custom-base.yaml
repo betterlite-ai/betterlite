@@ -1,0 +1,22 @@
+kind: helper
+name: voxtral-transcription-unversioned-custom-base
+call:
+  voxtral_transcription:
+    probes:
+      - model: voxtral-small-latest
+        filename: clip.wav
+        content: abc
+        api_base: https://custom.example
+        environment_api_key: environment-key
+      - model: voxtral-small-latest
+        filename: clip.wav
+        content: abc
+        api_base: https://custom.example/v1/
+        environment_api_key: environment-key
+      - model: voxtral-small-latest
+        filename: clip.wav
+        content: abc
+        api_base: https://custom.example/v1/v1
+        environment_api_key: environment-key
+env: {}
+compare: {ignore: []}
