@@ -78,6 +78,7 @@ fn chat_call(call_id: String, request: ClientChatRequest, calls: Arc<dyn ChatCal
         call_id,
         model_id: String::from(MODEL_ID),
         request: Box::new(request),
+        first_message_has_content: true,
         calls,
     })
 }

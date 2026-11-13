@@ -20,6 +20,7 @@ use uuid::Uuid;
 
 use crate::dispatch::Entry;
 use crate::dispatch::log::{CallLog, CallOutcome, CallRecord};
+use crate::operation::chat::first_message::first_message_has_content;
 use crate::operation::chat::{
     ChatCall, ChatCallInput, ChatCompletionAnswer, ChatFailure, ChatRequest, ChatStreamAnswer,
 };
@@ -137,16 +138,16 @@ impl RecordingRules {
 
 impl RuleEvaluator for RecordingRules {
     fn evaluate(&self, index: usize, input: &str) -> Option<RuleDecision> {
+        // the evaluator is asked again past the last rule, so only the first ask marks a pass
+        if index != 0 {
+            return None;
+        }
         self.trace.push("rules");
         self.inputs
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(input.to_owned());
-        if index == 0 {
-            self.decision.clone()
-        } else {
-            None
-        }
+        self.decision.clone()
     }
 }
 
@@ -154,6 +155,7 @@ impl RuleEvaluator for RecordingRules {
 pub(crate) enum StreamEnd {
     Ends,
     Pending,
+    Fails,
 }
 
 #[derive(Clone, Debug)]
@@ -320,9 +322,22 @@ where
     Calls: ChatCall + 'static,
 {
     let body = [CHAT, CHAT_STREAM][usize::from(stream)];
+    chat_request_from(body, call_id, model_id, calls)
+}
+
+pub(crate) fn chat_request_from<Calls>(
+    body: &[u8],
+    call_id: &str,
+    model_id: &str,
+    calls: Arc<Calls>,
+) -> ChatRequest
+where
+    Calls: ChatCall + 'static,
+{
     let request = Box::new(ClientChatRequest::parse(body).expect("chat request"));
     ChatRequest {
         request,
+        first_message_has_content: first_message_has_content(body),
         calls,
         call_id: call_id.to_owned(),
         model_id: model_id.to_owned(),
@@ -370,5 +385,11 @@ fn body_stream(end: StreamEnd) -> BoxStream<'static, Result<Vec<u8>, HttpError>>
         StreamEnd::Pending => stream::iter(vec![Ok(b"chunk-one".to_vec())])
             .chain(stream::pending::<Result<Vec<u8>, HttpError>>())
             .boxed(),
+        StreamEnd::Fails => stream::iter(vec![
+            Ok(b"chunk-one".to_vec()),
+            Err(HttpError::Timeout),
+            Ok(b"chunk-after-error".to_vec()),
+        ])
+        .boxed(),
     }
 }

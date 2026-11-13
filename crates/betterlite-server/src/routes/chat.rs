@@ -15,6 +15,7 @@ use betterlite_context::call_context::{CallContext as DispatchContext, CallInput
 use betterlite_core::dispatch::error::DispatchError;
 use betterlite_core::dispatch::log::TracingCallLog;
 use betterlite_core::dispatch::{Dispatch, NoRules};
+use betterlite_core::operation::chat::first_message::first_message_has_content;
 use betterlite_core::operation::chat::{
     ChatCall, ChatFailure, ChatRequest as DispatchChatRequest, ChatResult,
 };
@@ -170,7 +171,8 @@ async fn chat_completion(
             return failure(&error, &call, None);
         }
     };
-    execute_chat(&state, &request, deployment, &call).await
+    let has_content = first_message_has_content(&body);
+    execute_chat(&state, &request, has_content, deployment, &call).await
 }
 
 // only the dispatch's own terminal record covers a routed call; this covers one that never got there
@@ -185,6 +187,7 @@ fn log_unrouted_failure(error: &ChatError, call: &CallContext<'_>) {
 async fn execute_chat(
     state: &ChatRouteState,
     request: &ChatRequest,
+    has_content: bool,
     deployment: &ChatDeployment,
     call: &CallContext<'_>,
 ) -> Response {
@@ -192,6 +195,7 @@ async fn execute_chat(
         call_id: call.id.to_owned(),
         model_id: deployment.model_id.clone(),
         request: Box::new(request.clone()),
+        first_message_has_content: has_content,
         calls: Arc::clone(&state.calls),
     });
     let context = DispatchContext::start(CallInputs {

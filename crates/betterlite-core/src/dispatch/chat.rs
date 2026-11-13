@@ -3,7 +3,6 @@ use std::task::{Context as TaskContext, Poll};
 
 use betterlite_context::call_context::CallContext;
 use betterlite_http::error::HttpError;
-use betterlite_openai::chat::ChatRequest as ClientChatRequest;
 use betterlite_openai::chat::MessageContent;
 use futures_util::stream::{BoxStream, Stream, StreamExt as _};
 
@@ -55,7 +54,7 @@ where
         .model
         .as_deref()
         .unwrap_or(&request.model_id);
-    dispatch.evaluate_rules(rules_input(&request.request).as_deref(), model)?;
+    dispatch.evaluate_rules(rules_input(request).as_deref(), model)?;
     // parameter preparation parses the control options before any upstream request is built
     let control = request.calls.prepare(&request.request)?;
     let call = ChatCallInput {
@@ -71,13 +70,13 @@ where
     }
 }
 
-// LiteLLM concatenates the string contents of every message when the list is not empty
-fn rules_input(request: &ClientChatRequest) -> Option<String> {
-    if request.messages.is_empty() {
+// LiteLLM concatenates the string contents of every message once the first one has a content key
+fn rules_input(request: &ChatRequest) -> Option<String> {
+    if !request.first_message_has_content {
         return None;
     }
     let mut buffer = String::new();
-    for message in &request.messages {
+    for message in &request.request.messages {
         if let Some(MessageContent::Text(text)) = &message.content {
             buffer.push_str(text);
         }
@@ -89,7 +88,6 @@ fn with_terminal(answer: ChatStreamAnswer, terminal: Terminal) -> ChatStreamAnsw
     let body = TerminalStream {
         inner: answer.body,
         terminal: Some(terminal),
-        finished: false,
     }
     .boxed();
     ChatStreamAnswer {
@@ -102,7 +100,6 @@ fn with_terminal(answer: ChatStreamAnswer, terminal: Terminal) -> ChatStreamAnsw
 struct TerminalStream {
     inner: BoxStream<'static, Result<Vec<u8>, HttpError>>,
     terminal: Option<Terminal>,
-    finished: bool,
 }
 
 impl Stream for TerminalStream {
@@ -116,14 +113,12 @@ impl Stream for TerminalStream {
                 if let Some(terminal) = this.terminal.take() {
                     terminal.record(CallOutcome::Succeeded, None, None);
                 }
-                this.finished = true;
             }
             Poll::Ready(Some(Err(error))) => {
                 let message = error.to_string();
                 if let Some(terminal) = this.terminal.take() {
                     terminal.record(CallOutcome::Failed, None, Some(&message));
                 }
-                this.finished = true;
             }
             Poll::Ready(Some(Ok(_))) | Poll::Pending => {}
         }
@@ -133,9 +128,7 @@ impl Stream for TerminalStream {
 
 impl Drop for TerminalStream {
     fn drop(&mut self) {
-        if self.finished {
-            return;
-        }
+        // a stream that already ended or failed has used its terminal
         if let Some(terminal) = self.terminal.take() {
             terminal.record(CallOutcome::Cancelled, None, None);
         }

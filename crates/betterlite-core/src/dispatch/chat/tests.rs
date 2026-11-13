@@ -5,17 +5,16 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use betterlite_context::call_context::BillingPolicy;
-use betterlite_openai::chat::{ChatMessage, MessageContent, Role};
+use betterlite_http::error::HttpError;
 use futures_util::StreamExt as _;
-use indexmap::IndexMap;
 use rstest::rstest;
 use uuid::Uuid;
 
 use crate::dispatch::error::DispatchError;
 use crate::dispatch::log::CallOutcome;
 use crate::dispatch::tests::support::{
-    FakeChat, MODEL_ID, RecordingLog, RecordingRules, StreamEnd, Trace, chat_request, context,
-    deployment,
+    FakeChat, MODEL_ID, RecordingLog, RecordingRules, StreamEnd, Trace, chat_request,
+    chat_request_from, context, deployment,
 };
 use crate::dispatch::{Dispatch, Entry, NoRules};
 use crate::operation::chat::{ChatFailure, ChatResult};
@@ -346,49 +345,39 @@ async fn a_dropped_stream_logs_cancellation_once() {
     assert_eq!(recorded[0].outcome, CallOutcome::Cancelled);
 }
 
-#[tokio::test]
-async fn the_rules_read_the_joined_message_text() {
-    let (trace, log, rules) = fixtures(None);
-    let calls = Arc::new(FakeChat::new(trace.clone(), StreamEnd::Ends));
-    let dispatch = Dispatch::new(
-        vec![deployment(MODEL_ID, Duration::from_mins(1))],
-        Arc::clone(&rules),
-        log,
-    );
-    let context = context(None, SystemTime::UNIX_EPOCH);
-    let mut request = chat_request("rules-1", MODEL_ID, calls, false);
-    request.request.messages = vec![
-        ChatMessage {
-            role: Role::User,
-            content: Some(MessageContent::Text(String::from("hi "))),
-            name: None,
-            tool_calls: None,
-            tool_call_id: None,
-            passthrough: IndexMap::new(),
-        },
-        ChatMessage {
-            role: Role::Assistant,
-            content: Some(MessageContent::Text(String::from("there"))),
-            name: None,
-            tool_calls: None,
-            tool_call_id: None,
-            passthrough: IndexMap::new(),
-        },
-    ];
-    dispatch
-        .execute(Operation::Chat(request), &context)
-        .await
-        .expect("chat call");
-    assert_eq!(rules.inputs(), [String::from("hi there")]);
-    assert_eq!(trace.steps(), ["rules", "prepare", "complete", "success"]);
-}
+const RULES_RAN: &[&str] = &["rules", "prepare", "complete", "success"];
+const RULES_SKIPPED: &[&str] = &["prepare", "complete", "success"];
 
 #[rstest]
-#[case::first_message_without_content(true, &[""], &["rules", "prepare", "complete", "success"])]
-#[case::no_messages(false, &[], &["prepare", "complete", "success"])]
+#[case::joined_text(
+    r#"{"model":"g","messages":[{"role":"user","content":"hi "},{"role":"assistant","content":"there"}]}"#,
+    &["hi there"],
+    RULES_RAN
+)]
+#[case::text_parts_are_not_joined(
+    r#"{"model":"g","messages":[{"role":"user","content":"a"},{"role":"user","content":[{"type":"text","text":"b"}]},{"role":"user","content":"c"}]}"#,
+    &["ac"],
+    RULES_RAN
+)]
+#[case::explicit_null_content(
+    r#"{"model":"g","messages":[{"role":"user","content":null}]}"#,
+    &[""],
+    RULES_RAN
+)]
+#[case::later_message_without_content(
+    r#"{"model":"g","messages":[{"role":"user","content":"hi"},{"role":"assistant","tool_calls":[{"id":"c","type":"function","function":{"name":"f","arguments":"{}"}}]}]}"#,
+    &["hi"],
+    RULES_RAN
+)]
+#[case::first_message_omits_content(
+    r#"{"model":"g","messages":[{"role":"assistant","tool_calls":[{"id":"c","type":"function","function":{"name":"f","arguments":"{}"}}]},{"role":"tool","tool_call_id":"c","content":"result"}]}"#,
+    &[],
+    RULES_SKIPPED
+)]
+#[case::no_messages(r#"{"model":"g","messages":[]}"#, &[], RULES_SKIPPED)]
 #[tokio::test]
-async fn the_rules_run_for_any_non_empty_message_list(
-    #[case] with_message: bool,
+async fn the_rules_run_only_when_the_first_message_has_a_content_key(
+    #[case] body: &str,
     #[case] inputs: &[&str],
     #[case] steps: &[&str],
 ) {
@@ -400,23 +389,53 @@ async fn the_rules_run_for_any_non_empty_message_list(
         log,
     );
     let context = context(None, SystemTime::UNIX_EPOCH);
-    let mut request = chat_request("rules-2", MODEL_ID, calls, false);
-    request.request.messages = if with_message {
-        vec![ChatMessage {
-            role: Role::Tool,
-            content: None,
-            name: None,
-            tool_calls: None,
-            tool_call_id: Some(String::from("call-0")),
-            passthrough: IndexMap::new(),
-        }]
-    } else {
-        Vec::new()
-    };
+    let request = chat_request_from(body.as_bytes(), "rules-1", MODEL_ID, calls);
     dispatch
         .execute(Operation::Chat(request), &context)
         .await
         .expect("chat call");
     assert_eq!(rules.inputs(), inputs);
     assert_eq!(trace.steps(), steps);
+}
+
+#[tokio::test]
+async fn a_failed_stream_logs_failure_once_and_a_later_drop_logs_nothing() {
+    let trace = Trace::default();
+    let calls = Arc::new(FakeChat::new(trace.clone(), StreamEnd::Fails));
+    let log = Arc::new(RecordingLog::new(trace));
+    let dispatch = Dispatch::new(
+        vec![deployment(MODEL_ID, Duration::from_secs(10))],
+        Arc::new(NoRules),
+        Arc::clone(&log),
+    );
+    let context = context(None, SystemTime::UNIX_EPOCH);
+    let result = dispatch
+        .execute(
+            Operation::Chat(chat_request("stream-3", MODEL_ID, calls, true)),
+            &context,
+        )
+        .await
+        .expect("stream call");
+    let CallResult::Chat(ChatResult::Stream(answer)) = result else {
+        panic!("a streamed call answers a stream");
+    };
+    let mut body = answer.body;
+    body.next().await.expect("first chunk").expect("chunk");
+    assert!(log.calls().is_empty());
+    let failure = body.next().await.expect("second item");
+    assert!(matches!(failure, Err(HttpError::Timeout)));
+    let recorded = log.calls();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].outcome, CallOutcome::Failed);
+    assert_eq!(
+        recorded[0].message.as_deref(),
+        Some("the request timed out")
+    );
+    body.next()
+        .await
+        .expect("chunk after the error")
+        .expect("chunk");
+    assert!(body.next().await.is_none());
+    drop(body);
+    assert_eq!(log.calls().len(), 1);
 }

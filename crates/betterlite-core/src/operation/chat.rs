@@ -11,10 +11,14 @@ use futures_util::stream::BoxStream;
 use http::HeaderMap;
 use thiserror::Error;
 
+pub mod first_message;
+
 pub struct ChatRequest {
     pub call_id: String,
     pub model_id: String,
     pub request: Box<ClientChatRequest>,
+    // the typed message cannot tell an absent content key from a null one, so the caller reads it from the body
+    pub first_message_has_content: bool,
     pub calls: Arc<dyn ChatCall>,
 }
 
