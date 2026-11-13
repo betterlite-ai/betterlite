@@ -383,7 +383,7 @@ fn a_call_without_a_model_is_refused_and_a_failed_attempt_passes_through() {
 }
 
 #[rstest]
-#[case::inferred(None, "openai/gpt-4o", None, "gpt-4o", Some("openai"))]
+#[case::inferred(None, "openai/gpt-4o", Some("openai"), "gpt-4o", Some("openai"))]
 #[case::given(
     Some("azure"),
     "openai/gpt-4o",
