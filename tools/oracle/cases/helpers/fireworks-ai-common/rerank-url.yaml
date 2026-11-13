@@ -1,0 +1,23 @@
+kind: helper
+name: rerank-url
+call:
+  b6070:
+    model_cost: {}
+    api_keys: []
+    sessions: []
+    affinity: []
+    mixin_headers: []
+    embedding_params: []
+    pricing: []
+    costs: []
+    rerank_urls:
+      - api_base: null
+      - api_base: https://api.fireworks.ai/inference/v1/
+      - api_base: https://api.fireworks.ai/v1
+      - api_base: https://proxy.example/rerank
+      - api_base: https://proxy.example
+    rerank_headers: []
+    rerank_requests: []
+    rerank_responses: []
+env: {}
+compare: {ignore: []}

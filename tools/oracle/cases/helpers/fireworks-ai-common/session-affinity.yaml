@@ -1,0 +1,30 @@
+kind: helper
+name: session-affinity
+call:
+  b6070:
+    model_cost: {}
+    api_keys: []
+    sessions:
+      - litellm_params: {litellm_session_id: session-one}
+      - litellm_params: {session_id: session-two}
+      - litellm_params: {metadata: {session_id: session-three}}
+      - litellm_params: {metadata: {litellm_session_id_generated: true, session_id: generated}}
+      - litellm_params: {litellm_trace_id: trace-only}
+      - litellm_params: {}
+    affinity:
+      - headers: {}
+        litellm_params: {litellm_session_id: session-one}
+      - headers: {X-Session-Affinity: explicit}
+        litellm_params: {litellm_session_id: session-one}
+      - headers: {}
+        litellm_params: {}
+    mixin_headers: []
+    embedding_params: []
+    pricing: []
+    costs: []
+    rerank_urls: []
+    rerank_headers: []
+    rerank_requests: []
+    rerank_responses: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,26 @@
+kind: helper
+name: base-model-tiers
+call:
+  b6070:
+    model_cost: {}
+    api_keys: []
+    sessions: []
+    affinity: []
+    mixin_headers: []
+    embedding_params: []
+    pricing:
+      - model: fireworks_ai/llama-v3p1-8x7b
+      - model: mixtral-8x22b
+      - model: 8x30b
+      - model: llama-v3p1-1b
+      - model: llama-v3p1-5b
+      - model: llama-v3p1-16b
+      - model: llama-v3p1-17b
+      - model: nomic-ai/nomic-embed-text-v1.5
+    costs: []
+    rerank_urls: []
+    rerank_headers: []
+    rerank_requests: []
+    rerank_responses: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,30 @@
+kind: helper
+name: mixin-headers
+call:
+  b6070:
+    model_cost: {}
+    api_keys: []
+    sessions: []
+    affinity: []
+    mixin_headers:
+      - headers: {}
+        api_key: direct-key
+        env: {}
+        litellm_params: {}
+      - headers: {Authorization: Bearer caller, content-type: text/plain}
+        api_key: direct-key
+        env: {}
+        litellm_params: {}
+      - headers: {}
+        api_key: null
+        env: {fireworks_api_key: env-key}
+        litellm_params: {litellm_session_id: session-one}
+    embedding_params: []
+    pricing: []
+    costs: []
+    rerank_urls: []
+    rerank_headers: []
+    rerank_requests: []
+    rerank_responses: []
+env: {FIREWORKS_API_KEY: env-key}
+compare: {ignore: []}

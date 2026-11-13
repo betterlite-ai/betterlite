@@ -1,0 +1,24 @@
+kind: helper
+name: rerank-request-and-params
+call:
+  b6070:
+    model_cost: {}
+    api_keys: []
+    sessions: []
+    affinity: []
+    mixin_headers: []
+    embedding_params: []
+    pricing: []
+    costs: []
+    rerank_urls: []
+    rerank_headers: []
+    rerank_requests:
+      - model: fireworks_ai/fireworks/qwen3-reranker-8b
+        params: {query: find, documents: [alpha, {text: beta}], top_n: 2, return_documents: true}
+      - model: fireworks_ai/qwen3-reranker-8b
+        params: {query: find, documents: [alpha]}
+      - model: qwen3-reranker-8b
+        params: {query: find, documents: [alpha], return_documents: false}
+    rerank_responses: []
+env: {}
+compare: {ignore: []}

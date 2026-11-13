@@ -1,0 +1,20 @@
+kind: helper
+name: fireworks_ai_common-key-order-seed
+call:
+  b6070:
+    model_cost: {}
+    api_keys:
+      - argument: direct-key
+        env: {fireworks_api_key: env-key}
+    sessions: []
+    affinity: []
+    mixin_headers: []
+    embedding_params: []
+    pricing: []
+    costs: []
+    rerank_urls: []
+    rerank_headers: []
+    rerank_requests: []
+    rerank_responses: []
+env: {}
+compare: {ignore: []}
