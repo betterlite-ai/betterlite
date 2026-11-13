@@ -30,15 +30,10 @@ impl Settings {
         if let Some(key) = explicit {
             return Some(key.clone());
         }
-        let environment = self
-            .cohere_api_key
-            .as_ref()
-            .filter(|key| !key.expose_secret().is_empty())
-            .or_else(|| {
-                self.co_api_key
-                    .as_ref()
-                    .filter(|key| !key.expose_secret().is_empty())
-            });
+        let environment = [&self.cohere_api_key, &self.co_api_key]
+            .into_iter()
+            .flatten()
+            .find(|key| !key.expose_secret().is_empty());
         // the last operand stands even when empty, so only an absent module key leaves nothing
         environment.or(self.cohere_key.as_ref()).cloned()
     }

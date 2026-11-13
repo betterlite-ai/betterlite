@@ -157,23 +157,22 @@ pub fn transform_rerank_request(
     model: &str,
     params: &RerankParams,
 ) -> Result<RerankParams, CohereRerankError> {
-    let query = params
-        .get("query")
-        .ok_or(CohereRerankError::Required { name: "query" })?;
-    let documents = params
-        .get("documents")
-        .ok_or(CohereRerankError::Required { name: "documents" })?;
+    for name in ["query", "documents"] {
+        if !params.contains_key(name) {
+            return Err(CohereRerankError::Required { name });
+        }
+    }
     let (max_chunks_per_doc, max_tokens_per_doc) = match version {
-        RerankVersion::V1 => (optional(params, "max_chunks_per_doc")?, None),
-        RerankVersion::V2 => (None, optional(params, "max_tokens_per_doc")?),
+        RerankVersion::V1 => (field(params, "max_chunks_per_doc")?, None),
+        RerankVersion::V2 => (None, field(params, "max_tokens_per_doc")?),
     };
     let request = RerankRequest {
         model: model.to_owned(),
-        query: field("query", query)?,
-        top_n: optional(params, "top_n")?,
-        documents: field("documents", documents)?,
-        rank_fields: optional(params, "rank_fields")?,
-        return_documents: optional(params, "return_documents")?,
+        query: field(params, "query")?,
+        top_n: field(params, "top_n")?,
+        documents: field(params, "documents")?,
+        rank_fields: field(params, "rank_fields")?,
+        return_documents: field(params, "return_documents")?,
         max_chunks_per_doc,
         max_tokens_per_doc,
         instruction: None,
@@ -181,7 +180,14 @@ pub fn transform_rerank_request(
         truncation_side: None,
         max_tokens_per_query: None,
     };
-    project(&request)
+    let mut body = serde_json::to_value(&request)
+        .and_then(serde_json::from_value::<RerankParams>)
+        .map_err(|source| CohereRerankError::Field {
+            name: "request",
+            source,
+        })?;
+    body.retain(|_, value| !matches!(value, Json::Null));
+    Ok(body)
 }
 
 // the reply status is not checked here: Cohere's response transform reads only the body
@@ -196,7 +202,10 @@ pub fn transform_rerank_response(
         Err(RerankContractError::Shape(ShapeDecodeError::Json(_))) => {
             Err(CohereRerankError::ResponseJson {
                 status,
-                message: response_text(body),
+                message: str::from_utf8(body).map_or_else(
+                    |_| "the Cohere response is not valid UTF-8".to_owned(),
+                    str::to_owned,
+                ),
             })
         }
         Err(error) => Err(CohereRerankError::Decode(error)),
@@ -214,39 +223,12 @@ pub fn get_error_class(
     cohere_error(status_code, error_message)
 }
 
-fn response_text(body: &[u8]) -> String {
-    str::from_utf8(body).map_or_else(
-        |_| "the Cohere response is not valid UTF-8".to_owned(),
-        str::to_owned,
-    )
-}
-
-fn project(request: &RerankRequest) -> Result<RerankParams, CohereRerankError> {
-    let mut body = serde_json::to_value(request)
-        .and_then(serde_json::from_value::<RerankParams>)
-        .map_err(|source| CohereRerankError::Field {
-            name: "request",
-            source,
-        })?;
-    body.retain(|_, value| !matches!(value, Json::Null));
-    Ok(body)
-}
-
-fn field<T>(name: &'static str, value: &Json) -> Result<T, CohereRerankError>
-where
-    T: DeserializeOwned,
-{
-    serde_json::to_value(value)
-        .and_then(serde_json::from_value)
-        .map_err(|source| CohereRerankError::Field { name, source })
-}
-
-fn optional<T: DeserializeOwned>(
+// a key the map lacks reads as null, so an optional field decodes to None and a required one fails
+fn field<T: DeserializeOwned>(
     params: &RerankParams,
     name: &'static str,
-) -> Result<Option<T>, CohereRerankError> {
-    match params.get(name) {
-        None | Some(Json::Null) => Ok(None),
-        Some(present) => field(name, present).map(Some),
-    }
+) -> Result<T, CohereRerankError> {
+    serde_json::to_value(params.get(name))
+        .and_then(serde_json::from_value)
+        .map_err(|source| CohereRerankError::Field { name, source })
 }

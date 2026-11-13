@@ -60,42 +60,37 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let answers = input
-            .calls
-            .iter()
-            .map(run_call)
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut answers = Vec::with_capacity(input.calls.len());
+        for call in &input.calls {
+            let key = call.api_key.as_deref().map(SecretString::from);
+            let mapped = map_rerank_params(call.version, &call.options, &call.non_default);
+            let headers =
+                request_headers(&call.headers, key.as_ref(), &call.settings).or_value_error()?;
+            let body =
+                transform_rerank_request(call.version, &call.model, &mapped).or_value_error()?;
+            for reply in &call.responses {
+                match transform_rerank_response(reply.status, reply.body.as_bytes(), LIMITS) {
+                    // LiteLLM raises CohereError here, and the helper protocol carries its status
+                    Err(CohereRerankError::ResponseJson { status, message }) => {
+                        return Err(Box::new(HelperError {
+                            class: "CohereError".to_owned(),
+                            status: Some(status),
+                            error_type: Some(None),
+                            param: Some(None),
+                            code: Some(None),
+                            message,
+                        }));
+                    }
+                    other => other.map(drop).or_value_error()?,
+                }
+            }
+            answers.push(json!({
+                "mapped": mapped,
+                "url": complete_url(call.version, call.api_base.as_deref()),
+                "headers": headers,
+                "body": body,
+            }));
+        }
         Ok(json!(answers))
-    }
-}
-
-fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
-    let key = call.api_key.as_deref().map(SecretString::from);
-    let mapped = map_rerank_params(call.version, &call.options, &call.non_default);
-    let headers = request_headers(&call.headers, key.as_ref(), &call.settings).or_value_error()?;
-    let body = transform_rerank_request(call.version, &call.model, &mapped).or_value_error()?;
-    for reply in &call.responses {
-        consume_response(reply)?;
-    }
-    Ok(json!({
-        "mapped": mapped,
-        "url": complete_url(call.version, call.api_base.as_deref()),
-        "headers": headers,
-        "body": body,
-    }))
-}
-
-fn consume_response(reply: &Reply) -> Result<(), Box<HelperError>> {
-    match transform_rerank_response(reply.status, reply.body.as_bytes(), LIMITS) {
-        // LiteLLM raises CohereError here, and the helper protocol carries its upstream status
-        Err(CohereRerankError::ResponseJson { status, message }) => Err(Box::new(HelperError {
-            class: "CohereError".to_owned(),
-            status: Some(status),
-            error_type: Some(None),
-            param: Some(None),
-            code: Some(None),
-            message,
-        })),
-        other => other.map(drop).or_value_error(),
     }
 }
