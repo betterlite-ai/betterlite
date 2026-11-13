@@ -64,8 +64,8 @@ fn record_scan(args: &RecordScanArgs) -> HelperResult {
         &args.provider,
         args.stage,
     );
-    let request_data = serde_json::to_value(&request_data).or_value_error()?;
-    Ok(json!({ "request_data": request_data }))
+    let request_json = serde_json::to_value(&request_data).or_value_error()?;
+    Ok(json!({ "request_data": request_json }))
 }
 
 fn headers(args: &HeadersArgs) -> HelperResult {
@@ -96,11 +96,11 @@ fn append_standard_object(args: &AppendArgs) -> HelperResult {
     let record = invocation_record(&args.record);
     let mut details = args.model_call_details.clone();
     append_guardrail_response(details.as_mut(), &record).or_value_error()?;
-    let details = match details {
+    let details_json = match details {
         Some(fields) => serde_json::to_value(&fields).or_value_error()?,
         None => serde_json::Value::Null,
     };
-    Ok(json!({ "model_call_details": details }))
+    Ok(json!({ "model_call_details": details_json }))
 }
 
 pub(crate) struct Op;

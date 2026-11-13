@@ -28,6 +28,11 @@ use super::support::{assert_json, data, headers};
     r#"{"metadata": {"policy_sources": {}}}"#,
     "[]"
 )]
+// docs/deviations/B8994.yaml: the bucket is a BTreeMap, so LiteLLM's insertion order is key order here
+#[case::policy_sources_come_out_in_key_order(
+    r#"{"metadata": {"policy_sources": {"zeta-policy": "second", "alpha-policy": "first"}}}"#,
+    r#"[["x-litellm-policy-sources", "alpha-policy=first; zeta-policy=second"]]"#
+)]
 #[case::semantic_similarity_renders_as_a_number(
     r#"{"metadata": {"semantic-similarity": 0.85}}"#,
     r#"[["x-litellm-semantic-similarity", "0.85"]]"#
