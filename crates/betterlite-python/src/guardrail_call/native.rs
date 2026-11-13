@@ -12,6 +12,9 @@ use super::convert;
 use super::convert::settings::SettingsJson;
 use super::error::CallError;
 
+#[cfg(test)]
+mod tests;
+
 #[pyclass]
 pub(crate) struct NativeGuardrail {
     base: GuardrailBase,
