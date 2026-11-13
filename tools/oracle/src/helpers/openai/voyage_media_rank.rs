@@ -6,9 +6,8 @@ use betterlite_openai::voyage_embedding::{
 };
 use betterlite_openai::voyage_multimodal::{self, VoyageMultimodalError};
 use betterlite_openai::voyage_rerank::{
-    self, RerankLogging, VoyageRerankControls, VoyageRerankCostError, VoyageRerankError,
+    self, RerankLogging, VoyageRerankControls, VoyageRerankError,
 };
-use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
@@ -33,7 +32,7 @@ struct MultimodalCall {
     api_key: Option<String>,
     #[serde(default)]
     env: BTreeMap<String, String>,
-    reply: Option<Reply>,
+    reply: Reply,
 }
 
 #[derive(Deserialize)]
@@ -53,14 +52,8 @@ struct RerankCall {
     env: BTreeMap<String, String>,
     #[serde(default)]
     headers: Map<String, Value>,
-    reply: Option<Reply>,
-    model_info: Option<ModelInfoInput>,
+    reply: Reply,
     uuid: String,
-}
-
-#[derive(Deserialize)]
-struct ModelInfoInput {
-    input_cost_per_token: Option<Decimal>,
 }
 
 #[derive(Deserialize)]
@@ -92,9 +85,7 @@ impl From<VoyageEmbeddingError> for Failure {
 impl From<VoyageRerankError> for Failure {
     fn from(error: VoyageRerankError) -> Self {
         match error {
-            VoyageRerankError::MissingApiKey | VoyageRerankError::NoResults => {
-                Self { status: None }
-            }
+            VoyageRerankError::MissingApiKey | VoyageRerankError::NoResults => Self { status: None },
             VoyageRerankError::Status { status } | VoyageRerankError::Decode { status, .. } => {
                 Self {
                     status: Some(status),
@@ -102,12 +93,6 @@ impl From<VoyageRerankError> for Failure {
             }
             VoyageRerankError::ResponseField { .. } => Self { status: Some(502) },
         }
-    }
-}
-
-impl From<VoyageRerankCostError> for Failure {
-    fn from(_error: VoyageRerankCostError) -> Self {
-        Self { status: Some(502) }
     }
 }
 
@@ -139,6 +124,22 @@ impl crate::helpers::Helper for Op {
     }
 }
 
+// a reply transform that raises is the whole call's failure, as dispatch.py reports it
+fn top_error<E>(error: E) -> Box<crate::helpers::HelperError>
+where
+    E: Into<Failure>,
+{
+    let failure: Failure = error.into();
+    Box::new(crate::helpers::HelperError {
+        class: "ValueError".to_owned(),
+        status: failure.status,
+        error_type: None,
+        param: None,
+        code: None,
+        message: String::new(),
+    })
+}
+
 fn outcome<T, E>(result: Result<T, E>) -> crate::helpers::HelperResult
 where
     T: serde::Serialize,
@@ -152,28 +153,27 @@ where
 
 fn multimodal_call(call: &MultimodalCall) -> crate::helpers::HelperResult {
     let request = voyage_multimodal::request(&call.model, call.input.clone(), &call.options);
-    let response = match &call.reply {
-        Some(reply) => outcome(decode_voyage_embedding_reply(
-            reply.body.as_bytes(),
-            reply.status,
-            VoyageEmbeddingVariant::Multimodal,
-        ))?,
-        None => json!({"ok": false, "status": null}),
-    };
+    let response = decode_voyage_embedding_reply(
+        call.reply.body.as_bytes(),
+        call.reply.status,
+        VoyageEmbeddingVariant::Multimodal,
+    )
+    .map_err(|error| top_error(error))?;
     Ok(json!({
         "is_multimodal": voyage_multimodal::is_multimodal_embeddings(&call.model),
         "supported_params": voyage_multimodal::SUPPORTED_OPENAI_PARAMS,
         "url": endpoint(call.base.as_deref(), VoyageEmbeddingVariant::Multimodal),
         "request": outcome(request)?,
-        "response": response,
+        "response": {"ok": true, "value": response},
     }))
 }
 
 fn rerank_call(call: &RerankCall) -> crate::helpers::HelperResult {
     let uuid = Uuid::parse_str(&call.uuid).or_value_error()?;
-    let headers =
-        voyage_rerank::api_key(call.api_key.as_deref(), |name| call.env.get(name).cloned())
-            .map(|key| voyage_rerank::headers(call.headers.clone(), &key));
+    let headers = voyage_rerank::api_key(call.api_key.as_deref(), |name| {
+        call.env.get(name).cloned()
+    })
+    .map(|key| voyage_rerank::headers(call.headers.clone(), &key));
     let controls = VoyageRerankControls {
         top_n: call.top_n,
         return_documents: call.return_documents,
@@ -184,38 +184,20 @@ fn rerank_call(call: &RerankCall) -> crate::helpers::HelperResult {
     };
     let request = voyage_rerank::request(&call.model, &call.query, &call.documents, &controls);
     let mut recorder = Recorder { calls: 0 };
-    let decoded = call.reply.as_ref().map(|reply| {
-        voyage_rerank::decode_voyage_rerank(
-            reply.body.as_bytes(),
-            reply.status,
-            uuid,
-            &mut recorder,
-        )
-    });
-    let billed = decoded
-        .as_ref()
-        .and_then(|result| result.as_ref().ok())
-        .map(|response| &response.meta.billed_units);
-    let cost = voyage_rerank::calculate_rerank_cost(
-        call.model_info
-            .as_ref()
-            .and_then(|info| info.input_cost_per_token),
-        billed,
+    let response = voyage_rerank::decode_voyage_rerank(
+        call.reply.body.as_bytes(),
+        call.reply.status,
+        uuid,
+        &mut recorder,
     )
-    .or_value_error()?;
-    let response = match decoded {
-        Some(result) => outcome(result)?,
-        None => json!({"ok": false, "status": null}),
-    };
-    let (total, completion) = cost;
+    .map_err(|error| top_error(error))?;
     Ok(json!({
         "supported_params": voyage_rerank::SUPPORTED_COHERE_RERANK_PARAMS,
         "headers": outcome(headers)?,
         "url": voyage_rerank::endpoint(call.base.as_deref()),
-        "request": outcome(request)?,
-        "response": response,
+        "request": outcome(Ok::<_, Failure>(request))?,
+        "response": {"ok": true, "value": serde_json::to_value(response)?},
         "post_call": recorder.calls > 0,
-        "cost": [serde_json::to_value(total)?, serde_json::to_value(completion)?],
     }))
 }
 
