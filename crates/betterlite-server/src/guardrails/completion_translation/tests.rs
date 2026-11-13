@@ -116,6 +116,7 @@ fn capture_logs(level: tracing::Level) -> (tempfile::NamedTempFile, DefaultGuard
 
 #[tokio::test]
 async fn input_text_prompt_sends_one_text_and_replaces_the_prompt() {
+    let (log, _guard) = capture_logs(tracing::Level::DEBUG);
     let guardrail = FakeGuardrail::replying(&["rewritten", "dropped"]);
     let mut data = body(r#"{"model":"gpt-3.5-turbo-instruct","prompt":"hello"}"#);
     let original = data.clone();
@@ -135,6 +136,26 @@ async fn input_text_prompt_sends_one_text_and_replaces_the_prompt() {
         Some("gpt-3.5-turbo-instruct".to_owned())
     );
     assert_eq!(calls[0].request_data, original);
+    let written = fs::read_to_string(log.path()).unwrap();
+    assert!(
+        written.contains("Applied guardrail to string prompt. Original length: 5, New length: 9"),
+        "{written}"
+    );
+}
+
+#[tokio::test]
+async fn input_string_prompt_debug_counts_characters() {
+    let (log, _guard) = capture_logs(tracing::Level::DEBUG);
+    let guardrail = FakeGuardrail::replying(&["h\u{e9}llo"]);
+    let mut data = body("{\"prompt\":\"a\u{e9}\"}");
+    process_input_messages(&mut data, &guardrail, None)
+        .await
+        .unwrap();
+    let written = fs::read_to_string(log.path()).unwrap();
+    assert!(
+        written.contains("Original length: 2, New length: 5"),
+        "{written}"
+    );
 }
 
 #[rstest]
@@ -188,6 +209,7 @@ async fn input_one_empty_text_replaces_the_prompt_with_an_empty_string() {
 
 #[tokio::test]
 async fn input_array_prompt_sends_text_elements_and_rewrites_their_positions() {
+    let (log, _guard) = capture_logs(tracing::Level::DEBUG);
     let guardrail = FakeGuardrail::replying(&["A", "B"]);
     let mut data = body(r#"{"model":"m","prompt":["a",5,["x"],"b"]}"#);
     process_input_messages(&mut data, &guardrail, None)
@@ -201,6 +223,15 @@ async fn input_array_prompt_sends_text_elements_and_rewrites_their_positions() {
         Some(vec!["a".to_owned(), "b".to_owned()])
     );
     assert_eq!(calls[0].inputs.model, Some("m".to_owned()));
+    let written = fs::read_to_string(log.path()).unwrap();
+    assert!(
+        written.contains("Applied guardrail to prompt[0]. Original length: 1, New length: 1"),
+        "{written}"
+    );
+    assert!(
+        written.contains("Applied guardrail to prompt[3]. Original length: 1, New length: 1"),
+        "{written}"
+    );
 }
 
 #[rstest]
@@ -315,6 +346,7 @@ async fn input_guardrail_failure_is_returned_and_leaves_the_body_alone() {
 
 #[tokio::test]
 async fn output_rewrites_text_choices_and_leaves_other_choices_alone() {
+    let (log, _guard) = capture_logs(tracing::Level::DEBUG);
     let guardrail = FakeGuardrail::replying(&["A", "C"]);
     let mut response = value(
         r#"{"model":"gpt","choices":[{"text":"a"},{"text":null},{"text":"c"},{"finish_reason":"length"}]}"#,
@@ -338,6 +370,15 @@ async fn output_rewrites_text_choices_and_leaves_other_choices_alone() {
     );
     assert_eq!(calls[0].inputs.model, Some("gpt".to_owned()));
     assert_eq!(calls[0].request_data.get("response"), Some(&original));
+    let written = fs::read_to_string(log.path()).unwrap();
+    assert!(
+        written.contains("Applied guardrail to choice[0] text. Original length: 1, New length: 1"),
+        "{written}"
+    );
+    assert!(
+        written.contains("Applied guardrail to choice[2] text. Original length: 1, New length: 1"),
+        "{written}"
+    );
 }
 
 #[rstest]

@@ -116,6 +116,7 @@ fn capture_logs(level: tracing::Level) -> (tempfile::NamedTempFile, DefaultGuard
 
 #[tokio::test]
 async fn input_text_sends_one_text_and_replaces_the_input() {
+    let (log, _guard) = capture_logs(tracing::Level::DEBUG);
     let guardrail = FakeGuardrail::replying(&["rewritten"]);
     let mut data = body(r#"{"model":"text-embedding-3-small","input":"hello"}"#);
     let original = data.clone();
@@ -135,6 +136,11 @@ async fn input_text_sends_one_text_and_replaces_the_input() {
         Some("text-embedding-3-small".to_owned())
     );
     assert_eq!(calls[0].request_data, original);
+    let written = fs::read_to_string(log.path()).unwrap();
+    assert!(
+        written.contains("Applied guardrail to string input. Original length: 5, New length: 9"),
+        "{written}"
+    );
 }
 
 #[rstest]
@@ -178,6 +184,7 @@ async fn input_text_empty_reply_keeps_the_input() {
 
 #[tokio::test]
 async fn input_array_of_text_sends_the_whole_array_and_replaces_it_whole() {
+    let (log, _guard) = capture_logs(tracing::Level::DEBUG);
     let guardrail = FakeGuardrail::replying(&["x", "y", "z"]);
     let mut data = body(r#"{"model":"m","input":["a","b"]}"#);
     process_input_messages(&mut data, &guardrail, None)
@@ -190,6 +197,11 @@ async fn input_array_of_text_sends_the_whole_array_and_replaces_it_whole() {
         Some(vec!["a".to_owned(), "b".to_owned()])
     );
     assert_eq!(calls[0].inputs.model, Some("m".to_owned()));
+    let written = fs::read_to_string(log.path()).unwrap();
+    assert!(
+        written.contains("Applied guardrail to 3 inputs"),
+        "{written}"
+    );
 }
 
 #[tokio::test]
