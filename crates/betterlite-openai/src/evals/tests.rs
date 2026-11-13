@@ -559,6 +559,17 @@ fn openai_evals_credential_identity_isolation() {
 }
 
 #[test]
+fn get_error_class_reports_the_provider_message() {
+    let error = OpenAiEvalsConfig::default().get_error_class(
+        "slow down",
+        429,
+        &Headers::from([("retry-after".to_owned(), "3".to_owned())]),
+    );
+    assert!(matches!(error, EvalsError::Provider { .. }));
+    assert_eq!(error.to_string(), "slow down");
+}
+
+#[test]
 fn openai_evals_secret_safe_failure() {
     let config = OpenAiEvalsConfig {
         api_key: Some(SecretString::from("fixture-secret")),
