@@ -46,12 +46,27 @@ description: >-
   same Arc twice.
 scope:
   paths:
+    - "crates/betterlite-logging/src/**/tests/support.rs"
+    - "crates/betterlite-logging/src/**/tests.rs"
+    - "crates/betterlite-logging/src/callback_logger/event.rs"
+    - "crates/betterlite-logging/src/registry/catalog/tests.rs"
     - crates/betterlite-logging/src/langsmith_logger.rs
     - crates/betterlite-logging/src/langsmith_logger/**
     - crates/betterlite-logging/src/registry/catalog/langsmith.rs
     - crates/betterlite-logging/src/registry/catalog/langsmith/**
     - crates/betterlite-config/src/sections/langsmith_settings.rs
     - crates/betterlite-config/src/sections/langsmith_settings/**
+    - crates/betterlite-logging/src/logging_success/handler.rs
+    - crates/betterlite-logging/src/logging_failure/events.rs
+    - crates/betterlite-logging/src/logging_failure/handlers.rs
+    - crates/betterlite-logging/src/logging_metadata/params.rs
+    - crates/betterlite-server/src/trace_lifecycle/tests/support.rs
+    - tools/oracle/src/helpers/logging/b3933.rs
+    - tools/oracle/src/helpers/logging/b3944.rs
+    - crates/betterlite-logging/src/datadog/cost_management/datadog_cost_management/tests/callback_logger.rs
+    - tools/oracle/src/helpers/logging/b3938/datadog_llm_observability/support.rs
+    - tools/oracle/src/helpers/logging/b3940.rs
+    - tools/oracle/src/helpers/logging/b3971.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L42-L99
