@@ -112,7 +112,7 @@ impl Records {
         })
     }
 
-    fn catalogs(&self) -> CatalogSources<'_> {
+    const fn catalogs(&self) -> CatalogSources<'_> {
         CatalogSources {
             patterns: &self.patterns,
             runtime: &self.runtime,
