@@ -1,0 +1,13 @@
+kind: helper
+name: openai-response-input-reasoning-seed
+call:
+  openai_response_input:
+    probes:
+    - model: gpt-4o
+      input:
+      - {type: reasoning, id: r1, summary: [{type: summary_text, text: s}], status: null}
+      - {type: reasoning, id: r2, reasoning_content: not-a-list}
+      - {type: message, role: user, status: null}
+      params: {}
+env: {}
+compare: {ignore: []}
