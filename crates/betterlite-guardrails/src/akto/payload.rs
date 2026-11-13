@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -6,8 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use super::AktoMirroring;
 use super::error::AktoError;
-
-pub const DEFAULT_ROUTE: &str = "/v1/chat/completions";
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(default)]
@@ -66,17 +63,16 @@ impl AktoMirroring {
         let request_body = build_request_body(inputs, request_data);
         let request_headers = build_request_headers(request_data);
         let tag = build_tag_metadata(request_data);
-        let mut response_payload = serde_json::to_string(&BTreeMap::<String, String>::new())
-            .map_err(|source| AktoError::Encode { source })?;
-        let mut response_headers = response_payload.clone();
-        if include_response {
-            response_payload = double_encode(&build_response_body(inputs, request_data))?;
-            response_headers = serde_json::to_string(&BTreeMap::from([(
-                "content-type".to_owned(),
-                "application/json".to_owned(),
-            )]))
-            .map_err(|source| AktoError::Encode { source })?;
-        }
+        let (response_payload, response_headers) = if include_response {
+            let headers =
+                BTreeMap::from([("content-type".to_owned(), "application/json".to_owned())]);
+            (
+                double_encode(&build_response_body(inputs, request_data))?,
+                serde_json::to_string(&headers).map_err(|source| AktoError::Encode { source })?,
+            )
+        } else {
+            (String::from("{}"), String::from("{}"))
+        };
         let tag_text =
             serde_json::to_string(&tag).map_err(|source| AktoError::Encode { source })?;
         let status = status_code.to_string();
@@ -244,11 +240,11 @@ fn metadata_value(request_data: &BTreeMap<String, GuardrailValue>, key: &str) ->
 
 fn extract_request_path(request_data: &BTreeMap<String, GuardrailValue>) -> String {
     let Some(GuardrailValue::Object(metadata)) = request_data.get("metadata") else {
-        return DEFAULT_ROUTE.to_owned();
+        return String::from("/v1/chat/completions");
     };
     match metadata.get("user_api_key_request_route") {
         Some(GuardrailValue::Text(route)) if !route.is_empty() => route.clone(),
-        _ => DEFAULT_ROUTE.to_owned(),
+        _ => String::from("/v1/chat/completions"),
     }
 }
 
@@ -294,9 +290,7 @@ fn present(value: &GuardrailValue) -> bool {
         GuardrailValue::Boolean(flag) => *flag,
         GuardrailValue::SignedInteger(number) => *number != 0,
         GuardrailValue::UnsignedInteger(number) => *number != 0,
-        GuardrailValue::Decimal(number) => number
-            .partial_cmp(&0.0_f64)
-            .is_some_and(|ordering| ordering != Ordering::Equal),
+        GuardrailValue::Decimal(number) => number.abs() > 0.0_f64,
         GuardrailValue::Text(text) => !text.is_empty(),
         GuardrailValue::Array(items) => !items.is_empty(),
         GuardrailValue::Object(map) => !map.is_empty(),

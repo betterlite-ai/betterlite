@@ -503,7 +503,7 @@ fn akto_guardrail_response_parses_the_verdict(
 ) {
     let answer = AktoAnswer {
         status: StatusCode::OK,
-        body: body.to_owned(),
+        body: body.as_bytes().to_vec(),
     };
     let verdict = guardrail()
         .handle_guardrail_response(&answer)
@@ -520,7 +520,7 @@ fn akto_guardrail_response_parses_the_verdict(
 fn akto_guardrail_response_permits_non_object_json(#[case] body: &str) {
     let answer = AktoAnswer {
         status: StatusCode::OK,
-        body: body.to_owned(),
+        body: body.as_bytes().to_vec(),
     };
     let verdict = guardrail()
         .handle_guardrail_response(&answer)
@@ -536,7 +536,7 @@ fn akto_guardrail_response_permits_non_object_json(#[case] body: &str) {
 fn akto_guardrail_response_rejects_a_non_200_status(#[case] status: StatusCode) {
     let answer = AktoAnswer {
         status,
-        body: String::new(),
+        body: Vec::new(),
     };
     let error = guardrail()
         .handle_guardrail_response(&answer)
@@ -548,7 +548,7 @@ fn akto_guardrail_response_rejects_a_non_200_status(#[case] status: StatusCode) 
 fn akto_guardrail_response_rejects_malformed_json() {
     let answer = AktoAnswer {
         status: StatusCode::OK,
-        body: "not json".to_owned(),
+        body: b"not json".to_vec(),
     };
     let error = guardrail()
         .handle_guardrail_response(&answer)
@@ -560,7 +560,7 @@ fn akto_guardrail_response_rejects_malformed_json() {
 fn akto_guardrail_response_rejects_a_non_boolean_allowed() {
     let answer = AktoAnswer {
         status: StatusCode::OK,
-        body: r#"{"data":{"guardrailsResult":{"Allowed":"false"}}}"#.to_owned(),
+        body: br#"{"data":{"guardrailsResult":{"Allowed":"false"}}}"#.to_vec(),
     };
     let error = guardrail()
         .handle_guardrail_response(&answer)
@@ -574,7 +574,7 @@ fn akto_guardrail_response_rejects_a_non_boolean_allowed() {
 fn akto_guardrail_response_rejects_a_non_text_reason() {
     let answer = AktoAnswer {
         status: StatusCode::OK,
-        body: r#"{"data":{"guardrailsResult":{"Allowed":false,"Reason":7}}}"#.to_owned(),
+        body: br#"{"data":{"guardrailsResult":{"Allowed":false,"Reason":7}}}"#.to_vec(),
     };
     let error = guardrail()
         .handle_guardrail_response(&answer)

@@ -1,5 +1,3 @@
-use std::string::FromUtf8Error;
-
 use reqwest::StatusCode;
 use reqwest::header::InvalidHeaderValue;
 use thiserror::Error;
@@ -22,8 +20,6 @@ pub enum AktoError {
     ResponseTooLarge { limit: usize },
     #[error("the Akto response is not valid JSON")]
     ResponseJson { source: serde_json::Error },
-    #[error("the Akto response is not valid UTF-8")]
-    ResponseEncoding { source: FromUtf8Error },
     #[error("the Akto response field {field} has an unexpected type")]
     ResponseField { field: &'static str },
     #[error("the Akto guardrail service is unreachable")]

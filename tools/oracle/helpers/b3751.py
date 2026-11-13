@@ -53,7 +53,13 @@ class ScriptedTransport(httpx.AsyncBaseTransport):
         return httpx.Response(status, text=raw, request=request)
 
 
-def build_guardrail(settings: AktoSettings, env: dict[str, str]) -> AktoGuardrail:
+def build_guardrail(call: AktoCall) -> AktoGuardrail:
+    settings = call.get("settings")
+    if settings is None:
+        settings = {}
+    env = call.get("env")
+    if env is None:
+        env = {}
     os.environ.update(env)
     fallback = settings.get("unreachable_fallback")
     if fallback is None:
@@ -66,16 +72,6 @@ def build_guardrail(settings: AktoSettings, env: dict[str, str]) -> AktoGuardrai
         unreachable_fallback=fallback,
         guardrail_timeout=settings.get("guardrail_timeout"),
     )
-
-
-def guardrail_of(call: AktoCall) -> AktoGuardrail:
-    settings = call.get("settings")
-    if settings is None:
-        settings = {}
-    env = call.get("env")
-    if env is None:
-        env = {}
-    return build_guardrail(settings, env)
 
 
 def inputs_of(call: AktoCall) -> GenericGuardrailAPIInputs:
@@ -176,7 +172,7 @@ def payload_of(call: AktoCall, instance: AktoGuardrail) -> dict[str, Json]:
 
 
 def akto_init(call: AktoCall) -> Json:
-    instance = guardrail_of(call)
+    instance = build_guardrail(call)
     return {
         "base_url": instance.akto_base_url,
         "account_id": instance.akto_account_id,
@@ -187,12 +183,12 @@ def akto_init(call: AktoCall) -> Json:
 
 
 def akto_payload(call: AktoCall) -> Json:
-    instance = guardrail_of(call)
+    instance = build_guardrail(call)
     return normalize_payload(payload_of(call, instance))
 
 
 def akto_response(call: AktoCall) -> Json:
-    instance = guardrail_of(call)
+    instance = build_guardrail(call)
     answer = call.get("answer")
     if answer is None:
         answer = {}
@@ -210,14 +206,14 @@ def akto_response(call: AktoCall) -> Json:
 
 
 def akto_unreachable(call: AktoCall) -> Json:
-    instance = guardrail_of(call)
+    instance = build_guardrail(call)
     error = httpx.ConnectError("the Akto service is unreachable")
     returned = instance.handle_unreachable(inputs_of(call), error)
     return {"passthrough": TypeAdapter(Json).validate_python(returned)}
 
 
 def akto_send(call: AktoCall) -> Json:
-    instance = guardrail_of(call)
+    instance = build_guardrail(call)
     answer = call.get("answer")
     if answer is None:
         answer = {}

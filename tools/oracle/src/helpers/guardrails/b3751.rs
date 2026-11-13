@@ -10,8 +10,8 @@ use betterlite_guardrails::akto::error::AktoError;
 use betterlite_guardrails::akto::payload::AktoInputs;
 use betterlite_guardrails::akto::transport::AktoAnswer;
 use reqwest::StatusCode;
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use crate::helpers::HelperError;
 
@@ -59,10 +59,11 @@ pub(super) struct SettingsInput {
     pub(super) guardrail_timeout: Option<i64>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub(super) struct InputsInput {
     pub(super) texts: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) model: Option<String>,
 }
 
@@ -108,12 +109,7 @@ pub(super) fn inputs_json(input: &Input) -> Value {
     let Some(inputs) = &input.inputs else {
         return json!({"texts": ["hello"]});
     };
-    let mut object = serde_json::Map::new();
-    object.insert("texts".to_owned(), json!(inputs.texts));
-    if let Some(model) = &inputs.model {
-        object.insert("model".to_owned(), Value::String(model.clone()));
-    }
-    Value::Object(object)
+    json!(inputs)
 }
 
 fn settings(input: &Input) -> Result<AktoMirroring, Box<HelperError>> {
@@ -181,7 +177,7 @@ fn parse_response(input: &Input) -> crate::helpers::HelperResult {
     let guardrail = settings(input)?;
     let status = StatusCode::from_u16(input.answer.status.unwrap_or(200))
         .map_err(|error| failure("AktoError", None, error.to_string()))?;
-    let body = answer_body(input)?;
+    let body = answer_body(input)?.into_bytes();
     let verdict = guardrail
         .handle_guardrail_response(&AktoAnswer { status, body })
         .map_err(|error| failure("AktoError", None, error.to_string()))?;

@@ -14,7 +14,7 @@ const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AktoAnswer {
     pub status: StatusCode,
-    pub body: String,
+    pub body: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,7 +82,7 @@ impl AktoMirroring {
                 status: answer.status,
             });
         }
-        let parsed: GuardrailValue = serde_json::from_str(&answer.body).map_err(|source| {
+        let parsed: GuardrailValue = serde_json::from_slice(&answer.body).map_err(|source| {
             tracing::error!(
                 bytes = answer.body.len(),
                 "Akto returned a non-JSON body for status 200"
@@ -156,7 +156,7 @@ fn verdict_from(value: &GuardrailValue) -> Result<GuardrailVerdict, AktoError> {
     Ok(GuardrailVerdict { allowed, reason })
 }
 
-async fn read_body(mut response: reqwest::Response) -> Result<String, AktoError> {
+async fn read_body(mut response: reqwest::Response) -> Result<Vec<u8>, AktoError> {
     let mut body = Vec::new();
     while let Some(chunk) = response
         .chunk()
@@ -170,5 +170,5 @@ async fn read_body(mut response: reqwest::Response) -> Result<String, AktoError>
         }
         body.extend_from_slice(&chunk);
     }
-    String::from_utf8(body).map_err(|source| AktoError::ResponseEncoding { source })
+    Ok(body)
 }
