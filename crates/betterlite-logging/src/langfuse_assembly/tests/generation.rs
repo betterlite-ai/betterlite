@@ -317,3 +317,24 @@ fn the_generation_metadata_carries_the_cost_hidden_params_and_ids() {
         Some(Json::Text("hidden-1".to_owned()))
     );
 }
+
+#[test]
+fn the_payload_metadata_reaches_the_generation_metadata() {
+    let mut case = fixture();
+    case.inputs.payload = Some(payload(
+        r#"{"team_alias": "core", "requester_metadata": {"tier": "gold"}}"#,
+    ));
+    let outcome = run(case.assemble());
+    let generation = outcome.generation().expect("a generation span");
+    assert_eq!(
+        text(generation, "langfuse.observation.metadata.team_alias").as_deref(),
+        Some("core")
+    );
+    assert_eq!(
+        json(
+            generation,
+            "langfuse.observation.metadata.requester_metadata"
+        ),
+        Some(value(r#"{"tier": "gold"}"#))
+    );
+}
