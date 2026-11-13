@@ -53,14 +53,14 @@ struct TracingDetailJson {
 }
 
 impl TracingDetailJson {
-    fn into_detail(self) -> GuardrailTracingDetail {
-        GuardrailTracingDetail {
+    fn into_detail(self) -> Result<GuardrailTracingDetail, CallError> {
+        Ok(GuardrailTracingDetail {
             guardrail_id: self.guardrail_id,
             policy_template: self.policy_template,
             detection_method: self.detection_method,
             confidence_score: self.confidence_score,
-            classification: self.classification.map(exact_value),
-            match_details: self.match_details.map(exact_value),
+            classification: self.classification.map(exact_value).transpose()?,
+            match_details: self.match_details.map(exact_value).transpose()?,
             patterns_checked: self.patterns_checked,
             alert_recipients: self.alert_recipients,
             risk_score: self.risk_score,
@@ -70,7 +70,7 @@ impl TracingDetailJson {
             guardrail_cost: self.guardrail_cost,
             guardrail_cost_by_unit: self.guardrail_cost_by_unit,
             guardrail_cost_in_spend: self.guardrail_cost_in_spend,
-        }
+        })
     }
 }
 
@@ -80,7 +80,7 @@ pub(crate) fn record_input_from_text(text: &str) -> Result<GuardrailRecordInput,
         source,
     })?;
     Ok(GuardrailRecordInput {
-        guardrail_response: exact_value(raw.guardrail_response),
+        guardrail_response: exact_value(raw.guardrail_response)?,
         guardrail_status: raw.guardrail_status,
         start_time: raw.start_time,
         end_time: raw.end_time,
@@ -88,6 +88,9 @@ pub(crate) fn record_input_from_text(text: &str) -> Result<GuardrailRecordInput,
         masked_entity_count: raw.masked_entity_count,
         guardrail_provider: raw.guardrail_provider,
         event_type: raw.event_type,
-        tracing_detail: raw.tracing_detail.map(TracingDetailJson::into_detail),
+        tracing_detail: raw
+            .tracing_detail
+            .map(TracingDetailJson::into_detail)
+            .transpose()?,
     })
 }
