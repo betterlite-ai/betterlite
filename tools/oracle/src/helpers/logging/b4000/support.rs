@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -59,79 +59,31 @@ impl Clock for ManualClock {
 pub(super) struct ScriptedTransport {
     replies: Mutex<VecDeque<Reply>>,
     calls: Mutex<Vec<StorageRequest>>,
-    token: Option<String>,
 }
 
 impl ScriptedTransport {
-    pub(super) fn new(replies: &[Reply], token: Option<String>) -> Self {
+    pub(super) fn new(replies: &[Reply]) -> Self {
         Self {
             replies: Mutex::new(replies.iter().cloned().collect()),
             calls: Mutex::new(Vec::new()),
-            token,
         }
     }
 
-    pub(super) fn described(&self, account_key: bool) -> Vec<Value> {
+    pub(super) fn described(&self) -> Vec<Value> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .iter()
-            .map(|call| describe(call, account_key))
+            .map(describe)
             .collect()
     }
 }
 
-fn header(call: &StorageRequest, name: &str) -> Option<String> {
-    call.headers
-        .iter()
-        .find(|(present, _value)| present.eq_ignore_ascii_case(name))
-        .map(|(_name, value)| value.clone())
-}
-
-fn describe(call: &StorageRequest, account_key: bool) -> Value {
-    let url = call.url.clone();
+fn operation(call: &StorageRequest) -> &'static str {
+    let url = call.url.as_str();
     if url.ends_with(TOKEN_SUFFIX) {
-        let form: BTreeMap<String, String> = url::form_urlencoded::parse(&call.body)
-            .into_owned()
-            .collect();
-        let tenant = url::Url::parse(&url).ok().and_then(|parsed| {
-            parsed
-                .path_segments()
-                .and_then(|mut segments| segments.next().map(str::to_owned))
-        });
-        return json!({
-            "op": "entra_token",
-            "tenant_id": tenant,
-            "client_id": form.get("client_id"),
-            "client_secret": form.get("client_secret"),
-            "scope": form.get("scope"),
-        });
+        return "entra_token";
     }
-    let mut described = json!({ "op": operation(call, &url), "url": url });
-    if account_key {
-        return described;
-    }
-    if let Some(fields) = described.as_object_mut() {
-        fields.insert(
-            "x_ms_version".to_owned(),
-            json!(header(call, "x-ms-version")),
-        );
-        fields.insert(
-            "content_type".to_owned(),
-            json!(header(call, "Content-Type")),
-        );
-        fields.insert(
-            "content_length".to_owned(),
-            json!(header(call, "Content-Length")),
-        );
-        let scheme = header(call, "Authorization")
-            .and_then(|value| value.split_whitespace().next().map(str::to_owned));
-        fields.insert("authorization_scheme".to_owned(), json!(scheme));
-    }
-    described
-}
-
-fn operation(call: &StorageRequest, url: &str) -> &'static str {
     if call.method == http::Method::HEAD {
         return "exists";
     }
@@ -150,6 +102,27 @@ fn operation(call: &StorageRequest, url: &str) -> &'static str {
     "other"
 }
 
+fn parsed_body(call: &StorageRequest) -> Option<Value> {
+    let text = std::str::from_utf8(&call.body).ok()?;
+    serde_json::from_str(text.trim_end_matches('\n')).ok()
+}
+
+fn describe(call: &StorageRequest) -> Value {
+    let op = operation(call);
+    if op == "entra_token" {
+        return json!({ "op": op });
+    }
+    let mut described = json!({ "op": op, "url": call.url });
+    if op == "append" {
+        let trailing_newline = call.body.ends_with(b"\n");
+        if let Some(fields) = described.as_object_mut() {
+            fields.insert("body".to_owned(), json!(parsed_body(call)));
+            fields.insert("trailing_newline".to_owned(), json!(trailing_newline));
+        }
+    }
+    described
+}
+
 #[async_trait]
 impl StorageTransport for ScriptedTransport {
     async fn send(
@@ -162,10 +135,9 @@ impl StorageTransport for ScriptedTransport {
             .unwrap_or_else(PoisonError::into_inner)
             .push(request);
         if token_request {
-            let token = self.token.clone().unwrap_or_else(|| "tok-1".to_owned());
             return Ok(StorageResponse {
                 status: 200,
-                body: format!(r#"{{"access_token": "{token}"}}"#).into_bytes(),
+                body: br#"{"access_token": "tok-1"}"#.to_vec(),
             });
         }
         let reply = self

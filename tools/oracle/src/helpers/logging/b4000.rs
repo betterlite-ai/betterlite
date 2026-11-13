@@ -40,7 +40,6 @@ pub(crate) struct Input {
 struct Scenario {
     environment: BTreeMap<String, String>,
     payload: Option<Value>,
-    token: Option<String>,
     replies: Vec<Reply>,
     actions: Vec<Action>,
 }
@@ -115,10 +114,7 @@ async fn drive(scenario: &Scenario) -> Value {
         Err(error) => return json!({ "initialized": false, "error": error.to_string() }),
     };
     let described = describe_settings(&settings);
-    let transport = Arc::new(ScriptedTransport::new(
-        &scenario.replies,
-        scenario.token.clone(),
-    ));
+    let transport = Arc::new(ScriptedTransport::new(&scenario.replies));
     let clock = Arc::new(ManualClock(Mutex::new(Duration::from_secs(START_SECONDS))));
     let chain = Arc::new(FixedChain::default());
     let factory = Arc::new(FixedFactory {
@@ -130,7 +126,7 @@ async fn drive(scenario: &Scenario) -> Value {
         AzureStorageDeps {
             transport: Arc::clone(&transport) as Arc<dyn StorageTransport>,
             clock: Arc::clone(&clock) as Arc<dyn Clock>,
-            environment: Arc::new(environment.clone()),
+            environment: Arc::new(environment),
             ids: Arc::new(FixedIds),
             chain_factory: factory.clone(),
             shutdown: CancellationToken::new(),
@@ -153,7 +149,7 @@ async fn drive(scenario: &Scenario) -> Value {
         "settings": described,
         "actions": results,
         "queue": queue,
-        "calls": transport.described(uses_account_key(&scenario.environment)),
+        "calls": transport.described(),
         "clients": {
             "created": logger.created_clients.load(Ordering::SeqCst),
             "closed": logger.closed_clients.load(Ordering::SeqCst),
@@ -165,16 +161,9 @@ async fn drive(scenario: &Scenario) -> Value {
     })
 }
 
-fn uses_account_key(environment: &BTreeMap<String, String>) -> bool {
-    environment
-        .get("AZURE_STORAGE_ACCOUNT_KEY")
-        .is_some_and(|value| !value.is_empty())
-}
-
 fn describe_settings(settings: &AzureStorageSettings) -> Value {
     json!({
         "dfs_endpoint": settings.dfs_endpoint(),
-        "blob_endpoint": settings.blob_endpoint(),
         "account_name": settings.account_name.clone(),
         "file_system": settings.file_system.clone(),
         "endpoint_suffix": settings.endpoint_suffix.clone(),
@@ -183,26 +172,23 @@ fn describe_settings(settings: &AzureStorageSettings) -> Value {
         "has_client_secret": settings.client_secret.is_some(),
         "has_account_key": settings.account_key.is_some(),
         "batch_size": settings.batch.batch_size,
-        "flush_interval": settings.batch.flush_interval.as_secs(),
         "max_queue_size": settings.batch.max_queue_size,
     })
 }
 
 fn payload_for(base: &Value, id: &str) -> Result<StandardLoggingPayload, String> {
-    let mut value = base.clone();
-    match &mut value {
-        Value::Object(fields) => {
+    match base.clone() {
+        Value::Object(mut fields) => {
             let _replaced = fields.insert("id".to_owned(), Value::String(id.to_owned()));
+            serde_json::from_value(Value::Object(fields)).map_err(|error| error.to_string())
         }
-        _ => return Err("the scenario has no payload".to_owned()),
+        _ => Err("the scenario has no payload".to_owned()),
     }
-    serde_json::from_value(value).map_err(|error| error.to_string())
 }
 
 fn event(base: &Value, id: &str) -> Result<Arc<LoggerEvent>, String> {
-    let payload = payload_for(base, id)?;
     Ok(Arc::new(LoggerEvent {
-        payload: Arc::new(payload),
+        payload: Arc::new(payload_for(base, id)?),
         dynamic_params: Arc::new(Json::Null),
         stream: false,
         guardrail_snapshot: None,
