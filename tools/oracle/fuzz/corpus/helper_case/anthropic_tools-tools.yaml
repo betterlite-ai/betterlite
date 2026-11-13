@@ -1,0 +1,12 @@
+kind: helper
+name: anthropic-tools-seed-tools
+call:
+  anthropic_tools:
+    calls:
+      - function: tools
+        tools:
+          - {type: function, function: {name: lookup, parameters: {type: object, properties: {q: {type: string}}}, description: find}}
+          - {type: mcp, server_url: 'https://mcp.test/rpc', server_label: label, allowed_tools: [one], headers: {Authorization: 'Bearer token'}}
+          - {type: custom, name: native, input_schema: {type: object}}
+env: {}
+compare: {ignore: []}

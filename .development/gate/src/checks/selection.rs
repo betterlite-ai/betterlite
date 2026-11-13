@@ -84,10 +84,10 @@ pub(crate) fn prerequisite(id: &str) -> bool {
     .contains(&id)
 }
 
-// the dispatcher's final gate runs only these, since none builds or runs a test; every other check runs in CI on the task's pull request
+// the dispatcher's final gate runs only these, since none builds; clippy and every other check run in CI on the task's pull request (stage 3)
 pub(crate) fn lint(id: &str) -> bool {
     match id {
-        "clippy" | "deny" | "shear" => true,
+        "deny" | "shear" => true,
         _ => prerequisite(id),
     }
 }

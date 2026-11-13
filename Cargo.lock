@@ -1102,6 +1102,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
  "sha2 0.11.1",
  "thiserror",
  "tokio",
@@ -1508,6 +1509,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-foundry",
  "betterlite-http",
+ "betterlite-interactions",
  "betterlite-logging",
  "betterlite-mcp",
  "betterlite-models",
@@ -1593,6 +1595,7 @@ dependencies = [
  "aws-types",
  "base64 0.23.1",
  "betterlite-env",
+ "betterlite-openai",
  "betterlite-postgres-fixture",
  "betterlite-roi",
  "betterlite-secret-managers",
@@ -1653,7 +1656,11 @@ name = "betterlite-db-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-db",
+ "betterlite-openai",
+ "betterlite-secrets",
  "libfuzzer-sys",
+ "secrecy",
+ "uuid",
 ]
 
 [[package]]
@@ -2235,6 +2242,7 @@ dependencies = [
 name = "betterlite-openai-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-http",
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-tokenizer",
@@ -2642,6 +2650,7 @@ dependencies = [
  "async-trait",
  "aws-lc-rs",
  "base64 0.23.1",
+ "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-bedrock",
  "betterlite-config",
@@ -2784,8 +2793,17 @@ dependencies = [
 name = "betterlite-rate-limit"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-config",
+ "betterlite-core",
+ "betterlite-redis",
+ "rstest",
  "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
