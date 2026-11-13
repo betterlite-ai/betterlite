@@ -480,3 +480,10 @@ path = "fuzz_targets/openai_response_resources.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "openai_video_identifiers"
+path = "fuzz_targets/openai_video_identifiers.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,23 @@
+kind: helper
+name: openai-video-identifiers-multipart-input-file
+call:
+  openai_video_identifiers:
+    calls:
+      - op: add_image_to_files
+        fixture:
+          kind: buffered_reader
+          data_base64: iVBORw0KGgoAAAANSUhEUg==
+          position: 3
+          name: ref.png
+      - op: add_image_to_files
+        fixture:
+          kind: bytes_io
+          data_base64: /9j/4AAQSkZJRgA=
+          position: 0
+      - op: add_image_to_files
+        fixture:
+          kind: bytes
+          data_base64: /9j/4AAQSkZJRgA=
+env: {}
+compare:
+  ignore: []

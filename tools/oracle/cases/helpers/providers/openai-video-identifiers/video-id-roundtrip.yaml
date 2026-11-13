@@ -1,0 +1,25 @@
+kind: helper
+name: openai-video-identifiers-video-id-roundtrip
+call:
+  openai_video_identifiers:
+    calls:
+      - op: encode_video_id
+        video_id: vid-123
+        provider: openai
+        model_id: sora-2
+      - op: encode_video_id
+        video_id: vid-456
+        provider: azure
+        model_id: null
+      - op: decode_video_id
+        encoded: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLTEyMw==
+        capture_debug: true
+      - op: decode_video_id
+        encoded: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOmF6dXJlO21vZGVsX2lkOjt2aWRlb19pZDp2aWQtNDU2
+        capture_debug: true
+      - op: extract_original_video_id
+        encoded: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLTEyMw==
+        capture_debug: true
+env: {}
+compare:
+  ignore: []

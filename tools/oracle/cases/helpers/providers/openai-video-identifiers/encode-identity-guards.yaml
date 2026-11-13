@@ -1,0 +1,40 @@
+kind: helper
+name: openai-video-identifiers-encode-identity-guards
+call:
+  openai_video_identifiers:
+    calls:
+      - op: encode_video_id
+        video_id: vid
+        provider: ''
+        model_id: null
+      - op: encode_video_id
+        video_id: ''
+        provider: openai
+        model_id: null
+      - op: encode_character_id
+        character_id: char
+        provider: ''
+        model_id: null
+      - op: encode_character_id
+        character_id: ''
+        provider: openai
+        model_id: null
+      - op: encode_video_id
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLTEyMw==
+        provider: azure
+        model_id: other
+      - op: encode_character_id
+        character_id: character_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7Y2hhcmFjdGVyX2lkOmNoYXItMQ==
+        provider: azure
+        model_id: other
+      - op: encode_video_id
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOjttb2RlbF9pZDo7dmlkZW9faWQ6dmlk
+        provider: openai
+        model_id: sora-2
+      - op: encode_character_id
+        character_id: character_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOjttb2RlbF9pZDo7Y2hhcmFjdGVyX2lkOmNoYXI=
+        provider: openai
+        model_id: sora-2
+env: {}
+compare:
+  ignore: []
