@@ -1,11 +1,11 @@
 use std::collections::BTreeSet;
 
 use crate::limiter_records::{
-    AtomicCounterMeta, AtomicCounterState, CacheCounterValue, RateLimitResponse, RateLimitStatus,
+    AtomicCounterMeta, AtomicCounterState, CacheCounterValue, RateLimitResponse,
     ReservationBackend, ReservationWindowIdentity, sibling_counter_keys,
 };
 
-use super::rate_limit_kind::status_rate_limit_type;
+use super::status::counter_status;
 use super::value::{CounterValueError, counter_integer};
 
 mod tests;
@@ -40,7 +40,16 @@ pub async fn atomic_check_and_increment_in_memory(
             }
         };
         if over_limit(meta, current) {
-            return Ok(over_limit_response(meta, current));
+            return Ok(RateLimitResponse {
+                overall_code: "OVER_LIMIT".to_owned(),
+                statuses: vec![counter_status(
+                    "OVER_LIMIT",
+                    meta.current_limit,
+                    current,
+                    meta,
+                )],
+                reservation_windows: None,
+            });
         }
         states.push(AtomicCounterState {
             window_expired,
@@ -59,21 +68,6 @@ fn over_limit(meta: &AtomicCounterMeta, current: i64) -> bool {
         current.saturating_add(meta.increment) > meta.current_limit
     } else {
         current >= meta.current_limit
-    }
-}
-
-fn over_limit_response(meta: &AtomicCounterMeta, current: i64) -> RateLimitResponse {
-    RateLimitResponse {
-        overall_code: "OVER_LIMIT".to_owned(),
-        statuses: vec![RateLimitStatus {
-            code: "OVER_LIMIT".to_owned(),
-            current_limit: meta.current_limit,
-            limit_remaining: meta.current_limit.saturating_sub(current).max(0),
-            rate_limit_type: status_rate_limit_type(meta.rate_limit_type),
-            descriptor_key: meta.descriptor_key.clone(),
-            descriptor_value: Some(meta.descriptor_value.clone()),
-        }],
-        reservation_windows: None,
     }
 }
 
@@ -135,14 +129,7 @@ async fn apply_increments(
                 true,
             )
             .await;
-        statuses.push(RateLimitStatus {
-            code: "OK".to_owned(),
-            current_limit: meta.current_limit,
-            limit_remaining: meta.current_limit.saturating_sub(new_counter).max(0),
-            rate_limit_type: status_rate_limit_type(meta.rate_limit_type),
-            descriptor_key: meta.descriptor_key.clone(),
-            descriptor_value: Some(meta.descriptor_value.clone()),
-        });
+        statuses.push(counter_status("OK", meta.current_limit, new_counter, meta));
         windows.insert(ReservationWindowIdentity {
             counter_key: meta.counter_key.clone(),
             window_start: state.window_start.clone(),

@@ -108,24 +108,12 @@ fn meta(
     }
 }
 
-fn requests(current_limit: i64, increment: i64) -> AtomicCounterMeta {
-    meta(
-        WindowRateLimitType::Requests,
-        current_limit,
-        increment,
-        60,
-        60,
-    )
-}
-
-fn tokens(current_limit: i64, increment: i64) -> AtomicCounterMeta {
-    meta(
-        WindowRateLimitType::Tokens,
-        current_limit,
-        increment,
-        60,
-        60,
-    )
+fn counter(
+    rate_limit_type: WindowRateLimitType,
+    current_limit: i64,
+    increment: i64,
+) -> AtomicCounterMeta {
+    meta(rate_limit_type, current_limit, increment, 60, 60)
 }
 
 fn read(key: &str) -> ReadCall {
@@ -178,9 +166,13 @@ async fn in_memory_increments_an_active_window() {
         (WINDOW_KEY, window_start_text(1_700_000_299)),
         (REQUESTS_KEY, CacheCounterValue::Int(7)),
     ]);
-    let response = atomic_check_and_increment_in_memory(&cache, &[requests(10, 1)], NOW)
-        .await
-        .unwrap();
+    let response = atomic_check_and_increment_in_memory(
+        &cache,
+        &[counter(WindowRateLimitType::Requests, 10, 1)],
+        NOW,
+    )
+    .await
+    .unwrap();
     assert_eq!(cache.reads(), vec![read(WINDOW_KEY), read(REQUESTS_KEY)]);
     assert_eq!(
         cache.writes(),
@@ -199,9 +191,13 @@ async fn in_memory_increments_an_active_window() {
 #[tokio::test]
 async fn in_memory_resets_a_missing_window_without_reading_the_counter() {
     let cache = RecordingCache::new(&[]);
-    let response = atomic_check_and_increment_in_memory(&cache, &[requests(10, 1)], NOW)
-        .await
-        .unwrap();
+    let response = atomic_check_and_increment_in_memory(
+        &cache,
+        &[counter(WindowRateLimitType::Requests, 10, 1)],
+        NOW,
+    )
+    .await
+    .unwrap();
     assert_eq!(cache.reads(), vec![read(WINDOW_KEY)]);
     assert_eq!(
         cache.writes(),
@@ -224,9 +220,13 @@ async fn in_memory_expires_a_window_at_exactly_the_window_size() {
         (WINDOW_KEY, window_start_text(NOW - 60)),
         (REQUESTS_KEY, CacheCounterValue::Int(12)),
     ]);
-    let response = atomic_check_and_increment_in_memory(&cache, &[requests(10, 1)], NOW)
-        .await
-        .unwrap();
+    let response = atomic_check_and_increment_in_memory(
+        &cache,
+        &[counter(WindowRateLimitType::Requests, 10, 1)],
+        NOW,
+    )
+    .await
+    .unwrap();
     assert_eq!(cache.reads(), vec![read(WINDOW_KEY)]);
     assert_eq!(
         cache.writes(),
@@ -246,9 +246,13 @@ async fn in_memory_keeps_a_window_one_second_inside_the_window_size() {
         (WINDOW_KEY, window_start_text(NOW - 59)),
         (REQUESTS_KEY, CacheCounterValue::Int(3)),
     ]);
-    let response = atomic_check_and_increment_in_memory(&cache, &[requests(10, 1)], NOW)
-        .await
-        .unwrap();
+    let response = atomic_check_and_increment_in_memory(
+        &cache,
+        &[counter(WindowRateLimitType::Requests, 10, 1)],
+        NOW,
+    )
+    .await
+    .unwrap();
     assert_eq!(cache.reads(), vec![read(WINDOW_KEY), read(REQUESTS_KEY)]);
     assert_eq!(
         cache.writes(),
@@ -266,9 +270,13 @@ async fn in_memory_reads_a_window_start_stored_as_an_integer() {
         (WINDOW_KEY, CacheCounterValue::Int(1_700_000_299)),
         (REQUESTS_KEY, CacheCounterValue::Int(7)),
     ]);
-    let response = atomic_check_and_increment_in_memory(&cache, &[requests(10, 1)], NOW)
-        .await
-        .unwrap();
+    let response = atomic_check_and_increment_in_memory(
+        &cache,
+        &[counter(WindowRateLimitType::Requests, 10, 1)],
+        NOW,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         response.reservation_windows,
         Some(BTreeSet::from([window(REQUESTS_KEY, "1700000299")]))
@@ -282,10 +290,16 @@ async fn in_memory_resets_a_shared_window_and_its_siblings_once() {
         (REQUESTS_KEY, CacheCounterValue::Int(3)),
         (TOKENS_KEY, CacheCounterValue::Int(50)),
     ]);
-    let response =
-        atomic_check_and_increment_in_memory(&cache, &[requests(10, 1), tokens(200, 5)], NOW)
-            .await
-            .unwrap();
+    let response = atomic_check_and_increment_in_memory(
+        &cache,
+        &[
+            counter(WindowRateLimitType::Requests, 10, 1),
+            counter(WindowRateLimitType::Tokens, 200, 5),
+        ],
+        NOW,
+    )
+    .await
+    .unwrap();
     assert_eq!(cache.reads(), vec![read(WINDOW_KEY), read(WINDOW_KEY)]);
     assert_eq!(
         cache.writes(),
@@ -336,10 +350,16 @@ async fn in_memory_blocks_the_whole_call_when_a_later_counter_is_over_its_limit(
         (REQUESTS_KEY, CacheCounterValue::Int(9)),
         (TOKENS_KEY, CacheCounterValue::Int(200)),
     ]);
-    let response =
-        atomic_check_and_increment_in_memory(&cache, &[requests(10, 1), tokens(200, 5)], NOW)
-            .await
-            .unwrap();
+    let response = atomic_check_and_increment_in_memory(
+        &cache,
+        &[
+            counter(WindowRateLimitType::Requests, 10, 1),
+            counter(WindowRateLimitType::Tokens, 200, 5),
+        ],
+        NOW,
+    )
+    .await
+    .unwrap();
     assert_eq!(cache.reads().len(), 4);
     assert!(cache.writes().is_empty());
     assert_eq!(
@@ -358,9 +378,13 @@ async fn in_memory_allows_an_increment_that_reaches_the_limit() {
         (WINDOW_KEY, window_start_text(1_700_000_299)),
         (REQUESTS_KEY, CacheCounterValue::Int(9)),
     ]);
-    let response = atomic_check_and_increment_in_memory(&cache, &[requests(10, 1)], NOW)
-        .await
-        .unwrap();
+    let response = atomic_check_and_increment_in_memory(
+        &cache,
+        &[counter(WindowRateLimitType::Requests, 10, 1)],
+        NOW,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         cache.writes(),
         vec![written(REQUESTS_KEY, CacheCounterValue::Int(10), 60)]
@@ -374,9 +398,13 @@ async fn in_memory_blocks_a_positive_increment_past_the_limit() {
         (WINDOW_KEY, window_start_text(1_700_000_299)),
         (REQUESTS_KEY, CacheCounterValue::Int(10)),
     ]);
-    let response = atomic_check_and_increment_in_memory(&cache, &[requests(10, 1)], NOW)
-        .await
-        .unwrap();
+    let response = atomic_check_and_increment_in_memory(
+        &cache,
+        &[counter(WindowRateLimitType::Requests, 10, 1)],
+        NOW,
+    )
+    .await
+    .unwrap();
     assert_eq!(response.overall_code, "OVER_LIMIT");
     assert_eq!(
         response.statuses,
@@ -391,9 +419,13 @@ async fn in_memory_blocks_a_zero_increment_at_the_limit() {
         (WINDOW_KEY, window_start_text(1_700_000_299)),
         (REQUESTS_KEY, CacheCounterValue::Int(10)),
     ]);
-    let response = atomic_check_and_increment_in_memory(&cache, &[requests(10, 0)], NOW)
-        .await
-        .unwrap();
+    let response = atomic_check_and_increment_in_memory(
+        &cache,
+        &[counter(WindowRateLimitType::Requests, 10, 0)],
+        NOW,
+    )
+    .await
+    .unwrap();
     assert_eq!(response.overall_code, "OVER_LIMIT");
     assert!(cache.writes().is_empty());
 }
@@ -404,9 +436,13 @@ async fn in_memory_allows_a_zero_increment_below_the_limit() {
         (WINDOW_KEY, window_start_text(1_700_000_299)),
         (REQUESTS_KEY, CacheCounterValue::Int(9)),
     ]);
-    let response = atomic_check_and_increment_in_memory(&cache, &[requests(10, 0)], NOW)
-        .await
-        .unwrap();
+    let response = atomic_check_and_increment_in_memory(
+        &cache,
+        &[counter(WindowRateLimitType::Requests, 10, 0)],
+        NOW,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         cache.writes(),
         vec![written(REQUESTS_KEY, CacheCounterValue::Int(9), 60)]
@@ -420,9 +456,13 @@ async fn in_memory_blocks_a_negative_increment_at_the_limit() {
         (WINDOW_KEY, window_start_text(1_700_000_299)),
         (REQUESTS_KEY, CacheCounterValue::Int(10)),
     ]);
-    let response = atomic_check_and_increment_in_memory(&cache, &[requests(10, -1)], NOW)
-        .await
-        .unwrap();
+    let response = atomic_check_and_increment_in_memory(
+        &cache,
+        &[counter(WindowRateLimitType::Requests, 10, -1)],
+        NOW,
+    )
+    .await
+    .unwrap();
     assert_eq!(response.overall_code, "OVER_LIMIT");
     assert!(cache.writes().is_empty());
 }
@@ -433,9 +473,13 @@ async fn in_memory_refunds_a_negative_increment_below_the_limit() {
         (WINDOW_KEY, window_start_text(1_700_000_299)),
         (REQUESTS_KEY, CacheCounterValue::Int(5)),
     ]);
-    let response = atomic_check_and_increment_in_memory(&cache, &[requests(10, -2)], NOW)
-        .await
-        .unwrap();
+    let response = atomic_check_and_increment_in_memory(
+        &cache,
+        &[counter(WindowRateLimitType::Requests, 10, -2)],
+        NOW,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         cache.writes(),
         vec![written(REQUESTS_KEY, CacheCounterValue::Int(3), 60)]
@@ -447,7 +491,12 @@ async fn in_memory_refunds_a_negative_increment_below_the_limit() {
 async fn in_memory_rejects_a_non_integer_window_start() {
     let cache = RecordingCache::new(&[(WINDOW_KEY, CacheCounterValue::Text("soon".to_owned()))]);
     assert_eq!(
-        atomic_check_and_increment_in_memory(&cache, &[requests(10, 1)], NOW).await,
+        atomic_check_and_increment_in_memory(
+            &cache,
+            &[counter(WindowRateLimitType::Requests, 10, 1)],
+            NOW
+        )
+        .await,
         Err(CounterValueError::NotAnInteger {
             position: WINDOW_KEY.to_owned(),
             value: CacheCounterValue::Text("soon".to_owned()),
@@ -463,7 +512,12 @@ async fn in_memory_rejects_a_non_integer_counter() {
         (REQUESTS_KEY, CacheCounterValue::Text("many".to_owned())),
     ]);
     assert_eq!(
-        atomic_check_and_increment_in_memory(&cache, &[requests(10, 1)], NOW).await,
+        atomic_check_and_increment_in_memory(
+            &cache,
+            &[counter(WindowRateLimitType::Requests, 10, 1)],
+            NOW
+        )
+        .await,
         Err(CounterValueError::NotAnInteger {
             position: REQUESTS_KEY.to_owned(),
             value: CacheCounterValue::Text("many".to_owned()),
