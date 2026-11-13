@@ -1,0 +1,321 @@
+use std::str::FromStr as _;
+
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive as _;
+use serde_json::Number;
+
+use crate::fields::payload::StandardLoggingPayload;
+use crate::fields::timestamps::with_fraction;
+use crate::fields::usage::Usage;
+use crate::fields::usage::parse::usage_from_mapping;
+use crate::langfuse_child_observations::prompts::{
+    GenerationPrompt, PromptManagementMetadata, attach_generation_prompt,
+};
+use crate::langfuse_observations::identity::Timestamp;
+use crate::langfuse_projections::cache_usage::cache_read_tokens;
+use crate::langfuse_projections::ids::{logging_id, lookup_ids};
+use crate::langfuse_projections::requester_metadata::log_requester_metadata;
+use crate::langfuse_projections::text::optional_str;
+use crate::langfuse_rest::client::LangfuseApiClient;
+use crate::logging_privacy::snapshot::redact_user_api_key_info;
+
+use super::metadata::{Masked, Steering};
+use super::{AssemblyError, AssemblyInput, GenerationTrace, REDACTED_BY_LITELLM};
+
+#[derive(Debug)]
+pub struct GenerationParams {
+    pub name: String,
+    pub id: Option<String>,
+    pub input: Option<Json>,
+    pub output: Option<Json>,
+    pub cost_details: Option<Json>,
+    pub metadata: Json,
+    pub version: Option<String>,
+    pub prompt: Option<GenerationPrompt>,
+    pub status_message: Option<String>,
+    pub usage_details: Option<Json>,
+    pub enrichments: IndexMap<String, Json>,
+    pub model: String,
+    pub model_parameters: IndexMap<String, Json>,
+}
+
+// litellm.integrations.langfuse.langfuse.LangFuseLogger._log_langfuse_v2 generation parameters
+pub async fn build(
+    input: &AssemblyInput<'_>,
+    steering: &Steering,
+    masked: &Masked,
+    fields: &mut IndexMap<String, Json>,
+    prompt_client: &LangfuseApiClient,
+) -> Result<GenerationParams, AssemblyError> {
+    let usage = response_usage(input.trace.response)?;
+    let enrichments = enrichments(input.trace)?;
+    let metadata = generation_metadata(input, &enrichments)?;
+    let prompt_metadata = prompt_metadata(input.trace.payload)?;
+    let prompt = attach_generation_prompt(fields, prompt_metadata.as_ref(), prompt_client).await;
+    let model_parameters = model_parameters(input.trace);
+    Ok(GenerationParams {
+        name: generation_name(input.trace, fields),
+        id: generation_id(input.trace, fields),
+        input: masked_value(masked.input.as_ref(), steering.mask_input),
+        output: masked_value(masked.output.as_ref(), steering.mask_output),
+        cost_details: cost_details(usage.as_ref(), input.trace.response_cost),
+        metadata: Json::Object(metadata),
+        version: optional_str(fields.shift_remove("version").as_ref()),
+        prompt,
+        status_message: status_message(input.trace.level, masked.output.as_ref()),
+        usage_details: usage.as_ref().map(usage_details),
+        enrichments,
+        model: model_name(input.trace),
+        model_parameters,
+    })
+}
+
+fn response_usage(response: Option<&Json>) -> Result<Option<Usage>, AssemblyError> {
+    let Some(Json::Object(fields)) = response else {
+        return Ok(None);
+    };
+    let Some(Json::Object(usage)) = fields.get("usage") else {
+        return Ok(None);
+    };
+    if usage.is_empty() {
+        return Ok(None);
+    }
+    usage_from_mapping(usage)
+        .map(Some)
+        .map_err(AssemblyError::Usage)
+}
+
+fn generation_id(
+    trace: &GenerationTrace<'_>,
+    fields: &mut IndexMap<String, Json>,
+) -> Option<String> {
+    match fields.shift_remove("generation_id") {
+        Some(value) => optional_str(Some(&value)),
+        None => computed_id(trace),
+    }
+}
+
+fn computed_id(trace: &GenerationTrace<'_>) -> Option<String> {
+    let response = trace.response?;
+    if !response_has_id(response) {
+        return None;
+    }
+    let start = match trace.start_time {
+        Some(Timestamp::DateTime(datetime)) => Some(datetime),
+        Some(Timestamp::Seconds(_)) | None => None,
+    };
+    logging_id(start.as_ref(), Some(response))
+}
+
+fn response_has_id(response: &Json) -> bool {
+    match response {
+        Json::Object(fields) => fields
+            .get("id")
+            .is_some_and(|value| !matches!(value, Json::Null)),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => false,
+    }
+}
+
+fn generation_name(trace: &GenerationTrace<'_>, fields: &mut IndexMap<String, Json>) -> String {
+    let requested = optional_str(fields.shift_remove("generation_name").as_ref());
+    if let Some(name) = requested {
+        return name;
+    }
+    match optional_str(fields.get("user_api_key_alias")) {
+        Some(alias) => format!("litellm:{alias}"),
+        None => format!("litellm-{}", trace.call_type),
+    }
+}
+
+fn model_name(trace: &GenerationTrace<'_>) -> String {
+    let deployment = optional_str(trace.metadata.get("deployment"));
+    if let Some(deployment) = deployment
+        && deployment.contains('/')
+    {
+        return deployment;
+    }
+    if let Some(provider) = trace.provider
+        && provider == "bedrock"
+        && !trace.model.is_empty()
+        && !trace.model.contains('/')
+    {
+        return format!("{provider}/{}", trace.model);
+    }
+    trace.model.to_owned()
+}
+
+fn model_parameters(trace: &GenerationTrace<'_>) -> IndexMap<String, Json> {
+    let mut params = trace.optional_params.clone();
+    if let Some(fingerprint) = system_fingerprint(trace.response) {
+        params.insert("system_fingerprint".to_owned(), fingerprint);
+    }
+    params
+}
+
+fn system_fingerprint(response: Option<&Json>) -> Option<Json> {
+    let Json::Object(fields) = response? else {
+        return None;
+    };
+    match fields.get("system_fingerprint") {
+        Some(Json::Null) | None => None,
+        Some(value) => Some(value.clone()),
+    }
+}
+
+fn enrichments(trace: &GenerationTrace<'_>) -> Result<IndexMap<String, Json>, AssemblyError> {
+    let mut enrichments = IndexMap::new();
+    enrichments.insert(
+        "litellm_response_cost".to_owned(),
+        trace.response_cost.map_or(Json::Null, cost_value),
+    );
+    if let Some(payload) = trace.payload {
+        let hidden = serde_json::to_value(&payload.hidden_params)
+            .and_then(serde_json::from_value::<Json>)
+            .map_err(AssemblyError::Payload)?;
+        enrichments.insert("hidden_params".to_owned(), hidden);
+    }
+    insert_text(
+        &mut enrichments,
+        "api_base",
+        super::params_text(trace.litellm_params, "api_base"),
+    );
+    insert_text(&mut enrichments, "vertex_location", trace.vertex_location);
+    insert_text(&mut enrichments, "aws_region_name", trace.aws_region_name);
+    if let Some(cache_hit) = trace.cache_hit {
+        enrichments.insert("cache_hit".to_owned(), Json::Bool(cache_hit));
+    }
+    Ok(enrichments)
+}
+
+fn insert_text(enrichments: &mut IndexMap<String, Json>, name: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        enrichments.insert(name.to_owned(), Json::Text(value.to_owned()));
+    }
+}
+
+fn generation_metadata(
+    input: &AssemblyInput<'_>,
+    enrichments: &IndexMap<String, Json>,
+) -> Result<IndexMap<String, Json>, AssemblyError> {
+    let allowlisted = payload_metadata(input.trace.payload)?;
+    let redacted = redact_user_api_key_info(
+        &Json::Object(allowlisted),
+        input.settings.redact_user_api_key_info,
+    );
+    let mut metadata = match redacted {
+        Json::Object(fields) => log_requester_metadata(&fields),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            IndexMap::new()
+        }
+    };
+    for (key, value) in enrichments {
+        metadata.insert(key.clone(), value.clone());
+    }
+    for (key, value) in lookup_ids(input.trace.litellm_call_id, input.trace.response) {
+        metadata.insert(key, Json::Text(value));
+    }
+    Ok(metadata)
+}
+
+fn payload_metadata(
+    payload: Option<&StandardLoggingPayload>,
+) -> Result<IndexMap<String, Json>, AssemblyError> {
+    let Some(payload) = payload else {
+        return Ok(IndexMap::new());
+    };
+    let decoded = serde_json::to_value(&payload.metadata)
+        .and_then(serde_json::from_value::<Json>)
+        .map_err(AssemblyError::Payload)?;
+    match decoded {
+        Json::Object(fields) => Ok(fields),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            Ok(IndexMap::new())
+        }
+    }
+}
+
+fn prompt_metadata(
+    payload: Option<&StandardLoggingPayload>,
+) -> Result<Option<PromptManagementMetadata>, AssemblyError> {
+    let stored = payload.and_then(|payload| payload.metadata.prompt_management_metadata.as_ref());
+    let Some(stored) = stored else {
+        return Ok(None);
+    };
+    if matches!(stored, Json::Null) {
+        return Ok(None);
+    }
+    serde_json::from_value(stored.clone())
+        .map(Some)
+        .map_err(AssemblyError::PromptMetadata)
+}
+
+fn masked_value(value: Option<&Json>, redacted: bool) -> Option<Json> {
+    if redacted {
+        return Some(Json::Text(REDACTED_BY_LITELLM.to_owned()));
+    }
+    value.cloned()
+}
+
+fn status_message(level: &str, output: Option<&Json>) -> Option<String> {
+    let Json::Text(text) = output? else {
+        return None;
+    };
+    (level == "ERROR").then(|| text.clone())
+}
+
+fn cost_details(usage: Option<&Usage>, cost: Option<Decimal>) -> Option<Json> {
+    match (usage, cost) {
+        (Some(_usage), Some(cost)) => {
+            let mut record = IndexMap::new();
+            record.insert("total".to_owned(), cost_value(cost));
+            Some(Json::Object(record))
+        }
+        (None, _) | (Some(_), None) => None,
+    }
+}
+
+fn usage_details(usage: &Usage) -> Json {
+    let cache_read = cache_read_tokens(usage);
+    let cache_creation = cache_creation_tokens(usage);
+    let mut record = IndexMap::new();
+    record.insert(
+        "input".to_owned(),
+        Json::Number(Number::from(usage.prompt_tokens.saturating_sub(cache_read))),
+    );
+    record.insert(
+        "output".to_owned(),
+        Json::Number(Number::from(usage.completion_tokens)),
+    );
+    record.insert(
+        "total".to_owned(),
+        Json::Number(Number::from(usage.total_tokens)),
+    );
+    record.insert(
+        "cache_creation_input_tokens".to_owned(),
+        Json::Number(Number::from(cache_creation)),
+    );
+    record.insert(
+        "cache_read_input_tokens".to_owned(),
+        Json::Number(Number::from(cache_read)),
+    );
+    Json::Object(record)
+}
+
+fn cache_creation_tokens(usage: &Usage) -> i64 {
+    let Some(Json::Number(number)) = usage.extras.get("cache_creation_input_tokens") else {
+        return 0;
+    };
+    let Ok(amount) = Decimal::from_str(&number.to_string()) else {
+        return 0;
+    };
+    amount.to_i64().unwrap_or(0)
+}
+
+fn cost_value(cost: Decimal) -> Json {
+    match Number::from_str(&with_fraction(cost).to_string()) {
+        Ok(number) => Json::Number(number),
+        Err(_error) => Json::Null,
+    }
+}
