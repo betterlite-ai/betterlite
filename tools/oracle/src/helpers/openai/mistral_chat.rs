@@ -14,7 +14,9 @@ use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat_choices::stream::StreamError;
 use betterlite_openai::chat_content::RefuseDownloads;
 use betterlite_openai::compatible_wire::{LogInput, ReplyOptions};
-use betterlite_openai::mistral_chat::reply::{ResponseReply, decode_mistral_chat, transform_response};
+use betterlite_openai::mistral_chat::reply::{
+    ResponseReply, decode_mistral_chat, transform_response,
+};
 use betterlite_openai::mistral_chat::request::{RequestTransform, transform_request};
 use betterlite_openai::mistral_chat::stream::chunk_parser;
 use betterlite_openai::openai_base_config::Headers;
@@ -109,7 +111,8 @@ impl crate::helpers::Helper for Op {
 }
 
 fn request_step(step: &RequestStep) -> Result<Value, Box<HelperError>> {
-    let messages: Vec<ChatMessage> = serde_json::from_value(step.messages.clone()).map_err(failure)?;
+    let messages: Vec<ChatMessage> =
+        serde_json::from_value(step.messages.clone()).map_err(failure)?;
     let body = transform_request(&RequestTransform {
         model: &step.model,
         messages: &messages,
