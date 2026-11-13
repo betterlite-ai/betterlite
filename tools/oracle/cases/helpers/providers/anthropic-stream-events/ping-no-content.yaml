@@ -1,0 +1,19 @@
+kind: helper
+name: anthropic-stream-events-ping-no-content
+call:
+  anthropic_stream_events:
+    json_mode: false
+    tool_name_reverse_map: {}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: chunk, chunk: {type: ping}}
+      - {function: chunk, chunk: {type: tool_result}}
+      - {function: chunk, chunk: {type: message_stop}}
+      - {function: chunk, chunk: {type: whatever}}
+      - {function: chunk, chunk: {}}
+      - {function: chunk, chunk: {type: null}}
+      - {function: chunk, chunk: {type: 0}}
+      - {function: chunk, chunk: {type: ""}}
+      - {function: state}
+env: {}
+compare: {ignore: []}
