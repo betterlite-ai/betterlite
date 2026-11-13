@@ -92,6 +92,7 @@ fn ccr_hashes_are_lowercased_filtered_and_kept_once() {
         r#"{"ccr_hashes": [
             "ABCDEF012345",
             "abcdef012345",
+            "FEDCBA987654",
             "0123456789ab",
             "0123456789abc",
             "0123456789abcdef01234567",
@@ -109,7 +110,8 @@ fn ccr_hashes_are_lowercased_filtered_and_kept_once() {
             "0123456789ab".to_owned(),
             "0123456789abc".to_owned(),
             "0123456789abcdef01234567".to_owned(),
-            "abcdef012345".to_owned()
+            "abcdef012345".to_owned(),
+            "fedcba987654".to_owned()
         ]
     );
 }

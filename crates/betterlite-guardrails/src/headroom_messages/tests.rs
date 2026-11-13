@@ -183,12 +183,13 @@ fn protected_retrieval_result_rows_need_a_matching_id() {
             ]},
             {"role": "tool", "tool_call_id": "call-1", "content": "recovered"},
             {"role": "function", "tool_call_id": "call-2", "content": "other"},
-            {"role": "user", "tool_call_id": "call-1", "content": "not a result"}
+            {"role": "user", "tool_call_id": "call-1", "content": "not a result"},
+            {"role": "function", "tool_call_id": "call-1", "content": "recovered again"}
         ]"#,
     );
     assert_eq!(
         retrieval_result_indices(&messages, &BTreeSet::new()),
-        indices(&[1])
+        indices(&[1, 4])
     );
 }
 

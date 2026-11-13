@@ -6,6 +6,7 @@ call:
     messages:
       - {role: user, content: u}
       - {role: tool, tool_call_id: toolu-1, content: recovered content}
+      - {role: function, tool_call_id: toolu-1, content: recovered again}
       - {role: user, content: next}
     extra_ids:
       - toolu-1
