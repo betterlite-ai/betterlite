@@ -1,0 +1,32 @@
+kind: helper
+name: image-request-options-five-image-call-types-only
+call:
+  image_request_options:
+    calls:
+      - function: call_type
+        call_type: image_generation
+      - function: call_type
+        call_type: aimage_generation
+      - function: call_type
+        call_type: passthrough_image_generation
+      - function: call_type
+        call_type: image_edit
+      - function: call_type
+        call_type: aimage_edit
+      - function: call_type
+        call_type: completion
+      - function: call_type
+        call_type: acompletion
+      - function: call_type
+        call_type: embedding
+      - function: call_type
+        call_type: image_variation
+      - function: call_type
+        call_type: Image_Generation
+      - function: call_type
+        call_type: "image_generation "
+      - function: call_type
+        call_type: ""
+env: {}
+compare:
+  ignore: []
