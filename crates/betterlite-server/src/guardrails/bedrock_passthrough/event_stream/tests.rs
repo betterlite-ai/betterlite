@@ -48,37 +48,20 @@ fn event_frame(event_type: &str, payload: &[u8]) -> Vec<u8> {
     )
 }
 
-fn payload_of(raw: &[u8]) -> Vec<u8> {
-    let total = usize::try_from(u32::from_be_bytes(
-        raw.get(0..4)
-            .expect("prelude")
-            .try_into()
-            .expect("four bytes"),
-    ))
-    .expect("length fits");
-    let headers_length = usize::try_from(u32::from_be_bytes(
-        raw.get(4..8)
-            .expect("prelude")
-            .try_into()
-            .expect("four bytes"),
-    ))
-    .expect("length fits");
-    let start = 12_usize.saturating_add(headers_length);
-    let end = total.saturating_sub(4);
-    raw.get(start..end).expect("payload bounds").to_vec()
+fn length_at(raw: &[u8], start: usize) -> usize {
+    let bytes = raw.get(start..start.saturating_add(4)).expect("prelude");
+    usize::try_from(u32::from_be_bytes(bytes.try_into().expect("four bytes"))).expect("length fits")
 }
 
-fn headers_of(raw: &[u8]) -> Vec<u8> {
-    let headers_length = usize::try_from(u32::from_be_bytes(
-        raw.get(4..8)
-            .expect("prelude")
-            .try_into()
-            .expect("four bytes"),
-    ))
-    .expect("length fits");
-    raw.get(12..12_usize.saturating_add(headers_length))
-        .expect("headers bounds")
-        .to_vec()
+fn frame_parts(raw: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    let headers_length = length_at(raw, 4);
+    let headers = raw
+        .get(12..12_usize.saturating_add(headers_length))
+        .expect("headers bounds");
+    let payload = raw
+        .get(12_usize.saturating_add(headers_length)..length_at(raw, 0).saturating_sub(4))
+        .expect("payload bounds");
+    (headers.to_vec(), payload.to_vec())
 }
 
 fn frame_texts(frames: &[Frame]) -> Vec<Vec<String>> {
@@ -522,8 +505,8 @@ fn a_rebuilt_frame_keeps_its_headers_and_writes_a_compact_payload() {
     let parsed = parse_event_stream(&body);
     let new_texts = BTreeMap::from([((0, 0), "HELLO".to_owned())]);
     let output = rebuild_event_stream(&parsed, &new_texts);
-    assert_eq!(headers_of(&output), headers_of(&body));
-    let payload = payload_of(&output);
+    let (headers, payload) = frame_parts(&output);
+    assert_eq!(headers, frame_parts(&body).0);
     assert!(!payload.contains(&b' '));
     assert_eq!(
         serde_json::from_slice::<GuardrailValue>(&payload).expect("valid JSON"),

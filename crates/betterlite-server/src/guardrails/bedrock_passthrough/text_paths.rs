@@ -2,23 +2,16 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
+pub mod steps;
 mod tests;
+
+use steps::{PathStep, TextPath, child_path, text_at_path_mut};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SkipFlags {
     pub system: bool,
     pub tool: bool,
 }
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PathStep {
-    Key(String),
-    Index(usize),
-}
-
-// LiteLLM writes through the (container, key) references it collected; Rust records the route to them instead.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TextPath(pub Vec<PathStep>);
 
 #[must_use]
 pub fn collect_request_texts(body: &GuardrailValue, skip: SkipFlags) -> Vec<(TextPath, String)> {
@@ -70,11 +63,21 @@ fn collect_system_texts(
     let Some(GuardrailValue::Array(blocks)) = fields.get("system") else {
         return;
     };
+    let base = [PathStep::Key("system".to_owned())];
+    collect_block_texts(blocks, &base, holders);
+}
+
+fn collect_block_texts(
+    blocks: &[GuardrailValue],
+    base: &[PathStep],
+    holders: &mut Vec<(TextPath, String)>,
+) {
     for (index, entry) in blocks.iter().enumerate() {
         let GuardrailValue::Object(block) = entry else {
             continue;
         };
-        let path = [PathStep::Key("system".to_owned()), PathStep::Index(index)];
+        let mut path = base.to_vec();
+        path.push(PathStep::Index(index));
         push_block_text(block, &path, holders);
     }
 }
@@ -211,10 +214,17 @@ fn collect_strings(
     while let Some((current, path)) = stack.pop() {
         match current {
             GuardrailValue::Object(fields) => {
-                collect_object_strings(fields, &path, &mut stack, holders);
+                let children = fields
+                    .iter()
+                    .map(|(key, value)| (PathStep::Key(key.clone()), value));
+                collect_child_strings(children, &path, &mut stack, holders);
             }
             GuardrailValue::Array(items) => {
-                collect_array_strings(items, &path, &mut stack, holders);
+                let children = items
+                    .iter()
+                    .enumerate()
+                    .map(|(index, value)| (PathStep::Index(index), value));
+                collect_child_strings(children, &path, &mut stack, holders);
             }
             GuardrailValue::Null
             | GuardrailValue::Boolean(_)
@@ -226,45 +236,20 @@ fn collect_strings(
     }
 }
 
-fn collect_object_strings<'value>(
-    fields: &'value BTreeMap<String, GuardrailValue>,
+fn collect_child_strings<'value>(
+    children: impl Iterator<Item = (PathStep, &'value GuardrailValue)>,
     path: &[PathStep],
     stack: &mut Vec<(&'value GuardrailValue, Vec<PathStep>)>,
     holders: &mut Vec<(TextPath, String)>,
 ) {
-    for (key, value) in fields {
+    for (step, value) in children {
+        let mut child = path.to_vec();
+        child.push(step);
         match value {
-            GuardrailValue::Object(_) | GuardrailValue::Array(_) => {
-                stack.push((value, child_path(path, &[key.as_str()])));
-            }
+            GuardrailValue::Object(_) | GuardrailValue::Array(_) => stack.push((value, child)),
             GuardrailValue::Text(text) => {
                 if !text.is_empty() {
-                    holders.push((TextPath(child_path(path, &[key.as_str()])), text.clone()));
-                }
-            }
-            GuardrailValue::Null
-            | GuardrailValue::Boolean(_)
-            | GuardrailValue::SignedInteger(_)
-            | GuardrailValue::UnsignedInteger(_)
-            | GuardrailValue::Decimal(_) => {}
-        }
-    }
-}
-
-fn collect_array_strings<'value>(
-    items: &'value [GuardrailValue],
-    path: &[PathStep],
-    stack: &mut Vec<(&'value GuardrailValue, Vec<PathStep>)>,
-    holders: &mut Vec<(TextPath, String)>,
-) {
-    for (index, value) in items.iter().enumerate() {
-        let mut item_path = path.to_vec();
-        item_path.push(PathStep::Index(index));
-        match value {
-            GuardrailValue::Object(_) | GuardrailValue::Array(_) => stack.push((value, item_path)),
-            GuardrailValue::Text(text) => {
-                if !text.is_empty() {
-                    holders.push((TextPath(item_path), text.clone()));
+                    holders.push((TextPath(child), text.clone()));
                 }
             }
             GuardrailValue::Null
@@ -288,30 +273,4 @@ fn push_block_text(
         return;
     }
     holders.push((TextPath(child_path(base, &["text"])), text.clone()));
-}
-
-fn child_path(base: &[PathStep], keys: &[&str]) -> Vec<PathStep> {
-    let mut path = base.to_vec();
-    for key in keys {
-        path.push(PathStep::Key((*key).to_owned()));
-    }
-    path
-}
-
-fn text_at_path_mut<'root>(
-    root: &'root mut GuardrailValue,
-    path: &[PathStep],
-) -> Option<&'root mut String> {
-    let mut current = root;
-    for step in path {
-        current = match (current, step) {
-            (GuardrailValue::Object(fields), PathStep::Key(key)) => fields.get_mut(key)?,
-            (GuardrailValue::Array(items), PathStep::Index(index)) => items.get_mut(*index)?,
-            _ => return None,
-        };
-    }
-    let GuardrailValue::Text(text) = current else {
-        return None;
-    };
-    Some(text)
 }

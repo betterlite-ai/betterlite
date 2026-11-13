@@ -8,7 +8,8 @@ use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, Guardrai
 use thiserror::Error;
 
 use super::routing::{Routed, is_converse_endpoint};
-use super::text_paths::{TextPath, collect_output_texts, write_back_texts};
+use super::text_paths::steps::TextPath;
+use super::text_paths::{collect_output_texts, write_back_texts};
 
 mod tests;
 

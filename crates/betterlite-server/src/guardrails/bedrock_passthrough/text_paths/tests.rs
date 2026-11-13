@@ -8,9 +8,8 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use tracing::subscriber::with_default;
 use tracing_subscriber::fmt::MakeWriter;
 
-use super::{
-    PathStep, SkipFlags, TextPath, collect_output_texts, collect_request_texts, write_back_texts,
-};
+use super::steps::{PathStep, TextPath};
+use super::{SkipFlags, collect_output_texts, collect_request_texts, write_back_texts};
 
 fn value(json: &str) -> GuardrailValue {
     serde_json::from_str(json).expect("valid JSON fixture")

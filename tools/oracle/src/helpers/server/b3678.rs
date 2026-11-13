@@ -2,9 +2,6 @@ use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 
-use aws_smithy_eventstream::frame::{read_message_from, write_message_to};
-use aws_smithy_types::event_stream::{Header, HeaderValue, Message};
-use aws_smithy_types::str_bytes::StrBytes;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
@@ -23,6 +20,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+
+mod frames;
+
+use frames::{decode_stream, encode_stream};
 
 pub(crate) struct Op;
 
@@ -153,11 +154,7 @@ fn output_texts(input: &TextsResponse) -> HelperResult {
 }
 
 fn stream(input: &StreamInput) -> HelperResult {
-    let mut body = Vec::new();
-    for frame in &input.frames {
-        body.extend_from_slice(&encode_frame(frame)?);
-    }
-    body.extend_from_slice(&hex::decode(&input.trailing_hex).or_value_error()?);
+    let body = encode_stream(&input.frames, &input.trailing_hex)?;
     let hook = ScriptedHook {
         replace: input.replace.clone(),
     };
@@ -169,66 +166,6 @@ fn stream(input: &StreamInput) -> HelperResult {
     ))?;
     let rewritten = outcome.or_value_error()?;
     decode_stream(&rewritten)
-}
-
-fn encode_frame(frame: &FrameInput) -> Result<Vec<u8>, Box<HelperError>> {
-    let payload = serde_json::to_vec(&frame.payload).or_value_error()?;
-    let header = Header::new(
-        ":event-type".to_owned(),
-        HeaderValue::String(StrBytes::from(frame.event_type.clone())),
-    );
-    let message = Message::new(payload).add_header(header);
-    let mut buffer = Vec::new();
-    write_message_to(&message, &mut buffer).or_value_error()?;
-    Ok(buffer)
-}
-
-fn decode_stream(body: &[u8]) -> HelperResult {
-    let mut frames = Vec::new();
-    let mut offset = 0_usize;
-    while let Some(total) = frame_total_length(body, offset) {
-        let end = offset.saturating_add(total);
-        let Some(raw) = body.get(offset..end) else {
-            break;
-        };
-        let message = read_message_from(raw).or_value_error()?;
-        frames.push(frame_json(&message)?);
-        offset = end;
-    }
-    let trailing = body.get(offset..).unwrap_or_default();
-    Ok(json!({
-        "frames": frames,
-        "trailing": hex::encode(trailing),
-    }))
-}
-
-fn frame_total_length(body: &[u8], offset: usize) -> Option<usize> {
-    let (length_bytes, _rest) = body.get(offset..)?.split_first_chunk::<4>()?;
-    let total = usize::try_from(u32::from_be_bytes(*length_bytes)).ok()?;
-    if total < 16 {
-        return None;
-    }
-    let end = offset.checked_add(total)?;
-    (end <= body.len()).then_some(total)
-}
-
-fn frame_json(message: &Message) -> Result<Value, Box<HelperError>> {
-    let mut headers = serde_json::Map::new();
-    for header in message.headers() {
-        headers.insert(
-            header.name().as_str().to_owned(),
-            header_value_json(header.value()),
-        );
-    }
-    let payload = serde_json::from_slice::<Value>(message.payload().as_ref()).or_value_error()?;
-    Ok(json!({ "headers": headers, "payload": payload }))
-}
-
-fn header_value_json(value: &HeaderValue) -> Value {
-    value.as_string().map_or_else(
-        |_| Value::String(format!("{value:?}")),
-        |text| Value::String(text.as_str().to_owned()),
-    )
 }
 
 fn guardrail_map(
