@@ -855,3 +855,29 @@ fn the_token_stage_receives_the_response_time_and_the_logged_model() {
     let unlogged = fixture.stage(&request(CallType::Completion), "gpt-4o", Some("openai"));
     assert_eq!(unlogged.request_model_for_cost, None);
 }
+
+struct Uninstalled;
+
+impl SpecialPricePolicy for Uninstalled {}
+
+#[test]
+fn an_uninstalled_policy_answers_every_operation_with_its_unavailable_adapter() {
+    let message =
+        |adapter: &str| format!("betterlite has no executable adapter for the {adapter} provider");
+    let query = SearchQuery {
+        model: "tavily/search",
+        provider: Some("tavily"),
+        number_of_queries: 1,
+        optional_params: None,
+    };
+    let search = Uninstalled.search_cost(&query).unwrap_err();
+    assert_eq!(search.to_string(), message("tavily"));
+    let registry = Uninstalled
+        .has_together_registry_pricing("together_ai/llama", &Catalog(BTreeMap::new()))
+        .unwrap_err();
+    assert_eq!(registry.to_string(), message("together_ai"));
+    let category = Uninstalled
+        .together_category("together_ai/llama", CallType::Completion)
+        .unwrap_err();
+    assert_eq!(category.to_string(), message("together_ai"));
+}
