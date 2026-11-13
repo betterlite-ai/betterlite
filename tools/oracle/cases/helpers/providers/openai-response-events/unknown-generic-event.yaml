@@ -1,0 +1,20 @@
+kind: helper
+name: openai-response-events-unknown-generic-event
+env: {}
+compare: {ignore: []}
+call:
+  openai_response_events:
+    unknown_generic_event:
+      probes:
+        - {event: {type: vendor.future, model_debug: 7, payload: {n: 1}}}
+        - {event: {type: response.reasoning_summary_part.added, item_id: i, output_index: 0, part: {type: summary_text, text: why}}}
+        - {event: {type: response.reasoning_summary_text.delta, item_id: i, output_index: 0, summary_index: 1, delta: d}}
+        - {event: {type: response.reasoning_summary_text.done, item_id: i, output_index: 0, sequence_number: 2, summary_index: 1, text: d}}
+        - {event: {type: response.reasoning_summary_part.done, item_id: i, output_index: 0, sequence_number: 3, summary_index: 1, part: {type: summary_text, text: d}}}
+        - {event: {type: response.custom_tool_call_input.delta, item_id: i, output_index: 0, delta: patch}}
+        - {event: {type: response.custom_tool_call_input.done, item_id: i, output_index: 0, input: patch}}
+        - {event: {type: response.shell_call.in_progress, item_id: i, output_index: 0, shell_debug: kept}}
+        - {event: {type: response.shell_call.completed, item_id: i, output_index: 0, shell_debug: kept}}
+        - {event: {type: response.shell_call_output.done, item_id: i, output_index: 0, shell_debug: kept}}
+        - {event: {delta: x}}
+        - {event: {type: 5, delta: x}}
