@@ -123,8 +123,18 @@ async fn call_dispatch_tests_behavior(#[case] scenario: Scenario) {
         Scenario::LifecycleOrder => lifecycle_order().await,
         Scenario::RulesReject => rules_reject().await,
         Scenario::DeadlineCapsTimeout => deadline_caps_timeout().await,
-        Scenario::ExpiredDeadline => expired_deadline().await,
-        Scenario::MissingDeployment => missing_deployment().await,
+        Scenario::ExpiredDeadline => {
+            refused_before_transport(Some(SystemTime::UNIX_EPOCH), MODEL_ID, |error| {
+                matches!(error, DispatchError::DeadlineExpired { .. })
+            })
+            .await;
+        }
+        Scenario::MissingDeployment => {
+            refused_before_transport(None, "missing", |error| {
+                matches!(error, DispatchError::MissingDeployment { .. })
+            })
+            .await;
+        }
         Scenario::FailureBecomesRejected => failure_becomes_rejected().await,
     }
 }
@@ -217,7 +227,11 @@ async fn deadline_caps_timeout() {
     assert_eq!(calls.seen(), [Duration::from_secs(3)]);
 }
 
-async fn expired_deadline() {
+async fn refused_before_transport(
+    deadline: Option<SystemTime>,
+    model_id: &str,
+    expected: fn(&DispatchError) -> bool,
+) {
     let trace = Trace::default();
     let calls = Arc::new(FakeCompletion::new(trace.clone()));
     let log = Arc::new(RecordingLog::new(trace));
@@ -226,46 +240,20 @@ async fn expired_deadline() {
         Arc::new(crate::dispatch::NoRules),
         log,
     ));
-    let context = context(Some(SystemTime::UNIX_EPOCH), SystemTime::UNIX_EPOCH);
+    let context = context(deadline, SystemTime::UNIX_EPOCH);
     let error = dispatch
         .execute(
             crate::operation::Operation::TextCompletion(request(
                 "completion-4",
-                MODEL_ID,
+                model_id,
                 Arc::clone(&dispatch),
                 Arc::clone(&calls),
             )),
             &context,
         )
         .await
-        .expect_err("the deadline passed");
-    assert!(matches!(error, DispatchError::DeadlineExpired { .. }));
-    assert!(calls.seen().is_empty());
-}
-
-async fn missing_deployment() {
-    let trace = Trace::default();
-    let calls = Arc::new(FakeCompletion::new(trace.clone()));
-    let log = Arc::new(RecordingLog::new(trace));
-    let dispatch = Arc::new(Dispatch::new(
-        vec![deployment(MODEL_ID, Duration::from_mins(100))],
-        Arc::new(crate::dispatch::NoRules),
-        log,
-    ));
-    let context = context(None, SystemTime::UNIX_EPOCH);
-    let error = dispatch
-        .execute(
-            crate::operation::Operation::TextCompletion(request(
-                "completion-5",
-                "missing",
-                Arc::clone(&dispatch),
-                Arc::clone(&calls),
-            )),
-            &context,
-        )
-        .await
-        .expect_err("no deployment");
-    assert!(matches!(error, DispatchError::MissingDeployment { .. }));
+        .expect_err("the call must fail before transport");
+    assert!(expected(&error), "unexpected error: {error}");
     assert!(calls.seen().is_empty());
 }
 

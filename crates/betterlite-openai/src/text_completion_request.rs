@@ -102,22 +102,15 @@ impl CompletionPrompt {
     #[must_use]
     pub fn messages(&self) -> Option<Vec<Value>> {
         match self {
-            Self::Text(text) => Some(vec![user_message(Value::String(text.clone()))]),
             Self::Texts(texts) if !texts.is_empty() => Some(
                 texts
                     .iter()
                     .map(|text| user_message(Value::String(text.clone())))
                     .collect(),
             ),
-            Self::Tokens(tokens) => Some(vec![user_message(Value::Array(
-                tokens.iter().map(|id| Value::from(*id)).collect(),
-            ))]),
-            Self::TokenLists(lists) => Some(vec![user_message(Value::Array(
-                lists
-                    .iter()
-                    .map(|ids| Value::Array(ids.iter().map(|id| Value::from(*id)).collect()))
-                    .collect(),
-            ))]),
+            Self::Text(_) | Self::Tokens(_) | Self::TokenLists(_) => {
+                Some(vec![user_message(self.to_value())])
+            }
             Self::Texts(_) | Self::Unmapped(_) => None,
         }
     }

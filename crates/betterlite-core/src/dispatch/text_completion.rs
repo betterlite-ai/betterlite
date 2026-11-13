@@ -22,19 +22,17 @@ where
 {
     let dispatch = Arc::clone(&request.dispatch);
     let terminal = dispatch.terminal(Entry::TextCompletion, &request.call_id, context);
-    match run(&dispatch, &request, context).await {
-        Ok(result) => {
-            terminal.record(CallOutcome::Succeeded, None, None);
-            Ok(result)
-        }
-        Err(error) => {
-            terminal.record(CallOutcome::Failed, Some(&error), None);
-            Err(error)
-        }
-    }
+    let result = complete(&dispatch, &request, context).await;
+    let outcome = if result.is_ok() {
+        CallOutcome::Succeeded
+    } else {
+        CallOutcome::Failed
+    };
+    terminal.record(outcome, result.as_ref().err(), None);
+    result
 }
 
-async fn run<Metadata, Client>(
+async fn complete<Metadata, Client>(
     dispatch: &Dispatch,
     request: &TextCompletionRequest,
     context: &CallContext<'_, Metadata, Client>,

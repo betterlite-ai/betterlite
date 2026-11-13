@@ -171,44 +171,29 @@ async fn string_prompt() {
     );
 }
 
+fn assert_prompt_sent(answered: &Answered, expected: &str) {
+    assert_eq!(answered.status, StatusCode::OK);
+    assert!(answered.sent.contains(expected), "{}", answered.sent);
+}
+
 async fn strings_prompt() {
     let answered = text_answer("/v1/completions", r#"["a","b"]"#).await;
-    assert_eq!(answered.status, StatusCode::OK);
-    assert!(
-        answered.sent.contains(r#""prompt":["a","b"]"#),
-        "{}",
-        answered.sent
-    );
+    assert_prompt_sent(&answered, r#""prompt":["a","b"]"#);
 }
 
 async fn tokens_prompt() {
     let answered = text_answer("/v1/completions", "[1,2]").await;
-    assert_eq!(answered.status, StatusCode::OK);
-    assert!(
-        answered.sent.contains(r#""prompt":[1,2]"#),
-        "{}",
-        answered.sent
-    );
+    assert_prompt_sent(&answered, r#""prompt":[1,2]"#);
 }
 
 async fn token_lists_prompt() {
     let answered = text_answer("/v1/completions", "[[1,2],[3]]").await;
-    assert_eq!(answered.status, StatusCode::OK);
-    assert!(
-        answered.sent.contains(r#""prompt":[[1,2],[3]]"#),
-        "{}",
-        answered.sent
-    );
+    assert_prompt_sent(&answered, r#""prompt":[[1,2],[3]]"#);
 }
 
 async fn empty_string_prompt() {
     let answered = text_answer("/v1/completions", r#""""#).await;
-    assert_eq!(answered.status, StatusCode::OK);
-    assert!(
-        answered.sent.contains(r#""prompt":"""#),
-        "{}",
-        answered.sent
-    );
+    assert_prompt_sent(&answered, r#""prompt":"""#);
 }
 
 async fn empty_list_rejected() {
