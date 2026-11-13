@@ -17,35 +17,16 @@ pub struct GenerateContentRequest {
     pub system_instruction: Option<Json>,
 }
 
-// GoogleGenAIConfig.transform_generate_content_request keeps tools and generationConfig even when empty
+// Studio keeps tools and generationConfig even when absent or empty, Vertex adds a field only when Python calls it truthy
 #[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct StudioBody {
-    pub model: String,
-    pub contents: Json,
-    pub tools: Json,
-    pub generation_config: Object,
-    pub system_instruction: Option<Json>,
-}
-
-// VertexAIGoogleGenAIConfig.transform_generate_content_request adds a field only when Python calls it truthy
-#[skip_serializing_none]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VertexBody {
+pub struct GenerateContentBody {
     pub model: String,
     pub contents: Json,
     pub tools: Option<Json>,
     pub system_instruction: Option<Json>,
     pub generation_config: Option<Object>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(untagged)]
-pub enum GenerateContentBody {
-    Studio(StudioBody),
-    Vertex(VertexBody),
 }
 
 pub fn transform_request(
@@ -57,28 +38,28 @@ pub fn transform_request(
     match provider {
         NativeProvider::Studio => {
             normalize_response_schema(&mut config, &request.model, settings)?;
-            Ok(GenerateContentBody::Studio(StudioBody {
+            Ok(GenerateContentBody {
                 model: request.model.clone(),
                 contents: request.contents.clone(),
-                tools: request.tools.clone().unwrap_or(Json::Null),
-                generation_config: config,
+                tools: Some(request.tools.clone().unwrap_or(Json::Null)),
                 system_instruction: request
                     .system_instruction
                     .clone()
                     .filter(|instruction| !matches!(instruction, Json::Null)),
-            }))
+                generation_config: Some(config),
+            })
         }
         NativeProvider::Vertex => {
             if !config.is_empty() {
                 normalize_response_schema(&mut config, &request.model, settings)?;
             }
-            Ok(GenerateContentBody::Vertex(VertexBody {
+            Ok(GenerateContentBody {
                 model: request.model.clone(),
                 contents: request.contents.clone(),
                 tools: request.tools.clone().filter(Json::is_truthy),
                 system_instruction: request.system_instruction.clone().filter(Json::is_truthy),
                 generation_config: (!config.is_empty()).then_some(config),
-            }))
+            })
         }
     }
 }

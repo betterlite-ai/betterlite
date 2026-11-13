@@ -20,9 +20,7 @@ use serde::Serialize;
 use crate::credential_sources::getters::VertexParams;
 use crate::endpoint_target::headers::set_headers;
 use crate::gemini_response::decode::MAX_RESPONSE_BYTES;
-use crate::google_native_content::auth::{
-    AuthTarget, NativeAuth, VertexComponents, auth_token_and_url, vertex_components,
-};
+use crate::google_native_content::auth::{AuthTarget, NativeAuth, auth_token_and_url};
 use crate::google_native_content::capabilities::{
     NativeProvider, SUPPORTED_OPTIONS, X_GOOGLE_API_KEY,
 };
@@ -94,30 +92,20 @@ fn access_token(token: &str, project: &str) -> AccessToken {
     }
 }
 
-fn components<'text>(
-    project: Option<&'text str>,
-    location: Option<&'text str>,
-) -> VertexComponents<'text> {
-    VertexComponents {
-        credentials: None,
-        project,
-        location,
-    }
-}
-
 fn auth<'text>(
     provider: NativeProvider,
-    model: &'text str,
-    components: VertexComponents<'text>,
+    params: VertexParams<'text>,
+    vertex: &'text VertexSettings,
     studio: &'text StudioSettings,
     keys: NativeParams,
 ) -> NativeAuth<'text> {
     NativeAuth {
         provider,
-        model,
+        model: MODEL,
         api_base: None,
         stream: false,
-        components,
+        params,
+        vertex,
         studio,
         studio_keys: keys,
     }
@@ -423,62 +411,50 @@ fn response_keeps_unknown_top_level_and_candidate_fields() {
 }
 
 #[rstest]
-#[case::null_candidates(r#"{"candidates":null}"#, "{}")]
-#[case::null_content(r#"{"candidates":[{"content":null}]}"#, r#"{"candidates":[{}]}"#)]
+#[case::null_candidates(r#"{"candidates":null}"#)]
+#[case::null_content(r#"{"candidates":[{"content":null}]}"#)]
 #[case::null_reasons(
-    r#"{"candidates":[{"finishReason":null,"index":null,"citationMetadata":null}]}"#,
-    r#"{"candidates":[{}]}"#
+    r#"{"candidates":[{"finishReason":null,"index":null,"citationMetadata":null}]}"#
 )]
 #[case::null_top_level(
-    r#"{"promptFeedback":null,"usageMetadata":null,"responseId":null,"modelVersion":null}"#,
-    "{}"
+    r#"{"promptFeedback":null,"usageMetadata":null,"responseId":null,"modelVersion":null}"#
 )]
-fn declared_null_response_fields_decode_to_absent(#[case] source: &str, #[case] want: &str) {
-    assert_eq!(rendered(&response_of(source)), json_of(want));
-}
-
-#[rstest]
-#[case::candidates_object(r#"{"candidates":{"a":1}}"#, "candidates")]
-#[case::candidate_number(r#"{"candidates":[7]}"#, "candidates")]
-#[case::candidate_null(r#"{"candidates":[null]}"#, "candidates")]
-#[case::content_list(r#"{"candidates":[{"content":[]}]}"#, "content")]
-#[case::finish_reason(r#"{"candidates":[{"finishReason":7}]}"#, "finishReason")]
-#[case::index(r#"{"candidates":[{"index":"first"}]}"#, "index")]
-#[case::index_float(r#"{"candidates":[{"index":1.5}]}"#, "index")]
-#[case::parts(r#"{"candidates":[{"content":{"parts":{}}}]}"#, "parts")]
-#[case::role(r#"{"candidates":[{"content":{"role":7}}]}"#, "role")]
-#[case::response_id(r#"{"responseId":7}"#, "responseId")]
-#[case::model_version(r#"{"modelVersion":7}"#, "modelVersion")]
-#[case::usage_metadata(r#"{"usageMetadata":[]}"#, "usageMetadata")]
-#[case::prompt_feedback(r#"{"promptFeedback":"x"}"#, "promptFeedback")]
-fn wrong_typed_response_fields_are_named(#[case] source: &str, #[case] field: &str) {
-    let error = decode_google_native_content(source.as_bytes()).unwrap_err();
-    let NativeContentError::UnexpectedType { field: named } = error else {
-        panic!("unexpected error {error}");
-    };
-    assert_eq!(named, field);
+#[case::candidates_object(r#"{"candidates":{"a":1}}"#)]
+#[case::candidate_number(r#"{"candidates":[7]}"#)]
+#[case::candidate_null(r#"{"candidates":[null]}"#)]
+#[case::content_list(r#"{"candidates":[{"content":[]}]}"#)]
+#[case::non_integer_index(r#"{"candidates":[{"index":"first"}]}"#)]
+#[case::response_id(r#"{"responseId":7}"#)]
+fn response_keeps_every_field_it_cannot_widen(#[case] source: &str) {
+    assert_eq!(rendered(&response_of(source)), json_of(source));
 }
 
 #[test]
-fn decoded_usage_and_parts_use_the_shared_records() {
+fn decoded_candidates_use_the_shared_records() {
     let response = response_of(
-        r#"{"candidates":[{"content":{"parts":[{"text":"hello"},{"thought":true}]}}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"totalTokenCount":5}}"#,
+        r#"{"candidates":[{"content":{"parts":[{"text":"hello"},{"thought":true}]},"finishReason":"STOP","xUnknown":1}]}"#,
     );
-    let usage = response.usage().unwrap().unwrap();
-    assert_eq!(usage.prompt_token_count, 3);
-    assert_eq!(usage.candidates_token_count, 2);
-    assert_eq!(usage.total_token_count, 5);
-    let candidate = response
-        .candidates
-        .as_ref()
-        .and_then(|candidates| candidates.first())
-        .unwrap();
-    let parts = candidate.content.as_ref().unwrap().parts().unwrap();
+    let candidates = response.candidates().unwrap();
+    let candidate = candidates.first().unwrap();
+    let parts = candidate.content.as_ref().unwrap().parts.as_ref().unwrap();
     assert_eq!(parts.len(), 2);
     assert_eq!(
         parts.first().and_then(|part| part.text.as_deref()),
         Some("hello")
     );
+    assert_eq!(candidate.finish_reason.as_deref(), Some("STOP"));
+    assert!(candidate.metadata.contains_key("xUnknown"));
+}
+
+#[test]
+fn decoded_usage_uses_the_shared_record() {
+    let response = response_of(
+        r#"{"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"totalTokenCount":5}}"#,
+    );
+    let usage = response.usage().unwrap().unwrap();
+    assert_eq!(usage.prompt_token_count, 3);
+    assert_eq!(usage.candidates_token_count, 2);
+    assert_eq!(usage.total_token_count, 5);
 }
 
 #[test]
@@ -515,7 +491,7 @@ fn the_transform_retains_the_raw_status_and_headers() {
     let native = transform_response(&raw).unwrap();
     assert_eq!(native.status, 200);
     assert_eq!(native.headers, headers);
-    assert!(native.response.candidates.unwrap().is_empty());
+    assert!(native.response.candidates().unwrap().is_empty());
 }
 
 #[test]
@@ -566,20 +542,19 @@ fn request_key(text: &str) -> NativeParams {
 #[tokio::test]
 async fn studio_auth_uses_the_request_key_and_never_reads_credentials() {
     let studio = studio_settings(None, None);
+    let vertex = VertexSettings::default();
     let catalog = catalog();
     let auth = auth(
         NativeProvider::Studio,
-        MODEL,
-        components(None, None),
+        vertex_params(None, None),
+        &vertex,
         &studio,
         request_key("request-key"),
     );
     // a Gemini call must never poll the credential lookup, so its error never surfaces
-    let target = auth_token_and_url(
-        &catalog,
-        &auth,
-        ready(Err(CredentialCacheError::MissingToken)),
-    )
+    let target = auth_token_and_url(&catalog, &auth, |_, _| {
+        ready(Err(CredentialCacheError::MissingToken))
+    })
     .await
     .unwrap();
     assert_eq!(
@@ -593,15 +568,16 @@ async fn studio_auth_uses_the_request_key_and_never_reads_credentials() {
 #[tokio::test]
 async fn studio_auth_prefers_the_request_key_over_the_environment_key() {
     let studio = studio_settings(Some("environment-key"), None);
+    let vertex = VertexSettings::default();
     let catalog = catalog();
     let auth = auth(
         NativeProvider::Studio,
-        MODEL,
-        components(None, None),
+        vertex_params(None, None),
+        &vertex,
         &studio,
         request_key("request-key"),
     );
-    let target = auth_token_and_url(&catalog, &auth, ready(Ok(access_token("", ""))))
+    let target = auth_token_and_url(&catalog, &auth, |_, _| ready(Ok(access_token("", ""))))
         .await
         .unwrap();
     assert_eq!(header(&target, X_GOOGLE_API_KEY), Some("request-key"));
@@ -610,15 +586,16 @@ async fn studio_auth_prefers_the_request_key_over_the_environment_key() {
 #[tokio::test]
 async fn studio_auth_falls_back_to_the_environment_key() {
     let studio = studio_settings(Some("environment-key"), Some("generic-key"));
+    let vertex = VertexSettings::default();
     let catalog = catalog();
     let auth = auth(
         NativeProvider::Studio,
-        MODEL,
-        components(None, None),
+        vertex_params(None, None),
+        &vertex,
         &studio,
         NativeParams::default(),
     );
-    let target = auth_token_and_url(&catalog, &auth, ready(Ok(access_token("", ""))))
+    let target = auth_token_and_url(&catalog, &auth, |_, _| ready(Ok(access_token("", ""))))
         .await
         .unwrap();
     assert_eq!(header(&target, X_GOOGLE_API_KEY), Some("environment-key"));
@@ -627,6 +604,7 @@ async fn studio_auth_falls_back_to_the_environment_key() {
 #[tokio::test]
 async fn studio_auth_prefers_the_gemini_key_after_the_plain_key() {
     let studio = studio_settings(None, Some("generic-key"));
+    let vertex = VertexSettings::default();
     let catalog = catalog();
     let keys = NativeParams {
         api_key: None,
@@ -634,38 +612,33 @@ async fn studio_auth_prefers_the_gemini_key_after_the_plain_key() {
     };
     let auth = auth(
         NativeProvider::Studio,
-        MODEL,
-        components(None, None),
+        vertex_params(None, None),
+        &vertex,
         &studio,
         keys,
     );
-    let target = auth_token_and_url(&catalog, &auth, ready(Ok(access_token("", ""))))
+    let target = auth_token_and_url(&catalog, &auth, |_, _| ready(Ok(access_token("", ""))))
         .await
         .unwrap();
     assert_eq!(header(&target, X_GOOGLE_API_KEY), Some("gemini-key"));
 }
 
 #[tokio::test]
-async fn studio_auth_refuses_a_missing_key() {
+async fn studio_auth_refuses_a_key_that_is_missing_or_not_a_string() {
     let studio = studio_settings(None, None);
+    let vertex = VertexSettings::default();
     let catalog = catalog();
-    let auth = auth(
+    let missing = auth(
         NativeProvider::Studio,
-        MODEL,
-        components(None, None),
+        vertex_params(None, None),
+        &vertex,
         &studio,
         NativeParams::default(),
     );
-    let error = auth_token_and_url(&catalog, &auth, ready(Ok(access_token("", ""))))
+    let error = auth_token_and_url(&catalog, &missing, |_, _| ready(Ok(access_token("", ""))))
         .await
         .unwrap_err();
-    assert!(matches!(error, NativeContentError::MissingStudioKey));
-}
-
-#[tokio::test]
-async fn studio_auth_refuses_a_header_map_as_the_key() {
-    let studio = studio_settings(None, None);
-    let catalog = catalog();
+    assert!(matches!(error, NativeContentError::StudioKey));
     let keys = NativeParams {
         api_key: Some(AuthValue::Headers(BTreeMap::from([(
             X_GOOGLE_API_KEY.to_owned(),
@@ -673,41 +646,37 @@ async fn studio_auth_refuses_a_header_map_as_the_key() {
         )]))),
         gemini_api_key: None,
     };
-    let auth = auth(
+    let mapped = auth(
         NativeProvider::Studio,
-        MODEL,
-        components(None, None),
+        vertex_params(None, None),
+        &vertex,
         &studio,
         keys,
     );
-    let error = auth_token_and_url(&catalog, &auth, ready(Ok(access_token("", ""))))
-        .await
-        .unwrap_err();
-    assert!(matches!(error, NativeContentError::StudioKeyNotText));
+    let header_error =
+        auth_token_and_url(&catalog, &mapped, |_, _| ready(Ok(access_token("", ""))))
+            .await
+            .unwrap_err();
+    assert!(matches!(header_error, NativeContentError::StudioKey));
 }
 
 #[tokio::test]
 async fn vertex_auth_uses_the_resolved_project_and_a_bearer_token() {
     let studio = studio_settings(None, None);
+    let vertex = VertexSettings::default();
     let catalog = catalog();
-    let auth = NativeAuth {
-        provider: NativeProvider::Vertex,
-        model: MODEL,
-        api_base: None,
-        stream: false,
-        components: VertexComponents {
-            credentials: None,
-            project: Some("configured-project"),
-            location: Some("us-central1"),
-        },
-        studio: &studio,
-        studio_keys: NativeParams::default(),
-    };
-    let target = auth_token_and_url(
-        &catalog,
-        &auth,
-        ready(Ok(access_token("access-token", "resolved-project"))),
-    )
+    let auth = auth(
+        NativeProvider::Vertex,
+        vertex_params(Some("configured-project"), Some("us-central1")),
+        &vertex,
+        &studio,
+        NativeParams::default(),
+    );
+    let target = auth_token_and_url(&catalog, &auth, |credentials, project| {
+        assert!(credentials.is_none());
+        assert_eq!(project, Some("configured-project"));
+        ready(Ok(access_token("access-token", "resolved-project")))
+    })
     .await
     .unwrap();
     assert_eq!(
@@ -726,89 +695,74 @@ async fn vertex_auth_uses_the_resolved_project_and_a_bearer_token() {
 #[tokio::test]
 async fn vertex_auth_streams_with_alt_sse() {
     let studio = studio_settings(None, None);
+    let vertex = VertexSettings::default();
     let catalog = catalog();
-    let auth = NativeAuth {
-        provider: NativeProvider::Vertex,
-        model: MODEL,
-        api_base: None,
-        stream: true,
-        components: components(Some("proj"), Some("us-central1")),
-        studio: &studio,
-        studio_keys: NativeParams::default(),
-    };
-    let target = auth_token_and_url(&catalog, &auth, ready(Ok(access_token("tok", "proj"))))
-        .await
-        .unwrap();
+    let mut auth = auth(
+        NativeProvider::Vertex,
+        vertex_params(Some("proj"), Some("us-central1")),
+        &vertex,
+        &studio,
+        NativeParams::default(),
+    );
+    auth.stream = true;
+    let target = auth_token_and_url(&catalog, &auth, |_, _| {
+        ready(Ok(access_token("tok", "proj")))
+    })
+    .await
+    .unwrap();
     assert!(target.url.ends_with(":streamGenerateContent?alt=sse"));
 }
 
 #[tokio::test]
-async fn vertex_auth_takes_the_location_from_the_settings() {
+async fn vertex_auth_takes_the_project_and_location_from_the_settings() {
     let studio = studio_settings(None, None);
     let vertex = VertexSettings {
-        project: None,
+        project: Some("setting-project".to_owned()),
         location: Some("europe-west4".to_owned()),
         credentials: None,
         adc: AdcEnvironment::default(),
     };
     let catalog = catalog();
-    let params = vertex_params(None, None);
-    let auth = NativeAuth {
-        provider: NativeProvider::Vertex,
-        model: MODEL,
-        api_base: None,
-        stream: false,
-        components: vertex_components(params, &vertex),
-        studio: &studio,
-        studio_keys: NativeParams::default(),
-    };
-    let target = auth_token_and_url(&catalog, &auth, ready(Ok(access_token("tok", "proj"))))
-        .await
-        .unwrap();
+    let auth = auth(
+        NativeProvider::Vertex,
+        vertex_params(None, None),
+        &vertex,
+        &studio,
+        NativeParams::default(),
+    );
+    let target = auth_token_and_url(&catalog, &auth, |credentials, project| {
+        assert!(credentials.is_none());
+        assert_eq!(project, Some("setting-project"));
+        ready(Ok(access_token("tok", project.unwrap_or_default())))
+    })
+    .await
+    .unwrap();
     assert!(
         target
             .url
             .starts_with("https://europe-west4-aiplatform.googleapis.com/")
     );
+    assert!(target.url.contains("/projects/setting-project/"));
 }
 
 #[tokio::test]
 async fn vertex_auth_propagates_a_token_error() {
     let studio = studio_settings(None, None);
+    let vertex = VertexSettings::default();
     let catalog = catalog();
-    let auth = NativeAuth {
-        provider: NativeProvider::Vertex,
-        model: MODEL,
-        api_base: None,
-        stream: false,
-        components: components(Some("proj"), Some("us-central1")),
-        studio: &studio,
-        studio_keys: NativeParams::default(),
-    };
-    let failure = async { Err(CredentialCacheError::MissingToken) };
-    let error = auth_token_and_url(&catalog, &auth, failure)
-        .await
-        .unwrap_err();
-    assert!(matches!(error, NativeContentError::Credentials { .. }));
-}
-
-#[test]
-fn components_read_credentials_project_and_location() {
-    let vertex = VertexSettings {
-        project: Some("setting-project".to_owned()),
-        location: Some("setting-location".to_owned()),
-        credentials: None,
-        adc: AdcEnvironment::default(),
-    };
-    let empty = vertex_components(vertex_params(None, None), &vertex);
-    assert_eq!(empty.project, Some("setting-project"));
-    assert_eq!(empty.location, Some("setting-location"));
-    let explicit = vertex_components(
-        vertex_params(Some("request-project"), Some("request-location")),
+    let auth = auth(
+        NativeProvider::Vertex,
+        vertex_params(Some("proj"), Some("us-central1")),
         &vertex,
+        &studio,
+        NativeParams::default(),
     );
-    assert_eq!(explicit.project, Some("request-project"));
-    assert_eq!(explicit.location, Some("request-location"));
+    let error = auth_token_and_url(&catalog, &auth, |_, _| async {
+        Err(CredentialCacheError::MissingToken)
+    })
+    .await
+    .unwrap_err();
+    assert!(matches!(error, NativeContentError::Credentials { .. }));
 }
 
 #[rstest]

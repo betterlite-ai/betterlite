@@ -35,7 +35,7 @@ enum Call {
     Response(Box<ResponseCall>),
 }
 
-// the case carries a model for the Python config, which the mapping itself ignores
+// a case carries a model for the Python config, which the mapping itself ignores
 #[derive(Debug, Deserialize)]
 struct OptionalParamsCall {
     provider: Provider,
@@ -56,7 +56,7 @@ struct RequestCall {
     system_instruction: Option<Json>,
 }
 
-// the response transform is inherited from the Studio config by both providers, so the case's provider and model select only the Python instance
+// the response transform is inherited by both providers from the Studio config, so the case's provider and model select only the Python instance
 #[derive(Debug, Deserialize)]
 struct ResponseCall {
     status: u16,

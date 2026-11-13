@@ -13,29 +13,33 @@ pub const RESPONSE_JSON_SCHEMA_KEYS: [&str; 2] = ["responseJsonSchema", "respons
 // VertexAIGoogleGenAIConfig._camel_to_snake: an underscore goes before every ASCII capital but the first
 #[must_use]
 pub fn camel_to_snake(text: &str) -> String {
-    let mut result = String::with_capacity(text.len());
-    for (index, character) in text.char_indices() {
-        if index > 0 && character.is_ascii_uppercase() {
-            result.push('_');
-        }
-        result.extend(character.to_lowercase());
-    }
-    result
+    text.char_indices()
+        .fold(String::new(), |mut snake, (position, letter)| {
+            snake.extend((position > 0 && letter.is_ascii_uppercase()).then_some('_'));
+            snake.extend(letter.to_lowercase());
+            snake
+        })
 }
 
-// GoogleGenAIConfig's _snake_to_camel: each later component uppercases its first letter and lowercases the rest
+// GoogleGenAIConfig's _snake_to_camel: the first component stays as written, each later one is capitalized
 #[must_use]
 pub fn snake_to_camel(text: &str) -> String {
-    let mut parts = text.split('_');
-    let mut result = parts.next().unwrap_or_default().to_owned();
-    for part in parts {
-        let mut characters = part.chars();
-        if let Some(first) = characters.next() {
-            result.extend(first.to_uppercase());
-            result.push_str(&characters.as_str().to_lowercase());
-        }
-    }
-    result
+    let (head, tail) = text.split_once('_').unwrap_or((text, ""));
+    tail.split('_').fold(head.to_owned(), |mut camel, part| {
+        camel.push_str(&capitalized(part));
+        camel
+    })
+}
+
+fn capitalized(component: &str) -> String {
+    let mut letters = component.chars();
+    let mut word: String = letters
+        .next()
+        .into_iter()
+        .flat_map(char::to_uppercase)
+        .collect();
+    word.push_str(&letters.as_str().to_lowercase());
+    word
 }
 
 // GoogleGenAIConfig.map_generate_content_optional_params: unknown keys are dropped and kept keys leave in camelCase

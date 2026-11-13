@@ -11,8 +11,6 @@ pub enum NativeContentError {
     ResponseTooLarge { size: usize, limit: usize },
     #[error("the native response root is not a JSON object")]
     ResponseNotObject,
-    #[error("the native response's {field} field has a type the response does not declare")]
-    UnexpectedType { field: &'static str },
     #[error("the native response is not valid JSON")]
     Json {
         #[source]
@@ -30,10 +28,8 @@ pub enum NativeContentError {
         #[from]
         source: VertexSchemaError,
     },
-    #[error("the Gemini API key is missing")]
-    MissingStudioKey,
-    #[error("the Gemini API key is not a single string")]
-    StudioKeyNotText,
+    #[error("the Gemini API key is missing or not a single string")]
+    StudioKey,
     #[error("the Vertex credentials could not be resolved")]
     Credentials {
         #[source]
