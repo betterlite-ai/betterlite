@@ -1,3 +1,5 @@
+import contextlib
+import io
 from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict
 
 import litellm
@@ -106,12 +108,13 @@ def answer(step: Step) -> Json:
         non_default_params = step["non_default_params"]
         optional_params = dict(step["optional_params"])
     try:
-        mapped = TYPED_CONFIG.map_openai_params(
-            non_default_params=non_default_params,
-            optional_params=optional_params,
-            model=model,
-            drop_params=False,
-        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            mapped = TYPED_CONFIG.map_openai_params(
+                non_default_params=non_default_params,
+                optional_params=optional_params,
+                model=model,
+                drop_params=False,
+            )
     except ValueError:
         # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L867
         return {"error": {"status": 500}}
@@ -134,5 +137,6 @@ def run(input_value: Input) -> Json:
             "supports_minimal_reasoning_effort": supported,
         }
         model_cost: JsonObject = {name: entry}
-        litellm.register_model(model_cost)
+        with contextlib.redirect_stdout(io.StringIO()):
+            litellm.register_model(model_cost)
     return {"results": [answer(step) for step in input_value["steps"]]}
