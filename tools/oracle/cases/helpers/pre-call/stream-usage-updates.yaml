@@ -1,0 +1,16 @@
+kind: helper
+name: pre-call-stream-usage-updates
+call:
+  b8800:
+    function: stream_usage_updates
+    data:
+      stream: true
+      stream_options:
+        a: 1
+        include_usage: false
+    always_include: null
+    route_type: acompletion
+    supports: true
+env: {}
+compare:
+  ignore: []

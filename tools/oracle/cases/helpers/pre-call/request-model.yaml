@@ -1,0 +1,10 @@
+kind: helper
+name: pre-call-request-model
+call:
+  b8800:
+    function: request_model
+    data:
+      model: [gpt-4o, 7]
+env: {}
+compare:
+  ignore: []
