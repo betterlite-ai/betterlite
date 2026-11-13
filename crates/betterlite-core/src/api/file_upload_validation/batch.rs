@@ -1,7 +1,3 @@
-use std::io::Read;
-use crate::api::api_boundaries::{
-    ApiBoundariesInput, ApiLimits, EventBoundary, ItemsBoundary, JsonBoundary,
-};
 use super::codec::decode_line;
 use super::error::FileUploadValidationError;
 use super::failure::{FILE_PARAM, FILE_TOO_LARGE, FailureFields, INVALID_REQUEST};
@@ -9,6 +5,10 @@ use super::json::{self, Scan};
 use super::line_shape::LineShape;
 use super::source::FileBody;
 use super::{exceeds, megabytes};
+use crate::api::api_boundaries::{
+    ApiBoundariesInput, ApiLimits, EventBoundary, ItemsBoundary, JsonBoundary,
+};
+use std::io::Read;
 const JSONL_EXTENSION: &str = ".jsonl";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BatchValidationFailure {
@@ -60,7 +60,10 @@ impl BatchValidationFailure {
             Self::WrongExtension { filename } => format!(
                 "Invalid file format for Batch API: '{filename}'. Batch input files must be .jsonl files. The file was not forwarded to the provider."
             ),
-            Self::Empty => "Batch input file has no request lines. The file was not forwarded to the provider.".to_owned(),
+            Self::Empty => {
+                "Batch input file has no request lines. The file was not forwarded to the provider."
+                    .to_owned()
+            }
             Self::InvalidJsonLine { line_number } => format!(
                 "Batch input file line {line_number} is not valid JSON. The file was not forwarded to the provider."
             ),
@@ -152,7 +155,8 @@ fn scan(
         FileBody::Bytes(bytes) => decode_file_upload_validation(*bytes, line_shape, limits),
         FileBody::Seekable(reader) => {
             // a seekable body is read once, bounded by the JSON cap, before the same scan runs
-            let ceiling = u64::try_from(limits.max_json_bytes.saturating_add(1)).unwrap_or(u64::MAX);
+            let ceiling =
+                u64::try_from(limits.max_json_bytes.saturating_add(1)).unwrap_or(u64::MAX);
             let mut bytes = Vec::new();
             reader.take(ceiling).read_to_end(&mut bytes)?;
             decode_file_upload_validation(&bytes, line_shape, limits)

@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
+use std::collections::BTreeMap;
 pub(super) const ERROR_TYPE: &str = "invalid_request_error";
 pub(super) const INVALID_REQUEST: i64 = 400;
 pub(super) const FILE_TOO_LARGE: i64 = 413;
