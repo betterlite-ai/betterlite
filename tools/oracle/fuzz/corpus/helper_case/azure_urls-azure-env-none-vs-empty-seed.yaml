@@ -1,0 +1,9 @@
+kind: helper
+name: azure-urls-azure-env-none-vs-empty-seed
+call:
+  azure_urls:
+    azure_env_none_vs_empty:
+      - params: {tenant_id: null, client_id: ""}
+        environment: {AZURE_TENANT_ID: seed-tenant, AZURE_CLIENT_ID: seed-client}
+env: {}
+compare: {ignore: []}

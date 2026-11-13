@@ -1,0 +1,28 @@
+kind: helper
+name: anthropic-stream-state-empty-tool-arguments
+call:
+  anthropic_stream_state:
+    json_mode: false
+    speed: null
+    sync_stream: true
+    tool_name_reverse_map: {}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: setup, fields: {content_blocks: []}}
+      - {function: check_empty}
+      - {function: setup, fields: {content_blocks: [{type: content_block_delta, index: 0, delta: {type: text_delta, text: hello}}]}}
+      - {function: check_empty}
+      - {function: setup, fields: {content_blocks: [{type: content_block_delta, index: 0, delta: {type: thinking_delta, thinking: hmm}}, {type: content_block_delta, index: 0, delta: {type: input_json_delta, partial_json: '{"a":1}'}}]}}
+      - {function: check_empty}
+      - {function: setup, fields: {content_blocks: [{type: content_block_delta, index: 0, delta: {type: input_json_delta, partial_json: ""}}]}}
+      - {function: check_empty}
+      - {function: setup, fields: {content_blocks: [{type: content_block_delta, index: 0, delta: {type: input_json_delta}}]}}
+      - {function: check_empty}
+      - {function: setup, fields: {content_blocks: [{type: content_block_delta, index: 0, delta: {type: input_json_delta, partial_json: '{"a":1}'}}]}}
+      - {function: check_empty}
+      - {function: setup, fields: {content_blocks: [{type: content_block_delta, index: 0, delta: {type: input_json_delta, partial_json: "   "}}]}}
+      - {function: check_empty}
+      - {function: setup, fields: {content_blocks: [{type: content_block_delta, index: 0, delta: {type: text_delta, partial_json: x}}, {type: content_block_delta, index: 0, delta: {type: input_json_delta}}]}}
+      - {function: check_empty}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,4 @@
+litellm_settings:
+  max_ui_session_budget: os.environ/MAX_UI_SESSION_BUDGET
+
+model_list: []

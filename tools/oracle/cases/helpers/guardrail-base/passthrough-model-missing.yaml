@@ -1,0 +1,6 @@
+kind: helper
+name: passthrough-model-missing
+call:
+  b5471: {"function": "passthrough", "guardrail_name": null, "message": "nope", "request_data": {"messages": []}, "detection_info": null}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,25 @@
+kind: helper
+name: chat-refusal-precedence
+call:
+  messages_options:
+    fixture:
+      model_cost: {}
+      packaged: {}
+    steps:
+      - {function: openai_chat_refusal_text, refusal: "no", provider_specific_fields: {refusal: other}}
+      - {function: openai_chat_refusal_text, refusal: null, provider_specific_fields: {refusal: other}}
+      - {function: openai_chat_refusal_text, refusal: "", provider_specific_fields: {refusal: other}}
+      - {function: openai_chat_refusal_text, refusal: null, provider_specific_fields: {refusal: ""}}
+      - {function: openai_chat_refusal_text, refusal: null, provider_specific_fields: {}}
+      - {function: openai_chat_refusal_text, refusal: null, provider_specific_fields: null}
+      - {function: responses_output_refusal_text, output: []}
+      - {function: responses_output_refusal_text, output: [{kind: raw, value: {type: message, content: [{type: output_text, text: hi}, {type: refusal, refusal: "no"}]}}]}
+      - {function: responses_output_refusal_text, output: [{kind: raw, value: {type: message, content: [{type: refusal, refusal: first}]}}, {kind: raw, value: {type: message, content: [{type: refusal, refusal: second}]}}]}
+      - {function: responses_output_refusal_text, output: [{kind: raw, value: {type: reasoning, content: [{type: refusal, refusal: skipped}]}}]}
+      - {function: responses_output_refusal_text, output: [{kind: raw, value: {type: message, content: [{type: refusal, refusal: ""}, {type: refusal, refusal: later}]}}]}
+      - {function: responses_output_refusal_text, output: [{kind: raw, value: {type: message, content: []}}]}
+      - {function: responses_output_refusal_text, output: [{kind: raw, value: {type: message}}]}
+      - {function: responses_output_refusal_text, output: [{kind: typed, value: {type: reasoning, id: r1, summary: []}}, {kind: typed, value: {type: message, id: m1, role: assistant, status: completed, content: [{type: output_text, text: hi, annotations: []}, {type: refusal, refusal: typed no}]}}]}
+      - {function: responses_output_refusal_text, output: [{kind: typed, value: {type: message, id: m1, role: assistant, status: completed, content: [{type: output_text, text: hi, annotations: []}]}}]}
+env: {}
+compare: {ignore: []}

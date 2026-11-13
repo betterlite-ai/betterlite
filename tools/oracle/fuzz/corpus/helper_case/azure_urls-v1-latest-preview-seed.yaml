@@ -1,0 +1,11 @@
+kind: helper
+name: azure-urls-v1-latest-preview-seed
+call:
+  azure_urls:
+    v1_latest_preview:
+      - params: {api_base: https://seed.example, api_version: v1}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+env: {}
+compare: {ignore: []}

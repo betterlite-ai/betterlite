@@ -1,0 +1,56 @@
+kind: helper
+name: jwt-claims-team-array
+call:
+  jwt_claims:
+    scenarios:
+      - settings: {team_id_jwt_field: team, team_ids_jwt_field: groups, team_id_default: default-team}
+        trusted_issuers: []
+        claims: {groups: [team-a, team-b], team: [team-c, team-a]}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_id_jwt_field: team, team_ids_jwt_field: groups}
+        trusted_issuers: []
+        claims: {groups: team-a, team: team-c}
+        default_value: fallback
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_ids_jwt_field: groups}
+        trusted_issuers: []
+        claims: {groups: [team-a], team: raw-team}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_id_jwt_field: team, team_ids_jwt_field: groups, team_id_default: default-team}
+        trusted_issuers: []
+        claims: {groups: [team-a], team: []}
+        default_value: fallback
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_id_jwt_field: team, team_ids_jwt_field: groups}
+        trusted_issuers: []
+        claims: {groups: [team-a]}
+        default_value: fallback
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_id_jwt_field: team, team_ids_jwt_field: groups}
+        trusted_issuers: [https://idp.example]
+        claims: {_litellm_jwt_issuer: https://idp.example, _litellm_team_ids: [trusted-a, trusted-b], _litellm_team_id: [trusted-c, trusted-a], groups: [raw-a], team: raw-team}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_id_jwt_field: team, team_ids_jwt_field: groups}
+        trusted_issuers: [https://idp.example]
+        claims: {_litellm_jwt_issuer: https://idp.example, _litellm_team_ids: trusted-a, _litellm_team_id: trusted-b}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_id_jwt_field: team, team_ids_jwt_field: groups}
+        trusted_issuers: [https://idp.example]
+        claims: {_litellm_jwt_issuer: https://idp.example, _litellm_team_id: null, team: raw-team}
+        default_value: fallback
+        valid_user_email: null
+        leeway: 0
+    tokens: []
+env: {}
+compare: {ignore: []}

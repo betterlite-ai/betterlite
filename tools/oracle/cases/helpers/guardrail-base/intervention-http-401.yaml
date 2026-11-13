@@ -1,0 +1,6 @@
+kind: helper
+name: intervention-http-401
+call:
+  b5471: {"function": "intervention", "kind": "http", "status": 401}
+env: {}
+compare: {ignore: []}

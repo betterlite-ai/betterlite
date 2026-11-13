@@ -1,0 +1,6 @@
+kind: helper
+name: tool-name-anthropic-dual-names
+call:
+  b3663: {"function": "tool_names", "tool": {"type": "function", "name": "flat", "function": {"name": "nested"}}}
+env: {}
+compare: {ignore: []}

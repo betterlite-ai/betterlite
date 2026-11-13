@@ -1,0 +1,19 @@
+kind: helper
+name: azure-env-none-vs-empty
+call:
+  azure_urls:
+    azure_env_none_vs_empty:
+      - params: {tenant_id: explicit-tenant, client_id: explicit-client, client_secret: explicit-secret, azure_username: explicit-user, azure_password: explicit-password, azure_scope: explicit-scope}
+        environment: {AZURE_TENANT_ID: environment-tenant, AZURE_CLIENT_ID: environment-client, AZURE_CLIENT_SECRET: environment-secret, AZURE_USERNAME: environment-user, AZURE_PASSWORD: environment-password, AZURE_SCOPE: environment-scope}
+      - params: {tenant_id: "", client_id: "", client_secret: "", azure_username: "", azure_password: "", azure_scope: ""}
+        environment: {AZURE_TENANT_ID: environment-tenant, AZURE_CLIENT_ID: environment-client, AZURE_CLIENT_SECRET: environment-secret, AZURE_USERNAME: environment-user, AZURE_PASSWORD: environment-password, AZURE_SCOPE: environment-scope}
+      - params: {tenant_id: null, client_id: null, client_secret: null, azure_username: null, azure_password: null, azure_scope: null}
+        environment: {AZURE_TENANT_ID: environment-tenant, AZURE_CLIENT_ID: environment-client, AZURE_CLIENT_SECRET: environment-secret, AZURE_USERNAME: environment-user, AZURE_PASSWORD: environment-password, AZURE_SCOPE: environment-scope}
+      - params: {}
+        environment: {AZURE_TENANT_ID: environment-tenant, AZURE_CLIENT_ID: environment-client, AZURE_CLIENT_SECRET: environment-secret, AZURE_USERNAME: environment-user, AZURE_PASSWORD: environment-password, AZURE_SCOPE: environment-scope}
+      - params: {}
+        environment: {}
+      - params: {tenant_id: explicit-tenant, client_id: null, client_secret: "", azure_username: explicit-user}
+        environment: {AZURE_TENANT_ID: environment-tenant, AZURE_CLIENT_ID: environment-client, AZURE_CLIENT_SECRET: environment-secret, AZURE_USERNAME: environment-user, AZURE_PASSWORD: environment-password, AZURE_SCOPE: environment-scope}
+env: {}
+compare: {ignore: []}

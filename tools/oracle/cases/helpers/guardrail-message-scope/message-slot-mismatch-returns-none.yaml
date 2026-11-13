@@ -1,0 +1,6 @@
+kind: helper
+name: message-slot-mismatch-returns-none
+call:
+  b3663: {"function": "slots", "message": {"role": "user", "content": [{"type": "text", "text": "one"}, {"type": "text", "text": "two"}]}, "texts": ["only"]}
+env: {}
+compare: {ignore: []}
