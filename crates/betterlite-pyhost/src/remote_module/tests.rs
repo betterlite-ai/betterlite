@@ -5,11 +5,13 @@ use std::fs;
 use std::io;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use pyo3::types::PyAnyMethods as _;
 use tracing::subscriber::set_global_default;
 
-use super::{FetchError, ModuleFetcher, ModuleRequest, RemoteError};
+use super::{ModuleFetcher, ModuleRequest, RemoteError};
+use crate::blocking_work::WorkTracker;
 use crate::host::{DEFAULT_SHUTDOWN_GRACE, HostConfig, PythonHost};
 use crate::instance_loader::{InstanceLoader, LoadError};
 use crate::instance_ref::Storage;
@@ -38,34 +40,36 @@ impl Recorder {
 }
 
 impl ModuleFetcher for Recorder {
-    fn fetch(&self, request: &ModuleRequest) -> Result<(), FetchError> {
+    type Error = io::Error;
+
+    fn fetch(&self, request: &ModuleRequest) -> Result<(), Self::Error> {
         match self.requests.lock() {
             Ok(mut requests) => requests.push(request.clone()),
             Err(poisoned) => poisoned.into_inner().push(request.clone()),
         }
         if self.failure {
-            return Err(FetchError {
-                message: "the bucket refused the read".to_owned(),
-            });
+            return Err(io::Error::other("the bucket refused the read"));
         }
         let Some(body) = self.body else {
             return Ok(());
         };
-        fs::write(&request.local_path, body).map_err(|error| FetchError {
-            message: error.to_string(),
-        })
+        fs::write(&request.local_path, body)
     }
 }
 
-fn loader(fetcher: Arc<Recorder>) -> (PythonHost, InstanceLoader) {
+fn loader(fetcher: Arc<Recorder>) -> (PythonHost, InstanceLoader<io::Error>) {
     let config = HostConfig {
         module_dirs: Vec::new(),
         shutdown_grace: DEFAULT_SHUTDOWN_GRACE,
     };
     let host = PythonHost::start(&config).unwrap();
-    let downloader: Arc<dyn ModuleFetcher> = fetcher;
+    let downloader: Arc<dyn ModuleFetcher<Error = io::Error>> = fetcher;
     let loader = InstanceLoader::new(host.clone(), downloader);
     (host, loader)
+}
+
+fn tracker() -> WorkTracker {
+    WorkTracker::new(2, Duration::from_secs(30))
 }
 
 fn config_path() -> &'static Path {
@@ -113,7 +117,11 @@ async fn fetches_the_object_and_executes_it_under_the_module_path() {
     let recorder = Recorder::new(Some("name = __name__\ninstance = name\n"), false);
     let (host, loader) = loader(Arc::clone(&recorder));
     let instance = loader
-        .load("s3://bucket/loggers/custom.instance", Some(config_path()))
+        .load(
+            &tracker(),
+            "s3://bucket/loggers/custom.instance",
+            Some(config_path()),
+        )
         .await
         .unwrap();
     let text = host.attach(|py| instance.object.bind(py).extract::<String>().unwrap());
@@ -135,7 +143,11 @@ async fn a_bucket_load_logs_its_start_and_its_success() {
     let recorder = Recorder::new(Some("instance = 1\n"), false);
     let (_, loader) = loader(Arc::clone(&recorder));
     loader
-        .load("s3://bucket/loggers/custom.instance", Some(config_path()))
+        .load(
+            &tracker(),
+            "s3://bucket/loggers/custom.instance",
+            Some(config_path()),
+        )
         .await
         .unwrap();
     let text = captured.text();
@@ -154,7 +166,11 @@ async fn a_gcs_url_uses_the_gcs_storage() {
     let recorder = Recorder::new(Some("instance = 1\n"), false);
     let (_, loader) = loader(Arc::clone(&recorder));
     loader
-        .load("gcs://bucket/pkg/mod.instance", Some(config_path()))
+        .load(
+            &tracker(),
+            "gcs://bucket/pkg/mod.instance",
+            Some(config_path()),
+        )
         .await
         .unwrap();
     let requests = recorder.requests();
@@ -168,7 +184,11 @@ async fn a_failed_fetch_reads_as_the_download_error() {
     let recorder = Recorder::new(None, true);
     let (_, loader) = loader(Arc::clone(&recorder));
     let error = loader
-        .load("s3://bucket/loggers/custom.instance", Some(config_path()))
+        .load(
+            &tracker(),
+            "s3://bucket/loggers/custom.instance",
+            Some(config_path()),
+        )
         .await
         .unwrap_err();
     assert_eq!(
@@ -189,7 +209,11 @@ async fn a_module_that_raises_is_wrapped_with_its_message() {
     let recorder = Recorder::new(Some("raise ValueError('boom')\n"), false);
     let (_, loader) = loader(Arc::clone(&recorder));
     let error = loader
-        .load("s3://bucket/loggers/custom.instance", Some(config_path()))
+        .load(
+            &tracker(),
+            "s3://bucket/loggers/custom.instance",
+            Some(config_path()),
+        )
         .await
         .unwrap_err();
     assert_eq!(
@@ -203,7 +227,11 @@ async fn a_missing_instance_is_wrapped_with_the_runtime_text() {
     let recorder = Recorder::new(Some("other = 1\n"), false);
     let (_, loader) = loader(Arc::clone(&recorder));
     let error = loader
-        .load("s3://bucket/loggers/custom.instance", Some(config_path()))
+        .load(
+            &tracker(),
+            "s3://bucket/loggers/custom.instance",
+            Some(config_path()),
+        )
         .await
         .unwrap_err();
     let text = error.to_string();
@@ -219,7 +247,11 @@ async fn the_temp_file_is_removed_after_a_failing_module() {
     let recorder = Recorder::new(Some("raise ValueError('boom')\n"), false);
     let (_, loader) = loader(Arc::clone(&recorder));
     let error = loader
-        .load("s3://bucket/loggers/custom.instance", Some(config_path()))
+        .load(
+            &tracker(),
+            "s3://bucket/loggers/custom.instance",
+            Some(config_path()),
+        )
         .await
         .unwrap_err();
     let requests = recorder.requests();
@@ -236,7 +268,7 @@ async fn a_remote_value_without_a_config_path_is_refused() {
     let recorder = Recorder::new(Some("instance = 1\n"), false);
     let (_, loader) = loader(Arc::clone(&recorder));
     let error = loader
-        .load("s3://bucket/loggers/custom.instance", None)
+        .load(&tracker(), "s3://bucket/loggers/custom.instance", None)
         .await
         .unwrap_err();
     assert_eq!(
@@ -252,7 +284,7 @@ async fn a_url_error_is_wrapped_before_any_download() {
     let recorder = Recorder::new(Some("instance = 1\n"), false);
     let (_, loader) = loader(Arc::clone(&recorder));
     let error = loader
-        .load("s3://bucket-only", Some(config_path()))
+        .load(&tracker(), "s3://bucket-only", Some(config_path()))
         .await
         .unwrap_err();
     assert_eq!(
@@ -267,7 +299,7 @@ async fn a_py_extension_error_is_wrapped_before_any_download() {
     let recorder = Recorder::new(Some("instance = 1\n"), false);
     let (_, loader) = loader(Arc::clone(&recorder));
     let error = loader
-        .load("gcs://bucket/mod.py", Some(config_path()))
+        .load(&tracker(), "gcs://bucket/mod.py", Some(config_path()))
         .await
         .unwrap_err();
     assert_eq!(

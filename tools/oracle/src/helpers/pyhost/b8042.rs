@@ -1,11 +1,13 @@
+use std::error::Error;
 use std::ffi::CStr;
 use std::path::Path;
 use std::sync::Arc;
 
+use betterlite_pyhost::blocking_work::WorkTracker;
 use betterlite_pyhost::callable_handle::CallableHandle;
 use betterlite_pyhost::host::{HostConfig, PythonHost};
-use betterlite_pyhost::instance_loader::{InstanceLoader, LoadError, LoadedObject};
-use betterlite_pyhost::remote_module::{FetchError, ModuleFetcher, ModuleRequest};
+use betterlite_pyhost::instance_loader::{InstanceLoader, LoadError, LoadedObject, LocalError};
+use betterlite_pyhost::remote_module::{ModuleFetcher, ModuleRequest};
 use betterlite_pyhost::return_check::{ReturnCheckError, check_literal_true_return};
 use pyo3::Bound;
 use pyo3::types::{PyAnyMethods as _, PyModule};
@@ -46,10 +48,10 @@ pub(crate) enum Fixture {
 struct NoFetch;
 
 impl ModuleFetcher for NoFetch {
-    fn fetch(&self, _request: &ModuleRequest) -> Result<(), FetchError> {
-        Err(FetchError {
-            message: "the oracle helper downloads nothing".to_owned(),
-        })
+    type Error = std::io::Error;
+
+    fn fetch(&self, _request: &ModuleRequest) -> Result<(), Self::Error> {
+        Err(std::io::Error::other("the oracle helper downloads nothing"))
     }
 }
 
@@ -74,9 +76,11 @@ fn load(host: &PythonHost, value: &str, config_file_path: Option<&str>) -> Helpe
         .enable_all()
         .build()
         .map_err(|error| helper_error("PyHostError", error.to_string()))?;
-    let loader = InstanceLoader::new(host.clone(), Arc::new(NoFetch));
+    let fetcher: Arc<dyn ModuleFetcher<Error = std::io::Error>> = Arc::new(NoFetch);
+    let loader = InstanceLoader::new(host.clone(), fetcher);
+    let tracker = WorkTracker::default();
     let config = config_file_path.map(Path::new);
-    match runtime.block_on(loader.load(value, config)) {
+    match runtime.block_on(loader.load(&tracker, value, config)) {
         Ok(instance) => describe(host, &instance),
         Err(error) => Ok(describe_error(&error)),
     }
@@ -101,16 +105,22 @@ fn describe(host: &PythonHost, loaded: &LoadedObject) -> HelperResult {
     })
 }
 
-fn describe_error(error: &LoadError) -> Value {
+fn describe_error<E>(error: &LoadError<E>) -> Value
+where
+    E: Error + Send + Sync + 'static,
+{
     match error {
-        LoadError::Reference(reference) => failure_json("ValueError", &reference.to_string()),
         LoadError::RemoteNeedsConfigPath => failure_json("ValueError", &error.to_string()),
-        LoadError::Python(failure) => failure_json(&failure.type_name, &failure.message),
-        LoadError::Import { .. }
-        | LoadError::UnsafeModulePath { .. }
-        | LoadError::Remote { .. }
-        | LoadError::PathNotUtf8 { .. }
-        | LoadError::Work(_) => failure_json("ImportError", &error.to_string()),
+        LoadError::Local(LocalError::Python(failure)) => {
+            failure_json(&failure.type_name, &failure.message)
+        }
+        LoadError::Local(
+            LocalError::Import { .. }
+            | LocalError::UnsafeModulePath { .. }
+            | LocalError::Work(_)
+            | LocalError::PathNotUtf8 { .. },
+        )
+        | LoadError::Remote { .. } => failure_json("ImportError", &error.to_string()),
     }
 }
 

@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,21 +9,31 @@ use crate::blocking_work::{WorkError, WorkTracker};
 use crate::call_error::{CallError, PythonError};
 use crate::callable_handle::CallableHandle;
 use crate::host::PythonHost;
-use crate::instance_ref::{InstanceRef, RefError, RemoteModule};
+use crate::instance_ref::{InstanceRef, RemoteModule};
 use crate::remote_module::{ModuleFetcher, RemoteError, load_remote};
-
-pub(crate) mod local_file;
 
 const LOAD_DEADLINE: Duration = Duration::from_secs(60);
 
+pub(crate) mod local_file;
+
 #[derive(Debug, thiserror::Error)]
-pub enum LoadError {
-    #[error(transparent)]
-    Reference(#[from] RefError),
+pub enum LoadError<E: Error> {
     #[error(
         "Remote module loading (s3://, gcs://) is only permitted from the config-file load path. Register the module under ``litellm_settings`` in your config.yaml instead."
     )]
     RemoteNeedsConfigPath,
+    #[error(transparent)]
+    Local(#[from] LocalError),
+    #[error("Failed to load custom logger from {url}: {source}")]
+    Remote {
+        url: String,
+        #[source]
+        source: Box<RemoteError<E>>,
+    },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum LocalError {
     #[error("Could not import {instance_name} from {module_name}")]
     Import {
         module_name: String,
@@ -37,12 +48,6 @@ pub enum LoadError {
     },
     #[error(transparent)]
     Python(Box<PythonFailure>),
-    #[error("Failed to load custom logger from {url}: {source}")]
-    Remote {
-        url: String,
-        #[source]
-        source: Box<RemoteError>,
-    },
     #[error(transparent)]
     Work(#[from] WorkError),
     #[error("the module file {path:?} is not valid UTF-8, so Python cannot import it")]
@@ -83,54 +88,67 @@ impl LoadedObject {
     }
 }
 
-pub struct InstanceLoader {
+pub struct InstanceLoader<E: Error + Send + Sync + 'static> {
     host: PythonHost,
-    fetcher: Arc<dyn ModuleFetcher>,
-    tracker: WorkTracker,
+    fetcher: Arc<dyn ModuleFetcher<Error = E>>,
 }
 
-impl InstanceLoader {
+struct LocalJob {
+    module_name: String,
+    instance_name: String,
+    config: Option<PathBuf>,
+}
+
+impl<E: Error + Send + Sync + 'static> InstanceLoader<E> {
     #[must_use]
-    pub fn new(host: PythonHost, fetcher: Arc<dyn ModuleFetcher>) -> Self {
-        // the loader runs user imports off the async workers through a pool of its own
-        Self {
-            host,
-            fetcher,
-            tracker: WorkTracker::default(),
-        }
+    pub fn new(host: PythonHost, fetcher: Arc<dyn ModuleFetcher<Error = E>>) -> Self {
+        // the fetcher is a trait object, so the loader never names the downloading crate
+        Self { host, fetcher }
     }
 
     pub async fn load(
         &self,
+        tracker: &WorkTracker,
         value: &str,
         config_file_path: Option<&Path>,
-    ) -> Result<LoadedObject, LoadError> {
+    ) -> Result<LoadedObject, LoadError<E>> {
         // the config load waits as long as an import can take
-        self.load_within(value, config_file_path, LOAD_DEADLINE)
+        self.load_within(tracker, value, config_file_path, LOAD_DEADLINE)
             .await
     }
 
     pub async fn load_within(
         &self,
+        tracker: &WorkTracker,
         value: &str,
         config_file_path: Option<&Path>,
         deadline: Duration,
-    ) -> Result<LoadedObject, LoadError> {
+    ) -> Result<LoadedObject, LoadError<E>> {
         let remote = value.starts_with("s3://") || value.starts_with("gcs://");
         if remote && config_file_path.is_none() {
             return Err(LoadError::RemoteNeedsConfigPath);
         }
-        let reference = InstanceRef::parse(value).map_err(|error| wrap_reference(error, value))?;
+        let reference = InstanceRef::parse(value).map_err(|source| LoadError::Remote {
+            url: value.to_owned(),
+            source: Box::new(RemoteError::Reference(source)),
+        })?;
         let config = config_file_path.map(Path::to_path_buf);
         let object = match reference {
             InstanceRef::Local {
                 module_name,
                 instance_name,
             } => {
-                self.load_local_value(module_name, instance_name, config, deadline)
+                let local = LocalJob {
+                    module_name,
+                    instance_name,
+                    config,
+                };
+                self.load_local_value(local, tracker, deadline).await?
+            }
+            InstanceRef::Remote(module) => {
+                self.load_remote_value(tracker, value, &module, deadline)
                     .await?
             }
-            InstanceRef::Remote(module) => self.load_remote_value(value, &module, deadline).await?,
         };
         Ok(LoadedObject {
             object,
@@ -140,27 +158,35 @@ impl InstanceLoader {
 
     async fn load_local_value(
         &self,
-        module_name: String,
-        instance_name: String,
-        config: Option<PathBuf>,
+        local: LocalJob,
+        tracker: &WorkTracker,
         deadline: Duration,
-    ) -> Result<Py<PyAny>, LoadError> {
-        let job = self.tracker.run(&self.host, deadline, move |py| {
-            local_file::load_local(py, &module_name, &instance_name, config.as_deref())
+    ) -> Result<Py<PyAny>, LoadError<E>> {
+        let running = tracker.run(&self.host, deadline, move |py| {
+            local_file::load_local(
+                py,
+                &local.module_name,
+                &local.instance_name,
+                local.config.as_deref(),
+            )
         });
-        job.await.map_err(LoadError::Work)?
+        match running.await {
+            Ok(result) => result.map_err(LoadError::Local),
+            Err(work) => Err(LoadError::Local(LocalError::Work(work))),
+        }
     }
 
     async fn load_remote_value(
         &self,
+        tracker: &WorkTracker,
         url: &str,
         module: &RemoteModule,
         deadline: Duration,
-    ) -> Result<Py<PyAny>, LoadError> {
+    ) -> Result<Py<PyAny>, LoadError<E>> {
         let job_url = url.to_owned();
         let job_module = module.clone();
         let fetcher = Arc::clone(&self.fetcher);
-        let job = self.tracker.run(&self.host, deadline, move |py| {
+        let job = tracker.run(&self.host, deadline, move |py| {
             load_remote(py, fetcher.as_ref(), &job_url, &job_module)
         });
         match job.await {
@@ -174,16 +200,6 @@ impl InstanceLoader {
                 source: Box::new(RemoteError::Work(work)),
             }),
         }
-    }
-}
-
-fn wrap_reference(error: LoadError, value: &str) -> LoadError {
-    let LoadError::Reference(source) = error else {
-        return error;
-    };
-    LoadError::Remote {
-        url: value.to_owned(),
-        source: Box::new(RemoteError::Reference(source)),
     }
 }
 

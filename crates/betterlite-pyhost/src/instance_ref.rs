@@ -1,5 +1,3 @@
-use crate::instance_loader::LoadError;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Storage {
     S3,
@@ -52,7 +50,7 @@ pub enum RefError {
 }
 
 impl InstanceRef {
-    pub fn parse(value: &str) -> Result<Self, LoadError> {
+    pub fn parse(value: &str) -> Result<Self, RefError> {
         if let Some(rest) = value.strip_prefix("s3://") {
             return parse_remote(Storage::S3, value, rest);
         }
@@ -68,25 +66,25 @@ impl InstanceRef {
     }
 }
 
-fn parse_remote(storage: Storage, url: &str, rest: &str) -> Result<InstanceRef, LoadError> {
+fn parse_remote(storage: Storage, url: &str, rest: &str) -> Result<InstanceRef, RefError> {
     let Some((bucket, path_and_module)) = rest.split_once('/') else {
-        return Err(LoadError::Reference(RefError::MissingPath {
+        return Err(RefError::MissingPath {
             url: url.to_owned(),
             scheme: storage.as_str(),
-        }));
+        });
     };
     if let Some(module_path) = path_and_module.strip_suffix(".py") {
-        return Err(LoadError::Reference(RefError::PyExtension {
+        return Err(RefError::PyExtension {
             url: url.to_owned(),
             scheme: storage.as_str(),
             bucket: bucket.to_owned(),
             module_path: module_path.to_owned(),
-        }));
+        });
     }
     let Some((module_path, instance_name)) = path_and_module.rsplit_once('.') else {
-        return Err(LoadError::Reference(RefError::MissingInstance {
+        return Err(RefError::MissingInstance {
             url: url.to_owned(),
-        }));
+        });
     };
     Ok(InstanceRef::Remote(RemoteModule {
         storage,

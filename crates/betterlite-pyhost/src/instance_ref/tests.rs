@@ -6,7 +6,6 @@ use std::path::PathBuf;
 use rstest::rstest;
 
 use super::{InstanceRef, RemoteModule, Storage};
-use crate::instance_loader::LoadError;
 
 #[rstest]
 #[case::two_parts("a.b", "a", "b")]
@@ -103,10 +102,7 @@ fn parses_a_remote_reference(#[case] case: RemoteCase) {
 )]
 fn reports_a_remote_reference_error(#[case] value: &str, #[case] text: &str) {
     let error = InstanceRef::parse(value).unwrap_err();
-    let LoadError::Reference(reference) = &error else {
-        panic!("expected a reference error, got {error:?}");
-    };
-    assert_eq!(reference.to_string(), text);
+    assert_eq!(error.to_string(), text);
 }
 
 #[rstest]

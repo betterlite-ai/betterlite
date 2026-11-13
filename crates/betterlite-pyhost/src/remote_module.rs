@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::path::PathBuf;
 
 use pyo3::exceptions::PyImportError;
@@ -13,12 +14,6 @@ use crate::owned_temp::{OwnedTempDir, TempError};
 
 const MODULE_FILE_NAME: &str = "module.py";
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{message}")]
-pub struct FetchError {
-    pub message: String,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModuleRequest {
     pub storage: Storage,
@@ -28,11 +23,13 @@ pub struct ModuleRequest {
 }
 
 pub trait ModuleFetcher: Send + Sync {
-    fn fetch(&self, request: &ModuleRequest) -> Result<(), FetchError>;
+    type Error: Error + Send + Sync + 'static;
+
+    fn fetch(&self, request: &ModuleRequest) -> Result<(), Self::Error>;
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum RemoteError {
+pub enum RemoteError<E> {
     #[error(transparent)]
     Reference(#[from] RefError),
     #[error("Failed to download {object_key} from {scheme} bucket {bucket}")]
@@ -41,7 +38,7 @@ pub enum RemoteError {
         bucket: String,
         object_key: String,
         #[source]
-        source: FetchError,
+        source: E,
     },
     #[error(transparent)]
     Python(#[from] PythonFailure),
@@ -53,12 +50,15 @@ pub enum RemoteError {
     Work(#[from] WorkError),
 }
 
-pub(crate) fn load_remote(
+pub(crate) fn load_remote<E>(
     py: Python<'_>,
-    fetcher: &dyn ModuleFetcher,
+    fetcher: &dyn ModuleFetcher<Error = E>,
     url: &str,
     module: &RemoteModule,
-) -> Result<Py<PyAny>, RemoteError> {
+) -> Result<Py<PyAny>, RemoteError<E>>
+where
+    E: Error + Send + Sync + 'static,
+{
     debug!(
         storage = module.storage.as_str(),
         bucket = %module.bucket,
