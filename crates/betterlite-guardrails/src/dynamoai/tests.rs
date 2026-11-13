@@ -72,12 +72,15 @@ fn parse(body: &str) -> DynamoAiResponse {
     serde_json::from_str(body).expect("the test answer is a DynamoAI response")
 }
 
-async fn answering(status: StatusCode, body: String) -> (String, Server) {
+async fn answering(status: StatusCode, body: String, delay: Duration) -> (String, Server) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let answer = move || {
         let body = body.clone();
-        async move { (status, body) }
+        async move {
+            tokio::time::sleep(delay).await;
+            (status, body)
+        }
     };
     let router = Router::new().route("/v1/moderation/analyze/", post(answer));
     let mut server = JoinSet::new();
@@ -302,27 +305,11 @@ async fn dynamoai_guardrail_call_sends_policy_ids_and_model_id() {
     assert_eq!(body["modelId"], serde_json::json!("model-1"));
 }
 
-async fn delayed(body: String, delay: Duration) -> (String, Server) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
-    let answer = move || {
-        let body = body.clone();
-        async move {
-            tokio::time::sleep(delay).await;
-            (StatusCode::OK, body)
-        }
-    };
-    let router = Router::new().route("/v1/moderation/analyze/", post(answer));
-    let mut server = JoinSet::new();
-    server.spawn(axum::serve(listener, router).into_future());
-    (base, server)
-}
-
 #[tokio::test]
 async fn dynamoai_guardrail_reads_an_answer_larger_than_a_few_kilobytes() {
     let padding = "x".repeat(10_000);
     let body = format!(r#"{{"finalAction":"NONE","padding":"{padding}"}}"#);
-    let (base, _server) = answering(StatusCode::OK, body).await;
+    let (base, _server) = answering(StatusCode::OK, body, Duration::ZERO).await;
     let result = guardrail(&base).call_moderation(&[user_message()]).await;
     assert!(result.is_ok());
 }
@@ -331,7 +318,7 @@ async fn dynamoai_guardrail_reads_an_answer_larger_than_a_few_kilobytes() {
 async fn dynamoai_guardrail_an_answer_over_a_mebibyte_is_rejected() {
     let padding = "x".repeat(1024 * 1024);
     let body = format!(r#"{{"finalAction":"NONE","padding":"{padding}"}}"#);
-    let (base, _server) = answering(StatusCode::OK, body).await;
+    let (base, _server) = answering(StatusCode::OK, body, Duration::ZERO).await;
     let result = guardrail(&base).call_moderation(&[user_message()]).await;
     assert!(matches!(
         result,
@@ -341,7 +328,8 @@ async fn dynamoai_guardrail_an_answer_over_a_mebibyte_is_rejected() {
 
 #[tokio::test]
 async fn dynamoai_guardrail_a_stalled_answer_times_out() {
-    let (base, _server) = delayed(
+    let (base, _server) = answering(
+        StatusCode::OK,
         r#"{"finalAction":"NONE"}"#.to_owned(),
         Duration::from_millis(500),
     )
@@ -354,14 +342,24 @@ async fn dynamoai_guardrail_a_stalled_answer_times_out() {
 
 #[tokio::test]
 async fn dynamoai_guardrail_http_error_is_reported() {
-    let (base, _server) = answering(StatusCode::INTERNAL_SERVER_ERROR, "{}".to_owned()).await;
+    let (base, _server) = answering(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "{}".to_owned(),
+        Duration::ZERO,
+    )
+    .await;
     let result = guardrail(&base).call_moderation(&[user_message()]).await;
     assert!(matches!(result, Err(DynamoAiError::HttpStatus { .. })));
 }
 
 #[tokio::test]
 async fn dynamoai_guardrail_non_object_response_is_a_json_error() {
-    let (base, _server) = answering(StatusCode::OK, r#"["not","an","object"]"#.to_owned()).await;
+    let (base, _server) = answering(
+        StatusCode::OK,
+        r#"["not","an","object"]"#.to_owned(),
+        Duration::ZERO,
+    )
+    .await;
     let result = guardrail(&base).call_moderation(&[user_message()]).await;
     assert!(matches!(result, Err(DynamoAiError::ResponseJson { .. })));
 }
@@ -369,7 +367,7 @@ async fn dynamoai_guardrail_non_object_response_is_a_json_error() {
 #[tokio::test]
 async fn dynamoai_guardrail_pre_call_blocks_on_a_block_policy() {
     let body = r#"{"finalAction":"BLOCK","appliedPolicies":[{"policy":{"name":"Toxicity"},"outputs":{"action":"BLOCK","message":"no"}}]}"#;
-    let (base, _server) = answering(StatusCode::OK, body.to_owned()).await;
+    let (base, _server) = answering(StatusCode::OK, body.to_owned(), Duration::ZERO).await;
     let result = guardrail(&base)
         .async_pre_call_hook(&RequestData {
             messages: vec![user_message()],
@@ -381,7 +379,7 @@ async fn dynamoai_guardrail_pre_call_blocks_on_a_block_policy() {
 #[tokio::test]
 async fn dynamoai_guardrail_pre_call_allows_a_block_action_without_a_block_policy() {
     let body = r#"{"finalAction":"BLOCK","appliedPolicies":[{"policy":{"name":"Warned"},"outputs":{"action":"WARN"}}]}"#;
-    let (base, _server) = answering(StatusCode::OK, body.to_owned()).await;
+    let (base, _server) = answering(StatusCode::OK, body.to_owned(), Duration::ZERO).await;
     let result = guardrail(&base)
         .async_pre_call_hook(&RequestData {
             messages: vec![user_message()],
@@ -497,7 +495,7 @@ async fn dynamoai_guardrail_post_call_skips_non_string_content_silently() {
 #[tokio::test]
 async fn dynamoai_guardrail_post_call_blocks_on_a_block_policy() {
     let body = r#"{"finalAction":"BLOCK","appliedPolicies":[{"policy":{"name":"Toxicity"},"outputs":{"action":"BLOCK"}}]}"#;
-    let (base, _server) = answering(StatusCode::OK, body.to_owned()).await;
+    let (base, _server) = answering(StatusCode::OK, body.to_owned(), Duration::ZERO).await;
     let choices = vec![ResponseChoice {
         message: ResponseMessage {
             role: Some("assistant".to_owned()),

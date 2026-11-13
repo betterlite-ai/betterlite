@@ -61,9 +61,10 @@ impl DynamoAiGuardrail {
         messages: &[GuardrailValue],
     ) -> Result<GuardrailStatus, DynamoAiError> {
         if messages.is_empty() {
-            return Ok(GuardrailStatus::Success);
+            Ok(GuardrailStatus::Success)
+        } else {
+            self.inspect_messages(messages).await
         }
-        self.inspect_messages(messages).await
     }
 
     pub async fn async_post_call_success_hook(
