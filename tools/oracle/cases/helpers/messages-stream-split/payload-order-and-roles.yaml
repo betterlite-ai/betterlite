@@ -1,0 +1,47 @@
+kind: helper
+name: messages-stream-split-payload-order-and-roles
+call:
+  messages_stream_split:
+    steps:
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 5
+        chunks:
+          - id: chunk-1
+            created: 7
+            model: m
+            system_fingerprint: fp
+            choices:
+              - index: 0
+                delta:
+                  role: assistant
+                  reasoning_content: R
+                  content: T
+                  refusal: "no"
+                  function_call: {name: legacy, arguments: "{}"}
+                  tool_calls:
+                    - {index: 0, id: call-1, type: function, function: {name: lookup, arguments: "{}"}}
+            usage: {prompt_tokens: 5, completion_tokens: 2, total_tokens: 7}
+            hidden_params: {request_id: req-1}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 5
+        chunks:
+          - id: chunk-2
+            created: 8
+            model: m
+            choices:
+              - index: 0
+                delta: {role: assistant, reasoning_content: R, content: T}
+                finish_reason: stop
+            usage: {prompt_tokens: 5, completion_tokens: 2, total_tokens: 7}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+env: {}
+compare: {ignore: []}

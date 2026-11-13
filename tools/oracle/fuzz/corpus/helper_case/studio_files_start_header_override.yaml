@@ -1,0 +1,15 @@
+kind: helper
+name: studio-files-seed-start-header-override
+call:
+  studio_files:
+    calls:
+      - function: create_plan
+        now: 1700000000
+        file:
+          data: [1, 2, 3]
+          filename: seed.bin
+          content_type: application/octet-stream
+          headers:
+            X-Goog-Upload-Command: seed
+env: {}
+compare: {ignore: []}
