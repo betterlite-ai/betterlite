@@ -13,6 +13,7 @@ fn reasoning_alias_precedence() {
     alias_invalid_effort();
 }
 
+#[test]
 fn alias_medium_maps() {
     let world = World::load(RECORDS);
     let sent = body_of(transform(
@@ -37,6 +38,7 @@ fn budget_for(world: &World, effort: &str) -> Json {
     field(&sent, "thinking").cloned().expect("a mapped budget")
 }
 
+#[test]
 fn alias_budget_ladder() {
     let world = World::load(RECORDS);
     assert_eq!(
@@ -61,6 +63,7 @@ fn alias_budget_ladder() {
     );
 }
 
+#[test]
 fn alias_existing_thinking_wins() {
     let world = World::load(RECORDS);
     let sent = body_of(transform(
@@ -76,6 +79,7 @@ fn alias_existing_thinking_wins() {
     );
 }
 
+#[test]
 fn alias_nonstring_and_none() {
     let world = World::load(RECORDS);
     let unmapped = body_of(transform(
@@ -99,6 +103,7 @@ fn alias_nonstring_and_none() {
     assert_eq!(field(&cleared, "output_config"), None);
 }
 
+#[test]
 fn alias_invalid_effort() {
     let world = World::load(RECORDS);
     let legacy = failure(transform(
@@ -130,6 +135,7 @@ fn adaptive_output_effort() {
     adaptive_effort_gate();
 }
 
+#[test]
 fn adaptive_effort_levels() {
     let world = World::load(RECORDS);
     let minimal = body_of(transform(
@@ -171,6 +177,7 @@ fn adaptive_effort_levels() {
     );
 }
 
+#[test]
 fn adaptive_effort_top_levels() {
     let world = World::load(RECORDS);
     let high = body_of(transform(
@@ -197,6 +204,7 @@ fn adaptive_effort_top_levels() {
     );
 }
 
+#[test]
 fn adaptive_effort_existing_config() {
     let world = World::load(RECORDS);
     let existing = body_of(transform(
@@ -238,6 +246,7 @@ fn adaptive_effort_existing_config() {
     );
 }
 
+#[test]
 fn adaptive_effort_gate() {
     let world = World::load(RECORDS);
     let xhigh = failure(transform(
@@ -270,6 +279,7 @@ fn legacy_budget_fit() {
     budget_missing();
 }
 
+#[test]
 fn budget_cap() {
     let world = World::load(RECORDS);
     let capped = body_of(transform(
@@ -297,6 +307,7 @@ fn budget_cap() {
     );
 }
 
+#[test]
 fn budget_drop_keeps_existing() {
     let world = World::load(RECORDS);
     let (_guard, logs) = capture();
@@ -337,6 +348,7 @@ fn budget_drop_keeps_existing() {
     assert_eq!(field(&zero, "thinking"), None);
 }
 
+#[test]
 fn budget_missing() {
     let world = World::load(RECORDS);
     let missing = failure(transform(
@@ -379,6 +391,7 @@ fn nonadaptive_effort_translation() {
     invalid_legacy_effort();
 }
 
+#[test]
 fn legacy_thinking_for_nonadaptive() {
     let world = World::load(RECORDS);
     let translated = body_of(transform(
@@ -410,6 +423,7 @@ fn legacy_thinking_for_nonadaptive() {
     );
 }
 
+#[test]
 fn native_effort_kept() {
     let world = World::load(RECORDS);
     let native = body_of(transform(
@@ -439,6 +453,7 @@ fn native_effort_kept() {
     );
 }
 
+#[test]
 fn legacy_effort_fallbacks() {
     let world = World::load(RECORDS);
     let capped = body_of(transform(
@@ -484,6 +499,7 @@ fn legacy_effort_fallbacks() {
     );
 }
 
+#[test]
 fn invalid_legacy_effort() {
     let world = World::load(RECORDS);
     let invalid = failure(transform(
@@ -504,6 +520,7 @@ fn thinking_temperature_rules() {
     temperature_after_translation();
 }
 
+#[test]
 fn temperature_dropped() {
     let world = World::load(RECORDS);
     let enabled = body_of(transform(
@@ -525,6 +542,7 @@ fn temperature_dropped() {
     assert_eq!(field(&effort, "temperature"), None);
 }
 
+#[test]
 fn temperature_kept() {
     let world = World::load(RECORDS);
     let one = body_of(transform(
@@ -564,6 +582,7 @@ fn temperature_kept() {
     assert_eq!(field(&adaptive, "temperature"), Some(&json("0")));
 }
 
+#[test]
 fn temperature_after_translation() {
     let world = World::load(RECORDS);
     let translated = body_of(transform(
@@ -601,6 +620,7 @@ fn native_request_history() {
     transformation_is_logged();
 }
 
+#[test]
 fn history_retained() {
     let world = World::load(RECORDS);
     let sent = body_of(transform(
@@ -621,6 +641,7 @@ fn history_retained() {
     assert_eq!(field(&sent, "thinking"), None);
 }
 
+#[test]
 fn billing_history() {
     let world = World::load(RECORDS);
     let system = r#"{"max_tokens":2048,"system":[{"type":"text","text":"x-anthropic-billing-header: cc"},{"type":"text","text":"keep"}]}"#;
@@ -654,6 +675,7 @@ fn billing_history() {
     assert_eq!(field(&empty_map, "system"), None);
 }
 
+#[test]
 fn context_history() {
     let world = World::load(RECORDS);
     let context = body_of(transform(
@@ -682,6 +704,7 @@ fn context_history() {
     );
 }
 
+#[test]
 fn advisor_history() {
     let world = World::load(RECORDS);
     let advisor = r#"[{"role":"assistant","content":[{"type":"server_tool_use","id":"a","name":"advisor","input":{}},{"type":"advisor_tool_result","tool_use_id":"a","content":"advice"},{"type":"text","text":"after"}]}]"#;
@@ -713,6 +736,7 @@ fn advisor_history() {
     );
 }
 
+#[test]
 fn encrypted_history() {
     let world = World::load(RECORDS);
     let encrypted = r#"[{"role":"assistant","content":[{"type":"thinking","thinking":"hidden","signature":"litellm_encrypted_reasoning:abc"},{"type":"text","text":"kept"}]},{"role":"assistant","content":[{"type":"redacted_thinking","data":"litellm_encrypted_reasoning:def"}]}]"#;
@@ -731,6 +755,7 @@ fn encrypted_history() {
     );
 }
 
+#[test]
 fn system_role_history() {
     let world = World::load(RECORDS);
     let messages = r#"[{"role":"system","content":"first"},{"role":"user","content":"hello"}]"#;
@@ -749,6 +774,7 @@ fn system_role_history() {
     );
 }
 
+#[test]
 fn transformation_is_logged() {
     let world = World::load(RECORDS);
     let (_guard, logs) = capture();
