@@ -64,7 +64,7 @@ call:
       - request:
           system:
             - type: text
-              text: x-anthropic-billing-header: a
+              text: "x-anthropic-billing-header: a"
           messages:
             - role: user
               content: question

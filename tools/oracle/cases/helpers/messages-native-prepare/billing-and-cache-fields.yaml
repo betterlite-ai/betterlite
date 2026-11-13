@@ -4,12 +4,12 @@ call:
   messages_native_prepare:
     function: billing
     systems:
-      - x-anthropic-billing-header: cc_version=1
+      - "x-anthropic-billing-header: cc_version=1"
       - " x-anthropic-billing-header: cc_version=1"
       - be brief
       - null
       - - type: text
-          text: x-anthropic-billing-header: a
+          text: "x-anthropic-billing-header: a"
         - type: text
           text: keep
         - type: image
@@ -17,9 +17,9 @@ call:
             type: base64
             media_type: image/png
             data: AA==
-        - x-anthropic-billing-header: a
+        - "x-anthropic-billing-header: a"
       - - type: text
-          text: x-anthropic-billing-header: a
+          text: "x-anthropic-billing-header: a"
     request:
       system:
         - type: text
