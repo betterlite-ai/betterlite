@@ -1,0 +1,50 @@
+kind: probe
+name: order-filter
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: false
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: one, order: 2}
+          - {model_name: gpt, model: "openai/gpt-4o", id: two, order: 1}
+          - {model_name: gpt, model: "openai/gpt-4o", id: three, order: 1}
+          - {model_name: gpt, model: "openai/gpt-4o", id: none}
+        lookups:
+          - {model: gpt}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: false
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: one, order: 2}
+          - {model_name: gpt, model: "openai/gpt-4o", id: two, order: 1}
+        lookups:
+          - {model: gpt, target_order: 2}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: false
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: one, order: 2}
+          - {model_name: gpt, model: "openai/gpt-4o", id: two, order: 1}
+        lookups:
+          - {model: gpt, target_order: 3}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: false
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: one}
+          - {model_name: gpt, model: "openai/gpt-4o", id: two}
+        lookups:
+          - {model: gpt}
+compare: {ignore: []}
