@@ -7,6 +7,7 @@ use betterlite_openai::api::audio_file_input::{
     process_audio_file,
 };
 use betterlite_openai::openai_base_config::Object as WireObject;
+use betterlite_openai::ovhcloud_embedding::request::transform_embedding_request;
 use betterlite_prompts::arguments::json::{Json, Object as JsonObject};
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -149,7 +150,13 @@ impl Helper for Op {
                     .collect::<Vec<Value>>(),
                 "requests": requests
                     .iter()
-                    .map(embedding_request_value)
+                    .map(|call| json!({
+                        "value": pairs(&transform_embedding_request(
+                            &call.model,
+                            &call.input,
+                            &JsonObject::new(),
+                        )),
+                    }))
                     .collect::<Vec<Value>>(),
                 "replies": replies
                     .iter()
@@ -200,7 +207,7 @@ fn env_key(env: &BTreeMap<String, String>, name: &str) -> Option<SecretString> {
 
 mod wire;
 use self::wire::{
-    chat_request_value, chunk_value, embedding_reply_value, embedding_request_value, header_value,
+    chat_request_value, chunk_value, embedding_reply_value, header_value,
     transcription_reply_value, transcription_request_value,
 };
 pub(super) fn processed(call: &TranscriptionCall) -> Result<ProcessedAudioFile, Value> {

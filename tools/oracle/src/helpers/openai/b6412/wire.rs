@@ -12,7 +12,6 @@ use betterlite_openai::ovhcloud_chat::request::{
     ChatTransform, complete_url as chat_url, transform_request,
 };
 use betterlite_openai::ovhcloud_embedding::reply::decode_embedding_reply;
-use betterlite_openai::ovhcloud_embedding::request::transform_embedding_request;
 use betterlite_openai::scaleway_audio::reply::decode_transcription_reply as scaleway_reply;
 use betterlite_openai::scaleway_audio::request::{
     complete_url as scaleway_url, transcription_request as scaleway_form,
@@ -24,7 +23,7 @@ use serde_json::{Value, json};
 
 use super::{
     AudioProvider, ChatRequestCall, EmbeddingCall, HeaderCall, HeaderProvider, ReplyCall,
-    TranscriptionCall, env_key, fields_pairs, file_value, pairs, processed,
+    TranscriptionCall, env_key, fields_pairs, file_value, processed,
 };
 
 pub(super) fn chat_request_value(call: &ChatRequestCall) -> Value {
@@ -66,11 +65,6 @@ pub(super) fn header_value(provider: HeaderProvider, call: &HeaderCall) -> Value
         ovhcloud_audio_headers(&call.headers, explicit.as_ref(), from_env.as_ref())
     };
     json!({"ok": true, "headers": headers})
-}
-
-pub(super) fn embedding_request_value(call: &EmbeddingCall) -> Value {
-    let body = transform_embedding_request(&call.model, &call.input, &JsonObject::new());
-    json!({"value": pairs(&body)})
 }
 
 pub(super) fn embedding_reply_value(call: &ReplyCall) -> Value {

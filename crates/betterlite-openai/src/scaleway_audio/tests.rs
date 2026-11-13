@@ -212,4 +212,3 @@ fn a_json_reply_that_is_not_an_object_carries_the_status() {
     let error = decode_transcription_reply(b"[]", 200, &json_headers()).expect_err("an error");
     assert_eq!(error.status_code, 200);
 }
-
