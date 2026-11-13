@@ -114,15 +114,14 @@ def run(input_value: Input) -> JsonValue:
     )
     answers: list[JsonValue] = []
     for call in input_value["calls"]:
-        settings = call["settings"]
         for name, key in (
-            ("COHERE_API_KEY", settings.get("cohere_api_key")),
-            ("CO_API_KEY", settings.get("co_api_key")),
+            ("COHERE_API_KEY", call["settings"].get("cohere_api_key")),
+            ("CO_API_KEY", call["settings"].get("co_api_key")),
         ):
             os.environ.pop(name, None)
             if key is not None:
                 os.environ[name] = key
-        litellm.cohere_key = settings.get("cohere_key")
+        litellm.cohere_key = call["settings"].get("cohere_key")
         config = V1 if call["version"] == "v1" else V2
         options = call["options"]
         drop_params = False
