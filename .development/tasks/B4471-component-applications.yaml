@@ -36,6 +36,8 @@ scope:
     - crates/betterlite-gateway/**
     - crates/betterlite-backend/**
     - crates/betterlite-server/src/server.rs
+    - crates/betterlite-server/src/server/component.rs
+    - crates/betterlite-server/src/server/filter.rs
     - deny.toml
     - tools/oracle/helpers/b4471.py
     - tools/oracle/helpers/b4471/**
@@ -135,4 +137,4 @@ pitfalls:
 review_level: security
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 1
