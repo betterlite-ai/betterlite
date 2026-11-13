@@ -1,0 +1,14 @@
+task: B9951
+deviations:
+  - what: "json() returns pydantic's model_dump_json() text without raising pydantic's deprecation warning, where LiteLLM's Delta, Choices, StreamingChoices, Usage, ChatCompletionMessageToolCall and the other classes that do not define json() inherit pydantic's deprecated json(), which returns the same text and warns."
+    why: "The text a caller reads is the same, so json.loads(response.json()) keeps working; a warning is Python runtime noise no working setup relies on, and the wheel's strict type check treats the deprecated call as an error."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1857-L1872
+  - what: "A pydantic model inside provider_specific_fields is dumped with exclude_unset=True when the object is built, where LiteLLM stores the model in its dict[str, Any] field and serializes it with the options of the model_dump() call on the parent."
+    why: "The declared field type is dict[str, JsonValue], and pydantic rejects a model during validation; dumping at construction reproduces LiteLLM's exclude_unset=True output, and a parent dump without exclude_unset then carries fewer None keys than LiteLLM's."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1644
+  - what: "A constructor accepts a model object through the structural Dumpable protocol, which checks for a usable model_dump, where LiteLLM's isinstance(value, BaseModel) checks exclude an object that has model_dump without deriving from pydantic.BaseModel."
+    why: "Python duck typing is outside the compatibility policy; a value of the declared type, pydantic's BaseModel included, behaves the same, and the wire output is the model's model_dump."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1679-L1683
+  - what: "EmbeddingResponse.data holds a betterlite Embedding object as the caller passed it, and stores any other model that is not a betterlite response object as its model_dump, where LiteLLM keeps every object and dict exactly as given."
+    why: "The field's declared type is the response type union, and a model from another SDK is not one; dumping it keeps the serialized list LiteLLM produces, so only the Python object a caller reads back differs."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2330-L2344

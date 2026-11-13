@@ -1,0 +1,18 @@
+kind: helper
+name: vertex-batch-rows-first-managed-prefix
+call:
+  vertex_batch_rows:
+    operation: urls
+    urls:
+      - gs://b/litellm-vertex-files/passthrough/x
+      - gs://b/x/litellm-vertex-files/passthrough/y
+      - gs://b/x/litellm-vertex-files/a/litellm-vertex-files/passthrough/y
+      - gs://b/litellm-vertex-files/x
+      - gs://b/%6Citemm-vertex-files/passthrough/x
+      - https://x/publishers/google/models/gemini-1.5/?a=1
+      - https://x/publishers/anthropic/models/claude/rest
+      - https://x/p%75blishers/google/models/my%20model
+      - https://x/models/plain
+      - gs://b/litellm-vertex-files/x/publishers/google/models/first/publishers/google/models/second
+env: {}
+compare: {ignore: []}
