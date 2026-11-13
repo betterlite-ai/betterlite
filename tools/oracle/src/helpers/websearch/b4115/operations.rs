@@ -9,8 +9,8 @@ use betterlite_websearch::records::RichWebSearchInput;
 use serde::Serialize;
 use tokio::runtime::{Builder, Runtime};
 
-use super::{Input, Operation};
 use super::fakes::{self, RecordedCall};
+use super::{Input, Operation};
 
 #[derive(Serialize)]
 struct ExecuteOutput {
