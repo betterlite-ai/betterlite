@@ -2295,6 +2295,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-provider",
  "betterlite-proxy",
+ "betterlite-pyhost",
  "betterlite-rag",
  "betterlite-rate-limit",
  "betterlite-redact",
@@ -2327,6 +2328,7 @@ dependencies = [
  "opentelemetry-http",
  "opentelemetry_sdk",
  "percent-encoding",
+ "pyo3",
  "quick-xml",
  "rand 0.10.3",
  "redis",
@@ -2715,6 +2717,14 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "betterlite-pyhost-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-pyhost",
+ "libfuzzer-sys",
 ]
 
 [[package]]
