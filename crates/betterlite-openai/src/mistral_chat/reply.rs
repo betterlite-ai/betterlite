@@ -24,7 +24,6 @@ pub struct MistralChatReply {
     pub value: Value,
 }
 
-// MistralConfig.transform_response logs the raw text, records the response headers, then converts
 pub fn transform_response(
     reply: &ResponseReply<'_>,
     state: &mut LoggingState,
@@ -69,7 +68,6 @@ pub fn decode_mistral_chat(bytes: &[u8]) -> Result<MistralChatReply, MistralChat
     Ok(MistralChatReply { value })
 }
 
-// _handle_empty_content_response: Mistral answers "" where a chat message has nothing to say
 pub fn handle_empty_content_response(reply: &mut Value) {
     let Some(choices) = reply.get_mut("choices").and_then(Value::as_array_mut) else {
         return;
@@ -87,7 +85,6 @@ pub fn handle_empty_content_response(reply: &mut Value) {
     }
 }
 
-// _handle_content_list_to_str_conversion: the last text block wins, and the last thinking block wins
 pub fn handle_content_list_to_str_conversion(reply: &mut Value) -> Result<(), MistralChatError> {
     let Some(choices) = reply.get_mut("choices").and_then(Value::as_array_mut) else {
         return Ok(());

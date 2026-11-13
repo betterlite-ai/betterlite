@@ -17,8 +17,6 @@ pub fn get_model_response_iterator(json_mode: bool) -> MistralChatResponseIterat
     MistralChatResponseIterator { json_mode }
 }
 
-// chunk_parser normalizes the delta, then hands the chunk to the shared OpenAI chunk parser, and
-// every mutation made before a malformed block keeps reaching it
 pub fn chunk_parser(
     chunk: &mut Value,
     identifier: fn() -> Uuid,
@@ -34,7 +32,6 @@ struct Normalized {
     reasoning: Option<String>,
 }
 
-// a malformed block stops the custom path where Python would raise, so the caller falls back
 fn normalize_choices(chunk: &mut Value) -> Option<()> {
     let choices = match chunk.get_mut("choices") {
         None => return Some(()),
@@ -74,7 +71,6 @@ fn normalize_choices(chunk: &mut Value) -> Option<()> {
     Some(())
 }
 
-// _normalize_content_blocks: every text block joins, and every nonempty thinking block does too
 fn normalize_content_blocks(blocks: &[Value]) -> Option<Normalized> {
     let mut text_parts: Vec<String> = Vec::new();
     let mut thinking_blocks: Vec<Value> = Vec::new();

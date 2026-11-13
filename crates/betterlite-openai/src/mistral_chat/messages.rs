@@ -5,7 +5,6 @@ use serde_json::Value;
 use super::MistralChatError;
 use crate::chat::{ChatMessage, MessageContent, Role};
 
-const OUTPUT_ONLY_FIELDS: [&str; 2] = ["reasoning_content", "thinking_blocks"];
 const ASSISTANT_FIELDS: [&str; 6] = [
     "tool_calls",
     "function_call",
@@ -15,19 +14,16 @@ const ASSISTANT_FIELDS: [&str; 6] = [
     "reasoning_items",
 ];
 
-// _strip_output_only_fields drops the two response-only keys from assistant turns only
 #[must_use]
 pub fn strip_output_only_fields(message: &ChatMessage) -> ChatMessage {
     let mut stripped = message.clone();
     if stripped.role == Role::Assistant {
-        for field in OUTPUT_ONLY_FIELDS {
-            stripped.passthrough.shift_remove(field);
-        }
+        stripped.passthrough.shift_remove("reasoning_content");
+        stripped.passthrough.shift_remove("thinking_blocks");
     }
     stripped
 }
 
-// _handle_name_in_message keeps a name only on a tool message and only when it is not blank
 #[must_use]
 pub fn handle_name_in_message(mut message: Message) -> Message {
     if let Some(name) = message.name.take()
@@ -39,15 +35,27 @@ pub fn handle_name_in_message(mut message: Message) -> Message {
     message
 }
 
-// _handle_tool_call_message projects every tool call to Mistral's id/type/function record
 #[must_use]
 pub fn handle_tool_call_message(mut message: Message) -> Message {
     let projected = match message.provider_specific_fields.get("tool_calls") {
-        Some(Json::List(calls)) => calls.iter().map(project_tool_call).collect(),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_))
-        | None => {
-            return message;
-        }
+        Some(Json::List(calls)) => calls
+            .iter()
+            .map(|call| {
+                let fields = call.as_object();
+                let pick = |name: &str| {
+                    fields
+                        .and_then(|given| given.get(name))
+                        .cloned()
+                        .unwrap_or(Json::Null)
+                };
+                Json::Object(Object::from_iter([
+                    (String::from("id"), pick("id")),
+                    (String::from("type"), Json::Text(String::from("function"))),
+                    (String::from("function"), pick("function")),
+                ]))
+            })
+            .collect(),
+        _ => return message,
     };
     message
         .provider_specific_fields
@@ -55,28 +63,6 @@ pub fn handle_tool_call_message(mut message: Message) -> Message {
     message
 }
 
-fn project_tool_call(call: &Json) -> Json {
-    let fields = call.as_object();
-    Json::Object(Object::from_iter([
-        (
-            String::from("id"),
-            fields
-                .and_then(|given| given.get("id"))
-                .cloned()
-                .unwrap_or(Json::Null),
-        ),
-        (String::from("type"), Json::Text(String::from("function"))),
-        (
-            String::from("function"),
-            fields
-                .and_then(|given| given.get("function"))
-                .cloned()
-                .unwrap_or(Json::Null),
-        ),
-    ]))
-}
-
-// _is_empty_assistant_message reads the assistant field names on every role, role itself aside
 #[must_use]
 pub fn is_empty_assistant_message(message: &Message) -> bool {
     let empty_content = match &message.content {
@@ -95,7 +81,6 @@ pub fn is_empty_assistant_message(message: &Message) -> bool {
     })
 }
 
-// _handle_message_with_file turns file.file_id into the block's file_id and drops file
 pub fn handle_message_with_file(messages: &mut [ChatMessage]) -> Result<(), MistralChatError> {
     for message in messages {
         let Some(MessageContent::Parts(parts)) = &mut message.content else {

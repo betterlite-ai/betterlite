@@ -8,7 +8,6 @@ pub struct MistralTextBlock {
     pub text: String,
 }
 
-// a native content block: text carries "text", a thinking block carries "thinking"
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct MistralContentBlock {
     #[serde(rename = "type", default)]
@@ -20,7 +19,6 @@ pub struct MistralContentBlock {
 }
 
 impl MistralContentBlock {
-    // LiteLLM joins every text entry of one thinking block without a separator
     #[must_use]
     pub fn thinking_text(&self) -> String {
         self.thinking

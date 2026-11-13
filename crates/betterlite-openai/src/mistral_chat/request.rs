@@ -128,7 +128,6 @@ fn parent_transform(
     Ok(content.transform(mode)?)
 }
 
-// MistralConfig.transform_request inserts the reasoning prompt before _transform_messages runs
 #[must_use]
 pub fn add_reasoning_system_prompt_if_needed(
     model: &str,
