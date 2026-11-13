@@ -10,7 +10,7 @@ use crate::cache_defaults::{CachePolicy, DefaultsError};
 use crate::message_content::Message;
 
 use super::support::{
-    DEFAULT_POINTS, Facts, MARKED_USER, MODEL, OPENAI_MODEL, json, messages, object, wire,
+    DEFAULT_POINTS, Facts, MARKED_CHAT_USER, MODEL, OPENAI_MODEL, json, messages, object, wire,
 };
 
 const USER: &str = r#"[{"role": "user", "content": "hi"}]"#;
@@ -51,7 +51,7 @@ fn router_projection_applies_defaults_from_the_alias() {
     let models = [GROUP.to_owned()];
     assert_eq!(
         wire(&project(&conversation, &models, &Facts::claude())),
-        json(MARKED_USER)
+        json(MARKED_CHAT_USER)
     );
 }
 
@@ -61,7 +61,7 @@ fn router_projection_uses_the_first_model_that_would_inject() {
     let models = [OPENAI_MODEL.to_owned(), GROUP.to_owned()];
     assert_eq!(
         wire(&project(&conversation, &models, &Facts::claude())),
-        json(MARKED_USER)
+        json(MARKED_CHAT_USER)
     );
 }
 

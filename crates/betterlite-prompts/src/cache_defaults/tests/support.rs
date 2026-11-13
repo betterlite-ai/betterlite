@@ -96,9 +96,10 @@ pub(super) const DEFAULT_POINTS: &str = r#"[
     {"location": "message", "role": null, "index": -1, "control": {"type": "ephemeral"}}
 ]"#;
 
-pub(super) const MARKED_USER: &str = r#"[{
+pub(super) const MARKED_CHAT_USER: &str = r#"[{
     "role": "user",
-    "content": [{"type": "text", "text": "hi", "cache_control": {"type": "ephemeral"}}]
+    "content": "hi",
+    "cache_control": {"type": "ephemeral"}
 }]"#;
 
 pub(super) const MARKED_SYSTEM: &str = r#"[{
