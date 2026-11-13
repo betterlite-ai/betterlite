@@ -1,0 +1,17 @@
+task: B3732
+deviations:
+  - what: Model Armor's _redact_scanned_content uses DEFAULT_MAX_RECURSE_DEPTH constant for limiting recursion. betterlite uses the same constant and recursion depth limits.
+    why: The recursion limit prevents stack overflow on deeply nested JSON responses; matching LiteLLM's constant ensures consistent behavior on malformed or adversarial responses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L105-L116
+  - what: The redaction cap is the fixed value 100; the DEFAULT_MAX_RECURSE_DEPTH environment variable does not change it.
+    why: LiteLLM reads that variable once at import time. betterlite reads the environment only through the config crate, and no config section carries this cap, so the documented default applies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L85
+  - what: The sanitize_error_detail flag controls both error detail visibility and logging redaction. When true (default), Model Armor API errors and scanned content are sanitized; when false, full responses are included.
+    why: This matches LiteLLM's behavior of conditional sanitization based on deployment security posture. The default true protects production deployments.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L149-L177
+  - what: _should_block_content treats deidentifyResult MATCH_FOUND as blockable only when allow_sanitization is false. When masking is enabled (allow_sanitization=true), deidentify matches do not automatically block and allow sanitization to proceed.
+    why: This preserves LiteLLM's distinction between blocking on inspect results (always) and deidentify results (only when masking is disabled). The logic ensures masked responses are preferred over blocking when available.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L381-L405
+  - what: _filter_result_items handles both dict and list shapes for filterResults. When filterResults is a dict (most templates), values are extracted; when a list, it is returned directly.
+    why: Model Armor's API returns filterResults in different shapes depending on template type. This normalization allows uniform processing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L437-L448
