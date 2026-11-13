@@ -1,0 +1,15 @@
+kind: helper
+name: realtime-beta-protocol-seed
+call:
+  realtime_beta_protocol:
+    function: header_detection
+    websockets:
+      - headers: [[OpenAI-Beta, realtime=v1]]
+        latin1: false
+        scope_error: false
+    sessions:
+      - {modalities: [audio], input_audio_format: pcm16}
+    events:
+      - {type: conversation.item.added}
+env: {}
+compare: {ignore: []}

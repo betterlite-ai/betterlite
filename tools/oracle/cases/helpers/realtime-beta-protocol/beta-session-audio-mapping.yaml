@@ -1,0 +1,34 @@
+kind: helper
+name: realtime-beta-protocol-beta-session-audio-mapping
+call:
+  realtime_beta_protocol:
+    function: session_remap
+    websockets: []
+    sessions:
+      - modalities: [TEXT, AUDIO]
+        voice: alloy
+        input_audio_format: pcm16
+        output_audio_format: g711_ulaw
+        turn_detection: {type: server_vad}
+        input_audio_transcription: {model: whisper-1}
+      - modalities: [text]
+      - modalities: [audio]
+        voice: alloy
+      - modalities: []
+      - modalities: null
+      - modalities: [unknown]
+      - modalities: [audio]
+        output_modalities: null
+      - input_audio_format: g711_alaw
+        output_audio_format: future-codec
+      - input_audio_format: {type: audio/custom, rate: 16000}
+        voice: alloy
+      - type: session.update
+        instructions: hi
+        tools: [{type: function}]
+        future: {deep: true}
+      - type: null
+        voice: alloy
+    events: []
+env: {}
+compare: {ignore: []}
