@@ -174,5 +174,5 @@ pitfalls:
   - The session affinity check on existing headers ignores case, but the rerank Authorization override matches the exact key "Authorization" only.
   - A rerank body whose "data" is an empty list falls to "results" and ends as an error when that is absent too.
   - The mixin lets a caller Authorization replace the Bearer value because the headers are spread after it.
-budget: {max_changed_lines: 1500, max_new_expects: 0}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: standard
