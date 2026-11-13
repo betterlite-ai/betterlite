@@ -1,7 +1,7 @@
 id: B1517
 milestone: M3 providers
 title: Map Black Forest Labs image generation and validate polling hosts
-status: todo
+status: done
 depends_on: [B002, B997, B184, B171]
 file: tasks/B1517-bfl-generation-format.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/llms/black_forest_labs/image_edit/__init__.py"
 parent: B046
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1661
