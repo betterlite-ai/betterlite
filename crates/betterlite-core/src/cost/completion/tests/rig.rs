@@ -10,6 +10,7 @@ use betterlite_config::cost_adjustments::AdjustmentEntry;
 use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget};
 use betterlite_logging::fields::usage::Usage;
 use betterlite_models::catalog::ModelCatalog;
+use betterlite_models::cost_usage::tool_projection::ToolUsage;
 use betterlite_models::decisions::Json;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
@@ -17,9 +18,10 @@ use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::provider_model_sets::ProviderModelSets;
 use betterlite_models::resolution::{ProviderIdentity, ResolutionContext, ResolvedModel};
+use betterlite_models::tiered_pricing::Scalar;
 use betterlite_models::tool_fees::billing::{BuiltInToolBilling, BuiltInToolParams};
 use betterlite_models::tool_fees::error::LookupFailed;
-use betterlite_models::tool_fees::model_info::{Rate, ToolModelInfo};
+use betterlite_models::tool_fees::model_info::{Rate, SearchContextRates, ToolModelInfo};
 use betterlite_models::tool_fees::ports::{ToolPricePolicy, ToolPriceSource};
 use betterlite_models::tool_fees::prices::ToolPrices;
 use betterlite_models::tool_signals::response::{OtherView, ToolBillingResponse};
@@ -44,7 +46,9 @@ use crate::cost::prepare::{
 use crate::cost::response::response_cost_calculator;
 use crate::cost::special::policy::{ModelResolver, SpecialPricePolicy};
 use crate::cost::special::replicate::ReplicateStamps;
-use crate::cost::special::request::{ImageParts, LoggingView, TranscriptionDuration};
+use crate::cost::special::request::{
+    ImageParts, LoggingView, SpecialServices, TranscriptionDuration,
+};
 use crate::cost::usage::{BillingUsage, ResponseKind};
 
 pub fn dec(text: &str) -> Decimal {
@@ -106,10 +110,7 @@ pub fn priced(fields: &[(&str, &str)]) -> PriceRecord {
         .iter()
         .map(|(key, value)| {
             let found = Number::from_str(value).expect("the fixture is a number");
-            (
-                (*key).to_owned(),
-                betterlite_models::tiered_pricing::Scalar::Number(found),
-            )
+            ((*key).to_owned(), Scalar::Number(found))
         })
         .collect()
 }
@@ -206,7 +207,7 @@ impl ToolPricePolicy for Tools {
     fn web_search_cost(
         &self,
         _provider: &str,
-        _usage: &betterlite_models::cost_usage::tool_projection::ToolUsage,
+        _usage: &ToolUsage,
         _model_info: &ToolModelInfo,
     ) -> Option<Decimal> {
         None
@@ -318,7 +319,7 @@ pub fn rig(prices: &[(&str, &[(&str, &str)])]) -> Rig {
 pub fn searching() -> ToolModelInfo {
     ToolModelInfo {
         litellm_provider: Some("openai".to_owned()),
-        search_context: betterlite_models::tool_fees::model_info::SearchContextRates {
+        search_context: SearchContextRates {
             low: Rate::Absent,
             medium: Rate::Value(dec("0.01")),
             high: Rate::Absent,
@@ -355,7 +356,7 @@ impl Rig {
         context: &'rig ResolutionContext<'rig>,
     ) -> CostCalculator<'rig, Resolver, Images, Inference> {
         CostCalculator {
-            special: crate::cost::special::request::SpecialServices {
+            special: SpecialServices {
                 lookup: &self.catalog,
                 resolver: &Resolver,
                 image_policy: &Images,

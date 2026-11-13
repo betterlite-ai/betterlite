@@ -1,3 +1,4 @@
+use std::mem::take;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use betterlite_logging::cost_breakdown::CostBreakdownTarget;
@@ -39,7 +40,8 @@ struct Round<'round> {
     session: Option<(&'round [Event], &'round PricingUsage)>,
 }
 
-fn reading<Clock: FnMut() -> SystemTime>(
+// One clock reading as a UTC moment; a time before the epoch or past the calendar is an error.
+pub fn reading<Clock: FnMut() -> SystemTime>(
     clock: &mut Clock,
 ) -> Result<DateTime<Utc>, ChargeInputError> {
     clock()
@@ -164,7 +166,7 @@ where
             return Err(CompletionCostError::NestedPartitions);
         };
         let mut prepared = *prepared;
-        let attempts = std::mem::take(&mut prepared.attempts);
+        let attempts = take(&mut prepared.attempts);
         let round = Round {
             args,
             billing: &billing,
@@ -207,7 +209,7 @@ where
         }
         PreparedCompletion::Attempts(prepared) => {
             let mut prepared = *prepared;
-            let attempts = std::mem::take(&mut prepared.attempts);
+            let attempts = take(&mut prepared.attempts);
             let session = match args.billing.response {
                 Some(ResponseView::Realtime { record, .. }) => {
                     Some((record.results.as_slice(), &record.usage))
