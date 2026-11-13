@@ -66,22 +66,22 @@ fn reject_native_user_facet(claims: &Payload) -> Result<(), AgentIdentityFailure
 }
 
 #[derive(Clone, Copy)]
-enum TokenKind {
-    Delegated,
+enum TokenKind<'scope> {
+    Delegated(&'scope str),
     Application,
 }
 
-impl TokenKind {
+impl TokenKind<'_> {
     const fn subject_kind(self) -> SubjectKind {
         match self {
-            Self::Delegated => SubjectKind::DelegatedSubject,
+            Self::Delegated(_) => SubjectKind::DelegatedSubject,
             Self::Application => SubjectKind::Application,
         }
     }
 
     const fn subject_mode(self) -> SubjectMode {
         match self {
-            Self::Delegated => SubjectMode::Delegated,
+            Self::Delegated(_) => SubjectMode::Delegated,
             Self::Application => SubjectMode::Autonomous,
         }
     }
@@ -93,9 +93,9 @@ fn scope_subject(
     oid: &str,
     allowed_mode: &AgentExecutionMode,
 ) -> Result<AgentSubject, AgentIdentityFailure> {
-    let scope = match claims.0.get("scp") {
-        Some(JsonData::String(scope)) if !scope.is_empty() => Some(scope.as_str()),
-        Some(JsonData::String(_) | JsonData::Null) | None => None,
+    let kind = match claims.0.get("scp") {
+        Some(JsonData::String(scope)) if !scope.is_empty() => TokenKind::Delegated(scope),
+        Some(JsonData::String(_) | JsonData::Null) | None => TokenKind::Application,
         Some(
             JsonData::Bool(_) | JsonData::Number(_) | JsonData::Array(_) | JsonData::Object(_),
         ) => {
@@ -105,17 +105,13 @@ fn scope_subject(
             });
         }
     };
-    let kind = match scope {
-        Some(_) => TokenKind::Delegated,
-        None => TokenKind::Application,
-    };
     if let Some(message) = contradiction(kind, binding, claims, oid, allowed_mode) {
         return Err(AgentIdentityFailure {
             code: FailureCode::IdentityDenied,
             message: String::from(message),
         });
     }
-    if let Some(message) = requirement_missing(kind, binding, claims, scope)? {
+    if let Some(message) = requirement_missing(kind, binding, claims)? {
         return Err(AgentIdentityFailure {
             code: FailureCode::IdentityDenied,
             message: String::from(message),
@@ -129,14 +125,14 @@ fn scope_subject(
 }
 
 fn contradiction(
-    kind: TokenKind,
+    kind: TokenKind<'_>,
     binding: &AgentIdentityBinding,
     claims: &Payload,
     oid: &str,
     allowed_mode: &AgentExecutionMode,
 ) -> Option<&'static str> {
     let (rejected_mode, conflict_when_matched, rejected_idtyp, message) = match kind {
-        TokenKind::Delegated => (
+        TokenKind::Delegated(_) => (
             AgentExecutionMode::Autonomous,
             true,
             "app",
@@ -161,14 +157,13 @@ fn contradiction(
 }
 
 fn requirement_missing(
-    kind: TokenKind,
+    kind: TokenKind<'_>,
     binding: &AgentIdentityBinding,
     claims: &Payload,
-    scope: Option<&str>,
 ) -> Result<Option<&'static str>, AgentIdentityFailure> {
     match kind {
-        TokenKind::Delegated => {
-            let granted: BTreeSet<&str> = scope.unwrap_or_default().split_whitespace().collect();
+        TokenKind::Delegated(scope) => {
+            let granted: BTreeSet<&str> = scope.split_whitespace().collect();
             let required: BTreeSet<&str> = binding
                 .required_scopes
                 .0

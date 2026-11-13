@@ -13,14 +13,18 @@ const PROVIDER_MICROSOFT_ENTRA: &str = "microsoft_entra";
 pub fn identity_write(
     identity: Option<&EntraIdentityConfig>,
     existing: Option<&AgentResponse>,
+    next_revision: fn() -> Uuid,
 ) -> ManagedWriteFields {
     if let Some(configuration) = identity {
-        return bound_identity_fields(configuration, existing);
+        return bound_identity_fields(configuration, existing, next_revision);
     }
-    unbound_identity_fields(existing)
+    unbound_identity_fields(existing, next_revision)
 }
 
-fn unbound_identity_fields(existing: Option<&AgentResponse>) -> ManagedWriteFields {
+fn unbound_identity_fields(
+    existing: Option<&AgentResponse>,
+    next_revision: fn() -> Uuid,
+) -> ManagedWriteFields {
     let Some(agent) = existing else {
         return ManagedWriteFields::default();
     };
@@ -33,7 +37,7 @@ fn unbound_identity_fields(existing: Option<&AgentResponse>) -> ManagedWriteFiel
         required_roles: None,
         required_scopes: None,
         active: Some(false),
-        revision: Some(Uuid::new_v4().to_string()),
+        revision: Some(next_revision().to_string()),
         last_authenticated_at: Some(None),
     };
     ManagedWriteFields {
@@ -51,6 +55,7 @@ fn unbound_identity_fields(existing: Option<&AgentResponse>) -> ManagedWriteFiel
 fn bound_identity_fields(
     identity: &EntraIdentityConfig,
     existing: Option<&AgentResponse>,
+    next_revision: fn() -> Uuid,
 ) -> ManagedWriteFields {
     if existing.is_some_and(|agent| binding_unchanged(agent, identity)) {
         return ManagedWriteFields::default();
@@ -64,7 +69,7 @@ fn bound_identity_fields(
         required_roles: Some(identity.required_roles.clone()),
         required_scopes: Some(identity.required_scopes.clone()),
         active: Some(true),
-        revision: Some(Uuid::new_v4().to_string()),
+        revision: Some(next_revision().to_string()),
         last_authenticated_at: Some(None),
     };
     let relation = if existing.is_some() {

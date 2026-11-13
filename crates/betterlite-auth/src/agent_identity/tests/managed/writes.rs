@@ -9,7 +9,7 @@ use crate::agent_identity::write_fields::{
     IdentityFields, IdentityHistoryWrite, IdentityRelationWrite, ManagedWriteFields,
 };
 use crate::agent_policy::{AgentExecutionMode, AgentResponse};
-use crate::identity::FailureCode;
+use crate::identity::{AgentIdentityFailure, FailureCode};
 
 const TENANT: &str = "550e8400-e29b-41d4-a716-446655440000";
 const CLIENT: &str = "550e8400-e29b-41d4-a716-446655440001";
@@ -18,6 +18,24 @@ const ISSUER: &str = "https://login.microsoftonline.com/550e8400-e29b-41d4-a716-
 const AUTONOMOUS_PRINCIPAL_FAILURE: &str =
     "Autonomous mode requires the Enterprise application service-principal object ID";
 const ENABLE_WITHOUT_BINDING_FAILURE: &str = "Bind an identity before enabling this managed agent";
+
+const FIXED_REVISION: &str = "550e8400-e29b-41d4-a716-446655440010";
+const OTHER_REVISION: &str = "550e8400-e29b-41d4-a716-446655440011";
+
+fn fixed_revision() -> Uuid {
+    Uuid::parse_str(FIXED_REVISION).unwrap()
+}
+
+fn other_revision() -> Uuid {
+    Uuid::parse_str(OTHER_REVISION).unwrap()
+}
+
+fn write(
+    input: &ManagedWriteInput,
+    existing: Option<&AgentResponse>,
+) -> Result<ManagedWriteFields, AgentIdentityFailure> {
+    managed_write_fields(input, existing, fixed_revision)
+}
 
 fn json(text: &str) -> Json {
     serde_json::from_str(text).unwrap()
@@ -84,8 +102,7 @@ fn managed_write_fields_absent_identity_keeps_binding() {
         true,
         "autonomous",
     );
-    let fields =
-        managed_write_fields(&input(IdentityUpdate::Absent, None, None), Some(&existing)).unwrap();
+    let fields = write(&input(IdentityUpdate::Absent, None, None), Some(&existing)).unwrap();
     assert_eq!(fields, ManagedWriteFields::default());
 }
 
@@ -96,8 +113,7 @@ fn managed_write_fields_null_identity_unbinds() {
         true,
         "autonomous",
     );
-    let fields =
-        managed_write_fields(&input(IdentityUpdate::Null, None, None), Some(&existing)).unwrap();
+    let fields = write(&input(IdentityUpdate::Null, None, None), Some(&existing)).unwrap();
     assert_eq!(fields.enabled, Some(false));
     assert_eq!(fields.identity_managed, Some(true));
     assert_eq!(fields.execution_mode, None);
@@ -109,8 +125,7 @@ fn managed_write_fields_null_identity_unbinds() {
     assert_eq!(update.last_authenticated_at, Some(None));
     assert_eq!(update.provider, None);
     assert_eq!(update.tenant_id, None);
-    let revision = update.revision.as_deref().unwrap();
-    assert_eq!(Uuid::parse_str(revision).unwrap().get_version_num(), 4);
+    assert_eq!(update.revision.as_deref(), Some(FIXED_REVISION));
 }
 
 fn assert_archived_binding(binding: &IdentityFields) {
@@ -129,12 +144,7 @@ fn assert_archived_binding(binding: &IdentityFields) {
     );
     assert_eq!(binding.active, Some(true));
     assert_eq!(binding.last_authenticated_at, Some(None));
-    assert_eq!(
-        Uuid::parse_str(binding.revision.as_deref().unwrap())
-            .unwrap()
-            .get_version_num(),
-        4
-    );
+    assert_eq!(binding.revision.as_deref(), Some(FIXED_REVISION));
 }
 
 fn assert_retired_identity(history: &IdentityHistoryWrite) {
@@ -146,7 +156,7 @@ fn assert_retired_identity(history: &IdentityHistoryWrite) {
 
 #[test]
 fn managed_write_fields_new_identity_archives_binding() {
-    let fields = managed_write_fields(
+    let fields = write(
         &input(
             IdentityUpdate::Value(json(&config_json(Some(PRINCIPAL)))),
             None,
@@ -165,7 +175,7 @@ fn managed_write_fields_new_identity_archives_binding() {
 #[test]
 fn managed_write_fields_existing_agent_upserts_binding() {
     let existing = agent(None, false, "autonomous");
-    let fields = managed_write_fields(
+    let fields = write(
         &input(
             IdentityUpdate::Value(json(&config_json(Some(PRINCIPAL)))),
             None,
@@ -193,7 +203,7 @@ fn managed_write_fields_unchanged_identity_is_empty() {
         true,
         "autonomous",
     );
-    let fields = managed_write_fields(
+    let fields = write(
         &input(
             IdentityUpdate::Value(json(&config_json(Some(PRINCIPAL)))),
             None,
@@ -216,7 +226,7 @@ fn managed_write_fields_changed_client_rebinds() {
         true,
         "autonomous",
     );
-    let fields = managed_write_fields(
+    let fields = write(
         &input(
             IdentityUpdate::Value(json(&config_json(Some(PRINCIPAL)))),
             None,
@@ -239,7 +249,7 @@ fn managed_write_fields_inactive_binding_rebinds() {
         true,
         "autonomous",
     );
-    let fields = managed_write_fields(
+    let fields = write(
         &input(
             IdentityUpdate::Value(json(&config_json(Some(PRINCIPAL)))),
             None,
@@ -267,7 +277,7 @@ fn managed_write_fields_autonomous_needs_service_principal(
     #[case] mode: Option<AgentExecutionMode>,
     #[case] fails: bool,
 ) {
-    let result = managed_write_fields(
+    let result = write(
         &input(IdentityUpdate::Value(json(&config_json(None))), mode, None),
         None,
     );
@@ -290,7 +300,7 @@ fn managed_write_fields_enabling_needs_active_binding(
 ) {
     let identity = state.map(|value| binding_json(value, CLIENT, "rev-1"));
     let existing = agent(identity.as_deref(), true, "autonomous");
-    let result = managed_write_fields(
+    let result = write(
         &input(IdentityUpdate::Absent, None, Some(true)),
         Some(&existing),
     );
@@ -308,7 +318,7 @@ fn managed_write_fields_enabling_with_null_identity_unbinds() {
         true,
         "autonomous",
     );
-    let fields = managed_write_fields(
+    let fields = write(
         &input(IdentityUpdate::Null, None, Some(true)),
         Some(&existing),
     )
@@ -323,7 +333,7 @@ fn managed_write_fields_enabled_false_is_written() {
         true,
         "autonomous",
     );
-    let fields = managed_write_fields(
+    let fields = write(
         &input(IdentityUpdate::Absent, None, Some(false)),
         Some(&existing),
     )
@@ -335,8 +345,7 @@ fn managed_write_fields_enabled_false_is_written() {
 #[test]
 fn managed_write_fields_absent_identity_without_binding_is_allowed() {
     let existing = agent(None, true, "autonomous");
-    let fields =
-        managed_write_fields(&input(IdentityUpdate::Absent, None, None), Some(&existing)).unwrap();
+    let fields = write(&input(IdentityUpdate::Absent, None, None), Some(&existing)).unwrap();
     assert_eq!(fields, ManagedWriteFields::default());
 }
 
@@ -347,7 +356,7 @@ fn managed_write_fields_disabling_without_active_binding_is_allowed() {
         true,
         "autonomous",
     );
-    let fields = managed_write_fields(
+    let fields = write(
         &input(IdentityUpdate::Absent, None, Some(false)),
         Some(&existing),
     )
@@ -367,8 +376,7 @@ fn managed_write_fields_existing_binding_without_principal_fails() {
         true,
         "autonomous",
     );
-    let failure = managed_write_fields(&input(IdentityUpdate::Absent, None, None), Some(&existing))
-        .unwrap_err();
+    let failure = write(&input(IdentityUpdate::Absent, None, None), Some(&existing)).unwrap_err();
     assert_eq!(failure.message, AUTONOMOUS_PRINCIPAL_FAILURE);
 }
 
@@ -383,8 +391,7 @@ fn managed_write_fields_mode_defaults_to_existing() {
         true,
         "delegated",
     );
-    let fields =
-        managed_write_fields(&input(IdentityUpdate::Absent, None, None), Some(&existing)).unwrap();
+    let fields = write(&input(IdentityUpdate::Absent, None, None), Some(&existing)).unwrap();
     assert_eq!(fields.execution_mode, None);
 }
 
@@ -399,7 +406,7 @@ fn managed_write_fields_mode_from_request_is_written() {
         true,
         "autonomous",
     );
-    let fields = managed_write_fields(
+    let fields = write(
         &input(
             IdentityUpdate::Absent,
             Some(AgentExecutionMode::Delegated),
@@ -422,7 +429,7 @@ fn managed_write_fields_mode_from_request_is_written() {
     r#"{"provider":"google","tenant_id":"550e8400-e29b-41d4-a716-446655440000","client_id":"550e8400-e29b-41d4-a716-446655440001"}"#
 )]
 fn managed_write_fields_invalid_identity_is_failure(#[case] identity: &str) {
-    let failure = managed_write_fields(
+    let failure = write(
         &input(IdentityUpdate::Value(json(identity)), None, None),
         None,
     )
@@ -436,28 +443,22 @@ fn managed_write_fields_invalid_identity_is_failure(#[case] identity: &str) {
 }
 
 #[test]
-fn managed_write_fields_revision_is_fresh_uuid() {
-    let first = managed_write_fields(
-        &input(
-            IdentityUpdate::Value(json(&config_json(Some(PRINCIPAL)))),
-            None,
-            None,
-        ),
+fn managed_write_fields_uses_injected_revision() {
+    let write_input = input(
+        IdentityUpdate::Value(json(&config_json(Some(PRINCIPAL)))),
         None,
-    )
-    .unwrap();
-    let second = managed_write_fields(
-        &input(
-            IdentityUpdate::Value(json(&config_json(Some(PRINCIPAL)))),
-            None,
-            None,
-        ),
         None,
-    )
-    .unwrap();
-    let first_revision = created_binding(&first).revision.clone();
-    let second_revision = created_binding(&second).revision.clone();
-    assert_ne!(first_revision, second_revision);
+    );
+    let first = managed_write_fields(&write_input, None, fixed_revision).unwrap();
+    let second = managed_write_fields(&write_input, None, other_revision).unwrap();
+    assert_eq!(
+        created_binding(&first).revision.as_deref(),
+        Some(FIXED_REVISION)
+    );
+    assert_eq!(
+        created_binding(&second).revision.as_deref(),
+        Some(OTHER_REVISION)
+    );
 }
 
 #[test]
@@ -467,8 +468,7 @@ fn managed_write_fields_unbind_without_managed_flag_keeps_enabled() {
         false,
         "autonomous",
     );
-    let fields =
-        managed_write_fields(&input(IdentityUpdate::Null, None, None), Some(&existing)).unwrap();
+    let fields = write(&input(IdentityUpdate::Null, None, None), Some(&existing)).unwrap();
     assert_eq!(fields.enabled, None);
     assert_eq!(fields.identity_managed, None);
     assert!(matches!(
@@ -480,8 +480,7 @@ fn managed_write_fields_unbind_without_managed_flag_keeps_enabled() {
 #[test]
 fn managed_write_fields_unbind_without_identity_disables_agent() {
     let existing = agent(None, true, "autonomous");
-    let fields =
-        managed_write_fields(&input(IdentityUpdate::Null, None, None), Some(&existing)).unwrap();
+    let fields = write(&input(IdentityUpdate::Null, None, None), Some(&existing)).unwrap();
     assert_eq!(fields.identity, None);
     assert_eq!(fields.identity_managed, Some(true));
     assert_eq!(fields.enabled, Some(false));
@@ -489,6 +488,6 @@ fn managed_write_fields_unbind_without_identity_disables_agent() {
 
 #[test]
 fn managed_write_fields_null_identity_without_agent_is_empty() {
-    let fields = managed_write_fields(&input(IdentityUpdate::Null, None, None), None).unwrap();
+    let fields = write(&input(IdentityUpdate::Null, None, None), None).unwrap();
     assert_eq!(fields, ManagedWriteFields::default());
 }

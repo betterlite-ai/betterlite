@@ -1,4 +1,5 @@
 use betterlite_models::decisions::Json;
+use uuid::Uuid;
 
 use super::configuration::{IdentitySource, configuration_failure};
 use super::identity_write::identity_write;
@@ -24,6 +25,7 @@ pub struct ManagedWriteInput {
 pub fn managed_write_fields(
     input: &ManagedWriteInput,
     existing: Option<&AgentResponse>,
+    next_revision: fn() -> Uuid,
 ) -> Result<ManagedWriteFields, AgentIdentityFailure> {
     let identity = match &input.identity {
         IdentityUpdate::Absent | IdentityUpdate::Null => None,
@@ -50,7 +52,7 @@ pub fn managed_write_fields(
         return Err(failure);
     }
     let mut fields = if identity_present {
-        identity_write(identity.as_ref(), existing)
+        identity_write(identity.as_ref(), existing, next_revision)
     } else {
         ManagedWriteFields::default()
     };
