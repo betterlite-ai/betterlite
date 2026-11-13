@@ -197,8 +197,15 @@ fn resolve_prompt_identity_fails_with_litellm_text_when_prompt_id_is_missing() {
 
 #[rstest]
 #[case::integer(Json::Number(serde_json::Number::from(7_i8)), "7", "int")]
+#[case::negative_integer(number(-3), "-3", "int")]
+#[case::float(Json::Number(serde_json::Number::from(1.5_f64)), "1.5", "float")]
 #[case::boolean(Json::Bool(true), "True", "bool")]
 #[case::list(Json::List(vec![text("a"), number(1)]), "['a', 1]", "list")]
+#[case::quoted_list(
+    Json::List(vec![text("it's"), text("a\"b"), text("a'b\"c")]),
+    "[\"it's\", 'a\"b', 'a\\'b\"c']",
+    "list"
+)]
 #[case::dictionary(object(&[("a", number(1))]), "{'a': 1}", "dict")]
 fn resolve_prompt_identity_names_the_value_and_its_python_type(
     #[case] value: Json,
