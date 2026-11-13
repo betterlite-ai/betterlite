@@ -1768,6 +1768,8 @@ dependencies = [
  "betterlite-server",
  "clap",
  "nix",
+ "phf",
+ "rstest",
  "serde",
  "serde_json",
  "tempfile",

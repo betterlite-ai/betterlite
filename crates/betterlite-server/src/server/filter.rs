@@ -19,6 +19,7 @@ struct NotFoundBody {
 }
 
 // LiteLLM keeps a route when it is a kept mount, an exact path, or under a kept prefix
+#[must_use]
 pub fn matches_path(path: &str, routes: ComponentRoutes) -> bool {
     routes.mounts.contains(path)
         || routes.exact.contains(path)
@@ -64,6 +65,7 @@ pub async fn filter_path(
     }
 }
 
+#[must_use]
 pub fn with_component_filter(application: Router, routes: ComponentRoutes) -> Router {
     application.layer(from_fn_with_state(routes, filter_path))
 }
