@@ -169,7 +169,7 @@ async fn stream_leaves_invalid_items_alone() {
 
 #[rstest]
 #[case::no_items(&[])]
-#[case::only_invalid(&["not json", "7"])]
+#[case::only_invalid(&["7", "\"not json\""])]
 #[case::no_text(&[r#"{"result":{"kind":"task"}}"#])]
 #[tokio::test]
 async fn stream_without_a_valid_text_makes_no_call(#[case] raw: &[&str]) {
