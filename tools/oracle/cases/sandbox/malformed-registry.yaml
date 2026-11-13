@@ -1,0 +1,21 @@
+kind: helper
+name: sandbox-malformed-registry
+call:
+  b3519:
+    operation: registry
+    tools:
+      - sandbox_tool_name: good
+        litellm_params:
+          sandbox_provider: e2b
+          api_key: plain-key
+      - litellm_params:
+          sandbox_provider: e2b
+      - sandbox_tool_name: no-provider
+      - sandbox_tool_name: good
+        litellm_params:
+          sandbox_provider: opensandbox
+          api_key: later-key
+    names: [good, no-provider, missing]
+env: {}
+compare:
+  ignore: []

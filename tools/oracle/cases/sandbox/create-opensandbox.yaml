@@ -1,0 +1,23 @@
+kind: helper
+name: sandbox-create-opensandbox
+call:
+  b3519:
+    operation: create
+    provider: opensandbox
+    api_key: open-test-key
+    api_base: https://open.test
+    timeout: 120
+    metadata:
+      team: alpha
+    env_vars:
+      MODE: test
+    resource_limits:
+      cpu: "2"
+      memory: 4Gi
+    secure_access: true
+    replies:
+      - body: '{"id":"sbx_open","status":{"state":"Running"}}'
+      - body: '{"endpoint":"http://127.0.0.1:44772","headers":{"x-execd-token":"execd-secret"}}'
+env: {}
+compare:
+  ignore: []
