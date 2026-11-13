@@ -475,3 +475,119 @@ fn a_null_search_results_fails_the_step_and_leaves_the_reply_unchanged() {
     let enhanced = enhanced_reply(reply, &raw.to_string());
     assert_eq!(enhanced, reply_json(reply));
 }
+
+#[rstest]
+#[case::null(json!(null), None)]
+#[case::zero(json!(0), None)]
+#[case::zero_float(json!(0.0), None)]
+#[case::false_flag(json!(false), None)]
+#[case::empty_list(json!([]), None)]
+#[case::empty_object(json!({}), None)]
+#[case::number(json!(12_345_678), Some(2))]
+#[case::true_flag(json!(true), Some(1))]
+#[case::list(json!([12_345_678]), Some(2))]
+#[case::object(json!({"a": 1}), Some(1))]
+fn only_truthy_citation_entries_are_counted(#[case] entry: Value, #[case] expected: Option<i64>) {
+    let raw = json!({"usage": {}, "citations": [entry]});
+    let enhanced = enhanced_reply(
+        r#"{"object":"chat.completion","choices":[]}"#,
+        &raw.to_string(),
+    );
+    assert_eq!(enhanced["usage"]["citation_tokens"], json!(expected));
+}
+
+#[test]
+fn an_existing_usage_is_kept_and_extended() {
+    let raw = json!({"citations": ["abcdefgh"], "usage": {"num_search_queries": 3}});
+    let reply = json!({
+        "choices": [],
+        "usage": {
+            "prompt_tokens": 5,
+            "completion_tokens": 6,
+            "total_tokens": 11,
+            "prompt_tokens_details": {"cached_tokens": 2}
+        }
+    });
+    let enhanced = enhanced_reply(&reply.to_string(), &raw.to_string());
+    assert_eq!(
+        enhanced["usage"],
+        json!({
+            "prompt_tokens": 5,
+            "completion_tokens": 6,
+            "total_tokens": 11,
+            "citation_tokens": 2,
+            "prompt_tokens_details": {"cached_tokens": 2, "web_search_requests": 3}
+        })
+    );
+}
+
+#[test]
+fn a_null_reply_usage_is_replaced_by_a_zero_usage() {
+    let raw = json!({"citations": ["abcd"]});
+    let enhanced = enhanced_reply(r#"{"choices":[],"usage":null}"#, &raw.to_string());
+    assert_eq!(
+        enhanced["usage"],
+        json!({
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "citation_tokens": 1,
+            "prompt_tokens_details": {}
+        })
+    );
+}
+
+#[test]
+fn a_non_object_reply_usage_leaves_the_reply_unchanged() {
+    let reply = r#"{"choices":[],"usage":5}"#;
+    let raw = json!({"citations": ["abcd"]});
+    assert_eq!(enhanced_reply(reply, &raw.to_string()), reply_json(reply));
+}
+
+#[test]
+fn citation_tokens_alone_create_empty_prompt_token_details() {
+    let raw = json!({"citations": ["abcd"], "usage": {"num_search_queries": 0}});
+    let enhanced = enhanced_reply(r#"{"choices":[]}"#, &raw.to_string());
+    assert_eq!(enhanced["usage"]["prompt_tokens_details"], json!({}));
+}
+
+#[rstest]
+#[case::zero(json!(0), true)]
+#[case::empty_text(json!(""), true)]
+#[case::empty_object(json!({}), true)]
+#[case::false_flag(json!(false), true)]
+#[case::number(json!(5), false)]
+#[case::text(json!("x"), false)]
+fn choices_that_are_not_a_list_only_fail_when_truthy(
+    #[case] choices: Value,
+    #[case] skipped: bool,
+) {
+    let raw = json!({"citations": ["abcd"]});
+    let reply = json!({"choices": choices});
+    let enhanced = enhanced_reply(&reply.to_string(), &raw.to_string());
+    assert_eq!(enhanced.get("usage").is_some(), skipped);
+}
+
+#[test]
+fn a_search_result_without_a_title_is_ignored() {
+    let raw = json!({
+        "citations": ["https://a.example"],
+        "search_results": [{"url": "https://a.example"}]
+    });
+    let enhanced = enhanced_reply(
+        r#"{"choices":[{"message":{"role":"assistant","content":"[1]"}}]}"#,
+        &raw.to_string(),
+    );
+    assert_eq!(
+        enhanced["choices"][0]["message"]["annotations"][0]["url_citation"]["title"],
+        json!("")
+    );
+}
+
+#[test]
+fn non_list_existing_annotations_leave_the_reply_unchanged() {
+    let reply =
+        r#"{"choices":[{"message":{"role":"assistant","content":"[1]","annotations":"x"}}]}"#;
+    let raw = json!({"citations": ["https://a.example"]});
+    assert_eq!(enhanced_reply(reply, &raw.to_string()), reply_json(reply));
+}
