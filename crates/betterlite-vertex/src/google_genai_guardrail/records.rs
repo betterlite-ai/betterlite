@@ -18,20 +18,14 @@ pub fn project_request(request: &GenerateContentRequest) -> Object {
     object
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SystemSource {
-    RootCamel,
-    RootSnake,
-    ConfigCamel,
-    ConfigSnake,
+// a provider-local text location: the key and index path to the part object whose text is rewritten
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Segment {
+    Key(&'static str),
+    Index(usize),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Location {
-    System { source: SystemSource, part: usize },
-    Content { content: usize, part: usize },
-    Candidate { candidate: usize, part: usize },
-}
+pub type Location = Vec<Segment>;
 
 fn field<'value>(container: &'value Json, name: &str) -> Option<&'value Json> {
     let Json::Object(object) = container else {
@@ -47,64 +41,72 @@ fn field_mut<'value>(container: &'value mut Json, name: &str) -> Option<&'value 
     None
 }
 
-fn part_text(part: &Json) -> Option<&str> {
-    if let Some(Json::Text(text)) = field(part, "text")
-        && !text.is_empty()
-    {
-        return Some(text);
-    }
-    None
-}
-
-fn content_text_parts(content: &Json) -> Vec<(usize, &str)> {
+fn text_parts(content: &Json) -> Vec<(usize, &str)> {
     let Some(Json::List(parts)) = field(content, "parts") else {
         return Vec::new();
     };
-    parts
-        .iter()
-        .enumerate()
-        .filter_map(|(index, part)| part_text(part).map(|text| (index, text)))
-        .collect()
+    let mut found = Vec::new();
+    for (index, part) in parts.iter().enumerate() {
+        if let Some(Json::Text(text)) = field(part, "text")
+            && !text.is_empty()
+        {
+            found.push((index, text));
+        }
+    }
+    found
 }
 
 // root then config, camelCase then snake_case, and the first non-null value wins even when it holds no text
-fn system_instruction(data: &Object) -> Option<(SystemSource, &Json)> {
+fn system_instruction(data: &Object) -> Option<(Location, &Json)> {
     let config = data.get("config");
     [
-        (SystemSource::RootCamel, data.get("systemInstruction")),
-        (SystemSource::RootSnake, data.get("system_instruction")),
         (
-            SystemSource::ConfigCamel,
+            vec![Segment::Key("systemInstruction")],
+            data.get("systemInstruction"),
+        ),
+        (
+            vec![Segment::Key("system_instruction")],
+            data.get("system_instruction"),
+        ),
+        (
+            vec![Segment::Key("config"), Segment::Key("systemInstruction")],
             config.and_then(|value| field(value, "systemInstruction")),
         ),
         (
-            SystemSource::ConfigSnake,
+            vec![Segment::Key("config"), Segment::Key("system_instruction")],
             config.and_then(|value| field(value, "system_instruction")),
         ),
     ]
     .into_iter()
     .find(|(_, value)| value.is_some_and(|value| !matches!(*value, Json::Null)))
-    .and_then(|(source, value)| value.map(|value| (source, value)))
+    .and_then(|(location, value)| value.map(|value| (location, value)))
 }
 
-fn push_content(parts: &mut Vec<(Location, String)>, content: usize, item: &Json) {
-    for (part, text) in content_text_parts(item) {
-        parts.push((Location::Content { content, part }, text.to_owned()));
+fn append_parts(parts: &mut Vec<(Location, String)>, mut path: Location, content: &Json) {
+    path.push(Segment::Key("parts"));
+    for (part, text) in text_parts(content) {
+        let mut location = path.clone();
+        location.push(Segment::Index(part));
+        parts.push((location, text.to_owned()));
     }
 }
 
 fn request_parts(data: &Object) -> Vec<(Location, String)> {
     let mut parts = Vec::new();
-    if let Some((source, instruction)) = system_instruction(data) {
-        for (part, text) in content_text_parts(instruction) {
-            parts.push((Location::System { source, part }, text.to_owned()));
-        }
+    if let Some((path, instruction)) = system_instruction(data) {
+        append_parts(&mut parts, path, instruction);
     }
     match data.get("contents") {
-        Some(contents @ Json::Object(_)) => push_content(&mut parts, 0, contents),
+        Some(contents @ Json::Object(_)) => {
+            append_parts(&mut parts, vec![Segment::Key("contents")], contents);
+        }
         Some(Json::List(items)) => {
             for (content, item) in items.iter().enumerate() {
-                push_content(&mut parts, content, item);
+                append_parts(
+                    &mut parts,
+                    vec![Segment::Key("contents"), Segment::Index(content)],
+                    item,
+                );
             }
         }
         _ => {}
@@ -114,78 +116,59 @@ fn request_parts(data: &Object) -> Vec<(Location, String)> {
 
 #[must_use]
 pub fn request_texts(data: &Object) -> (Vec<Location>, Vec<String>) {
+    let parts = request_parts(data);
+    let locations = parts.iter().map(|(location, _)| location.clone()).collect();
+    let texts = parts.into_iter().map(|(_, text)| text).collect();
+    (locations, texts)
+}
+
+fn response_parts(response: &Object) -> Vec<(Location, String)> {
+    let Some(Json::List(candidates)) = response.get("candidates") else {
+        return Vec::new();
+    };
+    let mut parts = Vec::new();
+    for (candidate, entry) in candidates.iter().enumerate() {
+        if let Some(content) = field(entry, "content") {
+            append_parts(
+                &mut parts,
+                vec![
+                    Segment::Key("candidates"),
+                    Segment::Index(candidate),
+                    Segment::Key("content"),
+                ],
+                content,
+            );
+        }
+    }
+    parts
+}
+
+#[must_use]
+pub fn response_texts(response: &Object) -> (Vec<Location>, Vec<String>) {
     let mut locations = Vec::new();
     let mut texts = Vec::new();
-    for (location, text) in request_parts(data) {
+    for (location, text) in response_parts(response) {
         locations.push(location);
         texts.push(text);
     }
     (locations, texts)
 }
 
-#[must_use]
-pub fn response_texts(response: &Object) -> (Vec<Location>, Vec<String>) {
-    let Some(Json::List(candidates)) = response.get("candidates") else {
-        return (Vec::new(), Vec::new());
+fn resolve_mut<'data>(data: &'data mut Object, location: &[Segment]) -> Option<&'data mut Json> {
+    let (Segment::Key(first), rest) = location.split_first()? else {
+        return None;
     };
-    let mut parts = Vec::new();
-    for (candidate, entry) in candidates.iter().enumerate() {
-        if let Some(content) = field(entry, "content") {
-            parts.extend(
-                content_text_parts(content)
-                    .into_iter()
-                    .map(|(part, text)| (Location::Candidate { candidate, part }, text.to_owned())),
-            );
-        }
+    let mut current = data.get_mut(*first)?;
+    for segment in rest {
+        current = match segment {
+            Segment::Key(key) => field_mut(current, key)?,
+            Segment::Index(index) => match current {
+                Json::List(items) => items.get_mut(*index)?,
+                _ => return None,
+            },
+        };
     }
-    parts.into_iter().unzip()
-}
-
-fn content_part_mut<'data>(content: &'data mut Json, part: usize) -> Option<&'data mut Json> {
-    if let Some(Json::List(parts)) = field_mut(content, "parts") {
-        return parts.get_mut(part);
-    }
-    None
-}
-
-fn system_part_mut<'data>(
-    data: &'data mut Object,
-    source: SystemSource,
-    part: usize,
-) -> Option<&'data mut Json> {
-    let container = match source {
-        SystemSource::RootCamel => data.get_mut("systemInstruction"),
-        SystemSource::RootSnake => data.get_mut("system_instruction"),
-        SystemSource::ConfigCamel => field_mut(data.get_mut("config")?, "systemInstruction"),
-        SystemSource::ConfigSnake => field_mut(data.get_mut("config")?, "system_instruction"),
-    }?;
-    content_part_mut(container, part)
-}
-
-fn location_part_mut(data: &mut Object, location: Location) -> Option<&mut Json> {
-    match location {
-        Location::System { source, part } => system_part_mut(data, source, part),
-        Location::Content { content, part } => match data.get_mut("contents") {
-            Some(Json::List(items)) => items
-                .get_mut(content)
-                .and_then(|item| content_part_mut(item, part)),
-            Some(item @ Json::Object(_)) if content == 0 => content_part_mut(item, part),
-            _ => None,
-        },
-        Location::Candidate { candidate, part } => {
-            let Some(Json::List(candidates)) = data.get_mut("candidates") else {
-                return None;
-            };
-            let entry = candidates.get_mut(candidate)?;
-            content_part_mut(field_mut(entry, "content")?, part)
-        }
-    }
-}
-
-fn write_part(part: Option<&mut Json>, text: &str) {
-    if let Some(Json::Object(fields)) = part {
-        fields.insert("text".to_owned(), Json::Text(text.to_owned()));
-    }
+    Some(current)
 }
 
 pub fn write_texts(data: &mut Object, locations: &[Location], texts: &[String]) {
@@ -193,7 +176,9 @@ pub fn write_texts(data: &mut Object, locations: &[Location], texts: &[String]) 
         return;
     }
     for (location, text) in locations.iter().zip(texts) {
-        write_part(location_part_mut(data, *location), text);
+        if let Some(Json::Object(fields)) = resolve_mut(data, location) {
+            fields.insert("text".to_owned(), Json::Text(text.clone()));
+        }
     }
 }
 

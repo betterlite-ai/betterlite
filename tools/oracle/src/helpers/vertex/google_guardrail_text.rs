@@ -3,12 +3,13 @@ mod tests;
 use std::fmt::Display;
 
 use betterlite_prompts::arguments::json::{Json, Object};
-use betterlite_vertex::google_genai_guardrail::callbacks::{
-    ApplyFuture, GenaiGuardrail, GuardrailCall, GuardrailInputs, InputType, process_request,
-    process_response, process_stream,
+use betterlite_vertex::google_genai_guardrail::callbacks::merged_request_data;
+use betterlite_vertex::google_genai_guardrail::records::{
+    request_texts, response_texts, write_texts,
 };
-use betterlite_vertex::google_genai_guardrail::sse::decode_google_guardrail_sse;
-use betterlite_vertex::google_native_content::response::GenerateContentResponse;
+use betterlite_vertex::google_genai_guardrail::sse::{
+    accumulated_stream_text, decode_google_guardrail_sse,
+};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -82,52 +83,14 @@ impl SseChunk {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error("the recording guardrail cannot fail")]
-struct NeverFails;
-
-struct RecordedCall {
-    texts: Vec<String>,
-    model: Option<String>,
-    input_type: InputType,
-    request_data: Object,
-}
-
-struct Recorder {
-    replacement: Option<Vec<String>>,
-    calls: Vec<RecordedCall>,
-}
-
-impl GenaiGuardrail for Recorder {
-    type Failure = NeverFails;
-
-    fn apply_guardrail<'call>(
-        &'call mut self,
-        inputs: GuardrailInputs,
-        call: GuardrailCall<'call>,
-    ) -> ApplyFuture<'call, Self::Failure> {
-        self.calls.push(RecordedCall {
-            texts: inputs.texts.clone(),
-            model: inputs.model.clone(),
-            input_type: call.input_type,
-            request_data: call.request_data.clone(),
-        });
-        let replacement = self.replacement.clone().unwrap_or(inputs.texts);
-        Box::pin(async move { Ok(Some(replacement)) })
-    }
-}
-
 impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .map_err(failure)?;
         let calls = input
             .calls
             .iter()
-            .map(|call| resolve(&runtime, call))
+            .map(resolve)
             .collect::<Result<Vec<_>, _>>()?;
         Ok(json!({ "calls": calls }))
     }
@@ -144,87 +107,70 @@ fn failure<Error: Display>(error: Error) -> Box<HelperError> {
     })
 }
 
-fn resolve(runtime: &tokio::runtime::Runtime, call: &Call) -> HelperResult {
+fn resolve(call: &Call) -> HelperResult {
     match call {
         Call::Request(given) => {
-            let mut recorder = Recorder {
-                replacement: given.guarded.replacement.clone(),
-                calls: Vec::new(),
-            };
             let mut data = given.data.clone();
-            runtime
-                .block_on(process_request(&mut data, &mut recorder))
-                .map_err(failure)?;
-            result(&recorder, &Json::Object(data))
+            let (locations, texts) = request_texts(&data);
+            let called = !texts.is_empty();
+            let request_data = called.then(|| data.clone());
+            if let Some(replacement) = &given.guarded.replacement {
+                write_texts(&mut data, &locations, replacement);
+            }
+            Ok(json!({
+                "texts": called.then_some(texts.as_slice()),
+                "request_data": request_data.as_ref(),
+                "data": Json::Object(data),
+            }))
         }
         Call::Response(given) => {
-            let mut recorder = Recorder {
-                replacement: given.guarded.replacement.clone(),
-                calls: Vec::new(),
-            };
+            let mut response = given.response.clone();
+            let (locations, texts) = response_texts(&response);
+            let called = !texts.is_empty();
             let metadata = given.guarded.user_api_key_dict.clone().unwrap_or_default();
-            let mut record = GenerateContentResponse {
-                wire: given.response.clone(),
-            };
-            runtime
-                .block_on(process_response(
-                    &mut record.wire,
+            let merged = called.then(|| {
+                merged_request_data(
                     given.guarded.request_data.as_ref(),
                     &metadata,
-                    &mut recorder,
-                ))
-                .map_err(failure)?;
-            result(&recorder, &Json::Object(record.wire))
+                    "response",
+                    Json::Object(response.clone()),
+                )
+            });
+            if let Some(replacement) = &given.guarded.replacement {
+                write_texts(&mut response, &locations, replacement);
+            }
+            Ok(json!({
+                "texts": called.then_some(texts.as_slice()),
+                "request_data": merged.as_ref(),
+                "data": Json::Object(response),
+            }))
         }
         Call::Stream(given) => {
-            let frames = given.frames.clone();
+            let accumulated = accumulated_stream_text(&given.frames);
+            let called = !accumulated.is_empty();
             let metadata = given.guarded.user_api_key_dict.clone().unwrap_or_default();
-            let mut recorder = Recorder {
-                replacement: given.guarded.replacement.clone(),
-                calls: Vec::new(),
-            };
-            runtime
-                .block_on(process_stream(
-                    &frames,
+            let texts = called.then(|| vec![accumulated]);
+            let merged = called.then(|| {
+                merged_request_data(
                     given.guarded.request_data.as_ref(),
                     &metadata,
-                    &mut recorder,
-                ))
-                .map_err(failure)?;
-            result(&recorder, &Json::List(frames))
+                    "responses_so_far",
+                    Json::List(given.frames.clone()),
+                )
+            });
+            Ok(json!({
+                "texts": texts.as_deref(),
+                "request_data": merged.as_ref(),
+                "data": Json::List(given.frames.clone()),
+            }))
         }
-        Call::Sse(given) => sse_case(given),
+        Call::Sse(given) => {
+            let chunks: Vec<&[u8]> = given.chunks.iter().map(SseChunk::bytes).collect();
+            let texts = decode_google_guardrail_sse(&chunks);
+            if texts.is_empty() {
+                return Ok(json!({ "text": null }));
+            }
+            Ok(json!({ "text": texts.concat() }))
+        }
     }
-}
-
-fn sse_case(call: &SseCall) -> HelperResult {
-    let chunks: Vec<&[u8]> = call.chunks.iter().map(SseChunk::bytes).collect();
-    let texts = decode_google_guardrail_sse(&chunks);
-    if texts.is_empty() {
-        return Ok(json!({ "text": null }));
-    }
-    Ok(json!({ "text": texts.concat() }))
-}
-
-fn result(recorder: &Recorder, data: &Json) -> HelperResult {
-    let Some(call) = recorder.calls.first() else {
-        return Ok(json!({
-            "called": false,
-            "call_count": 0,
-            "texts": null,
-            "model": null,
-            "input_type": null,
-            "request_data": null,
-            "data": data,
-        }));
-    };
-    Ok(json!({
-        "called": true,
-        "call_count": recorder.calls.len(),
-        "texts": &call.texts,
-        "model": &call.model,
-        "input_type": call.input_type.as_str(),
-        "request_data": &call.request_data,
-        "data": data,
-    }))
 }
