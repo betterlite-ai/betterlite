@@ -1,0 +1,14 @@
+task: B3033
+deviations:
+  - what: CHECK_AND_INCREMENT_BY_N_SCRIPT reads Redis server time with redis.call('TIME') instead of taking a client timestamp.
+    why: Window resets stay deterministic across replicas whose wall clocks differ, so no replica can reopen the check-and-increment race by running ahead of the others.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L229
+  - what: The in-memory fallback reads and writes only the local cache and accepts counter divergence from Redis until each window expires.
+    why: Enforcement continues while Redis is unavailable, and the counter TTL bounds how long the two stores can disagree.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2421
+  - what: A cached counter or window start that is a float is a decode error naming the key.
+    why: LiteLLM's int() truncates 2.5 to 2, a Python runtime habit docs/compatibility.md does not copy; nothing in this limiter writes a float into these keys, so a float means the cache holds a value no path produced.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2456
+  - what: A Lua reply that names counter index 0 or below, or that stops before the counters it lists, is a decode error.
+    why: LiteLLM subtracts one from the 1-based index and lets Python list indexing wrap a negative index onto the last counter; no reply the script can produce is malformed that way, and a wrapped index would charge the wrong descriptor.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2377
