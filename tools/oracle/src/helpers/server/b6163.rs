@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
@@ -76,6 +76,13 @@ impl ScriptedGuardrail {
             calls: Mutex::new(Vec::new()),
         }
     }
+
+    fn recorded(&self) -> Vec<Value> {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
 }
 
 impl GuardrailContract for ScriptedGuardrail {
@@ -86,11 +93,13 @@ impl GuardrailContract for ScriptedGuardrail {
         input_type: GuardrailInputType,
         _logging_obj: Option<&mut GuardrailLogTarget>,
     ) -> impl Future<Output = Result<GuardrailApiInputs, GuardrailFailure>> + Send {
-        self.calls.lock().unwrap().push(json!({
+        let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
+        calls.push(json!({
             "input_type": input_type,
             "inputs": serde_json::to_value(&inputs).unwrap_or(Value::Null),
             "request_data": serde_json::to_value(&*request_data).unwrap_or(Value::Null),
         }));
+        drop(calls);
         let reply = self.reply.clone();
         async move {
             let mut outputs = inputs;
@@ -105,108 +114,91 @@ impl GuardrailContract for ScriptedGuardrail {
 impl Helper for Op {
     type Input = Request;
 
-    fn run(input_value: &Self::Input) -> HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .or_value_error()?;
-        match input_value {
+        match input {
             Request::Input { scenarios } => {
-                results(&runtime, scenarios.iter().map(Call::Input).collect())
+                let entries = scenarios.iter().map(Call::Input).collect::<Vec<_>>();
+                results(&runtime, &entries)
             }
             Request::Output { scenarios } => {
-                results(&runtime, scenarios.iter().map(Call::Output).collect())
+                let entries = scenarios.iter().map(Call::Output).collect::<Vec<_>>();
+                results(&runtime, &entries)
             }
             Request::Stream { scenarios } => {
-                results(&runtime, scenarios.iter().map(Call::Stream).collect())
+                let entries = scenarios.iter().map(Call::Stream).collect::<Vec<_>>();
+                results(&runtime, &entries)
             }
         }
     }
 }
 
-fn results(runtime: &tokio::runtime::Runtime, calls: Vec<Call<'_>>) -> HelperResult {
-    let results = calls
+fn results(runtime: &tokio::runtime::Runtime, entries: &[Call<'_>]) -> HelperResult {
+    let results = entries
         .iter()
-        .map(|call| call_result(runtime, call))
+        .map(|entry| call_result(runtime, entry))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(Value::Array(results))
 }
 
-fn call_result(runtime: &tokio::runtime::Runtime, call: &Call<'_>) -> HelperResult {
-    let guardrail = ScriptedGuardrail::new(call.reply().cloned());
-    match call {
+fn call_result(runtime: &tokio::runtime::Runtime, entry: &Call<'_>) -> HelperResult {
+    let guardrail = ScriptedGuardrail::new(entry.reply().cloned());
+    match entry {
         Call::Input(scenario) => {
             let mut data: BTreeMap<String, GuardrailValue> =
                 serde_json::from_value(Value::Object(scenario.data.clone())).or_value_error()?;
-            runtime
-                .block_on(input::process_input_messages(&mut data, &guardrail, None))
-                .or_value_error()?;
-            let calls = guardrail.calls.lock().unwrap().clone();
-            Ok(finished(
-                "data",
-                serde_json::to_value(&data).or_value_error()?,
-                calls,
-            ))
+            let action = input::process_input_messages(&mut data, &guardrail, None);
+            runtime.block_on(action).or_value_error()?;
+            let calls = guardrail.recorded();
+            Ok(json!({"data": serde_json::to_value(&data).or_value_error()?, "calls": calls}))
         }
         Call::Output(scenario) => {
             let mut response: GuardrailValue =
                 serde_json::from_value(scenario.response.clone()).or_value_error()?;
-            let mut request_data = request_data(&scenario.request_data)?;
-            runtime
-                .block_on(output::process_output_response(
-                    &mut response,
-                    &guardrail,
-                    None,
-                    None,
-                    request_data.as_mut(),
-                ))
-                .or_value_error()?;
-            let calls = guardrail.calls.lock().unwrap().clone();
-            Ok(finished(
-                "response",
-                serde_json::to_value(&response).or_value_error()?,
-                calls,
-            ))
+            let mut stored = request_data(scenario.request_data.as_ref())?;
+            let action = output::process_output_response(
+                &mut response,
+                &guardrail,
+                None,
+                None,
+                stored.as_mut(),
+            );
+            runtime.block_on(action).or_value_error()?;
+            let calls = guardrail.recorded();
+            Ok(
+                json!({"response": serde_json::to_value(&response).or_value_error()?, "calls": calls}),
+            )
         }
-        Call::Stream(scenario) => {
-            let mut responses: Vec<GuardrailValue> = scenario
-                .responses
-                .iter()
-                .cloned()
-                .map(serde_json::from_value)
-                .collect::<Result<Vec<_>, _>>()
-                .or_value_error()?;
-            let mut request_data = request_data(&scenario.request_data)?;
-            runtime
-                .block_on(stream::process_streaming_response(
-                    &mut responses,
-                    &guardrail,
-                    None,
-                    None,
-                    request_data.as_mut(),
-                ))
-                .or_value_error()?;
-            let calls = guardrail.calls.lock().unwrap().clone();
-            Ok(finished(
-                "responses",
-                serde_json::to_value(&responses).or_value_error()?,
-                calls,
-            ))
-        }
+        Call::Stream(scenario) => stream_result(runtime, scenario, &guardrail),
     }
 }
 
-fn finished(key: &str, value: Value, calls: Vec<Value>) -> Value {
-    let mut result = Map::new();
-    result.insert(key.to_owned(), value);
-    result.insert("calls".to_owned(), Value::Array(calls));
-    Value::Object(result)
+fn stream_result(
+    runtime: &tokio::runtime::Runtime,
+    scenario: &StreamScenario,
+    guardrail: &ScriptedGuardrail,
+) -> HelperResult {
+    let mut responses: Vec<GuardrailValue> = scenario
+        .responses
+        .iter()
+        .cloned()
+        .map(serde_json::from_value)
+        .collect::<Result<Vec<_>, _>>()
+        .or_value_error()?;
+    let mut stored = request_data(scenario.request_data.as_ref())?;
+    let action =
+        stream::process_streaming_response(&mut responses, guardrail, None, None, stored.as_mut());
+    runtime.block_on(action).or_value_error()?;
+    let calls = guardrail.recorded();
+    Ok(json!({"responses": serde_json::to_value(&responses).or_value_error()?, "calls": calls}))
 }
 
 fn request_data(
-    given: &Option<Map<String, Value>>,
+    given: Option<&Map<String, Value>>,
 ) -> Result<Option<BTreeMap<String, GuardrailValue>>, Box<crate::helpers::HelperError>> {
     given
-        .as_ref()
         .map(|fields| serde_json::from_value(Value::Object(fields.clone())))
         .transpose()
         .or_value_error()
