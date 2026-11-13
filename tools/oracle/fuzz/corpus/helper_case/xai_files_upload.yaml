@@ -1,0 +1,11 @@
+kind: helper
+name: xai-files-upload-seed
+call:
+  xai_files:
+    env: {XAI_API_KEY: environment}
+    xai_key: module
+    steps:
+      - {step: auth, api_key: explicit}
+      - {step: reply, parse: file, api_base: null, now: 1, status: 200, body: '{"id": "seed"}'}
+env: {}
+compare: {ignore: []}
