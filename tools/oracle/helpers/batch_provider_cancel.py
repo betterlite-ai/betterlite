@@ -164,13 +164,12 @@ def cancel(call: CancelCall, settings: Settings | None, env: dict[str, str]) -> 
             litellm.vertex_project,
             litellm.vertex_location,
         ) = previous
-    return WIRE.validate_python(
-        {
-            "batch": WIRE.validate_json(batch.model_dump_json()),
-            "model": call["model"],
-            "calls": [],
-        }
-    )
+    answer: dict[str, JsonValue] = {
+        "batch": WIRE.validate_json(batch.model_dump_json()),
+        "model": call["model"],
+        "calls": [],
+    }
+    return answer
 
 
 def status_fields(status: Status) -> dict[str, JsonValue]:
@@ -212,9 +211,12 @@ def async_invoke(status: Status) -> JsonValue:
     finally:
         bedrock_embedding.BedrockEmbedding = previous
         ScriptedEmbedding.answer = previous_answer
-    return WIRE.validate_python(
-        {"batch": WIRE.validate_json(batch.model_dump_json()), "model": None, "calls": []}
-    )
+    answer: dict[str, JsonValue] = {
+        "batch": WIRE.validate_json(batch.model_dump_json()),
+        "model": None,
+        "calls": [],
+    }
+    return answer
 
 
 def run(input_value: Input) -> JsonValue:
