@@ -65,25 +65,20 @@ fn convert(record: Option<&JsonData>) -> Result<Option<LiteLLMTeamTable>, TeamRe
 
 fn label(error: &TeamRecordError) -> String {
     match error {
-        TeamRecordError::Field { .. } => "invalid json".to_owned(),
-        TeamRecordError::Record { source } => record_label(source),
-        TeamRecordError::NotAnObject
+        TeamRecordError::Record {
+            source: TeamRowError::Field { field, .. },
+        } => format!("Field {field} should be a valid dictionary"),
+        TeamRecordError::Field { .. }
+        | TeamRecordError::Record {
+            source:
+                TeamRowError::TooLarge { .. }
+                | TeamRowError::TooDeep
+                | TeamRowError::InvalidUtf8(_)
+                | TeamRowError::Json(_),
+        } => "invalid json".to_owned(),
+        TeamRecordError::Record { .. }
+        | TeamRecordError::NotAnObject
         | TeamRecordError::NotAList
         | TeamRecordError::Member { .. } => "invalid model".to_owned(),
-    }
-}
-
-fn record_label(error: &TeamRowError) -> String {
-    match error {
-        TeamRowError::Field { field, .. } => {
-            format!("Field {field} should be a valid dictionary")
-        }
-        TeamRowError::TooLarge { .. }
-        | TeamRowError::TooDeep
-        | TeamRowError::InvalidUtf8(_)
-        | TeamRowError::Json(_) => "invalid json".to_owned(),
-        TeamRowError::NotAnObject | TeamRowError::MissingIdentity | TeamRowError::MissingTeamId => {
-            "invalid model".to_owned()
-        }
     }
 }

@@ -81,7 +81,7 @@ impl<'database> TeamRepository<'database> {
     ) -> Result<Vec<LiteLLMTeamTable>, TeamQueryError> {
         let records = self
             .table()
-            .find_by_organization_id(organization_id)
+            .find_many_by_organization(organization_id)
             .await?;
         let mut teams = Vec::with_capacity(records.len());
         for record in &records {
@@ -117,10 +117,13 @@ impl TeamTable<'_> {
             .query_opt(FIND_BY_ID_SQL, &[&team_id])
             .await
             .map_err(backend)?;
-        row.as_ref().map(row_record).transpose()
+        let Some(found) = row else {
+            return Ok(None);
+        };
+        row_record(&found).map(Some)
     }
 
-    pub async fn find_by_organization_id(
+    pub async fn find_many_by_organization(
         &self,
         organization_id: &str,
     ) -> Result<Vec<TeamRecord>, TeamQueryError> {
