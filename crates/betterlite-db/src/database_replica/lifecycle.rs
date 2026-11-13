@@ -41,12 +41,20 @@ where
 
     fn connect(&self, timeout: Option<Duration>) -> ClientFuture<'_, (), Client::Error> {
         Box::pin(async move {
-            let writer_error = attempt_connect(&self.writer, timeout).await;
+            let writer_error = if self.writer.is_connected() {
+                None
+            } else {
+                self.writer.connect(timeout).await.err()
+            };
             if writer_error.is_none() {
                 self.availability.mark_writer_recovered();
                 info!("[writer] DB connected");
             }
-            let reader_error = attempt_connect(&self.reader, timeout).await;
+            let reader_error = if self.reader.is_connected() {
+                None
+            } else {
+                self.reader.connect(timeout).await.err()
+            };
             if reader_error.is_none() {
                 self.availability.clear_reader_unavailable();
                 info!("[reader] DB connected");
@@ -139,20 +147,6 @@ where
             warn!("Error disconnecting Prisma client: {error}");
             Err(error)
         }
-    }
-}
-
-async fn attempt_connect<Client>(
-    client: &Client,
-    timeout: Option<Duration>,
-) -> Option<Client::Error>
-where
-    Client: DatabaseClient,
-{
-    if client.is_connected() {
-        None
-    } else {
-        client.connect(timeout).await.err()
     }
 }
 
