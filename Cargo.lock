@@ -3310,15 +3310,20 @@ dependencies = [
 name = "betterlite-vertex"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64 0.23.1",
  "betterlite-bedrock",
+ "betterlite-cache",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-core",
  "betterlite-error",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-redact",
  "betterlite-tokenizer",
  "google-cloud-auth",
  "google-cloud-gax",
@@ -3336,10 +3341,12 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_with",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-subscriber",
  "url",
  "uuid",
 ]
