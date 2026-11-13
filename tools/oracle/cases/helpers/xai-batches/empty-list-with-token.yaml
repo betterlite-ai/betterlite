@@ -1,0 +1,12 @@
+kind: helper
+name: empty-list-with-token
+call:
+  xai_batches:
+    operation: list
+    calls:
+      - page: {batches: [], pagination_token: "next-token"}
+      - page: {batches: [{batch_id: batch_a}, {batch_id: batch_b}], pagination_token: null}
+      - page: {batches: []}
+      - page: {batches: [], pagination_token: ""}
+env: {}
+compare: {ignore: []}

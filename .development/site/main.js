@@ -1,4 +1,4 @@
-import { REPO, GITHUB, DAY, number, shortDate, longDate, esc, percent, idNumber, figure, plural, fetchText, parseCsv } from "./shared.js";
+import { REPO, GITHUB, DAY, number, shortDate, yearDate, longDate, esc, percent, idNumber, figure, plural, fetchText, parseCsv, porting, milestoneOrder } from "./shared.js";
 import { renderHistory } from "./history.js";
 
 const STATES = [
@@ -129,7 +129,8 @@ function analyzePath(path, byId, depths, next) {
     }
   }
   chain.reverse();
-  return { path, total: entries.length, open, chain, withoutFile: open.filter((entry) => !entry.file).length };
+  const counted = entries.filter(porting);
+  return { path, total: counted.length, done: counted.filter((entry) => entry.status === "done").length, open, chain, withoutFile: open.filter((entry) => !entry.file).length };
 }
 
 // The first five rows, and the rest behind a toggle.
@@ -146,8 +147,7 @@ function taskRow(entry) {
 }
 
 function renderPath(facts, byId, reviewing) {
-  const { path, total, open, chain, withoutFile } = facts;
-  const done = total - open.length;
+  const { path, total, done, open, chain, withoutFile } = facts;
   const ready = open.filter((entry) => taskState(entry, byId, reviewing) === "ready");
   const inReview = open.filter((entry) => reviewing.has(entry.id)).length;
   const targets = path.targets.map((id) => taskLink(byId.get(id))).join(", ");
@@ -191,7 +191,7 @@ function renderMilestone(group, milestones, byId, children, merges, reviewing) {
   const bar = STATES.filter((state) => byState.get(state.key).length > 0)
     .map((state) => `<span class="state-${state.key}" style="flex-grow:${byState.get(state.key).length}" title="${state.label}: ${number.format(byState.get(state.key).length)}"></span>`)
     .join("");
-  const keys = STATES.map((state) => `<span><i class="state-${state.key}"></i>${state.label} <b>${number.format(byState.get(state.key).length)}</b></span>`).join("");
+  const keys = STATES.map((state) => `<span><i class="swatch state-${state.key}" aria-hidden="true"></i>${state.label} <b>${number.format(byState.get(state.key).length)}</b></span>`).join("");
 
   const sections = [];
   const review = byState.get("review");
@@ -251,7 +251,7 @@ function renderMilestoneList(milestones, entries, byId, merges, reviewing) {
     }
   }
   document.getElementById("milestone-list").innerHTML = [...milestones.values()]
-    .sort((a, b) => idNumber(a.code) - idNumber(b.code))
+    .sort(milestoneOrder)
     .map((group) => renderMilestone(group, milestones, byId, children, merges, reviewing))
     .join("");
 }
@@ -291,7 +291,7 @@ function renderDeviations(logs, byId, milestones, merges) {
     group.count += task.log.deviations.length;
     groups.set(code, group);
   }
-  const ordered = [...groups.values()].sort((a, b) => idNumber(a.code) - idNumber(b.code));
+  const ordered = [...groups.values()].sort(milestoneOrder);
   list.innerHTML = ordered.map((group) => {
     const rest = group.tasks.length <= 5 ? "" : `<details class="more"><summary>Show ${plural(group.tasks.length - 5, "more task")}</summary>${group.tasks.slice(5).map(deviationTask).join("")}</details>`;
     return `<details class="milestone deviation-group"><summary><span class="count">${plural(group.count, "deviation")} from ${plural(group.tasks.length, "task")}</span>${esc(group.name)}</summary><div class="milestone-body">${group.tasks.slice(0, 5).map(deviationTask).join("")}${rest}</div></details>`;
@@ -453,10 +453,10 @@ function milestoneGroups(entries) {
 
 function renderMilestones(milestones, entries, done) {
   const rows = [...milestones.values()]
-    .sort((a, b) => idNumber(a.code) - idNumber(b.code))
+    .sort(milestoneOrder)
     .map((group) => `<tr><td><a href="#milestone-${esc(group.code)}">${esc(group.name)}</a></td><td class="num">${number.format(group.done)}</td><td class="num">${number.format(group.total)}</td><td>${progressBar(group.done, group.total)}</td></tr>`)
     .join("");
-  document.getElementById("milestone-table").innerHTML = `<table><thead><tr><th>Milestone</th><th class="num">Done</th><th class="num">Tasks</th><th>Progress</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td>All</td><td class="num">${number.format(done)}</td><td class="num">${number.format(entries.length)}</td><td>${progressBar(done, entries.length)}</td></tr></tfoot></table>`;
+  document.getElementById("milestone-table").innerHTML = `<table><thead><tr><th>Milestone</th><th class="num">Done</th><th class="num">Tasks</th><th>Progress</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td>All porting milestones</td><td class="num">${number.format(done)}</td><td class="num">${number.format(entries.length)}</td><td>${progressBar(done, entries.length)}</td></tr></tfoot></table>`;
 }
 
 function renderAreas(areas, files, full, ported) {
@@ -495,18 +495,19 @@ async function main() {
   const ported = areas.reduce((sum, area) => sum + area.ported, 0);
   const merges = mergeTimes(byPull, mergesText);
   const lastWeek = merges.filter((merge) => merge.time >= Date.now() - 7 * DAY).length;
-  const done = entries.filter((entry) => entry.status === "done").length;
+  const counted = entries.filter(porting);
+  const done = counted.filter((entry) => entry.status === "done").length;
   const depths = new Map();
   const next = new Map();
   const paths = PATHS.map((path) => analyzePath(path, byId, depths, next));
 
   document.getElementById("figures").innerHTML = [
-    figure(number.format(done), `of ${number.format(entries.length)}`, "Tasks done"),
+    figure(number.format(done), `of ${number.format(counted.length)}`, "Porting tasks done"),
     figure(percent(ported, fileCount), `of ${number.format(fileCount)} files`, "LiteLLM's Python ported"),
     figure(number.format(lastWeek), `${(lastWeek / 7).toFixed(1)} a day`, "Merged in the last 7 days"),
     figure(number.format(paths[0].chain.length), "tasks", `Longest open chain: ${PATHS[0].name}`),
   ].join("");
-  renderMilestones(milestones, entries, done);
+  renderMilestones(milestones, counted, done);
   renderAreas(areas, fileCount, full, ported);
 
   const found = new Set(merges.map((merge) => merge.entry.id));
@@ -532,7 +533,9 @@ async function main() {
   renderDeviations(jsyaml.loadAll(deviationsText), byId, milestones, merges);
 
   const [sha, committed] = commitText.trim().split(" ");
-  document.getElementById("built").innerHTML = `Built from <a class="id" href="${GITHUB}/commit/${esc(sha)}">${esc(sha.slice(0, 8))}</a>, committed ${esc(longDate.format(Number(committed) * 1000))}.`;
+  const built = document.getElementById("built");
+  built.title = `Committed ${longDate.format(Number(committed) * 1000)}`;
+  built.innerHTML = `built from <a href="${GITHUB}/commit/${esc(sha)}">${esc(sha.slice(0, 8))}</a>, ${esc(yearDate.format(Number(committed) * 1000))}`;
   document.getElementById("status").hidden = true;
 
   const reviewing = await renderOpenPullRequests(byId);

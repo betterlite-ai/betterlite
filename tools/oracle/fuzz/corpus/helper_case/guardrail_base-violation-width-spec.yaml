@@ -1,0 +1,6 @@
+kind: helper
+name: violation-width-spec
+call:
+  b5471: {"function": "violation", "template": "[{who:>4}]", "default": "fallback", "context": {"who": "x"}}
+env: {}
+compare: {ignore: []}

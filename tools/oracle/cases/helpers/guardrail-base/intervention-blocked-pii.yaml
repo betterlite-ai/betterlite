@@ -1,0 +1,6 @@
+kind: helper
+name: intervention-blocked-pii
+call:
+  b5471: {"function": "intervention", "kind": "blocked_pii", "status": 400}
+env: {}
+compare: {ignore: []}
