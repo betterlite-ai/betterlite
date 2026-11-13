@@ -267,10 +267,11 @@ fn maps_keep_a_nested_retrieval_config_in_the_tool() {
     assert_eq!(mapped.tool_config, None);
 }
 
-#[test]
-fn maps_treat_null_coordinates_as_absent() {
-    let input: Vec<Object> =
-        parse(r#"[{"googleMaps": {"latitude": null, "longitude": 2, "languageCode": "en"}}]"#);
+#[rstest]
+#[case::null_latitude(r#"{"latitude": null, "longitude": 2, "languageCode": "en"}"#)]
+#[case::null_longitude(r#"{"latitude": 1, "longitude": null, "languageCode": "en"}"#)]
+fn maps_treat_null_coordinates_as_absent(#[case] maps: &str) {
+    let input: Vec<Object> = parse(&format!(r#"[{{"googleMaps": {maps}}}]"#));
     let mapped = mapped(&input);
     assert_eq!(
         as_json(&mapped.tools),
