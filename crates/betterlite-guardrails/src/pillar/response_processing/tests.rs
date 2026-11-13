@@ -337,6 +337,22 @@ fn missing_fields_of_the_response_default_to_empty_collections(
 }
 
 #[test]
+fn an_empty_session_id_is_not_stored() {
+    let mut response = response(false);
+    response.session_id = Some(String::new());
+    let mut request = data(&[("messages", messages())]);
+    process_pillar_response(
+        &response,
+        &mut request,
+        &pillar_settings(OnFlaggedAction::Monitor),
+    )
+    .expect("monitor mode does not fail");
+    let metadata = bucket(&request, "metadata");
+    assert!(!metadata.contains_key("pillar_session_id"));
+    assert!(!metadata.contains_key("pillar_session_id_response"));
+}
+
+#[test]
 fn an_empty_response_leaves_the_request_untouched() {
     let mut request = data(&[("messages", messages())]);
     process_pillar_response(

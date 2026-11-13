@@ -91,6 +91,32 @@ fn a_long_evidence_text_is_halved_until_the_encoding_fits() {
 }
 
 #[test]
+fn a_shrink_that_lands_exactly_on_the_budget_stops() {
+    let only_evidence = GuardrailValue::Object(
+        [("evidence".to_owned(), GuardrailValue::Text("x".repeat(60)))]
+            .into_iter()
+            .collect(),
+    );
+    let result = truncate_evidence_payload(&listed(vec![only_evidence]), 88);
+    let expected = GuardrailValue::Object(
+        [
+            (
+                "evidence".to_owned(),
+                GuardrailValue::Text(String::from("x...[truncated]")),
+            ),
+            (
+                "evidence_truncated".to_owned(),
+                GuardrailValue::Boolean(true),
+            ),
+        ]
+        .into_iter()
+        .collect(),
+    );
+    assert_eq!(result.evidence, listed(vec![expected]));
+    assert_eq!(result.encoded.len(), 88);
+}
+
+#[test]
 fn an_entry_that_cannot_shrink_enough_is_dropped() {
     let evidence = listed(vec![entry(&"x".repeat(100), 1)]);
     let result = truncate_evidence_payload(&evidence, 100);

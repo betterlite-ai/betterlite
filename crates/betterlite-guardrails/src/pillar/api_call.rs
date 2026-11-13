@@ -15,12 +15,12 @@ fn header_map(headers: &BTreeMap<String, String>) -> Result<HeaderMap, PillarErr
     for (name, value) in headers {
         let name = HeaderName::from_bytes(name.as_bytes())
             .map_err(|source| PillarError::InvalidHeaderName { source })?;
-        let mut value = HeaderValue::from_str(value)
+        let value = HeaderValue::from_str(value)
             .map_err(|source| PillarError::InvalidHeaderValue { source })?;
-        if name == AUTHORIZATION {
-            value.set_sensitive(true);
-        }
         map.insert(name, value);
+    }
+    if let Some(secret) = map.get_mut(AUTHORIZATION) {
+        secret.set_sensitive(true);
     }
     Ok(map)
 }
