@@ -60,6 +60,11 @@ fn azure_picks_the_variant_from_the_text_after_the_first_slash() {
     Some("name"),
     "Azure Content Safety: api_base is required"
 )]
+#[case::empty_base(
+    r#"{"guardrail": "azure/prompt_shield", "mode": "pre_call", "api_key": "key", "api_base": ""}"#,
+    Some("name"),
+    "Azure Content Safety: api_base is required"
+)]
 #[case::no_name(
     r#"{"guardrail": "azure/prompt_shield", "mode": "pre_call", "api_key": "key", "api_base": "https://azure.example"}"#,
     None,

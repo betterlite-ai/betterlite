@@ -135,6 +135,11 @@ fn purview_turns_numeric_app_names_into_text() {
     Some("name"),
     "Microsoft Purview: client_secret (or api_key) is required"
 )]
+#[case::empty_secret(
+    r#"{"guardrail": "microsoft_purview", "mode": "pre_call", "tenant_id": "tenant", "client_id": "client", "client_secret": ""}"#,
+    Some("name"),
+    "Microsoft Purview: client_secret (or api_key) is required"
+)]
 #[case::credentials_before_name(
     r#"{"guardrail": "microsoft_purview", "mode": "pre_call"}"#,
     None,

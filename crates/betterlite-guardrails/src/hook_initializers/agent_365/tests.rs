@@ -156,6 +156,20 @@ fn agent_365_treats_an_empty_param_as_unset() {
 }
 
 #[test]
+fn agent_365_skips_an_empty_api_key_for_the_lookup() {
+    let (args, _) = initialize_agent_365(
+        &params(
+            r#"{"guardrail": "agent_365", "mode": "pre_mcp_call", "tenant_id": "t",
+                "client_id": "c", "api_key": ""}"#,
+        ),
+        Some("agent-check"),
+        &lookup(&[("AGENT365_CLIENT_SECRET", "env-secret")]),
+    )
+    .unwrap();
+    assert_eq!(args.client_secret.expose_secret(), "env-secret");
+}
+
+#[test]
 fn agent_365_defaults_the_request_timeout_only_when_it_is_none() {
     let required = r#""guardrail": "agent_365", "mode": "pre_mcp_call", "tenant_id": "t",
         "client_id": "c", "api_key": "s""#;
