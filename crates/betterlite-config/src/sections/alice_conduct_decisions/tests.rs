@@ -4,8 +4,10 @@ use std::collections::BTreeMap;
 
 use secrecy::ExposeSecret as _;
 
-use super::{DEFAULT_API_BASE, Raw, Settings, UnreachableFallback};
+use super::{DEFAULT_API_BASE, Raw, Settings};
+use crate::loader::ConfigError;
 use crate::sections::Section;
+use crate::sections::guardrail_params::base::UnreachableFallback;
 
 fn settings_from(yaml: &str, env: &[(&str, &str)]) -> Settings {
     let raw: Raw = serde_saphyr::from_str(yaml).expect("the alice section parses");
@@ -129,17 +131,40 @@ fn alice_conduct_decisions_treats_an_empty_environment_key_as_unset() {
 }
 
 #[test]
-fn alice_conduct_decisions_defaults_an_unknown_fallback_to_fail_closed() {
+fn alice_conduct_decisions_lowercases_the_fallback_value() {
     let yaml = r"
 guardrails:
   - guardrail_name: alice-check
     litellm_params:
       guardrail: alice
-      unreachable_fallback: fail_sideways
+      unreachable_fallback: FAIL_OPEN
 ";
     let settings = settings_from(yaml, &[]);
     assert_eq!(
         settings.guardrails[0].unreachable_fallback,
-        UnreachableFallback::FailClosed
+        UnreachableFallback::FailOpen
+    );
+}
+
+#[test]
+fn alice_conduct_decisions_rejects_an_unknown_fallback_value() {
+    let yaml = r"
+guardrails:
+  - guardrail_name: alice-check
+    litellm_params:
+      guardrail: alice
+      unreachable_fallback: never
+";
+    let raw: Raw = serde_saphyr::from_str(yaml).expect("the alice section parses");
+    let error = raw
+        .convert(&BTreeMap::new())
+        .expect_err("an unknown fallback refuses the config");
+    assert!(
+        matches!(
+            error,
+            ConfigError::InvalidScalar { ref path, .. }
+                if path == "guardrails.0.litellm_params.unreachable_fallback"
+        ),
+        "{error:?}"
     );
 }

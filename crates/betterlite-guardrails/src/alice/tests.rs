@@ -13,11 +13,10 @@ use axum::http::{StatusCode as AxumStatusCode, Uri};
 use axum::response::IntoResponse as _;
 use axum::routing::post;
 use betterlite_config::sections::Section as _;
-use betterlite_config::sections::alice_conduct_decisions::{
-    Raw, UnreachableFallback as ConfigFallback,
-};
+use betterlite_config::sections::alice_conduct_decisions::Raw;
 use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity as _;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_params::base::UnreachableFallback as ConfigFallback;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::net::TcpListener;
@@ -514,6 +513,24 @@ async fn alice_guardrail_missing_verdict_fails_open_when_configured() {
 }
 
 #[tokio::test]
+async fn alice_guardrail_a_redirect_propagates_instead_of_failing_open() {
+    let harness = serve(Answer::Json {
+        status: 304,
+        body: serde_json::json!({}),
+    })
+    .await;
+    let instance = guardrail(
+        &harness.base,
+        UnreachableFallback::FailOpen,
+        Duration::from_secs(2),
+    );
+    match failure(apply(&instance, text_inputs(&["x"]), &BTreeMap::new()).await) {
+        GuardrailFailure::Http { status, .. } => assert_eq!(status, 304),
+        other => panic!("expected an http failure, got {other}"),
+    }
+}
+
+#[tokio::test]
 async fn alice_guardrail_a_client_error_propagates_without_the_fallback_policy() {
     let harness = serve(Answer::Json {
         status: 401,
@@ -799,6 +816,48 @@ guardrails:
     assert_eq!(configured.api_base, None);
     assert_eq!(configured.unreachable_fallback, ConfigFallback::FailOpen);
     assert_eq!(DEFAULT_API_BASE, "https://api.alice.io");
+}
+
+#[test]
+fn alice_guardrail_config_section_lowercases_the_fallback_value() {
+    let yaml = r"
+guardrails:
+  - guardrail_name: alice-check
+    litellm_params:
+      guardrail: alice
+      api_key: config-key
+      unreachable_fallback: FAIL_OPEN
+";
+    let raw: Raw = serde_saphyr::from_str(yaml).expect("the section parses");
+    let settings = raw.convert(&BTreeMap::new()).expect("the section converts");
+    assert_eq!(
+        settings.guardrails[0].unreachable_fallback,
+        ConfigFallback::FailOpen
+    );
+}
+
+#[test]
+fn alice_guardrail_config_section_rejects_an_unknown_fallback_value() {
+    let yaml = r"
+guardrails:
+  - guardrail_name: alice-check
+    litellm_params:
+      guardrail: alice
+      api_key: config-key
+      unreachable_fallback: never
+";
+    let raw: Raw = serde_saphyr::from_str(yaml).expect("the section parses");
+    let error = raw
+        .convert(&BTreeMap::new())
+        .expect_err("an unknown fallback refuses the config");
+    assert!(
+        matches!(
+            error,
+            betterlite_config::loader::ConfigError::InvalidScalar { ref path, .. }
+                if path == "guardrails.0.litellm_params.unreachable_fallback"
+        ),
+        "{error:?}"
+    );
 }
 
 #[rstest]

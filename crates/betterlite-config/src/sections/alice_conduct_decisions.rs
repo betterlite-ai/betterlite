@@ -4,17 +4,11 @@ use serde::Deserialize;
 use super::Section;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
+use crate::sections::guardrail_params::base::UnreachableFallback;
 
 pub const DEFAULT_API_BASE: &str = "https://api.alice.io";
 pub const API_KEY_ENV: &str = "ALICE_API_KEY";
 pub const API_BASE_ENV: &str = "ALICE_API_BASE";
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum UnreachableFallback {
-    #[default]
-    FailClosed,
-    FailOpen,
-}
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
@@ -103,30 +97,27 @@ impl Entry {
                 .lookup(API_BASE_ENV)
                 .filter(|value| !value.is_empty()),
         };
+        let fallback_path = format!("{prefix}.unreachable_fallback");
+        let unreachable_fallback = match self.litellm_params.unreachable_fallback {
+            Some(value) => parse_unreachable_fallback(&value, &fallback_path)?,
+            None => UnreachableFallback::default(),
+        };
         Ok(Configured {
             guardrail_name: self.guardrail_name,
             api_key,
             api_base,
-            unreachable_fallback: resolve_unreachable_fallback(
-                self.litellm_params.unreachable_fallback.as_deref(),
-            ),
+            unreachable_fallback,
         })
     }
 }
 
-fn resolve_unreachable_fallback(value: Option<&str>) -> UnreachableFallback {
-    match value {
-        None => UnreachableFallback::default(),
-        Some("fail_open") => UnreachableFallback::FailOpen,
-        Some("fail_closed") => UnreachableFallback::FailClosed,
-        Some(other) => {
-            tracing::warn!(
-                unreachable_fallback = other,
-                "Alice: unsupported unreachable_fallback, defaulting to fail_closed"
-            );
-            UnreachableFallback::default()
+fn parse_unreachable_fallback(value: &str, path: &str) -> Result<UnreachableFallback, ConfigError> {
+    serde_json::from_value(serde_json::Value::String(value.to_lowercase())).map_err(|_source| {
+        ConfigError::InvalidScalar {
+            path: path.to_owned(),
+            value: false,
         }
-    }
+    })
 }
 
 mod tests;

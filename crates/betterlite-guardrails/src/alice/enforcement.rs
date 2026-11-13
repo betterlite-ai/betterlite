@@ -52,16 +52,6 @@ pub(super) fn apply_replacements(
     Ok(())
 }
 
-pub(super) fn unavailable() -> GuardrailFailure {
-    GuardrailFailure::GuardrailRaised {
-        guardrail_name: Some(GUARDRAIL_NAME.to_owned()),
-        message: "Alice guardrail is unavailable and this request cannot be checked".to_owned(),
-        wrap_default_message: false,
-        status_code: 400,
-        blocked_content: false,
-    }
-}
-
 pub(super) fn blocked(verdict: &AliceVerdict) -> GuardrailFailure {
     GuardrailFailure::GuardrailRaised {
         guardrail_name: Some(GUARDRAIL_NAME.to_owned()),

@@ -8,7 +8,7 @@ pub const VERDICT_BLOCK: &str = "BLOCK";
 pub const VERDICT_MASK: &str = "MASK";
 pub const VERDICT_DETECT: &str = "DETECT";
 
-// A masked substitution, positional against the texts that were submitted
+// index is positional against the submitted texts and a bad one refuses the whole verdict
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default)]
 pub struct AliceReplacement {
@@ -16,7 +16,6 @@ pub struct AliceReplacement {
     pub text: Option<String>,
 }
 
-// The body returned by Alice's LiteLLM evaluate endpoint
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct AliceVerdict {

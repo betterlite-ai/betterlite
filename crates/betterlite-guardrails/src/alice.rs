@@ -18,7 +18,7 @@ use crate::generic_guardrail_contracts::{GuardrailInputType, UnreachableFallback
 use crate::guardrail_base::contract::GuardrailContract;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
-use enforcement::{apply_replacements, blocked, has_selectable_input, unavailable};
+use enforcement::{apply_replacements, blocked, has_selectable_input};
 use error::AliceError;
 use json_safe::CREDENTIAL_KEYS_TO_STRIP;
 use transport::{read_answer, verdict_from_body};
@@ -204,7 +204,13 @@ impl AliceGuardrail {
             );
             return Ok(inputs);
         }
-        Err(unavailable())
+        Err(GuardrailFailure::GuardrailRaised {
+            guardrail_name: Some(GUARDRAIL_NAME.to_owned()),
+            message: "Alice guardrail is unavailable and this request cannot be checked".to_owned(),
+            wrap_default_message: false,
+            status_code: 400,
+            blocked_content: false,
+        })
     }
 }
 
@@ -221,7 +227,10 @@ impl GuardrailContract for AliceGuardrail {
         }
         let verdict = match self.evaluate(&inputs, request_data, input_type).await {
             Ok(verdict) => verdict,
-            Err(AliceError::Status { status }) if status.is_client_error() => {
+            Err(error @ AliceError::Status { status }) if status.is_server_error() => {
+                return self.on_unreachable(&error, inputs);
+            }
+            Err(AliceError::Status { status }) => {
                 return Err(GuardrailFailure::Http {
                     status: status.as_u16(),
                     detail: String::new(),
