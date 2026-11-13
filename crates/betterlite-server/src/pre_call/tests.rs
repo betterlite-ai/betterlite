@@ -90,7 +90,7 @@ fn object(value: &Value) -> Map<String, Value> {
 )]
 fn route_type_round_trips(#[case] text: &str, #[case] expected: RouteType) {
     assert_eq!(text.parse::<RouteType>().unwrap(), expected);
-    assert_eq!(expected.as_str(), text);
+    assert_eq!(<&str>::from(expected), text);
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn every_route_type_text_parses_back_to_itself() {
     assert!(
         RouteType::VARIANTS
             .iter()
-            .all(|route| { route.as_str().parse::<RouteType>().as_ref() == Ok(route) })
+            .all(|route| { <&str>::from(*route).parse::<RouteType>().as_ref() == Ok(route) })
     );
 }
 
