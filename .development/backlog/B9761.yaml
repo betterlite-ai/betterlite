@@ -2,7 +2,7 @@ id: B9761
 milestone: M10 admin ui
 title: Cover the dashboard MCP OAuth, credential and environment requests
 status: todo
-depends_on: [B860, B5076, B899, B4718, B4719, B4721, B4723, B4724, B4725, B8622, B8627, B8700, B8701, B8702, B136]
+depends_on: [B860, B5076, B899, B4718, B4719, B4721, B4723, B4724, B4725, B8622, B8627, B8700, B8701, B8702, B136, B9950]
 file: tasks/B9761-dashboard-mcp-credential-requests.yaml
 covers:
   - "ui/litellm-dashboard/src/app/mcp/**"

@@ -14,7 +14,7 @@ description: >-
 
   Settings, read once in mount_public. `DocsEnv` (B7740) is filled from the process environment variables DOCS_URL,
   REDOC_URL, OPENAPI_URL, NO_DOCS, NO_REDOC, NO_OPENAPI and ROOT_REDIRECT_URL, and `resolve()` gives the DocsUrls. The
-  server root path is the value of B4200's request_root_paths section (SERVER_ROOT_PATH, default "/" as LiteLLM reads
+  server root path is the value of B4200's request_root_paths section (SERVER_ROOT_PATH, default "" as LiteLLM reads
   it). The title is the DOCS_TITLE value of B9300's config.sections.public_discovery (default "LiteLLM API", applied without a license gate, the same
   value the model hub uses) for the docs pages and the OpenAPI info it builds, in place of the fixed title of B123's `default_info(server_root_path, version)`;
   the version is the betterlite crate version.

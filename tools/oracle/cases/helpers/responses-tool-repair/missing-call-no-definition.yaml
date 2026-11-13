@@ -1,0 +1,14 @@
+kind: helper
+name: missing-call-no-definition
+call:
+  responses_tool_repair:
+    operation: repair
+    messages:
+      - {role: user, content: hi}
+      - {role: assistant, content: null}
+      - {role: tool, tool_call_id: call_3, content: ok}
+    tools: [{type: function, function: {}}, 5]
+    cache: {}
+env: {}
+compare:
+  ignore: []

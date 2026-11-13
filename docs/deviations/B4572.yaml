@@ -1,0 +1,19 @@
+task: B4572
+deviations:
+  - what: >-
+      The configure, reconfigure and unconfigure help screens are rendered by clap from this module's command
+      structs rather than by click: an option's value is named TEXT and `--base-url` shows as an alias of
+      `--gateway-url`, where click prints both spellings on the option line. Every about and help sentence is
+      LiteLLM's own, and every option, flag and default is the same.
+    why: >-
+      A Rust binary has no click. B134 mounts these commands in clap, the crate's one CLI framework, so the
+      help layout is clap's; the text and the parse behavior stay LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure.py#L107-L122
+  - what: >-
+      The "Gateway URL" prompt in the group command, and the URL and key prompts the wizard shows, are drawn
+      by the injected prompter (inquire): the message and the default are LiteLLM's, the look, key bindings
+      and fuzzy ranking are not InquirerPy's or click's.
+    why: >-
+      B4571 owns the prompter and records the same difference for every wizard screen; this module only asks
+      it for "Gateway URL" with the current base URL as the default, which is LiteLLM's prompt.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure.py#L99-L104

@@ -1,0 +1,103 @@
+id: B9480
+title: Prometheus per-request budget metric fan-out and its timeout
+description: >-
+  After every successful call LiteLLM's Prometheus success hook refreshes the remaining budget gauges of the key, team, user, org and customer that made the call. It does that in one function, PrometheusLogger._increment_remaining_budget_metrics (prometheus.py L1891-L1985). It runs B3883's five per-request lookups at the same time under one timeout. The lookups and the gauges already have owners (B3883 and B3882), and B8561's success hook calls this function, but nobody builds the function itself or the timeout it reads. This task builds both, so B8561 can call it.
+
+
+  Put the code in betterlite-server as the module `prometheus_remaining_budget` (crates/betterlite-server/src/prometheus_remaining_budget.rs and prometheus_remaining_budget/). It can't live in betterlite-logging: the carried budget snapshots are B3890's types in betterlite-core, and betterlite-core depends on betterlite-logging. The skeleton declares the module. When betterlite-server's Cargo.toml has no betterlite-logging dependency yet, add it.
+
+
+  Timeout. LiteLLM reads the environment variable PROMETHEUS_BUDGET_METRICS_PER_REQUEST_TIMEOUT on each call (`_get_budget_metrics_per_request_timeout`, L191-L207): unset gives 5.0 seconds (`_DEFAULT_BUDGET_METRICS_PER_REQUEST_TIMEOUT`, L98); a value that parses but is not finite or is 0 or less logs at debug "[Non-Blocking] Prometheus: invalid PROMETHEUS_BUDGET_METRICS_PER_REQUEST_TIMEOUT=<raw>; using default 5.0s." and gives 5.0; any other value is used as the number of seconds. betterlite reads it once at config load in a new section, crates/betterlite-config/src/sections/prometheus_request_budget.rs (the skeleton adds the stub, its `pub mod` line and its name in the sections! list), with tests in prometheus_request_budget/tests.rs. Read the text through the loader's EnvironmentLookup and `betterlite_env::number::<f64>`, as aiohttp_transport_toggle.rs reads its variable: empty or unset gives the default, a parsed value that is not finite or not above 0 gives the default with LiteLLM's debug line, and text the shared parser refuses is the config error naming the variable (docs/compatibility.md). Convert with `Duration::try_from_secs_f64`; a finite value too large for a Duration becomes `Duration::MAX`, since LiteLLM would wait that long. Settings reach the server as `config.sections.prometheus_request_budget.per_request_timeout: Duration`.
+
+
+  Fan-out. `RemainingBudgetFanOut<L>` holds a lookups value, the timeout and one `enabled` flag. `new(lookups, timeout, collectors)` sets enabled to false only when the four gauges litellm_remaining_team_budget_metric, litellm_remaining_api_key_budget_metric, litellm_remaining_user_budget_metric and litellm_remaining_org_budget_metric are all no-op collectors (B3874's factory makes a no-op collector for a metric that prometheus_metrics_config leaves out) and B3882's `customer_budget_gauges_are_noop` is true. LiteLLM checks this on every call, but the collectors never change after B3875 registers them, so once at construction gives the same answer. `L` implements `RequestBudgetLookups`, an async trait declared here with one method per entity, so the tests use a recording fake. Implement it for B3883's lookup type by forwarding each method to its function: key to `_set_api_key_budget_metrics_after_api_request`, team to `_set_team_budget_metrics_after_api_request`, user to `_set_user_budget_metrics_after_api_request`, org to `_set_org_budget_metrics_after_api_request`, customer to `_set_customer_budget_metrics_after_api_request`, in the Rust names B3883 gives them. Each method returns a Result whose error carries a message, since LiteLLM catches any exception a lookup raises.
+
+
+  `increment_remaining_budget_metrics(&self, request: RemainingBudgetRequest<'_>)`. The request has team, team_alias, key (the hashed key B8561 hands over), key_alias, user_id, org_id and end_user_id, all optional strings, the response cost (Decimal), and `metadata`, the call's litellm_params.metadata as a JSON map (an empty map when the call has none, as `litellm_params.get("metadata") or {}` gives). When enabled is false, return before reading anything. Otherwise read from metadata: user_api_key_team_spend and user_api_key_team_max_budget, user_api_key_spend and user_api_key_max_budget, user_api_key_user_spend and user_api_key_user_max_budget (optional numbers), user_api_key_user_email and user_api_key_org_alias (kept only when the value is a JSON string, otherwise None, as LiteLLM's isinstance check does), and parse the four carried snapshots with B3890's `KeyBudgetSnapshot::from_metadata`, `TeamBudgetSnapshot`, `UserBudgetSnapshot` and `OrgBudgetSnapshot` over the same map. Then start the five lookups at once, in this order and with these arguments: key (key, key_alias, response_cost, key max budget, key spend, key snapshot), team (team, team_alias, team spend, team max budget, response_cost, team snapshot), user (user_id, user spend, user max budget, response_cost, user snapshot, user email), org (org_id, response_cost, org snapshot, org alias), customer (end_user_id, response_cost). Hand each snapshot to B3883 in the shape its function takes. Await all five together under `tokio::time::timeout` with the configured timeout (`futures_util::future::join5` keeps them concurrent). On timeout drop them and log at debug "[Non-Blocking] Prometheus: per-request budget metric emission exceeded <timeout>s under load; skipping (values are refreshed by the periodic budget-metrics cron job)." and return; a gauge a lookup already set stays set, as in LiteLLM. Otherwise log every failed lookup at debug as "[Non-Blocking] Prometheus: Budget metric lookup <name> failed: <error>" with the names key, team, user, org and customer. The function never returns an error, so the success hook goes on with its next emitter.
+
+
+  Tests in prometheus_remaining_budget/tests.rs, in modules gate, mapping, timeout and failures, with a recording fake of RequestBudgetLookups that can wait or fail per entity: every disabled combination that skips, one enabled gauge that runs all five, the argument mapping from metadata including a non-string email and alias, absent metadata, a lookup slower than the timeout under `#[tokio::test(start_paused = true)]` (rule paused-clock-tests) and two failing lookups that log and leave the other three done. Config tests in sections::prometheus_request_budget cover unset, empty, 2.5, 0, -3, 1e999 (finite parse to infinity falls back), 1e300 (becomes Duration::MAX), and `abc` refused with the variable's name.
+
+
+  Oracle helper cases in tools/oracle/cases/helpers/prometheus-remaining-budget/ call this task's helper operation b9480. Its input is one of two shapes. `timeout` takes a list of values (null for unset, or the env text) and returns each resolved timeout in seconds; the Python adapter sets or removes os.environ["PROMETHEUS_BUDGET_METRICS_PER_REQUEST_TIMEOUT"] and calls the real `_get_budget_metrics_per_request_timeout`, the Rust adapter loads the section through ConfigLoader with that one variable in its lookup. Send only values the shared parser accepts. `fan_out` takes the request fields, the metadata map and which of the five gauge groups are no-op, and returns the lookups that ran, keyed by entity, with their arguments and each snapshot as its metadata_entries map or null; the Python adapter builds a stand-in object with NoOpMetric or a plain object for each gauge attribute, a `_customer_budget_gauges_are_noop` that returns the case's answer and five async recorders in place of the `_set_*_after_api_request` methods, then runs the unbound `PrometheusLogger._increment_remaining_budget_metrics` on it with asyncio.run. Cases: timeout-values, fan-out-all-noop-skips, fan-out-one-gauge-enabled, fan-out-metadata-mapping, fan-out-carried-snapshots, fan-out-non-string-email-and-alias, fan-out-no-metadata. Add corpus seeds tools/oracle/fuzz/corpus/helper_case/prometheus-remaining-budget-* for both shapes.
+
+
+  The decoder of outside text here is `betterlite_env::number`. It exists and has its own tests, so this task adds no parser and no fuzz target.
+scope:
+  paths:
+    - crates/betterlite-server/src/prometheus_remaining_budget.rs
+    - crates/betterlite-server/src/prometheus_remaining_budget/**
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-config/src/sections/prometheus_request_budget.rs
+    - crates/betterlite-config/src/sections/prometheus_request_budget/**
+    - tools/oracle/cases/helpers/prometheus-remaining-budget/**
+    - "tools/oracle/fuzz/corpus/helper_case/prometheus-remaining-budget-*"
+    - tools/oracle/helpers/b9480.py
+    - tools/oracle/helpers/b9480/**
+    - tools/oracle/src/helpers/server/b9480.rs
+    - tools/oracle/src/helpers/server/b9480/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1891-L1985
+    why: The fan-out this task builds, with the no-op gate, the metadata keys, the five calls and the timeout handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L191-L207
+    why: The timeout reader and its debug fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L98-L98
+    why: The 5.0 second default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1461-L1472
+    why: The one caller, in the success hook B8561 builds, and the values it passes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4230-L4235
+    why: _customer_budget_gauges_are_noop, B3882's half of the gate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/carried_budget_state.py#L17-L64
+    why: from_metadata gives None when any key of a snapshot is missing or invalid.
+dod:
+  - text: The section loads PROMETHEUS_BUDGET_METRICS_PER_REQUEST_TIMEOUT with the 5 second default, falls back for values that are not finite or not above 0, caps huge values at Duration::MAX and refuses text the shared parser refuses.
+    proof: [config-tests, oracle, new-cases, helper-python]
+  - text: The fan-out skips everything when all four remaining-budget gauges and the customer gauges are no-op, and otherwise runs all five lookups.
+    proof: [fan-out-tests, oracle, new-cases, helper-python]
+  - text: Each lookup gets the metadata spends, max budgets, string-only email and alias, and the carried snapshot LiteLLM passes it.
+    proof: [fan-out-tests, oracle, new-cases, helper-python]
+  - text: A run past the timeout returns after one debug line, and a failed lookup logs its entity name without stopping the others or returning an error.
+    proof: [fan-out-tests]
+  - text: New helper corpus seeds call b9480 and replay through the shared parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: fan-out-tests
+      why: the gate, the argument mapping, the timeout or the failure logging differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prometheus_remaining_budget::/)'
+    - id: config-tests
+      why: the timeout variable is not loaded, its default or fallback is wrong, or bad text is accepted
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::prometheus_request_budget::/)'
+    - id: new-cases
+      why: no new helper case for the fan-out or the timeout exists on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/prometheus-remaining-budget)"
+    - id: helper-python
+      why: the b9480 adapter must exist and pass ruff and basedpyright
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b9480)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b9480 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b9480/pyrightconfig.json
+    - id: helper-case-corpus
+      why: b9480 needs fresh seeds that replay
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/prometheus-remaining-budget-*")" && grep -lE '^[[:space:]]+b9480:' tools/oracle/fuzz/corpus/helper_case/prometheus-remaining-budget-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/prometheus-remaining-budget
+deviations:
+  - what: PROMETHEUS_BUDGET_METRICS_PER_REQUEST_TIMEOUT set to text that is not a decimal number (abc, inf, nan) stops startup with a config error naming the variable. LiteLLM logs at debug and uses 5 seconds.
+    why: docs/compatibility.md sends every env number through one shared parser that refuses such text; a value that parses but is not usable still falls back as in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L191-L207
+out_of_scope:
+  - "The five per-request lookups and the gauges they set: B3883 and B3882. This task only calls them."
+  - "Calling the fan-out from the success hook: B8561, and it needs this task in its depends_on. Building it with the configured timeout when the prometheus logger is made: B8655's prometheus arm."
+  - "The periodic budget refresh and PROMETHEUS_BUDGET_METRICS_REFRESH_INTERVAL_MINUTES: B3884."
+  - "The module helpers at prometheus.py L91-L158 (_BudgetedCustomerFilter, _PaginatedPrismaTable, _paginated_table, _JoinedBudgetRow, _CustomerBudgetRow): typing glue for the page walk and the customer setter, owned with their callers by B3884 and B3882."
+pitfalls:
+  - "The gate needs all five groups no-op to skip; with one gauge enabled LiteLLM still runs all five lookups, and each lookup decides on its own gauge."
+  - "Python's asyncio.gather with return_exceptions=True keeps going when one lookup fails, so a failure must not cancel the other four futures."
+  - "On timeout the debug line is the only output; the per-lookup failure lines are not logged, even for lookups that had already failed."
+  - "Duration::from_secs_f64 panics on 1e300 and clippy refuses it; use try_from_secs_f64 and map the overflow to Duration::MAX."
+  - "1e999 parses to infinity in both Python and Rust, so it reaches the finite check and falls back to 5 seconds instead of failing the load."
+  - "The email and the org alias are dropped when they are not strings, but the spends and max budgets are passed through as they are, null included."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

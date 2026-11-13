@@ -100,12 +100,17 @@ description: >-
   name and arguments, one mcp_servers entry with transport http, url {{upstream}}
   and a pinned server_id, and a default-on
   pre_mcp_call content filter. Compare the tools/call arguments observed by the MCP
-  mock, including nested string redaction and unchanged bool/numeric fields. Script
-  the stateless MCP handshake and tools/list/tools/call JSON-RPC replies with the
-  existing upstream answer queue: initialization returns no Mcp-Session-Id, and
-  notifications return 202. Do not assume an OpenAI completion response is an MCP
-  reply. Keep protocol methods and arguments compared; ignore generated request IDs
-  with their reason. Do not build a transport or mount /mcp,
+  mock, including nested string redaction and unchanged bool/numeric fields. The
+  mock captures six requests: LiteLLM's startup listing of the server
+  (initialize, notifications/initialized, tools/list), then the call's own session
+  (initialize, notifications/initialized, tools/call). Script the replies in that
+  order with the existing upstream answer queue: initialization returns no
+  Mcp-Session-Id, notifications return 202, and each JSON-RPC reply echoes its
+  request's id, which counts from 1 in each session. Do not assume an OpenAI
+  completion response is an MCP reply. Each initialize body carries its own side's
+  clientInfo, so name B9850's `/upstream/0/body` and `/upstream/3/body` in
+  compare.ignore with that reason. Keep protocol methods, ids and arguments in the
+  other four bodies compared. Do not build a transport or mount /mcp,
   /mcp/proxy, /toolset/{toolset_name}/mcp or /{mcp_server_name}/mcp, which B8728 owns.
   apply-aliases masks text through POST /guardrails/apply_guardrail and /apply_guardrail
   in a two-step scenario and compares response_text. no-auth uses the canonical
@@ -182,6 +187,10 @@ references:
     why: B3687's apply handler and both decorators, mounted by B8668.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1159-L1260
     why: The MCP tools/call decorator and accepted body fields; B8626 owns its mount.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6671-L6714
+    why: Config load lists the server's tools at startup, the first MCP session the mock captures in mcp-argument-mask.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L543-L570
+    why: Each MCP session opens with initialize, whose clientInfo differs per side, then notifications/initialized.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/cache_control_check.py#L16-L58
     why: B3705's nonempty allowlist enforcement, now tested with a real authenticated key through chat.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1940-L2150
@@ -253,7 +262,7 @@ out_of_scope:
   - "examples/README.md documents B3697/B8773 behavior and needs no executable port; llamaguard_prompt.txt has no caller at the pin in the open-source checkout, so no loader is built."
   - "SensitiveDataRoutingHandler and its cache policy are B3704, its registration is B8399, and handling a SensitiveDataRoute exception is B8392. No open-source built-in emits that exception at the pin. The cache-control hook is B3705 and is likewise installed by B8399."
   - "Code execution class/detection are B3701/B3702. Prompt-injection logic is B3703 and binding is B8850. hide_secrets is the missing-enterprise-package outcome owned by B3681, not a native secret detector."
-  - "Route ownership remains B8610 for the root, B8667/B8668/B8669/B8790 for the guardrail area, B8626 for MCP REST, B8701 for toolsets/sessions and B8728 for MCP transport. No route or mount is added by this umbrella."
+  - "Route ownership remains B8610 for the root, B8667/B8668/B8669/B8790 for the guardrail area, B8626 for MCP REST, B8701 for toolsets, B9950 for sessions and B8728 for MCP transport. No route or mount is added by this umbrella."
 pitfalls:
   - "_check_blocked_words uses literal substring search, whereas _filter_single_text turns an asterisk into .? and evaluates every configured word."
   - "The four chat aliases include engines and deployments paths; /openai/v1/chat/completions is not a decorator on this handler."
@@ -262,6 +271,8 @@ pitfalls:
   - "block_code_execution uses lowercase block/mask, unlike the content filter's uppercase BLOCK/MASK."
   - "A stream block after the first emitted data cannot be tested as an ordinary HTTP 400 response."
   - "Benchmark expected labels and recorded timings are not the oracle; compare the pinned running implementation, including its false positives and false negatives."
+  - "compare.ignore reaches a captured MCP request only through B9850's whole-body selector, so a pointer to a JSON-RPC id inside a body is refused; the dispatcher of mcp 2.3.0 (the version tools/oracle/litellm/uv.lock installs) numbers ids from 1 in each session (jsonrpc_dispatcher.py _allocate_id), so they need no ignore."
+  - "LiteLLM lists every mcp_servers entry's tools at startup (mcp_server_manager.py L6683-L6714), so mcp-argument-mask's first three captures come before its own request; run it with --self-check first and take the selector indices from that capture."
 review_level: security
 budget:
   max_changed_lines: 1500

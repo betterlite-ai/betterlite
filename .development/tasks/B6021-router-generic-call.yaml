@@ -106,7 +106,7 @@ out_of_scope:
   - "B016 owns the refusal check and selection, B017 the attempt loop and stamps, B310 the fallback executor, B303 the slot and request update, B336 compaction and B401 the passthrough endpoint rewrite."
   - "B014 owns `provider_for_generic_call`, and B398 owns `per_request_fallback_controls`."
   - "B982 owns the native Messages handler this task calls."
-  - "The other branches of `factory_function` (assistants, moderation, search, responses, realtime, vector stores, containers, interactions, agents) stay with B162's last part, and each plugs a `GenericCallExecutor` into `RouterGeneric`."
+  - "The other branches of `factory_function` (assistants, moderation, search, responses, realtime, vector stores, containers, interactions, agents) stay with B8354 and B8355, and each plugs a `GenericCallExecutor` into `RouterGeneric`."
   - "B6020 owns the chat completion calls, B6022 the Python bridge and B5078 the Python methods."
 pitfalls:
   - "`passthrough_on_no_deployment` is removed from the request before selection, so it never reaches a provider."

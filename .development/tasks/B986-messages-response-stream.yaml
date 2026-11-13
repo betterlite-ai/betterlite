@@ -3,7 +3,8 @@ title: Messages response stream
 description: >-
   Translate Responses SSE into Anthropic message/content-block events using a bounded per-stream state machine.
   Preserve text, tool arguments, reasoning signatures, usage and terminal errors; close upstream on cancellation
-  and keep output block indexes stable.
+  and keep output block indexes stable. The wrapper constructor (L117-L138) also records its msg_ id (L127) in
+  LoggingState.streamed_anthropic_message_id, the field B976 adds, the same way B976 does for the native stream.
 
 
   Implement crates/betterlite-core/src/api/messages_response_stream.rs. Use MessagesResponseStreamInput and MessagesResponseStreamResult

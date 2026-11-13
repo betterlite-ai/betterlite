@@ -5,7 +5,7 @@ description: >-
   B061's same-key algorithm migration. Move credential_endpoints/endpoints.py
   CredentialHelperUtils.encrypt_credential_values L34-L47 and update_db_credential L285-L321
   here as well, so this service never calls back into the migration route owner. B2332 supplies
-  MCP store rotation below B139; B137 supplies SSO assertion rotation. B785 retains HTTP routes.
+  MCP store rotation below B139; B4663 supplies SSO assertion rotation (rotation::rotate_assertions). B785 retains HTTP routes.
 
   current_master_key is unused: reads use the active configured salt through B8382/B2303, and
   writes use new_master_key. Do not validate the current-key argument or change active master/salt
@@ -115,7 +115,7 @@ out_of_scope:
   - B785 owns migration HTTP wrappers; B061 owns scanning/walking and credential routes, except the
     two credential helpers moved here. B895 owns master-key activation. B2332 owns MCP rotations.
   - B8382 owns ProxyConfig decrypt/encrypt methods, B836 model conversion, B4144 configuration publication,
-    B137 SSO assertion rotation, B725 model rows, B730 credential/config rows, B770 table adapters,
+    B4663 SSO assertion rotation, B725 model rows, B730 credential/config rows, B770 table adapters,
     B2303 crypto and B2305 stored MCP contracts. Remaining key endpoint functions keep B770-B898 owners.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as master_rotation in the server group. Replace the stub Op in tools/oracle/src/helpers/server/master_rotation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/master_rotation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

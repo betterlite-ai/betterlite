@@ -1,0 +1,183 @@
+id: B108
+title: Booted-proxy cases for the decision model, PromptGuard, Qostodian Nexus, Qualifire, Singulr and Zscaler guardrails
+description: >-
+  B108's parts built the M to Z guardrail classes, and B9460 to B9465 finish the four class runtimes and the HTTP
+  cases for the others. What is left is the booted-proxy proof for the classes B8210 to B8216 built, which were
+  planned before any chat route ran a guardrail: B8210 the decision model, B8211 PromptGuard, B8212 Qostodian Nexus,
+  B8213 Qualifire, B8215 Singulr and B8216 Zscaler AI Guard. B8521 registers the wire names, B8666 runs a held
+  guardrail through its class, B8613 installs the callbacks, B8399 runs the proxy hooks, B3683 starts the config
+  guardrails, B004 serves the chat route, B3515 with B524 send the decision model's decisions call through the router,
+  and B9850 lets a case skip one captured request body. This task writes no code and
+  registers no route, guardrail kind or class. A case that fails because a class answers differently from LiteLLM goes
+  back to that class's task as a finding and is never fixed here.
+
+
+  Cases go in tools/oracle/cases/guardrails/m-z-guard-http. Use the booted-proxy case format with master key
+  oracle-master, one deployment `chat` on `openai/gpt-oracle` with api_base {{upstream}} and api_key oracle-key, and
+  router_settings.num_retries 0. Every vendor endpoint is the same mock, so the ordered upstream queue holds the
+  guardrail calls and the model call in the order the hooks make them. Configure each guardrail in the top-level
+  `guardrails:` list and select it with the request body's `guardrails` list. Compare status, content-type,
+  x-litellm-applied-guardrails where the class records it, and the error type, param and code. On an error ignore
+  /error/message only where it embeds the HTTP client's own error text, with that reason; keep
+  every structured detail field compared. Compare the upstream requests the mock captured, so a 200 cannot hide a
+  skipped scan, and list the vendor headers named below in upstream_headers. Ignore generated ids and timestamps in a
+  200 body with a reason, and nothing else. Every case calls /v1/chat/completions.
+
+
+  Decision model (guardrail decision_model, a second deployment `decider` on `openai/jev-oracle` with api_base
+  {{upstream}}, decision_model decider, one check with action block, mode pre_call; the decisions call goes to the
+  mock on the path LiteLLM's OpenAI decisions transformation builds). decision-block: the decisions answer flags the
+  check, so the client gets 400 with {"error": "Violated decision model guardrail policy", "guardrail_name": ...,
+  "flagged_checks": [...]} and the model is never called. decision-pass: the check is not flagged and the model
+  answers. decision-fail-closed: the decisions call answers 500 and the client gets 502 with {"error": "Decision model
+  guardrail failed to respond"}. decision-fail-open: unreachable_fallback fail_open and a 500, so the model answers.
+
+
+  PromptGuard (guardrail promptguard, api_base {{upstream}}, api_key oracle-promptguard-key, so calls go to
+  /api/v1/guard; list x-api-key and content-type). promptguard-block: decision block with threat_type, confidence and
+  event_id; the client gets 400 with LiteLLM's wrapped guardrail message "Blocked by PromptGuard: ...".
+  promptguard-redact: decision redact with redacted_messages and the model receives them. promptguard-allow: decision
+  allow and the model answers. promptguard-block-output: mode post_call, the captured payload has direction output,
+  and a block answer replaces the 200. promptguard-error-block: the guard answers 500 with block_on_error at its
+  default true; ignore the text after "block_on_error=True): " with the HTTP client reason. promptguard-error-open:
+  block_on_error false and a 500, so the model answers.
+
+
+  Qostodian Nexus (guardrail qostodian_nexus, api_base {{upstream}}, so calls go to /beta/litellm_basic_guardrail_api;
+  list content-type). Its initializer passes no api_key, unreachable_fallback or fail_on_error, so no x-api-key header
+  goes out and errors fail closed. The generic guardrail API body carries request_headers with the inbound Host header,
+  which names each gateway's own port, plus litellm_version and the call and trace ids, so every Qostodian case names
+  `/upstream/0/body` with that reason; the scan's path and content-type and the model request after it stay compared.
+  qostodian-blocked: mode pre_call and the answer {"action": "BLOCKED", "blocked_reason": "pii found"}; the client gets
+  400 with the unwrapped message "pii found" and the model is never called. qostodian-intervened: action
+  GUARDRAIL_INTERVENED with texts ["oracle text, cleaned"], and the model receives that text in place of the user
+  message. qostodian-error: the scan answers 500 and the client gets 500 with "Generic Guardrail API failed: ...";
+  ignore the text after that prefix with the HTTP client reason.
+
+
+  Qualifire (guardrail qualifire, api_base {{upstream}}, api_key oracle-qualifire-key; list x-qualifire-api-key and
+  content-type). qualifire-block: no checks configured, so prompt_injections is on and the call goes to
+  /api/evaluation/evaluate; a flagged evaluation result gives 400 with {"error": "Violated guardrail policy",
+  "qualifire_response": {score, status}}. qualifire-monitor: on_flagged monitor and a flagged result, so the model
+  answers. qualifire-invoke: evaluation_id set, so the call goes to /api/evaluation/invoke with the last user message
+  as input. qualifire-pass: nothing flagged and the model answers.
+
+
+  Singulr (guardrail singulr, singulr_api_base {{upstream}}, which is plain http on 127.0.0.1 and so allowed,
+  singulr_api_key oracle-singulr-key, singulr_application_id and singulr_guardrail_id set, so calls go to
+  /api/v1/ai-gateway/litellm-v2; list x-singulr-gateway-token, x-singulr-enforcement-entity-id,
+  x-singulr-guardrail-id and content-type). singulr-block: should_block true with blocking_due_to and the client gets
+  400 "Blocked by Singulr, Blocking due to ...". singulr-allow: should_block false and the model answers.
+  singulr-error-block: the guard answers 500 with block_on_error at its default true, and the message names the status
+  and echoes the mock's fixed body, so nothing is ignored. singulr-error-open: block_on_error false and a
+  500, so the model answers.
+
+
+  Zscaler (guardrail zscaler_ai_guard, api_base {{upstream}}/v1/detection/execute-policy as the full URL, api_key
+  oracle-zscaler-key, policy_id 7; list authorization and content-type). zscaler-block: action BLOCK with
+  detectorResponses and the client gets 400 with "Content blocked by Zscaler AI Guard: ..." naming the transaction id
+  and blocking detectors. zscaler-allow: action ALLOW and the model answers. zscaler-block-output: mode post_call, the
+  captured payload has direction OUT and a block answer replaces the 200. zscaler-unavailable: the guard answers 503
+  and the client gets 500 with LiteLLM's user-facing error. zscaler-rate-limited: the guard answers 429 and the client
+  gets 500 with the rate limit reason.
+
+
+  no-auth: a PromptGuard guardrail with default_on true and no Authorization header; the 401 comes before any upstream
+  call.
+scope:
+  paths:
+    - tools/oracle/cases/guardrails/m-z-guard-http/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/decision_model/decision_model.py#L144-L160
+    why: The decision model calls the router's adecisions for a router deployment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/decision_model/decision_model.py#L231-L247
+    why: fail_open and the generic 502 on fail_closed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/decision_model/decision_model.py#L278-L329
+    why: The decision model's apply_guardrail and its 400 detail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/decision_model/__init__.py#L66-L92
+    why: The decision model initializer and its unreachable_fallback default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/decisions/transformation.py#L294
+    why: The path the OpenAI decisions call takes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/promptguard/promptguard.py#L123-L208
+    why: PromptGuard's payload, headers, block_on_error and the block and redact decisions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qohash/__init__.py#L11-L26
+    why: The Qostodian Nexus initializer, which passes no api_key, unreachable_fallback or fail_on_error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L372-L524
+    why: The generic API request body with request_headers and litellm_version, the BLOCKED and GUARDRAIL_INTERVENED actions and the fail-closed error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qualifire/qualifire.py#L320-L421
+    why: Qualifire's evaluate and invoke calls, the flagged check and the monitor mode.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/singulr/singulr.py#L63-L86
+    why: Singulr's plain-http rule for local bases and its block_on_error default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/singulr/singulr.py#L166-L268
+    why: Singulr's headers, error handling and the request block.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/zscaler_ai_guard/zscaler_ai_guard.py#L148-L262
+    why: Zscaler's direction, the concatenated text, the block message and the user-facing error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/zscaler_ai_guard/zscaler_ai_guard.py#L265-L357
+    why: Zscaler's request headers and the 429, 5xx and other status rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L273-L276
+    why: x-litellm-call-id sets the call id Singulr sends as correlation_id.
+dod:
+  - text: Booted-proxy cases show the decision model blocking, passing, failing closed with 502 and failing open.
+    proof: [oracle]
+  - text: Booted-proxy cases show PromptGuard blocking input and output, redacting, allowing and both block_on_error settings.
+    proof: [oracle]
+  - text: Booted-proxy cases show Qostodian Nexus blocking with an unwrapped reason, replacing the request text and failing closed on a scan error, with the scan's path and content-type compared.
+    proof: [oracle]
+  - text: Booted-proxy cases show Qualifire blocking, monitoring, using the invoke endpoint and passing.
+    proof: [oracle]
+  - text: Booted-proxy cases show Singulr blocking, allowing and both block_on_error settings.
+    proof: [oracle]
+  - text: Booted-proxy cases show Zscaler blocking input and output, allowing, and its unavailable and rate limit errors, and an unauthenticated request is refused before any scan.
+    proof: [oracle]
+checks:
+  optional: []
+  commands: []
+oracle_cases:
+  - tools/oracle/cases/guardrails/m-z-guard-http/decision-block.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/decision-pass.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/decision-fail-closed.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/decision-fail-open.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/promptguard-block.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/promptguard-redact.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/promptguard-allow.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/promptguard-block-output.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/promptguard-error-block.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/promptguard-error-open.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/qostodian-blocked.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/qostodian-intervened.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/qostodian-error.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/qualifire-block.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/qualifire-monitor.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/qualifire-invoke.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/qualifire-pass.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/singulr-block.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/singulr-allow.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/singulr-error-block.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/singulr-error-open.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/zscaler-block.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/zscaler-allow.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/zscaler-block-output.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/zscaler-unavailable.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/zscaler-rate-limited.yaml
+  - tools/oracle/cases/guardrails/m-z-guard-http/no-auth.yaml
+deviations: []
+out_of_scope:
+  - "The classes and their initializers: B8210 (decision model), B8211 (PromptGuard), B8212 (Qostodian Nexus over B3770 and B3771's generic guardrail API), B8213 (Qualifire), B8215 (Singulr) and B8216 (Zscaler). Registry arms: B8521. Running a held guardrail: B8666. Installing callbacks: B8613. Proxy hook dispatch: B8399. Config guardrail startup: B3683. The decisions call: B3513 to B3515 and B524."
+  - "The `/upstream/{i}/body` selector the Qostodian cases use: B9850. The fields inside the generic guardrail API body, the forwarded x-qostodian-nexus-identifiers-* headers included, are left to B3770's, B3771's and B8212's tests."
+  - "Semantic guard (B8214, B3808): semantic-router is not in tools/oracle/litellm's lock file, so LiteLLM cannot load the class in the oracle (see the B108 report notes)."
+  - "The four class runtimes and their cases: B9460 to B9464. Noma, Ovalix, Pangea, Prompt Security, Repello, custom code and the judge: B9465."
+  - "Streamed responses: the streaming cases across guardrails are B8993's."
+pitfalls:
+  - "Only the Qostodian cases skip a scan body; every other case compares each captured body whole. Singulr sends litellm_call_id as correlation_id, so send x-litellm-call-id oracle-call-1 on every Singulr request (LiteLLM honors it in common_request_processing.py L273-L276)."
+  - "PromptGuard and Singulr raise GuardrailRaisedException without should_wrap_with_default_message false, so the client message carries LiteLLM's default guardrail prefix; Ovalix-style unwrapped messages do not apply here."
+  - "Qostodian's block uses should_wrap_with_default_message false, so its message is the blocked_reason alone, unlike PromptGuard and Singulr; a BLOCKED answer without blocked_reason gives \"Content violates policy\"."
+  - "The generic guardrail API appends /beta/litellm_basic_guardrail_api to api_base unless it already ends with it, so api_base stays {{upstream}} with no path."
+  - "Zscaler's api_base is the full detection URL, not a base; LiteLLM appends nothing to it."
+  - "Zscaler joins every text with a space into one content field and sends one call per scan, not one per message."
+  - "Singulr rejects a plain http base unless the host is localhost or 127.0.0.1; {{upstream}} is http://127.0.0.1:<port>, so it passes."
+  - "The decision model's call goes through the router with num_retries 0 and no fallbacks, so one 500 is one upstream call even without router_settings."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -162,7 +162,7 @@ out_of_scope:
   - Protected message handling and compression failure details provided by B3774.
   - Issued-hash tracking and pruning (_issued_hashes_by_call_id, _prune_expired_hashes, ccr_hashes recording) provided by B3774.
   - Bypass header detection and background request skipping provided by B3774.
-  - Initialization from guardrail registry (owned by B107).
+  - Initialization from guardrail registry (owned by B8217 and B8521).
   - ">-
     CustomGuardrail base class lifecycle (CustomGuardrail.__init__, supported_event_hooks, log_guardrail_information decorator):
     Framework base class for guardrail integration; owned by B5471 (construction and updates) and B3664 (invocation logging). Required for initialization and lifecycle; infrastructure dependency."

@@ -1,0 +1,15 @@
+id: B9463
+milestone: M6 guardrails
+title: Presidio guardrail construction, request masking and the guard class
+status: todo
+depends_on: [B3804, B3805, B3806, B3807, B3681, B5471, B3665, B173]
+file: tasks/B9463-presidio-runtime.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/presidio.py"
+  - "litellm/proxy/hooks/example_presidio_ad_hoc_recognizer.json"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

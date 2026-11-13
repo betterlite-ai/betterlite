@@ -1,0 +1,8 @@
+id: no-comment-runs
+language: python
+severity: error
+message: a comment is one line; a reason that needs more lines belongs in the task report or the commit message
+rule:
+  kind: comment
+  precedes:
+    kind: comment

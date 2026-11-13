@@ -1,0 +1,18 @@
+kind: helper
+name: google-native-content-citation-overwrite
+call:
+  google_native_content:
+    calls:
+      - function: response
+        provider: studio
+        model: gemini-2.5-flash
+        status: 200
+        body: '{"candidates":[{"citationMetadata":{"citationSources":[{"uri":"https://a.example"}],"citations":[{"uri":"stale"}],"extra":"kept"},"finishReason":"STOP","xUnknown":{"deep":[1,2]}},{"content":{"parts":[{"text":"hello"}]}}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"totalTokenCount":5},"modelVersion":"gemini-2.5-flash","responseId":"r1","unknownTop":{"a":null}}'
+      - function: response
+        provider: vertex
+        model: gemini-2.5-flash
+        status: 200
+        headers: {content-type: application/json}
+        body: '{"candidates":[{"citationMetadata":"not-an-object"}],"candidatesExtra":1}'
+env: {}
+compare: {ignore: []}

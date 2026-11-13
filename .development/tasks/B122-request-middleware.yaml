@@ -1,7 +1,7 @@
 id: B122
-title: Request size limit, buffered gzip and security headers middleware
+title: Request size limit, buffered gzip, security headers and scalar root path middleware
 description: >-
-  Build the three request middleware LiteLLM's proxy installs next to its per-request root path middleware (B4200, already merged): the request size limit, the buffered gzip responder and the security headers. B4200 owns get_request_root_path and the root path wrap in server.rs; this task does not touch them. B7323 (planned) builds get_custom_url; nothing here builds URLs.
+  Build the three request middleware LiteLLM's proxy installs next to its per-request root path middleware (B4200, already merged): the request size limit, the buffered gzip responder and the security headers. Then make a scalar SERVER_ROOT_PATH route prefixed paths. It doesn't on main: B4200's root path layer is installed only when SERVER_ROOT_PATHS is set, so with SERVER_ROOT_PATH=/proxy alone a request to /proxy/v1/chat/completions gets 404. B4200's get_request_root_path, its normalization and its prefix matching stay as they are. B7323 (done) builds get_custom_url; nothing here builds URLs.
 
 
   Body limit decision, stated once so route tasks can rely on it. The middleware sets no body limit by default. With general_settings.max_request_size_mb unset (the default), zero or negative, nothing is installed for it, and axum's own default stays in force: the Bytes and Json extractors refuse a body over 2 MiB (2097152 bytes) with their own 413. Admin JSON routes keep depending on that 2 MiB. Do not call DefaultBodyLimit::disable and do not add any other global cap. LiteLLM has no cap at all in this case, so this is a deviation (see deviations). When max_request_size_mb is set to a positive number, that number replaces the 2 MiB for every route: the size layer rejects the request itself, and the same layer also applies DefaultBodyLimit::max with the same byte count so extractors accept bodies up to the configured size instead of stopping at 2 MiB.
@@ -22,15 +22,29 @@ description: >-
   Security headers, module `middleware::security_headers` (crates/betterlite-server/src/middleware/security_headers.rs). Port SecurityHeadersMiddleware. HTTP responses only. Set each header only if the response does not already carry it (header names compare case-insensitively), so a route that sets its own value keeps it: X-Frame-Options: DENY, Content-Security-Policy: frame-ancestors 'none', X-Content-Type-Options: nosniff. When Settings.enable_hsts is true, also Strict-Transport-Security: max-age=31536000; includeSubDomains. Skip responses with status 101. The setting is read once when the layer is built, not per response (see deviations). The layer applies to every response the router produces, 404 and 405 included.
 
 
-  Order, module `middleware::request_stack` (crates/betterlite-server/src/middleware/request_stack.rs). One function `wrap(application: Router, size_limit: &request_size_limit::Settings, security: &security_headers::Settings) -> Router` that composes the three layers in LiteLLM's order. From outermost to innermost: request size limit, gzip, security headers, then the router. So a 413 from the size limit carries no security headers and is never gzipped, a gzipped response carries the security headers, and the size limit sees the request before anything inside. In server.rs `application`, call `request_stack::wrap` on the router and then keep B4200's `RootPaths::wrap` as the outermost wrap, as it is today. Change nothing else in server.rs. Other planned middleware (admission control, billable metrics and the rest) are not installed here; they will slot in around this stack: admission control sits between the root path wrap and the size limit.
+  Scalar root path. LiteLLM passes SERVER_ROOT_PATH to FastAPI(root_path=...) (proxy_server.py L1731-L1742), and FastAPI copies it into every request's scope root_path before any middleware runs. Starlette's get_route_path then routes a path without the root when the path starts with the root and the next character is "/"; a path equal to the root routes as the empty path; any other path, a sibling such as /proxyx/v1/models included, routes whole. So with SERVER_ROOT_PATH=/proxy both /proxy/v1/chat/completions and /v1/chat/completions reach the chat route. The root is used exactly as read, with no trimming: SERVER_ROOT_PATH=/proxy/ strips only from /proxy//v1/models and leaves /proxy/v1/models whole (404), and SERVER_ROOT_PATH=/ strips only from a path that starts with "//". When both settings are set, LiteLLM's PerRequestRootPathMiddleware replaces root_path with a matched SERVER_ROOT_PATHS prefix and keeps the scalar otherwise. B4200's `RootPaths::effective_root` and `strip_root` already do exactly that, so build no second strip: change `RootPaths::from_settings` in crates/betterlite-server/src/middleware/request_root_paths.rs to return Some when the normalized prefix list is not empty or `server_root_path` is not empty ("/" included, since FastAPI's `if self.root_path` is true for it). Keep the both-set warning as it is, logged only when the list is not empty and the scalar is neither empty nor "/". Every request through the layer then carries RequestRootPath: the matched prefix or the scalar.
 
 
-  Tests live in tests.rs files of each module. Size limit: Content-Length over, equal and under the limit; no Content-Length with a chunked body over the limit; the 413 body bytes and content-type; disabled for None, 0 and negative; handler never runs on a Content-Length rejection; a body over 2 MiB and under the configured 10 MiB passes through a Bytes extractor route (proves DefaultBodyLimit is raised); with no setting a body over 2 MiB still gets axum's 413. Gzip: accepted and refused Accept-Encoding forms (q=0, q=0.5, x-gzip, *, "gzip;q=abc"), bodies of 499 and 500 bytes, 206, ETag, Content-Encoding and no-transform responses, Vary appended to an existing Vary, a stream body untouched, a body over 1 MiB compressed and decoding back to the original. Security headers: all three present on 200, 404 and 405 responses, a route-set X-Frame-Options kept, HSTS present only when enabled. Stack: 413 has no security headers, gzip responses have them. Config tests under `sections::request_size_limit::` and `sections::security_headers::`.
+  The root itself. Starlette routes a path equal to the root as "", no route matches that, and the router's redirect_slashes answers 307 to the same URL with "/" appended, because LiteLLM always registers the "/" home route (proxy_server.py L19860-L19862). The router sends it, so it passes every middleware and carries the security headers. B4200 routes an exact match as "/" instead (a row in docs/deviations/B4200.yaml); this task gives LiteLLM's answer, for a matched prefix and for the scalar alike. `assign_root_path` keeps rewriting an exact match to "/" and also inserts a new extension `RootSlashRedirect(String)`, defined in request_root_paths.rs, holding the redirect target: the original path with "/" appended, then "?" and the query when there is one. A new middleware function `redirect_root_slash` in the same file answers a request that carries it with 307 and a Location from `crate::docs_routes::redirect_location(host, target)`, host being the Host header, the way docs_routes' slash_redirect builds it. It does this for every method, since a POST to the root gets the same 307 in LiteLLM; a request without the marker goes on to the next service. A WebSocket handshake at the exact root (an Upgrade header equal to "websocket", case-insensitive) gets no marker and keeps its URI whole, because Starlette redirects only HTTP scopes, so the router answers it as an unknown path. With SERVER_ROOT_PATH=/ a GET / therefore gets 307 to "//", as in LiteLLM. In docs/deviations/B4200.yaml delete the exact-prefix row and change the "not installed" row to say the layer is installed when either setting is set.
+
+
+  Code that strips the scalar by hand. Two places on main imitate the strip because no layer did it, and both go. admission_control.rs `scalar_route_path` strips the scalar when the request has no RequestRootPath (its comment says "a scalar SERVER_ROOT_PATH has no middleware to do it here"). With the layer installed for any scalar, the admission gate already sees the route path, so delete `scalar_route_path`, the `scalar_root` field of `AdmissionStack` and the `Arc<str>` in the gate state, and look up `request.uri().path()` in EXEMPT_PATHS directly. The admission tests keep their scalar cases (scalar_root_exempt, scalar_root_exemption, matched_root_path_skips_the_scalar_root); their harness drops the `scalar_root` field and already wraps with `RootPaths::from_settings`, and that now returns Some for a scalar. docs_routes.rs `route_variants` registers every docs path twice, plain and under the scalar with its trailing slash trimmed. Behind the layer that makes /proxy/proxy/docs answer, and with SERVER_ROOT_PATH=/proxy/ it makes /proxy/docs answer where LiteLLM gives 404. Register only the plain path, delete `route_variants` and `route_prefix`, and keep `server_root_path` in DocsRouteConfig for the page bodies and `swagger_base`. In docs_routes/tests.rs, the_docs_are_served_under_the_server_root_path wraps the router with RootPaths for SERVER_ROOT_PATH=/api, and the_prefixed_root_redirects_to_its_slash is deleted, since the 307 now comes from redirect_root_slash and its tests cover it. Nothing else reads the scalar to route: login_form, the pass-through registry, the OpenAPI servers entry and the MCP well-known suffix use it to build URLs or to normalize a route they are handed, and stay as they are.
+
+
+  Order, module `middleware::request_stack` (crates/betterlite-server/src/middleware/request_stack.rs). One function `wrap(application: Router, size_limit: &request_size_limit::Settings, security: &security_headers::Settings) -> Router` that composes the layers in LiteLLM's order. From outermost to innermost: request size limit, gzip, security headers, B8295's `RedisBatchLayer`, `request_root_paths::redirect_root_slash`, then the router. LiteLLM adds RedisRequestBatchMiddleware before SecurityHeadersMiddleware and GZipBufferedResponseMiddleware, so it is inside them, and its slash redirect comes from the router itself. So a 413 from the size limit carries no security headers and is never gzipped, a gzipped response and an exact-root 307 carry the security headers, and the size limit sees the request before anything inside. In server.rs `application`, call `request_stack::wrap` on the routed router before `AdmissionStack::wrap`, so the admission stack stays outside the size limit as AdmissionControlMiddleware is in LiteLLM, and keep `RootPaths::wrap` outermost, now installed whenever `RootPaths::from_settings` returns Some. Drop `scalar_root` from the AdmissionStack literal. Change nothing else in server.rs. Other planned middleware (billable metrics, budget reservation release and the rest) are not installed here.
+
+
+  Tests live in tests.rs files of each module. Size limit: Content-Length over, equal and under the limit; no Content-Length with a chunked body over the limit; the 413 body bytes and content-type; disabled for None, 0 and negative; handler never runs on a Content-Length rejection; a body over 2 MiB and under the configured 10 MiB passes through a Bytes extractor route (proves DefaultBodyLimit is raised); with no setting a body over 2 MiB still gets axum's 413. Gzip: accepted and refused Accept-Encoding forms (q=0, q=0.5, x-gzip, *, "gzip;q=abc"), bodies of 499 and 500 bytes, 206, ETag, Content-Encoding and no-transform responses, Vary appended to an existing Vary, a stream body untouched, a body over 1 MiB compressed and decoding back to the original. Security headers: all three present on 200, 404 and 405 responses, a route-set X-Frame-Options kept, HSTS present only when enabled. Stack: 413 has no security headers, gzip responses and an exact-root 307 have them. Config tests under `sections::request_size_limit::` and `sections::security_headers::`. Root path, in request_root_paths/tests.rs, every new test named scalar_root_ or exact_root_ at the start: the layer is installed for "/proxy", "/proxy/" and "/" with no prefix list and still not for an empty scalar with no list; with "/proxy", /proxy/v1/models routes as /v1/models, /proxy/v1/models?x=1 keeps its query, /v1/models and /proxyx/v1/models route whole, and RequestRootPath is "/proxy"; with "/proxy/", /proxy/v1/models routes whole and /proxy//v1/models as /v1/models; with "/", /v1/models routes whole and //v1/models as /v1/models; a matched prefix still wins over the scalar; and server::application with SERVER_ROOT_PATH=/tenant-a answers 200 on both /tenant-a/health/liveliness and /health/liveliness. exact_root_ tests: the marker is set for an exact scalar and an exact prefix and not for a WebSocket handshake; redirect_root_slash answers 307 with Location http://proxy.example/proxy/ and, for /proxy?x=1, http://proxy.example/proxy/?x=1, for GET and POST, and passes a request without the marker through. root_path_middleware_installed_only_for_a_nonempty_prefix_list and the server test beside it change to the new install rule. Docs: a_doubled_root_path_is_not_found, behind RootPaths with only SERVER_ROOT_PATH=/api, gets 404 for /api/api/redoc, and with SERVER_ROOT_PATH=/api/ gets 404 for /api/redoc.
+
+
+  HTTP oracle cases for the root path, in tools/oracle/cases/request-middleware/, each with SERVER_ROOT_PATH in the case env. scalar-root-prefixed-chat: env /proxy, POST /proxy/v1/chat/completions with the master key to an openai/ model whose api_base is "{{upstream}}", one 200 upstream reply, compared like tools/oracle/cases/chat/deployments-path.yaml plus the three security headers. scalar-root-unprefixed-chat: the same with POST /v1/chat/completions. scalar-root-sibling-segment: env /proxy, GET /proxyx/v1/models with the master key, 404 {"detail":"Not Found"}. scalar-root-trailing-slash: env /proxy/, GET /proxy/v1/models with the master key, 404. scalar-root-exact-redirect: env /proxy, GET /proxy?x=1, 307 with an empty body, comparing x-frame-options, content-security-policy and x-content-type-options, and location under headers_present only, because its host carries each gateway's own port.
 
 
   Fuzz: `accepts_gzip` takes arbitrary bytes. Add the cargo-fuzz target `accept_encoding` to the existing crates/betterlite-server/fuzz crate (add a [[bin]] entry to its Cargo.toml like the others), seed its corpus with the Accept-Encoding values the gzip tests use plus one invalid-UTF-8 file, and replay every corpus file in a test named replays_the_accept_encoding_corpus, in the style of replays_the_route_path_corpus in auth/route_match/tests.rs.
 scope:
   paths:
+    - "tools/oracle/src/router_probes/admission_control/driver.rs"
+    - "tools/oracle/src/router_probes/admission_control/**"
     - Cargo.toml
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-config/src/sections/request_size_limit.rs
@@ -46,6 +60,13 @@ scope:
     - crates/betterlite-server/src/middleware/request_stack.rs
     - crates/betterlite-server/src/middleware/request_stack/**
     - crates/betterlite-server/src/server.rs
+    - crates/betterlite-server/src/middleware/request_root_paths.rs
+    - crates/betterlite-server/src/middleware/request_root_paths/**
+    - crates/betterlite-server/src/admission_control.rs
+    - crates/betterlite-server/src/admission_control/**
+    - crates/betterlite-server/src/docs_routes.rs
+    - crates/betterlite-server/src/docs_routes/**
+    - docs/deviations/B4200.yaml
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/accept_encoding.rs
     - crates/betterlite-server/fuzz/corpus/accept_encoding/**
@@ -62,8 +83,24 @@ references:
     why: Accept-Encoding weights, the negotiable rules, Vary handling and the off-loop threshold.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/security_headers_middleware.py#L1-L50
     why: The three static headers, the opt-in HSTS header and the set-if-absent rule.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2473-L2474
-    why: SecurityHeadersMiddleware and GZipBufferedResponseMiddleware are installed, gzip added last so it is the outer one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2470-L2474
+    why: RedisRequestBatchMiddleware, InFlightRequestsMiddleware, SecurityHeadersMiddleware and GZipBufferedResponseMiddleware are installed in this order, gzip added last so it is the outer one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1731-L1742
+    why: The app is built with root_path=server_root_path, the SERVER_ROOT_PATH value read at L974.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8349-L8356
+    why: get_server_root_path reads SERVER_ROOT_PATH with "" as the default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19860-L19862
+    why: The "/" home route that always exists, so an exact-root request is redirected to the slash form.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/per_request_root_path_middleware.py#L92-L121
+    why: A matched SERVER_ROOT_PATHS prefix replaces the scalar root_path FastAPI set; an unmatched request keeps the scalar.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/uv.lock#L9603-L9604
+    why: LiteLLM's lock pins starlette 1.3.1 (and fastapi 0.136.3 at L1881-L1882), the versions the two links below are read at.
+  - url: https://github.com/fastapi/fastapi/blob/0.136.3/fastapi/applications.py#L1156-L1159
+    why: FastAPI sets scope root_path to its root_path on every request before the middleware stack runs.
+  - url: https://github.com/encode/starlette/blob/1.3.1/starlette/_utils.py#L96-L111
+    why: get_route_path, the exact strip rule. It strips on a whole segment only, gives "" for the root itself and does nothing special with a trailing slash.
+  - url: https://github.com/encode/starlette/blob/1.3.1/starlette/routing.py#L694-L709
+    why: redirect_slashes, HTTP only, answers the empty route path with a 307 to the path plus "/" when a route matches it.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L20014-L20039
     why: RequestSizeLimitMiddleware reads general_settings max_request_size_mb and is enforced only for premium_user; admission control and the root path middleware are added after it, so they are outside it.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/middleware/test_security_headers_middleware.py#L1-L80
@@ -90,6 +127,14 @@ dod:
   - text: >-
       request_stack installs B8295's Redis request batch layer, the layer that task exports.
     proof: [stack-tests]
+  - text: With only a scalar SERVER_ROOT_PATH the root path layer is installed, a path under the root on a segment boundary routes without it, an unprefixed or sibling path routes whole, a trailing-slash root is used as written, and a matched SERVER_ROOT_PATHS prefix still wins.
+    proof: [root-path-tests, oracle]
+  - text: A request for exactly the root gets 307 to the root plus "/" with its query from inside the stack, so it carries the security headers; a WebSocket handshake there is not redirected.
+    proof: [root-path-tests, stack-tests, oracle]
+  - text: Admission control no longer strips the scalar itself and its exemptions still hold under a scalar root.
+    proof: [admission-tests]
+  - text: The docs router registers each path once, so a doubled root and a trailing-slash root give 404 as in LiteLLM.
+    proof: [docs-route-tests]
 checks:
   optional: [mutants]
   commands:
@@ -115,12 +160,32 @@ checks:
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/accept_encoding)" &&
         grep -q 'name = "accept_encoding"' crates/betterlite-server/fuzz/Cargo.toml &&
         cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_accept_encoding_corpus)'
+    - id: root-path-tests
+      why: a scalar root is not installed, strips on the wrong rule, or the exact root is not redirected
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::request_root_paths::tests::(scalar_root|exact_root)_/)' &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::request_root_paths::/)'
+    - id: admission-tests
+      why: admission control still strips the scalar itself or its exemptions break under the root path layer
+      run: >-
+        ! grep -q 'scalar_route_path' crates/betterlite-server/src/admission_control.rs &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^admission_control::/)'
+    - id: docs-route-tests
+      why: the docs router still registers a second path under the root
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^docs_routes::tests::a_doubled_root_path_is_not_found/)' &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^docs_routes::/)'
 oracle_cases:
   - tools/oracle/cases/request-middleware/security-headers-default.yaml
   - tools/oracle/cases/request-middleware/security-headers-hsts.yaml
   - tools/oracle/cases/request-middleware/gzip-large-accepted.yaml
   - tools/oracle/cases/request-middleware/gzip-large-refused.yaml
   - tools/oracle/cases/request-middleware/gzip-small-body.yaml
+  - tools/oracle/cases/request-middleware/scalar-root-prefixed-chat.yaml
+  - tools/oracle/cases/request-middleware/scalar-root-unprefixed-chat.yaml
+  - tools/oracle/cases/request-middleware/scalar-root-sibling-segment.yaml
+  - tools/oracle/cases/request-middleware/scalar-root-trailing-slash.yaml
+  - tools/oracle/cases/request-middleware/scalar-root-exact-redirect.yaml
 deviations:
   - what: With max_request_size_mb unset, betterlite keeps axum's 2 MiB body limit on the Bytes and Json extractors; LiteLLM has no limit.
     why: Rule bounded-inputs asks for a cap on every inbound body, and the admin JSON routes already rely on the 2 MiB. Setting max_request_size_mb replaces it for all routes.
@@ -136,8 +201,12 @@ deviations:
     why: axum has no body message boundary; a known exact size is the same set of responses (JSON and text replies) and streams stay untouched.
   - what: A request body that goes over the limit while the handler is already streaming its response cannot be turned into a 413 or abort the response.
     why: The 413 replaces the response only when the inner service has not yet returned one, as in LiteLLM when response start was already sent the error is re-raised; axum cannot abort after the head is sent without a special error path.
+  - what: The exact-root redirect's Location always uses the http scheme, where Starlette takes the request's scheme, so over TLS or behind a proxy that sets X-Forwarded-Proto LiteLLM answers with an https Location.
+    why: It reuses docs_routes' redirect_location, and B7740 recorded the same limit for the docs slash redirects; the server does not carry the scheme into the router.
+    link: https://github.com/encode/starlette/blob/1.3.1/starlette/routing.py#L694-L709
 out_of_scope:
-  - "get_request_root_path, the root path middleware and the SERVER_ROOT_PATH settings: B4200, already merged."
+  - "get_request_root_path, normalize_root_paths, the prefix matching of PerRequestRootPathMiddleware and the request_root_paths config section that reads SERVER_ROOT_PATH and SERVER_ROOT_PATHS: B4200, already merged. This task changes only when that layer is installed, what it answers for the exact root, and the code that stripped the scalar by hand."
+  - "normalize_route_for_root_path for pass-through routes: betterlite-auth's pass_through_registry, already on main; its future caller hands it the route path the layer leaves, as LiteLLM's get_request_route does."
   - "get_custom_url, join_paths and PROXY_BASE_URL: B7323."
   - "AdmissionControlMiddleware, InFlightRequestsMiddleware, BillableRequestMetricsMiddleware, BudgetReservationReleaseMiddleware, RedisRequestBatchMiddleware and PrometheusAuthMiddleware: other tasks own these files."
   - "check_if_request_size_is_safe and the response size check in auth_utils.py: B744."
@@ -154,6 +223,10 @@ pitfalls:
   - Compress with spawn_blocking only for bodies of 1048576 bytes or more; a smaller body compressed there would pay a thread hop for nothing, and a large one compressed inline would block the async runtime.
   - 'Setting a header that exists must not replace it: use the entry API or a contains check, since HeaderMap::insert overwrites.'
   - Router::layer may not wrap the fallback in the way you expect; test a 404 and a 405 for the security headers, and wrap with fallback_service as RootPaths::wrap does if they come back bare.
+  - SERVER_ROOT_PATH is used as written, with no trim and no normalize_root_paths call, so "/proxy/" leaves /proxy/v1/models whole; normalizing the scalar would route paths LiteLLM answers with 404.
+  - The exact-root 307 must come from redirect_root_slash innermost in request_stack, not from RootPaths::wrap, or it loses the security headers and skips the size limit and the admission gate.
+  - Put SERVER_ROOT_PATH in the oracle case env, never in config general_settings, since LiteLLM reads it only from the environment and the two gateways would otherwise run different setups.
+  - Each case with SERVER_ROOT_PATH other than "/" makes the oracle's LiteLLM rewrite every text file of its packaged UI in place at startup (proxy_server.py L2306-L2353); leave LITELLM_UI_PATH unset and add no UI case under a root path.
 review_level: standard
 budget:
   max_changed_lines: 1500

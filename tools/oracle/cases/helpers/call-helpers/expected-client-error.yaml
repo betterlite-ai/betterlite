@@ -1,0 +1,33 @@
+kind: helper
+name: expected-client-error
+call:
+  call_helpers:
+    function: expected_client_error
+    values:
+      - null
+      - {code: "400"}
+      - {status_code: 401}
+      - {code: null, status_code: 401}
+      - {code: "401", status_code: 500}
+      - {code: " 401 "}
+      - {code: 404}
+      - {code: "abc", status_code: 401}
+      - {code: "500"}
+      - {code: "399"}
+      - {status_code: "500"}
+      - {llm_provider: openai, status_code: 400}
+      - {base_llm_exception: true, status_code: 400}
+      - {}
+      - {llm_provider: openai, category: litellm_rate_limit, status_code: 429}
+      - {category: litellm_batch_rate_limit, status_code: 429}
+      - {category: vendor_rate_limit, status_code: 429}
+      - {http_exception: true, status_code: 429}
+      - {llm_provider: openai, category: litellm_rate_limit, status_code: 500}
+      - {code: true}
+      - {status_code: false}
+      - {code: 404.5}
+      - {status_code: "401.0"}
+      - {code: {a: 1}}
+      - {code: [400]}
+env: {}
+compare: {ignore: []}

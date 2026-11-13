@@ -1,0 +1,14 @@
+kind: helper
+name: strands-error-bad-request
+call:
+  b3512:
+    steps:
+      - kind: transform
+        api_base: arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/my-runtime
+        body: '{"error": {"code": "bad_request", "message": "at most 16 questions"}}'
+        model: m
+        state: the state
+        question: q
+        instructions: decide
+env: {}
+compare: {ignore: []}

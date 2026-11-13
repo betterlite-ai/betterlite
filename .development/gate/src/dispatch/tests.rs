@@ -29,12 +29,20 @@ fn fixtures() -> (Agents, Task) {
     let mut agents: Agents = read_yaml(&development.join("agents.yaml")).unwrap();
     let task: Task = read_yaml(&development.join("tasks/B000-workspace.yaml")).unwrap();
     agents.roles.worker.keep_rungs_for(&task.id);
-    // these tests walk the four-rung ladder that ran before DeepSeek went in front
+    // these tests walk the ladders that ran before DeepSeek went in front
     agents
         .roles
         .worker
         .ladder
         .retain(|rung| rung.runner != "deepseek-worker");
+    for role in [
+        &mut agents.roles.reviewer,
+        &mut agents.roles.security_reviewer,
+        &mut agents.roles.parity_reviewer,
+    ] {
+        role.ladder
+            .retain(|rung| rung.runner != "deepseek-reviewer");
+    }
     (agents, task)
 }
 
@@ -58,6 +66,7 @@ fn progress() -> Progress {
         session: None,
         starts: Vec::new(),
         red: Vec::new(),
+        reported_done: false,
     }
 }
 
@@ -167,6 +176,7 @@ fn trial_rung() -> Rung {
         effort: "high".to_owned(),
         attempts: 1,
         timeout_minutes: 1,
+        fix_model: None,
         tasks: Some(vec!["B9".to_owned()]),
     }
 }
@@ -634,8 +644,8 @@ fn no_start_moves_while_the_other_vendor_is_full_or_at_its_limit() {
             .map(|link| link.rung.model.clone())
     };
     let openai = hold_seats(folder.path(), "openai", 12);
-    // a worker start takes a writer seat first, and Claude has 12 of those beside 16 run seats
-    let anthropic = hold_seats(folder.path(), "anthropic-writer", 12);
+    // a worker start takes a writer seat first, and Claude has 20 of those beside 24 run seats
+    let anthropic = hold_seats(folder.path(), "anthropic-writer", 20);
     assert_eq!(pick().as_deref(), Some("gpt-6-luna"));
     drop(anthropic);
     mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
@@ -728,6 +738,47 @@ fn a_run_without_an_answer_starts_fresh_on_the_same_rung() {
     assert_eq!(flow, ControlFlow::Continue(()));
     assert_eq!((progress.fix_turns, progress.next), (0, NextRun::Fresh));
     assert_eq!(progress.feedback, vec!["no answer".to_owned()]);
+}
+
+#[test]
+fn only_a_done_report_counts_as_reported_done() {
+    let (agents, task) = fixtures();
+    let folder = tempfile::tempdir().unwrap();
+    let fix = |red: Red| {
+        Step::Fix(Failure {
+            feedback: vec!["a red check".to_owned()],
+            red: vec![red],
+        })
+    };
+    let steps = [
+        (reviewed(ReviewVerdict::Changes, &["a finding"]), true),
+        (fix(Red::Check("clippy".to_owned())), true),
+        (fix(Red::Edits), true),
+        (fix(Red::Report), false),
+        (fix(Red::Unfinished), false),
+        (
+            Step::Retry(Failure {
+                feedback: vec!["no answer".to_owned()],
+                red: vec![Red::Silent],
+            }),
+            false,
+        ),
+        (Step::Blocked(vec!["a blocker".to_owned()]), false),
+    ];
+    for (step, done) in steps {
+        let mut progress = progress();
+        progress.reported_done = !done;
+        let flow = apply_step(
+            &Chain::new(&agents).unwrap(),
+            &brief(&task),
+            &places(folder.path()),
+            &mut progress,
+            step,
+        )
+        .unwrap();
+        assert_eq!(flow, ControlFlow::Continue(()));
+        assert_eq!(progress.reported_done, done);
+    }
 }
 
 #[test]
@@ -980,6 +1031,45 @@ fn a_granted_start_runs_on_a_stand_in_while_the_last_rung_vendor_is_limited() {
     );
 }
 
+#[test]
+fn a_granted_start_runs_on_a_stand_in_while_a_limited_vendor_holds_every_open_rung() {
+    let (mut agents, task) = fixtures();
+    answer_with(&mut agents, "not a report");
+    let folder = tempfile::tempdir().unwrap();
+    worktree(folder.path());
+    mark(
+        folder.path(),
+        "openai",
+        "ERROR: You've hit your usage limit.",
+    )
+    .unwrap();
+    let chain = Chain::new(&agents).unwrap();
+    let ladder = &agents.roles.worker.ladder;
+    let last = ladder.len() - 1;
+    let luna = ladder
+        .iter()
+        .position(|rung| rung.model == "gpt-6-luna")
+        .unwrap();
+    let mut progress = progress();
+    progress.used = agents.policy.max_worker_attempts;
+    progress.rung = luna;
+    progress.starts = ladder.iter().map(|rung| rung.attempts).collect();
+    progress.starts[luna] = 0;
+    progress.starts[last] = 0;
+    let before = progress.starts.clone();
+    let places = places(folder.path());
+    let ungranted = chain.pick(&places, &progress, &chain.links[luna]).unwrap();
+    assert!(ungranted.is_none());
+    run_ladder(&agents, &brief(&task), &places, &mut progress, 2).unwrap_err();
+    let grown: Vec<usize> = (0..ladder.len())
+        .filter(|&index| progress.starts[index] > before[index])
+        .collect();
+    assert_eq!(progress.used, agents.policy.max_worker_attempts + 2);
+    assert_eq!(grown.len(), 1);
+    assert_ne!(ladder[grown[0]].runner, ladder[luna].runner);
+    assert_eq!(progress.starts[grown[0]], before[grown[0]] + 2);
+}
+
 fn claude_answers(agents: &mut Agents, report: &str) {
     let answer = format!(r#"printf '{{"structured_output":{report},"session_id":"s1"}}'"#);
     for runner in &mut agents.runners {
@@ -987,7 +1077,9 @@ fn claude_answers(agents: &mut Agents, report: &str) {
         runner.args = vec!["-c".to_owned(), format!("cat > /dev/null; {answer}")];
         runner.resume = Some(vec![
             "-c".to_owned(),
-            format!("echo {{session}} >> '{{home}}/resumed'; cat >> '{{home}}/prompts'; {answer}"),
+            format!(
+                "echo {{session}} >> '{{home}}/resumed'; echo {{session}} {{model}} >> '{{home}}/models'; cat >> '{{home}}/prompts'; {answer}"
+            ),
         ]);
         runner.output = OutputMode::ClaudeJson;
     }
@@ -1052,6 +1144,50 @@ fn a_session_from_another_model_starts_a_new_one() {
     .unwrap_err();
     let resumed = fs::read_to_string(folder.path().join("resumed")).unwrap();
     assert!(!resumed.contains("s0"), "{resumed}");
+}
+
+#[test]
+fn only_a_fix_turn_after_a_done_report_runs_on_the_fix_model() {
+    for (reported_done, first) in [(true, "fix-model"), (false, "rung")] {
+        let (mut agents, task) = fixtures();
+        claude_answers(&mut agents, "{}");
+        agents.roles.worker.ladder.truncate(1);
+        let rung = &mut agents.roles.worker.ladder[0];
+        "rung".clone_into(&mut rung.model);
+        rung.fix_model = Some("fix-model".to_owned());
+        let folder = tempfile::tempdir().unwrap();
+        worktree(folder.path());
+        let mut progress = progress();
+        progress.next = NextRun::Fix;
+        progress.feedback = vec!["a red check".to_owned()];
+        progress.reported_done = reported_done;
+        progress.session = Some(WorkerSession {
+            runner: rung.runner.clone(),
+            model: "rung".to_owned(),
+            id: "s0".to_owned(),
+        });
+        run_ladder(
+            &agents,
+            &brief(&task),
+            &places(folder.path()),
+            &mut progress,
+            0,
+        )
+        .unwrap_err();
+        let models = fs::read_to_string(folder.path().join("models")).unwrap();
+        let mut lines = models.lines();
+        assert_eq!(
+            lines.next(),
+            Some(format!("s0 {first}").as_str()),
+            "{models}"
+        );
+        // "{}" is a malformed report, not a done one, so the fix turns after it stay on the rung's model
+        assert!(lines.all(|line| line == "s1 rung"), "{models}");
+        assert_eq!(
+            progress.session.map(|session| session.model),
+            Some("rung".to_owned())
+        );
+    }
 }
 
 #[test]
@@ -1186,6 +1322,7 @@ fn run_review(
         earlier: None,
         reviewer: pinned,
         resume: None,
+        fix_model: None,
     };
     let worker = find_runner(agents, "claude-worker").unwrap();
     let step = review(&attempt, worker, folder.path());

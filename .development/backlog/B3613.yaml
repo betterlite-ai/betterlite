@@ -2,7 +2,7 @@ id: B3613
 milestone: M5 api families
 title: Pass-through HTTP request lifecycle
 status: todo
-depends_on: [B6510, B3600, B3605, B3607, B3609, B3610, B191, B1719]
+depends_on: [B6510, B3600, B3605, B3607, B3609, B3610, B191, B1719, B9802]
 file: tasks/B3613-passthrough-lifecycle.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"

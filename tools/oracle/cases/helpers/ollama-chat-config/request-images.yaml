@@ -1,0 +1,22 @@
+kind: helper
+name: ollama-chat-request-images
+env: {}
+compare: {ignore: []}
+call:
+  b8155:
+    op: request
+    requests:
+      - model: llama3
+        messages: [{role: user, content: [{type: text, text: look}, {type: image_url, image_url: "data:image/png;base64,AA"}, {type: image_url, image_url: "data:image/jpeg;base64,BB"}]}]
+      - model: llama3
+        messages: [{role: user, content: [{type: image_url, image_url: {url: "data:image/png;base64,CC"}}]}]
+      - model: llama3
+        messages: [{role: user, content: [{type: image_url, image_url: {url: "http://h/i.png"}}]}]
+      - model: llama3
+        messages: [{role: user, content: [{type: image_url, image_url: "plain-data-XYZ"}]}]
+      - model: llama3
+        messages: [{role: user, content: [{type: image_url, image_url: {detail: high}}]}]
+      - model: llama3
+        messages: [{role: user, content: [{type: text, text: ""}, {type: text, text: a}]}]
+      - model: llama3
+        messages: [{role: user, content: ""}]

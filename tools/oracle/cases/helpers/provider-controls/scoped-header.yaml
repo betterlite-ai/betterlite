@@ -1,0 +1,18 @@
+kind: helper
+name: provider-controls-scoped-provider-headers
+call:
+  provider_headers:
+    entries:
+      - custom_llm_provider: "openai, azure"
+        extra_headers:
+          x-shared: one
+      - custom_llm_provider: azure
+        extra_headers:
+          x-azure: two
+          x-shared: three
+      - custom_llm_provider: anthropic
+        extra_headers:
+          x-anthropic: four
+    custom_llm_provider: azure
+env: {}
+compare: {ignore: []}

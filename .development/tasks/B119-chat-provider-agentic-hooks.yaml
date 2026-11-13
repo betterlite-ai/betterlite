@@ -1,0 +1,244 @@
+id: B119
+title: Provider-level chat agentic hooks for web search
+description: >-
+  LiteLLM runs an older agentic loop for web search on chat completions inside the provider call, before the
+  main.py chat loop that B8294 ports. OpenAIChatCompletion.acompletion calls `_call_agentic_completion_hooks_openai`
+  (openai.py L547-L625) on every non-stream answer, and BaseLLMHTTPHandler.async_completion calls
+  `_call_agentic_chat_completion_hooks` (llm_http_handler.py L5899-L6050) with its plan executor
+  `_execute_chat_completion_agentic_plan` (L5607-L5665). Both walk litellm.callbacks and call three chat-only
+  CustomLogger hooks (custom_logger.py L792-L836): async_should_run_chat_completion_agentic_loop,
+  async_run_chat_completion_agentic_loop and async_build_chat_completion_agentic_loop_plan. Only the web search
+  interception overrides them (handler.py L789-L847 and L1092-L1152), and B4117 and B4119 built their bodies. No
+  betterlite trait carries these hooks and nothing runs the two loops, so an openai deployment with
+  websearch_interception would answer a search through B8294's plan path instead. That path gives the follow-up depth 1
+  and the max_agentic_loops ceiling, while LiteLLM's OpenAI loop sends a follow-up with no depth and never caps it. This
+  task adds the hooks, both loops and the gateway call for the OpenAI provider. It is what is left of the B119 umbrella
+  after its parts.
+
+
+  Trait. Edit B9820's crates/betterlite-context/src/agentic_callback.rs and add four default methods to
+  `AgenticCallback`, keeping every existing item as it is:
+  - `async fn should_run_chat_agentic_loop(&self, call: &AgenticCall<'_>) -> Result<AgenticGate, AgenticHookError>`,
+    default `AgenticGate { run: false, tools: JsonMap::new() }`, CustomLogger's `(False, {})`.
+  - `async fn build_chat_agentic_loop_plan(&self, call: &AgenticLoopCall<'_>) -> Result<AgenticLoopPlan,
+    AgenticHookError>`, default `AgenticLoopPlan::default()` (run_agentic_loop false).
+  - `async fn run_chat_agentic_loop(&self, call: &AgenticLoopCall<'_>) -> Result<Option<AgenticLoopRequestPatch>,
+    AgenticHookError>`, default `Ok(None)`. LiteLLM's hook sends the follow-up itself and returns its answer; here it
+    returns the follow-up request and the loop that called it sends that request, because this crate sits below the
+    continuation (see deviations). CustomLogger's body is only a docstring, so the default returns None.
+  - `fn overrides_chat_plan(&self) -> bool`, default false, read by the HTTP-handler loop the way LiteLLM compares
+    `callback.__class__.async_build_chat_completion_agentic_loop_plan` with CustomLogger's (L5969-L5972).
+  Tests in agentic_callback/tests.rs, names starting with `chat_`: a type that overrides nothing gets the three
+  defaults and false; a type that overrides all four returns its own values through an `Arc<dyn AgenticCallback>`.
+
+
+  Web search. Edit B9823's crates/betterlite-server/src/state/sdk_callbacks/websearch.rs and add the four methods to
+  its `impl AgenticCallback for WebSearchCallback`. `overrides_chat_plan` is true. The gate is B4117's
+  `WebSearchInterceptionState::async_should_run_agentic_loop` with the surface `Some(CHAT_COMPLETION_SURFACE)`, after the
+  same input conversion B9823's generic gate does; `Ok(Some(dict))` becomes run true with the dict as the tools map, and
+  `Ok(None)` run false. The plan is B4119's `ChatResponsesFollowup::build_chat_plan` with the gate dict's tool_calls and
+  its response_format, "openai" when absent (handler.py L1138-L1152). The run is B4119's `build_chat_rerun` with the
+  same inputs, returned as `AgenticLoopRequestPatch { model: Some(rerun.model), messages: Some(rerun.messages), tools:
+  None, max_tokens: None, optional_params: rerun.params, kwargs: rerun.kwargs }`. Tests in websearch/tests.rs, names
+  starting with `chat_`.
+
+
+  Loops. Code goes in crates/betterlite-core/src/api/provider_chat_hooks.rs and provider_chat_hooks/ (openai.rs,
+  http_handler.rs, followup.rs, error.rs, and a tests.rs beside each of the first three). Read B8294's merged
+  chat_agentic_loop first and reuse its input types (messages, params and kwargs maps, the chat response, `ChatLoopResult`,
+  `ChatContinuation`, `ChatCallError`) and its patch-to-call conversion. All inputs travel in one
+  `ProviderChatCall<'call>` struct: the provider answer, model, messages, optional_params, kwargs (LiteLLM's
+  litellm_params), the logging handle, custom_llm_provider, stream and `callbacks: &[Arc<dyn AgenticCallback>]` in
+  list order. A patch is sent through `ChatContinuation::complete` with `patch.model` or the original model,
+  `patch.messages`, `patch.optional_params` and `patch.kwargs`; a patch without messages is a hook error.
+
+
+  `run_openai_chat_hooks(call, continuation) -> Option<ChatLoopResult>` in openai.rs ports L547-L625. It logs
+  "LiteLLM.AgenticHooks: callbacks_count=<n>" and "LiteLLM.AgenticHooks: tools_count=<n>" at debug, takes tools from
+  optional_params["tools"] (empty when absent) and stream false. For each callback, inside one guard whose error is
+  logged at error level as "LiteLLM.AgenticHookError: Exception in agentic completion hooks for OpenAI: <error>" before
+  the next callback: call `should_run_chat_agentic_loop` with the kwargs as given; on run true call
+  `run_chat_agentic_loop` with the gate's tools map and a copy of kwargs with `custom_llm_provider` set; return None when
+  it gives None, else send the patch and return the answer. A send error is caught by the same guard. After the loop
+  return None. It never reads settings, never checks safety and never calls the plan builder.
+
+
+  `run_http_chat_hooks(call, continuation) -> Result<Option<HttpHookOutcome>, ProviderHookError>` in http_handler.rs
+  ports L5899-L6050. `HttpHookOutcome` is `Loop(ChatLoopResult)` or `FakeStream(response)`, the second for the caller to
+  turn into one stream chunk with B010's port of convert_model_response_to_streaming. First read depth, max_loops and
+  fingerprints with B2419's port of `_get_agentic_loop_settings` (L5211-L5219); its error ends the call. For each
+  callback:
+  1. Call the chat gate with the kwargs as given. An error logs "LiteLLM.AgenticHookError: Exception in
+     async_should_run_chat_completion_agentic_loop: <error>" and moves on; run false moves on.
+  2. Call B2419's port of `_check_agentic_loop_safety` (L5274-L5297) with the gate's tools map. Its error ends the call
+     as `ProviderHookError::Safety`, outside the guard below.
+  3. Inside one guard (error logged "LiteLLM.AgenticHookError: Exception in chat completion agentic hooks: <error>",
+     then the next callback), with hook kwargs = kwargs plus `custom_llm_provider`: when `overrides_chat_plan()` is
+     false, call `run_chat_agentic_loop`; return `Ok(None)` for None, else send the patch and return its answer. When
+     it is true, call `build_chat_agentic_loop_plan`: a `response_override` is returned (JSON that is not a chat response
+     is a hook error); `terminate` logs "Agentic chat loop terminated by callback=<name> reason=<stop_reason>" at debug
+     and returns the original answer; run_agentic_loop false moves on; otherwise return followup.rs's answer.
+  After the loop, when kwargs holds a true `_websearch_interception_converted_stream`, log "WebSearchInterception: No tool
+  call made, converting non-streaming chat completion to fake stream" at debug and return `FakeStream` of the original
+  answer. LiteLLM reads model_call_details["websearch_interception_converted_stream"], which BaseLLMHTTPHandler.completion
+  copies from that litellm_params key (L712-L713). Otherwise return `Ok(None)`.
+
+
+  followup.rs ports L5607-L5665 for the HTTP-handler loop only: the patch is `plan.request_patch` or an empty one, and no
+  patched messages is the error "Agentic loop plan missing patched messages". The model is patch.model or the original;
+  without a "/" it becomes "<custom_llm_provider>/<model>". Params are optional_params with patch.optional_params laid
+  over them and "tools" set from patch.tools when that is Some; tool_choice stays. The request kwargs drop every key that
+  starts with "_websearch_interception" or "_compression_interception" and the keys "_websearch_interception",
+  "acompletion", "litellm_logging_obj", "custom_llm_provider", "model_alias_map", "stream_response" and
+  "custom_prompt_dict"; they go with the unfiltered patch.kwargs to B4110's `build_agentic_followup_kwargs` with the
+  params' keys plus "model" and "messages" as request params, then depth, max_loops, fingerprints and the fingerprint
+  from step 2. Send model, patch.messages, params and those kwargs, and return the answer. No post hook, cleanup hook,
+  metadata merge or fake stream runs here. `ProviderHookError` (error.rs) holds the settings and safety errors with
+  #[source].
+
+
+  Gateway. Code goes in crates/betterlite-server/src/app/inference/provider_chat_step.rs and provider_chat_step/
+  (tests.rs). Read B9825's merged sdk_hooks.rs first. In its chat step 3, before the call to B8294's
+  maybe_run_chat_agentic_loop, call the provider step with the same response, model, messages, optional params, kwargs,
+  logging, provider and stream, the snapshot's `agentic_callbacks()` and the `GatewayContinuation`; a Some result replaces
+  the response that B8294's loop then gets. That call is the only change to sdk_hooks.rs. The step matches the attempt's
+  provider: the OpenAI provider (LiteLLM's openai_chat_completions path) runs `run_openai_chat_hooks`, every other
+  provider returns None, since no provider the gateway serves yet goes through BaseLLMHTTPHandler.async_completion. Tests
+  boot B8610's application the way B9825's sdk_hooks tests do, with one `openai/gpt-4o-mini` deployment against a local
+  tokio TcpListener upstream, and install test callbacks with `state.sdk_callbacks.replace`; names start with
+  `openai_`, `run_none_` or `empty_`. A callback whose chat gate says run and whose run returns a patch makes a second
+  upstream call with the patched messages and the client gets the second answer; with `max_agentic_loops: 1` on the
+  deployment and a follow-up that triggers again, a third call still runs and the client gets 200; a run that returns
+  None leaves one upstream call; with no callbacks the request goes out once and unchanged.
+
+
+  HTTP oracle cases in tools/oracle/cases/interception/chat-provider/, through the booted proxies. Config: an
+  `openai/gpt-4o-mini` deployment `gpt-search` with `api_base: "{{upstream}}"` and `api_key: oracle-key`; a
+  `search_tools` entry `oracle-search` with `search_provider: perplexity`, `api_key: oracle-key` and
+  `api_base: "{{upstream}}"`; `litellm_settings.callbacks: ["websearch_interception"]` and
+  `websearch_interception_params: {enabled_providers: ["openai"], search_tool_name: oracle-search}`. Compare status, the
+  body and every captured upstream request (path and body); ignore only generated ids and timestamps at their
+  pointers. Confirm each case with `--self-check` before comparing betterlite.
+  - openai-search-loop.yaml: POST /v1/chat/completions with a `{"type": "web_search_20250305", "name": "web_search"}`
+    tool; the first answer calls litellm_web_search with a query, the search provider gets it, the second chat request
+    carries the assistant tool call and the tool message, and the client gets the second answer.
+  - openai-search-twice.yaml: the same with `max_agentic_loops: 1` on the deployment and a follow-up answer that searches
+    again with another query, then a text answer.
+  - openai-forced-choice.yaml: the client also forces the web search tool through tool_choice; compare the follow-up
+    request's tool_choice.
+  Add one http_case corpus seed per case.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/provider_chat_hooks.rs
+    - crates/betterlite-core/src/api/provider_chat_hooks/**
+    - crates/betterlite-context/src/agentic_callback.rs
+    - crates/betterlite-context/src/agentic_callback/**
+    - crates/betterlite-server/src/state/sdk_callbacks/websearch.rs
+    - crates/betterlite-server/src/state/sdk_callbacks/websearch/**
+    - crates/betterlite-server/src/app/inference/provider_chat_step.rs
+    - crates/betterlite-server/src/app/inference/provider_chat_step/**
+    - crates/betterlite-server/src/app/inference/sdk_hooks.rs
+    - tools/oracle/cases/interception/chat-provider/**
+    - tools/oracle/fuzz/corpus/http_case/interception-chat-provider-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L792-L836
+    why: The three chat-only hooks and their defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L547-L625
+    why: The OpenAI provider loop, gate then run, everything in one guard, no ceiling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L966-L979
+    why: The loop runs on the non-stream acompletion answer and a non-None result replaces it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5899-L6050
+    why: The HTTP-handler loop, safety outside the guard, the plan branches and the converted stream at the end.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5607-L5665
+    why: The HTTP-handler plan executor and its kwargs filter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5211-L5297
+    why: Settings and safety the HTTP-handler loop takes from B2419.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L601-L613
+    why: async_completion keeps its own answer when the loop gives None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L708-L714
+    why: The converted stream flag is copied from litellm_params before the send.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L789-L847
+    why: The web search chat gate, strict litellm_web_search tool check and openai detection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1092-L1152
+    why: The web search chat run and chat plan.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1802-L1834
+    why: The legacy follow-up the OpenAI loop gets, tool_choice removed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/ARCHITECTURE.md
+    why: Background on the interception, the loop ceiling and streaming.
+dod:
+  - text: AgenticCallback has the three chat-only hooks and overrides_chat_plan with CustomLogger's defaults, and an implementation's values reach the caller.
+    proof: [chat-trait-tests]
+  - text: The web search callback reports overrides_chat_plan true and answers the chat gate, plan and run through B4117 and B4119.
+    proof: [websearch-chat-tests]
+  - text: The OpenAI loop asks each callback's chat gate, returns the first run's follow-up answer or None, swallows every error including a failed send, and checks no ceiling.
+    proof: [openai-hooks-tests]
+  - text: The HTTP-handler loop reads B2419's settings, raises its safety errors outside the guard, takes the run or the plan branch by overrides_chat_plan, and returns the converted stream outcome only for the web search flag.
+    proof: [http-hooks-tests]
+  - text: The HTTP-handler executor builds the follow-up model, params with tool_choice kept, and kwargs through build_agentic_followup_kwargs, and runs no post or cleanup hook.
+    proof: [followup-tests]
+  - text: On the gateway an openai attempt runs the provider loop before B8294's loop, other providers skip it, and the edited modules' tests still pass.
+    proof: [step-tests, touched-module-tests]
+  - text: Through /v1/chat/completions an openai deployment with websearch_interception runs the search and the follow-up as LiteLLM's provider loop does, without a ceiling, and drops tool_choice on the follow-up.
+    proof: [case-files, oracle]
+  - text: The new HTTP transcripts replay through the existing HTTP-case decoder.
+    proof: [http-corpus]
+checks:
+  optional: []
+  commands:
+    - id: chat-trait-tests
+      why: a chat hook or overrides_chat_plan is missing or has the wrong default
+      run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/^agentic_callback::tests::chat_/)'
+    - id: websearch-chat-tests
+      why: the web search callback does not answer the chat hooks or delegates to the wrong piece
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^state::sdk_callbacks::websearch::tests::chat_/)'
+    - id: openai-hooks-tests
+      why: the OpenAI loop order, its guard or its return value is wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::provider_chat_hooks::openai::tests::/)'
+    - id: http-hooks-tests
+      why: the HTTP-handler loop branches, its safety placement or its converted stream check is wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::provider_chat_hooks::http_handler::tests::/)'
+    - id: followup-tests
+      why: the HTTP-handler follow-up model, params or kwargs are wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::provider_chat_hooks::followup::tests::/)'
+    - id: step-tests
+      why: the gateway does not run the provider loop for openai, runs it for another provider, or runs it after B8294's loop
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::provider_chat_step::tests::/)'
+    - id: touched-module-tests
+      why: the edits to the trait, the web search callback or the chat step broke their existing tests
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-core/src/api/provider_chat_hooks.rs crates/betterlite-core/src/api/provider_chat_hooks)" && cargo nextest run --locked -p betterlite-context -p betterlite-server --no-tests=fail -E 'test(/^agentic_callback::tests::/) | test(/^state::sdk_callbacks::websearch::tests::/) | test(/^app::inference::sdk_hooks::tests::/)'
+    - id: case-files
+      why: no provider-level chat interception case exists on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/interception/chat-provider)"
+    - id: http-corpus
+      why: the HTTP transcripts never reach the production case parser
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/interception-chat-provider-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/interception/chat-provider/openai-search-loop.yaml
+  - tools/oracle/cases/interception/chat-provider/openai-search-twice.yaml
+  - tools/oracle/cases/interception/chat-provider/openai-forced-choice.yaml
+deviations:
+  - what: run_chat_agentic_loop returns the follow-up request, and the OpenAI and HTTP-handler loops send it through B8294's ChatContinuation. LiteLLM's web search hook calls litellm.acompletion itself and returns the answer.
+    why: The trait lives in betterlite-context, below the continuation in betterlite-core. The request, the order of calls and the answer the client gets are the same.
+out_of_scope:
+  - "The main.py chat loop in chat_completion_agentic_loop.py: B8294. Its call site in main.py: B5656. The gateway seam that calls it: B9825."
+  - "The web search handler's other functions: B4113 (post hook and native blocks), B4114 (tool access), B4115 (search execution and short circuit), B4116 (settings, request hooks, initialize_from_proxy_config), B4117 (gates), B4118 (Anthropic plan and surface dispatcher), B4119 (chat and Responses plans and the legacy chat rerun). async_run_agentic_loop and _execute_agentic_loop: no caller at the pin, since the class overrides async_build_agentic_loop_plan and the Messages loop never reaches its run."
+  - "tools.py: B4111. transformation.py: B4112, B4113. The two __init__.py files only re-export (B4113, B4120). ARCHITECTURE.md is documentation."
+  - "The code interpreter and compression interceptions: B4120 to B4122 and B9824, B9822. They do not override the chat-only hooks, so both loops skip them through the defaults."
+  - "The SDK callback list and the websearch_interception registration: B9821, B9823."
+  - "BaseLLMHTTPHandler.completion and async_completion (llm_http_handler.py L542-L613 and L615 on), the generic HTTP chat path that calls run_http_chat_hooks: no task ports it yet; the architect assigns it, and that owner calls run_http_chat_hooks and turns FakeStream into a chunk."
+  - "convert_model_response_to_streaming: B010. _get_agentic_loop_settings and _check_agentic_loop_safety: B2419. build_agentic_followup_kwargs: B4110."
+  - "The rest of OpenAIChatCompletion and the EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER branch: B004, B005, B024."
+  - "The other CustomLogger methods: B189, B3931, B6030, B9820. The prompt cache hook (anthropic_cache_control_hook.py): B2204, B4123 to B4126."
+pitfalls:
+  - "The OpenAI loop has no ceiling: it never reads settings or calls the safety check and adds no `_agentic_loop_depth`, so a follow-up that searches again runs its own provider loop at depth 0."
+  - "In both loops the first callback whose gate says run decides, and a run that returns None ends the loop with None without asking later callbacks."
+  - "In the OpenAI loop the follow-up send sits inside the guard, so a failed follow-up leaves the first answer, and B8294's loop then sees the litellm_web_search call and plans the search again."
+  - "The gate gets kwargs as they are, while run and plan get a copy with `custom_llm_provider` set, and B4119's chat patch reads that key to prefix the model with \"openai/\"."
+  - "The HTTP-handler executor keeps tool_choice, filters only the request kwargs and runs no post or cleanup hook, unlike B8294's followup.rs, so don't call that one."
+  - "After the HTTP-handler loop only `_websearch_interception_converted_stream` gives the fake stream; the code interpreter and headroom flags that B8294 reads do nothing here."
+  - "Add the hooks as default methods and overrides_chat_plan as a method, never as a field of AgenticOverrides, since B9822 and B9824 build that struct with a literal and may merge after this task."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

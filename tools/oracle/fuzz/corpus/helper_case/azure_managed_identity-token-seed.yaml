@@ -1,0 +1,5 @@
+kind: helper
+name: azure-managed-identity-token-seed
+call: {azure_managed_identity: {steps: [{action: token, environment: {}, scope: "https://cognitiveservices.azure.com/.default", now: 1700000000, replies: [{status: 200, headers: {Content-Type: application/json}, body: '{"access_token":"seed-token","expires_in":3600}'}]}]}}
+env: {}
+compare: {ignore: []}

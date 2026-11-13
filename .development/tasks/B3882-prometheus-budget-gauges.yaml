@@ -181,7 +181,7 @@ deviations:
 
 out_of_scope:
   - "The per-request lookups that build the input record (_set_team_budget_metrics_after_api_request, _assemble_team_object, _set_org_budget_metrics_after_api_request, _set_customer_budget_metrics_after_api_request, _get_default_customer_budget, _set_api_key_budget_metrics_after_api_request, _assemble_key_object, _set_user_budget_metrics_after_api_request, _assemble_user_object): B3883."
-  - "_increment_remaining_budget_metrics (the asyncio.gather fan-out with the PROMETHEUS_BUDGET_METRICS_PER_REQUEST_TIMEOUT wait_for, default 5 seconds) and _get_budget_metrics_per_request_timeout: no task owns them at the moment; it calls B3883's functions, so it cannot sit here. See the notes in the report."
+  - "_increment_remaining_budget_metrics (the asyncio.gather fan-out with the PROMETHEUS_BUDGET_METRICS_PER_REQUEST_TIMEOUT wait_for, default 5 seconds) and _get_budget_metrics_per_request_timeout: B9480 owns them; it calls B3883's functions, so it cannot sit here."
   - "The paginated refresh job and its cron (_initialize_budget_metrics and the _initialize_*_budget_metrics functions at prometheus.py:3617-3860, initialize_budget_metrics_cron_job): B3884."
   - "The gauge definitions and registration (prometheus.py:427-530, 636): B3874 builds the collectors and B3875 registers them."
   - "_track_end_user_metric_series and the series tracker: B3876."

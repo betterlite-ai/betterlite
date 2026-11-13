@@ -32,7 +32,7 @@ description: >-
   call. With no router installed it answers what LiteLLM answers with `llm_router` None: not recognized, not public, no
   pattern match, no remaining limits. B8611's view implements B3880's `RequestedModelCatalog`, so a hook that takes the
   catalog per call gets `router_views.current()` from its caller. Budget lookups (B3883) get `shared.auth_cache` and
-  `shared.db`.
+  `shared.db`. Make `RemainingBudgetFanOut::new(<the B3883 lookups>, config.sections.prometheus_request_budget.per_request_timeout, &collectors)` (B9480) and hand it to B8561's constructor.
 
 
   team.rs. The `datadog` arm (L4600-L4625). When `dd_api_key`, `dd_site` or `dd_agent_host` is present and not empty
@@ -103,6 +103,8 @@ references:
     why: The init function, the litellm_agent, prometheus and datadog arms, and the team credential test.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5161-L5180
     why: The newrelic arm, its team branch and the final return None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5083-L5089
+    why: The generic_api arm of get_custom_logger_compatible_class, which reuses an in-memory logger or builds one.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_callback_manager.py#L165-L270
     why: generic_api resolution from callback_settings and the compatible json, the name cache and where it runs.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6283-L6285

@@ -13,9 +13,11 @@ description: >-
 
   Request data. The loop reads the request dict that the pre-call hook (B095) built. Model it as a typed record in
   continuation/request.rs: `SkillsRequestData { model: String, messages: Vec<Value>, tools: Vec<Value>, max_tokens:
-  Option<u64>, litellm_metadata: Option<RequestMetadata>, metadata: Option<RequestMetadata> }` and `RequestMetadata {
-  code_execution_enabled: bool, skill_files: IndexMap<String, SkillFiles> }` (the keys `_litellm_code_execution_enabled` and
-  `_skill_files`, keyed by skill id). Derive Debug, Clone, Default. A missing model is "", missing messages and tools are
+  Option<u64>, skills: RequestMetadata }` and `RequestMetadata { code_execution_enabled: bool, skill_files:
+  IndexMap<String, SkillFiles> }` (LiteLLM's keys `_litellm_code_execution_enabled` and `_skill_files`, keyed by skill id).
+  B095's pre-call fills `skills` from the hook's own request-scoped state. The record has no client metadata fields: LiteLLM
+  also reads both keys from client-sent metadata (main.py L398-L405) and nothing strips them, so a client could start the
+  sandbox loop with its own files (a deviation below). Derive Debug, Clone, Default. A missing model is "", missing messages and tools are
   empty, and a missing max_tokens means 4096 (LiteLLM's literal default in the loop; it does not read DEFAULT_MAX_TOKENS).
   `Value` is allowed here for message and tool bodies: the module opens with one `#![expect(clippy::disallowed_types, reason =
   "...")]` like hook.rs.
@@ -23,10 +25,8 @@ description: >-
   Detection: `pub async fn post_call_success<C: MessagesContinuation + Sync>(&self, request_data: &SkillsRequestData,
   response: HookResponse, continuation: &C) -> Result<Option<HookResponse>, SkillsLoopError>` mirrors
   async_post_call_success_deployment_hook. In order:
-  1. Enabled means litellm_metadata.code_execution_enabled is true, else metadata.code_execution_enabled is true. Not enabled
-  returns Ok(None).
-  2. Skill files come from litellm_metadata.skill_files, and when that map is absent or empty from metadata.skill_files
-  (LiteLLM's `a or b` on dicts). Merge the inner maps of the chosen outer map, in order, into one SkillFiles; a later path
+  1. Enabled means skills.code_execution_enabled is true. Not enabled returns Ok(None).
+  2. Skill files come from skills.skill_files. Merge its inner maps, in order, into one SkillFiles; a later path
   replaces an earlier one with the same path. An empty merge logs the warning "SkillsInjectionHook: No skill files found,
   cannot execute code" and returns Ok(None).
   3. Call B3394's extract_tool_calls on the response. Its ToolCallError (malformed OpenAI arguments JSON) is not caught:
@@ -115,9 +115,9 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1498-L1535
     why: the dispatcher that calls the hook for each callback and turns a raised error into a log line (not built here).
 dod:
-  - text: post_call_success returns None when neither litellm_metadata nor metadata enables code execution, and reads the flag from metadata when litellm_metadata has it false or unset.
+  - text: post_call_success returns None when the request's skills state does not enable code execution.
     proof: [detection-gate]
-  - text: Skill files are taken from litellm_metadata unless that map is absent or empty, then from metadata; inner maps are merged in order with later paths winning; an empty merge returns None.
+  - text: Skill files are taken from the request's skills state; inner maps are merged in order with later paths winning; an empty merge returns None.
     proof: [detection-gate]
   - text: No tool calls, or only tool calls whose names are neither "litellm_code_execution" nor start with "litellm_skill_", returns None and never calls the continuation.
     proof: [detection-tools]
@@ -143,7 +143,7 @@ checks:
   optional: [mutants]
   commands:
     - id: detection-gate
-      why: the enabled flag, the metadata fallback or the skill file merge is wrong or untested
+      why: the enabled flag or the skill file merge is wrong or untested
       run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::continuation::tests::detection_gate/)'
     - id: detection-tools
       why: executable tool names, the no-tool-calls exit or the argument error path is wrong or untested
@@ -182,7 +182,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/skills-continuation/code-execution-then-final.yaml
   - tools/oracle/cases/helpers/skills-continuation/skill-tool-dispatch.yaml
   - tools/oracle/cases/helpers/skills-continuation/unhandled-tool.yaml
-  - tools/oracle/cases/helpers/skills-continuation/flag-in-metadata.yaml
+  - tools/oracle/cases/helpers/skills-continuation/flag-in-request-state.yaml
   - tools/oracle/cases/helpers/skills-continuation/disabled-returns-none.yaml
   - tools/oracle/cases/helpers/skills-continuation/no-skill-files.yaml
   - tools/oracle/cases/helpers/skills-continuation/non-executable-tool.yaml
@@ -190,6 +190,8 @@ oracle_cases:
   - tools/oracle/cases/helpers/skills-continuation/continuation-error.yaml
   - tools/oracle/cases/helpers/skills-continuation/continuation-none.yaml
 deviations:
+  - what: The enabled flag and the skill files are read only from the hook's request-scoped state, never from litellm_metadata or metadata sent by the client.
+    why: LiteLLM reads them from client metadata (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L398-L405) and strips nothing (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L376-L384), so a client could start the sandbox loop with files it sends itself.
   - what: A tool call with no name is treated as the name "" (not executable in detection, "Tool '' not handled" in the loop).
     why: LiteLLM calls .startswith on None and raises AttributeError; a typed Option<String> has no such crash and the request would only fail on a model that sent a nameless tool_use.
   - what: A non-object entry in a Dict response's content array becomes a text block holding the entry as JSON text.
@@ -208,7 +210,7 @@ out_of_scope:
   - "The Messages API call itself, acreate, is B1134. The adapter that implements MessagesContinuation over it, and the registration of the hook in the callback list, belong to B095."
   - "litellm.utils.async_post_call_success_deployment_hook, the loop over callbacks that logs a failing hook and moves on, belongs to the callback registry tasks."
 pitfalls:
-  - The enabled flag and the skill files each fall back from litellm_metadata to metadata on a falsy value, so an empty `_skill_files` map in litellm_metadata still reads metadata's.
+  - The enabled flag and the skill files come only from the hook's request-scoped state, never from the client's metadata; do not add a metadata fallback.
   - Both the stop test and the empty-tool-call test end the loop, but only the exact string "tool_use" continues it; "max_tokens" with tool calls present also stops.
   - On a failed or empty continuation the loop returns the first response passed in, not the latest one, so tool results the model already saw are dropped from what the client gets.
   - Each continuation call gets only model, messages, tools and max_tokens; system, temperature, tool_choice and the injected container are not forwarded.

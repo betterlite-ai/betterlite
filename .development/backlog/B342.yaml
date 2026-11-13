@@ -7,6 +7,7 @@ file: tasks/B342-routing-baselines.yaml
 covers:
   - "litellm/router_strategy/savings_baseline.py"
   - "litellm/proxy/hooks/autorouter_baseline_cache.py"
+  - "litellm/litellm_core_utils/litellm_logging.py"
 parent: B021
 split_from: null
 resolution: null

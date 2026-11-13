@@ -197,10 +197,10 @@ out_of_scope:
     Framework logging decorators, dynamic request params, transport primitives (F, H, E framework owners);
     this task calls logging_guardrail_information and standard logging helpers only.
   - >-
-    call_v2_guard is owned by B107 as part of Lakera's lifecycle entry points; this task does not
+    call_v2_guard is owned by B8522; this task does not
     directly call or own it. The _mask_pii_in_messages, _is_only_pii_violation, and
     _get_http_exception_for_blocked_guardrail functions are pure helpers that receive the violation
-    results from call_v2_guard through B107's orchestration.
+    results from call_v2_guard through B9451's orchestration.
 
 pitfalls:
   - Lasso message expansion creates synthetic Lasso-format messages for inspection but loses OpenAI field

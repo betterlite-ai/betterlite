@@ -1,5 +1,6 @@
 pub mod aws_speech;
 pub mod deps;
+pub mod langfuse;
 pub mod openai_common;
 pub mod saas_vgw;
 pub mod sockets;

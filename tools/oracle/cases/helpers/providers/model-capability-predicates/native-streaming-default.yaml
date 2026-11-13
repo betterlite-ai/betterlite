@@ -1,0 +1,25 @@
+kind: helper
+name: model-capability-predicates-native-streaming-default
+call:
+  model_capability_predicates:
+    fixture:
+      model_cost:
+        plain-model: {litellm_provider: deepseek, mode: chat}
+        null-model: {litellm_provider: deepseek, mode: chat, supports_native_streaming: null}
+        false-model: {litellm_provider: deepseek, mode: chat, supports_native_streaming: false}
+        string-model: {litellm_provider: deepseek, mode: chat, supports_native_streaming: sometimes}
+        true-model: {litellm_provider: deepseek, mode: chat, supports_native_streaming: true}
+        nullish-model: {litellm_provider: null, mode: chat, supports_native_streaming: sometimes}
+        deepseek/split-model: {litellm_provider: openai, mode: chat, supports_native_streaming: true}
+        split-model: {litellm_provider: deepseek, mode: chat, supports_native_streaming: sometimes}
+    steps:
+      - {function: supports_native_streaming, model: plain-model, custom_llm_provider: deepseek}
+      - {function: supports_native_streaming, model: null-model, custom_llm_provider: deepseek}
+      - {function: supports_native_streaming, model: false-model, custom_llm_provider: deepseek}
+      - {function: supports_native_streaming, model: string-model, custom_llm_provider: deepseek}
+      - {function: supports_native_streaming, model: true-model, custom_llm_provider: deepseek}
+      - {function: supports_native_streaming, model: nullish-model, custom_llm_provider: deepseek}
+      - {function: supports_native_streaming, model: split-model, custom_llm_provider: deepseek}
+      - {function: supports_native_streaming, model: nothing-here}
+env: {}
+compare: {ignore: []}

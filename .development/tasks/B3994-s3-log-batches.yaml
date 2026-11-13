@@ -2,8 +2,8 @@ id: B3994
 title: Flush S3 log batches with bounded retries and NDJSON grouping
 description: >-
   Implement queue outcome reconciliation, bounded concurrent uploads and optional
-  parent-directory NDJSON objects. Keep the sender below B115's timer/registry
-  integration and pass its state and upload operation explicitly.
+  parent-directory NDJSON objects. Pass the logger's state and upload operation explicitly.
+  B115 builds on this logger, so three things must hold: the queue payload type holds any JSON object (audit elements share the queue), the PartitionGranularityCache is reachable from `&self`, and the constructor the catalog build uses accepts resolved S3Parameters so B115's build_audit_logger can reuse it.
 
   Owned functions build the batch flush behavior: `_s3_key_parent` splits S3 keys
   at the last slash to identify parent directories; `_upload_semaphore` property
@@ -78,6 +78,12 @@ scope:
     - crates/betterlite-logging/src/registry/catalog/s3_v2/**
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L128-L254
+    why: S3Logger.__init__, built by the catalog arm of this task.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L469-L483
+    why: Model events queue through _async_log_event_base.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L514-L542
+    why: The remaining model-event queueing.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L104-L105
     why: Own _s3_key_parent to extract parent directory from S3 object keys.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L108-L112

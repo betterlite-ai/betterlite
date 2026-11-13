@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
+use chrono::DateTime;
 use indexmap::IndexMap;
 use rstest::rstest;
 use tokio::sync::mpsc;
@@ -14,6 +15,9 @@ use super::error::LoggerError;
 use super::event::{GuardrailRequestSnapshot, LoggerEvent};
 use super::resolver::LoggerResolver;
 use crate::fields::payload::StandardLoggingPayload;
+use crate::mcp_tool_hook::types::{
+    McpHiddenParams, McpPostCallResponse, McpToolHookCall, McpToolResult,
+};
 use crate::registry::CallbackRegistry;
 use crate::registry::Registration;
 use crate::registry::error::RegistryError;
@@ -497,4 +501,30 @@ fn a_logger_resolver_returns_the_logger_or_none() {
             .unwrap()
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn the_default_mcp_post_call_hook_returns_none() {
+    let logger = BaseLogger {
+        name: "plain".to_owned(),
+    };
+    let mut response = McpPostCallResponse {
+        mcp_tool_call_response: Vec::new(),
+        hidden_params: McpHiddenParams::default(),
+    };
+    let mut original = McpToolResult {
+        content: Vec::new(),
+        structured_content: None,
+        is_error: false,
+    };
+    let kwargs = IndexMap::new();
+    let call = McpToolHookCall {
+        kwargs: &kwargs,
+        response: &mut response,
+        original: &mut original,
+        start_time: DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00").unwrap(),
+        end_time: DateTime::parse_from_rfc3339("2026-01-01T00:00:01+00:00").unwrap(),
+    };
+    let outcome = logger.async_post_mcp_tool_call_hook(call).await;
+    assert!(matches!(outcome, Ok(None)));
 }

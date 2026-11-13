@@ -29,7 +29,7 @@ description: >-
   stored_then_carrying_order and empty_projection_no_io cover both directions of drift.
 
   After the team query, concurrently obtain MCP, agent and key display names via B065 resource_display_names,
-  passing B4731 config_mcp_servers and B141 global_agent_registry snapshots. Each category receives
+  passing B4731 config_mcp_servers and B4776 global_agent_registry snapshots. Each category receives
   first-seen IDs across all groups. B065 owns DB-over-config precedence and key_alias lookup; this task
   maps names back to every original resource ID, retaining duplicates/order and null for missing labels.
   Keys are identified by their stored hashes and names by aliases, never by plaintext key material.

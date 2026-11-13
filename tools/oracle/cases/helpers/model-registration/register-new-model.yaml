@@ -1,0 +1,18 @@
+kind: helper
+name: model-registration-register-new-model
+call:
+  b5365:
+    function: register_model
+    model_cost: {}
+    registrations:
+      - entries:
+          my-new: {litellm_provider: openai, input_cost_per_token: "3e-07", max_tokens: "4096"}
+          my-cohere: {litellm_provider: cohere, output_cost_per_token: 2.0e-06, cache_read_input_token_cost: 1.0e-07}
+          priced-by-name: {litellm_provider: custom_provider}
+        persist_across_reloads: false
+        warning_display_name: null
+    live: []
+    refresh: null
+    show: [litellm_provider, max_tokens, input_cost_per_token, output_cost_per_token, cache_read_input_token_cost, key]
+env: {}
+compare: {ignore: []}

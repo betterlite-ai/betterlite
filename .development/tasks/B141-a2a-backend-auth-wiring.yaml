@@ -1,0 +1,121 @@
+id: B141
+title: Real backend auth for A2A forwarding, and the A2A invoke cases over HTTP
+description: >-
+  Last part of the agents umbrella. Its parts built every function of LiteLLM's proxy/agent_endpoints/a2a_endpoints.py, and B8648 mounts the A2A routes. Two things are left. First, B4788's `resolve_backend_auth` chooses between two ports, `AppAuth` (Databricks App OAuth) and `HopAuth` (the Entra hop), and nobody gives the A2A route state real implementations of them: B8648 passes the placeholder `NoBackendAuth`, which answers no header for every agent. LiteLLM's `_resolve_backend_auth_header` calls `resolve_databricks_app_auth_header` over the module singleton `databricks_app_oauth_token_cache`, or `resolve_a2a_hop_auth_header` with the default Entra resolver `resolve_azure_ai_agent_auth_header`. Second, the A2A parts were planned before any route existed, so nothing proves their forwarding over HTTP. This task builds the two adapters, swaps them into the state, and adds the HTTP cases.
+
+  Where. Module `app::agents::a2a_backend_auth` in betterlite-server (crates/betterlite-server/src/app/agents/a2a_backend_auth.rs and a2a_backend_auth/**: databricks.rs, entra.rs, error.rs, tests.rs); the skeleton declares it in app/agents.rs. Add betterlite-proxy, betterlite-provider and betterlite-foundry to crates/betterlite-server/Cargo.toml if they aren't there yet. No statics, no trait objects where a generic works, native async fn. Read crates/betterlite-proxy/src/agent_endpoints/a2a_forwarding.rs first for the exact `AppAuth` and `HopAuth` signatures, crates/betterlite-proxy/src/agent_endpoints/databricks_oauth/header.rs and token_cache.rs for B4782's API, B8100's `resolve_a2a_hop_auth_header` in crates/betterlite-provider/src/a2a_chat and B549's `resolve_azure_ai_agent_auth_header` in crates/betterlite-foundry/src/credentials.
+
+  1. `DatabricksAppAuth` (databricks.rs) implements `AppAuth`. It holds one `Arc<DatabricksAppOAuthTokenCache>` and the secret lookup. `DatabricksAppAuth::new(http: ProxiedClient, secrets: Arc<SecretLookup>, environment: Arc<BTreeMap<String, String>>)` builds the cache once with `DatabricksAppOAuthTokenCache::new(http, clock)`, where the clock returns the wall time in seconds as f64. The state is built once at mount, so the cache is shared by every A2A request, as LiteLLM's module singleton is (B4782's deviation says the caller owns one cache). Its method reads the agent's litellm_params into B4782's `AgentLitellmParams` (a serde read of the same map; a wrong shape is the error B4782's parse gives), calls `resolve_oauth_header(&cache, &params, &lookup)` and maps `Some(value)` to the one pair ("Authorization", value) and `None` to `None`. `lookup` is a small `EnvironmentLookup` impl in this module: `lookup(name)` answers `secrets.get_secret_str(environment, "os.environ/<name>", None)`, so an `os.environ/` reference in the databricks_oauth block resolves through LiteLLM's get_secret_str (secret manager first when one is configured, then the environment) and not through std::env. Use the environment map the other `shared.secrets` callers pass; don't read std::env here.
+
+  2. `EntraHopAuth` (entra.rs) implements `HopAuth` by calling B8100's `resolve_a2a_hop_auth_header(litellm_params, custom_llm_provider, resolver)` with B549's `resolve_azure_ai_agent_auth_header` as the resolver. B8100 returns None unless custom_llm_provider is empty and one of azure_ad_token, client_secret or azure_password is truthy; then the resolver mints "Authorization: Bearer <token>". Keep that rule where B8100 wrote it; this adapter only connects the two.
+
+  3. Errors (error.rs). `BackendAuthError` has one variant per source (`Databricks(DatabricksOauthError)`, `Entra(...)` with B549's error, and the params read). Each is `#[error(transparent)]`, because B8589 answers any error here as -32603 "Internal error: <message>" with status 500 and the message must be LiteLLM's ValueError text, for example "Databricks App OAuth config is missing required field(s): client_secret" or "Databricks App OAuth token request failed with status 401".
+
+  4. Swap. In crates/betterlite-server/src/app/agents/a2a/state.rs replace only the `NoBackendAuth` B8648 passes to `A2aRouteState` with `DatabricksAppAuth::new(shared.http.clone(), shared.secrets.clone(), environment)` (the environment map from item 1) and `EntraHopAuth`, and delete `NoBackendAuth`. Leave the other collaborators and B7980's stream generator as they are. Read crates/betterlite-server/src/agent_endpoints/a2a_routes.rs for the parameter names A2aRouteState gives the two ports.
+
+  Rust tests in app::agents::a2a_backend_auth::tests, against a local tokio TcpListener for the token endpoint: DatabricksAppAuth answers the bearer pair for a full block, answers None without a databricks_oauth key, resolves an os.environ/ client_secret through the secret lookup, fetches the token once for two calls with the same block (the shared cache), and returns the B4782 error unchanged for a missing field; EntraHopAuth answers the bearer from a raw azure_ad_token, None when custom_llm_provider is set, None without Entra params, and B549's error for a client_secret without tenant_id and client_id.
+
+  HTTP oracle cases through the booted proxy, in tools/oracle/cases/agents/a2a-invoke/, with the master key and no database. Each config declares one agent under `agents` with agent_name oracle-agent and agent_card_params {name: oracle-agent, url: "{{upstream}}"}, set up like B8648's card-config-agent case, plus the litellm_params, static_headers or extra_headers the case needs. Requests go to POST /a2a/oracle-agent with a JSON-RPC 2.0 body. The tasks/* methods forward through forward_jsonrpc, so the mock answers one JSON-RPC body such as {"jsonrpc": "2.0", "id": "<same id>", "result": {"id": "task-1", "contextId": "ctx-1", "kind": "task", "status": {"state": "completed"}}}. Compare the response and the upstream request, and list the forwarded headers under upstream_headers.
+  (1) forward-headers: tasks/get with x-litellm-trace-id oracle-trace-1, a header named in the agent's extra_headers (x-forward-me), a prefixed header x-a2a-oracle-agent-x-tenant, and a static header X-Static on the agent; the agent receives x-forward-me, x-tenant, x-static, x-litellm-user-id and x-litellm-trace-id. (2) pascal-case-method: method GetTask; the agent receives tasks/get and the answer is converted for A2A 1.0. (3) version-header: method tasks/get with header a2a-version 1.0, answered in the 1.0 shape. (4) extended-card: agent/getAuthenticatedExtendedCard; the agent's card comes back with url and the first supportedInterfaces url pointing at the proxy (compare the url the way B8648's card-config-agent case does). (5) push-url-http: tasks/pushNotificationConfig/set with pushNotificationConfig.url "http://example.com/hook", 400 with detail "Push notification URL must use HTTPS" and no upstream call. (6) push-config-not-object: pushNotificationConfig "hook", 400 "pushNotificationConfig must be an object". (7) push-url-not-string: params.url 42, 400 "Push notification URL must be a string". (8) method-not-found: method tasks/unknown, 400 and -32601 "Method 'tasks/unknown' not found". (9) send-invalid-params: message/send with params {"message": 5}, 400 and -32602, ignoring /error/message (B6950 logs that text as its own deviation). (10) trace-id-required: litellm_params require_trace_id_on_calls_to_agent true and no trace header, 400 with the "requires x-litellm-trace-id header on all inbound requests." detail. (11) databricks-bearer: litellm_params databricks_oauth {client_id: oracle-client, client_secret: os.environ/ORACLE_DATABRICKS_SECRET, workspace_url: "{{upstream}}"} with that env var set; the mock answers the token request (POST /oidc/v1/token) with {"access_token": "oracle-dbx-token", "expires_in": 3600}, then the tasks/get forward, and both calls list authorization under upstream_headers. (12) databricks-missing-secret: the block without client_secret, 500 and -32603 "Internal error: Databricks App OAuth config is missing required field(s): client_secret", no upstream call. (13) databricks-token-401: the token endpoint answers 401, 500 and -32603 "Internal error: Databricks App OAuth token request failed with status 401". (14) entra-bearer: litellm_params azure_ad_token oracle-entra-token and static_headers {Authorization: Bearer static-token}; the agent receives the minted bearer, not the static one. (15) entra-unresolved: litellm_params client_secret only, 500 and -32603 with B549's "Azure AI agent Entra ID credentials did not resolve to a token." message. (16) bridge-agent-no-hop-auth: the entra-bearer agent with custom_llm_provider openai also set; tasks/get still forwards and the agent receives no authorization header.
+
+  message/send and message/stream don't go through forward_jsonrpc. LiteLLM hands them to asend_message and asend_message_streaming with api_base set to the agent's url, and its A2A client first GETs /.well-known/agent-card.json from that base and then posts the JSON-RPC call to the url inside the card it got back. B9850 makes the mock replace `{{upstream}}` in an answer with its own address, so the card answer is {"name": "oracle-agent", "description": "Oracle agent", "url": "{{upstream}}", "version": "1.0.0", "protocolVersion": "0.3.0", "preferredTransport": "JSONRPC", "capabilities": {"streaming": true}, "defaultInputModes": ["text"], "defaultOutputModes": ["text"], "skills": []} and the second call reaches the same mock at path /. a2a-sdk 1.1.0's JSON-RPC transport sends `str(uuid4())` as the id of that second call, so both cases list `{pointer: /upstream/1/body, why: ...}` under compare.ignore (B9850's body selector), compare the method, path and upstream_headers x-litellm-trace-id and x-litellm-agent-id of both calls, and send x-litellm-trace-id so the forwarded trace id is fixed. (17) message-send: POST /a2a/oracle-agent with {"jsonrpc": "2.0", "id": "oracle-send", "method": "message/send", "params": {"message": {"role": "user", "parts": [{"kind": "text", "text": "hello"}], "messageId": "oracle-msg-1"}}} and x-litellm-trace-id oracle-trace-send; the mock answers the card, then {"jsonrpc": "2.0", "id": "oracle-upstream", "result": {"kind": "task", "id": "task-1", "contextId": "ctx-1", "status": {"state": "completed"}}}, and the client gets that task under its own id oracle-send. (18) message-stream: the same request with method message/stream, id oracle-stream and trace id oracle-trace-stream; the mock answers the card, then status 200 with content-type text/event-stream and two events, a status-update for task-1 in state working with final false and one in state completed with final true, and the client gets both as data frames in order under the id oracle-stream.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/agents/a2a_backend_auth.rs
+    - crates/betterlite-server/src/app/agents/a2a_backend_auth/**
+    - crates/betterlite-server/src/app/agents/a2a/state.rs
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - tools/oracle/cases/agents/a2a-invoke/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L166-L172
+    why: _resolve_backend_auth_header, the choice between the Databricks resolver and the hop resolver on a truthy databricks_oauth value.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L819-L827
+    why: The call site, where the minted header joins the forwarding headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/databricks_oauth.py#L215-L230
+    why: The process-wide token cache and resolve_databricks_app_auth_header, which returns the Authorization pair or None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/databricks_oauth.py#L47-L119
+    why: os.environ/ references resolve through get_secret_str, and a present but incomplete block raises the missing-fields ValueError.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/common_utils.py#L148-L163
+    why: resolve_a2a_hop_auth_header and its default Entra resolver.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/common_utils.py#L51-L111
+    why: The Entra credential keys, has_azure_entra_params, the token minting order and resolve_azure_ai_agent_auth_header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L120-L132
+    why: The served version the pascal-case-method and version-header cases exercise.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L922-L1032
+    why: The tasks/* forward branch with the push notification checks and the extended card rewrite, the -32601 answer and the -32602 and -32603 error answers the cases hit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L466-L505
+    why: How a config agent under `agents` is registered, with its stable hashed agent_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L842-L921
+    why: The message/send and message/stream branches the message-send and message-stream cases reach, with api_base set to the agent url.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L767-L820
+    why: create_a2a_client reads the card from the agent's well-known path and builds a client that posts to the url inside that card.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L486-L501
+    why: The X-LiteLLM-Trace-Id and X-LiteLLM-Agent-Id headers the A2A client sends on the card fetch and on the call, overlaid by the forwarding headers.
+dod:
+  - text: The A2A route state gets DatabricksAppAuth over one token cache built at mount and EntraHopAuth, and NoBackendAuth is gone.
+    proof: [backend-auth-tests, no-placeholder-left]
+  - text: DatabricksAppAuth answers the Authorization pair for a full block, None without one, resolves os.environ/ values through the secret lookup, reuses the cached token, and passes B4782's error through with its own message.
+    proof: [backend-auth-tests]
+  - text: EntraHopAuth answers the Entra bearer only for an agent without custom_llm_provider that has Entra params, and passes B549's error through.
+    proof: [backend-auth-tests]
+  - text: Through the booted proxy the tasks/* forward sends the identity, trace, extra, prefixed and static headers and the minted Databricks or Entra bearer as LiteLLM does, and a bad Databricks or Entra setup answers -32603 with 500.
+    proof: [oracle]
+  - text: Through the booted proxy the PascalCase method and the a2a-version header get the 1.0 answer, the extended card points at the proxy, and the push URL, unknown method, invalid params and missing trace id answers match LiteLLM.
+    proof: [oracle]
+  - text: Through the booted proxy message/send and message/stream read the agent's card, call the url inside it with LiteLLM's trace and agent id headers, and answer the task or the two stream frames under the caller's id as LiteLLM does.
+    proof: [oracle]
+  - text: B8648's A2A state tests still pass after the swap.
+    proof: [a2a-state-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: backend-auth-tests
+      why: an adapter is missing or answers the wrong header or error
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::agents::a2a_backend_auth::/)'
+    - id: no-placeholder-left
+      why: the A2A state still forwards without backend auth
+      run: grep -q 'DatabricksAppAuth' crates/betterlite-server/src/app/agents/a2a/state.rs && grep -q 'EntraHopAuth' crates/betterlite-server/src/app/agents/a2a/state.rs && ! grep -rq 'NoBackendAuth' crates/betterlite-server/src
+    - id: a2a-state-tests
+      why: the swap broke the A2A state tests B8648 wrote
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::agents::a2a::/)'
+oracle_cases:
+  - tools/oracle/cases/agents/a2a-invoke/forward-headers.yaml
+  - tools/oracle/cases/agents/a2a-invoke/pascal-case-method.yaml
+  - tools/oracle/cases/agents/a2a-invoke/version-header.yaml
+  - tools/oracle/cases/agents/a2a-invoke/extended-card.yaml
+  - tools/oracle/cases/agents/a2a-invoke/push-url-http.yaml
+  - tools/oracle/cases/agents/a2a-invoke/push-config-not-object.yaml
+  - tools/oracle/cases/agents/a2a-invoke/push-url-not-string.yaml
+  - tools/oracle/cases/agents/a2a-invoke/method-not-found.yaml
+  - tools/oracle/cases/agents/a2a-invoke/send-invalid-params.yaml
+  - tools/oracle/cases/agents/a2a-invoke/trace-id-required.yaml
+  - tools/oracle/cases/agents/a2a-invoke/databricks-bearer.yaml
+  - tools/oracle/cases/agents/a2a-invoke/databricks-missing-secret.yaml
+  - tools/oracle/cases/agents/a2a-invoke/databricks-token-401.yaml
+  - tools/oracle/cases/agents/a2a-invoke/entra-bearer.yaml
+  - tools/oracle/cases/agents/a2a-invoke/entra-unresolved.yaml
+  - tools/oracle/cases/agents/a2a-invoke/bridge-agent-no-hop-auth.yaml
+  - tools/oracle/cases/agents/a2a-invoke/message-send.yaml
+  - tools/oracle/cases/agents/a2a-invoke/message-stream.yaml
+deviations: []
+out_of_scope:
+  - "_validate_push_notification_url, _caller_identity_headers, _resolve_backend_auth_header, _forwarding_headers, _jsonrpc_error, _enforce_inbound_trace_id, _jsonrpc_body and _forward_jsonrpc: B4788, which also owns the AppAuth and HopAuth ports."
+  - "_sse_event, _to_jsonrpc_object, _a2a_sse_event_source, _sse_streaming_response, _forward_jsonrpc_sse and _handle_stream_message: B4789. _build_message_send_params: B6950."
+  - "_PASCAL_TO_WIRE, _served_version, _get_agent, get_agent_card and invoke_agent_a2a: B8589. Mounting the routes and building the rest of the A2A state: B8648. The production stream generator in that state and the tasks/resubscribe cases: B7980."
+  - "resolve_oauth_header, the token cache and the token fetch: B4782. resolve_a2a_hop_auth_header: B8100. The Entra token minting and resolve_azure_ai_agent_auth_header: B549."
+  - "The mock's address in an answer and the body selector the message cases use: B9850. The deferred success log around message/send (a2a_endpoints.py L865-L890) gets no case: its only visible effect is that a post-call guardrail's result reaches the logged payload, and no HTTP case compares a logged payload."
+pitfalls:
+  - "The Databricks side is chosen on a truthy databricks_oauth value, so `databricks_oauth: {}` falls through to the hop side, while a non-empty block without client_secret is a -32603 500 and never a request without auth."
+  - "Build the token cache once in DatabricksAppAuth::new; a cache made per request fetches a new token on every A2A call, where LiteLLM's databricks_app_oauth_token_cache is one per process."
+  - "The minted Authorization replaces a static or extra header of the same name in any letter case (B4788 compares lowercase), which is what the entra-bearer case checks with its static Authorization."
+  - "A completion-bridge agent (custom_llm_provider set) keeps its Entra params for the model provider, so the hop gets no Authorization even when azure_ad_token is set."
+  - "The mock replaces authorization values with a hash, so the bearer cases compare equal hashes; the Databricks token request also carries a Basic authorization that is hashed the same way."
+  - "Send x-litellm-trace-id in the forward-headers case; without a chain id header the forwarded X-LiteLLM-Trace-Id is not a fixed value."
+  - "The message cases see two upstream calls per side, the card GET at index 0 and the JSON-RPC POST at index 1, so the body selector is `/upstream/1/body`; `/upstream/0/body` would hide nothing and let the uuid id fail the case."
+  - "The card's url must be exactly `{{upstream}}`: a card that names another host makes LiteLLM's client fail to connect, and a localhost card url then triggers its localhost retry against api_base, a different flow from the one these cases check."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

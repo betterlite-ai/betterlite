@@ -39,9 +39,9 @@ description: >-
   - Check should_run_guardrail for post_call; if false, pass through unchanged.
   - Call _check_and_mark_scanned to prevent duplicate scans on same call_id.
   - Collect all chunks from the response iterator.
-  - If chunks are bytes (Anthropic SSE from /v1/messages), extract text via _extract_text_from_sse_bytes (B3787),
+  - If chunks are bytes (Anthropic SSE from /v1/messages), extract text via _extract_text_from_sse_bytes (built in this task),
     call _scan_raw_streaming_text and yield original chunks unmodified.
-  - If chunks are non-ModelResponse events (from /v1/responses), extract text via _extract_text_from_streaming_events (B3787),
+  - If chunks are non-ModelResponse events (from /v1/responses), extract text via _extract_text_from_streaming_events (built in this task),
     call _scan_raw_streaming_text and yield original chunks.
   - Otherwise, use stream_chunk_builder (B2227) to assemble complete ModelResponse.
   - Call _scan_and_process_streaming_response to scan assembled response and apply masking.
@@ -52,6 +52,8 @@ description: >-
   - Catch HTTPException and yield as SSE error; catch generic exceptions and yield generic error frame.
 
   Helpers:
+  - _extract_text_from_sse_bytes and _extract_text_from_streaming_events (panw_prisma_airs.py L885-L937): built in hooks/ here, since B3787 does not build them.
+  - The _MCP_COMPAT_MAP override of should_run_guardrail (panw_prisma_airs.py L255-L269): built in hooks/ here; B3789 owns the base should_run_guardrail.
   - _check_and_mark_scanned: Check litellm_metadata[f"_panw_{scan_type}_scanned_{call_id}"] and mark if not present.
     Synthesize call_id if missing (warn). Return True if already scanned, False otherwise.
   - _extract_prompt_from_request: Extract from messages (chat completion) first, fall back to prompt field
@@ -149,7 +151,7 @@ deviations:
 
 out_of_scope:
   - "B3786 owns _call_panw_api, _build_error_detail, _get_masked_text, _handle_api_error_with_logging, _prepare_metadata_from_request, _record_scan_id and constructor initialization."
-  - "B3787 owns content extraction (_extract_text_from_messages, _extract_response_text, _extract_text_from_sse_bytes, _extract_text_from_streaming_events) and masking (_apply_masking_to_messages, _apply_masking_to_response, _apply_mcp_masking)."
+  - "B3787 owns content extraction (_extract_text_from_messages, _extract_response_text) and masking (_apply_masking_to_messages, _apply_masking_to_response, _apply_mcp_masking)."
   - "B3789 owns should_run_guardrail and unified text/tool selection."
   - "B2227 owns stream_chunk_builder and buffered chunk assembly."
   - "U1 framework contracts (guardrail exceptions, observation/logging, message extraction helpers) and U2 streaming reconstruction (MockResponseIterator, convert_model_response_to_streaming) remain unassigned."

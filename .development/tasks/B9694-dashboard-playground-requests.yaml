@@ -1,0 +1,169 @@
+id: B9694
+title: Prove the playground, compare, compliance, agent builder and transform-request requests through the booted proxy
+description: >-
+  Add HTTP oracle cases for the inference and helper requests the Playground page, its
+  Compare and Compliance tabs, the agent builder and the Transform Request page send. B9090
+  takes in the covered files unchanged, including uploadValidation.ts that B4921 names, and
+  B9091 builds them; nothing is ported. B147 left the shared components/llm_calls chat and
+  Responses builders to this page task. None of these components checks premiumUser, so there
+  is no patch. Every route has an owner and no handler is registered here.
+
+  How the page sends. The OpenAI SDK client is created with baseURL set to the proxy base
+  without /v1, so the SDK calls go to /chat/completions, /responses, /images/generations,
+  /images/edits, /audio/speech and /audio/transcriptions, with Authorization: Bearer <key>
+  (the session key or a key typed into the page). Every call adds x-litellm-tags: <tags joined
+  by ","> when tags are chosen, plus any custom headers from the settings panel; for fetch
+  calls the auth and Content-Type headers win over custom ones with the same name.
+
+  Chat completions (B004 non-stream, B005 stream). Body {model, litellm_trace_id,
+  messages, vector_store_ids?, guardrails?, policies?, tools?, tool_choice:"auto" when tools,
+  temperature?, max_tokens?, mock_testing_fallbacks:true?}; streaming adds stream:true and
+  stream_options:{include_usage:true}, non-streaming sends stream:false and reads the
+  x-litellm-cache-key header. MCP selection becomes tools of type "mcp" with server_label
+  "litellm", server_url "litellm_proxy/mcp" for all servers, "litellm_proxy/mcp/<alias or
+  server_name>" with allowed_tools for one server, or server_label <toolset name> and
+  "litellm_proxy/mcp/<encoded toolset name>" for a toolset, all with require_approval "never".
+  The stream reader uses delta.content, delta.reasoning_content,
+  delta.provider_specific_fields.search_results and mcp_list_tools/mcp_tool_calls/
+  mcp_call_results, and the last chunk's usage including completion_tokens_details and cost.
+  The on-disk chat/openai-stream-usage case sends a plain body without litellm_trace_id or
+  tags, so add a streamed and a non-streamed playground body with tags, a vector store, a
+  guardrail and temperature, a mock_testing_fallbacks request, and an MCP-tools request against
+  a mock MCP server (B8648 does not apply; MCP execution is B4727/B4728's).
+
+  Responses (B080). Body {model, input, litellm_trace_id, previous_response_id?,
+  vector_store_ids?, guardrails?, policies?, tools?, tool_choice:"auto"}; here MCP tools use
+  absolute server_url "<proxy base>/mcp" or "<proxy base>/mcp/<encoded server_name>" with
+  server_label set to the server name, and code interpreter adds {type:"code_interpreter",
+  container:{type:"auto"}}. CodeInterpreterOutput then fetches GET
+  /v1/containers/<container_id>/files/<file_id>/content (B3371, B3372). Add a two-turn
+  Responses chat that sends previous_response_id, and a code-interpreter turn whose container
+  file is read back from the mock. The Anthropic tab sends POST /v1/messages {model, messages,
+  stream, max_tokens:1024, litellm_trace_id} with the bearer key (B081); add stream and non-
+  stream. The interactions tab sends POST /v1beta/interactions {model, input, stream:true,
+  previous_interaction_id?} (B3507, mounted by B8774); add a two-turn case. Embeddings send
+  POST /embeddings {model, input} by fetch (B006); images send POST /images/generations
+  {model, prompt} and, for each uploaded image separately, multipart POST /images/edits with
+  model, image and prompt (B082); audio sends POST /audio/speech {model, input, voice,
+  response_format?} and multipart POST /audio/transcriptions with model, file, language?,
+  prompt?, response_format?, temperature? (B083). The realtime tab opens
+  <ws base>/v1/realtime?model=<m> with subprotocols ["realtime",
+  "openai-insecure-api-key.<key>"] (B1125); the on-disk
+  harness/websocket-oracle/auth-subprotocol.yaml already sends that handshake, so reuse it.
+
+  Agents (B8589, mounted by B8648). The agent picker reads GET /v1/agents (B4784, mounted by
+  B8647) and modelInfoCall page 1 size 200 for litellm_agent/ models (B850). Sending to an
+  agent posts JSON-RPC {jsonrpc:"2.0", id, method:"message/send", params:{message:{role:
+  "user", parts:[{kind:"text", text}], messageId}, metadata:{guardrails}?}} to POST
+  /a2a/<agent_id>/message/send; Compare streams with method "message/stream" to POST
+  /a2a/<agent_id> and reads the SSE frames. Point the agent at a mock A2A server and add one
+  of each. AgentBuilderView creates POST /model/new {model_name, litellm_params:{model:
+  "litellm_agent/<underlying>", litellm_system_prompt?, temperature, max_tokens, tools},
+  model_info:{}} (B1215) and reads model_id from the answer, updates with PATCH
+  /model/<id>/update and the same params plus the stored model_info (B835), deletes with POST
+  /model/delete (B838) and makes a key with POST /key/generate {user_id, models:[<agent
+  name>], key_alias:"Agent: <agent name>"} (B055). Add the create, a chat through the new agent
+  model that B8253 resolves, the key creation, the update and the delete.
+
+  Compliance (B3251, mounted by B8790). The quick test sends POST
+  /utils/test_policies_and_guardrails {policy_names, guardrail_names, inputs:{texts:[t]},
+  inputs_list, request_data:{}, input_type:"request", agent_id} with unset fields as explicit
+  null and reads inputs.texts and guardrail_errors[].guardrail_name/message; the batch run sends
+  inputs_list:[{texts:[t]}...] and, in chat-completions mode with a fixed agent, agent_id, and
+  reads results[].guardrail_errors. When the backend mode is a model it instead sends a chat
+  completion. B9752 explicitly does not cover this route; add a passing and a blocked quick
+  test, a batch, and the batch with agent_id. Guardrail, policy, tag, vector store and MCP
+  selectors reuse B9735's cases, and the MCP tool list and call reuse B9735's
+  mcp-toolsets-and-tools and B9762's call-with-provider-auth-and-guardrails.
+
+  Transform request (B8598, mounted by B8635). TransformRequestPanel sends POST
+  /utils/transform_request {call_type:"completion", request_body:<parsed JSON>} and reads
+  raw_request_api_base, raw_request_body and raw_request_headers; add a mock-provider model
+  and a body the safety check rejects with 400.
+
+  Use B860's Postgres fixture with B5076's bootstrap and mock upstreams for every provider,
+  agent and MCP server; no case reaches the internet. Compare status, content type, SSE frame
+  order where the page reads it and the stable body fields above. About 700 case lines.
+scope:
+  paths:
+    - tools/oracle/cases/ui/playground/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/llm_calls/chat_completion.tsx#L26-L249
+    why: Chat body, MCP tool entries, stream and non-stream forms and the fields the reader uses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/llm_calls/responses_api.tsx#L122-L180
+    why: Responses body with absolute MCP URLs, code interpreter and previous_response_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/llm_calls/request_headers.ts#L21-L38
+    why: x-litellm-tags and the header precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/playground/llm_calls/a2a_send_message.tsx#L117-L300
+    why: JSON-RPC message/send and message/stream bodies and their two URLs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/playground/llm_calls/anthropic_messages.tsx#L60-L90
+    why: Anthropic body with max_tokens 1024 and litellm_trace_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/playground/llm_calls/interactions_api.tsx#L30-L48
+    why: Interactions URL and body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/playground/llm_calls/embeddings_api.tsx#L30-L50
+    why: Embeddings by fetch to <base>/embeddings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/playground/llm_calls/image_edits.tsx#L30-L55
+    why: One edit request per uploaded image.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/playground/llm_calls/audio_transcriptions.tsx#L30-L45
+    why: Multipart transcription fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/playground/components/chat_ui/AgentBuilderView.tsx#L336-L440
+    why: Agent model create, update, key and delete requests.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/playground/components/complianceUI/ComplianceUI.tsx#L488-L579
+    why: Quick and batch compliance bodies, agent_id in chat mode.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/playground/components/compareUI/CompareUI.tsx#L576-L625
+    why: Compare uses the A2A stream or the shared chat builder per panel.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L3878-L3925
+    why: The compliance request sends unset fields as explicit null.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L1266-L1295
+    why: Transform request call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/transform-request/TransformRequestPanel.tsx#L75-L100
+    why: call_type completion and the raw request fields shown.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14139-L14158
+    why: B8598's /utils/transform_request handler.
+dod:
+  - text: Chat, Responses, Anthropic, interactions, embeddings, image and audio requests in the playground's exact shapes match LiteLLM, streamed where the page streams.
+    proof: [playground-cases, oracle]
+  - text: A2A send and stream, the agent builder's create, chat, key, update and delete, and the code interpreter file read match LiteLLM.
+    proof: [playground-cases, oracle]
+  - text: Compliance quick and batch tests and the transform request page match LiteLLM.
+    proof: [playground-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: playground-cases
+      why: No booted-proxy case sends the playground's inference bodies, A2A calls, agent builder writes or compliance tests.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/playground)" &&
+        ! grep -rlq '^kind: helper$' tools/oracle/cases/ui/playground
+oracle_cases:
+  - tools/oracle/cases/ui/playground/chat-stream-tags-and-options.yaml
+  - tools/oracle/cases/ui/playground/chat-non-stream-cache-header.yaml
+  - tools/oracle/cases/ui/playground/chat-mock-fallbacks.yaml
+  - tools/oracle/cases/ui/playground/chat-mcp-tools.yaml
+  - tools/oracle/cases/ui/playground/responses-two-turns.yaml
+  - tools/oracle/cases/ui/playground/responses-code-interpreter-file.yaml
+  - tools/oracle/cases/ui/playground/anthropic-stream-and-plain.yaml
+  - tools/oracle/cases/ui/playground/interactions-two-turns.yaml
+  - tools/oracle/cases/ui/playground/embeddings-unversioned-path.yaml
+  - tools/oracle/cases/ui/playground/images-generate-and-edit.yaml
+  - tools/oracle/cases/ui/playground/audio-speech-and-transcription.yaml
+  - tools/oracle/cases/ui/playground/a2a-send-and-stream.yaml
+  - tools/oracle/cases/ui/playground/agent-builder-lifecycle.yaml
+  - tools/oracle/cases/ui/playground/compliance-quick-and-batch.yaml
+  - tools/oracle/cases/ui/playground/transform-request.yaml
+  - tools/oracle/cases/harness/websocket-oracle/auth-subprotocol.yaml
+deviations: []
+out_of_scope:
+  - B9090 retains every function in the playground, compare, compliance, chat_ui and transform-request files, including uploadValidation.ts; B9091 builds them and B146 drives the playground in the browser.
+  - B004, B005, B006, B080, B081, B082, B083, B1125, B3371, B3372, B3507, B8589, B8253, B1215, B835, B838, B055, B3251 and B8598 own the handlers; B8774, B8648, B8647, B8790 and B8635 own the mounts.
+  - MCP tool listing and calling are B9735's and B9762's cases; MCP execution inside a completion is B4727/B4728's behavior, checked here only through the playground body.
+pitfalls:
+  - The SDK calls have no /v1 prefix, so a gateway that only mounts /v1/chat/completions fails every playground request while the generic cases pass.
+  - Chat MCP tools use the litellm_proxy/mcp pseudo-URL but Responses MCP tools use the absolute proxy URL; one case per form is needed.
+  - The compliance call sends unset fields as explicit null, and a handler that treats null differently from absent changes the result.
+  - Image edits with several files are several requests, one image each.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

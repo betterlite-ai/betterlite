@@ -24,7 +24,7 @@ description: >-
 
   `router` and `_direct_vector_store_embedding_executor` (L46-L53) hold Python objects that choose how a query is embedded for
   providers that embed on the client side. Rust embeds through its own router (B1059), so a call that passes either one
-  raises `UnsupportedCallArgument` naming it until B162 gives the Python Router a native handle.
+  raises `UnsupportedCallArgument` naming it. No task plans a native Router handle, so this stays refused.
 scope:
   paths:
   - crates/betterlite-python/src/vector_search.rs
@@ -78,7 +78,7 @@ checks:
 oracle_cases: []
 deviations:
 - what: "`router` and a direct embedding executor are refused with `UnsupportedCallArgument`, where LiteLLM uses them to embed the query."
-  why: They are Python callables Rust can't call. The question of how B162's Router hands over a native handle is in the architect notes.
+  why: They are Python callables Rust can't call, and no task plans a native Router handle for them (open question).
 - what: This task has no helper oracle cases.
   why: pytest compares both packages against one local server.
 out_of_scope:

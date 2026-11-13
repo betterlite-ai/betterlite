@@ -126,7 +126,7 @@ out_of_scope:
   - "B3775 owns `_call_retrieve`, the agentic loop hooks, the follow-up message builders and `_extract_headroom_tool_calls`."
   - "B3663 owns `content_to_text`, `is_all_text_parts` and `merge_rewritten_text_parts` in crates/betterlite-guardrails/src/content_text.rs; B3540 owns `get_protected_indices`; B224 owns `group_tool_exchanges`."
   - "B3662 owns `GuardrailEventHooks` and the `LitellmParams` fields (`api_base`, `api_key`, `model`, `unreachable_fallback`, `timeout`, `ccr_retrieval`) the constructor arguments come from."
-  - "The registry entry `initialize_guardrail`, `guardrail_initializer_registry` and `guardrail_class_registry` in headroom/__init__.py belong to B107 (the umbrella that wires the guardrail in)."
+  - "The registry entry `initialize_guardrail`, `guardrail_initializer_registry` and `guardrail_class_registry` in headroom/__init__.py belong to B8217 and B8521."
   - "B3775 owns `async_pre_call_deployment_hook` (turning a stream into a non-stream call when the retrieve tool is present). `get_config_model` is covered by `HeadroomConfig` here."
   - "The CustomGuardrail base class and its logging helpers have no task file; this task only holds plain settings and does not subclass anything."
 pitfalls:

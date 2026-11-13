@@ -1,0 +1,6 @@
+kind: helper
+name: unappliable-request-rewrite-exception
+call:
+  b3663: {"function": "unappliable", "guardrail_name": "pii-guard"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,2 @@
+data: {"event":{"metadata":{"usage":{"inputTokens":1,"outputTokens":2,"totalTokens":3}}}}
+data: {"message":{"role":"assistant"}}

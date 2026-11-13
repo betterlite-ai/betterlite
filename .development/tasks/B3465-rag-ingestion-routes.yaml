@@ -57,7 +57,7 @@ description: >-
   the store wins on conflict. 7. Build the request data with `add_litellm_data_to_request` as in ingest. 8. Log
   at debug "RAG Query - model: %s, vector_store_id: %s, custom_llm_provider: %s". 9. Call B3461's `aquery` with
   model, messages, merged_retrieval_config, `vector_store_params` = store_data, rerank, stream, the router and
-  the request data. 10. The response headers come from B004's `get_custom_headers` with the key identity and
+  the request data. 10. The response headers come from B9802's `custom_headers` with the key identity and
   these values read from the response's hidden params, each defaulting to "": litellm_call_id, model_id,
   cache_key, api_base, plus response_cost (no default) and the request data. 11. Not streaming: copy those
   headers onto the response and return it as JSON. 12. Streaming: wrap the call in B004's
@@ -79,14 +79,14 @@ description: >-
   that B1067 and the other route modules use, in the same style. Tests in `api::rag_routes::tests` use scripted
   fakes for the services and check each branch above, one named test per DoD item.
 
-  Size. The owned LiteLLM code is about 150 nonblank, non-comment lines. Allow 330 implementation, 330 tests,
-  and 20 oracle cases of about 25 lines each.
+  B097 mounts routes() inside the auth layers and runs the HTTP cases; test the handlers here with tower's oneshot over this module's Router.
+
+  Size. The owned LiteLLM code is about 150 nonblank, non-comment lines. Allow 330 implementation and 330 tests.
 
 scope:
   paths:
     - crates/betterlite-server/src/api/rag_routes.rs
     - crates/betterlite-server/src/api/rag_routes/**
-    - tools/oracle/cases/api/rag-routes/**
     - tools/oracle/helpers/b3465.py
     - tools/oracle/helpers/b3465/**
     - tools/oracle/src/helpers/server/b3465.rs
@@ -114,13 +114,13 @@ dod:
       ingest_aliases_and_validation: POST with a bearer key to /v1/rag/ingest and /rag/ingest with a JSON body
       that has ingest_options.vector_store but no file, file_url or file_id gets the same 400 body as LiteLLM on
       both paths. Without a bearer key both paths return B003's 401 envelope before any parsing.
-    proof: [route-tests, oracle, new-cases]
+    proof: [route-tests]
   - text: >-
       ingest_rejects_before_provider: a vector_store record with api_key, a nested vector_store_id that is an
       empty string, a custom_llm_provider that is not supported, and a base_url style field that
       is_request_body_safe refuses each give HTTP 400 {"detail":{"error":...}} like LiteLLM, and the fake
       ingest service is never called.
-    proof: [route-tests, oracle, new-cases]
+    proof: [route-tests]
   - text: >-
       ingest_view_only_role: a caller with role internal_user_viewer and no vector_store_id gets the 403 body
       from the description. With a vector_store_id it goes on. The ingest service is not called on the 403.
@@ -135,7 +135,7 @@ dod:
       200 RAGIngestResponse body like LiteLLM, and the save port is called once with the response's file_id and
       vector_store_id. With no database attached the save is skipped and the warning is logged. A response with
       status "failed" is still 200.
-    proof: [route-tests, oracle, new-cases]
+    proof: [route-tests]
   - text: >-
       ingest_unexpected_error_is_500: an error from aingest of any kind, including a mapped provider error with
       status 429, is returned as 500 with detail {"error": text}.
@@ -144,22 +144,21 @@ dod:
       query_required_fields: missing or empty model, messages and retrieval_config, a non-object
       retrieval_config, and a retrieval_config without vector_store_id each give LiteLLM's 400 message in the
       listed order. {} counts as missing, a string as "must be an object". Both aliases behave the same.
-    proof: [route-tests, oracle, new-cases]
+    proof: [route-tests]
   - text: >-
       query_embedding_selection_and_auth: embedding_model, litellm_embedding_model, litellm_embedding_config
       or litellm_credential_name inside retrieval_config is refused with B1067's 400 before any store lookup or
       upstream call. Without a bearer key the 401 envelope comes first.
-    proof: [route-tests, oracle, new-cases]
+    proof: [route-tests]
   - text: >-
       query_store_merge: for a managed store the store_data keys overwrite the caller's retrieval_config keys,
       null values included, and aquery receives vector_store_params equal to store_data.
     proof: [route-tests]
   - text: >-
       query_success_headers: a non-streaming query returns the aquery response as JSON with the
-      get_custom_headers values (x-litellm-call-id, x-litellm-model-id, x-litellm-response-cost and the rest B004
-      builds from the response's hidden params). The oracle case compares the body, status and those headers
-      with LiteLLM.
-    proof: [route-tests, oracle, new-cases]
+      get_custom_headers values (x-litellm-call-id, x-litellm-model-id, x-litellm-response-cost and the rest B9802
+      builds from the response's hidden params). The route tests check the body, status and those headers.
+    proof: [route-tests]
   - text: >-
       query_streaming: with stream true the route answers text/event-stream through open_sse_before_first_byte
       with the ttft keepalive interval, with the custom headers on the stream response, and an error raised by
@@ -169,7 +168,7 @@ dod:
       query_error_status: an aquery error that carries status 429 returns 429 {"detail":{"error":text}}, an
       error without a status returns 500, and an HTTPException-style error passes through unchanged. Compared
       with LiteLLM for an upstream 429.
-    proof: [route-tests, oracle, new-cases]
+    proof: [route-tests]
 
 checks:
   optional: []
@@ -177,34 +176,15 @@ checks:
     - id: route-tests
       why: a handler branch, error body or call order of the RAG routes is missing
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::rag_routes::tests::/)'
-    - id: new-cases
-      why: the RAG routes are not compared through real authenticated HTTP
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/rag-routes)"
 
-oracle_cases:
-  - tools/oracle/cases/api/rag-routes/ingest-v1-missing-source.yaml
-  - tools/oracle/cases/api/rag-routes/ingest-plain-missing-source.yaml
-  - tools/oracle/cases/api/rag-routes/ingest-unauthenticated.yaml
-  - tools/oracle/cases/api/rag-routes/ingest-blocked-credential.yaml
-  - tools/oracle/cases/api/rag-routes/ingest-empty-nested-store-id.yaml
-  - tools/oracle/cases/api/rag-routes/ingest-unsupported-provider.yaml
-  - tools/oracle/cases/api/rag-routes/ingest-openai-existing-file.yaml
-  - tools/oracle/cases/api/rag-routes/query-v1-missing-model.yaml
-  - tools/oracle/cases/api/rag-routes/query-plain-missing-messages.yaml
-  - tools/oracle/cases/api/rag-routes/query-empty-retrieval-config.yaml
-  - tools/oracle/cases/api/rag-routes/query-retrieval-config-not-object.yaml
-  - tools/oracle/cases/api/rag-routes/query-missing-store-id.yaml
-  - tools/oracle/cases/api/rag-routes/query-embedding-selection.yaml
-  - tools/oracle/cases/api/rag-routes/query-unauthenticated.yaml
-  - tools/oracle/cases/api/rag-routes/query-openai-success.yaml
-  - tools/oracle/cases/api/rag-routes/query-upstream-429.yaml
+oracle_cases: []
 
 deviations: []
 
 out_of_scope:
   - "B3460 owns aingest and the ingest pipeline, B3461 owns aquery with retrieval, rerank, completion and billing, B3462 owns parse_rag_ingest_request and _secure_uploaded_file, B3463 owns the store-id scan, authorization, option merge and provider check, B3464 owns _build_file_metadata_entry and _save_vector_store_to_db_from_rag_ingest. This task only calls them."
   - "_as_string_keyed_mapping and _response_attr (endpoints.py L66-L70) are Python typing helpers. In Rust the fields are typed, so there is nothing to port, and the other tasks use no such helper."
-  - "B7324 owns open_sse_before_first_byte, ttft_keepalive_interval and select_data_generator, B005 owns SSE framing, and get_custom_headers is not built by any task yet. This task calls them."
+  - "B7324 owns open_sse_before_first_byte, ttft_keepalive_interval and select_data_generator, B005 owns SSE framing, and B9802 builds get_custom_headers as custom_headers. This task calls them."
   - "The upload scanner EicarTestMalwareScanner is chosen by the caller of parse_rag_ingest_request; pass B3452's EICAR scanner, as the route does. B3452 owns the scanner itself."
 
 pitfalls:

@@ -75,7 +75,7 @@ oracle_cases: []
 deviations: []
 
 out_of_scope:
-  - The __init__ constructor, apply_guardrail method, async_logging_hook, and initialize_guardrail initialization belong to B3820 (hooks and orchestration).
+  - The __init__ constructor, apply_guardrail method, async_logging_hook, and initialize_guardrail initialization belong to B9462 (hooks and orchestration).
   - Guardrail framework base contracts (CustomGuardrail, GuardrailEventHooks, log_guardrail_information) are inherited interfaces, not built here.
   - The pooled httpx client (get_async_httpx_client, httpxSpecialProvider.GuardrailCallback) is owned by B173.
 

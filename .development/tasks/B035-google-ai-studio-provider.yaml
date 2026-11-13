@@ -22,7 +22,7 @@ description: >-
   ID in functionResponse; Vertex's omission policy does not apply. Expose B1363/B1364 video,
   B1368 native generateContent, B1370 Interactions, B1391 guardrail projection and B1392 agent
   lifecycle as native capabilities. Interactions receives B206 header conversion. These exports
-  are consumed later by B093/B098/B104/B141, not mounted under invented HTTP paths here.
+  are consumed later by B093/B3506/B3507/B3508/B104/B4784-B4787/B8589/B8647, not mounted under invented HTTP paths here.
   Observe chat through POST /v1/chat/completions, /chat/completions,
   /engines/{model:path}/chat/completions and /openai/deployments/{model:path}/chat/completions.
   Embedding aliases are POST /v1/embeddings, /embeddings, /engines/{model:path}/embeddings and
@@ -117,7 +117,7 @@ deviations: []
 out_of_scope:
   - B031 owns both named Vertex completion dispatch functions, including the gemini beta call; this task only supplies its Studio operation binding.
   - B1325/B1330/B1331/B1350/B1351/B1363/B1364/B1366-B1368/B1370/B1378-B1382/B1390-B1392/B1394 retain the Studio files and functions split from this entry.
-  - B004/B005/B006/B082/B083/B1032/B1034/B087/B1067/B1125 retain public handlers; B093/B098/B104/B141 remain future native-family API owners.
+  - B004/B005/B006/B082/B083/B1032/B1034/B087/B1067/B1125 retain public handlers; B093/B3506/B3507/B3508/B104/B4784-B4787/B8589/B8647 remain future native-family API owners.
 pitfalls:
   - GOOGLE_API_KEY can authenticate chat while image generation still requires its separate explicit or GEMINI_API_KEY source.
   - A Studio embedding request must not inherit Vertex project options merely because both implementations share a crate.

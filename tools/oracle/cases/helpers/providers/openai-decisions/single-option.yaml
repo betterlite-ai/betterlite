@@ -1,0 +1,38 @@
+kind: helper
+name: openai-decisions-single-option
+call:
+  openai_decisions:
+    systemone_to_request:
+      - model: gpt-4o
+        request:
+          state: "the input"
+          questions:
+            one-choice:
+              type: choice
+              instructions: pick
+              criteria: {only: null}
+      - model: gpt-4o
+        request:
+          state: "the input"
+          questions:
+            one-level:
+              type: score
+              instructions: rate
+              criteria: [only]
+      - model: gpt-4o
+        request:
+          state: "the input"
+          questions:
+            truth:
+              type: noul
+              instructions: is it true?
+            two-choices:
+              type: choice
+              instructions: pick
+              criteria: {a: null, b: null}
+            two-levels:
+              type: score
+              instructions: rate
+              criteria: [low, high]
+env: {}
+compare: {ignore: []}

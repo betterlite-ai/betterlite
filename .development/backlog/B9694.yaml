@@ -1,0 +1,17 @@
+id: B9694
+milestone: M10 admin ui
+title: Playground, compare, compliance and transform-request page requests
+status: todo
+depends_on: [B860, B5076, B004, B005, B006, B080, B081, B082, B083, B1125, B3371, B3372, B3507, B8774, B8589, B8648, B4784, B8647, B850, B060, B4720, B8625, B4725, B8701, B4727, B4728, B8626, B3251, B8790, B8598, B8635, B055, B8253, B1215, B835, B838, B9735, B9762]
+file: tasks/B9694-dashboard-playground-requests.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/transform-request/**"
+  - "ui/litellm-dashboard/src/app/(dashboard)/playground/{page*,hooks/**,llm_calls/**,components/compareUI/**,components/complianceUI/**}"
+  - "ui/litellm-dashboard/src/app/(dashboard)/playground/components/chat_ui/{[A-Z]*,chatConstants.ts}"
+  - "ui/litellm-dashboard/src/components/chat_ui/**"
+parent: B146
+split_from: B146
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

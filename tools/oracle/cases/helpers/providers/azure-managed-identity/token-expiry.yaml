@@ -1,0 +1,21 @@
+kind: helper
+name: token-expiry
+call: {azure_managed_identity: {steps: [
+  {action: token, environment: {}, scope: "https://cognitiveservices.azure.com/.default", now: 1700000000, replies: [{status: 200, headers: {Content-Type: application/json}, body: '{"access_token":"tok","expires_in":7200,"token_type":"Custom"}'}]},
+  {action: token, environment: {}, scope: "https://cognitiveservices.azure.com/.default", now: 1700000000, replies: [{status: 200, headers: {Content-Type: application/json}, body: '{"access_token":"tok","expires_in":"7200"}'}]},
+  {action: token, environment: {}, scope: "https://cognitiveservices.azure.com/.default", now: 1700000000, replies: [{status: 200, headers: {Content-Type: application/json}, body: '{"access_token":"tok","expires_in":0}'}]},
+  {action: token, environment: {}, scope: "https://cognitiveservices.azure.com/.default", now: 1700000000, replies: [{status: 200, headers: {Content-Type: application/json}, body: '{"access_token":"tok"}'}]},
+  {action: token, environment: {}, scope: "https://cognitiveservices.azure.com/.default", now: 1700000000, replies: [{status: 200, headers: {Content-Type: application/json}, body: '{"access_token":"tok","expires_in":"soon"}'}]},
+  {action: token, environment: {}, scope: "https://cognitiveservices.azure.com/.default", now: 1700000000, replies: [{status: 200, headers: {Content-Type: application/json}, body: '{"error":"invalid_request","error_description":"no identity"}'}]},
+  {action: token, environment: {}, scope: "https://cognitiveservices.azure.com/.default", now: 1700000000, replies: [{status: 200, headers: {Content-Type: application/json}, body: '{"error":"bad"}'}]}
+]}}
+env: {}
+compare: {ignore: [
+  {pointer: /value/steps/0/requests/0/headers/x-client-ver, why: "the oracle venv resolves msal 1.39.0; the pinned 1.37.0 value is asserted by the native case"},
+  {pointer: /value/steps/1/requests/0/headers/x-client-ver, why: "the oracle venv resolves msal 1.39.0; the pinned 1.37.0 value is asserted by the native case"},
+  {pointer: /value/steps/2/requests/0/headers/x-client-ver, why: "the oracle venv resolves msal 1.39.0; the pinned 1.37.0 value is asserted by the native case"},
+  {pointer: /value/steps/3/requests/0/headers/x-client-ver, why: "the oracle venv resolves msal 1.39.0; the pinned 1.37.0 value is asserted by the native case"},
+  {pointer: /value/steps/4/requests/0/headers/x-client-ver, why: "the oracle venv resolves msal 1.39.0; the pinned 1.37.0 value is asserted by the native case"},
+  {pointer: /value/steps/5/requests/0/headers/x-client-ver, why: "the oracle venv resolves msal 1.39.0; the pinned 1.37.0 value is asserted by the native case"},
+  {pointer: /value/steps/6/requests/0/headers/x-client-ver, why: "the oracle venv resolves msal 1.39.0; the pinned 1.37.0 value is asserted by the native case"}
+]}

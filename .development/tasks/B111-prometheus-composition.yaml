@@ -1,0 +1,120 @@
+id: B111
+title: Connect the Prometheus logger to the proxy failure hook and router events, and prove it over HTTP
+description: >-
+  The Prometheus parts are built in pieces: B3875 registers the collectors, B3876 to B3883 and B9480 write them, B8561 runs the success and failure events, B8655 resolves the name `prometheus` to one shared `PrometheusHooks`, B8742 and B8399 register it as a logger, and B8680 serves /metrics. Three paths still never reach the logger. LiteLLM's proxy failure hook calls `async_post_call_failure_hook` on every CustomLogger in litellm.callbacks (proxy/utils.py L3281-L3313), but B8740's CallbackLogger trait has only log events, so the failure counters litellm_proxy_failed_requests_metric and litellm_proxy_total_requests_metric for rejected requests never move. A cooldown calls `set_deployment_complete_outage` and `increment_deployment_cooled_down` on the logger (cooldown_callbacks.py L21-L97), and B308 builds that callback but leaves the Prometheus side here. A fallback calls `log_success_fallback_event` or `log_failure_fallback_event` on every CustomLogger (fallback_event_handlers.py L722-L775, B398's), and the trait has no such methods either. This task connects all three, then proves the whole chain through the booted proxy. It registers no route.
+
+
+  Code goes in crates/betterlite-server/src/app/callbacks/prometheus_hook.rs and prometheus_hook/ (proxy_hook.rs, router_events.rs, tests/). The skeleton declares the module in app/callbacks.rs; do not edit that file.
+
+
+  The shared value. In crates/betterlite-server/src/state/callback_loggers.rs add `pub fn prometheus(&self) -> Option<Arc<PrometheusHooks>>` to B8742's slot. It asks the slot's B8655 `CallbackLoggers` for `prometheus` with empty params and returns the Arc inside `ResolvedLogger::Prometheus`, so the hook, the router observers and the registered logger are one value, as LiteLLM reuses the PrometheusLogger already in its in-memory logger list (litellm_logging.py L4590-L4600).
+
+
+  proxy_hook.rs. `PrometheusProxyHook` holds that Arc and implements B8390's `ProxyCallback`. overrides: only post_call.success and post_call.failure are true, since PrometheusLogger defines async_post_call_success_hook and async_post_call_failure_hook and no other proxy hook. class_name is "PrometheusLogger"; is_base_logger, enforces_request_content and use_native_lifecycle_hooks are false; guardrail is None. post_call_success does nothing and returns Ok(None). post_call_failure turns the `ProxyHookError` into the exception view B8561's `async_post_call_failure_hook` takes (B3880's type) and awaits it with the request data and the caller's UserAPIKeyAuth, then returns `FailureReply::Original`: the Prometheus hook never replaces the client's error. The view's class name is the LiteLLM class each variant stands for: Http is HTTPException, Proxy is ProxyException, GuardrailRaised is GuardrailRaisedException, SensitiveDataRoute is SensitiveDataRouteException, ModifyResponse is ModifyResponseException, RejectedRequest is RejectedRequestError and Other is Exception; its status code is the variant's status (Http and GuardrailRaised) or the ProxyException code read as a number, and none for the others.
+
+
+  Registration. In crates/betterlite-server/src/app/callbacks/hooks.rs make `configured(state)` also yield ("prometheus", PrometheusProxyHook) at the place `prometheus` has in litellm_settings.callbacks, next to the five hook names it already picks, and add a `prometheus` arm to hook_for that builds the hook from `state.callback_loggers.prometheus()`. The resolver keeps resolving the same name to the logger, so B8399's init_callbacks registers one Arc as both, as B8749 does for dynamic_rate_limiter_v3. Only litellm_settings.callbacks gets the proxy hook: LiteLLM's failure hook walks litellm.callbacks and nothing else.
+
+
+  router_events.rs. Implement the observer B308's server adapter (crates/betterlite-server/src/routing/cooldown_policy.rs) takes for a cooldown, over the shared hooks: call B3881's `set_deployment_complete_outage(model_name, model_id, api_base, api_provider)` and then `increment_deployment_cooled_down(model_name, model_id, api_base, api_provider, exception_status)` with the values B308's event carries (model name, model id, api_base and provider from the deployment, empty strings where LiteLLM uses `or ""`, and the exception status as text). Implement the observer B398's server adapter (routing/fallback_observations.rs) takes for fallback outcomes by forwarding to B3881's `log_success_fallback_event` and `log_failure_fallback_event` with the original model group, the request values and the exception; an error from one is logged at error level as "Error in log_success_fallback_event: <error>" (or the failure name) and never reaches the caller, as LiteLLM's loop catches it. LiteLLM looks the logger up in the async success list and litellm.callbacks for the cooldown, and in every callback list for the fallbacks, so attach these observers whenever `prometheus` is in litellm_settings.callbacks, success_callback or failure_callback. Read both adapters first and attach the observers where they take them.
+
+
+  Oracle environment. LiteLLM's `_mount_metrics_endpoint` imports prometheus_client when the proxy starts with `callbacks: ["prometheus"]` (prometheus.py L4574), and the oracle's LiteLLM venv doesn't have it: litellm[proxy] leaves it out and only the proxy-dev extra pins prometheus-client==0.20.0 (pyproject.toml L247). B8680 needs the same package for its /metrics cases. If tools/oracle/litellm/pyproject.toml has no prometheus-client yet when you start, add "prometheus-client==0.20.0" to its dependencies and run `uv lock` in tools/oracle/litellm, keeping the litellm-enterprise override; never edit uv.lock by hand.
+
+
+  HTTP oracle cases in tools/oracle/cases/http/prometheus-composition/, all with `litellm_settings: {callbacks: [prometheus]}` and an OpenAI mock deployment named prometheus-chat (model openai/gpt-prometheus-upstream, api_base "{{upstream}}"). Copy the request and compare shapes from tools/oracle/cases/chat/openai-basic.yaml, openai-stream.yaml, upstream-429.yaml and tools/oracle/cases/auth/wrong-key.yaml. chat-success.yaml: a chat completion with usage 5, 2 and 7 answers as without the callback, headers included. chat-stream.yaml: the same as a stream. upstream-429.yaml: num_retries 0 and a provider 429, so the failure event and the proxy failure hook both run and the client still gets the 429 with its type, param and code. wrong-key.yaml: general_settings.master_key oracle-master and x-api-key wrong-key, as auth/wrong-key.yaml sends it, a 401 that runs the proxy failure hook. scrape-after-chat.yaml is a `kind: http_scenario` case: one chat completion, then GET /metrics/ without a key, comparing status and content-type. Use /metrics/ because LiteLLM mounts a Starlette sub-app at /metrics and the bare path answers a redirect; B8680 owns that redirect. Ignore only /error/message, with the repository's wording reason.
+
+
+  Boot tests. The HTTP oracle compares status, chosen headers and the error fields of each scenario step, not a /metrics body, so the counter values are proven by native tests in prometheus_hook/tests/boot.rs. Boot the real application the way crates/betterlite-server/src/server/tests.rs does, with a config that lists prometheus in litellm_settings.callbacks and a local mock provider, send real requests and read GET /metrics/ from the same app. Parse the exposition text and match samples by name, the labels named here and value. One chat completion with usage 5, 2 and 7: litellm_proxy_total_requests_metric_total with status_code 200 is 1, litellm_requests_metric_total is 1, litellm_input_tokens_metric_total 5, litellm_output_tokens_metric_total 2, litellm_total_tokens_metric_total 7, litellm_deployment_success_responses_total 1, litellm_deployment_total_requests_total 1, and litellm_request_total_latency_metric_count and litellm_llm_api_latency_metric_count 1. One stream: litellm_proxy_total_requests_metric_total is 1, not 2. A provider 429 with num_retries 0: litellm_llm_api_failed_requests_metric_total 1, litellm_deployment_failure_responses_total 1, litellm_proxy_failed_requests_metric_total and litellm_proxy_total_requests_metric_total with status_code 429 each 1, and no litellm_requests_metric_total sample. The wrong key: litellm_proxy_failed_requests_metric_total with status_code 401 is 1 and its hashed_api_key label is the text the label factory (B3873) writes for a missing value. Unit tests in tests/proxy_hook.rs cover the variant to class name and status mapping, that the reply is always Original, and that `configured()` yields the prometheus hook for litellm_settings.callbacks but not when prometheus is only in success_callback (LiteLLM then mounts no /metrics either, callback_utils.py L397-L405). tests/router_events.rs drives each observer with a recorded event against real B3875 collectors and checks litellm_deployment_state is 2 and litellm_deployment_cooled_down_total is 1 for the cooldown, and litellm_deployment_successful_fallbacks_total and litellm_deployment_failed_fallbacks_total for the two fallback outcomes.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/callbacks/prometheus_hook.rs
+    - crates/betterlite-server/src/app/callbacks/prometheus_hook/**
+    - crates/betterlite-server/src/app/callbacks/hooks.rs
+    - crates/betterlite-server/src/state/callback_loggers.rs
+    - tools/oracle/cases/http/prometheus-composition/**
+    - tools/oracle/litellm/pyproject.toml
+    - tools/oracle/litellm/uv.lock
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3197-L3314
+    why: The proxy failure hook and its walk over litellm.callbacks; B8395 owns it, this task puts Prometheus in that walk.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2608-L2693
+    why: The two proxy hooks B8561 builds and this adapter calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3374-L3411
+    why: How LiteLLM turns the exception into the exception_class label.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/cooldown_callbacks.py#L21-L97
+    why: The cooldown callback, the values it passes and where it looks for the logger.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3519-L3586
+    why: The deployment state setters and the cooled-down counter the cooldown observer calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/fallback_event_handlers.py#L722-L775
+    why: The fallback walk over every CustomLogger and its error line.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3434-L3517
+    why: The two fallback methods B3881 builds and the fallback observer calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4590-L4600
+    why: One PrometheusLogger per process, reused for every list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L400-L406
+    why: /metrics is mounted only for prometheus in litellm_settings.callbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4565-L4592
+    why: The mount imports prometheus_client at startup, so the oracle venv needs the package.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/pyproject.toml#L244-L247
+    why: LiteLLM's own pin, prometheus-client==0.20.0, in the proxy-dev extra.
+dod:
+  - text: The prometheus name yields one PrometheusHooks Arc for the logger, the proxy hook and the router observers.
+    proof: [callback-slot-tests, proxy-hook-tests]
+  - text: The proxy hook overrides only the two post-call hooks, maps every ProxyHookError variant to LiteLLM's class name and status, runs B8561's failure hook and always keeps the client's error.
+    proof: [proxy-hook-tests, boot-tests, oracle]
+  - text: A cooldown sets the deployment state to complete outage and counts one cooldown; fallback outcomes reach the two fallback counters and a failing one only logs.
+    proof: [router-event-tests]
+  - text: Through the booted app, a chat completion, a stream, a provider 429 and a wrong key leave the listed samples on /metrics/.
+    proof: [boot-tests]
+  - text: Only prometheus in litellm_settings.callbacks registers the proxy hook; prometheus only in success_callback does not.
+    proof: [proxy-hook-tests]
+  - text: With prometheus configured, chat, stream, provider 429, wrong key and a scrape after a call answer the client as LiteLLM does.
+    proof: [new-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: proxy-hook-tests
+      why: the proxy hook overrides the wrong hooks, labels the wrong class or status, or replaces the client's error
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::prometheus_hook::tests::proxy_hook::/)'
+    - id: router-event-tests
+      why: a cooldown or fallback never reaches the Prometheus collectors, or a fallback error escapes
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::prometheus_hook::tests::router_events::/)'
+    - id: boot-tests
+      why: real requests through the booted app leave missing, doubled or mislabeled samples on /metrics/
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::prometheus_hook::tests::boot::/)'
+    - id: callback-slot-tests
+      why: the slot gives a second PrometheusHooks or hooks.rs does not register the prometheus hook
+      run: grep -q 'prometheus' crates/betterlite-server/src/app/callbacks/hooks.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^state::callback_loggers::/)'
+    - id: new-cases
+      why: no Prometheus composition case was added on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/prometheus-composition)"
+oracle_cases:
+  - tools/oracle/cases/http/prometheus-composition/chat-success.yaml
+  - tools/oracle/cases/http/prometheus-composition/chat-stream.yaml
+  - tools/oracle/cases/http/prometheus-composition/upstream-429.yaml
+  - tools/oracle/cases/http/prometheus-composition/wrong-key.yaml
+  - tools/oracle/cases/http/prometheus-composition/scrape-after-chat.yaml
+deviations:
+  - what: The exception_class label of litellm_proxy_failed_requests_metric is the class of betterlite's ProxyHookError variant, so a provider error LiteLLM labels with its provider and class (Openai.RateLimitError) reads ProxyException, with the same status_code.
+    why: The proxy failure hook gets ProxyHookError, and it keeps no provider or LiteLLM exception class; carrying them needs a change to the error type that no task owns yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3374-L3411
+out_of_scope:
+  - "Every function in prometheus.py: B3870 to B3891, B8561 and B9480 own them, and their out_of_scope lists name the rest."
+  - "The proxy failure hook's walk and the registry: B8395 and B8399. The name resolution and the shared hooks value: B8655 and B8742."
+  - "The /metrics router, its auth and its mount, with their HTTP cases: B3886 and B8680. The dedicated metrics listener: B3887."
+  - "The cooldown decision and router_cooldown_event_callback: B308. The fallback walk: B398. This task only supplies the Prometheus observers they call."
+  - "Putting the Prometheus exporter into the success and failure handlers' failure_counters (litellm_callback_logging_failures_metric): no task builds those handler inputs in the server yet (see the report notes)."
+  - "_get_cached_prometheus_logger (litellm_logging.py L367-L378): a lazy import of the class, nothing to port; B8561's shared() covers the reuse."
+pitfalls:
+  - "The proxy hook and the logger must be the same Arc; a second PrometheusHooks would register its collectors twice and the registry refuses the clash."
+  - "async_post_call_success_hook must stay empty, or every request counts twice in litellm_proxy_total_requests_metric."
+  - "A 401 drops hashed_api_key from the proxy failure labels, so the wrong-key boot test must not find the hash of wrong-key on that sample."
+  - "The cooldown callback sets the outage state before it counts the cooldown, and both use empty strings for a missing model name, api_base or provider."
+  - "GET /metrics without the slash is a Starlette redirect in LiteLLM, so the scenario and the boot tests read /metrics/."
+  - "Counter samples carry the _total suffix in the exposition text, and the histograms are read through their _count samples."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

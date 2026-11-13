@@ -6,21 +6,44 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+async-trait = "0.1.92"
 betterlite-auth = { path = "../betterlite-auth" }
+betterlite-bedrock = { path = "../betterlite-bedrock" }
+betterlite-config = { path = "../betterlite-config" }
+betterlite-context = { path = "../betterlite-context" }
 betterlite-core = { path = "../betterlite-core" }
+betterlite-http = { path = "../betterlite-http" }
+betterlite-models = { path = "../betterlite-models" }
+betterlite-openai = { path = "../betterlite-openai" }
+betterlite-provider = { path = "../betterlite-provider" }
+betterlite-redact = { path = "../betterlite-redact" }
+chrono.workspace = true
+claxon = "0.4.3"
+futures-util = { version = "0.3.34", default-features = false, features = ["alloc"] }
+hound = "3.5.1"
+http = "1.5.0"
+lewton = "0.10.2"
+ogg = "0.8.0"
+percent-encoding.workspace = true
 rust_decimal.workspace = true
+secrecy.workspace = true
 serde.workspace = true
 serde_json = "1.0.154"
 serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
+symphonia-bundle-mp3 = { version = "0.6.1", default-features = false, features = ["mp3"] }
+symphonia-core = { version = "0.6.1", default-features = false }
+tempfile = "3.27.0"
 thiserror.workspace = true
+tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
 url = "2.5.8"
 
 [dev-dependencies]
+mutants = "0.0.4"
+rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng"] }
 rstest = "0.27.0"
-tempfile = "3.27.0"
-tokio.workspace = true
 tracing-subscriber.workspace = true
+uuid.workspace = true
 
 [lints]
 workspace = true

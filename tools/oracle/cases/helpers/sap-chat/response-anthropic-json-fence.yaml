@@ -1,0 +1,34 @@
+kind: helper
+name: sap-chat-response-anthropic-json-fence
+call:
+  b5845:
+    operation: responses
+    calls:
+      - model: anthropic--claude-3.5-sonnet
+        messages: [{role: user, content: hi}]
+        api_key: sk-case
+        request_data: {config: {modules: {prompt_templating: {prompt: {template: []}, model: {name: m}}}}}
+        response_format: {type: json_object}
+        raw_text: '{"final_result":{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"anthropic--claude-3.5-sonnet","choices":[{"index":0,"message":{"role":"assistant","content":"```json\n{\"a\": 1}\n```"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}}'
+      - model: anthropic--claude-3.5-sonnet
+        response_format: {type: json_schema}
+        raw_text: '{"final_result":{"id":"chatcmpl-2","object":"chat.completion","created":1700000001,"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"```\n{}\n```"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}}'
+      - model: anthropic--claude-3.5-sonnet
+        response_format: {type: text}
+        raw_text: '{"final_result":{"id":"chatcmpl-3","object":"chat.completion","created":1700000002,"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"```json\n{}\n```"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}}'
+      - model: gpt-4o
+        response_format: {type: json_object}
+        raw_text: '{"final_result":{"id":"chatcmpl-4","object":"chat.completion","created":1700000003,"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"```json\n{}\n```"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}}'
+      - model: anthropic--claude-3.5-sonnet
+        response_format: {type: json_object}
+        raw_text: '{"final_result":{"id":"chatcmpl-5","object":"chat.completion","created":1700000004,"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"{\"a\": 1}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}}'
+      - model: anthropic--claude-3.5-sonnet
+        response_format: {type: json_object}
+        raw_text: '{"final_result":{"id":"chatcmpl-6","object":"chat.completion","created":1700000005,"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"```json\n{\"a\": 1}\n```tail"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}}'
+      - model: anthropic--claude-3.5-sonnet
+        response_format: {type: json_object}
+        raw_text: '{"final_result":{"id":"chatcmpl-7","object":"chat.completion","created":1700000006,"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":""},"finish_reason":"stop"},{"index":1,"message":{"role":"assistant","content":"  ```json\n{}\n```  "},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}}'
+      - model: m
+        raw_text: '{"other": true}'
+env: {}
+compare: {ignore: []}

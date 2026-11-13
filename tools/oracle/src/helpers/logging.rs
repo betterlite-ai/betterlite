@@ -1,5 +1,6 @@
 helper_group! {
-    "audit_attribution" => audit_attribution, "b203" => b203, "b3605" => b3605, "b3608" => b3608,
+    "audit_attribution" => audit_attribution, "b115" => b115, "b203" => b203, "b3605" => b3605,
+    "b3608" => b3608,
     "b3609" => b3609, "b3841" => b3841, "b3843" => b3843, "b3844" => b3844, "b3845" => b3845,
     "b3846" => b3846, "b3849" => b3849, "b3850" => b3850, "b3851" => b3851, "b3852" => b3852,
     "b3853" => b3853, "b3854" => b3854, "b3855" => b3855, "b3856" => b3856, "b3857" => b3857,
@@ -12,7 +13,8 @@ helper_group! {
     "b3963" => b3963, "b3964" => b3964, "b3965" => b3965, "b3971" => b3971, "b3973" => b3973,
     "b3976" => b3976, "b3978" => b3978, "b3992" => b3992, "b3993" => b3993, "b3994" => b3994,
     "b3996" => b3996, "b3997" => b3997, "b3998" => b3998, "b4000" => b4000, "b4002" => b4002,
-    "b4023" => b4023, "b5240" => b5240, "b8400" => b8400, "b8910" => b8910,
+    "b4023" => b4023, "b5240" => b5240, "b8400" => b8400, "b8910" => b8910, "b9520" => b9520,
+    "b9650" => b9650,
     "batch_delivery" => batch_delivery,
     "billing_context" => billing_context, "callback_registry" => callback_registry,
     "callback_validation" => callback_validation, "collector_policy" => collector_policy,

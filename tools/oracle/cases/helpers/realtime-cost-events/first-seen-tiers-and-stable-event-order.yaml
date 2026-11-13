@@ -1,0 +1,14 @@
+kind: helper
+name: realtime-cost-events-first-seen-tiers-and-stable-event-order
+call:
+  realtime_cost_events:
+    function: collect
+    events:
+      - {type: response.completed, response: {service_tier: priority, usage: {input_tokens: 1, output_tokens: 0}}}
+      - {type: response.completed, response: {service_tier: "", usage: {input_tokens: 2, output_tokens: 0}}}
+      - {type: response.created, response: {service_tier: priority}}
+      - {type: response.incomplete, response: {service_tier: priority, usage: {input_tokens: 3, output_tokens: 0}}}
+      - {type: response.completed, response: {usage: {input_tokens: 4, output_tokens: 0}}}
+      - {type: response.completed, response: {service_tier: null, usage: {input_tokens: 5, output_tokens: 0}}}
+env: {}
+compare: {ignore: []}

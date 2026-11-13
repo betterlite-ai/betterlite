@@ -1,0 +1,27 @@
+kind: helper
+name: deepgram-listen-metadata-callbacks
+call:
+  deepgram_listen_metadata:
+    calls:
+    - function: callbacks
+      query: callback=&callback_method=POST&other=1
+      api_base: null
+      upstream_url: ""
+      messages: []
+    - function: callbacks
+      query: callbackx=1
+      api_base: null
+      upstream_url: ""
+      messages: []
+    - function: callbacks
+      query: callback_method=GET&callback=a&callback=b
+      api_base: null
+      upstream_url: ""
+      messages: []
+    - function: callbacks
+      query: ""
+      api_base: null
+      upstream_url: ""
+      messages: []
+compare: {ignore: []}
+env: {}

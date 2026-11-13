@@ -1,0 +1,33 @@
+kind: helper
+name: cache-placement-role-targeting
+call:
+  b4124:
+    operation: message_injections
+    probes:
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: assistant, index: null, control: null}]
+        max_blocks: 4
+      - messages: [{role: system, content: rules}, {role: user, content: one}, {role: assistant, content: two}]
+        points: [{location: message, role: system, index: null, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: user, index: 1, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: user, index: null, control: {type: ephemeral, ttl: 1h}}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points:
+          - {location: message, role: user, index: null, control: null}
+          - {location: message, role: assistant, index: null, control: null}
+        max_blocks: 1
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points:
+          - {location: message, role: assistant, index: null, control: null}
+          - {location: message, role: user, index: null, control: null}
+        max_blocks: 1
+env: {}
+compare: {ignore: []}

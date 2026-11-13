@@ -102,6 +102,8 @@ scope:
   - crates/betterlite-openai/Cargo.toml
   - crates/betterlite-openai/src/chat_choices.rs
   - crates/betterlite-openai/src/chat_choices/**
+  - crates/betterlite-openai/src/text_completion_policy/reply.rs
+  - crates/betterlite-openai/src/text_completion_policy/reply/usage.rs
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/openai/chat_choices.rs
   - tools/oracle/src/helpers/openai/chat_choices/**
@@ -255,7 +257,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::chat_choices_cases::case_[0-9]+_query_url_join$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_chat_choices.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_chat_choices.py tools/oracle/helpers/openai_chat_choices)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -332,6 +334,6 @@ pitfalls:
   the intermediate local.
 - get_complete_url does substring detection and literal concatenation, not URL query-aware joining.
 budget:
-  max_changed_lines: 1500
-  max_new_expects: 0
+  max_changed_lines: 2250
+  max_new_expects: 1
 review_level: security

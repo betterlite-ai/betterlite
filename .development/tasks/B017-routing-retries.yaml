@@ -106,7 +106,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - Cross-model fallbacks and cooldown policy (B018).
-- Python synchronous callable wrappers (B162).
+- Python synchronous callable wrappers (B5078/B8355).
 pitfalls:
 - An exhausted retry sequence raises the latest error, not the first.
 - Always release or refund the previous attempt before reserving the next.

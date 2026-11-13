@@ -1,0 +1,12 @@
+kind: helper
+name: anthropic-stream-events-citation-event
+call:
+  anthropic_stream_events:
+    json_mode: false
+    tool_name_reverse_map: {}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: citations_delta, citation: {type: web_search_result_location, url: "https://x", title: t}}}}
+      - {function: state}
+env: {}
+compare: {ignore: []}

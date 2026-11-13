@@ -1,0 +1,27 @@
+kind: helper
+name: anthropic-stream-state-partial-input-json
+call:
+  anthropic_stream_state:
+    json_mode: false
+    speed: null
+    sync_stream: true
+    tool_name_reverse_map: {}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: setup, fields: {current_content_block_type: tool_use, tool_index: 2}}
+      - {function: delta, chunk: {type: content_block_delta, index: 3, delta: {type: input_json_delta, partial_json: '{"a": 1'}}}
+      - {function: state}
+      - {function: delta, chunk: {type: content_block_delta, index: 0, delta: {type: text_delta, text: hello, partial_json: ignored}}}
+      - {function: state}
+      - {function: setup, fields: {current_content_block_type: server_tool_use, tool_index: 0}}
+      - {function: delta, chunk: {type: content_block_delta, index: 1, delta: {type: input_json_delta, partial_json: '{}'}}}
+      - {function: setup, fields: {current_content_block_type: web_search_tool_result, tool_index: 1}}
+      - {function: delta, chunk: {type: content_block_delta, index: 1, delta: {type: input_json_delta, partial_json: '{}'}}}
+      - {function: setup, fields: {current_content_block_type: text}}
+      - {function: delta, chunk: {type: content_block_delta, index: 2, delta: {type: citations_delta, citation: {cited_text: x}}}}
+      - {function: delta, chunk: {type: content_block_delta, index: 2, delta: {type: input_json_delta, partial_json: '{}', citation: {cited_text: y}}}}
+      - {function: delta, chunk: {type: content_block_delta, index: 2, delta: {type: compaction_delta, content: {summary: s}}}}
+      - {function: delta, chunk: {type: content_block_delta, index: 2, delta: {type: text_delta, content: {ignored: true}}}}
+      - {function: state}
+env: {}
+compare: {ignore: []}

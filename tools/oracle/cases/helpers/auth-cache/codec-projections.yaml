@@ -1,0 +1,35 @@
+kind: helper
+name: auth-cache-codec-projections
+call:
+  auth_cache:
+    scenario: codec
+    payloads:
+      - object_permission_id: op-1
+        mcp_servers: [server-1, server-2]
+        mcp_tool_permissions:
+          server-1: [tool-a]
+      - mcp_servers: [server-1]
+      - object_permission_id: op-2
+        mcp_servers: null
+        mcp_tool_search_enabled: true
+      - plain-text
+      - [1, 2]
+      - null
+      - object_permission_id: op-3
+        unknown_field: kept-out
+    ttls: []
+    fallback: 60
+    keys: []
+    ids:
+      user_id: user-1
+      object_permission_id: op-1
+      tag: tag-1
+      access_group: group-1
+      project_id: project-1
+      end_user_id: end-user-1
+      team_id: team-1
+      member_user_id: member-1
+    auth: {}
+env: {}
+compare:
+  ignore: []

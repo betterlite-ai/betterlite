@@ -1,0 +1,262 @@
+id: B9850
+title: Let an oracle case name one provider request body, upload filename or header value it can't compare, and put the mock's address in an answer
+description: >-
+  The booted-proxy comparison checks every provider request the mock captured: method and path first, then the body
+  (part by part when both captures decode as multipart, compare/multipart.rs), then each header the case lists in
+  upstream_headers. compare.ignore never reaches those requests: compare_response_body hands the list to
+  router_probes::comparison, which removes the pointers from the two response bodies only. So a provider request
+  that differs on every run can't be compared at all, and eight planned suites stop there. LiteLLM's RAG upload
+  renames every accepted file to `uuid4().hex` plus the detected extension before it posts it to /v1/files
+  (upload_security.py L205-L206), and GigaChat names its uploads `str(uuid4())` plus the extension
+  (file_handler.py L122 and L188). A Google token refresh for Vertex and Model Armor posts a different body from each
+  side: google-auth sends `grant_type=refresh_token&...` as a form body, google-cloud-auth sends the same fields as
+  JSON (user_account.rs, Oauth2RefreshRequest). The MCP JWT signer puts a freshly signed token in the outbound
+  Authorization header, and its iat and exp claims come from the clock (mcp_jwt_signer.py L709-L715), so that value
+  differs on every run while upstream_headers can only compare a header exactly. This task lets a case name exactly
+  one such value with a reason, and fails the case when the name matches nothing, so a case can never ignore more than
+  it says. It also lets a scripted answer name the mock's own address (Answer address below), since the A2A cases
+  that need it also need a body selector.
+
+
+  Selectors. Keep the compare.ignore record as it is (`pointer` and a non-empty `why`) and add no case field. An
+  ignore whose pointer starts with `/upstream/` is an upstream selector, and there are three forms.
+  `/upstream/{request}/body` skips the body comparison of that one captured request; its method, path and every
+  header in upstream_headers stay compared. `/upstream/{request}/parts/{part}/filename` relaxes the filename of one
+  part of a multipart capture. `/upstream/{request}/headers/{name}` checks that one header is present on both
+  captures of that request and compares no value of it. Indices are zero-based decimal numbers, the same text the
+  comparator already puts in its Difference pointers (`/upstream/1/parts/0/filename`). Match a selector as an exact
+  string against the pointers the comparator renders while it walks the captured requests, their parts and their
+  headers, and write no pointer parser: any other text under /upstream/ (a leading zero, a wildcard,
+  `/upstream/0/headers` without a name, `/upstream/0/method`) never matches, so it is refused like any other unused
+  selector.
+
+
+  Header rule. For each captured request the comparator renders `/upstream/{request}/headers/{name}` for every name
+  that both captures of that request carry, whether or not upstream_headers lists it. Names are the lowercase text the
+  mock stores (mock.rs capture_request keeps http's HeaderName text, which is always lowercase), so
+  `/upstream/0/headers/Authorization` matches nothing. A header selector whose name upstream_headers also lists
+  replaces that one value comparison on that one request; the same header on every other request keeps its value
+  compared. A header selector whose name upstream_headers doesn't list adds the presence check and nothing else. The
+  method, path and body of that request stay compared.
+
+
+  Filename rule. A filename selector needs both captures of that request to decode as multipart and the part to
+  carry a filename on both sides. Split each filename at its last dot. The extensions must be equal, each stem must
+  parse with `uuid::Uuid::try_parse` and report version 4 (`get_version_num() == 4`), and the two stems must have
+  the same length, so a 32-character hex stem never passes against a 36-character hyphenated one. Use the uuid crate
+  tools/oracle/Cargo.toml already has (default features off; try_parse needs none) and write no UUID check by hand.
+  The part's name, content type and bytes stay compared. A filename that breaks the rule fails at the selector's own
+  pointer with the message "generated filenames differ in shape".
+
+
+  Refusals. Every selector must be used while the requests are compared. A selector that names a request index
+  past the captures (zero captures on both sides included), a capture that is not multipart, a part index past the
+  parts, a part without a filename or a header that either capture of that request lacks, or that repeats another
+  selector, gives a Difference whose pointer is the selector and whose message is "compare.ignore names no captured
+  provider request, part or header" (or "compare.ignore repeats a selector"). A different request count is still
+  reported first as "provider request counts differ". A body selector on two equal bodies counts as used, not
+  refused: in --self-check both sides run LiteLLM, and a refresh body is the same on both. A header selector is used
+  whenever both captures carry the header, equal values included. Selectors never reach the response: drop every `/upstream/` pointer from the list
+  compare_response_body passes to router_probes::comparison, so a response field named upstream is never erased.
+
+
+  Answer address. artifacts::prepare replaces `{{upstream}}` in the case's config only, case env values get it
+  through native_feature_eligibility::child_environment, and the mock serves every scripted answer as written. Some
+  LiteLLM calls go to an address they read from an answer. Its A2A client fetches /.well-known/agent-card.json from
+  the agent and then posts message/send or message/stream to the url inside that card (a2a_protocol/main.py
+  L767-L820), and Replicate polls the urls.get address of its create reply (replicate/chat/handler.py L265-L282).
+  The mock listens on a random port, so a case can't write that address by hand. In MockProvider::start, once the
+  listener has its address and before the script goes into the Recording, pass every `Outcome::Answer` of
+  script.replies to a new `upstream_address::fill(answer: &mut UpstreamAnswer, base_url: &str)`. It replaces each
+  `{{upstream}}` inside every JSON string value of answer.body, at any depth, and inside every answer.events string,
+  with the mock's base_url (`http://127.0.0.1:<port>`, no trailing slash, the text the config gets). Object keys,
+  headers and the status stay as written. A body that is an object with a body_kind key is a bytes answer
+  (multipart_oracle::request::answer_body reads its fixture file) and is never touched, so binary and non-UTF-8
+  fixture bytes go out unchanged. A string without the marker is left alone, so an answer that names no
+  `{{upstream}}` is served byte for byte as today. Each mock fills its own script: in a group both gateways get the
+  address of the one mock that answers them, and a mock started for one SDK run or one helper call gets its own.
+  No case on main names `{{upstream}}` in an answer, so no existing case changes.
+
+
+  Where. compare.rs has 286 lines, so move compare_provider_requests and compare_provider_request into a new module
+  compare::upstream (tools/oracle/src/compare/upstream.rs, tests in compare/upstream/tests.rs); add `mod upstream;`
+  to compare.rs and call it from compare() with the case's ignore list. Give first_part_difference in
+  compare/multipart.rs what it needs to apply the filename rule to a selected part, and keep masked_boundary as it
+  is. In http_scenarios/compare.rs, compare_step builds its bridge Compare with an empty ignore list; give it the
+  step's `/upstream/` selectors instead, so a scenario step names requests by their index inside that step's own
+  captures. The browser step flow (an HTTP case with `steps:`) compares each step without captures and the
+  transcript without ignores, so a selector there matches nothing and is refused; a case that needs one uses
+  `kind: http_scenario`. Plain HTTP cases and scenarios share this one path; helper and SDK comparisons stay as they
+  are. mock.rs has 272 lines, so the fill lives in mock::upstream_address (tools/oracle/src/mock/upstream_address.rs,
+  tests in mock/upstream_address/tests.rs); mock.rs gets the `mod upstream_address;` line and the loop in start.
+
+
+  Tests in compare::upstream::tests call `compare::compare` with hand-built Response and ProviderRequest values,
+  never a copy of the comparison. Use rstest rows where the description lists variants, and assert each failure's
+  exact Difference pointer and message:
+
+  `body_selector_skips_one_body`: two captured requests whose bodies differ at index 0 pass with
+  `/upstream/0/body`, and a body change at index 1 still fails at /upstream/1/body.
+
+  `body_selector_keeps_target_and_headers`: with `/upstream/0/body` a changed path still fails at /upstream/0, and
+  a changed authorization header listed in upstream_headers still fails at /upstream/0/headers/authorization.
+
+  `filename_selector_accepts_generated_names`: rows for two different 32-character hex stems with .txt and two
+  different hyphenated version-4 stems with .png pass.
+
+  `filename_selector_refuses_other_names`: rows for different extensions, a stem that is not a UUID (notes), a
+  version-1 UUID, a hex stem against a hyphenated one, and a part without a filename on one side, each failing at
+  /upstream/0/parts/1/filename.
+
+  `filename_selector_keeps_part_fields`: with the selector set, a changed part name, content type or body still
+  fails at its own pointer.
+
+  `header_selector_checks_presence`: rows for authorization listed in upstream_headers with different values on both
+  captures of request 0, and x-mcp-channel-token not listed with different values, each passing with its
+  `/upstream/0/headers/{name}` selector; with the authorization selector set, a different authorization value on
+  request 1 still fails at /upstream/1/headers/authorization, a changed body at /upstream/0/body and a changed path
+  at /upstream/0.
+
+  `header_selector_refuses_missing_header`: rows for `/upstream/0/headers/authorization` with the header on the
+  left capture only, on the right capture only and on neither, and `/upstream/0/headers/Authorization` with the
+  header on both, each failing at the selector's own pointer with the refusal message.
+
+  `unused_selector_is_refused`: rows for `/upstream/0/body` with zero captures on both sides, a filename selector
+  on a JSON capture, `/upstream/00/body`, `/upstream/0/headers`, `/upstream/0/method`, and the same selector twice.
+
+  `selectors_never_touch_the_response`: two response bodies that differ only in a top-level `upstream` field still
+  fail at /upstream with a selector `/upstream/0/body` in the list.
+
+  In http_scenarios/tests/upstream_selectors.rs (one `mod upstream_selectors;` line in http_scenarios/tests.rs,
+  which is near its 1000-line limit), `step_selector_uses_step_captures` runs compare_transcripts on two steps:
+  the first step's `/upstream/0/body` skips its first capture's body, and the same body change in the second step,
+  which has no selector, still fails at /steps/1.
+
+  Tests in mock::upstream_address::tests:
+
+  `fill_names_the_mock_address`: rstest rows for a card body {"url": "{{upstream}}"}, a Replicate create body whose
+  urls.get is "{{upstream}}/v1/predictions/oracle-1", a marker inside an array item, and an events list whose second
+  string names the marker, each equal after fill to the same value with `http://127.0.0.1:4010` in its place.
+
+  `fill_keeps_unmarked_answers`: rows for a JSON body, an events list and a body with `{{upstream}}` only in an object
+  key, each equal to the original after fill.
+
+  `fill_never_touches_bytes_answers`: a body {"body_kind": "bytes", "fixture": "{{upstream}}.bin", "content_type":
+  "application/octet-stream"} is unchanged after fill, and so is a JSON answer's header x-next "{{upstream}}".
+
+  `mock_serves_its_own_address`: start two MockProviders, each with one answer {"url": "{{upstream}}/a2a"}, send a
+  request to each with crate::http::send, and assert each body's url starts with that mock's own base_url.
+
+  `mock_serves_unmarked_bytes_as_written`: a mock answering binary-response.bin (bytes 00 ff ... 80 0a, not UTF-8)
+  and a mock answering a JSON body without the marker serve exactly the fixture's bytes and exactly
+  serde_json::to_vec of the body.
+
+
+  Size. No LiteLLM function is ported. Allow about 190 lines for compare/upstream.rs, 30 for the multipart and
+  scenario call sites, 40 for mock/upstream_address.rs and the start loop, and 600 test lines.
+
+scope:
+  paths:
+    - tools/oracle/src/compare.rs
+    - tools/oracle/src/compare/multipart.rs
+    - tools/oracle/src/compare/upstream.rs
+    - tools/oracle/src/compare/upstream/**
+    - tools/oracle/src/http_scenarios/compare.rs
+    - tools/oracle/src/http_scenarios/tests.rs
+    - tools/oracle/src/http_scenarios/tests/upstream_selectors.rs
+    - tools/oracle/src/mock.rs
+    - tools/oracle/src/mock/upstream_address.rs
+    - tools/oracle/src/mock/upstream_address/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/upload_security.py#L205-L206
+    why: The RAG upload gets a uuid4().hex stem and the extension of the detected format, so the filename differs on every run.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/file_handler.py#L118-L124
+    why: GigaChat names its uploads with the hyphenated str(uuid4()), the other spelling the filename rule accepts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L191-L200
+    why: An authorized_user credential goes to google-auth's refresh, the token request a body selector names.
+  - url: https://github.com/googleapis/google-auth-library-python/blob/v2.62.1/google/oauth2/_client.py
+    why: google-auth 2.62.1, the version tools/oracle/litellm/uv.lock installs, posts the refresh grant as a form body.
+  - url: https://docs.rs/crate/google-cloud-auth/1.18.0/source/src/credentials/user_account.rs
+    why: google-cloud-auth posts the same refresh grant as JSON, so the two bodies never compare equal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L709-L715
+    why: The signed token's iat, nbf and exp come from time.time(), so the Authorization header a header selector names differs on every run.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L864-L877
+    why: The signer puts the token in extra_headers as Authorization "Bearer <token>", the header the MCP client sends upstream.
+  - url: https://docs.rs/uuid/1.28.0/uuid/struct.Uuid.html
+    why: try_parse accepts the hex and hyphenated spellings, and get_version_num gives the version the rule checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L767-L820
+    why: create_a2a_client reads the agent card from the agent's base URL and builds a client that posts to the url inside the card, the address an answer has to name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/replicate/chat/handler.py#L265-L282
+    why: Replicate posts the create request and then polls the urls.get address from that reply.
+
+dod:
+  - text: A body selector skips the body of exactly one captured provider request, while its method, path and listed headers stay compared.
+    proof: [upstream-selector-tests]
+  - text: A filename selector lets only a version-4 UUID stem of the same length differ, with equal extensions, and the part's name, content type and bytes stay compared.
+    proof: [upstream-selector-tests]
+  - text: A header selector checks that one header is present on both captures of one request and compares none of its value there, while the same header on other requests, the method, the path and the body stay compared.
+    proof: [upstream-selector-tests]
+  - text: A selector that matches no captured request, part or header (a header on one side only included), has any other shape or repeats another fails the case at its own pointer, and no selector changes the response comparison.
+    proof: [upstream-selector-tests]
+  - text: An HTTP scenario step applies its selectors to its own captures, and the existing HTTP, multipart and scenario comparisons behave as before.
+    proof: [upstream-selector-tests, comparison-regressions]
+  - text: Every mock serves its own address where an answer's JSON strings or events name `{{upstream}}`, serves an answer without the marker byte for byte, and never touches a bytes answer or a header.
+    proof: [answer-address-tests, mock-regressions]
+
+checks:
+  optional: []
+  commands:
+    - id: upstream-selector-tests
+      why: a selector hides more than one value, accepts a filename that is not generated, passes a header one side never sent, or passes while it matches nothing
+      run: >-
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail
+        -E 'test(/^compare::upstream::/) | test(/^http_scenarios::tests::upstream_selectors::/)'
+    - id: comparison-regressions
+      why: moving the provider request comparison changed how existing cases, multipart captures or scenarios compare
+      run: >-
+        test -f tools/oracle/src/compare/upstream/tests.rs
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail
+        -E 'test(/^tests::/) | test(/^multipart_oracle::/) | test(/^http_scenarios::/)'
+    - id: answer-address-tests
+      why: an answer that names `{{upstream}}` reaches the client as written, gets another mock's address, or a bytes answer or an unmarked answer changes
+      run: >-
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail
+        -E 'test(/^mock::upstream_address::/)'
+    - id: mock-regressions
+      why: filling the script in MockProvider::start changed how scripted replies, waits or captures behave
+      run: >-
+        test -f tools/oracle/src/mock/upstream_address/tests.rs
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail
+        -E 'test(/^routing_mock_scripts::/) | test(/^routing_scenarios::/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - "Decoding multipart captures and the mock's capture of request bodies: B900, unchanged. The case schema and the ignore record: unchanged."
+  - "The cases that use the selectors: the RAG upload case in B097, the Model Armor cases in B106, the Vertex token cases in B031, the GigaChat upload cases in B9232, the signed MCP tool call in B109, the MCP argument mask in B105, the Onyx and Noma v2 cases in B9465 and the Qostodian Nexus cases in B108."
+  - "The browser step flow's transcript comparison (runner/browser_flow_group.rs) takes no selectors; cases that need one use kind: http_scenario."
+  - "Helper and SDK comparisons (compare_helper, compare_sdk) keep their own ignore rules."
+  - "The cases that put `{{upstream}}` in an answer: the A2A message/send and message/stream cases in B141. Answer headers keep their text, since no planned case needs the mock's address in a header; the Azure operation-location polls are helper cases in B535."
+
+pitfalls:
+  - "compare_response_body passes compare.ignore to router_probes::comparison, which removes each pointer from both response bodies, so an unfiltered `/upstream/0/body` would erase a response field named upstream."
+  - "A selector for `/upstream/0/body` must fail when neither side captured a request, or a proxy that never calls the provider passes its own case."
+  - "Python's `uuid4().hex` is 32 lowercase hex characters and `str(uuid4())` is the 36-character hyphenated form; try_parse takes both, so the equal-length rule is what keeps one from passing against the other."
+  - "A Google refresh request's content-type differs on purpose (form against JSON), so the body selector leaves headers alone and cases keep content-type out of upstream_headers."
+  - "The mock rewrites the value of authorization and the other CREDENTIAL_HEADERS to `redacted:<hash>` (routing_mock_scripts.rs redact) but keeps the key, so a signed token still differs per side after redaction and a header selector still finds the header."
+  - "Render header pointers only for names both captures carry: a pointer rendered from one side's map would let a selector pass when the other side never sent the header."
+  - "In --self-check both token refresh bodies come from LiteLLM and are equal, so a body selector on equal bodies counts as used."
+  - "http_scenarios/tests.rs has 926 lines; the scenario test goes in its own file under tests/, or the test file passes the 1000-line limit."
+  - "Fill the script once in MockProvider::start, not in reply: the router state is the Recording alone and holds no address."
+  - "Replace inside parsed JSON string values, never in the serialized text, or a `{{upstream}}` object key changes too."
+  - "A body_kind answer names a fixture file whose bytes may not be UTF-8 (binary-response.bin starts 00 ff), so the fill skips the whole object and answer_body still reads the file as written."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

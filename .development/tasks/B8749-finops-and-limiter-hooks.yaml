@@ -66,7 +66,7 @@ oracle_cases: []
 deviations: []
 out_of_scope:
   - "The FinOps exports and their schedules: B3060 to B3077. The rate limiter behavior: B3050 to B3053."
-  - "vector_store_pre_call_hook and compression_interception: their hook arms stay unavailable (see the notes of B8742)."
+  - "vector_store_pre_call_hook: its hook arm stays unavailable (see the notes of B8742). compression_interception: B9821 takes it out of hooks.rs into the SDK callback list and B9822 registers it; leave its arm alone here."
 pitfalls:
   - Build the handler before update_variables gives it the router; LiteLLM's arm does it in that order, and a pre-call before the router is set must answer as the handler does with no router.
   - The FinOps names are loggers only in name; never give them events, or exports would count calls twice.

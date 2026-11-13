@@ -1,0 +1,26 @@
+kind: helper
+name: session-token-codec-cli-grants-and-budget
+call:
+  session_token_codec:
+    salt_key: salt-one
+    master_key: null
+    env: {}
+    nonce_hex: "000102030405060708090a0b0c0d0e0f"
+    now: "2026-11-12T17:50:00.123456+00:00"
+    steps:
+      - op: cli_token
+        user: {user_id: user-1, user_role: internal_user, models: [gpt-4o, claude], teams: [team-a]}
+        team_id: team-explicit
+        team_alias: Team Alias
+        team_models: [gpt-4o, claude]
+        team_model_aliases: {claude: alias-c, gpt-4o: alias-g}
+        max_budget: 5.5
+      - op: cli_token
+        user: {user_id: user-1, user_role: internal_user, models: [], teams: []}
+        team_models: []
+        team_model_aliases: {}
+        max_budget: 0
+      - op: cli_token
+        user: {user_id: user-1, user_role: internal_user, models: [], teams: []}
+env: {}
+compare: {ignore: []}

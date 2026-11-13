@@ -1,0 +1,84 @@
+kind: probe
+name: fallback-cycle-and-depth
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: group-a
+          lookup_model_group: group-a
+        config:
+          fallbacks:
+            - {group-a: [group-b]}
+            - {group-b: [group-a]}
+          max_fallbacks: 5
+        request: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: group-a
+          lookup_model_group: group-a
+        config:
+          fallbacks:
+            - {group-a: [group-b]}
+            - {group-b: [group-a]}
+          max_fallbacks: 5
+        request: {}
+        attempted: [group-b]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: group-b
+          lookup_model_group: group-b
+        config:
+          fallbacks:
+            - {group-a: [group-b]}
+            - {group-b: [group-a]}
+          max_fallbacks: 5
+        request: {}
+        attempted: [group-b]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: group-a
+          lookup_model_group: group-a
+        config:
+          fallbacks:
+            - {group-a: [group-b]}
+            - {group-b: [group-a]}
+          max_fallbacks: 5
+          depth: 4
+        request: {}
+        attempted: [group-a, group-b]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: group-a
+          lookup_model_group: group-a
+        config:
+          fallbacks:
+            - {group-a: [group-b]}
+          max_fallbacks: 5
+          depth: 5
+        request: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: group-a
+          lookup_model_group: group-a
+        config:
+          fallbacks:
+            - {group-a: [group-b]}
+          max_fallbacks: 0
+        request: {}

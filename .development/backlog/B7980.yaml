@@ -1,9 +1,9 @@
 id: B7980
 milestone: M8 platform
-title: Proxy streaming data generator
+title: Production ports and HTTP proof for the shared streaming generator
 status: todo
-depends_on: [B8602, B8603, B8604, B8605]
-file: null
+depends_on: [B9720, B8604, B8632, B8633, B8930, B8931, B3003, B081, B8648, B8804, B247, B7324, B002]
+file: tasks/B7980-shared-stream-wiring.yaml
 covers: []
 parent: B124
 split_from: B124

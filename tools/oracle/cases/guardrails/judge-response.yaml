@@ -1,0 +1,27 @@
+kind: helper
+name: judge-response
+call:
+  b3809:
+    guardrail:
+      guardrail_name: quality
+      litellm_params:
+        guardrail: llm_as_a_judge
+        mode: post_call
+        judge_model: gpt-4o-mini
+        overall_threshold: 80
+        on_failure: block
+        criteria:
+          - {name: Accuracy, description: Is it accurate?, weight: 60}
+          - {name: Safety, description: Is it safe?, weight: 40}
+    inputs:
+      texts: ["first choice", "second choice"]
+    request_data:
+      messages:
+        - {role: user, content: "hi"}
+      metadata: {}
+    input_type: response
+    judge:
+      content: |-
+        {"verdicts": [{"criterion_name": "Accuracy", "score": 85, "reasoning": "clear", "passed": true, "weight": 60}], "overall_score": 85}
+env: {}
+compare: {ignore: [{pointer: /value/guardrail_records/0/start_time, why: "The record time is the wall clock at the call"}, {pointer: /value/guardrail_records/0/end_time, why: "The record time is the wall clock at the call"}]}

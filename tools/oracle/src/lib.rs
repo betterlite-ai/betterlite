@@ -3,6 +3,7 @@
     reason = "The oracle compares arbitrary provider JSON, so captured payloads require serde_json::Value."
 )]
 
+pub mod a2a_http;
 mod artifacts;
 pub mod budget_http;
 pub mod case;

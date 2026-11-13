@@ -1,0 +1,49 @@
+kind: helper
+name: sap-chat-request-tools-and-response-format
+call:
+  b5845:
+    operation: requests
+    calls:
+      - model: anthropic--claude-3.5-sonnet
+        messages: [{role: user, content: hi}]
+        optional_params:
+          strict: true
+          tools:
+            - type: function
+              function:
+                name: f
+                description: a tool
+                parameters: {properties: {a: {type: string}}}
+                strict: true
+          response_format: {type: json_object}
+      - model: anthropic--claude-3.5-sonnet
+        messages: [{role: user, content: hi}]
+        optional_params:
+          response_format:
+            type: json_schema
+            json_schema: {name: s, description: d, schema: {type: object}, strict: true}
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params:
+          response_format:
+            type: json_schema
+            json_schema: {name: s, schema: {type: object}}
+      - model: gpt-4o
+        messages: [{role: user, content: hi}]
+        optional_params:
+          strict: true
+          response_format: {type: text}
+      - model: gpt-4
+        messages: [{role: user, content: hi}]
+        optional_params:
+          response_format: {type: json_object}
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params:
+          response_format: {}
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params:
+          tools: []
+env: {}
+compare: {ignore: []}

@@ -131,7 +131,7 @@ out_of_scope:
   - "get_response_headers, get_response_body, is_streaming_response and should_buffer_passthrough_response belong to B3600."
   - "The managed-id output rewrite (L1665-L1721), the streamed managed-id layer _own_streamed_managed_ids (L2744-L2771) and the managed_id_rewriter and managed_id_codec modules need the enterprise managed_files hook, which open-source LiteLLM never registers. Nothing here builds them."
   - "The route factory, request state cleanup and the first-byte SSE opener belong to B3615; the WebSocket path to B3612."
-  - "ProxyLogging's hook methods, get_custom_headers, the keepalive wrapper and the OpenAI error mapping functions are not built here. B6510 declares the ProxyHooks trait. This task defines the CustomHeaders and SseKeepalive traits and an adapter over merged code where it exists."
+  - "ProxyLogging's hook methods, get_custom_headers (B9802's custom_headers), the keepalive wrapper and the OpenAI error mapping functions are not built here. B6510 declares the ProxyHooks trait. This task defines the CustomHeaders and SseKeepalive traits and an adapter over merged code where it exists."
 pitfalls:
   - "upstream_usage goes into the failure payload that is built before the stream (L1423-L1432, L1515-L1526) and the buffered one (L1618-L1624). The payload built for relay_reporting_failures inside the SSE reply (L1465-L1470, L1557-L1562) does not take it. Keep that difference."
   - "The streaming branch sets logging_obj.stream before the failure log. The detected SSE branch sets it only after the response arrived, so a non-stream request that turns out to be SSE is logged as streaming from that point."

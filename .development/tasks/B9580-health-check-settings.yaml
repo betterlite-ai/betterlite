@@ -1,0 +1,98 @@
+id: B9580
+title: Health check general settings section
+description: >-
+  LiteLLM reads five general_settings keys in load_config that turn on and shape the model health checks, and no betterlite
+  section claims them yet. B002's loader stops startup on any key no section reads, so today a config with
+  `general_settings: {background_health_checks: true}` never boots, and the routes B4445 and B4444 build can't see the values
+  they take. This task adds the config section `health_check_settings` that parses them; B8540 reads it when it builds
+  HealthSlot and starts the background loop.
+
+  The section lives in crates/betterlite-config/src/sections/health_check_settings.rs, with its tests in
+  sections/health_check_settings/tests.rs. The skeleton has already created the stub, its `pub mod` line and its entry in the
+  sections! list, so replace the stub and touch nothing else in sections.rs. Its Raw view reads general_settings only, and the
+  settings reach other crates as config.sections.health_check_settings, a `Settings` struct with these fields (LiteLLM's
+  defaults from proxy_server.py L6852 to L6857):
+
+  `background_health_checks: bool` from general_settings.background_health_checks, default false (LiteLLM's
+  use_background_health_checks).
+
+  `use_shared_health_check: bool` from general_settings.use_shared_health_check, default false.
+
+  `health_check_interval: i64` from general_settings.health_check_interval. When the key is absent or null the value is the
+  env var DEFAULT_HEALTH_CHECK_INTERVAL, read once through `betterlite_env::number::<i64>`, and 300 when that is unset or
+  empty. A malformed DEFAULT_HEALTH_CHECK_INTERVAL is a ConfigError naming the variable, since LiteLLM's `int(os.getenv(...))`
+  in constants.py fails at import the same way.
+
+  `health_check_concurrency: Option<i64>` from general_settings.health_check_concurrency, default None.
+
+  `health_check_details: bool` from general_settings.health_check_details, default true.
+
+  Absent and null both take the default, and a value of the wrong type is a ConfigError naming the field, as
+  docs/compatibility.md says for every section. Keep the integers as configured: a zero or negative interval and a zero or
+  negative concurrency are valid here, because LiteLLM decides what they mean later (the loop at proxy_server.py L4515 returns
+  without running for an interval that is not a positive int, and B4443 runs unbounded for a concurrency that is not
+  positive). Read the env var through the `EnvironmentLookup` that `Section::convert` receives, the way
+  sections/aiohttp_transport_toggle.rs reads DISABLE_AIOHTTP_TRANSPORT.
+
+  Tests in `sections::health_check_settings::tests`: an empty config gives the five defaults; each key alone is read; null
+  takes the default; DEFAULT_HEALTH_CHECK_INTERVAL sets the interval only when the key is missing, an empty value counts as
+  unset and `abc` is an error naming the variable; a string interval and a string details flag are errors naming their
+  field; and a whole config file with all five keys loads through `ConfigLoader::load` (loader.rs) without
+  ConfigError::Unsupported. Add config_yaml corpus seeds named health-check-settings-*.yaml, one with every key and one with
+  nulls.
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/health_check_settings.rs
+    - crates/betterlite-config/src/sections/health_check_settings/**
+    - "crates/betterlite-config/fuzz/corpus/config_yaml/health-check-settings-*"
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6850-L6857
+    why: The five general_settings reads and their defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2632-L2637
+    why: The module globals these keys fill, which every health route reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1871
+    why: DEFAULT_HEALTH_CHECK_INTERVAL, the env var behind the interval default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4515-L4516
+    why: Why a zero or negative interval stays as configured; the background loop decides.
+  - url: https://docs.litellm.ai/docs/proxy/health
+    why: The user docs for background_health_checks, health_check_interval and health_check_details.
+dod:
+  - text: The section reads background_health_checks, use_shared_health_check, health_check_interval, health_check_concurrency and health_check_details with LiteLLM's defaults, and null takes the default.
+    proof: [settings-tests]
+  - text: DEFAULT_HEALTH_CHECK_INTERVAL sets the interval only when the key is missing, an empty value is unset, and a malformed one stops loading with an error naming it.
+    proof: [settings-tests]
+  - text: A config with all five keys loads without the unsupported-keys error.
+    proof: [settings-tests]
+  - text: The config corpus has the new seeds and replays them.
+    proof: [config-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: settings-tests
+      why: a key, a default, the env fallback or the unsupported-key claim is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::health_check_settings::/) - test(replays_the_config_yaml_corpus)'
+    - id: config-corpus
+      why: the new health-check-settings config seeds are missing or do not replay
+      run: >-
+        git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml | grep -Fq "/health-check-settings-" &&
+        test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs &&
+        cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The background loop, its interval check and the shared lock: B4444. Holding these settings in HealthSlot and starting the loop when background_health_checks is true: B8540."
+  - "The startup info line `background_health_check_config enabled=... model_groups=...` (proxy_server.py L6861-L6871): it also prints B307's enable_health_check_routing and B4441's model groups, so B8540 logs it where it holds all three sections."
+  - "background_health_check_model_groups and health_check_skip_disabled_background_models: B4441's health_probe_policy section. enable_health_check_routing, health_check_staleness_threshold and health_check_ignore_transient_errors: B307."
+  - "The ValueError for health_check_interval or health_check_concurrency under router_settings (proxy_server.py L6984-L6987): B8613."
+pitfalls:
+  - health_check_details defaults to true while the other two flags default to false; LiteLLM's _clean_endpoint_data hides fields only when details is exactly False.
+  - DEFAULT_HEALTH_CHECK_INTERVAL is only the fallback for a missing or null health_check_interval, so a configured interval of 60 wins over DEFAULT_HEALTH_CHECK_INTERVAL=10.
+  - Don't clamp or reject an interval of 0 or a negative concurrency here; the loop and the cycle treat them as "no loop" and "unbounded".
+  - Read only general_settings; health_check_interval under router_settings is a different, rejected key that B8613 handles.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

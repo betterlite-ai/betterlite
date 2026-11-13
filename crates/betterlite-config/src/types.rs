@@ -5,6 +5,7 @@ use secrecy::SecretString;
 use serde::Deserialize;
 
 use crate::sections::Sections;
+use crate::sections::fallback_plans::chains::FallbackTarget;
 use crate::tls::VerifySetting;
 
 #[derive(Debug, Clone)]
@@ -70,7 +71,7 @@ pub enum RoutingStrategy {
     UsageBasedRoutingV2,
     Lar1,
 }
-pub type RouterFallback = BTreeMap<String, Vec<String>>;
+pub type RouterFallback = BTreeMap<String, Vec<FallbackTarget>>;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ProxyTrust {

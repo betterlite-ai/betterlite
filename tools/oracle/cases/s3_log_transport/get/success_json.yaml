@@ -1,0 +1,20 @@
+kind: helper
+name: s3-get-success-json
+call:
+  b3993:
+    operation: get
+    settings:
+      bucket_name: logs
+      region_name: us-east-1
+      endpoint_url: http://127.0.0.1:9000
+    credentials:
+      access_key_id: AKIAEXAMPLE
+      secret_access_key: secretKeyEXAMPLE
+      session_token: tokenEXAMPLE
+    now: 1767323045
+    object_key: 2026-01-02/id.json
+    responses:
+      - status: 200
+        body: '{"id":"request"}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,33 @@
+kind: helper
+name: agents-codex-launch
+call:
+  b4568:
+    steps:
+      - agent: codex
+        scenario: launch
+        command: ["codex", "--full-auto"]
+        binary: /usr/local/bin/codex
+        models:
+          - {id: gpt-known, mode: chat}
+          - {id: gpt-unknown, mode: responses, max_input_tokens: 200000}
+          - {id: embed, mode: embedding}
+        stock: '{"models":[{"slug":"gpt-known","priority":7,"visibility":"hide","supported_in_api":false,"upgrade":{"model":"gpt-unknown","reason":"newer"},"context_window":128000,"base_instructions":"stock-known"}]}'
+      - agent: codex
+        scenario: read-back-failure
+        command: ["codex"]
+        binary: /usr/local/bin/codex
+        models:
+          - {id: gpt-4o, mode: chat}
+      - agent: codex
+        scenario: hooks
+        command: ["codex"]
+        binary: /usr/local/bin/codex
+        models:
+          - {id: gpt-4o, mode: chat}
+      - agent: codex
+        scenario: skip
+        command: ["codex", "--version"]
+        binary: /usr/local/bin/codex
+env: {}
+compare:
+  ignore: []

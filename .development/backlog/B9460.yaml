@@ -1,0 +1,14 @@
+id: B9460
+milestone: M6 guardrails
+title: Pillar guardrail construction and its three proxy hooks
+status: todo
+depends_on: [B3790, B5471, B3665, B3680, B8218, B173]
+file: tasks/B9460-pillar-runtime.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/pillar/pillar.py"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

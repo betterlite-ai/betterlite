@@ -5,9 +5,11 @@ description: >-
   _execute_responses_agentic_plan, _execute_anthropic_agentic_plan, _run_agentic_loop_cleanup,
   _finalize_refused_agentic_response and _maybe_wrap_in_fake_stream. The shared dispatcher owns
   both surface branches; do not split it at api_surface. B2419 supplies policy/follow-up kwargs,
-  B189 callback/plan records and internal-prefix helpers, B247 logging state and B978 synthetic
-  Anthropic events. Keep callbacks as injected typed invocations; B157 exposes the Python hook
-  bridge. Feature implementations installed by B119 are not copied into this task.
+  B189 internal-prefix helpers, B4119 the plan records, B247 logging state and B978 synthetic
+  Anthropic events. Callbacks arrive as `&[Arc<dyn AgenticCallback>]` (B9820's trait), global
+  then dynamic, and an override check reads the callback's `overrides()` flags; the composition
+  passes the server's SDK callback list (B9821, handed over by B9825), and B157 exposes the Python
+  hook bridge. Feature implementations installed by B119 are not copied into this task.
 
   Define ContinuationExecutor here with typed Responses and Anthropic calls. Its asynchronous
   result and failure are awaited by these complete functions. The family composition supplies
@@ -130,10 +132,10 @@ oracle_cases:
 - tools/oracle/cases/sdk-http/responses-agentic-continuation/continuation-patch-failures.yaml
 deviations: []
 out_of_scope:
-- B2419 owns safety, settings, fingerprints and follow-up collision filtering; B189 owns callback plan types and internal-key predicates.
+- B2419 owns safety, settings, fingerprints and follow-up collision filtering; B9820 owns the AgenticCallback trait, B4119 the plan types and B189 the internal-key predicates.
 - B2414 owns native create transport and Responses fake wrapping; B978 owns Anthropic fake event generation.
 - B080 supplies recursive Responses execution at composition; no dependency from this leaf back to the public SDK wrappers is introduced.
-- Other HTTP-handler operations, including _execute_chat_completion_agentic_plan and _call_agentic_chat_completion_hooks, remain with the chat/interception owners B004/B119.
+- Other HTTP-handler operations, including _execute_chat_completion_agentic_plan and _call_agentic_chat_completion_hooks, remain with the chat/interception owner B119.
 pitfalls:
 - Responses cleanup is inside the executor's try/finally, after patch validation, and is absent from the Anthropic executor.
 - response_override=false is a result; only null means there is no override.

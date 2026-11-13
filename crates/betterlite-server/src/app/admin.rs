@@ -1,4 +1,5 @@
 pub mod config;
+pub mod debugging;
 pub mod models;
 pub mod prompts;
 pub mod public_hubs;

@@ -1,0 +1,6 @@
+general_settings:
+  background_health_checks: null
+  use_shared_health_check: null
+  health_check_interval: null
+  health_check_concurrency: null
+  health_check_details: null

@@ -8,6 +8,7 @@ use crate::chat::execution::ChatError;
 use crate::chat::response::ChatResponse;
 use crate::embedding::EmbeddingResponse;
 use crate::text_completion_policy::reply::mapped_finish_reason;
+use betterlite_config::sections::fallback_plans::chains::FallbackChainEntry;
 use betterlite_config::sections::mock_response::failure::MockError;
 use betterlite_config::sections::mock_response::selection::{MockPermission, MockPlan};
 use betterlite_config::sections::mock_response::{MockResponse, MockToolCall, UsageDefaults};
@@ -20,9 +21,6 @@ use serde_json::{Number, Value};
 use serde_with::skip_serializing_none;
 use std::collections::BTreeMap;
 use thiserror::Error;
-
-// LiteLLM reads these request keys itself and never forwards them, and betterlite does not act on them yet
-const LITELLM_REQUEST_KEYS: &str = "api_base api_key api_version base_url caching context_window_fallback_dict extra_headers fallbacks max_retries mock_delay mock_timeout num_retries stream_timeout timeout";
 
 #[derive(Debug, Error)]
 pub enum RequestError {
@@ -100,6 +98,16 @@ pub struct ChatRequest {
     pub tool_choice: Option<ToolChoice>,
     pub parallel_tool_calls: Option<bool>,
     pub response_format: Option<ResponseFormat>,
+    // the router reads these fallback overrides itself and never forwards them
+    #[serde(default, skip_serializing)]
+    pub fallbacks: Option<Vec<FallbackChainEntry>>,
+    #[serde(default, skip_serializing)]
+    pub context_window_fallbacks: Option<Vec<FallbackChainEntry>>,
+    #[serde(default, skip_serializing)]
+    pub content_policy_fallbacks: Option<Vec<FallbackChainEntry>>,
+    // an absent or null disable_fallbacks leaves fallbacks on
+    #[serde(default, skip_serializing)]
+    pub disable_fallbacks: Option<bool>,
     // parameters betterlite does not model: LiteLLM forwards unknown ones and filters the OpenAI ones it knows
     #[serde(flatten)]
     pub passthrough: IndexMap<String, Value>,
@@ -109,21 +117,6 @@ pub struct ChatRequest {
 pub struct StreamOptions {
     #[serde(default)]
     pub include_usage: bool,
-}
-
-impl ChatRequest {
-    pub fn parse(bytes: &[u8]) -> Result<Self, RequestError> {
-        let request: Self =
-            serde_json::from_slice(bytes).map_err(|source| RequestError::Body { source })?;
-        if let Some(name) = request.passthrough.keys().find(|name| {
-            LITELLM_REQUEST_KEYS
-                .split(' ')
-                .any(|known| known == name.as_str())
-        }) {
-            return Err(RequestError::Unsupported { name: name.clone() });
-        }
-        Ok(request)
-    }
 }
 
 // LiteLLM strips a client mock field before it reads it, so a denied field is never decoded

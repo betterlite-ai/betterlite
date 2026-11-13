@@ -1,0 +1,16 @@
+kind: helper
+name: openai-image-generation-dalle3-quality-style
+call:
+  openai_image_generation:
+    function: dalle3_quality_style
+    probes:
+      - model: dall-e-3
+        prompt: a cat
+        optional_params: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"url":"https://example.test/a.png"}]}'}
+      - model: dall-e-3-preview
+        prompt: a dog
+        optional_params: {size: 1792x1024}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}],"quality":"standard","output_format":"jpeg"}'}
+env: {}
+compare: {ignore: []}

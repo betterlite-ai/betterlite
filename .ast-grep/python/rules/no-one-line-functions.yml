@@ -1,0 +1,42 @@
+id: no-one-line-functions
+language: python
+severity: error
+message: a function whose body is one line is only a name for that line; write it where the function is called. Padding the body to pass this check is the same defect
+note: dunder methods, a method of a class that has a base (it implements that base), a method marked @override or @property, main, and a stub whose body is only ... are exempt
+rule:
+  kind: function_definition
+  has:
+    field: body
+    all:
+      - has:
+          nthChild: 1
+          regex: "^[^\\n]*$"
+          not:
+            any:
+              - kind: if_statement
+              - kind: for_statement
+              - kind: while_statement
+              - kind: match_statement
+              - kind: with_statement
+              - kind: try_statement
+              - regex: ^\.\.\.$
+      - not:
+          has:
+            nthChild: 2
+  not:
+    any:
+      - has:
+          field: name
+          regex: ^(__\w+__|main)$
+      - inside:
+          kind: decorated_definition
+          has:
+            kind: decorator
+            regex: ^@(override|property|typing\.override)$
+      - inside:
+          stopBy:
+            kind: function_definition
+          kind: class_definition
+          has:
+            field: superclasses
+            kind: argument_list

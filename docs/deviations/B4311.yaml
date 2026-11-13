@@ -1,0 +1,52 @@
+task: B4311
+deviations:
+  - what: >-
+      NativeBackend reports BaseCache's default_ttl of 60, where LiteLLM's NativeBackend never calls
+      BaseCache.__init__, so the attribute is missing and get_ttl raises AttributeError.
+    why: >-
+      betterlite's CacheBackend trait requires a default ttl, and a cache that raises on get_ttl is a
+      crash no working setup relies on. 60 is the value BaseCache.__init__ would have stored.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_v2/cache/__init__.py#L19-L20
+  - what: >-
+      NativeBackend.test_connection returns betterlite's ConnectionTest with a message field, where
+      LiteLLM's adapter returns only {"status": "success"} or {"status": "failed"}.
+    why: >-
+      ConnectionTest always carries a message, so the status a caller branches on is unchanged and the
+      message says which ping answered.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_v2/cache/__init__.py#L55-L56
+  - what: >-
+      The Cache factories take the native handle factory and the cache callback list as parameters,
+      and their ttl, capacity and max_entry_bytes travel in MemoryHandleOptions or
+      RedisHandleOptions, where LiteLLM imports NativeCacheHandle lazily inside each factory,
+      appends "cache" to litellm's module-level callback lists through CacheFacade.__init__, and
+      spells the defaults as keyword defaults on the factory signature.
+    why: >-
+      The rust_bridge package is outside the repository inventory, betterlite keeps no module-level
+      mutable state, dependencies come in through constructors, and Rust functions have no optional
+      arguments. The option struct's Default holds LiteLLM's 600 seconds, 200 items and 4194304
+      bytes, the handle is still built only inside the factory call, and the callback lists get
+      "cache" once, as Cache.__init__ does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_v2/cache/__init__.py#L59-L68
+  - what: >-
+      A handle ttl that the native duration conversion refuses (zero, negative, non-finite, below one
+      nanosecond so it rounds to zero, or too large for a Duration), a memory capacity of 0, a
+      max_entry_bytes of 0 and an empty redis namespace are refused by the factory with a typed error
+      before the handle factory is called. LiteLLM forwards the same values to
+      NativeCacheHandle.memory or NativeCacheHandle.redis, which raises ValueError from its duration
+      conversion or its positive limits check.
+    why: >-
+      The native handle accepts a ttl only when Duration::try_from_secs_f64 yields a non-zero
+      duration, and its constructors require a positive capacity and max_entry_bytes and a non-empty
+      namespace, so the factory applies exactly those rules before a handle exists. The error names
+      the rejected ttl and no handle is constructed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/python-bridge/src/cache/native/v2.rs#L263-L268
+  - what: >-
+      A facade the v2 factories return does not answer ping or delete_cache_keys through the native
+      adapter: Cache::ping returns Ok(None) and Cache::delete_cache_keys returns Ok(()) for an injected
+      backend, where LiteLLM's Cache.ping awaits the backend's ping and Cache.delete_cache_keys awaits
+      its delete_cache_keys.
+    why: >-
+      Those two dispatch methods live in B4299's configuration/cache.rs, outside this task's
+      scope.paths, and only consult Backend::Redis. The adapter implements both operations and its
+      tests prove that; routing Backend::Injected to them is B4299's change.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L989-L999

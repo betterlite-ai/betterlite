@@ -1,0 +1,6 @@
+{
+  "include": ["../b9520.py"],
+  "typeCheckingMode": "strict",
+  "reportAny": "error",
+  "reportMissingTypeStubs": "none"
+}

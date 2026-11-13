@@ -1,0 +1,17 @@
+kind: helper
+name: openai-transcription-verbose-json-segments
+call:
+  openai_transcription:
+    function: exchange
+    probes:
+      - model: whisper-1
+        provider: whisper
+        optional_params: {response_format: verbose_json}
+        api_key: sk-fixture
+        api_base: 'https://transcription.test/v1'
+        reply:
+          status: 200
+          headers: {content-type: application/json}
+          body: '{"task":"transcribe","language":"en","duration":1.5,"text":"hi","words":[{"word":"hi","start":0.0,"end":1.0}],"segments":[{"id":0,"start":0.0,"end":1.5,"text":"hi"}],"usage":{"type":"duration","seconds":1.5}}'
+env: {}
+compare: {ignore: []}

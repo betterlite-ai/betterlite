@@ -1,0 +1,33 @@
+kind: helper
+name: billing-text-chat-text-parts-and-tool-arguments
+call:
+  billing_text:
+    calls:
+      - function: formatted_prompt
+        call_type: completion
+        data:
+          messages:
+            - {role: system, content: sys}
+            - role: user
+              content:
+                - {type: text, text: hi}
+                - {type: image_url, image_url: {url: "https://example.test/i.png"}}
+                - {type: text, text: " there"}
+            - role: assistant
+              content: null
+              tool_calls:
+                - {function: {arguments: '{"a":1}'}}
+                - {id: no-function}
+      - function: formatted_prompt
+        call_type: acompletion
+        data:
+          messages: []
+      - function: formatted_prompt
+        call_type: completion
+        data:
+          messages:
+            - {content: null}
+            - {content: kept}
+            - {content: text, tool_calls: null}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+task: B515
+deviations:
+  - what: The async failure hook receives the audio file name as the post_call input.
+    why: LiteLLM passes the Python builtin `input` there because the except block never defines a local of that name, so the logged value is a function repr that no logger can use. betterlite logs the same file name the success path logs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/handler.py#L217-L221
+  - what: The calls take no caller-supplied SDK client.
+    why: The optional client argument holds a Python OpenAI object. betterlite builds its client from the connection settings on every call, so there is nothing to pass.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/handler.py#L56-L67
+  - what: A response_format that is not a string is refused before the request is sent.
+    why: LiteLLM sends it and lets the OpenAI SDK fail while it builds the request or parses the reply. betterlite needs the reply kind before the send, so it names the field and stops early.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/handler.py#L84-L96

@@ -1,0 +1,26 @@
+kind: helper
+name: bedrock-other-count-call-failure
+call:
+  bedrock_other_count_call:
+    count_api_failure_warning:
+      calls:
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          reply: {status: 429, body: rate limited}
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          reply: {status: 200, body: '{"inputTokens": null}'}
+          now: 1767225600
+env: {}
+compare: {ignore: []}

@@ -35,7 +35,7 @@ description: >-
   jobs have exactly one router in their scope, and forward jobs skip traffic any candidate
   router served. Team-scoped targeting supports JWT-authenticated traffic without keys.
   Load all active jobs in one read, validate each with Pydantic to reject invalid rows,
-  group by target key, and cache the grouped result. Attempt insertion names every cost
+  group by target key, and cache the grouped result. The loader reports when a read refilled the cache (LiteLLM resets _job_starts on every fill, shadow_eval_logger.py L899), so B118 can clear its per-job starts. Attempt insertion names every cost
   type the eval pipeline bills (call costs, classifier costs, judge costs).
 scope:
   paths:

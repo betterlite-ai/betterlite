@@ -1,1 +1,12 @@
-
+pub mod batch;
+pub mod body;
+pub mod endpoint;
+pub mod error;
+pub mod executor;
+pub mod headers;
+pub mod json_post;
+pub mod request;
+pub mod service;
+pub mod sigv4;
+pub mod target;
+mod tests;

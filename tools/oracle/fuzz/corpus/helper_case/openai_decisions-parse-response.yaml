@@ -1,0 +1,16 @@
+kind: helper
+name: openai-decisions-parse-response
+call:
+  openai_decisions:
+    parse_response:
+      - request:
+          input: the input
+          questions:
+            - {type: predicate, instructions: "is it true?"}
+        payload:
+          model: gpt-4o
+          answers:
+            - {type: predicate, name: null, probability: 0.5}
+          usage: {input_tokens: 1, output_tokens: 2, total_tokens: 3}
+env: {}
+compare: {ignore: []}

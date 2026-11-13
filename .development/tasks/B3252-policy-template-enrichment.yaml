@@ -207,7 +207,7 @@ out_of_scope:
   - "suggest_policy_templates (POST /policy/templates/suggest, L1087-L1120) and AiPolicySuggester are B3253's."
   - "test_policy_template and _test_guardrail_definitions (L1123-L1265) are B3249's."
   - "The validate, list, info and match routes and apply_policies (L67-L605) are B3251's and B3250's."
-  - "B005 owns wrap_sse_stream_with_keepalive_pings, SSE_COMMENT_PING and the interval coercion (sse_keepalive.py). This task calls them."
+  - "B9720 owns with_sse_pings (LiteLLM's wrap_sse_stream_with_keepalive_pings), SSE_COMMENT_PING and the interval coercion (sse_keepalive.py). This task calls them."
   - "The router handle behind CompetitorModelClient (llm_router.acompletion) is not built here; see notes."
 
 pitfalls:

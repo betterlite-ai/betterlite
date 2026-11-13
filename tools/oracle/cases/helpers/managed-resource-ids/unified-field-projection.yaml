@@ -1,0 +1,97 @@
+kind: helper
+name: managed-resource-ids-unified-field-projection
+call:
+  managed_resource_ids:
+    calls:
+      - {"function": "parse", "value": "litellm_proxy:vector_store;unified_id,u;target_model_names,a, b,,a;resource_id,vs_1;model_id,m"}
+      - {"function": "resource_type", "value": "litellm_proxy:vector_store;unified_id,u;target_model_names,a, b,,a;resource_id,vs_1;model_id,m"}
+      - {"function": "unified_uuid", "value": "litellm_proxy:vector_store;unified_id,u;target_model_names,a, b,,a;resource_id,vs_1;model_id,m"}
+      - {"function": "target_model_names", "value": "litellm_proxy:vector_store;unified_id,u;target_model_names,a, b,,a;resource_id,vs_1;model_id,m"}
+      - {"function": "provider_resource_id", "value": "litellm_proxy:vector_store;unified_id,u;target_model_names,a, b,,a;resource_id,vs_1;model_id,m"}
+      - {"function": "model_id", "value": "litellm_proxy:vector_store;unified_id,u;target_model_names,a, b,,a;resource_id,vs_1;model_id,m"}
+      - {"function": "parse", "value": "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCx1O3RhcmdldF9tb2RlbF9uYW1lcyxhLCBiLCxhO3Jlc291cmNlX2lkLHZzXzE7bW9kZWxfaWQsbQ=="}
+      - {"function": "resource_type", "value": "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCx1O3RhcmdldF9tb2RlbF9uYW1lcyxhLCBiLCxhO3Jlc291cmNlX2lkLHZzXzE7bW9kZWxfaWQsbQ=="}
+      - {"function": "unified_uuid", "value": "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCx1O3RhcmdldF9tb2RlbF9uYW1lcyxhLCBiLCxhO3Jlc291cmNlX2lkLHZzXzE7bW9kZWxfaWQsbQ=="}
+      - {"function": "target_model_names", "value": "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCx1O3RhcmdldF9tb2RlbF9uYW1lcyxhLCBiLCxhO3Jlc291cmNlX2lkLHZzXzE7bW9kZWxfaWQsbQ=="}
+      - {"function": "provider_resource_id", "value": "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCx1O3RhcmdldF9tb2RlbF9uYW1lcyxhLCBiLCxhO3Jlc291cmNlX2lkLHZzXzE7bW9kZWxfaWQsbQ=="}
+      - {"function": "model_id", "value": "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCx1O3RhcmdldF9tb2RlbF9uYW1lcyxhLCBiLCxhO3Jlc291cmNlX2lkLHZzXzE7bW9kZWxfaWQsbQ=="}
+      - {"function": "parse", "value": "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCx1O3RhcmdldF9tb2RlbF9uYW1lcyxhLCBiLCxhO3Jlc291cmNlX2lkLHZzXzE7bW9kZWxfaWQsbQ"}
+      - {"function": "resource_type", "value": "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCx1O3RhcmdldF9tb2RlbF9uYW1lcyxhLCBiLCxhO3Jlc291cmNlX2lkLHZzXzE7bW9kZWxfaWQsbQ"}
+      - {"function": "unified_uuid", "value": "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCx1O3RhcmdldF9tb2RlbF9uYW1lcyxhLCBiLCxhO3Jlc291cmNlX2lkLHZzXzE7bW9kZWxfaWQsbQ"}
+      - {"function": "target_model_names", "value": "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCx1O3RhcmdldF9tb2RlbF9uYW1lcyxhLCBiLCxhO3Jlc291cmNlX2lkLHZzXzE7bW9kZWxfaWQsbQ"}
+      - {"function": "provider_resource_id", "value": "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCx1O3RhcmdldF9tb2RlbF9uYW1lcyxhLCBiLCxhO3Jlc291cmNlX2lkLHZzXzE7bW9kZWxfaWQsbQ"}
+      - {"function": "model_id", "value": "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCx1O3RhcmdldF9tb2RlbF9uYW1lcyxhLCBiLCxhO3Jlc291cmNlX2lkLHZzXzE7bW9kZWxfaWQsbQ"}
+      - {"function": "parse", "value": "litellm_proxy:"}
+      - {"function": "resource_type", "value": "litellm_proxy:"}
+      - {"function": "unified_uuid", "value": "litellm_proxy:"}
+      - {"function": "target_model_names", "value": "litellm_proxy:"}
+      - {"function": "provider_resource_id", "value": "litellm_proxy:"}
+      - {"function": "model_id", "value": "litellm_proxy:"}
+      - {"function": "parse", "value": "bGl0ZWxsbV9wcm94eTo="}
+      - {"function": "resource_type", "value": "bGl0ZWxsbV9wcm94eTo="}
+      - {"function": "unified_uuid", "value": "bGl0ZWxsbV9wcm94eTo="}
+      - {"function": "target_model_names", "value": "bGl0ZWxsbV9wcm94eTo="}
+      - {"function": "provider_resource_id", "value": "bGl0ZWxsbV9wcm94eTo="}
+      - {"function": "model_id", "value": "bGl0ZWxsbV9wcm94eTo="}
+      - {"function": "parse", "value": "file-1"}
+      - {"function": "resource_type", "value": "file-1"}
+      - {"function": "unified_uuid", "value": "file-1"}
+      - {"function": "target_model_names", "value": "file-1"}
+      - {"function": "provider_resource_id", "value": "file-1"}
+      - {"function": "model_id", "value": "file-1"}
+      - {"function": "parse", "value": "ZmlsZS0x"}
+      - {"function": "resource_type", "value": "ZmlsZS0x"}
+      - {"function": "unified_uuid", "value": "ZmlsZS0x"}
+      - {"function": "target_model_names", "value": "ZmlsZS0x"}
+      - {"function": "provider_resource_id", "value": "ZmlsZS0x"}
+      - {"function": "model_id", "value": "ZmlsZS0x"}
+      - {"function": "parse", "value": ""}
+      - {"function": "resource_type", "value": ""}
+      - {"function": "unified_uuid", "value": ""}
+      - {"function": "target_model_names", "value": ""}
+      - {"function": "provider_resource_id", "value": ""}
+      - {"function": "model_id", "value": ""}
+      - {"function": "parse", "value": "xx litellm_proxy:file;unified_id,u"}
+      - {"function": "resource_type", "value": "xx litellm_proxy:file;unified_id,u"}
+      - {"function": "unified_uuid", "value": "xx litellm_proxy:file;unified_id,u"}
+      - {"function": "target_model_names", "value": "xx litellm_proxy:file;unified_id,u"}
+      - {"function": "provider_resource_id", "value": "xx litellm_proxy:file;unified_id,u"}
+      - {"function": "model_id", "value": "xx litellm_proxy:file;unified_id,u"}
+      - {"function": "parse", "value": "litellm_proxy: \u001fvector_store　;unified_id,\t u\n;target_model_names, a , \u001cb;resource_id, vs_1 ;model_id, m "}
+      - {"function": "resource_type", "value": "litellm_proxy: \u001fvector_store　;unified_id,\t u\n;target_model_names, a , \u001cb;resource_id, vs_1 ;model_id, m "}
+      - {"function": "unified_uuid", "value": "litellm_proxy: \u001fvector_store　;unified_id,\t u\n;target_model_names, a , \u001cb;resource_id, vs_1 ;model_id, m "}
+      - {"function": "target_model_names", "value": "litellm_proxy: \u001fvector_store　;unified_id,\t u\n;target_model_names, a , \u001cb;resource_id, vs_1 ;model_id, m "}
+      - {"function": "provider_resource_id", "value": "litellm_proxy: \u001fvector_store　;unified_id,\t u\n;target_model_names, a , \u001cb;resource_id, vs_1 ;model_id, m "}
+      - {"function": "model_id", "value": "litellm_proxy: \u001fvector_store　;unified_id,\t u\n;target_model_names, a , \u001cb;resource_id, vs_1 ;model_id, m "}
+      - {"function": "parse", "value": "bGl0ZWxsbV9wcm94eTogH3ZlY3Rvcl9zdG9yZeOAgDt1bmlmaWVkX2lkLAkgdQo7dGFyZ2V0X21vZGVsX25hbWVzLMKgYSAsIBxiO3Jlc291cmNlX2lkLCB2c18xIDttb2RlbF9pZCwgbeKAgw=="}
+      - {"function": "resource_type", "value": "bGl0ZWxsbV9wcm94eTogH3ZlY3Rvcl9zdG9yZeOAgDt1bmlmaWVkX2lkLAkgdQo7dGFyZ2V0X21vZGVsX25hbWVzLMKgYSAsIBxiO3Jlc291cmNlX2lkLCB2c18xIDttb2RlbF9pZCwgbeKAgw=="}
+      - {"function": "unified_uuid", "value": "bGl0ZWxsbV9wcm94eTogH3ZlY3Rvcl9zdG9yZeOAgDt1bmlmaWVkX2lkLAkgdQo7dGFyZ2V0X21vZGVsX25hbWVzLMKgYSAsIBxiO3Jlc291cmNlX2lkLCB2c18xIDttb2RlbF9pZCwgbeKAgw=="}
+      - {"function": "target_model_names", "value": "bGl0ZWxsbV9wcm94eTogH3ZlY3Rvcl9zdG9yZeOAgDt1bmlmaWVkX2lkLAkgdQo7dGFyZ2V0X21vZGVsX25hbWVzLMKgYSAsIBxiO3Jlc291cmNlX2lkLCB2c18xIDttb2RlbF9pZCwgbeKAgw=="}
+      - {"function": "provider_resource_id", "value": "bGl0ZWxsbV9wcm94eTogH3ZlY3Rvcl9zdG9yZeOAgDt1bmlmaWVkX2lkLAkgdQo7dGFyZ2V0X21vZGVsX25hbWVzLMKgYSAsIBxiO3Jlc291cmNlX2lkLCB2c18xIDttb2RlbF9pZCwgbeKAgw=="}
+      - {"function": "model_id", "value": "bGl0ZWxsbV9wcm94eTogH3ZlY3Rvcl9zdG9yZeOAgDt1bmlmaWVkX2lkLAkgdQo7dGFyZ2V0X21vZGVsX25hbWVzLMKgYSAsIBxiO3Jlc291cmNlX2lkLCB2c18xIDttb2RlbF9pZCwgbeKAgw=="}
+      - {"function": "parse", "value": "litellm_proxy:;litellm_proxy:later"}
+      - {"function": "resource_type", "value": "litellm_proxy:;litellm_proxy:later"}
+      - {"function": "unified_uuid", "value": "litellm_proxy:;litellm_proxy:later"}
+      - {"function": "target_model_names", "value": "litellm_proxy:;litellm_proxy:later"}
+      - {"function": "provider_resource_id", "value": "litellm_proxy:;litellm_proxy:later"}
+      - {"function": "model_id", "value": "litellm_proxy:;litellm_proxy:later"}
+      - {"function": "parse", "value": "litellm_proxy:file;unified_id,  ;x"}
+      - {"function": "resource_type", "value": "litellm_proxy:file;unified_id,  ;x"}
+      - {"function": "unified_uuid", "value": "litellm_proxy:file;unified_id,  ;x"}
+      - {"function": "target_model_names", "value": "litellm_proxy:file;unified_id,  ;x"}
+      - {"function": "provider_resource_id", "value": "litellm_proxy:file;unified_id,  ;x"}
+      - {"function": "model_id", "value": "litellm_proxy:file;unified_id,  ;x"}
+      - {"function": "parse", "value": "litellm_proxy:file;target_model_names,"}
+      - {"function": "resource_type", "value": "litellm_proxy:file;target_model_names,"}
+      - {"function": "unified_uuid", "value": "litellm_proxy:file;target_model_names,"}
+      - {"function": "target_model_names", "value": "litellm_proxy:file;target_model_names,"}
+      - {"function": "provider_resource_id", "value": "litellm_proxy:file;target_model_names,"}
+      - {"function": "model_id", "value": "litellm_proxy:file;target_model_names,"}
+      - {"function": "parse", "value": "litellm_proxy:file;target_model_names, ​a​"}
+      - {"function": "resource_type", "value": "litellm_proxy:file;target_model_names, ​a​"}
+      - {"function": "unified_uuid", "value": "litellm_proxy:file;target_model_names, ​a​"}
+      - {"function": "target_model_names", "value": "litellm_proxy:file;target_model_names, ​a​"}
+      - {"function": "provider_resource_id", "value": "litellm_proxy:file;target_model_names, ​a​"}
+      - {"function": "model_id", "value": "litellm_proxy:file;target_model_names, ​a​"}
+env: {}
+compare: {ignore: []}

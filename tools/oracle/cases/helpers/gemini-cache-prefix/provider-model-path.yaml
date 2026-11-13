@@ -1,0 +1,38 @@
+kind: helper
+name: gemini-cache-prefix-provider-model-path
+call:
+  gemini_cache_prefix:
+    cases:
+      - model: gemini-2.5-pro
+        provider: vertex_ai
+        supports_system_message: true
+        cache_key: cache-key-1
+        project: proj
+        location: us-central1
+        now: "2026-11-12T00:00:00Z"
+        disable_transform: false
+        messages:
+          - {role: user, content: [{type: text, text: a, cache_control: {type: ephemeral}}]}
+      - model: gemini-2.5-pro
+        provider: vertex_ai_beta
+        supports_system_message: true
+        cache_key: cache-key-2
+        project: other-project
+        location: europe-west4
+        now: "2026-11-12T00:00:00Z"
+        disable_transform: false
+        messages:
+          - {role: user, content: [{type: text, text: a, cache_control: {type: ephemeral}}]}
+      - model: gemini-2.5-pro
+        provider: gemini
+        supports_system_message: true
+        cache_key: cache-key-3
+        project: ignored-project
+        location: ignored-location
+        now: "2026-11-12T00:00:00Z"
+        disable_transform: false
+        messages:
+          - {role: user, content: [{type: text, text: a, cache_control: {type: ephemeral}}]}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,9 @@
+model_list:
+  - model_name: azure-managed-identity
+    litellm_params:
+      model: azure/gpt-4o
+      api_base: https://example.openai.azure.com
+litellm_settings:
+  num_retries: 2
+environment_variables:
+  IDENTITY_ENDPOINT: http://sf.test/token

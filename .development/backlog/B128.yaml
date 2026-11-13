@@ -1,8 +1,8 @@
 id: B128
 milestone: M8 platform
 title: Semantic caches
-status: blocked
-depends_on: [B8650, B8651]
+status: todo
+depends_on: [B8650, B8651, B9560]
 file: tasks/B128-semantic-cache-http.yaml
 covers:
   - "litellm/caching/valkey_semantic_cache.py"
@@ -10,5 +10,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "waits for a task that wires the inference cache (B8612's ResponseCacheSlot through B4305 lookup and B4304 writes), to be planned with B125"
+blocked_reason: null
 pr: null

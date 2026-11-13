@@ -1,0 +1,10 @@
+kind: helper
+name: rate-limit-records-model-limit
+call:
+  b3031:
+    function: model_limit
+    requested: gpt4
+    group: gpt-4
+    limits: {gpt4: 0, gpt-4: 100}
+env: {}
+compare: {ignore: []}

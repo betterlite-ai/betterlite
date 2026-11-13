@@ -6,6 +6,8 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+betterlite-env = { path = "../betterlite-env" }
+betterlite-error = { path = "../betterlite-error" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 fancy-regex = "0.19.2"
 futures-util = { version = "0.3.34", default-features = false, features = ["async-await"] }
@@ -33,6 +35,7 @@ url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]
+betterlite-context = { path = "../betterlite-context" }
 rstest = "=0.27.0"
 tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber.workspace = true

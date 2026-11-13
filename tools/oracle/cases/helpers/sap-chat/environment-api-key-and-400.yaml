@@ -1,0 +1,33 @@
+kind: helper
+name: sap-chat-environment-api-key-and-400
+call:
+  b5845:
+    operation: environments
+    calls:
+      - service_key: '{"clientid":"id","clientsecret":"secret","url":"https://auth.example.com/oauth/token","serviceurls":{"AI_API_URL":"https://api.example.com/v2"},"resource_group":"key-rg"}'
+        environment: {}
+        session: {token: Bearer case-token, resource_group: rg1, deployment_url: https://dep.example.com/v2/}
+      - service_key: null
+        environment:
+          vars:
+            AICORE_CLIENT_ID: id
+            AICORE_CLIENT_SECRET: secret
+            AICORE_AUTH_URL: https://auth.example.com/oauth/token
+            AICORE_BASE_URL: https://api.example.com/v2
+            AICORE_RESOURCE_GROUP: rg1
+        session: {token: Bearer case-token, resource_group: rg1, deployment_url: https://dep.example.com/v2/}
+      - service_key: ''
+        environment:
+          vars:
+            AICORE_CLIENT_ID: id
+            AICORE_CLIENT_SECRET: secret
+            AICORE_AUTH_URL: https://auth.example.com/oauth/token
+            AICORE_BASE_URL: https://api.example.com/v2
+            AICORE_RESOURCE_GROUP: rg1
+        session: {token: Bearer case-token, resource_group: rg1, deployment_url: https://dep.example.com/v2/}
+      - service_key: '{}'
+        environment: {vars: {}}
+      - service_key: '{"client_id":"only"}'
+        environment: {vars: {}}
+env: {}
+compare: {ignore: []}

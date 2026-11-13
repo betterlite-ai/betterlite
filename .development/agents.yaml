@@ -5,12 +5,12 @@ vendors:
     max_parallel: 12
   - id: anthropic
     limit_markers: ["You've hit your", "Not logged in", "Can't reach the API server"]
-    max_parallel: 16
-    max_writers: 4
+    max_parallel: 24
+    max_writers: 20
   - id: deepseek
     limit_markers: ["Insufficient Balance", "Authentication Fails", "Rate Limit Reached", "Server Overloaded", "Can't reach the API server"]
-    max_parallel: 32
-    max_writers: 32
+    max_parallel: 128
+    max_writers: 128
 runners:
   - id: codex-worker
     vendor: openai
@@ -41,14 +41,31 @@ runners:
     program: claude
     args: [-p, --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --allowedTools, "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", Read, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Edit, Write, Agent, --output-format, json, --json-schema, "{schema_text}", --no-session-persistence, --strict-mcp-config]
     output: claude-json
+  - id: deepseek-reviewer
+    vendor: deepseek
+    program: claude
+    args: [-p, --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --allowedTools, "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", Read, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Edit, Write, Agent, --output-format, json, --json-schema, "{schema_text}", --no-session-persistence, --strict-mcp-config]
+    output: claude-json
+    env_file: "{home}/.config/betterlite/deepseek.env"
 roles:
   worker:
     instructions: roles/worker.md
     ladder:
+      - runner: claude-worker
+        model: claude-sonnet-5-5
+        effort: high
+        attempts: 2
+        timeout_minutes: 180
+        tasks: [B068, B302, B368, B401, B568, B569, B963, B966, B1117, B1685, B1686, B1687, B1689, B2227, B3246, B3662, B3663, B3664, B3665, B3667, B3668, B3669, B3857, B3868, B3910, B5471, B5650, B8152, B9710]
       - runner: deepseek-worker
         model: deepseek-flash[1m]
         effort: max
         attempts: 2
+        timeout_minutes: 90
+      - runner: deepseek-worker
+        model: deepseek-flash[1m]
+        effort: max
+        attempts: 1
         timeout_minutes: 90
       - runner: codex-worker
         model: gpt-6-luna
@@ -73,6 +90,11 @@ roles:
   reviewer:
     instructions: roles/reviewer.md
     ladder:
+      - runner: deepseek-reviewer
+        model: deepseek-flash[1m]
+        effort: max
+        attempts: 1
+        timeout_minutes: 45
       - runner: claude-reviewer
         model: claude-sonnet-5-5
         effort: high
@@ -86,6 +108,11 @@ roles:
   security_reviewer:
     instructions: roles/reviewer.md
     ladder:
+      - runner: deepseek-reviewer
+        model: deepseek-flash[1m]
+        effort: max
+        attempts: 1
+        timeout_minutes: 45
       - runner: claude-reviewer
         model: claude-opus-5-5
         effort: high
@@ -99,6 +126,11 @@ roles:
   parity_reviewer:
     instructions: roles/parity-reviewer.md
     ladder:
+      - runner: deepseek-reviewer
+        model: deepseek-flash[1m]
+        effort: max
+        attempts: 1
+        timeout_minutes: 45
       - runner: claude-reviewer
         model: claude-opus-5-5
         effort: high
@@ -115,6 +147,11 @@ roles:
       - runner: codex-worker
         model: gpt-6-astra
         effort: xhigh
+        attempts: 1
+        timeout_minutes: 60
+      - runner: deepseek-worker
+        model: deepseek-flash[1m]
+        effort: max
         attempts: 1
         timeout_minutes: 60
       - runner: claude-worker

@@ -1,0 +1,77 @@
+kind: helper
+name: cache-placement-index-resolution
+call:
+  b4124:
+    operation: message_injections
+    probes:
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: 0, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: 2, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: -1, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: -3, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: -4, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: -100, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: 3, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: "2", control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: "-1", control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: "-100", control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: assistant, index: "first", control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: assistant, index: 0, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: assistant, index: 9, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: system, index: null, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: null, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: user, index: "99999999999999999999", control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: user, index: "-99999999999999999999", control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: m0}, {role: user, content: m1}, {role: user, content: m2}, {role: user, content: m3}, {role: user, content: m4}, {role: user, content: m5}, {role: user, content: m6}, {role: user, content: m7}, {role: user, content: m8}, {role: user, content: m9}, {role: user, content: m10}, {role: user, content: m11}]
+        points: [{location: message, role: user, index: "1_0", control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: user, index: "1__0", control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: user, index: "", control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: user, index: "１", control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: m0}, {role: user, content: m1}, {role: user, content: m2}, {role: user, content: m3}, {role: user, content: m4}, {role: user, content: m5}, {role: user, content: m6}, {role: user, content: m7}, {role: user, content: m8}, {role: user, content: m9}, {role: user, content: m10}, {role: user, content: m11}]
+        points: [{location: message, role: user, index: "١_٠", control: null}]
+        max_blocks: 4
+env: {}
+compare: {ignore: []}

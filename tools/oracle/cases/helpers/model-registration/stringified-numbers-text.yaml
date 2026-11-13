@@ -1,0 +1,8 @@
+kind: helper
+name: model-registration-stringified-numbers-text
+call:
+  b5365:
+    function: convert_stringified_numbers
+    value: " not a number "
+env: {}
+compare: {ignore: []}

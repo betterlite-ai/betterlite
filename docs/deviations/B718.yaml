@@ -1,0 +1,10 @@
+task: B718
+deviations:
+  - what: >-
+      Replica identity executes the same DO statement through native Postgres, so operators need no
+      Prisma binary or writable temporary directory; connection/SQL failures retain the optional-step
+      false result and diagnostics.
+    why: >-
+      The existing native migration decision removes subprocess and temporary-SQL-file failures.
+      native_replica_execution_needs_no_prisma proves this environment difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/replica_identity.py#L67-L83

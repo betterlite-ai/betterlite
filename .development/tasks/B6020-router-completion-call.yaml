@@ -103,7 +103,7 @@ out_of_scope:
   - "B303 owns the deployment slot and kwargs update, B323 the reasoning effort steps, B336 the compaction step, B346 the scheduler, B8440 the silent experiment calls and B8466 prompt management."
   - "B305 owns Router.abatch_completion with its nested helpers, because it calls them; this task owns only the two helpers named above."
   - "B6021 owns the generic and anthropic_messages calls, B6022 the Python bridge and B5078 the Python methods."
-  - "The rest of litellm/router.py (constructor, endpoint setup, embeddings, images, batches, files, vector stores) stays with B162's last part."
+  - "The rest of litellm/router.py (constructor, endpoint setup, embeddings, images, batches, files, vector stores) stays with B8352, B8353, B8355 and B8356."
 pitfalls:
   - The request copy for the stream fallback is taken before `specific_deployment` is removed and before any deployment key is added, and its `model` is the group name.
   - "`silent_model` is removed from the deployment params copy and from the request, and from the final arguments again, so it never reaches a provider."

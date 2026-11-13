@@ -34,8 +34,12 @@ fn prepare_sandbox(places: &Places<'_>, stem: &Path) -> Result<(PathBuf, String)
         .worktree
         .to_str()
         .ok_or(GateError::NotUnicode("the worktree path"))?;
+    let home = places
+        .home
+        .to_str()
+        .ok_or(GateError::NotUnicode("the home folder"))?;
     let settings = stem.with_extension("sandbox.json");
-    sandbox::write_settings(&settings, worktree, places.writable)?;
+    sandbox::write_settings(&settings, worktree, home, places.writable)?;
     let roots = serde_json::to_string(places.writable).map_err(|source| GateError::Json {
         what: "the writable folders".to_owned(),
         source,
@@ -63,6 +67,8 @@ pub(crate) fn invoke(
         }
         Seat::Worker => ("report.schema.json", &roles.worker, attempt.resume),
     };
+    // reviewers never resume, so only a resumed worker run takes the fix model
+    let model = session.and(attempt.fix_model).unwrap_or(&rung.model);
     let seat_name = <&str>::from(seat);
     let stem = attempt
         .places
@@ -85,6 +91,7 @@ pub(crate) fn invoke(
         log: &log,
         prompt,
         session,
+        model,
     };
     run_on_seat(attempt.agents, runner, rung, seat, &invocation)
 }

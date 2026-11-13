@@ -78,3 +78,38 @@ path = "fuzz_targets/oci_embed_response.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "ollama_chat_reply"
+path = "fuzz_targets/ollama_chat_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ollama_generate_reply"
+path = "fuzz_targets/ollama_generate_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "langflow_chat_reply"
+path = "fuzz_targets/langflow_chat_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "langgraph_stream"
+path = "fuzz_targets/langgraph_stream.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "manus_files_reply"
+path = "fuzz_targets/manus_files_reply.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,13 @@
+kind: helper
+name: openai-decisions-request-roundtrip
+call:
+  openai_decisions:
+    request_roundtrip:
+      - model: gpt-4o
+        request:
+          input:
+            - {role: user, content: "hello"}
+          questions:
+            - {type: predicate, instructions: "is it true?"}
+env: {}
+compare: {ignore: []}

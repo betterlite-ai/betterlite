@@ -1,0 +1,117 @@
+id: B9440
+title: Model Armor Vertex token source
+description: >-
+  Model Armor needs a Google access token for every scan, and nothing gives it one yet. In LiteLLM,
+  ModelArmorGuardrail inherits VertexBase, so `make_model_armor_request` takes the token from the constructor's
+  `access_token_provider` when one is set and otherwise calls `self._ensure_access_token_async(credentials=self.credentials,
+  project_id=self.project_id, custom_llm_provider="vertex_ai")` (model_armor.py L294-L302). The proxy never passes an
+  access_token_provider, so in a running proxy every token comes from that Vertex lookup. B3733 built the seam as the
+  trait `ArmorTokens` (one async method returning the access token and the resolved project id) and left the default
+  implementation to be wired outside betterlite-guardrails, since that crate does not depend on betterlite-vertex.
+  This task writes that implementation, so B8666 can hand a real token source to each Model Armor guardrail it builds.
+
+
+  Where. A public module of betterlite-server, crates/betterlite-server/src/model_armor_tokens.rs with
+  model_armor_tokens/ holding error.rs and tests.rs (the skeleton declares `pub mod model_armor_tokens;` in lib.rs). Add
+  `betterlite-vertex = { path = "../betterlite-vertex" }` to crates/betterlite-server/Cargo.toml; betterlite-vertex does
+  not depend on betterlite-server or betterlite-guardrails, so there is no cycle. Read the merged code of B1301
+  (credential_sources: the credential decoder and source types), B1302 (token_cache: `CredentialCache`) and B1303
+  (token_refresh: the async ensure-token wrapper) for exact names before writing anything.
+
+
+  `VertexArmorTokens` holds one B1302 `CredentialCache`, the guardrail's credentials and its configured project id.
+  LiteLLM calls `VertexBase.__init__(self)` inside the ModelArmorGuardrail constructor (model_armor.py L165), so every
+  guardrail instance has its own token cache; build one cache per `VertexArmorTokens` and never share it with the
+  Vertex provider's cache or with another guardrail. The constructor `VertexArmorTokens::new(credentials, project_id,
+  ...)` takes the Model Armor `credentials` value as B8290's `ModelArmorArgs` carries it (a JSON object, a JSON string or
+  a local file path, LiteLLM's VERTEX_CREDENTIALS_TYPES) or None, the configured `project_id` or None, and whatever
+  B1303's wrapper needs from the server (its task tracker or JoinSet, the clock and the credential executor B1302
+  injects). Turn the credentials into B1301's credential source with B1301's own decoder. None means application
+  default credentials, and B1301 resolves those from its environment snapshot.
+
+
+  `ArmorTokens for VertexArmorTokens` calls B1303's async wrapper with that source, the configured project id and the
+  provider vertex_ai, and returns its `(access_token, resolved_project_id)` unchanged. Keep B1303's semantics as they
+  are: a fresh cached token comes back without a credential call, a stale one comes back at once while one background
+  refresh runs, an invalid one waits for a refresh. Do not cache again on top of B1303 and do not add a second refresh
+  path. Which project the URL uses stays B3733's rule (the configured id wins, the resolved one fills an empty
+  configuration), so this module never rewrites the project.
+
+
+  Errors. `ArmorTokenError` in model_armor_tokens/error.rs, a thiserror enum, wraps the credential decode error and the
+  token lookup error from betterlite-vertex with their own text, and converts into whatever error type B3733's
+  `ArmorTokens` method returns. LiteLLM raises "Unable to load vertex credentials from environment. Ensure the JSON is
+  valid (check for unescaped newlines in private_key). Parse error: <type>" for unreadable credentials (vertex_llm_base.py
+  L141-L163), and B1301 owns that text; keep it. No error text, Debug output or log line holds the private key, the
+  client secret, the refresh token or the access token.
+
+
+  Tests in model_armor_tokens/tests.rs drive the source with a fake credential executor from B1302's injection seam,
+  never a network call. Name them with the prefix `tokens_`: a first call exchanges once and a second call within the
+  token's lifetime reuses it (one exchange in total); two `VertexArmorTokens` built from the same credentials still
+  exchange separately, since each guardrail owns its cache; the resolved project id comes back when no project is
+  configured and the configured one is passed to the lookup when it is; an invalid credential JSON gives B1301's error
+  text; Debug of the struct and of every error shows no secret. No route reaches this code until B8666 builds Model
+  Armor guardrails with it, so the task has no oracle case. B106's model-armor cases prove it over HTTP once it is
+  wired: they use an authorized_user credential whose token_uri is the mock and skip only the refresh request's body
+  with B9850's selector, since google-auth posts that body as a form and google-cloud-auth as JSON. A service_account
+  credential can't be compared that way at all: google-auth exchanges a signed JWT at token_uri, while
+  google-cloud-auth signs its own token and sends no request.
+
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-server/src/model_armor_tokens.rs
+    - crates/betterlite-server/src/model_armor_tokens/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L142-L187
+    why: The constructor runs VertexBase.__init__ per instance, keeps credentials and project_id, and takes the optional access_token_provider this module stands in for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L282-L306
+    why: The token branch of make_model_armor_request with custom_llm_provider vertex_ai, and the resolved project that fills an empty project_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L1119-L1136
+    why: _ensure_access_token_async as B1303 ports it; vertex_ai goes to get_access_token_async.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L123-L163
+    why: load_auth accepts a JSON string, a file path or a dict, and the error text for unreadable credentials.
+
+dod:
+  - text: VertexArmorTokens returns the access token and resolved project from B1303's async lookup with provider vertex_ai, exchanging once per token lifetime.
+    proof: [tokens-tests]
+  - text: Each VertexArmorTokens owns its own credential cache, so two guardrails never share a token.
+    proof: [tokens-tests]
+  - text: Credentials given as an object, a JSON string or a path, and absent credentials, reach B1301's decoder or default credentials, and a bad credential keeps B1301's error text.
+    proof: [tokens-tests]
+  - text: No error, Debug output or log line of this module shows a credential secret or a token.
+    proof: [tokens-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: tokens-tests
+      why: the token source exchanges too often, shares a cache, loses the resolved project or leaks a secret
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_armor_tokens::tests::tokens_/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - "Credential decoding, default credentials and project recovery: B1301. The credential cache and reauthentication: B1302. The async refresh coordination: B1303."
+  - "The ArmorTokens trait, the transport and the project rule in the URL: B3733. The ModelArmorGuardrail construction and verdicts: B3732."
+  - "Building a Model Armor guardrail with this token source when the handler holds one: B8666 (LiveGuardrail::build)."
+  - "The access_token_provider constructor argument: no caller passes it in the proxy at the pin, so only the Vertex default is built."
+
+pitfalls:
+  - "LiteLLM's VertexBase.__init__ runs once per ModelArmorGuardrail, so a process-wide token cache would let one guardrail's credentials serve another's scans."
+  - "custom_llm_provider is the literal vertex_ai; passing gemini would make _ensure_access_token_async return an empty token and project."
+  - "A configured project_id must reach the lookup as the requested project, since B1301 lets an explicit project win over the one the credentials name."
+  - "The Model Armor credentials value is a path when that file exists and JSON text otherwise; a missing path is a decode error, never empty credentials."
+  - "B106's cases point an authorized_user credential's `token_uri` at the mock, so the credential's own token_uri must reach B1301's source; a source that always calls https://oauth2.googleapis.com/token fails every Model Armor case."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

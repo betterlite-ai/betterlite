@@ -1,0 +1,13 @@
+kind: helper
+name: provenance-plain-items
+call:
+  b3670:
+    function: input_item_provenance
+    raw_input:
+      - {"role": "user", "content": "u"}
+      - {"role": "assistant", "content": "a"}
+    expected_messages:
+      - {"role": "user", "content": "u"}
+      - {"role": "assistant", "content": "a"}
+env: {}
+compare: {ignore: []}

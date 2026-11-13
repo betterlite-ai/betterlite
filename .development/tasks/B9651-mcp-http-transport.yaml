@@ -1,0 +1,97 @@
+id: B9651
+title: MCP HTTP transport with credentials, redirect guard and error capture port
+description: >-
+  betterlite has the MCP client's session lifecycle (B4744) and its cleanup-aware HTTP client (B4743), but nothing sends a real HTTP request: B4743's McpHttpClient is generic over a `Transport` trait that only test fakes implement, and B4744's McpRuntime has a stdio implementation and no HTTP one. LiteLLM builds that client in MCPClient._create_httpx_client_factory (client.py L775-L815): an httpx2.AsyncClient with LiteLLM's TLS settings, the resolved credential or the AWS SigV4 signer as its auth, follow_redirects true, a request hook that drops a moved credential header when a request leaves the configured origin (credential_redirect_hook, types/mcp.py L364-L380) and a response hook that captures the start of every error body for diagnostics (capture_upstream_error_response, mcp_debug.py L579-L598). B4744 turned the configuration half into HttpClientConfig and RedirectGuard. This task builds the half that sends: one HTTP exchange per call, with the credential, the guard and the capture applied. Redirect following stays with the session transports (B9652), because the MCP SDK sends every request with follow_redirects=False and follows only same-origin redirects itself.
+
+
+  Code goes in crates/betterlite-mcp/src/client/http_transport.rs and crates/betterlite-mcp/src/client/http_transport/ (request.rs, send.rs, capture.rs, error.rs, tests.rs); the skeleton declares `pub mod http_transport;` in client.rs. Add betterlite-http to crates/betterlite-mcp/Cargo.toml for ProxiedClient and McpSigV4Auth.
+
+
+  Credentials reach the client. Today HttpClientConfig.auth is only an AuthSource flag and McpClient keeps `resolved_auth` and `aws_auth` as `Option<Box<dyn ResolvedAuth>>`, so no transport can apply them, and SigV4 needs the request body, which ResolvedAuth::authenticate never sees. Change McpClient.resolved_auth to `Option<Arc<dyn ResolvedAuth>>` and McpClient.aws_auth to `Option<Arc<McpSigV4Auth>>` (B4742's signer in betterlite-http, the type B8461 builds for aws_sigv4 servers). Add `pub credential: Option<RequestCredential>` to HttpClientConfig with `pub enum RequestCredential { Resolved(Arc<dyn ResolvedAuth>), AwsSigV4(Arc<McpSigV4Auth>) }`, filled by SessionClient::create_http_client_config: the resolved credential when there is one, else the AWS signer, the factory's fallback at L800-L801. HttpClientConfig's PartialEq compares the credential by Arc::ptr_eq and its Debug prints only which kind is set. Keep AuthSource as it is; B4744's tests read it.
+
+
+  Responses carry their head. B4743's `HttpResponse { status, body }` gains `headers: http::HeaderMap`, and `Transport::status_error` takes the response head (status, headers and the capture record below) instead of the bare status, so the error for a refused POST keeps WWW-Authenticate for B8460's upstream_auth_failure and the capture for B8194's describe_upstream_http_failure. Update every constructor in B4743's and B4744's code and fixtures; behavior there does not change.
+
+
+  request.rs. `McpHttpRequest { method: http::Method, url: url::Url, headers: http::HeaderMap, body: bytes::Bytes, read_timeout: Option<Duration> }` is the Transport::Request. read_timeout overrides the client timeout for reading only, which the legacy SSE GET needs (B9652).
+
+
+  send.rs. `McpHttpTransport` implements B4743's Transport. `McpHttpTransport::new(config: &HttpClientConfig, base: &HttpBase, capture: Arc<dyn ErrorCapture>)` with `HttpBase { proxy: Arc<ProxyPolicy>, tls: TlsPolicy }`, the gateway's proxy policy and resolved TLS policy, passed in by whoever builds the runtime. It builds one ProxiedClient with `ProxiedClient::outbound_with_tls` from a copy of base.tls whose verification follows config.tls (Enabled keeps verification on, Disabled turns it off, CaFile verifies against that file), so the client never follows redirects itself. One send: start from config.headers, let the request's own headers win per name, apply the credential (Resolved: ResolvedAuth::authenticate on method, url and headers; AwsSigV4: McpSigV4Auth::auth_flow on the full request with its body, every time, never cached), then run config.redirect_guard's apply against the request URL, then send with config.timeout for connect, write and pool and the read timeout (the request's, else config.timeout). A response with status 400 or higher goes through the capture port before send returns; any other response comes back untouched with its body unread when stream is true. A 401 answer on a Resolved credential gets one more try, as LiteLLM's ClientCredentialsBearerAuth does inside httpx's auth flow: await `ResolvedAuth::after_unauthorized(&self) -> Pin<Box<dyn Future<Output = bool> + Send + '_>>`, a new trait method in credentials.rs whose default resolves to false; on true apply authenticate again and send the same request once more, and that second answer stands whatever it is. Both answers go through the capture port, since LiteLLM's capture is an httpx response hook. A SigV4 credential never retries. B4667 implements after_unauthorized for client_credentials.
+
+
+  capture.rs. The capture is a port because its implementation is B8194's capture_error_response in betterlite-server, and betterlite-mcp cannot depend on betterlite-server. `pub trait ErrorCapture: Send + Sync` with one method that receives the exchange (method, URL, the request headers as sent, the request body, the status and response headers) and the body as a bounded stream of chunks, and returns `CapturedBody { retained: Vec<u8>, preview: String }`. The transport replaces the response body with `retained` (LiteLLM sets response._content to the prefix so an auth flow can still read a 401 body) and keeps the exchange and preview as the response's capture record. B9654 implements the port in betterlite-server; tests here use a recording fake.
+
+
+  error.rs. `McpHttpError` is this module's error enum: a send failure keeping reqwest's timeout and connect distinctions, a credential failure (ResolvedAuth's CredentialError or McpSigV4Error), a TLS or client build failure, a body read failure, and the status error built from a response head. Its Display never prints a header value or a body.
+
+
+  Tests in client::http_transport::tests run against a local axum server: config headers merged with request headers winning; a resolved credential applied; SigV4 signing covering the body (the x-amz-content-sha256 header equals the body's SHA-256 and Authorization starts with AWS4-HMAC-SHA256); the guard dropping a moved slot on a request to another origin and keeping it on the configured origin and on its http to https upgrade; a 307 returned unfollowed with its Location header; capture called exactly once for a 500 and a 401 and never for a 200 or a 302, with the retained prefix as the body afterwards; a 401 sent once more when after_unauthorized gives true (the second 401 returned as is) and returned at once when it gives false; status_error keeping WWW-Authenticate; a read timeout on paused time; TLS Disabled and CaFile building a client.
+scope:
+  paths:
+    - crates/betterlite-mcp/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-mcp/src/client/http_transport.rs
+    - crates/betterlite-mcp/src/client/http_transport/**
+    - crates/betterlite-mcp/src/client/cleanup/http_client.rs
+    - crates/betterlite-mcp/src/client/cleanup/recording.rs
+    - crates/betterlite-mcp/src/client/cleanup/tests.rs
+    - crates/betterlite-mcp/src/client/cleanup/tests/**
+    - crates/betterlite-mcp/src/client/sessions/factory.rs
+    - crates/betterlite-mcp/src/client/sessions/client.rs
+    - crates/betterlite-mcp/src/client/sessions/tests/**
+    - crates/betterlite-mcp/src/client/tools/tests/**
+    - crates/betterlite-mcp/src/credentials.rs
+    - crates/betterlite-mcp/src/credentials_tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/client_credentials.py#L341-L376
+    why: The auth flow that resends a 401 once with a refetched token; after_unauthorized is its Rust hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L775-L815
+    why: The client factory this task completes; the auth fallback order is L800-L801 and the hooks L802-L812.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L338-L380
+    why: crosses_origin and credential_redirect_hook, already ported as B4744's RedirectGuard; the guard runs on every request the client sends.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_debug.py#L558-L612
+    why: capture_upstream_error_response and the previews it feeds; which responses are captured and what replaces the body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/Readme.md
+    why: The custom HTTP client and redirect sections users read; credentials and hooks apply per request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L461-L495
+    why: SSE gets the factory and a timeout, streamable HTTP gets one prebuilt client with Timeout(self.timeout); both use this transport.
+  - url: https://pypi.org/project/mcp/2.3.0/
+    why: The MCP SDK version the oracle pins (tools/oracle/litellm/uv.lock); its shared/_httpx_utils.py sends every request with follow_redirects=False.
+dod:
+  - text: McpClient carries shareable credentials and HttpClientConfig hands the resolved credential, else the AWS signer, to the transport.
+    proof: [transport-tests, client-fixture-tests]
+  - text: Each send merges headers with the request winning, applies the credential to the exact request (SigV4 over the body), then the redirect guard, and never follows a redirect.
+    proof: [transport-tests]
+  - text: Every response with status 400 or higher goes through the capture port once, its body becomes the retained prefix, and the status error keeps the headers and the capture record.
+    proof: [transport-tests, client-fixture-tests]
+  - text: TLS verification, the CA file and the timeouts follow HttpClientConfig.
+    proof: [transport-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: transport-tests
+      why: Headers, credentials, the guard, capture or TLS differ from the factory's client.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^client::http_transport::/)'
+    - id: client-fixture-tests
+      why: The changed response head, credential fields or status_error broke the cleanup, session, tool or resource code built on them.
+      run: cargo nextest run --locked -p betterlite-mcp -p betterlite-core --no-tests=fail -E 'test(/^client::(cleanup|sessions|tools)::/) | test(/^credentials_tests::/) | test(/^api::mcp_client_resources::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Following redirects, SSE parsing and the MCP protocol: B9652 and B9653."
+  - "capture_upstream_error_response and the previews: B8194 (done). Wiring it into this port: B9654."
+  - "RedirectGuard and HttpClientConfig's other fields: B4744 (done). McpHttpClient's cleanup bookkeeping: B4743 (done)."
+  - "Choosing the credential for a server (resolve_v2_auth, the legacy auth source order) and building McpSigV4Auth from a record: B8461. ResolvedAuth implementations: B4667."
+  - "HTTP cases through the booted proxy: no route reaches an upstream through this transport until B9654 and the MCP mounts land; B140 adds them."
+pitfalls:
+  - "Apply the credential before the guard: httpx runs the auth flow first and the request hooks on the request it yields, so a credential the auth writes into a moved slot is still dropped across origins."
+  - "SigV4 signs the final header set and the exact body bytes, so nothing may add or change a header after auth_flow except the guard's removal; a later change breaks the signature."
+  - "Capture runs only for status 400 and up (httpx's is_error); a 3xx with a body is not captured even though it is not a success."
+  - "B4743's fetch reads a non-streamed body inside send and closes the body of a refused POST; the capture must happen inside the transport's send so its retained bytes are what that read sees."
+  - "McpSigV4Auth fetches credentials through its cache on every call; never sign once at build time, since temporary STS credentials expire."
+  - "ProxiedClient::outbound_with_tls already sets Policy::none for redirects and disables reqwest's environment proxy; do not build a bare reqwest::Client, or HTTP_PROXY from the environment would apply."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

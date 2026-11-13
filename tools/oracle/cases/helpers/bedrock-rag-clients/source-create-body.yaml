@@ -1,0 +1,15 @@
+kind: helper
+name: source-create-body
+call:
+  b3456:
+    step: create_data_source
+    vector:
+      vector_store_id: KB123
+      s3_bucket: my-bucket
+      s3_prefix: data/
+      aws_region_name: us-gov-west-1
+    environment: {}
+    kb_name: litellm-kb-abcd1234
+    data_source_id: DS789
+env: {}
+compare: {ignore: []}

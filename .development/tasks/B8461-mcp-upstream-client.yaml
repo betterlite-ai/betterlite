@@ -9,7 +9,7 @@ description: >-
   per-user env var reader (B4714's get_user_env_vars behind a trait so tests use a fake) and a
   clock, passed in by constructor.
 
-  UpstreamClients also holds B8254's `JwtSignerSlot` and exposes `jwt_signer(&self) -> Option<Arc<McpJwtSigner>>`, the slot's `get` read on every call (LiteLLM's get_mcp_jwt_signer). B8462's tools/list JWT gate in _get_tools_from_server reads the signer there. This task signs nothing itself.
+  UpstreamClients also holds B8254's `JwtSignerSlot` and exposes `jwt_signer(&self) -> Option<Arc<JwtSigner>>`, the slot's `get` read on every call (LiteLLM's get_mcp_jwt_signer). B8462's tools/list JWT gate in _get_tools_from_server reads the signer there. This task signs nothing itself.
 
 
   create_client(server, mcp_auth_header, extra_headers, stdio_env, subject_token, auth, raw_headers,
@@ -22,7 +22,7 @@ description: >-
   auth value comes from B4662's resolve_mcp_auth and the header name from resolved_token_header.
   Sampling and elicitation callbacks come from B8191's legacy callbacks, only when allow_sampling or
   allow_elicitation is set on the record; the sampling callback carries the caller auth, raw headers
-  and client ip as its operation context.
+  and client ip as its operation context. Fill SessionSettings.handlers (B9653's ServerRequestHandlers) from those legacy callbacks when allow_sampling or allow_elicitation is set.
 
 
   stdio: when B4716's stdio policy is disabled, fail with 403 and MCP_STDIO_DISABLED_MESSAGE. The env
@@ -74,7 +74,9 @@ description: >-
   serves a cache entry younger than 60 seconds keyed by (user_id, server_id) unless force_refresh,
   fails with "MCP per-user env vars require a database connection, but none is configured. Connect
   a database to your proxy to use per-user MCP env vars." without a database, and writes the cache
-  after a read. skip_blocked_stdio(server, listing) is true and logs at debug when the stdio policy
+  after a read. invalidate_user_env(user_id, server_id) drops that one entry (LiteLLM's
+  invalidate_user_env_vars_cache), so the next load reads the database again. B4724's env var routes call it after a
+  store or a clear through their UserEnvVarsCache port, and B8700 implements that port over it. skip_blocked_stdio(server, listing) is true and logs at debug when the stdio policy
   blocks the server's transport.
 
 scope:
@@ -90,8 +92,8 @@ scope:
   lint_tables: false
 
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1077-L1086
-    why: The per-user env var cache write.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1071-L1086
+    why: The per-user env var cache invalidate and write.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1666-L1685
     why: Sampling and elicitation callback creation.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3928-L4089
@@ -123,6 +125,10 @@ dod:
       static_headers interpolates globals over user values, re-reads once before raising the
       missing-variable error on the call path, and stays best-effort on the listing path.
     proof: [upstream-client-tests]
+  - text: >-
+      load_user_env serves a cache entry younger than 60 seconds unless force_refresh, and after
+      invalidate_user_env for that (user_id, server_id) the next load reads the database again.
+    proof: [upstream-client-tests]
 
 checks:
   optional: []
@@ -144,7 +150,6 @@ deviations:
     why: The flags only report the Python SDK version; with a current SDK both are true.
 
 out_of_scope:
-  - invalidate_user_env_vars_cache is B4724's; the env var routes call it.
   - "MCPClient sessions and transports: B4744. prepare_mcp_client and the credential provider: B4667."
   - "ensure_oauth_metadata_discovered and the discovery slots: B6762. _remember_upstream_initialize_instructions: B6592."
   - The helper cases cover the pure decisions (stdio command check, legacy source order, v2 header keep or drop); the HTTP cases come with the MCP routes in B136.

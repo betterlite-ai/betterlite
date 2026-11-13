@@ -1,0 +1,263 @@
+id: B095
+title: Skills pre-call hook, its adapters and the proxy hook
+description: >-
+  LiteLLM's SkillsInjectionHook has two halves. B3394 and B3395 built the post-call half in
+  crates/betterlite-core/src/api/skills/ (the hook struct, tool-call extraction, execute_code, execute_skill_tool,
+  attach_files_to_response, post_call_success and the Messages continuation loop). This task builds the pre-call half,
+  the three adapters that connect the hook to the real store, sandbox and Messages call, and the betterlite-server type
+  that makes the hook a proxy callback. Read hook.rs, hook/*.rs and continuation.rs with its folder first and reuse what
+  they define (SkillsInjectionHook, HookSettings, SkillFiles, SkillsSandbox, HookResponse, SkillsRequestData,
+  RequestMetadata, MessagesContinuation, ContinuationRequest, SkillsLoopError, LITELLM_SKILL_ID_PREFIX). Change none of
+  their files.
+
+
+  Where the code goes. In betterlite-core, the new module api::skills::wiring: crates/betterlite-core/src/api/skills/wiring.rs
+  and its folder. The architect's skeleton creates the empty file and declares it in skills.rs, so do not touch skills.rs.
+  Split it into wiring/pre_call.rs, wiring/lookup.rs, wiring/sandbox.rs, wiring/messages.rs and wiring/request.rs, with
+  tests in wiring/tests.rs or wiring/tests/; open each file that holds serde_json::Value with the same
+  `#![expect(clippy::disallowed_types, reason = "...")]` line hook.rs uses. In betterlite-server, the new module
+  hooks::litellm_skills: crates/betterlite-server/src/hooks/litellm_skills.rs and its folder (the skeleton adds the
+  `pub mod litellm_skills;` line to hooks.rs). Request maps are `betterlite_openai::openai_base_config::Object`
+  (serde_json Map), the same type ProxyCallback::pre_call receives.
+
+
+  Skill lookup (lookup.rs). Define
+
+      pub trait SkillLookup {
+          type Error: Display;
+          fn fetch_skill(&self, skill_id: &str, principal: &UserAPIKeyAuth) -> impl Future<Output = Result<Option<SkillRow>, Self::Error>> + Send;
+      }
+
+  in the style of SkillsSandbox in hook/execution.rs (impl Future, no async-trait). SkillRow stands for B858's skills row
+  (LiteLLM_SkillsTable), the type B1502's store returns and B1504's functions take. Implement it for B1502's
+  HostedSkillStore by calling its fetch_skill_from_db with the principal converted the way B1502 takes it; that call already
+  turns not-found, not-authorized and database errors into None, so its Error is std::convert::Infallible.
+  `fetch_skill_from_db(&self, skill_id, principal, lookup)` on the hook mirrors _fetch_skill_from_db: Ok(row) gives the
+  row, and Err(e) logs the warning "SkillsInjectionHook: Error fetching skill {skill_id}: {e}" and gives None.
+
+
+  Pre-call (pre_call.rs). `pub async fn pre_call<Lookup: SkillLookup + Sync>(&self, principal: &UserAPIKeyAuth, data: &mut
+  Object, call_type: CallType, lookup: &Lookup) -> Result<(), PreCallError>` in an `impl<PromptHandler: Sync, Sandbox: Sync>
+  SkillsInjectionHook<PromptHandler, Sandbox>` block mirrors async_pre_call_hook. It edits data in place, in this order:
+
+  1. Only CallType::Completion, CallType::Acompletion and CallType::AnthropicMessages go on; every other call type returns
+  Ok(()) with data untouched.
+
+  2. data["container"] must be a non-empty JSON object and its "skills" a non-empty array, otherwise return Ok(()). A
+  string container (an Anthropic container id) is skipped the same way.
+
+  3. Log "SkillsInjectionHook: Processing {n} skills" at debug, n being the array length including non-object entries.
+
+  4. Walk the skills in order. A non-object entry is skipped. skill_id is the entry's "skill_id" string, "" when absent.
+  An id starting with "litellm_skill_" is fetched through fetch_skill_from_db with the caller's principal; a row is kept
+  in order, and None logs the warning "SkillsInjectionHook: Skill '{skill_id}' not found in LiteLLM DB". Any other id is
+  a native Anthropic skill: LiteLLM collects it in a list it never reads, so it is left alone.
+
+  5. No rows kept: return Ok(()). The container stays in data and goes to the provider as sent.
+
+  6. Otherwise run `process_for_messages_api(&self, data, &rows, use_anthropic_format)` with use_anthropic_format true
+  only for AnthropicMessages. It mirrors _process_for_messages_api. tools is data["tools"] (absent or null is an empty
+  array; any other non-array is PreCallError::ToolsNotList). For each row in order: push B1504's
+  convert_skill_to_anthropic_tool(row) to tools; push extract_skill_content(row) to the contents list when it is Some and
+  non-empty; take extract_all_files(row) and, when non-empty, store it under the row's skill_id in an ordered map (a
+  repeated id replaces the earlier files) and count its paths ending ".py". Write tools back to data["tools"]. When the
+  contents list is non-empty, call B1504's inject_skill_content_to_messages(data, contents, use_anthropic_format). When the
+  files map is non-empty, append B1504's get_litellm_code_execution_tool_anthropic() to data["tools"] once, then set
+  the hook's own request-scoped state to code_execution_enabled true with the files map {skill_id: {path: SkillFiles}}.
+  Neither is written into data["litellm_metadata"] or data["metadata"], and the post-call never reads them from there
+  (a deviation below). Then remove data["container"] in every case,
+  and log at debug "SkillsInjectionHook: Messages API - converted {rows} skills to Anthropic tools, injected {contents}
+  skill contents, added litellm_code_execution tool with {py paths} modules". Call B1504's functions by these names in
+  betterlite_core::skills::content; if B1504 put them on a handler struct, that struct is the hook's PromptHandler
+  argument.
+
+  PreCallError is a thiserror enum in wiring/error.rs with ToolsNotList ("tools must be a list").
+
+
+  Request data for the post-call (request.rs). `pub fn skills_request_data(request: &Object, skills: RequestMetadata) -> SkillsRequestData` builds
+  B3395's record from the deployment call's request map: model (string, "" when absent), messages and tools (arrays,
+  empty when absent), max_tokens (u64, None when absent), and skills, the RequestMetadata that the pre-call stored in
+  the hook's request-scoped state for this request (default when the pre-call stored none). The request map's own
+  litellm_metadata and metadata are never read for the flag or the files.
+
+
+  Sandbox adapter (sandbox.rs). Implement B3394's SkillsSandbox for B1506's SkillsSandboxExecutor: execute(code,
+  skill_files) calls the executor with the code and the files and maps its result into SandboxOutcome (output, error,
+  and each generated file's name, mime_type and content_base64). The executor's own error is the adapter's Error.
+  `sandbox_executor(settings: &HookSettings, ...)` builds the executor the way SkillsInjectionHook builds it in LiteLLM,
+  passing settings.sandbox_timeout where B1506 accepts a timeout; B1506 documents that the timeout is not forwarded to
+  the session.
+
+
+  Messages adapter (messages.rs). `MessagesDispatchContinuation<Dispatch>` holds B1134's Messages dispatch service and
+  implements B3395's MessagesContinuation. create(request) mirrors `litellm.anthropic.acreate(model=, messages=, tools=,
+  max_tokens=)`: it builds B1134's dispatch input with exactly those four fields, no stream, no system, no credentials and
+  no api_base, awaits it, and returns Ok(Some(HookResponse::Dict(body))) with the Messages response body as a JSON map. A
+  streamed result cannot happen without stream=true and is an error. B1134's error is the adapter's Error; the loop logs
+  it and returns the first response, so it never reaches the client.
+
+
+  Proxy hook (betterlite-server hooks::litellm_skills). `SkillsProxyHook<Lookup, PromptHandler, Sandbox, Messages>` holds
+  the core SkillsInjectionHook, the lookup and the continuation. `new(lookup, prompt_handler, executor, messages,
+  settings: HookSettings)` is the constructor the proxy composition calls; HookSettings comes from B3394's
+  HookKwargs::default() (10 iterations, 120 seconds), since PROXY_HOOKS builds the hook with no kwargs. It implements
+  ProxyCallback: class_name "SkillsInjectionHook", overrides() with only request.pre_call set (LiteLLM's class overrides
+  async_pre_call_hook and the deployment hook, never the proxy-level success, failure, moderation, header or streaming
+  hooks), is_base_logger, enforces_request_content and use_native_lifecycle_hooks false, guardrail None. pre_call runs the
+  core pre_call and returns Ok(PreCallReturn::Unchanged) after editing data in place; a PreCallError becomes
+  ProxyHookError::Http with status 400 and the error text. `pub async fn post_call_success_deployment(&self,
+  request_data: &Object, response: HookResponse) -> Result<Option<HookResponse>, SkillsLoopError>` builds
+  skills_request_data(request_data, state) with the request's stored skills state and returns the core post_call_success with the Messages adapter. ProxyCallback has
+  no deployment-level method yet, so this inherent method is what the deployment hook loop calls once one exists.
+
+
+  Oracle helper. The skeleton registers this task's helper operation b095 in the core_ops group and adds its files to
+  the scope. Its input is call_type (a LiteLLM CallTypes string), data (the request map) and skills, a map from skill id
+  to one of found (a skills row in B858's wire shape, file_content base64), missing or error. The Rust adapter runs the
+  core pre_call with a scripted SkillLookup (error gives Err) and answers the edited map. The Python adapter builds
+  SkillsInjectionHook(), replaces LiteLLMSkillsHandler.fetch_skill_from_db with an async stub that returns the row,
+  returns None or raises RuntimeError for the case, awaits async_pre_call_hook(UserAPIKeyAuth(), DualCache(), data,
+  call_type), restores the stub, and answers the returned dict with every bytes value in litellm_metadata._skill_files
+  base64 encoded. The Rust adapter answers the stored skills state in that same shape, since the deviation below moves
+  the data out of the request map. The rows use instructions, description and small ZIP archives built for the case.
+
+
+  Size. The owned LiteLLM spans (main.py L118-L254 and L325-L348) are about 95 non-blank, non-comment lines, so this is
+  one task. Estimated 420 lines of Rust across both crates, 380 of tests, plus the adapters the skeleton adds. The request
+  body is already parsed JSON and the base64 decode is the base64 crate's, so there is no new byte decoder and no fuzz
+  target.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/skills/wiring.rs
+    - crates/betterlite-core/src/api/skills/wiring/**
+    - crates/betterlite-server/src/hooks/litellm_skills.rs
+    - crates/betterlite-server/src/hooks/litellm_skills/**
+    - tools/oracle/cases/helpers/skills-pre-call/**
+    - "tools/oracle/fuzz/corpus/helper_case/skills_pre_call-*"
+    - tools/oracle/helpers/b095.py
+    - tools/oracle/helpers/b095/**
+    - tools/oracle/src/helpers/core_ops/b095.rs
+    - tools/oracle/src/helpers/core_ops/b095/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L118-L182
+    why: async_pre_call_hook, the call type gate, the container checks, the prefix split and the not-found warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L184-L254
+    why: _process_for_messages_api, tool order, content injection, the code execution tool, the stored skills state and the container removal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L325-L348
+    why: _fetch_skill_from_db and its warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L106-L116
+    why: the constructor defaults the proxy hook passes (no kwargs).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L371-L438
+    why: how the post-call record is built from the request map and the stored skills state.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L199-L212
+    why: fetch_skill_from_db, which already returns None for missing, unauthorized and failed reads (B1502 builds it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/prompt_injection.py#L128-L184
+    why: inject_skill_content_to_messages, called with use_anthropic_format (B1504 builds it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/prompt_injection.py#L274-L307
+    why: convert_skill_to_anthropic_tool, whose name keeps the litellm_skill_ prefix the post-call matches on (B1504 builds it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/code_execution.py#L153-L170
+    why: get_litellm_code_execution_tool_anthropic, appended once when any skill has files (B1504 builds it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/messages/__init__.py#L27-L83
+    why: acreate, the call the Messages adapter stands for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/__init__.py#L20-L30
+    why: PROXY_HOOKS registers SkillsInjectionHook as litellm_skills on every proxy, with no config key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1349-L1370
+    why: _add_proxy_hooks builds each PROXY_HOOKS class with no kwargs (B8399 owns this loop).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1498-L1531
+    why: the deployment hook loop that calls the post-call half after each deployment call (not built here).
+dod:
+  - text: pre_call leaves data untouched for call types other than completion, acompletion and anthropic_messages, for a missing, empty or non-object container, and for missing, empty or non-array skills.
+    proof: [pre-call-gate]
+  - text: Only ids starting with "litellm_skill_" are fetched, in order, with the caller's principal; non-object entries are skipped, other ids are left alone, a missing row and a failed fetch are both skipped, and with no row kept the container stays in data.
+    proof: [pre-call-gate]
+  - text: With rows kept, tools get one Anthropic-style tool per row after the caller's tools, skill content goes to top-level system for anthropic_messages and to the messages system entry otherwise, and the container is removed even when it also held native skills.
+    proof: [pre-call-transform]
+  - text: When any row has files, the litellm_code_execution tool is appended once after the skill tools, and the request's skills state gets the files per skill id and code execution enabled; with no files neither the tool nor the state is added, and the request's metadata keys are never touched.
+    proof: [pre-call-transform]
+  - text: A non-array tools value comes back as PreCallError, and the proxy hook answers it as a 400 naming the field.
+    proof: [pre-call-transform, proxy-hook]
+  - text: skills_request_data reads model, messages, tools and max_tokens from the request map and takes the flag and files from the stored skills state, ignoring any _litellm_code_execution_enabled or _skill_files a client sent in litellm_metadata or metadata.
+    proof: [request-data]
+  - text: The Messages adapter sends exactly model, messages, tools and max_tokens to B1134's dispatch and returns the response body as a Dict, and the sandbox adapter maps B1506's result into SandboxOutcome.
+    proof: [adapters]
+  - text: SkillsProxyHook reports class_name SkillsInjectionHook with only request.pre_call overridden, edits data in place on pre_call, and post_call_success_deployment runs the code loop end to end with a scripted model and sandbox.
+    proof: [proxy-hook]
+  - text: The pre-call matches the pinned hook on scripted skill rows for every case.
+    proof: [oracle, helper-python, helper-case-corpus, new-oracle-cases]
+  - text: Every mutant in the wiring and proxy hook modules is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: pre-call-gate
+      why: the call type gate, the container checks, the prefix split or the fetch handling is wrong or untested
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::wiring::tests::pre_call_gate/)'
+    - id: pre-call-transform
+      why: tool order, content injection, the code execution tool, the stored skills state or the container removal is wrong or untested
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::wiring::tests::pre_call_transform/)'
+    - id: request-data
+      why: the post-call request record is built wrong from the request map
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::wiring::tests::request_data/)'
+    - id: adapters
+      why: the Messages or sandbox adapter forwards the wrong fields or maps results wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::wiring::tests::adapters/)'
+    - id: proxy-hook
+      why: the ProxyCallback impl, the 400 mapping or the deployment post-call entry is wrong or untested
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^hooks::litellm_skills::/)'
+    - id: helper-python
+      why: the strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b095)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b095 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b095/pyrightconfig.json
+    - id: helper-case-corpus
+      why: the added helper cases have no seed in the helper corpus or the shared parser rejects them
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/skills_pre_call-*")" &&
+        grep -lE '^[[:space:]]+b095:' tools/oracle/fuzz/corpus/helper_case/skills_pre_call-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: new-oracle-cases
+      why: no new oracle case exists on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/skills-pre-call)"
+oracle_cases:
+  - tools/oracle/cases/helpers/skills-pre-call/native-skills-pass-through.yaml
+  - tools/oracle/cases/helpers/skills-pre-call/instructions-only-messages.yaml
+  - tools/oracle/cases/helpers/skills-pre-call/files-add-code-execution.yaml
+  - tools/oracle/cases/helpers/skills-pre-call/chat-system-message-inserted.yaml
+  - tools/oracle/cases/helpers/skills-pre-call/existing-tools-and-metadata-kept.yaml
+  - tools/oracle/cases/helpers/skills-pre-call/missing-skill-keeps-container.yaml
+  - tools/oracle/cases/helpers/skills-pre-call/fetch-error-skipped.yaml
+  - tools/oracle/cases/helpers/skills-pre-call/mixed-native-dropped.yaml
+  - tools/oracle/cases/helpers/skills-pre-call/other-call-type-ignored.yaml
+  - tools/oracle/cases/helpers/skills-pre-call/skills-not-a-list.yaml
+deviations:
+  - what: The code execution flag and the skill files stay in the hook's request-scoped state. They are not written into litellm_metadata, and the post-call ignores any such keys a client sends.
+    why: LiteLLM writes them into litellm_metadata and reads them back, also from client metadata (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L398-L405), and strips nothing (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L376-L384), so a client could start the sandbox loop with its own files.
+  - what: A non-array tools value answers 400 naming the field.
+    why: LiteLLM raises AttributeError or TypeError there and answers 500; docs/compatibility.md rejects a value of the wrong declared type with a 400.
+  - what: The proxy hook edits the request map in place and returns PreCallReturn::Unchanged instead of returning the map.
+    why: LiteLLM returns the same dict it mutated, so the request that goes on is identical.
+out_of_scope:
+  - "_extract_tool_calls, _execute_code, _execute_skill_tool, _attach_files_to_response and __init__ (main.py L106-L116, L440-L484, L606-L713, L878-L914) are B3394's."
+  - "async_post_call_success_deployment_hook and _execute_code_loop_messages_api (main.py L371-L438, L486-L604) are B3395's; call post_call_success, do not copy it."
+  - "_process_non_anthropic_model, _is_anthropic_model, _execute_code_loop, _execute_code_tool, _first_choice and the _Chat* protocols (main.py L47-L86, L256-L323, L350-L369, L715-L876) have no caller at the pin."
+  - "SkillPromptInjectionHandler and the code execution tool definitions (prompt_injection.py, code_execution.py) are B1504's."
+  - "LiteLLMSkillsHandler.fetch_skill_from_db and the skill cache are B1502's; SkillsSandboxExecutor is B1506's; acreate and the Messages dispatch are B1134's."
+  - "Registering the hook as litellm_skills in the proxy's hook list (PROXY_HOOKS and _add_proxy_hooks) is B8399's; this task only provides SkillsProxyHook::new."
+  - "litellm.utils.async_post_call_success_deployment_hook, the loop that calls the post-call half for each callback, belongs to the call wrapper tasks (B5367, B5368)."
+  - "litellm/skills/__init__.py and litellm/proxy/hooks/litellm_skills/__init__.py only re-export names; the Python package re-exports are B7884's."
+  - "HTTP oracle cases through /v1/messages and /v1/chat/completions come with the task that registers the hook, since no route reaches it before that."
+pitfalls:
+  - The container is removed only when at least one litellm_skill_ row was found, and then the native Anthropic skills in it are dropped too; with no row found the whole container reaches the provider.
+  - Tools stay in Anthropic shape (name, description, input_schema) even for chat completions, since _process_for_messages_api runs for every accepted call type.
+  - A skill_id that is absent counts as "", so it is a native skill and never fetched.
+  - The code execution tool goes in once per request, after every skill tool, and only when some row had files; a skill with only instructions adds a tool and system text but no metadata.
+  - A skill fetched twice adds two tools, but its files land once under the same skill_id key.
+  - The debug count is the raw skills array length, non-object entries included, while the summary line counts only .py paths of the files map.
+  - The continuation call sends only model, messages, tools and max_tokens, with no api_key or api_base from the deployment, so it resolves credentials like a plain SDK call.
+  - LiteLLM reads _litellm_code_execution_enabled and _skill_files from the client-supplied metadata too; betterlite does not, so a test must send both keys in litellm_metadata and metadata and see the loop stay off.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 4

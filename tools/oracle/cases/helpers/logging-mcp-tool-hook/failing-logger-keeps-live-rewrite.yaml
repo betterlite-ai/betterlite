@@ -1,0 +1,15 @@
+kind: helper
+name: logging-mcp-tool-hook-failing-logger-keeps-live-rewrite
+call:
+  b9650:
+    result:
+      content: [{type: text, text: hello}]
+      structured_content: {answer: 42}
+    dynamic_success: []
+    global_success:
+      - name: broken-guard
+        behavior: rewrite_live_then_fail
+        content: [{type: text, text: blocked}]
+        structured_content: {blocked: true}
+env: {}
+compare: {ignore: []}

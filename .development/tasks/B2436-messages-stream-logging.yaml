@@ -4,7 +4,10 @@ description: >-
   Split complete logging/format/close methods from B979 into api::messages_stream_logging. Own the base
   constructor,_handle_streaming_logging,get_async_streaming_response_iterator,_convert_chunk_to_sse_format
   at messages/streaming_iterator.py L388-L466, _dispatch_pending_deferred_logging,_bill_collected_chunks,
-  _abort_upstream at L527-L576 and _fire_detached_failure_hook at L699-L710. B979 owns the pump and calls this
+  _abort_upstream at L527-L576 and _fire_detached_failure_hook at L699-L710. It also adds the slot on B247's
+  logging state that _fire_detached_failure_hook reads, and the arming side `_arm_detached_stream_failure_hook`
+  (common_request_processing.py L3135-L3161, https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3135-L3161),
+  so a messages stream that fails after the client left still runs the failure hook. B979 owns the pump and calls this
   leaf. Store request body/start time/optional first-chunk time in per-stream state with an injected clock.
 
   B3605 owns the PassThroughEndpointLogging constructor, B3608 _route_streaming_logging_to_handler and B3609 chunk_processor and schedule_stream_failure_logging; none has a task file yet. Define explicit

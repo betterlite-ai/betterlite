@@ -13,13 +13,14 @@ description: >-
 
   `LoopbackExecutor` holds the app service to call (the same axum router the gateway serves, taken as a tower
   `Service` the caller passes in, so no network is used), the parent request's URL, its `root_path` (the mount
-  prefix, empty by default), its headers, its peer address and the bool `logging_disabled`. The caller builds it once
-  for each client request. `logging_disabled` is true when the parent request's dynamic callback params carry
-  `turn_off_message_logging: true`. LiteLLM reads that from a context variable at call time. Here the caller reads it and
-  passes it in.
+  prefix, empty by default), its headers and its peer address. The caller builds it once for each client request
+  (B100's `executor_for`). It holds no privacy flag: LiteLLM's execute reads `turn_off_message_logging` from the
+  inherited privacy context variable each time it is called (native_compaction.py L42), and B336 sets that variable
+  right before the summary call. So the flag is an argument of each call.
 
-  Its `execute(protocol, payload, parent_model)` method implements B336's executor trait, with the arguments LiteLLM
-  uses: `protocol` is `chat` or `messages`, `payload` is a JSON object, `parent_model` is an optional string. It does this:
+  Its `execute(protocol, payload, parent_model, logging_disabled)` method implements B336's executor trait: `protocol`
+  is `chat` or `messages`, `payload` is a JSON object, `parent_model` is an optional string and `logging_disabled` is the
+  bool B336 decided for this summary call. It does this:
   1. The child path is `/v1/chat/completions` for chat and `/v1/messages` for messages. The URL is the parent URL with
      its path replaced by `root_path` (trailing slashes cut) plus the child path, and with the query and fragment removed.
   2. The child headers are every parent header except `content-length`, `x-litellm-call-id`,
@@ -30,7 +31,8 @@ description: >-
   3. The model name is `payload["model"]` as text. A missing or non-string model is `MissingModel`. LiteLLM raises a
      KeyError there.
   4. Around the call, B336's `native_compaction_call(parent_model, model)` scope is held, and the message logging
-     privacy flag is set to `logging_disabled` OR the inherited value (B188 owns that scope). Both scopes must also be on
+     privacy flag (B188's PrivacyContext) is set to the call's `logging_disabled`. B336 already ORed in what the parent
+     inherited, and LiteLLM runs the child in a fresh context, so nothing else is inherited. Both scopes must also be on
      the task that runs the child request, because LiteLLM starts it with a fresh context copy and the scopes were set
      inside that task. Spawn the child as its own tokio task and set the scopes inside it.
   5. The child sends POST to the URL with the headers and the payload as JSON, with the parent's peer address on the
@@ -41,8 +43,8 @@ description: >-
      `InvalidChildBody` with text "Native compaction child returned an invalid JSON object". The result is the parsed map.
 
   `with_proxy_compaction_executor` in LiteLLM puts the executor into a context variable for the length of one call and
-  resets it. A Rust call cannot read a context variable, so this task builds only the executor. The request pipeline
-  passes it to B336's entry point, and that wiring is a call site (common_request_processing.py L2626), not this task.
+  resets it. A Rust call cannot read a context variable, so this task builds only the executor. B100 builds one per
+  client request, and B9810 passes it to B336's compact_to_fit on the gateway's chat, messages and responses routes.
 
 scope:
   paths:
@@ -75,6 +77,8 @@ dod:
     proof: [executor-tests]
   - text: A payload without a string model gives MissingModel and sends no request.
     proof: [executor-tests]
+  - text: Two calls on one executor with different logging_disabled arguments each filter the redaction opt-out header and set the privacy scope by their own argument.
+    proof: [executor-tests]
   - text: Every LoopbackError maps to HTTP 400 with the type invalid_request_error.
     proof: [error-tests]
 
@@ -97,8 +101,8 @@ checks:
 oracle_cases: []
 
 deviations:
-  - what: logging_disabled is passed in when the executor is built. LiteLLM reads turn_off_message_logging from a context variable when the child is sent.
-    why: Rust has no context variables, and the value cannot change during one client request.
+  - what: logging_disabled is the fourth argument of execute, passed by B336's summary call. LiteLLM's execute reads turn_off_message_logging from the inherited privacy context variable that B336 sets just before that call.
+    why: Rust has no context variables, so B336 passes the value it would have set. The value depends on the payload being compacted, so it can't be fixed when the executor is built.
   - what: A missing or non-string model is MissingModel (HTTP 400). LiteLLM raises KeyError and the proxy turns it into a 500.
     why: B336 always sets a model, so only a bug reaches this, and a typed error is clearer.
   - what: The child request goes through the tower service in memory. LiteLLM uses its own ASGI client (litellm/llms/custom_httpx/asgi_handler.py).
@@ -107,7 +111,7 @@ deviations:
 out_of_scope:
   - "CompactionExecutor, native_compaction_call, the compaction state and the summary request: B336."
   - "The privacy scope itself (inherit_message_logging_privacy): B188."
-  - "The call site that wraps the model call (common_request_processing.py L2626): the request pipeline."
+  - "Building the executor from the client request: B100. Passing it to B336's compact_to_fit on the gateway routes (common_request_processing.py L2626, native_compaction.py L86-L90): B9810."
   - "get_async_asgi_client (litellm/llms/custom_httpx/asgi_handler.py): B171 inventory, replaced here by the tower service."
 
 pitfalls:

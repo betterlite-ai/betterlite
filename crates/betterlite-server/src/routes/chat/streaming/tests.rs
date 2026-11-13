@@ -2,10 +2,13 @@
 
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
+use std::time::Instant;
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_core::dispatch::error::DispatchError;
+use betterlite_core::operation::chat::ChatFailure;
 use betterlite_http::error::HttpError;
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::stream::SseParser;
@@ -17,7 +20,7 @@ use tower::ServiceExt as _;
 use uuid::Uuid;
 
 use super::{RelayState, next_sse};
-use crate::routes::chat::chat_routes_with_call_id;
+use crate::routes::chat::{CallContext, ErrorLayer, chat_routes_with_call_id, dispatch_failure};
 use crate::server::chat_setup::chat_executor;
 
 fn executor_for(source: &str) -> ChatExecutor {
@@ -229,6 +232,7 @@ struct ErrorFields {
     #[serde(rename = "type")]
     error_type: String,
     code: String,
+    litellm_call_id: Option<String>,
 }
 
 fn sentinel_source(sentinel: &str) -> String {
@@ -284,4 +288,28 @@ async fn stream_error_ends_relay(#[case] input: Result<Vec<u8>, HttpError>) {
     let (event, remaining) = next_sse(state).await.unwrap();
     event.unwrap_err();
     assert!(next_sse(remaining).await.is_none());
+}
+
+#[rstest]
+#[case::mismatched_operation(ChatFailure::Mismatched)]
+#[case::internal(ChatFailure::Internal {
+    message: String::from("the provider call could not run"),
+})]
+#[tokio::test]
+async fn provider_framework_tests_behavior(#[case] failure: ChatFailure) {
+    let layer = ErrorLayer::new().unwrap();
+    let call = CallContext {
+        id: "call-7",
+        include_in_body: true,
+        started: Instant::now(),
+        errors: &layer,
+    };
+    let error = DispatchError::Chat { source: failure };
+    let response = dispatch_failure(error, &call, None);
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let reply: ErrorReply = serde_json::from_slice(&body).unwrap();
+    assert_eq!(reply.error.error_type, "internal_server_error");
+    assert_eq!(reply.error.code, "500");
+    assert_eq!(reply.error.litellm_call_id.as_deref(), Some("call-7"));
 }

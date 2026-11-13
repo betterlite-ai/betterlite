@@ -13,7 +13,16 @@ cargo-fuzz = true
 
 [dependencies]
 betterlite-auth = { path = ".." }
+betterlite-secrets = { path = "../../betterlite-secrets" }
 libfuzzer-sys = "0.4.9"
+secrecy = "0.10.3"
+
+[[bin]]
+name = "auth_cache"
+path = "fuzz_targets/auth_cache.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "budget_window"
@@ -23,8 +32,22 @@ doc = false
 bench = false
 
 [[bin]]
+name = "jwt_claims"
+path = "fuzz_targets/jwt_claims.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "resource_hint"
 path = "fuzz_targets/resource_hint.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "session_token_codec"
+path = "fuzz_targets/session_token_codec.rs"
 test = false
 doc = false
 bench = false

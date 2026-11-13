@@ -9,7 +9,8 @@ description: >-
   resources and never imports Shared or calls an app mount. B8640 consumes one Arc of its result
   for both authenticated and public routes; B102 later tests that integration over HTTP.
 
-  RuntimeInputs carries the existing B068 CostCalculator, B1717 CostRecorder, B193 catalog and
+  RuntimeInputs carries the `stream_assembler: Arc<dyn StreamAssembler>` (B250's port, the one value B8610 builds) for
+  B3605's PassThroughEndpointLogging success handler, so this task builds no assembler of its own, and the existing B068 CostCalculator, B1717 CostRecorder, B193 catalog and
   B205 effective model-info lookup, B190 logging payload services, the B191 worker owned by
   B012's logging integration, B173 pooled HTTP
   client and its server-owned task tracker, B198 clock/ID source, B3602 credential router, B8611

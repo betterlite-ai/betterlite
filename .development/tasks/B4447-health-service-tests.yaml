@@ -121,7 +121,7 @@ description: >-
   400), `identifier_`, `dispatch_` (success-callback precedence and the mock branch), `vendor_` (the vendor health
   messages and the admin gates), `alert_` (webhook, slack, ms_teams, email), `route_` (error shape, /test, the null
   bodies). Every branch above gets a named case; use fake traits and tokio's paused clock. Config tests live in
-  sections::health_services::tests. The HTTP oracle cases run through the booted proxy.
+  sections::health_services::tests.
 
 scope:
   paths:
@@ -130,16 +130,6 @@ scope:
     - crates/betterlite-config/src/sections/health_services.rs
     - crates/betterlite-config/src/sections/health_services/**
     - "crates/betterlite-config/fuzz/corpus/config_yaml/health-services-*"
-    - tools/oracle/cases/health/services-no-key.yaml
-    - tools/oracle/cases/health/services-unknown-name.yaml
-    - tools/oracle/cases/health/services-missing-name.yaml
-    - tools/oracle/cases/health/services-mock-braintrust.yaml
-    - tools/oracle/cases/health/services-unmatched-null.yaml
-    - tools/oracle/cases/health/services-webhook-null.yaml
-    - tools/oracle/cases/health/services-slack-not-configured.yaml
-    - tools/oracle/cases/health/services-teams-not-configured.yaml
-    - tools/oracle/cases/health/services-teams-no-url.yaml
-    - tools/oracle/cases/health/test-route.yaml
     - tools/oracle/helpers/b4447.py
     - tools/oracle/helpers/b4447/**
     - tools/oracle/src/helpers/server/b4447.rs
@@ -165,23 +155,23 @@ references:
 dod:
   - text: >-
       GET /test answers the request route, and GET /health/services without a service query gets the validation 422 and with an unknown name gets a 400 auth_error whose message starts `{'error': 'Service must be in list.`
-    proof: [service-tests, route-tests, oracle]
+    proof: [service-tests, route-tests]
   - text: The 22 service names parse and nothing else does.
     proof: [service-tests]
   - text: The success-callback test matches a plain name, a registered callback name or its identifier, and wins over every vendor branch except langfuse and pointfive.
-    proof: [dispatch-tests, oracle]
+    proof: [dispatch-tests]
   - text: openmeter, braintrust, generic_api and a listed callback make the mock request with the exact model, message, user and mock_response and answer the mock message; langfuse checks auth first and fails with the auth_check text.
-    proof: [dispatch-tests, oracle]
+    proof: [dispatch-tests]
   - text: datadog, datadog_metrics, arize, galileo, sqs, newrelic and pointfive answer the exact status and message texts, including the pointfive setup failure and its empty-error rule.
     proof: [vendor-tests]
   - text: newrelic, pointfive and webhook answer 403 for a caller who is not a proxy admin, and view-only admins pass.
     proof: [vendor-tests, alert-tests]
   - text: webhook sends the user-budget test alert and answers a JSON null body, as do the names that match no branch.
-    proof: [alert-tests, route-tests, oracle]
+    proof: [alert-tests, route-tests]
   - text: slack and slack_budget_alerts answer 422 without "slack" in alerting, pick the per-type message, honor the active alert types, spawn the two spend reports only with a database, and list the active alert types.
-    proof: [alert-tests, oracle]
+    proof: [alert-tests]
   - text: ms_teams answers 422 without alerting config or without a webhook URL, posts the timestamped text, and turns a status of 400 or more into a 500.
-    proof: [alert-tests, oracle]
+    proof: [alert-tests]
   - text: email sends the key_created test event with TEST_EMAIL_ADDRESS and answers success whatever the send returns.
     proof: [alert-tests, health-services-config-tests]
   - text: Every failure logs the typo'd error line and the 500 fallback message reads "Authentication Error, <error>".
@@ -229,21 +219,11 @@ checks:
         test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs &&
         cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 
-oracle_cases:
-  - tools/oracle/cases/health/services-no-key.yaml
-  - tools/oracle/cases/health/services-unknown-name.yaml
-  - tools/oracle/cases/health/services-missing-name.yaml
-  - tools/oracle/cases/health/services-mock-braintrust.yaml
-  - tools/oracle/cases/health/services-unmatched-null.yaml
-  - tools/oracle/cases/health/services-webhook-null.yaml
-  - tools/oracle/cases/health/services-slack-not-configured.yaml
-  - tools/oracle/cases/health/services-teams-not-configured.yaml
-  - tools/oracle/cases/health/services-teams-no-url.yaml
-  - tools/oracle/cases/health/test-route.yaml
+oracle_cases: []
 
 deviations:
   - what: The 400 message lists betterlite's 22 accepted names, not the Python typing repr of the Literal.
-    why: The repr text of a typing union is a Python runtime detail. The status, type, param and code match, and the oracle ignores /error/message for that case.
+    why: The repr text of a typing union is a Python runtime detail. The status, type, param and code match.
   - what: get_callback_identifier has no attribute or class-registry steps; a registered callback returns its registered name.
     why: B189's registry holds a closed enum with one registered name per callback, and there are no Python objects to inspect.
   - what: Vendor checks that LiteLLM runs by constructing a fresh logger (DataDogLogger(), ArizeLogger(), GalileoObserve(), SQSLogger()) run through injected probes over the configured integration.

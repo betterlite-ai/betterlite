@@ -4,7 +4,7 @@ description: >-
   Finish server::spend::callbacks and ::capture_route. Own _ProxyDBLogger construction,
   success/offload/run_spend_event, _PROXY_track_cost_callback, its run_spend_event facade
   and the two typed interaction predicates. Register the callback and async-success entry
-  only when a database exists, sharing B1708's producer, and register B4085's shadow evaluation logger (ShadowEvalLogger) beside it; drain
+  only when a database exists, sharing B1708's producer, and register B118's ShadowEvalLogger beside it, built from B4083's job loader and funnel counters, B4084's router provider, B4085's pipeline, a clock and the server TaskTracker drained at shutdown; pass the request's captured GuardrailRequestSnapshot into SuccessRequest.guardrail_snapshot for proxied calls; drain
   the producer on shutdown with its configured timeout. B1707 handles eligible event
   building/decoding. A build failure warns and executes in process; a decode failure logs
   and discards. Store-body selection comes from B1714. B1720 owns failure callbacks and
@@ -21,7 +21,7 @@ description: >-
   intersect the served deployment through B1742. Eligible nonnull cost settles via B1719;
   false charged stops all subsequent cache/alert work. Otherwise submit B8376 cached-object
   updates to an owned worker and await B4025's customer_spend_alert. Ineligible cost releases
-  an existing reservation. Missing-cost interactions with absent usage use B098's shared
+  an existing reservation. Missing-cost interactions with absent usage use B3481's shared
   predicates: retain a reservation only for a pollable id-bearing queued/in_progress
   response when BACKGROUND_INTERACTION_COST_POLLING_ENABLED is true. Read the flag from B3496's PollSettings (its enabled
   field, loaded by PollSettings::from_env_map: default true, lowercase comparison to true without trimming); do not parse the env setting here. Other expected-no-usage
@@ -93,7 +93,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/batch_utils.py#L36-L68
     why: Pure batch finality extracted below B1040's dependency on spend callbacks.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L203-L232
-    why: B098's common pollability and expected-missing-usage predicates.
+    why: B3481's common pollability and expected-missing-usage predicates.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10912-L10942
     why: Open-source startup skips the absent enterprise managed-batch polling hook.
 dod:
@@ -151,7 +151,7 @@ deviations:
 out_of_scope:
   - B1720 owns failure/enrichment/tag/eligibility/metadata helpers in proxy_track_cost_callback.py; B1719 owns its reservation and database-counter settlement helpers.
   - Every other spend_management_endpoints.py handler belongs to B1721-B1727 or B1729-B1732; B1704 owns visibility and B1728 owns list-query construction.
-  - B1039/B1040 retain batch output/finalization utilities beyond batch_cost_is_final; B098 retains interaction polling, settlement and response types.
+  - B1039/B1040 retain batch output/finalization utilities beyond batch_cost_is_final; B3481 retains interaction polling and response types; B3496 settlement.
   - B8376 owns proxy_server.py update_cache and its batched cache reads, B3015, B2321 and B3014 own the spend counters, B8372 registers the capture job at startup, and the enterprise hook debug-only skip is not built because it runs only with litellm_enterprise.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as batch_cost_status in the server group. Replace the stub Op in tools/oracle/src/helpers/server/batch_cost_status.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/batch_cost_status.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

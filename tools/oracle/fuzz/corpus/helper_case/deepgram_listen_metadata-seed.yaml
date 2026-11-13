@@ -1,0 +1,41 @@
+kind: helper
+name: deepgram-listen-metadata-seed
+call:
+  deepgram_listen_metadata:
+    calls:
+    - function: query_identity
+      query: model=nova-3&model=nova-2&language=en&language=multi&redact=true&redact=false
+      api_base: null
+      upstream_url: ""
+      messages: []
+    - function: exact_streaming_price
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?model=nova-3&language=multi
+      messages: []
+    - function: addon_flags
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?redact=true&diarize_model=1
+      messages: []
+    - function: channel_precedence
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?channels=2
+      messages:
+      - {type: Metadata, channels: 2}
+      - {type: Results, channel_index: [0, 1]}
+    - function: duration_precedence
+      query: ""
+      api_base: null
+      upstream_url: ""
+      messages:
+      - {type: Metadata, duration: 1.5}
+    - function: final_transcript
+      query: ""
+      api_base: null
+      upstream_url: ""
+      messages:
+      - {type: Results, is_final: true, channel: {alternatives: [{transcript: hello}]}}
+compare: {ignore: []}
+env: {}

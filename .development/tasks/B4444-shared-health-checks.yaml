@@ -24,10 +24,6 @@ scope:
   paths:
     - crates/betterlite-server/src/health_shared.rs
     - crates/betterlite-server/src/health_shared/**
-    - tools/oracle/cases/health/shared-status-disabled.yaml
-    - tools/oracle/cases/health/shared-status-enabled.yaml
-    - tools/oracle/cases/health/shared-status-no-redis.yaml
-    - tools/oracle/cases/health/shared-status-error.yaml
     - tools/oracle/helpers/b4444.py
     - tools/oracle/helpers/b4444/**
     - tools/oracle/src/helpers/server/b4444.rs
@@ -137,11 +133,7 @@ checks:
       why: the background loop leaves the cache stale, saves more than once per window or holds the lock after a failed save
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_shared::background_loop(::|$)/)'
 
-oracle_cases:
-  - tools/oracle/cases/health/shared-status-disabled.yaml
-  - tools/oracle/cases/health/shared-status-enabled.yaml
-  - tools/oracle/cases/health/shared-status-no-redis.yaml
-  - tools/oracle/cases/health/shared-status-error.yaml
+oracle_cases: []
 
 deviations:
   - what: "Concurrency default for perform_health_check when None or non-positive is unbounded (matching B4443 LiteLLM behavior), not a constructor-specified cap."

@@ -195,8 +195,8 @@ deviations:
       parameter precedence.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L100-L127
 out_of_scope:
-  - Logger lifecycle and batching, owned by B112.
-  - LangSmith HTTP delivery, owned by B112.
+  - Logger lifecycle and batching, owned by B8748.
+  - LangSmith HTTP delivery, owned by B8748.
   - Dynamic callback parameters and cache, owned by other tasks.
 pitfalls:
   - Default run name is 'LLMRun' from LANGSMITH_DEFAULT_RUN_NAME environment

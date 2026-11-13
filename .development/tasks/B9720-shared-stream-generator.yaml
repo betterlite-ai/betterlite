@@ -1,0 +1,161 @@
+id: B9720
+title: Shared streaming data generator for Anthropic messages and A2A streams
+description: >-
+  LiteLLM has two proxy streaming generators. B8604 builds proxy_server.py's async_data_generator for chat and Responses. This task builds the other one, ProxyBaseLLMRequestProcessing.async_streaming_data_generator (litellm/proxy/common_request_processing.py L3866-L4017), with the SSE flavor the /v1/messages route uses, async_sse_data_generator (L4019-L4054), its serializers return_sse_chunk and _sse_chunk_serializer (L3780-L3806), _withheld_provider_output (L269-L270) and _should_return_raw_model_name (L279-L283). It also builds the three sse_keepalive.py helpers the generator calls and no Rust code has yet: advance_sse_tail, _sse_tail_bytes and seal_open_sse_frame (L158-L177), plus wrap_sse_stream_with_keepalive_pings with _keepalive_ping_stream (L45-L83), which the messages pipeline wraps around the generator. The generator runs the proxy iterator hook on every stream, the per-chunk post-call hook and cost injection unless both are off, writes each chunk through a serializer, turns a failure into an error frame after the failure hook, re-raises an HTTP failure, and runs the stream cleanup exactly once. Its callers at the pin are the Anthropic /v1/messages stream (common_request_processing.py L2785 and the blocked-response branch at anthropic_endpoints/endpoints.py L215) and the A2A stream relay (agent_endpoints/a2a_endpoints.py L393 and L523). No route on main streams through it yet, so this task gets unit tests and helper oracle cases; B7980 wires the production ports and proves it over HTTP. Everything goes in crates/betterlite-server, module `shared_stream` (crates/betterlite-server/src/shared_stream.rs and shared_stream/), with tests in shared_stream/tests.rs and a tests/ folder if they pass the size limit. Every name stays at 30 characters or fewer.
+
+
+  What it reuses, all by direct call. From B8604 (crates/betterlite-server/src/sse_data_generator.rs): the `StreamHooks<Key>` port, `ItemStream`, `StreamFailure` with `FailureParam` and `FailureKind`, `StreamCleanup<Key>`, `CleanupOutcome` and `StreamSnapshot`. From B8602 (stream_chunks.rs): `StreamItem`, `StreamChunk`, `ChunkKind` and `chunk_response_text`. From B7324 (done): `coerce_keepalive_interval` and `PingSetting` in keepalive_interval.rs, and `sse_error_payload` with `SseFailure` in sse_error_frames.rs. From B958 (done): `anthropic_error_sse_frame` and `AnthropicErrorSseFrame` in crates/betterlite-anthropic/src/api/messages_errors/frame.rs. From betterlite-error: `ProxyException::new` with `ProxyExceptionInit` and `ExceptionCode` (crates/betterlite-error/src/proxy_exception.rs), which already applies the 429 and 401 code rules for the router messages. From betterlite-redact: `Redactor::redact_internal_details`. From B980: the per-stream Anthropic restamper in crates/betterlite-core/src/api/messages_stream_restamp.rs (LiteLLM's AnthropicStreamModelRestamper, with process and flush); read its public API there and call it, do not port streaming_model_restamp.py again. From B4789: the `StreamHooks` trait, `JsonStream`, `HookedStream` and its `StreamFailure` (`Rejected`, `Failed`) in crates/betterlite-proxy/src/agent_endpoints/a2a_stream/. Add `betterlite-anthropic` and `betterlite-proxy` as path dependencies in crates/betterlite-server/Cargo.toml when they are not there yet.
+
+
+  Ports declared in shared_stream/ports.rs; tests use recording fakes and B7980 writes the production ones. `ReservationRelease<Key>` has one sync method `release_on_cancel(&self, key: &Key)`: LiteLLM's release_budget_reservation_on_cancel on the key's budget_reservation (B3003), which the production impl runs on the server's task tracker, since it is called from Drop. `CostInjection` has one sync method `inject(&self, item: StreamItem, model_name: &str) -> StreamItem`: _process_chunk_with_cost_injection (B8930's StreamCostInjector); it is passed only when litellm_settings.include_cost_in_streaming_usage is true. `BufferedOutput: Send + Sync` has one method `has_buffered_provider_output(&self) -> bool`, the attribute _withheld_provider_output reads on the response (the messages streaming iterators and the router's fallback stream answer it).
+
+
+  Types. `SharedSource { items: ItemStream, snapshot: Option<Arc<dyn StreamSnapshot>>, buffered: Option<Arc<dyn BufferedOutput>> }` is the response. `SharedCall<Key> { source: SharedSource, key: Key, request_data: Map<String, Value>, request: Option<Parts> }` is one call. `StreamAbort { status: u16, detail: String }` is an HTTP failure the generator re-raises; the route layer ends the body with it, since the status line is already sent. `ChunkFraming: Send + 'static` is the serializer pair: an associated `type Out: Send + 'static`, `frame_chunk(&mut self, item: StreamItem) -> Result<Self::Out, StreamAbort>` (serialize_chunk), `frame_tail(&mut self) -> Option<Self::Out>` (flush_tail) and `frame_failure(&mut self, error: &ProxyException) -> Result<Self::Out, StreamAbort>` (serialize_error, with the seal of an open frame where the flavor has one).
+
+
+  `SharedStreamGenerator<Key, H>` with `H: StreamHooks<Key>` is built with `hooks: Arc<H>`, `reservation: Arc<dyn ReservationRelease<Key>>`, `cleanup: Arc<dyn StreamCleanup<Key>>`, `cost: Option<Arc<dyn CostInjection>>`, `redactor: Option<Arc<Redactor>>` (None when LITELLM_DISABLE_REDACT_SECRETS is "true" in any case, LiteLLM's _ENABLE_SECRET_REDACTION), `limits: WireDecodeLimits` for B958 and `anthropic_ping: Option<PingSetting>` (litellm.anthropic_sse_ping_interval_seconds, LiteLLM default 15.0). `standalone(redactor)` builds it with pass-through hooks (the iterator and each chunk unchanged, a failure hook that answers Ok, both capability flags false), a reservation release and a cleanup that do nothing, no cost injection, the limits max_json_bytes 16777216, max_event_bytes 1048576 and max_items 65536, and `Some(PingSetting::Seconds(15.0))`; B081's route and B8648's A2A state build this one until B7980 swaps in the production ports. `generate<F: ChunkFraming>(&self, call: SharedCall<Key>, framing: F) -> BoxStream<'static, Result<F::Out, StreamAbort>>` returns the body and does no work until it is polled.
+
+
+  Setup. fast_path is true when `hooks.needs_per_chunk_hook()` is false and `cost` is None. The items always go through `hooks.wrap_iterator(items, &key, &request_data)`: LiteLLM calls async_post_call_streaming_iterator_hook on every stream, and B6370's wrapper behind that port has its own pass-through path that fires the deferred stream logging, so never call fire_deferred_stream_logging here. State: stream_completed, client_disconnected and delivered_chunk false, str_so_far "".
+
+
+  Loop, for each item. An Err goes to the failure path. For an Ok item, unless fast_path: (1) pass it through `hooks.chunk_hook(item, &key, &request_data, Some(&str_so_far))`, where an Err goes to the failure path; (2) grow str_so_far: a ModelStream or ModelFull chunk adds its chunk_response_text, an Event or Plain chunk adds its body's `content` (a string as it is, null or missing adds nothing, any other JSON value its JSON text, per docs/compatibility.md), Bytes and Text add nothing; (3) when `cost` is Some, `item = cost.inject(item, model)` with model the request's `model` when it is a JSON string, else "". Then set delivered_chunk when the item is anything but Bytes equal to ANTHROPIC_PING_BYTES (`event: ping\ndata: {"type": "ping"}\n\n`, LiteLLM's STREAM_SSE_KEEPALIVE_PING_BYTES), before writing it. Write `framing.frame_chunk(item)`; an Err from it ends the body like an HTTP failure. At a clean end write `framing.frame_tail()` when it gives something, set stream_completed, run the cleanup and end.
+
+
+  Failure path. Log at error "litellm.proxy.proxy_server.async_data_generator(): Exception occured - {failure}" and await `hooks.failure_hook(&key, &failure, &request_data)`. An Err from the hook is the replacement exception LiteLLM's post_call_failure_hook returns, always an HTTPException: it takes the failure's place. When the failure in hand has kind Http, run the cleanup with stream_completed false and end the body with Err(StreamAbort { status: status_code or 500, detail: message }) and no frame. Otherwise shape the ProxyException: build an `SseFailure` with the failure's status_code, error_type, param (FailureParam Text gives the text, Missing and Null give None) and detail the message passed through redactor.redact_internal_details when a redactor is set, call sse_error_payload, and pass its message, type, param and status (as ExceptionCode::Status) to ProxyException::new, which turns the code into "429" or "401" for the router messages. Set stream_completed, write `framing.frame_failure(&exception)`, run the cleanup and end.
+
+
+  Drop. A body dropped before the cleanup ran (the client left) does what LiteLLM's CancelledError and GeneratorExit branch and its finally do: client_disconnected is not stream_completed; when delivered_chunk is false and `source.buffered` does not report buffered provider output, call `reservation.release_on_cancel(&key)`; then call `cleanup.finalize` once. Hold this in a guard the generator state owns, do not spawn a task here, and drop the upstream items with the state. Every cleanup call passes a `CleanupOutcome` with the request parts, the request data, the key, the source's snapshot handle (cloned at setup) and the two flags.
+
+
+  SSE flavor, the messages one (async_sse_data_generator). `SseFraming::new(restamp_model: Option<String>, limits)` holds a B980 restamper when the model is a non-empty string, and the rolling tail, starting as SSE_STREAM_START_TAIL ("\n\n"). Its Out is `Emitted`, the closed set `Frame(Bytes)` or `AnthropicError(AnthropicErrorSseFrame)`, with `into_bytes(self) -> Bytes` (the frame's body for AnthropicError); create_response, which B9801 builds, reads AnthropicError on the first item to answer JSON with its status. frame_chunk runs the item through the restamper first (a chunk object comes back as an object, Bytes and Text come back as bytes, possibly empty while it holds a torn frame), then return_sse_chunk: a chunk becomes `data: ` + the JSON of its body as it is, nulls kept + "\n\n" (the chunks here are plain dicts, so no chunk kind drops fields), Bytes and Text are written as they are. The written bytes advance the tail. frame_tail is the restamper's flush when it returns bytes, written as they are, and None without a restamper. frame_failure builds `anthropic_error_sse_frame(exception status, &exception.message, limits)`, where the status is the exception code parsed as a number, 500 when it is not one; with `seal_open_sse_frame(tail)` empty the item is AnthropicError, otherwise it is Frame(seal + the frame body). A WireDecodeError from B958 logs at error and ends the body with StreamAbort { status: 500, detail: the error text }.
+  `advance_sse_tail(tail: &[u8], written: &[u8]) -> Vec<u8>` keeps the last 4 bytes of tail + written (the longest delimiter, `\r\n\r\n`), and an empty write leaves the tail alone. `seal_open_sse_frame(tail: &[u8]) -> String` gives "" when the tail ends with "\r\n\r\n", "\n\n" or "\r\r", otherwise "\n" (left out when the tail ends with "\n" or "\r") followed by the Anthropic ping chunk, so an error frame written after a torn upstream frame is still parsed as its own event.
+  `sse_data_generator(&self, call, restamp_model: Option<String>)` is generate with SseFraming. `return_raw_model_name(request_data) -> bool` is true when `metadata` or `litellm_metadata` is an object whose `_complexity_router_return_raw_model_name` is the JSON bool true. `restamp_model_for(request_data, client_model: Option<&str>) -> Option<String>` gives None when return_raw_model_name is true and the client model otherwise. `with_sse_pings(stream, setting: Option<&PingSetting>, ping: &'static str)` is wrap_sse_stream_with_keepalive_pings: when coerce_keepalive_interval gives None the stream comes back as it is; otherwise every time the interval passes with no item from the inner stream, including before the first one, write Frame(ping), and pass every inner item through in order; use tokio::time::timeout around the inner stream's next future (StreamExt::next is cancel safe) and keep waiting on it after a ping. Constants ANTHROPIC_PING_CHUNK (the text above) and SSE_COMMENT_PING (": ping\n\n"). `messages_stream(&self, call, client_model: Option<&str>)` is the messages pipeline's stream branch (common_request_processing.py L2785-L2798): sse_data_generator with restamp_model_for, wrapped by with_sse_pings with the generator's anthropic_ping and ANTHROPIC_PING_CHUNK. The blocked-response branch of B081 calls sse_data_generator with no restamp model and no pings.
+
+
+  A2A flavor. `A2aStreamHooks<Key, H>` implements B4789's `StreamHooks` for one request: it holds a SharedStreamGenerator, the key, the request data and the request parts, since that port's serve takes only the events (B8589 builds one per request). serve turns each event into an item: a JSON object becomes a Plain chunk with empty hidden params, a string becomes Text, any other JSON value becomes Bytes holding its JSON text, and an Err(StreamError) becomes a StreamFailure with its Display text, kind Other, no type, param Missing and no status. Its framing has Out `A2aOut`, `Event(Value)` or `Failed(String)`: frame_chunk turns a chunk back into its body object, Text into a JSON string and Bytes into the JSON value they hold (a string of their lossy text when they do not parse); frame_tail gives None; frame_failure gives Failed(exception message), which is what both A2A error serializers read. serve then maps Event to Ok, Failed to Err(Failed { message }) and a StreamAbort to Err(Rejected { status, detail }).
+
+
+  Tests use recording fakes for every port, scripted item streams and `tokio::time::pause` for the pings. Helper oracle cases compare advance_sse_tail with seal_open_sse_frame, return_raw_model_name, and the failure shaping with the Anthropic error frame against LiteLLM through the operation named b9720: the Python side folds advance_sse_tail over the written chunks from SSE_STREAM_START_TAIL and calls seal_open_sse_frame, calls _should_return_raw_model_name, and for a failure builds an exception object carrying only the given message, type, param and status_code attributes and runs the generator's own lines on it (error_status_code, redact_internal_details_from_client_message, openai_error_type, openai_error_param, ProxyException(...).to_dict() and anthropic_error_sse_frame).
+scope:
+  paths:
+  - crates/betterlite-server/Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-server/src/shared_stream.rs
+  - crates/betterlite-server/src/shared_stream/**
+  - tools/oracle/cases/helpers/shared-stream/**
+  - tools/oracle/helpers/b9720.py
+  - tools/oracle/helpers/b9720/**
+  - tools/oracle/src/helpers/server/b9720.rs
+  - tools/oracle/src/helpers/server/b9720/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3866-L4017
+  why: async_streaming_data_generator, the fast path, the hook order, str_so_far, the ping-bytes check for delivered_chunk, the cancel branch with the reservation release, the failure path and the cleanup in finally.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L4019-L4054
+  why: async_sse_data_generator, the restamper, the Anthropic error frame with the status from the exception and the seal of an open frame.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3780-L3806
+  why: return_sse_chunk and _sse_chunk_serializer, dicts framed and bytes or text written as they are.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L262-L283
+  why: _withheld_provider_output and _should_return_raw_model_name.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2774-L2798
+  why: The messages stream branch of _process_llm_request, the restamp model choice and the keepalive wrap with anthropic_sse_ping_interval_seconds.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/sse_keepalive.py#L8-L83
+  why: The ping constants, the start tail, coerce_keepalive_interval and wrap_sse_stream_with_keepalive_pings with its idle-gap loop.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/sse_keepalive.py#L158-L177
+  why: advance_sse_tail, _sse_tail_bytes and seal_open_sse_frame.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_error_payload.py#L29-L57
+  why: error_status_code, openai_error_type and openai_error_param, the failure shaping.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4371
+  why: ProxyException, its code rules and to_dict.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_logging.py#L71
+  why: LITELLM_DISABLE_REDACT_SECRETS turns the client message redaction off.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_logging.py#L120-L125
+  why: redact_internal_details_from_client_message, applied to the failure message.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3197-L3314
+  why: post_call_failure_hook returns the first HTTPException a callback returns or raises, which replaces the failure.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3905-L3936
+  why: The iterator hook's pass-through path, which fires the deferred stream logging itself.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/endpoints.py#L210-L226
+  why: The blocked-response stream, one message dict through async_sse_data_generator with the exception's request data.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L348-L409
+  why: The tasks/resubscribe caller, its chunk and error serializers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L475-L531
+  why: The message/stream caller, its chunk serializer and the error message it reads from the ProxyException.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L979-L1019
+  why: create_response checks the first item for an AnthropicErrorSseFrame, which is why the error frame keeps its type when nothing was written before it.
+dod:
+- text: >-
+    Every stream passes wrap_iterator; with no per-chunk hook and no cost injection chunk_hook is never called, and otherwise every item
+    passes chunk_hook with str_so_far "" first and then the text so far, and then the cost injection.
+  proof: [shared-stream-tests]
+- text: >-
+    The SSE flavor writes a chunk as a data frame with nulls kept, bytes and text as they are, restamps the message_start model only with a
+    restamp model, writes the restamper's held bytes at the end, and messages_stream fills idle gaps with the Anthropic ping event.
+  proof: [shared-stream-tests]
+- text: >-
+    A failure runs the failure hook, then writes one frame: the Anthropic error event with the status, the redacted message and the 429 or
+    401 code for the router messages, as AnthropicError when nothing was written before and sealed after a torn frame; an HTTP failure or a
+    hook replacement ends the body with StreamAbort and no frame.
+  proof: [shared-stream-tests, oracle, helper-python]
+- text: >-
+    advance_sse_tail with seal_open_sse_frame and return_raw_model_name match LiteLLM.
+  proof: [shared-stream-tests, oracle, helper-python]
+- text: >-
+    The cleanup runs exactly once with the snapshot handle, stream_completed true after a clean end or an error frame and false after an
+    HTTP failure, and client_disconnected true when the body is dropped mid-stream.
+  proof: [shared-stream-tests]
+- text: >-
+    A body dropped before any delivered chunk, a ping bytes chunk not counting, releases the reservation once, unless the source reports
+    buffered provider output; a body dropped after a delivered chunk does not.
+  proof: [shared-stream-tests]
+- text: >-
+    A2aStreamHooks passes JSON objects, strings and other JSON values through the generator and back unchanged, turns a failure into Failed
+    with the redacted message and an HTTP failure into Rejected.
+  proof: [shared-stream-tests]
+checks:
+  optional: []
+  commands:
+  - id: shared-stream-tests
+    why: the hook gates, str_so_far, the SSE framing and restamp, the pings, the failure frames, the cleanup, the reservation release or the A2A adapter is missing or wrong
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^shared_stream::/)'
+  - id: helper-python
+    why: the tail seal, the raw model name check and the failure shaping have no pinned LiteLLM comparison through the b9720 helper
+    run: grep -qE '^[[:space:]]+b9720:' tools/oracle/fuzz/corpus/helper_case/b9720-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/shared-stream/seal-open-frame.yaml
+- tools/oracle/cases/helpers/shared-stream/raw-model-name.yaml
+- tools/oracle/cases/helpers/shared-stream/failure-shapes.yaml
+deviations:
+- what: The iterator hook, the per-chunk hook, the failure hook, the cost injection, the reservation release and the cleanup reach the generator through ports and constructor values instead of proxy_logging_obj and litellm module globals.
+  why: betterlite wires dependencies through constructors; the frames a client sees are the same.
+- what: The reservation release and the cleanup of a dropped body are handed to sync ports that the server runs on its task tracker, so they run side by side instead of the release finishing before the cleanup starts.
+  why: Rust cannot await in Drop and rules.yaml async-hygiene forbids detached tasks; the two touch different state (the budget counter, and the logging object and parallel-request slot).
+- what: An HTTP failure ends the body with a StreamAbort value that the route turns into a cut connection, where LiteLLM raises the HTTPException out of the generator.
+  why: A Rust stream cannot raise; once the status line is sent both cut the connection.
+- what: An Anthropic error frame that B958 cannot build (a WireDecodeError) ends the body with a StreamAbort of 500.
+  why: LiteLLM's frame builder cannot fail; betterlite's checks decode limits, and cutting the stream is the only honest answer left.
+out_of_scope:
+- "_finalize_streaming_generator_cleanup and its helpers (L262-L462, L3808-L3864): B8605, reached through B8604's StreamCleanup port. The response.aclose() call: dropping the item stream closes it."
+- "_process_chunk_with_cost_injection and its pricing helpers (L4056-L4272): B8930, reached through the CostInjection port. release_budget_reservation_on_cancel: B3003, reached through ReservationRelease."
+- "async_post_call_streaming_iterator_hook, async_post_call_streaming_hook, post_call_failure_hook and _callback_capabilities: B6370, B8394, B8395 and B8390 behind B8604's StreamHooks port; B8632's ProxyStreamHooks implements it."
+- "AnthropicStreamModelRestamper and restamp_anthropic_stream_chunk_model: B980. anthropic_error_sse_frame: B958 (done)."
+- "The rest of _process_llm_request around the messages stream branch, _arm_detached_stream_failure_hook and the rest of ProxyBaseLLMRequestProcessing: B7324 records that no task builds the shared class; see B7980's notes. create_response and the first-chunk checks: B9801."
+- "The A2A relay functions, their framing and keepalive: B4789. Building A2aStreamHooks per request and holding the generator in the route state: B8589 and B8648."
+- "The production ports, the anthropic_sse_ping_interval_seconds setting and the HTTP cases: B7980."
+- "keepalive_ping_has_fired, is_sse_content_type, split_complete_sse_frames, wrap_passthrough_sse_bytes_with_keepalive_pings and the TTFT keepalive helpers of sse_keepalive.py: no caller in this generator or its messages branch; B005 covers the file."
+pitfalls:
+- 'str_so_far reaches the per-chunk hook as "" on the first chunk, not as None; B8604''s generator passes None there, this one does not.'
+- 'The iterator hook runs on every stream here, even with no override, because LiteLLM calls it unconditionally and its pass-through path fires the deferred stream logging; skipping it loses that logging.'
+- 'Only Bytes equal to `event: ping\ndata: {"type": "ping"}\n\n` leave delivered_chunk false; Text with the same characters counts as delivered, as a str never equals bytes in LiteLLM.'
+- 'delivered_chunk is set before the item is written, so a client that leaves while the first real chunk is being written keeps its reservation charged.'
+- 'An HTTP failure runs the cleanup with stream_completed false and client_disconnected false and writes nothing, while a plain failure sets stream_completed before it writes the error frame.'
+- 'The error frame is AnthropicError only while the seal is empty; once a seal is prepended it is plain bytes, so create_response can no longer turn it into a JSON answer.'
+- 'The seal starts with a line break only when the tail does not already end in "\n" or "\r", and the tail starts as "\n\n", so an error before any write is never sealed.'
+- 'The restamper turns a Text item into bytes and may return empty bytes while it holds a torn message_start frame; its flush output is written as it is and does not advance the tail.'
+- 'The router 429 and 401 code rules look at the redacted message, and the Anthropic error status is that code, so a "No deployments available" failure with status 500 is sent as 429.'
+- 'In the A2A flavor a failure message is final: A2A''s serializers read proxy_exc.message, so do not add "Streaming error: " to it.'
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -85,7 +85,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - "CoordinationRedisParams: B8411. Reading the persisted block and reporting the source: B1652. The test route: B1653."
-  - "The response cache Redis itself (_init_cache): B5630. The call order at startup: B8374."
+  - "The response cache Redis itself (_init_cache): B8612, called at startup by B8613. The call order at startup: B8374."
 pitfalls:
   - The CLI SSO session cache gets Redis whenever there is one, even with enable_redis_auth_cache unset, because the browser login can land on another worker.
   - An explicit block or a cache backend that fails is a startup error, but the inferred REDIS_* fallback must never stop a proxy that ran in memory before.

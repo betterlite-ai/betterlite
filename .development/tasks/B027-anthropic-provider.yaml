@@ -267,7 +267,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_anthropic_provider_dispatch_http$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_provider.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_provider.py tools/oracle/helpers/anthropic_provider)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -342,7 +342,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: make_call L72-L129; make_sync_call L132-L197;
   AnthropicChatCompletion.acompletion_stream_function L204-L252 belong to B689.'
 - 'Function ownership inventory litellm/llms/anthropic/compaction.py: supports_native_compaction L19-L28; compatible_defaults
-  L31-L32; request_kwargs L35-L44; _native_blocks L47-L56; extract_summary L59-L71 belong to B100.'
+  L31-L32; request_kwargs L35-L44; _native_blocks L47-L56; extract_summary L59-L71 belong to B3545.'
 - 'Function ownership inventory litellm/llms/anthropic/files/handler.py: AnthropicFilesHandler.__init__ L36-L37;
   AnthropicFilesHandler.afile_content L39-L109; AnthropicFilesHandler.file_content L111-L153; AnthropicFilesHandler._transform_anthropic_batch_results_to_openai_format
   L155-L267; AnthropicFilesHandler._transform_anthropic_message_to_openai_format L269-L345 have no caller at the

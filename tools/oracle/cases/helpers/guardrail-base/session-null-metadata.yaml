@@ -1,0 +1,6 @@
+kind: helper
+name: session-null-metadata
+call:
+  b5471: {"function": "session", "request_data": {"metadata": null, "litellm_metadata": {"session_id": "s3"}}}
+env: {}
+compare: {ignore: []}

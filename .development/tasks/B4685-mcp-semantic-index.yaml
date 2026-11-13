@@ -218,7 +218,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/semantic_tool_filter.py#L224-L259
 
 out_of_scope:
-  - Hook registration and request preprocessing; the hook that calls filter_tools comes in B4686.
+  - Hook registration and request preprocessing; the hook that calls filter_tools is B8201, and B138 registers it.
   - MCP server discovery, tool fetching and tool expansion; those come from B4680 and B4683.
   - Configuration loading; this task receives parameters at initialization and raises on invalid inputs.
   - Tool invocation and execution; tool matching is for filtering only, not execution.

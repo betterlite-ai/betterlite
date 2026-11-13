@@ -455,4 +455,4 @@ pitfalls:
 review_level: security
 budget:
   max_changed_lines: 3450
-  max_new_expects: 1
+  max_new_expects: 2

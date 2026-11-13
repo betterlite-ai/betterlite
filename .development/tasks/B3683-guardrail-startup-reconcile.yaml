@@ -150,7 +150,7 @@ out_of_scope:
   - "initialize_callbacks_on_proxy in callback_utils.py beyond registration by name (the named enterprise and integration branches, custom imports, the prometheus mount): no task owns it. B189 owns the registry that `starter.rs` calls."
   - "reinitialize_guardrail, `_has_guardrail_params_changed`, `initialize_guardrail`, `delete_in_memory_guardrail` and the registry class: B3682."
   - "The legacy readers of `guardrail_name_config_map` (guardrail_helpers.py, lakera_ai.py): B3663 and B888 for the helpers, the Lakera task for lakera_ai.py. They read `config.sections.legacy_guardrails.by_name`."
-  - "Router.guardrail_list and Router.get_available_guardrail: no task text owns them yet, see router_list.rs above (B162 holds Router.__init__ but has no task file)."
+  - "Router.guardrail_list is the Vec<RouterGuardrail> from router_list.rs; Router.get_available_guardrail is B9711's select_router_guardrail."
 
 pitfalls:
   - "`reconcile_db_guardrails` only drops `db` entries, so a guardrail from the config file stays when the database has no row for it."

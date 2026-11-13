@@ -1,0 +1,16 @@
+name: config-includes-collision
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request:
+  method: GET
+  path: /health/liveliness
+  headers: {}
+  body: null
+upstream: []
+config_files:
+  fragments/models.yaml: |
+    model_list: []
+  fragments/models.yaml/nested.yaml: |
+    model_list: []

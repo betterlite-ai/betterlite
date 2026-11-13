@@ -1,7 +1,7 @@
 id: B8155
 milestone: M3 providers
 title: Ollama chat config, request, reply and stream chunks
-status: todo
+status: done
 depends_on: [B2202, B177, B2223, B212]
 file: tasks/B8155-ollama-chat-config.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/ollama/common_utils.py"
 parent: B040
 split_from: B040
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1260

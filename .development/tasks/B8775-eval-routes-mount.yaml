@@ -7,7 +7,9 @@ description: >-
   /v1/evals/{eval_id} and POST /v1/evals/{eval_id}/cancel. B3428 (api/eval_run_create_list_routes) serves POST and GET
   /v1/evals/{eval_id}/runs. Each keeps an `Arc<dyn PreCall<UserAPIKeyAuth>>` in its route state, B8801's shared
   pre-call step, and leaves the production value to the part that mounts it. This task mounts the three routers inside
-  the auth layers with B8802's production step and takes the HTTP cases of B3426 and B3427; B8776 takes B3428's.
+  the auth layers with B8802's production step and takes the HTTP cases of B3426 and B3427; B8776 takes B3428's. Each
+  route state also takes B9372's `Arc<EvalCallRoute>`, so `evals::mount` passes
+  `app::inference::eval_deployments::eval_call_route(state)` to all three routers.
 
 
   Where. Module `app::inference::evals` (crates/betterlite-server/src/app/inference/evals.rs and evals/tests.rs). In

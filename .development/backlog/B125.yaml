@@ -2,8 +2,8 @@ id: B125
 milestone: M8 platform
 title: Response caching core, in-memory and disk caches, cache API
 status: todo
-depends_on: [B002, B003, B726, B872, B1600, B4290, B4291, B4292, B4293, B4294, B4295, B4296, B4297, B4298, B4299, B4300, B4301, B4302, B4303, B4304, B4305, B4306, B4307, B4308, B4309, B4310, B4311]
-file: null
+depends_on: [B9560, B080, B081, B926, B980, B4302, B4304, B4305]
+file: tasks/B125-gateway-cache-messages-responses.yaml
 covers:
   - "litellm/caching/{__init__,_internal_lru_cache}.py"
   - "litellm/caching/Readme.md"

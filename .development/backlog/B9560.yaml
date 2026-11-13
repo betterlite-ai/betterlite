@@ -1,0 +1,13 @@
+id: B9560
+milestone: M8 platform
+title: Response cache lookup and store on the gateway chat and embeddings calls
+status: todo
+depends_on: [B4299, B4300, B4302, B4303, B4304, B4305, B8610, B8611, B8612, B8613, B8633, B8803]
+file: tasks/B9560-gateway-response-cache.yaml
+covers: []
+parent: B125
+split_from: B125
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

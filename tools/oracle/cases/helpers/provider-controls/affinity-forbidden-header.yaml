@@ -1,0 +1,11 @@
+kind: helper
+name: provider-controls-affinity-forbidden-header
+call:
+  provider_affinity:
+    operation: add
+    headers: {}
+    params:
+      provider_affinity_header: Authorization
+      session_id: s
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,15 @@
+kind: helper
+name: manus-files-list-request-and-items
+env: {TZ: UTC}
+compare: {ignore: []}
+call:
+  b8105:
+    op: requests
+    environment: {TZ: UTC}
+    now: 1700000000
+    sdk: {api_base: null, api_key: null}
+    api_base: "http://explicit:2"
+    file_ids: []
+    delete_bodies: []
+    purposes: ["assistants", null, ""]
+    body: '{"data":[{"id":"a","status":"pending"},{"id":"b","created_at":"2025-01-02T03:04:05Z","purpose":"vision"},{"id":"c","status":"error","status_details":"bad"}],"has_more":true}'

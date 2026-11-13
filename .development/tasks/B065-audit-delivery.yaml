@@ -18,8 +18,9 @@ description: >-
   Reuse B189's installed callback resolver and B165's configured Python instances. Unknown
   names warn and skip. Cache only successful named resolutions, and expose reset on config
   reload. Expose whether the audit_log_callbacks key was present, the cache reset, and clear and append
-  operations on the configured callback list, which B8872 calls at startup. s3_v2 with non-null s3_audit_callback_params constructs a dedicated B3992 S3 sink,
+  operations on the configured callback list, which B8872 calls at startup. Pass B115's build_audit_logger as B2330's injected dedicated-logger builder, so s3_v2 with non-null s3_audit_callback_params gets a logger
   separate from the normal callback singleton; ordinary names retain the shared resolver.
+  Add `async_log_audit_log_event(&self, audit_log: &StandardAuditLogPayload)` to B8740's CallbackLogger trait with a no-op default. The s3_v2 logger forwards it to B115's log_audit_event and the Azure Sentinel logger to B4002's audit queue, so audit_log_callbacks can reach a logger by name.
   Build payload timestamps as ISO strings, table names as enum values, missing actor/key
   as empty strings, and preserve before_value/updated_values fields. Normalize dict values
   to JSON strings before both destinations. Submit each callback independently before
@@ -49,6 +50,10 @@ scope:
     - crates/betterlite-logging/src/audit/**
     - crates/betterlite-logging/src/registry.rs
     - crates/betterlite-logging/src/worker.rs
+    - crates/betterlite-logging/src/callback_logger.rs
+    - crates/betterlite-logging/src/s3_batch/**
+    - crates/betterlite-logging/src/azure_sentinel_logging.rs
+    - crates/betterlite-logging/src/azure_sentinel_logging/**
     - crates/betterlite-config/src/audit.rs
     - crates/betterlite-config/src/audit/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/audit-*

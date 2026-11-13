@@ -1,0 +1,18 @@
+kind: helper
+name: hosted-selection-order
+call: {azure_managed_identity: {steps: [
+  {action: select, environment: {IDENTITY_ENDPOINT: "http://sf.test/token", IDENTITY_HEADER: "header-secret", IDENTITY_SERVER_THUMBPRINT: "00112233445566778899aabbccddeeff00112233"}},
+  {action: select, environment: {IDENTITY_ENDPOINT: "http://app.test/token", IDENTITY_HEADER: "header-secret"}},
+  {action: select, environment: {IDENTITY_ENDPOINT: "http://arc.test/token", IMDS_ENDPOINT: "http://arc.test/imds"}},
+  {action: select, environment: {MSI_ENDPOINT: "http://ml.test/token", MSI_SECRET: "ml-secret"}},
+  {action: select, environment: {MSI_ENDPOINT: "http://ml.test/token"}},
+  {action: select, environment: {AZURE_AUTHORITY_HOST: "https://login.contoso.test", AZURE_TENANT_ID: "fixture-tenant", AZURE_FEDERATED_TOKEN_FILE: "/var/run/token", AZURE_CLIENT_ID: "env-client"}},
+  {action: select, environment: {}},
+  {action: select, environment: {IDENTITY_ENDPOINT: "http://sf.test/token"}},
+  {action: select, environment: {IDENTITY_ENDPOINT: "", IDENTITY_HEADER: "", IDENTITY_SERVER_THUMBPRINT: ""}},
+  {action: select, environment: {IDENTITY_ENDPOINT: "", IDENTITY_HEADER: ""}},
+  {action: select, environment: {MSI_ENDPOINT: "", MSI_SECRET: ""}},
+  {action: select, environment: {IDENTITY_ENDPOINT: "", IMDS_ENDPOINT: "http://arc.test/imds"}}
+]}}
+env: {}
+compare: {ignore: []}

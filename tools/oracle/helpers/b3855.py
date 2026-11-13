@@ -268,7 +268,7 @@ def tracer_cache_value(input_value: dict[str, Json]) -> Json:
         key_text = cache_key_text(key_value)
         key_of[key_text] = key_value
         recorder = partial(RecordingProvider, index, built)
-        _cached_tracer(logger, key_text, recorder, cast(bool, request.get("owns_exporter")))
+        _cached_tracer(logger, key_text, recorder, cast(bool, request.get("owns_exporter")))  # pyright: ignore[reportArgumentType]
     _PROVIDER_SHUTDOWN_EXECUTOR.shutdown(wait=True)
     cache = logger._tracer_provider_cache  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     order = [key_of[text] for text in cache]

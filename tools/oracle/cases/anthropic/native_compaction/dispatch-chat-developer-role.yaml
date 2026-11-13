@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-dispatch-chat-developer-role
+call:
+  b3545: {"function": "dispatch", "protocol": "chat", "payload": {"model": "claude-opus-4-7", "messages": [{"role": "developer", "content": "rules"}]}, "reply_id": "chat_4"}
+env: {}
+compare:
+  ignore: []

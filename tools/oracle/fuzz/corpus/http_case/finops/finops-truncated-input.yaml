@@ -1,0 +1,10 @@
+name: finops-truncated
+config: config
+env: {}
+request: {method: GET, path: /health/liveliness, headers: {}, body: null}
+upstream: []
+database:
+  seed:
+    users: [{user_id: alice}]
+    finops:
+      organizations: [{organization_id: org-key, organization_alias: Key Org

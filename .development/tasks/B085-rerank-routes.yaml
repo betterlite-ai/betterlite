@@ -11,7 +11,7 @@ description: >-
   422 schema check that runs before the SDK. Neither URL query parameters nor path aliases
   change the rerank payload.
 
-  After success schedule update_request_status(status=success). Merge B8994's logging_caching_headers into the custom headers by calling that utility. Use B004 custom headers from
+  After success schedule update_request_status(status=success). Merge B8994's logging_caching_headers into the custom headers by calling that utility. Use B9802's custom_headers from
   hidden model_id,cache_key,api_base with empty-string fallbacks, response_cost with None fallback,
   allowed_model_region with empty-string fallback, request_data and additional_headers ({} when
   absent). Hidden litellm_call_id wins when truthy, otherwise use the request call id. No post-call
@@ -100,7 +100,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - The only callable in endpoints.py is owned here; B1014/B1079 own SDK rerank execution, B1103 request enrichment and B8352 the router's arerank dispatch.
-- B004 supplies call-id resolution and custom headers; B003 owns shared error fields and ProxyException serialization; B8393's pre-call hook and B8395's failure hook and update_request_status are injected.
+- B004 supplies call-id resolution and B9802 the custom headers; B003 owns shared error fields and ProxyException serialization; B8393's pre-call hook and B8395's failure hook and update_request_status are injected.
 pitfalls:
 - The route's JSON union puts the trusted call id on the right, so a body value cannot replace it.
 - Rerank falls back to the request call id when hidden metadata lacks one; copying image-route behavior would lose it.

@@ -1,0 +1,13 @@
+kind: helper
+name: responses-input-messages-message-seed
+call:
+  responses_input_messages:
+    request:
+      instructions: follow
+      input:
+        - {role: user, content: hi}
+        - {type: web_search_call, id: w, status: completed, action: {type: search, query: q}}
+    replay_reasoning: false
+    cache: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,28 @@
+kind: helper
+name: ollama-chat-reply-text
+env: {}
+compare: {ignore: []}
+call:
+  b8155:
+    op: reply
+    replies:
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "hello"}, "done_reason": "stop", "prompt_eval_count": 3, "eval_count": 4}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "hello world"}, "done": true}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "hello", "thinking": "why"}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "hello", "thinking": ""}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "hello", "thinking": null}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "<think>inner</think>answer", "thinking": null}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": ""}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": null}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "<think>inner</think>answer"}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "<thinking>a</thinking>b"}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "plain"}, "done_reason": "length"}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "plain"}, "done_reason": "load"}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "plain"}, "done_reason": ""}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"content": "no role"}}'}
+      - {model: llama3, body: 'not json'}
+      - {model: llama3, body: '{"model": "llama3"}'}
+      - {model: llama3, body: '{"model": "llama3", "message": null}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": 5}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "x", "extra": 1}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "x"}, "prompt_eval_count": 0, "eval_count": 0}'}

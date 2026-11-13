@@ -1,0 +1,23 @@
+# a call without standard_logging_object logs the missing payload warning and returns: the queue stays unchanged and no send starts, even at batch_size
+kind: helper
+name: azure-sentinel-model-event-missing-payload
+call:
+  b4002:
+    scenarios:
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 1
+        actions:
+          - {do: model, missing: true}
+          - {do: model, missing: true, failure: true}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 2
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a]}
+          - {do: model, missing: true}
+          - {do: model, missing: true, failure: true}
+          - {do: model, ids: [b]}
+env: {}
+compare: {ignore: []}

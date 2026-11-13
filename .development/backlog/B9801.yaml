@@ -1,0 +1,14 @@
+id: B9801
+milestone: M5 api families
+title: First-chunk answer for the messages stream
+status: todo
+depends_on: [B9720, B7324, B958, B011]
+file: tasks/B9801-messages-first-chunk.yaml
+covers:
+  - "litellm/proxy/common_request_processing.py"
+parent: B081
+split_from: B081
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

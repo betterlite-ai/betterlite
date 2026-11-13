@@ -26,12 +26,24 @@ tools:
   - name: similarity-rs
     version_command: similarity-rs --version
     expect: similarity-rs 0.5.0
+  - name: similarity-py
+    version_command: similarity-py --version
+    expect: similarity-py 0.5.0
   - name: prek
     version_command: prek --version
     expect: prek 0.4.9
   - name: zizmor
     version_command: zizmor --version
     expect: zizmor 1.26.1
+  - name: shellcheck
+    version_command: shellcheck --version | sed -n 2p
+    expect: "version: 0.11.0"
+  - name: shfmt
+    version_command: shfmt --version
+    expect: v3.14.1
+  - name: actionlint
+    version_command: actionlint --version
+    expect: 1.7.12
   - name: uv
     version_command: uv --version
     expect: uv 0.11.14
@@ -83,7 +95,7 @@ base:
     - id: diff-budget
       why: the change must fit the task's changed-line budget
     - id: expect-budget
-      why: "new #[expect(...)] attributes must fit the task's budget"
+      why: "new #[expect(...)] attributes and new Python lines with a cast, type: ignore, pyright: ignore or noqa must fit the task's budget together"
     - id: file-size
       why: no Rust source file may grow past the line limits in settings.file_size; a `mod name;` line does not count, so a parent can declare every child module where cargo-mutants finds it
     - id: crates
@@ -96,13 +108,17 @@ base:
     - id: committed
       why: every change must be committed, so the branch is exactly what gets merged
       run: |-
-        git status --porcelain --untracked-files=all | sed "s/^/uncommitted: /" | grep . && exit 1 || exit 0
+        uncommitted=$(git status --porcelain --untracked-files=all) || exit 1
+        if [[ -z ${uncommitted} ]]; then exit 0; fi
+        mapfile -t lines <<< "${uncommitted}"
+        printf 'uncommitted: %s\n' "${lines[@]}"
+        exit 1
     - id: whitespace
       why: the change adds no trailing whitespace or conflict markers, the same check CI runs on every pull request
-      run: git diff --check "$GATE_BASE" HEAD
+      run: git diff --check "${GATE_BASE}" HEAD
     - id: specs-untouched
-      why: a task branch changes nothing in .development/, .claude/, .codex/ or .cargo/config.toml except its own task file and backlog entry, and only the architect edits those
-      run: git diff --exit-code --stat "$GATE_BASE" -- .development .claude .codex .cargo/config.toml ":(exclude,glob).development/tasks/$GATE_TASK-*.yaml" ":(exclude).development/backlog/$GATE_TASK.yaml"
+      why: a task branch changes nothing in .development/, .claude/, .codex/, .cargo/config.toml or tools/oracle/helpers/pyrightconfig.json except its own task file and backlog entry, and only the architect edits those; a helper that fails basedpyright gets fixed, never excluded
+      run: git diff --exit-code --stat "${GATE_BASE}" -- .development .claude .codex .cargo/config.toml tools/oracle/helpers/pyrightconfig.json ":(exclude,glob).development/tasks/${GATE_TASK}-*.yaml" ":(exclude).development/backlog/${GATE_TASK}.yaml"
     - id: fmt
       why: rustfmt decides the layout
       run: cargo fmt --all --check
@@ -110,8 +126,10 @@ base:
     - id: clippy
       why: the lint table is the code standard and warnings are errors, on this machine in the packages the change edits and in CI in every package it can affect, and a push to main lints the whole workspace
       run: |-
-        if [ "$GITHUB_ACTIONS" = true ]; then packages=$(cargo gate affected) || exit 1; else packages=$(cargo gate affected --edited) || exit 1; fi
-        if [ -z "$packages" ]; then echo "the change affects no package"; else cargo clippy --all-targets --locked $packages -- -D warnings; fi
+        if [[ ${GITHUB_ACTIONS} == true ]]; then packages=$(cargo gate affected) || exit 1; else packages=$(cargo gate affected --edited) || exit 1; fi
+        if [[ -z ${packages} ]]; then echo "the change affects no package"; exit 0; fi
+        read -r -a flags <<< "${packages}"
+        cargo clippy --all-targets --locked "${flags[@]}" -- -D warnings
     - id: deny
       why: licenses, advisories, bans, crate layering and sources follow deny.toml
       run: cargo deny --locked check
@@ -123,22 +141,50 @@ base:
     - id: corpus-replays
       why: every fuzz corpus file the change touches still passes the replays_the_ tests of the package that owns the corpus, since task checks leave those tests out
       run: |-
-        dirs=$(git diff --name-only "$GATE_BASE" -- ':(glob)**/fuzz/corpus/**' | sed 's#/fuzz/corpus/.*##' | sort -u)
-        if [ -z "$dirs" ]; then echo "the change touches no fuzz corpus"; exit 0; fi
-        packages=$(cargo metadata --locked --offline --no-deps --format-version 1 | jq -r --arg root "$(pwd -P)/" '.packages[] | select(.manifest_path | ltrimstr($root) | rtrimstr("/Cargo.toml") | IN($ARGS.positional[])) | "-p \(.name)"' --args $dirs)
-        if [ -z "$packages" ]; then echo "no package owns the corpus in $dirs"; exit 1; fi
-        cargo nextest run --locked --no-tests=warn $packages -E 'test(/replays_the_/)'
+        set -o pipefail
+        dirs=$(git diff --name-only "${GATE_BASE}" -- ':(glob)**/fuzz/corpus/**' | sed 's#/fuzz/corpus/.*##' | sort -u) || exit 1
+        if [[ -z ${dirs} ]]; then echo "the change touches no fuzz corpus"; exit 0; fi
+        mapfile -t corpora <<< "${dirs}"
+        root=$(pwd -P) || exit 1
+        packages=$(cargo metadata --locked --offline --no-deps --format-version 1 | jq -r --arg root "${root}/" '.packages[] | select(.manifest_path | ltrimstr($root) | rtrimstr("/Cargo.toml") | IN($ARGS.positional[])) | "-p", .name' --args "${corpora[@]}") || exit 1
+        if [[ -z ${packages} ]]; then echo "no package owns the corpus in ${dirs}"; exit 1; fi
+        mapfile -t flags <<< "${packages}"
+        cargo nextest run --locked --no-tests=warn "${flags[@]}" -E 'test(/replays_the_/)'
     - id: hooks
-      why: the prek pre-commit hooks (hygiene, test placement, ast-grep rules, typos, rustfmt) pass on the files the change touches, and on every file when it touches hook config or tool versions; on this machine basedpyright is left to CI, since it was most of this check's time and failed once in 185 runs
+      why: the prek pre-commit hooks (hygiene, test placement, ast-grep rules, typos, rustfmt, ruff, mypy and the Python rules) pass on the files the change touches, and on every file when it touches hook config or tool versions; on this machine basedpyright checks only the helper files the change touches, and CI runs it over the whole helpers folder; a change to hook config runs it over the whole folder here too, since prek's batches of all 740 files fail on files the change never touched (B9951, 11-13)
       run: |-
-        config=(.pre-commit-config.yaml sgconfig.yml .ast-grep rust-toolchain.toml .development/checks.yaml typos.toml tools/oracle/helpers/pyrightconfig.json tools/oracle/helpers/ruff.toml tools/oracle/litellm/pyproject.toml tools/oracle/litellm/uv.lock)
-        if [ "$GITHUB_ACTIONS" != true ]; then export SKIP=basedpyright-helpers; fi
-        if git diff --quiet "$GATE_BASE" HEAD -- "${config[@]}"; then prek run --from-ref "$GATE_BASE" --to-ref HEAD; else prek run --all-files; fi
+        config=(.pre-commit-config.yaml sgconfig.yml .ast-grep .development/hooks .shellcheckrc rust-toolchain.toml .development/checks.yaml typos.toml ruff.toml tools/oracle/helpers/pyrightconfig.json tools/oracle/litellm/pyproject.toml tools/oracle/litellm/mypy.toml tools/oracle/litellm/uv.lock)
+        if [[ ${GITHUB_ACTIONS} == true ]]; then export SKIP=basedpyright-changed-helpers; else export SKIP=basedpyright-helpers; fi
+        if git diff --quiet "${GATE_BASE}" HEAD -- "${config[@]}"; then prek run --from-ref "${GATE_BASE}" --to-ref HEAD; else SKIP=basedpyright-changed-helpers prek run --all-files; fi
+    - id: python-legacy
+      why: python-legacy.txt, the Python files that still wait for mypy and the Python rules, only shrinks and names files that exist, and a file that leaves it passes the checks it waited for
+      run: |-
+        if ! git cat-file -e "${GATE_BASE}:python-legacy.txt" 2>/dev/null; then echo "the base has no legacy list yet"; exit 0; fi
+        changes=$(git diff -U0 "${GATE_BASE}" HEAD -- python-legacy.txt) || exit 1
+        added=$(grep '^+[^+]' <<< "${changes}")
+        if [[ -n ${added} ]]; then echo "${added}"; echo "a file joined python-legacy.txt; fix the file instead" >&2; exit 1; fi
+        missing=()
+        while read -r file; do [[ -e ${file} ]] || missing+=("${file}"); done < python-legacy.txt
+        if [[ ${#missing[@]} -gt 0 ]]; then printf '%s\n' "${missing[@]}"; echo "python-legacy.txt names files that don't exist; take them off" >&2; exit 1; fi
+        left=()
+        while read -r line; do [[ ${line} == -[^-]* && -e ${line:1} ]] && left+=("${line:1}"); done <<< "${changes}"
+        if [[ ${#left[@]} -eq 0 ]]; then echo "no file left the list"; exit 0; fi
+        bash .development/hooks/python.sh ruff "${left[@]}" && bash .development/hooks/python.sh rules "${left[@]}" && bash .development/hooks/python.sh mypy "${left[@]}" && bash .development/hooks/python.sh similarity
     - id: similarity
       why: no two functions are near copies of each other, on this machine in the crates the change edits and in CI across crates and tools
       run: |-
-        if [ "$GITHUB_ACTIONS" = true ]; then paths=$(ls -d crates tools 2>/dev/null); else paths=$({ git diff --name-only "$GATE_BASE"; git ls-files --others --exclude-standard; } | grep -E '^(crates|tools)/[^/]+/' | cut -d/ -f1,2 | sort -u | xargs -r ls -d 2>/dev/null); fi
-        if [ -z "$paths" ]; then echo "the change edits no crate"; else similarity-rs $paths --threshold 0.85 --min-lines 8 --skip-test --fail-on-duplicates; fi
+        set -o pipefail
+        if [[ ${GITHUB_ACTIONS} == true ]]; then
+          paths=(crates tools)
+        else
+          files=$(git diff --name-only "${GATE_BASE}" && git ls-files --others --exclude-standard) || exit 1
+          dirs=$(sed -n -E 's#^((crates|tools)/[^/]+)/.*#\1#p' <<< "${files}" | sort -u) || exit 1
+          mapfile -t candidates <<< "${dirs}"
+          paths=()
+          for dir in "${candidates[@]}"; do [[ -d ${dir} ]] && paths+=("${dir}"); done
+        fi
+        if [[ ${#paths[@]} -eq 0 ]]; then echo "the change edits no crate"; exit 0; fi
+        similarity-rs "${paths[@]}" --threshold 0.85 --min-lines 8 --skip-test --fail-on-duplicates
     - id: notice
       why: the MIT license and Berri AI's notice for LiteLLM stay in place
       run: grep -q '^MIT License' LICENSE && grep -q 'Copyright (c) 2023 Berri AI' THIRD_PARTY_NOTICES.md
@@ -147,7 +193,9 @@ base:
       run: "! git grep -nIE 'litellm_enterprise|BerriAI/litellm/(blob|tree)/[^/[:space:]]+/enterprise/' -- . ':(exclude).development' ':(exclude)tools/oracle/litellm/uv.lock'"
     - id: no-attribution
       why: commit messages carry no co-author or generator lines
-      run: "! git log --format=%B \"$GATE_BASE\"..HEAD | grep -qiE '^co-authored-by:|claude-session|claude\\.ai/code|generated with'"
+      run: |-
+        messages=$(git log --format=%B "${GATE_BASE}..HEAD") || exit 1
+        ! grep -qiE '^co-authored-by:|claude-session|claude\.ai/code|generated with' <<< "${messages}"
     - id: workflows
       why: GitHub workflows pass zizmor's audit
       run: zizmor --offline .github
@@ -163,12 +211,14 @@ optional:
     after_green: true
     run: |-
       set -e
-      scratch="$GATE_LOG_DIR/mutants-tmp"
-      rm -rf "$scratch"
-      mkdir -p "$scratch"
-      trap 'rm -rf "$scratch"' EXIT
-      git diff "$GATE_BASE" -- '*.rs' ':(exclude)tools/oracle' ':(exclude,glob)**/fuzz/**' > "$GATE_LOG_DIR/mutants.diff"
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER='prlimit --as=4294967296 --' CARGO_INCREMENTAL=1 RUSTC_WRAPPER= TMPDIR="$scratch" cargo mutants --in-diff "$GATE_LOG_DIR/mutants.diff" --test-tool nextest --no-shuffle --in-place --output "$GATE_LOG_DIR" ${MUTANTS_SHARD:+--shard "$MUTANTS_SHARD" --sharding round-robin}
+      scratch="${GATE_LOG_DIR}/mutants-tmp"
+      rm -rf "${scratch}"
+      mkdir -p "${scratch}"
+      trap 'rm -rf "${scratch}"' EXIT
+      git diff "${GATE_BASE}" -- '*.rs' ':(exclude)tools/oracle' ':(exclude,glob)**/fuzz/**' > "${GATE_LOG_DIR}/mutants.diff"
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER='prlimit --as=4294967296 --' CARGO_INCREMENTAL=1 RUSTC_WRAPPER='' TMPDIR="${scratch}" cargo mutants --in-diff "${GATE_LOG_DIR}/mutants.diff" --test-tool nextest --no-shuffle --in-place --output "${GATE_LOG_DIR}" ${MUTANTS_SHARD:+--shard "${MUTANTS_SHARD}" --sharding round-robin}
   - id: oracle
     why: betterlite answers the oracle cases the same way the pinned LiteLLM does
-    run: cargo build --locked --quiet -p betterlite && cargo run --locked --quiet -p betterlite-oracle -- $GATE_ORACLE_CASES
+    run: |-
+      read -r -a cases <<< "${GATE_ORACLE_CASES}"
+      cargo build --locked --quiet -p betterlite && cargo run --locked --quiet -p betterlite-oracle -- "${cases[@]}"

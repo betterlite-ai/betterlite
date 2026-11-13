@@ -1,7 +1,7 @@
 id: B126
 milestone: M8 platform
 title: Redis, Redis Cluster and Valkey
-status: todo
+status: done
 depends_on: [B003, B360, B4320, B4321, B4322, B4323, B4324, B4325, B4326, B4327, B4328, B4329, B4330, B4331, B5220, B5630]
 file: null
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/middleware/redis_request_batch_middleware.py"
 parent: null
 split_from: null
-resolution: null
-superseded_by: null
+resolution: superseded
+superseded_by: B5630
 blocked_reason: null
 pr: null

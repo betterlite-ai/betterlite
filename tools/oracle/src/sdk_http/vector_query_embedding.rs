@@ -4,8 +4,6 @@ use std::sync::{Arc, Mutex};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
-use betterlite_core::api::vector_query_embedding::query::embed_query;
-use betterlite_core::api::vector_store_contracts::executor::DirectEmbeddingExecutor;
 use betterlite_core::mock::{chat::response as mock_chat, embedding::response as mock_embedding};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::BundledCatalog;
@@ -17,6 +15,8 @@ use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_provider::api::vector_query_embedding::error::QueryEmbeddingError;
 use betterlite_provider::api::vector_store_contracts::config::{EmbeddingEntry, Params};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_transcribe::vector_query_embedding::query::embed_query;
+use betterlite_transcribe::vector_store_contracts::executor::DirectEmbeddingExecutor;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use serde_json::Number;
@@ -71,7 +71,9 @@ pub(crate) async fn send(
     })
 }
 
-fn outbound_client(env: &BTreeMap<String, String>) -> Result<ProxiedClient, SdkHttpError> {
+pub(super) fn outbound_client(
+    env: &BTreeMap<String, String>,
+) -> Result<ProxiedClient, SdkHttpError> {
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), env).map_err(SdkHttpError::ProxyPolicy)?,
     );

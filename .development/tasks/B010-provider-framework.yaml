@@ -10,7 +10,8 @@ description: >-
   Provider-specific branches select their own prompt and parameter transforms, and unavailable adapters remain explicit
   errors even when the catalog recognizes their names. Adapt B004-B006 server calls to this boundary, preserve B005's
   cancellation and incremental SSE behavior, and expose typed bridge/iterator seams for B015 and future endpoints
-  without implementing unneeded endpoint bodies. Add framework oracle cases and regression tests; keep reqwest confined
+  without implementing unneeded endpoint bodies. Own convert_model_response_to_streaming and MockResponseIterator
+  (base_model_iterator.py L160-L221), which B3726, B3735, B3788, B3807 and B9450 call. Add framework oracle cases and regression tests; keep reqwest confined
   to betterlite-http and update deny.toml only for the new crate edges.   B174 owns ProviderId; B010 owns executable
   Provider, PreparedRequest in src/prepared.rs, OperationRequest/OperationResult in src/operation.rs and TransformRetry
   in src/transform_retry.rs. AiohttpOpenAi is a separate variant: default base https://api.openai.com with /chat/completions
@@ -253,5 +254,5 @@ pitfalls:
   std::future::ready(Err(...)) so its owner can make it async later without touching the registry.
 review_level: standard
 budget:
-  max_changed_lines: 2400
+  max_changed_lines: 2900
   max_new_expects: 0

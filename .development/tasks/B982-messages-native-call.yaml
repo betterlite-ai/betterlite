@@ -3,7 +3,7 @@ title: Messages native call
 description: >-
   Execute native Anthropic Messages through B027 and B014, selecting native/chat/Responses bridging from prepared
   deployment capabilities. Apply pre-request interceptors as closed typed outcomes and validate metadata before
-  transport; B119 supplies later interceptor implementations and cannot be a dependency because it consumes this
+  transport; B9823 and B9824 supply later interceptor implementations, through B1118, and cannot be dependencies because they consume this
   API.
 
 

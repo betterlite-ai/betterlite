@@ -9,7 +9,7 @@ description: >-
 
   `PrometheusHooks` holds B3875's `PrometheusCollectors`, the `prometheus_emit_stream_label` flag
   (litellm_settings.prometheus_emit_stream_label, default false, read from the section B3875 or B3874 already owns; do not add a key) and the
-  budget and router ports the B3882, B3883 and B3879 emitters take. `PrometheusHooks::shared(build)` keeps one instance per
+  budget and router ports the B3882 and B3879 emitters take. The constructor takes B9480's `RemainingBudgetFanOut` for the per-request remaining budget gauges, not the raw B3883 lookups port. `PrometheusHooks::shared(build)` keeps one instance per
   process: the first call builds it, later calls return the same `Arc`, as litellm_logging.py L4590-L4602 reuses the
   PrometheusLogger already in the in-memory logger list.
 
@@ -28,7 +28,7 @@ description: >-
   5. After the label values are built, a key that starts with `sk-` is hashed with B2314's hash_token for the emitters
      below (the label values keep the original).
   6. Build one `PrometheusLabelFactoryContext` and call, in this order: B3877 top-level request and spend, B3877 zero-cost,
-     B3877 token metrics, B3882/B3883 remaining budget (await), B3879 virtual-key rate limits, B3879 key and team rate
+     B3877 token metrics, B9480's RemainingBudgetFanOut::increment_remaining_budget_metrics (await), B3879 virtual-key rate limits, B3879 key and team rate
      limits, B3878 latency (input sequence length only when emit_input_sequence_length_label is on), B3881 deployment
      success, B3879 router remaining (await), B3877 cache, B3877 media generation, B3877 MCP tool calls, then B3876's
      `inc_labeled_counter` on `litellm_proxy_total_requests_metric`. An emitter error stops the hook and propagates.

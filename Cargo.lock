@@ -1085,6 +1085,7 @@ name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
  "betterlite-config",
+ "betterlite-context",
  "betterlite-error",
  "betterlite-http",
  "betterlite-logging",
@@ -1096,16 +1097,19 @@ dependencies = [
  "http 1.5.0",
  "indexmap 2.14.2",
  "num-traits",
+ "regex",
  "rstest",
  "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
  "sha2 0.11.1",
  "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -1120,9 +1124,16 @@ dependencies = [
 name = "betterlite-auth"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64 0.23.1",
+ "betterlite-cache",
+ "betterlite-context",
  "betterlite-db",
  "betterlite-error",
+ "betterlite-models",
+ "betterlite-paths",
+ "betterlite-redis",
+ "betterlite-secrets",
  "chrono",
  "hex",
  "lru",
@@ -1151,7 +1162,9 @@ name = "betterlite-auth-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-auth",
+ "betterlite-secrets",
  "libfuzzer-sys",
+ "secrecy",
 ]
 
 [[package]]
@@ -1166,6 +1179,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "chrono",
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
@@ -1173,6 +1187,7 @@ dependencies = [
  "lru",
  "p12-keystore",
  "pem",
+ "percent-encoding",
  "pkcs8",
  "rstest",
  "secrecy",
@@ -1205,6 +1220,7 @@ dependencies = [
  "aws-config",
  "aws-credential-types",
  "aws-sdk-sts",
+ "aws-sigv4",
  "aws-smithy-async",
  "aws-smithy-eventstream",
  "aws-smithy-runtime-api",
@@ -1223,6 +1239,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-secret-managers",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "bytes",
  "chrono",
@@ -1231,11 +1248,13 @@ dependencies = [
  "fancy-regex 0.19.2",
  "futures-util",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "mime",
  "num-traits",
  "percent-encoding",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
@@ -1294,11 +1313,14 @@ dependencies = [
  "betterlite-models",
  "betterlite-redact",
  "betterlite-redis",
+ "chrono",
  "futures-util",
  "hex",
  "indexmap 2.14.2",
+ "num-traits",
  "rstest",
  "rusqlite",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
@@ -1323,20 +1345,29 @@ dependencies = [
 name = "betterlite-cli"
 version = "0.1.0"
 dependencies = [
+ "anstyle",
  "apple-native-keyring-store",
  "async-trait",
+ "axum",
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-env",
+ "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-secrets",
  "clap",
+ "comfy-table",
+ "console",
  "dbus-secret-service-keyring-store",
+ "getrandom 0.4.3",
  "hex",
+ "http 1.5.0",
  "httparse",
  "indexmap 2.14.2",
+ "inquire",
  "keyring-core",
+ "mutants",
  "num-traits",
  "regex",
  "rstest",
@@ -1344,10 +1375,14 @@ dependencies = [
  "rustix",
  "secrecy",
  "serde",
+ "serde-saphyr",
  "serde_json",
+ "serde_path_to_error",
  "serde_with",
  "sha2 0.11.1",
  "shlex",
+ "signal-hook",
+ "socket2",
  "soft-canonicalize",
  "strum",
  "subtle",
@@ -1356,6 +1391,7 @@ dependencies = [
  "tokio",
  "toml_edit",
  "url",
+ "which",
  "windows-native-keyring-store",
 ]
 
@@ -1404,6 +1440,8 @@ dependencies = [
  "serde-saphyr",
  "serde_ignored",
  "serde_json",
+ "serde_path_to_error",
+ "serde_with",
  "shellexpand",
  "strum",
  "tempfile",
@@ -1433,6 +1471,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-redact",
  "hex",
+ "indexmap 2.14.2",
  "percent-encoding",
  "regex",
  "rstest",
@@ -1465,25 +1504,35 @@ dependencies = [
  "betterlite-auth",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-cost",
+ "betterlite-db",
  "betterlite-env",
  "betterlite-error",
+ "betterlite-foundry",
  "betterlite-http",
+ "betterlite-interactions",
  "betterlite-logging",
  "betterlite-mcp",
  "betterlite-models",
  "betterlite-openai",
- "betterlite-provider",
+ "betterlite-paths",
+ "betterlite-policy",
+ "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "chrono",
  "futures-util",
+ "hex",
  "http 1.5.0",
+ "httpdate",
  "indexmap 2.14.2",
  "jiff",
  "jsonschema",
  "lopdf",
+ "lru",
  "num-traits",
- "rand 0.10.3",
+ "regex",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -1491,6 +1540,9 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_with",
+ "sha2 0.11.1",
+ "strum",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -1506,6 +1558,8 @@ version = "0.0.0"
 dependencies = [
  "betterlite-config",
  "betterlite-core",
+ "betterlite-models",
+ "betterlite-openai",
  "chrono",
  "jiff",
  "libfuzzer-sys",
@@ -1540,7 +1594,9 @@ dependencies = [
  "aws-smithy-runtime-api",
  "aws-smithy-types",
  "aws-types",
+ "base64 0.23.1",
  "betterlite-env",
+ "betterlite-openai",
  "betterlite-postgres-fixture",
  "betterlite-roi",
  "betterlite-secret-managers",
@@ -1550,6 +1606,7 @@ dependencies = [
  "deadpool-postgres",
  "futures-util",
  "hex",
+ "indexmap 2.14.2",
  "percent-encoding",
  "rand 0.10.3",
  "rcgen",
@@ -1584,8 +1641,10 @@ dependencies = [
  "betterlite-config",
  "betterlite-db",
  "betterlite-postgres-fixture",
+ "chrono",
  "clap",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "tempfile",
  "thiserror",
@@ -1598,7 +1657,11 @@ name = "betterlite-db-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-db",
+ "betterlite-openai",
+ "betterlite-secrets",
  "libfuzzer-sys",
+ "secrecy",
+ "uuid",
 ]
 
 [[package]]
@@ -1685,11 +1748,14 @@ dependencies = [
 name = "betterlite-guardrails"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "aws-lc-rs",
  "axum",
  "base64 0.23.1",
  "betterlite-compression",
  "betterlite-config",
+ "betterlite-context",
+ "betterlite-core",
  "betterlite-env",
  "betterlite-http",
  "betterlite-models",
@@ -1704,6 +1770,7 @@ dependencies = [
  "jsonwebtoken",
  "lru",
  "mime_guess",
+ "mutants",
  "pem",
  "pkcs8",
  "rcgen",
@@ -1846,6 +1913,17 @@ dependencies = [
 [[package]]
 name = "betterlite-interactions"
 version = "0.1.0"
+dependencies = [
+ "indexmap 2.14.2",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "betterlite-lens"
@@ -1902,16 +1980,22 @@ name = "betterlite-logging"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-credential-types",
+ "aws-sigv4",
+ "aws-smithy-runtime-api",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-env",
  "betterlite-error",
  "betterlite-http",
+ "betterlite-interactions",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-privacy-openai",
  "betterlite-prometheus",
  "betterlite-redact",
+ "betterlite-secrets",
  "chrono",
  "csv",
  "flate2",
@@ -1925,6 +2009,7 @@ dependencies = [
  "jiff",
  "lettre",
  "mail-builder",
+ "md-5",
  "minijinja",
  "minijinja-contrib",
  "nix",
@@ -1952,6 +2037,7 @@ dependencies = [
  "serde_with",
  "sha2 0.11.1",
  "strum",
+ "subtle",
  "temp-env",
  "tempfile",
  "thiserror",
@@ -1979,15 +2065,21 @@ dependencies = [
 name = "betterlite-mcp"
 version = "0.1.0"
 dependencies = [
+ "aws-credential-types",
  "aws-lc-rs",
+ "aws-smithy-async",
+ "axum",
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-db",
+ "betterlite-http",
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-secrets",
+ "bytes",
  "chrono",
  "derive_more",
+ "futures-util",
  "hex",
  "http 1.5.0",
  "pem",
@@ -2025,6 +2117,9 @@ dependencies = [
 name = "betterlite-models"
 version = "0.1.0"
 dependencies = [
+ "betterlite-context",
+ "betterlite-env",
+ "betterlite-error",
  "chrono",
  "fancy-regex 0.19.2",
  "futures-util",
@@ -2097,6 +2192,9 @@ name = "betterlite-openai"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-credential-types",
+ "aws-sigv4",
+ "aws-smithy-runtime-api",
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-context",
@@ -2115,6 +2213,7 @@ dependencies = [
  "fancy-regex 0.19.2",
  "futures-util",
  "hex",
+ "hound",
  "http 1.5.0",
  "httparse",
  "indexmap 2.14.2",
@@ -2145,6 +2244,7 @@ dependencies = [
 name = "betterlite-openai-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-http",
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-tokenizer",
@@ -2203,14 +2303,17 @@ dependencies = [
  "betterlite-ocr",
  "betterlite-openai",
  "betterlite-openapi",
+ "betterlite-oracle-core-ops",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-redact",
+ "betterlite-oracle-server",
  "betterlite-paths",
  "betterlite-policy",
  "betterlite-postgres-fixture",
  "betterlite-prompts",
  "betterlite-provider",
  "betterlite-proxy",
+ "betterlite-pyhost",
  "betterlite-rag",
  "betterlite-rate-limit",
  "betterlite-redact",
@@ -2224,6 +2327,7 @@ dependencies = [
  "betterlite-server",
  "betterlite-streaming",
  "betterlite-tokenizer",
+ "betterlite-transcribe",
  "betterlite-vertex",
  "betterlite-websearch",
  "bytes",
@@ -2232,6 +2336,8 @@ dependencies = [
  "cookie_store",
  "flate2",
  "futures-util",
+ "google-cloud-speech-v2",
+ "google-cloud-wkt",
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
@@ -2240,10 +2346,12 @@ dependencies = [
  "opentelemetry-http",
  "opentelemetry_sdk",
  "percent-encoding",
+ "pyo3",
  "quick-xml",
  "rand 0.10.3",
  "redis",
  "reqwest",
+ "rmcp",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -2264,6 +2372,51 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ulid",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "betterlite-oracle-core-ops"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "betterlite-anthropic",
+ "betterlite-auth",
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-core",
+ "betterlite-error",
+ "betterlite-http",
+ "betterlite-logging",
+ "betterlite-mcp",
+ "betterlite-models",
+ "betterlite-openai",
+ "betterlite-oracle",
+ "betterlite-oracle-helper-api",
+ "betterlite-policy",
+ "betterlite-prompts",
+ "betterlite-provider",
+ "betterlite-redact",
+ "betterlite-streaming",
+ "betterlite-tokenizer",
+ "betterlite-transcribe",
+ "chrono",
+ "hex",
+ "indexmap 2.14.2",
+ "jiff",
+ "rand 0.10.3",
+ "reqwest",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
  "url",
  "uuid",
 ]
@@ -2306,6 +2459,56 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-oracle-server"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "aws-smithy-eventstream",
+ "aws-smithy-types",
+ "axum",
+ "base64 0.23.1",
+ "betterlite",
+ "betterlite-auth",
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-core",
+ "betterlite-db",
+ "betterlite-guardrails",
+ "betterlite-http",
+ "betterlite-mcp",
+ "betterlite-ocr",
+ "betterlite-oracle",
+ "betterlite-oracle-helper-api",
+ "betterlite-redact",
+ "betterlite-roi",
+ "betterlite-semantic",
+ "betterlite-server",
+ "betterlite-transcribe",
+ "chrono",
+ "flate2",
+ "futures-util",
+ "hex",
+ "jiff",
+ "quick-xml",
+ "rand 0.10.3",
+ "rmcp",
+ "rstest",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "sha2 0.11.1",
+ "soft-canonicalize",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "betterlite-paths"
 version = "0.1.0"
 dependencies = [
@@ -2342,6 +2545,7 @@ dependencies = [
 name = "betterlite-postgres-fixture"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "clap",
  "hex",
  "rcgen",
@@ -2351,6 +2555,7 @@ dependencies = [
  "rustls-native-certs",
  "secrecy",
  "serde",
+ "serde_json",
  "sha2 0.11.1",
  "subtle",
  "tempfile",
@@ -2449,7 +2654,12 @@ dependencies = [
  "async-trait",
  "aws-lc-rs",
  "base64 0.23.1",
+ "betterlite-anthropic",
+ "betterlite-auth",
+ "betterlite-bedrock",
  "betterlite-config",
+ "betterlite-context",
+ "betterlite-core",
  "betterlite-env",
  "betterlite-error",
  "betterlite-http",
@@ -2458,16 +2668,20 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-secret-managers",
  "betterlite-streaming",
  "betterlite-tokenizer",
  "chrono",
  "futures-util",
  "hex",
  "http 1.5.0",
+ "image",
  "indexmap 2.14.2",
+ "jiff",
  "jsonwebtoken",
  "mutants",
  "pem",
+ "regex",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -2481,6 +2695,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
  "zeroize",
 ]
 
@@ -2518,31 +2733,81 @@ dependencies = [
 [[package]]
 name = "betterlite-pyhost"
 version = "0.1.0"
+dependencies = [
+ "proptest",
+ "pyo3",
+ "rstest",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "betterlite-pyhost-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-pyhost",
+ "libfuzzer-sys",
+]
+
+[[package]]
+name = "betterlite-python"
+version = "0.1.0"
+dependencies = [
+ "betterlite-models",
+ "pyo3",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-rag"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-smithy-async",
+ "aws-smithy-runtime-api",
+ "aws-types",
+ "betterlite-bedrock",
+ "betterlite-config",
+ "betterlite-context",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-provider",
+ "betterlite-redact",
  "betterlite-redis",
+ "betterlite-secret-managers",
+ "hex",
+ "percent-encoding",
  "redis",
  "rstest",
  "rust_decimal",
  "secrecy",
+ "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
 name = "betterlite-rate-limit"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-config",
+ "betterlite-core",
+ "betterlite-redis",
+ "rstest",
  "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2650,15 +2915,19 @@ dependencies = [
 name = "betterlite-router"
 version = "0.1.0"
 dependencies = [
+ "arc-swap",
  "async-trait",
  "betterlite-config",
  "betterlite-context",
  "betterlite-error",
  "betterlite-http",
  "betterlite-models",
+ "betterlite-openai",
  "betterlite-redis",
  "betterlite-tokenizer",
+ "chrono",
  "fancy-regex 0.19.2",
+ "hex",
  "indexmap 2.14.2",
  "prometheus-client",
  "rand 0.10.3",
@@ -2669,10 +2938,13 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
+ "strum",
  "thiserror",
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-subscriber",
  "unicode-general-category",
 ]
 
@@ -2695,14 +2967,26 @@ dependencies = [
 name = "betterlite-sdk"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-config",
+ "betterlite-context",
+ "betterlite-core",
+ "betterlite-error",
  "betterlite-http",
+ "betterlite-logging",
+ "betterlite-models",
+ "betterlite-openai",
+ "betterlite-prompts",
+ "betterlite-redact",
  "chrono",
+ "hex",
  "http 1.5.0",
+ "indexmap 2.14.2",
  "rstest",
  "secrecy",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror",
  "tokio",
  "tracing",
@@ -2798,33 +3082,42 @@ version = "0.1.0"
 dependencies = [
  "aho-corasick",
  "async-trait",
+ "aws-smithy-eventstream",
+ "aws-smithy-types",
  "axum",
  "base64 0.23.1",
  "betterlite-auth",
  "betterlite-billing",
+ "betterlite-cache",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-core",
  "betterlite-db",
  "betterlite-env",
  "betterlite-error",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-mcp",
  "betterlite-models",
  "betterlite-ocr",
  "betterlite-openai",
  "betterlite-openapi",
  "betterlite-postgres-fixture",
+ "betterlite-provider",
  "betterlite-redact",
+ "betterlite-redis",
  "betterlite-roi",
  "betterlite-router",
  "betterlite-semantic",
  "caseless",
  "chrono",
  "clap",
+ "crc32fast",
  "deadpool-postgres",
  "email_address",
  "encoding_rs",
+ "flate2",
  "form_urlencoded",
  "futures-channel",
  "futures-util",
@@ -2837,6 +3130,10 @@ dependencies = [
  "indexmap 2.14.2",
  "jiff",
  "multipart-rs",
+ "mutants",
+ "num-traits",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "percent-encoding",
  "rand 0.10.3",
  "rcgen",
@@ -2877,6 +3174,7 @@ name = "betterlite-server-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-auth",
+ "betterlite-core",
  "betterlite-server",
  "libfuzzer-sys",
  "serde_json",
@@ -2989,61 +3287,118 @@ dependencies = [
 name = "betterlite-transcribe"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-auth",
- "betterlite-core",
- "rstest",
- "rust_decimal",
- "serde",
- "serde_json",
- "serde_with",
- "tempfile",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "url",
-]
-
-[[package]]
-name = "betterlite-vertex"
-version = "0.1.0"
-dependencies = [
+ "betterlite-bedrock",
  "betterlite-config",
- "betterlite-error",
+ "betterlite-context",
+ "betterlite-core",
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
- "betterlite-prompts",
+ "betterlite-provider",
+ "betterlite-redact",
+ "chrono",
+ "claxon",
+ "futures-util",
+ "hound",
  "http 1.5.0",
- "jiff",
- "regex",
+ "lewton",
+ "mutants",
+ "ogg",
+ "percent-encoding",
+ "rand 0.10.3",
  "rstest",
  "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
  "serde_with",
+ "symphonia-bundle-mp3",
+ "symphonia-core",
+ "tempfile",
  "thiserror",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "betterlite-transcribe-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-transcribe",
+ "libfuzzer-sys",
+]
+
+[[package]]
+name = "betterlite-vertex"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "betterlite-bedrock",
+ "betterlite-cache",
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-core",
+ "betterlite-error",
+ "betterlite-http",
+ "betterlite-logging",
+ "betterlite-models",
+ "betterlite-openai",
+ "betterlite-prompts",
+ "betterlite-redact",
+ "betterlite-tokenizer",
+ "google-cloud-auth",
+ "google-cloud-gax",
+ "google-cloud-speech-v2",
+ "google-cloud-wkt",
+ "http 1.5.0",
+ "indexmap 2.14.2",
+ "jiff",
+ "percent-encoding",
+ "regex",
+ "rstest",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "serde_with",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
 ]
 
 [[package]]
 name = "betterlite-vertex-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-bedrock",
+ "betterlite-models",
  "betterlite-vertex",
+ "indexmap 2.14.2",
  "jiff",
  "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]
 name = "betterlite-websearch"
 version = "0.1.0"
 dependencies = [
+ "betterlite-anthropic",
  "betterlite-error",
  "betterlite-openai",
+ "betterlite-prompts",
  "indexmap 2.14.2",
  "serde",
  "serde_json",
@@ -3334,10 +3689,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
+name = "byteorder-lite"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495"
+
+[[package]]
 name = "bytes"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "bytes-utils"
@@ -3506,6 +3870,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
+name = "claxon"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4bfbf56724aa9eca8afa4fcfadeb479e722935bb2a0900c2d37e0cc477af0688"
+
+[[package]]
 name = "cmake"
 version = "0.1.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3562,6 +3932,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "comfy-table"
+version = "8.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b96a46ad395a5e00676eddaca4a45ed78b29c08be5a878d35e4b071c625637dd"
+dependencies = [
+ "unicode-segmentation",
+ "unicode-width",
+]
+
+[[package]]
 name = "compact_str"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3607,6 +3987,18 @@ name = "conquer-util"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e763eef8846b13b380f37dfecda401770b0ca4e56e95170237bd7c25c7db3582"
+
+[[package]]
+name = "console"
+version = "0.16.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e96a4956774c13c126a8b5af4daa79384f4d826534c95a02d76afb39e2ab64e3"
+dependencies = [
+ "encode_unicode",
+ "libc",
+ "unicode-width",
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "const-hex"
@@ -4339,6 +4731,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "encode_unicode"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
+
+[[package]]
 name = "encodify"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4468,6 +4866,15 @@ name = "fastrand"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
+
+[[package]]
+name = "fdeflate"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c"
+dependencies = [
+ "simd-adler32",
+]
 
 [[package]]
 name = "ferroid"
@@ -4662,6 +5069,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fuzzy-matcher"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54614a3312934d066701a80f20f15fa3b56d67ac7722b39eea5b4c9dd1d66c94"
+dependencies = [
+ "thread_local",
+]
+
+[[package]]
 name = "garde"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4797,6 +5213,210 @@ dependencies = [
  "log",
  "regex-automata",
  "regex-syntax",
+]
+
+[[package]]
+name = "google-cloud-api"
+version = "1.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4212525a72252d4d5359dfc0b19dd8039cb898f54458fb6357f56162c5b35a33"
+dependencies = [
+ "bytes",
+ "google-cloud-wkt",
+ "serde",
+ "serde_json",
+ "serde_with",
+]
+
+[[package]]
+name = "google-cloud-auth"
+version = "1.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d563c7b987f40249c274a4e6a671661df6be2d084f08476dda2f0f931576cfcf"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "bytes",
+ "google-cloud-gax",
+ "hex",
+ "hmac 0.13.0",
+ "http 1.5.0",
+ "jiff",
+ "reqwest",
+ "rustc_version",
+ "rustls",
+ "rustls-pki-types",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror",
+ "time",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "google-cloud-gax"
+version = "1.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc64ee071c0d22cb68662b454f1bea5424506cafeaddc51260fbc585bac1d29d"
+dependencies = [
+ "bytes",
+ "futures",
+ "google-cloud-rpc",
+ "google-cloud-wkt",
+ "http 1.5.0",
+ "pin-project",
+ "rand 0.10.3",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
+name = "google-cloud-gax-internal"
+version = "0.7.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ad2379de0de5562c27eb79acd9c36143719a9271191df5d0ac6eb162a1b9d7e"
+dependencies = [
+ "bytes",
+ "futures",
+ "google-cloud-api",
+ "google-cloud-auth",
+ "google-cloud-gax",
+ "google-cloud-rpc",
+ "google-cloud-wkt",
+ "h2",
+ "http 1.5.0",
+ "http-body 1.1.0",
+ "http-body-util",
+ "hyper",
+ "lazy_static",
+ "opentelemetry",
+ "opentelemetry-semantic-conventions",
+ "opentelemetry_sdk",
+ "percent-encoding",
+ "pin-project",
+ "prost",
+ "prost-types",
+ "reqwest",
+ "rustc_version",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-prost",
+ "tower",
+ "tracing",
+ "tracing-opentelemetry",
+]
+
+[[package]]
+name = "google-cloud-location"
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c01fde700ea72005d09d5c37e6837fa9460f2ec6b20a147db46c248b63b4519"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "google-cloud-gax",
+ "google-cloud-gax-internal",
+ "google-cloud-wkt",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "tracing",
+]
+
+[[package]]
+name = "google-cloud-longrunning"
+version = "1.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8ea252eee22a4e2187025ea6789c682a0d791a9748ea99de2abec3026a32cb4"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "google-cloud-gax",
+ "google-cloud-gax-internal",
+ "google-cloud-rpc",
+ "google-cloud-wkt",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "tracing",
+]
+
+[[package]]
+name = "google-cloud-lro"
+version = "1.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dfb938b40ede9ef70c24f49c2687d84f289c9e9104ddfece739985e4b4844b8f"
+dependencies = [
+ "google-cloud-gax",
+ "google-cloud-gax-internal",
+ "google-cloud-longrunning",
+ "google-cloud-rpc",
+ "google-cloud-wkt",
+ "serde",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "google-cloud-rpc"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2162c08a89118130979ba261080e960e44cdcb2d6e2ab8ca9b1da245285d353"
+dependencies = [
+ "bytes",
+ "google-cloud-wkt",
+ "serde",
+ "serde_json",
+ "serde_with",
+]
+
+[[package]]
+name = "google-cloud-speech-v2"
+version = "1.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c391725087465ec32c174051a1533e36cb21a973a27f2200ffac017da2bb972"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "google-cloud-gax",
+ "google-cloud-gax-internal",
+ "google-cloud-location",
+ "google-cloud-longrunning",
+ "google-cloud-lro",
+ "google-cloud-rpc",
+ "google-cloud-wkt",
+ "http 1.5.0",
+ "prost",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "tracing",
+]
+
+[[package]]
+name = "google-cloud-wkt"
+version = "1.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75d00ec306dbc2cf7adf222409ec22515c39308124e3d357ecb163ffa61172ba"
+dependencies = [
+ "base64 0.23.1",
+ "bytes",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "thiserror",
+ "time",
+ "url",
 ]
 
 [[package]]
@@ -4981,6 +5601,12 @@ dependencies = [
  "libc",
  "windows-link",
 ]
+
+[[package]]
+name = "hound"
+version = "3.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62adaabb884c94955b19907d60019f4e145d091c75345379e70d1ee696f7854f"
 
 [[package]]
 name = "http"
@@ -5305,6 +5931,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "image"
+version = "0.25.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85ab80394333c02fe689eaf900ab500fbd0c2213da414687ebf995a65d5a6104"
+dependencies = [
+ "bytemuck",
+ "byteorder-lite",
+ "moxcms",
+ "num-traits",
+ "png",
+ "zune-core",
+ "zune-jpeg",
+]
+
+[[package]]
 name = "indexmap"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5345,6 +5986,20 @@ checksum = "3b5cf4372d022092674a83b8febf5865f7a573cc0c5baec5e49c879b6a20978f"
 dependencies = [
  "block-padding 0.4.2",
  "hybrid-array",
+]
+
+[[package]]
+name = "inquire"
+version = "0.9.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6654738b8024300cf062d04a1c13c10c8e2cea598ec1c47dc9b6641159429756"
+dependencies = [
+ "bitflags 2.13.2",
+ "console",
+ "dyn-clone",
+ "fuzzy-matcher",
+ "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]
@@ -5695,6 +6350,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lewton"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "777b48df9aaab155475a83a7df3070395ea1ac6902f5cd062b8f2b028075c030"
+dependencies = [
+ "byteorder",
+ "ogg",
+ "tinyvec",
+]
+
+[[package]]
 name = "lexical-parse-float"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6003,6 +6669,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
 dependencies = [
  "adler2",
+ "simd-adler32",
 ]
 
 [[package]]
@@ -6053,6 +6720,16 @@ name = "more-asserts"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fafa6961cabd9c63bcd77a45d7e3b7f3b552b70417831fb0f56db717e72407e"
+
+[[package]]
+name = "moxcms"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb85c154ba489f01b25c0d36ae69a87e4a1c73a72631fc6c0eb6dde34a73e44b"
+dependencies = [
+ "num-traits",
+ "pxfm",
+]
 
 [[package]]
 name = "multipart-rs"
@@ -6323,6 +7000,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ogg"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6951b4e8bf21c8193da321bcce9c9dd2e13c858fe078bf9054a288b419ae5d6e"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
 name = "oid-registry"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6491,6 +7177,12 @@ dependencies = [
  "tonic",
  "tonic-prost",
 ]
+
+[[package]]
+name = "opentelemetry-semantic-conventions"
+version = "0.33.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a3cf639fefd3e852869114f9925b578da6dd8e99281a2089bb0e773ead46962"
 
 [[package]]
 name = "opentelemetry-stdout"
@@ -6918,6 +7610,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
+name = "png"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60769b8b31b2a9f263dae2776c37b1b28ae246943cf719eb6946a1db05128a61"
+dependencies = [
+ "bitflags 2.13.2",
+ "crc32fast",
+ "fdeflate",
+ "flate2",
+ "miniz_oxide 0.8.9",
+]
+
+[[package]]
 name = "poly1305"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7141,6 +7846,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "pxfm"
+version = "0.1.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
+
+[[package]]
 name = "py_literal"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7151,6 +7862,63 @@ dependencies = [
  "num-traits",
  "pest",
  "pest_derive",
+]
+
+[[package]]
+name = "pyo3"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "229ca13b8a15bb0d1487b81ab975bfcd97513416499a8312011b6036e42e0de4"
+dependencies = [
+ "libc",
+ "once_cell",
+ "portable-atomic",
+ "pyo3-build-config",
+ "pyo3-ffi",
+ "pyo3-macros",
+]
+
+[[package]]
+name = "pyo3-build-config"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70130e2b6dd1ee589a8788026a429561ca5c40fa7a2fa7914c2282eddae24700"
+dependencies = [
+ "target-lexicon",
+]
+
+[[package]]
+name = "pyo3-ffi"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e7ff73c555c286d212d4ce7e5fbda845a973c4f61bd5f160f5f2c3c2a04d1c4"
+dependencies = [
+ "libc",
+ "pyo3-build-config",
+]
+
+[[package]]
+name = "pyo3-macros"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c46d2e5862c7bb8207e3b639f713dda3c499933444784154c11d013c5a691b60"
+dependencies = [
+ "proc-macro2",
+ "pyo3-macros-backend",
+ "quote",
+ "syn 3.0.9",
+]
+
+[[package]]
+name = "pyo3-macros-backend"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38b89f066f2ae72a2aef52d1537ca2fcd104440ebfadee06e97aa90738a25b9b"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.9",
 ]
 
 [[package]]
@@ -8545,6 +9313,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7973cce6668464ea31f176d85b13c7ab3bba2cb3b77a2ed26abd7801688010a"
 
 [[package]]
+name = "symphonia-bundle-mp3"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98ea5ffc8716bff677dfb3b01b420c7b758de901a72b8c330bf2040ab74b4add"
+dependencies = [
+ "lazy_static",
+ "log",
+ "symphonia-core",
+]
+
+[[package]]
+name = "symphonia-core"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01c412864d599d4750d0c3d684d7e093ec05e5309681ef5252cc1096a437f6e0"
+dependencies = [
+ "bitflags 2.13.2",
+ "bytemuck",
+ "lazy_static",
+ "log",
+ "num-complex",
+ "smallvec",
+]
+
+[[package]]
 name = "syn"
 version = "2.0.119"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8638,6 +9431,12 @@ name = "target-features"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1bbb9f3c5c463a01705937a24fdabc5047929ac764b2d5b9cf681c1f5041ed5"
+
+[[package]]
+name = "target-lexicon"
+version = "0.13.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
 
 [[package]]
 name = "temp-env"
@@ -8927,6 +9726,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -9036,9 +9836,11 @@ dependencies = [
  "hyper-util",
  "percent-encoding",
  "pin-project",
+ "rustls-native-certs",
  "socket2",
  "sync_wrapper",
  "tokio",
+ "tokio-rustls",
  "tokio-stream",
  "tokio-util",
  "tower",
@@ -9177,6 +9979,20 @@ dependencies = [
  "log",
  "once_cell",
  "tracing-core",
+]
+
+[[package]]
+name = "tracing-opentelemetry"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a904802a1b902f43638b677ff2a650847e3b4404101b6c586d648e8c1e3e8fe"
+dependencies = [
+ "js-sys",
+ "opentelemetry",
+ "tracing",
+ "tracing-core",
+ "tracing-subscriber",
+ "web-time",
 ]
 
 [[package]]
@@ -10369,3 +11185,18 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+
+[[package]]
+name = "zune-core"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d56377fd46368984a170bc5aac5567e52ca5da874caa60bea39fcbca78fb658b"
+
+[[package]]
+name = "zune-jpeg"
+version = "0.5.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "27bc9d5b815bc103f142aa054f561d9187d191692ec7c2d1e2b4737f8dbd7296"
+dependencies = [
+ "zune-core",
+]

@@ -1,14 +1,13 @@
 id: B112
 milestone: M7 observability
 title: Langfuse and LangSmith
-status: todo
+status: done
 depends_on: [B3900, B3901, B3902, B3903, B3904, B3905, B3912, B3906, B3907, B3908, B3909, B3910, B3911, B002, B173, B189, B256, B8748]
 file: null
-covers:
-  - "litellm/integrations/langsmith.py"
+covers: []
 parent: null
 split_from: null
-resolution: null
-superseded_by: null
+resolution: superseded
+superseded_by: B8748
 blocked_reason: null
 pr: null

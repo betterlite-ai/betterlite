@@ -10,7 +10,7 @@ description: >-
   tools above the threshold, narrows the MCP references to the selected names, and writes the
   result to request metadata. A response header hook adds the selected tool names as a CSV, cut at
   a whole tool name by _truncate_csv_at_tool_name_boundary when too long.
-  initialize_from_config builds the hook from the config block and registers it.
+  initialize_from_config builds the hook from the config block and returns it; B138 registers it.
 
   The package __init__.py only exports the hook and the config type.
 

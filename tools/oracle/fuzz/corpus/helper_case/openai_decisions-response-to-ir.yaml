@@ -1,0 +1,16 @@
+kind: helper
+name: openai-decisions-response-to-ir
+call:
+  openai_decisions:
+    response_to_ir:
+      - request:
+          input: the input
+          questions:
+            - {type: predicate, name: truth, instructions: "is it true?"}
+        response:
+          model: gpt-4o
+          answers:
+            - {type: predicate, name: truth, probability: 0.5}
+          usage: {input_tokens: 1, output_tokens: 2, total_tokens: 3}
+env: {}
+compare: {ignore: []}

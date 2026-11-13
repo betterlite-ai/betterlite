@@ -1,0 +1,8 @@
+task: B5845
+deviations:
+  - what: "The chat and embedding configs are built from plain arguments (token, resource group, deployment URL). LiteLLM's lazy run_env_setup is a separate setup step returning the service key's Credentials, and one prepare step returns the SAP headers and the complete URL together, instead of LiteLLM's lazy validate_environment, headers and get_complete_url."
+    why: "These modules are pure. The caller (B8331) mints the token from the credentials setup returns and looks the deployment up with their base URL, then builds the config and calls prepare; LiteLLM's caching stays with it."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/transformation.py#L120-L253"
+  - what: "The Markdown fence strip for Anthropic JSON replies uses the Rust regex crate with LiteLLM's pattern, ^```(?:json)?\\s*\\n?(.*?)\\n?```$, compiled per response."
+    why: "The two engines agree on every fence shape the cases cover: a json tag, no tag, no whitespace and surrounding whitespace. The content is trimmed before matching and the capture after, as LiteLLM does."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/transformation.py#L410-L431"

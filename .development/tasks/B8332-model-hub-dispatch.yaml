@@ -84,6 +84,7 @@ oracle_cases:
   - tools/oracle/cases/providers/model-hub/huggingface-embedding-error.yaml
   - tools/oracle/cases/providers/model-hub/huggingface-rerank.yaml
   - tools/oracle/cases/providers/model-hub/replicate-no-poll-url.yaml
+  - tools/oracle/cases/providers/model-hub/replicate-create-poll.yaml
   - tools/oracle/cases/providers/model-hub/predibase-chat.yaml
   - tools/oracle/cases/providers/model-hub/predibase-missing-tenant.yaml
 deviations:
@@ -101,6 +102,6 @@ pitfalls:
   - "Replicate puts litellm.api_key before both REPLICATE_* variables, and Predibase puts it before litellm.predibase_key."
   - "The replicate arm matches any model name that contains replicate, but only after every arm before L5960 has had its turn."
   - "Hugging Face cases set api_base to the mock and pass input_type feature-extraction for embeddings, so no request leaves for huggingface.co."
-  - "Replicate create plus poll cannot be an HTTP case. The mock answers the case field upstream in arrival order, but it listens on a random port and only case env values get its address through {{upstream}}; reply bodies are sent as written. LiteLLM polls the urls.get address from the create reply, so the poll cannot reach the mock. Test create, the processing retries, the poll delay and the failed status with a recording transport in the model_hub_dispatch tests. The one Replicate HTTP case, replicate-no-poll-url.yaml, answers create with a body that has no urls.get and compares LiteLLM's 400 error that starts with LiteLLM Error - prediction url is None."
+  - "Replicate create plus poll is an HTTP case, replicate-create-poll.yaml (B9850 lets reply bodies use {{upstream}}). The create reply has status starting and urls.get {{upstream}}/v1/predictions/oracle-1, and the poll reply has status succeeded with an output. Test the processing retries, the poll delay and the failed status with a recording transport in the model_hub_dispatch tests. replicate-no-poll-url.yaml answers create with a body that has no urls.get and compares LiteLLM's 400 error that starts with LiteLLM Error - prediction url is None."
 budget: {max_changed_lines: 1500, max_new_expects: 0}
 review_level: standard

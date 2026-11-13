@@ -141,7 +141,7 @@ deviations:
 out_of_scope:
   - Delivery retry, cancellation requeue or 413-splitting logic; LLM Observability intake sends uncompressed JSON and does not split on 413.
   - Health checks; this task focuses on regular span delivery, not intake health monitoring.
-  - Team-scoped or key-scoped logger isolation; this task builds the global LLM Observability logger registered by B113.
+  - Team-scoped or key-scoped logger isolation; this task builds the global LLM Observability logger and its registry/catalog/datadog_llm_observability.rs arm. Team and key isolation is B8251 and B8655.
 pitfalls:
   - trace_id and span_id may both come from caller metadata; check both before attaching to payloads as they are independent fields.
   - span_id and name defaults ("litellm_llm_call" for name, UUID for span_id) only apply when metadata does not provide them; do not override caller values.

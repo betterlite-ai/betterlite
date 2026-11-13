@@ -1,6 +1,7 @@
 mod attempt;
 mod chain;
 mod checkpoint;
+mod ci_failures;
 mod maintenance;
 pub(crate) mod overlap;
 mod preparation;
@@ -77,6 +78,7 @@ pub(crate) struct Attempt<'run> {
     pub(crate) earlier: Option<&'run EarlierReview>,
     pub(crate) reviewer: Option<&'run ReviewerPin>,
     pub(crate) resume: Option<&'run str>,
+    pub(crate) fix_model: Option<&'run str>,
 }
 
 pub(crate) fn find_runner<'agents>(
@@ -192,8 +194,10 @@ fn apply_round(
     progress.reviewer = Some(round.reviewer);
     progress.next = NextRun::Fix;
     progress.fix_turns = 0;
+    // a failed CI run on the reviewed head turns an approval into a fix turn too
+    let ci = ci_failures::take(places.journal, places.worktree)?;
     match round.verdict {
-        ReviewVerdict::Approve => {
+        ReviewVerdict::Approve if ci.is_empty() => {
             progress.feedback.clear();
             progress.earlier = Some(round.review);
             let mut lines = vec![format!(
@@ -205,8 +209,9 @@ fn apply_round(
             lines.append(&mut progress.litellm);
             Ok(ControlFlow::Break(lines))
         }
-        ReviewVerdict::Changes => {
+        ReviewVerdict::Approve | ReviewVerdict::Changes => {
             progress.feedback.clone_from(&round.review.findings);
+            progress.feedback.extend(ci);
             progress.earlier = Some(round.review);
             if progress.review_rounds >= agents.policy.max_review_rounds {
                 let reason = format!("review rounds ran out: {}", progress.feedback.join("; "));
@@ -229,6 +234,14 @@ fn apply_step(
     step: Step,
 ) -> Result<ControlFlow<Vec<String>>, GateError> {
     let agents = chain.agents;
+    progress.reported_done = match &step {
+        Step::Reviewed(_) => true,
+        Step::Fix(failure) => !failure
+            .red
+            .iter()
+            .any(|red| matches!(red, Red::Report | Red::Unfinished)),
+        Step::Retry(_) | Step::Blocked(_) => false,
+    };
     match step {
         Step::Reviewed(round) => return apply_round(agents, brief, places, progress, round),
         Step::Fix(failure) if progress.fix_turns < agents.policy.max_fix_turns => {
@@ -280,6 +293,11 @@ fn run_once(
                 && session.model == pick.rung.model
         })
         .map(|session| session.id.as_str());
+    let fix_model = pick
+        .rung
+        .fix_model
+        .as_deref()
+        .filter(|_| fix && progress.reported_done && resume.is_some());
     let current = Attempt {
         agents,
         brief,
@@ -288,6 +306,7 @@ fn run_once(
         earlier: progress.earlier.as_ref(),
         reviewer: progress.reviewer.as_ref(),
         resume,
+        fix_model,
     };
     let turn = attempt::attempt_once(&current, pick.runner, pick.rung, &progress.feedback)?;
     // a run stopped by a usage limit keeps the session of the run before it

@@ -1,0 +1,95 @@
+# oauth token: cached until 60 seconds before expires_in runs out (3600 when absent), refreshed on the next send, and a failed token request keeps or drops the batch by status
+kind: helper
+name: azure-sentinel-oauth-token-refresh
+call:
+  b4002:
+    scenarios:
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: "se&cret 1"}
+        batch_size: 1
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 200}
+          - {status: 200}
+          - {status: 200, body: '{"access_token": "tok-2", "expires_in": 3600}'}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a]}
+          - {do: advance, seconds: 3539}
+          - {do: model, ids: [b]}
+          - {do: advance, seconds: 1}
+          - {do: model, ids: [c]}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 1
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1"}'}
+          - {status: 200}
+          - {status: 200}
+          - {status: 200, body: '{"access_token": "tok-2"}'}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a]}
+          - {do: advance, seconds: 3539}
+          - {do: model, ids: [b]}
+          - {do: advance, seconds: 1}
+          - {do: model, ids: [c]}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 1
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 120}'}
+          - {status: 200}
+          - {status: 200}
+          - {status: 200, body: '{"access_token": "tok-2", "expires_in": 120}'}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a]}
+          - {do: advance, seconds: 59}
+          - {do: model, ids: [b]}
+          - {do: advance, seconds: 1}
+          - {do: model, ids: [c]}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 1
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 30}'}
+          - {status: 200}
+          - {status: 200, body: '{"access_token": "tok-2", "expires_in": 3600}'}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a]}
+          - {do: model, ids: [b]}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 1
+        replies:
+          - {status: 500, body: boom}
+          - {status: 200, body: '{"access_token": "tok-1"}'}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a]}
+          - {do: flush}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 1
+        replies:
+          - {status: 401, body: unauthorized}
+        actions:
+          - {do: model, ids: [a]}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 1
+        replies:
+          - {status: 429, body: slow}
+          - {status: 408, body: slow}
+        actions:
+          - {do: model, ids: [a]}
+          - {do: flush}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 1
+        replies:
+          - {status: 200, body: '{"expires_in": 60}'}
+          - {status: 200, body: '{"access_token": "", "expires_in": 60}'}
+          - {status: 201, body: '{"access_token": "tok-1"}'}
+          - {network: true}
+        actions:
+          - {do: model, ids: [a]}
+          - {do: flush}
+          - {do: flush}
+          - {do: flush}
+env: {}
+compare: {ignore: []}

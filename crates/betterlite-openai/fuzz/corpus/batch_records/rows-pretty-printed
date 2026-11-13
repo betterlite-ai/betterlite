@@ -1,0 +1,5 @@
+{"custom_id":"a",
+ "url":"/v1/embeddings",
+ "body":{"model":"x",
+  "input":"one"}}
+{"custom_id":"b","body":{"input":"two"}}

@@ -3,7 +3,7 @@ title: Bedrock InvokeAgent requests and trace replies
 description: >-
   Add InvokeAgentRequest/Reply with agent id/alias/session inputs, signed agent-runtime URLs and event stream reply
   aggregation. Preserve trace/preprocessing/orchestration usage and decoded text chunks without exposing trace payloads
-  in logs. The public agent gateway API remains B050/B141; this is a provider adapter callable as chat.
+  in logs. The public agent gateway API remains B050/B4784-B4787/B8589/B8647; this is a provider adapter callable as chat.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/invoke_agent/transformation.py:
@@ -176,7 +176,7 @@ checks:
   commands:
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_invoke_agent.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_invoke_agent.py tools/oracle/helpers/bedrock_services_invoke_agent)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus

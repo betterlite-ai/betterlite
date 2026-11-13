@@ -1,0 +1,25 @@
+kind: helper
+name: full-model-metadata-cached-record-mutation
+call:
+  full_model_metadata:
+    fixture:
+      model_cost:
+        gpt-4o: {litellm_provider: openai, mode: chat, max_tokens: 100}
+      cache_maxsize: 8
+    steps:
+      - {op: call, model: gpt-4o, custom_llm_provider: openai, parameters: {kind: absent}}
+      - {op: mutate, record: 0, field: max_tokens, value: 123}
+      - {op: call, model: gpt-4o, custom_llm_provider: openai, parameters: {kind: absent}}
+      - {op: call, model: gpt-4o, custom_llm_provider: openai, api_key: fixture-key, parameters: {kind: absent}}
+      - {op: mutate, record: 2, field: max_tokens, value: 999}
+      - {op: call, model: gpt-4o, custom_llm_provider: openai, parameters: {kind: absent}}
+      - {op: invalidate}
+      - {op: call, model: gpt-4o, custom_llm_provider: openai, parameters: {kind: absent}}
+      - {op: helper_call, model: gpt-4o, custom_llm_provider: openai}
+      - {op: mutate, record: 5, field: max_tokens, value: 7}
+      - {op: helper_call, model: gpt-4o, custom_llm_provider: openai}
+      - {op: replace, key: gpt-4o, entry: {litellm_provider: openai, mode: chat, max_tokens: 300}}
+      - {op: invalidate}
+      - {op: helper_call, model: gpt-4o, custom_llm_provider: openai}
+env: {}
+compare: {ignore: []}

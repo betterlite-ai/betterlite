@@ -1,8 +1,11 @@
 pub mod alerting;
 pub mod audit_startup;
+pub mod azure_content_safety;
 pub mod catalog;
 pub mod hooks;
 pub mod post_call;
+pub mod prometheus_hook;
 pub mod prompt_injection;
 pub mod telemetry;
 pub mod tenant_destinations;
+pub mod third_party_legacy;

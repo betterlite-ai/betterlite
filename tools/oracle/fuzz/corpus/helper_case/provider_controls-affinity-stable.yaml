@@ -1,0 +1,13 @@
+kind: helper
+name: provider_controls-affinity-stable-seed
+call:
+  provider_affinity:
+    operation: stable_session
+    params:
+      metadata:
+        session_id: metadata-session
+        litellm_session_id_generated: true
+      litellm_metadata:
+        session_id: stable-session
+env: {}
+compare: {ignore: []}

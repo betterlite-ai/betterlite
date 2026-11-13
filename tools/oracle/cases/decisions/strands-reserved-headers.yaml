@@ -1,0 +1,21 @@
+kind: helper
+name: strands-reserved-headers
+call:
+  b3512:
+    steps:
+      - kind: sign
+        api_base: arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/my-runtime
+        headers:
+          Host: evil.example
+          X-Amzn-Bedrock-AgentCore-Runtime-User-Id: someone-else
+          X-Amz-Security-Token: caller-token
+          X-Request-Source: batch
+          x-amz-target: forged
+        api_key: runtime-jwt
+        model: m
+        state: the state
+        question: q
+        instructions: decide
+        now: 1767225600
+env: {}
+compare: {ignore: []}

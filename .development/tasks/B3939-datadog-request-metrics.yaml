@@ -28,6 +28,7 @@ description: >-
 
 scope:
   paths:
+    - "crates/betterlite-logging/src/datadog_logging/send.rs"
     - crates/betterlite-logging/src/datadog/metrics.rs
     - crates/betterlite-logging/src/datadog/metrics/**
     - tools/oracle/cases/logging/datadog-metrics/**

@@ -7,9 +7,13 @@ description: >-
   the input with B975's splitter, use B966's usage/content translation, B963 refusal helpers and B571's empty
   unsigned-thinking predicate. B968 supplies compaction result records.
 
-  Generate one msg_<UUID> id per instance and report it through an injected B247 logging-state recorder when
-  present. B247's task does not yet name record_streamed_anthropic_message_id; keep that narrow setter seam
-  explicit for the architect rather than adding logging persistence here. HelperCall::MessagesStreamUsage
+  Generate one msg_<UUID> id per instance. The constructor takes the call's logging state as
+  Option<&mut LoggingState> (LiteLLM's litellm_logging_obj) and, when it is Some, sets its
+  streamed_anthropic_message_id to that id, which is LiteLLM's record_streamed_anthropic_message_id
+  (litellm_logging.py L4174-L4175). Add that field, `pub streamed_anthropic_message_id: Option<String>`, to
+  LoggingState in crates/betterlite-logging/src/logging_state.rs (LiteLLM's class attribute, L571), None in
+  LoggingState::new; callers assign it, so write no setter function. B9840's logged-response conversion reads it to
+  put the served msg_ id on the /v1/messages spend row. HelperCall::MessagesStreamUsage
   applies finite typed state operations, returning each event and state snapshot; Python constructs a real
   wrapper with an inert input. Normalize only the generated UUID while comparing equality across recording and
   output. No byte parser or provider request is hidden in this helper. Own 301 nonblank/non-comment physical
@@ -19,6 +23,7 @@ scope:
   paths:
   - crates/betterlite-core/src/api/messages_stream_usage.rs
   - crates/betterlite-core/src/api/messages_stream_usage/**
+  - crates/betterlite-logging/src/logging_state.rs
   - tools/oracle/src/helpers/core_ops/messages_stream_usage.rs
   - tools/oracle/src/helpers/core_ops/messages_stream_usage/**
   - tools/oracle/helpers/messages_stream_usage.py
@@ -31,12 +36,14 @@ references:
   why: Per-instance construction, held-stop usage replacement, context edits and one-at-a-time synthetic compaction events.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py#L1046-L1201
   why: Refusal precedence, nonempty-delta predicates and transitions between text, thinking and named tools.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4174-L4175
+  why: record_streamed_anthropic_message_id, the setter the constructor calls with its msg_ id; the attribute it sets is declared at L571.
 dod:
 - text: >-
     stream_state_initialization has index0,type=text,start={type:text,text:""},all sent/queued flags false,
     empty queue/refusal text/tool map/applied edits and null held chunks. Initial usage is exactly input_tokens=0,
     output_tokens=0,cache_creation_input_tokens=0,cache_read_input_tokens=0. Two instances get independent queues,
-    mutable block starts and msg_<UUID> ids; the optional recorder receives that exact id once. chunks/messages
+    mutable block starts and msg_<UUID> ids; a given logging state's streamed_anthropic_message_id holds that exact id. chunks/messages
     properties forward through the splitter, or return null when absent. Copy the applied-edit list.
   proof: [behavior-tests, oracle, helper-python]
 - text: >-
@@ -88,7 +95,7 @@ checks:
   commands:
   - id: behavior-tests
     why: stream usage or a state transition has no adjacent production test
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_usage::/)'
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_usage::/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^logging_state::/)'
   - id: helper-python
     why: the inert-wrapper comparison is absent or fails strict checking
     run: test -f tools/oracle/helpers/messages_stream_usage.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
@@ -110,7 +117,9 @@ deviations: []
 out_of_scope:
 - B975 owns adapters/streaming_iterator.py L43-L293 splitter/error helpers; B977 and its sync part own all iteration/SSE methods L548-L1044 and AnthropicSSEStream L1212-L1233.
 - B966 owns usage arithmetic and chunk translation; B571 defines empty unsigned thinking, B963 refusal extraction/details.
-- B247 owns the logging record setter. Logging persistence and main completion HTTP are not state-helper work.
+- B9840 reads streamed_anthropic_message_id in the /v1/messages logged-response conversion; this task only writes it. Logging persistence and main completion HTTP are not state-helper work.
+- The Responses bridge stream records its own msg_ id the same way (responses_adapters/streaming_iterator.py L127); B986 assigns the same field.
+- In litellm_logging.py this task builds only record_streamed_anthropic_message_id and its attribute; the logged-response conversions are B9840's, and the rest of the file belongs to B190, its named sibling parts (B247 to B254) and the owners their out_of_scope lists name.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as messages_stream_usage in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/messages_stream_usage.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/messages_stream_usage.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Presence of context_management or usage.iterations blocks augmentation even when its value is null.

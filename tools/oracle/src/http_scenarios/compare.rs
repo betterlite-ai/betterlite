@@ -70,11 +70,17 @@ fn compare_step(
             rust: Value::from(second.provider_total),
         });
     }
+    // a step's selector names a request by its index inside that step's own captures
     let bridge = Compare {
         headers: compare.headers.clone(),
         headers_present: compare.headers_present.clone(),
         upstream_headers: compare.upstream_headers.clone(),
-        ignore: Vec::new(),
+        ignore: compare
+            .ignore
+            .iter()
+            .filter(|ignored| ignored.pointer.starts_with("/upstream/"))
+            .cloned()
+            .collect(),
         contracts: None,
     };
     let reference = projected(first, compare);

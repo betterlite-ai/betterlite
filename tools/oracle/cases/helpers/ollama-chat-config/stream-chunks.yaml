@@ -1,0 +1,51 @@
+kind: helper
+name: ollama-chat-stream-chunks
+env: {}
+compare: {ignore: []}
+call:
+  b8155:
+    op: stream
+    lines:
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "Hello"}, "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": ""}, "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant"}, "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant", "thinking": "why"}, "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant", "thinking": ""}, "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "ans"}, "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "<think>in"}, "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "side</think>out"}, "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "a<think>b</think>c"}, "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"function": {"name": "f", "arguments": {"b": 2, "a": 1}}}]}, "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"function": {"name": "f", "arguments": {}}}]}, "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"function": {"name": "f", "arguments": "{\"a\":"}}]} , "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"function": {"name": "f", "arguments": "{}"}}]}, "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"function": {"name": "f", "arguments": ""}}]}, "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": []}, "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": null}, "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"index": 5, "function": {"name": "f", "arguments": {}}}, {"function": {"name": "g", "arguments": {}}}]}, "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"type": null, "function": {"name": "f", "arguments": {}}}]}, "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "z"}, "done": true, "done_reason": "stop", "prompt_eval_count": 3, "eval_count": 4}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "w"}, "done": true, "done_reason": "length"}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "l"}, "done": true, "done_reason": "load"}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "v"}, "done": true, "prompt_eval_count": 3}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "u"}, "done": true}'
+      - 'data: {"model": "llama3", "message": {"role": "assistant", "content": "t"}, "done": false}'
+      - ""
+      - "   "
+      - not json
+      - "null"
+      - "0"
+      - "false"
+      - "[]"
+      - "{}"
+      - "data: "
+      - "[DONE]"
+      - "data: [DONE]"
+      - '{"model": "llama3", "message": {"content": "a[DONE]b"}, "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": 5}, "done": false}'
+      - '{"model": "llama3", "done": false}'
+      - '{"model": "llama3", "message": {"content": "x"}}'
+      - '{"message": {"content": "x"}, "done": false}'
+      - '{"model": "llama3", "message": 5, "done": false}'
+      - '{"model": "llama3", "message": {"content": "x", "tool_calls": [{"function": {"name": "f", "arguments": 5}}]}, "done": false}'
+      - "[1, 2]"

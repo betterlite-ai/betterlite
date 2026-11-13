@@ -1,7 +1,7 @@
 id: B8175
 milestone: M3 providers
 title: Volcengine chat, embedding and shared helpers
-status: todo
+status: done
 depends_on: [B668, B1425, B2202]
 file: tasks/B8175-volcengine-chat-embedding.yaml
 covers:
@@ -12,7 +12,7 @@ covers:
   - "litellm/llms/volcengine/embedding/transformation.py"
 parent: B043
 split_from: B043
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1247

@@ -1,0 +1,20 @@
+task: B3490
+deviations:
+  - what: Provider selection returns None for an empty string, a missing provider and every unsupported identifier; it never falls back to "gemini". The default-to-Gemini behavior lives in the HTTP handler tasks (B3495, B3499) and the route tasks (B3507), which decide what to do with the None.
+    why: This task selects the provider config when the caller named a supported one; callees decide the default, so Gemini is not hard-coded as a global fallback inside the selection function.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/utils.py#L27-L58
+  - what: Provider selection and optional-field extraction are pure functions that take their arguments, not methods on a global config registry.
+    why: Rule inject-dependencies keeps provider setup composable; dependencies come in through function arguments.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/utils.py#L27-L58
+  - what: The optional-field names are a const whitespace-separated string that the shared filter splits, not a Python set iterated into a dict of None defaults.
+    why: The shared filter takes its default names as a string, and the names are provider-independent, so they stay a compile-time constant.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/utils.py#L11-L24
+  - what: None as the Responses-bridge signal is the explicit None of an Option return type, not an absent entry in a global provider dict.
+    why: Rust's type system makes the absence explicit and forces every caller to handle it; Python's None is implicit on a missing dict entry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/utils.py#L27-L58
+  - what: Selection answers an InteractionsProvider variant naming the provider config class instead of constructing GoogleAIStudioInteractionsConfig or VertexAIInteractionsConfig. Those config types live in the provider crates and are owned by B1369 (Vertex) and B1370 (Studio), which are outside this task's scope; callers build the config the variant names.
+    why: betterlite-core cannot construct provider configs it does not own, and rule stay-in-scope keeps the provider implementations in their own tasks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/utils.py#L27-L58
+  - what: An absent custom_llm_provider is treated as an unnamed provider, so an aws_ or vertex_-prefixed kwarg is dropped instead of raising AttributeError. LiteLLM calls .startswith on the missing provider and fails with a 500 before it reaches any filter.
+    why: Rule owned-behavior-is-built fixes a crash no working setup can rely on; every LiteLLM caller of this utility supplies the provider, so no working setup sees the change.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4223-L4237

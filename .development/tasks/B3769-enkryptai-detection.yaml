@@ -91,7 +91,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/enkryptai/enkryptai.py#L232-L268
 out_of_scope:
   - Lifecycle hook entry points (async_pre_call_hook, async_moderation_hook, async_post_call_success_hook, async_post_call_streaming_iterator_hook wrapper logic);
-    B107 orchestrates when EnkryptAI guardrails are invoked.
+    EnkryptAI's own hook methods have no caller at the pin, because the class has apply_guardrail and ProxyLogging uses the unified path.
   - The threshold-based decision whether to run EnkryptAI on a particular request; B219 and other tasks handle that.
   - Whether to actually block when block_on_violation is set or when detectors dict enables/disables specific checks; those toggles remain unobserved at this pin.
   - The deployment_name field and X-Enkrypt-Deployment header wiring; declared but not used in the detection call at the pinned code.

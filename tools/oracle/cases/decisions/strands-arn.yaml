@@ -1,0 +1,24 @@
+kind: helper
+name: strands-arn
+call:
+  b3512:
+    steps:
+      - kind: runtime
+        api_base: arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/my-runtime
+      - kind: runtime
+        api_base: arn:aws-cn:bedrock-agentcore:cn-north-1:123456789012:runtime/runtime_a-b
+      - kind: sign
+        api_base: arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/my-runtime
+        headers:
+          X-Custom: v
+        litellm_params:
+          aws_access_key_id: AKIDEXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+          aws_session_token: session-token
+        model: m
+        state: the state
+        question: q
+        instructions: decide
+        now: 1767225600
+env: {}
+compare: {ignore: []}

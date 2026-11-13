@@ -1,0 +1,17 @@
+task: B655
+deviations:
+  - what: A malformed SSE line is logged as "Skipping non-JSON SSE line" without its first 100 characters; the skip and its debug category stay the same.
+    why: LiteLLM logs the raw line prefix, and repository redaction rules keep provider content out of diagnostics.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L630-L632
+  - what: A negative inputTokens, outputTokens or totalTokens value fails the stream with a typed error instead of emitting a negative count.
+    why: LiteLLM stores any Python int in Usage, while betterlite's ChatUsage carries u64 token counts, so a negative provider count has no representation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L604-L609
+  - what: A stream line whose bytes are not UTF-8 is skipped as a non-JSON line instead of being decoded with replacement characters.
+    why: httpx decodes text with a charset and replacement, and betterlite refuses bytes that are not UTF-8 rather than mangling them into different JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L538-L540
+  - what: The fake-stream JSON body and the body read for a non-200 error message are capped at 16 MiB; a larger body fails with a typed error.
+    why: LiteLLM reads those streamed responses without a bound, while an untrusted provider body needs a limit in a gateway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L694-L695
+  - what: A stream line longer than 1 MiB, whether it arrives in one read or in several, fails the stream with a typed error after the events decoded before it were delivered.
+    why: LiteLLM buffers a line without a bound, while an untrusted provider line needs a limit in a gateway. The limit applies to complete lines too, so the answer does not depend on how the network splits reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L539-L547

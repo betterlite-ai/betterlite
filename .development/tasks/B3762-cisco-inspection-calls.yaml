@@ -170,9 +170,9 @@ out_of_scope:
   - Verdict envelope parsing, action normalization, sanitized payload extraction, MCP argument decoding; those belong to B3758.
   - Request and response redaction application; those belong to B3757.
   - Verdict finalization, decision logging, metadata attachment to request, error fallback policy, and block payload building; those belong to B3760.
-  - Building MCP request/response payloads (_build_mcp_request_payload, _build_mcp_response_payload), MCP post-tool hook (async_post_mcp_tool_call_hook), and MCP output replacement; those belong to B3761.
+  - Building MCP request/response payloads (_build_mcp_request_payload, _build_mcp_response_payload), and MCP output replacement; those belong to B3761. The MCP post-tool hook (async_post_mcp_tool_call_hook) belongs to B9450.
   - Message and tool-argument extraction from requests/responses; those belong to B3756.
-  - Streaming output hook (async_post_call_streaming_iterator_hook); that buffers and applies verdicts to streamed chunks.
+  - Streaming output hook (async_post_call_streaming_iterator_hook); that buffers and applies verdicts to streamed chunks, and B9450 owns it.
   - HTTP client setup and async handler acquisition; those are framework dependencies (H).
   - CustomGuardrail base class initialization; that belongs to the framework (F).
   - should_run_guardrail filtering by event_type and metadata; that belongs to the guardrail base (F).

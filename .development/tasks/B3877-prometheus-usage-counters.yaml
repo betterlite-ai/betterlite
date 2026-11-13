@@ -167,7 +167,7 @@ out_of_scope:
   - "The `litellm_proxy_total_requests_metric` increment at the end of the success hook: one call to B3876's `inc_labeled_counter` made by the orchestrator."
   - "Latency, token-per-second and guardrail observations, `_get_input_sequence_length`: B3878."
   - "Remaining rate-limit and deployment TPM/RPM gauges, `_set_virtual_key_rate_limit_metrics`: B3879. Deployment success and failure outcomes: B3881."
-  - "Remaining budget gauges and `_increment_remaining_budget_metrics`: B3882 owns the projection, B3883 the request lookups."
+  - "Remaining budget gauges and `_increment_remaining_budget_metrics`: B3882 owns the projection, B3883 the request lookups, B9480 the fan-out."
   - "`inc_labeled_counter`, `_track_end_user_metric_series` and the series tracker: B3876. Label projection and the label factory: B3873. Collector factories and `get_labels_for_metric`: B3874. Collector creation and registration of every metric here: B3875."
   - "The scheduled job that calls `set_spend_capture_rate` (proxy_server.py 11162-11230) and its alert: no owner in the Prometheus entries; only the gauge setter is built here."
   - "Metric label catalog entries for these metrics: B3871 and B3872."

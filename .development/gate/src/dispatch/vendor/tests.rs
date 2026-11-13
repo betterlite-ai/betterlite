@@ -192,6 +192,28 @@ fn an_expired_limit_allows_one_probe_instead_of_a_stampede() {
 }
 
 #[test]
+fn a_lapsed_network_error_sends_no_probe_ahead() {
+    let agents = agents();
+    let git = tempfile::tempdir().unwrap();
+    mark(
+        git.path(),
+        "openai",
+        "API Error: Can't reach the API server (EAI_AGAIN)",
+    )
+    .unwrap();
+    let path = git.path().join("betterlite/limits/openai");
+    File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(SystemTime::now() - Duration::from_mins(2))
+        .unwrap();
+    let first = take_seat(git.path(), &agents, &codex(), Seat::Worker).unwrap();
+    assert!(first.is_some());
+    assert!(seat_free(git.path(), &agents, &codex(), Seat::Worker).unwrap());
+}
+
+#[test]
 fn only_the_first_waiter_in_line_tries_for_a_seat() {
     let git = tempfile::tempdir().unwrap();
     let queue = git.path().join("seat-queue");

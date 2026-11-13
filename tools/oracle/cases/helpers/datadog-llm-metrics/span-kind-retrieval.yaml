@@ -1,0 +1,9 @@
+kind: helper
+name: datadog-llm-metrics-span-kind-retrieval
+call:
+  b3937:
+    function: span_kind
+    call_type: "get_assistants"
+    parent_id: "parent-span"
+env: {}
+compare: {ignore: []}

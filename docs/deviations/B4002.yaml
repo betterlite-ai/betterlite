@@ -1,0 +1,23 @@
+task: B4002
+deviations:
+  - what: The shared batch queue caps itself at max_queue_size when a record is appended, so the oldest record goes at once. LiteLLM lets the queue grow past max_queue_size on append and trims it only when undelivered records are put back.
+    why: The shared BatchQueue keeps every batch logger bounded. An unreachable destination can no longer grow memory without limit between sends. Setups with max_queue_size at or above batch_size never see the difference unless a send is stuck.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L378-L399
+  - what: The overflow warning uses the shared batch logger wording. It still names max_queue_size and the number of dropped records, but not the "audit logs" or "logs" label LiteLLM puts in the text.
+    why: One warning for every batch logger, emitted by the shared queue.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L391-L396
+  - what: Model batches and audit batches take separate flush locks. LiteLLM uses one flush_lock for both streams.
+    why: A slow model send no longer holds up the audit stream. Each queue still sends one batch at a time, and flush_queue still sends the model queue before the audit queue.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L162-L163
+  - what: A token response whose expires_in is null is read as the default of 3600 seconds. In LiteLLM the null reaches `time.time() + expires_in` and raises a TypeError.
+    why: The declared type of expires_in is an optional number, and null takes the default (docs/compatibility.md).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L231-L236
+  - what: The token is fetched once for each delivery of a batch and shared by every halved send of that batch. A batch that splits on 413 does not fetch the token again between its halves.
+    why: The cached token cannot expire between two sends of one delivery, so the calls LiteLLM makes are the same, and one expiry check per delivery is simpler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L195-L236
+  - what: The size of a batch for the 1,000,000 byte split is measured on the JSON text serde_json writes, not on Python's json.dumps text.
+    why: Standard JSON output (docs/compatibility.md). Python's default separators add spaces, so the two sizes can differ by a few bytes per record near the limit.
+    link: ""
+  - what: The audit payload is a StandardAuditLogPayload type local to this module, and the audit entry point is a method of AzureSentinelLogger because the shared CallbackLogger trait has no audit method.
+    why: The shared audit types belong to another task. The queue, the stream and the batch behavior are those of LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L297-L318

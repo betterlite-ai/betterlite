@@ -4,16 +4,19 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use betterlite_models::decisions::Json;
 use betterlite_provider::api::vector_store_contracts::config::Params;
 
 use crate::case::{Compare, UpstreamAnswer};
 use error::SdkHttpError;
 use result::SdkResult;
 
+pub(crate) mod anthropic_beta_config;
 pub(crate) mod capture;
 mod child;
 pub(crate) mod embedding_executor;
 pub mod error;
+pub(crate) mod messages_header_stream;
 pub(crate) mod native;
 pub(crate) mod python;
 pub mod result;
@@ -60,6 +63,8 @@ pub enum SdkHttpCall {
     OpenaiChat(OpenaiChat),
     VectorStoreEmbeddingExecutor(VectorStoreEmbeddingCall),
     VectorQueryEmbedding(VectorQueryEmbeddingCall),
+    AnthropicBetaConfig(AnthropicBetaConfigCall),
+    MessagesHeaderStream(MessagesHeaderStreamCall),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,6 +95,36 @@ pub struct VectorQueryEmbeddingCall {
     pub(crate) query_text: String,
     #[serde(default)]
     pub(crate) litellm_params: Params,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnthropicBetaConfigCall {
+    pub(crate) url: BetaConfigUrl,
+    pub(crate) steps: Vec<BetaConfigStep>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MessagesHeaderStreamCall {
+    pub(crate) body: Json,
+    #[serde(default)]
+    pub(crate) buffered_provider_output: Option<Json>,
+}
+
+// the call names no address: the harness points the endpoint at its own mock, or leaves it empty
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BetaConfigUrl {
+    Mock,
+    Empty,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BetaConfigStep {
+    Load,
+    Reload,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -192,7 +227,14 @@ fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHtt
                 }
             }
         }
-        SdkHttpCall::VectorQueryEmbedding(_) => {}
+        SdkHttpCall::MessagesHeaderStream(stream) => {
+            if !matches!(stream.body, Json::Object(_)) {
+                return Err(SdkHttpError::Invalid(
+                    "the Messages header stream body must be an object".to_owned(),
+                ));
+            }
+        }
+        SdkHttpCall::VectorQueryEmbedding(_) | SdkHttpCall::AnthropicBetaConfig(_) => {}
     }
     Ok(())
 }

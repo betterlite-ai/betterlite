@@ -123,7 +123,7 @@ deviations:
     why: The pinned MCP helper returns configured values without validation, but spend storage requires a finite monetary result. A2A's explicit numeric-string conversion remains supported.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/cost_calculator.py#L63-L69
 out_of_scope:
-  - B142 retains A2A protocol transport and streaming; B136 retains MCP server behavior. Their cost_calculator.py methods are extracted here for those callers to consume directly.
+  - B4801, B4810 and B4814 hold A2A protocol transport and streaming; B136 retains MCP server behavior. Their cost_calculator.py methods are extracted here for those callers to consume directly.
   - B5831 builds has_together_registry_pricing/get_model_params_and_category and its embedding category helper (together_ai_cost, model_has_registry_pricing and pricing_category); the price-policy interface invokes them without importing a provider crate into core.
   - B068 assembles ordinary token/tool fees and public cost entry points; B1688 owns preparation, and the remaining cost_calculator.py helper ranges retain their B1666-B1687 owners.
 pitfalls:

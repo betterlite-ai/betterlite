@@ -30,6 +30,7 @@ use crate::routing_mock_scripts::{
 };
 
 pub mod mcp_reply;
+mod upstream_address;
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub(crate) struct ProviderRequest {
@@ -65,12 +66,18 @@ async fn serve_until_stopped(
 }
 
 impl MockProvider {
-    pub(crate) fn start(script: MockScript) -> Result<Self, OracleError> {
+    pub(crate) fn start(mut script: MockScript) -> Result<Self, OracleError> {
         let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(OracleError::MockIo)?;
         listener
             .set_nonblocking(true)
             .map_err(OracleError::MockIo)?;
         let address = listener.local_addr().map_err(OracleError::MockIo)?;
+        let base_url = format!("http://{address}");
+        for reply in &mut script.replies {
+            if let Outcome::Answer(answer) = &mut reply.then {
+                upstream_address::fill(answer, &base_url);
+            }
+        }
         let runtime = runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -90,7 +97,7 @@ impl MockProvider {
             .spawn(move || runtime.block_on(serve_until_stopped(listener, router, stopped)))
             .map_err(OracleError::MockIo)?;
         Ok(Self {
-            base_url: format!("http://{address}"),
+            base_url,
             recording,
             stop: Some(stop),
             thread: Some(thread),

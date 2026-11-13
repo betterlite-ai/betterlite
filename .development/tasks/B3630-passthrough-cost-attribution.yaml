@@ -28,7 +28,7 @@ description: >-
 
 
   Tests: module tests under pass_through_logging::batch_attribution::tests, ::stream_fields::tests, ::response_costing::tests and ::response_payload::tests, each test name starting with the group word the checks use (batch_, fields_, costing_, payload_). Fakes stand in for the cost service and the call log; the real B880 function runs where it is cheap.
-  No route reaches this code yet, so the oracle cases are helper cases for the pure functions (is_collection_route, request_tags_from_metadata, the two extractors, resolve_costing_model, cost_relevant_speed); the umbrella B103 and the handlers that call these add the HTTP cases. The helper calls the pinned Python static functions with a stub logging object and never copies the algorithm.
+  No route reaches this code yet, so the oracle cases are helper cases for the pure functions (is_collection_route, request_tags_from_metadata, the two extractors, resolve_costing_model, cost_relevant_speed); B102 and the handlers that call these add the HTTP cases. The helper calls the pinned Python static functions with a stub logging object and never copies the algorithm.
 scope:
   paths:
     - crates/betterlite-server/src/pass_through_logging/batch_attribution.rs

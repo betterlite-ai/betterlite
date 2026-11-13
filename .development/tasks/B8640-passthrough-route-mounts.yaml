@@ -5,19 +5,20 @@ description: >-
   LiteLLM includes the whole llm_passthrough router at one slot in proxy_server.py (L19966, `reserve_lazy_slot(app, "llm_passthrough")`), the openai_passthrough router just before it and the config routes of pass_through_endpoints.py just after. Lazy loading changes nothing a client sees, so here every route is mounted at startup.
 
   Shared state (app/pass_through/routes/deps.rs). `PassThroughState::new(state: &ServerState)` builds, from `state.shared` and nothing global:
-  - the one `Arc<PassThroughRuntime>` of B8931, set once into `Shared.pass_through_logging` (B8610's empty OnceLock; mount and mount_public share the first value) from the cost-service slot, the shared resources and `stream_usage_cost.enabled` (B8930). Its completion, streaming and binder handles feed the handler dependencies below, and its `speech_rates` is exposed for B8607 to pass to B3625. This adds no mounts;
+  - the one `Arc<PassThroughRuntime>` of B8931, set once into `Shared.pass_through_logging` (B8610's empty OnceLock; mount and mount_public share the first value) from the cost-service slot, the shared resources, Shared's `stream_assembler` Arc (passed as RuntimeInputs.stream_assembler) and `stream_usage_cost.enabled` (B8930). Its completion, streaming and binder handles feed the handler dependencies below, and its `speech_rates` is exposed for B8607 to pass to B3625. This adds no mounts;
   - the one `Arc<PassThroughHandler>` of B3613, from B3613's merged `HandlerDeps` filled from Shared (`http`, `general_settings`, `router_views`, and `proxy_logging` through B8641's HooksAdapter) and B6510's `PassThroughDeps`;
   - B8641's `PassThroughPorts::new(shared)`;
   - B3612's `WebSocketRelay` with `WebSocketDeps` filled from Shared, B8641's HooksAdapter as hooks and B8642's `TungsteniteConnector` as connector;
   - `AxumSocketServe` (app/pass_through/routes/sockets.rs), the production `SocketServePort` of B3628. Its serve extracts axum's WebSocketUpgrade from the request (a request that is not an upgrade gets 400, which only a bug can reach since the callers check first) and calls B8642's `serve_client_socket` with a closure that, for `SocketAuth::Key`, runs B052's user_api_key_auth_websocket on the socket (read the merged name) and closes before accept on a failure, then runs the route with the key; for `SocketAuth::Route` it runs the route with no key;
   - B8643's `ConfiguredDispatch` over the same handler Arc and the route table handle.
   The B3602 credential router, the B1302 Vertex token state and the B3614 route table must each be one value per process, because LiteLLM keeps them at module level and set_default_vertex_config, B3616's startup install and B8520's writes change them. Take all three from the Shared field the architect names for them (see the planner notes) and never build a second one. When that field is not on the branch, stop and report.
+  `PassThroughState` also exposes the server Config, Shared's `secrets: Arc<SecretLookup>`, the environment map SecretLookup::get_secret takes and the startup TlsPolicy, for B103's Langfuse route.
   Every family file reads only `PassThroughState`, so the family parts never touch Shared.
 
   The router hop and the passthrough processor. B3618's `RouterPassthrough` and B7324's `LlmRequestProcessor` and `ExceptionMapper` have no production value yet. `PassThroughState` holds them for the families whose deps take them (B3620 through B3621, B3624, B3627 and B3628's NVIDIA route). They are filled from B8694's `LlmPipelinePorts::new(state)`: its `LlmPassthroughProcessor` for the processor fields and its `RouterHop` (None without a router) for the router fields.
 
-  Mount functions (app/pass_through.rs). `mount(router, state)` builds one PassThroughState from `state.shared` and calls, in this order, `openai_common::mount`, `aws_speech::mount`, `vertex_azure::mount` and `saas_vgw::mount` (each `fn mount(router: Router, ps: &PassThroughState) -> Router` in app/pass_through/routes/<family>.rs). Then it merges B3617's two GET routes (`/config/pass_through_endpoint` and `/config/pass_through_endpoint/team/{team_id}`) and B8520's routes (POST `/config/pass_through_endpoint/{endpoint_id}`, POST `/config/pass_through_endpoint`, DELETE `/config/pass_through_endpoint`) with B8641's settings store, and sets B8643's `configured_fallback` as the app fallback. Only this area sets the fallback, and it still answers the 404 Not Found body when no configured route matches. `mount_public(router, state)` calls `openai_common::mount_public` the same way (B8606 puts the Gemini route there). `start(state)` stays the skeleton's stub.
-  Write the four family files with stub bodies that return the router unchanged, so the app builds before the family parts run. Each family part replaces its stub.
+  Mount functions (app/pass_through.rs). `mount(router, state)` builds one PassThroughState from `state.shared` and calls, in this order, `openai_common::mount`, `aws_speech::mount`, `vertex_azure::mount` and `saas_vgw::mount` (each `fn mount(router: Router, ps: &PassThroughState) -> Router` in app/pass_through/routes/<family>.rs). Then it merges B3617's two GET routes (`/config/pass_through_endpoint` and `/config/pass_through_endpoint/team/{team_id}`) and B8520's routes (POST `/config/pass_through_endpoint/{endpoint_id}`, POST `/config/pass_through_endpoint`, DELETE `/config/pass_through_endpoint`) with B8641's settings store, and sets B8643's `configured_fallback` as the app fallback. Only this area sets the fallback, and it still answers the 404 Not Found body when no configured route matches. `mount_public(router, state)` calls `openai_common::mount_public` the same way (B8606 puts the Gemini route there), then `langfuse::mount_public(router, &ps)` (B103 fills it). `start(state)` stays the skeleton's stub.
+  Write the five family files with stub bodies that return the router unchanged, so the app builds before the family parts run. Each family part replaces its stub. The fifth, routes/langfuse.rs, holds only `pub fn mount_public(router: Router, ps: &PassThroughState) -> Router { router }` and B103 replaces it.
 scope:
   paths:
     - crates/betterlite-server/src/app/pass_through.rs
@@ -31,6 +32,7 @@ scope:
     - crates/betterlite-server/src/app/pass_through/routes/aws_speech.rs
     - crates/betterlite-server/src/app/pass_through/routes/vertex_azure.rs
     - crates/betterlite-server/src/app/pass_through/routes/saas_vgw.rs
+    - crates/betterlite-server/src/app/pass_through/routes/langfuse.rs
     - tools/oracle/cases/server/pass-through-mounts/**
     - tools/oracle/cases/passthrough_config/**
     - tools/oracle/cases/passthrough_config_writes/**
@@ -47,7 +49,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12813-L12842
     why: user_api_key_auth_websocket as the dependency of a WebSocket route, which AxumSocketServe runs for SocketAuth::Key.
 dod:
-  - text: mount and mount_public build the app with all four family stubs, the config routes answer, and an unknown path still answers 404 Not Found.
+  - text: mount and mount_public build the app with all five family stubs, the config routes answer, and an unknown path still answers 404 Not Found.
     proof: [registration-tests, oracle]
   - text: B3617's and B8520's config routes answer through the booted proxy as LiteLLM does, with and without a database and a key.
     proof: [oracle]
@@ -87,7 +89,7 @@ deviations:
   - what: Every pass-through family is mounted at startup instead of on the first request to its prefix.
     why: LiteLLM's lazy slot only delays the Python import; the routes and their order are the same once loaded.
 out_of_scope:
-  - "The family mounts and their HTTP cases: B8606, B8607, B8608 and B8609. The port adapters: B8641. The socket adapters: B8642. Configured route matching: B8643."
+  - "The family mounts and their HTTP cases: B8606, B8607, B8608 and B8609. The Langfuse route mount and its HTTP cases: B103. The port adapters: B8641. The socket adapters: B8642. Configured route matching: B8643."
   - "B3618's RouterPassthrough and B7324's LlmRequestProcessor and ExceptionMapper production values: B8694 builds them over B8690 to B8693."
   - "The startup install of configured endpoints: B8374 (config) and B8384 (database). They must use the same route table this task reads."
 pitfalls:

@@ -103,7 +103,7 @@ fn detail(body: &[u8]) -> String {
         .to_owned()
 }
 
-fn gzip(data: &[u8]) -> Result<Vec<u8>, DatadogError> {
+pub(crate) fn gzip(data: &[u8]) -> Result<Vec<u8>, DatadogError> {
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(data).map_err(DatadogError::Compress)?;
     encoder.finish().map_err(DatadogError::Compress)

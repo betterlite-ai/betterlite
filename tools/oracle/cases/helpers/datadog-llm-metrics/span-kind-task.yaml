@@ -1,0 +1,9 @@
+kind: helper
+name: datadog-llm-metrics-span-kind-task
+call:
+  b3937:
+    function: span_kind
+    call_type: "create_batch"
+    parent_id: "parent-span"
+env: {}
+compare: {ignore: []}

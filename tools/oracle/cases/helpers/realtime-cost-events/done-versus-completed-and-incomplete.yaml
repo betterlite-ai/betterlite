@@ -1,0 +1,13 @@
+kind: helper
+name: realtime-cost-events-done-versus-completed-and-incomplete
+call:
+  realtime_cost_events:
+    function: collect
+    events:
+      - {type: response.done, response: {usage: {input_tokens: 10, output_tokens: 4}}}
+      - {type: response.completed, response: {usage: {input_tokens: 3, output_tokens: 1}}}
+      - {type: response.incomplete, response: {usage: {input_tokens: 2, output_tokens: 0}}}
+      - {type: response.created, response: {}}
+      - {type: rate_limits.updated}
+env: {}
+compare: {ignore: []}

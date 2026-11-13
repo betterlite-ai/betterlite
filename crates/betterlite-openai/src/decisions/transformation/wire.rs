@@ -5,7 +5,9 @@ use betterlite_models::decisions::systemone;
 use betterlite_models::decisions::validators::Bounded;
 use betterlite_models::decisions::{DecisionsJson, Extra};
 
-#[derive(Serialize)]
+use crate::decisions::openai::request::wire::RequestWire as OpenAiRequestWire;
+
+#[derive(Debug, Serialize)]
 pub struct NoulQuestionWire {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instructions: Option<DecisionsJson>,
@@ -15,7 +17,7 @@ pub struct NoulQuestionWire {
     pub extra: Extra,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ChoiceQuestionWire {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instructions: Option<DecisionsJson>,
@@ -24,7 +26,7 @@ pub struct ChoiceQuestionWire {
     pub extra: Extra,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ScoreQuestionWire {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instructions: Option<DecisionsJson>,
@@ -33,7 +35,7 @@ pub struct ScoreQuestionWire {
     pub extra: Extra,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum QuestionWire {
     Noul(NoulQuestionWire),
@@ -66,7 +68,7 @@ impl From<&systemone::DecisionQuestion> for QuestionWire {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct RequestWire {
     pub model: String,
     pub state: DecisionsJson,
@@ -94,4 +96,12 @@ impl From<&systemone::DecisionsRequest> for RequestWire {
             extra: request.body.extra.clone(),
         }
     }
+}
+
+// OpenAI-format providers send a different body than the SystemOne providers, so a call carries either shape
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum ProviderRequestWire {
+    SystemOne(RequestWire),
+    OpenAi(OpenAiRequestWire),
 }

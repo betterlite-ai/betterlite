@@ -85,6 +85,7 @@ deviations:
 out_of_scope:
   - "Credentials, metadata, redaction and run payloads (get_credentials_from_env, _get_credentials_to_use_for_request, _extract_metadata_fields, _prepare_log_data and the rest): B3911."
   - "get_run_by_id: a debugging read with no caller in the logging path."
+  - "is_serializable (langsmith.py L32): no caller at the pin."
 pitfalls:
   - LiteLLM's sampling expression is (explicit or float(env)) if env is all digits else 1.0, so an explicit rate without the env var is ignored.
   - The sync event cannot await, so it spawns the flush on the tracker instead of blocking the caller.

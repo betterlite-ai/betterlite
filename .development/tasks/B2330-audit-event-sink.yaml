@@ -35,8 +35,9 @@ description: >-
   audit_invalid_record reject malformed records before submission. This is redaction, not encryption.
 
   Cache resolved named callbacks only when non-null. s3_v2 with non-null
-  litellm_settings.s3_audit_callback_params (default null, even {} selects override) constructs
-  B115's dedicated logger; other names call B188's registry factory with internal_usage_cache
+  litellm_settings.s3_audit_callback_params (default null, even {} selects override) calls an
+  injected dedicated-logger builder (B065 passes B115's build_audit_logger; this task doesn't
+  depend on B115, so its tests inject a fake); other names call B188's registry factory with internal_usage_cache
   and llm_router null. reset_audit_log_callback_cache clears this cache on caller-requested reload.
   Cases audit_callback_cache_hit, audit_unresolved_not_cached, audit_s3_override_empty and
   audit_cache_reset cover resolution. litellm_settings.audit_log_callbacks defaults []; B8872

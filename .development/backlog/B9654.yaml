@@ -1,0 +1,14 @@
+id: B9654
+milestone: M9 agents and mcp
+title: Gateway MCP runtime with upstream error capture in the MCP area state
+status: todo
+depends_on: [B8610, B8620, B8622, B8461, B8194, B9651, B9653]
+file: tasks/B9654-mcp-upstream-runtime-wiring.yaml
+covers:
+  - "litellm/experimental_mcp_client/client.py"
+parent: B140
+split_from: B140
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

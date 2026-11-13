@@ -1,0 +1,78 @@
+kind: helper
+name: chat-params-and-thinking
+call:
+  b8175:
+    steps:
+      - kind: chat_supported_params
+      - kind: chat_defaults
+        defaults:
+          temperature: 0
+          stop: ""
+          top_p: []
+          n: 2
+          response_format: {type: text}
+      - kind: chat_defaults
+        defaults: {temperature: null, unknown_setting: 1}
+      - kind: chat_map
+        params: {max_completion_tokens: 5}
+      - kind: chat_map
+        params: {max_tokens: 7, max_completion_tokens: 9}
+      - kind: chat_map
+        params:
+          frequency_penalty: 0.1
+          logit_bias: {"1": 2}
+          logprobs: true
+          top_logprobs: 2
+          max_tokens: 7
+          n: 2
+          presence_penalty: 0.2
+          seed: 4
+          stop: ["END"]
+          stream: false
+          stream_options: {include_usage: true}
+          temperature: 0
+          top_p: 1
+          tools: []
+          tool_choice: auto
+          function_call: none
+          functions: []
+          max_retries: 3
+          extra_headers: {x-call: "1"}
+          response_format: {type: json_object}
+          modalities: [text]
+          unknown: 1
+      - kind: chat_map
+        params: {thinking: {type: enabled, budget_tokens: 3}}
+      - kind: chat_map
+        params: {thinking: {type: disabled}}
+      - kind: chat_map
+        params: {thinking: {type: auto}}
+      - kind: chat_map
+        params: {thinking: {type: other, budget_tokens: 1}}
+      - kind: chat_map
+        params: {thinking: {budget_tokens: 3}}
+      - kind: chat_map
+        params: {thinking: true}
+      - kind: chat_map
+        params: {thinking: "enabled"}
+      - kind: chat_map
+        params: {thinking: null}
+      - kind: chat_map
+        params: {thinking: [{type: enabled}]}
+      - kind: chat_map
+        params: {thinking: {type: enabled}}
+        optional_params: {extra_body: {keep: 1, thinking: {type: disabled}}}
+      - kind: chat_map
+        params: {thinking: {type: other}}
+        optional_params: {extra_body: 5}
+      - kind: chat_map
+        params: {thinking: {type: enabled}}
+        optional_params: {extra_body: 5}
+      - kind: chat_map
+        params: {}
+        optional_params: {temperature: 0.2, thinking: {type: auto}}
+      - kind: chat_map
+        params: {}
+        optional_params: {max_tokens: 1, max_completion_tokens: 2}
+env: {}
+compare: {ignore: []}

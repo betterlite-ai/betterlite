@@ -1,0 +1,88 @@
+id: B9653
+title: MCP SDK runtime and client session over rmcp
+description: >-
+  B4744 wrote the MCP client against an McpRuntime trait, and B4745 and B4746 wrote tool calls, listing, prompts and resources against session traits, all so the MCP SDK could be swapped in later. Only StdioRuntime and test fakes implement them, and StdioRuntime's session factory has no production implementation either, so no MCP call reaches a real server today. LiteLLM gets this part from the MCP Python SDK's ClientSession (mcp 2.3.0, pinned in tools/oracle/litellm/uv.lock): JSON-RPC request ids, a read timeout per request, server-initiated requests answered through callbacks, and the typed calls tools/list, tools/call, prompts/list, prompts/get, resources/list, resources/templates/list and resources/read. This task builds that on rmcp 3.9.0, the MCP crate the workspace already uses for its server side, over B9652's transports.
+
+
+  Code goes in crates/betterlite-mcp/src/client/sdk_runtime.rs and crates/betterlite-mcp/src/client/sdk_runtime/ (runtime.rs, session.rs, handler.rs, convert.rs, tests.rs), and in crates/betterlite-core/src/api/mcp_sdk_resources.rs with its tests.rs beside it for the one trait that lives in betterlite-core. The skeleton declares both modules.
+
+
+  runtime.rs. `SdkRuntime` implements B4744's McpRuntime with `Error = SdkError` and `Transport = SdkTransport` from B9652. `SdkRuntime::new(base: HttpBase, capture: Arc<dyn ErrorCapture>, tracker: TaskTracker)` takes B9651's HTTP base and capture port and the task tracker the server drains on shutdown; it reads no environment and holds no global. stdio_client wraps B4744's StdioServer, sse_client builds the legacy SSE transport with its own McpHttpTransport from the SseRequest's client config (the SDK calls the factory per connection), streamable_http_client wraps the shared client it is given, and http_client builds `SdkHttpClient`, a newtype over B4743's McpHttpClient carrying B9651's McpHttpTransport whose HttpClientHandle reports recorded errors as SdkError. close_http_client does no I/O of its own: B4743's cleanup scope already bounds the client's last requests.
+
+
+  session.rs. `SdkSessionContext` implements B4744's SessionContext: enter starts an rmcp client service on the transport's streams without rmcp's own handshake (serve_directly), because B4744's initialize_session drives the handshake through ClientSession, and exit cancels the service and waits for it inside B4743's cleanup bound. `SdkSession` implements B4744's ClientSession (initialize with the SDK's default request, send_initialize with the request B4744 negotiated, adopt keeps the server capabilities and instructions of the result, send_initialized sends notifications/initialized), B4740's McpSession (list_tools by cursor, call_tool), B4745's ToolCallSession (tools/call with a progress token when a ProgressForwarder is given, progress notifications forwarded to it, and allow_input_required passed through) and, in betterlite-core's mcp_sdk_resources.rs, B4746's ResourceSession. Every request uses SessionOptions.read_timeout as the SDK's read_timeout_seconds, and a timeout comes back as the protocol failure B4744's run.rs already recognises (code -32001, SDK_READ_TIMEOUT_CODE, context Timeout). protocol_failure maps an rmcp JSON-RPC error to McpFailure with its code, message and data; transport and framing errors stay runtime errors. A stream failure recorded in the MessageHandler by B9652's transport fails every pending request, as LiteLLM's raising message handler closes them (client.py L594-L604).
+
+
+  handler.rs. `SdkClientHandler` implements rmcp's ClientHandler for server-initiated messages, with the SDK's defaults when nothing is configured: sampling/createMessage answers INVALID_REQUEST "Sampling not supported", elicitation/create answers INVALID_REQUEST "Elicitation not supported", roots/list answers INVALID_REQUEST "List roots not supported", ping answers an empty result, and notifications/message is dropped. B4744's Callbacks only names which callbacks exist, so the handlers themselves have no way into a session today. Add `pub struct ServerRequestHandlers { pub sampling: Option<Arc<dyn SamplingResponder>>, pub elicitation: Option<Arc<dyn ElicitationResponder>> }` with Default, two object-safe traits that take the decoded request params and return the result or a JSON-RPC ErrorData, a `handlers` field on B4744's SessionSettings and SessionOptions, and pass it from SessionClient through to the session. A configured responder answers its request instead of the default. Callbacks keeps advertising the capability as it does.
+
+
+  convert.rs maps rmcp's model types to and from the betterlite types B4740, B4745 and B4746 defined (McpTool pages, ToolCallResult and its ContentBlock items, prompt and resource pages, ServerCapabilities) through their shared JSON wire shape. A field rmcp drops and the MCP wire carries is a defect here, not a deviation.
+
+
+  Tests in client::sdk_runtime::tests run the whole stack (SessionClient, B4744's run_with_session, B4745's list_tools and call_tool) against a local MCP server built with rmcp's server side over streamable HTTP, legacy SSE and an in-process duplex standing in for stdio: initialize negotiation including the legacy fallback, a two-page tool listing, a tool call with progress, an isError result, a JSON-RPC error, a read timeout on paused time, a server sampling request with and without a responder, an elicitation request with and without one, and a stream failure that fails the pending call. api::mcp_sdk_resources::tests covers each ResourceSession method against the same server.
+scope:
+  paths:
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-core/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-mcp/src/client/sdk_runtime.rs
+    - crates/betterlite-mcp/src/client/sdk_runtime/**
+    - crates/betterlite-mcp/src/client/sessions/runtime.rs
+    - crates/betterlite-mcp/src/client/sessions/client.rs
+    - crates/betterlite-mcp/src/client/sessions/execute/session.rs
+    - crates/betterlite-mcp/src/client/sessions/tests/**
+    - crates/betterlite-mcp/src/client/tools/tests/**
+    - crates/betterlite-core/src/api/mcp_sdk_resources.rs
+    - crates/betterlite-core/src/api/mcp_sdk_resources/**
+    - crates/betterlite-core/src/api/mcp_client_resources/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L572-L650
+    why: How LiteLLM opens the SDK session, with read_timeout_seconds, the raising message handler and the three callbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L543-L570
+    why: The initialize request LiteLLM sends; B4744 negotiates it and this session only carries it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L395-L430
+    why: The client takes sampling, elicitation and logging callbacks at construction.
+  - url: https://pypi.org/project/mcp/2.3.0/
+    why: The pinned SDK; mcp/client/session.py has the default callbacks (L245-L281) and the per-request read timeout (L544-L575).
+  - url: https://docs.rs/rmcp/3.9.0/rmcp/
+    why: serve_directly, Peer::send_request_with_option and ClientHandler.
+dod:
+  - text: SdkRuntime implements McpRuntime for stdio, legacy SSE and streamable HTTP with the injected HTTP base, capture port and tracker, and no environment read.
+    proof: [runtime-tests]
+  - text: The session runs B4744's handshake, lists tools by page, calls tools with progress and maps JSON-RPC errors and read timeouts the way B4744 and B4745 expect.
+    proof: [runtime-tests, session-fixture-tests]
+  - text: Server sampling, elicitation and roots requests get the configured responder's answer or the SDK's default error text.
+    proof: [runtime-tests]
+  - text: Prompts and resources work through B4746's ResourceSession on the real session.
+    proof: [resource-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: runtime-tests
+      why: The runtime, the session or a default answer differs from the SDK, or a call never reaches the server.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^client::sdk_runtime::/)'
+    - id: resource-tests
+      why: A prompt or resource call is missing or converts a field wrongly.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::mcp_sdk_resources::/)'
+    - id: session-fixture-tests
+      why: The new handlers field broke B4744's, B4745's or B4746's tests.
+      run: cargo nextest run --locked -p betterlite-mcp -p betterlite-core --no-tests=fail -E 'test(/^client::(sessions|tools)::/) | test(/^api::mcp_client_resources::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Transports, redirects and SSE framing: B9652. One HTTP exchange with credentials and capture: B9651."
+  - "Building the sampling and elicitation responders from B8191's legacy callbacks: B8461, which fills SessionSettings.handlers when allow_sampling or allow_elicitation is set."
+  - "Building SdkRuntime once for the gateway with the real capture: B9654."
+  - "LiteLLM never passes a logging_callback from the proxy, so notifications/message has no consumer to wire."
+pitfalls:
+  - "Do not use rmcp's serve_client: it sends its own initialize from ClientHandler::get_info, which bypasses B4744's version negotiation and its -32022 handling."
+  - "The SDK's default answers are JSON-RPC errors with code INVALID_REQUEST (-32600), not METHOD_NOT_FOUND; rmcp's own defaults differ, so override every server-request method."
+  - "The read timeout applies to each request, the handshake included, not to the whole session."
+  - "adopt must keep the initialize result's capabilities; B4746's list helpers return early when the server lacks a capability."
+  - "A ProgressForwarder is per call: register its token before sending tools/call and drop it after, or a later call receives stale progress."
+  - "rmcp model structs and betterlite's wire types both use camelCase on the wire (inputSchema, isError, structuredContent, nextCursor); convert through the wire shape, never field by field by guess."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-claude-anthropic
+call:
+  b5650: {function: claude_target, custom_llm_provider: anthropic, model: some-model}
+env: {}
+compare: {ignore: []}

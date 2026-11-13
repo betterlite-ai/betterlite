@@ -1,0 +1,11 @@
+kind: helper
+name: openai-decisions-settings
+call:
+  openai_decisions:
+    settings:
+      - api_base: null
+        api_key: null
+        globals: {api_base: litellm-base, api_key: litellm-key}
+        env: {OPENAI_BASE_URL: env-base, OPENAI_API_KEY: env-key}
+env: {}
+compare: {ignore: []}

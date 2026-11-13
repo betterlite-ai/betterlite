@@ -1,0 +1,14 @@
+id: B9580
+milestone: M8 platform
+title: Health check general settings section
+status: done
+depends_on: [B002]
+file: tasks/B9580-health-check-settings.yaml
+covers:
+  - "litellm/proxy/proxy_server.py"
+parent: B130
+split_from: B130
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 1286

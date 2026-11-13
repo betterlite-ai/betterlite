@@ -1,0 +1,171 @@
+id: B9450
+title: Cisco AI Defense streaming output scan and MCP tool output hook
+description: >-
+  B3762 built the Cisco AI Defense pre-call, moderation and nonstreaming post-call hooks
+  (crates/betterlite-guardrails/src/cisco_inspection/hooks.rs). Two hooks of the same class are still
+  missing. async_post_call_streaming_iterator_hook buffers a streamed chat answer, scans it and
+  then lets it through, rebuilds it or replaces it with one SSE error event, and the MCP mixin's
+  async_post_mcp_tool_call_hook scans an MCP tool's output and swaps it for a violation message
+  on a block. Build both in betterlite-guardrails, in two new modules the skeleton creates:
+  cisco_stream_scan.rs with cisco_stream_scan/ and cisco_mcp_tool_hook.rs with cisco_mcp_tool_hook/.
+
+
+  Streaming scan. `cisco_stream_scan::scan_stream(guardrail: &CiscoInspectionGuardrail, request_data:
+  &mut Fields, chunks: S, args: PostCallArgs<'_>) -> Result<Vec<StreamItem>, E>`, where S is a stream of
+  `Result<chunk, E>` and the chunk type is the streamed chat chunk B2227's
+  betterlite-streaming::streamed_response_assembly takes (read it for the names). `StreamItem` has two
+  variants: a chunk to send on, and a ready SSE text `data: {...}\n\n`. LiteLLM buffers the whole stream
+  before it yields anything, so a Vec is the same behavior. The steps, in LiteLLM's order: when
+  settings.inspection_type is not chat, or args.should_run is false (the caller asks B3665's gate with
+  event post_call), every chunk passes unchanged and nothing is scanned. Otherwise collect every chunk;
+  an upstream error is logged at error ("Cisco AI Defense guardrail: upstream streaming failed") and
+  returned as is. No chunk gives an empty Vec. A first item that is not a chat chunk, or an assembly
+  that is not a chat response, gives one event with error {message "Cisco AI Defense: unsupported
+  streaming format — response withheld for safety", type guardrail_unsupported_stream, code 400,
+  guardrail <name>}; keep that message text byte for byte, dash included, since it is a wire value.
+  An assembly that gives nothing (B2227 returns none) passes the chunks unchanged.
+
+
+  Then build the messages to scan. Take the assembled response's messages with
+  cisco_inspection::hooks' extract_response_messages (make it and record_applied_guardrail
+  pub(crate); that one-word change is the only edit to hooks.rs). Build the chunk scan text the way
+  _extract_streaming_chunk_scan_text does: for each choice delta in order, append delta.content when it
+  is text, then the reasoning parts joined by one space (cisco_conversation::response::reasoning_parts),
+  and collect every tool_call and function_call arguments string into a second text; the result is the
+  two texts joined by one space, skipping an empty one. When that text is not empty and is not a
+  substring of the assembled messages' contents joined by one space, add one more message, role
+  assistant, with that text. No message at all passes the chunks unchanged. Otherwise prepend
+  cisco_conversation::request::request_messages(request_data) and call
+  cisco_inspection::chat::inspect_chat with direction Output and ResponseSurface::ChatResponse over the
+  assembled response as Fields, so a redaction lands in it.
+
+
+  Map the FinalizeOutcome. Blocked and ApiError(Blocked) are LiteLLM's HTTPException (400 with the
+  block payload, 503 with the API error detail): log a warning, build the error object with
+  cisco_verdict_enforcement::http_exception_to_error_obj and return one event `data:
+  {"error": <object>}`. Do not record the guardrail as applied for them. Every other outcome records it
+  with record_applied_guardrail. Then compare the chunk scan text with the assembled messages' contents
+  joined by one space (_streaming_content_was_modified): equal sends the original chunks, different
+  sends the chunks that B010's MockResponseIterator gives for the assembled response
+  (convert_model_response_to_streaming in base_model_iterator.py). LiteLLM also turns any other
+  exception from _inspect_chat into an event {message "Cisco AI Defense streaming scan failed —
+  response withheld.", type guardrail_scan_error, code 500, guardrail <name>}. inspect_chat returns an
+  outcome instead of failing, so that branch is reached only by an error the assembly into Fields
+  raises; map such an error to that event and test it with a response that can't be turned into Fields.
+
+
+  MCP tool hook. `CiscoMcpToolHook` holds an Arc of the CiscoInspectionGuardrail and the B3665
+  selection value its gate is called on (read guardrail_selection/gate.rs for the receiver type). It
+  implements B9650's CallbackLogger::async_post_mcp_tool_call_hook(McpToolHookCall). Steps from
+  cisco_ai_defense_mcp.py L97-L173: inspection_type other than mcp answers Ok(None). Copy into a fresh
+  request map only these kwargs keys, and only when present and not null: name, litellm_call_id, id,
+  user, mcp_tool_name, tool_name, mcp_arguments, arguments, mcp_server_name, server_name, metadata,
+  litellm_metadata, mcp_tool_call_metadata, guardrails. Run cisco_mcp::context::hydrate_tool_context on
+  it. Ask the gate with event during_mcp_call, then with pre_mcp_call, and an empty suppressed set
+  (MCP tool calls never pass the auto router); when both say no, log at debug and answer Ok(None). Take
+  the tool response with cisco_mcp::blocking::extract_tool_call_response over the logger's response
+  copy; none answers Ok(None). Call cisco_inspection::mcp::inspect_mcp_response with it; a redaction
+  goes to call.original when the kwargs carry original_response, else to the scanned response. On
+  Blocked or ApiError(Blocked), build the replacement with build_blocking_response from the exception
+  detail, put it into the response copy and into call.original with replace_tool_response, record the
+  guardrail as applied, log a warning and answer Ok(Some(replacement)). Any other outcome records the
+  guardrail and answers Ok(None). An error type for this module is only needed if the trait's
+  LoggerError can't carry one; LiteLLM raises nothing else here.
+
+
+  Add betterlite-streaming and betterlite-logging to betterlite-guardrails' Cargo.toml (neither
+  depends on guardrails, so there is no cycle) and let Cargo.lock change with it.
+
+
+  Tests in cisco_stream_scan/tests.rs and cisco_mcp_tool_hook/tests.rs use an axum mock of the
+  inspect endpoint and cover each branch above: passthrough for mcp inspection type and a false gate,
+  the two unsupported-shape events, allow, block, fail-closed and fail-open API errors, a redaction that
+  rebuilds the stream, the reasoning and tool-argument scan text, and for MCP the key copy, both gate
+  events, a missing tool response, block with and without original_response, and allow.
+
+
+  Helper cases in tools/oracle/cases/guardrails/cisco-stream/ call this task's helper with the
+  guardrail settings, the request data, the streamed chunks (or for MCP the kwargs and the tool
+  response), should_run where the hook takes it, and the scripted inspect answer
+  (`answer: {status, headers, body}`) in the onyx pattern. The output is the list of yielded items
+  (chunk objects and SSE texts) or the MCP return value and the changed response objects, the request
+  body the inspect endpoint got, and the applied_guardrails metadata.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/cisco_stream_scan.rs
+    - crates/betterlite-guardrails/src/cisco_stream_scan/**
+    - crates/betterlite-guardrails/src/cisco_mcp_tool_hook.rs
+    - crates/betterlite-guardrails/src/cisco_mcp_tool_hook/**
+    - crates/betterlite-guardrails/src/cisco_inspection/hooks.rs
+    - crates/betterlite-guardrails/Cargo.toml
+    - Cargo.lock
+    - tools/oracle/cases/guardrails/cisco-stream/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L419-L537
+    why: The streaming iterator hook built here, with both SSE error events and the rebuild branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L575-L610
+    why: _streaming_content_was_modified and _extract_streaming_chunk_scan_text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1981-L2035
+    why: _extract_response_messages, already in hooks.rs, reused on the assembled response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L97-L173
+    why: The MCP post-tool hook built here, its key copy, the two gate events and the replacement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L160-L221
+    why: convert_model_response_to_streaming and MockResponseIterator, B010's; they rebuild a redacted stream.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2820-L2840
+    why: ProxyLogging uses a streaming iterator hook a class defines in its own dictionary, so this hook runs for Cisco even though the class uses the unified path.
+dod:
+  - text: A streamed chat answer is buffered and scanned, and passes unchanged, comes back rebuilt after a redaction, or becomes one SSE error event on a block or a fail-closed API error.
+    proof: [cisco-hook-tests, helper-python, oracle]
+  - text: The unsupported-shape and scan-error events carry LiteLLM's type, code, message and guardrail name, and passthrough happens for the mcp inspection type and a false gate.
+    proof: [cisco-hook-tests, helper-python, oracle]
+  - text: The chunk scan text adds reasoning and tool or function arguments, and is added as a message only when the assembled text does not contain it.
+    proof: [cisco-hook-tests, oracle]
+  - text: The MCP tool hook copies the listed kwargs, asks the gate for during_mcp_call and pre_mcp_call, and on a block replaces both the response copy and the original with the violation message and returns it.
+    proof: [cisco-hook-tests, helper-python, oracle]
+  - text: The guardrail is recorded as applied after every scan that does not block, and never after a block.
+    proof: [cisco-hook-tests, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: cisco-hook-tests
+      why: the streaming scan or the MCP tool hook is missing or takes a different branch than LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^cisco_stream_scan::/) | test(/^cisco_mcp_tool_hook::/) | test(/^cisco_inspection::hooks::/)'
+    - id: helper-python
+      why: the oracle adapter for the Cisco stream and MCP cases is missing or fails strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- 'tools/oracle/helpers/b9450*')" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/guardrails/cisco-stream/stream-allowed-passthrough.yaml
+  - tools/oracle/cases/guardrails/cisco-stream/stream-blocked-error-event.yaml
+  - tools/oracle/cases/guardrails/cisco-stream/stream-redacted-rebuilt.yaml
+  - tools/oracle/cases/guardrails/cisco-stream/stream-api-error-fail-closed.yaml
+  - tools/oracle/cases/guardrails/cisco-stream/stream-api-error-fail-open.yaml
+  - tools/oracle/cases/guardrails/cisco-stream/stream-unsupported-chunk.yaml
+  - tools/oracle/cases/guardrails/cisco-stream/stream-mcp-inspection-type.yaml
+  - tools/oracle/cases/guardrails/cisco-stream/stream-gate-off.yaml
+  - tools/oracle/cases/guardrails/cisco-stream/stream-reasoning-and-arguments.yaml
+  - tools/oracle/cases/guardrails/cisco-stream/mcp-output-blocked.yaml
+  - tools/oracle/cases/guardrails/cisco-stream/mcp-output-blocked-original.yaml
+  - tools/oracle/cases/guardrails/cisco-stream/mcp-output-allowed.yaml
+  - tools/oracle/cases/guardrails/cisco-stream/mcp-chat-inspection-type.yaml
+  - tools/oracle/cases/guardrails/cisco-stream/mcp-no-mode.yaml
+  - tools/oracle/cases/guardrails/cisco-stream/mcp-no-tool-response.yaml
+deviations: []
+out_of_scope:
+  - "The rest of cisco_ai_defense.py and cisco_ai_defense_mcp.py: B3756, B3757, B3758, B3759, B3760, B3761 and B3762 built it."
+  - "Assembling chunks (stream_chunk_builder) is B2227's; MockResponseIterator and convert_model_response_to_streaming are B010's."
+  - "Calling LiveGuardrail's streaming iterator for Cisco and registering CiscoMcpToolHook with the success callbacks the MCP dispatch reads: B8666 and the B107 composition."
+  - "The MCP hook dispatch over the logger lists: B9650."
+pitfalls:
+  - "The two error event messages contain an em dash (U+2014) in LiteLLM; changing it breaks the SSE body comparison."
+  - "Recording the guardrail after a blocked stream is wrong: LiteLLM yields the error event and returns before add_guardrail_to_applied_guardrails_header."
+  - "The substring test is `original not in assembled`, so a scan text that is a part of the assembled text adds no extra message."
+  - "In the MCP hook the copied metadata is the same dict object as kwargs['metadata'], so the applied_guardrails entry lands in the caller's metadata when that key was there."
+  - "The MCP gate is an or: either during_mcp_call or pre_mcp_call being true runs the scan."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

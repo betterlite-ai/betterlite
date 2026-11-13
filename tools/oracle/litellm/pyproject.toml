@@ -4,19 +4,33 @@ version = "0.1.0"
 requires-python = ">=3.11,<3.14"
 dependencies = [
   "a2a-sdk==1.1.0",
-  "litellm[proxy]==1.105.1",
+  "azure-ai-contentsafety>=1.0.0,<2.0",
+  "litellm[proxy,semantic-router]==1.105.1",
+  "prometheus-client==0.20.0",
   "pypdf>=6.16.1,<7.0",
 ]
 
 [dependency-groups]
 dev = [
   "basedpyright==1.40.2",
+  "mypy==2.4.1",
   "pytest==9.1.1",
   "ruff==0.17.1",
 ]
 
 [tool.uv]
 override-dependencies = ["litellm-enterprise; sys_platform == 'never'"]
+# releases at least 7 days old at the 2026-11-11 relock
+constraint-dependencies = [
+  "jsonpatch==1.41",
+  "jsonpointer==3.8",
+  "langchain-core==1.7.4",
+  "langchain-protocol==0.0.20",
+  "semantic-router==0.3.3",
+  "tornado==6.6",
+  "voyageai==0.5.0",
+  "xxhash==4.0.2",
+]
 
 [tool.ruff]
 line-length = 120
@@ -29,6 +43,7 @@ ignore = [
   "D", # the repository keeps no docstrings
   "EM", # ProbeError takes a failure kind and its message directly
   "INP001", # probes is a namespace package run with python -m from this folder
+  "TC", # imports stay at the top, since the no-typing-escapes rule bans if TYPE_CHECKING blocks
   "TRY003", # same reason as EM
 ]
 

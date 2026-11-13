@@ -105,7 +105,7 @@ out_of_scope:
   - Modern guardrail construction and configuration updates are owned by B5471, and invocation logging by B3664.
   - Threshold evaluation, category filtering and the complete moderation guardrail hook are owned by B3730 (text moderation).
   - Prompt Shield-specific scans and billing are owned by B3729.
-  - The legacy callback registration caller at litellm/proxy/common_utils/callback_utils.py:356 is owned by U3 (callback helpers).
+  - The legacy callback registration caller at litellm/proxy/common_utils/callback_utils.py:356 is owned by B106.
   - Text content type checking (is_text_content_call_type) and message text iteration (iter_message_text) are owned by U1 (framework utilities).
 pitfalls:
   - "split_text_by_words always returns at least one chunk even if the input is longer than max_length; a caller cannot rely on len(chunks) > 1 to know if splitting occurred."

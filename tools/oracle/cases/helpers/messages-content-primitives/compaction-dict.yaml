@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-compaction-dict
+call: {"messages_content_primitives": {"operation": "compaction_blocks", "fields": {"compaction_blocks": {"type": "compaction", "content": "one"}}}}
+env: {}
+compare: {ignore: []}

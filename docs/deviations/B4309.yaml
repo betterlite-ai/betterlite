@@ -1,0 +1,51 @@
+task: B4309
+deviations:
+  - what: >-
+      /cache/ping answers ping_response with the boolean its backend ping returned, where LiteLLM sets
+      ping_response=True whenever the await completes without raising.
+    why: >-
+      The task text asks for the boolean conversion so a backend that reports a failed ping is visible
+      in the response instead of a hardcoded true.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L81-L82
+  - what: >-
+      /cache/delete answers 500 for an uninitialized cache; the check raises HTTPException(503), and the
+      blanket handler in the same function catches it and rewrites every failure to 500.
+    why: >-
+      Betterlite keeps LiteLLM's blanket rewrite, so the raised 503 never reaches the client and the route
+      reports deletion failures uniformly as 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L141-L162
+  - what: >-
+      /cache/redis/info answers 503 for an uninitialized cache and for a non-Redis backend; the
+      uninitialized check raises HTTPException(503) and the backend-type check raises HTTPException(500),
+      and the blanket handler rewrites every exception to 503.
+    why: >-
+      Betterlite keeps LiteLLM's blanket rewrite and reports every redis-info failure with 503.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L188-L213
+  - what: >-
+      /cache/flushall answers 503 for a non-Redis backend; the check raises HTTPException(500) and the
+      blanket handler rewrites it to 503 with the Service Unhealthy message.
+    why: >-
+      Betterlite keeps LiteLLM's blanket rewrite and reports every flush failure with 503.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L232-L249
+  - what: >-
+      The health_check_cache_params of a Redis cache carries redis_version as the major version number,
+      where LiteLLM reports the full INFO version string such as "7.2.4".
+    why: >-
+      Betterlite's RedisCache keeps only redis_major_version, which its Redis protocol version gates read;
+      the full INFO text is not retained on the cache.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L656-L661
+  - what: >-
+      The redis_kwargs in /cache/ping hide the password in a url kwarg (the userinfo password and the
+      values of sensitive query parameters), where LiteLLM prints url as given because its masker only
+      looks at the key name.
+    why: >-
+      A redis url routinely carries the password, so LiteLLM's response leaks a credential to any caller
+      of the route. No working setup can rely on reading it back.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L41-L44
+  - what: >-
+      The redis_kwargs in /cache/ping leave out credential_provider, which LiteLLM lists as the provider
+      object's attributes.
+    why: >-
+      Betterlite keeps the provider as a flag with typed settings, so there is no attribute dictionary to
+      print, and the settings hold the cloud credentials.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L642-L646

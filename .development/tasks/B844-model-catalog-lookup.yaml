@@ -222,7 +222,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/model-catalog-lookup/public-name-duplicates.yaml
 deviations: []
 out_of_scope:
-  - 'litellm/router.py: B013 owns _cost_value_as_float (L391-L397), _replay_live_router_model_cost (L707-L710),
+  - 'litellm/router.py: B846 owns _cost_value_as_float (L391-L397). B9710 owns _replay_live_router_model_cost (L707-L710),
     Router._inherit_builtin_cache_pricing (L8800-L8826), Router._inherit_builtin_service_tier_pricing
     (L8839-L8861), Router._inherit_builtin_base_rates_for_off_peak (L8864-L8907), Router._inherit_builtin_tiered_output_rate
     (L8910-L8940), Router._deployment_model_cost_payload (L10032-L10066), Router._register_deployment_pricing
@@ -294,7 +294,7 @@ out_of_scope:
     (L4455-L4516).'
   - 'litellm/router.py: B8466 owns Router._is_prompt_management_model (L4518-L4528), Router._prompt_management_factory
     (L4530-L4617).'
-  - 'litellm/router.py: B086 owns Router.aguardrail (L5183-L5210), Router._aguardrail_helper (L5212-L5239),
+  - 'litellm/router.py: B9711 owns get_available_guardrail; aguardrail and _aguardrail_helper have no caller at the pin: Router.aguardrail (L5183-L5210), Router._aguardrail_helper (L5212-L5239),
     Router.get_available_guardrail (L5241-L5270).'
   - 'litellm/router.py: B401 owns Router._add_deployment_model_to_endpoint_for_llm_passthrough_route (L5305-L5332),
     Router._json_default_stable_id (L8760-L8765), Router.generate_model_id (L8768-L8797), Router._create_deployment
@@ -335,7 +335,7 @@ out_of_scope:
     (L11769-L11818), Router._filter_cooldown_deployments (L14476-L14493), Router._filter_blocked_deployments
     (L14495-L14509), Router._is_deployment_blocked (L14512-L14521), Router._async_filter_health_check_unhealthy_deployments
     (L14523-L14566), Router._filter_health_check_unhealthy_deployments (L14568-L14596).'
-  - 'litellm/router.py: B066 owns Router.get_settings (L12185-L12225), Router.update_settings (L12227-L12291).'
+  - 'litellm/router.py: B9711 owns Router.get_settings (L12185-L12225), Router.update_settings (L12227-L12291).'
   - 'litellm/router.py: B302 owns Router._get_model_from_alias (L12627-L12635), Router._get_deployment_by_litellm_model
     (L12637-L12641), Router._try_early_resolve_deployments_for_model_not_in_names (L12643-L12688), Router._team_deployments_across_teams
     (L12690-L12713), Router.deployments_for_request (L12715-L12727), Router._is_strategy_marker_deployment
@@ -357,7 +357,7 @@ out_of_scope:
     (L14029-L14034), Router._consumed_request_tags_stamp (L14036-L14056), Router._record_routing_decision
     (L14059-L14095), Router._stamp_or_clear_metadata_key (L14098-L14118).'
   - 'litellm/router.py: B021 owns Router.async_pre_routing_hook (L13796-L13980).'
-  - 'litellm/router.py: B012 owns Router._redact_prompt_text_if_needed (L14121-L14151).'
+  - 'litellm/router.py: B362 owns Router._redact_prompt_text_if_needed (L14121-L14151).'
   - 'litellm/router.py: B308 owns Router.get_allowed_fails_from_policy (L14643-L14695).'
   - 'litellm/router.py: Router._initialize_alerting (L14697-L14717) is not built: the proxy reaches it only through router_settings.alerting_config, which LiteLLM keeps as a dict and fails on at startup; only Python SDK callers pass a typed AlertingConfig.'
   - 'litellm/router.py: B845 owns Router.arefresh_model_info (L10350-L10362), Router._arefresh_deployment_model_info

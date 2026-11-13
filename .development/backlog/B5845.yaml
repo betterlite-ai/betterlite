@@ -1,7 +1,7 @@
 id: B5845
 milestone: M3 providers
 title: SAP provider
-status: todo
+status: done
 depends_on: [B004, B006, B171, B668, B5950, B5951, B5952]
 file: tasks/B5845-sap-chat-embedding.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/llms/sap/embed/**"
 parent: B042
 split_from: B042
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1279

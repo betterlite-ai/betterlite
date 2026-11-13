@@ -82,7 +82,7 @@ deviations:
 
 out_of_scope:
   - Provider factory (ProviderConfigManager.get_provider_evals_api_config).
-  - HTTP handler implementation and transport dispatch.
+  - HTTP handler implementation and transport dispatch (B9370, api::eval_http).
   - Request/response transformation for OpenAI (B523).
   - Logging infrastructure and observability (B247).
   - Exception type mapping (B185, B186).

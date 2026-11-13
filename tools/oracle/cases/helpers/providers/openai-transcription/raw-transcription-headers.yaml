@@ -1,0 +1,25 @@
+kind: helper
+name: openai-transcription-raw-transcription-headers
+call:
+  openai_transcription:
+    function: exchange
+    probes:
+      - model: whisper-1
+        provider: whisper
+        api_key: sk-fixture
+        api_base: 'https://transcription.test/v1'
+        reply:
+          status: 200
+          headers: {content-type: application/json, x-request-id: req-sync, openai-processing-ms: '42'}
+          body: '{"text":"hi"}'
+      - model: whisper-1
+        provider: whisper
+        atranscription: true
+        api_key: sk-fixture
+        api_base: 'https://transcription.test/v1'
+        reply:
+          status: 200
+          headers: {content-type: application/json, x-request-id: req-async, openai-processing-ms: '17'}
+          body: '{"text":"hi"}'
+env: {}
+compare: {ignore: []}

@@ -286,7 +286,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::feature_flags_cases::case_[0-9]+_skills_code_execution_beta$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_feature_flags.py)" && uv
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_feature_flags.py tools/oracle/helpers/anthropic_feature_flags)" && uv
       run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -333,7 +333,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/integrations/websearch_interception/tools.py: _web_search_input_schema L20-L56;
   get_litellm_web_search_tool L59-L82; get_litellm_web_search_tool_openai L85-L103; get_litellm_web_search_tool_responses
   L106-L123; is_web_search_tool_responses L126-L160; is_web_search_tool_chat_completion L163-L204; is_web_search_tool
-  L228-L301 belong to B119.'
+  L228-L301 belong to B4111.'
 - 'Function ownership inventory litellm/llms/anthropic/common_utils.py: _strip_bedrock_id_suffixes L213-L222; AnthropicModelInfo._strip_version_suffix
   L569-L574; AnthropicModelInfo._model_map_lookup_candidates L576-L614; AnthropicModelInfo._get_model_capability
   L616-L631; AnthropicModelInfo._get_exact_model_capability L633-L641; AnthropicModelInfo.supports_fast_mode L643-L648
@@ -379,6 +379,6 @@ pitfalls:
 - Top-level eager_input_streaming=false overrides nested true, and detection short-circuits before later invalid
   tools.
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1900
   max_new_expects: 0
 review_level: standard

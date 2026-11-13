@@ -1,0 +1,14 @@
+kind: helper
+name: provider_controls-headers-select-seed
+call:
+  provider_headers:
+    entries:
+      - custom_llm_provider: "openai, azure"
+        extra_headers:
+          x-shared: one
+      - custom_llm_provider: azure
+        extra_headers:
+          x-azure: two
+    custom_llm_provider: azure
+env: {}
+compare: {ignore: []}

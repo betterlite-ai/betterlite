@@ -1,0 +1,64 @@
+kind: helper
+name: ollama-chat-request-body
+env: {}
+compare: {ignore: []}
+call:
+  b8155:
+    op: request
+    requests:
+      - model: llama3
+        messages: [{role: user, content: hi}]
+      - model: llama3
+        messages: [{role: system, content: [{type: text, text: a}, {type: text, text: b}]}]
+      - model: llama3
+        messages: [{role: user, content: null}]
+      - model: llama3
+        messages: [{role: assistant, content: hello, reasoning_content: why}]
+      - model: llama3
+        messages: [{role: assistant, content: hello, reasoning: why}]
+      - model: llama3
+        messages: [{role: assistant, content: hello, reasoning_content: one, reasoning: two}]
+      - model: llama3
+        messages: [{role: assistant, content: hello, reasoning_content: ""}]
+      - model: llama3
+        messages: [{role: assistant, content: hello, reasoning_content: null}]
+      - model: llama3
+        messages: [{role: assistant, content: "<think>inner</think>answer"}]
+      - model: llama3
+        messages: [{role: assistant, content: "<think>inner</think>answer", reasoning: null}]
+      - model: llama3
+        messages: [{role: tool, content: r, tool_call_id: call_1}]
+      - model: llama3
+        messages: [{role: tool, content: r, tool_call_id: null}]
+      - model: llama3
+        messages: [{role: user, content: x, search_results: [{source: s, title: t, content: [{text: c}], citations: {x: 1}}]}]
+      - model: llama3
+        messages: [{role: user, content: x, search_results: nope}]
+      - model: llama3
+        messages: [{role: assistant, content: x, tool_calls: [{id: c1, type: function, function: {name: f, arguments: "{\"a\": 1}"}}]}]
+      - model: llama3
+        messages: [{role: assistant, content: x, tool_calls: [{id: c1, type: function, function: {name: f, arguments: "[1, 2]"}}]}]
+      - model: llama3
+        messages: [{role: assistant, content: x, tool_calls: [{id: c1, type: other, function: {name: g, arguments: "{}"}}]}]
+      - model: llama3
+        messages: [{role: assistant, content: x, tool_calls: [{id: c1, type: function, function: {name: f}}]}]
+      - model: llama3
+        messages: [{role: assistant, content: x, tool_calls: []}]
+      - model: llama3
+        messages: [{role: assistant, content: x, tool_calls: null}]
+      - model: llama3
+        messages: [{role: user, content: hi}]
+        options: {stream: true, temperature: 0.5, format: {type: object}, tools: [{type: function}], keep_alive: 5m, think: true, function_name: f}
+      - model: llama3
+        messages: [{role: user, content: hi}]
+        options: {format: null, tools: null, keep_alive: null, think: null, function_name: null}
+      - model: llama3
+        messages: [{role: user, content: hi}]
+        options: {think: false, tools: []}
+      - model: llama3
+        messages: [{role: user, content: hi}]
+        config: {mirostat: 1, temperature: 0.5, seed: 2}
+        options: {temperature: 0.9}
+      - model: llama3
+        messages: [{role: user, content: hi}]
+        config: {system: "", num_predict: 0, stop: []}

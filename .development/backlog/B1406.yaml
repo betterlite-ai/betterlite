@@ -1,14 +1,14 @@
 id: B1406
 milestone: M3 providers
 title: xAI native batches and paged JSONL results
-status: todo
+status: done
 depends_on: [B1402, B1035, B173, B171]
 file: tasks/B1406-xai-batches.yaml
 covers:
   - "litellm/llms/xai/batches/**"
 parent: B036
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1472

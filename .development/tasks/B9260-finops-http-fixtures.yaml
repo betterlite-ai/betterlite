@@ -95,6 +95,8 @@ description: >-
   rust_decimal and secrecy already in the fixture crate.
 scope:
   paths:
+    - "tools/postgres-fixture/src/seed_sql.rs"
+    - "tools/postgres-fixture/src/fixtures/http_scenarios.rs"
     - tools/postgres-fixture/src/finops.rs
     - tools/postgres-fixture/src/finops/**
     - tools/oracle/src/finops_fixture.rs

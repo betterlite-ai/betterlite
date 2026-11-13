@@ -36,7 +36,7 @@ description: >-
   its SsoAssertionStore, and keep the resolver in McpTokens.
 
   4. OAuth sessions (sessions.rs). B4718's SessionStore with its process-local table, a system clock, the cipher over
-  B1600, the database port over B4711 and B4712, and the Redis backend: the response cache backend from
+  B1600, the database port over B4711 and B4712, McpIdentity's ServerAccessCheck (B8621), and the Redis backend: the response cache backend from
   `shared.response_cache` when the configured cache is Redis (B4290 and B4299), otherwise None, as LiteLLM passes
   litellm.cache or nothing.
 
@@ -73,7 +73,7 @@ oracle_cases: []
 deviations: []
 out_of_scope:
   - "The routes that read these stores: B8623 to B8626."
-  - "resolver.py beyond the composition here: B4667 and the B137 umbrella's leftover glob."
+  - "resolver.py beyond the composition here: B4667."
 pitfalls:
   - The OAuthTokenCacheCodec decrypt uses the label "mcp_per_user_token" and returns None on failure; an error here turns a cache miss into a 500.
   - SessionStore takes the response cache backend only when the response cache is Redis; a local response cache gives None, not an in-memory backend.

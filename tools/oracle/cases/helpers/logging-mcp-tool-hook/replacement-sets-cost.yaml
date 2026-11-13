@@ -1,0 +1,15 @@
+kind: helper
+name: logging-mcp-tool-hook-replacement-sets-cost
+call:
+  b9650:
+    result:
+      content: [{type: text, text: hello}]
+      structured_content: {answer: 42}
+    dynamic_success: []
+    global_success:
+      - name: replacer
+        behavior: replace
+        content: [{type: text, text: replaced}]
+        response_cost: 0.25
+env: {}
+compare: {ignore: []}

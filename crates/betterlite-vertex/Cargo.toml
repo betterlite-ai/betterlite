@@ -6,27 +6,49 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+base64 = "0.23.1"
+betterlite-bedrock = { path = "../betterlite-bedrock" }
+betterlite-cache = { path = "../betterlite-cache" }
+betterlite-config = { path = "../betterlite-config" }
+betterlite-context = { path = "../betterlite-context" }
+betterlite-core = { path = "../betterlite-core" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
+betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
+betterlite-tokenizer = { path = "../betterlite-tokenizer" }
+google-cloud-auth = { version = "=1.18.0", default-features = false, features = ["default-rustls-provider"] }
+google-cloud-gax = { version = "=1.15.0", default-features = false }
+google-cloud-speech-v2 = "=1.15.0"
 http = "1.5.0"
+indexmap = "2.14.2"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
+percent-encoding.workspace = true
 regex.workspace = true
 rust_decimal.workspace = true
-secrecy.workspace = true
+secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
+serde_path_to_error = "0.1.20"
 serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
 thiserror.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tracing.workspace = true
 url = "2.5.8"
+uuid.workspace = true
 
 [dev-dependencies]
-betterlite-config = { path = "../betterlite-config" }
+async-trait = "0.1.92"
+betterlite-redact = { path = "../betterlite-redact" }
+google-cloud-wkt = "=1.11.0"
 rstest = "=0.27.0"
-tokio = { workspace = true, features = ["rt"] }
+tempfile = "3.27.0"
+tokio = { workspace = true, features = ["rt", "time"] }
+tracing-subscriber.workspace = true
+uuid.workspace = true
 
 [lints]
 workspace = true

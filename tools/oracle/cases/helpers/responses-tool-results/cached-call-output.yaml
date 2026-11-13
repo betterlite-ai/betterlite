@@ -1,0 +1,54 @@
+kind: helper
+name: cached-call-output
+call:
+  responses_tool_results:
+    operation: cached_call_output
+    calls:
+      - item: {call_id: c, output: done}
+        cache:
+          - key: c
+            value: {id: toolu_1, type: function, function: {name: shell, arguments: '{"a":1}'}}
+      - item: {call_id: c, output: o}
+        cache:
+          - {key: c, value: {id: x}}
+      - item: {call_id: c, output: o}
+        cache:
+          - {key: c, value: {id: x, function: null}}
+      - item: {call_id: c, output: o}
+        cache:
+          - {key: c, value: {id: "", type: "", function: {name: "", arguments: ""}}}
+      - item: {call_id: c, output: o}
+        cache:
+          - {key: c, value: {id: x, function: {name: "n", arguments: null}}}
+      - item: {call_id: c, output: o}
+        cache:
+          - {key: c, value: {id: x, function: {name: "n", arguments: {x: 1}}}}
+      - item: {call_id: c, output: o}
+        cache:
+          - {key: c, value: {id: x, type: custom, function: {name: "n"}}}
+      - item: {call_id: c, output: o}
+        cache:
+          - {key: c, value: {}}
+      - item: {call_id: c, output: o}
+        cache:
+          - {key: c, value: null}
+      - item: {call_id: C, output: o}
+        cache:
+          - {key: c, value: {id: x}}
+      - item: {call_id: c, output: o}
+        cache: []
+      - item: {call_id: 7, output: x}
+        cache:
+          - {key: "7", value: {id: "7"}}
+      - item: {output: x}
+        cache:
+          - {key: "", value: {id: x}}
+      - item: {call_id: "", output: x}
+        cache:
+          - {key: "", value: {id: x}}
+      - item: {call_id: 0, output: x}
+        cache:
+          - {key: "0", value: {id: x}}
+env: {}
+compare:
+  ignore: []

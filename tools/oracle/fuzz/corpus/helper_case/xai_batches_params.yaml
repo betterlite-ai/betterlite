@@ -1,0 +1,11 @@
+kind: helper
+name: xai-batches-params-seed
+call:
+  xai_batches:
+    operation: params
+    env: {XAI_API_BASE: "https://seed.example/v1"}
+    xai_key: null
+    calls:
+      - {api_base: null, api_key: seed, after: "", limit: 0}
+env: {}
+compare: {ignore: []}

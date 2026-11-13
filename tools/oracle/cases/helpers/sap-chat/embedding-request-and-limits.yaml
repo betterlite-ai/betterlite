@@ -1,0 +1,35 @@
+kind: helper
+name: sap-chat-embedding-request-and-limits
+call:
+  b5845:
+    operation: embeddings
+    calls:
+      - {function: request, model: text-embedding-3-large, input: hi, optional_params: {}}
+      - function: request
+        model: text-embedding-3-large
+        input: [a, b]
+        optional_params: {version: v1, parameters: {x: 1}, timeout: 5, max_retries: 2, type: query}
+      - {function: request, model: m, input: hi, optional_params: {timeout: 0}}
+      - {function: request, model: m, input: hi, optional_params: {timeout: 601}}
+      - {function: request, model: m, input: hi, optional_params: {max_retries: -1}}
+      - {function: request, model: m, input: hi, optional_params: {max_retries: 6}}
+      - {function: request, model: m, input: hi, optional_params: {timeout: 600, max_retries: 5}}
+      - {function: request, model: m, input: hi, optional_params: {timeout: 1, max_retries: 0}}
+      - {function: request, model: m, input: hi, optional_params: {type: bogus}}
+      - {function: request, model: m, input: [1, 2]}
+      - function: request
+        model: m
+        input: hi
+        optional_params:
+          masking:
+            providers:
+              - type: sap_data_privacy_integration
+                method: anonymization
+                entities: [{type: profile-email}]
+      - {function: request, model: m, input: hi, optional_params: {masking: {providers: []}}}
+      - function: request
+        model: m
+        input: hi
+        optional_params: {encoding_format: float, dimensions: 3, type: text}
+env: {}
+compare: {ignore: []}

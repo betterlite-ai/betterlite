@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-tool-names-and-native-tools
+call: {"messages_content_primitives": {"operation": "truncate_tool_name", "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}
+env: {}
+compare: {ignore: []}

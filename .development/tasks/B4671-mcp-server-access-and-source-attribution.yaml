@@ -66,7 +66,7 @@ description: >-
   Production reads. LiveAccessReads, in crates/betterlite-server/src/mcp/source_reads.rs with a tests.rs beside it, is the production AccessReads. Its fields (struct literal) are B737's team lookup, B887's team budget check, B752's organization budget check, B4668's key permission reads and B4778's managed ceilings read. Keep the mapping from those error values to AccessReadError and BudgetState in plain functions so their tests need no Postgres.
 
 
-  Tests use fakes that record calls, synthetic keys and teams, and names with the prefixes the checks name. No route reaches this code yet (B4673 admits requests and B137 registers the MCP routes), so the helper operation b4671 covers scoped_source_auth and the attributing_source choice, and the HTTP cases come with the umbrella.
+  Tests use fakes that record calls, synthetic keys and teams, and names with the prefixes the checks name. No route reaches this code yet (B4673 admits requests and B8626 and B8728 mount the MCP routes), so the helper operation b4671 covers scoped_source_auth and the attributing_source choice, and the HTTP cases are in B137.
 
 scope:
   paths:

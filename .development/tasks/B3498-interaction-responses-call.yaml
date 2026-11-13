@@ -37,7 +37,7 @@ references:
 dod:
   - text: "interactions_api_handler accepts model, input, optional_params and optional custom_llm_provider, builds a Responses API request dict with B3497's transform_interactions_request_to_responses_request, calls the Responses handler (origin unresolved), and dispatches to async or non-streaming path based on _is_async and response type."
     proof: [responses-handler-tests]
-  - text: "async_interactions_api_handler accepts a pre-built responses_request dict, calls litellm.aresponses() (origin unresolved), detects streaming responses, wraps them in the streaming iterator, and transforms non-streaming ResponsesAPIResponse to InteractionsAPIResponse via B3497."
+  - text: "async_interactions_api_handler accepts a pre-built responses_request dict, calls B932's api::responses_create_call::aresponses directly (and the sync path B1078's api::responses_create::responses_create), detects streaming responses, wraps them in the streaming iterator, and transforms non-streaming ResponsesAPIResponse to InteractionsAPIResponse via B3497."
     proof: [responses-handler-tests]
   - text: "Non-streaming responses dispatch through B3497's transform_responses_response_to_interactions_response and return an InteractionsAPIResponse with no iterator."
     proof: [responses-handler-tests]
@@ -78,16 +78,13 @@ checks:
 oracle_cases: []
 
 deviations:
-  - what: "The Responses operation is called through unresolved dynamic dispatch (vars(litellm)[\"responses\"] and vars(litellm)[\"aresponses\"]) rather than a direct import, since B932 cannot be a direct prerequisite while the reverse umbrella dependency exists."
-    why: "This preserves LiteLLM's own dynamic lookup and keeps the circular dependency in the outline until the architect resolves it by restructuring the dependencies."
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/handler.py#L81-L83
   - what: "ID fallback uses object memory address (id(self) in Python) for stable correlation when chunks do not carry an explicit ID; Rust uses a Uuid or counter to ensure stability across event sequences."
     why: "Memory addresses are non-deterministic and unsafe to rely on; Rust generates a stable identifier once per iterator instance to preserve event correlation in tests and logs."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/streaming_iterator.py#L144
 
 out_of_scope:
   - "_transform_responses_chunk_to_interactions_chunk (streaming_iterator.py L272-289) has no caller at the pin and is not implemented; only tests call it."
-  - The Responses API operation itself (owned by B932, unresolved).
+  - The Responses API operation itself (aresponses is B932's, responses_create is B1078's).
   - Interaction request preparation (owned by B3497).
   - Interaction response transformation from complete Responses responses (owned by B3497).
   - Interactions API response type construction (owned by B3481).

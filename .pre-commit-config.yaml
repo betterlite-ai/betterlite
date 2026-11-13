@@ -73,18 +73,64 @@ repos:
         entry: zizmor --offline
         language: system
         files: ^\.github/(workflows/[^/]+|actions/[^/]+/action)\.ya?ml$
-      - id: ruff-helpers
-        name: ruff on the oracle Python helpers
-        entry: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers
+      - id: actionlint
+        name: actionlint
+        entry: actionlint
         language: system
-        files: ^tools/oracle/helpers/.*\.py$
+        files: ^\.github/workflows/[^/]+\.ya?ml$
+      # .shellcheckrc turns on every optional check
+      - id: shellcheck
+        name: shellcheck
+        entry: shellcheck
+        language: system
+        types: [shell]
+      - id: shfmt
+        name: shfmt
+        entry: shfmt -i 2 -sr -ci -d
+        language: system
+        types: [shell]
+      - id: shellcheck-specs
+        name: shellcheck on the run commands of checks.yaml and new task files
+        entry: bash .development/hooks/shellcheck-specs.sh
+        language: system
+        files: ^\.development/(checks\.yaml|tasks/[^/]+\.yaml)$
+        require_serial: true
+      # a file in python-legacy.txt gets only the checks it had before mypy and the Python rules, until a cleanup task fixes it
+      - id: ruff
+        name: ruff
+        entry: bash .development/hooks/python.sh ruff
+        language: system
+        types: [python]
+      - id: python-rules
+        name: Python rules, upstream links on suppressions, file size
+        entry: bash .development/hooks/python.sh rules
+        language: system
+        types: [python]
+      - id: mypy
+        name: mypy strict
+        entry: bash .development/hooks/python.sh mypy
+        language: system
+        types: [python]
+        require_serial: true
+      - id: python-similarity
+        name: no near copies among the Python files off the legacy list
+        entry: bash .development/hooks/python.sh similarity
+        language: system
+        types: [python]
         pass_filenames: false
       - id: basedpyright-helpers
-        name: basedpyright on the oracle Python helpers
-        entry: uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+        name: basedpyright on the whole oracle helpers folder, as task checks run it
+        entry: bash .development/hooks/python.sh pyright
+        language: system
+        files: ^tools/oracle/helpers/(.*\.py|pyrightconfig\.json)$
+        pass_filenames: false
+        require_serial: true
+      - id: basedpyright-changed-helpers
+        name: basedpyright on the helper files the change touches, as this machine runs it
+        entry: bash .development/hooks/python.sh pyright-files
         language: system
         files: ^tools/oracle/helpers/.*\.py$
-        pass_filenames: false
+        require_serial: true
       - id: clippy
         name: cargo clippy
         entry: cargo clippy --workspace --all-targets --locked -- -D warnings

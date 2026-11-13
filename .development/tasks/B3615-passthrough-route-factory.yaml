@@ -32,17 +32,26 @@ description: >-
   calls the handler built earlier in this task (by whatever name under 30 characters it uses); else
   treat target as a URL and return an endpoint_func that calls pass_through_request via a _relay closure.
   The URL branch parses request data via
-  _parse_request_data_by_content_type, checks the registry via is_registered_pass_through_route
-  and get_registered_pass_through_route (B3614), raises 404 or 405 as needed, merges config-supplied
-  passthrough_params, constructs full_target via construct_target_url_with_subpath (B3600),
-  converts custom_headers to a dict, merges query_params, reads request.state for the custom body
-  (LITELLM_PASS_THROUGH_CUSTOM_BODY_STATE_KEY), and calls pass_through_request with all parameters.
+  _parse_request_data_by_content_type, constructs full_target from its target argument via
+  construct_target_url_with_subpath (B3600), converts custom_headers to a dict, merges query_params,
+  reads request.state for the custom body (LITELLM_PASS_THROUGH_CUSTOM_BODY_STATE_KEY), and calls
+  pass_through_request with all parameters.
   The relay closure wraps pass_through_request in a finally block that cleans up three request.state
   keys (LITELLM_PASS_THROUGH_CUSTOM_BODY_STATE_KEY, LITELLM_PASS_THROUGH_RAW_BODY_STATE_KEY,
   LITELLM_PASS_THROUGH_DEPLOYMENT_MODEL_INFO_STATE_KEY) before returning. Wrap the relay result in
   open_sse_before_first_byte with ping_interval_seconds set to litellm.sse_keepalive_ping_interval_seconds
   for streaming requests, None otherwise. Set LITELLM_PASS_THROUGH_ENDPOINT_MARKER attribute on
   endpoint_func to True for auth discovery.
+
+  Registry. The arguments are the final passthrough params: target, custom_headers, forward_headers,
+  merge_query_params, cost_per_request, guardrails (as guardrails_config), default_query_params and
+  timeout reach pass_through_request as the caller gave them. The factory takes no registry or route
+  handle, and neither branch answers 404 or 405 of its own. LiteLLM's URL endpoint function looks
+  the request path up with is_registered_pass_through_route and get_registered_pass_through_route on
+  every call, answers 404 or 405 from them, and lets the entry's passthrough_params override its
+  arguments. For a configured endpoint B8643 does all three before it calls this factory, with the
+  matched entry's values as the arguments, so the relay holds no lock. The endpoint argument stays in
+  the signature for its callers; no branch reads it, since the 404 that named it is B8643's.
 
   Request state. Add a typed per-request value PassThroughState in the request extensions that holds the three entries (custom body, raw body, deployment model info; the key names stay MODEL_INFO_STATE_KEY, CUSTOM_BODY_STATE_KEY and RAW_BODY_STATE_KEY from B3600). Provide set_passthrough_state(extensions, state) and take_passthrough_state(extensions) -> Option<PassThroughState>; callers such as B3623 set the value through these functions and the relay cleanup takes it with take_passthrough_state in its finally step. The relay returns Result<Response, ProxyException>, the error type of B3613 PassThroughHandler::handle.
 
@@ -71,10 +80,10 @@ references:
   why: >-
     create_pass_through_route factory: dual branches (CustomLogger vs URL), adapter_id generation,
     endpoint_func closure structure for both branches, get_instance_fn resolution, _relay closure
-    with state cleanup (three state keys), get_request_route lookup, registry checks (is_registered_pass_through_route,
-    get_registered_pass_through_route), parameter merging from config, target URL construction,
-    request data parsing, query and body parameter handling, open_sse_before_first_byte wrapping,
-    endpoint marker setting with LITELLM_PASS_THROUGH_ENDPOINT_MARKER.
+    with state cleanup (three state keys), target URL construction, request data parsing, query and
+    body parameter handling, open_sse_before_first_byte wrapping, endpoint marker setting with
+    LITELLM_PASS_THROUGH_ENDPOINT_MARKER. The get_request_route lookup, the two registry checks and
+    the passthrough_params merge at L2041-L2089 are B8643's: it runs them before it calls this factory.
 
 dod:
 - text: >-
@@ -137,8 +146,10 @@ dod:
   proof:
   - url-branch-structure-cases
 - text: >-
-    URL branch correctly parses request data, checks registry (404 if not registered, 405 if method
-    not allowed), merges config-supplied passthrough_params, and constructs full_target.
+    URL branch parses request data, constructs full_target from its target argument, and passes its
+    custom_headers, forward_headers, merge_query_params, cost_per_request, guardrails (as
+    guardrails_config) and timeout arguments to pass_through_request as given; a path no registry
+    holds still relays, since the factory takes no registry and answers no 404 or 405.
   proof:
   - url-branch-logic-cases
 - text: >-
@@ -167,8 +178,8 @@ dod:
   proof:
   - sse-keepalive-cases
 - text: >-
-    All default_query_params references (parameter name, parsing) are handled; parameter is passed through
-    to pass_through_request for completeness.
+    The parameter names default_query_params and guardrails are kept, and both reach pass_through_request
+    (as default_query_params and guardrails_config) as the factory's arguments give them, None included.
   proof:
   - constant-and-name-tests
 
@@ -243,7 +254,7 @@ checks:
       -E 'test(/::passthrough_url_branch_structure($|::)/) - test(/replays_the_/)'
   - id: url-branch-logic-cases
     why: >-
-      URL branch registry checks and parameter construction tests are missing or fail
+      URL branch argument passing and full_target construction tests are missing or fail
     run: >-
       cargo nextest run --locked -p betterlite-server --no-tests=fail
       -E 'test(/::passthrough_url_branch_logic($|::)/) - test(/replays_the_/)'
@@ -296,8 +307,6 @@ oracle_cases:
 - tools/oracle/cases/passthrough/chat-completion-exception-missing-model.yaml
 - tools/oracle/cases/passthrough/create-route-adapter-branch.yaml
 - tools/oracle/cases/passthrough/create-route-url-branch-basic.yaml
-- tools/oracle/cases/passthrough/create-route-url-branch-not-registered.yaml
-- tools/oracle/cases/passthrough/create-route-url-branch-method-not-allowed.yaml
 - tools/oracle/cases/passthrough/create-route-url-branch-default-query-params.yaml
 - tools/oracle/cases/passthrough/create-route-state-cleanup.yaml
 - tools/oracle/cases/passthrough/create-route-sse-keepalive-streaming.yaml
@@ -307,7 +316,7 @@ deviations:
 - what: >-
     ProxyBaseLLMRequestProcessing.get_custom_headers is called but its implementation
     (get_custom_headers, _process_chunk_with_cost_injection, and error/hook methods) are not built
-    by this task; they are owned by B004 or a shared proxy infrastructure task (gap D).
+    by this task; get_custom_headers is built by B9802 (custom_headers).
   why: >-
     This task builds the route factory which calls that method; the method's implementation
     is a dependency owned elsewhere. betterlite calls the method with the same parameters
@@ -323,6 +332,21 @@ deviations:
     URLs transparently.
   link: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2005-L2008
+- what: >-
+    The URL branch reads no registry. For a configured endpoint B8643 runs the 404, the 405 and the
+    passthrough_params merge before the call, but a direct caller (the mapped provider routes such as
+    /anthropic/{endpoint:path} of B3619, B3626 and the others) relays with exactly the arguments it
+    passes. In LiteLLM the same endpoint function also looks those request paths up, so a configured
+    endpoint registered at the same path, /anthropic/v1/messages for one, overrides their target,
+    headers and other params and refuses the methods it doesn't list with 405, and a path
+    is_registered_pass_through_route rejects answers 404.
+  why: >-
+    The arguments are the final params, so the factory needs no lock on the shared route handle while
+    the request relays; B8643 copies the matched entry out under the lock for the endpoints it serves.
+    A configured endpoint at a mapped provider path never answers as its own route in LiteLLM either,
+    since the static provider route comes first, so only its override of that route is lost.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2041-L2089
 
 out_of_scope:
 - >-
@@ -330,7 +354,7 @@ out_of_scope:
   this task calls them as external dependencies for the CustomLogger branch.
 - >-
   ProxyBaseLLMRequestProcessing.get_custom_headers and its related methods (ProxyBaseLLMRequestProcessing itself);
-  B004 or a shared proxy infrastructure task owns them (gap D).
+  B9802 builds get_custom_headers as custom_headers; the other methods belong to the shared proxy tasks (gap D).
 - >-
   add_litellm_data_to_request, pre_call_hook, and post_call_failure_hook; these are imported
   from the proxy context (proxy_server globals) and called by this task.
@@ -342,8 +366,9 @@ out_of_scope:
   open_sse_before_first_byte wrapper for keepalive pings; B7324 builds the real function
   (Common request processing helpers); this task calls it with the relay result and ping interval.
 - >-
-  get_request_route lookup for the URL branch's path extraction; owned by gap D; this task
-  calls it to get the canonical route for registry lookups.
+  The registry checks of LiteLLM's URL endpoint function (get_request_route, is_registered_pass_through_route,
+  get_registered_pass_through_route, the 404 and 405 answers and the passthrough_params merge); B8643 runs
+  them for a configured endpoint before it calls this factory.
 
 pitfalls:
 - >-
@@ -375,10 +400,14 @@ pitfalls:
   The interval is None for non-streaming (force synchronous read) or the config value for streaming.
   If interval is wrong, keepalive breaks or SSE stalls.
 - >-
-  The factory accepts default_query_params in its signature and merges config-supplied passthrough_params
-  but does not apply default_query_params in the URL branch because it is never added to target_params.
-  The parameter is passed to pass_through_request as None for completeness; changing this would require
-  modifying target_params construction at line 2068-2076.
+  LiteLLM's URL branch ignores its own guardrails and default_query_params arguments (target_params
+  starts guardrails at None and never holds default_query_params) and takes both from the registry
+  entry only. Here the arguments already are the entry's values, so pass both to pass_through_request
+  as given; the mapped provider routes pass None for both, as they do in LiteLLM.
+- >-
+  LiteLLM's URL endpoint answers 404 unless the request path is in _registered_pass_through_routes or
+  starts with a MAPPED_PASS_THROUGH_ROUTES prefix, so the Python side of every URL-branch helper case
+  registers the path with the same params the Rust side passes as arguments, or the two sides differ.
 
 review_level: security
 

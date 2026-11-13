@@ -1,0 +1,52 @@
+kind: helper
+name: openai-decisions-score-question-roundtrip
+call:
+  openai_decisions:
+    systemone_to_request:
+      - model: gpt-4o
+        request:
+          state: "the input"
+          questions:
+            rate:
+              type: score
+              instructions: null
+              criteria: [low, [2]]
+            empty:
+              type: score
+              instructions: ""
+              criteria: [a, b]
+    request_roundtrip:
+      - model: gpt-4o
+        request:
+          input: the input
+          questions:
+            - type: score
+              name: rate
+              instructions: rate it
+              levels:
+                - {label: low, description: bottom}
+                - {label: high}
+    response_to_ir:
+      - request:
+          input: the input
+          questions:
+            - type: score
+              name: rate
+              instructions: rate it
+              levels:
+                - {label: low}
+                - {label: desc}
+        response:
+          model: gpt-4o
+          answers:
+            - type: score
+              name: rate
+              score: 1.0
+              confidence: 0.8
+              probabilities:
+                - {value: 1, label: returned, probability: 0.3}
+                - {value: 9, label: out-of-range, probability: 0.4}
+                - {value: -1, label: negative, probability: 0.3}
+          usage: {input_tokens: 1, output_tokens: 1, total_tokens: 2}
+env: {}
+compare: {ignore: []}

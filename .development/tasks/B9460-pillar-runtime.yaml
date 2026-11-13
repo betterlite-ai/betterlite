@@ -1,0 +1,122 @@
+id: B9460
+title: Pillar guardrail construction and its three proxy hooks
+description: >-
+  B3790 builds Pillar's payload, headers, the /api/v1/protect call, the response handling and the API error fallback,
+  but it leaves out the class itself: `PillarGuardrail.__init__`, `async_pre_call_hook`, `async_moderation_hook`,
+  `async_post_call_success_hook` and `run_pillar_guardrail` (pillar.py L196-L496). Without them a configured
+  `guardrail: pillar` has nothing to run. Build them as `PillarGuard` in betterlite-guardrails, module pillar_runtime
+  (crates/betterlite-guardrails/src/pillar_runtime.rs and pillar_runtime/, with error.rs and tests.rs). B8218 builds the
+  initializer arguments (`PillarArgs` in third_party_init_b), B8521 holds the spec variant, and B8666 constructs this
+  value and dispatches the hooks to it, so this task registers nothing and reads no process globals.
+
+
+  Config section pillar_runtime (crates/betterlite-config/src/sections/pillar_runtime.rs and its folder; the skeleton
+  adds the stub, the `pub mod` line and the sections! entry). It reads no config key, only the environment through
+  `EnvironmentLookup`, and exposes `Settings` with `api_key: Option<SecretString>` from PILLAR_API_KEY, and
+  `api_base`, `on_flagged_action`, `fallback_on_error`, `timeout` from PILLAR_API_BASE, PILLAR_ON_FLAGGED_ACTION,
+  PILLAR_FALLBACK_ON_ERROR and PILLAR_TIMEOUT, plus the raw texts of PILLAR_ASYNC, PILLAR_PERSIST,
+  PILLAR_INCLUDE_SCANNERS and PILLAR_INCLUDE_EVIDENCE for B3790's boolean resolver. Every field is `Option<String>`
+  (the key a secret), an empty variable counts as unset (docs/compatibility.md), and the section parses nothing: the
+  timeout text is parsed by the constructor so its warning matches LiteLLM's. Debug never prints the key. Tests in
+  sections/pillar_runtime/tests.rs load a real config file with an injected environment map.
+
+
+  Constructor `PillarGuard::new(args: &PillarArgs, settings: &pillar_runtime::Settings, base: GuardrailBase, client:
+  reqwest::Client) -> Result<PillarGuard, PillarRuntimeError>`, in LiteLLM's order. The key is the argument, else the
+  environment value; with neither, fail with LiteLLM's text "Couldn't get Pillar API key, either set the
+  `PILLAR_API_KEY` in the environment or pass it as a parameter to the guardrail in the config file". The base is the
+  argument, else PILLAR_API_BASE, else "https://api.pillar.security". on_flagged_action is the argument, else the
+  environment; a value in block, monitor, mask is kept, any other non-empty value logs the warning "Invalid action
+  '<value>', using default" and becomes monitor, and absent is monitor. async_mode and persist_session go through
+  B3790's resolver with default none, include_scanners and include_evidence with default true. fallback_on_error is
+  the argument or the environment; allow or block is kept, another non-empty value warns "Invalid fallback action
+  '<value>', using default 'allow'", absent is allow. The base settings come in already built (B8521 fills
+  GuardrailBase with the supported hooks pre_call, during_call, post_call, pre_mcp_call and during_mcp_call). The
+  timeout is set after the base, so it replaces the base timeout: the argument when set, else PILLAR_TIMEOUT parsed as
+  a float, else 5.0; text that does not parse warns "Pillar Guardrail: Invalid PILLAR_TIMEOUT value '<text>', falling
+  back to default 5.0s" and uses 5.0. Use B3790's settings record for these values; read its merged module for the
+  names. Only values that come from the config and environment reach the URL; nothing from a request does.
+
+
+  Hooks. Each takes the request data as `BTreeMap<String, GuardrailValue>` and the key context type B3790's header
+  builder takes, and returns `GuardrailFailure` (B5471) on a block. `pre_call` asks B3665's gate
+  `should_run_guardrail` with event pre_call and runs only on `Ok(true)`; any other answer leaves the data as it is
+  and logs at debug. Then it calls `run`, then records the guardrail name with B3680's `MetadataGuardrailRecorder`
+  (LiteLLM's add_guardrail_to_applied_guardrails_header), and returns the data. `moderation` is the same with event
+  during_call. `post_call_success` asks with event post_call and returns the response unchanged when the gate says
+  no. Otherwise it takes the `message` of every choice that has one; with none it logs at debug and returns. It then
+  builds a shallow copy of the request data whose `messages` is the request's messages (or an empty list) followed by
+  those response messages, calls `run` on the copy, records the name on the original data, and returns the response
+  unchanged even in mask mode. `run(data, key)` returns the data at once when `messages` is absent or empty. Otherwise
+  it builds headers and payload, calls the API and processes the answer with B3790's functions. A detection block
+  (the HTTP 400 B3790 raises) goes back to the caller as it is. Every other error logs at error "Pillar Guardrail: API
+  communication failed - <error>" and goes to B3790's API error handler, so fallback allow returns the data and
+  fallback block fails with its 503.
+
+
+  The class defines these three hooks and no apply_guardrail, so B8666 reports exactly pre_call, moderation and
+  post_call_success as overridden. Tests in pillar_runtime/tests.rs use the rstest function `pillar_runtime_cases`
+  and an axum server on 127.0.0.1 as the Pillar endpoint, as the crate's other HTTP tests do: the constructor
+  precedence and fallbacks for every field, the missing key error, each hook's gate skip, a flagged block, monitor and
+  mask on pre_call, a post_call scan that sends request plus response messages and leaves the response unchanged, an
+  empty messages bypass with no call, and fallback allow and block on a 500 and on a refused connection. The client
+  sees this code through the chat route once B8666 dispatches it; B9464 adds those HTTP cases, so this task has none.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/pillar_runtime.rs
+    - crates/betterlite-guardrails/src/pillar_runtime/**
+    - crates/betterlite-config/src/sections/pillar_runtime.rs
+    - crates/betterlite-config/src/sections/pillar_runtime/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/pillar.py#L180-L306
+    why: The owned constructor, its class constants, the environment fallbacks, the two action checks and the timeout set after the base.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/pillar.py#L312-L450
+    why: The owned pre_call, during_call and post_call hooks, the gate check, the applied guardrail record and the request plus response conversation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/pillar.py#L456-L496
+    why: The owned run_pillar_guardrail, the empty messages bypass and which errors go to the fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/pillar.py#L502-L838
+    why: B3790's error fallback, headers, payload, API call and response processing that run calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/__init__.py#L19-L70
+    why: The initializer B8218 ports, which passes these constructor arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L591-L599
+    why: add_guardrail_to_applied_guardrails_header, built by B3680 as MetadataGuardrailRecorder.
+dod:
+  - text: The pillar_runtime section reads the nine PILLAR_* variables as optional texts, treats empty as unset and never prints the key.
+    proof: [section-tests]
+  - text: PillarGuard::new resolves key, base, both actions, the four booleans and the timeout with LiteLLM's precedence, warnings and errors.
+    proof: [runtime-tests]
+  - text: pre_call and moderation run only when the gate answers true, scan the request, record the applied guardrail and pass block, monitor and mask outcomes through.
+    proof: [runtime-tests]
+  - text: post_call_success scans the request plus response messages on a copy, records the guardrail on the original and never changes the response.
+    proof: [runtime-tests]
+  - text: run skips a request without messages and sends API failures to the allow or block fallback while a detection block passes through.
+    proof: [runtime-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: section-tests
+      why: the pillar_runtime section misses a variable, keeps an empty one or leaks the key
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::pillar_runtime::/)'
+    - id: runtime-tests
+      why: the Pillar class is missing, resolves a setting differently or runs a hook LiteLLM would skip
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^pillar_runtime::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Payload, headers, the protect call, response processing, evidence headers, the boolean resolver and the API error fallback (pillar.py L48-L168 and L502-L838): B3790."
+  - "get_config_model returns the form model: B6562's form tables. get_supported_event_hooks: B8521's supported hook list."
+  - "The initializer and its _get_config_value helper: B8218. The spec variant: B8521. Building this value, the pooled client and the hook dispatch: B8666."
+  - "add_guardrail_to_applied_guardrails_header: B3680 (MetadataGuardrailRecorder). should_run_guardrail: B3665."
+  - "The PillarGuardrailMissingSecrets and PillarGuardrailAPIError classes are only Python exception names; the first becomes this module's error variant and the second has no raiser at the pin."
+  - "The booted-proxy cases: B9464."
+pitfalls:
+  - "The timeout is assigned after the base constructor, so a guardrail timeout of none still ends up 5.0 or PILLAR_TIMEOUT, never the base's none."
+  - "post_call_success copies the request data shallowly, so an existing metadata object is shared with the original and Pillar's session and flag keys land there, but a metadata object Pillar creates on the copy is lost."
+  - "Mask mode rewrites messages only on pre_call and during_call; on post_call it rewrites the copy and the client still gets the model's response."
+  - "An invalid on_flagged_action falls back to monitor and an invalid fallback_on_error to allow, both with a warning, never a start error."
+  - "Only the HTTP 400 detection skips the fallback; a 4xx from the Pillar API itself is an API failure and goes to allow or block like a timeout."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

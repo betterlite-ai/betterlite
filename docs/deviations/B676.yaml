@@ -1,0 +1,17 @@
+task: B676
+deviations:
+  - what: The workload credential re-reads AZURE_FEDERATED_TOKEN_FILE on every token request; the SDK caches the file text in memory for 600 seconds.
+    why: betterlite's credential holds no mutable state, so a rotated service-account token is used on the next request instead of after the cache window. No working setup relies on a stale assertion.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_credentials/workload_identity.py#L21-L36
+  - what: The credential runs the IMDS availability probe on every token request instead of remembering a successful probe on the credential object.
+    why: betterlite's credential is a value object built per configured identity, and remembering availability would add mutable state shared between requests.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_credentials/imds.py#L90-L122
+  - what: A Retry-After value that is neither a number nor an HTTP date waits for the backoff instead of failing the token request.
+    why: azure-core raises from its date parser on such a value, which ends the credential call with an unrelated parse error. No working setup relies on that crash, and the retry budget still bounds the wait.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-core_1.41.0/sdk/core/azure-core/azure/core/pipeline/policies/_utils.py#L62-L76
+  - what: The IMDS availability probe accepts any reply except a 403 containing "unreachable", including a 200 whose body has no "resource" field.
+    why: The SDK parses the probe reply as a token and a missing "resource" raises a KeyError that it reports as an unavailable credential. betterlite checks only the status, since the token request that follows reports a malformed reply itself. No working setup answers the probe with a body that is not a token.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_internal/managed_identity_client.py#L58-L90
+  - what: The workload identity token request carries no x-ms-client-request-id header.
+    why: The SDK builds its pipeline with a request id policy, so Azure AD sees a client request id on the client-credentials POST. betterlite sends that POST through the shared OIDC exchange owned by B530, which sets no such header, and this task may not change that crate. The id only helps Azure support trace a call and no token behavior depends on it.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_internal/pipeline.py#L18-L60
