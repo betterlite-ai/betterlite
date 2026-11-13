@@ -1,14 +1,11 @@
 from typing import Literal, NotRequired, TypedDict
 
-from litellm.rust_bridge.traces import DecodedSpan
-from litellm.tracing.types import SpanRow
 from pydantic import JsonValue
 
 
 class BodyInput(TypedDict):
     encoding: Literal["utf8", "base64"]
     value: str
-    hanging: NotRequired[bool]
 
 
 class RequestInput(TypedDict):
@@ -27,39 +24,14 @@ class AuthInput(TypedDict):
     org_id: NotRequired[str]
 
 
-class DecoderInput(TypedDict):
-    kind: Literal["ok", "overflow", "malformed", "too_large", "overloaded"]
-    message: NotRequired[str]
-    spans: NotRequired[list[DecodedSpan]]
-    rows: NotRequired[list[SpanRow]]
-
-
-class ErrorInput(TypedDict):
-    kind: Literal["invalid_cursor", "invalid", "unavailable", "storage"]
-    message: NotRequired[str]
-
-
-class ReadScript(TypedDict):
-    value: NotRequired[JsonValue]
-    error: NotRequired[ErrorInput]
-
-
-class QueryScript(TypedDict):
-    value: NotRequired[str]
-    error: NotRequired[ErrorInput]
-
-
-class ScriptInput(TypedDict):
-    decoder: NotRequired[DecoderInput]
-    max_concurrent_ingests: NotRequired[int]
-    body_read_timeout_ms: NotRequired[int]
-    now_ms: NotRequired[int]
-    list_traces: NotRequired[ReadScript]
-    get_trace: NotRequired[ReadScript]
-    get_span: NotRequired[ReadScript]
-    get_span_error: NotRequired[ReadScript]
-    query: NotRequired[QueryScript]
-    query_help: NotRequired[QueryScript]
+class Script(TypedDict):
+    decoder: NotRequired[JsonValue]
+    list_traces: NotRequired[JsonValue]
+    get_trace: NotRequired[JsonValue]
+    get_span: NotRequired[JsonValue]
+    get_span_error: NotRequired[JsonValue]
+    query: NotRequired[JsonValue]
+    query_help: NotRequired[JsonValue]
 
 
 class Input(TypedDict):
@@ -67,4 +39,4 @@ class Input(TypedDict):
     auth: NotRequired[AuthInput]
     tracing: NotRequired[bool]
     master_key: NotRequired[str]
-    script: NotRequired[ScriptInput]
+    script: NotRequired[Script]

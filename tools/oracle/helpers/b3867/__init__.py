@@ -7,4 +7,8 @@ from .types import Input
 
 
 def run(input_value: Input) -> JsonValue:
-    return asyncio.run(dispatch(input_value))
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(dispatch(input_value))
+    finally:
+        loop.close()
