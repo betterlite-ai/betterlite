@@ -1,0 +1,33 @@
+kind: helper
+name: vertex-token-cache-stale-usable
+call:
+  vertex_token_cache:
+    scenarios:
+      - credentials:
+          - name: reported-fresh
+            token: token-fresh
+            state: fresh
+            project_id: own-project
+          - name: reported-stale
+            token: token-stale
+            state: stale
+            project_id: own-project
+          - name: stale-without-token
+            state: stale
+            project_id: own-project
+        records:
+          - credential: reported-fresh
+            credentials: credential-a
+            cached_project: cached-project
+          - credential: reported-stale
+            credentials: credential-b
+            cached_project: cached-project
+          - credential: stale-without-token
+            credentials: credential-c
+            cached_project: cached-project
+        probes:
+          - credentials: credential-a
+          - credentials: credential-b
+          - credentials: credential-c
+env: {}
+compare: {ignore: []}

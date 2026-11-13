@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-params-seed-unknown-model
+call:
+  openai_response_params:
+    unknown_catalog_model:
+      probes:
+      - {model: unlisted-reasoner, params: {reasoning: {effort: high}}, model_cost: {}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,36 @@
+kind: helper
+name: vertex-token-cache-explicit-project-wins
+call:
+  vertex_token_cache:
+    scenarios:
+      - credentials:
+          - name: paired
+            token: token-paired
+            state: fresh
+            quota_project_id: quota-project
+            project_id: own-project
+        records:
+          - credential: paired
+            credentials: credential-a
+            project: cached-key-project
+            cached_project: cached-project
+        probes:
+          - credentials: credential-a
+            project: cached-key-project
+            requested_project: explicit-project
+          - credentials: credential-a
+            project: cached-key-project
+      - credentials:
+          - name: paired-no-project
+            token: token-paired
+            state: fresh
+            quota_project_id: quota-project
+            project_id: own-project
+        records:
+          - credential: paired-no-project
+            credentials: credential-b
+        probes:
+          - credentials: credential-b
+            requested_project: explicit-project
+env: {}
+compare: {ignore: []}

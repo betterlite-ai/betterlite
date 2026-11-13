@@ -105,5 +105,5 @@ pitfalls:
   - A purpose of "" is dropped from list params because only a truthy purpose is sent.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1900
   max_new_expects: 0

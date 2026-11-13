@@ -1108,6 +1108,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -1129,7 +1130,9 @@ dependencies = [
  "betterlite-db",
  "betterlite-error",
  "betterlite-models",
+ "betterlite-paths",
  "betterlite-redis",
+ "betterlite-secrets",
  "chrono",
  "hex",
  "lru",
@@ -1158,7 +1161,9 @@ name = "betterlite-auth-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-auth",
+ "betterlite-secrets",
  "libfuzzer-sys",
+ "secrecy",
 ]
 
 [[package]]
@@ -1181,6 +1186,7 @@ dependencies = [
  "lru",
  "p12-keystore",
  "pem",
+ "percent-encoding",
  "pkcs8",
  "rstest",
  "secrecy",
@@ -1500,11 +1506,13 @@ dependencies = [
  "betterlite-db",
  "betterlite-env",
  "betterlite-error",
+ "betterlite-foundry",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-mcp",
  "betterlite-models",
  "betterlite-openai",
+ "betterlite-paths",
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-tokenizer",
@@ -1526,6 +1534,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_with",
+ "strum",
  "tempfile",
  "thiserror",
  "tokio",
@@ -2580,6 +2589,7 @@ dependencies = [
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-core",
  "betterlite-env",
  "betterlite-error",
  "betterlite-http",
@@ -2653,7 +2663,10 @@ dependencies = [
 name = "betterlite-pyhost"
 version = "0.1.0"
 dependencies = [
+ "proptest",
  "pyo3",
+ "rstest",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tokio",
@@ -2841,6 +2854,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-subscriber",
  "unicode-general-category",
 ]
 
@@ -3250,6 +3264,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_path_to_error",
  "serde_with",
  "thiserror",
  "tokio",

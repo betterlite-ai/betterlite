@@ -1,0 +1,8 @@
+kind: helper
+name: router-deployment-pricing-params-price-overrides-model-info-and-stays-off-shared-key
+call:
+  b9710:
+    deployment: {"model_name": "alias", "litellm_params": {"model": "gpt-4.1", "input_cost_per_token": 0.000003}, "model_info": {"id": "dep-16", "input_cost_per_token": 0.000001, "custom_note": "kept"}}
+    shared_before: null
+compare: {ignore: []}
+env: {}

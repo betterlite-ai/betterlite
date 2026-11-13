@@ -1,0 +1,5 @@
+task: B1302
+deviations:
+  - what: Refreshes of two different credential identities run concurrently. LiteLLM wraps every synchronous refresh on one VertexBase in a single threading.RLock, so credentials loaded through the same instance refresh one at a time.
+    why: The task asks for refresh serialized per handle, and a Rust mutex guard may not be held over the network await. The cache leases by the serialized credential value and the requested project, so each identity refreshes alone while another identity may refresh at the same time. Tokens, projects and errors are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L368-L386
