@@ -555,6 +555,33 @@ fn oversized_payloads_are_refused_before_parsing() {
     );
 }
 
+#[rstest]
+#[case::nan("NaN")]
+#[case::infinity("Infinity")]
+#[case::negative_infinity("-Infinity")]
+fn non_finite_literals_are_invalid_json(#[case] literal: &str) {
+    let payload = format!(
+        r#"{{"type":"session.update","session":{{"input_audio_transcription":{{"temperature":{literal}}}}}}}"#
+    );
+    assert_eq!(rejection(&payload), "invalid JSON object");
+}
+
+#[rstest]
+#[case::shallow(100, true)]
+#[case::deep(200, false)]
+fn nesting_depth_is_capped(#[case] depth: usize, #[case] accepted: bool) {
+    let payload = format!(
+        r#"{{"type":"session.update","session":{{"extra":{}{}}}}}"#,
+        "[".repeat(depth),
+        "]".repeat(depth)
+    );
+    let parsed = parse(&payload);
+    assert_eq!(parsed.is_ok(), accepted);
+    if !accepted {
+        assert_eq!(parsed.unwrap_err().to_string(), "invalid JSON object");
+    }
+}
+
 fn replay(bytes: &[u8]) {
     let Some((&selector, rest)) = bytes.split_first() else {
         return;
