@@ -1,0 +1,6 @@
+kind: helper
+name: failure-text-blocked-pii-named
+call:
+  b5471: {"function": "failure_text", "kind": "blocked_pii", "guardrail_name": "pii", "message": "", "wrap_default_message": true}
+env: {}
+compare: {ignore: []}

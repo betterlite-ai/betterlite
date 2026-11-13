@@ -1,0 +1,18 @@
+kind: helper
+name: responses-parameters-stream-options
+call:
+  responses_parameters:
+    action: optional
+    steps:
+      - {model: m, supported: [stream_options], allowed: [], global_drop: false, call_drop: null, params: {stream_options: {include_obfuscation: true}}, mapped: null}
+      - {model: m, supported: [stream_options], allowed: [], global_drop: false, call_drop: null, params: {stream_options: {include_obfuscation: false}}, mapped: null}
+      - {model: m, supported: [stream_options], allowed: [], global_drop: false, call_drop: null, params: {stream_options: {}}, mapped: null}
+      - {model: m, supported: [stream_options], allowed: [], global_drop: false, call_drop: null, params: {stream_options: {include_usage: true}}, mapped: null}
+      - {model: m, supported: [stream_options], allowed: [], global_drop: false, call_drop: null, params: {stream_options: {include_obfuscation: 1}}, mapped: null}
+      - {model: m, supported: [stream_options], allowed: [], global_drop: false, call_drop: null, params: {stream_options: {include_obfuscation: "true"}}, mapped: null}
+      - {model: m, supported: [stream_options], allowed: [], global_drop: false, call_drop: null, params: {}, mapped: {stream_options: {include_obfuscation: true}}}
+      - {model: m, supported: [stream_options], allowed: [], global_drop: false, call_drop: null, params: {}, mapped: {stream_options: {include_usage: true}}}
+      - {model: m, supported: [], allowed: [stream_options], global_drop: false, call_drop: null, params: {stream_options: {include_obfuscation: 1}}, mapped: {}}
+      - {model: m, supported: [stream_options], allowed: [], global_drop: false, call_drop: null, params: {stream_options: {include_obfuscation: 1}}, mapped: {}}
+env: {}
+compare: {ignore: []}

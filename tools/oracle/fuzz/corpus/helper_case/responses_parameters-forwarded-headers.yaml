@@ -1,0 +1,12 @@
+kind: helper
+name: responses-parameters-forwarded-headers
+call:
+  responses_parameters:
+    action: forwarded_headers
+    steps:
+      - extra: {Authorization: new}
+        client: {authorization: old, x-client: "yes"}
+      - extra: null
+        client: null
+env: {}
+compare: {ignore: []}
