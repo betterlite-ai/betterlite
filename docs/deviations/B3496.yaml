@@ -9,8 +9,8 @@ deviations:
   - what: settle_before_delete takes the active-poll registry and the fetch function as arguments, where LiteLLM reads the process-global _ACTIVE_POLLS dict and defaults the fetch to _fetch_interaction.
     why: Rule inject-dependencies bars globals; B3481's registry is owned by the server, and the create path supplies its fetcher.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L287-L296
-  - what: The three numeric polling settings load into Durations, so text Rust's f64 parser rejects but Python's float() accepts (digit underscores such as "1_0") and a number a Duration cannot hold (negative, nan or inf) are startup errors naming the variable, while LiteLLM stores the float and its poll loop then makes no fetch.
-    why: A Duration cannot be negative or non-finite, and the poll loop's interval math needs one; no working setup configures an interval or timeout that disables polling.
+  - what: The three numeric polling settings load into Durations, so text Rust's f64 parser rejects but Python's float() accepts (digit underscores such as "1_0") and a negative or nan number are startup errors naming the variable; +inf and finite values past Duration's range clamp to Duration::MAX, where LiteLLM keeps the float and polls with no timeout or no backoff cap.
+    why: A Duration cannot be negative or nan, while a positive value the type cannot hold clamps so a setup that polls without a timeout or an interval cap keeps working instead of stopping at startup.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1831-L1843
   - what: The spans_logged dedupe scopes are Python tuples in LiteLLM's dict and text keys in betterlite's JSON call details, so the reset compares each key's JSON array form and drops it when its last element is "success".
     why: B250 stores call details as JSON, whose object keys are text; the cleared set is the same.

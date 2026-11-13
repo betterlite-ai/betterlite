@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
-use std::time::Duration;
+use std::num::ParseFloatError;
+use std::time::{Duration, TryFromFloatSecsError};
 
 use thiserror::Error;
 
@@ -24,9 +25,19 @@ pub struct PollSettings {
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum PollSettingsError {
     #[error("environment variable {name} must be a number, not {value:?}")]
-    NotANumber { name: &'static str, value: String },
-    #[error("environment variable {name} is not a valid number of seconds: {value:?}")]
-    OutOfRange { name: &'static str, value: String },
+    NotANumber {
+        name: &'static str,
+        value: String,
+        #[source]
+        source: ParseFloatError,
+    },
+    #[error("environment variable {name} must be a non-negative number of seconds, not {value:?}")]
+    OutOfRange {
+        name: &'static str,
+        value: String,
+        #[source]
+        source: TryFromFloatSecsError,
+    },
 }
 
 impl PollSettings {
@@ -58,14 +69,23 @@ fn seconds(
     let value = text
         .trim()
         .parse::<f64>()
-        .map_err(|_source| PollSettingsError::NotANumber {
+        .map_err(|source| PollSettingsError::NotANumber {
             name,
             value: text.clone(),
+            source,
         })?;
-    Duration::try_from_secs_f64(value).map_err(|_source| PollSettingsError::OutOfRange {
-        name,
-        value: text.clone(),
-    })
+    match Duration::try_from_secs_f64(value) {
+        Ok(duration) => Ok(duration),
+        Err(source) if value.is_sign_negative() || value.is_nan() => {
+            Err(PollSettingsError::OutOfRange {
+                name,
+                value: text.clone(),
+                source,
+            })
+        }
+        // LiteLLM's float() accepts +inf and values past Duration's range, then polls with no timeout or backoff cap
+        Err(_) => Ok(Duration::MAX),
+    }
 }
 
 mod tests;

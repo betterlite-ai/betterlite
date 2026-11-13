@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::time::Duration;
+use std::num::ParseFloatError;
+use std::time::{Duration, TryFromFloatSecsError};
 
 use rstest::rstest;
 
@@ -90,24 +91,54 @@ fn rejects_an_unparsable_number_naming_the_variable(
         PollSettingsError::NotANumber {
             name: variable,
             value: value.to_owned(),
+            source: unparsable(value),
         }
     );
     assert!(error.to_string().contains(variable));
 }
 
+fn unparsable(value: &str) -> ParseFloatError {
+    value
+        .trim()
+        .parse::<f64>()
+        .expect_err("the fixture text is not a number")
+}
+
+fn out_of_range(value: &str) -> TryFromFloatSecsError {
+    let seconds: f64 = value.trim().parse().expect("the fixture text is a float");
+    Duration::try_from_secs_f64(seconds).expect_err("the fixture value is out of range")
+}
+
 #[rstest]
 #[case::negative("-5")]
-#[case::infinity("inf")]
+#[case::negative_infinity("-inf")]
 #[case::nan("nan")]
 fn rejects_a_number_a_duration_cannot_hold_naming_the_variable(#[case] value: &str) {
     let error = PollSettings::from_env_map(&environment(&[(TIMEOUT_VARIABLE, value)]))
-        .expect_err("a duration cannot hold a negative or non-finite number of seconds");
+        .expect_err("a duration cannot hold a negative or nan number of seconds");
     assert_eq!(
         error,
         PollSettingsError::OutOfRange {
             name: TIMEOUT_VARIABLE,
             value: value.to_owned(),
+            source: out_of_range(value),
         }
     );
     assert!(error.to_string().contains(TIMEOUT_VARIABLE));
+}
+
+#[test]
+fn clamps_a_timeout_past_durations_range_to_its_maximum() {
+    let settings = PollSettings::from_env_map(&environment(&[(TIMEOUT_VARIABLE, "inf")]))
+        .expect("LiteLLM's float accepts infinity and polls without a timeout");
+    assert_eq!(settings.timeout, Duration::MAX);
+}
+
+#[rstest]
+#[case::infinity("inf")]
+#[case::finite_overflow("1e30")]
+fn clamps_a_max_interval_past_durations_range_to_its_maximum(#[case] value: &str) {
+    let settings = PollSettings::from_env_map(&environment(&[(MAX_INTERVAL_VARIABLE, value)]))
+        .expect("LiteLLM's float accepts values a Duration cannot hold and polls without a cap");
+    assert_eq!(settings.max_interval, Duration::MAX);
 }
