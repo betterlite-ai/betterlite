@@ -202,6 +202,8 @@ fn dalle2_fields() {
         select_image_edit_family("gpt_image_1"),
         ImageEditFamily::OpenAi
     );
+    assert_eq!(ImageEditFamily::DallE2.name(), "dall_e_2");
+    assert_eq!(ImageEditFamily::OpenAi.name(), "openai");
     let single = form(
         ImageEditFamily::DallE2,
         &request(
