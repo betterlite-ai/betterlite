@@ -11,7 +11,7 @@ maintenance() {
   fi
 }
 maintenance
-# Dispatches one task once a slot is free: 14 GB RAM available (from /proc/meminfo, since free prints translated labels under the flow services' LANGUAGE), disk under 95% (a full disk stops git for every flow, and a checkout takes about 0.5 GB), /tmp under 50%, and fewer than 8 running dispatches waiting for an agent seat (34 sat in the Claude seat queue on 11-05 while their checkouts held disk). Since stage 3 a dispatch builds nothing, so CPU pressure and IO stalls no longer hold a slot (Max, 11-13). A temp dir on disk (betterlite-worktrees/tmp/<id>) stands in for /tmp, since /tmp is RAM. There is no fixed dispatch count: the gate caps the agents on each vendor (max_parallel in agents.yaml) and overflows to the other vendor. Usage: bash next-slot.sh <id> <log name> [note]. Tests use the shared local postgres betterlite-test-postgres (127.0.0.1:55432) through POSTGRES_TEST_URL instead of a testcontainers one per test (Max).
+# Dispatches one task once a slot is free: 14 GB RAM available (from /proc/meminfo, since free prints translated labels under the flow services' LANGUAGE), disk under 95% (a full disk stops git for every flow, and a checkout takes about 0.5 GB), /tmp under 50%, fewer than 8 running dispatches waiting for an agent seat (34 sat in the Claude seat queue on 11-05 while their checkouts held disk), and memory pressure in the dispatch slice under 20% full over the last minute. Since stage 3 a dispatch builds nothing, so CPU pressure and IO stalls no longer hold a slot (Max, 11-13), but the agents still fill the slice's MemoryHigh: at 18:23 UTC on 11-13 its tasks stalled on memory 51% of the time with swap full, while MemAvailable read 22 GB, most of it reclaimable dentries and inodes from the checkouts (Max). A temp dir on disk (betterlite-worktrees/tmp/<id>) stands in for /tmp, since /tmp is RAM. There is no fixed dispatch count: the gate caps the agents on each vendor (max_parallel in agents.yaml) and overflows to the other vendor. Usage: bash next-slot.sh <id> <log name> [note]. Tests use the shared local postgres betterlite-test-postgres (127.0.0.1:55432) through POSTGRES_TEST_URL instead of a testcontainers one per test (Max).
 id=$1
 log=${L}/dispatch-${id}-$2.log
 tools=${worktrees}/.tools
@@ -32,6 +32,7 @@ if [[ ! -x ${gates}/${tree}/gate ]] && [[ -z ${changes} ]]; then
   cp .development/gate/target/debug/gate "${copy}" && chmod 0755 "${copy}" && mv "${copy}" "${gates}/${tree}/gate" || exit 1
 fi
 find "${gates}" -mindepth 1 -maxdepth 1 -mmin +2880 -exec rm -rf -- {} +
+slice=/sys/fs/cgroup$(systemctl --user show betterlite-dispatch.slice -p ControlGroup --value)
 mkdir -p "${L}/locks"
 exec 9> "${L}/locks/admission.lock"
 flock 9
@@ -54,6 +55,7 @@ waiting_seats() {
 # a reading that fails skips its check instead of holding the slot
 busy() {
   memory_gb=$(awk '/^MemAvailable:/ {print int($2 / 1048576)}' /proc/meminfo) && [[ "${memory_gb}" -lt 14 ]] && return 0
+  memory_full=$(awk '/^full/ {split($3, a, "="); print int(a[2])}' "${slice}/memory.pressure") && [[ "${memory_full}" -ge 20 ]] && return 0
   home_use=$(df --output=pcent /home) && home_use=${home_use##*$'\n'} && [[ "${home_use//[!0-9]/}" -ge 95 ]] && return 0
   tmp_use=$(df --output=pcent /tmp) && tmp_use=${tmp_use##*$'\n'} && [[ "${tmp_use//[!0-9]/}" -ge 50 ]] && return 0
   seats=$(waiting_seats) && [[ "${seats}" -ge 8 ]] && return 0
