@@ -1,0 +1,13 @@
+kind: helper
+name: mcp-client-credentials-prepare-form-basic
+call:
+  b4661:
+    function: grant
+    configs:
+      - client_id: gateway client
+        client_secret: "s3cret:/value"
+        token_url: https://idp.example.com/token
+        scopes: [read]
+        token_endpoint_auth_method: client_secret_basic
+env: {}
+compare: {ignore: []}

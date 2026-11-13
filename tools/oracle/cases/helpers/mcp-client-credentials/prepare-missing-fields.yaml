@@ -1,0 +1,10 @@
+kind: helper
+name: mcp-client-credentials-prepare-missing-fields
+call:
+  b4661:
+    function: grant
+    configs:
+      - client_secret: gateway-secret
+        token_url: ""
+env: {}
+compare: {ignore: []}

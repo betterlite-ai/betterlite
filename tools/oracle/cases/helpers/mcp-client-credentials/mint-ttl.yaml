@@ -1,0 +1,20 @@
+kind: helper
+name: mcp-client-credentials-mint-ttl
+call:
+  b4661:
+    function: mint
+    config:
+      client_id: gateway-client
+      client_secret: gateway-secret
+      token_url: https://idp.example.com/token
+      scopes: [read]
+    outcomes:
+      - {kind: success, body: '{"access_token": "tok-cached", "expires_in": 3600}'}
+      - {kind: success, body: '{"access_token": "tok-3600", "expires_in": 3600}'}
+      - {kind: success, body: '{"access_token": "tok-5", "expires_in": 5}'}
+      - {kind: success, body: '{"access_token": "tok-default"}'}
+      - {kind: success, body: '{"access_token": "tok-zero", "expires_in": 0}'}
+      - {kind: success, body: '{"access_token": "tok-negative", "expires_in": -5}'}
+    servers: [cached, cached, long-lived, short-lived, no-expiry, zero-expiry, negative-expiry]
+env: {}
+compare: {ignore: []}
