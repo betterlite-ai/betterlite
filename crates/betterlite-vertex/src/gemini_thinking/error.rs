@@ -7,11 +7,11 @@ pub enum GeminiThinkingError {
     )]
     UnsupportedEffort { effort: String },
     #[error(
-        "Cannot specify both `{param}` (which maps to `thinking_budget`) and `thinking_level` in the same request. For Gemini 3 models, use `thinking_level` instead."
+        "Cannot specify both `{param}` and `thinking_level` in the same request. For Gemini 3 models, use `thinking_level` instead."
     )]
     ThinkingLevelConflict { param: String },
     #[error(
-        "Unsupported audio format for Gemini TTS models: {format}. Gemini TTS models only support 'pcm16' format as they return audio data in L16 PCM format."
+        "Unsupported audio format for Gemini TTS models: {format}. Gemini TTS models only support 'pcm16' format."
     )]
     UnsupportedAudioFormat { format: String },
 }

@@ -13,7 +13,6 @@ call:
         high: 4096
         disable: 0
       default_thinking_level_low: false
-      max_recurse_depth: 100
     catalog:
       gemini-3-flash-preview: false
     steps:

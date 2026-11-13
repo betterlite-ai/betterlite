@@ -3,13 +3,12 @@ use betterlite_prompts::arguments::json::{Json, Object};
 
 use crate::model_policy::capabilities::response_schema::supports_response_json_schema;
 use crate::vertex_schema::build::{SchemaFormat, shape_parameters};
+use crate::vertex_schema::error::VertexSchemaError;
 
-use super::error::GeminiFormatError;
-
-enum SelectedSchema<'schema> {
-    Absent,
-    Empty,
-    Schema(&'schema Object),
+#[derive(Debug, thiserror::Error)]
+pub enum GeminiFormatError {
+    #[error(transparent)]
+    Schema(#[from] VertexSchemaError),
 }
 
 pub fn apply_response_format(
@@ -30,25 +29,44 @@ pub fn apply_response_format(
             }
         });
     }
-    if let Some(mime) = type_mime_type(&format) {
+    if let Some(mime) = mime_for_type(&format) {
         optional_params.insert("response_mime_type".to_owned(), Json::Text(mime.to_owned()));
     }
-    match selected_schema(&format) {
-        SelectedSchema::Absent => {}
-        SelectedSchema::Empty => set_json_mime_type(optional_params),
-        SelectedSchema::Schema(schema) => {
-            set_json_mime_type(optional_params);
-            apply_schema(schema, modern, optional_params, schema_settings)?;
-        }
+    let candidate = schema_candidate(&format);
+    if candidate.is_some() {
+        optional_params.insert(
+            "response_mime_type".to_owned(),
+            Json::Text("application/json".to_owned()),
+        );
     }
-    Ok(())
+    let Some(Json::Object(schema)) = candidate else {
+        return Ok(());
+    };
+    if schema.is_empty() {
+        return Ok(());
+    }
+    apply_schema(schema, modern, optional_params, schema_settings)
 }
 
-fn set_json_mime_type(optional_params: &mut Object) {
-    optional_params.insert(
-        "response_mime_type".to_owned(),
-        Json::Text("application/json".to_owned()),
-    );
+fn mime_for_type(format: &Object) -> Option<&'static str> {
+    match format.get("type").and_then(Json::as_str) {
+        Some("json_object") => Some("application/json"),
+        Some("text") => Some("text/plain"),
+        _ => None,
+    }
+}
+
+fn schema_candidate(format: &Object) -> Option<&Json> {
+    if let Some(schema) = format.get("response_schema") {
+        return Some(schema);
+    }
+    if format.get("type").and_then(Json::as_str) != Some("json_schema") {
+        return None;
+    }
+    format
+        .get("json_schema")
+        .and_then(Json::as_object)
+        .and_then(|json_schema| json_schema.get("schema"))
 }
 
 fn apply_schema(
@@ -72,39 +90,6 @@ fn apply_schema(
     )?;
     optional_params.insert("response_schema".to_owned(), Json::Object(shaped));
     Ok(())
-}
-
-fn selected_schema(format: &Object) -> SelectedSchema<'_> {
-    let candidate = if format.contains_key("response_schema") {
-        format.get("response_schema")
-    } else if format.get("type").and_then(Json::as_str) == Some("json_schema") {
-        format
-            .get("json_schema")
-            .and_then(Json::as_object)
-            .and_then(|json_schema| json_schema.get("schema"))
-    } else {
-        return SelectedSchema::Absent;
-    };
-    match candidate {
-        None => SelectedSchema::Absent,
-        Some(Json::Object(schema)) if !schema.is_empty() => SelectedSchema::Schema(schema),
-        Some(
-            Json::Null
-            | Json::Bool(_)
-            | Json::Number(_)
-            | Json::Text(_)
-            | Json::List(_)
-            | Json::Object(_),
-        ) => SelectedSchema::Empty,
-    }
-}
-
-fn type_mime_type(format: &Object) -> Option<&'static str> {
-    match format.get("type").and_then(Json::as_str) {
-        Some("json_object") => Some("application/json"),
-        Some("text") => Some("text/plain"),
-        _ => None,
-    }
 }
 
 fn visit_objects(fields: &mut Object, visit: &mut dyn FnMut(&mut Object)) {

@@ -3,10 +3,10 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 
-use super::audio::{AudioParam, PrebuiltVoiceConfig, SpeechConfig, VoiceConfig, map_audio_params};
+use super::audio::{AudioParam, map_audio_params};
+use super::audio::{ResponseModality, map_response_modalities};
 use super::effort::{map_effort_to_budget, map_effort_to_level, supports_minimal_level};
 use super::error::GeminiThinkingError;
-use super::modalities::{ResponseModality, map_response_modalities};
 use super::param::{ThinkingParam, ThinkingType, map_thinking_param, validate_thinking_conflicts};
 use super::server_flags::apply_server_tool_flags;
 use super::settings::{
@@ -323,14 +323,12 @@ fn pcm16_audio_maps_voice_and_language() {
 
     assert_eq!(
         mapped,
-        SpeechConfig {
-            voice_config: Some(VoiceConfig {
-                prebuilt_voice_config: PrebuiltVoiceConfig {
-                    voice_name: "alloy".to_owned(),
-                },
-            }),
-            language_code: Some("en-US".to_owned()),
-        }
+        object(
+            r#"{
+                "voiceConfig": {"prebuiltVoiceConfig": {"voiceName": "alloy"}},
+                "languageCode": "en-US"
+            }"#
+        )
     );
 }
 
@@ -346,14 +344,7 @@ fn absent_audio_fields_are_omitted() {
 
     assert_eq!(
         mapped,
-        SpeechConfig {
-            voice_config: Some(VoiceConfig {
-                prebuilt_voice_config: PrebuiltVoiceConfig {
-                    voice_name: "alloy".to_owned(),
-                },
-            }),
-            language_code: None,
-        }
+        object(r#"{"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": "alloy"}}}"#)
     );
 }
 
@@ -367,10 +358,7 @@ fn empty_audio_maps_to_an_empty_speech_config() {
 
     assert_eq!(
         map_audio_params(&audio).expect("an empty audio object is valid"),
-        SpeechConfig {
-            voice_config: None,
-            language_code: None,
-        }
+        Object::new()
     );
 }
 

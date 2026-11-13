@@ -13,7 +13,6 @@ call:
         high: 4096
         disable: 9
       default_thinking_level_low: false
-      max_recurse_depth: 100
     catalog: {}
     steps:
       - {op: reasoning_effort, effort: none, model: "gemini-2.5-flash", optional_params: {}}
@@ -24,6 +23,14 @@ call:
       - {op: reasoning_effort, effort: high, model: "gemini-3-pro-preview", optional_params: {}}
       - {op: reasoning_effort, effort: extreme, model: "gemini-2.5-flash", optional_params: {}}
       - {op: reasoning_effort, effort: extreme, model: "gemini-3-pro-preview", optional_params: {}}
-env: {}
+env:
+  DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET: "128"
+  DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET_GEMINI_2_5_FLASH: "1"
+  DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET_GEMINI_2_5_PRO: "128"
+  DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET_GEMINI_2_5_FLASH_LITE: "512"
+  DEFAULT_REASONING_EFFORT_LOW_THINKING_BUDGET: "1024"
+  DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET: "2048"
+  DEFAULT_REASONING_EFFORT_HIGH_THINKING_BUDGET: "4096"
+  DEFAULT_REASONING_EFFORT_DISABLE_THINKING_BUDGET: "9"
 compare:
   ignore: []

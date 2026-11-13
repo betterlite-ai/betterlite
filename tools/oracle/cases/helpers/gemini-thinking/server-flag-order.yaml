@@ -13,7 +13,6 @@ call:
         high: 4096
         disable: 0
       default_thinking_level_low: false
-      max_recurse_depth: 100
     catalog: {}
     steps:
       - {op: server_flags, non_default_params: {include_server_side_tool_invocations: true}, optional_params: {temperature: 1}}
@@ -27,6 +26,14 @@ call:
         optional_params:
           tools:
             - functionDeclarations: []
-env: {}
+env:
+  DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET: "128"
+  DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET_GEMINI_2_5_FLASH: "1"
+  DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET_GEMINI_2_5_PRO: "128"
+  DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET_GEMINI_2_5_FLASH_LITE: "512"
+  DEFAULT_REASONING_EFFORT_LOW_THINKING_BUDGET: "1024"
+  DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET: "2048"
+  DEFAULT_REASONING_EFFORT_HIGH_THINKING_BUDGET: "4096"
+  DEFAULT_REASONING_EFFORT_DISABLE_THINKING_BUDGET: "0"
 compare:
   ignore: []

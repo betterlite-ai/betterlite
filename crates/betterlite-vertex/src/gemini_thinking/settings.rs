@@ -1,6 +1,6 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 pub struct ThinkingBudgets {
     pub minimal: i64,
     pub minimal_flash: i64,
@@ -12,7 +12,7 @@ pub struct ThinkingBudgets {
     pub disable: i64,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 pub struct ThinkingSettings {
     pub budgets: ThinkingBudgets,
     pub default_thinking_level_low: bool,

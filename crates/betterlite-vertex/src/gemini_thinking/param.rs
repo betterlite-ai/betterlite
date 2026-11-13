@@ -30,11 +30,26 @@ pub fn map_thinking_param(
     settings: &ThinkingSettings,
     support: &dyn MinimalEffortSupport,
 ) -> ThinkingConfig {
+    let enabled = param.kind == Some(ThinkingType::Enabled);
     if model.is_some_and(is_gemini_3_or_newer) {
-        return gemini_3_config(param, model, settings, support);
+        let thoughts = enabled && param.budget_tokens != Some(0);
+        let mut config = ThinkingConfig {
+            include_thoughts: Some(thoughts),
+            thinking_budget: None,
+            thinking_level: None,
+        };
+        if thoughts && settings.default_thinking_level_low {
+            let minimal = model.is_some_and(|name| supports_minimal_level(name, support));
+            config.thinking_level = Some(if minimal {
+                ThinkingLevel::Minimal
+            } else {
+                ThinkingLevel::Low
+            });
+        }
+        return config;
     }
     let mut config = ThinkingConfig::default();
-    if param.kind == Some(ThinkingType::Enabled) && param.budget_tokens != Some(0) {
+    if enabled && param.budget_tokens != Some(0) {
         config.include_thoughts = Some(true);
     }
     config.thinking_budget = param.budget_tokens;
@@ -54,25 +69,4 @@ pub fn validate_thinking_conflicts(
         });
     }
     Ok(())
-}
-
-fn gemini_3_config(
-    param: &ThinkingParam,
-    model: Option<&str>,
-    settings: &ThinkingSettings,
-    support: &dyn MinimalEffortSupport,
-) -> ThinkingConfig {
-    let mut config = ThinkingConfig::default();
-    let include_thoughts =
-        param.kind == Some(ThinkingType::Enabled) && param.budget_tokens != Some(0);
-    config.include_thoughts = Some(include_thoughts);
-    if include_thoughts && settings.default_thinking_level_low {
-        let minimal = model.is_some_and(|name| supports_minimal_level(name, support));
-        config.thinking_level = Some(if minimal {
-            ThinkingLevel::Minimal
-        } else {
-            ThinkingLevel::Low
-        });
-    }
-    config
 }
