@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use betterlite_core::cost::call_price::error::CallPriceError;
+use betterlite_models::price_lookup::PriceLookup as _;
 use http::HeaderMap;
 use http::header::{AUTHORIZATION, HeaderValue};
 use rstest::rstest;
@@ -54,6 +55,19 @@ fn header_text(headers: &HeaderMap, name: &str) -> String {
 struct FakePrices {
     per_token: Decimal,
     fail: bool,
+}
+
+struct FixedPrices(Decimal);
+
+impl CostPerToken for FixedPrices {
+    fn cost_per_token(
+        &self,
+        _model: &str,
+        _input_tokens: u64,
+        _output_tokens: u64,
+    ) -> Result<Decimal, CostError> {
+        Ok(self.0)
+    }
 }
 
 impl CostPerToken for FakePrices {
@@ -326,20 +340,24 @@ fn replays_the_sse_parser_corpus(#[files("fuzz/corpus/sse_parser/*")] path: Path
 
 #[test]
 fn compute_cost_is_zero_without_a_model() {
-    let prices = FakePrices {
-        per_token: dec("1"),
-        fail: true,
-    };
+    let prices = FixedPrices(dec("1"));
     assert_eq!(compute_cost(&prices, None, 10, 10), Decimal::ZERO);
 }
 
 #[test]
 fn compute_cost_is_zero_without_tokens() {
+    let prices = FixedPrices(dec("1"));
+    assert_eq!(compute_cost(&prices, Some("gpt-4o"), 0, 0), Decimal::ZERO);
+}
+
+#[test]
+fn compute_cost_prices_a_call_with_only_one_token_kind() {
     let prices = FakePrices {
         per_token: dec("1"),
-        fail: true,
+        fail: false,
     };
-    assert_eq!(compute_cost(&prices, Some("gpt-4o"), 0, 0), Decimal::ZERO);
+    assert_eq!(compute_cost(&prices, Some("gpt-4o"), 0, 2), dec("2"));
+    assert_eq!(compute_cost(&prices, Some("gpt-4o"), 3, 0), dec("3"));
 }
 
 #[test]
@@ -366,6 +384,36 @@ fn bundled_catalog_prices_a_known_model() {
     assert_eq!(
         compute_cost(&prices, Some("gpt-4o"), 1_000, 500),
         dec("0.0075")
+    );
+}
+
+#[test]
+fn bundled_catalog_answers_the_price_lookups() {
+    let prices = CatalogPrices::bundled();
+    let effective = prices
+        .effective_model_info("gpt-4o", Some("openai"))
+        .unwrap();
+    assert!(effective.contains_key("input_cost_per_token"));
+    assert!(
+        prices
+            .effective_model_info("not-a-model-in-the-catalog", None)
+            .is_none()
+    );
+    let direct = prices.raw_cost_map_entry("gpt-4o").unwrap();
+    assert!(direct.contains_key("output_cost_per_token"));
+    assert!(
+        prices
+            .raw_cost_map_entry("not-a-model-in-the-catalog")
+            .is_none()
+    );
+    let priced = prices.effective_priced_model("gpt-4o", None).unwrap();
+    assert!(priced.record.contains_key("input_cost_per_token"));
+    assert!(priced.tiered_pricing.is_empty());
+    assert!(priced.off_peak_pricing.is_none());
+    assert!(
+        prices
+            .effective_priced_model("not-a-model-in-the-catalog", None)
+            .is_none()
     );
 }
 
