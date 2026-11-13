@@ -12,7 +12,7 @@ pub type ToolConfigDict = Json;
 pub type GenerateContentConfigDict = Object;
 
 // LiteLLM's GenerateContentRequestDict: model, contents, tools and generationConfig, extras kept as sent
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GenerateContentRequestDict {
     pub model: String,
