@@ -454,43 +454,34 @@ fn required_lists_the_properties_in_their_order() {
 }
 
 #[rstest]
-#[case::items("items")]
-#[case::any_of("anyOf")]
-#[case::one_of("oneOf")]
-#[case::all_of("allOf")]
-fn nested_schemas_in_arrays_are_rewritten(#[case] key: &str) {
-    let input = format!(
-        r#"{{"type": "json_schema", "schema": {{"{key}": [{{"type": "object", "properties": {{"b": {{"type": "string"}}}}}}]}}}}"#
-    );
-    let answer = format_answer(&input);
-    let Some(Json::Object(response)) = answer
-        .as_object()
-        .and_then(|fields| fields.get("json_schema"))
-    else {
-        panic!("a json_schema answers");
-    };
-    let Some(Json::Object(schema)) = response.get("schema") else {
-        panic!("a schema answers");
-    };
-    let Some(Json::List(entries)) = schema.get(key) else {
-        panic!("a schema list answers");
-    };
-    let Some(Json::Object(entry)) = entries.first() else {
-        panic!("one schema answers");
-    };
-    assert_eq!(entry.get("additionalProperties"), Some(&Json::Bool(false)));
-    assert_eq!(entry.get("required"), Some(&json(r#"["b"]"#)));
-}
-
-#[rstest]
-#[case::defs("$defs")]
-#[case::definitions("definitions")]
-fn nested_schemas_in_definitions_are_rewritten(#[case] key: &str) {
-    let input = format!(
-        r#"{{"type": "json_schema", "schema": {{"{key}": {{"named": {{"type": "object", "properties": {{"e": {{"type": "string"}}}}}}}}}}}}"#
-    );
+#[case::items(
+    r#"{"items": {"type": "object", "properties": {"b": {"type": "string"}}}}"#,
+    r#"{"items": {"type": "object", "properties": {"b": {"type": "string"}}, "required": ["b"], "additionalProperties": false}}"#
+)]
+#[case::any_of(
+    r#"{"anyOf": [{"type": "object", "properties": {"b": {"type": "string"}}}]}"#,
+    r#"{"anyOf": [{"type": "object", "properties": {"b": {"type": "string"}}, "required": ["b"], "additionalProperties": false}]}"#
+)]
+#[case::one_of(
+    r#"{"oneOf": [{"type": "object", "properties": {"b": {"type": "string"}}}]}"#,
+    r#"{"oneOf": [{"type": "object", "properties": {"b": {"type": "string"}}, "required": ["b"], "additionalProperties": false}]}"#
+)]
+#[case::all_of(
+    r#"{"allOf": [{"type": "object", "properties": {"b": {"type": "string"}}}]}"#,
+    r#"{"allOf": [{"type": "object", "properties": {"b": {"type": "string"}}, "required": ["b"], "additionalProperties": false}]}"#
+)]
+#[case::defs(
+    r#"{"$defs": {"named": {"type": "object", "properties": {"e": {"type": "string"}}}}}"#,
+    r#"{"$defs": {"named": {"type": "object", "properties": {"e": {"type": "string"}}, "required": ["e"], "additionalProperties": false}}}"#
+)]
+#[case::definitions(
+    r#"{"definitions": {"named": {"type": "object", "properties": {"e": {"type": "string"}}}}}"#,
+    r#"{"definitions": {"named": {"type": "object", "properties": {"e": {"type": "string"}}, "required": ["e"], "additionalProperties": false}}}"#
+)]
+fn nested_schemas_are_rewritten(#[case] schema: &str, #[case] rewritten: &str) {
+    let input = format!(r#"{{"type": "json_schema", "schema": {schema}}}"#);
     let expected = format!(
-        r#"{{"type": "json_schema", "json_schema": {{"name": "structured_output", "strict": true, "schema": {{"{key}": {{"named": {{"type": "object", "properties": {{"e": {{"type": "string"}}}}, "required": ["e"], "additionalProperties": false}}}}}}}}}}"#
+        r#"{{"type": "json_schema", "json_schema": {{"name": "structured_output", "strict": true, "schema": {rewritten}}}}}"#
     );
     assert_eq!(format_answer(&input), json(&expected));
 }
