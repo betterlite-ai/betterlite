@@ -624,7 +624,7 @@ fn replays_the_managed_resource_rows_corpus(
     #[files("fuzz/corpus/managed_resource_rows/*")] path: PathBuf,
 ) {
     let bytes = fs::read(&path).unwrap();
-    let name = path.file_name().unwrap().to_string_lossy();
+    let name = path.file_name().unwrap().to_str().unwrap();
     let decoded = decode(from_utf8(&bytes).unwrap());
     assert_eq!(decoded.is_ok(), name.starts_with("valid-"), "{name}");
 }
