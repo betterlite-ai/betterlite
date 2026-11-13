@@ -62,19 +62,18 @@ impl Parser<'_> {
             return None;
         }
         match self.peek()? {
-            b'"' => drop(self.string(false)?),
-            b'{' => self.object(depth, false)?,
-            b'[' => self.array(depth)?,
-            b't' => self.literal(b"true")?,
-            b'f' => self.literal(b"false")?,
-            b'n' => self.literal(b"null")?,
-            b'N' => self.literal(b"NaN")?,
-            b'I' => self.literal(b"Infinity")?,
-            b'-' => self.signed()?,
-            b'0'..=b'9' => self.number()?,
-            _ => return None,
+            b'"' => self.string(false).map(drop),
+            b'{' => self.object(depth, false),
+            b'[' => self.array(depth),
+            b't' => self.literal(b"true"),
+            b'f' => self.literal(b"false"),
+            b'n' => self.literal(b"null"),
+            b'N' => self.literal(b"NaN"),
+            b'I' => self.literal(b"Infinity"),
+            b'-' => self.signed(),
+            b'0'..=b'9' => self.number(),
+            _ => None,
         }
-        Some(())
     }
     fn member(&mut self, depth: usize, track_keys: bool) -> Option<Option<String>> {
         let key = self.string(track_keys)?;

@@ -117,10 +117,10 @@ fn failure_json(fields: Option<FailureFields>) -> Value {
         "status": status,
     })
 }
-fn with_source<T>(
-    source: &Source,
-    check: impl FnOnce(&mut FileBody<'_>) -> Result<T, FileUploadValidationError>,
-) -> Result<(T, Value), Box<HelperError>> {
+fn with_source<T, F>(source: &Source, check: F) -> Result<(T, Value), Box<HelperError>>
+where
+    F: FnOnce(&mut FileBody<'_>) -> Result<T, FileUploadValidationError>,
+{
     let data = decode_source(source)?;
     match source {
         Source::Bytes { .. } => {
