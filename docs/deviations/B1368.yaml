@@ -1,0 +1,11 @@
+task: B1368
+deviations:
+  - what: A native response body over 16 MiB is refused with a typed error before it is decoded, where LiteLLM parses any size.
+    why: Rule bounded-inputs caps every input from outside, and the 16 MiB ceiling is the pooled transport's reply cap that the shared generate-content decoder already uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/transformation.py#L362-L392
+  - what: A declared response field whose value has the wrong type, such as a non-list candidates, a non-object candidate or content, a non-string finishReason, modelVersion or responseId, or a non-integer index, fails with a typed error that names the field, where LiteLLM splats the JSON into a pydantic model with extra="allow" and keeps the value, or raises an uncaught TypeError as HTTP 500.
+    why: docs/compatibility.md makes a value the declared type cannot hold an error that names the field instead of a quiet difference, and a 500 is the wrong answer for a provider reply betterlite cannot read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/transformation.py#L379-L392
+  - what: A response body nested past serde_json's 128 levels, or holding the non-standard NaN or Infinity literals, fails as unreadable JSON, where LiteLLM parses it through Python's json.loads.
+    why: Rule bounded-inputs gives the decoder a depth cap so an adversarial body cannot exhaust the stack, and betterlite reads and writes standard JSON; a Gemini reply that deep or carrying NaN is nothing a working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/transformation.py#L379-L385

@@ -1,0 +1,28 @@
+kind: helper
+name: google-native-content-studio-null-tools
+call:
+  google_native_content:
+    calls:
+      - function: request
+        provider: studio
+        model: gemini-2.5-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        generation_config: {}
+        settings: {}
+      - function: request
+        provider: studio
+        model: gemini-2.5-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        tools: null
+        generation_config: {temperature: 0}
+        system_instruction: {parts: [{text: behave}]}
+        settings: {}
+      - function: request
+        provider: studio
+        model: gemini-2.5-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        tools: [{functionDeclarations: []}]
+        generation_config: {candidate_count: 2}
+        settings: {}
+env: {}
+compare: {ignore: []}
