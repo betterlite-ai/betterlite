@@ -1,0 +1,10 @@
+kind: helper
+name: a2a-error-chunk
+call:
+  b3679:
+    function: a2a_error_chunk
+    status_code: 403
+    detail: {error: blocked, reason: pii}
+    request_id: req-9
+env: {}
+compare: {ignore: []}
