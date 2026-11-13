@@ -443,6 +443,33 @@ async fn the_request_carries_the_documented_headers_and_body() {
 }
 
 #[tokio::test]
+async fn a_missing_api_key_sends_an_empty_bearer_token() {
+    let mock = mock(200, r#"{"statusCode": 200, "action": "ALLOW"}"#).await;
+    let mut args = args();
+    args.api_base = Some(mock.base.clone());
+    args.api_key = None;
+    let environment: BTreeMap<String, String> = BTreeMap::new();
+    let guardrail =
+        ZscalerAiGuard::new(args, &environment, base_builder().build().unwrap()).unwrap();
+    guardrail
+        .apply_guardrail(
+            inputs(&["hello"]),
+            &request_data(r#"{"metadata": {}}"#),
+            GuardrailInputType::Request,
+        )
+        .await
+        .unwrap();
+    let seen = mock.seen.lock().unwrap();
+    let authorization = seen[0]
+        .headers
+        .get("authorization")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert_eq!(authorization.trim_end(), "Bearer");
+}
+
+#[tokio::test]
 async fn the_policy_id_is_only_sent_when_it_is_at_least_one() {
     let mock = mock(200, r#"{"statusCode": 200, "action": "ALLOW"}"#).await;
     let mut args = args();
