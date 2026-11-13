@@ -314,7 +314,7 @@ fn filename_and_mime() {
             ImageParams::new(),
         ),
     );
-    assert_eq!(literal.files[0].1.content, path);
+    assert_eq!(literal.files[0].1.content, path.to_vec());
     assert_eq!(
         filenames(&literal),
         vec![pair("image[]", DEFAULT_IMAGE_NAME, DEFAULT_CONTENT_TYPE)]

@@ -22,7 +22,7 @@ pub fn file_record(field: &str, file: &ImageEditFile, default_name: &str) -> (St
     let head = file
         .content
         .get(..CONTENT_TYPE_BYTES)
-        .unwrap_or(&file.content);
+        .unwrap_or(file.content.as_slice());
     let content_type = image_type(head).map_or(DEFAULT_CONTENT_TYPE, mime_from_type);
     (
         field.to_owned(),
