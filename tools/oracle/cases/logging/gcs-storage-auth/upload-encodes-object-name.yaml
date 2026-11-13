@@ -1,0 +1,7 @@
+# slashes and spaces in the object name are encoded in the upload URL
+kind: helper
+name: gcs-storage-auth-upload-encodes-object-name
+call:
+  b3997: {"action": "upload", "bucket": "env-bucket", "object_name": "logs/2026 01/a b+c.json", "payload": "text", "body": "{\"name\": \"obj\", \"bucket\": \"env-bucket\", \"size\": \"12\"}"}
+env: {}
+compare: {ignore: []}

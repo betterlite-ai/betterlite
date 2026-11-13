@@ -1,0 +1,7 @@
+# a download from a bucket with a folder path reads folder/object from the bare bucket
+kind: helper
+name: gcs-storage-auth-download-handles-folder-prefix
+call:
+  b3997: {"action": "initialize", "environment": {"GCS_BUCKET_NAME": "my-bucket/my-folder"}, "object_name": "log.json", "body": "{\"a\": 1}"}
+env: {}
+compare: {ignore: []}

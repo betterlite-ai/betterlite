@@ -1,0 +1,7 @@
+# no credentials cache the instance under IAM_AUTH
+kind: helper
+name: gcs-storage-auth-vertex-instance-iam-auth-key-for-none
+call:
+  b3997: {"action": "vertex_instance"}
+env: {}
+compare: {ignore: []}

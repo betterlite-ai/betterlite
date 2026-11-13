@@ -1,0 +1,7 @@
+# construct_request_headers sends Bearer plus the minted token and asks for no project
+kind: helper
+name: gcs-storage-auth-async-headers-include-bearer-token
+call:
+  b3997: {"action": "async_headers", "credentials": "/creds/service-account.json"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,7 @@
+# a string payload is posted byte for byte
+kind: helper
+name: gcs-storage-auth-upload-preserves-string-payload
+call:
+  b3997: {"action": "upload", "bucket": "env-bucket", "object_name": "log.json", "payload": "not  json,  kept  verbatim", "body": "{\"name\": \"obj\", \"bucket\": \"env-bucket\", \"size\": \"12\"}"}
+env: {}
+compare: {ignore: []}

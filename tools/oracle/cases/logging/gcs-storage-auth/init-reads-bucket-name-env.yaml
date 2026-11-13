@@ -1,0 +1,7 @@
+# GCSBucketBase takes the bucket from GCS_BUCKET_NAME when none is passed
+kind: helper
+name: gcs-storage-auth-init-reads-bucket-name-env
+call:
+  b3997: {"action": "initialize", "environment": {"GCS_BUCKET_NAME": "env-bucket"}, "object_name": "log.json", "body": "{\"ok\": true}"}
+env: {}
+compare: {ignore: []}
