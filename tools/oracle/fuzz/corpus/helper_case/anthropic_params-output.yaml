@@ -1,0 +1,16 @@
+kind: helper
+name: anthropic-params-output
+call:
+  anthropic_params:
+    fixture:
+      model_cost:
+        effort-model: {litellm_provider: anthropic, supports_output_config: true, supports_max_reasoning_effort: true}
+        plain-model: {litellm_provider: anthropic}
+      packaged: {}
+    default_max_tokens: 4096
+    steps:
+      - {function: apply_output_config, model: plain-model, data: {output_config: {effort: high, format: {type: json_schema}}}, optional_params: {output_config: {effort: high, format: {type: json_schema}}}, global_drop_params: true}
+      - {function: apply_output_config, model: effort-model, data: {output_config: {effort: max}}, optional_params: {output_config: {effort: max}}, global_drop_params: false}
+      - {function: apply_output_config, model: plain-model, data: {output_config: {effort: bogus}}, optional_params: {output_config: {effort: bogus}}, global_drop_params: false}
+env: {}
+compare: {ignore: []}

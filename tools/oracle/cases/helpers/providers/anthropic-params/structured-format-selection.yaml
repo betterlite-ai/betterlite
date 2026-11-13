@@ -1,0 +1,20 @@
+kind: helper
+name: structured-format-selection
+call:
+  anthropic_params:
+    fixture:
+      model_cost:
+        fallback-model: {litellm_provider: anthropic}
+        native-model: {litellm_provider: anthropic, supports_native_structured_output: true}
+        no-forced-tools: {litellm_provider: anthropic, supports_forced_tool_use: false}
+      packaged: {}
+    default_max_tokens: 4096
+    steps:
+      - {function: map_openai_params, model: native-model, non_default_params: {response_format: {type: json_schema, json_schema: {schema: {type: object}}}}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: fallback-model, non_default_params: {response_format: {type: json_schema, json_schema: {schema: {type: object}}}}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: fallback-model, non_default_params: {reasoning_effort: low, response_format: {type: json_schema, json_schema: {schema: {type: object}}}}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: no-forced-tools, non_default_params: {response_format: {type: json_schema, json_schema: {schema: {type: object}}}}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: fallback-model, non_default_params: {response_format: {type: text}}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: native-model, non_default_params: {response_format: {type: text}}, optional_params: {}, drop_params: false, global_drop_params: false}
+env: {}
+compare: {ignore: []}

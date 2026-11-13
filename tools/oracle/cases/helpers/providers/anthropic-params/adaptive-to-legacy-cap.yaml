@@ -1,0 +1,18 @@
+kind: helper
+name: adaptive-to-legacy-cap
+call:
+  anthropic_params:
+    fixture:
+      model_cost:
+        adaptive-model: {litellm_provider: anthropic, supports_adaptive_thinking: true}
+        plain-model: {litellm_provider: anthropic}
+      packaged: {}
+    default_max_tokens: 4096
+    steps:
+      - {function: map_openai_params, model: plain-model, non_default_params: {thinking: {type: adaptive}, max_tokens: 100000}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {thinking: {type: adaptive}, max_tokens: 3000}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: plain-model, non_default_params: {thinking: {type: adaptive}, max_tokens: 1000}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: adaptive-model, non_default_params: {thinking: {type: adaptive}, max_tokens: 1000}, optional_params: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: adaptive-model, non_default_params: {thinking: {type: enabled, budget_tokens: 2048}}, optional_params: {}, drop_params: false, global_drop_params: false}
+env: {}
+compare: {ignore: []}
