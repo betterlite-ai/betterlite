@@ -1,17 +1,28 @@
 use std::collections::BTreeMap;
 
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use reqwest::StatusCode;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::error::AktoError;
 use super::payload::AktoPayload;
-use super::response::AktoAnswer;
 use super::{AKTO_CONNECTOR_NAME, AktoMirroring, HTTP_PROXY_PATH};
 
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 
-#[must_use]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AktoAnswer {
+    pub status: StatusCode,
+    pub body: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GuardrailVerdict {
+    pub allowed: bool,
+    pub reason: String,
+}
+
 pub fn build_query_params(guardrails: bool, ingest_data: bool) -> BTreeMap<String, String> {
     let mut params =
         BTreeMap::from([("akto_connector".to_owned(), AKTO_CONNECTOR_NAME.to_owned())]);
@@ -53,7 +64,32 @@ impl AktoMirroring {
             .send()
             .await
             .map_err(|source| AktoError::Transport { source })?;
-        read_answer(response).await
+        let status = response.status();
+        let body = read_body(response).await?;
+        Ok(AktoAnswer { status, body })
+    }
+
+    pub fn handle_guardrail_response(
+        &self,
+        answer: &AktoAnswer,
+    ) -> Result<GuardrailVerdict, AktoError> {
+        if answer.status != StatusCode::OK {
+            tracing::error!(
+                status = answer.status.as_u16(),
+                "Akto returned an unexpected status"
+            );
+            return Err(AktoError::HttpStatus {
+                status: answer.status,
+            });
+        }
+        let parsed: GuardrailValue = serde_json::from_str(&answer.body).map_err(|source| {
+            tracing::error!(
+                bytes = answer.body.len(),
+                "Akto returned a non-JSON body for status 200"
+            );
+            AktoError::ResponseJson { source }
+        })?;
+        verdict_from(&parsed)
     }
 
     pub async fn fire_and_forget_request(
@@ -84,8 +120,43 @@ impl AktoMirroring {
     }
 }
 
-async fn read_answer(mut response: reqwest::Response) -> Result<AktoAnswer, AktoError> {
-    let status = response.status();
+fn verdict_from(value: &GuardrailValue) -> Result<GuardrailVerdict, AktoError> {
+    let allowed_default = || GuardrailVerdict {
+        allowed: true,
+        reason: String::new(),
+    };
+    let GuardrailValue::Object(result) = value else {
+        return Ok(allowed_default());
+    };
+    let Some(GuardrailValue::Object(data)) = result.get("data") else {
+        return Ok(allowed_default());
+    };
+    let Some(GuardrailValue::Object(guardrails)) = data.get("guardrailsResult") else {
+        return Ok(allowed_default());
+    };
+    let allowed = match guardrails.get("Allowed") {
+        None => true,
+        Some(GuardrailValue::Null) => false,
+        Some(GuardrailValue::Boolean(flag)) => *flag,
+        Some(_) => {
+            return Err(AktoError::ResponseField {
+                field: "data.guardrailsResult.Allowed",
+            });
+        }
+    };
+    let reason = match guardrails.get("Reason") {
+        None | Some(GuardrailValue::Null) => String::new(),
+        Some(GuardrailValue::Text(text)) => text.clone(),
+        Some(_) => {
+            return Err(AktoError::ResponseField {
+                field: "data.guardrailsResult.Reason",
+            });
+        }
+    };
+    Ok(GuardrailVerdict { allowed, reason })
+}
+
+async fn read_body(mut response: reqwest::Response) -> Result<String, AktoError> {
     let mut body = Vec::new();
     while let Some(chunk) = response
         .chunk()
@@ -99,6 +170,5 @@ async fn read_answer(mut response: reqwest::Response) -> Result<AktoAnswer, Akto
         }
         body.extend_from_slice(&chunk);
     }
-    let text = String::from_utf8(body).map_err(|source| AktoError::ResponseEncoding { source })?;
-    Ok(AktoAnswer { status, body: text })
+    String::from_utf8(body).map_err(|source| AktoError::ResponseEncoding { source })
 }

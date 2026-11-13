@@ -24,8 +24,7 @@ use tracing_subscriber::fmt;
 use super::AktoMirroring;
 use super::error::AktoError;
 use super::payload::{AktoInputs, AktoPayload};
-use super::response::AktoAnswer;
-use super::transport::{build_query_params, prepare_headers};
+use super::transport::{AktoAnswer, build_query_params, prepare_headers};
 
 fn text(value: &str) -> GuardrailValue {
     GuardrailValue::Text(value.to_owned())

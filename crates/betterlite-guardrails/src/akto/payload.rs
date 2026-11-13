@@ -218,39 +218,28 @@ fn build_request_headers(
 
 fn build_tag_metadata(request_data: &BTreeMap<String, GuardrailValue>) -> BTreeMap<String, String> {
     let mut tag = BTreeMap::from([("gen-ai".to_owned(), "Gen AI".to_owned())]);
-    if let Some(user_id) = resolve_metadata_value(request_data, "user_api_key_user_id") {
-        if !user_id.is_empty() {
-            tag.insert("user_id".to_owned(), user_id);
-        }
-    }
-    if let Some(team_id) = resolve_metadata_value(request_data, "user_api_key_team_id") {
-        if !team_id.is_empty() {
-            tag.insert("team_id".to_owned(), team_id);
+    let user_id = metadata_value(request_data, "user_api_key_user_id");
+    let team_id = metadata_value(request_data, "user_api_key_team_id");
+    for (name, value) in [("user_id", user_id), ("team_id", team_id)] {
+        if let Some(value) = value.filter(|text| !text.is_empty()) {
+            tag.insert(name.to_owned(), value);
         }
     }
     tag
 }
 
-fn resolve_metadata_value(
-    request_data: &BTreeMap<String, GuardrailValue>,
-    key: &str,
-) -> Option<String> {
-    for container_key in ["litellm_metadata", "metadata"] {
-        let Some(GuardrailValue::Object(container)) = request_data.get(container_key) else {
-            continue;
-        };
-        if container.is_empty() {
-            continue;
-        }
-        let Some(value) = container.get(key) else {
-            continue;
-        };
-        if matches!(value, GuardrailValue::Null) {
-            continue;
-        }
-        return Some(value_text(value).trim().to_owned());
-    }
-    None
+fn metadata_value(request_data: &BTreeMap<String, GuardrailValue>, key: &str) -> Option<String> {
+    ["litellm_metadata", "metadata"]
+        .iter()
+        .find_map(|container_key| {
+            let Some(GuardrailValue::Object(container)) = request_data.get(*container_key) else {
+                return None;
+            };
+            let value = container
+                .get(key)
+                .filter(|value| !matches!(value, GuardrailValue::Null))?;
+            Some(value_text(value).trim().to_owned())
+        })
 }
 
 fn extract_request_path(request_data: &BTreeMap<String, GuardrailValue>) -> String {
@@ -271,21 +260,16 @@ fn extract_client_ip(request_data: &BTreeMap<String, GuardrailValue>) -> String 
     let Some(GuardrailValue::Object(proxy_headers)) = proxy_request.get("headers") else {
         return String::new();
     };
-    let Some(ip) = header_text(proxy_headers, "x-forwarded-for")
-        .or_else(|| header_text(proxy_headers, "x-real-ip"))
-    else {
-        return String::new();
-    };
-    if ip.contains(',') {
-        return ip.split(',').next().unwrap_or_default().trim().to_owned();
-    }
-    ip
-}
-
-fn header_text(headers: &BTreeMap<String, GuardrailValue>, name: &str) -> Option<String> {
-    match headers.get(name) {
+    let header = |name: &str| match proxy_headers.get(name) {
         Some(GuardrailValue::Text(text)) if !text.is_empty() => Some(text.clone()),
         _ => None,
+    };
+    let Some(ip) = header("x-forwarded-for").or_else(|| header("x-real-ip")) else {
+        return String::new();
+    };
+    match ip.split_once(',') {
+        Some((first, _rest)) => first.trim().to_owned(),
+        None => ip,
     }
 }
 

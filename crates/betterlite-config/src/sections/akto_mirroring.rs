@@ -8,7 +8,6 @@ use super::Section;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
 
-pub const UI_FRIENDLY_NAME: &str = "Akto";
 pub const DEFAULT_ACCOUNT_ID: &str = "1000000";
 pub const DEFAULT_VXLAN_ID: &str = "0";
 pub const DEFAULT_GUARDRAIL_TIMEOUT: Duration = Duration::from_secs(5);
@@ -41,7 +40,7 @@ struct Parameters {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum RawTimeout {
-    Integer(i64),
+    Integer(u64),
     Text(String),
 }
 
@@ -243,19 +242,12 @@ where
             }
             resolved
                 .trim()
-                .parse::<i64>()
+                .parse::<u64>()
                 .map_err(|source| ConfigError::InvalidInteger {
                     path: path.to_owned(),
                     source,
                 })?
         }
-    };
-    let Ok(seconds) = u64::try_from(seconds) else {
-        return Err(ConfigError::Yaml {
-            source: <serde_saphyr::Error as DeserializeError>::custom(format!(
-                "{path}: guardrail_timeout must not be negative"
-            )),
-        });
     };
     Ok(Duration::from_secs(seconds))
 }

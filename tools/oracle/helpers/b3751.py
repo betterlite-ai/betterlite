@@ -53,13 +53,6 @@ class ScriptedTransport(httpx.AsyncBaseTransport):
         return httpx.Response(status, text=raw, request=request)
 
 
-def answer_of(call: AktoCall) -> AktoAnswer:
-    answer = call.get("answer")
-    if answer is None:
-        return {}
-    return answer
-
-
 def build_guardrail(settings: AktoSettings, env: dict[str, str]) -> AktoGuardrail:
     os.environ.update(env)
     fallback = settings.get("unreachable_fallback")
@@ -200,7 +193,9 @@ def akto_payload(call: AktoCall) -> Json:
 
 def akto_response(call: AktoCall) -> Json:
     instance = guardrail_of(call)
-    answer = answer_of(call)
+    answer = call.get("answer")
+    if answer is None:
+        answer = {}
     status = answer.get("status")
     if status is None:
         status = 200
@@ -223,7 +218,10 @@ def akto_unreachable(call: AktoCall) -> Json:
 
 def akto_send(call: AktoCall) -> Json:
     instance = guardrail_of(call)
-    transport = ScriptedTransport(answer_of(call))
+    answer = call.get("answer")
+    if answer is None:
+        answer = {}
+    transport = ScriptedTransport(answer)
     instance.async_handler.client = httpx.AsyncClient(transport=transport)
     payload = payload_of(call, instance)
     fire_and_forget = call.get("op") == "fire_and_forget"

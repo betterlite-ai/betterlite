@@ -6,7 +6,6 @@ use tokio_util::task::TaskTracker;
 
 pub mod error;
 pub mod payload;
-pub mod response;
 mod tests;
 pub mod transport;
 
