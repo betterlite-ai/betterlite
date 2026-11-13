@@ -1,0 +1,8 @@
+kind: helper
+name: router-deployment-pricing-unrelated-mode-change-applies
+call:
+  b9710:
+    deployment: {"model_name": "alias", "litellm_params": {"model": "gpt-4.1"}, "model_info": {"id": "dep-21", "mode": "embedding"}}
+    shared_before: {"mode": "chat", "litellm_provider": "openai"}
+compare: {ignore: []}
+env: {}

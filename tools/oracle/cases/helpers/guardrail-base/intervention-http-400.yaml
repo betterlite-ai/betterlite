@@ -1,0 +1,6 @@
+kind: helper
+name: intervention-http-400
+call:
+  b5471: {"function": "intervention", "kind": "http", "status": 400}
+env: {}
+compare: {ignore: []}

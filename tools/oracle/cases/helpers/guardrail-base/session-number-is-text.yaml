@@ -1,0 +1,6 @@
+kind: helper
+name: session-number-is-text
+call:
+  b5471: {"function": "session", "request_data": {"metadata": {"session_id": 42}}}
+env: {}
+compare: {ignore: []}

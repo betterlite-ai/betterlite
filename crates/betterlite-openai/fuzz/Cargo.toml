@@ -430,3 +430,10 @@ path = "fuzz_targets/openai_response_params.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "xai_batch"
+path = "fuzz_targets/xai_batch.rs"
+test = false
+doc = false
+bench = false

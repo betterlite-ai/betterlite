@@ -1,0 +1,6 @@
+kind: helper
+name: advisory-no-fields-creates-messages
+call:
+  b5471: {"function": "advisory", "data": {}, "message": "careful"}
+env: {}
+compare: {ignore: []}
