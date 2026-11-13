@@ -2,7 +2,7 @@ use betterlite_context::agentic_loop_plan::{
     AgenticLoopRequestPatch, FollowupMessage, JsonMap, get_text,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::value::RawValue;
+use serde_json::value::{RawValue, to_raw_value};
 
 use super::error::FollowupError;
 use super::search::{SearchExecutor, SearchSurface, search_batch};
@@ -76,17 +76,19 @@ pub async fn build_responses_patch(
     let texts: Vec<String> = outcomes.iter().map(search_outcome_text).collect();
     let mut messages = normalized_input(request.input)?;
     for (call, text) in tool_calls.iter().zip(&texts) {
-        messages.push(FollowupMessage::from_value(&FollowupItem::FunctionCall {
-            call_id: call.call_id.clone().flatten(),
-            name: LITELLM_WEB_SEARCH_TOOL_NAME,
-            arguments: call.arguments.clone().unwrap_or_default(),
-        })?);
-        messages.push(FollowupMessage::from_value(
+        messages.push(FollowupMessage(to_raw_value(
+            &FollowupItem::FunctionCall {
+                call_id: call.call_id.clone().flatten(),
+                name: LITELLM_WEB_SEARCH_TOOL_NAME,
+                arguments: call.arguments.clone().unwrap_or_default(),
+            },
+        )?));
+        messages.push(FollowupMessage(to_raw_value(
             &FollowupItem::FunctionCallOutput {
                 call_id: call.call_id.clone().flatten(),
                 output: text.clone(),
             },
-        )?);
+        )?));
     }
     let model = responses_model(request.model, request.kwargs);
     tracing::debug!(
@@ -106,10 +108,10 @@ pub async fn build_responses_patch(
 
 fn normalized_input(input: &ResponsesInput) -> Result<Vec<FollowupMessage>, FollowupError> {
     match input {
-        ResponsesInput::Text(text) => Ok(vec![FollowupMessage::from_value(&UserItem {
+        ResponsesInput::Text(text) => Ok(vec![FollowupMessage(to_raw_value(&UserItem {
             role: "user",
             content: text,
-        })?]),
+        })?)]),
         ResponsesInput::Items(items) => Ok(items.clone()),
     }
 }

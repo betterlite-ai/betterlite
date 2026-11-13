@@ -7,7 +7,7 @@ use betterlite_openai::search::records::SearchResponse;
 use serde_json::json;
 
 use crate::call_transformation::outcome::{SearchFailure, SearchResult};
-use crate::chat_responses_followup::search::SearchExecutor;
+use crate::chat_responses_followup::search::{ExecutionSearch, SearchExecutor};
 use crate::execution::WebSearchExecution;
 use crate::execution::capabilities::ProviderCapabilities;
 use crate::execution::runner::{SearchCall, SearchRunner};
@@ -107,8 +107,9 @@ fn search_response() -> SearchResponse {
         .unwrap()
 }
 
-fn execution() -> WebSearchExecution<FakeRunner, FakeGrants, FakeMetadata, FakeCapabilities> {
-    WebSearchExecution {
+fn execution()
+-> ExecutionSearch<WebSearchExecution<FakeRunner, FakeGrants, FakeMetadata, FakeCapabilities>> {
+    ExecutionSearch(WebSearchExecution {
         enabled_providers: None,
         search_tool_name: None,
         search_tools: None,
@@ -121,7 +122,7 @@ fn execution() -> WebSearchExecution<FakeRunner, FakeGrants, FakeMetadata, FakeC
         },
         metadata_source: FakeMetadata,
         capabilities: FakeCapabilities,
-    }
+    })
 }
 
 fn kwargs(value: serde_json::Value) -> JsonMap {
@@ -134,7 +135,7 @@ async fn websearch_execution_port_forwards_the_caller_kwargs_to_the_search() {
     let kwargs = kwargs(json!({"metadata": {"user_api_key_auth": {"team_id": "team_1"}}}));
     let result = SearchExecutor::execute_search(&execution, "weather", &kwargs, None).await;
     assert!(matches!(result, SearchResult::Succeeded { .. }));
-    let calls = execution.runner.calls.lock().unwrap();
+    let calls = execution.0.runner.calls.lock().unwrap();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].search_provider, "perplexity");
     let metadata = calls[0].metadata.as_ref().expect("the caller metadata");
@@ -148,7 +149,7 @@ async fn websearch_execution_port_forwards_the_caller_kwargs_to_the_search() {
 #[tokio::test]
 async fn websearch_execution_port_reports_a_failed_search() {
     let mut execution = execution();
-    execution.runner.outcome = Err(unclassified("provider down".to_owned()));
+    execution.0.runner.outcome = Err(unclassified("provider down".to_owned()));
     let result =
         SearchExecutor::execute_search(&execution, "weather", &kwargs(json!({})), None).await;
     assert!(matches!(result, SearchResult::Failed(failure) if failure.message == "provider down"));

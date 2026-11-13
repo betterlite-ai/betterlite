@@ -26,31 +26,8 @@ pub trait SearchExecutor: Send + Sync {
     ) -> SearchResult;
 }
 
-// the port carries a distinct method name because clippy::same_name_method refuses two execute_search methods in one crate
-#[async_trait]
-pub trait SearchExecutionPort: Send + Sync {
-    async fn run_search(
-        &self,
-        query: &str,
-        kwargs: &JsonMap,
-        rich: Option<RichWebSearchInput>,
-    ) -> SearchResult;
-}
-
-#[async_trait]
-impl<Host> SearchExecutor for Host
-where
-    Host: SearchExecutionPort + ?Sized,
-{
-    async fn execute_search(
-        &self,
-        query: &str,
-        kwargs: &JsonMap,
-        rich: Option<RichWebSearchInput>,
-    ) -> SearchResult {
-        self.run_search(query, kwargs, rich).await
-    }
-}
+// a newtype keeps SearchExecutor free of a second trait while clippy::same_name_method guards the inner type
+pub struct ExecutionSearch<Execution>(pub Execution);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchSurface {
@@ -142,8 +119,8 @@ fn hook_kwargs(kwargs: &JsonMap) -> Result<SearchHookKwargs, SearchFailure> {
 }
 
 #[async_trait]
-impl<Search, Grants, Metadata, Capabilities> SearchExecutionPort
-    for WebSearchExecution<Search, Grants, Metadata, Capabilities>
+impl<Search, Grants, Metadata, Capabilities> SearchExecutor
+    for ExecutionSearch<WebSearchExecution<Search, Grants, Metadata, Capabilities>>
 where
     Search: SearchRunner,
     Grants: SearchToolGrants,
@@ -151,7 +128,7 @@ where
     Metadata: SearchMetadataSource,
     Capabilities: ProviderCapabilities,
 {
-    async fn run_search(
+    async fn execute_search(
         &self,
         query: &str,
         kwargs: &JsonMap,
@@ -161,7 +138,9 @@ where
             Ok(hook_kwargs) => hook_kwargs,
             Err(failure) => return SearchResult::Failed(failure),
         };
-        match Self::execute_search(self, query, Some(&hook_kwargs), rich.as_ref()).await {
+        match WebSearchExecution::execute_search(&self.0, query, Some(&hook_kwargs), rich.as_ref())
+            .await
+        {
             Ok((text, response)) => SearchResult::Succeeded { text, response },
             Err(failure) => SearchResult::Failed(failure),
         }

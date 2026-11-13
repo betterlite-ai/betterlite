@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use async_trait::async_trait;
 use betterlite_context::agentic_loop_plan::{FollowupMessage, JsonMap, get_text};
 use rstest::rstest;
-use serde_json::{Value, json};
+use serde_json::{Value, json, value::to_raw_value};
 
 use super::ChatResponsesFollowup;
 use super::chat::{FollowupRequest, build_chat_patch};
@@ -95,7 +95,7 @@ fn map(value: Value) -> JsonMap {
 }
 
 fn message(value: Value) -> FollowupMessage {
-    FollowupMessage::from_value(&value).unwrap()
+    FollowupMessage(to_raw_value(&value).unwrap())
 }
 
 fn calls_from(response: Value, format: &str) -> Vec<Call> {

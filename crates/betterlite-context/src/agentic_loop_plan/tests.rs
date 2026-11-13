@@ -118,14 +118,14 @@ fn plan_round_trips_a_full_value() {
 }
 
 #[test]
-fn followup_message_from_value_keeps_the_json() {
-    let message = FollowupMessage::from_value(&ToolMessage {
+fn followup_message_keeps_the_json_it_wraps() {
+    let raw = to_raw_value(&ToolMessage {
         role: "tool",
         content: "results",
     })
     .unwrap();
     assert_eq!(
-        serde_json::to_value(message).unwrap(),
+        serde_json::to_value(FollowupMessage(raw)).unwrap(),
         json!({"role": "tool", "content": "results"})
     );
 }

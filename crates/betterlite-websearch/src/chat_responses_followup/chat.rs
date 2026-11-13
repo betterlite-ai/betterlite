@@ -1,6 +1,7 @@
 use betterlite_context::agentic_loop_plan::{
     AgenticLoopRequestPatch, FollowupMessage, JsonMap, get_text,
 };
+use serde_json::value::to_raw_value;
 
 use super::error::FollowupError;
 use super::search::{SearchExecutor, SearchSurface, search_batch};
@@ -45,14 +46,14 @@ pub async fn build_chat_patch(
     let (assistant, results) =
         WebSearchTransformation::transform_response(tool_calls, &texts, response_format)?;
     let mut messages: Vec<FollowupMessage> = request.messages.to_vec();
-    messages.push(FollowupMessage::from_value(&assistant)?);
+    messages.push(FollowupMessage(to_raw_value(&assistant)?));
     match results {
         Results::OpenAi(tool_messages) => {
             for message in &tool_messages {
-                messages.push(FollowupMessage::from_value(message)?);
+                messages.push(FollowupMessage(to_raw_value(message)?));
             }
         }
-        Results::Anthropic(message) => messages.push(FollowupMessage::from_value(&message)?),
+        Results::Anthropic(message) => messages.push(FollowupMessage(to_raw_value(&message)?)),
     }
     tracing::debug!(
         "WebSearchInterception: Follow-up messages count: {}",
