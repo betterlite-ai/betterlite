@@ -260,6 +260,25 @@ fn the_reply_defaults_the_total_to_the_prompt_tokens() {
 }
 
 #[test]
+fn the_reply_keeps_a_base64_embedding_as_text() {
+    let body = br#"{"data":[{"object":"embedding","index":3,"embedding":"AAAA"}]}"#;
+    let reply = decode_dashscope_embedding(body, 200, "model").unwrap();
+    assert_eq!(reply.response.data[0].index, 3);
+    match &reply.response.data[0].embedding {
+        EmbeddingVector::Base64(text) => assert_eq!(text, "AAAA"),
+        EmbeddingVector::Floats(_) => panic!("a text embedding stays base64"),
+    }
+}
+
+#[test]
+fn the_reply_reads_a_null_token_count_as_unset() {
+    let body = br#"{"usage":{"prompt_tokens":null,"total_tokens":5}}"#;
+    let reply = decode_dashscope_embedding(body, 200, "model").unwrap();
+    assert_eq!(reply.response.usage.prompt_tokens, 0);
+    assert_eq!(reply.response.usage.total_tokens, 5);
+}
+
+#[test]
 fn the_reply_reports_a_non_json_body_with_the_reply_status() {
     let error = decode_dashscope_embedding(b"not json", 502, "model").unwrap_err();
     assert_eq!(error.status_code, 502);
