@@ -1,6 +1,6 @@
 import asyncio
 import os
-from typing import Literal, Protocol, TypedDict
+from typing import Literal, Protocol, TypedDict, cast
 
 import httpx
 from litellm.caching.dual_cache import DualCache
@@ -131,26 +131,27 @@ def build_guardrail(call: Input) -> Guardrail:
     os.environ.update(call["env"])
     policy_ids: list[str] = [] if call["policy_ids"] is None else call["policy_ids"]
     model_id = "" if call["model_id"] is None else call["model_id"]
-    return DynamoAIGuardrails(
+    return cast(Guardrail, DynamoAIGuardrails(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/dynamoai/dynamoai.py#L289-L334
         guardrail_name="dynamoai",
         api_key=call["api_key"],
         api_base=call["api_base"],
         model_id=model_id,
         policy_ids=policy_ids,
         default_on=True,
-    )
+    ))
 
 
 def build_response(choices: list[Choice]) -> ModelResponse:
-    built = [
-        Choices(
-            message={"role": choice["role"], "content": choice["content"]},
-            index=choice["index"],
-            finish_reason="stop",
+    built: list[Choices] = []
+    for choice in choices:
+        message: dict[str, str | None] = {
+            "role": choice["role"],
+            "content": choice["content"],
+        }
+        built.append(
+            Choices(message=message, index=choice["index"], finish_reason="stop")
         )
-        for choice in choices
-    ]
-    return ModelResponse(choices=built)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2146
+    return ModelResponse.model_construct(choices=built)
 
 
 def call_hook(guardrail: Guardrail, call: Input, data: HookData) -> None:
