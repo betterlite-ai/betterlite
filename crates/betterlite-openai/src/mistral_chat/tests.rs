@@ -312,7 +312,7 @@ fn the_last_text_and_thinking_block_win() {
             {"type": "text", "text": "first"},
             {"type": "thinking", "thinking": [{"type": "text", "text": "one"}, {"type": "text", "text": "two"}]},
             {"type": "text", "text": "second"},
-            {"type": "thinking", "thinking": [{"type": "text", "text": "three"}]}
+            {"type": "thinking", "thinking": [{"type": "text", "text": "three"}, {"type": "text", "text": "four"}]}
         ]}}]} )
         .to_string()
         .as_bytes(),
@@ -320,7 +320,7 @@ fn the_last_text_and_thinking_block_win() {
     .expect("a reply");
     let message = &decoded.value["choices"][0]["message"];
     assert_eq!(message["content"], json!("second"));
-    assert_eq!(message["reasoning_content"], json!("three"));
+    assert_eq!(message["reasoning_content"], json!("three\nfour"));
 }
 
 #[test]
@@ -372,10 +372,10 @@ fn stream_text_blocks_concatenate_and_thinking_blocks_carry_signatures() {
     let reply = serde_json::to_value(reply).expect("a chunk value");
     let delta = &reply["choices"][0]["delta"];
     assert_eq!(delta["content"], json!("ab"));
-    assert_eq!(delta["reasoning_content"], json!("one\nthree"));
+    assert_eq!(delta["reasoning_content"], json!("onetwo\nthree"));
     assert_eq!(
         delta["thinking_blocks"],
-        json!([{"type": "thinking", "thinking": "one", "signature": "mistral"},
+        json!([{"type": "thinking", "thinking": "onetwo", "signature": "mistral"},
                {"type": "thinking", "thinking": "three", "signature": "mistral"}])
     );
 }

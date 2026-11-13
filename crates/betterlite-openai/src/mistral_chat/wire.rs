@@ -20,11 +20,12 @@ pub struct MistralContentBlock {
 
 impl MistralContentBlock {
     #[must_use]
-    pub fn thinking_text(&self) -> String {
+    pub fn thinking_text(&self, separator: &str) -> String {
         self.thinking
             .iter()
             .filter(|entry| entry.kind == "text")
             .map(|entry| entry.text.as_str())
-            .collect()
+            .collect::<Vec<_>>()
+            .join(separator)
     }
 }

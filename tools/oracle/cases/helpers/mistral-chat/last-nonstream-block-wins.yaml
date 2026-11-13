@@ -29,6 +29,8 @@ call:
                     thinking:
                       - type: text
                         text: three
+                      - type: text
+                        text: four
           usage:
             prompt_tokens: 3
             completion_tokens: 4

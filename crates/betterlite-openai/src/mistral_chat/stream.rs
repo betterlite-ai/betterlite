@@ -79,7 +79,7 @@ fn normalize_content_blocks(blocks: &[Value]) -> Option<Normalized> {
         let decoded: MistralContentBlock = serde_json::from_value(block.clone()).ok()?;
         match decoded.kind.as_str() {
             "thinking" => {
-                let text = decoded.thinking_text();
+                let text = decoded.thinking_text("");
                 if !text.is_empty() {
                     reasoning_parts.push(text.clone());
                     thinking_blocks.push(thinking_block(&text));

@@ -105,7 +105,7 @@ pub fn handle_content_list_to_str_conversion(reply: &mut Value) -> Result<(), Mi
             let decoded: MistralContentBlock = serde_json::from_value(block)
                 .map_err(|source| MistralChatError::ReplyBlock { source })?;
             match decoded.kind.as_str() {
-                "thinking" => thinking_content = decoded.thinking_text(),
+                "thinking" => thinking_content = decoded.thinking_text("\n"),
                 "text" => text_content = decoded.text.unwrap_or_default(),
                 _ => {}
             }
