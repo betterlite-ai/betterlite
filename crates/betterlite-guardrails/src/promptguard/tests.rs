@@ -372,51 +372,35 @@ fn a_block_without_details_uses_the_defaults() {
     );
 }
 
+fn message(role: &str, content: GuardrailValue) -> GuardrailMessage {
+    GuardrailMessage {
+        role: role.to_owned(),
+        extra: BTreeMap::from([("content".to_owned(), content)]),
+    }
+}
+
+fn part(kind: &str, text: &str) -> GuardrailValue {
+    GuardrailValue::Object(BTreeMap::from([
+        ("type".to_owned(), GuardrailValue::Text(kind.to_owned())),
+        ("text".to_owned(), GuardrailValue::Text(text.to_owned())),
+    ]))
+}
+
 fn redacted_messages() -> Vec<GuardrailMessage> {
     vec![
-        GuardrailMessage {
-            role: "user".to_owned(),
-            extra: BTreeMap::from([(
-                "content".to_owned(),
-                GuardrailValue::Text("hello <EMAIL>".to_owned()),
-            )]),
-        },
-        GuardrailMessage {
-            role: "assistant".to_owned(),
-            extra: BTreeMap::from([(
-                "content".to_owned(),
-                GuardrailValue::Text("assistant <EMAIL>".to_owned()),
-            )]),
-        },
-        GuardrailMessage {
-            role: "user".to_owned(),
-            extra: BTreeMap::from([(
-                "content".to_owned(),
-                GuardrailValue::Array(vec![
-                    GuardrailValue::Object(BTreeMap::from([
-                        ("type".to_owned(), GuardrailValue::Text("text".to_owned())),
-                        (
-                            "text".to_owned(),
-                            GuardrailValue::Text("call <PHONE>".to_owned()),
-                        ),
-                    ])),
-                    GuardrailValue::Object(BTreeMap::from([
-                        (
-                            "type".to_owned(),
-                            GuardrailValue::Text("image_url".to_owned()),
-                        ),
-                        (
-                            "text".to_owned(),
-                            GuardrailValue::Text("ignored".to_owned()),
-                        ),
-                    ])),
-                    GuardrailValue::Object(BTreeMap::from([
-                        ("type".to_owned(), GuardrailValue::Text("text".to_owned())),
-                        ("text".to_owned(), GuardrailValue::Text(String::new())),
-                    ])),
-                ]),
-            )]),
-        },
+        message("user", GuardrailValue::Text("hello <EMAIL>".to_owned())),
+        message(
+            "assistant",
+            GuardrailValue::Text("assistant <EMAIL>".to_owned()),
+        ),
+        message(
+            "user",
+            GuardrailValue::Array(vec![
+                part("text", "call <PHONE>"),
+                part("image_url", "ignored"),
+                part("text", ""),
+            ]),
+        ),
     ]
 }
 

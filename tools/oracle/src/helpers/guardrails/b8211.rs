@@ -4,6 +4,7 @@ use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
 use betterlite_guardrails::promptguard::PromptGuardGuardrail;
+use betterlite_guardrails::promptguard::error::PromptGuardError;
 use betterlite_guardrails::promptguard::init::PromptGuardArgs;
 use betterlite_http::proxy::base_builder;
 use secrecy::SecretString;
@@ -13,7 +14,7 @@ use serde_json::Value;
 use crate::case::UpstreamAnswer;
 use crate::helpers::{Helper, HelperError, HelperResult};
 use crate::mock::MockProvider;
-use crate::routing_mock_scripts::MockScript;
+use crate::routing_mock_scripts::{MockScript, ProviderCall};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -77,6 +78,13 @@ fn execute(input: &Input) -> Result<Output, Box<HelperError>> {
         .into_iter()
         .next()
         .ok_or_else(|| fail("MockError", "the guardrail made no request".to_owned()))?;
+    build_output(call, outcome)
+}
+
+fn build_output(
+    call: ProviderCall,
+    outcome: Result<GuardrailApiInputs, PromptGuardError>,
+) -> Result<Output, Box<HelperError>> {
     let mut output = Output {
         request: RequestView {
             api_key_present: call.request.headers.contains_key("x-api-key"),
