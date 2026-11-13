@@ -178,44 +178,40 @@ fn streaming_params(
     init: &BedrockGuardrailInit,
 ) -> Result<BedrockGuardrailStreamParams, BedrockGuardrailError> {
     let mut extras = BTreeMap::new();
-    insert_streaming_flag(
+    insert_streaming_value(
         &mut extras,
         "streaming_buffer_until_moderated",
-        init.streaming_buffer_until_moderated,
+        init.streaming_buffer_until_moderated
+            .map(GuardrailValue::Boolean),
     );
-    insert_streaming_rate(&mut extras, init.streaming_sampling_rate);
-    insert_streaming_flag(
+    insert_streaming_value(
+        &mut extras,
+        "streaming_sampling_rate",
+        init.streaming_sampling_rate
+            .map(|rate| GuardrailValue::UnsignedInteger(rate.0)),
+    );
+    insert_streaming_value(
         &mut extras,
         "streaming_end_of_stream_only",
-        init.streaming_end_of_stream_only,
+        init.streaming_end_of_stream_only
+            .map(GuardrailValue::Boolean),
     );
-    insert_streaming_flag(
+    insert_streaming_value(
         &mut extras,
         "streaming_buffer_release_on_scan",
-        init.streaming_buffer_release_on_scan,
+        init.streaming_buffer_release_on_scan
+            .map(GuardrailValue::Boolean),
     );
     BedrockGuardrailStreamParams::from_extras(Some(&extras)).map_err(BedrockGuardrailError::from)
 }
 
-fn insert_streaming_flag(
+fn insert_streaming_value(
     extras: &mut BTreeMap<String, GuardrailValue>,
     key: &str,
-    value: Option<GuardrailFlag>,
+    value: Option<GuardrailValue>,
 ) {
-    if let Some(flag) = value {
-        extras.insert(key.to_owned(), GuardrailValue::Boolean(flag));
-    }
-}
-
-fn insert_streaming_rate(
-    extras: &mut BTreeMap<String, GuardrailValue>,
-    value: Option<SamplingRate>,
-) {
-    if let Some(rate) = value {
-        extras.insert(
-            "streaming_sampling_rate".to_owned(),
-            GuardrailValue::UnsignedInteger(rate.0),
-        );
+    if let Some(value) = value {
+        extras.insert(key.to_owned(), value);
     }
 }
 
