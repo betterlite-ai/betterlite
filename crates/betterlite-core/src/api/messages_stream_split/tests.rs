@@ -190,6 +190,36 @@ fn finish_and_content_split_peels_content_then_finish() {
     assert!(finish.hidden_params.contains_key("usage"));
 }
 
+#[rstest::rstest]
+#[case::reasoning(r#""reasoning_content":"Think""#)]
+#[case::thinking_blocks(
+    r#""thinking_blocks":[{"type":"thinking","thinking":"A","signature":"sig"}]"#
+)]
+#[case::named_tool_call(
+    r#""tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"lookup","arguments":"{}"}}]"#
+)]
+fn finish_and_content_split_peels_a_single_payload_kind(#[case] payload: &str) {
+    let combined = chunk(&format!(
+        r#"{{"id":"chunk-1","created":7,"model":"m","choices":[{{"index":0,"delta":{{"role":"assistant",{payload}}},"finish_reason":"stop"}}]}}"#
+    ));
+    let pieces = split_chunk(&combined);
+    let (content, finish) = two(&pieces);
+    assert_eq!(only_choice(content).finish_reason, None);
+    assert_eq!(
+        delta(content).reasoning_content,
+        delta(&combined).reasoning_content
+    );
+    assert_eq!(
+        delta(content).thinking_blocks,
+        delta(&combined).thinking_blocks
+    );
+    assert_eq!(delta(content).tool_calls, delta(&combined).tool_calls);
+    assert_eq!(only_choice(finish).finish_reason.as_deref(), Some("stop"));
+    assert_eq!(delta(finish).reasoning_content, None);
+    assert_eq!(delta(finish).thinking_blocks, None);
+    assert_eq!(delta(finish).tool_calls, None);
+}
+
 #[test]
 fn finish_and_content_split_keeps_one_chunk_without_payload_or_finish() {
     let without_finish = text_chunk("Hello", "null");

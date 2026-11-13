@@ -115,5 +115,50 @@ call:
         chunks_attr: null
         messages_attr: null
         failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 4
+        chunks:
+          - id: chunk-8
+            created: 14
+            model: m
+            choices:
+              - index: 0
+                delta: {role: assistant, reasoning_content: Think}
+                finish_reason: stop
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 4
+        chunks:
+          - id: chunk-9
+            created: 15
+            model: m
+            choices:
+              - index: 0
+                delta: {role: assistant, thinking_blocks: [{type: thinking, thinking: A, signature: sig}]}
+                finish_reason: stop
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 4
+        chunks:
+          - id: chunk-10
+            created: 16
+            model: m
+            choices:
+              - index: 0
+                delta: {role: assistant, tool_calls: [{index: 0, id: call-1, type: function, function: {name: lookup, arguments: "{}"}}]}
+                finish_reason: stop
+        chunks_attr: null
+        messages_attr: null
+        failure: null
 env: {}
 compare: {ignore: []}
