@@ -1,0 +1,35 @@
+use betterlite_openai::api::responses_event_records::records::{
+    KnownResponseEvent, ResponsesAPIStreamingResponse,
+};
+use betterlite_openai::api::responses_objects::ResponsesApiResponse;
+
+#[must_use]
+pub fn assemble_responses_stream(
+    chunks: &[ResponsesAPIStreamingResponse],
+) -> (bool, Option<ResponsesApiResponse>) {
+    let mut looks_like_responses_api = false;
+    let mut final_response = None;
+    for chunk in chunks {
+        match chunk {
+            ResponsesAPIStreamingResponse::Generic(event) => {
+                looks_like_responses_api |= event.r#type.starts_with("response.");
+            }
+            ResponsesAPIStreamingResponse::Known(event) => match event.as_ref() {
+                KnownResponseEvent::ResponseCreated(inner)
+                | KnownResponseEvent::ResponseInProgress(inner)
+                | KnownResponseEvent::ResponseCompleted(inner)
+                | KnownResponseEvent::ResponseFailed(inner)
+                | KnownResponseEvent::ResponseIncomplete(inner) => {
+                    looks_like_responses_api = true;
+                    final_response = Some(inner.response.clone());
+                }
+                KnownResponseEvent::Error(_)
+                | KnownResponseEvent::ImageGenerationPartialImage(_) => {}
+                _ => looks_like_responses_api = true,
+            },
+        }
+    }
+    (looks_like_responses_api, final_response)
+}
+
+mod tests;
