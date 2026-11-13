@@ -1,11 +1,11 @@
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
 use serde::Serialize;
 
-// every by-id interaction request carries the empty JSON object, so this body has no fields to set
+// every by-id interaction request carries the empty JSON object, which serde writes for a fieldless struct
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-#[serde(transparent)]
-pub struct EmptyBody(IndexMap<String, Json>);
+pub struct EmptyBody {
+    #[serde(skip)]
+    marker: (),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LifecycleRequest {

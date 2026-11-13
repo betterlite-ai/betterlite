@@ -42,7 +42,7 @@ impl VertexInteractionsConfig {
             .map_err(VertexInteractionsError::Mint)
     }
 
-    // every target mints, requires a resolved project, and takes the explicit location or global
+    // interactions default to global, independent of the ordinary Vertex region fallback
     pub async fn target(
         &self,
         call: &InteractionCall<'_>,
@@ -101,7 +101,7 @@ impl VertexInteractionsConfig {
         Ok(headers)
     }
 
-    // get and delete carry no suffix, cancel appends one outside the encoded id, and every body is empty
+    // :cancel stays outside the encoded id, so the encoder never escapes the colon
     pub async fn lifecycle_request(
         &self,
         call: &InteractionCall<'_>,

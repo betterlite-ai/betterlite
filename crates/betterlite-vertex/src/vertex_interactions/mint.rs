@@ -31,9 +31,9 @@ impl MintAccessToken for CredentialCache {
     }
 }
 
-// Lyria builds an interactions URL with a configured project, and no credential refresh may run for it
+// Lyria already resolved its project, and building the URL must not refresh a credential
 pub struct ProjectOnlyMint {
-    pub project: Option<String>,
+    pub project: String,
 }
 
 impl MintAccessToken for ProjectOnlyMint {
@@ -44,9 +44,7 @@ impl MintAccessToken for ProjectOnlyMint {
     ) -> MintFuture<'mint> {
         let resolved = project
             .filter(|value| !value.is_empty())
-            .map(str::to_owned)
-            .or_else(|| self.project.clone())
-            .unwrap_or_default();
+            .map_or_else(|| self.project.clone(), str::to_owned);
         Box::pin(ready(Ok(AccessToken {
             token: SecretString::from(""),
             project: resolved,

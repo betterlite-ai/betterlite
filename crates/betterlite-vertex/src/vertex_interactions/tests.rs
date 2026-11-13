@@ -221,7 +221,7 @@ async fn target_and_headers_mint_order() {
 #[tokio::test]
 async fn lyria_project_only_callback() {
     let api = config(Arc::new(ProjectOnlyMint {
-        project: Some("configured-project".to_owned()),
+        project: "configured-project".to_owned(),
     }));
     let settings = VertexSettings::default();
     let given = params(Some("param-project"), Some("global"), None);
