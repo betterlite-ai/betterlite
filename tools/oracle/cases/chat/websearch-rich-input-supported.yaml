@@ -1,0 +1,27 @@
+{
+  "kind": "helper",
+  "name": "websearch-rich-input-supported",
+  "call": {
+    "b4115": {
+      "operation": "execute_search",
+      "model": "gpt-5",
+      "query": "rust async",
+      "search_tools": [
+        {"search_tool_name": "research", "litellm_params": {"search_provider": "parallel_ai"}}
+      ],
+      "rich_providers": ["parallel_ai"],
+      "tool_inputs": [
+        {"objective": "find the rust async book", "search_queries": ["rust async", "tokio tutorial"]}
+      ],
+      "search_response": {
+        "results": [
+          {"title": "Async", "url": "https://rust-lang.github.io/async-book/", "snippet": "Asynchronous programming in Rust."}
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

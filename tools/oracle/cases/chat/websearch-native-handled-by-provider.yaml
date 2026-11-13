@@ -1,0 +1,23 @@
+{
+  "kind": "helper",
+  "name": "websearch-native-handled-by-provider",
+  "call": {
+    "b4115": {
+      "operation": "short_circuit",
+      "model": "claude-sonnet-4-5",
+      "messages": [
+        {"role": "user", "content": "What is Rust?"}
+      ],
+      "tools": [
+        {"type": "web_search_20250305", "name": "web_search"}
+      ],
+      "custom_llm_provider": "anthropic",
+      "enabled_providers": ["anthropic"],
+      "native_providers": ["anthropic"]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
