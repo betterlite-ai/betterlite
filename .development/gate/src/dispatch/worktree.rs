@@ -1,5 +1,6 @@
 mod tests;
 
+use std::env;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -23,6 +24,16 @@ pub(crate) fn branch_name(task: &Task) -> String {
     format!("task/{}-{}", task.id, trimmed.trim_end_matches('-'))
 }
 
+// bin/cargo runs the shared build of a clean gate version, so a checkout's own 625 MB gate build is waste (142 checkouts held one on 11-13)
+fn needs_own_gate(path: &Path, shared_builds: Option<&Path>) -> Result<bool, GateError> {
+    let Some(builds) = shared_builds else {
+        return Ok(true);
+    };
+    let tree = git(path, &["rev-parse", "HEAD:.development/gate"])?;
+    let changes = git(path, &["status", "--porcelain", "--", ".development/gate"])?;
+    Ok(!changes.is_empty() || !builds.join(tree.trim()).join("gate").is_file())
+}
+
 pub(crate) fn ensure(
     root: &Path,
     worktrees: &str,
@@ -38,18 +49,21 @@ pub(crate) fn ensure(
         &["sync", "--locked", "--quiet"],
         &path.join("tools/oracle/litellm"),
     )?;
-    // the alias builds the gate quietly, and workers took that silent first cargo gate for a hang and quit
-    finish(
-        "cargo",
-        &[
-            "build",
-            "--quiet",
-            "--locked",
-            "--manifest-path",
-            ".development/gate/Cargo.toml",
-        ],
-        &path,
-    )?;
+    let shared_builds = env::var_os("GATE_SHARED_BUILDS").map(PathBuf::from);
+    if needs_own_gate(&path, shared_builds.as_deref())? {
+        // the alias builds the gate quietly, and workers took that silent first cargo gate for a hang and quit
+        finish(
+            "cargo",
+            &[
+                "build",
+                "--quiet",
+                "--locked",
+                "--manifest-path",
+                ".development/gate/Cargo.toml",
+            ],
+            &path,
+        )?;
+    }
     // Claude's sandbox matches writable paths literally, so a path through .. would not cover the worktree
     let canonical = fs::canonicalize(&path).map_err(|source| GateError::Read {
         path: path.clone(),

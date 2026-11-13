@@ -6,7 +6,7 @@ use std::process::Command;
 
 use tempfile::TempDir;
 
-use super::prepare;
+use super::{needs_own_gate, prepare};
 use crate::git::{common_dir, coordinator, git};
 
 fn fixture() -> (TempDir, PathBuf) {
@@ -111,6 +111,25 @@ fn an_existing_task_branch_is_reused_in_a_private_checkout() {
     );
     assert_eq!(coordinator(&target).unwrap(), common_dir(&root).unwrap());
     assert!(prepare(&root, &target, "task/B124-other").is_err());
+}
+
+#[test]
+fn a_checkout_builds_its_own_gate_only_without_a_shared_build_of_its_clean_gate() {
+    let (folder, root) = fixture();
+    let gate = root.join(".development/gate");
+    fs::create_dir_all(&gate).unwrap();
+    fs::write(gate.join("Cargo.toml"), "[package]\n").unwrap();
+    git(&root, &["add", ".development/gate/Cargo.toml"]).unwrap();
+    git(&root, &["commit", "-qm", "gate manifest"]).unwrap();
+    let tree = git(&root, &["rev-parse", "HEAD:.development/gate"]).unwrap();
+    let builds = folder.path().join("builds");
+    assert!(needs_own_gate(&root, None).unwrap());
+    assert!(needs_own_gate(&root, Some(&builds)).unwrap());
+    fs::create_dir_all(builds.join(tree.trim())).unwrap();
+    fs::write(builds.join(tree.trim()).join("gate"), "").unwrap();
+    assert!(!needs_own_gate(&root, Some(&builds)).unwrap());
+    fs::write(gate.join("Cargo.toml"), "[package]\nname = \"gate\"\n").unwrap();
+    assert!(needs_own_gate(&root, Some(&builds)).unwrap());
 }
 
 #[test]
