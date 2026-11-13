@@ -1,0 +1,14 @@
+kind: helper
+name: chirp-backend-policy-discarded-result-hidden
+call:
+  chirp_backend_policy:
+    kind: deliver
+    elapsed_seconds: 0.0
+    speech_active: false
+    item_kind: turn_result
+    turn: 1
+    event: '{"kind":"response","speech_event":"none","results":[],"billed_seconds":0.5}'
+    reason: ''
+    discarded_turns: [1]
+env: {}
+compare: {ignore: []}

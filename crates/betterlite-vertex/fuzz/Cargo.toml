@@ -42,6 +42,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "chirp_command"
+path = "fuzz_targets/chirp_command.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "embedding_data_url"
 path = "fuzz_targets/embedding_data_url.rs"
 test = false

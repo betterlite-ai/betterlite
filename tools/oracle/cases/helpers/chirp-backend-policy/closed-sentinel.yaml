@@ -1,0 +1,14 @@
+kind: helper
+name: chirp-backend-policy-closed-sentinel
+call:
+  chirp_backend_policy:
+    kind: deliver
+    elapsed_seconds: 0.0
+    speech_active: false
+    item_kind: closed
+    turn: 0
+    event: ''
+    reason: ''
+    discarded_turns: [3]
+env: {}
+compare: {ignore: []}
