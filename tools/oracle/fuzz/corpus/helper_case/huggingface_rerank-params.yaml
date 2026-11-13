@@ -1,0 +1,11 @@
+kind: helper
+name: params-and-body
+call:
+  b5848:
+    steps:
+      - {kind: supported_params, model: "org/model"}
+      - {kind: url, model: "org/model", api_base: null, env: {HF_API_BASE: "https://hf.example"}}
+      - {kind: params, model: "org/model", non_default_params: {query: "q", documents: ["a"], top_n: 3, return_documents: true}}
+      - {kind: request, model: "model", params: {query: "q", texts: ["a"]}}
+env: {}
+compare: {ignore: []}

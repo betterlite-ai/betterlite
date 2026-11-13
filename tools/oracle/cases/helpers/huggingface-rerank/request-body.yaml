@@ -1,0 +1,10 @@
+kind: helper
+name: request-body
+call:
+  b5848:
+    steps:
+      - {kind: request, model: "model", params: {query: "q", texts: ["a"], top_n: 2, return_text: true}}
+      - {kind: request, model: "model", params: {query: "q", texts: [], truncate: true, raw_scores: true, truncation_direction: "Left"}}
+      - {kind: request, model: "model", params: {query: null, texts: []}}
+env: {}
+compare: {ignore: []}
