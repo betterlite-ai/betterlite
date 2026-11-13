@@ -118,7 +118,7 @@ def format_response(step: FormatStep) -> Json:
             model=step["model"],
         )
     except ValueError:
-        return {"error": {"status": None}}
+        return {"error": {"status": 500}}  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L867
     return cast(Json, optional_params)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L778
 
 
@@ -126,7 +126,7 @@ def audio(step: AudioStep) -> Json:
     try:
         config = VertexGeminiConfig()._map_audio_params(step["audio"])  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1019
     except ValueError:
-        return {"error": {"status": None}}
+        return {"error": {"status": 500}}  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L867
     return cast(Json, config)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1019
 
 

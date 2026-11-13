@@ -241,6 +241,28 @@ fn an_unknown_response_format_sets_nothing() {
 }
 
 #[test]
+fn a_schema_nested_past_the_depth_limit_is_a_500() {
+    let levels = usize::try_from(DEPTH).expect("the depth limit is positive") + 5;
+    let nested = format!(
+        "{}{{\"type\": \"string\"}}{}",
+        r#"{"type": "array", "items": "#.repeat(levels),
+        "}".repeat(levels)
+    );
+    let format = format!(r#"{{"type": "json_schema", "json_schema": {{"schema": {nested}}}}}"#);
+    let mut optional_params = Object::new();
+
+    let error = apply_response_format(
+        &object(&format),
+        "gemini-1.5-pro",
+        &mut optional_params,
+        &settings(),
+    )
+    .expect_err("a schema nested past the limit cannot be shaped");
+
+    assert_eq!(error.status(), Some(500));
+}
+
+#[test]
 fn existing_optional_params_survive_the_mapping() {
     let mut optional_params =
         object(r#"{"temperature": 1, "thinkingConfig": {"includeThoughts": true}}"#);

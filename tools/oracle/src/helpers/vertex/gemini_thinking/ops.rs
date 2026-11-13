@@ -117,17 +117,15 @@ fn thinking_answer(step: &Step, input: &Input) -> Value {
 fn format_answer(step: &Step) -> Value {
     let mut mapped = step.optional_params.clone();
     let model = step.model.as_deref().unwrap_or_default();
-    if apply_response_format(
+    match apply_response_format(
         &step.response_format,
         model,
         &mut mapped,
         &SchemaSettings::default(),
-    )
-    .is_err()
-    {
-        return json!({"error": {"status": null}});
+    ) {
+        Ok(()) => json!(mapped),
+        Err(error) => json!({"error": {"status": error.status()}}),
     }
-    json!(mapped)
 }
 
 fn audio_answer(step: &Step) -> Value {

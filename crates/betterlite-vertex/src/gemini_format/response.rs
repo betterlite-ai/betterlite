@@ -11,6 +11,16 @@ pub enum GeminiFormatError {
     Schema(#[from] VertexSchemaError),
 }
 
+impl GeminiFormatError {
+    // LiteLLM's schema shaping raises a bare ValueError, which the exception mapper turns into a 500
+    #[must_use]
+    pub const fn status(&self) -> Option<u16> {
+        match self {
+            Self::Schema(_) => Some(500),
+        }
+    }
+}
+
 pub fn apply_response_format(
     response_format: &Object,
     model: &str,

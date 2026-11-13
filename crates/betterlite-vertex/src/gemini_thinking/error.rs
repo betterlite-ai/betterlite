@@ -17,12 +17,12 @@ pub enum GeminiThinkingError {
 }
 
 impl GeminiThinkingError {
-    // LiteLLM raises UnsupportedParamsError with 400 for the effort and conflict checks, and a bare ValueError for audio
+    // LiteLLM raises UnsupportedParamsError (400) for the effort and conflict checks, and a bare ValueError for audio that the exception mapper turns into a 500
     #[must_use]
     pub const fn status(&self) -> Option<u16> {
         match self {
             Self::UnsupportedEffort { .. } | Self::ThinkingLevelConflict { .. } => Some(400),
-            Self::UnsupportedAudioFormat { .. } => None,
+            Self::UnsupportedAudioFormat { .. } => Some(500),
         }
     }
 }

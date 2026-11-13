@@ -376,7 +376,7 @@ fn non_pcm16_audio_is_refused(#[case] format: &str) {
 
     let error = map_audio_params(&audio).expect_err("Gemini TTS only accepts pcm16");
 
-    assert_eq!(error.status(), None);
+    assert_eq!(error.status(), Some(500));
     assert!(matches!(
         error,
         GeminiThinkingError::UnsupportedAudioFormat { .. }
