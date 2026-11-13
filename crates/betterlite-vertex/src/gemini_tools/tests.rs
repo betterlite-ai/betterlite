@@ -624,6 +624,19 @@ fn an_openai_web_search_type_tool_becomes_a_search_tool_in_the_list() {
 }
 
 #[test]
+fn a_computer_use_type_tool_becomes_a_computer_use_tool() {
+    let mapped = mapped(&tools(
+        r#"[{"type": "computer_use", "environment": "browser", "excluded_predefined_functions": ["x"]}]"#,
+    ));
+    assert_eq!(
+        as_json(&mapped.tools),
+        parse::<Json>(
+            r#"[{"computerUse": {"environment": "ENVIRONMENT_BROWSER", "excludedPredefinedFunctions": ["x"]}}]"#
+        )
+    );
+}
+
+#[test]
 fn extract_maps_returns_the_cleaned_config_and_the_retrieval_pair() {
     let (cleaned, retrieval) = extract_maps(&parse::<Object>(
         r#"{"enableWidget": true, "latitude": 1, "longitude": 2}"#,
