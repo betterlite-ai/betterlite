@@ -34,37 +34,6 @@ fn redactor() -> Redactor {
     Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap()
 }
 
-fn logging_state(redactor: &Redactor) -> LoggingState {
-    LoggingState::new(
-        serde_json::from_str::<LoggingInit>(INIT).unwrap(),
-        CorrelationSetup {
-            context: &mut CorrelationContext::default(),
-            settings: CorrelationSettings::default(),
-        },
-        redactor,
-        || String::from("trace"),
-        Duration::default,
-    )
-    .unwrap()
-}
-
-fn logging_env(redactor: &Redactor) -> PrePostEnv<'_> {
-    PrePostEnv {
-        debug: DebugSettings::default(),
-        globals: GlobalFlags::default(),
-        decision: Decision {
-            content: false,
-            key_info: false,
-        },
-        redactor,
-        log: &Silent,
-        input_callbacks: &[],
-        sentry: None,
-        logger_fn: None,
-        now: DateTime::parse_from_rfc3339(NOW).unwrap(),
-    }
-}
-
 fn compact_call(
     text: &str,
     status: u16,
@@ -72,8 +41,31 @@ fn compact_call(
     now: i64,
 ) -> (Result<ResponsesReply, OpenAiError>, LoggingState) {
     let redactor = redactor();
-    let mut state = logging_state(&redactor);
-    let env = logging_env(&redactor);
+    let mut state = LoggingState::new(
+        serde_json::from_str::<LoggingInit>(INIT).unwrap(),
+        CorrelationSetup {
+            context: &mut CorrelationContext::default(),
+            settings: CorrelationSettings::default(),
+        },
+        &redactor,
+        || String::from("trace"),
+        Duration::default,
+    )
+    .unwrap();
+    let env = PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor: &redactor,
+        log: &Silent,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now: DateTime::parse_from_rfc3339(NOW).unwrap(),
+    };
     let reply = RawResponse {
         status,
         headers,

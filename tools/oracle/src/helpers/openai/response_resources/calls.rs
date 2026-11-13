@@ -1,5 +1,6 @@
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::identity::provider_id::ProviderId;
+use betterlite_openai::api::responses_shapes::DeleteResponseResult;
 use betterlite_openai::error::OpenAiError;
 use betterlite_openai::response_events::{
     RawResponse, ReplyBody, ResponsesReply, transform_response,
@@ -9,7 +10,7 @@ use betterlite_openai::response_resources::request::{
     CompactRequest, ListInputItemsQuery, ResourceOperation, ResourceRequest, compact_request,
     list_input_items_request, resource_request,
 };
-use betterlite_openai::response_resources::response::{delete_response, json_body, response_reply};
+use betterlite_openai::response_resources::response::{decode_record, json_body, response_reply};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 use serde_json::{Value, json};
@@ -53,13 +54,16 @@ fn responses(probes: &[Probe], redactor: &Redactor) -> HelperResult {
 
 fn request_value(probe: &Probe) -> Result<Value, Box<HelperError>> {
     let api_base = required(probe.api_base.as_deref(), "api_base")?;
+    let request = request_of(probe, api_base)?;
+    Ok(request_output(&request))
+}
+
+fn request_of(probe: &Probe, api_base: &str) -> Result<ResourceRequest, Box<HelperError>> {
     match endpoint(probe)? {
         Endpoint::Compact => {
-            let Some(input) = probe.input.as_ref() else {
-                return Err(invalid_input(String::from(
-                    "a compact request probe needs input",
-                )));
-            };
+            let input = probe.input.as_ref().ok_or_else(|| {
+                invalid_input(String::from("a compact request probe needs input"))
+            })?;
             let options = probe.params.clone().unwrap_or_default();
             let request = CompactRequest {
                 model: required(probe.model.as_deref(), "model")?,
@@ -68,35 +72,30 @@ fn request_value(probe: &Probe) -> Result<Value, Box<HelperError>> {
                 provider: probe.provider.unwrap_or(ProviderId::Openai),
                 model_info: probe.model_info.as_ref(),
             };
-            let compacted =
-                compact_request(&request, api_base).map_err(|error| response_error(&error))?;
-            Ok(request_output(&compacted))
+            compact_request(&request, api_base).map_err(|error| response_error(&error))
         }
-        Endpoint::Delete | Endpoint::Get | Endpoint::Cancel | Endpoint::List => {
-            let response_id = required(probe.response_id.as_deref(), "response_id")?;
-            let request = item_request(probe, response_id, api_base)?;
-            Ok(request_output(&request))
-        }
+        Endpoint::List => list_input_items_request(
+            required(probe.response_id.as_deref(), "response_id")?,
+            api_base,
+            &query_of(probe),
+        )
+        .map_err(|error| response_error(&error)),
+        Endpoint::Delete => item_request(probe, api_base, ResourceOperation::Delete),
+        Endpoint::Get => item_request(probe, api_base, ResourceOperation::Get),
+        Endpoint::Cancel => item_request(probe, api_base, ResourceOperation::Cancel),
     }
 }
 
 fn item_request(
     probe: &Probe,
-    response_id: &str,
     api_base: &str,
+    operation: ResourceOperation,
 ) -> Result<ResourceRequest, Box<HelperError>> {
-    let result = match endpoint(probe)? {
-        Endpoint::Delete => resource_request(response_id, api_base, ResourceOperation::Delete),
-        Endpoint::Get => resource_request(response_id, api_base, ResourceOperation::Get),
-        Endpoint::Cancel => resource_request(response_id, api_base, ResourceOperation::Cancel),
-        Endpoint::List => list_input_items_request(response_id, api_base, &query_of(probe)),
-        Endpoint::Compact => {
-            return Err(invalid_input(String::from(
-                "a compact request has no item endpoint",
-            )));
-        }
-    };
-    result.map_err(|error| response_error(&error))
+    let response_id = probe
+        .response_id
+        .as_deref()
+        .ok_or_else(|| invalid_input(String::from("a probe needs response_id")))?;
+    resource_request(response_id, api_base, operation).map_err(|error| response_error(&error))
 }
 
 fn query_of(probe: &Probe) -> ListInputItemsQuery {
@@ -133,29 +132,34 @@ fn response_value(probe: &Probe, redactor: &Redactor) -> Result<Value, Box<Helpe
     })
 }
 
-fn delete_value(reply: &RawResponse<'_>) -> Value {
-    match delete_response(reply) {
-        Ok(deleted) => json!({
-            "id": deleted.id,
-            "object": deleted.object,
-            "deleted": deleted.deleted,
-        }),
+fn reply_value<T, F>(result: Result<T, ResponseResourceError>, build: F) -> Value
+where
+    F: FnOnce(T) -> Value,
+{
+    match result {
+        Ok(value) => build(value),
         Err(error) => error_value(&error),
     }
 }
 
+fn delete_value(reply: &RawResponse<'_>) -> Value {
+    reply_value(
+        decode_record::<DeleteResponseResult>(reply),
+        |deleted| json!({"id": deleted.id, "object": deleted.object, "deleted": deleted.deleted}),
+    )
+}
+
 fn typed_value(reply: &RawResponse<'_>) -> Value {
-    match response_reply(reply) {
-        Ok(transformed) => json!({
+    reply_value(response_reply(reply), |transformed| {
+        json!({
             "id": transformed.response.id,
             "created_at": transformed.response.created_at,
             "status": transformed.response.status,
             "model": transformed.response.model,
             "headers": transformed.headers,
             "additional_headers": transformed.additional_headers,
-        }),
-        Err(error) => error_value(&error),
-    }
+        })
+    })
 }
 
 fn list_value(reply: &RawResponse<'_>) -> Value {
@@ -170,13 +174,10 @@ fn compact_value(
     reply: &RawResponse<'_>,
     redactor: &Redactor,
 ) -> Result<Value, Box<HelperError>> {
-    let Some(now) = probe.now else {
-        return Err(invalid_input(String::from(
-            "a compact reply probe needs now",
-        )));
-    };
-    let mut state = fixtures::state(redactor)?;
-    let env = fixtures::environment(redactor)?;
+    let now = probe
+        .now
+        .ok_or_else(|| invalid_input(String::from("a compact reply probe needs now")))?;
+    let (mut state, env) = fixtures::logging(redactor)?;
     match transform_response(reply, now, &mut state, &env) {
         Ok(transformed) => Ok(compact_output(&transformed, &state, now)),
         Err(OpenAiError::Provider(provider)) => Ok(json!({

@@ -23,10 +23,12 @@ impl LogSink for Silent {
     fn emit(&self, _record: LogRecord) {}
 }
 
-pub(super) fn state(redactor: &Redactor) -> Result<LoggingState, Box<HelperError>> {
+pub(super) fn logging(
+    redactor: &Redactor,
+) -> Result<(LoggingState, PrePostEnv<'_>), Box<HelperError>> {
     let init = serde_json::from_str::<LoggingInit>(INIT)
         .map_err(|error| invalid_input(error.to_string()))?;
-    LoggingState::new(
+    let state = LoggingState::new(
         init,
         CorrelationSetup {
             context: &mut CorrelationContext::default(),
@@ -36,13 +38,10 @@ pub(super) fn state(redactor: &Redactor) -> Result<LoggingState, Box<HelperError
         || String::from("trace"),
         Duration::default,
     )
-    .map_err(|error| invalid_input(error.to_string()))
-}
-
-pub(super) fn environment(redactor: &Redactor) -> Result<PrePostEnv<'_>, Box<HelperError>> {
+    .map_err(|error| invalid_input(error.to_string()))?;
     let now =
         DateTime::parse_from_rfc3339(NOW).map_err(|error| invalid_input(error.to_string()))?;
-    Ok(PrePostEnv {
+    let environment = PrePostEnv {
         debug: DebugSettings::default(),
         globals: GlobalFlags::default(),
         decision: Decision {
@@ -55,5 +54,6 @@ pub(super) fn environment(redactor: &Redactor) -> Result<PrePostEnv<'_>, Box<Hel
         sentry: None,
         logger_fn: None,
         now,
-    })
+    };
+    Ok((state, environment))
 }

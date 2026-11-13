@@ -5,6 +5,7 @@ use indexmap::IndexMap;
 use serde_json::Value;
 
 use super::{compact_call, header_map};
+use crate::api::responses_shapes::DeleteResponseResult;
 use crate::error::OpenAiError;
 use crate::response_events::{RawResponse, ReplyBody, ResponsesReply};
 use crate::response_input::ResponsesInput;
@@ -13,7 +14,7 @@ use crate::response_resources::request::{
     CompactRequest, InputItemsOrder, ListInputItemsQuery, ResourceOperation, compact_request,
     list_input_items_request, resource_request,
 };
-use crate::response_resources::response::{delete_response, json_body, response_reply};
+use crate::response_resources::response::{decode_record, json_body, response_reply};
 
 fn value(text: &str) -> Value {
     serde_json::from_str(text).unwrap()
@@ -30,6 +31,18 @@ fn reply_failure(result: Result<ResponsesReply, OpenAiError>) -> OpenAiError {
     match result {
         Ok(_reply) => panic!("expected the reply to fail"),
         Err(error) => error,
+    }
+}
+
+fn raw_reply<'reply>(
+    headers: &'reply IndexMap<String, String>,
+    text: &'reply str,
+    status: u16,
+) -> RawResponse<'reply> {
+    RawResponse {
+        status,
+        headers,
+        text,
     }
 }
 
@@ -172,30 +185,26 @@ pub(super) fn delete_result() {
 
 fn delete_values() {
     let headers = IndexMap::new();
-    let reply = RawResponse {
-        status: 200,
-        headers: &headers,
-        text: r#"{"id":"resp_1","object":"response","deleted":true}"#,
-    };
-    let deleted = delete_response(&reply).unwrap();
+    let reply = raw_reply(
+        &headers,
+        r#"{"id":"resp_1","object":"response","deleted":true}"#,
+        200,
+    );
+    let deleted = decode_record::<DeleteResponseResult>(&reply).unwrap();
     assert_eq!(deleted.id.as_deref(), Some("resp_1"));
     assert_eq!(deleted.object.as_deref(), Some("response"));
     assert_eq!(deleted.deleted, Some(true));
-    let nullable = RawResponse {
-        status: 200,
-        headers: &headers,
-        text: r#"{"id":null,"object":null,"deleted":null}"#,
-    };
-    let empty = delete_response(&nullable).unwrap();
+    let nullable = raw_reply(&headers, r#"{"id":null,"object":null,"deleted":null}"#, 200);
+    let empty = decode_record::<DeleteResponseResult>(&nullable).unwrap();
     assert_eq!(empty.id, None);
     assert_eq!(empty.object, None);
     assert_eq!(empty.deleted, None);
-    let extra = RawResponse {
-        status: 200,
-        headers: &headers,
-        text: r#"{"id":"resp_2","object":"response","deleted":false,"vendor":{"n":1}}"#,
-    };
-    let kept = delete_response(&extra).unwrap();
+    let extra = raw_reply(
+        &headers,
+        r#"{"id":"resp_2","object":"response","deleted":false,"vendor":{"n":1}}"#,
+        200,
+    );
+    let kept = decode_record::<DeleteResponseResult>(&extra).unwrap();
     assert_eq!(kept.deleted, Some(false));
     assert_eq!(
         serde_json::to_value(kept.extra.get("vendor")).unwrap(),
@@ -205,39 +214,27 @@ fn delete_values() {
 
 fn delete_rejections() {
     let headers = IndexMap::new();
-    let missing = RawResponse {
-        status: 200,
-        headers: &headers,
-        text: r#"{"id":"resp_3","object":"response"}"#,
-    };
+    let missing = raw_reply(&headers, r#"{"id":"resp_3","object":"response"}"#, 200);
     assert!(matches!(
-        delete_response(&missing),
+        decode_record::<DeleteResponseResult>(&missing),
         Err(ResponseResourceError::Record { .. })
     ));
-    let wrong = RawResponse {
-        status: 200,
-        headers: &headers,
-        text: r#"{"id":7,"object":"response","deleted":true}"#,
-    };
+    let wrong = raw_reply(
+        &headers,
+        r#"{"id":7,"object":"response","deleted":true}"#,
+        200,
+    );
     assert!(matches!(
-        delete_response(&wrong),
+        decode_record::<DeleteResponseResult>(&wrong),
         Err(ResponseResourceError::Record { .. })
     ));
-    let list = RawResponse {
-        status: 200,
-        headers: &headers,
-        text: "[]",
-    };
+    let list = raw_reply(&headers, "[]", 200);
     assert!(matches!(
-        delete_response(&list),
+        decode_record::<DeleteResponseResult>(&list),
         Err(ResponseResourceError::Record { .. })
     ));
-    let broken = RawResponse {
-        status: 503,
-        headers: &headers,
-        text: "not-json",
-    };
-    let error = delete_response(&broken).unwrap_err();
+    let broken = raw_reply(&headers, "not-json", 503);
+    let error = decode_record::<DeleteResponseResult>(&broken).unwrap_err();
     assert_eq!(error.http_status(), Some(503));
     assert_eq!(provider_failure(&error), (503, String::from("not-json")));
 }
@@ -255,11 +252,11 @@ fn get_typed_reply() {
         ("llm_provider-x-custom", "keep"),
         ("x-test-header", "value"),
     ]);
-    let reply = RawResponse {
-        status: 200,
-        headers: &headers,
-        text: r#"{"id":"resp_1","created_at":9,"output":[],"status":"completed","model":"gpt-4o"}"#,
-    };
+    let reply = raw_reply(
+        &headers,
+        r#"{"id":"resp_1","created_at":9,"output":[],"status":"completed","model":"gpt-4o"}"#,
+        200,
+    );
     let typed = response_reply(&reply).unwrap();
     assert_eq!(typed.response.id, "resp_1");
     assert_eq!(typed.response.created_at, 9);
@@ -277,11 +274,11 @@ fn get_typed_reply() {
             r#"{"x-ratelimit-remaining-requests":"9","llm_provider-x-custom":"keep","llm_provider-x-request-id":"req-1","llm_provider-x-ratelimit-remaining-requests":"9","llm_provider-x-test-header":"value"}"#
         )
     );
-    let minimal = RawResponse {
-        status: 200,
-        headers: &headers,
-        text: r#"{"id":"resp_2","created_at":5,"output":[],"store":true}"#,
-    };
+    let minimal = raw_reply(
+        &headers,
+        r#"{"id":"resp_2","created_at":5,"output":[],"store":true}"#,
+        200,
+    );
     let plain = response_reply(&minimal).unwrap();
     assert_eq!(plain.response.status, None);
     assert_eq!(plain.response.model, None);
@@ -289,49 +286,37 @@ fn get_typed_reply() {
 
 fn get_rejections() {
     let headers = IndexMap::new();
-    let lax_only = RawResponse {
-        status: 200,
-        headers: &headers,
-        text: r#"{"id":7,"created_at":5,"output":"bad"}"#,
-    };
+    let lax_only = raw_reply(&headers, r#"{"id":7,"created_at":5,"output":"bad"}"#, 200);
     assert!(matches!(
         response_reply(&lax_only),
         Err(ResponseResourceError::Record { .. })
     ));
-    let text_timestamp = RawResponse {
-        status: 200,
-        headers: &headers,
-        text: r#"{"id":"resp_3","created_at":"3.9","output":[]}"#,
-    };
+    let text_timestamp = raw_reply(
+        &headers,
+        r#"{"id":"resp_3","created_at":"3.9","output":[]}"#,
+        200,
+    );
     assert!(matches!(
         response_reply(&text_timestamp),
         Err(ResponseResourceError::Record { .. })
     ));
-    let list = RawResponse {
-        status: 200,
-        headers: &headers,
-        text: "[]",
-    };
+    let list = raw_reply(&headers, "[]", 200);
     assert!(matches!(
         response_reply(&list),
         Err(ResponseResourceError::Record { .. })
     ));
-    let broken = RawResponse {
-        status: 400,
-        headers: &headers,
-        text: "{oops",
-    };
+    let broken = raw_reply(&headers, "{oops", 400);
     let error = response_reply(&broken).unwrap_err();
     assert_eq!(provider_failure(&error), (400, String::from("{oops")));
 }
 
 fn get_content_type() {
     let content_type = header_map(&[("content-type", "application/json")]);
-    let progress = RawResponse {
-        status: 200,
-        headers: &content_type,
-        text: r#"{"id":"resp_4","created_at":9,"output":[],"status":"in_progress"}"#,
-    };
+    let progress = raw_reply(
+        &content_type,
+        r#"{"id":"resp_4","created_at":9,"output":[],"status":"in_progress"}"#,
+        200,
+    );
     let typed = response_reply(&progress).unwrap();
     assert_eq!(
         serde_json::to_value(&typed.additional_headers).unwrap(),
@@ -448,11 +433,11 @@ pub(super) fn cancel_response() {
 
 fn cancel_value() {
     let headers = header_map(&[("x-request-id", "req-1")]);
-    let reply = RawResponse {
-        status: 200,
-        headers: &headers,
-        text: r#"{"id":"resp_1","created_at":9,"output":[],"status":"cancelled"}"#,
-    };
+    let reply = raw_reply(
+        &headers,
+        r#"{"id":"resp_1","created_at":9,"output":[],"status":"cancelled"}"#,
+        200,
+    );
     let typed = response_reply(&reply).unwrap();
     assert_eq!(typed.response.status.as_deref(), Some("cancelled"));
     assert_eq!(
@@ -463,20 +448,16 @@ fn cancel_value() {
 
 fn cancel_rejections() {
     let headers = IndexMap::new();
-    let lax_only = RawResponse {
-        status: 200,
-        headers: &headers,
-        text: r#"{"id":"resp_2","created_at":5,"output":"bad"}"#,
-    };
+    let lax_only = raw_reply(
+        &headers,
+        r#"{"id":"resp_2","created_at":5,"output":"bad"}"#,
+        200,
+    );
     assert!(matches!(
         response_reply(&lax_only),
         Err(ResponseResourceError::Record { .. })
     ));
-    let broken = RawResponse {
-        status: 502,
-        headers: &headers,
-        text: "not json",
-    };
+    let broken = raw_reply(&headers, "not json", 502);
     let error = response_reply(&broken).unwrap_err();
     assert_eq!(provider_failure(&error), (502, String::from("not json")));
 }
@@ -532,6 +513,27 @@ fn compact_options() {
     assert_eq!(error.http_status(), None);
 }
 
+const REASONING_INPUT: &str = r#"[{"type":"reasoning","id":"rs_1","summary":[],"status":null,"content":null,"encrypted_content":null},{"role":"user","content":[{"type":"input_text","text":"hi","cache_control":{"type":"ephemeral"}}]}]"#;
+const REASONING_TOOLS: &str = r#"{"tools":[{"type":"function","name":"f","parameters":"{\"type\":\"object\"}","cache_control":{"type":"ephemeral"}}]}"#;
+const REASONING_EXPECTED: &str = r#"{"model":"gpt-4o","input":[{"id":"rs_1","summary":[],"type":"reasoning"},{"role":"user","content":[{"type":"input_text","text":"hi"}]}],"tools":[{"type":"function","name":"f","parameters":{"type":"object"}}]}"#;
+const FOREIGN_INPUT: &str = r#"[{"type":"function_call","id":"fc_1","call_id":"c","name":"f","arguments":"{}"},{"type":"function_call","id":"other_1","call_id":"c","name":"f","arguments":"{}"},{"type":"custom_tool_call","id":"ctc_1","call_id":"c","name":"f","input":"x"},{"type":"custom_tool_call","id":"foreign","call_id":"c","name":"f","input":"x"}]"#;
+const FOREIGN_EXPECTED: &str = r#"{"model":"gpt-4o","input":[{"type":"function_call","id":"fc_1","call_id":"c","name":"f","arguments":"{}"},{"type":"function_call","call_id":"c","name":"f","arguments":"{}"},{"type":"custom_tool_call","id":"ctc_1","call_id":"c","name":"f","input":"x"},{"type":"custom_tool_call","call_id":"c","name":"f","input":"x"}]}"#;
+const VLLM_INPUT: &str =
+    r#"[{"type":"function_call","id":"other_1","call_id":"c","name":"f","arguments":"{}"}]"#;
+const VLLM_TOOLS: &str =
+    r#"{"tools":[{"type":"function","name":"f","parameters":{"allOf":[{"type":"object"}]}}]}"#;
+const VLLM_EXPECTED: &str = r#"{"model":"gpt-4o","input":[{"type":"function_call","id":"other_1","call_id":"c","name":"f","arguments":"{}"}],"tools":[{"type":"function","name":"f","parameters":{"allOf":[{"type":"object"}]}}]}"#;
+const SCHEMA_TOOLS: &str = r#"{"tools":[{"type":"function","name":"f","parameters":{"type":"object","anyOf":[{"type":"string"}],"properties":{"bad":{"pattern":"("},"good":{"pattern":"^a+$"}}}}]}"#;
+const SCHEMA_EXPECTED: &str = r#"{"model":"gpt-4o","input":"hi","tools":[{"type":"function","name":"f","parameters":{"type":"object","properties":{"bad":{},"good":{"pattern":"^a+$"}}}}]}"#;
+const NEUTRAL_TOOLS: &str = r#"{"tools":null}"#;
+const NEUTRAL_EXPECTED: &str = r#"{"model":"gpt-4o","input":"hi","tools":null}"#;
+
+fn compacted(input: &str, options: &str, provider: ProviderId) -> Value {
+    let request_input = input_of(input);
+    let request_options = options_of(options);
+    compact_payload("gpt-4o", &request_input, &request_options, provider, None)
+}
+
 pub(super) fn compact_replay_input() {
     replay_reasoning_and_tools();
     replay_foreign_ids();
@@ -541,74 +543,44 @@ pub(super) fn compact_replay_input() {
 }
 
 fn replay_reasoning_and_tools() {
-    let input = input_of(
-        r#"[{"type":"reasoning","id":"rs_1","summary":[],"status":null,"content":null,"encrypted_content":null},{"role":"user","content":[{"type":"input_text","text":"hi","cache_control":{"type":"ephemeral"}}]}]"#,
-    );
-    let options = options_of(
-        r#"{"tools":[{"type":"function","name":"f","parameters":"{\"type\":\"object\"}","cache_control":{"type":"ephemeral"}}]}"#,
-    );
     assert_eq!(
-        compact_payload("gpt-4o", &input, &options, ProviderId::Openai, None),
-        value(
-            r#"{"model":"gpt-4o","input":[{"id":"rs_1","summary":[],"type":"reasoning"},{"role":"user","content":[{"type":"input_text","text":"hi"}]}],"tools":[{"type":"function","name":"f","parameters":{"type":"object"}}]}"#
-        )
+        compacted(REASONING_INPUT, REASONING_TOOLS, ProviderId::Openai),
+        value(REASONING_EXPECTED)
     );
 }
 
 fn replay_foreign_ids() {
-    let input = input_of(
-        r#"[{"type":"function_call","id":"fc_1","call_id":"c","name":"f","arguments":"{}"},{"type":"function_call","id":"other_1","call_id":"c","name":"f","arguments":"{}"},{"type":"custom_tool_call","id":"ctc_1","call_id":"c","name":"f","input":"x"},{"type":"custom_tool_call","id":"foreign","call_id":"c","name":"f","input":"x"}]"#,
-    );
-    let options = Object::new();
     assert_eq!(
-        compact_payload("gpt-4o", &input, &options, ProviderId::Openai, None),
-        value(
-            r#"{"model":"gpt-4o","input":[{"type":"function_call","id":"fc_1","call_id":"c","name":"f","arguments":"{}"},{"type":"function_call","call_id":"c","name":"f","arguments":"{}"},{"type":"custom_tool_call","id":"ctc_1","call_id":"c","name":"f","input":"x"},{"type":"custom_tool_call","call_id":"c","name":"f","input":"x"}]}"#
-        )
+        compacted(FOREIGN_INPUT, "{}", ProviderId::Openai),
+        value(FOREIGN_EXPECTED)
     );
 }
 
 fn replay_provider_gates() {
-    let input = input_of(
-        r#"[{"type":"function_call","id":"other_1","call_id":"c","name":"f","arguments":"{}"}]"#,
-    );
-    let options = options_of(
-        r#"{"tools":[{"type":"function","name":"f","parameters":{"allOf":[{"type":"object"}]}}]}"#,
-    );
     assert_eq!(
-        compact_payload("gpt-4o", &input, &options, ProviderId::HostedVllm, None),
-        value(
-            r#"{"model":"gpt-4o","input":[{"type":"function_call","id":"other_1","call_id":"c","name":"f","arguments":"{}"}],"tools":[{"type":"function","name":"f","parameters":{"allOf":[{"type":"object"}]}}]}"#
-        )
+        compacted(VLLM_INPUT, VLLM_TOOLS, ProviderId::HostedVllm),
+        value(VLLM_EXPECTED)
     );
 }
 
 fn replay_schema_gate() {
-    let input = input_of(r#""hi""#);
-    let options = options_of(
-        r#"{"tools":[{"type":"function","name":"f","parameters":{"type":"object","anyOf":[{"type":"string"}],"properties":{"bad":{"pattern":"("},"good":{"pattern":"^a+$"}}}}]}"#,
-    );
     let model_info = options_of(r#"{"base_model":"gpt-4o"}"#);
     assert_eq!(
         compact_payload(
             "gpt-4o",
-            &input,
-            &options,
+            &input_of(r#""hi""#),
+            &options_of(SCHEMA_TOOLS),
             ProviderId::Openai,
-            Some(&model_info)
+            Some(&model_info),
         ),
-        value(
-            r#"{"model":"gpt-4o","input":"hi","tools":[{"type":"function","name":"f","parameters":{"type":"object","properties":{"bad":{},"good":{"pattern":"^a+$"}}}}]}"#
-        )
+        value(SCHEMA_EXPECTED)
     );
 }
 
 fn replay_null_tools() {
-    let input = input_of(r#""hi""#);
-    let options = options_of(r#"{"tools":null}"#);
     assert_eq!(
-        compact_payload("gpt-4o", &input, &options, ProviderId::Openai, None),
-        value(r#"{"model":"gpt-4o","input":"hi","tools":null}"#)
+        compacted(r#""hi""#, NEUTRAL_TOOLS, ProviderId::Openai),
+        value(NEUTRAL_EXPECTED)
     );
 }
 
@@ -684,14 +656,18 @@ fn lax_fallback() {
     assert_eq!(created_at_of(&current.unwrap()), 1_700_000_000);
 }
 
-fn lax_failure() {
+fn compact_failure(text: &str, status: u16) -> (u16, String) {
     let headers = IndexMap::new();
-    let (result, _state) = compact_call("not json", 503, &headers, 1_700_000_000);
+    let (result, _state) = compact_call(text, status, &headers, 1_700_000_000);
     let OpenAiError::Provider(provider) = reply_failure(result) else {
         panic!("expected an upstream failure");
     };
+    (provider.status_code, provider.message)
+}
+
+fn lax_failure() {
     assert_eq!(
-        (provider.status_code, provider.message),
+        compact_failure("not json", 503),
         (503, String::from("not json"))
     );
 }
@@ -703,31 +679,19 @@ pub(super) fn resource_json_error_status() {
 
 fn json_error_statuses() {
     let headers = IndexMap::new();
-    let delete_broken = RawResponse {
-        status: 400,
-        headers: &headers,
-        text: "not json",
-    };
-    let delete_error = delete_response(&delete_broken).unwrap_err();
+    let delete_broken = raw_reply(&headers, "not json", 400);
+    let delete_error = decode_record::<DeleteResponseResult>(&delete_broken).unwrap_err();
     assert_eq!(
         provider_failure(&delete_error),
         (400, String::from("not json"))
     );
-    let get_broken = RawResponse {
-        status: 503,
-        headers: &headers,
-        text: r#"{"id":"#,
-    };
+    let get_broken = raw_reply(&headers, r#"{"id":"#, 503);
     let get_error = response_reply(&get_broken).unwrap_err();
     assert_eq!(
         provider_failure(&get_error),
         (503, String::from(r#"{"id":"#))
     );
-    let list_broken = RawResponse {
-        status: 401,
-        headers: &headers,
-        text: "not json",
-    };
+    let list_broken = raw_reply(&headers, "not json", 401);
     let list_error = json_body(&list_broken).unwrap_err();
     assert_eq!(
         provider_failure(&list_error),
@@ -739,43 +703,27 @@ fn json_error_statuses() {
 
 fn cancel_json_failure() {
     let headers = IndexMap::new();
-    let cancel_broken = RawResponse {
-        status: 500,
-        headers: &headers,
-        text: "{}x",
-    };
+    let cancel_broken = raw_reply(&headers, "{}x", 500);
     let cancel_error = response_reply(&cancel_broken).unwrap_err();
     assert_eq!(provider_failure(&cancel_error), (500, String::from("{}x")));
 }
 
 fn compact_json_failure() {
-    let headers = IndexMap::new();
-    let (result, _state) = compact_call("[]", 429, &headers, 1_700_000_000);
-    let OpenAiError::Provider(provider) = reply_failure(result) else {
-        panic!("expected an upstream failure");
-    };
-    assert_eq!(
-        (provider.status_code, provider.message),
-        (429, String::from("[]"))
-    );
+    assert_eq!(compact_failure("[]", 429), (429, String::from("[]")));
 }
 
 fn list_without_validation() {
     let headers = IndexMap::new();
-    let items = RawResponse {
-        status: 200,
-        headers: &headers,
-        text: "[1,2,3]",
-    };
+    let items = raw_reply(&headers, "[1,2,3]", 200);
     assert_eq!(
         serde_json::to_value(json_body(&items).unwrap()).unwrap(),
         value("[1,2,3]")
     );
-    let page = RawResponse {
-        status: 200,
-        headers: &headers,
-        text: r#"{"data":[{"id":"item_1"}],"has_more":false}"#,
-    };
+    let page = raw_reply(
+        &headers,
+        r#"{"data":[{"id":"item_1"}],"has_more":false}"#,
+        200,
+    );
     assert_eq!(
         serde_json::to_value(json_body(&page).unwrap()).unwrap(),
         value(r#"{"data":[{"id":"item_1"}],"has_more":false}"#)

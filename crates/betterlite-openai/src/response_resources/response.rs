@@ -3,9 +3,9 @@ use betterlite_models::call_helpers::headers::{
 };
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use serde::de::DeserializeOwned;
 
 use crate::api::responses_objects::ResponsesApiResponse;
-use crate::api::responses_shapes::DeleteResponseResult;
 use crate::api::responses_shapes::wire::{WireDecodeLimits, decode_responses_shapes};
 use crate::error::{OpenAiError, ProviderError, ProviderErrorParts};
 use crate::response_events::RawResponse;
@@ -49,23 +49,18 @@ pub fn json_body(reply: &RawResponse<'_>) -> Result<Json, ResponseResourceError>
     }
 }
 
-pub fn delete_response(
-    reply: &RawResponse<'_>,
-) -> Result<DeleteResponseResult, ResponseResourceError> {
+pub fn decode_record<T>(reply: &RawResponse<'_>) -> Result<T, ResponseResourceError>
+where
+    T: DeserializeOwned,
+{
     let decoded = json_body(reply)?;
     let value =
         serde_json::to_value(decoded).map_err(|source| ResponseResourceError::Encode { source })?;
-    let result =
-        serde_json::from_value(value).map_err(|source| ResponseResourceError::Record { source })?;
-    Ok(result)
+    serde_json::from_value(value).map_err(|source| ResponseResourceError::Record { source })
 }
 
 pub fn response_reply(reply: &RawResponse<'_>) -> Result<TypedReply, ResponseResourceError> {
-    let decoded = json_body(reply)?;
-    let value =
-        serde_json::to_value(decoded).map_err(|source| ResponseResourceError::Encode { source })?;
-    let response: ResponsesApiResponse =
-        serde_json::from_value(value).map_err(|source| ResponseResourceError::Record { source })?;
+    let response: ResponsesApiResponse = decode_record(reply)?;
     Ok(TypedReply {
         response,
         headers: reply.headers.clone(),
