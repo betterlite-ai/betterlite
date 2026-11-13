@@ -127,7 +127,9 @@ fn map_cohere_rerank_params_drops_the_unsupported_params() {
 fn env_with(text: Option<&str>) -> FireworksEnv {
     FireworksEnv {
         fireworks_api_key: text.map(SecretString::from),
-        ..FireworksEnv::default()
+        fireworks_ai_api_key: None,
+        fireworksai_api_key: None,
+        fireworks_ai_token: None,
     }
 }
 
@@ -317,15 +319,16 @@ fn transform_rerank_response_falls_back_to_results_when_data_is_empty() {
     assert_eq!(results[0].index, 2);
 }
 
-#[test]
-fn transform_rerank_response_errors_when_neither_data_nor_results_exist() {
-    for payload in [r#"{}"#, r#"{"data":[]}"#, r#"{"data":[],"results":[]}"#] {
-        let error = transform(200, payload).unwrap_err();
-        assert!(
-            matches!(error, FireworksRerankError::NoResults),
-            "{payload}"
-        );
-    }
+#[rstest]
+#[case::empty_object("{}")]
+#[case::empty_data(r#"{"data":[]}"#)]
+#[case::empty_data_and_results(r#"{"data":[],"results":[]}"#)]
+fn transform_rerank_response_errors_when_neither_data_nor_results_exist(#[case] payload: &str) {
+    let error = transform(200, payload).unwrap_err();
+    assert!(
+        matches!(error, FireworksRerankError::NoResults),
+        "{payload}"
+    );
 }
 
 #[test]

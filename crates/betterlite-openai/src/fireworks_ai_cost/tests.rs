@@ -61,8 +61,9 @@ impl FakeLookup {
 
     fn failing() -> Self {
         Self {
+            entries: BTreeMap::new(),
+            calls: Mutex::new(Vec::new()),
             fail_all: true,
-            ..Self::default()
         }
     }
 
@@ -231,28 +232,39 @@ fn cost_per_token_returns_the_third_lookup_failure() {
     assert_eq!(lookup.calls().len(), 3);
 }
 
+fn provider_error(info: ModelInfo) -> FireworksCostError {
+    let lookup = FakeLookup::default().with(
+        "accounts/fireworks/models/x",
+        Some(FIREWORKS_AI_PROVIDER),
+        info,
+    );
+    cost_per_token(
+        "accounts/fireworks/models/x",
+        &usage(1, 1),
+        DateTime::UNIX_EPOCH,
+        &tiers(),
+        &lookup,
+    )
+    .unwrap_err()
+}
+
 #[test]
 fn cost_per_token_needs_a_text_litellm_provider() {
-    for info in [
-        BTreeMap::from([("input_cost_per_token".to_owned(), number("0.000001"))]),
-        BTreeMap::from([("litellm_provider".to_owned(), Scalar::Null)]),
-        BTreeMap::from([("litellm_provider".to_owned(), number("1"))]),
-    ] {
-        let lookup = FakeLookup::default().with(
-            "accounts/fireworks/models/x",
-            Some(FIREWORKS_AI_PROVIDER),
-            info,
-        );
-        let error = cost_per_token(
-            "accounts/fireworks/models/x",
-            &usage(1, 1),
-            DateTime::UNIX_EPOCH,
-            &tiers(),
-            &lookup,
-        )
-        .unwrap_err();
-        assert!(matches!(error, FireworksCostError::Provider { .. }));
-    }
+    let missing = BTreeMap::from([("input_cost_per_token".to_owned(), number("0.000001"))]);
+    assert!(matches!(
+        provider_error(missing),
+        FireworksCostError::Provider { .. }
+    ));
+    let null = BTreeMap::from([("litellm_provider".to_owned(), Scalar::Null)]);
+    assert!(matches!(
+        provider_error(null),
+        FireworksCostError::Provider { .. }
+    ));
+    let numeric = BTreeMap::from([("litellm_provider".to_owned(), number("1"))]);
+    assert!(matches!(
+        provider_error(numeric),
+        FireworksCostError::Provider { .. }
+    ));
 }
 
 #[test]

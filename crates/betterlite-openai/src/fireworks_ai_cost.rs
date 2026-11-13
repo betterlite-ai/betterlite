@@ -8,7 +8,6 @@ use betterlite_models::token_cost::prompt_overlap::PromptExtras;
 use betterlite_models::token_cost::{GenericCostRequest, generic_cost_per_token};
 use betterlite_models::token_rates::ModelInfo;
 use chrono::{DateTime, Utc};
-use fancy_regex::Captures;
 use fancy_regex::Regex;
 use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
@@ -47,23 +46,27 @@ pub trait ModelInfoLookup {
     ) -> Result<ModelInfo, LookupFailed>;
 }
 
-fn captured_billions(captures: &Captures<'_, str>, group: usize) -> Option<u128> {
-    let digits = captures.get(group)?.as_str();
-    Some(digits.parse::<u128>().unwrap_or(u128::MAX))
-}
-
 fn moe_billions(name: &str) -> Option<u128> {
     let pattern = Regex::new(MOE_PATTERN).ok()?;
     let captures = pattern.captures(name).ok()??;
-    let first = captured_billions(&captures, 1)?;
-    let second = captured_billions(&captures, 2)?;
+    let first = captures
+        .get(1)?
+        .as_str()
+        .parse::<u128>()
+        .unwrap_or(u128::MAX);
+    let second = captures
+        .get(2)?
+        .as_str()
+        .parse::<u128>()
+        .unwrap_or(u128::MAX);
     Some(first.saturating_mul(second))
 }
 
 fn standard_billions(name: &str) -> Option<u128> {
     let pattern = Regex::new(SIZE_PATTERN).ok()?;
     let captures = pattern.captures(name).ok()??;
-    captured_billions(&captures, 1)
+    let digits = captures.get(1)?.as_str();
+    Some(digits.parse::<u128>().unwrap_or(u128::MAX))
 }
 
 #[must_use]
