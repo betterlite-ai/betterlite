@@ -1,25 +1,28 @@
 task: B368
 deviations:
   - what: >-
-      A raise-mode upsert_deployment that fails while adding the new deployment puts the previous deployment
-      back where it was in the catalog and the indexes, and the failure is returned to the caller.
+      A raise-mode upsert_deployment that fails while adding the new deployment returns the failure and
+      leaves the previous deployment in the catalog and the indexes. The oracle case
+      raise-mode-failed-upsert pins both states.
     why: >-
-      LiteLLM deletes the old deployment before it builds the new one and its restore step re-adds the old
-      deployment at the end of the model list, so a failed update reorders the list that a working setup
-      reads by position. The catalog is published as one snapshot, so a failed update leaves the earlier
-      snapshot untouched.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9995-L10021
+      LiteLLM pops the old deployment before it builds the new one and, without ignore_invalid_deployments,
+      re-raises without putting it back, so a failed update deletes a deployment that was serving. The
+      catalog is published as one snapshot, so a failed update leaves the earlier snapshot untouched.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9953-L9993
   - what: >-
-      A set_model_list that fails on one entry publishes nothing: the earlier catalog stays as it was.
+      A set_model_list that fails on one entry publishes nothing: the earlier catalog stays as it was. The
+      oracle case raise-mode-failed-set pins both states.
     why: >-
       LiteLLM clears the model list, the indexes and the pattern routers first and then adds the entries one
       by one, so an invalid entry leaves a half-built router that serves a partial model list. Building the
       new catalog aside and publishing it on success gives every reader either the old or the new list.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9519-L9609
   - what: >-
-      When restoring the previous deployment after a failed upsert itself fails, the original catalog is kept
-      and the original error is returned.
+      When restoring the previous deployment after an ignored upsert failure itself fails, the original
+      catalog is kept, a warning is logged and the upsert returns no deployment. The oracle case
+      failed-restore-keeps-snapshot reaches this with a deployment that is refused on its second admission.
     why: >-
-      LiteLLM lets the restore error replace the upsert error and leaves the deployment missing from the
-      list. Keeping the earlier snapshot loses nothing and reports the error that started the failure.
+      LiteLLM logs the same warning and returns none, but by then it has already popped the previous
+      deployment, so the deployment stays missing from the model list. Keeping the earlier snapshot loses
+      nothing.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9995-L10021

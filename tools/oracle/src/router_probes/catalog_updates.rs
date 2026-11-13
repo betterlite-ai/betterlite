@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use betterlite_models::catalog_generalizations::CatalogGeneralizations;
 use betterlite_models::decisions::Json;
@@ -64,8 +65,11 @@ pub struct Output {
     pub steps: Vec<Observed>,
 }
 
-// The cases carry no access windows, pricing or cost map. Only the provider check answers: a model outside the openai provider is the unmapped provider LiteLLM refuses.
-struct Probe;
+// Only the provider check answers: a model outside the openai provider is refused, and openai/flaky is refused on its second admission so a restore can fail.
+#[derive(Default)]
+struct Probe {
+    flaky_admitted: AtomicBool,
+}
 
 impl ConstructionPolicy for Probe {
     fn check_access_windows(&self, _: &JsonObject, _: &str) -> Result<(), InvalidDeployment> {
@@ -111,6 +115,14 @@ impl CostMapFetcher for Probe {
 impl CatalogEffects for Probe {
     fn admit(&self, spec: &DeploymentSpec) -> Result<(), InvalidDeployment> {
         match spec.litellm_params.get("model") {
+            Some(Json::Text(model)) if model == "openai/flaky" => {
+                if self.flaky_admitted.swap(true, Ordering::SeqCst) {
+                    return Err(InvalidDeployment::Rejected {
+                        message: "the provider stopped answering".to_owned(),
+                    });
+                }
+                Ok(())
+            }
             Some(Json::Text(model)) if model.starts_with("openai/") => Ok(()),
             _ => Err(InvalidDeployment::ProviderUnresolved {
                 message: "LLM Provider NOT provided".to_owned(),
@@ -226,10 +238,12 @@ pub(crate) fn run(
                 message: error.to_string(),
             })?;
     let handle = CatalogHandle::default();
+    let probe = Probe::default();
+    let variables: BTreeMap<String, String> = BTreeMap::new();
     let generalizations = CatalogGeneralizations::default();
     let environment = RegistrationEnvironment {
-        lookup: &Probe,
-        fetcher: &Probe,
+        lookup: &probe,
+        fetcher: &probe,
         generalizations: &generalizations,
         bedrock_base_model: str::to_owned,
     };
@@ -238,12 +252,13 @@ pub(crate) fn run(
     for step in &input.steps {
         let mut updater = CatalogUpdater {
             catalog: &handle,
-            effects: &Probe,
+            effects: &probe,
+            env_vars: &variables,
             construction: Construction {
                 registry: &mut registry,
                 environment: &environment,
                 pricing: &PRICING,
-                policy: &Probe,
+                policy: &probe,
                 new_id: || "probe-deployment".to_owned(),
                 ignore_invalid_deployments: input.ignore_invalid_deployments,
             },
