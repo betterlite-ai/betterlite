@@ -1723,15 +1723,31 @@ dependencies = [
 name = "betterlite-foundry"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "betterlite-azure",
+ "betterlite-config",
  "betterlite-context",
  "betterlite-models",
+ "betterlite-openai",
  "chrono",
+ "indexmap 2.14.2",
  "jiff",
  "rstest",
  "rust_decimal",
+ "secrecy",
+ "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "tracing",
+]
+
+[[package]]
+name = "betterlite-foundry-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-foundry",
+ "libfuzzer-sys",
 ]
 
 [[package]]
