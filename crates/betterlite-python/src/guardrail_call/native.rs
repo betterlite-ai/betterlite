@@ -44,7 +44,8 @@ impl NativeGuardrail {
 
     fn settings(&self) -> PyResult<String> {
         let json = SettingsJson::from(&self.base.settings);
-        Ok(convert::write("guardrail settings", &json)?)
+        let text = convert::write("guardrail settings", &json)?;
+        Ok(text)
     }
 
     fn render_violation_message(&self, default: &str, context: &str) -> PyResult<String> {

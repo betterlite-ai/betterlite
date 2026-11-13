@@ -86,7 +86,8 @@ impl RecordParts {
         data: &BTreeMap<String, GuardrailValue>,
     ) -> Result<RecordUpdate, CallError> {
         let text = convert::write("request data", data)?;
-        Ok((text, self.log_target_text()?))
+        let target = self.log_target_text()?;
+        Ok((text, target))
     }
 
     pub(crate) fn log_target_text(&self) -> Result<String, CallError> {
