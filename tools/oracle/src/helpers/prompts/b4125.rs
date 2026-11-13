@@ -156,7 +156,7 @@ struct Facts<'input> {
 }
 
 impl<'input> Facts<'input> {
-    fn new(
+    const fn new(
         model_cost: &'input BTreeMap<String, Json>,
         global_enabled: bool,
         ttl: Option<&'input str>,
