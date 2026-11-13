@@ -277,6 +277,7 @@ async fn input_unexpected_list_item_type_warns_and_makes_no_call(
 #[rstest]
 #[case::later_integer(r#"{"input":["a",5]}"#, 1, "int")]
 #[case::later_object(r#"{"input":["a",{"x":1}]}"#, 1, "dict")]
+#[case::later_array(r#"{"input":["a",[1]]}"#, 1, "list")]
 #[tokio::test]
 async fn input_mixed_array_starting_with_text_returns_an_error(
     #[case] raw: &str,
@@ -307,6 +308,7 @@ async fn input_mixed_array_starting_with_text_returns_an_error(
 #[case::null(r#"{"input":null}"#)]
 #[tokio::test]
 async fn input_missing_or_null_makes_no_call(#[case] raw: &str) {
+    let (log, _guard) = capture_logs(tracing::Level::DEBUG);
     let guardrail = FakeGuardrail::replying(&["unused"]);
     let mut data = body(raw);
     let untouched = data.clone();
@@ -315,6 +317,11 @@ async fn input_missing_or_null_makes_no_call(#[case] raw: &str) {
         .unwrap();
     assert!(guardrail.calls().is_empty());
     assert_eq!(data, untouched);
+    let written = fs::read_to_string(log.path()).unwrap();
+    assert!(
+        written.contains("No input found in request data"),
+        "{written}"
+    );
 }
 
 #[rstest]

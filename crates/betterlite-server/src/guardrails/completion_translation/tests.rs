@@ -116,7 +116,7 @@ fn capture_logs(level: tracing::Level) -> (tempfile::NamedTempFile, DefaultGuard
 
 #[tokio::test]
 async fn input_text_prompt_sends_one_text_and_replaces_the_prompt() {
-    let guardrail = FakeGuardrail::replying(&["rewritten"]);
+    let guardrail = FakeGuardrail::replying(&["rewritten", "dropped"]);
     let mut data = body(r#"{"model":"gpt-3.5-turbo-instruct","prompt":"hello"}"#);
     let original = data.clone();
     process_input_messages(&mut data, &guardrail, None)
@@ -256,6 +256,7 @@ async fn input_empty_array_reply_keeps_the_array() {
 #[case::null(r#"{"prompt":null}"#)]
 #[tokio::test]
 async fn input_missing_or_null_prompt_makes_no_call(#[case] raw: &str) {
+    let (log, _guard) = capture_logs(tracing::Level::DEBUG);
     let guardrail = FakeGuardrail::replying(&["unused"]);
     let mut data = body(raw);
     let untouched = data.clone();
@@ -264,6 +265,11 @@ async fn input_missing_or_null_prompt_makes_no_call(#[case] raw: &str) {
         .unwrap();
     assert!(guardrail.calls().is_empty());
     assert_eq!(data, untouched);
+    let written = fs::read_to_string(log.path()).unwrap();
+    assert!(
+        written.contains("No prompt found in request data"),
+        "{written}"
+    );
 }
 
 #[rstest]
