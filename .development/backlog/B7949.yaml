@@ -2,7 +2,7 @@ id: B7949
 milestone: M12 python
 title: Python types for the small proxy endpoint files (types/proxy, agent identity to vantage)
 status: todo
-depends_on: [B5657]
+depends_on: [B5657, B9951]
 file: tasks/B7949-types-proxy-endpoint-types.yaml
 covers:
   - "litellm/types/proxy/agent_identity.py"

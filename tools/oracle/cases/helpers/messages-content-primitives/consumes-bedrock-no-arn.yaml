@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-consumes-bedrock-no-arn
+call: {"messages_content_primitives": {"operation": "consumes_cache_control", "model": "my:bedrock:model"}}
+env: {}
+compare: {ignore: []}

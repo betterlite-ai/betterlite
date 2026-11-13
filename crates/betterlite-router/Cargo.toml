@@ -17,6 +17,7 @@ betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-models = { path = "../betterlite-models" }
+betterlite-openai = { path = "../betterlite-openai" }
 betterlite-redis = { path = "../betterlite-redis" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 chrono.workspace = true

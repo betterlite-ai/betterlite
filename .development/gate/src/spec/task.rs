@@ -120,7 +120,9 @@ pub(crate) struct Budget {
         description = "Added plus deleted lines against the base, without the paths in settings.budget_excludes."
     )]
     pub(crate) max_changed_lines: usize,
-    #[schemars(description = "New #[expect(...)] attributes the task may add.")]
+    #[schemars(
+        description = "New #[expect(...)] attributes plus new Python lines with a cast, type: ignore, pyright: ignore or noqa the task may add."
+    )]
     pub(crate) max_new_expects: usize,
 }
 

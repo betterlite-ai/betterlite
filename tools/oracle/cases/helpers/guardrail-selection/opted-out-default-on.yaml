@@ -1,0 +1,6 @@
+kind: helper
+name: opted-out-default-on
+call:
+  b3665: {"function": "should_run_guardrail", "guardrail_name": "g", "event_hook": "pre_call", "default_on": true, "data": {"metadata": {"user_api_key_metadata": {"opted_out_global_guardrails": ["g"]}}}, "event_type": "pre_call", "suppressed": []}
+env: {}
+compare: {ignore: []}

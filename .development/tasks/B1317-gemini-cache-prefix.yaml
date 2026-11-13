@@ -85,5 +85,5 @@ pitfalls:
   - A second separated marked run stays in the uncached messages rather than being combined with the first.
   - System extraction must happen after TTL lookup or a system-block TTL disappears.
   - A terminal tool response is rejected for caching even though conversation conversion emits it with role user.
-budget: {max_changed_lines: 725, max_new_expects: 0}
+budget: {max_changed_lines: 725, max_new_expects: 9}
 review_level: standard

@@ -1,0 +1,6 @@
+kind: helper
+name: session-none-found
+call:
+  b5471: {"function": "session", "request_data": {"metadata": {}}}
+env: {}
+compare: {ignore: []}

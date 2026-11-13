@@ -1,0 +1,11 @@
+task: B3665
+deviations:
+  - what: The dynamic request body parameters of a guardrail are returned without LiteLLM's premium check, so a user who is not premium also gets the extra_body of the request.
+    why: betterlite has no premium licence tier, and returning an empty object for everyone would make the feature unusable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1182-L1189
+  - what: A guardrail whose event hook is a tag mode and that matches the event type fails with a 500 that names the guardrail, where LiteLLM hands the tag decision to a separate proprietary package.
+    why: That package is not ported to betterlite, and LiteLLM without it fails with an ImportError.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1115-L1127
+  - what: A guardrails list in a request that is not a list gets a 400 when the gate or the dynamic parameters read it, and a dynamic entry whose options or extra_body is not an object gets a 400 that names the guardrail.
+    why: LiteLLM iterates the value or unpacks it with ** and fails with a Python TypeError (a 500), or iterates a string character by character.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1174-L1192
