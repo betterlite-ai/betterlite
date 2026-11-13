@@ -1,0 +1,18 @@
+kind: helper
+name: rewrite-undeliverable-count-change
+call:
+  b3246:
+    guardrail:
+      kind: unified
+      name: tools
+      texts_out: ["[masked]"]
+      tool_calls_out: []
+      hook: {mode: nothing, response: null}
+    translation:
+      delivers: true
+      tool_calls:
+        - {id: call_1, type: function, function: {name: lookup, arguments: '{"id": "42"}'}}
+      rescans: true
+    chunks: ["alice"]
+env: {}
+compare: {ignore: []}

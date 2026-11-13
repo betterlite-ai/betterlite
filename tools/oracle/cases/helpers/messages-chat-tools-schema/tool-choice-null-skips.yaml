@@ -1,0 +1,11 @@
+kind: helper
+name: messages-chat-tools-schema-tool-choice-null-skips
+call:
+  messages_chat_tools_schema:
+    operation: request
+    request:
+      model: gpt-4o
+      messages: []
+      tool_choice: null
+env: {}
+compare: {ignore: []}

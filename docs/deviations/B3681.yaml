@@ -1,0 +1,11 @@
+task: B3681
+deviations:
+  - what: The initializers return argument structs and register nothing. LiteLLM builds the callback object and adds it to `litellm.logging_callback_manager`.
+    why: The sibling callback classes have no Rust constructor in this task, and registration belongs to B3682's registry. The structs carry the same data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_initializers.py#L50
+  - what: A bad Bedrock streaming extra gives `InvalidStreamingParam` and the guardrail does not start. LiteLLM raises a pydantic ValidationError from the same call.
+    why: Same outcome, with a Rust error type. The error names the field and never the value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L701-L707
+  - what: initialize_hide_secrets never succeeds.
+    why: The class is in LiteLLM's enterprise package, which this rewrite does not ship. LiteLLM gives the same error without that package.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_initializers.py#L204
