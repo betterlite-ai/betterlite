@@ -1,27 +1,43 @@
 #![cfg(test)]
 
-use std::fs;
-use std::path::Path;
-
 use serde_json::{Value, json};
 
-use crate::case::HelperCase;
 use crate::helpers::Helper as _;
 
 use super::Op;
 
-fn run_case(name: &str) -> Value {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("cases/helpers/batch-enqueued-reserve")
-        .join(name);
-    let source = fs::read_to_string(&path).expect("the case reads");
-    let case: HelperCase = serde_saphyr::from_str(&source).expect("the case parses");
-    Op::decode_and_run(&case.call.input).expect("the helper runs")
+fn run(input: &Value) -> Value {
+    Op::decode_and_run(input).expect("the helper runs")
 }
+
+fn principal(key_limit: i64, team_limit: i64) -> Value {
+    json!({
+        "api_key": "sk-oracle-key",
+        "team_id": "team-oracle",
+        "metadata": {"batch_enqueued_token_limit": key_limit},
+        "team_metadata": {"batch_enqueued_token_limit": team_limit},
+    })
+}
+
+fn reserve(key: &str, limit: i64) -> Value {
+    json!({
+        "event": "reserve",
+        "key": key,
+        "args": [500_i64, 691_200_i64, limit],
+    })
+}
+
+const KEY_COUNTER: &str = "batch_enqueued_tokens:api_key:sk-oracle-key";
+const TEAM_COUNTER: &str = "batch_enqueued_tokens:team:team-oracle";
 
 #[test]
 fn key_team_reserve_matches_the_pinned_answer() {
-    let answer = run_case("key-team-reserve.yaml");
+    let answer = run(&json!({
+        "tokens": 500_i64,
+        "principal": principal(1000, 2000),
+        "redis": {"reserve": [[1_i64, 500_i64], [1_i64, 500_i64]], "refund": []},
+        "memory": {"seed": {}, "read": []},
+    }));
     assert_eq!(
         answer["outcome"],
         json!({
@@ -37,25 +53,19 @@ fn key_team_reserve_matches_the_pinned_answer() {
     );
     assert_eq!(
         answer["events"],
-        json!([
-            {
-                "event": "reserve",
-                "key": "batch_enqueued_tokens:api_key:sk-oracle-key",
-                "args": [500_i64, 691_200_i64, 1000_i64],
-            },
-            {
-                "event": "reserve",
-                "key": "batch_enqueued_tokens:team:team-oracle",
-                "args": [500_i64, 691_200_i64, 2000_i64],
-            },
-        ])
+        json!([reserve(KEY_COUNTER, 1000), reserve(TEAM_COUNTER, 2000)])
     );
     assert_eq!(answer["memory"], json!({}));
 }
 
 #[test]
 fn enqueued_limit_exceeded_matches_the_pinned_answer() {
-    let answer = run_case("enqueued-limit-exceeded.yaml");
+    let answer = run(&json!({
+        "tokens": 500_i64,
+        "principal": principal(1000, 2000),
+        "redis": {"reserve": [[0_i64, 950_i64]], "refund": []},
+        "memory": {"seed": {}, "read": []},
+    }));
     assert_eq!(
         answer["outcome"],
         json!({
@@ -64,20 +74,18 @@ fn enqueued_limit_exceeded_matches_the_pinned_answer() {
             "enqueued": 950_i64,
         })
     );
-    assert_eq!(
-        answer["events"],
-        json!([{
-            "event": "reserve",
-            "key": "batch_enqueued_tokens:api_key:sk-oracle-key",
-            "args": [500_i64, 691_200_i64, 1000_i64],
-        }])
-    );
+    assert_eq!(answer["events"], json!([reserve(KEY_COUNTER, 1000)]));
     assert_eq!(answer["memory"], json!({}));
 }
 
 #[test]
 fn invalid_limit_warning_matches_the_pinned_answer() {
-    let answer = run_case("invalid-limit-warning.yaml");
+    let answer = run(&json!({
+        "tokens": 500_i64,
+        "principal": principal(0, -3),
+        "redis": null,
+        "memory": {"seed": {}, "read": []},
+    }));
     assert_eq!(
         answer["outcome"],
         json!({
@@ -100,7 +108,12 @@ fn invalid_limit_warning_matches_the_pinned_answer() {
 
 #[test]
 fn partial_reserve_rollback_matches_the_pinned_answer() {
-    let answer = run_case("partial-reserve-rollback.yaml");
+    let answer = run(&json!({
+        "tokens": 500_i64,
+        "principal": principal(1000, 2000),
+        "redis": {"reserve": [[1_i64, 100_i64], [0_i64, 1900_i64]], "refund": [1_i64]},
+        "memory": {"seed": {}, "read": []},
+    }));
     assert_eq!(
         answer["outcome"],
         json!({
@@ -112,21 +125,9 @@ fn partial_reserve_rollback_matches_the_pinned_answer() {
     assert_eq!(
         answer["events"],
         json!([
-            {
-                "event": "reserve",
-                "key": "batch_enqueued_tokens:api_key:sk-oracle-key",
-                "args": [500_i64, 691_200_i64, 1000_i64],
-            },
-            {
-                "event": "reserve",
-                "key": "batch_enqueued_tokens:team:team-oracle",
-                "args": [500_i64, 691_200_i64, 2000_i64],
-            },
-            {
-                "event": "refund",
-                "key": "batch_enqueued_tokens:api_key:sk-oracle-key",
-                "args": [500_i64],
-            },
+            reserve(KEY_COUNTER, 1000),
+            reserve(TEAM_COUNTER, 2000),
+            {"event": "refund", "key": KEY_COUNTER, "args": [500_i64]},
         ])
     );
     assert_eq!(answer["memory"], json!({}));
@@ -134,7 +135,18 @@ fn partial_reserve_rollback_matches_the_pinned_answer() {
 
 #[test]
 fn redis_fallback_memory_matches_the_pinned_answer() {
-    let answer = run_case("redis-fallback-memory.yaml");
+    let answer = run(&json!({
+        "tokens": 500_i64,
+        "principal": principal(1000, 2000),
+        "redis": {"reserve": ["redis unavailable"], "refund": []},
+        "memory": {
+            "seed": {
+                KEY_COUNTER: 300_i64,
+                TEAM_COUNTER: 100_i64,
+            },
+            "read": [KEY_COUNTER, TEAM_COUNTER],
+        },
+    }));
     assert_eq!(
         answer["outcome"],
         json!({
@@ -150,20 +162,10 @@ fn redis_fallback_memory_matches_the_pinned_answer() {
     );
     assert_eq!(
         answer["events"],
-        json!([
-            {
-                "event": "reserve",
-                "key": "batch_enqueued_tokens:api_key:sk-oracle-key",
-                "args": [500_i64, 691_200_i64, 1000_i64],
-            },
-            {"event": "warning", "level": "warning"},
-        ])
+        json!([reserve(KEY_COUNTER, 1000), {"event": "warning", "level": "warning"}])
     );
     assert_eq!(
         answer["memory"],
-        json!({
-            "batch_enqueued_tokens:api_key:sk-oracle-key": 800_i64,
-            "batch_enqueued_tokens:team:team-oracle": 600_i64,
-        })
+        json!({KEY_COUNTER: 800_i64, TEAM_COUNTER: 600_i64})
     );
 }
