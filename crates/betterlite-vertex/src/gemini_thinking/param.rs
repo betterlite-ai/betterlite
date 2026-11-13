@@ -30,30 +30,25 @@ pub fn map_thinking_param(
     settings: &ThinkingSettings,
     support: &dyn MinimalEffortSupport,
 ) -> ThinkingConfig {
-    let enabled = param.kind == Some(ThinkingType::Enabled);
-    if model.is_some_and(is_gemini_3_or_newer) {
-        let thoughts = enabled && param.budget_tokens != Some(0);
-        let mut config = ThinkingConfig {
+    let thoughts = param.kind == Some(ThinkingType::Enabled) && param.budget_tokens != Some(0);
+    if let Some(name) = model.filter(|name| is_gemini_3_or_newer(name)) {
+        let default_level = if supports_minimal_level(name, support) {
+            ThinkingLevel::Minimal
+        } else {
+            ThinkingLevel::Low
+        };
+        return ThinkingConfig {
             include_thoughts: Some(thoughts),
             thinking_budget: None,
-            thinking_level: None,
+            thinking_level: (thoughts && settings.default_thinking_level_low)
+                .then_some(default_level),
         };
-        if thoughts && settings.default_thinking_level_low {
-            let minimal = model.is_some_and(|name| supports_minimal_level(name, support));
-            config.thinking_level = Some(if minimal {
-                ThinkingLevel::Minimal
-            } else {
-                ThinkingLevel::Low
-            });
-        }
-        return config;
     }
-    let mut config = ThinkingConfig::default();
-    if enabled && param.budget_tokens != Some(0) {
-        config.include_thoughts = Some(true);
+    ThinkingConfig {
+        include_thoughts: thoughts.then_some(true),
+        thinking_budget: param.budget_tokens,
+        thinking_level: None,
     }
-    config.thinking_budget = param.budget_tokens;
-    config
 }
 
 pub fn validate_thinking_conflicts(
