@@ -28,6 +28,15 @@ pub const POLICY_BLOCKED: &str = "blocked";
 pub const POLICY_TRUSTED: &str = "trusted";
 pub const POLICY_UNTRUSTED: &str = "untrusted";
 
+// ToolPolicyGuardrail defines apply_guardrail, so LiteLLM accepts logging_only for it
+const TOOL_POLICY_SWITCHES: GuardrailSwitches = GuardrailSwitches {
+    use_native_during_call_hook: false,
+    use_native_lifecycle_hooks: false,
+    records_own_information: false,
+    uses_apply_guardrail_interface: true,
+    deny_text_on_error: false,
+};
+
 pub trait ToolPolicyLookup: Sync {
     fn is_initialized(&self) -> bool;
     fn effective_policies(
@@ -77,14 +86,7 @@ pub fn initialize_tool_policy(
             scan_raw_request: false,
             only_scan_new_messages: false,
             timeout: None,
-            switches: GuardrailSwitches {
-                use_native_during_call_hook: false,
-                use_native_lifecycle_hooks: false,
-                records_own_information: false,
-                // ToolPolicyGuardrail defines apply_guardrail, so LiteLLM accepts logging_only here
-                uses_apply_guardrail_interface: true,
-                deny_text_on_error: false,
-            },
+            switches: TOOL_POLICY_SWITCHES,
         },
         strict_modes,
         policies,
