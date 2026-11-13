@@ -3,11 +3,10 @@ import os
 from typing import Literal, Protocol, TypedDict
 
 import httpx
-from litellm.caching.caching import DualCache
+from litellm.caching.dual_cache import DualCache
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.dynamoai.dynamoai import DynamoAIGuardrails
-from litellm.types.proxy.guardrails.guardrail_hooks.dynamoai import DynamoAIResponse
 from litellm.types.utils import CallTypesLiteral, Choices, GuardrailStatus, ModelResponse
 from pydantic import JsonValue, TypeAdapter
 
@@ -33,7 +32,7 @@ class Choice(TypedDict):
 
 class Answer(TypedDict):
     status: int
-    body: DynamoAIResponse
+    body: dict[str, JsonValue]
 
 
 class RequestRecord(TypedDict):
