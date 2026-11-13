@@ -1,0 +1,1 @@
+{"error":{"message":"boom","code":400},"choices":[{"delta":{"content":[{"type":"thinking","thinking":"bad"}]}}]}
