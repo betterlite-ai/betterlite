@@ -53,7 +53,7 @@ def construct(call: ConstructCall) -> JsonValue:
     if call["record"] == "response":
         response = GenerateContentResponse(**fields)
         wire = OBJECT.validate_json(response.model_dump_json())
-        # betterlite keeps _hidden_params off the wire, where LiteLLM serializes the extra (docs/deviations/B3480.yaml)
+        # deviation: betterlite keeps _hidden_params off the wire (docs/deviations/B3480.yaml)
         wire.pop("_hidden_params", None)
         hidden = HiddenRecord.model_validate(response, from_attributes=True)
         return {"value": wire, "hidden_params": hidden.hidden_params}
