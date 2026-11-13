@@ -1,0 +1,63 @@
+kind: helper
+name: modelscope-image-params-and-url
+call:
+  b8174:
+    steps:
+      - kind: image_params
+        model: Qwen/Qwen-Image
+        params: {n: 2, size: 1024x1024, response_format: url, user: abc}
+      - kind: image_params
+        model: Qwen/Qwen-Image
+        params: {}
+      - kind: image_params
+        model: Qwen/Qwen-Image
+        params: {n: 1, quality: hd}
+        drop_params: true
+      - kind: image_params
+        model: Qwen/Qwen-Image
+        params: {quality: hd, style: vivid}
+        drop_params: true
+      - kind: image_params
+        model: Qwen/Qwen-Image
+        params: {n: null}
+        drop_params: true
+      - kind: image_url
+      - kind: image_url
+        api_base: "https://base.example/v1"
+      - kind: image_url
+        api_base: "https://base.example/v1///"
+      - kind: image_url
+        env_base: "https://env.example/v1/"
+      - kind: image_url
+        api_base: "https://base.example/v1"
+        env_base: "https://env.example/v1"
+      - kind: image_headers
+        api_key: "ms-key"
+      - kind: image_headers
+        env_key: "env-key"
+      - kind: speech_url
+      - kind: speech_url
+        api_base: "https://speech.example/"
+      - kind: speech_url
+        env_base: "https://speech-env.example"
+      - kind: speech_url
+        api_base: "https://speech.example"
+        env_base: "https://speech-env.example"
+      - kind: speech_headers
+        api_key: "speech-key"
+      - kind: speech_headers
+        global_key: "global-key"
+      - kind: speech_headers
+        env_key: "env-key"
+      - kind: speech_headers
+        api_key: "speech-key"
+        global_key: "global-key"
+        env_key: "env-key"
+      - kind: speech_headers
+        global_key: "global-key"
+        env_key: "env-key"
+      - kind: image_params
+        model: Qwen/Qwen-Image
+        params: {n: 1, quality: hd}
+env: {}
+compare: {ignore: []}

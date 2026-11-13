@@ -1,0 +1,5 @@
+task: B8174
+deviations:
+  - what: A speech or image reply with a field of the wrong type fails with a typed error, status 500.
+    why: LiteLLM raises a raw TypeError or KeyError there, which its proxy answers with a 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/minimax/text_to_speech/transformation.py
