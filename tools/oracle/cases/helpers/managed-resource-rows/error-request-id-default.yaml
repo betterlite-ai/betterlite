@@ -1,0 +1,20 @@
+kind: helper
+name: error_request_id_default
+call:
+  managed_resource_rows:
+    rows:
+      - name: error_log_omitted_request_id
+        stored: '{"kind":"error_log","row":{"startTime":null,"endTime":null}}'
+      - name: error_log_explicit_null_request_id
+        stored: '{"kind":"error_log","row":{"startTime":null,"endTime":null,"request_id":null}}'
+      - name: error_log_explicit_request_id
+        stored: '{"kind":"error_log","row":{"startTime":null,"endTime":null,"request_id":"r-1"}}'
+      - name: error_log_second_omitted_request_id
+        stored: '{"kind":"error_log","row":{"startTime":null,"endTime":null,"exception_type":"boom"}}'
+env: {}
+compare:
+  ignore:
+    - pointer: /value/rows/0/row/request_id
+      why: the omitted request_id is one UUID minted at Python import, so each process has its own
+    - pointer: /value/rows/3/row/request_id
+      why: the omitted request_id is one UUID minted at Python import, so each process has its own

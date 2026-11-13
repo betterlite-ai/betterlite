@@ -1593,6 +1593,7 @@ dependencies = [
  "aws-types",
  "base64 0.23.1",
  "betterlite-env",
+ "betterlite-openai",
  "betterlite-postgres-fixture",
  "betterlite-roi",
  "betterlite-secret-managers",
@@ -1652,7 +1653,11 @@ name = "betterlite-db-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-db",
+ "betterlite-openai",
+ "betterlite-secrets",
  "libfuzzer-sys",
+ "secrecy",
+ "uuid",
 ]
 
 [[package]]

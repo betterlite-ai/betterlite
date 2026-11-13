@@ -1,0 +1,13 @@
+kind: helper
+name: managed_resource_rows_seed
+call:
+  managed_resource_rows:
+    rows:
+      - name: tag_defaults
+        stored: '{"kind":"tag","row":{"tag_name":"t"}}'
+      - name: tag_null_collections_normalized
+        stored: '{"kind":"tag","row":{"tag_name":"t","models":null,"spend":null}}'
+      - name: spend_log_metadata_and_payload
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"c","startTime":null,"endTime":null,"messages":[1],"response":{"a":1},"metadata":"{\"trace\": \"seed\"}"}}'
+env: {}
+compare: {ignore: []}
