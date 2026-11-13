@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use secrecy::ExposeSecret as _;
@@ -18,10 +20,23 @@ pub(crate) struct Response {
     pub(crate) parsed: Parsed,
 }
 
-pub(crate) async fn send(
+pub(crate) async fn send(guardrail: &EnkryptAiGuardrail, text: &str) -> Response {
+    match post(guardrail, text).await {
+        Ok(raw) => parse(raw),
+        Err(error) => Response {
+            raw: GuardrailValue::Object(BTreeMap::from([(
+                "error".to_owned(),
+                GuardrailValue::Text(error.to_string()),
+            )])),
+            parsed: Parsed::Malformed(error),
+        },
+    }
+}
+
+async fn post(
     guardrail: &EnkryptAiGuardrail,
     text: &str,
-) -> Result<Response, EnkryptAiError> {
+) -> Result<GuardrailValue, EnkryptAiError> {
     let url = format!("{}{}", guardrail.settings.api_base, API_PATH);
     let payload = DetectPayload {
         text: text.to_owned(),
@@ -42,21 +57,25 @@ pub(crate) async fn send(
         });
     }
     let body = read_capped(response).await?;
-    let raw: GuardrailValue =
-        serde_json::from_slice(&body).map_err(|source| EnkryptAiError::ResponseJson { source })?;
+    serde_json::from_slice(&body).map_err(|source| EnkryptAiError::ResponseJson { source })
+}
+
+fn parse(raw: GuardrailValue) -> Response {
     if !matches!(raw, GuardrailValue::Object(_)) {
-        return Ok(Response {
+        return Response {
             raw,
             parsed: Parsed::Malformed(EnkryptAiError::MalformedResponse),
-        });
+        };
     }
-    let value =
-        serde_json::to_value(&raw).map_err(|source| EnkryptAiError::Serialize { source })?;
-    let parsed = match serde_json::from_value::<DetectionResponse>(value) {
-        Ok(response) => Parsed::Response(response),
-        Err(source) => Parsed::Malformed(EnkryptAiError::ResponseShape { source }),
+    let value = serde_json::to_value(&raw).map_err(|source| EnkryptAiError::Serialize { source });
+    let parsed = match value {
+        Ok(value) => match serde_json::from_value::<DetectionResponse>(value) {
+            Ok(response) => Parsed::Response(response),
+            Err(source) => Parsed::Malformed(EnkryptAiError::ResponseShape { source }),
+        },
+        Err(error) => Parsed::Malformed(error),
     };
-    Ok(Response { raw, parsed })
+    Response { raw, parsed }
 }
 
 impl EnkryptAiGuardrail {

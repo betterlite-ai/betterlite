@@ -124,17 +124,7 @@ impl EnkryptAiGuardrail {
         log_target: Option<&mut GuardrailLogTarget>,
     ) -> Result<Detection, EnkryptAiError> {
         let started = (self.clock)();
-        let outcome = transport::send(self, text).await;
-        let response = match outcome {
-            Ok(response) => response,
-            Err(error) => Response {
-                raw: GuardrailValue::Object(BTreeMap::from([(
-                    "error".to_owned(),
-                    GuardrailValue::Text(error.to_string()),
-                )])),
-                parsed: Parsed::Malformed(error),
-            },
-        };
+        let response = transport::send(self, text).await;
         let timing = Timing {
             started,
             finished: (self.clock)(),

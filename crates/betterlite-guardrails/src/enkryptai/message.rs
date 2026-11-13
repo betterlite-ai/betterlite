@@ -32,60 +32,45 @@ fn describe(
 ) -> Result<String, serde_json::Error> {
     match attack {
         "policy_violation" => Ok(policy(response)),
-        "pii" => {
-            let pii = response
-                .details
-                .pii
-                .as_ref()
-                .and_then(|value| value.pii.clone())
-                .unwrap_or_default();
-            Ok(format!("pii detected: {}", serde_json::to_string(&pii)?))
-        }
+        "pii" => Ok(format!(
+            "pii detected: {}",
+            serde_json::to_string(&pii_details(response))?
+        )),
         "toxicity" => Ok(format!(
             "toxicity scores above {TOXICITY_THRESHOLD}: {}",
             toxicity_names(response.details.toxicity.as_ref()).join(", ")
         )),
-        _ => describe_detector(attack, processed, response),
-    }
-}
-
-fn policy(response: &DetectionResponse) -> String {
-    let detail = response.details.policy_violation.as_ref();
-    let policy = detail
-        .and_then(|value| value.violating_policy.as_deref())
-        .unwrap_or(NOT_AVAILABLE);
-    let explanation = detail
-        .and_then(|value| value.explanation.as_deref())
-        .unwrap_or(NOT_AVAILABLE);
-    format!("policy \"{policy}\", explanation \"{explanation}\"")
-}
-
-fn describe_detector(
-    attack: &str,
-    processed: &Processed,
-    response: &DetectionResponse,
-) -> Result<String, serde_json::Error> {
-    if attack == "keyword_detected" {
-        let keywords = response
-            .details
-            .keyword_detected
-            .as_ref()
-            .and_then(|value| value.detected_keywords.clone())
-            .unwrap_or_default();
-        return Ok(format!(
+        "keyword_detected" => Ok(format!(
             "detected keywords: {}",
-            serde_json::to_string(&keywords)?
-        ));
+            serde_json::to_string(&keywords(response))?
+        )),
+        "bias" => Ok(format!("bias detected: {}", bias_detected(response))),
+        other => unknown(other, processed),
     }
-    if attack == "bias" {
-        let detected = response
-            .details
-            .bias
-            .as_ref()
-            .and_then(|value| value.bias_detected)
-            .unwrap_or(false);
-        return Ok(format!("bias detected: {detected}"));
+}
+
+fn pii_details(response: &DetectionResponse) -> BTreeMap<String, GuardrailValue> {
+    match &response.details.pii {
+        Some(detail) => detail.pii.clone().unwrap_or_default(),
+        None => BTreeMap::new(),
     }
+}
+
+fn keywords(response: &DetectionResponse) -> Vec<String> {
+    match &response.details.keyword_detected {
+        Some(detail) => detail.detected_keywords.clone().unwrap_or_default(),
+        None => Vec::new(),
+    }
+}
+
+fn bias_detected(response: &DetectionResponse) -> bool {
+    match &response.details.bias {
+        Some(detail) => detail.bias_detected.unwrap_or(false),
+        None => false,
+    }
+}
+
+fn unknown(attack: &str, processed: &Processed) -> Result<String, serde_json::Error> {
     let detail = processed
         .details
         .get(attack)
