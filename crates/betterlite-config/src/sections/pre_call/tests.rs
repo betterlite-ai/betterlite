@@ -4,10 +4,10 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
-use crate::loader::ConfigLoader;
+use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::pre_call::Settings;
 
-fn settings(source: &str) -> Result<Settings, crate::loader::ConfigError> {
+fn settings(source: &str) -> Result<Settings, ConfigError> {
     let loader = ConfigLoader {
         lookup: BTreeMap::new(),
     };
@@ -29,7 +29,8 @@ fn loads_always_include_stream_usage(#[case] source: &str, #[case] expected: Opt
 #[test]
 fn rejects_a_text_value_for_the_boolean_setting() {
     let source = "general_settings:\n  always_include_stream_usage: maybe";
-    assert!(settings(source).is_err());
+    let error = settings(source).unwrap_err();
+    assert!(matches!(error, ConfigError::Yaml { .. }));
 }
 
 #[test]

@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use async_trait::async_trait;
 use rstest::rstest;
 use serde_json::{Map, Value, json};
-use strum::VariantArray as _;
+use strum::{ParseError, VariantArray as _};
 
 use crate::pre_call::failure::PreCallFailure;
 use crate::pre_call::key::PreCallKey;
@@ -109,10 +109,7 @@ fn every_route_type_text_parses_back_to_itself() {
 #[case::missing_underscore("arealtime")]
 #[case::case_differs("Acompletion")]
 fn route_type_rejects_unknown_text(#[case] text: &str) {
-    assert_eq!(
-        text.parse::<RouteType>(),
-        Err(strum::ParseError::VariantNotFound)
-    );
+    assert_eq!(text.parse::<RouteType>(), Err(ParseError::VariantNotFound));
 }
 
 #[rstest]
