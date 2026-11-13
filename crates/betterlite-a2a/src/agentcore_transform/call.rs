@@ -20,7 +20,7 @@ pub struct SignedRequestCall<'call> {
 pub struct HandlerCall<'call> {
     pub request_id: &'call str,
     pub params: &'call MessageSendParams,
-    pub litellm_params: &'call LitellmParams,
+    pub litellm_params: LitellmParams,
     pub agent_extra_headers: Option<&'call BTreeMap<String, String>>,
 }
 

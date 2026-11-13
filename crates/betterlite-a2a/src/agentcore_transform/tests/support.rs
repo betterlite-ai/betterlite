@@ -88,15 +88,13 @@ pub(crate) fn fixture() -> FixtureRuntime {
     }
 }
 
+type Params = BTreeMap<String, AgentJson>;
+
 impl AgentCoreRuntime for FixtureRuntime {
     type Error = FixtureError;
     type Lines = stream::Iter<std::vec::IntoIter<Result<String, FixtureError>>>;
 
-    fn complete_url(
-        &self,
-        model: &str,
-        _optional_params: &BTreeMap<String, AgentJson>,
-    ) -> Result<String, Self::Error> {
+    fn complete_url(&self, model: &str, _optional_params: &Params) -> Result<String, Self::Error> {
         match self.url_error {
             Some(message) => Err(FixtureError(message)),
             None => Ok(format!("{}{model}", self.url)),
@@ -105,7 +103,7 @@ impl AgentCoreRuntime for FixtureRuntime {
 
     fn session_id(
         &self,
-        _optional_params: &BTreeMap<String, AgentJson>,
+        _optional_params: &Params,
         generated: Uuid,
     ) -> Result<String, Self::Error> {
         match self.session_error {
@@ -114,14 +112,11 @@ impl AgentCoreRuntime for FixtureRuntime {
         }
     }
 
-    fn user_id(
-        &self,
-        _optional_params: &BTreeMap<String, AgentJson>,
-    ) -> Result<Option<String>, Self::Error> {
-        match self.user_error {
-            Some(message) => Err(FixtureError(message)),
-            None => Ok(self.user.clone()),
+    fn user_id(&self, _optional_params: &Params) -> Result<Option<String>, Self::Error> {
+        if let Some(message) = self.user_error {
+            return Err(FixtureError(message));
         }
+        Ok(self.user.clone())
     }
 
     async fn sign(&self, request: &SigningRequest<'_>) -> Result<SignedRequest, Self::Error> {

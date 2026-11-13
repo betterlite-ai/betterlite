@@ -32,7 +32,7 @@ fn handler_call<'call>(
     HandlerCall {
         request_id: "req-1",
         params: request,
-        litellm_params,
+        litellm_params: litellm_params.clone(),
         agent_extra_headers: None,
     }
 }

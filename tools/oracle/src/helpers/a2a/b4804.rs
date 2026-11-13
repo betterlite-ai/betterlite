@@ -5,7 +5,7 @@ use betterlite_core::agents::json::AgentJson;
 use serde::Deserialize;
 
 use crate::helpers::{Helper, HelperResult};
-use calls::{config, non_streaming, signed, sse, streaming};
+use calls::{Mode, call, config, sse};
 use fixture::{Answer, StreamAnswer};
 
 mod calls;
@@ -63,11 +63,12 @@ impl Helper for Op {
                 params,
                 litellm_params,
                 agent_extra_headers,
-            } => signed(
+            } => call(
                 request_id,
                 params,
                 litellm_params,
                 agent_extra_headers.as_ref(),
+                Mode::Signed,
             ),
             Input::ParseSse { lines } => sse(lines),
             Input::NonStreaming {
@@ -76,12 +77,12 @@ impl Helper for Op {
                 litellm_params,
                 agent_extra_headers,
                 answer,
-            } => non_streaming(
+            } => call(
                 request_id,
                 params,
                 litellm_params,
                 agent_extra_headers.as_ref(),
-                answer,
+                Mode::Buffered(answer),
             ),
             Input::Streaming {
                 request_id,
@@ -89,12 +90,12 @@ impl Helper for Op {
                 litellm_params,
                 agent_extra_headers,
                 answer,
-            } => streaming(
+            } => call(
                 request_id,
                 params,
                 litellm_params,
                 agent_extra_headers.as_ref(),
-                answer,
+                Mode::Streamed(answer),
             ),
             Input::Config {
                 request_id,

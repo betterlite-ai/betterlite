@@ -5,7 +5,7 @@ use betterlite_a2a::agentcore_transform::config::{BedrockAgentCoreConfig, Config
 use betterlite_a2a::agentcore_transform::params::LitellmParams;
 use betterlite_a2a::agentcore_transform::runtime::RpcMethod;
 use betterlite_a2a::agentcore_transform::{
-    AgentCoreError, TransformError, get_url_and_signed_request, parse_sse_events,
+    AgentCoreError, SignedRequest, TransformError, get_url_and_signed_request, parse_sse_events,
 };
 use betterlite_a2a::completion_bridge::wire::MessageSendParams;
 use betterlite_core::agents::json::AgentJson;
@@ -54,35 +54,90 @@ fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
         .map_err(|error| helper_failure("RuntimeError", error.to_string()))
 }
 
-pub(super) fn signed(
+fn signed_output(request: &SignedRequest) -> HelperResult {
+    let body = serde_json::from_slice(&request.body)
+        .map_err(|error| helper_failure("SerializationError", error.to_string()))?;
+    Ok(serde_json::json!({"url": request.url, "headers": request.headers, "body": body}))
+}
+
+fn handler_call<'call>(
+    request_id: &'call str,
+    params: &'call MessageSendParams,
+    litellm_params: LitellmParams,
+    agent_extra_headers: Option<&'call BTreeMap<String, String>>,
+) -> HandlerCall<'call> {
+    HandlerCall {
+        request_id,
+        params,
+        litellm_params,
+        agent_extra_headers,
+    }
+}
+
+pub(super) enum Mode<'case> {
+    Signed,
+    Buffered(&'case Answer),
+    Streamed(&'case StreamAnswer),
+}
+
+pub(super) fn call(
     request_id: &str,
     params: &MessageSendParams,
     litellm_params: &BTreeMap<String, AgentJson>,
     agent_extra_headers: Option<&BTreeMap<String, String>>,
+    mode: Mode<'_>,
 ) -> HelperResult {
     let parameters = parameters(litellm_params)?;
-    let fixture = FixtureRuntime {
-        answer: None,
-        stream: None,
-    };
-    let result = runtime()?.block_on(get_url_and_signed_request(
-        &fixture,
-        &SignedRequestCall {
-            request_id,
-            params,
-            litellm_params: &parameters,
-            method: RpcMethod::Send,
-            agent_extra_headers,
-        },
-        &mut Source,
-    ));
-    match result {
-        Ok(request) => {
-            let body = serde_json::from_slice(&request.body)
-                .map_err(|error| helper_failure("SerializationError", error.to_string()))?;
-            Ok(serde_json::json!({"url": request.url, "headers": request.headers, "body": body}))
+    let runtime = runtime()?;
+    match mode {
+        Mode::Signed => {
+            let request = runtime.block_on(get_url_and_signed_request(
+                &FixtureRuntime {
+                    answer: None,
+                    stream: None,
+                },
+                &SignedRequestCall {
+                    request_id,
+                    params,
+                    litellm_params: &parameters,
+                    method: RpcMethod::Send,
+                    agent_extra_headers,
+                },
+                &mut Source,
+            ));
+            request.map_or_else(
+                |error| Err(failed(&error)),
+                |request| signed_output(&request),
+            )
         }
-        Err(error) => Err(failed(&error)),
+        Mode::Buffered(answer) => {
+            let mut handler = AgentCoreHandler {
+                runtime: FixtureRuntime {
+                    answer: Some(answer),
+                    stream: None,
+                },
+                ids: Source,
+            };
+            let handler_call = handler_call(request_id, params, parameters, agent_extra_headers);
+            match runtime.block_on(handler.handle_non_streaming(&handler_call)) {
+                Ok(value) => Ok(value),
+                Err(error) => Err(failed(&error)),
+            }
+        }
+        Mode::Streamed(answer) => {
+            let mut handler = AgentCoreHandler {
+                runtime: FixtureRuntime {
+                    answer: None,
+                    stream: Some(answer),
+                },
+                ids: Source,
+            };
+            let handler_call = handler_call(request_id, params, parameters, agent_extra_headers);
+            match runtime.block_on(handler.handle_streaming(&handler_call)) {
+                Ok(events) => Ok(serde_json::json!({"events": collect(&runtime, events)?})),
+                Err(error) => Err(failed(&error)),
+            }
+        }
     }
 }
 
@@ -124,61 +179,6 @@ where
         Ok(values)
     });
     values.map_err(|error| failed(&error))
-}
-
-pub(super) fn non_streaming(
-    request_id: &str,
-    params: &MessageSendParams,
-    litellm_params: &BTreeMap<String, AgentJson>,
-    agent_extra_headers: Option<&BTreeMap<String, String>>,
-    answer: &Answer,
-) -> HelperResult {
-    let parameters = parameters(litellm_params)?;
-    let mut handler = AgentCoreHandler {
-        runtime: FixtureRuntime {
-            answer: Some(answer),
-            stream: None,
-        },
-        ids: Source,
-    };
-    let call = HandlerCall {
-        request_id,
-        params,
-        litellm_params: &parameters,
-        agent_extra_headers,
-    };
-    match runtime()?.block_on(handler.handle_non_streaming(&call)) {
-        Ok(value) => Ok(value),
-        Err(error) => Err(failed(&error)),
-    }
-}
-
-pub(super) fn streaming(
-    request_id: &str,
-    params: &MessageSendParams,
-    litellm_params: &BTreeMap<String, AgentJson>,
-    agent_extra_headers: Option<&BTreeMap<String, String>>,
-    answer: &StreamAnswer,
-) -> HelperResult {
-    let parameters = parameters(litellm_params)?;
-    let mut handler = AgentCoreHandler {
-        runtime: FixtureRuntime {
-            answer: None,
-            stream: Some(answer),
-        },
-        ids: Source,
-    };
-    let call = HandlerCall {
-        request_id,
-        params,
-        litellm_params: &parameters,
-        agent_extra_headers,
-    };
-    let runtime = runtime()?;
-    match runtime.block_on(handler.handle_streaming(&call)) {
-        Ok(events) => Ok(serde_json::json!({"events": collect(&runtime, events)?})),
-        Err(error) => Err(failed(&error)),
-    }
 }
 
 #[derive(serde::Serialize)]

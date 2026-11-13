@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 use std::time::UNIX_EPOCH;
 
+use betterlite_a2a::agentcore_transform::SignedRequest;
 use betterlite_a2a::agentcore_transform::runtime::{
     AgentCoreRuntime, HttpRequest, HttpResponse, SigningRequest, StreamedResponse,
 };
-use betterlite_a2a::agentcore_transform::SignedRequest;
 use betterlite_a2a::completion_bridge::EventSource;
 use betterlite_bedrock::agentcore_request::error::AgentCoreRequestError;
 use betterlite_bedrock::agentcore_request::identifiers::{runtime_session_id, runtime_user_id};
@@ -19,6 +19,8 @@ use futures_util::stream::{self, Iter};
 use secrecy::SecretString;
 use serde::Deserialize;
 use uuid::Uuid;
+
+type Params = BTreeMap<String, AgentJson>;
 
 #[derive(Clone, Deserialize)]
 pub(super) struct Answer {
@@ -52,26 +54,15 @@ impl AgentCoreRuntime for FixtureRuntime<'_> {
     type Error = Failure;
     type Lines = Iter<std::vec::IntoIter<Result<String, Failure>>>;
 
-    fn complete_url(
-        &self,
-        model: &str,
-        optional_params: &BTreeMap<String, AgentJson>,
-    ) -> Result<String, Self::Error> {
+    fn complete_url(&self, model: &str, optional_params: &Params) -> Result<String, Self::Error> {
         complete_url(model, &param_map(optional_params)).map_err(Failure::Request)
     }
 
-    fn session_id(
-        &self,
-        optional_params: &BTreeMap<String, AgentJson>,
-        generated: Uuid,
-    ) -> Result<String, Self::Error> {
+    fn session_id(&self, optional_params: &Params, generated: Uuid) -> Result<String, Self::Error> {
         runtime_session_id(&param_map(optional_params), generated).map_err(Failure::Request)
     }
 
-    fn user_id(
-        &self,
-        optional_params: &BTreeMap<String, AgentJson>,
-    ) -> Result<Option<String>, Self::Error> {
+    fn user_id(&self, optional_params: &Params) -> Result<Option<String>, Self::Error> {
         runtime_user_id(&param_map(optional_params)).map_err(Failure::Request)
     }
 
@@ -112,10 +103,9 @@ impl AgentCoreRuntime for FixtureRuntime<'_> {
 
     async fn post(&self, _request: &HttpRequest<'_>) -> Result<HttpResponse, Self::Error> {
         let answer = self.answer.ok_or(Failure::Missing("non-streaming"))?;
-        let body = serde_json::to_vec(&answer.body).map_err(Failure::Encode)?;
         Ok(HttpResponse {
             status: answer.status,
-            body,
+            body: serde_json::to_vec(&answer.body).map_err(Failure::Encode)?,
         })
     }
 

@@ -187,80 +187,79 @@ where
     }
 }
 
+fn http_request<'call>(signed: &'call SignedRequest) -> HttpRequest<'call> {
+    HttpRequest {
+        url: &signed.url,
+        headers: &signed.headers,
+        body: &signed.body,
+    }
+}
+
+fn decode_body(body: &[u8]) -> Result<AgentJson, TransformError> {
+    let value: AgentJson = serde_json::from_slice(body).map_err(TransformError::Decode)?;
+    if value.get("error").is_some() {
+        tracing::warn!("BedrockAgentCore A2A: the agent returned an error response");
+    }
+    Ok(value)
+}
+
+fn check_status<E: Error + 'static>(status: u16) -> Result<(), AgentCoreError<E>> {
+    if (200..300).contains(&status) {
+        return Ok(());
+    }
+    Err(AgentCoreError::Status { status })
+}
+
 impl<R, S> AgentCoreHandler<R, S>
 where
     R: AgentCoreRuntime,
     S: EventSource + Send,
 {
-    pub async fn handle_non_streaming(
+    async fn signed(
         &mut self,
         call: &HandlerCall<'_>,
-    ) -> Result<AgentJson, AgentCoreError<R::Error>> {
-        let signed = get_url_and_signed_request(
+        method: RpcMethod,
+    ) -> Result<SignedRequest, AgentCoreError<R::Error>> {
+        get_url_and_signed_request(
             &self.runtime,
             &SignedRequestCall {
                 request_id: call.request_id,
                 params: call.params,
-                litellm_params: call.litellm_params,
-                method: RpcMethod::Send,
+                litellm_params: &call.litellm_params,
+                method,
                 agent_extra_headers: call.agent_extra_headers,
             },
             &mut self.ids,
         )
-        .await?;
+        .await
+    }
+
+    pub async fn handle_non_streaming(
+        &mut self,
+        call: &HandlerCall<'_>,
+    ) -> Result<AgentJson, AgentCoreError<R::Error>> {
+        let signed = self.signed(call, RpcMethod::Send).await?;
         // LiteLLM branches here on client.post(..., stream=True); the runtime seam owns the HTTP client
         let response = self
             .runtime
-            .post(&HttpRequest {
-                url: &signed.url,
-                headers: &signed.headers,
-                body: &signed.body,
-            })
+            .post(&http_request(&signed))
             .await
             .map_err(AgentCoreError::Runtime)?;
-        if !(200..300).contains(&response.status) {
-            return Err(AgentCoreError::Status {
-                status: response.status,
-            });
-        }
-        let value: AgentJson =
-            serde_json::from_slice(&response.body).map_err(TransformError::Decode)?;
-        if value.get("error").is_some() {
-            tracing::warn!("BedrockAgentCore A2A: the agent returned an error response");
-        }
-        Ok(value)
+        check_status::<R::Error>(response.status)?;
+        Ok(decode_body(&response.body)?)
     }
 
     pub async fn handle_streaming(
         &mut self,
         call: &HandlerCall<'_>,
     ) -> Result<StreamedEvents<R::Error>, AgentCoreError<R::Error>> {
-        let signed = get_url_and_signed_request(
-            &self.runtime,
-            &SignedRequestCall {
-                request_id: call.request_id,
-                params: call.params,
-                litellm_params: call.litellm_params,
-                method: RpcMethod::Stream,
-                agent_extra_headers: call.agent_extra_headers,
-            },
-            &mut self.ids,
-        )
-        .await?;
+        let signed = self.signed(call, RpcMethod::Stream).await?;
         let response = self
             .runtime
-            .post_stream(&HttpRequest {
-                url: &signed.url,
-                headers: &signed.headers,
-                body: &signed.body,
-            })
+            .post_stream(&http_request(&signed))
             .await
             .map_err(AgentCoreError::Runtime)?;
-        if !(200..300).contains(&response.status) {
-            return Err(AgentCoreError::Status {
-                status: response.status,
-            });
-        }
+        check_status::<R::Error>(response.status)?;
         let json_reply = response
             .content_type
             .to_lowercase()

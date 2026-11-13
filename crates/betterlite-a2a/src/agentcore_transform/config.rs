@@ -18,6 +18,16 @@ pub struct ConfigCall<'call> {
     pub agent_extra_headers: Option<&'call BTreeMap<String, String>>,
 }
 
+fn handler_call<'call>(call: &'call ConfigCall<'_>) -> Result<HandlerCall<'call>, TransformError> {
+    let raw = call.litellm_params.ok_or(TransformError::MissingParams)?;
+    Ok(HandlerCall {
+        request_id: call.request_id,
+        params: call.params,
+        litellm_params: LitellmParams::parse(raw)?,
+        agent_extra_headers: call.agent_extra_headers,
+    })
+}
+
 pub struct BedrockAgentCoreConfig<R, S> {
     pub handler: AgentCoreHandler<R, S>,
 }
@@ -31,15 +41,8 @@ where
         &mut self,
         call: &ConfigCall<'_>,
     ) -> Result<AgentJson, AgentCoreError<R::Error>> {
-        let litellm_params =
-            LitellmParams::parse(call.litellm_params.ok_or(TransformError::MissingParams)?)?;
         self.handler
-            .handle_non_streaming(&HandlerCall {
-                request_id: call.request_id,
-                params: call.params,
-                litellm_params: &litellm_params,
-                agent_extra_headers: call.agent_extra_headers,
-            })
+            .handle_non_streaming(&handler_call(call)?)
             .await
     }
 
@@ -47,15 +50,6 @@ where
         &mut self,
         call: &ConfigCall<'_>,
     ) -> Result<StreamedEvents<R::Error>, AgentCoreError<R::Error>> {
-        let litellm_params =
-            LitellmParams::parse(call.litellm_params.ok_or(TransformError::MissingParams)?)?;
-        self.handler
-            .handle_streaming(&HandlerCall {
-                request_id: call.request_id,
-                params: call.params,
-                litellm_params: &litellm_params,
-                agent_extra_headers: call.agent_extra_headers,
-            })
-            .await
+        self.handler.handle_streaming(&handler_call(call)?).await
     }
 }

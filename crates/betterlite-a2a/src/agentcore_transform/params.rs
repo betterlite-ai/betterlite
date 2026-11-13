@@ -5,6 +5,7 @@ use secrecy::SecretString;
 
 use super::TransformError;
 
+#[derive(Clone)]
 pub struct LitellmParams {
     pub model: String,
     pub api_key: Option<SecretString>,
