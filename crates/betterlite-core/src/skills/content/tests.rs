@@ -1,7 +1,9 @@
 #![cfg(test)]
 
+use std::fmt::Debug;
 use std::io::{Cursor, Write as _};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -9,10 +11,15 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::managed_resource_rows::skills::SkillTable;
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
+use tracing::field::{Field, Visit};
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing::{Event, Level, Subscriber};
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
+use tracing_subscriber::registry;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
-use super::decode::{DecodeError, MAX_ARCHIVE_ENTRIES, MAX_COMPRESSED_BYTES, decode_skill_zip};
+use super::decode::{DecodeError, MAX_ARCHIVE_ENTRIES, decode_skill_zip};
 use super::files::extract_all_files;
 use super::inject::{SkillContentError, inject_skill_content_to_messages};
 use super::prompt::extract_skill_content;
@@ -81,7 +88,7 @@ fn numbered_entries(count: usize) -> Vec<u8> {
     output.into_inner()
 }
 
-fn expansion_archive() -> Vec<u8> {
+fn expansion_archive(huge_bytes: usize) -> Vec<u8> {
     let mut output = Cursor::new(Vec::new());
     let mut writer = ZipWriter::new(&mut output);
     let options = SimpleFileOptions::default()
@@ -90,12 +97,52 @@ fn expansion_archive() -> Vec<u8> {
     writer.start_file("skill/small.txt", options).unwrap();
     writer.write_all(b"keep").unwrap();
     writer.start_file("skill/huge.bin", options).unwrap();
-    let zeros = [0_u8; 1024 * 1024];
-    for _ in 0..65 {
-        writer.write_all(&zeros).unwrap();
-    }
+    writer.write_all(&vec![0_u8; huge_bytes]).unwrap();
     writer.finish().unwrap();
     output.into_inner()
+}
+
+#[derive(Clone, Default)]
+struct Warnings(Arc<Mutex<Vec<String>>>);
+
+impl Warnings {
+    fn messages(&self) -> Vec<String> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+#[derive(Default)]
+struct MessageField(String);
+
+impl Visit for MessageField {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
+        if field.name() == "message" {
+            self.0 = format!("{value:?}");
+        }
+    }
+}
+
+impl<Inner: Subscriber> Layer<Inner> for Warnings {
+    fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
+        if *event.metadata().level() != Level::WARN {
+            return;
+        }
+        let mut field = MessageField::default();
+        event.record(&mut field);
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(field.0);
+    }
+}
+
+fn capture_warnings() -> (Warnings, DefaultGuard) {
+    let warnings = Warnings::default();
+    let guard = set_default(registry().with(warnings.clone()));
+    (warnings, guard)
 }
 
 fn text(value: &str) -> Json {
@@ -247,22 +294,95 @@ fn files_without_stored_content_are_empty(#[case] content: Option<&str>) {
 
 #[test]
 fn files_keep_entries_read_before_the_expansion_limit() {
-    let skill = archive_row(&expansion_archive(), Some("fallback"));
+    let (warnings, _guard) = capture_warnings();
+    let skill = archive_row(&expansion_archive(65 * 1024 * 1024), Some("fallback"));
     let files = extract_all_files(&skill);
     assert_eq!(files.len(), 1);
     assert_eq!(files.get("small.txt"), Some(&b"keep".to_vec()));
+    assert_eq!(
+        warnings.messages(),
+        [
+            "SkillPromptInjectionHandler: Error extracting files from skill litellm_skill_demo: the archive expands past the 67108864 byte budget"
+        ]
+    );
+}
+
+#[test]
+fn files_read_an_archive_that_fills_the_expansion_budget_exactly() {
+    let huge_bytes = 64 * 1024 * 1024 - 4;
+    let skill = archive_row(&expansion_archive(huge_bytes), Some("fallback"));
+    let files = extract_all_files(&skill);
+    assert_eq!(files.len(), 2);
+    assert_eq!(files.get("huge.bin").map(Vec::len), Some(huge_bytes));
+}
+
+#[test]
+fn files_warn_when_an_entry_cannot_be_read() {
+    let (warnings, _guard) = capture_warnings();
+    let skill = archive_row(&zip_bytes(CORRUPT_ZIP), Some("fallback"));
+    let files = extract_all_files(&skill);
+    assert_eq!(files.len(), 1);
+    let messages = warnings.messages();
+    assert_eq!(messages.len(), 1);
+    assert!(messages[0].starts_with(
+        "SkillPromptInjectionHandler: Error extracting files from skill litellm_skill_demo: entry skill/bad.md"
+    ));
+}
+
+#[test]
+fn files_warn_about_each_invalid_path() {
+    let (warnings, _guard) = capture_warnings();
+    let skill = archive_row(&zip_bytes(PATHS_ZIP), Some("fallback"));
+    let _files = extract_all_files(&skill);
+    assert_eq!(
+        warnings.messages(),
+        [
+            "SkillPromptInjectionHandler: Skipping entry with invalid path in skill litellm_skill_demo: skill/..notes",
+            "SkillPromptInjectionHandler: Skipping entry with invalid path in skill litellm_skill_demo: skill/../escape.txt",
+            "SkillPromptInjectionHandler: Skipping entry with invalid path in skill litellm_skill_demo: skill//etc/passwd",
+        ]
+    );
+}
+
+#[test]
+fn files_warn_before_a_duplicate_path_replaces_the_first() {
+    let (warnings, _guard) = capture_warnings();
+    let entries = write_archive(
+        &[("skill/a/../dup.txt", b"one"), ("skill/dup.txt", b"two")],
+        CompressionMethod::Stored,
+    );
+    let _files = extract_all_files(&archive_row(&entries, Some("fallback")));
+    assert_eq!(
+        warnings.messages(),
+        [
+            "SkillPromptInjectionHandler: Duplicate path in skill litellm_skill_demo for entry skill/dup.txt"
+        ]
+    );
+}
+
+#[test]
+fn markdown_warns_after_a_decode_failure() {
+    let (warnings, _guard) = capture_warnings();
+    let skill = row(Some(NOT_UTF8_ZIP), Some("fallback"));
+    assert_eq!(extract_skill_content(&skill), Some("fallback".to_owned()));
+    assert_eq!(
+        warnings.messages(),
+        [
+            "SkillPromptInjectionHandler: Error extracting content from skill litellm_skill_demo: entry skill/SKILL.md is not valid UTF-8"
+        ]
+    );
 }
 
 #[test]
 fn decode_rejects_an_archive_past_the_compressed_limit() {
-    let bytes = vec![0_u8; MAX_COMPRESSED_BYTES + 1];
+    let bytes = vec![0_u8; 16 * 1024 * 1024 + 1];
     let error = decode_skill_zip(bytes).unwrap_err();
     assert!(matches!(error, DecodeError::ArchiveTooLarge { .. }));
 }
 
 #[test]
 fn decode_checks_the_compressed_limit_before_parsing() {
-    let bytes = vec![0_u8; MAX_COMPRESSED_BYTES];
+    let bytes = vec![0_u8; 16 * 1024 * 1024];
     let error = decode_skill_zip(bytes).unwrap_err();
     assert!(matches!(error, DecodeError::NotAnArchive(_)));
 }

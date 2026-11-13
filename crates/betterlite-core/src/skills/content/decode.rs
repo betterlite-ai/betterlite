@@ -1,4 +1,4 @@
-use std::io::{self, Cursor};
+use std::io::{self, Cursor, Read as _};
 use std::str::Utf8Error;
 
 use base64::Engine as _;
