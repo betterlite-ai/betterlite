@@ -1,6 +1,6 @@
 import time
 from functools import partial
-from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict
+from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -11,24 +11,13 @@ from litellm.types.llms.openai import AllMessageValues
 from litellm.types.utils import Choices, Message, ModelResponse
 from pydantic import JsonValue, TypeAdapter
 
+from .views import Transform
+
 REAL_TIME: Final = time.time
 Role: TypeAlias = Literal["assistant", "user", "system", "tool", "function"]
-PEGASUS = pegasus_module.AmazonTwelveLabsPegasusConfig()
 
-
-class Mapper(Protocol):
-    def map_openai_params(
-        self,
-        non_default_params: dict[str, JsonValue],
-        optional_params: dict[str, JsonValue],
-        model: str,
-        *,
-        drop_params: bool,
-    ) -> dict[str, JsonValue]: ...
-
-
-# LiteLLM leaves the optional params bare, so this typed view is the public entry to the mapping
-MAPPER: Mapper = PEGASUS
+# LiteLLM leaves these signatures bare, so views.pyi is the typed view of the public entry points
+VIEW: Transform = pegasus_module.AmazonTwelveLabsPegasusConfig()
 
 
 class MessageSeed(TypedDict):
@@ -131,7 +120,7 @@ def build_model_response(seed: ResponseSeed) -> ModelResponse:
 def request_params(
     messages: list[AllMessageValues], optional_params: dict[str, JsonValue]
 ) -> dict[str, JsonValue]:
-    return PEGASUS.transform_request(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_twelvelabs_pegasus_transformation.py#L103-L130
+    return VIEW.transform_request(
         model="",
         messages=messages,
         optional_params=optional_params,
@@ -149,8 +138,8 @@ def request_view(
 
 def mapping_view(call: MappingCall) -> JsonValue:
     supported: list[JsonValue] = []
-    supported.extend(PEGASUS.get_supported_openai_params(model=""))
-    mapped = MAPPER.map_openai_params(
+    supported.extend(VIEW.get_supported_openai_params(model=""))
+    mapped = VIEW.map_openai_params(
         non_default_params=call["non_default"],
         optional_params=call["optional_params"],
         model="",
@@ -172,7 +161,7 @@ def reply_view(call: ReplyCall) -> JsonValue:
     )
     time.time = partial(float, call["now"])
     try:
-        transformed = PEGASUS.transform_response(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_twelvelabs_pegasus_transformation.py#L182-L270
+        transformed = VIEW.transform_response(
             model=call["model"],
             raw_response=response,
             model_response=build_model_response(call["response"]),
