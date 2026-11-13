@@ -7,7 +7,21 @@ use betterlite_models::model_registration::JsonObject;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::router_predicates::params::{ParamSupport, ResolvedProvider};
 use crate::static_eligibility::optional::{CooldownRecorder, DeploymentPreCallCheck, PreCallError};
+use crate::static_eligibility::request::RequestFacts;
 use crate::static_eligibility::tokens::{TokenCountError, TokenCounter, TokenLimits};
+
+pub(crate) fn facts() -> RequestFacts {
+    RequestFacts {
+        messages: None,
+        system: None,
+        tools: Vec::new(),
+        response_format: false,
+        target_order: None,
+        input_token_count: None,
+        compaction_pending: false,
+        drop_params: false,
+    }
+}
 
 pub(crate) fn spec(name: &str, id: &str, model: &str, info: &str) -> DeploymentSpec {
     let params = format!(r#"{{"model":"{model}"}}"#);

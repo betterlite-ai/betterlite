@@ -4,7 +4,7 @@ use betterlite_models::deployment_filters::{OrderedDeployment, get_order_filtere
 use crate::deployment_catalog::types::Candidates;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::router_predicates::params::ParamSupport;
-use crate::static_eligibility::environment::model_info_is_active_for_environment;
+use crate::static_eligibility::environment::active_in_environment;
 use crate::static_eligibility::error::EligibilityError;
 use crate::static_eligibility::params::filter_supported_params;
 use crate::static_eligibility::request::RequestFacts;
@@ -104,7 +104,7 @@ pub fn eligible(
     };
     let mut active = Vec::new();
     for deployment in deployments {
-        if model_info_is_active_for_environment(&deployment.model_info, input.environment)? {
+        if active_in_environment(&deployment.model_info, input.environment)? {
             active.push(deployment);
         } else {
             causes.push(Cause::Environment {

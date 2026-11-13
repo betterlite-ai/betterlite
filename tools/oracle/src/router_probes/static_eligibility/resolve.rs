@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::deployment_catalog::types::Candidates;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
-use betterlite_router::static_eligibility::environment::model_info_is_active_for_environment;
+use betterlite_router::static_eligibility::environment::active_in_environment;
 
 use super::{API_KEY, Entry, Input, Lookup};
 use crate::router_probes::error::OperationError;
@@ -42,12 +42,11 @@ pub(super) fn model_info(entry: &Entry) -> JsonObject {
 // One registered deployment; None when Router would have skipped it at construction because of its environment.
 fn spec(input: &Input, entry: &Entry) -> Result<Option<DeploymentSpec>, OperationError> {
     let info = model_info(entry);
-    let active =
-        model_info_is_active_for_environment(&info, Some(&input.environment)).map_err(|error| {
-            OperationError::InvalidRequest {
-                message: error.to_string(),
-            }
-        })?;
+    let active = active_in_environment(&info, Some(&input.environment)).map_err(|error| {
+        OperationError::InvalidRequest {
+            message: error.to_string(),
+        }
+    })?;
     if !active {
         return Ok(None);
     }

@@ -2,13 +2,11 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
 
-use super::support::{InfoLimits, Support, ids, spec, with_param};
+use super::support::{InfoLimits, Support, facts as empty_facts, ids, spec, with_param};
 use crate::deployment_catalog::types::Candidates;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::router_predicates::params::{ParamSupport, ResolvedProvider};
-use crate::static_eligibility::environment::{
-    EnvironmentError, model_info_is_active_for_environment,
-};
+use crate::static_eligibility::environment::{EnvironmentError, active_in_environment};
 use crate::static_eligibility::error::EligibilityError;
 use crate::static_eligibility::filter::{
     Cause, EligibilityInput, EligibilityResult, EligibilityServices, eligible,
@@ -53,11 +51,10 @@ fn windowed(id: &str, maximum: u64) -> DeploymentSpec {
 }
 
 fn counted(tokens: usize) -> RequestFacts {
-    RequestFacts {
-        messages: Some(vec![Json::Object(JsonObject::new())]),
-        input_token_count: Some(tokens),
-        ..RequestFacts::default()
-    }
+    let mut facts = empty_facts();
+    facts.messages = Some(vec![Json::Object(JsonObject::new())]);
+    facts.input_token_count = Some(tokens);
+    facts
 }
 
 fn number(value: i64) -> Json {
@@ -200,10 +197,8 @@ fn context_zero_limit_needs_a_zero_count() {
 }
 
 fn context_without_a_count_skips() {
-    let facts = RequestFacts {
-        messages: Some(vec![Json::Object(JsonObject::new())]),
-        ..RequestFacts::default()
-    };
+    let mut facts = empty_facts();
+    facts.messages = Some(vec![Json::Object(JsonObject::new())]);
     let result = run(
         Candidates::Pool(vec![windowed("tiny", 1)]),
         &facts,
@@ -215,10 +210,8 @@ fn context_without_a_count_skips() {
 }
 
 fn order_target_without_a_match_empties() {
-    let facts = RequestFacts {
-        target_order: Some(7),
-        ..RequestFacts::default()
-    };
+    let mut facts = empty_facts();
+    facts.target_order = Some(7);
     let result = run(
         Candidates::Pool(vec![
             with_param(spec("gpt", "one", "openai/gpt-4o", ""), "order", number(1)),
@@ -265,7 +258,7 @@ fn order_source(deployments: Vec<DeploymentSpec>, expected: &[&str]) {
 fn environment_not_a_list() {
     let info: JsonObject =
         serde_json::from_str(r#"{"supported_environments":"production"}"#).unwrap();
-    let error = model_info_is_active_for_environment(&info, Some("production")).unwrap_err();
+    let error = active_in_environment(&info, Some("production")).unwrap_err();
     match error {
         EnvironmentError::NotList { value, model_info } => {
             assert_eq!(value, "\"production\"");
@@ -279,7 +272,7 @@ fn environment_unset() {
     let info: JsonObject =
         serde_json::from_str(r#"{"supported_environments":["production"]}"#).unwrap();
     assert_eq!(
-        model_info_is_active_for_environment(&info, None),
+        active_in_environment(&info, None),
         Err(EnvironmentError::MissingEnvironment)
     );
 }
@@ -288,7 +281,7 @@ fn environment_unknown_value() {
     let info: JsonObject =
         serde_json::from_str(r#"{"supported_environments":["production"]}"#).unwrap();
     assert_eq!(
-        model_info_is_active_for_environment(&info, Some("qa")),
+        active_in_environment(&info, Some("qa")),
         Err(EnvironmentError::UnknownEnvironment {
             value: "qa".to_owned()
         })
@@ -297,7 +290,7 @@ fn environment_unknown_value() {
 
 fn environment_unknown_supported_entry() {
     let info: JsonObject = serde_json::from_str(r#"{"supported_environments":["qa"]}"#).unwrap();
-    let error = model_info_is_active_for_environment(&info, Some("production")).unwrap_err();
+    let error = active_in_environment(&info, Some("production")).unwrap_err();
     assert!(matches!(
         error,
         EnvironmentError::UnknownSupportedEnvironment { value, .. } if value == "\"qa\""
@@ -339,10 +332,8 @@ fn empty_pool_has_no_causes() {
 }
 
 fn web_search_non_boolean_flag() {
-    let facts = RequestFacts {
-        tools: vec![serde_json::from_str(r#"{"type":"web_search"}"#).unwrap()],
-        ..RequestFacts::default()
-    };
+    let mut facts = empty_facts();
+    facts.tools = vec![serde_json::from_str(r#"{"type":"web_search"}"#).unwrap()];
     let result = run(
         Candidates::Pool(vec![spec(
             "gpt",
@@ -392,11 +383,10 @@ impl ParamSupport for ModelSupport {
 }
 
 fn response_format_facts() -> RequestFacts {
-    RequestFacts {
-        messages: Some(vec![Json::Object(JsonObject::new())]),
-        response_format: true,
-        ..RequestFacts::default()
-    }
+    let mut facts = empty_facts();
+    facts.messages = Some(vec![Json::Object(JsonObject::new())]);
+    facts.response_format = true;
+    facts
 }
 
 fn params_base_model(deployment: DeploymentSpec) {

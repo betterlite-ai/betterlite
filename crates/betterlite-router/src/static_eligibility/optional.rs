@@ -86,8 +86,8 @@ pub trait CooldownRecorder: Send + Sync {
     fn record_rate_limit(&self, deployment_id: &str, status: u16);
 }
 
-// routing_strategy_pre_call_checks: every registered check runs in order and the first failure stops the request.
-pub fn routing_strategy_pre_call_checks(
+// routing_strategy_checks: every registered check runs in order and the first failure stops the request.
+pub fn routing_strategy_checks(
     deployment: &DeploymentSpec,
     checks: &[&dyn DeploymentPreCallCheck],
 ) -> Result<(), PreCallError> {
@@ -107,8 +107,8 @@ fn rate_limit(failure: &PreCallError) -> Option<(&str, u16)> {
     }
 }
 
-// async_routing_strategy_pre_call_checks: a rate limit records the cooldown before the same error goes up.
-pub async fn async_routing_strategy_pre_call_checks(
+// async_routing_strategy_checks: a rate limit records the cooldown before the same error goes up.
+pub async fn async_routing_strategy_checks(
     deployment: &DeploymentSpec,
     checks: &[&dyn DeploymentPreCallCheck],
     cooldown: &dyn CooldownRecorder,

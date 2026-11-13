@@ -110,8 +110,7 @@ where
     counter.count_messages(&counted, payload.tools).await
 }
 
-// _acount_pre_call_check_tokens: no messages means nothing to count, no declared limit means the count is not needed,
-// and an uncountable prompt leaves the deployments unfiltered.
+// The off-loop pre-call count: no messages or no declared limit skips it, and a failed count leaves the deployments unfiltered.
 pub async fn count_for_pre_call_checks<L, C>(
     model: &str,
     deployments: &[DeploymentSpec],
@@ -189,8 +188,7 @@ fn cause_model<'deployment>(
     }
 }
 
-// The context-window arm of _pre_call_checks: a deployment whose declared window is smaller than the prompt is out,
-// and a prompt no deployment can hold is the ContextWindowExceededError.
+// The context-window arm of _pre_call_checks: an over-window deployment is out, and no deployment left is the error.
 pub fn filter_context_window<L>(
     model: &str,
     deployments: Vec<DeploymentSpec>,

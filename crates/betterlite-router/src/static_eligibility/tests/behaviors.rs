@@ -1,7 +1,9 @@
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 
-use super::support::{Cooldown, FixedCounter, InfoLimits, Support, ids, spec, with_param};
+use super::support::{
+    Cooldown, FixedCounter, InfoLimits, Support, facts as empty_facts, ids, spec, with_param,
+};
 use crate::deployment_catalog::types::Candidates;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::static_eligibility::error::EligibilityError;
@@ -10,7 +12,7 @@ use crate::static_eligibility::filter::{
 };
 use crate::static_eligibility::optional::{
     CooldownRecorder, DeploymentPreCallCheck, EnabledChecks, OptionalPreCallCheck, PreCallError,
-    async_routing_strategy_pre_call_checks, routing_strategy_pre_call_checks,
+    async_routing_strategy_checks, routing_strategy_checks,
 };
 use crate::static_eligibility::request::RequestFacts;
 use crate::static_eligibility::tokens::{
@@ -66,10 +68,9 @@ fn message(content: &str) -> Json {
 }
 
 fn message_facts(content: &str) -> RequestFacts {
-    RequestFacts {
-        messages: Some(vec![message(content)]),
-        ..RequestFacts::default()
-    }
+    let mut facts = empty_facts();
+    facts.messages = Some(vec![message(content)]);
+    facts
 }
 
 fn pool(deployments: Vec<DeploymentSpec>) -> Candidates {
@@ -188,10 +189,8 @@ fn environment_selection(rows: &[(&str, &str)], expected: &[&str], causes: &[Cau
 }
 
 fn web_search_drops_unsupported() {
-    let facts = RequestFacts {
-        tools: vec![tool("web_search")],
-        ..RequestFacts::default()
-    };
+    let mut facts = empty_facts();
+    facts.tools = vec![tool("web_search")];
     let result = run(
         pool(vec![
             spec(
@@ -217,10 +216,8 @@ fn web_search_drops_unsupported() {
 }
 
 fn web_search_other_tool_keeps_all() {
-    let facts = RequestFacts {
-        tools: vec![tool("function")],
-        ..RequestFacts::default()
-    };
+    let mut facts = empty_facts();
+    facts.tools = vec![tool("function")];
     let result = run(
         pool(vec![spec(
             "gpt",
@@ -311,10 +308,8 @@ fn context_raises_when_no_window_fits() {
 }
 
 fn context_skips_without_messages() {
-    let facts = RequestFacts {
-        input_token_count: Some(1000),
-        ..RequestFacts::default()
-    };
+    let mut facts = empty_facts();
+    facts.input_token_count = Some(1000);
     let result = run(
         pool(vec![spec(
             "gpt",
@@ -448,10 +443,8 @@ fn order_selection(rows: &[(&str, Option<i64>)], target: Option<i64>, expected: 
             None => deployments.push(deployment),
         }
     }
-    let facts = RequestFacts {
-        target_order: target,
-        ..RequestFacts::default()
-    };
+    let mut facts = empty_facts();
+    facts.target_order = target;
     let result = run(pool(deployments), &facts, false, &support()).unwrap();
     assert_eq!(ids(&result.deployments), expected);
 }
@@ -518,7 +511,7 @@ fn pre_call_checks_propagate_the_failure() {
         }),
     };
     let view: &dyn DeploymentPreCallCheck = &check;
-    let result = routing_strategy_pre_call_checks(&spec("gpt", "d1", "openai/gpt-4o", ""), &[view]);
+    let result = routing_strategy_checks(&spec("gpt", "d1", "openai/gpt-4o", ""), &[view]);
     assert_eq!(
         result,
         Err(PreCallError::Failed {
@@ -552,12 +545,9 @@ async fn async_pre_call_checks_record_the_cooldown_then_fail() {
     };
     let view: &dyn DeploymentPreCallCheck = &check;
     let cooldown = Cooldown::default();
-    let result = async_routing_strategy_pre_call_checks(
-        &spec("gpt", "d1", "openai/gpt-4o", ""),
-        &[view],
-        &cooldown,
-    )
-    .await;
+    let result =
+        async_routing_strategy_checks(&spec("gpt", "d1", "openai/gpt-4o", ""), &[view], &cooldown)
+            .await;
     assert!(matches!(result, Err(PreCallError::RateLimited { .. })));
     let recorded = cooldown
         .recorded

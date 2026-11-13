@@ -3,7 +3,7 @@ use betterlite_models::model_registration::JsonObject;
 
 pub const VALID_ENVIRONMENTS: [&str; 3] = ["development", "staging", "production"];
 
-// The ValueError texts of model_info_is_active_for_environment, with the deployment's model_info kept as it was read.
+// The ValueError texts of active_in_environment, with the deployment's model_info kept as it was read.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum EnvironmentError {
     #[error(
@@ -29,8 +29,8 @@ fn listing(value: &Json) -> String {
     }
 }
 
-// model_info_is_active_for_environment: a deployment with supported_environments loads only where LITELLM_ENVIRONMENT is listed.
-pub fn model_info_is_active_for_environment(
+// active_in_environment: a deployment with supported_environments loads only where LITELLM_ENVIRONMENT is listed.
+pub fn active_in_environment(
     model_info: &JsonObject,
     environment: Option<&str>,
 ) -> Result<bool, EnvironmentError> {
