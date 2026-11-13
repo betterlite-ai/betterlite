@@ -4,10 +4,10 @@ call:
   vertex_interactions:
     mint: {token: minted-token}
     calls:
-      - {function: url, litellm_params: {vertex_project: project-1, vertex_location: us-central1}}
-      - {function: url, litellm_params: {vertex_project: project-1, vertex_location: us}}
-      - {function: url, litellm_params: {vertex_project: project-1, vertex_ai_location: eu}}
-      - {function: url, litellm_params: {vertex_project: project-1}, api_base: "https://proxy.example/v1"}
-      - {function: url, litellm_params: {vertex_project: project-1}, api_base: ""}
+      - {function: url, api_base: "", stream: false, interaction_id: "", headers: {}, params: {vertex_project: project-1, vertex_location: us-central1}}
+      - {function: url, api_base: "", stream: false, interaction_id: "", headers: {}, params: {vertex_project: project-1, vertex_location: us}}
+      - {function: url, api_base: "", stream: false, interaction_id: "", headers: {}, params: {vertex_project: project-1, vertex_ai_location: eu}}
+      - {function: url, api_base: "https://proxy.example/v1", stream: false, interaction_id: "", headers: {}, params: {vertex_project: project-1}}
+      - {function: url, api_base: "", stream: false, interaction_id: "", headers: {}, params: {vertex_project: project-1}}
 env: {}
 compare: {ignore: []}

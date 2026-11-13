@@ -4,6 +4,6 @@ call:
   vertex_interactions:
     mint: {token: minted-token}
     calls:
-      - {function: url}
+      - {function: url, api_base: "", stream: false, interaction_id: "", headers: {}, params: {}}
 env: {}
 compare: {ignore: []}

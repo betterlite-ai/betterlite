@@ -8,11 +8,10 @@ use betterlite_vertex::studio_interactions::urls::Lifecycle;
 use betterlite_vertex::token_cache::probe::AccessToken;
 use betterlite_vertex::vertex_interactions::config::{InteractionCall, VertexInteractionsConfig};
 use betterlite_vertex::vertex_interactions::mint::{MintAccessToken, MintFuture};
-use betterlite_vertex::vertex_interactions::{API_VERSION, DEFAULT_LOCATION, PROVIDER};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use crate::helpers::OrHelperError as _;
 
@@ -33,56 +32,24 @@ struct Mint {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "function", rename_all = "snake_case")]
-enum Call {
-    Url(Box<UrlCall>),
-    Lifecycle(LifecycleCall),
-    Headers(HeadersCall),
-    Identity,
-}
-
-#[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Params {
-    #[serde(rename = "vertex_project")]
-    project: Option<String>,
-    #[serde(rename = "vertex_ai_project")]
-    ai_project: Option<String>,
-    #[serde(rename = "vertex_location")]
-    location: Option<String>,
-    #[serde(rename = "vertex_ai_location")]
-    ai_location: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct UrlCall {
-    #[serde(default)]
-    api_base: Option<String>,
-    #[serde(default)]
+struct Call {
+    function: Function,
+    api_base: String,
     stream: bool,
-    #[serde(default)]
-    litellm_params: Params,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct LifecycleCall {
-    action: Lifecycle,
+    params: BTreeMap<String, String>,
     interaction_id: String,
-    #[serde(default)]
-    api_base: Option<String>,
-    #[serde(default)]
-    litellm_params: Params,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct HeadersCall {
-    #[serde(default)]
     headers: BTreeMap<String, String>,
     #[serde(default)]
-    litellm_params: Params,
+    action: Option<Lifecycle>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Function {
+    Url,
+    Lifecycle,
+    Headers,
 }
 
 // the injected mint of the source: a fixed token, and the case's project or the one the getters resolved
@@ -97,16 +64,14 @@ impl MintAccessToken for FixtureMint {
         _credentials: Option<&'mint ConfiguredCredentials>,
         project: Option<&'mint str>,
     ) -> MintFuture<'mint> {
-        let resolved = self
-            .project
-            .clone()
-            .or_else(|| project.map(str::to_owned))
-            .unwrap_or_default();
+        let resolved = self.project.clone().or_else(|| project.map(str::to_owned));
         let token = SecretString::from(self.token.clone());
-        Box::pin(std::future::ready(Ok(AccessToken {
-            token,
-            project: resolved,
-        })))
+        Box::pin(async move {
+            Ok(AccessToken {
+                token,
+                project: resolved.unwrap_or_default(),
+            })
+        })
     }
 }
 
@@ -136,86 +101,70 @@ async fn execute(input: &Input) -> crate::helpers::HelperResult {
     Ok(json!({ "calls": replies }))
 }
 
+fn interaction_call<'call>(
+    call: &'call Call,
+    settings: &'call VertexSettings,
+) -> InteractionCall<'call> {
+    InteractionCall {
+        api_base: Some(call.api_base.as_str()),
+        params: VertexParams {
+            project: call.params.get("vertex_project").map(String::as_str),
+            ai_project: call.params.get("vertex_ai_project").map(String::as_str),
+            location: call.params.get("vertex_location").map(String::as_str),
+            ai_location: call.params.get("vertex_ai_location").map(String::as_str),
+            credentials: None,
+            ai_credentials: None,
+        },
+        settings,
+    }
+}
+
+fn caller_headers(headers: &BTreeMap<String, String>) -> IndexMap<String, String> {
+    headers
+        .iter()
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect()
+}
+
+fn rendered_headers(headers: &IndexMap<String, SecretString>) -> IndexMap<String, String> {
+    headers
+        .iter()
+        .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
+        .collect()
+}
+
 async fn resolve(
     config: &VertexInteractionsConfig,
     settings: &VertexSettings,
     call: &Call,
 ) -> crate::helpers::HelperResult {
-    match call {
-        Call::Url(given) => url_call(config, settings, given).await.or_value_error(),
-        Call::Lifecycle(given) => lifecycle_call(config, settings, given)
-            .await
-            .or_value_error(),
-        Call::Headers(given) => headers_call(config, settings, given).await.or_value_error(),
-        Call::Identity => Ok(json!({
-            "provider": PROVIDER,
-            "api_version": API_VERSION,
-            "default_location": DEFAULT_LOCATION,
-        })),
-    }
-}
-
-async fn url_call(
-    config: &VertexInteractionsConfig,
-    settings: &VertexSettings,
-    given: &UrlCall,
-) -> Result<Value, betterlite_vertex::vertex_interactions::error::VertexInteractionsError> {
-    let url = config
-        .get_complete_url(
-            &interaction_call(given.api_base.as_deref(), &given.litellm_params, settings),
-            given.stream,
-        )
-        .await?;
-    Ok(json!({ "url": url }))
-}
-
-async fn lifecycle_call(
-    config: &VertexInteractionsConfig,
-    settings: &VertexSettings,
-    given: &LifecycleCall,
-) -> Result<Value, betterlite_vertex::vertex_interactions::error::VertexInteractionsError> {
-    let call = interaction_call(given.api_base.as_deref(), &given.litellm_params, settings);
-    let request = config
-        .lifecycle_request(&call, given.action, &given.interaction_id)
-        .await?;
-    Ok(json!({ "url": request.url, "body": request.body }))
-}
-
-async fn headers_call(
-    config: &VertexInteractionsConfig,
-    settings: &VertexSettings,
-    given: &HeadersCall,
-) -> Result<Value, betterlite_vertex::vertex_interactions::error::VertexInteractionsError> {
-    let caller: IndexMap<String, String> = given
-        .headers
-        .iter()
-        .map(|(name, value)| (name.clone(), value.clone()))
-        .collect();
-    let call = interaction_call(None, &given.litellm_params, settings);
-    let headers = config.headers(&call, &caller).await?;
-    let rendered: IndexMap<String, String> = headers
-        .iter()
-        .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
-        .collect();
-    Ok(json!({ "headers": rendered }))
-}
-
-fn interaction_call<'call>(
-    api_base: Option<&'call str>,
-    params: &'call Params,
-    settings: &'call VertexSettings,
-) -> InteractionCall<'call> {
-    InteractionCall {
-        api_base,
-        params: VertexParams {
-            project: params.project.as_deref(),
-            ai_project: params.ai_project.as_deref(),
-            location: params.location.as_deref(),
-            ai_location: params.ai_location.as_deref(),
-            credentials: None,
-            ai_credentials: None,
-        },
-        settings,
+    let given = interaction_call(call, settings);
+    match call.function {
+        Function::Url => {
+            let url = config
+                .get_complete_url(&given, call.stream)
+                .await
+                .or_value_error()?;
+            Ok(json!({ "url": url }))
+        }
+        Function::Lifecycle => {
+            let action = call
+                .action
+                .ok_or("a lifecycle call needs an action")
+                .or_value_error()?;
+            let request = config
+                .lifecycle_request(&given, action, &call.interaction_id)
+                .await
+                .or_value_error()?;
+            Ok(json!({ "url": request.url, "body": request.body }))
+        }
+        Function::Headers => {
+            let headers = config
+                .headers(&given, &caller_headers(&call.headers))
+                .await
+                .or_value_error()?;
+            Ok(json!({ "headers": rendered_headers(&headers) }))
+        }
     }
 }
 

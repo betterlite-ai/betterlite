@@ -98,23 +98,10 @@ impl MintAccessToken for FailingMint {
 fn params<'params>(
     project: Option<&'params str>,
     location: Option<&'params str>,
-) -> VertexParams<'params> {
-    VertexParams {
-        project,
-        ai_project: None,
-        location,
-        ai_location: None,
-        credentials: None,
-        ai_credentials: None,
-    }
-}
-
-fn aliased<'params>(
-    location: Option<&'params str>,
     alias: Option<&'params str>,
 ) -> VertexParams<'params> {
     VertexParams {
-        project: Some("project-1"),
+        project,
         ai_project: None,
         location,
         ai_location: alias,
@@ -159,22 +146,17 @@ async fn target_and_headers_mint_order() {
         },
     ]));
     let settings = VertexSettings::default();
-    let target = config(Arc::clone(&mint))
-        .target(&call(
-            None,
-            params(Some("requested-project"), None),
-            &settings,
-        ))
-        .await
-        .unwrap();
+    let given = call(
+        None,
+        params(Some("requested-project"), None, None),
+        &settings,
+    );
+    let target = config(Arc::clone(&mint)).target(&given).await.unwrap();
     assert_eq!(target.project_id, "first-project");
     assert_eq!(target.base_url, "https://aiplatform.googleapis.com");
     assert_eq!(target.location, DEFAULT_LOCATION);
     let headers = config(Arc::clone(&mint))
-        .headers(
-            &call(None, params(Some("requested-project"), None), &settings),
-            &IndexMap::new(),
-        )
+        .headers(&given, &IndexMap::new())
         .await
         .unwrap();
     assert_eq!(
@@ -196,7 +178,7 @@ async fn lyria_project_only_callback() {
         project: Some("configured-project".to_owned()),
     }));
     let settings = VertexSettings::default();
-    let given = params(Some("param-project"), Some("global"));
+    let given = params(Some("param-project"), Some("global"), None);
     assert_eq!(
         api.get_complete_url(&call(None, given, &settings), false)
             .await
@@ -204,9 +186,12 @@ async fn lyria_project_only_callback() {
         "https://aiplatform.googleapis.com/v1beta1/projects/param-project/locations/global/interactions"
     );
     assert_eq!(
-        api.get_complete_url(&call(None, params(None, Some("global")), &settings), false)
-            .await
-            .unwrap(),
+        api.get_complete_url(
+            &call(None, params(None, Some("global"), None), &settings),
+            false
+        )
+        .await
+        .unwrap(),
         "https://aiplatform.googleapis.com/v1beta1/projects/configured-project/locations/global/interactions"
     );
     let headers = api
@@ -225,7 +210,7 @@ async fn global_default_location() {
     assert_eq!(
         recording()
             .get_complete_url(
-                &call(None, params(Some("project-1"), None), &settings),
+                &call(None, params(Some("project-1"), None, None), &settings),
                 false
             )
             .await
@@ -243,7 +228,14 @@ async fn explicit_location_selects_the_host(#[case] location: &str, #[case] host
     let expected = format!("{host}/v1beta1/projects/project-1/locations/{location}/interactions");
     assert_eq!(
         recording()
-            .get_complete_url(&call(None, aliased(Some(location), None), &settings), false)
+            .get_complete_url(
+                &call(
+                    None,
+                    params(Some("project-1"), Some(location), None),
+                    &settings
+                ),
+                false
+            )
             .await
             .unwrap(),
         expected
@@ -259,7 +251,14 @@ async fn location_alias_selects_the_host(#[case] alias: &str, #[case] host: &str
     let expected = format!("{host}/v1beta1/projects/project-1/locations/{alias}/interactions");
     assert_eq!(
         recording()
-            .get_complete_url(&call(None, aliased(None, Some(alias)), &settings), false)
+            .get_complete_url(
+                &call(
+                    None,
+                    params(Some("project-1"), None, Some(alias)),
+                    &settings
+                ),
+                false
+            )
             .await
             .unwrap(),
         expected
@@ -276,7 +275,7 @@ async fn custom_base_is_used_verbatim(#[case] api_base: Option<&str>, #[case] ba
     assert_eq!(
         recording()
             .get_complete_url(
-                &call(api_base, params(Some("project-1"), None), &settings),
+                &call(api_base, params(Some("project-1"), None, None), &settings),
                 false,
             )
             .await
@@ -292,7 +291,7 @@ async fn invalid_location_fails_even_with_a_custom_base() {
         .get_complete_url(
             &call(
                 Some("https://proxy.example"),
-                params(Some("project-1"), Some("attacker.example/")),
+                params(Some("project-1"), Some("attacker.example/"), None),
                 &settings,
             ),
             false,
@@ -310,7 +309,7 @@ async fn missing_project_fails() {
     }]));
     let settings = VertexSettings::default();
     let error = config(mint)
-        .get_complete_url(&call(None, params(None, None), &settings), false)
+        .get_complete_url(&call(None, params(None, None, None), &settings), false)
         .await
         .unwrap_err();
     assert!(matches!(error, VertexInteractionsError::MissingProject));
@@ -320,7 +319,11 @@ async fn missing_project_fails() {
 async fn mint_failure_is_carried() {
     let settings = VertexSettings::default();
     let error = config(Arc::new(FailingMint))
-        .target(&call(None, params(Some("project-1"), None), &settings))
+        .target(&call(
+            None,
+            params(Some("project-1"), None, None),
+            &settings,
+        ))
         .await
         .unwrap_err();
     assert!(matches!(error, VertexInteractionsError::Mint(_)));
@@ -336,7 +339,7 @@ async fn settings_project_and_credentials_reach_the_mint() {
         adc: AdcEnvironment::default(),
     };
     config(Arc::clone(&mint))
-        .target(&call(None, params(None, None), &settings))
+        .target(&call(None, params(None, None, None), &settings))
         .await
         .unwrap();
     assert_eq!(
@@ -357,7 +360,7 @@ async fn caller_headers_override_json_and_bearer() {
     caller.insert("X-Extra".to_owned(), "1".to_owned());
     let headers = recording()
         .headers(
-            &call(None, params(Some("project-1"), None), &settings),
+            &call(None, params(Some("project-1"), None, None), &settings),
             &caller,
         )
         .await
@@ -378,7 +381,7 @@ async fn vertex_headers_add_no_revision_or_api_key() {
     let settings = VertexSettings::default();
     let headers = recording()
         .headers(
-            &call(None, params(Some("project-1"), None), &settings),
+            &call(None, params(Some("project-1"), None, None), &settings),
             &IndexMap::new(),
         )
         .await
@@ -404,7 +407,7 @@ async fn encoded_interaction_id_is_one_segment(#[case] action: Lifecycle, #[case
     let settings = VertexSettings::default();
     let request = recording()
         .lifecycle_request(
-            &call(None, params(Some("project-1"), None), &settings),
+            &call(None, params(Some("project-1"), None, None), &settings),
             action,
             "a/b c?d#e%",
         )
@@ -426,7 +429,7 @@ async fn invalid_interaction_ids_are_refused(#[case] interaction_id: &str) {
     let settings = VertexSettings::default();
     let error = recording()
         .lifecycle_request(
-            &call(None, params(Some("project-1"), None), &settings),
+            &call(None, params(Some("project-1"), None, None), &settings),
             Lifecycle::Get,
             interaction_id,
         )
@@ -441,7 +444,7 @@ async fn streaming_collection_appends_alt_sse() {
     assert_eq!(
         recording()
             .get_complete_url(
-                &call(None, params(Some("project-1"), None), &settings),
+                &call(None, params(Some("project-1"), None, None), &settings),
                 true
             )
             .await

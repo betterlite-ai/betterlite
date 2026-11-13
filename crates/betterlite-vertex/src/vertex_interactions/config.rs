@@ -71,11 +71,12 @@ impl VertexInteractionsConfig {
         call: &InteractionCall<'_>,
         stream: bool,
     ) -> Result<String, VertexInteractionsError> {
-        let collection_url = self.target(call).await?.collection_url();
-        if stream {
-            return Ok(format!("{collection_url}?alt=sse"));
-        }
-        Ok(collection_url)
+        let url = self.target(call).await?.collection_url();
+        Ok(if stream {
+            format!("{url}?alt=sse")
+        } else {
+            url
+        })
     }
 
     // the Vertex override mints again here and only adds JSON and Bearer, so caller headers win over both

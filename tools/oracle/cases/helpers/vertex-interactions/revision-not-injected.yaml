@@ -4,8 +4,7 @@ call:
   vertex_interactions:
     mint: {token: minted-token, project: callback-project}
     calls:
-      - {function: headers, litellm_params: {vertex_project: project-1}}
-      - {function: identity}
-      - {function: headers}
+      - {function: headers, api_base: "", stream: false, interaction_id: "", params: {vertex_project: project-1}, headers: {}}
+      - {function: headers, api_base: "", stream: false, interaction_id: "", params: {}, headers: {}}
 env: {}
 compare: {ignore: []}

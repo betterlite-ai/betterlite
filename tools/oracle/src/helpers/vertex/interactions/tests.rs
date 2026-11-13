@@ -10,7 +10,7 @@ use crate::helpers::Helper as _;
 
 use super::Op;
 
-const KINDS: [&str; 4] = ["url", "lifecycle", "headers", "identity"];
+const KINDS: [&str; 3] = ["url", "lifecycle", "headers"];
 
 fn seed_sources() -> Vec<String> {
     let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");

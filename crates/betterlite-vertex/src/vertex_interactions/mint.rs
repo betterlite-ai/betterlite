@@ -1,6 +1,5 @@
 use std::future::{Future, ready};
 use std::pin::Pin;
-use std::sync::Arc;
 
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use secrecy::SecretString;
@@ -21,18 +20,14 @@ pub trait MintAccessToken: Send + Sync {
     ) -> MintFuture<'mint>;
 }
 
-// the replacement LiteLLM installs by default, VertexBase._ensure_access_token through the credential cache
-pub struct CredentialMint {
-    pub cache: Arc<CredentialCache>,
-}
-
-impl MintAccessToken for CredentialMint {
+// LiteLLM's default mint, VertexBase._ensure_access_token, is the credential cache's lookup
+impl MintAccessToken for CredentialCache {
     fn mint<'mint>(
         &'mint self,
         credentials: Option<&'mint ConfiguredCredentials>,
         project: Option<&'mint str>,
     ) -> MintFuture<'mint> {
-        Box::pin(self.cache.get_access_token(credentials, project))
+        Box::pin(self.get_access_token(credentials, project))
     }
 }
 

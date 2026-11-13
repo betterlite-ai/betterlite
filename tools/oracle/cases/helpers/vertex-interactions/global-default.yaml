@@ -4,8 +4,8 @@ call:
   vertex_interactions:
     mint: {token: minted-token}
     calls:
-      - {function: url, litellm_params: {vertex_project: project-1}}
-      - {function: url, litellm_params: {vertex_ai_project: alias-project}}
-      - {function: url, litellm_params: {vertex_project: project-1, vertex_location: ""}}
+      - {function: url, api_base: "", stream: false, interaction_id: "", headers: {}, params: {vertex_project: project-1}}
+      - {function: url, api_base: "", stream: false, interaction_id: "", headers: {}, params: {vertex_ai_project: alias-project}}
+      - {function: url, api_base: "", stream: false, interaction_id: "", headers: {}, params: {vertex_project: project-1, vertex_location: ""}}
 env: {}
 compare: {ignore: []}
