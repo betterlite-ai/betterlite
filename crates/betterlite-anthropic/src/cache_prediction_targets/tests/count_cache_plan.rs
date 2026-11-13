@@ -117,7 +117,7 @@ async fn count_cache_plan_counts_every_breakpoint() {
 async fn count_cache_plan_counts_the_whole_body_before_the_prefixes() {
     let plan = plan(TWO);
     let (result, counter, _thinking) = counted(&plan, &[Some(30), Some(10), Some(20)], true).await;
-    assert!(result.is_ok());
+    assert_eq!(result.unwrap().total_tokens, 30);
     let bodies = counter.counted_bodies();
     assert_eq!(bodies.len(), 3);
     assert_eq!(bodies[0], json(TWO));
@@ -151,14 +151,14 @@ async fn count_cache_plan_rejects_thinking_blocks_without_preservation() {
 async fn count_cache_plan_counts_thinking_blocks_when_preserved() {
     let (result, _counter, thinking) =
         counted(&plan(THINKING), &[Some(100), Some(40), Some(80)], true).await;
-    assert!(result.is_ok());
+    assert_eq!(result.unwrap().total_tokens, 100);
     assert_eq!(thinking.asked(), vec![MODEL.to_owned()]);
 }
 
 #[tokio::test]
 async fn count_cache_plan_skips_the_thinking_check_without_thinking_blocks() {
     let (result, _counter, thinking) = counted(&plan(SINGLE), &[Some(30), Some(10)], false).await;
-    assert!(result.is_ok());
+    assert_eq!(result.unwrap().total_tokens, 30);
     assert!(thinking.asked().is_empty());
 }
 

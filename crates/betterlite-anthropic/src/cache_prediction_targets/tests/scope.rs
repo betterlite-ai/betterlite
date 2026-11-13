@@ -13,7 +13,7 @@ fn scope_is_the_litellm_digest() {
 #[test]
 fn scope_hashes_non_ascii_text_as_utf8() {
     assert_eq!(
-        cache_scope("héllo", "世界", "", "x\"y\\z"),
+        cache_scope("h\u{e9}llo", "\u{4e16}\u{754c}", "", "x\"y\\z"),
         "3447059a94069de6c20dd8b111fa4152b51858cdea5333178ab3adce3aa1fc1f"
     );
 }

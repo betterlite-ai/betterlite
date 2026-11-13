@@ -83,7 +83,7 @@ fn deployment_config_extra_option_is_rejected(#[case] json: &str) {
     r#"{"model":"anthropic/claude-x","api_key":"sk-ant-api03-x","use_xai_oauth":false}"#
 )]
 fn deployment_config_extra_option_allows_a_false_default(#[case] json: &str) {
-    assert!(resolve(json).is_ok());
+    assert_eq!(resolve(json).expect("resolved").model, MODEL);
 }
 
 #[test]
@@ -109,7 +109,7 @@ fn deployment_config_extra_option_reasons_are_the_litellm_strings() {
 #[test]
 fn deployment_config_extra_option_ignores_null_values() {
     let json = r#"{"model":"anthropic/claude-x","api_key":"sk-ant-api03-x","organization":null}"#;
-    assert!(resolve(json).is_ok());
+    assert_eq!(resolve(json).expect("resolved").model, MODEL);
 }
 
 #[rstest]

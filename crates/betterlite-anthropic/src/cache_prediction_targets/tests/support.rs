@@ -101,10 +101,45 @@ impl Sent {
             .find(|(present, _)| present == name)
             .map(|(_, value)| value.as_str())
     }
+
+    fn read(request: OutboundRequest) -> Self {
+        let OutboundRequest {
+            method,
+            url,
+            headers,
+            body,
+            deadline,
+            ..
+        } = request;
+        let payload = match body {
+            RequestBody::Json(bytes) => bytes,
+            RequestBody::Empty | RequestBody::Bytes { .. } | RequestBody::Multipart { .. } => {
+                Vec::new()
+            }
+        };
+        let pairs = headers
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.to_string(),
+                    value.to_str().unwrap_or_default().to_owned(),
+                )
+            })
+            .collect();
+        Self {
+            method,
+            url: url.to_string(),
+            headers: pairs,
+            body: payload,
+            deadline,
+        }
+    }
 }
 
+type Replies = Mutex<VecDeque<Option<(u16, Vec<u8>)>>>;
+
 pub(crate) struct Script {
-    replies: Mutex<VecDeque<Option<(u16, Vec<u8>)>>>,
+    replies: Replies,
     sent: Mutex<Vec<Sent>>,
 }
 
@@ -146,39 +181,10 @@ impl CountTokensTransport for Script {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        let OutboundRequest {
-            method,
-            url,
-            headers,
-            body,
-            deadline,
-            ..
-        } = request;
-        let body = match body {
-            RequestBody::Json(bytes) => bytes,
-            RequestBody::Empty | RequestBody::Bytes { .. } | RequestBody::Multipart { .. } => {
-                Vec::new()
-            }
-        };
-        let headers = headers
-            .iter()
-            .map(|(name, value)| {
-                (
-                    name.to_string(),
-                    value.to_str().unwrap_or_default().to_owned(),
-                )
-            })
-            .collect();
         self.sent
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(Sent {
-                method,
-                url: url.to_string(),
-                headers,
-                body,
-                deadline,
-            });
+            .push(Sent::read(request));
         let reply = self
             .replies
             .lock()
@@ -188,10 +194,10 @@ impl CountTokensTransport for Script {
         ready(
             reply
                 .ok_or(TransportError::Closed)
-                .map(|(status, body)| UpstreamResponse {
+                .map(|(status, payload)| UpstreamResponse {
                     status,
                     headers: HeaderMap::new(),
-                    body,
+                    body: payload,
                 }),
         )
     }
