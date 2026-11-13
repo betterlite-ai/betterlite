@@ -7,13 +7,14 @@ use std::sync::{Arc, PoisonError};
 
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use secrecy::SecretString;
-use tokio_util::task::TaskTracker;
 
 use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::token_cache::CredentialCache;
 use crate::token_cache::error::{CredentialCacheError, needs_reauthentication};
 use crate::token_cache::key::CredentialKey;
-use crate::token_cache::probe::{AccessToken, UsableToken, try_usable_cached_token};
+use crate::token_cache::probe::{
+    AccessToken, UsableToken, try_cached_token, try_usable_cached_token,
+};
 use crate::token_cache::record::{CacheRecord, CredentialSnapshot, unpack_cached_credentials};
 use crate::token_cache::state::{TokenState, token_state};
 
@@ -23,23 +24,21 @@ use self::reauth::reauthenticate_async;
 // LiteLLM's get_access_token_async: fresh returns now, stale serves now and refreshes in the background, invalid blocks
 pub async fn get_access_token_async(
     cache: &CredentialCache,
-    tasks: &TaskTracker,
     credentials: Option<&ConfiguredCredentials>,
     project: Option<&str>,
 ) -> Result<AccessToken, CredentialCacheError> {
     let key = CredentialKey::new(credentials, project);
-    if let Some(access) = usable_or_scheduled(cache, tasks, &key, project) {
+    if let Some(access) = usable_or_scheduled(cache, &key, project) {
         return Ok(access);
     }
     // the lease covers the whole slow path so one caller refreshes and the rest read its result
     let _lease = cache.acquire_refresh_lease(&key).await?;
-    locked_access_token(cache, tasks, credentials, project, &key).await
+    locked_access_token(cache, credentials, project, &key).await
 }
 
-// a stale token is served as is; the refresh it needs runs once in the caller's tracker
+// a stale token is served as is; the refresh it needs runs once in the cache's tracker
 fn usable_or_scheduled(
     cache: &CredentialCache,
-    tasks: &TaskTracker,
     key: &CredentialKey,
     project: Option<&str>,
 ) -> Option<AccessToken> {
@@ -47,7 +46,6 @@ fn usable_or_scheduled(
     if entry.state == TokenState::Stale {
         schedule_background_refresh(
             cache,
-            tasks,
             entry.credential,
             key.to_owned(),
             entry.cached_project,
@@ -73,38 +71,8 @@ fn usable_cached(
     )
 }
 
-// one template generates both ensure-token wrappers, so their mode handling cannot drift apart
-macro_rules! ensure_access {
-    ($name:ident, method) => {
-        // LiteLLM's _ensure_access_token: the synchronous lookup behind the same mode selection
-        pub async fn $name(
-            cache: &CredentialCache,
-            credentials: Option<&ConfiguredCredentials>,
-            project: Option<&str>,
-            provider: VertexCapabilityProvider,
-        ) -> Result<AccessToken, CredentialCacheError> {
-            select_access_by_provider(provider, cache.get_access_token(credentials, project)).await
-        }
-    };
-    ($name:ident, $lookup:ident) => {
-        // LiteLLM's _ensure_access_token_async: the coordinated lookup behind the same mode selection
-        pub async fn $name(
-            cache: &CredentialCache,
-            tasks: &TaskTracker,
-            credentials: Option<&ConfiguredCredentials>,
-            project: Option<&str>,
-            provider: VertexCapabilityProvider,
-        ) -> Result<AccessToken, CredentialCacheError> {
-            select_access_by_provider(provider, $lookup(cache, tasks, credentials, project)).await
-        }
-    };
-}
-
-ensure_access!(ensure_access_token, method);
-ensure_access!(ensure_access_token_async, get_access_token_async);
-
-// the mode selection here is exhaustive, so a provider added to the enum fails this match instead of reading credentials
-async fn select_access_by_provider<Lookup>(
+// LiteLLM's _ensure_access_token and _ensure_access_token_async: gemini is Google AI Studio and reads no credentials at all
+pub async fn ensure_access_token<Lookup>(
     provider: VertexCapabilityProvider,
     lookup: Lookup,
 ) -> Result<AccessToken, CredentialCacheError>
@@ -122,18 +90,15 @@ where
 
 async fn locked_access_token(
     cache: &CredentialCache,
-    tasks: &TaskTracker,
     credentials: Option<&ConfiguredCredentials>,
     project: Option<&str>,
     key: &CredentialKey,
 ) -> Result<AccessToken, CredentialCacheError> {
     // another caller may have refreshed while this one waited for the lease
-    let fresh = usable_cached(cache, key, project)
-        .filter(|entry| entry.state == TokenState::Fresh)
-        .map(|entry| AccessToken {
-            token: entry.token,
-            project: entry.project,
-        });
+    let fresh = {
+        let records = cache.records.lock().unwrap_or_else(PoisonError::into_inner);
+        try_cached_token(&records, key, project, cache.clock.now())
+    };
     if let Some(access) = fresh {
         return Ok(access);
     }
@@ -148,7 +113,7 @@ async fn locked_access_token(
     );
     match token_state(&credential, cache.clock.now()) {
         TokenState::Fresh => validate(&credential, resolved),
-        TokenState::Stale => match stale_access(cache, tasks, key, resolved.as_deref(), &record)? {
+        TokenState::Stale => match stale_access(cache, key, resolved.as_deref(), &record)? {
             Some(access) => Ok(access),
             None => invalid_access(cache, credentials, key, record, resolved).await,
         },
@@ -179,7 +144,6 @@ fn resolved_project_alias(
 
 fn stale_access(
     cache: &CredentialCache,
-    tasks: &TaskTracker,
     key: &CredentialKey,
     resolved: Option<&str>,
     record: &CacheRecord,
@@ -189,7 +153,7 @@ fn stale_access(
     let Some(token) = credential.token.clone() else {
         return Ok(None);
     };
-    schedule_background_refresh(cache, tasks, credential, key.clone(), credential_project);
+    schedule_background_refresh(cache, credential, key.clone(), credential_project);
     Ok(Some(AccessToken {
         token,
         project: project.to_owned(),
@@ -204,12 +168,10 @@ async fn invalid_access(
     resolved: Option<String>,
 ) -> Result<AccessToken, CredentialCacheError> {
     await_background_refresh(cache, key).await;
-    let fresh = usable_cached(cache, key, resolved.as_deref())
-        .filter(|entry| entry.state == TokenState::Fresh)
-        .map(|entry| AccessToken {
-            token: entry.token,
-            project: entry.project,
-        });
+    let fresh = {
+        let records = cache.records.lock().unwrap_or_else(PoisonError::into_inner);
+        try_cached_token(&records, key, resolved.as_deref(), cache.clock.now())
+    };
     if let Some(access) = fresh {
         return Ok(access);
     }

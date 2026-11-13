@@ -32,7 +32,7 @@ use self::support::{
     reauthentication_error, snapshot,
 };
 use super::background::{RefreshJob, await_background_refresh, release_job};
-use super::{ensure_access_token, ensure_access_token_async, get_access_token_async};
+use super::{ensure_access_token, get_access_token_async};
 
 const CREDENTIAL: &str = "credential-secret-value";
 const PROJECT: &str = "project-p";
@@ -69,11 +69,13 @@ fn new_fixture(
     let clock_source: Arc<dyn CredentialClock> = clock_handle;
     let executor_handle = Arc::clone(&executor);
     let credential_executor: Arc<dyn CredentialExecutor> = executor_handle;
+    let tasks = TaskTracker::new();
+    let cache = CredentialCache::new(clock_source, credential_executor, tasks.clone());
     Fixture {
-        cache: Arc::new(CredentialCache::new(clock_source, credential_executor)),
+        cache: Arc::new(cache),
         clock,
         executor,
-        tasks: TaskTracker::new(),
+        tasks,
     }
 }
 
@@ -142,13 +144,7 @@ async fn lookup(
     fixture: &Fixture,
     project: Option<&str>,
 ) -> Result<AccessToken, CredentialCacheError> {
-    get_access_token_async(
-        &fixture.cache,
-        &fixture.tasks,
-        Some(&credentials()),
-        project,
-    )
-    .await
+    get_access_token_async(&fixture.cache, Some(&credentials()), project).await
 }
 
 fn refreshing_identities(cache: &CredentialCache) -> Vec<CredentialKey> {
@@ -371,19 +367,16 @@ async fn gemini_skips_auth() {
     let fixture = new_fixture(Vec::new(), Vec::new());
     let configured = credentials();
     let synchronous = ensure_access_token(
-        &fixture.cache,
-        Some(&configured),
-        Some(PROJECT),
         VertexCapabilityProvider::Gemini,
+        fixture
+            .cache
+            .get_access_token(Some(&configured), Some(PROJECT)),
     )
     .await
     .unwrap();
-    let asynchronous = ensure_access_token_async(
-        &fixture.cache,
-        &fixture.tasks,
-        Some(&configured),
-        Some(PROJECT),
+    let asynchronous = ensure_access_token(
         VertexCapabilityProvider::Gemini,
+        get_access_token_async(&fixture.cache, Some(&configured), Some(PROJECT)),
     )
     .await
     .unwrap();
@@ -395,10 +388,10 @@ async fn gemini_skips_auth() {
     assert_eq!(fixture.executor.refresh_count(), 0);
     assert!(fixture.cache.cached_record(&requested_key(None)).is_none());
     let error = ensure_access_token(
-        &fixture.cache,
-        Some(&configured),
-        Some(PROJECT),
         VertexCapabilityProvider::VertexAi,
+        fixture
+            .cache
+            .get_access_token(Some(&configured), Some(PROJECT)),
     )
     .await
     .unwrap_err();
@@ -459,7 +452,6 @@ async fn cancelled_waiter_releases_key() {
     let configured = credentials();
     let mut first = Box::pin(get_access_token_async(
         &fixture.cache,
-        &fixture.tasks,
         Some(&configured),
         Some(PROJECT),
     ));
@@ -467,7 +459,6 @@ async fn cancelled_waiter_releases_key() {
     timeout(WAIT, started.notified()).await.unwrap();
     let mut second = Box::pin(get_access_token_async(
         &fixture.cache,
-        &fixture.tasks,
         Some(&configured),
         Some(PROJECT),
     ));
@@ -507,7 +498,6 @@ async fn fresh_token_skips_the_lease() {
     let configured = credentials();
     let mut blocking = Box::pin(get_access_token_async(
         &fixture.cache,
-        &fixture.tasks,
         Some(&configured),
         Some(PROJECT),
     ));
@@ -516,7 +506,6 @@ async fn fresh_token_skips_the_lease() {
     store_project(&fixture.cache, &key, "token-fresh", TokenState::Fresh);
     let mut fast_lookup = Box::pin(get_access_token_async(
         &fixture.cache,
-        &fixture.tasks,
         Some(&configured),
         Some(PROJECT),
     ));
@@ -578,19 +567,16 @@ async fn vertex_wrappers_read_credentials() {
     let fixture = new_fixture(Vec::new(), Vec::new());
     let configured = credentials();
     let synchronous = ensure_access_token(
-        &fixture.cache,
-        Some(&configured),
-        Some(PROJECT),
         VertexCapabilityProvider::VertexAi,
+        fixture
+            .cache
+            .get_access_token(Some(&configured), Some(PROJECT)),
     )
     .await;
     assert!(matches!(synchronous, Err(CredentialCacheError::Load(_))));
-    let asynchronous = ensure_access_token_async(
-        &fixture.cache,
-        &fixture.tasks,
-        Some(&configured),
-        Some(PROJECT),
+    let asynchronous = ensure_access_token(
         VertexCapabilityProvider::VertexAiBeta,
+        get_access_token_async(&fixture.cache, Some(&configured), Some(PROJECT)),
     )
     .await;
     assert!(matches!(asynchronous, Err(CredentialCacheError::Load(_))));
