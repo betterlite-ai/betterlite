@@ -1,7 +1,9 @@
+use betterlite_prompts::arguments::json::Object;
 use indexmap::IndexMap;
 use rstest::rstest;
 
-use super::support::{headers, secret, settings};
+use super::support::{headers, json, object, secret, settings};
+use crate::api::anthropic_beta_filter::native_injection::NativeRequest;
 use crate::api::messages_native_prepare::environment::validate_environment;
 use crate::api::messages_native_prepare::error::MessagesPrepareError;
 
@@ -11,10 +13,16 @@ fn validated(
     api_base: Option<&str>,
 ) -> (IndexMap<String, String>, Option<String>) {
     let mut request_headers = headers(given);
+    let optional_params = Object::new();
     let answer = validate_environment(
         &mut request_headers,
         api_key.map(secret),
         api_base,
+        &NativeRequest {
+            provider: "anthropic",
+            optional_params: &optional_params,
+            messages: &[],
+        },
         &settings("https://api.anthropic.com"),
     )
     .expect("a credential is present");
@@ -64,19 +72,53 @@ fn environment_header_precedence_adds_the_only_credential_it_has() {
 #[test]
 fn environment_header_precedence_requires_a_credential() {
     let mut given = headers(&[("x-caller", "value")]);
+    let optional_params = Object::new();
     let failure = validate_environment(
         &mut given,
         None,
         None,
+        &NativeRequest {
+            provider: "anthropic",
+            optional_params: &optional_params,
+            messages: &[],
+        },
         &settings("https://api.anthropic.com"),
     )
     .expect_err("no api key and no auth token");
     assert_eq!(failure, MessagesPrepareError::MissingCredential);
     assert_eq!(failure.status_code(), Some(401));
+    assert_eq!(failure.class_name(), "AuthenticationError");
     assert_eq!(
         failure.to_string(),
         "no Anthropic credential is set; set ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN"
     );
+}
+
+#[rstest]
+#[case::speed(r#"{"speed":"fast"}"#, "fast-mode-2026-02-01")]
+#[case::context_management(
+    r#"{"context_management":{"edits":[{"type":"clear_tool_uses_20250919"}]}}"#,
+    "context-management-2025-06-27"
+)]
+fn environment_header_precedence_injects_feature_betas(#[case] params: &str, #[case] beta: &str) {
+    let mut given = headers(&[]);
+    let optional_params = object(params);
+    let messages = vec![json(r#"{"role":"user","content":"hi"}"#)];
+    let answer = validate_environment(
+        &mut given,
+        Some(secret("sk-test")),
+        None,
+        &NativeRequest {
+            provider: "anthropic",
+            optional_params: &optional_params,
+            messages: &messages,
+        },
+        &settings("https://api.anthropic.com"),
+    )
+    .expect("a credential is present");
+    assert_eq!(answer, None);
+    assert_eq!(given.get("x-api-key"), Some(&"sk-test".to_owned()));
+    assert_eq!(given.get("anthropic-beta"), Some(&beta.to_owned()));
 }
 
 #[rstest]

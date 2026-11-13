@@ -129,9 +129,7 @@ pub fn normalize_system_turns(request: &mut Object, supports_mid_system: bool) {
     } else {
         convert_mid_system_turns(rest)
     };
-    if leading_count > 0 || remaining != rest {
-        request.insert("messages".to_owned(), Json::List(remaining));
-    }
+    request.insert("messages".to_owned(), Json::List(remaining));
     let mut system_content = as_system_content_blocks(request.get("system"));
     for message in hoisted {
         system_content.extend(as_system_content_blocks(

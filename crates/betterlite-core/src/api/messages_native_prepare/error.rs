@@ -19,4 +19,12 @@ impl MessagesPrepareError {
             Self::Beta(_) => None,
         }
     }
+
+    #[must_use]
+    pub const fn class_name(&self) -> &'static str {
+        match self {
+            Self::MissingCredential => "AuthenticationError",
+            Self::Beta(_) => "BetaFilterError",
+        }
+    }
 }

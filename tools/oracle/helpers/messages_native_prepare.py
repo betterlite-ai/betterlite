@@ -17,7 +17,6 @@ JsonObject: TypeAlias = dict[str, Json]
 Headers: TypeAlias = dict[str, Json]
 MODEL: Final = "claude-sonnet-4-5"
 NO_PARAMS: Final[JsonObject] = {}
-NO_MESSAGES: Final[list[Json]] = []
 NO_HEADERS: Final[Headers] = {}
 
 
@@ -136,6 +135,8 @@ class UrlCall(TypedDict):
 
 class EnvironmentStep(TypedDict):
     headers: Headers
+    optional_params: JsonObject
+    messages: list[Json]
     environment: dict[str, str]
 
 
@@ -212,8 +213,8 @@ def environment_answer(config: Config, step: EnvironmentStep) -> Json:
     headers, api_base = config.validate_anthropic_messages_environment(
         step["headers"].copy(),
         MODEL,
-        NO_MESSAGES,
-        NO_PARAMS,
+        step["messages"],
+        step["optional_params"],
         NO_PARAMS,
     )
     return {"headers": headers, "api_base": api_base}
@@ -265,7 +266,6 @@ def base_defaults(config: Config, call: BaseDefaultsCall) -> Json:
     )
     projection: JsonObject = {
         "signed": {"headers": signed[0], "has_signed_body": signed[1] is not None},
-        "url": config.get_complete_url(None, None, MODEL, NO_PARAMS, NO_PARAMS),
         "web_search": config.handles_web_search_natively(),
         "uses_provider_base": config.uses_get_llm_provider_api_base(),
         "filters_betas": config.should_filter_anthropic_beta_headers(),

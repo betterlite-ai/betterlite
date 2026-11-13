@@ -4,12 +4,12 @@ use super::support::{json, object};
 use crate::api::messages_native_prepare::billing::{filter_billing_headers, remove_cache_scope};
 
 #[rstest]
-#[case::string_block("x-anthropic-billing-header: cc_version=1", None)]
+#[case::string_block(r#""x-anthropic-billing-header: cc_version=1""#, None)]
 #[case::leading_whitespace(
-    " x-anthropic-billing-header: cc_version=1",
-    Some(" x-anthropic-billing-header: cc_version=1")
+    r#"" x-anthropic-billing-header: cc_version=1""#,
+    Some(r#"" x-anthropic-billing-header: cc_version=1""#)
 )]
-#[case::plain_string("be brief", Some("be brief"))]
+#[case::plain_string(r#""be brief""#, Some(r#""be brief""#))]
 #[case::null_value("null", None)]
 #[case::number_value("17", Some("17"))]
 fn billing_and_cache_fields_keeps_or_drops_a_system_value(

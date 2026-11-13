@@ -1,7 +1,6 @@
 use betterlite_anthropic::credentials::{
     ANTHROPIC_VERSION, AnthropicSettings, get_auth_header, handle_anthropic_oauth,
 };
-use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -12,11 +11,12 @@ pub const ANTHROPIC_VERSION_HEADER: &str = "anthropic-version";
 pub const CONTENT_TYPE_HEADER: &str = "content-type";
 pub const JSON_CONTENT_TYPE: &str = "application/json";
 
-// LiteLLM hands the beta updater its default provider, and the returned api_base is the supplied value unchanged
+// LiteLLM hands the beta updater the request's own params and messages under its default provider
 pub fn validate_environment(
     headers: &mut IndexMap<String, String>,
     api_key: Option<SecretString>,
     api_base: Option<&str>,
+    request: &NativeRequest<'_>,
     settings: &AnthropicSettings,
 ) -> Result<Option<String>, MessagesPrepareError> {
     let resolved_key = handle_anthropic_oauth(headers, api_key);
@@ -41,13 +41,6 @@ pub fn validate_environment(
     if !headers.contains_key(CONTENT_TYPE_HEADER) {
         headers.insert(CONTENT_TYPE_HEADER.to_owned(), JSON_CONTENT_TYPE.to_owned());
     }
-    let optional_params = Object::new();
-    let messages: [Json; 0] = [];
-    let request = NativeRequest {
-        provider: "anthropic",
-        optional_params: &optional_params,
-        messages: &messages,
-    };
-    *headers = inject_native_betas(headers.clone(), &request)?;
+    *headers = inject_native_betas(headers.clone(), request)?;
     Ok(api_base.map(str::to_owned))
 }

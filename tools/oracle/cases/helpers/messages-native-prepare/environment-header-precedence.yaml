@@ -6,24 +6,36 @@ call:
     calls:
       - headers:
           X-API-Key: caller
+        optional_params: {}
+        messages: []
         environment:
           ANTHROPIC_API_KEY: sk-test
       - headers:
           Authorization: Bearer caller
+        optional_params: {}
+        messages: []
         environment: {}
       - headers: {}
+        optional_params: {}
+        messages: []
         environment:
           ANTHROPIC_API_KEY: sk-test
       - headers:
           anthropic-version: "2024-01-01"
           content-type: text/plain
+        optional_params: {}
+        messages: []
         environment:
           ANTHROPIC_API_KEY: sk-test
       - headers:
           Anthropic-Version: "2024-01-01"
+        optional_params: {}
+        messages: []
         environment:
           ANTHROPIC_API_KEY: sk-test
       - headers: {}
+        optional_params: {}
+        messages: []
         environment:
           ANTHROPIC_API_KEY: sk-ant-oat-test
 env: {}

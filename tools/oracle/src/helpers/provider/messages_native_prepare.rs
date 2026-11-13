@@ -2,15 +2,14 @@ use std::collections::BTreeMap;
 
 use betterlite_anthropic::credentials::{ANTHROPIC_VERSION, AnthropicSettings};
 use betterlite_config::sections::anthropic_credentials::Settings as ConfigSettings;
+use betterlite_core::api::anthropic_beta_filter::native_injection::NativeRequest;
 use betterlite_core::api::messages_native_prepare::billing::remove_cache_scope;
 use betterlite_core::api::messages_native_prepare::environment::validate_environment;
-use betterlite_core::api::messages_native_prepare::fields::{
-    native_filters_betas, native_supported_fields,
-};
+use betterlite_core::api::messages_native_prepare::fields::native_filters_betas;
 use betterlite_core::api::messages_native_prepare::system_turns::normalize_system_turns;
 use betterlite_core::api::messages_native_prepare::url::messages_url;
 use betterlite_models::identity::provider_id::ProviderId;
-use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_provider::api::messages_native_prepare::error::MessagesContractError;
 use betterlite_provider::api::messages_native_prepare::{AnthropicMessagesConfig, Headers};
 use indexmap::IndexMap;
@@ -42,6 +41,8 @@ pub(crate) enum Input {
 #[serde(deny_unknown_fields)]
 pub(crate) struct EnvironmentCall {
     headers: IndexMap<String, String>,
+    optional_params: Object,
+    messages: Vec<Json>,
     environment: BTreeMap<String, String>,
 }
 
@@ -70,6 +71,19 @@ impl AnthropicMessagesConfig for Base {
     type Error = MessagesContractError;
 }
 
+// A subclass that only names its provider, so the contract defaults answer for it
+struct Contract {
+    provider: Option<ProviderId>,
+}
+
+impl AnthropicMessagesConfig for Contract {
+    type Error = MessagesContractError;
+
+    fn custom_llm_provider(&self) -> Option<ProviderId> {
+        self.provider
+    }
+}
+
 pub(crate) struct Op;
 
 impl Helper for Op {
@@ -93,10 +107,13 @@ fn supported_fields(providers: &[Option<ProviderId>]) -> Value {
     let answers: Vec<Value> = providers
         .iter()
         .map(|provider| {
+            let contract = Contract {
+                provider: *provider,
+            };
             json!({
-                "fields": native_supported_fields(*provider),
+                "fields": contract.supported_params("claude-sonnet-4-5"),
                 "filters_betas": native_filters_betas(*provider),
-                "strips_billing": false,
+                "strips_billing": contract.strips_billing_metadata(),
             })
         })
         .collect();
@@ -127,17 +144,33 @@ fn environment(calls: &[EnvironmentCall]) -> HelperResult {
     let mut answers = Vec::with_capacity(calls.len());
     for call in calls {
         let settings = settings(&call.environment)?;
-        answers.push(environment_answer(call, &settings));
+        answers.push(environment_answer(call, &settings)?);
     }
     Ok(json!({ "calls": answers }))
 }
 
-fn environment_answer(call: &EnvironmentCall, settings: &AnthropicSettings) -> Value {
+fn environment_answer(
+    call: &EnvironmentCall,
+    settings: &AnthropicSettings,
+) -> Result<Value, Box<HelperError>> {
     let mut headers: Headers = call.headers.clone();
-    match validate_environment(&mut headers, None, None, settings) {
-        Ok(api_base) => json!({ "headers": headers, "api_base": api_base }),
-        Err(error) => json!({ "error": {"status": error.status_code()} }),
-    }
+    let request = NativeRequest {
+        provider: "anthropic",
+        optional_params: &call.optional_params,
+        messages: &call.messages,
+    };
+    let api_base =
+        validate_environment(&mut headers, None, None, &request, settings).map_err(|error| {
+            Box::new(HelperError {
+                class: error.class_name().to_owned(),
+                status: error.status_code(),
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?;
+    Ok(json!({ "headers": headers, "api_base": api_base }))
 }
 
 fn transform(calls: &[TransformCall]) -> Value {
@@ -167,7 +200,6 @@ fn base_defaults(case: &BaseDefaultsCall) -> Value {
             "headers": signed.headers,
             "has_signed_body": signed.signed_body.is_some(),
         },
-        "url": Base.complete_url(None),
         "web_search": Base.handles_web_search_natively(),
         "uses_provider_base": Base.uses_provider_api_base(),
         "filters_betas": Base.filters_beta_headers(),
