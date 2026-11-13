@@ -530,6 +530,23 @@ fn a_non_string_effort_is_left_untouched() {
 }
 
 #[test]
+fn the_flag_names_match_litellm() {
+    assert_eq!(
+        TogetherFlag::SupportsFunctionCalling.name(),
+        "supports_function_calling"
+    );
+    assert_eq!(
+        TogetherFlag::SupportsResponseSchema.name(),
+        "supports_response_schema"
+    );
+    assert_eq!(TogetherFlag::SupportsReasoning.name(), "supports_reasoning");
+    assert_eq!(
+        TogetherFlag::SupportsReasoning.to_string(),
+        "supports_reasoning"
+    );
+}
+
+#[test]
 fn a_plain_model_never_reaches_the_payload_step() {
     let mapped = map_with(
         "some/model",
