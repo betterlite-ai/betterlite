@@ -37,16 +37,16 @@ async fn estimate_returns_the_full_litellm_estimate_record() {
 
 #[tokio::test]
 async fn estimate_truncates_reasoning_to_twelve_thousand_characters() {
-    let content = json!({"hours": 1, "reasoning": "x".repeat(REASONING_MAX_CHARS + 1)}).to_string();
+    let content = json!({"hours": 1, "reasoning": "é".repeat(REASONING_MAX_CHARS + 1)}).to_string();
     let estimate = run_estimate(&content).await;
-    assert_eq!(estimate.reasoning.chars().count(), REASONING_MAX_CHARS);
+    assert_eq!(estimate.reasoning, "é".repeat(REASONING_MAX_CHARS));
 }
 
 #[tokio::test]
 async fn estimate_keeps_reasoning_at_exactly_twelve_thousand_characters() {
-    let content = json!({"hours": 1, "reasoning": "x".repeat(REASONING_MAX_CHARS)}).to_string();
+    let content = json!({"hours": 1, "reasoning": "é".repeat(REASONING_MAX_CHARS)}).to_string();
     let estimate = run_estimate(&content).await;
-    assert_eq!(estimate.reasoning.chars().count(), REASONING_MAX_CHARS);
+    assert_eq!(estimate.reasoning, "é".repeat(REASONING_MAX_CHARS));
 }
 
 #[tokio::test]

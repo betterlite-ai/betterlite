@@ -15,7 +15,7 @@ use super::support::{
 
 fn pull_with_body(length: usize) -> ROIPullEvidence {
     let mut value = pull();
-    value.body = "x".repeat(length);
+    value.body = "é".repeat(length);
     value
 }
 
@@ -39,6 +39,10 @@ async fn estimate_scores_evidence_at_exactly_the_character_limit() {
         .estimate(&pull, &mut ModelSupport::none())
         .await
         .unwrap();
+    assert!(
+        json_dumps_text(&metadata_evidence(&pull)).unwrap().len() > MAX_EVIDENCE_CHARS,
+        "the at-limit pull must exceed the limit in bytes so a byte count would refuse it"
+    );
     assert_eq!(estimate.status, ROIEstimateStatus::Estimated);
     assert_eq!(recorded_request(&requests).model, "gpt-5.2");
 }

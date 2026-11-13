@@ -8,8 +8,8 @@ use betterlite_models::model_capability_predicates::{
 use betterlite_roi::estimator::cache::cache_context;
 use betterlite_roi::estimator::evidence::metadata_evidence;
 use betterlite_roi::estimator::extraction::first_json_object;
-use betterlite_roi::estimator::models::{EstimatorModel, ROICompletionRequest, configured_models};
-use betterlite_roi::estimator::options::estimator_options;
+use betterlite_roi::estimator::models::{EstimatorModel, ROICompletionRequest};
+use betterlite_roi::estimator::options::{configured_models, estimator_options};
 use betterlite_roi::estimator::result::ROIEstimatorResult;
 use betterlite_roi::records::ROIPullEvidence;
 use betterlite_roi::settings::ROISettings;

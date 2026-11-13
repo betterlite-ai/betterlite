@@ -9,7 +9,7 @@ use crate::roi_github::error::SourceError;
 )]
 pub struct EstimatorError {
     #[source]
-    source: CompletionFailure,
+    pub(super) source: CompletionFailure,
 }
 
 #[derive(Debug, Error)]

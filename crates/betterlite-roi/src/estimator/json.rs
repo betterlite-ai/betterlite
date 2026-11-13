@@ -6,9 +6,15 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum JsonError {
     #[error("the estimator value could not be serialized to JSON")]
-    Serialize(#[source] serde_json::Error),
+    Serialize {
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("the serialized estimator value is not UTF-8")]
-    Utf8(#[source] std::string::FromUtf8Error),
+    Utf8 {
+        #[source]
+        source: std::string::FromUtf8Error,
+    },
 }
 
 // LiteLLM hashes and sends json.dumps output, whose default separators carry one space after each comma and colon
