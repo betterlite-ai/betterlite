@@ -1,0 +1,22 @@
+{
+  "kind": "helper",
+  "name": "oauth-token-basic",
+  "call": {
+    "b4656": {
+      "function": "token",
+      "token": {
+        "access_token": "access-secret",
+        "expires_at_ms": null,
+        "refresh_token": "refresh-secret",
+        "scopes": [
+          "read"
+        ],
+        "identity_binding_proof": null
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

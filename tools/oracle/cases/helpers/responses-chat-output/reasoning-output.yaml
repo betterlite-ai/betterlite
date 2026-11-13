@@ -1,0 +1,30 @@
+kind: helper
+name: responses-chat-output-reasoning-output
+call:
+  responses_chat_output:
+    request_input: hi
+    responses_api_request: {}
+    chat_completion_response:
+      _hidden_params: {}
+      id: chat_d
+      created: 4
+      model: m
+      choices:
+        - finish_reason: stop
+          message: {role: assistant, content: plain}
+        - finish_reason: length
+          message:
+            role: assistant
+            content: null
+            reasoning_content: because
+            thinking_blocks:
+              - {type: thinking, thinking: step, signature: sig}
+              - {type: thinking, thinking: unsigned}
+              - {type: redacted_thinking, data: zzz}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/response/output/0/id
+      why: The reasoning id is a random UUID.
+    - pointer: /value/response/output/1/id
+      why: The message id is a random UUID.

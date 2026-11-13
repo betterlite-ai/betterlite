@@ -1,0 +1,8 @@
+kind: helper
+name: lemonade-cost-is-zero-for-every-model
+call:
+  b8152:
+    function: "lemonade_cost"
+    calls: [{"model": "lemonade/Llama-3.2-1B", "prompt_tokens": 100, "completion_tokens": 50}, {"model": "unlisted-model", "prompt_tokens": 0, "completion_tokens": 0}, {"model": "gpt-4o", "prompt_tokens": 4000000, "completion_tokens": 4000000}]
+env: {}
+compare: {ignore: []}

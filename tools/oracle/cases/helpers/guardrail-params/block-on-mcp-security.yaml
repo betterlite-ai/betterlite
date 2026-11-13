@@ -1,0 +1,11 @@
+kind: helper
+name: guardrail-params-block-on-mcp-security
+call:
+  b3662:
+    function: litellm_params
+    body:
+      guardrail: mcp_security
+      mode: pre_call
+      on_violation: block
+env: {}
+compare: {ignore: []}

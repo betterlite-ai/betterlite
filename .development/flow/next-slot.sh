@@ -11,9 +11,8 @@ maintenance() {
   fi
 }
 maintenance
-# Dispatches one task once a slot is free (CPU pressure in the dispatch slice under 20% over the last minute (the slice caps dispatches at 1400%, 14 of the 16 cores, since the rest of the machine takes about 2 cores (Max raised it from 1200% on 11-09)), 14 GB RAM available (from /proc/meminfo, since free prints translated labels under the flow services' LANGUAGE), IO stalls (full) under 40% over the last minute (the 512 GB KIOXIA BG5 sat at 85% busy with 15 tasks), disk under 89% (Max allowed 95% on 11-05; a new task's target adds about 13 GB, 3% of the disk, after admission, and 18 running targets grew the disk from 87% to 92% on 11-05), fewer than 4 running dispatches waiting for an agent seat (34 sat in the Claude seat queue on 11-05 while their checkouts held disk), and a CI fix round (CI_ROUNDS from dispatch-flow) or a task within 10 steps of the longest open chain (Max, 11-12; it was 30 or more tasks chained behind it from 11-06, until 32 of 35 running flows passed that) skips only the CPU pressure check, and so does an architect fix round (run name arch*, the architect's call on 11-08, since B3783 waited 4 hours at 79% pressure after a passed gate and a review), since its PR is the closest to merging (B2222 waited 22 minutes at 77% pressure on 11-06) or it sits on the longest chain; caches are retained until explicit cleanup), with lean cached builds and a temp dir on disk (betterlite-worktrees/tmp/<id>), since /tmp is RAM. There is no fixed dispatch count: the gate caps the agents on each vendor (max_parallel in agents.yaml) and overflows to the other vendor. Usage: bash next-slot.sh <id> <log name> [note] Tests use the shared local postgres betterlite-test-postgres (127.0.0.1:55432) through POSTGRES_TEST_URL instead of a testcontainers one per test (Max). A dispatch builds no tests (Max, 11-05), so a new worktree gets no seeded target.
+# Dispatches one task once a slot is free: 14 GB RAM available (from /proc/meminfo, since free prints translated labels under the flow services' LANGUAGE), disk under 95% (a full disk stops git for every flow, and a checkout takes about 0.5 GB), /tmp under 50%, and fewer than 8 running dispatches waiting for an agent seat (34 sat in the Claude seat queue on 11-05 while their checkouts held disk). Since stage 3 a dispatch builds nothing, so CPU pressure and IO stalls no longer hold a slot (Max, 11-13). A temp dir on disk (betterlite-worktrees/tmp/<id>) stands in for /tmp, since /tmp is RAM. There is no fixed dispatch count: the gate caps the agents on each vendor (max_parallel in agents.yaml) and overflows to the other vendor. Usage: bash next-slot.sh <id> <log name> [note]. Tests use the shared local postgres betterlite-test-postgres (127.0.0.1:55432) through POSTGRES_TEST_URL instead of a testcontainers one per test (Max).
 id=$1
-run=$2
 log=${L}/dispatch-${id}-$2.log
 tools=${worktrees}/.tools
 cd "${main}" || exit 1
@@ -36,7 +35,6 @@ find "${gates}" -mindepth 1 -maxdepth 1 -mmin +2880 -exec rm -rf -- {} +
 mkdir -p "${L}/locks"
 exec 9> "${L}/locks/admission.lock"
 flock 9
-cg=/sys/fs/cgroup$(systemctl --user show betterlite-dispatch.slice -p ControlGroup --value)
 waiting_seats() {
   n=0
   # pgrep exits 1 when no dispatch runs, which is an empty list, not an error
@@ -55,10 +53,8 @@ waiting_seats() {
 }
 # a reading that fails skips its check instead of holding the slot
 busy() {
-  [[ "${CI_ROUNDS:-0}" -eq 0 ]] && [[ ${run} != arch* ]] && [[ "${lowest_slot}" -eq 2 ]] && cpu_some=$(awk '/^some/ {split($3, a, "="); print int(a[2])}' "${cg}/cpu.pressure") && [[ "${cpu_some}" -ge 20 ]] && return 0
-  io_full=$(awk '/^full/ {split($3, a, "="); print int(a[2])}' /proc/pressure/io) && [[ "${io_full}" -ge 40 ]] && return 0
   memory_gb=$(awk '/^MemAvailable:/ {print int($2 / 1048576)}' /proc/meminfo) && [[ "${memory_gb}" -lt 14 ]] && return 0
-  home_use=$(df --output=pcent /home) && home_use=${home_use##*$'\n'} && [[ "${home_use//[!0-9]/}" -ge 89 ]] && return 0
+  home_use=$(df --output=pcent /home) && home_use=${home_use##*$'\n'} && [[ "${home_use//[!0-9]/}" -ge 95 ]] && return 0
   tmp_use=$(df --output=pcent /tmp) && tmp_use=${tmp_use##*$'\n'} && [[ "${tmp_use//[!0-9]/}" -ge 50 ]] && return 0
   seats=$(waiting_seats) && [[ "${seats}" -ge 8 ]] && return 0
   return 1
@@ -107,9 +103,9 @@ done
   echo "test database socket unavailable; no worker started" >&2
   exit 1
 }
-UV_CACHE_DIR="${HOME}/.cache/uv" GATE_POSTGRES_SOCKET="${socket}" POSTGRES_TEST_URL="postgresql://betterlite:betterlite@127.0.0.1:55432/betterlite?host=${socket_dir}" TMPDIR=${tmp} PATH=${P}/bin:${HOME}/.local/bin:${tools}/bin:${PATH} RUSTC_WRAPPER=${tools}/bin/sccache SCCACHE_IGNORE_SERVER_IO_ERROR=1 CARGO_INCREMENTAL=0 \
-  CARGO_PROFILE_DEV_DEBUG=line-tables-only CARGO_PROFILE_TEST_DEBUG=line-tables-only CARGO_BUILD_JOBS=2 NEXTEST_TEST_THREADS=2 GATE_BUILD_SLOTS=8 GATE_LOWEST_BUILD_SLOT=${lowest_slot} GATE_SHARED_BUILDS=${gates} \
-  systemd-run --user --scope --slice=betterlite-dispatch.slice -p MemoryMax=16G -p MemorySwapMax=4G -q -- nice -n 10 cargo gate dispatch "${id}" ${3:+--note "$3"} ${GRANT:+--grant "${GRANT}"} > "${log}" 2>&1 9>&- &
+UV_CACHE_DIR="${HOME}/.cache/uv" GATE_POSTGRES_SOCKET="${socket}" POSTGRES_TEST_URL="postgresql://betterlite:betterlite@127.0.0.1:55432/betterlite?host=${socket_dir}" TMPDIR=${tmp} PATH=${P}/bin:${HOME}/.local/bin:${tools}/bin:${PATH} \
+  NEXTEST_TEST_THREADS=2 GATE_BUILD_SLOTS=8 GATE_LOWEST_BUILD_SLOT=${lowest_slot} GATE_SHARED_BUILDS=${gates} \
+  systemd-run --user --scope --slice=betterlite-dispatch.slice -p MemoryMax=16G -p MemorySwapMax=4G -q -- bash "${P}/build-env.sh" nice -n 10 cargo gate dispatch "${id}" ${3:+--note "$3"} ${GRANT:+--grant "${GRANT}"} > "${log}" 2>&1 9>&- &
 child=$!
 while kill -0 "${child}" 2> /dev/null && ! pgrep -f "^([^ ]*/)?gate dispatch ${id}( |$)" > /dev/null; do
   sleep 0.05

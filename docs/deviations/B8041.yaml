@@ -1,0 +1,11 @@
+task: B8041
+deviations:
+  - what: Hook arguments and results cross as JSON values, so a hook that returns a custom object, bytes or a tuple key gets a typed ValueError where LiteLLM passes the object on.
+    why: The Rust side has no use for an opaque Python object, and a typed error names the field. Callers that need a class instance use call_raw.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6771-L6811
+  - what: An async hook runs on one shared event loop thread, not on the proxy's own loop.
+    why: The proxy loop is Tokio. Hooks that rely on a particular running loop (contextvars set by the server) do not see them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1569
+  - what: SystemExit and KeyboardInterrupt raised inside an async hook come back as PythonError and the shared loop keeps serving later calls, where LiteLLM lets them escape the awaited call.
+    why: A hook that exits is not something a working setup relies on, and letting the exception end the loop would turn every later async hook into a timeout until the process restarts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1569

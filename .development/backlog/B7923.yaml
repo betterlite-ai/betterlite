@@ -2,7 +2,7 @@ id: B7923
 milestone: M12 python
 title: Python types for the Bedrock Converse request, response and streaming blocks (types/llms/bedrock L1-L494)
 status: todo
-depends_on: [B5657]
+depends_on: [B5657, B9951]
 file: tasks/B7923-types-bedrock-converse.yaml
 covers:
   - "litellm/types/llms/bedrock.py"

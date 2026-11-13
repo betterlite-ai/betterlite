@@ -1,0 +1,18 @@
+kind: helper
+name: tool-fees-seed
+call:
+  tool_fees:
+    web_search:
+      - options: {search_context_size: low}
+        model_info: {search_context_cost_per_query: {search_context_size_low: 0.5, search_context_size_medium: null}}
+    file_search:
+      - {file_search: {}, provider: azure, model_info: {file_search_cost_per_gb_per_day: 0.5, file_search_cost_per_1k_calls: 7}, storage_gb: 2, days: 3}
+      - {file_search: null, provider: openai, model_info: null, storage_gb: null, days: null}
+    vector_store:
+      - {usage: {storage_gb: 2, days: 5}, provider: azure, model_info: null}
+    computer_use:
+      - {input_tokens: 1000, output_tokens: 500, provider: azure, model_info: {computer_use_input_cost_per_1k_tokens: 2}}
+    code_interpreter:
+      - {sessions: -2, provider: azure, model_info: {code_interpreter_cost_per_session: 0.5}}
+env: {}
+compare: {ignore: []}

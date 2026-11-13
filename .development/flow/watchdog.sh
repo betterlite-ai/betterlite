@@ -77,11 +77,54 @@ sample_machine() {
   cargo_count=$(pgrep -xc cargo)
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${EPOCHSECONDS}" "${btime}" "${disk}" "${cpu}" "${mem}" "${psi}" "${df}" "${flows}" "${rustc_count}" "${cargo_count}" "${clippy}" >> "${samples}"
 }
+# stage 3 runs up to 128 DeepSeek agents at once, so the day's spend stops at 300 USD (Max, 11-13): the limit mark holds the vendor until midnight, as a usage limit with a reset time does
+check_deepseek_spend() {
+  mark=${main}/.git/betterlite/limits/deepseek
+  [[ -f "${mark}" ]] && grep -q 'daily ceiling' "${mark}" && return
+  day=$(date +%F)
+  started=$(find "${main}/.git/betterlite" -mindepth 2 -maxdepth 2 -name 'attempt-*.started.json' -newermt "${day} 00:00" -exec grep -l '"model":"deepseek' {} +)
+  # list price per million tokens for deepseek-flash, doubled from 01 to 04 and 06 to 10 UTC on weekdays (https://api-docs.deepseek.com/quick_start/pricing); a run cut off before its answer has no usage and counts nothing
+  rows=
+  while read -r file; do
+    [[ -n "${file}" ]] || continue
+    last=$(tail -n 1 "${file%.started.json}.stdout" 2> /dev/null) || continue
+    usage=$(jq -r 'select(.usage) | [.usage.input_tokens, (.usage.cache_read_input_tokens // 0), .usage.output_tokens] | @tsv' <<< "${last}" 2> /dev/null) || continue
+    [[ -n "${usage}" ]] || continue
+    when=$(date -u -r "${file}" '+%u %H') || continue
+    rows+="${when}"$'\t'"${usage}"$'\n'
+  done <<< "${started}"
+  spent=$(LC_ALL=C awk -F'\t' 'NF { split($1, d, " "); peak = (d[1] <= 5 && ((d[2] >= 1 && d[2] < 4) || (d[2] >= 6 && d[2] < 10))) ? 2 : 1; usd += ($2 * 0.15 + $3 * 0.003 + $4 * 0.60) * peak / 1e6 } END { printf "%.2f", usd }' <<< "${rows}")
+  LC_ALL=C awk -v spent="${spent}" 'BEGIN { exit !(spent >= 300) }' || return
+  zone=$(timedatectl show -p Timezone --value) || return
+  printf 'DeepSeek spent %s USD today at list price, the 300 USD daily ceiling; resets 12am (%s)\n' "${spent}" "${zone}" > "${mark}.watchdog" && mv -f -- "${mark}.watchdog" "${mark}" &&
+    printf '%(%H:%M)T %s\n' -1 "(watchdog) DeepSeek spent ${spent} USD today, the 300 USD daily ceiling; its runs wait until midnight" >> "${events}"
+}
+deepseek_low=0
+# Max wants to hear before DeepSeek runs dry (11-13); the key goes to curl on stdin, so no process list shows it
+check_deepseek_balance() {
+  key=$(sed -n 's/^ANTHROPIC_AUTH_TOKEN=//p' "${HOME}/.config/betterlite/deepseek.env" 2> /dev/null)
+  [[ -n "${key}" ]] || return
+  answer=$(printf 'Authorization: Bearer %s\n' "${key}" | curl -fsS --max-time 20 -H @- https://api.deepseek.com/user/balance 2> /dev/null) || return
+  balance=$(jq -r '.balance_infos[] | select(.currency == "USD") | .total_balance' <<< "${answer}" 2> /dev/null)
+  [[ -n "${balance}" ]] || return
+  if LC_ALL=C awk -v balance="${balance}" 'BEGIN { exit !(balance >= 20) }'; then
+    deepseek_low=0
+    return
+  fi
+  [[ "${deepseek_low}" -eq 0 ]] || return
+  deepseek_low=1
+  printf '%(%H:%M)T %s\n' -1 "(watchdog) DeepSeek balance is ${balance} USD, under 20 USD; top up at https://platform.deepseek.com/top_up" >> "${events}"
+  notify-send --urgency=critical "betterlite: DeepSeek balance ${balance} USD" "Under 20 USD. Top up at https://platform.deepseek.com/top_up" 2> /dev/null
+}
 tick=0
 while [[ ! -f "${L}/watchdog.STOP" ]]; do
   check_pool
   check_stuck
   [[ $((tick % 5)) -eq 0 ]] && sample_machine
+  if [[ $((tick % 10)) -eq 0 ]]; then
+    check_deepseek_spend
+    check_deepseek_balance
+  fi
   tick=$((tick + 1))
   sleep "${every}"
 done

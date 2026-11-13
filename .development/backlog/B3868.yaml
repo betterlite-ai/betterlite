@@ -1,7 +1,7 @@
 id: B3868
 milestone: M7 observability
 title: OTel provider assembly and legacy initialization
-status: todo
+status: done
 depends_on: [B002, B189, B3840, B3842, B3848, B3849, B3854, B3855]
 file: tasks/B3868-otel-provider-assembly.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/integrations/otel/plumbing/providers.py"
 parent: B110
 split_from: B110
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1437

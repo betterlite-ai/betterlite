@@ -1,0 +1,16 @@
+kind: helper
+name: cli-login-pages-quoted-action-and-token
+call:
+  cli_login_page:
+    environment: {}
+    renders:
+      - page: verification
+        verify_url: "https://proxy.example.com/a?x=\"y\"&z=<w>'v"
+        browser_complete_token: "t\"o'k&<>"
+        prefill_user_code: "A\"B'C&D<E>F"
+      - page: verification
+        verify_url: "https://proxy.example.com/sso/cli/start?state=\"a b\"&scope=<s>"
+        browser_complete_token: "tok'en \"quoted\""
+        prefill_user_code: null
+env: {}
+compare: {ignore: []}

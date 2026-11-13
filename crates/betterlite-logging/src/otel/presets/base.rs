@@ -1,9 +1,11 @@
 use betterlite_config::loader::EnvironmentLookup;
 
+use crate::langfuse_otel::error::LangfuseOtelError;
 use crate::otel::config::Settings;
 use crate::otel::integrations::levo_settings::LevoSettingsError;
 use crate::otel::integrations::phoenix_settings::PhoenixSettingsError;
 use crate::otel::integrations::weave_settings::WeaveSettingsError;
+use crate::otel::presets::newrelic::NewrelicPresetError;
 
 pub trait Preset {
     fn build(
@@ -22,6 +24,10 @@ pub enum PresetError {
     Levo(#[from] LevoSettingsError),
     #[error(transparent)]
     Weave(#[from] WeaveSettingsError),
+    #[error(transparent)]
+    Langfuse(#[from] LangfuseOtelError),
+    #[error(transparent)]
+    Newrelic(#[from] NewrelicPresetError),
 }
 
 mod tests;

@@ -1,0 +1,56 @@
+kind: helper
+name: shared-output-metadata
+call:
+  response_chat_history:
+    operation: shared_output_metadata
+    responses:
+      - fields:
+          choices: []
+          created: 1
+          id: bad
+          model: m
+          object: chat.completion
+          system_fingerprint: fp
+          usage: {total_tokens: 1}
+          background: false
+          completed_at: 2
+          conversation: conv
+          created_at: 3
+          error: {code: x}
+          incomplete_details: {reason: content_filter}
+          instructions: x
+          max_output_tokens: 4
+          max_tool_calls: 5
+          metadata: {m: 1}
+          output: []
+          parallel_tool_calls: true
+          previous_response_id: resp_prev
+          prompt: {id: p}
+          prompt_cache_key: k
+          prompt_cache_options: {mode: explicit}
+          prompt_cache_retention: 24h
+          reasoning: {effort: low}
+          safety_identifier: s
+          status: completed
+          store: true
+          temperature: 0.5
+          text: {format: {type: text}}
+          tool_choice: auto
+          tools: []
+          top_logprobs: 6
+          top_p: 0.9
+          truncation: auto
+          user: u
+          vendor: 7
+          nested: {a: 1}
+          empty: null
+        id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpncHQtNG87cmVzcG9uc2VfaWQ6cmVzcF9h
+        payload: {incomplete_details: {reason: content_filter}}
+      - {fields: null, id: null, payload: {incomplete_details: {reason: max_output_tokens}}}
+      - {payload: {incomplete_details: {reason: 7}}}
+      - {payload: {incomplete_details: null}}
+      - {payload: {}}
+      - {payload: not-a-map}
+      - {fields: {}, id: resp_a, payload: {incomplete_details: {reason: unknown}}}
+env: {}
+compare: {ignore: []}

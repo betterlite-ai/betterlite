@@ -1,0 +1,20 @@
+kind: helper
+name: mock-message-literals
+call:
+  messages_options:
+    fixture:
+      model_cost: {}
+      packaged: {}
+    steps:
+      - {function: mock_response, model: claude-opus-4-8, mock_response: null}
+      - {function: mock_response, model: claude-opus-4-8, mock_response: hello there}
+      - {function: mock_response, model: claude-opus-4-8, mock_response: ""}
+      - {function: mock_response, model: m, mock_response: litellm.InternalServerError}
+      - {function: mock_response, model: m, mock_response: litellm.ContextWindowExceededError}
+      - {function: mock_response, model: m, mock_response: litellm.RateLimitError}
+      - {function: mock_response, model: m, mock_response: litellm.internalservererror}
+      - {function: mock_response, model: m, mock_response: "litellm.RateLimitError "}
+      - {function: mock_response, model: m, mock_response: RateLimitError}
+      - {function: mock_response, model: m, mock_response: litellm.AuthenticationError}
+env: {}
+compare: {ignore: []}

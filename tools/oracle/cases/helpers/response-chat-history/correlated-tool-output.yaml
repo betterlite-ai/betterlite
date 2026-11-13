@@ -1,0 +1,19 @@
+kind: helper
+name: correlated-tool-output
+call:
+  response_chat_history:
+    operation: correlated_tool_output
+    histories:
+      - - {role: assistant, content: null, tool_calls: [{id: c2, custom: {name: g}}]}
+        - {role: tool, tool_call_id: c1, content: ok}
+        - {role: tool, tool_call_id: c2, content: ok}
+        - {role: tool, tool_call_id: c3, content: null}
+        - {role: tool, tool_call_id: c4, content: 7}
+        - {role: tool, content: missing}
+        - {role: tool, tool_call_id: c5, content: [{type: text, text: multi}]}
+      - - {role: tool, tool_call_id: c2, content: ok}
+        - {role: assistant, content: null, tool_calls: [{id: c2, custom: {name: g}}]}
+      - - {role: tool, tool_call_id: c9, content: [{type: text, text: a}, {type: image_url, image_url: {url: "https://x.test/i"}}]}
+        - {role: assistant, content: null, tool_calls: [{id: c9, function: {name: f}, custom: {name: g}}]}
+env: {}
+compare: {ignore: []}

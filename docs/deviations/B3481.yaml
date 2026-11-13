@@ -1,0 +1,29 @@
+task: B3481
+deviations:
+  - what: The active-poll registry is a struct the server owns, holding a tokio JoinSet and a map of interaction id to poll context, and shutdown aborts every poll; each schedule reaps the JoinSet's finished polls, logging a poll that panicked or was cancelled, and shutdown reaps before it aborts. LiteLLM keeps a process-global dict of asyncio tasks, drops a finished task's entry in _discard_poll, and relies on the GC.
+    why: Rule inject-dependencies and async-hygiene bar globals and detached tasks; a finished task stays in a JoinSet, handle and result included, until it is joined, so reaping keeps that set bounded by the active polls.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L241-L248
+  - what: Polling intervals and the timeout are Duration fields injected into InteractionPollContext, not globals read from litellm.constants when the module imports.
+    why: Dependencies come in through constructors; betterlite reads configuration once and passes it to the poll.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1831-L1843
+  - what: The settlement gate is an Arc<AtomicBool> claimed with a compare-and-swap on the poll context, not a key in the logging object's model_call_details dict.
+    why: The flag must be shared by the poll task and the delete path and only one of them may win; a compare-and-swap gives exactly-once without a lock.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L98-L111
+  - what: The poll bills and releases through the SettlementHost trait, whose reservation and error types are associated types, instead of calling methods on a Python logging object.
+    why: betterlite-interactions cannot name betterlite-logging's error types without a dependency cycle; the host supplies them, and settlement.rs reuses this trait.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L166-L200
+  - what: The default aget fetcher is not built here. The fetch is an injected function returning the caller's own error type, and the caller builds the aget-based one.
+    why: aget lives in betterlite-core, which depends on this crate, so the default fetcher is wired by the create path; this crate keeps the FetchInteraction shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L74-L83
+  - what: Names are shorter than LiteLLM's because a lint refuses names over 30 characters, so maybe_schedule_background_interaction_cost_polling is maybe_schedule_poll, poll_and_log_background_interaction_cost is poll_background_cost, BackgroundInteractionPollContext is InteractionPollContext and is_pollable_background_interaction is is_pollable_interaction.
+    why: Rule clear-names and the no-long-names hook cap identifiers at 30 characters; the behavior is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L250-L284
+  - what: The generated content, tool, delta and SSE event unions are serde internally tagged enums whose payload structs omit the discriminator field; LiteLLM models each member as a Pydantic class carrying its own type or event_type literal.
+    why: The enum variant is the discriminator in Rust and the JSON wire format is unchanged in both directions.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/generated.py#L662-L701
+  - what: Batch polling is not built; each poll task fetches on its own.
+    why: The task text defers grouping polls by provider and interaction id to a later optimization.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L114-L164
+  - what: An interaction record keeps created, updated and object as the provider's strings, so an unparsable datetime or an object other than "interaction" is accepted where Pydantic's AwareDatetime and Literal["interaction"] would reject it.
+    why: Nothing else comes from a working provider, and parsing would change the Rust field type without changing any value betterlite writes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/generated.py#L744-L770

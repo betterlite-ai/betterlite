@@ -9,8 +9,8 @@ vendors:
     max_writers: 20
   - id: deepseek
     limit_markers: ["Insufficient Balance", "Authentication Fails", "Rate Limit Reached", "Server Overloaded", "Can't reach the API server"]
-    max_parallel: 32
-    max_writers: 32
+    max_parallel: 128
+    max_writers: 128
 runners:
   - id: codex-worker
     vendor: openai
@@ -63,11 +63,10 @@ roles:
         attempts: 2
         timeout_minutes: 90
       - runner: deepseek-worker
-        model: deepseek-v4-pro[1m]
-        effort: high
+        model: deepseek-flash[1m]
+        effort: max
         attempts: 1
-        timeout_minutes: 120
-        fix_model: deepseek-flash[1m]
+        timeout_minutes: 90
       - runner: codex-worker
         model: gpt-6-luna
         effort: medium
@@ -92,8 +91,8 @@ roles:
     instructions: roles/reviewer.md
     ladder:
       - runner: deepseek-reviewer
-        model: deepseek-v4-pro[1m]
-        effort: high
+        model: deepseek-flash[1m]
+        effort: max
         attempts: 1
         timeout_minutes: 45
       - runner: claude-reviewer
@@ -110,7 +109,7 @@ roles:
     instructions: roles/reviewer.md
     ladder:
       - runner: deepseek-reviewer
-        model: deepseek-v4-pro[1m]
+        model: deepseek-flash[1m]
         effort: max
         attempts: 1
         timeout_minutes: 45
@@ -128,7 +127,7 @@ roles:
     instructions: roles/parity-reviewer.md
     ladder:
       - runner: deepseek-reviewer
-        model: deepseek-v4-pro[1m]
+        model: deepseek-flash[1m]
         effort: max
         attempts: 1
         timeout_minutes: 45
@@ -151,7 +150,7 @@ roles:
         attempts: 1
         timeout_minutes: 60
       - runner: deepseek-worker
-        model: deepseek-v4-pro[1m]
+        model: deepseek-flash[1m]
         effort: max
         attempts: 1
         timeout_minutes: 60

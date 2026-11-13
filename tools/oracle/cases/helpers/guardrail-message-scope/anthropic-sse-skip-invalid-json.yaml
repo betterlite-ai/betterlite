@@ -1,0 +1,6 @@
+kind: helper
+name: anthropic-sse-skip-invalid-json
+call:
+  b3663: {"function": "blocked_usage", "shape": "response", "original": {"kind": "stream", "items": [{"kind": "bytes", "text": "data: {not json\n\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":11,\"output_tokens\":1}}}\n\ndata: [1,2]\n\ndata:\n\n"}, {"kind": "bytes", "text": "broken but decoded\n\n"}]}}
+env: {}
+compare: {ignore: []}

@@ -29,7 +29,8 @@ pub(crate) fn ensure(
     task: &Task,
 ) -> Result<(PathBuf, String), GateError> {
     let branch = branch_name(task);
-    let path = root.join(worktrees).join(&task.id);
+    let folder = root.join(worktrees);
+    let path = folder.join(&task.id);
     prepare(root, &path, &branch)?;
     // inside the worker sandbox uv cannot hardlink from its cache and copies the whole LiteLLM venv
     finish(

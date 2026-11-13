@@ -1,0 +1,8 @@
+kind: helper
+name: oobabooga-reply-content-usage-and-errors
+call:
+  b8152:
+    function: "oobabooga_reply"
+    calls: [{"model": "m", "status": 200, "body": "{\"choices\": [{\"message\": {\"content\": \"hello\"}}], \"usage\": {\"prompt_tokens\": 1, \"completion_tokens\": 2, \"total_tokens\": 3}}"}, {"model": "m", "status": 200, "body": "{\"choices\": [{\"message\": {\"content\": null}}], \"usage\": {\"prompt_tokens\": 1, \"completion_tokens\": 2, \"total_tokens\": 3}}"}, {"model": "m", "status": 200, "body": "{\"choices\": [{\"message\": {\"content\": \"\"}}, {\"message\": {\"content\": \"second\"}}], \"usage\": {\"prompt_tokens\": 0, \"completion_tokens\": 0, \"total_tokens\": 0}}"}, {"model": "m", "status": 500, "body": "plain failure text"}, {"model": "m", "status": 200, "body": "not json"}, {"model": "m", "status": 200, "body": "{\"error\": \"model not loaded\"}"}, {"model": "m", "status": 503, "body": "{\"error\": \"\"}"}, {"model": "m", "status": 200, "body": "{\"usage\": {\"prompt_tokens\": 1, \"completion_tokens\": 2, \"total_tokens\": 3}}"}, {"model": "m", "status": 200, "body": "{\"choices\": [], \"usage\": {\"prompt_tokens\": 1, \"completion_tokens\": 2, \"total_tokens\": 3}}"}, {"model": "m", "status": 200, "body": "{\"choices\": [{}], \"usage\": {\"prompt_tokens\": 1, \"completion_tokens\": 2, \"total_tokens\": 3}}"}, {"model": "m", "status": 200, "body": "{\"choices\": [{\"message\": {}}], \"usage\": {\"prompt_tokens\": 1, \"completion_tokens\": 2, \"total_tokens\": 3}}"}]
+env: {}
+compare: {ignore: []}

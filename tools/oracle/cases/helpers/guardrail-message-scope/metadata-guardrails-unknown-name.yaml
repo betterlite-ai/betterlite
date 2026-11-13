@@ -1,0 +1,6 @@
+kind: helper
+name: metadata-guardrails-unknown-name
+call:
+  b3663: {"function": "proceed", "data": {"metadata": {"guardrails": {"missing": true}}}, "guardrail_name": "presidio", "callbacks": {"pii": ["presidio"]}}
+env: {}
+compare: {ignore: []}

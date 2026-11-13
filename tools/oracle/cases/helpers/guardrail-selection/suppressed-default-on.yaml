@@ -1,0 +1,6 @@
+kind: helper
+name: suppressed-default-on
+call:
+  b3665: {"function": "should_run_guardrail", "guardrail_name": "g", "event_hook": "pre_call", "default_on": true, "data": {}, "event_type": "pre_call", "suppressed": ["g"]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,144 @@
+kind: helper
+name: container-walk
+call:
+  response_id_traversal:
+    operation: response_rewrite
+    scenarios:
+      - response:
+          id: resp_YQ==
+          output:
+            - container_id: c1
+            - code_interpreter_call:
+                container_id: c2
+            - type: message
+              content:
+                - annotations:
+                    - container_id: c3
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_YQ==
+          output:
+            - type: function_call
+              content:
+                - annotations:
+                    - container_id: c4
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_YQ==
+          output:
+            - container_id: "cntr_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm90aGVyO21vZGVsX2lkOm07Y29udGFpbmVyX2lkOmM="
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_YQ==
+          output:
+            - container_id: "cntr_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOjttb2RlbF9pZDo7Y29udGFpbmVyX2lkOmM="
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_YQ==
+          output:
+            - container_id: ""
+            - container_id: null
+            - container_id: 5
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_YQ==
+          output:
+            - __object__:
+                fields:
+                  container_id: c1
+                  type: message
+                  content:
+                    - annotations:
+                        - container_id: c3
+                  code_interpreter_call:
+                    __object__:
+                      fields:
+                        container_id: c2
+                      readonly: []
+                readonly:
+                  - container_id
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_YQ==
+          output:
+            - code_interpreter_call:
+                __object__:
+                  fields:
+                    container_id: c9
+                  readonly: []
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_YQ==
+          output:
+            - __object__:
+                fields:
+                  code_interpreter_call:
+                    container_id: c8
+                readonly: []
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_YQ==
+          output:
+            - code_interpreter_call:
+                container_id: c2
+                code_interpreter_call:
+                  container_id: c9
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_YQ==
+          output:
+            - code_interpreter_call:
+                type: message
+                container_id: c2
+                content:
+                  - annotations:
+                      - container_id: c3
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_YQ==
+          output:
+            - __object__:
+                fields:
+                  code_interpreter_call:
+                    type: message
+                    content:
+                      - annotations:
+                          - container_id: c3
+                readonly: []
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: dep_a
+env: {}
+compare:
+  ignore: []

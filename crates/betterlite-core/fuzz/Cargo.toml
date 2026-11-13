@@ -183,8 +183,22 @@ doc = false
 bench = false
 
 [[bin]]
+name = "responses_input_messages"
+path = "fuzz_targets/responses_input_messages.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "response_id_codecs"
 path = "fuzz_targets/response_id_codecs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "file_routing_ids"
+path = "fuzz_targets/file_routing_ids.rs"
 test = false
 doc = false
 bench = false
@@ -199,6 +213,13 @@ bench = false
 [[bin]]
 name = "realtime_contract"
 path = "fuzz_targets/realtime_contract.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "messages_sse_events"
+path = "fuzz_targets/messages_sse_events.rs"
 test = false
 doc = false
 bench = false

@@ -1,0 +1,50 @@
+kind: helper
+name: jwt-claims-team-alias
+call:
+  jwt_claims:
+    scenarios:
+      - settings: {team_alias_jwt_field: team.name}
+        trusted_issuers: []
+        claims: {team: {name: core}}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_alias_jwt_field: team.name}
+        trusted_issuers: []
+        claims: {team: {}}
+        default_value: fallback
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_alias_jwt_field: team.name}
+        trusted_issuers: []
+        claims: {team: {name: null}}
+        default_value: fallback
+        valid_user_email: null
+        leeway: 0
+      - settings: {}
+        trusted_issuers: []
+        claims: {team: {name: core}}
+        default_value: fallback
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_alias_jwt_field: 'kubernetes\.io.team'}
+        trusted_issuers: [https://idp.example]
+        claims: {_litellm_jwt_issuer: https://idp.example, kubernetes.io: {team: alias-team}}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_id_jwt_field: team_id, team_alias_jwt_field: team_name}
+        trusted_issuers: []
+        claims: {team_id: team-1, team_name: core}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_id_jwt_field: '', team_alias_jwt_field: ''}
+        trusted_issuers: []
+        claims: {}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+    tokens: []
+env: {}
+compare: {ignore: []}
