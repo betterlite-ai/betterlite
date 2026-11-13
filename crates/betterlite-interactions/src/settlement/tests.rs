@@ -320,17 +320,17 @@ async fn fetch_error_claim_lost_releases_nothing() {
 async fn settles_with_the_create_credentials_from_the_poll_context() {
     let host = host(Some("reservation-1"));
     let mut registry = BackgroundPollRegistry::default();
-    let mut context = poll_context(host);
-    context.custom_llm_provider = "vertex_ai".to_owned();
-    context.api_key = Some(SecretString::from("create-key"));
-    context.api_base = Some("https://example.test".to_owned());
+    let mut create_context = poll_context(host);
+    create_context.custom_llm_provider = "vertex_ai".to_owned();
+    create_context.api_key = Some(SecretString::from("create-key"));
+    create_context.api_base = Some("https://example.test".to_owned());
     let fetched = Arc::new(Mutex::new(None));
     let recorder = Arc::clone(&fetched);
     let fetch: FetchInteraction<FakeHost, FakeError> = Arc::new(move |context| {
         *recorder.lock().unwrap_or_else(PoisonError::into_inner) = Some(context);
         Box::pin(ready(Ok(answer("completed", true))))
     });
-    assert!(registry.schedule(context, Arc::clone(&fetch)));
+    assert!(registry.schedule(create_context, Arc::clone(&fetch)));
     settle_before_delete(&registry, "interaction-1", fetch)
         .await
         .expect("the fetched interaction bills");
