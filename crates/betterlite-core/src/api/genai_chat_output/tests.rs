@@ -241,12 +241,12 @@ fn an_absent_finish_reason_maps_to_stop() {
 #[test]
 fn a_text_delta_becomes_one_text_part() {
     let mut state = GenAiStreamState::default();
-    let chunk = stream_chunk(json!({"content": "Hel"}), None, None);
+    let chunk = stream_chunk(json!({"content": "Hello"}), None, None);
     assert_eq!(
         translated_chunk(&chunk, &mut state),
         json!({
             "candidates": [{
-                "content": {"parts": [{"text": "Hel"}], "role": "model"},
+                "content": {"parts": [{"text": "Hello"}], "role": "model"},
                 "finishReason": null,
                 "index": 0,
                 "safetyRatings": [],
