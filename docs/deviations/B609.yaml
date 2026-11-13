@@ -1,2 +1,5 @@
 task: B609
-deviations: []
+deviations:
+  - what: A streamed Anthropic thinking delta followed by a usage block that reports no thinking tokens counts 0 reasoning tokens, and the rest of the completion tokens are text tokens.
+    why: LiteLLM estimates them with its tiktoken based token_counter, which is an async engine behind a model catalog in betterlite and cannot run inside the synchronous chunk parser.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L2296-L2303

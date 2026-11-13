@@ -101,6 +101,7 @@ pub(super) fn claude3_invoke_stream() {
         r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}"#,
     ));
     assert_eq!(text.choices[0].delta.content, "hi");
+    assert_eq!(text.id, format!("chatcmpl-{}", super::support::fixed_id()));
     let thinking = anthropic(parse(
         &mut decoder,
         r#"{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"plan"}}"#,
@@ -125,6 +126,9 @@ pub(super) fn claude3_invoke_stream() {
         r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}"#,
     ));
     assert_eq!(finished.choices[0].finish_reason.as_deref(), Some("stop"));
+    // the deviation in docs/deviations/B609.yaml: the streamed thinking text is not tokenized
+    let details = finished.usage.unwrap().completion_tokens_details;
+    assert_eq!(details.reasoning, Some(0));
 
     let mut converted = stream_decoder(Some("anthropic"), &options(Some(true), true));
     let suppressed = anthropic(parse(
@@ -365,11 +369,11 @@ pub(super) fn stream_selector_variants() {
         r#"{"start":{"toolUse":{"toolUseId":"j","name":"json_tool_call"}},"contentBlockIndex":0}"#,
     );
     let mut explicit_json = stream_decoder(None, &options(Some(true), false));
-    assert!(
-        converse(explicit_json.chunk_parser(&converse_probe).unwrap())
-            .delta
-            .tool_calls
-            .is_none()
+    let suppressed = converse(explicit_json.chunk_parser(&converse_probe).unwrap());
+    assert!(suppressed.delta.tool_calls.is_none());
+    assert_eq!(
+        suppressed.id,
+        format!("chatcmpl-{}", super::support::fixed_id())
     );
     let mut legacy_json = bedrock_event_stream_decoder(None, &options(Some(true), false));
     assert!(
