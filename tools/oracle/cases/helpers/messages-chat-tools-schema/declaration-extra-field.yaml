@@ -1,0 +1,15 @@
+kind: helper
+name: messages-chat-tools-schema-declaration-extra-field
+call:
+  messages_chat_tools_schema:
+    operation: request
+    request:
+      model: gpt-4o
+      messages: []
+      tools:
+        - name: lookup
+          input_schema: {type: object}
+          type: custom
+          display_width_px: 800
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: messages-chat-tools-schema-tool-choice-unknown-type-errors
+call:
+  messages_chat_tools_schema:
+    operation: request
+    request:
+      model: gpt-4o
+      messages: []
+      tool_choice: {type: bogus}
+env: {}
+compare: {ignore: []}
