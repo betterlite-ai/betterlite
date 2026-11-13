@@ -64,13 +64,9 @@ fn resolved_fields(resolved: ResolvedModel, original_model: &str) -> (String, St
     (resolved_model, provider_name)
 }
 
-// _resolve_provider_from_router_alias: the first deployment that resolves wins, and every failure stays silent.
-fn resolve_from_router_alias(
-    model: &str,
-    resolver: &dyn ProviderResolution,
-    snapshot: &dyn DeploymentSnapshot,
-) -> Option<(String, String)> {
-    let deployments = snapshot.model_list().ok()??;
+// The underlying models of the deployments registered under `model`, in model_list order.
+fn alias_candidates<'list>(model: &str, deployments: &'list [Json]) -> Vec<&'list str> {
+    let mut candidates = Vec::new();
     for deployment in deployments {
         let Json::Object(row) = deployment else {
             continue;
@@ -87,9 +83,21 @@ fn resolve_from_router_alias(
         let Some(Json::Text(underlying)) = params.get("model") else {
             continue;
         };
-        if underlying.is_empty() {
-            continue;
+        if !underlying.is_empty() {
+            candidates.push(underlying.as_str());
         }
+    }
+    candidates
+}
+
+// _resolve_provider_from_router_alias: the first candidate that resolves wins, and every failure stays silent.
+fn resolve_from_router_alias(
+    model: &str,
+    resolver: &dyn ProviderResolution,
+    snapshot: &dyn DeploymentSnapshot,
+) -> Option<(String, String)> {
+    let deployments = snapshot.model_list().ok()??;
+    for underlying in alias_candidates(model, deployments) {
         let Ok(resolved) = resolver.resolve(underlying) else {
             continue;
         };

@@ -2,9 +2,9 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_auth::rejection_provider::{
-    DeploymentSnapshot, ProviderResolution, SnapshotError, resolve_llm_provider_for_rate_limit,
-};
+use betterlite_auth::rejection_provider::{DeploymentSnapshot, ProviderResolution, SnapshotError};
+// ast-grep-ignore: no-long-names
+use betterlite_auth::rejection_provider::resolve_llm_provider_for_rate_limit;
 use betterlite_models::decisions::Json;
 use betterlite_models::resolution::{ProviderIdentity, ResolutionError, ResolvedModel};
 use serde::Deserialize;
