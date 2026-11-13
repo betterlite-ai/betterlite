@@ -122,10 +122,9 @@ pub(crate) fn write<T>(field: &'static str, value: &T) -> Result<String, CallErr
 where
     T: Serialize,
 {
-    serde_json::to_string(value).map_err(|encoding_error| CallError::Json {
-        field,
-        source: encoding_error,
-    })
+    let encoded = serde_json::to_string(value);
+    let text = encoded.map_err(|source| CallError::Json { field, source })?;
+    Ok(text)
 }
 
 pub(crate) fn suppressed_from_text(text: &str) -> Result<BTreeSet<String>, CallError> {
