@@ -190,15 +190,18 @@ def create_outcome(call: CreateCall) -> Json:
 
 
 def job_outcome(call: JobCall) -> Json:
+    status: Json = None
     try:
         batch = BatchTransform.transform_vertex_ai_batch_response_to_openai_batch_response(
             call["response"],
         )
     except VertexAIError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L99
-        return {"ok": False, "status": error.status_code}
+        status = error.status_code
     except (AttributeError, KeyError, TypeError, ValueError):
-        return {"ok": False, "status": None}
-    return {"ok": True, "batch": job_state(batch)}
+        status = None
+    else:
+        return {"ok": True, "batch": job_state(batch)}
+    return {"ok": False, "status": status}
 
 
 def list_outcome(call: ListCall) -> Json:

@@ -139,20 +139,23 @@ fn create_outcome(call: &CreateCall) -> Result<Value, Box<HelperError>> {
 }
 
 fn job_outcome(call: &JobCall, local: &LocalTimeContext) -> Value {
-    let Ok(response) =
-        serde_json::from_value::<VertexBatchPredictionResponse>(call.response.clone())
-    else {
-        return json!({"ok": false, "status": Value::Null});
-    };
-    match to_batch_object(&response, local) {
+    match batch_of(call, local) {
         Ok(batch) => json!({"ok": true, "batch": job_state(&batch)}),
-        Err(error) => json!({"ok": false, "status": error.status_code()}),
+        Err(status) => json!({"ok": false, "status": status}),
     }
 }
 
+// a job payload that is not a batch response has no provider status, and a projection error keeps its own
+fn batch_of(call: &JobCall, local: &LocalTimeContext) -> Result<BatchObject, Option<u16>> {
+    let response = serde_json::from_value::<VertexBatchPredictionResponse>(call.response.clone())
+        .map_err(|_| None)?;
+    to_batch_object(&response, local).map_err(|error| error.status_code())
+}
+
 fn list_outcome(call: &ListCall, local: &LocalTimeContext) -> Value {
-    let Ok(page) = serde_json::from_value::<VertexBatchJobPage>(call.page.clone()) else {
-        return json!({"ok": false, "status": Value::Null});
+    let page = match serde_json::from_value::<VertexBatchJobPage>(call.page.clone()) {
+        Ok(page) => page,
+        Err(_) => return json!({"ok": false, "status": Value::Null}),
     };
     match to_batch_list(&page, local) {
         Ok(list) => json!({
