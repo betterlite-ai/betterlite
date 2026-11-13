@@ -1,6 +1,6 @@
 import logging
 from collections.abc import Mapping
-from typing import Final, Literal, TypeAlias
+from typing import ClassVar, Final, Literal, TypeAlias
 
 from pydantic import JsonValue
 from typing_extensions import override
@@ -11,6 +11,7 @@ from betterlite.types.utils.base import (
     ModelValue,
     ResponseObject,
     drop_none_fields,
+    dump_value,
 )
 from betterlite.types.utils.message import Delta, Message
 from betterlite.types.utils.tool_calls import ChoiceLogprobs
@@ -62,11 +63,15 @@ class Choices(ResponseObject):
         self, finish_reason: JsonValue = None, index: JsonValue = None,
         message: ModelValue = None, logprobs: JsonValue = None,
         enhancements: JsonValue = None,
-        provider_specific_fields: Mapping[str, JsonValue] | None = None,
+        provider_specific_fields: Mapping[str, ModelValue] | None = None,
         **params: InitValue,
     ) -> None:
-        selected: dict[str, JsonValue] | None = (
-            None if provider_specific_fields is None else dict(provider_specific_fields)
+        selected: dict[str, InitValue] | None = (
+            None if provider_specific_fields is None
+            else {
+                str(name): dump_value(item, exclude_unset=True)
+                for name, item in provider_specific_fields.items()
+            }
         )
         if finish_reason is None:
             mapped: JsonValue = "stop"
@@ -76,13 +81,11 @@ class Choices(ResponseObject):
                 case str():
                     mapped = map_finish_reason(finish_reason)
                     if finish_reason != mapped:
-                        selected = native_finish_reason(provider_specific_fields, finish_reason)
+                        selected = native_finish_reason(selected, finish_reason)
                 case bool() | int() | float() | list() | dict():
                     mapped = finish_reason
         if selected is not None:
-            params["provider_specific_fields"] = {
-                str(name): item for name, item in selected.items()
-            }
+            params["provider_specific_fields"] = selected
         super().__init__(
             finish_reason=mapped, index=0 if index is None else index,
             message=message_value(message), logprobs=logprobs_value(logprobs), **params,
@@ -93,10 +96,10 @@ class Choices(ResponseObject):
 
 
 class StreamingChoices(ResponseObject):
-    finish_reason: FinishReason | None = None
-    index: int
-    delta: Delta
-    logprobs: ChoiceLogprobs | JsonValue = None
+    finish_reason: ClassVar[FinishReason | None]
+    index: ClassVar[int]
+    delta: ClassVar[Delta]
+    logprobs: ClassVar[ChoiceLogprobs | JsonValue]
 
     @override
     def __init__(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2007-L2038
@@ -132,9 +135,9 @@ class StreamingChoices(ResponseObject):
 
 
 def native_finish_reason(
-    fields: Mapping[str, JsonValue] | None, finish_reason: str,
-) -> dict[str, JsonValue]:
-    merged: dict[str, JsonValue] = {} if fields is None else dict(fields)
+    fields: dict[str, InitValue] | None, finish_reason: str,
+) -> dict[str, InitValue]:
+    merged: dict[str, InitValue] = {} if fields is None else dict(fields)
     merged["native_finish_reason"] = finish_reason
     return merged
 

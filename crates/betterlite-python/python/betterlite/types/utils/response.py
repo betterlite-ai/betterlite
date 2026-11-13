@@ -121,21 +121,26 @@ class ModelResponseStream(ModelResponseBase):
 
     @override
     def __init__(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2107-L2159
-        self, choices: Sequence[ModelValue] | None = None, id: JsonValue = None,
+        self, choices: ModelValue | Sequence[ModelValue] = None, id: JsonValue = None,
         created: JsonValue = None, provider_specific_fields: Mapping[str, JsonValue] | None = None,
         **kwargs: InitValue,
     ) -> None:
-        selected: list[StreamingChoices] = (
-            [StreamingChoices()] if choices is None
-            else [validated_value(choice, StreamingChoices) for choice in choices]
-        )
         extras: dict[str, InitValue] = dict(kwargs)
+        extras["object"] = "chat.completion.chunk"
         if "usage" in kwargs and kwargs["usage"] is not None:
             extras["usage"] = response_usage(kwargs["usage"])
+        selected: list[StreamingChoices] = [StreamingChoices()]
+        if choices is not None:
+            match choices:
+                case list():
+                    selected = [
+                        validated_value(choice, StreamingChoices) for choice in choices
+                    ]
+                case bool() | int() | float() | str() | Mapping() | Dumpable() | Sequence():
+                    selected = [StreamingChoices()]
         super().__init__(
             choices=selected, id=_generate_id() if id is None else id,
             created=int(time.time()) if created is None else created,
-            object="chat.completion.chunk",
             provider_specific_fields=provider_specific_fields, **extras,
         )
 

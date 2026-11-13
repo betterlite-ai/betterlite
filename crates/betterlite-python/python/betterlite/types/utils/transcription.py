@@ -1,23 +1,29 @@
-from typing import Literal
+from typing import ClassVar, Literal
 
-from pydantic import JsonValue, PrivateAttr
+from pydantic import ConfigDict, JsonValue, PrivateAttr
 from typing_extensions import override
 
 from betterlite.types.utils.base import ResponseObject
 
 
 class TranscriptionUsageDurationObject(ResponseObject):  # ast-grep-ignore: no-long-names
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     type: Literal["duration"]
     seconds: float
 
 
 # ast-grep-ignore: no-long-names
 class TranscriptionUsageInputTokenDetailsObject(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     audio_tokens: int
     text_tokens: int
 
 
 class TranscriptionUsageTokensObject(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     type: Literal["tokens"]
     input_tokens: int
     output_tokens: int

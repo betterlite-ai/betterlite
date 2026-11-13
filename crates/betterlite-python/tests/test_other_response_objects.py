@@ -36,6 +36,7 @@ DURATION_SECONDS = 1.5
 IMAGE_COUNT = 2
 AUDIO_TOKENS = 1
 TEXT_TOKENS = 2
+FUNCTION_VALUES: dict[str, JsonValue] = {"name": "f", "arguments": "{}"}
 
 
 class Dumpable(Protocol):
@@ -872,15 +873,88 @@ def test_small_types_exports() -> None:
         assert name in betterlite_utils.__all__
 
 
+def test_stream_choice_shapes() -> None:
+    delta: dict[str, JsonValue] = {"content": "y"}
+    choice_dict: dict[str, JsonValue] = {"delta": delta}
+    reference_dict = litellm_utils.ModelResponseStream(
+        choices=choice_dict, id="i", created=CREATED,
+    )
+    ours_dict = betterlite_utils.ModelResponseStream(
+        choices=choice_dict, id="i", created=CREATED,
+    )
+    assert_same("stream dict choice", reference_dict, ours_dict)
+    reference_single = litellm_utils.ModelResponseStream(
+        choices=betterlite_utils.StreamingChoices(delta=delta), id="i", created=CREATED,
+    )
+    ours_single = betterlite_utils.ModelResponseStream(
+        choices=betterlite_utils.StreamingChoices(delta=delta), id="i", created=CREATED,
+    )
+    assert_same("stream single choice", reference_single, ours_single)
+
+
+def test_stream_object_round_trip() -> None:
+    reference = litellm_utils.ModelResponseStream(
+        choices=[], object="chat.completion.chunk", id="i", created=CREATED,
+    )
+    ours = betterlite_utils.ModelResponseStream(
+        choices=[], object="chat.completion.chunk", id="i", created=CREATED,
+    )
+    assert ours.object == "chat.completion.chunk"
+    assert_same("stream object", reference, ours)
+    validated = betterlite_utils.ModelResponseStream.model_validate(ours.model_dump())
+    assert_same("stream round trip", reference, validated)
+    fixed = betterlite_utils.ModelResponseStream(object="made-up", id="i", created=CREATED)
+    assert fixed.object == "chat.completion.chunk"
+
+
+def test_transcription_extras() -> None:
+    duration_values: dict[str, JsonValue] = {
+        "type": "duration", "seconds": DURATION_SECONDS, "foo": 1,
+    }
+    duration_reference = litellm_utils.TranscriptionUsageDurationObject.model_validate(
+        duration_values,
+    )
+    duration_ours = betterlite_utils.TranscriptionUsageDurationObject.model_validate(
+        duration_values,
+    )
+    assert_same("transcription duration ignore", duration_reference, duration_ours)
+    details_values: dict[str, JsonValue] = {
+        "audio_tokens": AUDIO_TOKENS, "text_tokens": TEXT_TOKENS, "foo": 1,
+    }
+    details_reference = litellm_utils.TranscriptionUsageInputTokenDetailsObject.model_validate(
+        details_values,
+    )
+    details_ours = betterlite_utils.TranscriptionUsageInputTokenDetailsObject.model_validate(
+        details_values,
+    )
+    assert_same("transcription details ignore", details_reference, details_ours)
+    tokens_values: dict[str, JsonValue] = {
+        "type": "tokens", "input_tokens": PROMPT_TOKENS,
+        "output_tokens": COMPLETION_TOKENS, "total_tokens": TOTAL_TOKENS,
+        "input_token_details": details_values, "foo": 1,
+    }
+    tokens_reference = litellm_utils.TranscriptionUsageTokensObject.model_validate(tokens_values)
+    tokens_ours = betterlite_utils.TranscriptionUsageTokensObject.model_validate(tokens_values)
+    assert_same("transcription tokens ignore", tokens_reference, tokens_ours)
+
+
 def pydantic_pairs() -> tuple[tuple[pydantic.BaseModel, pydantic.BaseModel], ...]:
-    return (
+    pairs: list[tuple[pydantic.BaseModel, pydantic.BaseModel]] = [
         (
             betterlite_utils.ModelResponse(id="i", created=5),
             litellm_utils.ModelResponse(id="i", created=5),
         ),
         (betterlite_utils.Message(content="x"), litellm_utils.Message(content="x")),
         (betterlite_utils.EmbeddingResponse(), litellm_utils.EmbeddingResponse()),
-    )
+        (betterlite_utils.Delta(), litellm_utils.Delta()),
+        (betterlite_utils.StreamingChoices(), litellm_utils.StreamingChoices()),
+        (betterlite_utils.TextChoices(), litellm_utils.TextChoices()),
+        (
+            betterlite_utils.ChatCompletionMessageToolCall(function=FUNCTION_VALUES),
+            litellm_utils.ChatCompletionMessageToolCall(function=FUNCTION_VALUES),
+        ),
+    ]
+    return tuple(pairs)
 
 
 def schema_properties(item: pydantic.BaseModel) -> dict[str, JsonValue]:

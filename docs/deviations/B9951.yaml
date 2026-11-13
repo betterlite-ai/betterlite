@@ -1,11 +1,11 @@
 task: B9951
 deviations:
-  - what: "json() on a response object returns standard JSON text from model_dump_json, where LiteLLM's Message, Delta, Choices, Usage, StreamingChoices, ModelResponse, ModelResponseStream, Embedding, EmbeddingResponse, Logprobs, TextChoices, TextCompletionResponse, HiddenParams, ImageObject, ImageResponse and TranscriptionResponse define json() to return the model_dump dict."
-    why: "The classes are pydantic models now, so pydantic's json() is the base method and a dict-returning override would not type against it; betterlite's compatibility policy says output is standard JSON, and the dict is model_dump()'s."
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1499-L1504
+  - what: "json() returns the model_dump dict on every response object, where LiteLLM's Delta, Choices, StreamingChoices, Usage, TextChoices, ChatCompletionMessageToolCall and the other classes that do not define json() inherit pydantic's deprecated json(), which returns a JSON string."
+    why: "The task asks for the json() LiteLLM's classes define, and the classes that define it return the dump; a base method cannot switch on the class, and a caller of Message, ModelResponse or EmbeddingResponse that indexes response.json() has to keep working. A caller that read one of the other classes' json() as text now gets a dict."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1507
+  - what: "A pydantic model inside provider_specific_fields is dumped with exclude_unset=True when the object is built, where LiteLLM stores the model in its dict[str, Any] field and serializes it with the options of the model_dump() call on the parent."
+    why: "The declared field type is dict[str, JsonValue], and pydantic rejects a model during validation; dumping at construction reproduces LiteLLM's exclude_unset=True output, and a parent dump without exclude_unset then carries fewer None keys than LiteLLM's."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1644
   - what: "A constructor accepts a model object through the structural Dumpable protocol, which checks for a usable model_dump, where LiteLLM's isinstance(value, BaseModel) checks exclude an object that has model_dump without deriving from pydantic.BaseModel."
     why: "Python duck typing is outside the compatibility policy; a value of the declared type, pydantic's BaseModel included, behaves the same, and the wire output is the model's model_dump."
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1690-L1693
-  - what: "json() ignores encoder and models_as_dict when they are absent and raises TypeError when dumps_kwargs are given, where pydantic's deprecated json() raises TypeError for any of the three, encoder=None included."
-    why: "The unsupported options cannot be typed against pydantic's Any-typed sentinels without the wheel's no-Any rule; the include, exclude, by_alias, exclude_unset, exclude_defaults and exclude_none options behave as in pydantic."
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1499-L1504
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1679-L1683

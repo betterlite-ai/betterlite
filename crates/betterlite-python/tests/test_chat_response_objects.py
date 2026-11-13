@@ -252,9 +252,9 @@ def test_access_dict_parity() -> None:
     reference_message: Dumpable = litellm_utils.Message(content="x")
     assert message.dict() == reference_message.dict()  # pyright: ignore[reportDeprecated]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1499-L1504
     assert message.dict(exclude_none=True) == reference_message.dict(exclude_none=True)  # pyright: ignore[reportDeprecated]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1499-L1504
-    usage_text = betterlite_utils.Usage().json(exclude_none=True)
-    dumped_usage = parse_object(str(usage_text))
-    assert dumped_usage == {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    usage = betterlite_utils.Usage()
+    dumped_usage: JsonValue = usage.json(exclude_none=True)
+    assert dumped_usage == usage.model_dump()
 
 
 def test_dump_message_choices() -> None:
@@ -435,8 +435,12 @@ def test_dump_unset_default() -> None:
 def test_dump_json_parity() -> None:
     ours = betterlite_utils.ModelResponse(id="i", created=5, model="m")
     reference: Dumpable = litellm_utils.ModelResponse(id="i", created=5, model="m")
-    assert parse_object(ours.model_dump_json()) == parse_object(reference.model_dump_json())
-    assert parse_object(ours.json()) == ours.model_dump(exclude_unset=False)
+    assert ours.json() == ours.model_dump()
+    assert_same("response json", reference, ours)
+    message = betterlite_utils.Message(content="x")
+    reference_message: Dumpable = litellm_utils.Message(content="x")
+    assert message.json() == message.model_dump()
+    assert_same("message json", reference_message, message)
 
 
 def test_tool_call_function_args() -> None:
@@ -587,14 +591,14 @@ def test_choices_unknown_warns() -> None:
 
 
 def test_choices_keep_model() -> None:
-    message = betterlite_utils.Message(content="y").model_dump(exclude_unset=True)
-    nested: Dumpable = litellm_utils.Message(content="y")
-    fields: dict[str, Dumpable] = {"x": nested}
+    message = betterlite_utils.Message(content="y")
+    reference_message = litellm_utils.Message(content="y")
     ours = betterlite_utils.Choices(provider_specific_fields={"x": message})
-    reference = litellm_utils.Choices(provider_specific_fields=fields)
+    reference_fields: dict[str, Dumpable] = {"x": reference_message}
+    reference = litellm_utils.Choices(provider_specific_fields=reference_fields)
     stored = ours.provider_specific_fields
     assert stored is not None
-    assert stored["x"] == message
+    assert stored["x"] == message.model_dump(exclude_unset=True)
     reference_dumpable: Dumpable = reference
     assert ours.model_dump(exclude_unset=True) == reference_dumpable.model_dump(
         exclude_unset=True,

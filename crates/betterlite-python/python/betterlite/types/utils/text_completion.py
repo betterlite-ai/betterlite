@@ -1,6 +1,6 @@
 import time
 from collections.abc import Sequence
-from typing import Unpack
+from typing import ClassVar, Unpack
 
 from pydantic import JsonValue, PrivateAttr
 from typing_extensions import override
@@ -26,10 +26,10 @@ class Logprobs(ResponseObject):
 
 
 class TextChoices(ResponseObject):
-    finish_reason: FinishReason | None = None
-    index: int | None = None
-    text: str | None = None
-    logprobs: Logprobs | None = None
+    finish_reason: ClassVar[FinishReason | None]
+    index: ClassVar[int | None]
+    text: ClassVar[str | None]
+    logprobs: ClassVar[Logprobs | None]
 
     @override
     def __init__(

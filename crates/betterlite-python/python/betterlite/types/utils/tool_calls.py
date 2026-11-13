@@ -1,7 +1,7 @@
 import json
 import uuid
 from collections.abc import Mapping, Sequence
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import JsonValue, field_validator
 from typing_extensions import override
@@ -96,9 +96,9 @@ class ChatCompletionDeltaToolCall(ResponseObject):
 
 
 class ChatCompletionMessageToolCall(ResponseObject):
-    id: str
-    function: Function
-    type: str
+    id: ClassVar[str]
+    function: ClassVar[Function]
+    type: ClassVar[str]
 
     @override
     def __init__(
@@ -107,7 +107,14 @@ class ChatCompletionMessageToolCall(ResponseObject):
     ) -> None:
         generated = str(uuid.uuid4()) if id is None else id
         kind = "function" if type is None else type
-        super().__init__(function=function, id=generated, type=kind, **params)
+        selected: ModelValue = function
+        if function is not None:
+            match function:
+                case Mapping():
+                    selected = Function.model_validate(function)
+                case Dumpable() | bool() | int() | float() | str() | list():
+                    selected = function
+        super().__init__(function=selected, id=generated, type=kind, **params)
 
 
 class ChatCompletionAudioResponse(ResponseObject):

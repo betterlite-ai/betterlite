@@ -7,6 +7,7 @@ from typing import (
     TypedDict,
     TypeVar,
     Unpack,
+    overload,
     runtime_checkable,
 )
 
@@ -15,6 +16,7 @@ from pydantic.main import IncEx
 from typing_extensions import override
 
 ModelType = TypeVar("ModelType", bound="ResponseObject")
+JsonCallValue: TypeAlias = JsonValue | IncEx | Callable[[JsonValue], JsonValue]
 
 
 class DumpOptions(TypedDict, total=False):
@@ -59,12 +61,12 @@ def drop_none_fields(item: "ResponseObject", names: Collection[str]) -> None:
             del item[name]
 
 
-def dump_value(value: InitValue) -> InitValue:
+def dump_value(value: InitValue, *, exclude_unset: bool = False) -> InitValue:
     if value is None:
         return None
     match value:
         case Dumpable():
-            dumped: dict[str, JsonValue] = value.model_dump()
+            dumped: dict[str, JsonValue] = value.model_dump(exclude_unset=exclude_unset)
             return dumped
         case Mapping() | Sequence() | bool() | int() | float():
             return value
@@ -130,6 +132,26 @@ class ResponseObject(BaseModel):
         dumped: dict[str, JsonValue] = super().model_dump(**kwargs)
         return dumped
 
+    @overload
+    def json(self, *args: JsonValue) -> dict[str, JsonValue]: ...
+
+    @overload
+    def json(
+        self, *, include: IncEx | None = None, exclude: IncEx | None = None,
+        by_alias: bool = False, exclude_unset: bool = False,
+        exclude_defaults: bool = False, exclude_none: bool = False,
+        encoder: Callable[[JsonValue], JsonValue] | None = None,
+        models_as_dict: bool = False, **dumps_kwargs: JsonValue,
+    ) -> str: ...
+
+    @override
+    def json(self, *_args: JsonValue, **_kwargs: JsonCallValue) -> JsonValue:
+        # json() dumps like LiteLLM's; the second overload matches pydantic's deprecated signature.
+        if _args:
+            raise TypeError("json() takes no positional arguments")
+        dumped: dict[str, JsonValue] = self.model_dump()
+        return dumped
+
     @override
     def dict(
         self, *, include: IncEx | None = None, exclude: IncEx | None = None,
@@ -137,22 +159,6 @@ class ResponseObject(BaseModel):
         exclude_defaults: bool = False, exclude_none: bool = False,
     ) -> dict[str, JsonValue]:
         return self.model_dump(
-            include=include, exclude=exclude, by_alias=by_alias,
-            exclude_unset=exclude_unset, exclude_defaults=exclude_defaults,
-            exclude_none=exclude_none,
-        )
-
-    @override
-    def json(
-        self, *, include: IncEx | None = None, exclude: IncEx | None = None,
-        by_alias: bool = False, exclude_unset: bool = False,
-        exclude_defaults: bool = False, exclude_none: bool = False,
-        encoder: Callable[[JsonValue], JsonValue] | None = None,
-        models_as_dict: bool = False, **dumps_kwargs: JsonValue,
-    ) -> str:
-        if dumps_kwargs:
-            raise TypeError("json does not take extra keyword arguments")
-        return self.model_dump_json(
             include=include, exclude=exclude, by_alias=by_alias,
             exclude_unset=exclude_unset, exclude_defaults=exclude_defaults,
             exclude_none=exclude_none,

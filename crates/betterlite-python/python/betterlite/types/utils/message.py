@@ -1,5 +1,5 @@
 from collections.abc import Mapping, Sequence
-from typing import Literal, TypeAlias
+from typing import ClassVar, Literal, TypeAlias
 
 from pydantic import JsonValue
 from typing_extensions import override
@@ -10,6 +10,7 @@ from betterlite.types.utils.base import (
     ModelValue,
     ResponseObject,
     drop_none_fields,
+    dump_value,
 )
 from betterlite.types.utils.tool_calls import (
     ChatCompletionAudioResponse,
@@ -44,7 +45,10 @@ def add_provider_specific_fields(
         case Mapping() if len(provider_specific_fields) == 0:
             return
         case Mapping():
-            response["provider_specific_fields"] = dict(provider_specific_fields)
+            response["provider_specific_fields"] = {
+                str(name): dump_value(item, exclude_unset=True)
+                for name, item in provider_specific_fields.items()
+            }
         case Dumpable() | Sequence() | bool() | int() | float():
             return
 
@@ -88,13 +92,13 @@ class Message(ResponseObject):
 
 
 class Delta(ResponseObject):
-    content: str | None = None
-    role: str | None = None
-    function_call: FunctionCall | None = None
-    tool_calls: list[ChatCompletionDeltaToolCall | DeltaCustomToolCall] | None = None
-    audio: ChatCompletionAudioResponse | JsonValue = None
-    images: list[JsonValue] | None = None
-    annotations: list[JsonValue] | None = None
+    content: ClassVar[str | None]
+    role: ClassVar[str | None]
+    function_call: ClassVar[FunctionCall | None]
+    tool_calls: ClassVar[list[ChatCompletionDeltaToolCall | DeltaCustomToolCall] | None]
+    audio: ClassVar[ChatCompletionAudioResponse | JsonValue]
+    images: ClassVar[list[JsonValue] | None]
+    annotations: ClassVar[list[JsonValue] | None]
     reasoning_content: str | None = None
     thinking_blocks: list[JsonValue] | None = None
     reasoning_items: list[JsonValue] | None = None
@@ -112,24 +116,24 @@ class Delta(ResponseObject):
         selected_reasoning: InitValue = reasoning_content
         if selected_reasoning is None and "reasoning" in params:
             selected_reasoning = params.pop("reasoning")
+        provider_fields: InitValue = params.pop("provider_specific_fields", None)
+        extras: dict[str, InitValue] = {
+            "content": content, "role": role, "function_call": function_call,
+            "tool_calls": delta_tool_calls(tool_calls), "audio": audio,
+        }
+        if images is not None and len(images) > 0:
+            extras["images"] = list(images)
+        if annotations is not None:
+            extras["annotations"] = list(annotations)
         super().__init__(
-            content=content, role=role, function_call=function_call,
-            tool_calls=delta_tool_calls(tool_calls), audio=audio,
-            images=nonempty_sequence(images),
-            annotations=None if annotations is None else list(annotations),
             reasoning_content=selected_reasoning,
             thinking_blocks=None if thinking_blocks is None else list(thinking_blocks),
             reasoning_items=None if reasoning_items is None else list(reasoning_items),
             **params,
+            **extras,
         )
-        add_provider_specific_fields(self, params.get("provider_specific_fields"))
+        add_provider_specific_fields(self, provider_fields)
         drop_none_fields(self, DELTA_DROPPED)
-
-
-def nonempty_sequence(value: Sequence[JsonValue] | None) -> Sequence[JsonValue] | None:
-    if value is None or len(value) == 0:
-        return None
-    return value
 
 
 def message_tool_calls(tool_calls: Sequence[ModelValue] | None) -> list[ModelValue] | None:
