@@ -8,5 +8,6 @@ call:
     hook: pre_call
     key_alias: null
     answer: {required_action: {action_type: anonymize_action}, analysis_result: {policy_drill_down: {}}, redacted_chat: {all_redacted_messages: [{role: user, content: "what is in this image"}]}}
+    answer_status: 200
 env: {}
 compare: {ignore: []}

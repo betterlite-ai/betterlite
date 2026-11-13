@@ -59,6 +59,21 @@ fn aim_inspection_config_requires_an_api_key_and_skips_other_kinds() {
 }
 
 #[test]
+fn aim_inspection_config_treats_empty_values_as_unset() {
+    let source = format!("{AIM_CONFIG}      api_key: \"\"\n      api_base: \"\"\n");
+    let lookup = BTreeMap::from([
+        ("AIM_API_KEY".to_owned(), "env-key".to_owned()),
+        ("AIM_API_BASE".to_owned(), String::new()),
+    ]);
+    let configured = resolve(&source, &lookup).unwrap().guardrails.remove(0);
+    assert_eq!(configured.api_key.expose_secret(), "env-key");
+    assert_eq!(configured.api_base, super::DEFAULT_API_BASE);
+    let blank = BTreeMap::from([("AIM_API_KEY".to_owned(), String::new())]);
+    let error = resolve(&source, &blank).unwrap_err();
+    assert!(matches!(error, ConfigError::MissingEnvironment { .. }));
+}
+
+#[test]
 fn aim_inspection_config_is_optional_and_resolves_environment_references() {
     let loader = ConfigLoader {
         lookup: BTreeMap::new(),

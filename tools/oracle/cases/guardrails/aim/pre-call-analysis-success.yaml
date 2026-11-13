@@ -8,5 +8,6 @@ call:
     hook: pre_call
     key_alias: alias-1
     answer: {required_action: {action_type: monitor_action, detection_message: null}, analysis_result: {policy_drill_down: {}}}
+    answer_status: 200
 env: {}
 compare: {ignore: []}

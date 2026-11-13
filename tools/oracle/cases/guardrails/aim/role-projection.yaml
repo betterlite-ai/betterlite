@@ -8,5 +8,6 @@ call:
     hook: moderation
     key_alias: null
     answer: {required_action: {action_type: monitor_action}, analysis_result: {policy_drill_down: {}}}
+    answer_status: 200
 env: {}
 compare: {ignore: []}

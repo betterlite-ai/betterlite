@@ -94,27 +94,27 @@ fn rejection(error: &AimError) -> Option<Rejection> {
 }
 
 fn construct(args: &ConstructArgs) -> HelperResult {
-    let built = match prepared(
+    let outcome = build(
         &args.settings,
         &args.environment,
         &GuardrailValue::Null,
         200,
         &[],
-    ) {
-        Ok((built, _runtime)) => built,
-        Err(error) if error.class == "AimMissingSecrets" => {
-            return Ok(json!({"missing_secrets": true}));
-        }
-        Err(error) => return Err(error),
-    };
-    let guardrail = &built.guardrail;
+    );
+    if let Err(error) = &outcome
+        && error.class == "AimMissingSecrets"
+    {
+        return Ok(json!({"missing_secrets": true}));
+    }
+    let guardrail = outcome?.guardrail;
+    let hooks = serde_json::to_value(SUPPORTED_EVENT_HOOKS)
+        .map_err(|error| failure("ValueError", error.to_string()))?;
     Ok(json!({
         "api_key": guardrail.api_key.expose_secret(),
         "api_base": guardrail.api_base,
         "ws_api_base": guardrail.ws_api_base,
         "inspect_embeddings": guardrail.inspect_embeddings,
-        "supported_event_hooks": serde_json::to_value(SUPPORTED_EVENT_HOOKS)
-            .map_err(|error| failure("ValueError", error.to_string()))?,
+        "supported_event_hooks": hooks,
     }))
 }
 
@@ -194,12 +194,12 @@ fn stream(args: &StreamArgs) -> HelperResult {
         200,
         &args.frames,
     )?;
-    let mut chunks = Vec::new();
-    for chunk in &args.chunks {
-        let text = serde_json::to_string(chunk)
-            .map_err(|error| failure("ValueError", error.to_string()))?;
-        chunks.push(AimStreamChunk(text));
-    }
+    let chunks = args
+        .chunks
+        .iter()
+        .map(|chunk| serde_json::to_string(chunk).map(AimStreamChunk))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| failure("ValueError", error.to_string()))?;
     runtime.block_on(async {
         let stream = built
             .guardrail

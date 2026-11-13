@@ -8,5 +8,6 @@ call:
     hook: pre_call
     key_alias: null
     answer: {required_action: {action_type: block_action, detection_message: "blocked by policy"}, analysis_result: {policy_drill_down: {pii: {}}}}
+    answer_status: 200
 env: {}
 compare: {ignore: []}
