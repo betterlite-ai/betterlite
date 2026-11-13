@@ -1,0 +1,28 @@
+{
+  "kind": "helper",
+  "name": "websearch-unavailable-error",
+  "call": {
+    "b4115": {
+      "operation": "short_circuit",
+      "model": "claude-sonnet-4-5",
+      "messages": [
+        {"role": "user", "content": "What is Rust?"}
+      ],
+      "tools": [
+        {"type": "web_search_20250305", "name": "web_search"}
+      ],
+      "custom_llm_provider": "github_copilot",
+      "enabled_providers": ["github_copilot"],
+      "native_providers": [],
+      "search_error": {"kind": "unavailable", "message": "provider down"}
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": [
+      {"pointer": "/value/id", "why": "the synthetic message carries a fresh uuid4"},
+      {"pointer": "/value/content/0/id", "why": "the server_tool_use id is a fresh uuid4"},
+      {"pointer": "/value/content/1/tool_use_id", "why": "it repeats the random server_tool_use id"}
+    ]
+  }
+}
