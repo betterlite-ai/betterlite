@@ -2378,6 +2378,7 @@ dependencies = [
  "betterlite-oracle-helper-api",
  "betterlite-provider",
  "betterlite-redact",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-transcribe",
  "chrono",
