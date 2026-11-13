@@ -1,14 +1,14 @@
 id: B2455
 milestone: M5 API families
 title: Realtime guardrail selection and setup policy
-status: todo
+status: done
 depends_on: [B171, B1004, B3665]
 file: tasks/B2455-realtime-guardrail-policy.yaml
 covers:
   - "litellm/litellm_core_utils/realtime_streaming.py"
 parent: B084
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1683
