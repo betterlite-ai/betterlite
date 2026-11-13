@@ -1,0 +1,11 @@
+kind: helper
+name: vertex-interactions-auth-seed
+call:
+  vertex_interactions:
+    mint: {token: minted-token, project: callback-project}
+    calls:
+      - {function: headers, api_base: "", stream: false, interaction_id: "", params: {vertex_project: project-1}, headers: {}}
+      - {function: headers, api_base: "", stream: false, interaction_id: "", params: {vertex_project: project-1}, headers: {Authorization: "Bearer caller", Content-Type: text/plain, X-Extra: "1"}}
+      - {function: url, api_base: "", stream: false, interaction_id: "", headers: {}, params: {}}
+env: {}
+compare: {ignore: []}

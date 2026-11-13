@@ -45,7 +45,9 @@ async-trait = "0.1.92"
 betterlite-redact = { path = "../betterlite-redact" }
 google-cloud-wkt = "=1.11.0"
 rstest = "=0.27.0"
+tempfile = "3.27.0"
 tokio = { workspace = true, features = ["rt", "time"] }
+tracing-subscriber.workspace = true
 uuid.workspace = true
 
 [lints]

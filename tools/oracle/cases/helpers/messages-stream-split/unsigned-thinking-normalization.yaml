@@ -1,0 +1,134 @@
+kind: helper
+name: messages-stream-split-unsigned-thinking-normalization
+call:
+  messages_stream_split:
+    steps:
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 4
+        chunks:
+          - id: chunk-1
+            created: 7
+            model: m
+            choices:
+              - index: 0
+                delta:
+                  role: assistant
+                  content: T
+                  reasoning_content: R
+                  thinking_blocks:
+                    - {type: thinking, thinking: A}
+                    - {type: thinking, thinking: B}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 4
+        chunks:
+          - id: chunk-2
+            created: 8
+            model: m
+            choices:
+              - index: 0
+                delta:
+                  content: T
+                  thinking_blocks:
+                    - {type: thinking, thinking: A}
+                    - {type: thinking, thinking: B, signature: sig}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 4
+        chunks:
+          - id: chunk-3
+            created: 9
+            model: m
+            choices:
+              - index: 0
+                delta:
+                  content: T
+                  reasoning_content: R
+                  thinking_blocks:
+                    - {type: redacted_thinking, data: cipher, signature: sig}
+                    - {type: thinking, thinking: A}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 4
+        chunks:
+          - id: chunk-4
+            created: 10
+            model: m
+            choices:
+              - index: 0
+                delta:
+                  content: T
+                  thinking_blocks:
+                    - {type: redacted_thinking, data: cipher}
+                    - {type: thinking, thinking: ""}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 4
+        chunks:
+          - id: chunk-5
+            created: 11
+            model: m
+            choices:
+              - index: 0
+                delta:
+                  content: T
+                  thinking_blocks:
+                    - null
+                    - {type: thinking, thinking: A}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 3
+        chunks:
+          - id: chunk-6
+            created: 12
+            model: m
+            choices:
+              - index: 0
+                delta:
+                  thinking_blocks:
+                    - {type: thinking, thinking: A}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 4
+        chunks:
+          - id: chunk-7
+            created: 13
+            model: m
+            choices:
+              - index: 0
+                delta:
+                  content: T
+                  reasoning_content: R
+                  thinking_blocks:
+                    - {type: thinking, thinking: A, signature: ""}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+env: {}
+compare: {ignore: []}
