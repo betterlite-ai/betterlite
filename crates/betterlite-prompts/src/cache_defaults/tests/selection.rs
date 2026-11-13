@@ -300,13 +300,14 @@ fn a_non_claude_code_user_agent_is_not_one_shot(#[case] user_agent: &str) {
 #[case::empty_key_then_marker("x-anthropic-billing-header: =x; cc_is_subagent=true")]
 #[case::empty_value_then_marker("x-anthropic-billing-header: a=; cc_is_subagent=true")]
 fn a_malformed_billing_header_is_not_one_shot(#[case] text: &str) {
-    let setup = Setup {
+    assert!(text.starts_with("x-anthropic-billing-header:"));
+    let request = Setup {
         system: Some(SystemPrompt::Text(text.to_owned())),
         kwargs: object(CLAUDE_CODE_HEADERS),
         ..Setup::claude()
     };
     assert_eq!(
-        wire(&defaults(&setup, &Facts::claude())),
+        wire(&defaults(&request, &Facts::claude())),
         json(DEFAULT_POINTS)
     );
 }
