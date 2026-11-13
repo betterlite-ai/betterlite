@@ -15,7 +15,8 @@ struct Params {
     cohere_key: Option<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
 pub struct Settings {
     pub cohere_api_key: Option<SecretString>,
     pub co_api_key: Option<SecretString>,

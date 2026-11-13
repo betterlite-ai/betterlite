@@ -37,28 +37,14 @@ fn loaded(
 }
 
 #[rstest]
-#[case::long_alias(&[("COHERE_API_KEY", "long")], Some("long"), None, None)]
-#[case::short_alias(&[("CO_API_KEY", "short")], None, Some("short"), None)]
-#[case::both_aliases(&[("COHERE_API_KEY", "long"), ("CO_API_KEY", "short")], Some("long"), Some("short"), None)]
-#[case::empty_long_alias(&[("COHERE_API_KEY", "")], None, None, None)]
-#[case::missing(&[], None, None, None)]
-fn the_two_environment_aliases_load(
-    #[case] environment: &[(&str, &str)],
-    #[case] long: Option<&str>,
-    #[case] short: Option<&str>,
-    #[case] module: Option<&str>,
-) {
-    let (loaded_long, loaded_short, loaded_module) = loaded(environment, "");
-    assert_eq!(loaded_long.as_deref(), long);
-    assert_eq!(loaded_short.as_deref(), short);
-    assert_eq!(loaded_module.as_deref(), module);
-}
-
-#[rstest]
+#[case::long_alias(&[("COHERE_API_KEY", "long")], "", Some("long"), None, None)]
+#[case::short_alias(&[("CO_API_KEY", "short")], "", None, Some("short"), None)]
+#[case::both_aliases(&[("COHERE_API_KEY", "long"), ("CO_API_KEY", "short")], "", Some("long"), Some("short"), None)]
+#[case::empty_long_alias(&[("COHERE_API_KEY", "")], "", None, None, None)]
+#[case::missing(&[], "", None, None, None)]
 #[case::module_key(&[], MODULE_KEY, None, None, Some("module-key"))]
 #[case::empty_module_key(&[], "litellm_settings:\n  cohere_key: ''\n", None, None, Some(""))]
-#[case::absent_module_key(&[], "", None, None, None)]
-fn the_module_wide_key_loads(
+fn the_two_environment_aliases_and_the_module_key_load(
     #[case] environment: &[(&str, &str)],
     #[case] source: &str,
     #[case] long: Option<&str>,
