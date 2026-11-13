@@ -37,7 +37,7 @@ impl MicrosoftPurviewDLPGuardrail {
             user_id: check.user_id,
             text: check.text,
             activity: check.activity,
-            etag: &etag,
+            etag: etag.as_str(),
             correlation_id,
         };
         let response = match process_content(&self.base, &request).await {
