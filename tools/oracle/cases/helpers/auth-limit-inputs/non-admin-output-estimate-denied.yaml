@@ -1,0 +1,17 @@
+kind: helper
+name: auth-limit-inputs-non-admin-output-estimate-denied
+call:
+  auth_limit_inputs:
+    function: enforce_output_estimates
+    request:
+      model_fields_set: [default_estimated_output_tokens]
+      default_estimated_output_tokens: 1
+    existing_metadata:
+      default_estimated_output_tokens: 2000
+    caller:
+      api_key: sk-user
+      user_role: internal_user
+    entity: key
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,12 @@
+kind: helper
+name: auth-limit-inputs-missing-limit
+call:
+  auth_limit_inputs:
+    function: key_model_limits
+    auth:
+      api_key: sk-oracle
+    model_name: gpt-4
+    deployments: null
+env: {}
+compare:
+  ignore: []

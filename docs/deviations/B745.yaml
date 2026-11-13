@@ -1,0 +1,8 @@
+task: B745
+deviations:
+  - what: A metadata model-limit, MCP-limit or tag-limit value that is not a JSON map of integers is read as absent instead of being returned as stored.
+    why: LiteLLM returns the stored value unchecked, so a string, list or float in metadata reaches the descriptor builder and raises an AttributeError or a Redis comparison error that ends the request with a 500. No working setup sends a value the declared dict[str, int] cannot hold, so betterlite treats it as unset and falls through to the next source.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L986-L1003
+  - what: An output-token estimate or a metadata limit above i64::MAX (including a float that truncates above it) is treated as malformed or overflowing instead of being kept as an arbitrary-precision Python integer.
+    why: betterlite's limits and estimates are i64 throughout, so a value outside that range cannot be enforced or reserved; LiteLLM keeps it as a Python int. Only absurd operator input reaches this, and the alternative is a silent truncation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1080-L1107

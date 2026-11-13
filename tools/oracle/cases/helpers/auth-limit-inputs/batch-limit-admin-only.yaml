@@ -1,0 +1,18 @@
+kind: helper
+name: auth-limit-inputs-batch-limit-admin-only
+call:
+  auth_limit_inputs:
+    function: enforce_batch_limit
+    request:
+      model_fields_set: [metadata]
+      metadata:
+        batch_enqueued_token_limit: 200000
+    existing_metadata:
+      batch_enqueued_token_limit: 100000
+    caller:
+      api_key: sk-user
+      user_role: internal_user
+    entity: team
+env: {}
+compare:
+  ignore: []
