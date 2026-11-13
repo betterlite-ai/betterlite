@@ -61,13 +61,11 @@ pub fn input_item_provenance(
         return Ok(None);
     }
     let units = provenance_unit_bounds(raw_input, &solo_conversions);
-    let Some(unit_messages) = unit_conversions(&items, &units, &solo_conversions, &cache)? else {
-        return Ok(None);
-    };
+    let unit_messages = unit_conversions(&items, &units, &solo_conversions, &cache)?;
     if !unit_messages.iter().flatten().eq(full_conversion.iter()) {
         return Ok(None);
     }
-    Ok(provenance_maps(&units, &unit_messages))
+    Ok(Some(provenance_maps(&units, &unit_messages)))
 }
 
 fn unit_conversions(
@@ -75,51 +73,47 @@ fn unit_conversions(
     units: &[(usize, usize)],
     solo_conversions: &[Vec<Value>],
     cache: &DualLocalCache,
-) -> Result<Option<Vec<Vec<Value>>>, InputProvenanceError> {
+) -> Result<Vec<Vec<Value>>, InputProvenanceError> {
+    let unit_starts: BTreeSet<usize> = units.iter().map(|(start, _)| *start).collect();
+    let start_solos = solo_conversions
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| unit_starts.contains(index))
+        .map(|(_, solo)| solo);
     let mut unit_messages = Vec::with_capacity(units.len());
-    for (start, end) in units {
-        let messages = if end.saturating_sub(*start) == 1 {
-            let Some(messages) = solo_conversions.get(*start) else {
-                return Ok(None);
-            };
-            messages.clone()
+    let mut remaining = items.iter();
+    // the bounds are contiguous, so each unit's span picks up where the previous one ended
+    for ((start, end), solo) in units.iter().zip(start_solos) {
+        let span = end.saturating_sub(*start);
+        let unit: Vec<Json> = remaining.by_ref().take(span).cloned().collect();
+        unit_messages.push(if span == 1 {
+            solo.clone()
         } else {
-            let Some(slice) = items.get(*start..*end) else {
-                return Ok(None);
-            };
-            convert(slice, cache)?
-        };
-        unit_messages.push(messages);
+            convert(&unit, cache)?
+        });
     }
-    Ok(Some(unit_messages))
+    Ok(unit_messages)
 }
 
-fn provenance_maps(
-    units: &[(usize, usize)],
-    unit_messages: &[Vec<Value>],
-) -> Option<InputProvenance> {
-    let boundaries = message_boundaries(unit_messages);
+fn provenance_maps(units: &[(usize, usize)], unit_messages: &[Vec<Value>]) -> InputProvenance {
     let mut item_for_message = BTreeMap::new();
     let mut tainted = BTreeSet::new();
-    for (unit_index, (start, end)) in units.iter().enumerate() {
-        let (Some(from), Some(to)) = (
-            boundaries.get(unit_index),
-            boundaries.get(unit_index.saturating_add(1)),
-        ) else {
-            return None;
-        };
+    let mut message_offset = 0_usize;
+    for ((start, end), messages) in units.iter().zip(unit_messages) {
+        let next_offset = message_offset.saturating_add(messages.len());
         if end.saturating_sub(*start) > 1 {
-            tainted.extend(*from..*to);
+            tainted.extend(message_offset..next_offset);
         } else {
-            for message_index in *from..*to {
+            for message_index in message_offset..next_offset {
                 item_for_message.insert(message_index, *start);
             }
         }
+        message_offset = next_offset;
     }
-    Some(InputProvenance {
+    InputProvenance {
         item_for_message,
         tainted,
-    })
+    }
 }
 
 #[must_use]
@@ -277,15 +271,4 @@ fn empty_cache() -> Result<DualLocalCache, InputProvenanceError> {
         Arc::new(|| 0.0_f64),
         diagnostics,
     ))
-}
-
-fn message_boundaries(unit_messages: &[Vec<Value>]) -> Vec<usize> {
-    let mut boundaries = Vec::with_capacity(unit_messages.len().saturating_add(1));
-    let mut total = 0_usize;
-    boundaries.push(total);
-    for messages in unit_messages {
-        total = total.saturating_add(messages.len());
-        boundaries.push(total);
-    }
-    boundaries
 }

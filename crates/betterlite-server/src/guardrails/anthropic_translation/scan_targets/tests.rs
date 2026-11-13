@@ -89,6 +89,48 @@ fn extracted_input_keeps_scanned_texts_and_tool_calls() {
     assert_eq!(extracted.tool_calls.len(), 1);
 }
 
+#[test]
+fn extracted_input_compares_scanned_texts_and_tool_calls() {
+    let tool_call = ScannedToolCall {
+        tool_call: json!({"id": "t1"}),
+        target: ToolUseInputTarget {
+            msg_idx: 0,
+            content_idx: 1,
+        },
+    };
+    let extracted = ExtractedInput {
+        scanned: Vec::new(),
+        images: Vec::new(),
+        tool_calls: vec![tool_call.clone()],
+    };
+    assert_eq!(
+        extracted,
+        ExtractedInput {
+            scanned: Vec::new(),
+            images: Vec::new(),
+            tool_calls: vec![tool_call.clone()],
+        }
+    );
+    assert_ne!(
+        extracted,
+        ExtractedInput {
+            scanned: Vec::new(),
+            images: Vec::new(),
+            tool_calls: Vec::new(),
+        }
+    );
+    assert_ne!(
+        tool_call,
+        ScannedToolCall {
+            tool_call: json!({"id": "t2"}),
+            target: ToolUseInputTarget {
+                msg_idx: 0,
+                content_idx: 1,
+            },
+        }
+    );
+}
+
 #[rstest]
 #[case::tool_use_with_object_input(
     json!({"type": "tool_use", "id": "t1", "name": "f", "input": {"q": "x"}}),
