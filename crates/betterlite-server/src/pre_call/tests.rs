@@ -108,7 +108,8 @@ fn every_route_type_text_parses_back_to_itself() {
 #[case::missing_underscore("arealtime")]
 #[case::case_differs("Acompletion")]
 fn route_type_rejects_unknown_text(#[case] text: &str) {
-    assert!(RouteType::parse(text).is_err());
+    let error = RouteType::parse(text).unwrap_err();
+    assert_eq!(error.0, text);
 }
 
 #[rstest]
@@ -137,7 +138,7 @@ fn resolve_call_id_keeps_at_most_256_characters(#[case] length: usize, #[case] k
 
 #[test]
 fn resolve_call_id_counts_characters_not_bytes() {
-    let header = "é".repeat(256);
+    let header = "\u{e9}".repeat(256);
     assert_eq!(resolve_call_id(Some(&header)), header);
 }
 
@@ -212,7 +213,7 @@ fn the_support_check_runs_only_when_it_decides(
 ) {
     let calls = Cell::new(0_u32);
     stream_usage_updates(&object(&data), always_include, route, || {
-        calls.set(calls.get() + 1);
+        calls.set(calls.get().saturating_add(1));
         true
     });
     assert_eq!(calls.get(), 0);
@@ -226,7 +227,7 @@ fn the_support_check_runs_once_for_a_plain_chat_stream() {
         None,
         RouteType::Completion,
         || {
-            calls.set(calls.get() + 1);
+            calls.set(calls.get().saturating_add(1));
             true
         },
     );
