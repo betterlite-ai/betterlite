@@ -7,7 +7,6 @@ use super::capabilities::NativeProvider;
 use super::error::NativeContentError;
 use super::map::normalize_response_schema;
 
-// the native arguments a caller supplies; contents and tools stay the open JSON the GenAI API takes
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenerateContentRequest {
     pub model: String,

@@ -17,7 +17,6 @@ pub struct GenerateContentResponse {
 }
 
 impl GenerateContentResponse {
-    // the existing Gemini candidate record, parts and candidate extension included
     pub fn candidates(&self) -> Result<Vec<Candidate>, NativeContentError> {
         match self.wire.get("candidates") {
             None | Some(Json::Null) => Ok(Vec::new()),

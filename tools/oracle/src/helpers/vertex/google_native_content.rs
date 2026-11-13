@@ -59,11 +59,11 @@ struct RequestCall {
 }
 
 // a case that leaves the field out sends the None LiteLLM's signature defaults to
-fn default_tools() -> Json {
+const fn default_tools() -> Json {
     Json::Null
 }
 
-fn default_system_instruction() -> Json {
+const fn default_system_instruction() -> Json {
     Json::Null
 }
 
