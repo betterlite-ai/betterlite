@@ -14,12 +14,12 @@ const fn hook_names(target: &ModeTarget) -> &[String] {
 }
 
 fn mcp_only(hooks: &[String]) -> bool {
-    match hooks {
-        [] => false,
-        _ => hooks
-            .iter()
-            .all(|hook| MCP_EVENT_HOOKS.contains(&hook.as_str())),
+    if hooks.is_empty() {
+        return false;
     }
+    hooks
+        .iter()
+        .all(|hook| MCP_EVENT_HOOKS.contains(&hook.as_str()))
 }
 
 #[must_use]
