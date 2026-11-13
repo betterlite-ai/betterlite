@@ -58,6 +58,7 @@ pub fn managed_inference_request(
     let model = if MANAGED_REALTIME_ROUTES.contains(&request.route) {
         request
             .query_model
+            .filter(|query| !query.is_empty())
             .or_else(|| body_text(request.body, "model"))
             .map(str::to_owned)
     } else if MANAGED_MODEL_ROUTES.contains(&request.route)
@@ -65,6 +66,7 @@ pub fn managed_inference_request(
     {
         let endpoint_model = request
             .path_model
+            .filter(|path| !path.is_empty())
             .or_else(|| query_model_fallback(request.route, request.query_model));
         resolve_model(
             body_text(request.body, "model"),

@@ -47,7 +47,9 @@ pub fn actor_admission_failure(
             message: String::from("Agent is not enabled for this execution mode"),
         });
     }
-    if admitted.mode == ManagedAgentMode::Delegated && admitted.user_id.is_none() {
+    if admitted.mode == ManagedAgentMode::Delegated
+        && admitted.user_id.as_deref().is_none_or(str::is_empty)
+    {
         return Some(AgentIdentityFailure {
             code: FailureCode::IdentityDenied,
             message: String::from("A verified human subject is required"),

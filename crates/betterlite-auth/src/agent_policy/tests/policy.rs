@@ -140,10 +140,12 @@ fn policy_actor_mode_compatibility(
     }
 }
 
-#[test]
-fn policy_actor_delegated_requires_user_id() {
+#[rstest]
+#[case::absent(r#"{"agent_id":"agent","binding_revision":"rev-1","mode":"delegated"}"#)]
+#[case::empty(r#"{"agent_id":"agent","binding_revision":"rev-1","mode":"delegated","user_id":""}"#)]
+fn policy_actor_delegated_requires_user_id(#[case] input: &str) {
     let policy = agent(AgentState::Ready, "delegated");
-    let admitted = context(r#"{"agent_id":"agent","binding_revision":"rev-1","mode":"delegated"}"#);
+    let admitted = context(input);
     let failure = actor_admission_failure(&policy, Some(&admitted)).unwrap();
     assert_eq!(failure.message, "A verified human subject is required");
 }

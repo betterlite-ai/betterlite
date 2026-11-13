@@ -73,6 +73,28 @@ fn route_inference_realtime_prefers_query_model() {
 }
 
 #[test]
+fn route_inference_realtime_empty_query_model_falls_back_to_body() {
+    let body = object(r#"{"model":"body-model"}"#);
+    let mut input = request("/realtime", &body);
+    input.query_model = Some("");
+    let result = resolved(&input).unwrap();
+    assert_eq!(model_of(&result), "body-model");
+}
+
+#[test]
+fn route_inference_empty_path_model_falls_back_to_query_model() {
+    let body = object("{}");
+    let mut input = request("/v1/completions", &body);
+    input.path_model = Some("");
+    input.query_model = Some("query-model");
+    let result = resolved(&input).unwrap();
+    assert_eq!(
+        model_of(&result),
+        r#"Completion|None|None|Some("query-model")"#
+    );
+}
+
+#[test]
 fn route_inference_realtime_uses_body_model() {
     let body = object(r#"{"model":"body-model"}"#);
     let result = resolved(&request("/v1/realtime", &body)).unwrap();
