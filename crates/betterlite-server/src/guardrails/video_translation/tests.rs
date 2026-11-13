@@ -41,12 +41,9 @@ impl FakeGuardrail {
     }
 
     fn touching(texts: &[&str]) -> Self {
-        Self {
-            reply: Some(texts.iter().map(|text| (*text).to_owned()).collect()),
-            failure: None,
-            touch: true,
-            calls: Mutex::new(Vec::new()),
-        }
+        let mut guardrail = Self::replying(texts);
+        guardrail.touch = true;
+        guardrail
     }
 
     fn without_texts() -> Self {
