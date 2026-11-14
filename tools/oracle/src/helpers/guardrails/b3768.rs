@@ -98,7 +98,17 @@ fn run_call(call: &Call) -> HelperResult {
     }))
     .map_err(|error| failure("ValueError", error.to_string()))?;
     let output = match params.resolve("dynamoai", "guardrail", &call.env) {
-        Ok(settings) if call.mode == Mode::Constructor => constructor_output(settings),
+        Ok(settings) if call.mode == Mode::Constructor => Output {
+            created: true,
+            api_base: Some(settings.api_base),
+            policy_ids: settings.policy_ids,
+            model_id: settings.model_id,
+            event_hooks: event_hook_names(),
+            requests: Vec::new(),
+            status: None,
+            raised: false,
+            error: None,
+        },
         Ok(settings) => hook_output(call, settings)?,
         Err(ConfigError::MissingEnvironment { .. }) => Output {
             created: false,
@@ -114,20 +124,6 @@ fn run_call(call: &Call) -> HelperResult {
         Err(error) => return Err(failure("ValueError", error.to_string())),
     };
     serde_json::to_value(output).map_err(|error| failure("ValueError", error.to_string()))
-}
-
-fn constructor_output(settings: Configured) -> Output {
-    Output {
-        created: true,
-        api_base: Some(settings.api_base),
-        policy_ids: settings.policy_ids,
-        model_id: settings.model_id,
-        event_hooks: event_hook_names(),
-        requests: Vec::new(),
-        status: None,
-        raised: false,
-        error: None,
-    }
 }
 
 fn hook_output(call: &Call, mut settings: Configured) -> Result<Output, Box<HelperError>> {
