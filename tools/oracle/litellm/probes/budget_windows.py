@@ -13,7 +13,7 @@ from typing_extensions import override
 
 from probes.protocol import Operation, ProbeError, Strict
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
+# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
 
 MONEY: Final = TypeAdapter(float | None)
 DEFAULT_MODEL: Final = "openai/gpt-4o-mini"

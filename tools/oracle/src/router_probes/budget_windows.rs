@@ -129,7 +129,7 @@ async fn run_steps(input: &Input) -> Result<Output, String> {
         .map(|deployment| Some(deployment.model_id.as_str()))
         .collect();
     let now = DateTime::<Utc>::from_timestamp(0, 0).ok_or("the probe clock is out of range")?;
-    let database = TimeZoneDatabase::default();
+    let database = TimeZoneDatabase::from_env();
     let parser = PeriodParser {
         now,
         timezone: None,

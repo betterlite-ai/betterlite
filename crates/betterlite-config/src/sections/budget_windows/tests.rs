@@ -26,7 +26,7 @@ fn reads_provider_tag_and_deployment_budgets() {
     assert_eq!(
         providers.get("openai"),
         Some(&BudgetValues {
-            limit: Some(Decimal::from(100)),
+            limit: Some(Decimal::from(100_u8)),
             duration: Some("1d".to_owned()),
         })
     );
@@ -46,7 +46,7 @@ fn reads_provider_tag_and_deployment_budgets() {
         resolved.deployments,
         vec![
             DeploymentBudgetConfig {
-                max_budget: Some(Decimal::from(10)),
+                max_budget: Some(Decimal::from(10_u8)),
                 budget_duration: Some("24h".to_owned()),
             },
             DeploymentBudgetConfig::default(),
@@ -79,14 +79,14 @@ fn tag_aliases_win_over_the_declared_fields() {
     assert_eq!(
         tags.get("team"),
         Some(&BudgetValues {
-            limit: Some(Decimal::from(10)),
+            limit: Some(Decimal::from(10_u8)),
             duration: Some("7d".to_owned()),
         })
     );
     assert_eq!(
         tags.get("solo"),
         Some(&BudgetValues {
-            limit: Some(Decimal::from(3)),
+            limit: Some(Decimal::from(3_u8)),
             duration: Some("2h".to_owned()),
         })
     );

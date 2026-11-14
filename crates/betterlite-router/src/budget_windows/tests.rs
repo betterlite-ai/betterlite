@@ -111,7 +111,7 @@ fn provider_config() -> IndexMap<String, ProviderBudget> {
     configs.insert(
         "openai".to_owned(),
         ProviderBudget {
-            budget_limit: Some(Decimal::from(100)),
+            budget_limit: Some(Decimal::from(100_u8)),
             period: Some(day()),
         },
     );
@@ -123,7 +123,7 @@ fn team_tags() -> IndexMap<String, TagBudget> {
     tags.insert(
         "team".to_owned(),
         TagBudget {
-            max_budget: Some(Decimal::from(5)),
+            max_budget: Some(Decimal::from(5_u8)),
             period: Some(day()),
         },
     );
@@ -186,7 +186,7 @@ fn configured_maps() {
         windows
             .provider_budget("openai")
             .map(|budget| budget.budget_limit),
-        Some(Some(Decimal::from(100)))
+        Some(Some(Decimal::from(100_u8)))
     );
     assert_eq!(
         windows
@@ -194,13 +194,13 @@ fn configured_maps() {
             .as_ref()
             .and_then(|configs| configs.get("team"))
             .map(|budget| budget.max_budget),
-        Some(Some(Decimal::from(5)))
+        Some(Some(Decimal::from(5_u8)))
     );
     assert_eq!(
         windows
             .deployment_budget("d1")
             .map(|budget| budget.max_budget),
-        Some(Decimal::from(10))
+        Some(Decimal::from(10_u8))
     );
 }
 
@@ -240,18 +240,21 @@ fn init_flags() {
 
 // LiteLLM tests the tag config object itself, so a tag without limit or duration still gets a key
 fn tag_key_table() {
-    let mut tags = IndexMap::new();
-    tags.insert(
-        "team".to_owned(),
-        TagBudget {
-            max_budget: None,
-            period: None,
-        },
+    let unlimited = TagBudget {
+        max_budget: None,
+        period: None,
+    };
+    let windows = BudgetWindows::new(
+        None,
+        Some(IndexMap::from([("team".to_owned(), unlimited)])),
+        &[],
     );
-    let windows = BudgetWindows::new(None, Some(tags), &[]);
-    let output = windows.cache_keys(&[], &["team".to_owned(), "other".to_owned()]);
-    assert_eq!(output.keys, vec!["tag_spend:team:None".to_owned()]);
-    assert!(output.deployment_providers.is_empty());
+    let requested = ["team".to_owned(), "other".to_owned()];
+    let output = windows.cache_keys(&[], &requested);
+    assert_eq!(
+        (output.keys, output.deployment_providers.len()),
+        (vec!["tag_spend:team:None".to_owned()], 0)
+    );
 }
 
 fn key_table() {
@@ -259,7 +262,7 @@ fn key_table() {
     providers.insert(
         "azure".to_owned(),
         ProviderBudget {
-            budget_limit: Some(Decimal::from(1)),
+            budget_limit: Some(Decimal::from(1_u8)),
             period: None,
         },
     );
@@ -353,7 +356,7 @@ async fn reset_window() {
         .await
         .unwrap();
     cache
-        .reset_spend(&names.spend, Decimal::from(9), day().seconds)
+        .reset_spend(&names.spend, Decimal::from(9_u8), day().seconds)
         .await
         .unwrap();
     let increment = BudgetIncrement {
@@ -363,11 +366,16 @@ async fn reset_window() {
         flush_lock: Arc::default(),
     };
     let config = BudgetConfig {
-        max_budget: Some(Decimal::from(10)),
+        max_budget: Some(Decimal::from(10_u8)),
         budget_duration: Some(day().seconds),
     };
     increment
-        .increment_spend_for_key(&config, &names.spend, &names.start_time, Decimal::from(2))
+        .increment_spend_for_key(
+            &config,
+            &names.spend,
+            &names.start_time,
+            Decimal::from(2_u8),
+        )
         .await
         .unwrap();
     assert_eq!(stored(&cache, &names.spend), Some(spend_value("2")));
@@ -395,7 +403,7 @@ async fn provider_init() {
         ]
     );
     cache
-        .reset_spend(&names.spend, Decimal::from(7), day().seconds)
+        .reset_spend(&names.spend, Decimal::from(7_u8), day().seconds)
         .await
         .unwrap();
     init_provider_budget_in_cache(&cache, "openai", &budget, 999.0).await;
@@ -435,7 +443,7 @@ async fn provider_init_redis() {
     assert_eq!(failing_writes, vec![(names.spend.clone(), Decimal::ZERO)]);
     let untimed = window_cache(0.0, None);
     let timeless = ProviderBudget {
-        budget_limit: Some(Decimal::from(3)),
+        budget_limit: Some(Decimal::from(3_u8)),
         period: None,
     };
     init_provider_budget_in_cache(&untimed, "azure", &timeless, 7.0).await;
@@ -447,7 +455,7 @@ fn registration() {
     assert!(windows.deployment.as_ref().is_none());
     let incomplete = DeploymentLimits {
         model_id: Some("d1".to_owned()),
-        max_budget: Some(Decimal::from(1)),
+        max_budget: Some(Decimal::from(1_u8)),
         period: None,
     };
     windows.register_deployment_budget(&incomplete);
@@ -459,14 +467,14 @@ fn registration() {
         windows
             .provider_budget("openai")
             .map(|budget| budget.budget_limit),
-        Some(Some(Decimal::from(100)))
+        Some(Some(Decimal::from(100_u8)))
     );
     windows.sync_deployment_budget(&deployment("d1", 9));
     assert_eq!(
         windows
             .deployment_budget("d1")
             .map(|budget| budget.max_budget),
-        Some(Decimal::from(9))
+        Some(Decimal::from(9_u8))
     );
     windows.sync_deployment_budget(&incomplete);
     assert!(windows.deployment.as_ref().is_none());
@@ -485,7 +493,7 @@ fn unregistration() {
     assert!(untouched.deployment.as_ref().is_none());
     let unknown = DeploymentLimits {
         model_id: None,
-        max_budget: Some(Decimal::from(1)),
+        max_budget: Some(Decimal::from(1_u8)),
         period: Some(day()),
     };
     untouched.sync_deployment_budget(&unknown);

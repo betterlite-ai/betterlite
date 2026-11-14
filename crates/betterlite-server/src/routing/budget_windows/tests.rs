@@ -23,7 +23,7 @@ fn section() -> config::Settings {
     tags.insert(
         "team".to_owned(),
         config::BudgetValues {
-            limit: Some(Decimal::from(5)),
+            limit: Some(Decimal::from(5_u8)),
             duration: Some("daily".to_owned()),
         },
     );
@@ -32,7 +32,7 @@ fn section() -> config::Settings {
         tag_budget_config: Some(tags),
         deployments: vec![
             config::DeploymentBudgetConfig {
-                max_budget: Some(Decimal::from(10)),
+                max_budget: Some(Decimal::from(10_u8)),
                 budget_duration: Some("1d".to_owned()),
             },
             config::DeploymentBudgetConfig {
@@ -46,7 +46,7 @@ fn section() -> config::Settings {
 #[test]
 fn converts_configured_budgets_into_typed_periods() {
     let now = DateTime::<Utc>::from_timestamp(1_700_000_000, 0).unwrap();
-    let database = TimeZoneDatabase::default();
+    let database = TimeZoneDatabase::from_env();
     let parser = PeriodParser {
         now,
         timezone: Some("UTC"),
@@ -72,7 +72,7 @@ fn converts_configured_budgets_into_typed_periods() {
         .as_ref()
         .and_then(|configs| configs.get("team"))
         .unwrap();
-    assert_eq!(tag.max_budget, Some(Decimal::from(5)));
+    assert_eq!(tag.max_budget, Some(Decimal::from(5_u8)));
     assert_eq!(
         tag.period.as_ref().map(|period| period.seconds),
         Some(Duration::from_secs(86_400))
@@ -82,7 +82,7 @@ fn converts_configured_budgets_into_typed_periods() {
 #[test]
 fn keeps_one_limit_entry_per_catalog_deployment() {
     let now = DateTime::<Utc>::from_timestamp(1_700_000_000, 0).unwrap();
-    let database = TimeZoneDatabase::default();
+    let database = TimeZoneDatabase::from_env();
     let parser = PeriodParser {
         now,
         timezone: None,
@@ -95,7 +95,7 @@ fn keeps_one_limit_entry_per_catalog_deployment() {
             .deployments
             .first()
             .and_then(|limits| limits.max_budget),
-        Some(Decimal::from(10))
+        Some(Decimal::from(10_u8))
     );
     assert_eq!(
         resolved
@@ -115,7 +115,7 @@ fn keeps_one_limit_entry_per_catalog_deployment() {
 #[test]
 fn a_missing_catalog_deployment_and_an_invalid_duration_are_named() {
     let now = DateTime::<Utc>::from_timestamp(1_700_000_000, 0).unwrap();
-    let database = TimeZoneDatabase::default();
+    let database = TimeZoneDatabase::from_env();
     let parser = PeriodParser {
         now,
         timezone: None,
