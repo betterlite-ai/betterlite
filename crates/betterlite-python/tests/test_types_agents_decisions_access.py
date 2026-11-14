@@ -188,7 +188,7 @@ def special_decisions(module, spec):
         frozen.append("rejected")
     return {
         "call_params": plain(adapter.validate_python(spec["call_params"])),
-        "choice_keys": [module.systemone_choice_key(item) for item in spec["choice_keys"]],
+        "choice_keys": [module.systemone_choice_key(value=item) for item in spec["choice_keys"]],
         "hidden": [plain(response.hidden_params), plain(response.model_dump(mode="json"))],
         "usage": plain(module.DecisionsUsage().model_dump(mode="json")),
         "frozen": frozen,
@@ -341,7 +341,8 @@ DOCUMENTED_SHAPES: Final = {
     },
 }
 
-DESCRIBE_SPEC: Final = json.dumps({"names": MODULES, "skip_shapes": DOCUMENTED_SHAPES})
+DESCRIBE_PAYLOAD: Final = {"names": MODULES, "skip_shapes": DOCUMENTED_SHAPES}
+DESCRIBE_SPEC: Final = json.dumps(DESCRIBE_PAYLOAD)
 
 REFUSAL = 30
 AGENT_STATUSES: Final = [None, 199, 200, 299, 300]
@@ -354,16 +355,14 @@ CALL_PARAMS: Final = {
     "unknown": 1,
 }
 
-AGENT_SPECIAL_SPEC: Final = json.dumps(
-    {"module": "agents", "statuses": AGENT_STATUSES},
-)
-DECISION_SPECIAL_SPEC: Final = json.dumps(
-    {
-        "module": "decisions",
-        "call_params": CALL_PARAMS,
-        "choice_keys": [True, False, "true"],
-    },
-)
+AGENT_SPECIAL_PAYLOAD: Final = {"module": "agents", "statuses": AGENT_STATUSES}
+AGENT_SPECIAL_SPEC: Final = json.dumps(AGENT_SPECIAL_PAYLOAD)
+DECISION_SPECIAL_PAYLOAD: Final = {
+    "module": "decisions",
+    "call_params": CALL_PARAMS,
+    "choice_keys": [True, False, "true"],
+}
+DECISION_SPECIAL_SPEC: Final = json.dumps(DECISION_SPECIAL_PAYLOAD)
 
 CASES: Final[tuple[tuple[str, str, JsonValue], ...]] = (
     ("decisions", "NoulQuestion", {"type": "noul"}),
@@ -677,14 +676,13 @@ CASES: Final[tuple[tuple[str, str, JsonValue], ...]] = (
     ("access_group", "AccessGroupResponse", {"access_group_id": "g"}),
 )
 
-BEHAVIOR_SPEC: Final = json.dumps(
-    {
-        "cases": [
-            {"module": module, "name": name, "payload": payload}
-            for module, name, payload in CASES
-        ],
-    },
-)
+BEHAVIOR_PAYLOAD: Final = {
+    "cases": [
+        {"module": module, "name": name, "payload": payload}
+        for module, name, payload in CASES
+    ],
+}
+BEHAVIOR_SPEC: Final = json.dumps(BEHAVIOR_PAYLOAD)
 
 OBJECT: Final = TypeAdapter(dict[str, JsonValue])
 LIST: Final = TypeAdapter(list[JsonValue])
@@ -736,7 +734,8 @@ def test_names_match_litellm(
 
 @pytest.mark.parametrize("module", MODULES)
 def test_names_defined(module: str) -> None:
-    spec = json.dumps({"modules": [module]})
+    payload: dict[str, list[str]] = {"modules": [module]}
+    spec = json.dumps(payload)
     theirs = LIST.validate_python(run_probe(LITELLM, "defined", spec)[module])
     ours = LIST.validate_python(run_probe(BETTERLITE, "defined", spec)[module])
     assert ours == [name for name in theirs if name in MODULES[module]]
