@@ -72,13 +72,14 @@ impl Store {
         store
     }
 
-    fn failing(fail_reads: bool, fail_writes: bool) -> Self {
+    // One side fails: the read when read_failure, the write otherwise
+    fn failing(read_failure: bool) -> Self {
         Self {
             entries: Mutex::default(),
             reads: Mutex::default(),
             writes: Mutex::default(),
-            fail_reads,
-            fail_writes,
+            fail_reads: read_failure,
+            fail_writes: !read_failure,
         }
     }
 
@@ -277,7 +278,7 @@ async fn filter_scans_everything_when_the_request_has_no_session_id() {
 
 #[tokio::test]
 async fn filter_warns_and_scans_everything_when_the_read_fails() {
-    let store = Store::failing(true, false);
+    let store = Store::failing(true);
     let (_guard, logs) = capture();
     let result = scanning(Some("g"))
         .filter_new_texts_for_session(Some(&texts(&["hello"])), &session("s1"), &store)
@@ -414,7 +415,7 @@ async fn mark_does_nothing_without_a_session_id() {
 
 #[tokio::test]
 async fn mark_warns_and_writes_nothing_when_the_read_fails() {
-    let store = Store::failing(true, false);
+    let store = Store::failing(true);
     let (_guard, logs) = capture();
     scanning(Some("g"))
         .mark_texts_scanned(Some(&texts(&["hello"])), &session("s1"), &store, 60)
@@ -429,7 +430,7 @@ async fn mark_warns_and_writes_nothing_when_the_read_fails() {
 
 #[tokio::test]
 async fn mark_warns_once_when_the_write_fails() {
-    let store = Store::failing(false, true);
+    let store = Store::failing(false);
     let (_guard, logs) = capture();
     scanning(Some("g"))
         .mark_texts_scanned(Some(&texts(&["hello"])), &session("s1"), &store, 60)
