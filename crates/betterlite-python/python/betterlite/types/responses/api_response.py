@@ -154,7 +154,16 @@ OutputItem: TypeAlias = (
     | CustomToolCallOutputItem
     | ResponseReasoningItem
     | RawResponseOutputItem
+    | ResponseObject
 )
+
+
+def _dump_entry(item: OutputItem, entry: JsonValue) -> JsonValue:
+    match item:
+        case BaseResponseOutputItem():
+            return item.dump_entry(entry)
+        case ResponseObject():
+            return entry
 
 
 class ResponsesAPIResponse(ResponseObject):
@@ -205,7 +214,7 @@ class ResponsesAPIResponse(ResponseObject):
         match output:
             case list():
                 dumped["output"] = [
-                    item.dump_entry(entry)
+                    _dump_entry(item, entry)
                     for item, entry in zip(self.output, output, strict=False)
                 ]
             case bool() | int() | float() | str() | dict() | None:
@@ -228,5 +237,7 @@ class ResponsesAPIResponse(ResponseObject):
                     | OutputCodeInterpreterCall() | CustomToolCallOutputItem()
                     | ResponseReasoningItem()
                 ):
+                    pass
+                case ResponseObject():
                     pass
         return "".join(texts)

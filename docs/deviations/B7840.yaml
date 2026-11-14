@@ -1,6 +1,6 @@
 task: B7840
 deviations:
-  - what: "build_web_search_call returns a ResponseObject, where LiteLLM returns openai's ResponseFunctionWebSearch."
+  - what: "build_web_search_call returns a ResponseObject, where LiteLLM returns openai's ResponseFunctionWebSearch, and ResponsesAPIResponse.output takes any ResponseObject as its last union member so the builder's result fits, where LiteLLM's union takes its own openai item models."
     why: The wheel does not depend on the openai package. The dumped dict is the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/responses/main.py#L44-L72
   - what: The strict schema function is ported into base_utils.py and does not import openai.
@@ -9,7 +9,7 @@ deviations:
   - what: "type_to_response_format_param accepts any class with a model_json_schema attribute, where LiteLLM requires a pydantic BaseModel subclass."
     why: The Python rules forbid isinstance and issubclass, so the class branch matches any class and reads its model_json_schema attribute. A class without one (a dataclass, int), an instance, a plain value, a pydantic model instance or a plain function is still refused with LiteLLM's TypeError text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L179-L212
-  - what: A ResponsesAPIResponse output item given as a dict is validated into the typed output item model its type and shape match, and an item none of them match becomes a RawResponseOutputItem that keeps its fields as given. LiteLLM keeps a dict item as a dict unless one of the openai models in its union validates it, so a plain dump can carry openai's null defaults where here the typed model's defaults are the ones added, and exclude_none drops the null fields of a raw item here where LiteLLM leaves the values of a plain dict alone.
+  - what: A ResponsesAPIResponse output item given as a dict is validated into the typed output item model its type and shape match, an item none of them match becomes a RawResponseOutputItem that keeps its fields as given, and a plain ResponseObject given as an item is kept as given too. LiteLLM keeps a dict item as a dict unless one of the openai models in its union validates it, so a plain dump can carry openai's null defaults where here the typed model's defaults are the ones added, and exclude_none drops the null fields of a raw item here where LiteLLM leaves the values of a plain dict alone.
     why: The wheel does not depend on openai, and output_text reads a typed type, content and text instead of matching every item's shape; the raw item keeps a provider field this package does not model.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1397-L1409
   - what: A reasoning output item without the id or summary that openai's ResponseReasoningItem requires becomes a RawResponseOutputItem and keeps its null status, content or encrypted_content, where LiteLLM keeps the dict and still drops those keys because the serializer reads the item's type.
