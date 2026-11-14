@@ -15,7 +15,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
 use super::FixedClock;
-use crate::azure_arc_identity::{ArcHost, ArcPlatform, ArcRequest, ArcResponse, ArcTransport};
+use crate::azure_arc_identity::{
+    ArcHost, ArcPlatform, ArcTransport, MetadataRequest, MetadataResponse,
+};
 use crate::azure_certificate::assertion::IdSource;
 use crate::azure_certificate::credential::FileReader;
 use crate::azure_client_secret::ClientSecretError;
@@ -30,7 +32,7 @@ use crate::azure_hosted_identity::request::{
     HostedIo, HostedRequest, HostedResponse, HostedTransport,
 };
 use crate::azure_managed_identity::environment::ManagedIdentityEnvironment;
-use crate::azure_managed_identity::imds::{ImdsRequest, ImdsResponse, ImdsTransport};
+use crate::azure_managed_identity::imds::ImdsTransport;
 use crate::azure_managed_identity::runtime::{ImdsIo, Scheduler, TokenFiles};
 use crate::azure_username_password::transport::{
     HttpRequest as PasswordRequest, Transport as PasswordTransport,
@@ -199,7 +201,7 @@ impl ArcHost for QuietHost {
 struct NoArc;
 
 impl ArcTransport for NoArc {
-    fn get(&self, _request: &ArcRequest) -> io::Result<ArcResponse> {
+    fn get(&self, _request: &MetadataRequest) -> io::Result<MetadataResponse> {
         Err(io::Error::other("arc is not reachable"))
     }
 }
@@ -221,7 +223,7 @@ struct Imds {
 }
 
 impl ImdsTransport for Imds {
-    fn get(&self, request: &ImdsRequest) -> io::Result<ImdsResponse> {
+    fn get(&self, request: &MetadataRequest) -> io::Result<MetadataResponse> {
         let probe = !request.headers.iter().any(|(name, _)| name == "Metadata");
         self.requests
             .lock()
@@ -244,7 +246,7 @@ impl ImdsTransport for Imds {
         } else {
             r#"{"access_token":"imds-token","expires_in":3600}"#
         };
-        Ok(ImdsResponse {
+        Ok(MetadataResponse {
             status: 200,
             headers: Vec::new(),
             body: SecretString::from(body),
