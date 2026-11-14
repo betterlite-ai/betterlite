@@ -65,7 +65,10 @@ pub trait AgenticCallback: Send + Sync {
         &self,
         _call: &AgenticCall<'_>,
     ) -> Result<AgenticGate, AgenticHookError> {
-        Ok(AgenticGate::default())
+        Ok(AgenticGate {
+            run: false,
+            tools: JsonMap::new(),
+        })
     }
 
     async fn build_agentic_loop_plan(
