@@ -73,7 +73,8 @@ impl<Db: Database> LensRepository<Db> {
                     SqlBind::Integer(Some(previous.version)),
                 ],
             )
-            .await?;
+            .await
+            .map_err(LensRepositoryError::Database)?;
         let completed = match rows.first() {
             Some(row) => {
                 serde_json::from_str::<u64>(&row.data).map_err(LensRepositoryError::Count)? == 1
