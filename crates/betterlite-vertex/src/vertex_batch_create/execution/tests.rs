@@ -5,6 +5,7 @@ mod support;
 
 use std::collections::BTreeMap;
 use std::error::Error as _;
+use std::fs;
 use std::future::ready;
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -27,8 +28,10 @@ use http::Method;
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use jiff::tz::TimeZone;
 use rstest::rstest;
+use tempfile::NamedTempFile;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
+use tracing::subscriber::set_default;
 use uuid::Uuid;
 
 use super::{
@@ -427,6 +430,28 @@ async fn create_status_is_preserved(#[case] status: u16, #[case] body: &str) {
     assert!(matches!(error, VertexBatchCreateError::Http { .. }));
     assert_eq!(error.status_code(), status);
     assert!(error.to_string().contains(body));
+}
+
+#[tokio::test]
+async fn a_failed_create_logs_its_status_and_the_first_1000_body_characters() {
+    let body = "x".repeat(1500);
+    let transport = Scripted::new(vec![reply(503, &body)]);
+    let fetcher = Scripted::new(Vec::new());
+    let log = NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    let guard = set_default(subscriber);
+    let error = run(&transport, &fetcher, &base(&create(PUBLISHER)))
+        .await
+        .unwrap_err();
+    drop(guard);
+    assert_eq!(error.status_code(), 503);
+    let logged = fs::read_to_string(log.path()).unwrap();
+    assert!(logged.contains("status=503"));
+    assert!(logged.contains(&"x".repeat(1000)));
+    assert!(!logged.contains(&"x".repeat(1001)));
 }
 
 #[rstest]
