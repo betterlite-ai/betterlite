@@ -237,3 +237,17 @@ path = "fuzz_targets/deepgram_transcript.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "genai_sse"
+path = "fuzz_targets/genai_sse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "eleven_transcript"
+path = "fuzz_targets/eleven_transcript.rs"
+test = false
+doc = false
+bench = false

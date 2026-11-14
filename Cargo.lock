@@ -2527,6 +2527,7 @@ dependencies = [
  "betterlite-transcribe",
  "betterlite-vertex",
  "chrono",
+ "futures-util",
  "hex",
  "indexmap 2.14.2",
  "jiff",
@@ -2832,9 +2833,11 @@ dependencies = [
 name = "betterlite-provider-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-anthropic",
  "betterlite-openai",
  "betterlite-provider",
  "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]
