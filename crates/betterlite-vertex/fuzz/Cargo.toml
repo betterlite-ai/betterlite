@@ -150,6 +150,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vertex_rerank"
+path = "fuzz_targets/vertex_rerank.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vertex_recognition"
 path = "fuzz_targets/vertex_recognition.rs"
 test = false
@@ -159,6 +166,13 @@ bench = false
 [[bin]]
 name = "vertex_timestamp"
 path = "fuzz_targets/vertex_timestamp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_tuning_job"
+path = "fuzz_targets/vertex_tuning_job.rs"
 test = false
 doc = false
 bench = false

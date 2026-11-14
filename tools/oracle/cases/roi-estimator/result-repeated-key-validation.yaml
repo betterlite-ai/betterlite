@@ -1,0 +1,5 @@
+kind: helper
+name: result-repeated-key-validation
+call: {"b3154": {"operation": "validate_result", "raw": "{\"hours\": \"1\", \"hours\": 2, \"reasoning\": 5, \"reasoning\": \"x\"}"}}
+env: {}
+compare: {ignore: []}
