@@ -383,6 +383,8 @@ def test_keys_error_update(
 def test_keys_error_not_object(server: RecordingServer) -> None:
     lite = LiteKeysClient(server.url, api_key="sk-test", timeout=TIMEOUT)
     ours = KeysManagementClient(server.url, api_key="sk-test", timeout=TIMEOUT)
+    lite_credentials = LiteCredentialsClient(server.url, api_key="sk-test", timeout=TIMEOUT)
+    our_credentials = CredentialsManagementClient(server.url, api_key="sk-test", timeout=TIMEOUT)
     server.reply(OK, "[]")
     lite.list()
     server.reply(OK, "[]")
@@ -393,8 +395,14 @@ def test_keys_error_not_object(server: RecordingServer) -> None:
     server.reply(OK, "[]")
     with pytest.raises(RequestError) as informed:
         ours.info(INFO_KEY)
+    server.reply(OK, "[]")
+    lite_credentials.list()
+    server.reply(OK, "[]")
+    with pytest.raises(RequestError) as credential_list:
+        our_credentials.list()
     assert str(listed.value) == "the key reply is not a JSON object"
     assert str(informed.value) == "the key reply is not a JSON object"
+    assert str(credential_list.value) == "the credential reply is not a JSON object"
 
 
 def test_credentials_collection(server: RecordingServer) -> None:

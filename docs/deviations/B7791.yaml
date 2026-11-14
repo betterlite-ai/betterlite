@@ -33,8 +33,8 @@ deviations:
       betterlite itself and surfaces instead of becoming "Error updating key".
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/keys.py#L284-L290
   - what: >-
-      Every key call except update raises RequestError when the reply is not a JSON object, and update wraps that
-      failure in KeyUpdateError. LiteLLM returns whatever response.json() parsed.
+      Every key call except update, and every credential call, raises RequestError when the reply is not a JSON
+      object, and update wraps that failure in KeyUpdateError. LiteLLM returns whatever response.json() parsed.
     why: >-
       betterlite declares dict[str, JsonValue], so a list, string or number reply is outside the declared types.
       B7790 records the same deviation for the health and model group clients, and the reply of a working proxy is
