@@ -1,3 +1,9 @@
+pub mod blocked_word;
+pub mod category_keyword;
+pub mod conditional;
+pub mod masking;
+pub mod pattern;
+
 use std::ops::Range;
 
 use betterlite_config::sections::content_filter_records::{
@@ -7,13 +13,9 @@ use betterlite_config::sections::content_filter_records::{
 
 use crate::content_filter_matching::CategoryMatch;
 use crate::pattern_matching::CompiledPattern;
-use crate::pattern_matching::masking::{keyword_pattern, mask_spans, redaction_tag};
-use crate::primitives::pattern_matching::replace_all;
 
+use self::masking::{mask_blocked_word, mask_category_keyword, mask_pattern_match};
 use super::error::{ContentFilterActionError, ContentFilterBlockDetail};
-
-// Python's re.IGNORECASE, the flag value replace_all reads.
-const IGNORECASE: i64 = 2;
 
 const fn action_value(action: ContentFilterAction) -> &'static str {
     match action {
@@ -22,205 +24,174 @@ const fn action_value(action: ContentFilterAction) -> &'static str {
     }
 }
 
-fn append_category_keyword(
-    matched: &CategoryMatch,
-    detections: Option<&mut Vec<ContentFilterDetection>>,
-) {
-    if let Some(list) = detections {
-        list.push(ContentFilterDetection::CategoryKeyword(
-            CategoryKeywordDetection {
-                r#type: "category_keyword".to_owned(),
-                category: matched.category.clone(),
-                keyword: matched.matched.clone(),
-                severity: matched.severity.clone(),
-                action: action_value(matched.action).to_owned(),
+// One match of any detection kind, carrying what its masking action needs.
+enum Matched<'matched> {
+    Conditional {
+        found: &'matched CategoryMatch,
+        text: &'matched str,
+    },
+    CategoryKeyword {
+        found: &'matched CategoryMatch,
+        text: &'matched str,
+        redaction_tag: &'matched str,
+    },
+    Pattern {
+        pattern: &'matched CompiledPattern,
+        spans: &'matched [Range<usize>],
+        text: &'matched str,
+        redaction_format: &'matched str,
+    },
+    BlockedWord {
+        word: &'matched BlockedWord,
+        text: &'matched str,
+        redaction_tag: &'matched str,
+    },
+}
+
+impl<'matched> Matched<'matched> {
+    const fn action(&self) -> ContentFilterAction {
+        match self {
+            Self::Conditional { found, .. } | Self::CategoryKeyword { found, .. } => found.action,
+            Self::Pattern { pattern, .. } => pattern.action,
+            Self::BlockedWord { word, .. } => word.action,
+        }
+    }
+
+    fn record(&self, detections: Option<&mut Vec<ContentFilterDetection>>) {
+        let Some(list) = detections else {
+            return;
+        };
+        match self {
+            Self::Conditional { found, .. } | Self::CategoryKeyword { found, .. } => {
+                list.push(ContentFilterDetection::CategoryKeyword(
+                    CategoryKeywordDetection {
+                        r#type: "category_keyword".to_owned(),
+                        category: found.category.clone(),
+                        keyword: found.matched.clone(),
+                        severity: found.severity.clone(),
+                        action: action_value(found.action).to_owned(),
+                    },
+                ));
+            }
+            Self::Pattern { pattern, .. } => {
+                list.push(ContentFilterDetection::Pattern(PatternDetection {
+                    r#type: "pattern".to_owned(),
+                    pattern_name: pattern.pattern_name.clone(),
+                    action: action_value(pattern.action).to_owned(),
+                }));
+            }
+            Self::BlockedWord { word, .. } => {
+                list.push(ContentFilterDetection::BlockedWord(BlockedWordDetection {
+                    r#type: "blocked_word".to_owned(),
+                    keyword: word.keyword.clone(),
+                    action: action_value(word.action).to_owned(),
+                    description: word.description.clone(),
+                }));
+            }
+        }
+    }
+
+    fn finish(&self) -> Result<String, ContentFilterActionError> {
+        match self.action() {
+            ContentFilterAction::Block => Err(self.blocked()),
+            ContentFilterAction::Mask => self.masked(),
+        }
+    }
+
+    fn blocked(&self) -> ContentFilterActionError {
+        let detail = self.detail();
+        tracing::warn!(
+            error = detail_message(&detail),
+            "content filter blocked the text"
+        );
+        ContentFilterActionError::Blocked { detail }
+    }
+
+    fn detail(&self) -> ContentFilterBlockDetail {
+        match self {
+            Self::Conditional { found, .. } => conditional_detail(found),
+            Self::CategoryKeyword { found, .. } => ContentFilterBlockDetail::CategoryKeyword {
+                error: format!(
+                    "Content blocked: {} category keyword '{}' detected (severity: {})",
+                    found.category, found.matched, found.severity
+                ),
+                category: found.category.clone(),
+                keyword: found.matched.clone(),
+                severity: found.severity.clone(),
             },
-        ));
+            Self::Pattern { pattern, .. } => ContentFilterBlockDetail::Pattern {
+                error: format!("Content blocked: {} pattern detected", pattern.pattern_name),
+                pattern: pattern.pattern_name.clone(),
+            },
+            Self::BlockedWord { word, .. } => blocked_word_detail(word),
+        }
     }
-}
 
-pub fn handle_conditional_match(
-    matched: &CategoryMatch,
-    detections: Option<&mut Vec<ContentFilterDetection>>,
-) -> Result<(), ContentFilterActionError> {
-    append_category_keyword(matched, detections);
-    match matched.action {
-        ContentFilterAction::Block => Err(block_conditional_match(matched)),
-        ContentFilterAction::Mask => {
-            tracing::warn!(
-                category = %matched.category,
-                matched_phrase = %matched.matched,
-                "conditional match detected but MASK action is not supported for conditional categories"
-            );
-            Ok(())
+    fn masked(&self) -> Result<String, ContentFilterActionError> {
+        match self {
+            Self::Conditional { found, text } => {
+                tracing::warn!(
+                    category = %found.category,
+                    matched_phrase = %found.matched,
+                    "conditional match detected but MASK action is not supported for conditional categories"
+                );
+                Ok(text.to_string())
+            }
+            Self::CategoryKeyword {
+                found,
+                text,
+                redaction_tag,
+            } => mask_category_keyword(found, text, redaction_tag),
+            Self::Pattern {
+                pattern,
+                spans,
+                text,
+                redaction_format,
+            } => mask_pattern_match(pattern, text, spans, redaction_format),
+            Self::BlockedWord {
+                word,
+                text,
+                redaction_tag,
+            } => mask_blocked_word(word, text, redaction_tag),
         }
     }
 }
 
-pub fn handle_category_keyword_match(
-    matched: &CategoryMatch,
-    text: &str,
-    keyword_redaction_tag: &str,
-    detections: Option<&mut Vec<ContentFilterDetection>>,
-) -> Result<String, ContentFilterActionError> {
-    append_category_keyword(matched, detections);
-    match matched.action {
-        ContentFilterAction::Block => Err(block_category_keyword(matched)),
-        ContentFilterAction::Mask => mask_category_keyword(matched, text, keyword_redaction_tag),
+fn detail_message(detail: &ContentFilterBlockDetail) -> &str {
+    match detail {
+        ContentFilterBlockDetail::Conditional { error, .. }
+        | ContentFilterBlockDetail::CategoryKeyword { error, .. }
+        | ContentFilterBlockDetail::Pattern { error, .. }
+        | ContentFilterBlockDetail::BlockedWord { error, .. } => error,
     }
 }
 
-pub fn handle_pattern_match(
-    pattern: &CompiledPattern,
-    text: &str,
-    spans: &[Range<usize>],
-    pattern_redaction_format: &str,
-    detections: Option<&mut Vec<ContentFilterDetection>>,
-) -> Result<String, ContentFilterActionError> {
-    if let Some(list) = detections {
-        list.push(ContentFilterDetection::Pattern(PatternDetection {
-            r#type: "pattern".to_owned(),
-            pattern_name: pattern.pattern_name.clone(),
-            action: action_value(pattern.action).to_owned(),
-        }));
-    }
-    match pattern.action {
-        ContentFilterAction::Block => Err(block_pattern_match(pattern)),
-        ContentFilterAction::Mask => {
-            mask_pattern_match(pattern, text, spans, pattern_redaction_format)
-        }
+fn conditional_detail(found: &CategoryMatch) -> ContentFilterBlockDetail {
+    ContentFilterBlockDetail::Conditional {
+        error: format!(
+            "Content blocked: {} conditional match '{}' detected (severity: {})",
+            found.category, found.matched, found.severity
+        ),
+        category: found.category.clone(),
+        matched_phrase: found.matched.clone(),
+        severity: found.severity.clone(),
     }
 }
 
-pub fn handle_blocked_word_match(
-    word: &BlockedWord,
-    text: &str,
-    keyword_redaction_tag: &str,
-    detections: Option<&mut Vec<ContentFilterDetection>>,
-) -> Result<String, ContentFilterActionError> {
-    tracing::debug!(
-        keyword = %word.keyword,
-        action = %action_value(word.action),
-        "blocked word found"
-    );
-    if let Some(list) = detections {
-        list.push(ContentFilterDetection::BlockedWord(BlockedWordDetection {
-            r#type: "blocked_word".to_owned(),
-            keyword: word.keyword.clone(),
-            action: action_value(word.action).to_owned(),
-            description: word.description.clone(),
-        }));
-    }
-    match word.action {
-        ContentFilterAction::Block => Err(block_blocked_word(word)),
-        ContentFilterAction::Mask => mask_blocked_word(word, text, keyword_redaction_tag),
+fn blocked_word_detail(word: &BlockedWord) -> ContentFilterBlockDetail {
+    ContentFilterBlockDetail::BlockedWord {
+        error: blocked_word_message(word),
+        keyword: word.keyword.clone(),
+        description: word.description.clone(),
     }
 }
 
-fn block_conditional_match(matched: &CategoryMatch) -> ContentFilterActionError {
-    let error = format!(
-        "Content blocked: {} conditional match '{}' detected (severity: {})",
-        matched.category, matched.matched, matched.severity
-    );
-    tracing::warn!(%error, "content filter blocked a conditional match");
-    ContentFilterActionError::Blocked {
-        detail: ContentFilterBlockDetail::Conditional {
-            error,
-            category: matched.category.clone(),
-            matched_phrase: matched.matched.clone(),
-            severity: matched.severity.clone(),
-        },
-    }
-}
-
-fn block_category_keyword(matched: &CategoryMatch) -> ContentFilterActionError {
-    let error = format!(
-        "Content blocked: {} category keyword '{}' detected (severity: {})",
-        matched.category, matched.matched, matched.severity
-    );
-    tracing::warn!(%error, "content filter blocked a category keyword");
-    ContentFilterActionError::Blocked {
-        detail: ContentFilterBlockDetail::CategoryKeyword {
-            error,
-            category: matched.category.clone(),
-            keyword: matched.matched.clone(),
-            severity: matched.severity.clone(),
-        },
-    }
-}
-
-fn mask_category_keyword(
-    matched: &CategoryMatch,
-    text: &str,
-    keyword_redaction_tag: &str,
-) -> Result<String, ContentFilterActionError> {
-    let masked = replace_all(
-        text,
-        &keyword_pattern(&matched.matched),
-        keyword_redaction_tag,
-        IGNORECASE,
-    )?;
-    tracing::info!(
-        category = %matched.category,
-        keyword = %matched.matched,
-        severity = %matched.severity,
-        "masked category keyword"
-    );
-    Ok(masked)
-}
-
-fn block_pattern_match(pattern: &CompiledPattern) -> ContentFilterActionError {
-    let error = format!("Content blocked: {} pattern detected", pattern.pattern_name);
-    tracing::warn!(%error, "content filter blocked a pattern match");
-    ContentFilterActionError::Blocked {
-        detail: ContentFilterBlockDetail::Pattern {
-            error,
-            pattern: pattern.pattern_name.clone(),
-        },
-    }
-}
-
-fn mask_pattern_match(
-    pattern: &CompiledPattern,
-    text: &str,
-    spans: &[Range<usize>],
-    pattern_redaction_format: &str,
-) -> Result<String, ContentFilterActionError> {
-    let tag = redaction_tag(pattern_redaction_format, &pattern.pattern_name)?;
-    let masked = mask_spans(text, spans, &tag)?;
-    tracing::info!(pattern = %pattern.pattern_name, "masked every pattern match");
-    Ok(masked)
-}
-
-fn block_blocked_word(word: &BlockedWord) -> ContentFilterActionError {
-    let error = match &word.description {
+fn blocked_word_message(word: &BlockedWord) -> String {
+    match &word.description {
         Some(description) => format!(
             "Content blocked: keyword '{}' detected ({description})",
             word.keyword
         ),
         None => format!("Content blocked: keyword '{}' detected", word.keyword),
-    };
-    tracing::warn!(%error, "content filter blocked a word");
-    ContentFilterActionError::Blocked {
-        detail: ContentFilterBlockDetail::BlockedWord {
-            error,
-            keyword: word.keyword.clone(),
-            description: word.description.clone(),
-        },
     }
-}
-
-fn mask_blocked_word(
-    word: &BlockedWord,
-    text: &str,
-    keyword_redaction_tag: &str,
-) -> Result<String, ContentFilterActionError> {
-    let masked = replace_all(
-        text,
-        &keyword_pattern(&word.keyword),
-        keyword_redaction_tag,
-        IGNORECASE,
-    )?;
-    tracing::info!(keyword = %word.keyword, "masked blocked word");
-    Ok(masked)
 }

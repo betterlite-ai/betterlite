@@ -19,10 +19,10 @@ mod content_filter_actions_behavior {
     use crate::content_filter_actions::error::{
         ContentFilterActionError, ContentFilterBlockDetail,
     };
-    use crate::content_filter_actions::handlers::{
-        handle_blocked_word_match, handle_category_keyword_match, handle_conditional_match,
-        handle_pattern_match,
-    };
+    use crate::content_filter_actions::handlers::blocked_word::handle_blocked_word_match;
+    use crate::content_filter_actions::handlers::category_keyword::handle_category_keyword_match;
+    use crate::content_filter_actions::handlers::conditional::handle_conditional_match;
+    use crate::content_filter_actions::handlers::pattern::handle_pattern_match;
     use crate::content_filter_actions::{ContentFilterSource, filter_single_text};
     use crate::content_filter_matching::{CategoryMatch, ContentFilterMatchingError};
     use crate::pattern_matching::CompiledPattern;
@@ -92,20 +92,26 @@ mod content_filter_actions_behavior {
         identifiers: &[&str],
         blocks: &[&str],
     ) -> ConditionalCategoryConfig {
+        let identifier_words = identifiers.iter().map(|word| (*word).to_owned()).collect();
+        let block_words = blocks.iter().map(|word| (*word).to_owned()).collect();
         ConditionalCategoryConfig {
-            identifier_words: identifiers.iter().map(|word| (*word).to_owned()).collect(),
-            block_words: blocks.iter().map(|word| (*word).to_owned()).collect(),
+            identifier_words,
+            block_words,
             action,
             severity: severity.to_owned(),
         }
     }
 
-    fn phrase_category(name: &str, action: ContentFilterAction, source: &str) -> CategoryConfig {
-        let mut config = category(name, action);
-        config.phrase_patterns = vec![CompiledPhrasePattern {
+    fn phrase(source: &str) -> CompiledPhrasePattern {
+        CompiledPhrasePattern {
             source: source.to_owned(),
             regex: Pattern::compile(source).expect("test phrase pattern compiles"),
-        }];
+        }
+    }
+
+    fn phrase_category(name: &str, action: ContentFilterAction, source: &str) -> CategoryConfig {
+        let mut config = category(name, action);
+        config.phrase_patterns.push(phrase(source));
         config
     }
 
@@ -178,7 +184,13 @@ mod content_filter_actions_behavior {
             ContentFilterAction::Mask,
         );
         let mut detections = Vec::new();
-        handle_conditional_match(&matched, Some(&mut detections)).unwrap();
+        let returned = handle_conditional_match(
+            &matched,
+            "a minor with romantic ideas",
+            Some(&mut detections),
+        )
+        .unwrap();
+        assert_eq!(returned, "a minor with romantic ideas");
         assert_eq!(detections.len(), 1);
         let ContentFilterDetection::CategoryKeyword(record) = &detections[0] else {
             panic!("expected a category keyword record");
@@ -199,7 +211,12 @@ mod content_filter_actions_behavior {
             ContentFilterAction::Block,
         );
         let mut detections = Vec::new();
-        let error = handle_conditional_match(&matched, Some(&mut detections)).unwrap_err();
+        let error = handle_conditional_match(
+            &matched,
+            "a minor with romantic ideas",
+            Some(&mut detections),
+        )
+        .unwrap_err();
         assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
         assert_eq!(detections.len(), 1);
         let ContentFilterDetection::CategoryKeyword(record) = &detections[0] else {
@@ -217,7 +234,8 @@ mod content_filter_actions_behavior {
             "high",
             ContentFilterAction::Block,
         );
-        let failure = handle_conditional_match(&matched, None).unwrap_err();
+        let failure =
+            handle_conditional_match(&matched, "a minor with romantic ideas", None).unwrap_err();
         assert_eq!(failure.status_code(), StatusCode::BAD_REQUEST);
         let ContentFilterActionError::Blocked { detail } = failure else {
             panic!("expected a block error");
@@ -604,7 +622,11 @@ mod content_filter_actions_behavior {
             "high",
             ContentFilterAction::Mask,
         );
-        assert!(handle_conditional_match(&conditional_match, None).is_ok());
+        assert_eq!(
+            handle_conditional_match(&conditional_match, "a minor with romantic ideas", None)
+                .unwrap(),
+            "a minor with romantic ideas"
+        );
         let keyword = matched("alert", "operational", "medium", ContentFilterAction::Mask);
         assert_eq!(
             handle_category_keyword_match(&keyword, "alert", KEYWORD_TAG, None).unwrap(),
@@ -628,7 +650,7 @@ mod content_filter_actions_behavior {
             ContentFilterAction::Block,
         );
         assert_eq!(
-            handle_conditional_match(&blocking, None)
+            handle_conditional_match(&blocking, "a minor with romantic ideas", None)
                 .unwrap_err()
                 .status_code(),
             StatusCode::BAD_REQUEST

@@ -13,10 +13,10 @@ use crate::pattern_matching::CompiledPattern;
 use crate::pattern_matching::masking::keyword_pattern;
 
 use self::error::ContentFilterActionError;
-use self::handlers::{
-    handle_blocked_word_match, handle_category_keyword_match, handle_conditional_match,
-    handle_pattern_match,
-};
+use self::handlers::blocked_word::handle_blocked_word_match;
+use self::handlers::category_keyword::handle_category_keyword_match;
+use self::handlers::conditional::handle_conditional_match;
+use self::handlers::pattern::handle_pattern_match;
 
 #[derive(Debug)]
 pub struct ContentFilterSource<'source> {
@@ -33,13 +33,13 @@ pub fn filter_single_text(
     mut detections: Option<&mut Vec<ContentFilterDetection>>,
 ) -> Result<String, ContentFilterActionError> {
     let exceptions = matching_exceptions(source.categories);
+    let mut filtered = text.to_owned();
     if let Some(found) = check_conditional_categories(text, &exceptions, source.categories)? {
-        handle_conditional_match(&found, detections.as_deref_mut())?;
+        filtered = handle_conditional_match(&found, text, detections.as_deref_mut())?;
     }
     if let Some(found) = check_phrase_patterns(text, &exceptions, source.categories)? {
-        handle_conditional_match(&found, detections.as_deref_mut())?;
+        filtered = handle_conditional_match(&found, text, detections.as_deref_mut())?;
     }
-    let mut filtered = text.to_owned();
     if let Some(found) = check_category_keywords(text, &exceptions, source.categories)? {
         filtered = handle_category_keyword_match(
             &found,
@@ -48,8 +48,7 @@ pub fn filter_single_text(
             detections.as_deref_mut(),
         )?;
     }
-    filtered = mask_patterns(source, &filtered, detections.as_deref_mut())?;
-    mask_blocked_words(source, &filtered, detections)
+    mask_patterns_and_words(source, &filtered, detections)
 }
 
 fn matching_exceptions(categories: &CategoryLoadResult) -> Vec<String> {
@@ -60,46 +59,36 @@ fn matching_exceptions(categories: &CategoryLoadResult) -> Vec<String> {
         .collect()
 }
 
-fn mask_patterns(
+fn mask_patterns_and_words(
     source: &ContentFilterSource<'_>,
     text: &str,
     mut detections: Option<&mut Vec<ContentFilterDetection>>,
 ) -> Result<String, ContentFilterActionError> {
-    let mut filtered = text.to_owned();
+    let mut masked = text.to_owned();
     for pattern in source.patterns {
-        let spans = pattern.find_spans(&filtered)?;
-        if spans.is_empty() {
-            continue;
+        let spans = pattern.find_spans(&masked)?;
+        if !spans.is_empty() {
+            masked = handle_pattern_match(
+                pattern,
+                &masked,
+                &spans,
+                source.pattern_redaction_format,
+                detections.as_deref_mut(),
+            )?;
         }
-        filtered = handle_pattern_match(
-            pattern,
-            &filtered,
-            &spans,
-            source.pattern_redaction_format,
-            detections.as_deref_mut(),
-        )?;
     }
-    Ok(filtered)
-}
-
-fn mask_blocked_words(
-    source: &ContentFilterSource<'_>,
-    text: &str,
-    mut detections: Option<&mut Vec<ContentFilterDetection>>,
-) -> Result<String, ContentFilterActionError> {
-    let mut filtered = text.to_owned();
-    let mut text_lower = filtered.to_lowercase();
+    let mut text_lower = masked.to_lowercase();
     for word in source.blocked_words {
         if !Regex::new(&keyword_pattern(&word.keyword))?.is_match(&text_lower) {
             continue;
         }
-        filtered = handle_blocked_word_match(
+        masked = handle_blocked_word_match(
             word,
-            &filtered,
+            &masked,
             source.keyword_redaction_tag,
             detections.as_deref_mut(),
         )?;
-        text_lower = filtered.to_lowercase();
+        text_lower = masked.to_lowercase();
     }
-    Ok(filtered)
+    Ok(masked)
 }
