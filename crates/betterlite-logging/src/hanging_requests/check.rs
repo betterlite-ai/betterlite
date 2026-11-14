@@ -63,13 +63,13 @@ impl AlertingHangingRequestCheck {
         &self,
         request_data: Option<&IndexMap<String, Json>>,
     ) -> Result<(), HangingRequestError> {
-        let Some(request_data) = request_data else {
+        let Some(params) = request_data else {
             return Ok(());
         };
-        let metadata = litellm_metadata_from_params(Some(&call_params(request_data)));
-        let model = field_text(request_data, "model")?.unwrap_or("");
-        let request_id = field_text(request_data, "litellm_call_id")?.unwrap_or("");
-        let api_base = deployment_api_base(self.api_base.as_ref(), request_data, model)?;
+        let metadata = litellm_metadata_from_params(Some(&call_params(params)));
+        let model = field_text(params, "model")?.unwrap_or("");
+        let request_id = field_text(params, "litellm_call_id")?.unwrap_or("");
+        let api_base = deployment_api_base(self.api_base.as_ref(), params, model)?;
         let key_alias = field_text(&metadata, "user_api_key_alias")?;
         let team_alias = field_text(&metadata, "user_api_key_team_alias")?;
         let mut data =

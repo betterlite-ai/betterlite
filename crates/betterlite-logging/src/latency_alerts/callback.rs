@@ -64,13 +64,13 @@ fn slow_request_info(
     );
     let mut alerting_metadata = IndexMap::new();
     let metadata = litellm_params.and_then(|params| mapping_field(params, "metadata"));
-    if let Some(metadata) = metadata {
-        request_info = add_key_name_and_team(request_info, metadata);
-        if let Some(latencies) = deployment_latencies(metadata) {
+    if let Some(fields) = metadata {
+        request_info = add_key_name_and_team(request_info, fields);
+        if let Some(latencies) = deployment_latencies(fields) {
             request_info.push_str("\nAvailable Deployment Latencies\n");
             request_info.push_str(&latencies);
         }
-        if let Some(Json::Object(entries)) = metadata.get("alerting_metadata") {
+        if let Some(Json::Object(entries)) = fields.get("alerting_metadata") {
             alerting_metadata.clone_from(entries);
         }
     }
@@ -80,10 +80,10 @@ fn slow_request_info(
 fn add_key_name_and_team(request_info: String, metadata: &IndexMap<String, Json>) -> String {
     let mut info = request_info;
     if let Some(key_name) = metadata.get("user_api_key_alias").and_then(as_text) {
-        let mut team = "";
-        if let Some(alias) = metadata.get("user_api_key_team_alias").and_then(as_text) {
-            team = alias;
-        }
+        let team = metadata
+            .get("user_api_key_team_alias")
+            .and_then(as_text)
+            .unwrap_or("");
         info = format!("\n\nKey Name: `{key_name}`\nTeam: `{team}`{info}");
     }
     info

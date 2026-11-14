@@ -46,10 +46,10 @@ pub fn slow_response_parameters(
         Some(Json::Null) | None => request.input,
         Some(messages) => Some(messages),
     };
-    let mut messages = String::from(MISSING_MESSAGE);
-    if let Some(value) = source {
-        messages = rendered_message(value);
-    }
+    let mut messages = match source {
+        Some(value) => rendered_message(value),
+        None => String::from(MISSING_MESSAGE),
+    };
     messages = messages.chars().take(MESSAGE_PREVIEW_CHARS).collect();
     if request.privacy.turn_off_message_logging || request.privacy.redact_messages_in_exceptions {
         messages = String::from(MESSAGE_NOT_LOGGED);

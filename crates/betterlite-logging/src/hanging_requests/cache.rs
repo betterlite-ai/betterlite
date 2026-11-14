@@ -24,7 +24,7 @@ pub trait HangingCacheFactory: Send + Sync {
 pub fn hanging_cache_ttl(alerting_threshold_seconds: f64) -> Duration {
     let buffer = Duration::from_secs(HANGING_ALERT_BUFFER_SECONDS).as_secs_f64();
     let seconds = alerting_threshold_seconds.mul_add(1.5, buffer).trunc();
-    if !seconds.is_finite() || seconds <= 0.0 {
+    if !seconds.is_finite() || seconds <= 0.0_f64 {
         return Duration::ZERO;
     }
     Duration::try_from_secs_f64(seconds).unwrap_or(Duration::MAX)
