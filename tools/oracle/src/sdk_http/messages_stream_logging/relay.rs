@@ -11,7 +11,7 @@ use betterlite_core::api::messages_stream_logging::StreamDeps;
 use betterlite_core::api::messages_stream_logging::seams::{
     LoggingFuture, LoggingJob, ReportedFailure,
 };
-use betterlite_core::api::messages_stream_logging::slots::{DetachedFailureHook, StreamSlots};
+use betterlite_core::api::messages_stream_logging::slots::StreamSlots;
 use betterlite_logging::passthrough_logging_state::logger::PassThroughEndpointLogging;
 use betterlite_logging::passthrough_stream_logging::types::EndpointType;
 use betterlite_logging::worker::{LoggingWorker, WorkerSettings};
@@ -252,7 +252,8 @@ async fn gate_source(
 }
 
 fn install_failure_hook(slots: &StreamSlots, state: &Arc<StreamState>) {
-    let hook: Arc<dyn DetachedFailureHook> = Arc::clone(state);
+    // binding the concrete Arc first makes Some() the coercion site for the trait object
+    let hook = Arc::clone(state);
     slots
         .fields
         .lock()
