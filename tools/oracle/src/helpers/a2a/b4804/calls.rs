@@ -15,7 +15,8 @@ use futures_util::{Stream, StreamExt as _};
 use serde::Serialize;
 use tokio::runtime::{Builder, Runtime};
 
-use super::fixture::{Answer, Failure, FixtureRuntime, Source, StreamAnswer};
+use super::fixture::{Failure, FixtureRuntime, Source};
+use super::{Answer, StreamAnswer, Transport};
 use crate::compare::helper::HelperError;
 use crate::helpers::HelperResult;
 
@@ -33,8 +34,8 @@ fn helper_failure(class: &str, message: String) -> Box<HelperError> {
 fn failed(error: &AgentCoreError<Failure>) -> Box<HelperError> {
     let status = match error {
         AgentCoreError::Transform(TransformError::SessionId { .. }) => Some(400),
+        AgentCoreError::Status { status } => Some(*status),
         AgentCoreError::Transform(_)
-        | AgentCoreError::Status { .. }
         | AgentCoreError::ResponseTooLarge { .. }
         | AgentCoreError::Runtime(_) => None,
     };
@@ -112,21 +113,15 @@ fn run_streamed(runtime: &Runtime, call: &HandlerCall<'_>, answer: &StreamAnswer
         .map_err(|error| failed(&error))
 }
 
-pub(super) fn call(
-    request_id: &str,
-    params: &MessageSendParams,
-    litellm_params: &BTreeMap<String, AgentJson>,
-    agent_extra_headers: Option<&BTreeMap<String, String>>,
-    mode: Mode<'_>,
-) -> HelperResult {
-    let parsed = LitellmParams::parse(litellm_params)
+pub(super) fn call(transport: &Transport, mode: Mode<'_>) -> HelperResult {
+    let parsed = LitellmParams::parse(&transport.litellm_params)
         .map_err(|error| helper_failure("TransformError", error.to_string()))?;
     let runtime = new_runtime()?;
     let handler_call = HandlerCall {
-        request_id,
-        params,
+        request_id: &transport.request_id,
+        params: &transport.params,
         litellm_params: parsed,
-        agent_extra_headers,
+        agent_extra_headers: transport.agent_extra_headers.as_ref(),
     };
     match mode {
         Mode::Signed => run_signed(&runtime, &handler_call),

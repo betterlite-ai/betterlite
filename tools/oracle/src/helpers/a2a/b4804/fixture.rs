@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
+use std::future::ready;
 use std::time::UNIX_EPOCH;
+use std::vec::IntoIter;
 
 use betterlite_a2a::agentcore_transform::SignedRequest;
 use betterlite_a2a::agentcore_transform::call::AgentCoreHandler;
@@ -18,23 +20,11 @@ use betterlite_core::agents::json::AgentJson;
 use chrono::{DateTime, Utc};
 use futures_util::stream::{self, Iter};
 use secrecy::SecretString;
-use serde::Deserialize;
 use uuid::Uuid;
 
+use super::{Answer, StreamAnswer};
+
 type Params = BTreeMap<String, AgentJson>;
-
-#[derive(Clone, Deserialize)]
-pub(super) struct Answer {
-    pub(super) status: u16,
-    pub(super) body: AgentJson,
-}
-
-#[derive(Clone, Deserialize)]
-pub(super) struct StreamAnswer {
-    pub(super) status: u16,
-    pub(super) content_type: String,
-    pub(super) lines: Vec<String>,
-}
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum Failure {
@@ -83,7 +73,7 @@ impl<'case> FixtureRuntime<'case> {
 
 impl AgentCoreRuntime for FixtureRuntime<'_> {
     type Error = Failure;
-    type Lines = Iter<std::vec::IntoIter<Result<String, Failure>>>;
+    type Lines = Iter<IntoIter<Result<String, Failure>>>;
 
     fn complete_url(&self, model: &str, optional_params: &Params) -> Result<String, Self::Error> {
         complete_url(model, &param_map(optional_params)).map_err(Failure::Request)
@@ -116,7 +106,7 @@ impl AgentCoreRuntime for FixtureRuntime<'_> {
                 now: UNIX_EPOCH,
             },
             |_settings, _region| {
-                std::future::ready(Ok(Credentials {
+                ready(Ok(Credentials {
                     access_key_id: SecretString::from("fixture-access-key"),
                     secret_access_key: SecretString::from("fixture-secret-key"),
                     session_token: None,
@@ -132,25 +122,36 @@ impl AgentCoreRuntime for FixtureRuntime<'_> {
         })
     }
 
-    async fn post(&self, _request: &HttpRequest<'_>) -> Result<HttpResponse, Self::Error> {
-        let answer = self.answer.ok_or(Failure::Missing("non-streaming"))?;
-        Ok(HttpResponse {
-            status: answer.status,
-            body: serde_json::to_vec(&answer.body).map_err(Failure::Encode)?,
-        })
-    }
-
-    async fn post_stream(
+    fn post(
         &self,
         _request: &HttpRequest<'_>,
-    ) -> Result<StreamedResponse<Self::Lines>, Self::Error> {
-        let answer = self.stream.ok_or(Failure::Missing("streaming"))?;
+    ) -> impl Future<Output = Result<HttpResponse, Self::Error>> + Send {
+        match self.answer {
+            None => ready(Err(Failure::Missing("non-streaming"))),
+            Some(answer) => ready(
+                serde_json::to_vec(&answer.body)
+                    .map(|body| HttpResponse {
+                        status: answer.status,
+                        body,
+                    })
+                    .map_err(Failure::Encode),
+            ),
+        }
+    }
+
+    fn post_stream(
+        &self,
+        _request: &HttpRequest<'_>,
+    ) -> impl Future<Output = Result<StreamedResponse<Self::Lines>, Self::Error>> + Send {
+        let Some(answer) = self.stream else {
+            return ready(Err(Failure::Missing("streaming")));
+        };
         let lines: Vec<Result<String, Failure>> = answer.lines.iter().cloned().map(Ok).collect();
-        Ok(StreamedResponse {
+        ready(Ok(StreamedResponse {
             status: answer.status,
             content_type: answer.content_type.clone(),
             lines: stream::iter(lines),
-        })
+        }))
     }
 }
 
