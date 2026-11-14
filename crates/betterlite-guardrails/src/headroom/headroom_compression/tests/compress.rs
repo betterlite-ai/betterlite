@@ -7,12 +7,13 @@ use betterlite_http::proxy::base_builder;
 use betterlite_http::proxy::limits::TransportLimits;
 use reqwest::StatusCode;
 use rstest::rstest;
+use secrecy::SecretString;
 use tokio::net::TcpListener;
 use uuid::Uuid;
 
 use super::{
-    FOUR, SERVICE_ONE, THREE_USERS, apply, data, default_input, fail_open_input, guardrail,
-    guardrail_with_clock, inputs, json, mock, only_call, record_response, record_status,
+    FOUR, SERVICE_ONE, THREE_USERS, apply, call_count, data, default_input, fail_open_input,
+    guardrail, guardrail_with_clock, inputs, json, mock, only_call, record_response, record_status,
 };
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::headroom_failure::NOT_FOUND_HINT;
@@ -135,6 +136,25 @@ async fn the_compression_request_omits_authorization_without_a_key() {
     let mut request = data("{}");
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
     assert!(only_call(&server).authorization.is_none());
+}
+
+#[tokio::test]
+async fn an_unusable_api_key_fails_before_the_request() {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let input = HeadroomInput {
+        api_key: Some(SecretString::from("bad\nkey")),
+        ..default_input(&server.base)
+    };
+    let guardrail = guardrail_with_clock(input);
+    let mut request = data("{}");
+    let error = apply(&guardrail, inputs(FOUR), &mut request)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error,
+        GuardrailFailure::Other("the Headroom API key cannot be sent as a header value".to_owned())
+    );
+    assert_eq!(call_count(&server), 0);
 }
 
 #[tokio::test]
