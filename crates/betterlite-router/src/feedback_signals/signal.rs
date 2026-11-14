@@ -31,11 +31,6 @@ impl SignalDelta {
 }
 
 #[must_use]
-pub fn signal_count(fired: bool) -> i64 {
-    i64::from(fired)
-}
-
-#[must_use]
 pub fn merge_signal_deltas(deltas: &[SignalDelta]) -> SignalDelta {
     let mut merged = SignalDelta::default();
     for delta in deltas {

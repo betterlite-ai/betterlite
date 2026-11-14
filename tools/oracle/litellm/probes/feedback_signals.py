@@ -6,7 +6,7 @@ from litellm.router_strategy.adaptive_router.signals import (
     Turn,
     apply_turn,
 )
-from pydantic import Field
+from pydantic import Field, JsonValue
 from typing_extensions import override
 
 from probes.protocol import Operation, Strict
@@ -69,7 +69,7 @@ class Output(Strict):
 
 
 def turn_value(raw: TurnInput) -> Turn:
-    calls: list[Mapping[str, object]] = [
+    calls: list[Mapping[str, JsonValue]] = [
         {
             "id": call.id,
             "type": call.type,
@@ -77,7 +77,7 @@ def turn_value(raw: TurnInput) -> Turn:
         }
         for call in raw.tool_calls
     ]
-    results: list[Mapping[str, object]] = [
+    results: list[Mapping[str, JsonValue]] = [
         {"content": result.content, "is_error": result.is_error} for result in raw.tool_results
     ]
     return Turn(

@@ -5,7 +5,7 @@ use crate::adaptive_classification::constants::{
     LOOP_REPEAT_THRESHOLD, MISALIGNMENT_JACCARD_THRESHOLD, STAGNATION_JACCARD_NEAR_DUP,
 };
 use crate::feedback_signals::error::SignalError;
-use crate::feedback_signals::signal::{SignalDelta, signal_count};
+use crate::feedback_signals::signal::SignalDelta;
 use crate::feedback_signals::turn::{ToolResult, Turn};
 use crate::signal_math::{jaccard, tokens};
 
@@ -87,17 +87,17 @@ pub fn detect_user_feedback(
     allow_satisfaction: bool,
 ) -> SignalDelta {
     SignalDelta {
-        misalignment: signal_count(detect_misalignment(
+        misalignment: i64::from(detect_misalignment(
             detector,
             previous_user_content,
             turn.user_content.as_deref(),
         )),
         stagnation: 0,
-        disengagement: signal_count(detect_disengagement(detector, turn.user_content.as_deref())),
-        satisfaction: signal_count(
+        disengagement: i64::from(detect_disengagement(detector, turn.user_content.as_deref())),
+        satisfaction: i64::from(
             allow_satisfaction && detect_satisfaction(detector, turn.user_content.as_deref()),
         ),
-        failure: signal_count(detect_failure(&turn.tool_results)),
+        failure: i64::from(detect_failure(&turn.tool_results)),
         r#loop: 0,
         exhaustion: 0,
     }
@@ -112,7 +112,7 @@ pub fn detect_response_signals(
 ) -> SignalDelta {
     SignalDelta {
         misalignment: 0,
-        stagnation: signal_count(detect_stagnation(
+        stagnation: i64::from(detect_stagnation(
             detector,
             previous_assistant_content,
             turn.assistant_content.as_deref(),
@@ -120,8 +120,8 @@ pub fn detect_response_signals(
         disengagement: 0,
         satisfaction: 0,
         failure: 0,
-        r#loop: signal_count(detect_loop(tool_call_history, &turn.tool_calls)),
-        exhaustion: signal_count(detect_exhaustion(turn.response_status, &turn.tool_results)),
+        r#loop: i64::from(detect_loop(tool_call_history, &turn.tool_calls)),
+        exhaustion: i64::from(detect_exhaustion(turn.response_status, &turn.tool_results)),
     }
 }
 

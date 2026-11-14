@@ -14,9 +14,7 @@ use crate::feedback_signals::detector::{
     Detector, DetectorThresholds, detect_response_signals, detect_user_feedback,
 };
 use crate::feedback_signals::error::SignalError;
-use crate::feedback_signals::signal::{
-    SignalDelta, apply_signal_delta, merge_signal_deltas, signal_count,
-};
+use crate::feedback_signals::signal::{SignalDelta, apply_signal_delta, merge_signal_deltas};
 use crate::feedback_signals::state::SessionState;
 use crate::feedback_signals::turn::{ToolResult, Turn};
 use crate::signal_math::{jaccard, tokens};
@@ -183,8 +181,6 @@ fn assert_counted() {
         r#loop: 1,
         exhaustion: 1,
     };
-    assert_eq!(signal_count(true), 1);
-    assert_eq!(signal_count(false), 0);
     assert!(!SignalDelta::default().any_fired());
     assert!(one.any_fired());
     assert_eq!(fields(merge_signal_deltas(&[all, all])), [2; 7]);
