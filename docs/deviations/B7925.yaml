@@ -1,0 +1,26 @@
+task: B7925
+deviations:
+  - what: >-
+      Fields LiteLLM declares as a bare dict or as a container of bare dicts are typed as JSON mappings:
+      FunctionResponse.response and FunctionCall.args as dict[str, JsonValue] | None, HttpxFunctionCall.args and
+      HttpxServerSideToolCall.args as dict[str, JsonValue], HttpxServerSideToolResponse.response as
+      str | dict[str, JsonValue], the Tools fields (googleSearch, googleSearchRetrieval, enterpriseWebSearch,
+      url_context, code_execution, googleMaps, computerUse) and GenerationConfig.response_schema,
+      response_json_schema and responseFormat as dict[str, JsonValue], FunctionDeclaration.parameters as
+      Schema | dict[str, JsonValue], GroundingMetadata.groundingAttributions as list[dict[str, JsonValue]],
+      VertexMultimodalEmbeddingRequest.parameters as dict[str, JsonValue], and VertexVideoGenerationResponse.response,
+      metadata and error as dict[str, JsonValue] where LiteLLM writes dict[str, Any].
+    why: >-
+      betterlite types Python's untyped bare dict as a JSON mapping, so a key that is not a string or a value
+      that is not JSON is rejected where LiteLLM accepts it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L22
+  - what: Schema.default and Schema.example are JsonValue where LiteLLM declares Any.
+    why: >-
+      betterlite types Any as JSON, so a default or example that is not JSON is rejected where LiteLLM accepts
+      it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L130
+  - what: VertexToolName and VertexPartnerProvider derive from enum.StrEnum instead of (str, Enum).
+    why: >-
+      Ruff UP042 rejects the two-base form, and the member names and values stay the same. str() of a member
+      returns its value, where (str, Enum) returns the class and member name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L257

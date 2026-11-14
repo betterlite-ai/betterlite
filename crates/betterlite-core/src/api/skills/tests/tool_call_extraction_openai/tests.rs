@@ -13,6 +13,7 @@ fn response_with_choices(choices: &str) -> HookResponse {
     HookResponse::Object(ObjectResponse {
         content: Vec::new(),
         choices: parsed.choices,
+        stop_reason: None,
         generated_files: GeneratedFilesAttribute::Rejected,
         model_extra: None,
     })

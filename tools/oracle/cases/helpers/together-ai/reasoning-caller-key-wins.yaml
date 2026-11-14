@@ -1,0 +1,26 @@
+kind: helper
+name: reasoning-caller-key-wins
+call:
+  b5831:
+    model_cost: {}
+    chat_supported: []
+    chat_map:
+    - model: MiniMaxAI/MiniMax-M3
+      params: {reasoning_effort: none}
+      optional_params:
+        reasoning: {enabled: true}
+    - model: openai/gpt-oss-120b
+      params: {reasoning_effort: xhigh}
+      optional_params: {reasoning_effort: low}
+    - model: openai/gpt-oss-20b
+      params: {reasoning_effort: 5}
+      optional_params: {}
+    chat_messages: []
+    completion: []
+    rerank_requests: []
+    rerank_responses: []
+    cost_categories: []
+    cost_registry: []
+env: {}
+compare:
+  ignore: []
