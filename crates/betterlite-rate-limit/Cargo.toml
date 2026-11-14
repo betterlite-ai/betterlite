@@ -14,6 +14,7 @@ betterlite-models = { path = "../betterlite-models" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redis = { path = "../betterlite-redis" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
+crc16 = "0.4.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
 rust_decimal.workspace = true
 serde.workspace = true

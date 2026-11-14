@@ -4,6 +4,16 @@ use serde::{Deserialize, Serialize};
 
 pub type MetadataMap = IndexMap<String, Json>;
 
+// LiteLLM passes litellm_params.metadata through to loggers; an absent or non-object metadata is empty.
+#[must_use]
+pub fn metadata_from_litellm_params(litellm_params: &IndexMap<String, Json>) -> MetadataMap {
+    match litellm_params.get("metadata") {
+        Some(Json::Object(fields)) => fields.clone(),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
+        | None => MetadataMap::new(),
+    }
+}
+
 // The litellm_params keys the logging metadata helpers read; other keys never reach them
 #[serde_with::skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
