@@ -29,5 +29,27 @@ call:
               finishReason: STOP
             - content: {parts: [{text: b}]}
         replacement: [A, B]
+      - function: request
+        data:
+          system_instruction:
+            parts:
+              - {text: old, role: system}
+              - {inlineData: {mimeType: image/png, data: x}}
+          contents: [{parts: [{text: body}]}]
+        replacement: [SNAKE, BODY]
+      - function: request
+        data:
+          config:
+            systemInstruction:
+              parts:
+                - {text: old, role: system}
+          contents: [{parts: [{text: body}]}]
+        replacement: [CAMEL, BODY]
+      - function: request
+        data:
+          config:
+            system_instruction: {parts: [{text: old}]}
+          contents: {parts: [{text: body}]}
+        replacement: [CONFIG-SNAKE, BODY]
 env: {}
 compare: {ignore: []}
