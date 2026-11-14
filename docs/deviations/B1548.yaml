@@ -1,0 +1,8 @@
+task: B1548
+deviations:
+  - what: A token start_ms or end_ms integer beyond the i64 range is not a subtitle timing, so no cue is cut from it, where LiteLLM keeps any Python int and renders the cue.
+    why: SubtitleToken timings are i64 in betterlite's shared subtitle type, so a number outside that range cannot be a cue; it is dropped the way the source already drops a float timing, and no working setup sends a millisecond count past 9.2 * 10^18.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/common_utils.py#L78-L79
+  - what: A token speaker number beyond the i64 range fails the response decode with the transcript field named, where LiteLLM compares and renders the Python int as Speaker <digits>:.
+    why: The ported speaker is a bool, an i64 or text, and an integer outside that range fits none of them; a speaker id that large is a value no working setup sends, and naming the field beats silently relabelling the speaker.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/common_utils.py#L128-L129
