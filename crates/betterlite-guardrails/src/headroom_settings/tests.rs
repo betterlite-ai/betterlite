@@ -46,7 +46,7 @@ fn settings_use_the_explicit_values_and_default_the_rest() {
         api_key: Some(SecretString::from("explicit-key")),
         model: Some("compress-model".to_owned()),
         unreachable_fallback: Some("fail_open".to_owned()),
-        timeout: Some(2.0),
+        timeout: Some(2.0_f64),
         ccr_retrieval: Some(false),
     };
     let resolved = settings(&input, &BTreeMap::new());
@@ -218,8 +218,8 @@ fn timeout_defaults_to_sixty_seconds_with_a_five_second_connect_cap() {
 }
 
 #[rstest]
-#[case::zero(0.0)]
-#[case::negative(-3.0)]
+#[case::zero(0.0_f64)]
+#[case::negative(-3.0_f64)]
 #[case::nan(f64::NAN)]
 #[case::infinite(f64::INFINITY)]
 #[case::negative_infinite(f64::NEG_INFINITY)]
@@ -231,14 +231,14 @@ fn timeout_rejects_unusable_values(#[case] seconds: f64) {
 
 #[test]
 fn timeout_keeps_a_value_below_the_connect_cap() {
-    let resolved = resolve_timeout(Some(2.0));
+    let resolved = resolve_timeout(Some(2.0_f64));
     assert_eq!(resolved.total, Duration::from_secs(2));
     assert_eq!(resolved.connect, Duration::from_secs(2));
 }
 
 #[test]
 fn timeout_caps_the_connect_budget_at_five_seconds() {
-    let resolved = resolve_timeout(Some(90.0));
+    let resolved = resolve_timeout(Some(90.0_f64));
     assert_eq!(resolved.total, Duration::from_secs(90));
     assert_eq!(resolved.connect, Duration::from_secs(5));
 }
@@ -253,11 +253,14 @@ fn request_headers_carry_the_bearer_key_only_when_a_key_is_set() {
         timeout: None,
         ccr_retrieval: None,
     };
-    let headers = settings(&input, &BTreeMap::new())
+    let keyless_headers = settings(&input, &BTreeMap::new())
         .request_headers()
         .unwrap();
-    assert_eq!(headers.get(CONTENT_TYPE).unwrap(), "application/json");
-    assert!(headers.get(AUTHORIZATION).is_none());
+    assert_eq!(
+        keyless_headers.get(CONTENT_TYPE).unwrap(),
+        "application/json"
+    );
+    assert!(keyless_headers.get(AUTHORIZATION).is_none());
 
     let with_key = HeadroomInput {
         api_base: Some("https://headroom.test".to_owned()),
