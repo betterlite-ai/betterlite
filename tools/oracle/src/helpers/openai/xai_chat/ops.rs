@@ -124,19 +124,17 @@ impl Run<'_> {
         api_key: Option<&SecretString>,
         use_xai_oauth: bool,
     ) -> HelperResult {
-        let settings = identity(self.settings);
-        let resolved = self
-            .runtime
+        self.runtime
             .block_on(validate_environment(Environment {
                 headers: headers.clone(),
                 api_key,
-                settings: &settings,
+                settings: &identity(self.settings),
                 model,
                 use_xai_oauth,
                 oauth: &mut oauth(self.settings, None),
             }))
-            .map_err(|error| failure(CHAT_FAILURE, Some(error.status_code()), error))?;
-        Ok(json!({ "headers": resolved }))
+            .map(|resolved| json!({ "headers": resolved }))
+            .map_err(|error| failure(CHAT_FAILURE, Some(error.status_code()), error))
     }
 
     pub(super) fn url(
