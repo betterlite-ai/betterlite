@@ -241,6 +241,27 @@ async fn add_queries_the_resolver_without_deployment_params() {
 }
 
 #[tokio::test]
+async fn add_records_no_api_base_for_a_non_object_deployment() {
+    let fixture = support::fixture();
+    let data = support::object(&[
+        ("model", support::json("\"gpt-4\"")),
+        ("litellm_call_id", support::json("\"call-1\"")),
+        ("deployment", support::json("\"fast\"")),
+    ]);
+    fixture
+        .check
+        .add_hanging_request(Some(&data))
+        .await
+        .expect("the request is added");
+    let stored = fixture
+        .cache
+        .stored("call-1")
+        .expect("the request is cached");
+    assert_eq!(stored.api_base, None);
+    assert!(fixture.resolver.calls().is_empty());
+}
+
+#[tokio::test]
 async fn add_records_no_api_base_for_non_object_deployment_params() {
     let fixture = support::fixture();
     let data = support::object(&[
