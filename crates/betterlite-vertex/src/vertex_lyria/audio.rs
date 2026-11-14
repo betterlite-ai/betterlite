@@ -48,8 +48,8 @@ pub fn decode_lyria_dialect(
         .strip_prefix("vertex_ai/")
         .unwrap_or(decode.model);
     let (audio, mime_type) = match api {
-        VertexAudioApi::LyriaPredict => predict_audio(decode.body, model)?,
-        VertexAudioApi::LyriaInteractions => interactions_audio(decode.body, model)?,
+        VertexAudioApi::LyriaPredict => predict(decode.body, model)?,
+        VertexAudioApi::LyriaInteractions => interactions(decode.body, model)?,
     };
     let bytes = decode_stream_audio_fragment(&audio, MAX_RESPONSE_BYTES)
         .map_err(VertexLyriaError::Audio)?;
@@ -89,66 +89,62 @@ struct InteractionResponse {
 struct InteractionItem {
     #[serde(rename = "type")]
     kind: Option<String>,
-    content: Option<Vec<InteractionItem>>,
+    content: Option<Vec<Self>>,
     data: Option<String>,
     #[serde(rename = "mime_type")]
     mime_type: Option<String>,
 }
 
-fn predict_audio(body: &[u8], model: &str) -> Result<(String, Option<String>), VertexLyriaError> {
-    let response: PredictResponse =
-        serde_json::from_slice(body).map_err(VertexLyriaError::ResponseJson)?;
-    let prediction = response
-        .predictions
-        .as_deref()
-        .and_then(|predictions| predictions.first())
-        .ok_or_else(|| VertexLyriaError::MissingAudio {
-            model: model.to_owned(),
-        })?;
-    let audio = prediction
-        .audio_content
-        .as_ref()
-        .filter(|value| !value.is_empty())
-        .or(prediction.bytes_base64_encoded.as_ref())
-        .ok_or_else(|| VertexLyriaError::MissingAudio {
-            model: model.to_owned(),
-        })?;
-    Ok((audio.clone(), prediction.mime_type.clone()))
+impl PredictResponse {
+    fn first_audio(&self) -> Option<(String, Option<String>)> {
+        let prediction = self.predictions.as_deref()?.first()?;
+        let content = prediction.audio_content.as_deref();
+        let encoded = prediction.bytes_base64_encoded.as_deref();
+        let audio = content.filter(|text| !text.is_empty()).or(encoded)?;
+        Some((audio.to_owned(), prediction.mime_type.clone()))
+    }
 }
 
-fn interactions_audio(
-    body: &[u8],
-    model: &str,
-) -> Result<(String, Option<String>), VertexLyriaError> {
-    let response: InteractionResponse =
-        serde_json::from_slice(body).map_err(VertexLyriaError::ResponseJson)?;
-    let steps = response
-        .steps
-        .filter(|steps| !steps.is_empty())
-        .or(response.outputs)
-        .unwrap_or_default();
-    let mut audio: Option<String> = None;
-    let mut mime_type: Option<String> = None;
-    for step in &steps {
-        let contents: &[InteractionItem] = if step.kind.as_deref() == Some("model_output") {
-            step.content.as_deref().unwrap_or_default()
-        } else {
-            std::slice::from_ref(step)
-        };
-        for content in contents {
-            let data = content.data.as_ref().filter(|value| !value.is_empty());
-            if content.kind.as_deref() == Some("audio")
-                && let Some(data) = data
-            {
-                audio = Some(data.clone());
-                mime_type = content.mime_type.clone();
+impl InteractionResponse {
+    fn last_audio(self) -> Option<(String, Option<String>)> {
+        let steps = self
+            .steps
+            .filter(|steps| !steps.is_empty())
+            .or(self.outputs)
+            .unwrap_or_default();
+        let mut found = None;
+        for step in steps {
+            let items = if step.kind.as_deref() == Some("model_output") {
+                step.content.unwrap_or_default()
+            } else {
+                vec![step]
+            };
+            for item in items {
+                if item.kind.as_deref() == Some("audio")
+                    && let Some(data) = item.data.filter(|value| !value.is_empty())
+                {
+                    found = Some((data, item.mime_type));
+                }
             }
         }
+        found
     }
-    match audio {
-        Some(audio) => Ok((audio, mime_type)),
-        None => Err(VertexLyriaError::MissingAudio {
-            model: model.to_owned(),
-        }),
+}
+
+fn missing_audio(model: &str) -> VertexLyriaError {
+    VertexLyriaError::MissingAudio {
+        model: model.to_owned(),
     }
+}
+
+fn predict(body: &[u8], model: &str) -> Result<(String, Option<String>), VertexLyriaError> {
+    let response: PredictResponse =
+        serde_json::from_slice(body).map_err(VertexLyriaError::ResponseJson)?;
+    response.first_audio().ok_or_else(|| missing_audio(model))
+}
+
+fn interactions(body: &[u8], model: &str) -> Result<(String, Option<String>), VertexLyriaError> {
+    let response: InteractionResponse =
+        serde_json::from_slice(body).map_err(VertexLyriaError::ResponseJson)?;
+    response.last_audio().ok_or_else(|| missing_audio(model))
 }
