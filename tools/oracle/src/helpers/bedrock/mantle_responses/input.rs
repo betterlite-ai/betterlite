@@ -23,7 +23,7 @@ pub(crate) enum Input {
     #[serde(rename = "mantle_tool_filter")]
     ToolFilter { cases: Vec<MapCase> },
     #[serde(rename = "mantle_input_hoisting")]
-    InputHoisting { cases: Vec<HoistCase> },
+    Hoisting { cases: Vec<HoistCase> },
 }
 
 #[derive(Debug, Deserialize)]

@@ -28,7 +28,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
     let warnings = Warnings::default();
     let _guard = set_default(tracing_subscriber::registry().with(warnings.clone()));
     match input {
-        Input::Url { cases } => url_cases(cases),
+        Input::Url { cases } => Ok(url_cases(cases)),
         Input::ResponseOptions { cases }
         | Input::UnsupportedParams400 { cases }
         | Input::UnsupportedParamsWarnDrop { cases }
@@ -38,7 +38,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
             map_cases(&warnings, cases, Some(&body_input))
         }
         Input::ResponseAuth { cases } | Input::ProjectHeader { cases } => auth_cases(cases),
-        Input::InputHoisting { cases } => hoist_cases(&warnings, cases),
+        Input::Hoisting { cases } => hoist_cases(&warnings, cases),
     }
 }
 
@@ -99,7 +99,7 @@ fn map_outcome(
     Ok(mapped)
 }
 
-fn attach_warnings(value: &mut Value, warnings: Vec<String>) {
+fn attach_warnings(value: &mut Value, warnings: &[String]) {
     if let Value::Object(fields) = value {
         fields.insert("warnings".to_owned(), json!(warnings));
     }
@@ -127,13 +127,13 @@ fn map_cases(
             (Ok(params), Some(input)) => body_value(&case.model, input, &params)?,
             (Ok(params), None) => json!({"params": serde_json::to_value(params)?}),
         };
-        attach_warnings(&mut value, warnings.take());
+        attach_warnings(&mut value, &warnings.take());
         results.push(value);
     }
     Ok(json!({"results": results}))
 }
 
-fn url_cases(cases: &[UrlCase]) -> HelperResult {
+fn url_cases(cases: &[UrlCase]) -> Value {
     let mut urls = Vec::with_capacity(cases.len());
     for case in cases {
         let params = CompleteUrlParams {
@@ -145,12 +145,9 @@ fn url_cases(cases: &[UrlCase]) -> HelperResult {
             params,
             &globals(&case.environment),
         );
-        urls.push(match outcome {
-            Ok(url) => json!({"url": url}),
-            Err(_) => json!({"error": true}),
-        });
+        urls.push(outcome.map_or_else(|_| json!({"error": true}), |url| json!({"url": url})));
     }
-    Ok(json!({"urls": urls}))
+    json!({"urls": urls})
 }
 
 fn auth_cases(cases: &[AuthCase]) -> HelperResult {
@@ -177,8 +174,8 @@ fn auth_cases(cases: &[AuthCase]) -> HelperResult {
     Ok(json!({"results": results}))
 }
 
-fn error_probe(probe: Option<&ErrorProbe>) -> Result<Value, Box<HelperError>> {
-    let Some(probe) = probe else {
+fn error_probe(given: Option<&ErrorProbe>) -> Result<Value, Box<HelperError>> {
+    let Some(probe) = given else {
         return Ok(Value::Null);
     };
     let pairs: Vec<(String, String)> = probe
@@ -196,7 +193,7 @@ fn hoist_cases(warnings: &Warnings, cases: &[HoistCase]) -> HelperResult {
         let request: ResponsesInput = serde_json::from_value(case.input.clone())?;
         warnings.clear();
         let mut value = body_value(&case.model, &request, &case.params)?;
-        attach_warnings(&mut value, warnings.take());
+        attach_warnings(&mut value, &warnings.take());
         results.push(value);
     }
     Ok(json!({"results": results}))

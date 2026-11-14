@@ -1,6 +1,7 @@
 from typing import Final, NotRequired, Protocol, TypeAlias, TypedDict
 
 from litellm.types.router import GenericLiteLLMParams
+from litellm.types.utils import LlmProviders
 from pydantic import JsonValue, TypeAdapter
 
 Object: TypeAlias = dict[str, JsonValue]
@@ -16,6 +17,13 @@ ENVIRONMENT_KEYS: Final = (
 
 
 class MantleCalls(Protocol):
+    @property
+    def custom_llm_provider(self) -> LlmProviders: ...
+
+    def supports_native_file_search(self) -> bool: ...
+
+    def supports_native_websocket(self) -> bool: ...
+
     def get_complete_url(self, api_base: str | None, litellm_params: Object) -> str: ...
 
     def validate_environment(

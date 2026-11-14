@@ -1,10 +1,12 @@
 import logging
 import os
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 
 from litellm.exceptions import UnsupportedParamsError
-from litellm.llms.bedrock_mantle.responses.transformation import BedrockMantleResponsesAPIConfig
+from litellm.llms.bedrock_mantle.responses.transformation import (
+    BedrockMantleResponsesAPIConfig as MantleConfig,
+)
 from litellm.types.router import GenericLiteLLMParams
 from pydantic import JsonValue
 from typing_extensions import override
@@ -14,23 +16,20 @@ from .models import ENVIRONMENT_KEYS, MapCase, Object, UrlCase
 BODY_INPUT = "hello"
 
 
-def config_of(case: UrlCase | MapCase) -> BedrockMantleResponsesAPIConfig:
+def config_of(case: UrlCase | MapCase) -> MantleConfig:
     use_openai_path = case.get("use_openai_path")
     given = True if use_openai_path is None else use_openai_path
-    return BedrockMantleResponsesAPIConfig(use_openai_path=given)
+    return MantleConfig(use_openai_path=given)
 
 
-def transform_body(
-    config: BedrockMantleResponsesAPIConfig, model: str, source: JsonValue, params: Object
-) -> Object:
+def transform_body(config: MantleConfig, model: str, source: JsonValue, params: Object) -> Object:
     extra = GenericLiteLLMParams()
-    body: Object = config.transform_responses_api_request(model, source, params, extra, {})  # type: ignore[arg-type]  # pyright: ignore[reportUnknownMemberType, reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/responses/transformation.py#L183-L189
+    headers: Object = {}
+    body: Object = config.transform_responses_api_request(model, source, params, extra, headers)  # type: ignore[arg-type]  # pyright: ignore[reportUnknownMemberType, reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/responses/transformation.py#L183-L189
     return body
 
 
-def map_result(
-    config: BedrockMantleResponsesAPIConfig, case: MapCase, *, with_body: bool
-) -> Object:
+def map_result(config: MantleConfig, case: MapCase, *, with_body: bool) -> Object:
     params = case.get("params")
     drop_params = case.get("drop_params")
     given = {} if params is None else params
@@ -57,7 +56,7 @@ class Warnings(logging.Handler):
 
 
 @contextmanager
-def warnings_recorded() -> Iterator[list[JsonValue]]:
+def warnings_recorded() -> Generator[list[JsonValue]]:
     recorder = Warnings()
     logger = logging.getLogger("LiteLLM")
     logger.addHandler(recorder)
@@ -68,7 +67,7 @@ def warnings_recorded() -> Iterator[list[JsonValue]]:
 
 
 @contextmanager
-def environment(values: dict[str, str] | None) -> Iterator[None]:
+def environment(values: dict[str, str] | None) -> Generator[None]:
     given = {} if values is None else values
     saved = {name: os.environ.pop(name, None) for name in ENVIRONMENT_KEYS}
     os.environ.update({name: given[name] for name in ENVIRONMENT_KEYS if name in given})
