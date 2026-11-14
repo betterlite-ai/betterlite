@@ -14,6 +14,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use tokio::time::sleep;
 
 use super::error::CompresrTransportError;
 use super::{
@@ -425,7 +426,7 @@ async fn a_configured_timeout_bounds_the_request() {
     let mut server = JoinSet::new();
     server.spawn(async move {
         let router = Router::new().fallback(|| async {
-            tokio::time::sleep(Duration::from_millis(300)).await;
+            sleep(Duration::from_millis(300)).await;
             "{}"
         });
         let _served = axum::serve(listener, router).await;
