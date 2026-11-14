@@ -8,11 +8,15 @@ publish.workspace = true
 [dependencies]
 aho-corasick = "1.1.5"
 async-trait = "0.1.92"
+aws-config = { version = "=1.12.0", default-features = false, features = ["rt-tokio"] }
+aws-credential-types = "=1.3.1"
 aws-smithy-eventstream = "=0.61.6"
 aws-smithy-types = "=1.9.1"
 axum.workspace = true
 base64 = "0.23.1"
+betterlite-a2a = { path = "../betterlite-a2a" }
 betterlite-auth = { path = "../betterlite-auth" }
+betterlite-azure = { path = "../betterlite-azure" }
 betterlite-billing = { path = "../betterlite-billing" }
 betterlite-cache = { path = "../betterlite-cache" }
 betterlite-config = { path = "../betterlite-config" }
@@ -36,6 +40,7 @@ betterlite-roi = { path = "../betterlite-roi" }
 betterlite-router = { path = "../betterlite-router" }
 betterlite-semantic = { path = "../betterlite-semantic" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
+betterlite-vertex = { path = "../betterlite-vertex" }
 caseless = "0.2.2"
 chrono = { workspace = true }
 crc32fast = "1.5.3"
