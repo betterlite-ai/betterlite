@@ -24,7 +24,10 @@ fn fixture() -> tempfile::TempDir {
     tempfile::tempdir().unwrap()
 }
 
-pub(crate) fn capture_logs<T>(run: impl FnOnce() -> T) -> (T, String) {
+pub(crate) fn capture_logs<T, F>(run: F) -> (T, String)
+where
+    F: FnOnce() -> T,
+{
     let log = tempfile::NamedTempFile::new().unwrap();
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)

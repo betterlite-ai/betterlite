@@ -36,28 +36,28 @@ fn python_ascii_patterns_are_retained(#[case] source: &str, #[case] text: &str) 
 #[case::nested_unicode(r"(?a:(?u:^\w+$))", "\u{e9}", "!")]
 #[case::restored_unicode("^(?a:spam)spam$", "SPAM\u{17f}pam", "\u{17f}pamspam")]
 #[case::combined_ascii_case("(?ai)^spam$", "SPAM", "\u{17f}pam")]
-#[case::dot(r"(?a)danger.*zone", "DANGER middle ZONE", "danger\nzone")]
+#[case::dot("(?a)danger.*zone", "DANGER middle ZONE", "danger\nzone")]
 #[case::negated_space(r"(?a)\S+", "abc", " \t ")]
-#[case::negated_class(r"(?a)[^x]", "a", "x")]
-#[case::ascii_dot_is_one_character(r"(?a)^.$", "\u{e9}", "ab")]
-#[case::scoped_ascii_dot(r"^(?a:.)$", "\u{e9}", "ab")]
-#[case::ascii_dot_counted(r"(?a)a.{2}b", "a\u{e9}\u{e9}b", "a\u{e9}b")]
+#[case::negated_class("(?a)[^x]", "a", "x")]
+#[case::ascii_dot_is_one_character("(?a)^.$", "\u{e9}", "ab")]
+#[case::scoped_ascii_dot("^(?a:.)$", "\u{e9}", "ab")]
+#[case::ascii_dot_counted("(?a)a.{2}b", "a\u{e9}\u{e9}b", "a\u{e9}b")]
 #[case::ascii_non_space(r"(?a)^\S$", "\u{e9}", " ")]
 #[case::ascii_non_word_ignores_case(r"(?a)^\W$", "\u{17f}", "s")]
 #[case::ascii_non_digit(r"(?a)^\D$", "\u{e9}", "1")]
 #[case::unicode_non_word_after_flag_group(r"(?m)^\W$", "!", "\u{e9}")]
 #[case::unicode_non_digit(r"^\D$", "a", "\u{663}")]
 #[case::unicode_non_space(r"^\S$", "a", "\u{a0}")]
-#[case::multiline_lines(r"(?m)^foo$", "foo\nbar", "foox\nbar")]
-#[case::multiline_before_newline(r"(?m)foo$", "foo\n", "foox\n")]
-#[case::ascii_multiline(r"(?am)^foo$", "foo\nbar", "foox\nbar")]
+#[case::multiline_lines("(?m)^foo$", "foo\nbar", "foox\nbar")]
+#[case::multiline_before_newline("(?m)foo$", "foo\n", "foox\n")]
+#[case::ascii_multiline("(?am)^foo$", "foo\nbar", "foox\nbar")]
 #[case::multiline_scope_ends(r"(?m:a$)\nb$", "a\nb\n", "a\nb\nc")]
-#[case::multiline_turned_off(r"(?m)(?-m:a$)", "a\n", "a\nb")]
-#[case::end_of_text(r"foo$", "foo", "foo\nbar")]
-#[case::before_final_newline(r"foo$", "foo\n", "foo\nbar")]
+#[case::multiline_turned_off("(?m)(?-m:a$)", "a\n", "a\nb")]
+#[case::end_of_text("foo$", "foo", "foo\nbar")]
+#[case::before_final_newline("foo$", "foo\n", "foo\nbar")]
 #[case::absolute_end(r"foo\Z", "foo", "foo\n")]
-#[case::dollar_in_class(r"[$]", "$", "x")]
-#[case::class_then_end(r"[x]foo$", "xfoo\n", "xfoo\nbar")]
+#[case::dollar_in_class("[$]", "$", "x")]
+#[case::class_then_end("[x]foo$", "xfoo\n", "xfoo\nbar")]
 #[case::escaped_dollar(r"\$", "$", "x")]
 fn python_syntax_matches_re_semantics(
     #[case] source: &str,
@@ -86,7 +86,7 @@ fn python_flag_removals_python_rejects_are_skipped(#[case] source: &str) {
 
 #[rstest]
 #[case::lookahead(r"(?a)secret\s*(?=:)")]
-#[case::scoped_lookahead(r"(?a:secret)(?=:)")]
+#[case::scoped_lookahead("(?a:secret)(?=:)")]
 #[case::backreference(r"(?a)(\w)\1")]
 fn python_ascii_patterns_with_backtracking_only_syntax_are_skipped(#[case] source: &str) {
     let mut data: CategoryFileData = serde_saphyr::from_str("keywords: []").unwrap();
@@ -96,7 +96,7 @@ fn python_ascii_patterns_with_backtracking_only_syntax_are_skipped(#[case] sourc
 }
 
 #[rstest]
-#[case::negated_class(r"(?a)^[^x]$", "a")]
+#[case::negated_class("(?a)^[^x]$", "a")]
 #[case::non_word_in_class(r"(?a)^[\W]$", "!")]
 fn python_ascii_classes_match_single_bytes_of_non_ascii_text(
     #[case] source: &str,

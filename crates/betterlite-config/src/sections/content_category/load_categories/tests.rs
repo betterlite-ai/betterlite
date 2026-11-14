@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::{fs, slice, sync::Arc};
+use std::{fs, path::Path, slice, sync::Arc};
 
 use rstest::rstest;
 use tracing::subscriber::with_default;
@@ -11,41 +11,63 @@ use crate::sections::content_filter_records::{
 
 use super::loading::load_categories;
 
-#[test]
-fn load_categories_skips_failures_and_keeps_valid_records() {
+fn category(name: &str, file: &str) -> ContentFilterCategoryConfig {
+    ContentFilterCategoryConfig {
+        category: name.to_owned(),
+        enabled: true,
+        action: ContentFilterAction::Block,
+        severity_threshold: ContentFilterSeverity::Low,
+        category_file: Some(file.to_owned()),
+    }
+}
+
+fn write_category_files(root: &Path, outside: &Path) {
+    fs::create_dir_all(root).unwrap();
+    let files = [
+        (
+            root.join("good.yaml"),
+            "keywords: [{keyword: Fine, severity: high}]\n",
+        ),
+        (
+            root.join("late.yaml"),
+            "keywords: [{keyword: Later, severity: high}]\n",
+        ),
+        (root.join("broken.yaml"), "keywords: [unclosed\n"),
+        (root.join("broken.json"), "{not json"),
+        (
+            outside.join("outside.yaml"),
+            "keywords: [{keyword: Hidden}]\n",
+        ),
+    ];
+    for (path, text) in files {
+        fs::write(path, text).unwrap();
+    }
+}
+
+#[rstest]
+#[case::outside_every_root("outside.yaml", "WARN", "invalid category file path")]
+#[case::malformed_yaml("broken.yaml", "ERROR", "failed to load category")]
+#[case::malformed_json("broken.json", "ERROR", "failed to load category")]
+fn load_categories_skips_failures_and_keeps_valid_records(
+    #[case] file: &str,
+    #[case] level: &str,
+    #[case] message: &str,
+) {
     super::tests::load_categories_resolves_custom_category_files();
     super::tests::partial_updates_survive_later_load_failure();
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("root");
-    fs::create_dir_all(&root).unwrap();
-    fs::write(
-        root.join("good.yaml"),
-        "keywords: [{keyword: Fine, severity: high}]\n",
-    )
-    .unwrap();
-    fs::write(
-        root.join("late.yaml"),
-        "keywords: [{keyword: Later, severity: high}]\n",
-    )
-    .unwrap();
-    fs::write(root.join("broken.yaml"), "keywords: [unclosed\n").unwrap();
-    fs::write(root.join("broken.json"), "{not json").unwrap();
-    let outside = temp.path().join("outside.yaml");
-    fs::write(&outside, "keywords: [{keyword: Hidden, severity: high}]\n").unwrap();
+    write_category_files(&root, temp.path());
+    let path = if file == "outside.yaml" {
+        temp.path().join(file).display().to_string()
+    } else {
+        file.to_owned()
+    };
     let configs = [
-        ("good", "good.yaml".to_owned()),
-        ("outside", outside.display().to_string()),
-        ("brokenyaml", "broken.yaml".to_owned()),
-        ("brokenjson", "broken.json".to_owned()),
-        ("late", "late.yaml".to_owned()),
-    ]
-    .map(|(category, file)| ContentFilterCategoryConfig {
-        category: category.to_owned(),
-        enabled: true,
-        action: ContentFilterAction::Block,
-        severity_threshold: ContentFilterSeverity::Low,
-        category_file: Some(file),
-    });
+        category("good", "good.yaml"),
+        category("failing", &path),
+        category("late", "late.yaml"),
+    ];
     let (loaded, output) = super::tests::capture_logs(|| {
         load_categories(
             &configs,
@@ -54,35 +76,17 @@ fn load_categories_skips_failures_and_keeps_valid_records() {
             &super::Settings::default(),
         )
     });
-    assert_eq!(loaded.category_keywords.get("fine").unwrap().0, "good");
-    assert_eq!(loaded.category_keywords.get("later").unwrap().0, "late");
-    assert!(!loaded.category_keywords.contains_key("hidden"));
-    for skipped in ["outside", "brokenyaml", "brokenjson"] {
-        assert!(!loaded.loaded_categories.contains_key(skipped), "{skipped}");
-    }
-    let warnings: Vec<_> = output
-        .lines()
-        .filter(|line| line.contains("WARN"))
+    let owners: Vec<_> = loaded
+        .category_keywords
+        .values()
+        .map(|entry| entry.0.as_str())
         .collect();
-    assert_eq!(warnings.len(), 1, "{output}");
-    assert!(
-        warnings[0].contains("invalid category file path"),
-        "{output}"
-    );
-    assert!(warnings[0].contains("outside"), "{output}");
-    let errors: Vec<_> = output
-        .lines()
-        .filter(|line| line.contains("ERROR"))
-        .collect();
-    assert_eq!(errors.len(), 2, "{output}");
-    assert!(
-        errors.iter().any(|line| line.contains("brokenyaml")),
-        "{output}"
-    );
-    assert!(
-        errors.iter().any(|line| line.contains("brokenjson")),
-        "{output}"
-    );
+    assert_eq!(owners, ["good", "late"]);
+    assert!(!loaded.loaded_categories.contains_key("failing"));
+    assert_eq!(output.lines().count(), 1, "{output}");
+    assert!(output.contains(level), "{output}");
+    assert!(output.contains(message), "{output}");
+    assert!(output.contains("failing"), "{output}");
 }
 
 #[rstest]
