@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::Section;
 use betterlite_config::sections::azure_credentials::{DeploymentSettings, Raw as TokenRaw};
 use betterlite_config::sections::azure_url_policy::Raw as KeyRaw;
+use betterlite_core::api::anthropic_beta_filter::error::BetaFilterError;
 use betterlite_core::api::anthropic_beta_filter::native_injection::{
     NativeRequest, inject_native_betas,
 };
@@ -111,18 +112,26 @@ fn environment(calls: &[EnvironmentStep]) -> HelperResult {
     Ok(json!({ "calls": answers }))
 }
 
-fn environment_answer(step: &EnvironmentStep) -> Result<Value, Box<HelperError>> {
-    let configured = configured_key(&step.globals, &step.environment)?;
-    let credentials = token_settings(&step.litellm_params, &step.environment)?;
-    let params_entry = step.litellm_params.get("api_key");
-    let params_secret = params_entry
-        .and_then(|entry| entry.as_deref())
-        .map(SecretString::from);
-    let params_key = match (params_entry, params_secret.as_ref()) {
+fn key_shape<'data>(
+    litellm_params: &'data BTreeMap<String, Option<String>>,
+    secret: &'data Option<SecretString>,
+) -> ParamsKey<'data> {
+    match (litellm_params.get("api_key"), secret.as_ref()) {
         (None, _) => ParamsKey::DictAbsent,
         (Some(_), None) => ParamsKey::DictNull,
-        (Some(_), Some(secret)) => ParamsKey::Dict(secret),
-    };
+        (Some(_), Some(value)) => ParamsKey::Dict(value),
+    }
+}
+
+fn environment_answer(step: &EnvironmentStep) -> Result<Value, Box<HelperError>> {
+    let params_secret = step
+        .litellm_params
+        .get("api_key")
+        .and_then(|entry| entry.as_deref())
+        .map(SecretString::from);
+    let params_key = key_shape(&step.litellm_params, &params_secret);
+    let configured = configured_key(&step.globals, &step.environment)?;
+    let credentials = token_settings(&step.litellm_params, &step.environment)?;
     let argument = step.api_key.as_deref().map(SecretString::from);
     let request = EnvironmentRequest {
         headers: step.headers.clone(),
@@ -147,7 +156,12 @@ fn environment_answer(step: &EnvironmentStep) -> Result<Value, Box<HelperError>>
         inject_native_betas(updated.into_iter().collect(), &native)
             .map(|merged| merged.into_iter().collect())
     })
-    .map_err(|error| match error {
+    .map_err(helper_environment_error)?;
+    Ok(json!({ "headers": headers, "api_base": api_base }))
+}
+
+fn helper_environment_error(error: EnvironmentError<BetaFilterError>) -> Box<HelperError> {
+    match error {
         EnvironmentError::Token(token) => Box::new(HelperError {
             class: token.class().to_owned(),
             status: token.status(),
@@ -164,6 +178,5 @@ fn environment_answer(step: &EnvironmentStep) -> Result<Value, Box<HelperError>>
             code: Some(None),
             message: betas.to_string(),
         }),
-    })?;
-    Ok(json!({ "headers": headers, "api_base": api_base }))
+    }
 }

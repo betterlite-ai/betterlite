@@ -53,7 +53,7 @@ class Config(Protocol):
     ) -> JsonObject: ...
 
 
-# B961 owns the parent request transform, so the seam hands back the request it was given
+# B961 owns the parent request transform and system normalization, so the seam hands back what it was given
 class Seam(AnthropicMessagesConfig):
     @override
     def transform_anthropic_messages_request(  # ast-grep-ignore: no-long-names
@@ -65,6 +65,14 @@ class Seam(AnthropicMessagesConfig):
         headers: JsonObject,
     ) -> JsonObject:
         return anthropic_messages_optional_request_params
+
+    @override
+    def _normalize_system_role_messages(  # ast-grep-ignore: no-long-names
+        self,
+        anthropic_messages_request: JsonObject,
+        model: str,
+    ) -> None:
+        return None
 
 
 class Driver(AzureAnthropicMessagesConfig, Seam):

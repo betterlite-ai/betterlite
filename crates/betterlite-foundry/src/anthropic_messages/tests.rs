@@ -158,6 +158,28 @@ fn url(call: &UrlCall) -> String {
     }
 }
 
+fn fixture_request<'data>(
+    call: EnvironmentCall,
+    params_key: ParamsKey<'data>,
+    argument: Option<&'data SecretString>,
+    configured: Option<&'data SecretString>,
+    credentials: &'data DeploymentSettings,
+) -> EnvironmentRequest<'data> {
+    EnvironmentRequest {
+        headers: call.headers,
+        params_key,
+        argument_key: argument,
+        configured_key: configured,
+        token: TokenSource {
+            credentials,
+            refresh_enabled: false,
+            provider: None,
+            sources: &NoSources,
+        },
+        api_base: call.api_base,
+    }
+}
+
 // "dict_absent", "dict_null", "dict:KEY", "typed" and "typed:KEY" name the shape LiteLLM received
 fn environment(call: EnvironmentCall) -> Outcome {
     let spec = call.params.unwrap_or_else(|| "dict_absent".to_owned());
@@ -176,19 +198,13 @@ fn environment(call: EnvironmentCall) -> Outcome {
     let argument = call.argument_key.as_deref().map(SecretString::from);
     let configured = call.configured_key.as_deref().map(SecretString::from);
     let credentials = settings(call.token.as_deref(), None);
-    let request = EnvironmentRequest {
-        headers: call.headers,
+    let request = fixture_request(
+        call,
         params_key,
-        argument_key: argument.as_ref(),
-        configured_key: configured.as_ref(),
-        token: TokenSource {
-            credentials: &credentials,
-            refresh_enabled: false,
-            provider: None,
-            sources: &NoSources,
-        },
-        api_base: call.api_base,
-    };
+        argument.as_ref(),
+        configured.as_ref(),
+        &credentials,
+    );
     match validate_anthropic_messages_environment(request, fixture_betas) {
         Ok((headers, api_base)) => Outcome {
             headers: Some(headers),
@@ -393,6 +409,14 @@ fn anthropic_messages_cases(#[case] source: &str) {
     }
 }
 
+fn key_of(outcome: &Outcome, name: &str) -> Option<String> {
+    outcome
+        .headers
+        .as_ref()
+        .and_then(|headers| headers.get(name))
+        .cloned()
+}
+
 #[test]
 fn anthropic_messages_credential_identity_isolation() {
     let from_header = environment(EnvironmentCall {
@@ -408,13 +432,6 @@ fn anthropic_messages_credential_identity_isolation() {
         ..EnvironmentCall::default()
     });
     let anonymous = environment(EnvironmentCall::default());
-    let key_of = |outcome: &Outcome, name: &str| {
-        outcome
-            .headers
-            .as_ref()
-            .and_then(|headers| headers.get(name))
-            .cloned()
-    };
     assert_eq!(
         key_of(&from_header, "x-api-key").as_deref(),
         Some("identity-a-key")
