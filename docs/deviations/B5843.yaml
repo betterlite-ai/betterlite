@@ -1,0 +1,14 @@
+task: B5843
+deviations:
+  - what: The oci_signer option is not supported; credentials are always the manual user, fingerprint, tenancy and key (or key file). The signer check in validate_environment is dropped with it, so a caller that passes only oci_signer gets the 401 missing-credentials error instead of a signed request.
+    why: See B5940. betterlite signs with its own RSA-SHA256 signer and has no OCI SDK signer object to accept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L410-L411
+  - what: A body that does not decode, a chunk that is not JSON and a request that does not fit its typed payload give a fixed message prefix without the Python exception text. The status codes are the same.
+    why: The Python text comes from json and pydantic, which have no Rust equivalent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L782-L787
+  - what: The user-agent validate_environment sets is litellm/1.105.1, the version B5940's OciEnvironment carries, where LiteLLM reports its installed package version.
+    why: A Rust gateway has no LiteLLM package version to report.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L52-L58
+  - what: A chat completion response id is chatcmpl-<uuid4>, generated in this module, where LiteLLM leaves the id its ModelResponse constructor made; the wire body carries no id.
+    why: The shared betterlite ChatResponse requires an id before B5942's handlers fill the rest.
+    link: ""
