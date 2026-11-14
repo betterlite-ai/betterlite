@@ -71,6 +71,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "image_options"
+path = "fuzz_targets/image_options.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "multimodal_embedding"
 path = "fuzz_targets/multimodal_embedding.rs"
 test = false
@@ -143,6 +150,13 @@ bench = false
 [[bin]]
 name = "vertex_timestamp"
 path = "fuzz_targets/vertex_timestamp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_tuning_job"
+path = "fuzz_targets/vertex_tuning_job.rs"
 test = false
 doc = false
 bench = false
