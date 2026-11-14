@@ -253,7 +253,7 @@ fn tag_key_table() {
     let output = windows.cache_keys(&[], &requested);
     assert_eq!(
         (output.keys, output.deployment_providers.len()),
-        (vec!["tag_spend:team:None".to_owned()], 0)
+        (vec!["tag_spend:team:None".to_owned()], 0_usize)
     );
 }
 
