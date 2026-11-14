@@ -362,6 +362,33 @@ REJECTIONS = [
 ]
 
 
+UI_EXTRA_KEYS = (
+    "ui_type",
+    "options",
+    "min",
+    "max",
+    "step",
+    "default_value",
+    "examples",
+)
+
+
+def ui_extras(model):
+    found = {}
+    for field_name, field in model.model_fields.items():
+        extras = field.json_schema_extra
+        if not isinstance(extras, dict):
+            continue
+        picked = {}
+        for key in UI_EXTRA_KEYS:
+            if key in extras:
+                item = extras[key]
+                picked[key] = item.value if isinstance(item, Enum) else item
+        if picked:
+            found[field_name] = picked
+    return found
+
+
 def collect_literals(node, found):
     if isinstance(node, dict):
         enum_values = node.get("enum")
@@ -454,11 +481,17 @@ def describe(module_name, module):
     aliases = {}
     for alias in ALIASES.get(module_name, ()):
         aliases[alias] = schema_fields(TypeAdapter(vars(module)[alias]).json_schema())
+    extras = {}
+    for name in names:
+        value = vars(module)[name]
+        if isinstance(value, type) and issubclass(value, BaseModel):
+            extras[name] = ui_extras(value)
     return {
         "names": names,
         "kinds": {name: kind_of(vars(module)[name]) for name in names},
         "shapes": shapes,
         "types": types,
+        "ui_extras": extras,
         "aliases": aliases,
         "constants": {
             constant: vars(module)[constant] for constant in CONSTANTS.get(module_name, ())
@@ -529,6 +562,7 @@ class ModuleDescription(TypedDict):
     kinds: dict[str, str]
     shapes: dict[str, Shape]
     types: dict[str, dict[str, JsonValue]]
+    ui_extras: dict[str, JsonValue]
     aliases: dict[str, Shape]
     constants: dict[str, JsonValue]
 
@@ -571,6 +605,7 @@ def test_covered_names(report: FullReport, module_name: str) -> None:
     assert ours["names"] == theirs["names"], module_name
     assert ours["kinds"] == theirs["kinds"], module_name
     assert ours["shapes"] == theirs["shapes"], module_name
+    assert ours["ui_extras"] == theirs["ui_extras"], module_name
     assert ours["aliases"] == theirs["aliases"], module_name
     assert ours["constants"] == theirs["constants"], module_name
 
@@ -632,6 +667,38 @@ def test_ui_names(report: FullReport) -> None:
     assert ours == theirs
     assert ours["aim.AimGuardrailConfigModel"] == "AIM Guardrail"
     assert ours["cisco_ai_defense.CiscoAIDefenseGuardrailConfigModel"] == "Cisco AI Defense"
+
+
+def test_ui_extra_names(report: FullReport) -> None:
+    modules = report["betterlite"]["modules"]
+    assert modules["aim"]["ui_extras"] == {
+        "AimGuardrailConfigModel": {"inspect_embeddings": {"ui_type": "bool"}},
+    }
+    assert modules["cato_networks"]["ui_extras"] == {
+        "CatoNetworksGuardrailConfigModel": {"inspect_embeddings": {"ui_type": "bool"}},
+    }
+    assert modules["akto"]["ui_extras"] == {
+        "AktoConfigModel": {
+            "akto_base_url": {
+                "examples": ["http://localhost:9090", "https://akto-ingestion.example.com"],
+            },
+        },
+    }
+    assert modules["block_code_execution"]["ui_extras"] == {
+        "BlockCodeExecutionGuardrailConfigModel": {
+            "blocked_languages": {
+                "ui_type": "multiselect",
+                "options": block_code_execution.BLOCKED_LANGUAGES_OPTIONS,
+            },
+            "confidence_threshold": {
+                "ui_type": "percentage",
+                "min": 0.0,
+                "max": 1.0,
+                "step": 0.1,
+                "default_value": 0.5,
+            },
+        },
+    }
 
 
 def test_abstract_names(report: FullReport) -> None:
