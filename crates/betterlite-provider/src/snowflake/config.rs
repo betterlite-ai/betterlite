@@ -79,30 +79,29 @@ pub fn get_complete_url(
     params: &mut Object,
     account_id_env: Option<&str>,
 ) -> Result<String, SnowflakeError> {
-    let base = match api_base.filter(|base| !base.is_empty()) {
-        Some(given) => with_api_suffix(given),
-        None => {
-            let resolved = match params.shift_remove("account_id") {
-                Some(Json::Null) => None,
-                Some(Json::Text(text)) => Some(text),
-                Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-                    return Err(SnowflakeError::AccountIdType);
-                }
-                None => account_id_env.map(str::to_owned),
-            };
-            let account_id = resolved.ok_or(SnowflakeError::MissingAccountId)?;
-            if !valid_account_id(&account_id) {
-                return Err(SnowflakeError::InvalidAccountId);
-            }
-            format!("https://{account_id}.snowflakecomputing.com{API_SUFFIX}")
-        }
-    };
     let path = match endpoint {
         Endpoint::Chat(model) if is_claude_model(model) => "/cortex/v1/messages",
         Endpoint::Chat(_) => "/cortex/v1/chat/completions",
         Endpoint::Embedding => "/cortex/inference:embed",
     };
-    Ok(format!("{base}{path}"))
+    if let Some(given) = api_base.filter(|base| !base.is_empty()) {
+        return Ok(format!("{}{path}", with_api_suffix(given)));
+    }
+    let resolved = match params.shift_remove("account_id") {
+        Some(Json::Null) => None,
+        Some(Json::Text(text)) => Some(text),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            return Err(SnowflakeError::AccountIdType);
+        }
+        None => account_id_env.map(str::to_owned),
+    };
+    let account_id = resolved.ok_or(SnowflakeError::MissingAccountId)?;
+    if !valid_account_id(&account_id) {
+        return Err(SnowflakeError::InvalidAccountId);
+    }
+    Ok(format!(
+        "https://{account_id}.snowflakecomputing.com{API_SUFFIX}{path}"
+    ))
 }
 
 pub fn validate_environment(
