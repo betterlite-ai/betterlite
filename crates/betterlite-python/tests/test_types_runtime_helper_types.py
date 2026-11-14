@@ -415,9 +415,13 @@ def prompt_results(package):
     params = module.PromptLiteLLMParams(prompt_integration="dotprompt")
     default_spec = module.PromptSpec(prompt_id="p1", litellm_params=params)
     staging_spec = module.PromptSpec(
-        prompt_id="p2", litellm_params={"prompt_integration": "generic_prompt_management"},
-        prompt_info={"environment": "staging"},
+        prompt_id="p2",
+        litellm_params={
+            "prompt_integration": "generic_prompt_management", "prompt_directory": "/prompts",
+        },
+        prompt_info={"environment": "staging", "owner": "team-a"},
     )
+    staging_dump = staging_spec.model_dump(mode="json")
     db_spec = module.PromptSpec(
         prompt_id="p3", litellm_params=params, prompt_info={"prompt_type": "db"},
     )
@@ -430,7 +434,11 @@ def prompt_results(package):
     return {
         "params": params.model_dump(mode="json"),
         "default_spec": default_spec.model_dump(mode="json"),
-        "staging_spec": staging_spec.model_dump(mode="json"),
+        "staging_spec": staging_dump,
+        "staging_extras": {
+            "prompt_directory": staging_dump["litellm_params"].get("prompt_directory"),
+            "owner": staging_dump["prompt_info"].get("owner"),
+        },
         "db_spec": db_spec.model_dump(mode="json"),
         "response": response.model_dump(mode="json"),
         "listing": listing.model_dump(mode="json"),
@@ -645,9 +653,15 @@ class ValidationNames(TypedDict):
     details: list[JsonValue]
 
 
+class PromptExtrasNames(TypedDict):
+    prompt_directory: str | None
+    owner: str | None
+
+
 class PromptNames(TypedDict):
     default_spec: PromptSpecNames
     staging_spec: PromptSpecNames
+    staging_extras: PromptExtrasNames
     db_spec: PromptSpecNames
     missing_params: ValidationNames
     missing_prompt_id: ValidationNames
@@ -891,6 +905,9 @@ def test_prompt_spec_names(report: Report) -> None:
     )
     assert prompts["db_spec"]["prompt_info"] == PromptInfoNames(
         prompt_type="db", environment="development",
+    )
+    assert prompts["staging_extras"] == PromptExtrasNames(
+        prompt_directory="/prompts", owner="team-a",
     )
     assert prompts["default_spec"]["prompt_id"] == "p1"
     assert prompts["default_spec"]["environment"] == "development"
