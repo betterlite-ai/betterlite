@@ -1,4 +1,4 @@
-use betterlite_core::api::riva::records::error::{
+use betterlite_core::api::riva::records::grpc_status::{
     CodeAttribute, DetailsAttribute, GrpcErrorObservation, grpc_error_to_exception,
 };
 use betterlite_core::api::riva::records::options::map_openai_params;

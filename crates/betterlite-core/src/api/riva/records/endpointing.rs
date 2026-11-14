@@ -3,21 +3,33 @@ use std::collections::BTreeMap;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Object;
 use rust_decimal::Decimal;
-use serde_json::{Value, from_value, to_value};
+use serde::Serialize;
+use serde_json::{Value, from_value};
 
 use super::error::RecordsError;
 use super::options::{decimal_value, integer_value};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct EndpointingOptions {
+    #[serde(
+        with = "rust_decimal::serde::float_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub start_threshold: Option<Decimal>,
+    #[serde(
+        with = "rust_decimal::serde::float_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub stop_threshold: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_history: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_history_eou: Option<u32>,
 }
 
 // An explicit endpointing_config is copied verbatim; a server_vad chunking_strategy is translated into these settings
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
 pub enum EndpointingConfig {
     Explicit(BTreeMap<String, Json>),
     Derived(EndpointingOptions),
@@ -78,51 +90,4 @@ fn derived_endpointing(chunking: &Object) -> Result<Option<EndpointingConfig>, R
         return Ok(None);
     }
     Ok(Some(EndpointingConfig::Derived(endpointing)))
-}
-
-impl EndpointingConfig {
-    pub(super) fn to_value(&self) -> Result<Value, RecordsError> {
-        match self {
-            Self::Explicit(entries) => explicit_value(entries),
-            Self::Derived(options) => derived_value(options),
-        }
-    }
-}
-
-fn explicit_value(entries: &BTreeMap<String, Json>) -> Result<Value, RecordsError> {
-    let mut object = Object::new();
-    for (name, value) in entries {
-        let converted = to_value(value).map_err(|source| RecordsError::Value {
-            field: "endpointing_config",
-            source,
-        })?;
-        object.insert(name.clone(), converted);
-    }
-    Ok(Value::Object(object))
-}
-
-fn derived_value(options: &EndpointingOptions) -> Result<Value, RecordsError> {
-    let mut object = Object::new();
-    if let Some(threshold) = options.start_threshold {
-        object.insert("start_threshold".to_owned(), threshold_value(threshold)?);
-    }
-    if let Some(threshold) = options.stop_threshold {
-        object.insert("stop_threshold".to_owned(), threshold_value(threshold)?);
-    }
-    if let Some(history) = options.stop_history {
-        object.insert("stop_history".to_owned(), Value::from(history));
-    }
-    if let Some(history) = options.stop_history_eou {
-        object.insert("stop_history_eou".to_owned(), Value::from(history));
-    }
-    Ok(Value::Object(object))
-}
-
-fn threshold_value(threshold: Decimal) -> Result<Value, RecordsError> {
-    threshold
-        .to_f64()
-        .map(Value::from)
-        .ok_or(RecordsError::Number {
-            field: "chunking_strategy.threshold",
-        })
 }

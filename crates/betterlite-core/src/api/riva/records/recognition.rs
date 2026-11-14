@@ -2,7 +2,7 @@ use betterlite_openai::api::transcription_contract::{
     AudioTranscriptionData, AudioTranscriptionRequestData,
 };
 use betterlite_openai::openai_base_config::Object;
-use serde_json::Value;
+use serde::Serialize;
 
 use super::endpointing::{EndpointingConfig, endpointing_config};
 use super::error::RecordsError;
@@ -12,13 +12,13 @@ use super::options::{
     integer_option, text_option,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct TranscriptFilters {
     pub verbatim_transcripts: bool,
     pub profanity_filter: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RecognitionOptions {
     pub language_code: String,
     pub sample_rate_hertz: u32,
@@ -28,11 +28,13 @@ pub struct RecognitionOptions {
     pub enable_word_time_offsets: bool,
     pub max_alternatives: u32,
     pub model: String,
+    #[serde(flatten)]
     pub transcript_filters: TranscriptFilters,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub endpointing_config: Option<EndpointingConfig>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RivaRequest {
     pub recognition_config: RecognitionOptions,
     pub response_format: String,
@@ -70,48 +72,6 @@ impl RecognitionOptions {
             endpointing_config: endpointing_config(params)?,
         })
     }
-
-    fn config_object(&self) -> Result<Object, RecordsError> {
-        let mut config = Object::new();
-        config.insert(
-            "language_code".to_owned(),
-            Value::from(self.language_code.as_str()),
-        );
-        config.insert(
-            "sample_rate_hertz".to_owned(),
-            Value::from(self.sample_rate_hertz),
-        );
-        config.insert("encoding".to_owned(), Value::from(self.encoding.as_str()));
-        config.insert(
-            "audio_channel_count".to_owned(),
-            Value::from(self.audio_channel_count),
-        );
-        config.insert(
-            "enable_automatic_punctuation".to_owned(),
-            Value::Bool(self.enable_automatic_punctuation),
-        );
-        config.insert(
-            "enable_word_time_offsets".to_owned(),
-            Value::Bool(self.enable_word_time_offsets),
-        );
-        config.insert(
-            "max_alternatives".to_owned(),
-            Value::from(self.max_alternatives),
-        );
-        config.insert("model".to_owned(), Value::from(self.model.as_str()));
-        config.insert(
-            "verbatim_transcripts".to_owned(),
-            Value::Bool(self.transcript_filters.verbatim_transcripts),
-        );
-        config.insert(
-            "profanity_filter".to_owned(),
-            Value::Bool(self.transcript_filters.profanity_filter),
-        );
-        if let Some(endpointing) = &self.endpointing_config {
-            config.insert("endpointing_config".to_owned(), endpointing.to_value()?);
-        }
-        Ok(config)
-    }
 }
 
 pub fn transform_request(optional_params: &Object) -> Result<RivaRequest, RecordsError> {
@@ -126,34 +86,18 @@ pub fn transform_request(optional_params: &Object) -> Result<RivaRequest, Record
 
 impl RivaRequest {
     pub fn request_data(&self) -> Result<AudioTranscriptionRequestData, RecordsError> {
-        let mut data = Object::new();
-        data.insert(
-            "recognition_config".to_owned(),
-            Value::Object(self.recognition_config.config_object()?),
-        );
-        data.insert(
-            "response_format".to_owned(),
-            Value::from(self.response_format.as_str()),
-        );
-        data.insert(
-            "timestamp_granularities".to_owned(),
-            self.granularities_value(),
-        );
+        let value = serde_json::to_value(self).map_err(|source| RecordsError::Value {
+            field: "request",
+            source,
+        })?;
+        let data: Object = serde_json::from_value(value).map_err(|source| RecordsError::Value {
+            field: "request",
+            source,
+        })?;
         Ok(AudioTranscriptionRequestData {
             data: AudioTranscriptionData::Object(data),
             files: None,
             content_type: None,
         })
-    }
-
-    fn granularities_value(&self) -> Value {
-        let Some(names) = &self.timestamp_granularities else {
-            return Value::Null;
-        };
-        let entries = names
-            .iter()
-            .map(|name| Value::from(name.as_str()))
-            .collect();
-        Value::Array(entries)
     }
 }

@@ -5,9 +5,9 @@ use betterlite_openai::openai_base_config::{Headers, Object};
 use rstest::rstest;
 use serde_json::{Number, Value, json};
 
-use super::error::{
-    CodeAttribute, DetailsAttribute, GrpcErrorObservation, RecordsError, RivaException,
-    grpc_error_to_exception,
+use super::error::RecordsError;
+use super::grpc_status::{
+    CodeAttribute, DetailsAttribute, GrpcErrorObservation, RivaException, grpc_error_to_exception,
 };
 use super::options::map_openai_params;
 use super::recognition::transform_request;

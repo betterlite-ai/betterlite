@@ -1,5 +1,6 @@
 pub mod endpointing;
 pub mod error;
+pub mod grpc_status;
 pub mod options;
 pub mod recognition;
 pub mod response;

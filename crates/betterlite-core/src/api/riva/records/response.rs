@@ -1,6 +1,7 @@
 use betterlite_openai::api::transcription_contract::TranscriptionResponse;
 use betterlite_openai::openai_base_config::Object;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -24,6 +25,13 @@ pub struct FinalResult {
     pub words: Vec<WordTiming>,
 }
 
+#[derive(Debug, Serialize)]
+struct WordEntry<'a> {
+    word: &'a str,
+    start: f64,
+    end: f64,
+}
+
 pub fn build_transcription_response(
     final_results: &[FinalResult],
     response_format: &str,
@@ -37,16 +45,7 @@ pub fn build_transcription_response(
     let mut extra = Object::new();
     extra.insert("task".to_owned(), Value::from(TRANSCRIBE_TASK));
     if response_format == VERBOSE_JSON {
-        let mut words = Vec::new();
-        if timestamp_granularities
-            .is_some_and(|names| names.iter().any(|name| name == WORD_GRANULARITY))
-        {
-            for result in final_results {
-                for word in &result.words {
-                    words.push(word_value(word)?);
-                }
-            }
-        }
+        let words = word_entries(final_results, timestamp_granularities)?;
         if !words.is_empty() {
             extra.insert("words".to_owned(), Value::Array(words));
         }
@@ -60,15 +59,32 @@ pub fn build_transcription_response(
     })
 }
 
-fn word_value(word: &WordTiming) -> Result<Value, RecordsError> {
-    let mut entry = Object::new();
-    entry.insert("word".to_owned(), Value::from(word.word.as_str()));
-    entry.insert(
-        "start".to_owned(),
-        Value::from(seconds(word.start_time_ms)?),
-    );
-    entry.insert("end".to_owned(), Value::from(seconds(word.end_time_ms)?));
-    Ok(Value::Object(entry))
+fn word_entries(
+    final_results: &[FinalResult],
+    timestamp_granularities: Option<&[String]>,
+) -> Result<Vec<Value>, RecordsError> {
+    let requested = timestamp_granularities
+        .is_some_and(|names| names.iter().any(|name| name == WORD_GRANULARITY));
+    if !requested {
+        return Ok(Vec::new());
+    }
+    let mut entries = Vec::new();
+    for result in final_results {
+        for word in &result.words {
+            let entry = WordEntry {
+                word: &word.word,
+                start: seconds(word.start_time_ms)?,
+                end: seconds(word.end_time_ms)?,
+            };
+            entries.push(
+                serde_json::to_value(entry).map_err(|source| RecordsError::Value {
+                    field: "words",
+                    source,
+                })?,
+            );
+        }
+    }
+    Ok(entries)
 }
 
 fn seconds(milliseconds: i64) -> Result<f64, RecordsError> {
