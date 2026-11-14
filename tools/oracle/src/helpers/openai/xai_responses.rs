@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::Future;
+use std::future::{Future, ready};
 
 use betterlite_config::sections::xai_identity::Settings;
 use betterlite_logging::logging_pre_post::env::{LogRecord, LogSink};
@@ -70,7 +70,7 @@ impl OauthAccess for OauthFixture {
             Some(token) => Ok(SecretString::from(token)),
             None => Err(XaiOauthError::LoginRequired),
         };
-        std::future::ready(outcome)
+        ready(outcome)
     }
 }
 

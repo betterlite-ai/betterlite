@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::future::Future;
+use std::future::{Future, ready};
 
 use betterlite_config::sections::xai_identity::Settings;
 use betterlite_models::decisions::Json;
@@ -268,7 +268,7 @@ impl OauthAccess for FixedOauth {
         } else {
             Ok(SecretString::from("oauth-token"))
         };
-        std::future::ready(outcome)
+        ready(outcome)
     }
 }
 
