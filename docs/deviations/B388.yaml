@@ -12,3 +12,6 @@ deviations:
   - what: model_info.adaptive_router_preferences is validated on every deployment at config load, while LiteLLM validates it only for the models an adaptive router lists in available_models.
     why: The config loader types the whole model_list in one pass, so a stale preferences block on a model no router uses fails the load instead of staying dormant until a router references it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9412-L9425
+  - what: The rules match under Rust regex's Unicode definitions, so a few characters Python's re treats differently do not match the same rule; U+0130 İ folds to i under Python's IGNORECASE, a combining mark is not a word character for Python's \b, and U+001C-U+001F count as whitespace for Python's \s.
+    why: The pinned rules run on the regex crate, whose simple case folding and Unicode classes differ from Python's re at those characters; hand-porting Python's fold and class tables would replace the engine every other betterlite pattern uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/classifier.py#L16-L120

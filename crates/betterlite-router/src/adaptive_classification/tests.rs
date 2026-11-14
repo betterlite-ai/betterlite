@@ -211,6 +211,16 @@ fn classifier_keeps_the_first_two_thousand_characters() {
 }
 
 #[test]
+fn classifier_keeps_rust_unicode_classes() {
+    assert_eq!(classify("WRİTE a python function"), RequestType::General);
+    assert_eq!(
+        classify("Explain this function\u{0301}."),
+        RequestType::General
+    );
+    assert_eq!(classify("write\u{1c}python"), RequestType::General);
+}
+
+#[test]
 fn constants_keep_the_pinned_values() {
     assert_eq!(DEFAULT_QUALITY_WEIGHT.to_bits(), 0.7_f64.to_bits());
     assert_eq!(DEFAULT_COST_WEIGHT.to_bits(), 0.3_f64.to_bits());
