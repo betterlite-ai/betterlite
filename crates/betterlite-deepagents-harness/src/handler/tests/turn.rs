@@ -117,10 +117,8 @@ async fn turn_sets_final_text_and_structured_output() {
         .lock()
         .unwrap()
         .push_back(vec![Ok(text_part("draft", "model"))]);
-    let mut state = plan.state.lock().unwrap();
-    state.messages = vec![human("hi"), ai("the answer")];
-    state.structured_response = Some(json_object(r#"{"result":7}"#));
-    drop(state);
+    plan.state.lock().unwrap().messages = vec![human("hi"), ai("the answer")];
+    plan.state.lock().unwrap().structured_response = Some(json_object(r#"{"result":7}"#));
     let mut handler = handler(runtime);
     let mut ctx = context("/work");
     ctx.settings.output_schema = Some(json_object(r#"{"title":"Answer","type":"object"}"#));
@@ -138,10 +136,8 @@ async fn turn_leaves_output_json_empty_without_an_output_schema() {
         .lock()
         .unwrap()
         .push_back(vec![Ok(text_part("draft", "model"))]);
-    let mut state = plan.state.lock().unwrap();
-    state.messages = vec![human("hi"), ai("the answer")];
-    state.structured_response = Some(json_object(r#"{"result":7}"#));
-    drop(state);
+    plan.state.lock().unwrap().messages = vec![human("hi"), ai("the answer")];
+    plan.state.lock().unwrap().structured_response = Some(json_object(r#"{"result":7}"#));
     let mut handler = handler(runtime);
     let mut ctx = context("/work");
     handler.start(&mut ctx).await.unwrap();
@@ -382,9 +378,9 @@ async fn turn_fails_with_session_closed_before_start_and_after_stop() {
     drop(stream);
     handler.start(&mut ctx).await.unwrap();
     handler.stop(&mut ctx).await.unwrap();
-    let mut stream = Box::pin(handler.turn(&mut ctx, "again"));
-    let first = stream.next().await.unwrap();
-    assert!(matches!(first, Err(HarnessError::SessionClosed)));
+    let mut after_stop = Box::pin(handler.turn(&mut ctx, "again"));
+    let closed = after_stop.next().await.unwrap();
+    assert!(matches!(closed, Err(HarnessError::SessionClosed)));
 }
 
 fn one_generation(input_tokens: u64, output_tokens: u64) -> LlmResult {

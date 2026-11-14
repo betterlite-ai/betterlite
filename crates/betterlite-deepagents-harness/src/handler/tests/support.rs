@@ -214,12 +214,11 @@ impl AgentRuntime for FakeRuntime {
     }
 
     fn build_agent(&self, spec: AgentSpec) -> Result<FakeGraph, HarnessError> {
-        let mut specs = self
-            .plan
+        self.plan
             .specs
             .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        specs.push(spec);
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(spec);
         Ok(FakeGraph {
             plan: Arc::clone(&self.plan),
         })
