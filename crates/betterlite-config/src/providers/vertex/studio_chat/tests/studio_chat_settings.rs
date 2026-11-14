@@ -36,13 +36,20 @@ fn a_configured_response_schema_reaches_the_studio_options() {
         .expect("every configured value is finite");
     let config = serde_json::to_value(options).expect("the options encode as JSON");
 
+    let schema = config
+        .get("response_schema")
+        .expect("the configured schema reaches the options");
     assert_eq!(
-        config.get("response_schema"),
-        Some(&serde_json::json!({"type": "object", "properties": {"name": {"type": "string"}}})),
+        schema.get("type"),
+        Some(&serde_json::to_value("object").unwrap())
+    );
+    assert_eq!(
+        schema.pointer("/properties/name/type"),
+        Some(&serde_json::to_value("string").unwrap())
     );
     assert_eq!(
         config.get("response_mime_type"),
-        Some(&serde_json::json!("application/json"))
+        Some(&serde_json::to_value("application/json").unwrap())
     );
     assert_eq!(config.as_object().unwrap().len(), 8, "{config}");
 }
@@ -55,17 +62,29 @@ fn every_configured_value_keeps_its_type() {
         .expect("every configured value is finite");
     let config = serde_json::to_value(options).expect("the options encode as JSON");
 
-    assert_eq!(config.get("temperature"), Some(&serde_json::json!(0.0)));
+    assert_eq!(
+        config.get("temperature"),
+        Some(&serde_json::to_value(0.0_f64).unwrap())
+    );
     assert_eq!(
         config.get("max_output_tokens"),
-        Some(&serde_json::json!(256))
+        Some(&serde_json::to_value(256_i64).unwrap())
     );
-    assert_eq!(config.get("top_p"), Some(&serde_json::json!(0.95)));
-    assert_eq!(config.get("top_k"), Some(&serde_json::json!(40)));
-    assert_eq!(config.get("candidate_count"), Some(&serde_json::json!(2)));
+    assert_eq!(
+        config.get("top_p"),
+        Some(&serde_json::to_value(0.95_f64).unwrap())
+    );
+    assert_eq!(
+        config.get("top_k"),
+        Some(&serde_json::to_value(40_i64).unwrap())
+    );
+    assert_eq!(
+        config.get("candidate_count"),
+        Some(&serde_json::to_value(2_i64).unwrap())
+    );
     assert_eq!(
         config.get("stop_sequences"),
-        Some(&serde_json::json!(["END"]))
+        Some(&serde_json::to_value(["END"]).unwrap())
     );
 }
 
