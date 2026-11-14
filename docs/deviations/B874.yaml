@@ -1,0 +1,29 @@
+task: B874
+deviations:
+  - what: New otherwise unbounded byte decoders reject input over 1048576 bytes, a JSON cell deeper than 64 fails only its row, and smaller inherited limits stay, matching LiteLLM's per-row failure behavior.
+    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial parser behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/update_unassigned_teams.py#L5-L34
+  - what: JSON cells are parsed and inserted as JSONB values. LiteLLM hands the raw cell text to Prisma for its Json fields, which the typed client does not accept as a Json value, so with LiteLLM a row with a non-empty JSON cell fails while betterlite stores the document.
+    why: A working migration has to store the exported JSON documents, and the offline import cannot hand a string to a Json column.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/migrate_keys.py#L35-L39
+  - what: A JSON object cell with a duplicate key fails its row. Postgres jsonb would keep the last value, and betterlite's typed JSON decoder rejects the document.
+    why: The typed JSON model refuses duplicate keys everywhere else in betterlite, and silently picking one of two values for a security-relevant field invites the wrong one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/migrate_keys.py#L35-L39
+  - what: A spend or max_budget cell of inf, nan, or an exponent beyond the decimal range fails its row. Python's float() accepts those and Postgres stores Inf and NaN in DOUBLE PRECISION, while betterlite parses every money cell as an exact decimal.
+    why: Money stays an exact decimal in betterlite, and a non-finite or unrepresentable budget cell is a typed row error rather than a value that makes every later budget comparison meaningless.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/migrate_keys.py#L24-L25
+  - what: Integer cells accept only ASCII digits. Python's str.isdigit() and int() also read non-ASCII decimal digits such as Arabic-Indic ones, so LiteLLM stores their value while betterlite treats the cell as absent.
+    why: The coercion table is typed per column, and reading non-ASCII digits into integer columns differs across Python builds and handwritten CSVs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/migrate_keys.py#L27-L29
+  - what: The import writes one line per row event, then exactly three summary lines with no leading blank line. LiteLLM prefixes the summary with a blank line, and the text after a failed row's token is Python's exception text where betterlite prints its typed row error.
+    why: The admin tool emits one diagnostic line per event so an operator can read and grep it, without Python's print formatting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/migrate_keys.py#L152-L177
+  - what: A failed row whose token column is missing prints the token as unknown. LiteLLM prints None when the column exists but the cell is missing, and unknown only when the column is absent, and betterlite's typed row keeps no distinction between the two.
+    why: The typed row carries the token as an optional string, and the diagnostic line names the one case callers see as a missing token.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/migrate_keys.py#L168-L172
+  - what: The team repair emits its warning and its result as ordinary output lines, and the result line renders the response as the number of affected spend logs. LiteLLM logs the warning through LiteLLM's logger and prints Response=%s plus the driver object as two print arguments.
+    why: The admin tool reports through its output stream, and the affected-row count is the response a caller can use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/update_unassigned_teams.py#L14-L33
+  - what: A missing or unreadable CSV file, an oversized file, or invalid UTF-8 fails the command with a typed error and a failing exit status. LiteLLM catches the same errors outside its row loop, prints Migration failed, and exits with status 0.
+    why: An offline repair that could not read its input must not report success to a script.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/migrate_keys.py#L179-L180

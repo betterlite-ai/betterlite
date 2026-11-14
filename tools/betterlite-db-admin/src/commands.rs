@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use betterlite_db::database_repair::RepairError;
 use betterlite_db::migration_deploy::DeployError;
 use betterlite_db::migration_ledger::connection::ConnectionError;
 use betterlite_db::spend_backfills::BackfillError;
@@ -26,7 +27,8 @@ pub struct Cli {
     pub operation: Operation,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Subcommand)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Subcommand, strum::IntoStaticStr)]
+#[strum(serialize_all = "kebab-case")]
 pub enum Operation {
     #[command(about = "Run the database migration job")]
     Migrate,
@@ -61,22 +63,20 @@ pub enum Operation {
         long_about = "Convert a partitioned LiteLLM_SpendLogs back into the plain table of the default LiteLLM schema, following db_scripts/unpartition_spend_logs.sql.\n\nRun it during a low-traffic window and take a backup first: every surviving row is copied, and duplicate request_id values at different startTime values collapse to one arbitrary row. Afterwards disable use_spend_logs_partitioning, or remove it, so retention returns to DELETE-based cleanup."
     )]
     UnpartitionSpendLogs,
+    #[command(about = "Fill unassigned spend logs' team_id from their verification token")]
+    UpdateUnassignedTeams,
+    #[command(about = "Import verification tokens from the LiteLLM CSV export")]
+    MigrateVerificationTokens {
+        #[arg(
+            long,
+            value_name = "PATH",
+            help = "Path to the verification-token CSV export"
+        )]
+        csv: PathBuf,
+    },
 }
 
 impl Operation {
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Migrate => "migrate",
-            Self::DatabaseViews => "database-views",
-            Self::DailyToolSpend { .. } => "daily-tool-spend",
-            Self::KeyTotalSpend => "key-total-spend",
-            Self::KeyTotalSpendFromLogs => "key-total-spend-from-logs",
-            Self::PartitionSpendLogs => "partition-spend-logs",
-            Self::UnpartitionSpendLogs => "unpartition-spend-logs",
-        }
-    }
-
     const fn of_spend_partition(operation: SpendPartitionOperation) -> Self {
         match operation {
             SpendPartitionOperation::Partition => Self::PartitionSpendLogs,
@@ -109,6 +109,10 @@ impl Operation {
             Self::UnpartitionSpendLogs => {
                 DbAdminCommand::SpendPartition(SpendPartitionOperation::Unpartition)
             }
+            Self::UpdateUnassignedTeams => DbAdminCommand::UpdateUnassignedTeams,
+            Self::MigrateVerificationTokens { csv } => {
+                DbAdminCommand::MigrateVerificationTokens(csv)
+            }
         }
     }
 }
@@ -118,12 +122,16 @@ pub const DAILY_TOOL_SPEND_KEY: Operation = Operation::DailyToolSpend {
     cutover: DateTime::<Utc>::UNIX_EPOCH,
 };
 
+pub const VERIFICATION_TOKENS_KEY: Operation = Operation::MigrateVerificationTokens {
+    csv: PathBuf::new(),
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DailyToolSpendOptions {
     pub cutover: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DbAdminCommand {
     Migrate(MigrationOptions),
     DatabaseViews,
@@ -131,6 +139,8 @@ pub enum DbAdminCommand {
     KeyTotalSpend,
     KeyTotalSpendFromLogs,
     SpendPartition(SpendPartitionOperation),
+    UpdateUnassignedTeams,
+    MigrateVerificationTokens(PathBuf),
 }
 
 impl DbAdminCommand {
@@ -143,6 +153,10 @@ impl DbAdminCommand {
             Self::KeyTotalSpend => Operation::KeyTotalSpend,
             Self::KeyTotalSpendFromLogs => Operation::KeyTotalSpendFromLogs,
             Self::SpendPartition(operation) => Operation::of_spend_partition(*operation),
+            Self::UpdateUnassignedTeams => Operation::UpdateUnassignedTeams,
+            Self::MigrateVerificationTokens(_) => Operation::MigrateVerificationTokens {
+                csv: PathBuf::new(),
+            },
         }
     }
 }
@@ -188,6 +202,8 @@ pub enum DbAdminError {
         #[source]
         source: SpendPartitionAdminError,
     },
+    #[error(transparent)]
+    DatabaseRepair(#[from] RepairError),
 }
 
 impl From<BackfillError> for DbAdminError {
@@ -266,8 +282,5 @@ fn str_to_bool(value: Option<&str>) -> bool {
     let Some(text) = value else {
         return false;
     };
-    matches!(
-        text.to_lowercase().as_str(),
-        "true" | "1" | "t" | "y" | "yes"
-    )
+    ["true", "1", "t", "y", "yes"].contains(&text.to_lowercase().as_str())
 }
