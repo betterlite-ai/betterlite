@@ -653,6 +653,21 @@ mod budget_selection {
         }
 
         #[tokio::test]
+        async fn assembles_the_truncated_message() {
+            let messages = vec![
+                json!({"role": "system", "content": "s"}),
+                json!({"role": "user", "content": words(150)}),
+                json!({"role": "user", "content": "last"}),
+            ];
+            let counter = fixture_counter(vec![40, 20]);
+            let result = compress(&request(&messages, 0, Some(120)), &counter)
+                .await
+                .expect("compressed");
+            assert_eq!(result.messages[1], truncate_message(&messages[1], 118));
+            assert!(result.cache.is_empty());
+        }
+
+        #[tokio::test]
         async fn never_truncates_a_single_index_span() {
             let normalized = vec![json!({"content": words(150)})];
             let scores = vec![0.9_f64];
