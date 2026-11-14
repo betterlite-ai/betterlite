@@ -51,12 +51,12 @@ impl TogetherCapabilities for ModelCost<'_> {
     }
 
     fn declared_reasoning_efforts(&self, model: &str) -> Option<Vec<String>> {
-        let levels = self
+        let declared = self
             .0
             .get(&format!("together_ai/{model}"))
             .or_else(|| self.0.get(model))?
             .get("reasoning_effort_levels")?;
-        let Value::Array(levels) = levels else {
+        let Value::Array(levels) = declared else {
             return None;
         };
         Some(
@@ -77,7 +77,7 @@ impl CostMap for Priced {
     }
 }
 
-fn empty_catalog() -> CatalogCapabilities {
+const fn empty_catalog() -> CatalogCapabilities {
     CatalogCapabilities {
         chat_models: BTreeSet::new(),
         text_models: BTreeSet::new(),
@@ -115,7 +115,7 @@ fn messages_step(step: &ChatMessagesStep) -> Value {
     serde_json::to_value(messages).unwrap_or(Value::Null)
 }
 
-fn completion_kind(error: &TogetherCompletionError) -> &'static str {
+const fn completion_kind(error: &TogetherCompletionError) -> &'static str {
     match error {
         TogetherCompletionError::Integers => "integers",
         TogetherCompletionError::MultiplePrompts => "multiple_prompts",
@@ -132,7 +132,7 @@ fn completion_step(step: &CompletionStep) -> Value {
     }
 }
 
-fn rerank_kind(error: &TogetherRerankError) -> &'static str {
+const fn rerank_kind(error: &TogetherRerankError) -> &'static str {
     match error {
         TogetherRerankError::MaxChunksPerDoc => "max_chunks",
         TogetherRerankError::Response { .. } => "response",
