@@ -105,15 +105,10 @@ class SchemaSource:
 
 
 def litellm_convert(
-    response_format: type[BaseModel] | dict[str, JsonValue] | None,
+    response_format: Refused | type[BaseModel],
     ref_template: str | None = None,
 ) -> dict[str, JsonValue] | None:
-    converted: dict[str, JsonValue] | None = litellm_type_param(response_format, ref_template)  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L181-L212
-    return converted
-
-
-def litellm_convert_value(value: Refused) -> dict[str, JsonValue] | None:
-    converted: dict[str, JsonValue] | None = litellm_type_param(value)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L179-L212
+    converted: dict[str, JsonValue] | None = litellm_type_param(response_format, ref_template)  # type: ignore[arg-type]  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L179-L212
     return converted
 
 
@@ -268,5 +263,5 @@ def test_unsupported_message() -> None:
         with pytest.raises(TypeError, match=UNSUPPORTED_MESSAGE) as ours_error:
             convert_value(value)
         with pytest.raises(TypeError, match=UNSUPPORTED_MESSAGE) as reference_error:
-            litellm_convert_value(value)
+            litellm_convert(value)
         assert str(ours_error.value) == str(reference_error.value)

@@ -70,8 +70,10 @@ class ResponseAPIUsage(ResponseObject):
     @classmethod
     def parse_cost(cls, value: JsonValue) -> JsonValue:
         match value:
+            case {"total_cost": total_cost}:
+                return total_cost
             case dict():
-                return value.get("total_cost")
+                return None
             case bool() | int() | float() | str() | list() | None:
                 return value
 
@@ -108,14 +110,14 @@ def _field(item: InitValue, name: str) -> InitValue:
 
 def _strip_reasoning_nulls(item: JsonValue) -> JsonValue:
     match item:
-        case dict():
-            if item.get("type") != "reasoning":
-                return item
-            return {
-                key: value for key, value in item.items()
-                if value is not None or key not in DROPPED_REASONING_KEYS
-            }
-        case bool() | int() | float() | str() | list() | None:
+        case {"type": "reasoning"}:
+            kept: dict[str, JsonValue] = {}
+            for key, value in item.items():
+                if value is None and key in DROPPED_REASONING_KEYS:
+                    continue
+                kept[key] = value
+            return kept
+        case dict() | bool() | int() | float() | str() | list() | None:
             return item
 
 
@@ -163,10 +165,10 @@ class ResponsesAPIResponse(ResponseObject):
     @classmethod
     def validate_reasoning_to_dict(cls, value: InitValue) -> InitValue:
         match value:
-            case Dumpable():
-                return value.model_dump()
             case Mapping() | bool() | int() | float() | str() | Sequence() | None:
                 return value
+            case Dumpable() as model:
+                return model.model_dump()
 
     @override
     def model_dump(self, **kwargs: Unpack[DumpOptions]) -> dict[str, JsonValue]:

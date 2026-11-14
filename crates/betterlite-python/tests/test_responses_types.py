@@ -243,7 +243,7 @@ def assert_output_text(output: list[JsonValue], expected: str) -> None:
 
 
 def hidden_params(response: ResponsesAPIResponse | DeleteResponseResult) -> dict[str, JsonValue]:
-    params: dict[str, JsonValue] = response._hidden_params  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    params: dict[str, JsonValue] = response._hidden_params  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1424
     return params
 
 

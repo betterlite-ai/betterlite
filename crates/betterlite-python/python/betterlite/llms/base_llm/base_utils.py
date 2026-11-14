@@ -1,13 +1,10 @@
 from copy import deepcopy
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 from pydantic import JsonValue
 
 
-@runtime_checkable
 class ResponseFormatModel(Protocol):
-    __name__: str
-
     @classmethod
     def model_json_schema(
         cls, *, ref_template: str = "#/$defs/{model}",
@@ -200,8 +197,21 @@ def _ensure_strict_json_schema(
             raise TypeError(f"Expected {json_schema} to be a dictionary; path={path}")
 
 
+def _class_schema(
+    response_class: type[ResponseFormatModel], ref_template: str | None,
+) -> dict[str, JsonValue]:
+    try:
+        schema_method = response_class.model_json_schema
+    except AttributeError as error:
+        raise TypeError(f"Unsupported response_format type - {response_class}") from error
+    if ref_template is not None:
+        return schema_method(ref_template=ref_template)
+    schema = schema_method()
+    return _ensure_strict_json_schema(schema, path=(), root=schema)
+
+
 def type_to_response_format_param(
-    response_format: ResponseFormatModel | JsonValue,
+    response_format: type[ResponseFormatModel] | JsonValue,
     ref_template: str | None = None,
 ) -> dict[str, JsonValue] | None:
     if response_format is None:
@@ -211,24 +221,13 @@ def type_to_response_format_param(
             return _dict_to_response_format_helper(response_format, ref_template)
         case int() | float() | str() | list():
             raise TypeError(f"Unsupported response_format type - {response_format}")
-        case ResponseFormatModel():
-            pass
-    if not callable(response_format):
-        raise TypeError(f"Unsupported response_format type - {response_format}")
-    try:
-        schema_method = response_format.model_json_schema
-    except AttributeError as error:
-        raise TypeError(f"Unsupported response_format type - {response_format}") from error
-    if ref_template is not None:
-        schema = schema_method(ref_template=ref_template)
-    else:
-        schema = schema_method()
-        schema = _ensure_strict_json_schema(schema, path=(), root=schema)
-    return {
-        "type": "json_schema",
-        "json_schema": {
-            "schema": schema,
-            "name": response_format.__name__,
-            "strict": True,
-        },
-    }
+        case type():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L179-L212
+            return {
+                "type": "json_schema",
+                "json_schema": {
+                    "schema": _class_schema(response_format, ref_template),
+                    "name": response_format.__name__,
+                    "strict": True,
+                },
+            }
+    raise TypeError(f"Unsupported response_format type - {response_format}")
