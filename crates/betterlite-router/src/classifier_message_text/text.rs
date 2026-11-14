@@ -97,9 +97,7 @@ pub fn strip_reminder_blocks(text: &str, markers: &[MarkerPair<'_>]) -> String {
     let mut parts: Vec<String> = Vec::new();
     let mut kept_from = 0_usize;
     for (start, end) in spans {
-        if start > kept_from {
-            push_trimmed(&mut parts, &original, kept_from, start);
-        }
+        push_trimmed(&mut parts, &original, kept_from, start);
         kept_from = kept_from.max(end);
     }
     push_trimmed(&mut parts, &original, kept_from, original.len());
