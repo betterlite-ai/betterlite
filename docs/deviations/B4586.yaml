@@ -9,7 +9,7 @@ deviations:
   - what: A gateway answer larger than 1 MiB is not a session and is not final.
     why: A session answer is a few hundred bytes, and the cap keeps a hostile gateway from filling memory. The script reads the whole body.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L200
-  - what: Money is held as decimals, so a percentage, a bar fill or a dollar figure that lands exactly on a half rounds to even on the exact value.
+  - what: Money is held as decimals, so a value outside Decimal's range is not a session, arithmetic that would overflow it shows savings unavailable, and a percentage, bar fill or dollar figure on an exact half rounds to even.
     why: A float can sit just either side of a half (1.005 is below it), so Python's round and format can disagree with the exact value. The task rules keep money out of floats.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L323-L381
   - what: Column widths come from the unicode-width crate (wide and fullwidth characters take two cells, Mn and Me take none) instead of unicodedata.east_asian_width.
