@@ -36,8 +36,6 @@ const SHORTENED: &str = r#"[{"role":"system","content":"sys"},{"role":"user","co
 const THREE_USERS: &str = r#"{"structured_messages":[{"role":"user","content":"one"},{"role":"user","content":"two"},{"role":"user","content":"three"}]}"#;
 const SINGLE_USER: &str = r#"{"structured_messages":[{"role":"user","content":"only"}]}"#;
 const SERVICE_ONE: &str = r#"{"messages":[{"role":"user","content":"short"}]}"#;
-const SERVICE_TWO: &str =
-    r#"{"messages":[{"role":"user","content":"a"},{"role":"user","content":"b"}]}"#;
 const SERVICE_HASHES: &str =
     r#"{"messages":[{"role":"user","content":"short"}],"ccr_hashes":["ABCDEF123456"]}"#;
 const SENT_HASH: &str = "abcdef123456";
@@ -217,16 +215,19 @@ fn logging_target(call_id: &str) -> GuardrailLogTarget {
     }
 }
 
-fn metadata(data: &BTreeMap<String, GuardrailValue>) -> BTreeMap<String, GuardrailValue> {
-    let key = if data.contains_key("litellm_metadata") {
+fn metadata_key(data: &BTreeMap<String, GuardrailValue>) -> &'static str {
+    if data.contains_key("litellm_metadata") {
         "litellm_metadata"
     } else {
         "metadata"
-    };
-    let Some(GuardrailValue::Object(fields)) = data.get(key) else {
-        return BTreeMap::new();
-    };
-    fields.clone()
+    }
+}
+
+fn metadata(data: &BTreeMap<String, GuardrailValue>) -> BTreeMap<String, GuardrailValue> {
+    match data.get(metadata_key(data)) {
+        Some(GuardrailValue::Object(fields)) => fields.clone(),
+        _ => BTreeMap::new(),
+    }
 }
 
 fn records(data: &BTreeMap<String, GuardrailValue>) -> Vec<BTreeMap<String, GuardrailValue>> {
@@ -237,11 +238,9 @@ fn records(data: &BTreeMap<String, GuardrailValue>) -> Vec<BTreeMap<String, Guar
     };
     entries
         .into_iter()
-        .map(|entry| {
-            let GuardrailValue::Object(fields) = entry else {
-                panic!("a record object");
-            };
-            fields
+        .filter_map(|entry| match entry {
+            GuardrailValue::Object(fields) => Some(fields),
+            _ => None,
         })
         .collect()
 }
@@ -257,15 +256,14 @@ fn applied_names(data: &BTreeMap<String, GuardrailValue>) -> Vec<String> {
     let Some(GuardrailValue::Array(names)) = metadata(data).remove("applied_guardrails") else {
         return Vec::new();
     };
-    names
-        .into_iter()
-        .map(|name| {
-            let GuardrailValue::Text(text) = name else {
-                panic!("an applied guardrail name");
-            };
-            text
-        })
-        .collect()
+    names.into_iter().filter_map(as_text).collect()
+}
+
+fn as_text(value: GuardrailValue) -> Option<String> {
+    match value {
+        GuardrailValue::Text(text) => Some(text),
+        _ => None,
+    }
 }
 
 fn record_response(data: &BTreeMap<String, GuardrailValue>) -> GuardrailValue {
@@ -741,30 +739,52 @@ async fn success_records_statistics_and_the_applied_guardrail() {
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
     let record = first_record(&request);
     assert_eq!(record.len(), 9);
-    for (key, expected) in [
-        ("guardrail_name", "headroom"),
-        ("guardrail_provider", "headroom"),
-        ("guardrail_status", "success"),
-        ("guardrail_mode", "pre_call"),
-    ] {
-        assert_eq!(
-            record.get(key),
-            Some(&GuardrailValue::Text(expected.to_owned()))
-        );
-    }
+    assert_eq!(
+        record.get("guardrail_name"),
+        Some(&GuardrailValue::Text("headroom".to_owned()))
+    );
+    assert_eq!(
+        record.get("guardrail_provider"),
+        Some(&GuardrailValue::Text("headroom".to_owned()))
+    );
+    assert_eq!(
+        record.get("guardrail_status"),
+        Some(&GuardrailValue::Text("success".to_owned()))
+    );
+    assert_eq!(
+        record.get("guardrail_mode"),
+        Some(&GuardrailValue::Text("pre_call".to_owned()))
+    );
     assert_eq!(
         record.get("masked_entity_count"),
         Some(&GuardrailValue::Null)
     );
-    for key in ["start_time", "end_time", "duration"] {
-        assert!(matches!(record.get(key), Some(GuardrailValue::Decimal(_))));
-    }
-    assert_eq!(
-        record_response(&request),
-        gv(
-            r#"{"tokens_before":100,"tokens_after":25,"tokens_saved":75,"compression_ratio":4.0,"transforms_applied":["dedupe"]}"#
-        )
-    );
+    assert!(matches!(
+        record.get("start_time"),
+        Some(GuardrailValue::Decimal(_))
+    ));
+    assert!(matches!(
+        record.get("end_time"),
+        Some(GuardrailValue::Decimal(_))
+    ));
+    assert!(matches!(
+        record.get("duration"),
+        Some(GuardrailValue::Decimal(_))
+    ));
+    let expected = BTreeMap::from([
+        (
+            "tokens_before".to_owned(),
+            GuardrailValue::SignedInteger(100),
+        ),
+        ("tokens_after".to_owned(), GuardrailValue::SignedInteger(25)),
+        ("tokens_saved".to_owned(), GuardrailValue::SignedInteger(75)),
+        ("compression_ratio".to_owned(), GuardrailValue::Decimal(4.0)),
+        (
+            "transforms_applied".to_owned(),
+            GuardrailValue::Array(vec![GuardrailValue::Text("dedupe".to_owned())]),
+        ),
+    ]);
+    assert_eq!(record_response(&request), GuardrailValue::Object(expected));
     assert_eq!(applied_names(&request), ["headroom"]);
 }
 

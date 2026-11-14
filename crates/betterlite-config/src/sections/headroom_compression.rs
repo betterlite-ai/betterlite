@@ -44,21 +44,17 @@ enum RawFlag {
     Text(String),
 }
 
-impl RawFlag {
-    fn resolve<L: EnvironmentLookup>(
-        self,
-        path: &str,
-        lookup: &L,
-    ) -> Result<Option<bool>, ConfigError> {
-        match self {
-            Self::Boolean(flag) => Ok(Some(flag)),
-            Self::Text(text) => {
-                let name = text.strip_prefix("os.environ/").unwrap_or(path).to_owned();
-                let resolved = resolve_string(text, path, lookup)?;
-                Ok(betterlite_env::flag(&name, &resolved)?)
-            }
-        }
-    }
+fn resolve_flag<L>(raw: RawFlag, path: &str, lookup: &L) -> Result<Option<bool>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let text = match raw {
+        RawFlag::Boolean(flag) => return Ok(Some(flag)),
+        RawFlag::Text(text) => text,
+    };
+    let name = text.strip_prefix("os.environ/").unwrap_or(path).to_owned();
+    let resolved = resolve_string(text, path, lookup)?;
+    Ok(betterlite_env::flag(&name, &resolved)?)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,7 +120,7 @@ impl Entry {
         let ccr_path = format!("{prefix}.ccr_retrieval");
         let ccr_retrieval = parameters
             .ccr_retrieval
-            .map(|raw| raw.resolve(&ccr_path, lookup))
+            .map(|raw| resolve_flag(raw, &ccr_path, lookup))
             .transpose()?
             .flatten();
         Ok(Configured {

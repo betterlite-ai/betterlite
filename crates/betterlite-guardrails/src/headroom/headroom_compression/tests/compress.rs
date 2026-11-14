@@ -166,12 +166,20 @@ async fn statistics_copy_the_five_keys_and_drop_the_rest() {
         r#"{"messages":[{"role":"user","content":"short"}],"tokens_before":100,"tokens_after":25,"tokens_saved":50,"compression_ratio":4.0,"transforms_applied":["dedupe"],"unused":1}"#,
     )
     .await;
-    assert_eq!(
-        response,
-        data(
-            r#"{"tokens_before":100,"tokens_after":25,"tokens_saved":50,"compression_ratio":4.0,"transforms_applied":["dedupe"]}"#
-        )
-    );
+    let expected = BTreeMap::from([
+        (
+            "tokens_before".to_owned(),
+            GuardrailValue::SignedInteger(100),
+        ),
+        ("tokens_after".to_owned(), GuardrailValue::SignedInteger(25)),
+        ("tokens_saved".to_owned(), GuardrailValue::SignedInteger(50)),
+        ("compression_ratio".to_owned(), GuardrailValue::Decimal(4.0)),
+        (
+            "transforms_applied".to_owned(),
+            GuardrailValue::Array(vec![GuardrailValue::Text("dedupe".to_owned())]),
+        ),
+    ]);
+    assert_eq!(response, expected);
 }
 
 #[rstest]
