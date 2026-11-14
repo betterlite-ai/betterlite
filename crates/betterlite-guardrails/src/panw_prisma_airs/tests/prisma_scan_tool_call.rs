@@ -92,13 +92,13 @@ fn prompt_json(text: &str) -> String {
 }
 
 fn calls_body(scanned: usize, unscannable: &[&str]) -> String {
-    let mut calls: Vec<serde_json::Value> = (0..scanned)
-        .map(|index| serde_json::json!({"function": {"name": format!("tool_{index}")}}))
+    let mut calls: Vec<String> = (0..scanned)
+        .map(|index| format!(r#"{{"function":{{"name":"tool_{index}"}}}}"#))
         .collect();
     for entry in unscannable {
-        calls.push(serde_json::from_str(entry).expect("call parses"));
+        calls.push(String::from(*entry));
     }
-    serde_json::Value::Array(calls).to_string()
+    format!("[{}]", calls.join(","))
 }
 
 #[tokio::test]
@@ -322,7 +322,7 @@ async fn a_hundred_and_twenty_eight_tool_calls_are_each_scanned_once() {
     let outcome = run(Setup::new(ALLOW), &calls).await;
     outcome.result.as_ref().expect("at the cap");
     assert_eq!(outcome.bodies.len(), 128);
-    assert!((0..128).all(|index| {
+    assert!((0..128_usize).all(|index| {
         outcome
             .bodies
             .iter()
