@@ -163,12 +163,12 @@ class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
         }
     def routed_entry(self, call: RouteCall, first: datetime | None) -> Json:
         within = None if first is None else call["start_time"] <= first <= call["end_time"]
-        return {
-            **self.seen(call),
+        extra: dict[str, Json] = {
             "raw_frames": [frame.decode(errors="replace") for frame in call["raw_bytes"]],
             "iterator_logging_obj": call["litellm_logging_obj"] is self.logging,
             "first_within_run": within,
         }
+        return self.seen(call) | extra
     def processed_entry(self, call: ProcessorCall) -> Json:
         return {
             **self.seen(call),
