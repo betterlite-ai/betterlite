@@ -1,7 +1,7 @@
 id: B1440
 milestone: M3 providers
 title: Compatible API-family selection and shared embedding dispatch
-status: todo
+status: done
 depends_on: [B002, B006, B010, B209, B1424, B1425, B1437, B171]
 file: tasks/B1440-compatible-api-selection.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/main.py"
 parent: B014
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1645
