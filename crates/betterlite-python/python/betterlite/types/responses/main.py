@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Final, Literal
 
 from pydantic import JsonValue, PrivateAttr
 from typing_extensions import TypedDict, override
@@ -6,6 +6,11 @@ from typing_extensions import TypedDict, override
 from betterlite.types.utils.base import InitValue, ResponseObject
 
 Phase = Literal["commentary", "final_answer"] | None
+
+
+class BaseResponseOutputItem(ResponseObject):
+    def dump_entry(self, entry: JsonValue) -> JsonValue:
+        return entry
 
 
 class GenericResponseOutputItemContentAnnotation(  # ast-grep-ignore: no-long-names
@@ -33,7 +38,7 @@ class OutputText(ResponseObject):
         super().__init__(**data)
 
 
-class OutputFunctionToolCall(ResponseObject):
+class OutputFunctionToolCall(BaseResponseOutputItem):
     arguments: str | None
     call_id: str | None
     name: str | None
@@ -109,7 +114,7 @@ def build_web_search_call(
     )
 
 
-class OutputImageGenerationCall(ResponseObject):
+class OutputImageGenerationCall(BaseResponseOutputItem):
     type: Literal["image_generation_call"]
     id: str
     status: Literal["in_progress", "completed", "incomplete", "failed"]
@@ -129,7 +134,7 @@ class OutputCodeInterpreterCallLog(ResponseObject):
         super().__init__(**data)
 
 
-class OutputCodeInterpreterCall(ResponseObject):
+class OutputCodeInterpreterCall(BaseResponseOutputItem):
     type: Literal["code_interpreter_call"]
     id: str
     code: str | None
@@ -162,7 +167,7 @@ def build_code_interpreter_log_outputs(  # ast-grep-ignore: no-long-names
             return None
 
 
-class CustomToolCallOutputItem(ResponseObject):
+class CustomToolCallOutputItem(BaseResponseOutputItem):
     type: Literal["custom_tool_call"]
     call_id: str
     id: str | None = None
@@ -175,7 +180,7 @@ class CustomToolCallOutputItem(ResponseObject):
         super().__init__(**data)
 
 
-class GenericResponseOutputItem(ResponseObject):
+class GenericResponseOutputItem(BaseResponseOutputItem):
     type: str
     id: str
     status: str
@@ -186,6 +191,51 @@ class GenericResponseOutputItem(ResponseObject):
     @override
     def __init__(self, **data: InitValue) -> None:
         super().__init__(**data)
+
+
+class ResponseReasoningItemSummary(ResponseObject):
+    type: Literal["summary_text"]
+    text: str
+
+    @override
+    def __init__(self, **data: InitValue) -> None:
+        super().__init__(**data)
+
+
+class ResponseReasoningItemContent(ResponseObject):
+    type: Literal["reasoning_text"]
+    text: str
+
+    @override
+    def __init__(self, **data: InitValue) -> None:
+        super().__init__(**data)
+
+
+DROPPED_REASONING_KEYS: Final[tuple[str, ...]] = ("status", "content", "encrypted_content")
+
+
+class ResponseReasoningItem(BaseResponseOutputItem):
+    type: Literal["reasoning"]
+    id: str
+    summary: list[ResponseReasoningItemSummary]
+    content: list[ResponseReasoningItemContent] | None = None
+    encrypted_content: str | None = None
+    status: Literal["in_progress", "completed", "incomplete"] | None = None
+
+    @override
+    def __init__(self, **data: InitValue) -> None:
+        super().__init__(**data)
+
+    @override
+    def dump_entry(self, entry: JsonValue) -> JsonValue:
+        match entry:
+            case dict() as dumped:
+                return {
+                    name: value for name, value in dumped.items()
+                    if value is not None or name not in DROPPED_REASONING_KEYS
+                }
+            case bool() | int() | float() | str() | list() | None:
+                return entry
 
 
 class DeleteResponseResult(ResponseObject):

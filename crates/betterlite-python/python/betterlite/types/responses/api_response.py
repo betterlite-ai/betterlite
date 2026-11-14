@@ -1,22 +1,29 @@
 from collections.abc import Mapping, Sequence
-from typing import ClassVar, Final, Literal, Unpack
+from typing import ClassVar, Literal, TypeAlias, Unpack
 
 from pydantic import (
     ConfigDict,
     JsonValue,
     NonNegativeInt,
     PrivateAttr,
-    SerializeAsAny,
     field_validator,
 )
 from typing_extensions import override
 
+from betterlite.types.responses.main import (
+    BaseResponseOutputItem,
+    CustomToolCallOutputItem,
+    GenericResponseOutputItem,
+    OutputCodeInterpreterCall,
+    OutputFunctionToolCall,
+    OutputImageGenerationCall,
+    ResponseReasoningItem,
+)
 from betterlite.types.utils.base import Dumpable, DumpOptions, InitValue, ResponseObject
 
 ResponsesAPIStatus = Literal[
     "completed", "failed", "in_progress", "cancelled", "queued", "incomplete",
 ]
-DROPPED_REASONING_KEYS: Final[tuple[str, ...]] = ("status", "content", "encrypted_content")
 
 
 class CachedTokensDetails(ResponseObject):
@@ -96,33 +103,58 @@ class ResponsesToolUsage(ResponseObject):
         super().__init__(**data)
 
 
-def _field(item: InitValue, name: str) -> InitValue:
-    match item:
-        case ResponseObject():
-            return item.get(name)
-        case Mapping() as mapping:
-            return mapping.get(name)
-        case Dumpable() | bool() | int() | float() | str() | Sequence() | None:
+def _raw_string(item: ResponseObject, name: str) -> str | None:
+    match item.model_dump().get(name):
+        case str() as value:
+            return value
+        case bool() | int() | float() | list() | dict() | None:
             return None
 
 
-def _without_reasoning_nulls(dumped: dict[str, JsonValue]) -> dict[str, JsonValue]:
-    output = dumped.get("output")
-    match output:
-        case list():
-            for index, item in enumerate(output):
-                match item:
+class RawOutputContent(ResponseObject):
+    @property
+    def type(self) -> str | None:
+        return _raw_string(self, "type")
+
+    @property
+    def text(self) -> str | None:
+        return _raw_string(self, "text")
+
+
+def _content_items(value: JsonValue | None) -> list[RawOutputContent]:
+    items: list[RawOutputContent] = []
+    match value:
+        case list() as entries:
+            for entry in entries:
+                match entry:
                     case dict():
-                        if item.get("type") == "reasoning":
-                            output[index] = {
-                                key: value for key, value in item.items()
-                                if value is not None or key not in DROPPED_REASONING_KEYS
-                            }
+                        items.append(RawOutputContent.model_validate(entry))
                     case bool() | int() | float() | str() | list() | None:
                         pass
         case bool() | int() | float() | str() | dict() | None:
             pass
-    return dumped
+    return items
+
+
+class RawResponseOutputItem(BaseResponseOutputItem):
+    @property
+    def type(self) -> str | None:
+        return _raw_string(self, "type")
+
+    @property
+    def content(self) -> list[RawOutputContent]:
+        return _content_items(self.model_dump().get("content"))
+
+
+OutputItem: TypeAlias = (
+    GenericResponseOutputItem
+    | OutputFunctionToolCall
+    | OutputImageGenerationCall
+    | OutputCodeInterpreterCall
+    | CustomToolCallOutputItem
+    | ResponseReasoningItem
+    | RawResponseOutputItem
+)
 
 
 class ResponsesAPIResponse(ResponseObject):
@@ -134,7 +166,7 @@ class ResponsesAPIResponse(ResponseObject):
     metadata: dict[str, JsonValue] | None = None
     model: str | None = None
     object: str | None = None
-    output: list[dict[str, JsonValue] | SerializeAsAny[ResponseObject]]
+    output: list[OutputItem]
     parallel_tool_calls: bool | None = None
     temperature: float | None = None
     tool_choice: JsonValue = None
@@ -168,29 +200,33 @@ class ResponsesAPIResponse(ResponseObject):
 
     @override
     def model_dump(self, **kwargs: Unpack[DumpOptions]) -> dict[str, JsonValue]:
-        return _without_reasoning_nulls(super().model_dump(**kwargs))
+        dumped = super().model_dump(**kwargs)
+        output = dumped.get("output")
+        match output:
+            case list():
+                dumped["output"] = [
+                    item.dump_entry(entry)
+                    for item, entry in zip(self.output, output, strict=False)
+                ]
+            case bool() | int() | float() | str() | dict() | None:
+                pass
+        return dumped
 
     @property
     def output_text(self) -> str:
         texts: list[str] = []
-        for output_item in self.output:
-            if _field(output_item, "type") != "message":
-                continue
-            content = _field(output_item, "content")
-            match content:
-                case list():
-                    for content_item in content:
-                        if _field(content_item, "type") != "output_text":
-                            continue
-                        text = _field(content_item, "text")
-                        match text:
-                            case str():
+        for item in self.output:
+            match item:
+                case GenericResponseOutputItem() | RawResponseOutputItem():
+                    if item.type == "message":
+                        for content in item.content:
+                            text = content.text
+                            if content.type == "output_text" and text is not None:
                                 texts.append(text)
-                            case (
-                                Dumpable() | Mapping() | bool() | int() | float()
-                                | Sequence() | None
-                            ):
-                                texts.append("")
-                case Dumpable() | Mapping() | bool() | int() | float() | str() | Sequence() | None:
+                case (
+                    OutputFunctionToolCall() | OutputImageGenerationCall()
+                    | OutputCodeInterpreterCall() | CustomToolCallOutputItem()
+                    | ResponseReasoningItem()
+                ):
                     pass
         return "".join(texts)
