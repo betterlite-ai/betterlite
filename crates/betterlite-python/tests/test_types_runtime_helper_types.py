@@ -967,11 +967,8 @@ def test_usage_per_chunk_names() -> None:
     with pytest.raises(ValidationError) as incomplete:
         adapter.validate_python(empty)
     errors: Final = TypeAdapter(list[ErrorLocName]).validate_json(incomplete.value.json())
-    assert len(errors) == 12
     missing = {str(tuple(error["loc"])) for error in errors}
-    assert "('prompt_tokens',)" in missing
-    assert "('completion_tokens_details',)" in missing
-    assert "('speed',)" in missing
+    assert missing == {str((key,)) for key in USAGE_CHUNK}
 
 
 def test_protocol_names_structural() -> None:
