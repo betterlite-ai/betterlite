@@ -100,13 +100,14 @@ fn numeric_extras(
 pub fn pricing_usage(usage: &Usage) -> Result<PricingUsage, UsageConversionError> {
     let fields = usage_fields(usage)?;
     let converted = normalize_usage(UsageInput::Mapping(&fields))?;
+    let extras = numeric_extras(&converted)?;
     Ok(PricingUsage {
         prompt_tokens: converted.prompt_tokens,
         completion_tokens: converted.completion_tokens,
         total_tokens: converted.total_tokens,
         prompt_tokens_details: converted.prompt_tokens_details,
         completion_tokens_details: converted.completion_tokens_details,
-        numeric_extras: numeric_extras(&converted)?,
+        numeric_extras: extras,
     })
 }
 

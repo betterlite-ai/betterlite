@@ -74,7 +74,7 @@ pub struct CompletionArgs<'args> {
     pub charge: ChargeInputs<'args>,
 }
 
-impl<'input> ChargeInputs<'input> {
+impl ChargeInputs<'_> {
     // The early-return stage owns its request, so each prepared set of attempts gets a fresh one built from the shared parts.
     pub(super) fn special_request<'request>(
         &'request self,
