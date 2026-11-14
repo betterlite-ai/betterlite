@@ -1,0 +1,52 @@
+kind: helper
+name: embedding_model_default
+call:
+  b7812:
+    calls:
+      - call: request
+        input:
+          vector_store_id: "a:b"
+          query: q
+          vector: [0.25]
+          litellm_params: {aws_region_name: eu-west-1}
+      - call: request
+        input:
+          vector_store_id: "a:b"
+          query: q
+          vector: [0.25]
+          litellm_params: {aws_region_name: eu-west-1, embedding_model: cohere/embed-english-v3.0}
+      - call: request
+        input:
+          vector_store_id: "a:b"
+          query: q
+          vector: [0.25]
+          litellm_params:
+            aws_region_name: eu-west-1
+            litellm_embedding_model: voyage/voyage-3
+            embedding_model: cohere/embed-english-v3.0
+      - call: request
+        input:
+          vector_store_id: "a:b"
+          query: q
+          vector: [0.25]
+          litellm_params:
+            aws_region_name: eu-west-1
+            litellm_embedding_model: ""
+            embedding_model: cohere/embed-english-v3.0
+      - call: request
+        input:
+          vector_store_id: "a:b"
+          query: q
+          vector: [0.25]
+          litellm_params:
+            aws_region_name: eu-west-1
+            litellm_embedding_model: null
+            embedding_model: cohere/embed-english-v3.0
+      - call: request
+        input:
+          vector_store_id: "a:b"
+          query: q
+          vector: [0.25]
+          litellm_params: {aws_region_name: eu-west-1, litellm_embedding_model: "", embedding_model: ""}
+env: {}
+compare: {ignore: []}
