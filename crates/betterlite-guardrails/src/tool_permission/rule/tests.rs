@@ -302,3 +302,19 @@ fn invalid_parameter_regex_names_the_rule_and_pattern() {
             if rule_id == "broken" && field == "allowed_param_patterns" && pattern == "("
     ));
 }
+
+#[test]
+fn a_lookaround_pattern_is_rejected_as_an_invalid_regex() {
+    let error = ToolPermissionGuardrail::new(args(vec![rule_fields(
+        "look",
+        "allow",
+        Some("(?=read)read"),
+        None,
+    )]))
+    .unwrap_err();
+    assert!(matches!(
+        &error,
+        ToolPermissionError::InvalidRegex { rule_id, field, .. }
+            if rule_id == "look" && field == "tool_name"
+    ));
+}
