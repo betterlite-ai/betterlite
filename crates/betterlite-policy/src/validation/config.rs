@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use indexmap::IndexMap;
 
 use super::error::PolicyParseError;
 use super::types::{PolicyValidationError, PolicyValidationErrorType};
@@ -13,10 +13,10 @@ fn parse_policy_value(policy_name: &str, data: &JsonValue) -> Result<Policy, Pol
 }
 
 pub(super) fn parse_policies(
-    policy_config: &BTreeMap<String, JsonValue>,
-) -> Result<BTreeMap<String, Policy>, Vec<PolicyValidationError>> {
+    policy_config: &IndexMap<String, JsonValue>,
+) -> Result<IndexMap<String, Policy>, Vec<PolicyValidationError>> {
     let mut errors = Vec::new();
-    let mut policies = BTreeMap::new();
+    let mut policies = IndexMap::new();
     for (policy_name, data) in policy_config {
         match parse_policy_value(policy_name, data) {
             Ok(policy) => {

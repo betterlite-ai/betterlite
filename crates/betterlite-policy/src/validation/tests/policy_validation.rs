@@ -1,8 +1,8 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::support::{
@@ -44,7 +44,7 @@ fn expected(
     }
 }
 
-fn config(text: &str) -> BTreeMap<String, JsonValue> {
+fn config(text: &str) -> IndexMap<String, JsonValue> {
     serde_json::from_str(text).unwrap()
 }
 
@@ -500,8 +500,8 @@ fn inheritance_cycles_name_the_repeated_policy(
     );
 }
 
-fn linear_chain(length: usize, last_parent: Option<&str>) -> BTreeMap<String, Policy> {
-    let mut chain = BTreeMap::new();
+fn linear_chain(length: usize, last_parent: Option<&str>) -> IndexMap<String, Policy> {
+    let mut chain = IndexMap::new();
     for index in 0..length {
         let next = index.saturating_add(1);
         let parent = if next < length {
@@ -595,7 +595,7 @@ fn policy_guardrails_all_registered_is_valid() {
 }
 
 #[test]
-fn policy_guardrails_errors_follow_policy_name_order() {
+fn policy_guardrails_errors_follow_the_caller_order() {
     let all = policies(vec![
         ("zeta", policy(None, &["x"], &[])),
         ("alpha", policy(None, &["y"], &[])),
@@ -606,7 +606,7 @@ fn policy_guardrails_errors_follow_policy_name_order() {
         .iter()
         .map(|found| found.policy_name.as_str())
         .collect();
-    assert_eq!(names, vec!["alpha", "zeta"]);
+    assert_eq!(names, vec!["zeta", "alpha"]);
 }
 
 #[test]
@@ -836,7 +836,7 @@ fn config_parse_of_a_clean_config_is_valid() {
 
 #[test]
 fn config_parse_of_an_empty_config_is_valid() {
-    let response = offline(&["a"]).validate_policy_config(&BTreeMap::new(), true);
+    let response = offline(&["a"]).validate_policy_config(&IndexMap::new(), true);
     assert_eq!(
         response,
         PolicyValidationResponse {
@@ -845,6 +845,17 @@ fn config_parse_of_an_empty_config_is_valid() {
             warnings: Vec::new()
         }
     );
+}
+
+#[test]
+fn config_parse_reports_syntax_errors_in_the_caller_order() {
+    let raw = config(r#"{"zeta": {"nope": 1}, "alpha": {"nope": 2}}"#);
+    let response = offline(&["known"]).validate_policy_config(&raw, true);
+    assert_eq!(response.errors.len(), 2);
+    let first = response.errors.first().unwrap();
+    assert_eq!(first.policy_name, "zeta");
+    let second = response.errors.get(1).unwrap();
+    assert_eq!(second.policy_name, "alpha");
 }
 
 #[rstest]

@@ -8,7 +8,9 @@ pub mod types;
 
 mod tests;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
+
+use indexmap::IndexMap;
 
 use crate::pipeline::json_value::JsonValue;
 use crate::values::Policy;
@@ -42,7 +44,7 @@ impl<Guardrails: GuardrailRegistry, Database, Router>
     #[must_use]
     pub fn validate_policies(
         &self,
-        policies: &BTreeMap<String, Policy>,
+        policies: &IndexMap<String, Policy>,
         _validate_db: bool,
     ) -> PolicyValidationResponse {
         let mut errors = Vec::new();
@@ -65,7 +67,7 @@ impl<Guardrails: GuardrailRegistry, Database, Router>
     #[must_use]
     pub fn validate_policy_config(
         &self,
-        policy_config: &BTreeMap<String, JsonValue>,
+        policy_config: &IndexMap<String, JsonValue>,
         validate_db: bool,
     ) -> PolicyValidationResponse {
         match config::parse_policies(policy_config) {

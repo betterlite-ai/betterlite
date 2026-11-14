@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use indexmap::IndexMap;
 
 use super::types::{PolicyValidationError, PolicyValidationErrorType};
 use crate::values::Policy;
@@ -8,7 +8,7 @@ pub const MAX_INHERITANCE_DEPTH: usize = 100;
 #[must_use]
 pub fn validate_inheritance_chain(
     policy_name: &str,
-    policies: &BTreeMap<String, Policy>,
+    policies: &IndexMap<String, Policy>,
 ) -> Option<PolicyValidationError> {
     let mut visited: Vec<&str> = Vec::new();
     let mut current = policy_name;

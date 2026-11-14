@@ -1,11 +1,11 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::future::{Future, ready};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use indexmap::IndexMap;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level, Subscriber};
@@ -176,7 +176,7 @@ pub(super) fn pipeline_policy(add: &[&str], steps: &[&str]) -> Policy {
     piped
 }
 
-pub(super) fn policies(entries: Vec<(&str, Policy)>) -> BTreeMap<String, Policy> {
+pub(super) fn policies(entries: Vec<(&str, Policy)>) -> IndexMap<String, Policy> {
     entries
         .into_iter()
         .map(|(name, entry)| (name.to_owned(), entry))
