@@ -125,10 +125,7 @@ pub(crate) fn response_text(result: ChatLoopResult) -> String {
 }
 
 pub(crate) fn optional_text(result: Option<ChatLoopResult>) -> String {
-    match result {
-        Some(result) => response_text(result),
-        None => panic!("expected a loop result"),
-    }
+    result.map_or_else(|| panic!("expected a loop result"), response_text)
 }
 
 pub(crate) fn loop_error<T>(result: Result<T, AgenticLoopError>) -> AgenticLoopError {
@@ -340,11 +337,11 @@ pub(crate) struct CleanupRecord {
 
 #[derive(Clone, Default)]
 pub(crate) struct CallbackRecords {
-    pub gate_calls: Vec<GateRecord>,
-    pub legacy_calls: Vec<LoopRecord>,
-    pub plan_calls: Vec<LoopRecord>,
-    pub post_calls: Vec<PostRecord>,
-    pub cleanup_calls: Vec<CleanupRecord>,
+    pub gate: Vec<GateRecord>,
+    pub legacy: Vec<LoopRecord>,
+    pub plan: Vec<LoopRecord>,
+    pub post: Vec<PostRecord>,
+    pub cleanup: Vec<CleanupRecord>,
 }
 
 enum CallRecord {
@@ -456,11 +453,11 @@ impl ScriptedCallback {
     fn record(&self, record: CallRecord) {
         let mut records = self.records.lock().unwrap_or_else(PoisonError::into_inner);
         match record {
-            CallRecord::Gate(gate) => records.gate_calls.push(gate),
-            CallRecord::Legacy(legacy) => records.legacy_calls.push(legacy),
-            CallRecord::Plan(plan) => records.plan_calls.push(plan),
-            CallRecord::Post(post) => records.post_calls.push(post),
-            CallRecord::Cleanup(cleanup) => records.cleanup_calls.push(cleanup),
+            CallRecord::Gate(gate) => records.gate.push(gate),
+            CallRecord::Legacy(legacy) => records.legacy.push(legacy),
+            CallRecord::Plan(plan) => records.plan.push(plan),
+            CallRecord::Post(post) => records.post.push(post),
+            CallRecord::Cleanup(cleanup) => records.cleanup.push(cleanup),
         }
     }
 }
@@ -488,7 +485,7 @@ impl AgenticCallback for ScriptedCallback {
             stream: call.stream,
             provider: call.custom_llm_provider.to_owned(),
             kwargs: call.kwargs.clone(),
-            tools: call.tools.map(|tools| tools.to_vec()),
+            tools: call.tools.map(<[FollowupMessage]>::to_vec),
         };
         self.scripted_answer(CallRecord::Gate(record), &self.gate)
             .unwrap_or(Ok(AgenticGate::default()))
@@ -531,16 +528,14 @@ impl AgenticCallback for ScriptedCallback {
         plan: &AgenticLoopPlan,
         kwargs: &JsonMap,
     ) -> Result<(), AgenticHookError> {
-        match self.scripted_answer(
+        self.scripted_answer(
             CallRecord::Cleanup(CleanupRecord {
                 stop_reason: plan.stop_reason.clone(),
                 kwargs: kwargs.clone(),
             }),
             &self.cleanup,
-        ) {
-            Some(result) => result,
-            None => Ok(()),
-        }
+        )
+        .unwrap_or(Ok(()))
     }
 }
 

@@ -236,10 +236,10 @@ async fn the_post_hook_returns_the_hooked_response() {
     let result = run(&parts).await.unwrap();
     assert_eq!(response_text(result), r#"{"hooked":true}"#);
     let records = parts.callback.records();
-    assert_eq!(records.post_calls.len(), 1);
-    assert_eq!(records.post_calls[0].stop_reason.as_deref(), Some("done"));
+    assert_eq!(records.post.len(), 1);
+    assert_eq!(records.post[0].stop_reason.as_deref(), Some("done"));
     assert_eq!(
-        raw_text(&records.post_calls[0].kwargs, "user").as_deref(),
+        raw_text(&records.post[0].kwargs, "user").as_deref(),
         Some("\"u-1\"")
     );
 }
@@ -287,7 +287,7 @@ async fn the_post_hook_is_skipped_without_the_override() {
     ));
     let result = run(&parts).await.unwrap();
     assert_eq!(response_text(result), MODEL_RESPONSE);
-    assert!(parts.callback.records().post_calls.is_empty());
+    assert!(parts.callback.records().post.is_empty());
 }
 
 #[tokio::test]
@@ -302,13 +302,10 @@ async fn the_cleanup_hook_runs_and_its_error_is_swallowed() {
     let result = run(&parts).await.unwrap();
     assert_eq!(response_text(result), MODEL_RESPONSE);
     let records = parts.callback.records();
-    assert_eq!(records.cleanup_calls.len(), 1);
+    assert_eq!(records.cleanup.len(), 1);
+    assert_eq!(records.cleanup[0].stop_reason.as_deref(), Some("done"));
     assert_eq!(
-        records.cleanup_calls[0].stop_reason.as_deref(),
-        Some("done")
-    );
-    assert_eq!(
-        raw_text(&records.cleanup_calls[0].kwargs, "user").as_deref(),
+        raw_text(&records.cleanup[0].kwargs, "user").as_deref(),
         Some("\"u-1\"")
     );
     assert_eq!(
@@ -326,7 +323,7 @@ async fn a_continuation_error_reaches_the_caller_after_the_cleanup() {
     let result = call_error(run(&parts).await);
     assert!(matches!(&result, ChatCallError::Completion(_)));
     assert_eq!(result.to_string(), "completion down");
-    assert_eq!(parts.callback.records().cleanup_calls.len(), 1);
+    assert_eq!(parts.callback.records().cleanup.len(), 1);
 }
 
 #[tokio::test]
@@ -341,7 +338,7 @@ async fn missing_patched_messages_fail_before_the_call_and_the_cleanup() {
         "Agentic loop plan missing patched messages"
     );
     assert_eq!(parts.continuation.call_count(), 0);
-    assert!(parts.callback.records().cleanup_calls.is_empty());
+    assert!(parts.callback.records().cleanup.is_empty());
     assert!(logs.messages().is_empty());
 }
 
@@ -352,7 +349,7 @@ async fn a_plan_without_a_patch_has_no_messages_either() {
     let result = call_error(run(&parts).await);
     assert!(matches!(result, ChatCallError::MissingMessages));
     assert_eq!(parts.continuation.call_count(), 0);
-    assert!(parts.callback.records().cleanup_calls.is_empty());
+    assert!(parts.callback.records().cleanup.is_empty());
 }
 
 #[tokio::test]
@@ -363,7 +360,7 @@ async fn a_depth_overflow_is_a_typed_error_before_the_cleanup() {
     assert!(matches!(&result, ChatCallError::Depth(_)));
     assert_eq!(result.to_string(), "agentic loop depth overflowed");
     assert_eq!(parts.continuation.call_count(), 0);
-    assert!(parts.callback.records().cleanup_calls.is_empty());
+    assert!(parts.callback.records().cleanup.is_empty());
 }
 
 #[rstest]
@@ -421,6 +418,6 @@ async fn a_stream_followup_skips_the_post_hook_and_the_wrap() {
     ));
     let result = run(&parts).await.unwrap();
     assert!(matches!(result, ChatLoopResult::Stream(_)));
-    assert!(parts.callback.records().post_calls.is_empty());
+    assert!(parts.callback.records().post.is_empty());
     assert!(parts.port.records().is_empty());
 }

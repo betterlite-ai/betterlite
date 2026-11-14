@@ -120,7 +120,7 @@ async fn gate_or_skip(
         })
         .await;
     match gate {
-        Ok(gate) => Some(gate),
+        Ok(ready) => Some(ready),
         Err(error) => {
             tracing::error!(
                 "LiteLLM.AgenticHookError: Exception in chat completion agentic gate: {error}"
@@ -150,10 +150,11 @@ where
     };
     if !callback.overrides().build_plan {
         let response = callback.run_agentic_loop(&loop_call).await?;
-        return Ok(match response {
-            Some(response) => CallbackStep::Done(ChatLoopResult::Response(response)),
-            None => CallbackStep::NoLoop,
-        });
+        let step = response.map_or_else(
+            || CallbackStep::NoLoop,
+            |value| CallbackStep::Done(ChatLoopResult::Response(value)),
+        );
+        return Ok(step);
     }
     let plan = callback.build_agentic_loop_plan(&loop_call).await?;
     plan_step(callback, run, &plan).await

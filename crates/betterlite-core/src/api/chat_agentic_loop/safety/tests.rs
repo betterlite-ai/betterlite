@@ -52,7 +52,7 @@ fn a_depth_at_the_cap_is_exceeded() {
 
 #[test]
 fn a_depth_below_the_cap_passes() {
-    assert!(check_loop_safety(&json_map(&[("call", "1")]), &[], 2, 3, "gpt-4o").is_ok());
+    check_loop_safety(&json_map(&[("call", "1")]), &[], 2, 3, "gpt-4o").unwrap();
 }
 
 #[test]

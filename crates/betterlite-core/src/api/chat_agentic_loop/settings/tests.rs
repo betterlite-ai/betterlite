@@ -119,7 +119,7 @@ fn the_fingerprint_text_renders_every_shape() {
     assert_eq!(fingerprint_text(&Json::Bool(true)).unwrap(), "true");
     assert_eq!(fingerprint_text(&Json::Bool(false)).unwrap(), "false");
     assert_eq!(
-        fingerprint_text(&Json::Number(Number::from(7))).unwrap(),
+        fingerprint_text(&Json::Number(Number::from(7_i32))).unwrap(),
         "7"
     );
     assert_eq!(

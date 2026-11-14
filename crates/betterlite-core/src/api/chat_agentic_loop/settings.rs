@@ -106,8 +106,11 @@ fn read_fingerprints(kwargs: &JsonMap) -> Result<Vec<String>, SettingsError> {
 fn fingerprint_text(value: &Json) -> Result<String, SettingsError> {
     match value {
         Json::Text(text) => Ok(text.clone()),
-        other => serde_json::to_string(&sorted_json(other))
-            .map_err(|error| SettingsError::Fingerprint(error.to_string())),
+        other
+        @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            serde_json::to_string(&sorted_json(other))
+                .map_err(|error| SettingsError::Fingerprint(error.to_string()))
+        }
     }
 }
 
@@ -119,13 +122,15 @@ fn ceiling_value(raw: &RawValue) -> Result<AgenticLoopValue, AgenticLoopCeilingE
     match from_str::<Json>(raw.get()) {
         Ok(Json::Null) => Ok(AgenticLoopValue::Null),
         Ok(Json::Bool(flag)) => Ok(AgenticLoopValue::Boolean(flag)),
-        Ok(Json::Number(number)) => match number.as_i64() {
-            Some(integer) => Ok(AgenticLoopValue::Integer(integer)),
-            None => number
-                .as_f64()
-                .map(AgenticLoopValue::Float)
-                .ok_or_else(not_whole),
-        },
+        Ok(Json::Number(number)) => number.as_i64().map_or_else(
+            || {
+                number
+                    .as_f64()
+                    .map(AgenticLoopValue::Float)
+                    .ok_or_else(not_whole)
+            },
+            |integer| Ok(AgenticLoopValue::Integer(integer)),
+        ),
         Ok(Json::Text(text)) => Ok(AgenticLoopValue::Text(text)),
         Ok(Json::List(_) | Json::Object(_)) | Err(_) => Err(not_whole()),
     }
@@ -143,12 +148,11 @@ fn is_set(kwargs: &JsonMap, key: &str) -> bool {
         return false;
     };
     match from_str::<Json>(raw.get()) {
-        Ok(Json::Null) => false,
+        Ok(Json::Null) | Err(_) => false,
         Ok(Json::Bool(flag)) => flag,
         Ok(Json::Number(number)) => number.as_f64().is_some_and(|float| float != 0.0_f64),
         Ok(Json::Text(text)) => !text.is_empty(),
         Ok(Json::List(items)) => !items.is_empty(),
         Ok(Json::Object(entries)) => !entries.is_empty(),
-        Err(_) => false,
     }
 }

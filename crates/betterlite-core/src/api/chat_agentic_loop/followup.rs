@@ -98,16 +98,16 @@ async fn post_process<Continuation, FakeStream>(
     call: &FollowupCall<'_, Continuation, FakeStream>,
 ) -> ChatLoopResult
 where
-    Continuation: ?Sized,
+    Continuation: Sync + ?Sized,
     FakeStream: FakeStreamPort + ?Sized,
 {
     let hooked = match response {
-        ChatLoopResult::Response(response) => {
+        ChatLoopResult::Response(raw) => {
             let hooked = if call.callback.overrides().post_response {
-                let original = response.clone();
+                let original = raw.clone();
                 match call
                     .callback
-                    .post_agentic_loop_response(response, call.plan, call.kwargs)
+                    .post_agentic_loop_response(raw, call.plan, call.kwargs)
                     .await
                 {
                     Ok(hooked) => hooked,
@@ -121,7 +121,7 @@ where
                     }
                 }
             } else {
-                response
+                raw
             };
             ChatLoopResult::Response(hooked)
         }
@@ -240,7 +240,7 @@ fn kwarg_json(value: &AgenticKwargValue) -> Json {
         AgenticKwargValue::Object(entries) => Json::Object(
             entries
                 .iter()
-                .map(|(key, value)| (key.clone(), kwarg_json(value)))
+                .map(|(key, inner)| (key.clone(), kwarg_json(inner)))
                 .collect(),
         ),
     }
@@ -248,10 +248,11 @@ fn kwarg_json(value: &AgenticKwargValue) -> Json {
 
 // LiteLLM folds the loop's own markers into litellm_metadata: the old entries first, then every marker the follow-up carries
 fn with_metadata(kwargs: JsonMap) -> Result<JsonMap, serde_json::Error> {
-    let mut metadata = match kwargs.get(LITELLM_METADATA_KEY) {
-        Some(raw) => from_str::<IndexMap<String, Box<RawValue>>>(raw.get()).unwrap_or_default(),
-        None => IndexMap::new(),
-    };
+    let mut metadata = kwargs
+        .get(LITELLM_METADATA_KEY)
+        .map_or_else(IndexMap::new, |raw| {
+            from_str::<IndexMap<String, Box<RawValue>>>(raw.get()).unwrap_or_default()
+        });
     for (key, value) in &kwargs {
         if key.starts_with(AGENTIC_LOOP_PREFIX)
             || key.as_str() == MAX_AGENTIC_LOOPS_KEY

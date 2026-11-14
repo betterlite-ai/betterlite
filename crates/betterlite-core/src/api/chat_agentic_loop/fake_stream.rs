@@ -26,12 +26,12 @@ pub trait FakeStreamPort: Send + Sync {
     ) -> ChatLoopResult {
         match response {
             ChatLoopResult::Stream(stream) => ChatLoopResult::Stream(stream),
-            ChatLoopResult::Response(response) => {
-                let is_model_response = from_str::<ChatResponse>(response.get()).is_ok();
+            ChatLoopResult::Response(raw) => {
+                let is_model_response = from_str::<ChatResponse>(raw.get()).is_ok();
                 if is_model_response && matches!(logging, LoggingHandle::Object(_)) {
-                    return self.wrap_model_response(response, model, provider, logging);
+                    return self.wrap_model_response(raw, model, provider, logging);
                 }
-                ChatLoopResult::Response(response)
+                ChatLoopResult::Response(raw)
             }
         }
     }

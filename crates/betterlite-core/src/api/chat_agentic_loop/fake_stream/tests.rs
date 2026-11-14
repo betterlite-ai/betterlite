@@ -2,7 +2,7 @@
 
 use rstest::rstest;
 
-use super::FakeStreamPort;
+use super::FakeStreamPort as _;
 use crate::api::chat_agentic_loop::entry::maybe_run_chat_agentic_loop;
 use crate::api::chat_agentic_loop::tests::support::{
     FakeContinuation, MODEL_RESPONSE, RecordingPort, callbacks, empty_stream, fixture, json_map,
