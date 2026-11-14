@@ -44,6 +44,23 @@ enum RawFlag {
     Text(String),
 }
 
+impl RawFlag {
+    fn resolve<L: EnvironmentLookup>(
+        self,
+        path: &str,
+        lookup: &L,
+    ) -> Result<Option<bool>, ConfigError> {
+        match self {
+            Self::Boolean(flag) => Ok(Some(flag)),
+            Self::Text(text) => {
+                let name = text.strip_prefix("os.environ/").unwrap_or(path).to_owned();
+                let resolved = resolve_string(text, path, lookup)?;
+                Ok(betterlite_env::flag(&name, &resolved)?)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnreachableFallback {
     FailClosed,
@@ -104,11 +121,12 @@ impl Entry {
             lookup,
             parse_float,
         )?;
-        let ccr_retrieval = optional_flag(
-            parameters.ccr_retrieval,
-            &format!("{prefix}.ccr_retrieval"),
-            lookup,
-        )?;
+        let ccr_path = format!("{prefix}.ccr_retrieval");
+        let ccr_retrieval = parameters
+            .ccr_retrieval
+            .map(|raw| raw.resolve(&ccr_path, lookup))
+            .transpose()?
+            .flatten();
         Ok(Configured {
             guardrail_name: self.guardrail_name,
             api_base,
@@ -118,25 +136,6 @@ impl Entry {
             timeout,
             ccr_retrieval,
         })
-    }
-}
-
-fn optional_flag<L>(
-    value: Option<RawFlag>,
-    path: &str,
-    lookup: &L,
-) -> Result<Option<bool>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    match value {
-        None => Ok(None),
-        Some(RawFlag::Boolean(flag)) => Ok(Some(flag)),
-        Some(RawFlag::Text(text)) => {
-            let name = text.strip_prefix("os.environ/").unwrap_or(path).to_owned();
-            let resolved = resolve_string(text, path, lookup)?;
-            Ok(betterlite_env::flag(&name, &resolved)?)
-        }
     }
 }
 

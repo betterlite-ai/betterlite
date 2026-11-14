@@ -27,7 +27,7 @@ mod retrieve_tool;
 mod tests;
 
 // LiteLLM's _HASH_CACHE_TTL_SECONDS: 15 * 60
-const HASH_CACHE_TTL: Duration = Duration::from_secs(900);
+const HASH_CACHE_TTL: Duration = Duration::from_mins(15);
 
 pub type Clock = Box<dyn Fn() -> Duration + Send + Sync>;
 
@@ -77,12 +77,14 @@ impl IssuedHashStore {
     }
 
     fn record(&self, call_id: &str, hashes: BTreeSet<String>, now: Duration) {
-        let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
         let issued = IssuedHashes {
             hashes,
             expires_at: now.saturating_add(HASH_CACHE_TTL),
         };
-        entries.insert(call_id.to_owned(), issued);
+        self.entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(call_id.to_owned(), issued);
     }
 }
 
@@ -136,20 +138,42 @@ impl HeadroomGuardrail {
             .unwrap_or_else(PoisonError::into_inner);
         entries.get(call_id).map(|issued| issued.hashes.clone())
     }
-}
 
-impl GuardrailContract for HeadroomGuardrail {
-    fn apply_guardrail(
+    pub(crate) async fn apply(
         &self,
         inputs: GuardrailApiInputs,
         request_data: &mut BTreeMap<String, GuardrailValue>,
         input_type: GuardrailInputType,
         logging_obj: Option<&mut GuardrailLogTarget>,
-    ) -> impl Future<Output = Result<GuardrailApiInputs, GuardrailFailure>> + Send {
-        async move {
-            self.apply(inputs, request_data, input_type, logging_obj)
-                .await
+    ) -> Result<GuardrailApiInputs, GuardrailFailure> {
+        if input_type != GuardrailInputType::Request
+            || request_data::bypass(request_data)
+            || request_data::background(request_data)
+        {
+            return Ok(inputs);
         }
+        let Some(messages) = messages::collect(&inputs, request_data)? else {
+            return Ok(inputs);
+        };
+        let compressed = apply::compress_rows(self, request_data, messages).await?;
+        if !compressed.result.succeeded {
+            records::record_outcome(self, request_data, &compressed, logging_obj);
+            return Ok(inputs);
+        }
+        apply::finish_success(self, inputs, request_data, &compressed, logging_obj)
+    }
+}
+
+impl GuardrailContract for HeadroomGuardrail {
+    async fn apply_guardrail(
+        &self,
+        inputs: GuardrailApiInputs,
+        request_data: &mut BTreeMap<String, GuardrailValue>,
+        input_type: GuardrailInputType,
+        logging_obj: Option<&mut GuardrailLogTarget>,
+    ) -> Result<GuardrailApiInputs, GuardrailFailure> {
+        self.apply(inputs, request_data, input_type, logging_obj)
+            .await
     }
 
     fn get_supported_event_hooks(&self) -> Option<Vec<GuardrailEventHooks>> {

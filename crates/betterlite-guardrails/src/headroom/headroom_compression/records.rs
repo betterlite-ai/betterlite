@@ -29,52 +29,54 @@ impl GuardrailSpanSink for NoSpan {
     }
 }
 
-impl HeadroomGuardrail {
-    pub(super) fn record_outcome(
-        &self,
-        request_data: &mut BTreeMap<String, GuardrailValue>,
-        compressed: &Compressed,
-        log_target: Option<&mut GuardrailLogTarget>,
-    ) {
-        let (status, response) = if compressed.result.succeeded {
-            let stats = guardrail_value(&JsonValue::Object(compressed.result.stats.clone()));
-            (GuardrailStatus::Success, stats)
-        } else {
-            let error = GuardrailValue::Object(BTreeMap::from([(
-                "error".to_owned(),
-                GuardrailValue::Text(UNAVAILABLE_MESSAGE.to_owned()),
-            )]));
-            (GuardrailStatus::GuardrailFailedToRespond, error)
-        };
-        let mut settings = GuardrailSettings::default();
-        settings.guardrail_name.clone_from(&self.guardrail_name);
-        settings.event_hook.clone_from(&self.runtime.event_hook);
-        let base = GuardrailBase {
-            settings,
-            mode: None,
-        };
-        let mut context = GuardrailRecordContext {
-            base: &base,
-            request_data,
-            log_target,
-            sink: &NoSpan,
-        };
-        let input = GuardrailRecordInput {
-            guardrail_response: response,
-            guardrail_status: status,
-            start_time: Some(compressed.started),
-            end_time: Some(compressed.ended),
-            duration: Some(compressed.ended - compressed.started),
-            masked_entity_count: None,
-            guardrail_provider: Some(HEADROOM_GUARDRAIL_PROVIDER.to_owned()),
-            event_type: None,
-            tracing_detail: None,
-        };
-        if let Err(error) = add_guardrail_record(&mut context, input) {
-            tracing::warn!(%error, "Headroom: guardrail record could not be written");
-        }
-        append_applied(request_data, self.guardrail_name.as_deref());
+pub(super) fn record_outcome(
+    guardrail: &HeadroomGuardrail,
+    request_data: &mut BTreeMap<String, GuardrailValue>,
+    compressed: &Compressed,
+    log_target: Option<&mut GuardrailLogTarget>,
+) {
+    let (status, response) = if compressed.result.succeeded {
+        let stats = guardrail_value(&JsonValue::Object(compressed.result.stats.clone()));
+        (GuardrailStatus::Success, stats)
+    } else {
+        let error = GuardrailValue::Object(BTreeMap::from([(
+            "error".to_owned(),
+            GuardrailValue::Text(UNAVAILABLE_MESSAGE.to_owned()),
+        )]));
+        (GuardrailStatus::GuardrailFailedToRespond, error)
+    };
+    let mut settings = GuardrailSettings::default();
+    settings
+        .guardrail_name
+        .clone_from(&guardrail.guardrail_name);
+    settings
+        .event_hook
+        .clone_from(&guardrail.runtime.event_hook);
+    let base = GuardrailBase {
+        settings,
+        mode: None,
+    };
+    let mut context = GuardrailRecordContext {
+        base: &base,
+        request_data,
+        log_target,
+        sink: &NoSpan,
+    };
+    let input = GuardrailRecordInput {
+        guardrail_response: response,
+        guardrail_status: status,
+        start_time: Some(compressed.started),
+        end_time: Some(compressed.ended),
+        duration: Some(compressed.started.mul_add(-1.0_f64, compressed.ended)),
+        masked_entity_count: None,
+        guardrail_provider: Some(HEADROOM_GUARDRAIL_PROVIDER.to_owned()),
+        event_type: None,
+        tracing_detail: None,
+    };
+    if let Err(error) = add_guardrail_record(&mut context, input) {
+        tracing::warn!(%error, "Headroom: guardrail record could not be written");
     }
+    append_applied(request_data, guardrail.guardrail_name.as_deref());
 }
 
 pub(super) fn guardrail_value(value: &JsonValue) -> GuardrailValue {
@@ -108,8 +110,11 @@ fn number_value(number: &Number) -> GuardrailValue {
 }
 
 // LiteLLM's add_guardrail_to_applied_guardrails_header
-fn append_applied(request_data: &mut BTreeMap<String, GuardrailValue>, name: Option<&str>) {
-    let Some(name) = name else {
+fn append_applied(
+    request_data: &mut BTreeMap<String, GuardrailValue>,
+    guardrail_name: Option<&str>,
+) {
+    let Some(name) = guardrail_name else {
         return;
     };
     let key = if request_data.contains_key(LITELLM_METADATA_KEY) {

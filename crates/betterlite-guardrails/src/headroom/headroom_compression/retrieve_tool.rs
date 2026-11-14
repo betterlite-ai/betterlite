@@ -1,35 +1,28 @@
 use betterlite_prompts::arguments::json::Json;
 use betterlite_prompts::response_tool_calls::tools::has_tool_with_name;
-use serde_json::json;
 
 use super::HeadroomError;
 use crate::generic_guardrail_contracts::GuardrailToolParam;
 use crate::headroom_settings::HEADROOM_RETRIEVE_TOOL_NAME;
 
-const TOOL_DESCRIPTION: &str = "Retrieve original content that was compressed by Headroom. Call this when you encounter a compression marker containing a hash.";
-const HASH_DESCRIPTION: &str = "The hex hash from the compression marker.";
-const QUERY_DESCRIPTION: &str = "Optional search query for BM25-ranked retrieval.";
-
-pub(crate) fn build() -> Result<GuardrailToolParam, HeadroomError> {
-    let tool = json!({
-        "type": "function",
-        "function": {
-            "name": HEADROOM_RETRIEVE_TOOL_NAME,
-            "description": TOOL_DESCRIPTION,
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "hash": {"type": "string", "description": HASH_DESCRIPTION},
-                    "query": {"type": "string", "description": QUERY_DESCRIPTION},
-                },
-                "required": ["hash"],
+// LiteLLM's _build_headroom_retrieve_tool, named HEADROOM_RETRIEVE_TOOL_NAME
+const TOOL_DEFINITION: &str = r#"{
+    "type": "function",
+    "function": {
+        "name": "headroom_retrieve",
+        "description": "Retrieve original content that was compressed by Headroom. Call this when you encounter a compression marker containing a hash.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "hash": {"type": "string", "description": "The hex hash from the compression marker."},
+                "query": {"type": "string", "description": "Optional search query for BM25-ranked retrieval."}
             },
-        },
-    });
-    Ok(serde_json::from_value(tool)?)
-}
+            "required": ["hash"]
+        }
+    }
+}"#;
 
-pub(crate) fn has_retrieve_tool(tools: &[GuardrailToolParam]) -> bool {
+fn has_retrieve_tool(tools: &[GuardrailToolParam]) -> bool {
     let Ok(encoded) = serde_json::to_value(tools) else {
         return false;
     };
@@ -42,13 +35,9 @@ pub(crate) fn has_retrieve_tool(tools: &[GuardrailToolParam]) -> bool {
 pub(crate) fn merged(
     existing: Option<&[GuardrailToolParam]>,
 ) -> Result<Vec<GuardrailToolParam>, HeadroomError> {
-    let Some(tools) = existing else {
-        return Ok(vec![build()?]);
-    };
-    if has_retrieve_tool(tools) {
-        return Ok(tools.to_vec());
+    let mut tools = existing.map_or_else(Vec::new, <[_]>::to_vec);
+    if !has_retrieve_tool(&tools) {
+        tools.push(serde_json::from_str(TOOL_DEFINITION)?);
     }
-    let mut merged = tools.to_vec();
-    merged.push(build()?);
-    Ok(merged)
+    Ok(tools)
 }

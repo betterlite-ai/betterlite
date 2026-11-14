@@ -16,6 +16,7 @@ use betterlite_http::proxy::base_builder;
 use reqwest::StatusCode;
 use rstest::rstest;
 use secrecy::SecretString;
+use serde::Serialize;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use uuid::Uuid;
@@ -40,6 +41,7 @@ const SERVICE_TWO: &str =
 const SERVICE_HASHES: &str =
     r#"{"messages":[{"role":"user","content":"short"}],"ccr_hashes":["ABCDEF123456"]}"#;
 const SENT_HASH: &str = "abcdef123456";
+const RETRIEVE_TOOL: &str = r#"{"type":"function","function":{"name":"headroom_retrieve","description":"Retrieve original content that was compressed by Headroom. Call this when you encounter a compression marker containing a hash.","parameters":{"type":"object","properties":{"hash":{"type":"string","description":"The hex hash from the compression marker."},"query":{"type":"string","description":"Optional search query for BM25-ranked retrieval."}},"required":["hash"]}}}"#;
 
 #[derive(Clone)]
 struct Seen {
@@ -190,8 +192,19 @@ fn data(pairs: &str) -> BTreeMap<String, GuardrailValue> {
     serde_json::from_str(pairs).unwrap()
 }
 
-fn json(text: &str) -> serde_json::Value {
+fn gv(text: &str) -> GuardrailValue {
     serde_json::from_str(text).unwrap()
+}
+
+fn encoded<T: Serialize>(value: &T) -> GuardrailValue {
+    gv(&serde_json::to_string(value).unwrap())
+}
+
+fn unavailable() -> GuardrailValue {
+    GuardrailValue::Object(BTreeMap::from([(
+        "error".to_owned(),
+        GuardrailValue::Text(UNAVAILABLE_MESSAGE.to_owned()),
+    )]))
 }
 
 fn logging_target(call_id: &str) -> GuardrailLogTarget {
@@ -204,58 +217,71 @@ fn logging_target(call_id: &str) -> GuardrailLogTarget {
     }
 }
 
-fn metadata(data: &BTreeMap<String, GuardrailValue>) -> serde_json::Value {
-    let encoded = serde_json::to_value(data).unwrap();
-    let key = if encoded.get("litellm_metadata").is_some() {
+fn metadata(data: &BTreeMap<String, GuardrailValue>) -> BTreeMap<String, GuardrailValue> {
+    let key = if data.contains_key("litellm_metadata") {
         "litellm_metadata"
     } else {
         "metadata"
     };
-    encoded.get(key).cloned().unwrap_or(serde_json::Value::Null)
+    let Some(GuardrailValue::Object(fields)) = data.get(key) else {
+        return BTreeMap::new();
+    };
+    fields.clone()
 }
 
-fn records(data: &BTreeMap<String, GuardrailValue>) -> Vec<serde_json::Value> {
-    metadata(data)
-        .get("standard_logging_guardrail_information")
-        .and_then(serde_json::Value::as_array)
-        .cloned()
-        .unwrap_or_default()
+fn records(data: &BTreeMap<String, GuardrailValue>) -> Vec<BTreeMap<String, GuardrailValue>> {
+    let Some(GuardrailValue::Array(entries)) =
+        metadata(data).remove("standard_logging_guardrail_information")
+    else {
+        return Vec::new();
+    };
+    entries
+        .into_iter()
+        .map(|entry| {
+            let GuardrailValue::Object(fields) = entry else {
+                panic!("a record object");
+            };
+            fields
+        })
+        .collect()
 }
 
-fn first_record(data: &BTreeMap<String, GuardrailValue>) -> serde_json::Value {
-    records(data).first().cloned().expect("a guardrail record")
+fn first_record(data: &BTreeMap<String, GuardrailValue>) -> BTreeMap<String, GuardrailValue> {
+    records(data)
+        .into_iter()
+        .next()
+        .expect("a guardrail record")
 }
 
 fn applied_names(data: &BTreeMap<String, GuardrailValue>) -> Vec<String> {
-    metadata(data)
-        .get("applied_guardrails")
-        .and_then(serde_json::Value::as_array)
-        .map(|names| {
-            names
-                .iter()
-                .filter_map(serde_json::Value::as_str)
-                .map(str::to_owned)
-                .collect()
+    let Some(GuardrailValue::Array(names)) = metadata(data).remove("applied_guardrails") else {
+        return Vec::new();
+    };
+    names
+        .into_iter()
+        .map(|name| {
+            let GuardrailValue::Text(text) = name else {
+                panic!("an applied guardrail name");
+            };
+            text
         })
-        .unwrap_or_default()
+        .collect()
 }
 
-fn record_response(data: &BTreeMap<String, GuardrailValue>) -> serde_json::Value {
+fn record_response(data: &BTreeMap<String, GuardrailValue>) -> GuardrailValue {
     first_record(data)
-        .get("guardrail_response")
-        .cloned()
-        .unwrap_or(serde_json::Value::Null)
+        .remove("guardrail_response")
+        .expect("a guardrail_response")
 }
 
-fn record_status(data: &BTreeMap<String, GuardrailValue>) -> serde_json::Value {
+fn record_status(data: &BTreeMap<String, GuardrailValue>) -> GuardrailValue {
     first_record(data)
-        .get("guardrail_status")
-        .cloned()
-        .unwrap_or(serde_json::Value::Null)
+        .remove("guardrail_status")
+        .expect("a guardrail_status")
 }
 
-fn structure(returned: &GuardrailApiInputs) -> serde_json::Value {
-    serde_json::to_value(returned.structured_messages.as_ref().unwrap()).unwrap()
+fn structure(returned: &GuardrailApiInputs) -> GuardrailValue {
+    encoded(returned.structured_messages.as_ref().unwrap())
 }
 
 #[rstest]
@@ -307,7 +333,7 @@ async fn the_bypass_header_skips_compression_only_for_true(
         assert_eq!(call_count(&server), 0);
         assert!(records(&request).is_empty());
     } else {
-        assert_eq!(structure(&returned), json(SHORTENED));
+        assert_eq!(structure(&returned), gv(SHORTENED));
         assert_eq!(call_count(&server), 1);
     }
 }
@@ -330,7 +356,7 @@ async fn background_requests_skip_compression(#[case] given: &str, #[case] skipp
         assert_eq!(returned, original);
         assert_eq!(call_count(&server), 0);
     } else {
-        assert_eq!(structure(&returned), json(SHORTENED));
+        assert_eq!(structure(&returned), gv(SHORTENED));
         assert_eq!(call_count(&server), 1);
     }
 }
@@ -391,7 +417,7 @@ async fn a_non_list_request_messages_field_contributes_no_ids() {
     let returned = apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
     assert_eq!(
         structure(&returned),
-        json(
+        gv(
             r#"[{"role":"system","content":"sys"},{"role":"user","content":"short"},{"role":"assistant","content":"answer"},{"role":"user","content":"now"}]"#
         )
     );
@@ -406,14 +432,14 @@ async fn protected_rows_are_restored_in_their_positions() {
     let returned = apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
     assert_eq!(
         structure(&returned),
-        json(
+        gv(
             r#"[{"role":"system","content":"sys"},{"role":"user","content":"short"},{"role":"assistant","content":"answer"},{"role":"user","content":"now"}]"#
         )
     );
-    let sent = json(&only_call(&server).body);
+    let sent = data(&only_call(&server).body);
     assert_eq!(
         sent,
-        json(r#"{"messages":[{"role":"user","content":"long text"}]}"#)
+        data(r#"{"messages":[{"role":"user","content":"long text"}]}"#)
     );
 }
 
@@ -430,17 +456,15 @@ async fn untranslated_tool_results_are_protected_from_compression() {
     let returned = apply(&guardrail, given, &mut request).await.unwrap();
     assert_eq!(
         structure(&returned),
-        json(
+        gv(
             r#"[{"role":"user","content":"short"},{"role":"tool","tool_call_id":"t1","content":"retrieved secret"},{"role":"user","content":"final"}]"#
         )
     );
-    let sent = json(&only_call(&server).body);
-    assert_eq!(
-        sent.get("messages")
-            .and_then(serde_json::Value::as_array)
-            .map(Vec::len),
-        Some(1)
-    );
+    let sent = data(&only_call(&server).body);
+    let Some(GuardrailValue::Array(sent_messages)) = sent.get("messages") else {
+        panic!("sent messages");
+    };
+    assert_eq!(sent_messages.len(), 1);
 }
 
 #[tokio::test]
@@ -492,7 +516,7 @@ fn assert_one_headroom_record(params: Option<&BTreeMap<String, GuardrailValue>>)
     assert_eq!(entries.len(), 1);
     assert_eq!(
         entries[0].get("guardrail_name"),
-        Some(&serde_json::Value::String("headroom".to_owned()))
+        Some(&GuardrailValue::Text("headroom".to_owned()))
     );
 }
 
@@ -589,7 +613,7 @@ async fn ccr_retrieval_disabled_records_no_hashes_and_adds_no_tool() {
     assert!(returned.tools.is_none());
     assert_eq!(
         structure(&returned),
-        json(
+        gv(
             r#"[{"role":"system","content":"sys"},{"role":"user","content":"short"},{"role":"assistant","content":"answer"},{"role":"user","content":"now"}]"#
         )
     );
@@ -628,7 +652,7 @@ async fn hashes_are_pruned_once_the_ttl_has_passed() {
         .await
         .unwrap();
     assert!(guardrail.has_issued_hashes("first").is_some());
-    *now.lock().unwrap() = Duration::from_secs(900);
+    *now.lock().unwrap() = Duration::from_mins(15);
     let mut expired = logging_target("third");
     guardrail
         .apply(
@@ -652,7 +676,7 @@ async fn a_response_without_hashes_does_not_prune() {
         [SENT_HASH.to_owned()].into_iter().collect(),
         Duration::ZERO,
     );
-    *now.lock().unwrap() = Duration::from_secs(3_600);
+    *now.lock().unwrap() = Duration::from_hours(1);
     let mut request = data("{}");
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
     assert!(guardrail.has_issued_hashes("first").is_some());
@@ -664,13 +688,8 @@ async fn the_retrieve_tool_is_added_when_hashes_are_recorded() {
     let guardrail = guardrail(&server.base);
     let mut request = data("{}");
     let returned = apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
-    let tools = serde_json::to_value(returned.tools.as_ref().unwrap()).unwrap();
-    assert_eq!(
-        tools,
-        json(
-            r#"[{"type":"function","function":{"name":"headroom_retrieve","description":"Retrieve original content that was compressed by Headroom. Call this when you encounter a compression marker containing a hash.","parameters":{"type":"object","properties":{"hash":{"type":"string","description":"The hex hash from the compression marker."},"query":{"type":"string","description":"Optional search query for BM25-ranked retrieval."}},"required":["hash"]}}}]"#
-        )
-    );
+    let tools = encoded(returned.tools.as_ref().unwrap());
+    assert_eq!(tools, gv(&format!("[{RETRIEVE_TOOL}]")));
 }
 
 #[tokio::test]
@@ -695,17 +714,9 @@ async fn existing_tools_are_kept_and_the_retrieve_tool_is_appended() {
     );
     let mut request = data("{}");
     let returned = apply(&guardrail, given, &mut request).await.unwrap();
-    let tools = serde_json::to_value(returned.tools.as_ref().unwrap()).unwrap();
-    let names: Vec<&str> = tools
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|tool| {
-            tool.pointer("/function/name")
-                .and_then(serde_json::Value::as_str)
-        })
-        .collect();
-    assert_eq!(names, ["weather", "headroom_retrieve"]);
+    let weather = r#"{"type":"function","function":{"name":"weather"}}"#;
+    let tools = encoded(returned.tools.as_ref().unwrap());
+    assert_eq!(tools, gv(&format!("[{weather},{RETRIEVE_TOOL}]")));
 }
 
 #[tokio::test]
@@ -729,48 +740,28 @@ async fn success_records_statistics_and_the_applied_guardrail() {
     let mut request = data("{}");
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
     let record = first_record(&request);
-    assert_eq!(record.as_object().map(serde_json::Map::len), Some(9));
-    assert_eq!(
-        record.get("guardrail_name"),
-        Some(&serde_json::Value::String("headroom".to_owned()))
-    );
-    assert_eq!(
-        record.get("guardrail_provider"),
-        Some(&serde_json::Value::String("headroom".to_owned()))
-    );
-    assert_eq!(
-        record.get("guardrail_status"),
-        Some(&serde_json::Value::String("success".to_owned()))
-    );
-    assert_eq!(
-        record.get("guardrail_mode"),
-        Some(&serde_json::Value::String("pre_call".to_owned()))
-    );
+    assert_eq!(record.len(), 9);
+    for (key, expected) in [
+        ("guardrail_name", "headroom"),
+        ("guardrail_provider", "headroom"),
+        ("guardrail_status", "success"),
+        ("guardrail_mode", "pre_call"),
+    ] {
+        assert_eq!(
+            record.get(key),
+            Some(&GuardrailValue::Text(expected.to_owned()))
+        );
+    }
     assert_eq!(
         record.get("masked_entity_count"),
-        Some(&serde_json::Value::Null)
+        Some(&GuardrailValue::Null)
     );
-    assert!(
-        record
-            .get("start_time")
-            .and_then(serde_json::Value::as_f64)
-            .is_some()
-    );
-    assert!(
-        record
-            .get("end_time")
-            .and_then(serde_json::Value::as_f64)
-            .is_some()
-    );
-    assert!(
-        record
-            .get("duration")
-            .and_then(serde_json::Value::as_f64)
-            .is_some()
-    );
+    for key in ["start_time", "end_time", "duration"] {
+        assert!(matches!(record.get(key), Some(GuardrailValue::Decimal(_))));
+    }
     assert_eq!(
         record_response(&request),
-        json(
+        gv(
             r#"{"tokens_before":100,"tokens_after":25,"tokens_saved":75,"compression_ratio":4.0,"transforms_applied":["dedupe"]}"#
         )
     );
@@ -790,12 +781,9 @@ async fn a_failed_compression_records_the_unavailable_error() {
     assert_eq!(returned, original);
     assert_eq!(
         record_status(&request),
-        serde_json::Value::String("guardrail_failed_to_respond".to_owned())
+        GuardrailValue::Text("guardrail_failed_to_respond".to_owned())
     );
-    assert_eq!(
-        record_response(&request),
-        serde_json::json!({"error": UNAVAILABLE_MESSAGE})
-    );
+    assert_eq!(record_response(&request), unavailable());
     assert_eq!(applied_names(&request), ["headroom"]);
 }
 
@@ -805,17 +793,13 @@ async fn records_and_applied_names_go_into_litellm_metadata() {
     let guardrail = guardrail(&server.base);
     let mut request = data(r#"{"litellm_metadata":{"keep":true}}"#);
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
-    let encoded = serde_json::to_value(&request).unwrap();
-    let bucket = encoded.get("litellm_metadata").expect("litellm_metadata");
-    assert_eq!(bucket.get("keep"), Some(&serde_json::Value::Bool(true)));
     assert_eq!(
-        bucket
-            .get("standard_logging_guardrail_information")
-            .and_then(serde_json::Value::as_array)
-            .map(Vec::len),
-        Some(1)
+        metadata(&request).get("keep"),
+        Some(&GuardrailValue::Boolean(true))
     );
-    assert!(encoded.get("metadata").is_none());
+    assert_eq!(records(&request).len(), 1);
+    assert!(request.contains_key("litellm_metadata"));
+    assert!(!request.contains_key("metadata"));
 }
 
 #[tokio::test]
@@ -831,12 +815,12 @@ async fn existing_records_and_applied_names_are_kept() {
         records(&request)
             .first()
             .and_then(|entry| entry.get("guardrail_name")),
-        Some(&serde_json::Value::String("other".to_owned()))
+        Some(&GuardrailValue::Text("other".to_owned()))
     );
     assert_eq!(applied_names(&request), ["other", "headroom"]);
     assert_eq!(
         metadata(&request).get("keep"),
-        Some(&serde_json::Value::Bool(true))
+        Some(&GuardrailValue::Boolean(true))
     );
 }
 
@@ -856,6 +840,23 @@ fn supported_event_hooks_are_pre_and_post_call() {
         guardrail.get_supported_event_hooks(),
         Some(SUPPORTED_EVENT_HOOKS.to_vec())
     );
+}
+
+#[tokio::test]
+async fn the_contract_entry_point_compresses_request_messages() {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let mut request = data("{}");
+    let returned = guardrail
+        .apply_guardrail(
+            inputs(FOUR),
+            &mut request,
+            GuardrailInputType::Request,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(structure(&returned), gv(SHORTENED));
 }
 
 #[tokio::test]
@@ -887,7 +888,16 @@ async fn records_carry_the_injected_wall_clock_times_and_their_difference() {
     let mut request = data("{}");
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
     let record = first_record(&request);
-    assert_eq!(record.get("start_time"), Some(&serde_json::json!(1_000.5)));
-    assert_eq!(record.get("end_time"), Some(&serde_json::json!(1_002.75)));
-    assert_eq!(record.get("duration"), Some(&serde_json::json!(2.25)));
+    assert_eq!(
+        record.get("start_time"),
+        Some(&GuardrailValue::Decimal(1_000.5_f64))
+    );
+    assert_eq!(
+        record.get("end_time"),
+        Some(&GuardrailValue::Decimal(1_002.75_f64))
+    );
+    assert_eq!(
+        record.get("duration"),
+        Some(&GuardrailValue::Decimal(2.25_f64))
+    );
 }

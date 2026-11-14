@@ -105,39 +105,16 @@ fn call(
     ));
     match result {
         Ok(returned) => Ok((Some(returned), None)),
-        Err(GuardrailFailure::HttpObject { status, detail }) => {
-            let detail = serde_json::to_value(detail).or_value_error()?;
-            Ok((
-                None,
-                Some(json!({
-                    "status": status,
-                    "detail": transport_detail(detail),
-                })),
-            ))
+        Err(GuardrailFailure::HttpObject { status, mut detail }) => {
+            // httpx and reqwest word the same transport failure differently, so both sides report one marker
+            if let Some(transport) = detail.get_mut("detail") {
+                *transport = GuardrailValue::Text(TRANSPORT_DETAIL.to_owned());
+            }
+            let encoded = serde_json::to_value(detail).or_value_error()?;
+            Ok((None, Some(json!({"status": status, "detail": encoded}))))
         }
-        Err(other) => Err(Box::new(HelperError {
-            class: "RuntimeError".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: other.to_string(),
-        })),
+        Err(other) => Err(other).or_config_error(),
     }
-}
-
-// httpx and reqwest word the same transport failure differently, so both sides report one marker
-fn transport_detail(detail: Value) -> Value {
-    let Value::Object(mut fields) = detail else {
-        return detail;
-    };
-    if fields.contains_key("detail") {
-        fields.insert(
-            "detail".to_owned(),
-            Value::String(TRANSPORT_DETAIL.to_owned()),
-        );
-    }
-    Value::Object(fields)
 }
 
 fn resolve_identity(

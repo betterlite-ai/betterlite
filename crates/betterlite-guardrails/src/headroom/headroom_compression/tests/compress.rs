@@ -13,25 +13,28 @@ use uuid::Uuid;
 
 use super::{
     FOUR, SERVICE_ONE, THREE_USERS, apply, call_count, data, default_input, fail_open_input,
-    guardrail, guardrail_with_clock, inputs, json, mock, only_call, record_response, record_status,
+    guardrail, guardrail_with_clock, inputs, mock, only_call, record_response, record_status,
+    unavailable,
 };
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::headroom_failure::NOT_FOUND_HINT;
 use crate::headroom_settings::{HeadroomInput, HeadroomSettings};
 
-use super::super::apply::UNAVAILABLE_MESSAGE;
 use super::super::compress::{
     BODY_PREVIEW_CHARS, COUNT_ERROR, EMPTY_MESSAGES_ERROR, MISSING_MESSAGES_ERROR, NON_JSON_ERROR,
     SERVICE_ERROR, SHAPE_ERROR, UNREACHABLE_ERROR,
 };
 use super::super::{HeadroomGuardrail, HeadroomRuntime};
 
-async fn recorded_response(payload: &str) -> serde_json::Value {
+async fn recorded_response(payload: &str) -> BTreeMap<String, GuardrailValue> {
     let server = mock(StatusCode::OK, payload.to_owned()).await;
     let guardrail = guardrail(&server.base);
     let mut request = data("{}");
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
-    record_response(&request)
+    let GuardrailValue::Object(fields) = record_response(&request) else {
+        panic!("an object response");
+    };
+    fields
 }
 
 fn detail_of(error: GuardrailFailure) -> (u16, BTreeMap<String, GuardrailValue>) {
@@ -53,8 +56,8 @@ async fn the_compression_request_posts_flattened_messages() {
     assert_eq!(call.authorization.as_deref(), Some("Bearer sk-test"));
     assert_eq!(call.content_type.as_deref(), Some("application/json"));
     assert_eq!(
-        json(&call.body),
-        json(r#"{"messages":[{"role":"user","content":"long text"}]}"#)
+        data(&call.body),
+        data(r#"{"messages":[{"role":"user","content":"long text"}]}"#)
     );
 }
 
@@ -68,10 +71,10 @@ async fn the_compression_request_sends_the_configured_model() {
     let guardrail = guardrail_with_clock(input);
     let mut request = data(r#"{"model":"gpt-4o"}"#);
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
-    let body = json(&only_call(&server).body);
+    let body = data(&only_call(&server).body);
     assert_eq!(
         body.get("model"),
-        Some(&serde_json::Value::String("compressor".to_owned()))
+        Some(&GuardrailValue::Text("compressor".to_owned()))
     );
 }
 
@@ -85,10 +88,10 @@ async fn an_empty_configured_model_falls_back_to_the_request_model() {
     let guardrail = guardrail_with_clock(input);
     let mut request = data(r#"{"model":"gpt-4o"}"#);
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
-    let body = json(&only_call(&server).body);
+    let body = data(&only_call(&server).body);
     assert_eq!(
         body.get("model"),
-        Some(&serde_json::Value::String("gpt-4o".to_owned()))
+        Some(&GuardrailValue::Text("gpt-4o".to_owned()))
     );
 }
 
@@ -98,7 +101,7 @@ async fn an_empty_request_model_is_not_sent() {
     let guardrail = guardrail(&server.base);
     let mut request = data(r#"{"model":""}"#);
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
-    let body = json(&only_call(&server).body);
+    let body = data(&only_call(&server).body);
     assert!(body.get("model").is_none());
 }
 
@@ -108,10 +111,10 @@ async fn the_compression_request_falls_back_to_the_request_model() {
     let guardrail = guardrail(&server.base);
     let mut request = data(r#"{"model":"gpt-4o"}"#);
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
-    let body = json(&only_call(&server).body);
+    let body = data(&only_call(&server).body);
     assert_eq!(
         body.get("model"),
-        Some(&serde_json::Value::String("gpt-4o".to_owned()))
+        Some(&GuardrailValue::Text("gpt-4o".to_owned()))
     );
 }
 
@@ -121,7 +124,7 @@ async fn the_compression_request_omits_an_unknown_model() {
     let guardrail = guardrail(&server.base);
     let mut request = data("{}");
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
-    let body = json(&only_call(&server).body);
+    let body = data(&only_call(&server).body);
     assert!(body.get("model").is_none());
 }
 
@@ -165,7 +168,7 @@ async fn statistics_copy_the_five_keys_and_drop_the_rest() {
     .await;
     assert_eq!(
         response,
-        json(
+        data(
             r#"{"tokens_before":100,"tokens_after":25,"tokens_saved":50,"compression_ratio":4.0,"transforms_applied":["dedupe"]}"#
         )
     );
@@ -189,9 +192,7 @@ async fn tokens_saved_is_derived_from_both_counts(#[case] payload: &str, #[case]
     let response = recorded_response(payload).await;
     assert_eq!(
         response.get("tokens_saved"),
-        Some(&serde_json::Value::Number(serde_json::Number::from(
-            expected
-        )))
+        Some(&GuardrailValue::SignedInteger(expected))
     );
 }
 
@@ -203,7 +204,7 @@ async fn tokens_saved_is_derived_from_float_counts() {
     .await;
     assert_eq!(
         response.get("tokens_saved"),
-        Some(&serde_json::json!(75.25))
+        Some(&GuardrailValue::Decimal(75.25_f64))
     );
 }
 
@@ -229,25 +230,31 @@ async fn tokens_saved_is_omitted_without_two_numbers(#[case] payload: &str) {
 #[case::empty_messages(r#"{"messages":[]}"#, EMPTY_MESSAGES_ERROR)]
 #[case::no_object_rows(r#"{"messages":[1,2]}"#, EMPTY_MESSAGES_ERROR)]
 #[tokio::test]
-async fn malformed_responses_fall_open_with_the_reason(
+async fn malformed_responses_fail_closed_with_the_reason_and_fall_open_with_the_unavailable_record(
     #[case] payload: &str,
     #[case] reason: &str,
 ) {
     let server = mock(StatusCode::OK, payload.to_owned()).await;
-    let guardrail = guardrail_with_clock(fail_open_input(&server.base));
+    let closed = guardrail(&server.base);
+    let mut request = data("{}");
+    let error = apply(&closed, inputs(FOUR), &mut request)
+        .await
+        .unwrap_err();
+    let (status, detail) = detail_of(error);
+    assert_eq!(status, 502);
+    assert_eq!(
+        detail.get("error"),
+        Some(&GuardrailValue::Text(reason.to_owned()))
+    );
+    let open = guardrail_with_clock(fail_open_input(&server.base));
     let original = inputs(FOUR);
     let mut request = data("{}");
-    let returned = apply(&guardrail, original.clone(), &mut request)
-        .await
-        .unwrap();
+    let returned = apply(&open, original.clone(), &mut request).await.unwrap();
     assert_eq!(returned, original);
-    assert_eq!(
-        record_response(&request),
-        serde_json::json!({"error": reason})
-    );
+    assert_eq!(record_response(&request), unavailable());
     assert_eq!(
         record_status(&request),
-        serde_json::Value::String("guardrail_failed_to_respond".to_owned())
+        GuardrailValue::Text("guardrail_failed_to_respond".to_owned())
     );
 }
 
@@ -440,10 +447,7 @@ async fn an_unreachable_service_falls_open() {
         .await
         .unwrap();
     assert_eq!(returned, original);
-    assert_eq!(
-        record_response(&request),
-        serde_json::json!({"error": UNAVAILABLE_MESSAGE})
-    );
+    assert_eq!(record_response(&request), unavailable());
 }
 
 #[tokio::test]
@@ -461,10 +465,7 @@ async fn a_timeout_fails_open() {
         .await
         .unwrap();
     assert_eq!(returned, original);
-    assert_eq!(
-        record_response(&request),
-        serde_json::json!({"error": UNAVAILABLE_MESSAGE})
-    );
+    assert_eq!(record_response(&request), unavailable());
 }
 
 #[tokio::test]
@@ -518,7 +519,7 @@ fn records_are_absent(request: &BTreeMap<String, GuardrailValue>) -> bool {
 #[test]
 fn updating_params_re_resolves_and_re_clamps_the_timeout() {
     let mut guardrail = guardrail("http://127.0.0.1:1");
-    assert_eq!(guardrail.settings.timeout.total, Duration::from_secs(60));
+    assert_eq!(guardrail.settings.timeout.total, Duration::from_mins(1));
     assert_eq!(guardrail.settings.timeout.connect, Duration::from_secs(5));
     guardrail.update_in_memory_params(Some(2.0)).unwrap();
     assert_eq!(guardrail.settings.timeout.total, Duration::from_secs(2));
@@ -527,10 +528,10 @@ fn updating_params_re_resolves_and_re_clamps_the_timeout() {
     assert_eq!(guardrail.settings.timeout.total, Duration::from_secs(10));
     assert_eq!(guardrail.settings.timeout.connect, Duration::from_secs(5));
     guardrail.update_in_memory_params(Some(0.0)).unwrap();
-    assert_eq!(guardrail.settings.timeout.total, Duration::from_secs(60));
+    assert_eq!(guardrail.settings.timeout.total, Duration::from_mins(1));
     assert_eq!(guardrail.settings.timeout.connect, Duration::from_secs(5));
     guardrail.update_in_memory_params(None).unwrap();
-    assert_eq!(guardrail.settings.timeout.total, Duration::from_secs(60));
+    assert_eq!(guardrail.settings.timeout.total, Duration::from_mins(1));
 }
 
 #[test]
@@ -565,6 +566,6 @@ fn updating_params_rebuilds_the_client_for_the_new_connect_deadline() {
     guardrail.update_in_memory_params(None).unwrap();
     assert_eq!(
         *seen.lock().unwrap(),
-        [5, 2, 5, 5, 5].map(Duration::from_secs)
+        [5_u64, 2, 5, 5, 5].map(Duration::from_secs)
     );
 }

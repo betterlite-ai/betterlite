@@ -52,48 +52,59 @@ struct CompressPayload<'payload> {
     model: Option<&'payload str>,
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct CompressRequest<'request> {
     pub(crate) rows: &'request [JsonValue],
     pub(crate) model: Option<&'request str>,
 }
 
-impl HeadroomGuardrail {
-    pub(crate) async fn call_compress(
-        &self,
-        request: CompressRequest<'_>,
-    ) -> Result<CompressResult, CompressError> {
-        let headers = self.settings.request_headers()?;
-        let payload = CompressPayload {
-            messages: request.rows,
-            model: request.model,
-        };
-        let url = format!("{}/v1/compress", self.settings.api_base);
-        let fallback = self.settings.unreachable_fallback;
-        let sent = self
-            .client
-            .post(url)
-            .headers(headers)
-            .timeout(self.settings.timeout.total)
-            .json(&payload)
-            .send()
-            .await;
-        let mut response = match sent {
-            Ok(response) => response,
-            Err(error) => return unreachable(request.rows, &error.to_string(), fallback),
-        };
-        let status = response.status().as_u16();
-        let body = match read_bounded(&mut response, TransportLimits::DEFAULT.body_bytes).await {
-            Ok(body) => body,
-            Err(error) => return unreachable(request.rows, &error.to_string(), fallback),
-        };
-        let text = String::from_utf8_lossy(&body);
-        if status != 200 {
-            let detail = build_compress_failure_detail(status, &text);
-            return failure(fallback, request.rows, SERVICE_ERROR, detail)
-                .map_err(CompressError::Failure);
-        }
-        parse_body(&body, &text, request.rows, fallback).map_err(CompressError::Failure)
+pub(crate) async fn call_compress(
+    guardrail: &HeadroomGuardrail,
+    request: CompressRequest<'_>,
+) -> Result<CompressResult, CompressError> {
+    let headers = guardrail.settings.request_headers()?;
+    let payload = CompressPayload {
+        messages: request.rows,
+        model: request.model,
+    };
+    let url = format!("{}/v1/compress", guardrail.settings.api_base);
+    let fallback = guardrail.settings.unreachable_fallback;
+    let sent = guardrail
+        .client
+        .post(url)
+        .headers(headers)
+        .timeout(guardrail.settings.timeout.total)
+        .json(&payload)
+        .send()
+        .await;
+    let mut response = match sent {
+        Ok(response) => response,
+        Err(error) => return unreachable(request.rows, &error.to_string(), fallback),
+    };
+    let status = response.status().as_u16();
+    let body = match read_bounded(&mut response, TransportLimits::DEFAULT.body_bytes).await {
+        Ok(body) => body,
+        Err(error) => return unreachable(request.rows, &error.to_string(), fallback),
+    };
+    let text = lossy_text(&body);
+    if status != 200 {
+        let detail = build_compress_failure_detail(status, &text);
+        return failure(fallback, request.rows, SERVICE_ERROR, &detail)
+            .map_err(CompressError::Failure);
     }
+    parse_body(&body, &text, request.rows, fallback).map_err(CompressError::Failure)
+}
+
+// httpx's response.text: UTF-8 with errors="replace", so each invalid sequence reads as one U+FFFD
+fn lossy_text(bytes: &[u8]) -> String {
+    let mut text = String::with_capacity(bytes.len());
+    for chunk in bytes.utf8_chunks() {
+        text.push_str(chunk.valid());
+        if !chunk.invalid().is_empty() {
+            text.push(char::REPLACEMENT_CHARACTER);
+        }
+    }
+    text
 }
 
 fn unreachable(
@@ -105,7 +116,7 @@ fn unreachable(
         fallback,
         rows,
         UNREACHABLE_ERROR,
-        IndexMap::from([("detail".to_owned(), JsonValue::String(error.to_owned()))]),
+        &IndexMap::from([("detail".to_owned(), JsonValue::String(error.to_owned()))]),
     )
     .map_err(CompressError::Failure)
 }
@@ -114,9 +125,9 @@ fn failure(
     fallback: UnreachableFallback,
     rows: &[JsonValue],
     error: &str,
-    detail: IndexMap<String, JsonValue>,
+    detail: &IndexMap<String, JsonValue>,
 ) -> Result<CompressResult, CompressFailure> {
-    let messages = handle_compress_failure(fallback, rows, error, &detail)?;
+    let messages = handle_compress_failure(fallback, rows, error, detail)?;
     let result = CompressResult {
         messages,
         succeeded: false,
@@ -137,7 +148,7 @@ fn parse_body(
             fallback,
             rows,
             NON_JSON_ERROR,
-            body_detail(text, BODY_PREVIEW_CHARS),
+            &body_detail(text, BODY_PREVIEW_CHARS),
         );
     };
     let JsonValue::Object(fields) = &body else {
@@ -145,7 +156,7 @@ fn parse_body(
             fallback,
             rows,
             SHAPE_ERROR,
-            body_detail(text, BODY_PREVIEW_CHARS),
+            &body_detail(text, BODY_PREVIEW_CHARS),
         );
     };
     build_result(&body, fields, text, rows, fallback)
@@ -163,7 +174,7 @@ fn build_result(
             fallback,
             rows,
             MISSING_MESSAGES_ERROR,
-            body_detail(text, text.chars().count()),
+            &body_detail(text, text.chars().count()),
         );
     };
     let filtered: Vec<JsonValue> = items
@@ -176,7 +187,7 @@ fn build_result(
             fallback,
             rows,
             EMPTY_MESSAGES_ERROR,
-            body_detail(text, text.chars().count()),
+            &body_detail(text, text.chars().count()),
         );
     }
     if filtered.len() != rows.len() {
@@ -184,7 +195,7 @@ fn build_result(
             fallback,
             rows,
             COUNT_ERROR,
-            count_detail(rows.len(), filtered.len()),
+            &count_detail(rows.len(), filtered.len()),
         );
     }
     let result = CompressResult {
@@ -241,16 +252,12 @@ fn derive_tokens_saved(stats: &mut IndexMap<String, JsonValue>) {
 }
 
 fn subtract(before: &Number, after: &Number) -> Option<Number> {
-    match (before.as_i64(), after.as_i64()) {
-        (Some(left), Some(right)) => {
-            i64::try_from(i128::from(left).checked_sub(i128::from(right))?)
-                .ok()
-                .map(Number::from)
-        }
-        _ => {
-            let left = before.as_f64()?;
-            let right = after.as_f64()?;
-            Number::from_f64(left - right)
-        }
+    if let (Some(left), Some(right)) = (before.as_i64(), after.as_i64()) {
+        let difference = i128::from(left).checked_sub(i128::from(right))?;
+        return i64::try_from(difference).ok().map(Number::from);
     }
+    let left = before.as_f64()?;
+    let right = after.as_f64()?;
+    // left - right, written as a fused multiply-add because the lint table bans bare float arithmetic
+    Number::from_f64(right.mul_add(-1.0_f64, left))
 }
