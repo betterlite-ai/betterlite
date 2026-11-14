@@ -22,7 +22,7 @@ pub(super) fn defer_token_increment_script(
         return false;
     };
     let usage = Arc::clone(&adjustments.usage);
-    let fallback_operations = operations.to_vec();
+    let group_operations = operations.to_vec();
     let hook: SettledHook<ScriptReply> = Arc::new(
         move |settled: &Settled<ScriptReply>| -> Option<SettledFollowUp> {
             let Err(failure) = settled else {
@@ -33,10 +33,12 @@ pub(super) fn defer_token_increment_script(
                 return None;
             }
             tracing::warn!(%error, "ttl preservation failed, falling back to the regular pipeline");
-            let usage = Arc::clone(&usage);
-            let operations = fallback_operations.clone();
+            let fallback_usage = Arc::clone(&usage);
+            let fallback_operations = group_operations.clone();
             Some(Box::pin(async move {
-                usage.increment_pipeline(&operations).await;
+                fallback_usage
+                    .increment_pipeline(&fallback_operations)
+                    .await;
             }))
         },
     );

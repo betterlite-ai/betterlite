@@ -18,6 +18,10 @@ use crate::token_adjustments::store::{PostCallScriptBatch, TokenAdjustments, Usa
 
 pub(crate) const WINDOW_START: &str = "100";
 
+// f64 holds whole counts exactly to 2^53, and the next one rounds
+pub(crate) const MAX_EXACT_COUNT: i64 = 0x0020_0000_0000_0000;
+pub(crate) const FIRST_INEXACT_COUNT: i64 = 0x0020_0000_0000_0001;
+
 pub(crate) fn operation(key: &str, increment: f64, ttl: Option<i64>) -> IncrementOperation {
     IncrementOperation {
         key: key.to_owned(),
@@ -56,12 +60,11 @@ pub(crate) fn guarded_operation(
     increment: f64,
     backend: ReservationBackend,
 ) -> ReservationAwareIncrement {
-    ReservationAwareIncrement {
-        operation: operation(key, increment, Some(60)),
-        window_key: Some("{scope:value}:window".to_owned()),
-        expected_window_start: Some(WINDOW_START.to_owned()),
-        reservation_backend: Some(backend),
-    }
+    let mut reservation = unguarded_operation(key, increment);
+    reservation.window_key = Some("{scope:value}:window".to_owned());
+    reservation.expected_window_start = Some(WINDOW_START.to_owned());
+    reservation.reservation_backend = Some(backend);
+    reservation
 }
 
 pub(crate) fn unguarded_operation(key: &str, increment: f64) -> ReservationAwareIncrement {

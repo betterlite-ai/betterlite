@@ -9,6 +9,8 @@ use crate::token_adjustments::builders::{
 };
 use crate::token_adjustments::store::TokenAdjustmentError;
 
+use super::support::FIRST_INEXACT_COUNT;
+
 fn scopes(scopes: &[(&str, &str)]) -> BTreeSet<(String, String)> {
     scopes
         .iter()
@@ -149,7 +151,7 @@ fn a_token_count_beyond_the_exact_float_range_is_an_error() {
     let reserved = scopes(&[]);
     let reconciliation = TokenReconciliation {
         reserved_scopes: &reserved,
-        actual_tokens: 9_007_199_254_740_993,
+        actual_tokens: FIRST_INEXACT_COUNT,
         reserved_tokens: 0,
         window_size: 60,
     };
@@ -158,7 +160,7 @@ fn a_token_count_beyond_the_exact_float_range_is_an_error() {
     assert!(matches!(
         result,
         Err(TokenAdjustmentError::TokenAmount {
-            value: 9_007_199_254_740_993
+            value: FIRST_INEXACT_COUNT
         })
     ));
 }

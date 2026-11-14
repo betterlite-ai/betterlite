@@ -15,3 +15,6 @@ deviations:
   - what: A token delta larger than 2^53 returns a typed error instead of being rounded to the nearest float.
     why: LiteLLM's increment_value is declared as float; f64 cannot represent a whole count past 2^53, so betterlite refuses the value rather than silently charging the wrong amount.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/caching.py#L61-L68
+  - what: A failed TTL-preserving or window-guarded script run logs a plain tracing warning. LiteLLM passes the failure to log_redis_failure, which also drops an open circuit-breaker error to debug and throttles repeated timeout lines.
+    why: B393's log_redis_failure lives in betterlite-server, which depends on this crate, so calling it here would close a dependency cycle; B3031 and B3032 record the same trade.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4414-L4422

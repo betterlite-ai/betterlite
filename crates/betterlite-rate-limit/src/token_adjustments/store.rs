@@ -12,7 +12,7 @@ use crate::limiter_records::ScriptReply;
 use crate::rate_limit_window_store::{CounterScript, WindowStore};
 
 // f64 holds every whole number to 2^53 exactly, which is where a token count stops being countable
-const MAX_EXACT_TOKEN_AMOUNT: u64 = 9_007_199_254_740_992;
+const MAX_EXACT_TOKEN_AMOUNT: u64 = 0x0020_0000_0000_0000;
 
 pub struct TokenAdjustments {
     pub windows: WindowStore,

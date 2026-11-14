@@ -8,8 +8,8 @@ use std::task::{Context, Waker};
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
 
 use super::support::{
-    FakeCache, FakeScript, FakeUsage, WINDOW_START, adjustments_with, guarded_operation,
-    operation_tuples, script_handle, unguarded_operation,
+    FIRST_INEXACT_COUNT, FakeCache, FakeScript, FakeUsage, WINDOW_START, adjustments_with,
+    guarded_operation, operation_tuples, script_handle, unguarded_operation,
 };
 use crate::limiter_records::{CacheCounterValue, ReservationAwareIncrement, ReservationBackend};
 use crate::rate_limit_window_store::RedisCacheKind;
@@ -276,7 +276,7 @@ async fn a_counter_beyond_the_exact_float_range_is_an_error() {
     let cache = FakeCache::new(Some(RedisCacheKind::Standalone));
     let usage = FakeUsage::new();
     cache.seed(WINDOW_KEY, CacheCounterValue::Int(100));
-    cache.seed(COUNTER_KEY, CacheCounterValue::Int(9_007_199_254_740_993));
+    cache.seed(COUNTER_KEY, CacheCounterValue::Int(FIRST_INEXACT_COUNT));
     let adjustments = local_adjustments(&cache, &usage);
     let operations = [guarded_operation(
         COUNTER_KEY,
@@ -287,7 +287,7 @@ async fn a_counter_beyond_the_exact_float_range_is_an_error() {
     assert!(matches!(
         result,
         Err(TokenAdjustmentError::TokenAmount {
-            value: 9_007_199_254_740_993
+            value: FIRST_INEXACT_COUNT
         })
     ));
 }
