@@ -1,0 +1,11 @@
+kind: helper
+name: deepinfra-rerank-query-repetition-and-base-replacement
+call:
+  deepinfra_policy:
+    operation: rerank_request
+    params:
+      - {api_base: "https://api.deepinfra.com/v1/openai", model: BAAI/bge-reranker-v2-m3, headers: {}, api_key: sk-test, environment_key: env-key, query: "find it", documents: [a, b], non_default: {documents: [a, b]}}
+      - {api_base: "https://host/v1///", model: m, headers: {}, api_key: null, environment_key: env-key, query: "", documents: [x], non_default: {documents: [x]}}
+      - {api_base: "https://host/openai", model: m, headers: {Authorization: Token other, x-call: "1"}, api_key: "", environment_key: env-key, query: q, documents: [], non_default: {}}
+env: {DEEPINFRA_API_KEY: env-key}
+compare: {ignore: []}

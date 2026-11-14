@@ -1,0 +1,12 @@
+kind: helper
+name: deepinfra-mistral-zero-temperature
+call:
+  deepinfra_policy:
+    operation: chat_map
+    params:
+      - {model: mistralai/Mistral-7B-Instruct-v0.1, params: {temperature: 0}, optional_params: {}, drop_params: false, global_drop_params: false, supports_reasoning: false, minimum_temperature: 0.0001}
+      - {model: mistralai/Mistral-7B-Instruct-v0.1, params: {temperature: 0.5}, optional_params: {}, drop_params: false, global_drop_params: false, supports_reasoning: false, minimum_temperature: 0.0001}
+      - {model: mistralai/Mistral-7B-Instruct-v0.1, params: {temperature: 0}, optional_params: {}, drop_params: false, global_drop_params: false, supports_reasoning: false, minimum_temperature: 0.25}
+      - {model: meta-llama/Meta-Llama-3-70B, params: {temperature: 0}, optional_params: {}, drop_params: false, global_drop_params: false, supports_reasoning: false, minimum_temperature: 0.25}
+env: {}
+compare: {ignore: []}

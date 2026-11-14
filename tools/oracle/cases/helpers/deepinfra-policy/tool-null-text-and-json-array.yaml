@@ -1,0 +1,22 @@
+kind: helper
+name: deepinfra-tool-null-text-and-json-array
+call:
+  deepinfra_policy:
+    operation: tool_content
+    params:
+      - model: deepinfra-model
+        messages: [{role: tool, content: [{type: text, text: "20"}], tool_call_id: c1}]
+        optional_params: {}
+      - model: deepinfra-model
+        messages: [{role: tool, content: [{type: text, text: null}], tool_call_id: c2}]
+        optional_params: {}
+      - model: deepinfra-model
+        messages: [{role: tool, content: [{type: text, text: a}, {type: text, text: b}]}]
+        optional_params: {}
+      - model: deepinfra-model
+        messages:
+          - {role: user, content: [{type: text, text: hi}]}
+          - {role: tool, content: plain}
+        optional_params: {}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+kind: helper
+name: deepinfra-tool-choice-never-inserted
+call:
+  deepinfra_policy:
+    operation: chat_map
+    params:
+      - {model: meta-llama/Meta-Llama-3-70B, params: {tool_choice: auto}, optional_params: {}, drop_params: false, global_drop_params: false, supports_reasoning: false, minimum_temperature: 0.0001}
+      - {model: meta-llama/Meta-Llama-3-70B, params: {tool_choice: none}, optional_params: {}, drop_params: false, global_drop_params: false, supports_reasoning: false, minimum_temperature: 0.0001}
+      - {model: meta-llama/Meta-Llama-3-70B, params: {tool_choice: {type: function, function: {name: lookup}}}, optional_params: {}, drop_params: true, global_drop_params: false, supports_reasoning: false, minimum_temperature: 0.0001}
+      - {model: meta-llama/Meta-Llama-3-70B, params: {tool_choice: required}, optional_params: {}, drop_params: false, global_drop_params: false, supports_reasoning: false, minimum_temperature: 0.0001}
+      - {model: meta-llama/Meta-Llama-3-70B, params: {max_completion_tokens: 9, stop: [END]}, optional_params: {}, drop_params: false, global_drop_params: false, supports_reasoning: false, minimum_temperature: 0.0001}
+env: {}
+compare: {ignore: []}

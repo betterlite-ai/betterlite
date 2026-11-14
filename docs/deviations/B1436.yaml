@@ -1,0 +1,11 @@
+task: B1436
+deviations:
+  - what: A tool content list part carrying cache_control is dumped after the parent transform strips that key, while LiteLLM dumps it as sent.
+    why: betterlite applies the cleanup to the body the shared parent request transform already stripped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepinfra/chat/transformation.py#L147-L188
+  - what: A rerank score outside exact decimal representation falls back to the supplied response instead of returning a rounded float.
+    why: The B1013 rerank records keep scores as exact decimals, so the conversion refuses the value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepinfra/rerank/transformation.py#L196-L211
+  - what: A non-string detail.error in an error body keeps the original message instead of being stored in the typed message field.
+    why: LiteLLM's BaseLLMException.message is declared str, so the selection failure is swallowed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepinfra/rerank/transformation.py#L252-L270
