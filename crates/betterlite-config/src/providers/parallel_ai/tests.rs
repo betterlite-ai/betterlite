@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use secrecy::ExposeSecret;
+use secrecy::ExposeSecret as _;
 
 use crate::types::ModelInfo;
 

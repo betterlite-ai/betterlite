@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::ExposeSecret;
 
 use crate::types::ModelDeployment;
 
