@@ -1,0 +1,14 @@
+kind: helper
+name: headroom-messages-restore-shapes-untouched-row
+call:
+  b3773:
+    function: restore_shapes
+    originals:
+      - role: user
+        content:
+          - {type: text, text: first part, cache_control: {type: ephemeral}}
+          - {type: text, text: second part, cache_control: {type: ephemeral, ttl: 5m}}
+    returned:
+      - {role: user, content: "first part\n\nsecond part"}
+env: {}
+compare: {ignore: []}

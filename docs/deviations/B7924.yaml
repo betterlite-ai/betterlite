@@ -1,0 +1,14 @@
+task: B7924
+deviations:
+  - what: "Loose annotations that name no usable type are JsonValue or a dict or list of it: BedrockPreparedRequest.prepped (Any) and data (bare dict), BedrockRerankModelConfiguration.modelConfiguration and BedrockRerankInlineDocumentSource.jsonDocument (bare dict), and the bare list, dict and object fields of BedrockInvokeAnthropicMessagesRequest (messages, system, tools, tool_choice, thinking, metadata, output_config, safeguards, context_management). AwsAuthParams.aws_session_tags (object) is Sequence[AwsSessionTag] | JsonValue, because LiteLLM's own call sites pass a tuple of session tags and pydantic's JsonValue rejects a tuple."
+    why: "LiteLLM writes Any, object, or a bare dict or list, which the Python rules ban; docs/compatibility.md makes JsonValue the port for JSON whose shape is open, and every value the declared type accepts still passes. The session-tag union adds the one non-JSON value LiteLLM's declared object accepts and its handler forwards."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock.py#L1223-L1247
+  - what: "The AWSPreparedRequest name is not defined and BedrockPreparedRequest.prepped is typed JsonValue, where LiteLLM binds AWSPreparedRequest to botocore's awsrequest.AWSPreparedRequest under TYPE_CHECKING and to Any at runtime."
+    why: "betterlite's Python wheel does not depend on botocore, and the Python rules ban TYPE_CHECKING imports and Any; a working LiteLLM setup passes a botocore request through this internal helper, and that value is open JSON here."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock.py#L1005-L1018
+  - what: "The dict[str, Any] fields of the Invoke Agent trace types (inferenceConfiguration, parsedResponse, rawResponse, reasoningContent) are dict[str, JsonValue]."
+    why: "The Python rules ban Any; docs/compatibility.md makes JsonValue the port for JSON whose shape is open, and every mapping the LiteLLM field accepts still passes."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock_invoke_agents.py#L42-L54
+  - what: "BedrockToolBlock types toolSpec, systemTool and cachePoint as dict[str, JsonValue] | None, where LiteLLM types them ToolSpecBlock | None, SystemToolBlock | None and CachePointBlock | None."
+    why: "Those three names belong to B7923's part of the file (L17-L260) and do not exist in this branch, so importing them would make this module unimportable; each block is a JSON mapping, and the umbrella B167 can point the fields at B7923's classes once they land."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock.py#L1191-L1194

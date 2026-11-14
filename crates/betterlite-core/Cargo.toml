@@ -41,7 +41,7 @@ lopdf = { version = "0.46.0", default-features = false }
 lru = "0.18.5"
 num-traits = "0.2.19"
 regex.workspace = true
-rust_decimal.workspace = true
+rust_decimal = { workspace = true, features = ["serde-with-float"] }
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
