@@ -116,11 +116,23 @@ fn environment_controls_external_files(#[case] value: Option<&str>, #[case] allo
         file.display()
     ))
     .unwrap();
-    let result = super::loading::load_categories(
-        &[config],
-        &[temp.path().join("root")],
-        temp.path(),
-        &loaded.sections.content_category,
-    );
+    let (result, output) = super::tests::capture_logs(|| {
+        super::loading::load_categories(
+            &[config],
+            &[temp.path().join("root")],
+            temp.path(),
+            &loaded.sections.content_category,
+        )
+    });
     assert_eq!(result.loaded_categories.contains_key("external"), allowed);
+    assert_eq!(
+        output.contains("LITELLM_CONTENT_FILTER_ALLOW_EXTERNAL_PATHS"),
+        allowed,
+        "{output}"
+    );
+    assert_eq!(
+        output.contains("bypassing category path jail"),
+        allowed,
+        "{output}"
+    );
 }

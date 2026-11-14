@@ -5,7 +5,10 @@ use std::{
     fs,
     path::{Path, PathBuf},
     slice,
+    sync::Arc,
 };
+
+use tracing::subscriber::with_default;
 
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::content_filter_records::{ContentFilterAction, ContentFilterSeverity};
@@ -19,6 +22,16 @@ use super::{
 
 fn fixture() -> tempfile::TempDir {
     tempfile::tempdir().unwrap()
+}
+
+pub(crate) fn capture_logs<T>(run: impl FnOnce() -> T) -> (T, String) {
+    let log = tempfile::NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    let value = with_default(subscriber, run);
+    (value, fs::read_to_string(log.path()).unwrap())
 }
 
 #[test]
@@ -67,6 +80,15 @@ pub(crate) fn category_config_default_action_is_block() {
     let category =
         CategoryConfig::from_data(serde_saphyr::from_str("keywords: []").unwrap()).unwrap();
     assert_eq!(category.default_action, ContentFilterAction::Block);
+}
+
+#[test]
+pub(crate) fn category_config_default_action_mask_is_kept() {
+    let category = CategoryConfig::from_data(
+        serde_saphyr::from_str("category_name: sample\ndefault_action: MASK").unwrap(),
+    )
+    .unwrap();
+    assert_eq!(category.default_action, ContentFilterAction::Mask);
 }
 
 #[test]

@@ -8,6 +8,7 @@ use tracing::subscriber::with_default;
 #[test]
 fn category_config_constructor_covers_defaults_and_normalization() {
     super::tests::category_config_default_action_is_block();
+    super::tests::category_config_default_action_mask_is_kept();
     super::tests::category_config_rejects_invalid_action();
     super::tests::category_config_lowercases_words_and_skips_invalid_regex();
 }
@@ -77,6 +78,17 @@ fn python_syntax_matches_re_semantics(
 #[case::turn_off_unicode("(?-u)word")]
 #[case::incompatible_ascii_unicode("(?au)word")]
 fn python_flag_removals_python_rejects_are_skipped(#[case] source: &str) {
+    let mut data: CategoryFileData = serde_saphyr::from_str("keywords: []").unwrap();
+    data.phrase_patterns.push(source.to_owned());
+    let category = super::model::CategoryConfig::from_data(data).unwrap();
+    assert!(category.phrase_patterns.is_empty(), "{source}");
+}
+
+#[rstest]
+#[case::lookahead(r"(?a)secret\s*(?=:)")]
+#[case::scoped_lookahead(r"(?a:secret)(?=:)")]
+#[case::backreference(r"(?a)(\w)\1")]
+fn python_ascii_patterns_with_backtracking_only_syntax_are_skipped(#[case] source: &str) {
     let mut data: CategoryFileData = serde_saphyr::from_str("keywords: []").unwrap();
     data.phrase_patterns.push(source.to_owned());
     let category = super::model::CategoryConfig::from_data(data).unwrap();

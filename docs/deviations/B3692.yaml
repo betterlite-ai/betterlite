@@ -12,3 +12,6 @@ deviations:
   - what: A JSON category entry whose match is neither a string nor null is skipped with the rest of the file still loading, where LiteLLM raises and drops the whole category.
     why: The entry type is an untagged enum whose fallback variant skips a non-object entry, and the same fallback also swallows a malformed match field.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L682-L716
+  - what: A phrase pattern that combines Python's (?a) flag with syntax only the backtracking engine supports, such as a lookahead like (?a)secret\s*(?=:) or a backreference like (?a)(\w)\1, is skipped with a warning, where Python's re compiles it and applies the ASCII flag.
+    why: fancy-regex rejects the (?a) flag, so (?a) patterns fall to the linear regex crate after the (?-u) rewrite, and that crate has no lookaround or backreferences.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L186-L191

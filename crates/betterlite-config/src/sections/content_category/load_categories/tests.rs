@@ -15,6 +15,74 @@ use super::loading::load_categories;
 fn load_categories_skips_failures_and_keeps_valid_records() {
     super::tests::load_categories_resolves_custom_category_files();
     super::tests::partial_updates_survive_later_load_failure();
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("root");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("good.yaml"),
+        "keywords: [{keyword: Fine, severity: high}]\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("late.yaml"),
+        "keywords: [{keyword: Later, severity: high}]\n",
+    )
+    .unwrap();
+    fs::write(root.join("broken.yaml"), "keywords: [unclosed\n").unwrap();
+    fs::write(root.join("broken.json"), "{not json").unwrap();
+    let outside = temp.path().join("outside.yaml");
+    fs::write(&outside, "keywords: [{keyword: Hidden, severity: high}]\n").unwrap();
+    let configs = [
+        ("good", "good.yaml".to_owned()),
+        ("outside", outside.display().to_string()),
+        ("brokenyaml", "broken.yaml".to_owned()),
+        ("brokenjson", "broken.json".to_owned()),
+        ("late", "late.yaml".to_owned()),
+    ]
+    .map(|(category, file)| ContentFilterCategoryConfig {
+        category: category.to_owned(),
+        enabled: true,
+        action: ContentFilterAction::Block,
+        severity_threshold: ContentFilterSeverity::Low,
+        category_file: Some(file),
+    });
+    let (loaded, output) = super::tests::capture_logs(|| {
+        load_categories(
+            &configs,
+            slice::from_ref(&root),
+            &root,
+            &super::Settings::default(),
+        )
+    });
+    assert_eq!(loaded.category_keywords.get("fine").unwrap().0, "good");
+    assert_eq!(loaded.category_keywords.get("later").unwrap().0, "late");
+    assert!(!loaded.category_keywords.contains_key("hidden"));
+    for skipped in ["outside", "brokenyaml", "brokenjson"] {
+        assert!(!loaded.loaded_categories.contains_key(skipped), "{skipped}");
+    }
+    let warnings: Vec<_> = output
+        .lines()
+        .filter(|line| line.contains("WARN"))
+        .collect();
+    assert_eq!(warnings.len(), 1, "{output}");
+    assert!(
+        warnings[0].contains("invalid category file path"),
+        "{output}"
+    );
+    assert!(warnings[0].contains("outside"), "{output}");
+    let errors: Vec<_> = output
+        .lines()
+        .filter(|line| line.contains("ERROR"))
+        .collect();
+    assert_eq!(errors.len(), 2, "{output}");
+    assert!(
+        errors.iter().any(|line| line.contains("brokenyaml")),
+        "{output}"
+    );
+    assert!(
+        errors.iter().any(|line| line.contains("brokenjson")),
+        "{output}"
+    );
 }
 
 #[rstest]
@@ -34,14 +102,26 @@ fn load_categories_rejects_invalid_or_disabled(#[case] name: &str, #[case] enabl
         severity_threshold: ContentFilterSeverity::Low,
         category_file: Some(path.display().to_string()),
     };
-    let loaded = load_categories(
-        &[config],
-        &[temp.path().to_path_buf()],
-        temp.path(),
-        &super::Settings::default(),
-    );
+    let (loaded, output) = super::tests::capture_logs(|| {
+        load_categories(
+            &[config],
+            &[temp.path().to_path_buf()],
+            temp.path(),
+            &super::Settings::default(),
+        )
+    });
     assert!(loaded.loaded_categories.is_empty());
     assert!(loaded.category_keywords.is_empty());
+    if enabled {
+        assert!(output.contains("WARN"), "{output}");
+        assert!(
+            output.contains("category name missing or invalid"),
+            "{output}"
+        );
+        assert!(output.contains(name), "{output}");
+    } else {
+        assert!(output.is_empty(), "{output}");
+    }
 }
 
 #[rstest]
