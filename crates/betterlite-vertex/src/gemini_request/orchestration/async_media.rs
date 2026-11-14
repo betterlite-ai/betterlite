@@ -65,7 +65,10 @@ fn reject_inlined_media(
         };
         let inlines = inlines_remote(google, &media.url, &hints);
         if inlines && first.load(Ordering::Relaxed) == 0 {
-            first.store(u8::from(media.part_type == "file") + 1, Ordering::Relaxed);
+            first.store(
+                if media.part_type == "file" { 2 } else { 1 },
+                Ordering::Relaxed,
+            );
         }
         inlines
     })?;

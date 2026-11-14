@@ -1,4 +1,5 @@
 use betterlite_prompts::error::FactoryError;
+use betterlite_prompts::media::error::MediaError;
 use serde::{Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
@@ -25,7 +26,7 @@ pub enum RequestError {
     #[error(transparent)]
     Body(#[from] BodyError),
     #[error(transparent)]
-    Inline(#[from] betterlite_prompts::media::error::MediaError),
+    Inline(#[from] MediaError),
 }
 
 pub fn encode<T, U>(value: &T) -> Result<U, BodyError>
@@ -33,6 +34,6 @@ where
     T: Serialize + ?Sized,
     U: DeserializeOwned,
 {
-    let encoded = serde_json::to_value(value).map_err(BodyError::Encode)?;
-    serde_json::from_value(encoded).map_err(BodyError::Encode)
+    serde_json::from_value(serde_json::to_value(value).map_err(BodyError::Encode)?)
+        .map_err(BodyError::Encode)
 }

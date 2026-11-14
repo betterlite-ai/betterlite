@@ -53,8 +53,8 @@ pub fn rewrite_maps_response_format(body: &mut Object) {
         "mimeType".to_owned(),
         Json::Text("APPLICATION_JSON".to_owned()),
     );
-    if let Some(schema) = schema {
-        text.insert("schema".to_owned(), schema);
+    if let Some(schema_value) = schema {
+        text.insert("schema".to_owned(), schema_value);
     }
     let response_format = Object::from_iter([("text".to_owned(), Json::Object(text))]);
     config.insert("responseFormat".to_owned(), Json::Object(response_format));
