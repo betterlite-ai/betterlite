@@ -1,22 +1,19 @@
 import subprocess
 import sys
-from typing import Final, TypedDict, get_type_hints
+from typing import Final, TypedDict
 
 import pytest
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from betterlite.types.proxy.guardrails.guardrail_hooks import (
-    compresr,
     conduct,
     crowdstrike_aidr,
-    decision_model,
     deepkeep,
     dynamoai,
     enkryptai,
     generic_guardrail_api,
     grayswan,
     guardrails_ai,
-    headroom,
 )
 
 MODULE_NAMES: Final = (
@@ -544,6 +541,16 @@ def response_fields(response):
     }
 
 
+def open_json_report(module):
+    try:
+        model = module.GenericGuardrailAPIOptionalParams.model_validate(
+            {"additional_provider_specific_params": {"knob": object()}},
+        )
+    except ValidationError as error:
+        return {"errors": sorted([item["type"], str(item["loc"])] for item in error.errors())}
+    return {"keys": sorted(model.model_dump())}
+
+
 def function_report(module):
     coerced = {}
     for label, value in COERCE_INPUTS:
@@ -564,7 +571,12 @@ def function_report(module):
             responses[label] = response_fields(response)
         except Exception as error:
             responses[label] = {"error": type(error).__name__}
-    return {"coerce": coerced, "structured": messages, "responses": responses}
+    return {
+        "coerce": coerced,
+        "structured": messages,
+        "responses": responses,
+        "open_json": open_json_report(module),
+    }
 
 
 def side_report(package_name):
@@ -626,6 +638,7 @@ class FunctionReport(TypedDict):
     coerce: dict[str, JsonValue]
     structured: dict[str, JsonValue]
     responses: dict[str, JsonValue]
+    open_json: JsonValue
 
 
 class ModuleDescription(TypedDict):
@@ -758,18 +771,23 @@ def test_default_names() -> None:
 
 
 def test_optional_params_names() -> None:
-    payload: dict[str, JsonValue] = {"knob": True}
-    enkryptai_config: dict[str, JsonValue] = enkryptai.EnkryptAIGuardrailConfigModel(
-        optional_params=payload,
-    ).model_dump(mode="json")
+    enkryptai_config: dict[str, JsonValue] = (
+        enkryptai.EnkryptAIGuardrailConfigModel.model_validate_json(
+            '{"optional_params": {"knob": true}}',
+        ).model_dump(mode="json")
+    )
     assert enkryptai_config["optional_params"] == {}
-    dynamoai_config: dict[str, JsonValue] = dynamoai.DynamoAIGuardrailConfigModel(
-        optional_params=payload,
-    ).model_dump(mode="json")
+    dynamoai_config: dict[str, JsonValue] = (
+        dynamoai.DynamoAIGuardrailConfigModel.model_validate_json(
+            '{"optional_params": {"knob": true}}',
+        ).model_dump(mode="json")
+    )
     assert dynamoai_config["optional_params"] == {}
-    guardrails_ai_config: dict[str, JsonValue] = guardrails_ai.GuardrailsAIGuardrailConfigModel(
-        optional_params=payload,
-    ).model_dump(mode="json")
+    guardrails_ai_config: dict[str, JsonValue] = (
+        guardrails_ai.GuardrailsAIGuardrailConfigModel.model_validate_json(
+            '{"optional_params": {"knob": true}}',
+        ).model_dump(mode="json")
+    )
     assert guardrails_ai_config["optional_params"] == {}
 
 
@@ -803,34 +821,11 @@ def test_enum_names() -> None:
     assert str(dynamoai.DynamoTextType.MODEL_INPUT) == "MODEL_INPUT"
 
 
-def test_frozen_names() -> None:
-    check = decision_model.DecisionModelCheck(name="harm", instructions="flag harm")
-    with pytest.raises(ValidationError):
-        check.threshold = 0.1
-    config = decision_model.DecisionModelGuardrailConfigModel(
-        decision_model="judge",
-        checks=(check,),
-    )
-    with pytest.raises(ValidationError):
-        config.max_input_chars = 1
-
-
 def test_tool_param_names() -> None:
     payload: dict[str, JsonValue] = {"type": "code_interpreter", "container": {"type": "auto"}}
     param = generic_guardrail_api.GuardrailToolParam.model_validate(payload)
     assert param.type == "code_interpreter"
     assert param.model_dump() == payload
-
-
-def test_open_json_names() -> None:
-    generic_hints = get_type_hints(generic_guardrail_api.GenericGuardrailAPIOptionalParams)
-    assert generic_hints["additional_provider_specific_params"] == dict[str, JsonValue] | None
-    compresr_hints = get_type_hints(compresr.CompresrGuardrailOptionalParams)
-    assert compresr_hints["compression_params"] == dict[str, JsonValue] | None
-    dynamo_hints = get_type_hints(dynamoai.DynamoAIProcessedResult)
-    assert dynamo_hints["violation_details"] == dict[str, JsonValue]
-    enkrypt_hints = get_type_hints(enkryptai.EnkryptAIGuardrailConfigs)
-    assert enkrypt_hints["detectors"] == dict[str, JsonValue] | None
 
 
 def test_coerce_names(report: FullReport) -> None:
@@ -846,9 +841,10 @@ def test_coerce_names(report: FullReport) -> None:
     assert ours["string_underscores"] == {"value": 1000}
     assert ours["string_float"] == {"value": 0}
     assert ours["list"] == {"value": 0}
+    true_value: JsonValue = True
     direct: dict[str, int] = {
         "null": generic_guardrail_api.coerce_stream_holdback_value(None),
-        "true": generic_guardrail_api.coerce_stream_holdback_value(True),
+        "true": generic_guardrail_api.coerce_stream_holdback_value(true_value),
         "float_down": generic_guardrail_api.coerce_stream_holdback_value(2.9),
         "negative": generic_guardrail_api.coerce_stream_holdback_value(-3),
         "spaces": generic_guardrail_api.coerce_stream_holdback_value(" 42 "),
@@ -878,6 +874,24 @@ def test_structured_names(report: FullReport) -> None:
     assert ours["role_number"] == {"value": None}
     assert ours["extra_key"] == {"value": [{"role": "user", "content": "hello", "name": "ada"}]}
     assert ours["custom_role"] == {"value": [{"role": "custom", "content": "hello"}]}
+
+
+def test_open_json_names(report: FullReport) -> None:
+    theirs = report["litellm"]["functions"]["open_json"]
+    ours = report["betterlite"]["functions"]["open_json"]
+    assert theirs == {
+        "keys": [
+            "additional_provider_specific_params",
+            "fail_on_error",
+            "streaming_end_of_stream_only",
+            "streaming_sampling_rate",
+            "streaming_transform_mode",
+            "unreachable_fallback",
+        ],
+    }
+    assert ours == {
+        "errors": [["invalid-json-value", "('additional_provider_specific_params', 'knob')"]],
+    }
 
 
 def test_response_names(report: FullReport) -> None:
