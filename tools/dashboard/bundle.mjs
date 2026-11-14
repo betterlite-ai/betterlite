@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+
+import { PatchError, sha256Hex } from "./patches.mjs";
 
 const APP = "ui/litellm-dashboard";
 const READY_MARKER = ".litellm_ui_ready";
@@ -12,18 +13,6 @@ const LICENSE_FILE = /^(licen[cs]e|notice|copying|copyright)(\.|$)/i;
 const BUILDER = /^ARG UI_BUILD_IMAGE=(\S+@sha256:[0-9a-f]{64})$/m;
 const HEX = /^[0-9a-f]{64}$/;
 const ROUTE_GROUP = /^\([^.][^)]*\)$/;
-
-export class BuildError extends Error {
-  constructor(code, message) {
-    super(message);
-    this.name = "BuildError";
-    this.code = code;
-  }
-}
-
-export function sha256Hex(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
 
 export async function listTree(root) {
   const files = [];
@@ -39,7 +28,7 @@ export async function listTree(root) {
         const { mode } = await fs.stat(full);
         files.push({ path: child, mode: mode & 0o777, sha256: sha256Hex(await fs.readFile(full)) });
       } else {
-        throw new BuildError("tree-entry", `${child} is neither a regular file nor a directory`);
+        throw new PatchError("tree-entry", `${child} is neither a regular file nor a directory`);
       }
     }
   }
@@ -56,10 +45,10 @@ export function checkApiBase(value) {
   try {
     url = new URL(value);
   } catch {
-    throw new BuildError("api-base", `--api-base ${JSON.stringify(value)} is not an absolute URL`);
+    throw new PatchError("api-base", `--api-base ${JSON.stringify(value)} is not an absolute URL`);
   }
   if (!["http:", "https:"].includes(url.protocol) || url.username !== "" || url.password !== "" || /\s/.test(value)) {
-    throw new BuildError("api-base", "--api-base must be an http(s) URL without credentials or spaces");
+    throw new PatchError("api-base", "--api-base must be an http(s) URL without credentials or spaces");
   }
 }
 
@@ -67,7 +56,7 @@ export function cacheFlags(env) {
   const mode = env.DASHBOARD_BUILDKIT_CACHE ?? "";
   if (mode === "") return [];
   if (mode !== "read" && mode !== "read-write") {
-    throw new BuildError("cache-mode", `DASHBOARD_BUILDKIT_CACHE is ${JSON.stringify(mode)}, expected read or read-write`);
+    throw new PatchError("cache-mode", `DASHBOARD_BUILDKIT_CACHE is ${JSON.stringify(mode)}, expected read or read-write`);
   }
   if (!env.ACTIONS_RESULTS_URL || !env.ACTIONS_RUNTIME_TOKEN) return [];
   const flags = ["--cache-from", "type=gha,scope=dashboard"];
@@ -78,7 +67,10 @@ export function cacheFlags(env) {
 async function readPatchFiles(patchesDir) {
   let names;
   try {
-    names = (await fs.readdir(patchesDir)).filter((name) => name.endsWith(".patch")).sort();
+    names = (await fs.readdir(patchesDir, { withFileTypes: true }))
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".patch"))
+      .map((entry) => entry.name)
+      .sort();
   } catch (error) {
     if (error.code === "ENOENT") return [];
     throw error;
@@ -93,7 +85,7 @@ async function readPatchFiles(patchesDir) {
         record: await fs.readFile(path.join(patchesDir, recordName)),
       });
     } catch (error) {
-      if (error.code === "ENOENT") throw new BuildError("patch-record", `${name} has no adjacent ${recordName}`);
+      if (error.code === "ENOENT") throw new PatchError("patch-record", `${name} has no adjacent ${recordName}`);
       throw error;
     }
   }
@@ -106,7 +98,7 @@ export async function bundleInputs({ repoRoot, apiBase = "" }) {
   const pin = JSON.parse(await read("tools/dashboard/source.pin.json"));
   const pinned = (name) => {
     const file = pin.protectedFiles.find((entry) => entry.path === `${APP}/${name}`);
-    if (file === undefined) throw new BuildError("pin", `source.pin.json does not pin ${name}`);
+    if (file === undefined) throw new PatchError("pin", `source.pin.json does not pin ${name}`);
     return file.sha256;
   };
   const patches = (await readPatchFiles(path.join(repoRoot, "ui/dashboard/patches"))).map((file) => ({
@@ -116,7 +108,7 @@ export async function bundleInputs({ repoRoot, apiBase = "" }) {
   }));
   const dockerfile = await read("packaging/ui/Dockerfile");
   const builder = BUILDER.exec(dockerfile.toString("utf8"))?.[1];
-  if (builder === undefined) throw new BuildError("builder", "packaging/ui/Dockerfile has no digest-pinned UI_BUILD_IMAGE");
+  if (builder === undefined) throw new PatchError("builder", "packaging/ui/Dockerfile has no digest-pinned UI_BUILD_IMAGE");
   const source = { commit: pin.commit, archiveSha256: pin.archiveSha256 };
   const buildId = sha256Hex(JSON.stringify({ source: source.archiveSha256, patches, apiBase })).slice(0, 20);
   const key = sha256Hex(
@@ -156,18 +148,18 @@ async function extraTests(testsDir, appRoot) {
   }
   const list = JSON.parse(text);
   if (!Array.isArray(list) || list.some((entry) => typeof entry !== "string")) {
-    throw new BuildError("upstream-tests", "upstream-tests.json must be an array of paths");
+    throw new PatchError("upstream-tests", "upstream-tests.json must be an array of paths");
   }
   const appReal = await fs.realpath(appRoot);
   for (const entry of list) {
     const inside = entry !== "" && !path.posix.isAbsolute(entry) && path.posix.normalize(entry) === entry && !entry.startsWith("../");
     if (!inside || entry.split("/").includes("node_modules")) {
-      throw new BuildError("upstream-tests", `${entry} is outside the prepared application`);
+      throw new PatchError("upstream-tests", `${entry} is outside the prepared application`);
     }
-    if (!/\.test\.tsx?$/.test(entry)) throw new BuildError("upstream-tests", `${entry} is not a Vitest file`);
+    if (!/\.test\.tsx?$/.test(entry)) throw new PatchError("upstream-tests", `${entry} is not a Vitest file`);
     const real = await fs.realpath(path.join(appRoot, entry)).catch(() => null);
     if (real === null || !real.startsWith(`${appReal}${path.sep}`) || !(await fs.stat(real)).isFile()) {
-      throw new BuildError("upstream-tests", `${entry} has no tests in the prepared application`);
+      throw new PatchError("upstream-tests", `${entry} has no tests in the prepared application`);
     }
   }
   return list;
@@ -175,7 +167,7 @@ async function extraTests(testsDir, appRoot) {
 
 export async function writePlan({ testsDir, appRoot, repoRoot, out }) {
   const stat = await fs.stat(testsDir).catch(() => null);
-  if (stat === null || !stat.isDirectory()) throw new BuildError("tests-dir", `${testsDir} is not a directory`);
+  if (stat === null || !stat.isDirectory()) throw new PatchError("tests-dir", `${testsDir} is not a directory`);
   await listTree(testsDir);
   const extras = await extraTests(testsDir, appRoot);
   const patched = await patchedSources(path.join(repoRoot, "ui/dashboard/patches"));
@@ -228,9 +220,9 @@ async function verifyLayout(files, appRoot) {
   if (!files.some((file) => file.path.endsWith(".txt") && file.path.split("/").some((part) => part.startsWith("__next")))) {
     missing.push("__next segment files");
   }
-  if (missing.length > 0) throw new BuildError("layout", `the export lacks ${missing.slice(0, 10).join(", ")}`);
+  if (missing.length > 0) throw new PatchError("layout", `the export lacks ${missing.slice(0, 10).join(", ")}`);
   const logo = files.find((file) => LOGOS.has(path.posix.basename(file.path)));
-  if (logo !== undefined) throw new BuildError("logo", `the export ships ${logo.path}, which the bundle never contains`);
+  if (logo !== undefined) throw new PatchError("logo", `the export ships ${logo.path}, which the bundle never contains`);
 }
 
 async function dependencyNotices(appRoot) {
@@ -246,7 +238,7 @@ async function dependencyNotices(appRoot) {
     for (const file of names) lines.push(`--- ${file} ---`, (await fs.readFile(path.join(directory, file), "utf8")).trimEnd());
     sections.push(lines.join("\n"));
   }
-  if (sections.length === 0) throw new BuildError("notices", "no npm license file was found in node_modules");
+  if (sections.length === 0) throw new PatchError("notices", "no npm license file was found in node_modules");
   return sections;
 }
 
@@ -283,7 +275,7 @@ async function normalizeModes(root) {
 }
 
 export async function finalize({ exported, appRoot, license, bundle, inputs, versions }) {
-  if (!HEX.test(inputs.key)) throw new BuildError("inputs", "the manifest inputs carry no cache key");
+  if (!HEX.test(inputs.key)) throw new PatchError("inputs", "the manifest inputs carry no cache key");
   const ui = path.join(bundle, "ui");
   await fs.rm(bundle, { recursive: true, force: true });
   await fs.mkdir(bundle, { recursive: true });
@@ -351,7 +343,7 @@ export async function main(argv, env) {
       break;
     }
     default:
-      throw new BuildError("usage", "usage: bundle.mjs key|build-id|inputs|cache-flags|plan|finalize|check [options]");
+      throw new PatchError("usage", "usage: bundle.mjs key|build-id|inputs|cache-flags|plan|finalize|check [options]");
   }
 }
 

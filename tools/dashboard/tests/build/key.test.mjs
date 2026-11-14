@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
 
-import { BuildError, bundleInputs, cacheFlags, checkApiBase } from "../../bundle.mjs";
+import { bundleInputs, cacheFlags, checkApiBase } from "../../bundle.mjs";
+import { PatchError } from "../../patches.mjs";
 import { PINNED_IMAGE, REPO_ROOT, put, scratch, writeRepo } from "./fixtures.mjs";
 
 async function inputsFor(t, { overrides = {}, apiBase = "" } = {}) {
@@ -106,6 +108,14 @@ test("no patches directory is no patches", async (t) => {
   assert.deepEqual(inputs.patches, []);
 });
 
+test("a directory named like a patch is not a patch", async (t) => {
+  const root = await scratch(t);
+  await writeRepo(root);
+  await fs.mkdir(path.join(root, "ui/dashboard/patches/20-fake.patch"));
+  const inputs = await bundleInputs({ repoRoot: root });
+  assert.deepEqual(inputs.patches, ["10-build.patch"]);
+});
+
 test("a patch without its record is refused", async (t) => {
   const root = await scratch(t);
   await writeRepo(root);
@@ -134,7 +144,7 @@ test("only http and https API bases without credentials pass", () => {
   checkApiBase("http://localhost:4000");
   checkApiBase("https://api.example.test/base");
   for (const bad of ["api.example.test", "ftp://example.test", "https://user:pw@example.test", "https://user@example.test", "https://exa mple.test", "javascript:alert(1)"]) {
-    assert.throws(() => checkApiBase(bad), BuildError, bad);
+    assert.throws(() => checkApiBase(bad), PatchError, bad);
   }
 });
 

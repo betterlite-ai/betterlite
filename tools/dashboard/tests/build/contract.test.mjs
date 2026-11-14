@@ -62,6 +62,13 @@ test("the bundling step has no network and the export holds only /bundle", async
   assert.equal(stage(text, "export"), "FROM scratch AS export\nCOPY --from=bundled /bundle /bundle\n\n");
 });
 
+test("the image copies the module bundle.mjs imports beside it", async () => {
+  const text = await dockerfile();
+  for (const name of ["bundled", "checks"]) {
+    assert.match(stage(text, name), /^COPY --from=tools bundle\.mjs patches\.mjs \/opt\/$/m, name);
+  }
+});
+
 test("the checks run the shared entrypoint without network", async () => {
   const text = stage(await dockerfile(), "checks");
   assert.match(text, /^COPY --from=checkplan tests\/ tests\/betterlite\/$/m);

@@ -3,7 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-import { BuildError, listTree } from "./bundle.mjs";
+import { listTree } from "./bundle.mjs";
+import { PatchError } from "./patches.mjs";
 
 async function exists(file) {
   return fs.stat(file).then(() => true, () => false);
@@ -12,10 +13,10 @@ async function exists(file) {
 export async function installBundle({ bundle, bin }) {
   const source = path.join(path.resolve(bundle), "ui");
   if (!(await exists(path.join(source, ".litellm_ui_ready"))) || !(await exists(path.join(path.resolve(bundle), "manifest.json")))) {
-    throw new BuildError("bundle", `${bundle} is not a finished dashboard bundle`);
+    throw new PatchError("bundle", `${bundle} is not a finished dashboard bundle`);
   }
   const binary = path.resolve(bin);
-  if (!(await fs.stat(binary).catch(() => null))?.isFile()) throw new BuildError("bin", `${bin} is not a file`);
+  if (!(await fs.stat(binary).catch(() => null))?.isFile()) throw new PatchError("bin", `${bin} is not a file`);
   await listTree(source);
   const target = path.join(path.dirname(binary), "ui");
   const staging = `${target}.new-${process.pid}`;
