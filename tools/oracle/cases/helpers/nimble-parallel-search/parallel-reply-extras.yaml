@@ -31,5 +31,8 @@ call:
           search_id: null
           session_id: null
           results: []
+      - operation: reply
+        body:
+          results: null
 env: {}
 compare: {ignore: []}
