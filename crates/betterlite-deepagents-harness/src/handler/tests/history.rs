@@ -13,8 +13,7 @@ async fn history_returns_the_runtime_openai_messages() {
             json_object(r#"{"content":"done"}"#)
         ]
     );
-    let configs = plan.state_configs.lock().unwrap();
-    let config = configs.first().unwrap();
+    let config = plan.state_configs.lock().unwrap().first().unwrap().clone();
     assert_eq!(config.thread_id, "session-1");
     assert_eq!(config.recursion_limit, DEFAULT_RECURSION_LIMIT);
     assert!(config.usage_callback.is_none());

@@ -50,11 +50,14 @@ async fn turn_yields_update_events_without_the_skipped_tools() {
     let events = run_turn(&mut handler, &mut ctx, "hi", |_| Decision::Allow).await;
     let calls: Vec<(&str, &str)> = events
         .iter()
-        .filter_map(|event| match event {
-            Event::ToolCall {
+        .filter_map(|event| {
+            let Event::ToolCall {
                 name, native_name, ..
-            } => Some((name.as_str(), native_name.as_str())),
-            _ => None,
+            } = event
+            else {
+                return None;
+            };
+            Some((name.as_str(), native_name.as_str()))
         })
         .collect();
     assert_eq!(calls, [("read", "read_file")]);
@@ -72,22 +75,21 @@ async fn turn_passes_thread_id_recursion_limit_and_usage_callback() {
     ctx.settings.max_turns = Some(2);
     handler.start(&mut ctx).await.unwrap();
     run_turn(&mut handler, &mut ctx, "hi", |_| Decision::Allow).await;
-    let configs = plan.run_configs.lock().unwrap();
-    let config = configs.first().unwrap();
+    let config = plan.run_configs.lock().unwrap().first().unwrap().clone();
     assert_eq!(config.thread_id, "session-1");
     let expected_limit =
         BASE_RECURSION_LIMIT.saturating_add(2_u32.saturating_mul(DEEPAGENTS_STEPS_PER_TURN));
     assert_eq!(config.recursion_limit, expected_limit);
     assert!(config.usage_callback.is_some());
-    let cost_models = plan.cost_models.lock().unwrap();
+    let cost_models = plan.cost_models.lock().unwrap().clone();
     assert_eq!(cost_models.len(), 1);
     assert_eq!(
         cost_models.first().unwrap().as_deref(),
         Some("openai/gpt-4o")
     );
-    let state_configs = plan.state_configs.lock().unwrap();
-    assert_eq!(state_configs.first().unwrap().thread_id, "session-1");
-    assert!(state_configs.first().unwrap().usage_callback.is_some());
+    let state_config = plan.state_configs.lock().unwrap().first().unwrap().clone();
+    assert_eq!(state_config.thread_id, "session-1");
+    assert!(state_config.usage_callback.is_some());
 }
 
 #[tokio::test]
@@ -115,11 +117,10 @@ async fn turn_sets_final_text_and_structured_output() {
         .lock()
         .unwrap()
         .push_back(vec![Ok(text_part("draft", "model"))]);
-    {
-        let mut state = plan.state.lock().unwrap();
-        state.messages = vec![human("hi"), ai("the answer")];
-        state.structured_response = Some(json_object(r#"{"result":7}"#));
-    }
+    let mut state = plan.state.lock().unwrap();
+    state.messages = vec![human("hi"), ai("the answer")];
+    state.structured_response = Some(json_object(r#"{"result":7}"#));
+    drop(state);
     let mut handler = handler(runtime);
     let mut ctx = context("/work");
     ctx.settings.output_schema = Some(json_object(r#"{"title":"Answer","type":"object"}"#));
@@ -137,11 +138,10 @@ async fn turn_leaves_output_json_empty_without_an_output_schema() {
         .lock()
         .unwrap()
         .push_back(vec![Ok(text_part("draft", "model"))]);
-    {
-        let mut state = plan.state.lock().unwrap();
-        state.messages = vec![human("hi"), ai("the answer")];
-        state.structured_response = Some(json_object(r#"{"result":7}"#));
-    }
+    let mut state = plan.state.lock().unwrap();
+    state.messages = vec![human("hi"), ai("the answer")];
+    state.structured_response = Some(json_object(r#"{"result":7}"#));
+    drop(state);
     let mut handler = handler(runtime);
     let mut ctx = context("/work");
     handler.start(&mut ctx).await.unwrap();
@@ -214,13 +214,13 @@ async fn turn_asks_one_approval_per_action_with_the_normalized_tool_name() {
     let (_plan, events) = run_write_then_bash_turn().await;
     let asked = approvals(&events);
     assert_eq!(asked.len(), 2);
-    assert_eq!(asked.first().unwrap().tool, "write");
-    assert_eq!(
-        asked.first().unwrap().input,
-        json_object(r#"{"path":"a.txt"}"#)
-    );
-    assert_eq!(asked.get(1).unwrap().tool, "bash");
-    assert_eq!(asked.get(1).unwrap().input, JsonObject::new());
+    let mut remaining = asked.into_iter();
+    let first = remaining.next().unwrap();
+    assert_eq!(first.tool, "write");
+    assert_eq!(first.input, json_object(r#"{"path":"a.txt"}"#));
+    let second = remaining.next().unwrap();
+    assert_eq!(second.tool, "bash");
+    assert_eq!(second.input, JsonObject::new());
 }
 
 #[tokio::test]
@@ -283,21 +283,12 @@ async fn turn_repeats_until_a_pass_has_no_interrupts() {
     plan.passes
         .lock()
         .unwrap()
-        .push_back(vec![Ok(update_part(interrupt_update(
-            "int-1",
-            &[("write_file", "{}")],
-        )))]);
+        .push_back(interrupt_pass("int-1", "write_file"));
     plan.passes
         .lock()
         .unwrap()
-        .push_back(vec![Ok(update_part(interrupt_update(
-            "int-2",
-            &[("execute", "{}")],
-        )))]);
-    plan.passes
-        .lock()
-        .unwrap()
-        .push_back(vec![Ok(text_part("done", "model"))]);
+        .push_back(interrupt_pass("int-2", "execute"));
+    plan.passes.lock().unwrap().push_back(text_pass("done"));
     let mut handler = handler(runtime);
     let mut ctx = context("/work");
     handler.start(&mut ctx).await.unwrap();
@@ -333,10 +324,7 @@ async fn turn_collects_every_interrupt_of_a_pass_before_asking() {
         Ok(text_part("after", "model")),
         Ok(update_part(interrupt_update("int-2", &[("execute", "{}")]))),
     ]);
-    plan.passes
-        .lock()
-        .unwrap()
-        .push_back(vec![Ok(text_part("done", "model"))]);
+    plan.passes.lock().unwrap().push_back(text_pass("done"));
     let mut handler = handler(runtime);
     let mut ctx = context("/work");
     handler.start(&mut ctx).await.unwrap();
@@ -349,10 +337,8 @@ async fn turn_collects_every_interrupt_of_a_pass_before_asking() {
     let approval_at: Vec<usize> = events
         .iter()
         .enumerate()
-        .filter_map(|(index, event)| match event {
-            Event::Approval(_) => Some(index),
-            _ => None,
-        })
+        .filter(|(_, event)| matches!(event, Event::Approval(_)))
+        .map(|(index, _)| index)
         .collect();
     assert_eq!(approval_at.len(), 2);
     assert!(approval_at.iter().all(|index| text_at < *index));
@@ -390,11 +376,10 @@ async fn turn_fails_with_session_closed_before_start_and_after_stop() {
     let (runtime, _plan) = FakeRuntime::new();
     let mut handler = handler(runtime);
     let mut ctx = context("/work");
-    {
-        let mut stream = Box::pin(handler.turn(&mut ctx, "hi"));
-        let first = stream.next().await.unwrap();
-        assert!(matches!(first, Err(HarnessError::SessionClosed)));
-    }
+    let mut stream = Box::pin(handler.turn(&mut ctx, "hi"));
+    let first = stream.next().await.unwrap();
+    assert!(matches!(first, Err(HarnessError::SessionClosed)));
+    drop(stream);
     handler.start(&mut ctx).await.unwrap();
     handler.stop(&mut ctx).await.unwrap();
     let mut stream = Box::pin(handler.turn(&mut ctx, "again"));

@@ -298,7 +298,7 @@ async fn build_copies_skills_under_the_workdir_and_passes_the_virtual_dir() {
     handler.start(&mut ctx).await.unwrap();
     let spec = built_spec(&plan);
     assert_eq!(spec.skills, Some(vec!["/.deepagents/skills/".to_owned()]));
-    let writes = ctx.sandbox.writes.lock().unwrap();
+    let writes = ctx.sandbox.writes.lock().unwrap().clone();
     assert_eq!(writes.len(), 1);
     let (path, data) = writes.first_key_value().unwrap();
     assert_eq!(path, "/work/.deepagents/skills/my-skill/SKILL.md");

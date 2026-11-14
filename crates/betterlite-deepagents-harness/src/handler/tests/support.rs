@@ -214,7 +214,12 @@ impl AgentRuntime for FakeRuntime {
     }
 
     fn build_agent(&self, spec: AgentSpec) -> Result<FakeGraph, HarnessError> {
-        self.plan.specs.lock().unwrap().push(spec);
+        let mut specs = self
+            .plan
+            .specs
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        specs.push(spec);
         Ok(FakeGraph {
             plan: Arc::clone(&self.plan),
         })
@@ -295,6 +300,14 @@ fn update_part(update: Update) -> StreamPart {
     StreamPart::Update(update)
 }
 
+fn text_pass(text: &str) -> Vec<Result<StreamPart, HarnessError>> {
+    vec![Ok(text_part(text, "model"))]
+}
+
+fn interrupt_pass(id: &str, tool: &str) -> Vec<Result<StreamPart, HarnessError>> {
+    vec![Ok(update_part(interrupt_update(id, &[(tool, "{}")])))]
+}
+
 fn update_with(entries: Vec<(&str, UpdateEntry)>) -> Update {
     Update {
         entries: entries
@@ -325,9 +338,11 @@ fn interrupt_update(id: &str, requests: &[(&str, &str)]) -> Update {
 fn deltas(events: &[Event]) -> Vec<String> {
     events
         .iter()
-        .filter_map(|event| match event {
-            Event::Text { delta } => Some(delta.clone()),
-            _ => None,
+        .filter_map(|event| {
+            let Event::Text { delta } = event else {
+                return None;
+            };
+            Some(delta.clone())
         })
         .collect()
 }

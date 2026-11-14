@@ -54,7 +54,7 @@ async fn agent_spec<C, R, S>(
     blocked: &BTreeSet<String>,
 ) -> Result<AgentSpec, HarnessError>
 where
-    C: BaseHarnessConfig,
+    C: BaseHarnessConfig + Send + Sync,
     R: AgentRuntime,
     S: Sandbox,
 {
