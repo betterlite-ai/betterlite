@@ -10,5 +10,5 @@ deviations:
     why: Prices are decimals at the type boundary, and a string is a wrong-typed value that LiteLLM only accepts through Python coercion.
     link: ""
   - what: The Replicate per-second price is fixed at 0.0014 and the DEFAULT_REPLICATE_GPU_PRICE_PER_SECOND environment override is not read.
-    why: The cost service takes no process environment, so the constant is the only source.
+    why: The price is a typed constant and the service takes its time zone database as injected data, so it reads no environment of its own.
     link: ""

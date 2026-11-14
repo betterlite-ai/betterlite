@@ -128,11 +128,9 @@ async fn a_header_text_that_is_not_a_decimal_keeps_the_parse_cause() {
         .respond(&args(Some(&view)), None, None::<&mut Stored>)
         .await
         .unwrap_err();
-    let (header, source) = match error {
-        CompletionCostError::Input(ChargeInputError::CostHeaderValue { header, source }) => {
-            (header, source)
-        }
-        other => panic!("expected the typed header parse error, got {other:?}"),
+    let CompletionCostError::Input(ChargeInputError::CostHeaderValue { header, source }) = error
+    else {
+        panic!("the header parse failure is typed and carries its text");
     };
     assert_eq!(header, "free");
     assert!(matches!(source, DecimalLexemeError::Decimal(_)));
