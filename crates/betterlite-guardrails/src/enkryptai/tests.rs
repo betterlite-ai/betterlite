@@ -285,6 +285,39 @@ async fn enkryptai_guardrail_detects_policy_violation() {
 }
 
 #[tokio::test]
+async fn enkryptai_guardrail_defaults_null_attack_details() {
+    let (base, _state, mut server) = serve(vec![Reply {
+        status: StatusCode::OK,
+        body: r#"{"summary":{"policy_violation":1},"details":{"policy_violation":null}}"#
+            .to_owned(),
+    }])
+    .await;
+    let mut request_data = BTreeMap::new();
+    let error = guardrail(&base)
+        .apply(inputs(&["bad"]), &mut request_data, None)
+        .await
+        .expect_err("detected");
+    let message = match error {
+        GuardrailFailure::GuardrailRaised {
+            message,
+            status_code: 400,
+            ..
+        } => message,
+        other => panic!("unexpected failure: {other:?}"),
+    };
+    assert_eq!(
+        message,
+        "EnkryptAI guardrail detected 1 violation(s):\n- POLICY_VIOLATION: policy \"N/A\", explanation \"N/A\""
+    );
+    let records = record_objects(&request_data);
+    assert_eq!(
+        field(&records[0], "guardrail_status"),
+        text("guardrail_intervened")
+    );
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn enkryptai_guardrail_detects_pii() {
     let (base, _state, mut server) = serve(vec![Reply {
         status: StatusCode::OK,
@@ -466,10 +499,10 @@ async fn enkryptai_guardrail_batch_stops_at_the_first_detected_text() {
 }
 
 #[tokio::test]
-async fn enkryptai_guardrail_http_failure_records_failed_status() {
+async fn enkryptai_guardrail_http_failure_is_not_an_intervention() {
     let (base, _state, mut server) = serve(vec![Reply {
-        status: StatusCode::UNAUTHORIZED,
-        body: r#"{"detail":"bad key"}"#.to_owned(),
+        status: StatusCode::FORBIDDEN,
+        body: r#"{"detail":"forbidden"}"#.to_owned(),
     }])
     .await;
     let mut request_data = BTreeMap::new();
@@ -477,7 +510,10 @@ async fn enkryptai_guardrail_http_failure_records_failed_status() {
         .apply(inputs(&["hello"]), &mut request_data, None)
         .await
         .expect_err("http failure");
-    assert!(matches!(error, GuardrailFailure::Http { status: 401, .. }));
+    assert!(
+        matches!(&error, GuardrailFailure::Other(message) if message.contains("HTTP status 403"))
+    );
+    assert!(!error.is_intervention());
     let records = record_objects(&request_data);
     assert_eq!(records.len(), 1);
     assert_eq!(
@@ -632,24 +668,55 @@ async fn enkryptai_guardrail_rejects_an_invalid_policy_header() {
 fn enkryptai_guardrail_processes_the_summary(#[case] body: &str, #[case] detected: bool) {
     let value = parse_value(body);
     let response = parsed_response(&value);
-    let processed: Processed = process(&response, &value);
+    let processed: Processed = process(&response).expect("process");
     assert_eq!(!processed.attacks.is_empty(), detected);
 }
 
 #[test]
 fn enkryptai_guardrail_collects_attack_details_from_the_response() {
-    let body = r#"{"summary":{"policy_violation":1,"toxicity":["toxic"]},"details":{"policy_violation":{"violating_policy":"p","explanation":"e"},"toxicity":{"toxic":0.9}}}"#;
+    let body = r#"{"summary":{"policy_violation":1,"pii":1,"toxicity":["toxic"],"keyword_detected":1,"bias":1,"prompt_injection":1,"jailbreak":1},"details":{"policy_violation":{"violating_policy":"p","explanation":"e"},"pii":{"pii":{"email":1}},"toxicity":{"toxic":0.9},"keyword_detected":{"detected_keywords":["k"]},"bias":{"bias_detected":true},"prompt_injection":{"score":0.8},"jailbreak":{"score":0.9}}}"#;
     let value = parse_value(body);
     let response = parsed_response(&value);
-    let processed = process(&response, &value);
-    assert_eq!(processed.attacks, vec!["toxicity", "policy_violation"]);
+    let processed = process(&response).expect("process");
+    assert_eq!(
+        processed.attacks,
+        vec![
+            "toxicity",
+            "policy_violation",
+            "pii",
+            "keyword_detected",
+            "bias",
+            "prompt_injection",
+            "jailbreak"
+        ]
+    );
     assert_eq!(
         processed.details["policy_violation"],
         parse_value(r#"{"violating_policy":"p","explanation":"e"}"#)
     );
     assert_eq!(
+        processed.details["pii"],
+        parse_value(r#"{"pii":{"email":1}}"#)
+    );
+    assert_eq!(
         processed.details["toxicity"],
         parse_value(r#"{"toxic":0.9}"#)
+    );
+    assert_eq!(
+        processed.details["keyword_detected"],
+        parse_value(r#"{"detected_keywords":["k"]}"#)
+    );
+    assert_eq!(
+        processed.details["bias"],
+        parse_value(r#"{"bias_detected":true}"#)
+    );
+    assert_eq!(
+        processed.details["prompt_injection"],
+        parse_value(r#"{"score":0.8}"#)
+    );
+    assert_eq!(
+        processed.details["jailbreak"],
+        parse_value(r#"{"score":0.9}"#)
     );
 }
 

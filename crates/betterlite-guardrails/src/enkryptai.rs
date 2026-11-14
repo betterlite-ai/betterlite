@@ -102,9 +102,9 @@ impl EnkryptAiGuardrail {
         request_data: &mut BTreeMap<String, GuardrailValue>,
         mut logging_obj: Option<&mut GuardrailLogTarget>,
     ) -> Result<GuardrailApiInputs, GuardrailFailure> {
-        for text in inputs.texts.clone().unwrap_or_default() {
+        for text in inputs.texts.iter().flatten() {
             let started = (self.clock)();
-            let response = transport::send(self, &text).await;
+            let response = transport::send(self, text).await;
             let timing = Timing {
                 started,
                 finished: (self.clock)(),
@@ -132,15 +132,15 @@ impl EnkryptAiGuardrail {
         let Response { raw, parsed } = response;
         let (outcome, status) = match parsed {
             Parsed::Response(parsed) => {
-                let processed = process::process(&parsed, &raw);
-                let status = processed.status();
-                (
-                    Ok(Detection {
-                        response: parsed,
-                        processed,
-                    }),
-                    status,
-                )
+                let outcome = process::process(&parsed);
+                let status = outcome
+                    .as_ref()
+                    .map_or(GuardrailStatus::GuardrailFailedToRespond, Processed::status);
+                let detection = outcome.map(|processed| Detection {
+                    response: parsed,
+                    processed,
+                });
+                (detection, status)
             }
             Parsed::Malformed(error) => (Err(error), GuardrailStatus::GuardrailFailedToRespond),
         };
@@ -164,11 +164,8 @@ impl EnkryptAiGuardrail {
                 status_code: 400,
                 blocked_content: true,
             },
-            EnkryptAiError::HttpStatus { status } => GuardrailFailure::Http {
-                status,
-                detail: format!("EnkryptAI answered with HTTP status {status}"),
-            },
-            other @ (EnkryptAiError::Request { .. }
+            other @ (EnkryptAiError::HttpStatus { .. }
+            | EnkryptAiError::Request { .. }
             | EnkryptAiError::Timeout { .. }
             | EnkryptAiError::ResponseTooLarge { .. }
             | EnkryptAiError::ResponseJson { .. }

@@ -248,13 +248,9 @@ fn process_answer(answer: &UpstreamAnswer) -> Result<Processed, Box<HelperError>
     let body = answer.body.clone().ok_or_else(|| {
         helper_error("ValidationError", "the answer needs a JSON body".to_owned())
     })?;
-    let raw: GuardrailValue = serde_json::from_value(body)
+    let response: DetectionResponse = serde_json::from_value(body)
         .map_err(|error| helper_error("ValidationError", error.to_string()))?;
-    let value = serde_json::to_value(&raw)
-        .map_err(|error| helper_error("ValidationError", error.to_string()))?;
-    let response: DetectionResponse = serde_json::from_value(value)
-        .map_err(|error| helper_error("ValidationError", error.to_string()))?;
-    Ok(process(&response, &raw))
+    process(&response).map_err(|error| helper_error("ValueError", error.to_string()))
 }
 
 fn statuses(request_data: &BTreeMap<String, GuardrailValue>) -> Vec<String> {
