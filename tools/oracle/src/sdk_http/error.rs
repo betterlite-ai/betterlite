@@ -85,4 +85,6 @@ pub enum SdkHttpError {
     HeaderValue(String),
     #[error("the provider streamed more than {limit} bytes")]
     StreamTooLarge { limit: usize },
+    #[error("cannot run the stream logging steps: {0}")]
+    Logging(String),
 }

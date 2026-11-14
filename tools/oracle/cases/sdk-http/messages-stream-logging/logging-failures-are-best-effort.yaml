@@ -1,0 +1,33 @@
+kind: sdk_http
+name: logging-failures-are-best-effort
+env: {}
+call:
+  messages_stream_logging:
+    body:
+      model: claude-sonnet-4-20250514
+      max_tokens: 1
+      messages:
+        - {role: user, content: hi}
+    steps:
+      - {op: collect, first_chunk: false}
+      - {op: bill, teardown: false, route_failure: broken}
+      - {op: bill, teardown: true, route_failure: broken}
+      - {op: bill, teardown: false, route_failure: null}
+      - {op: abort_upstream, close: unsupported}
+      - {op: abort_upstream, close: closes}
+      - {op: abort_upstream, close: fails}
+      - {op: detached_failure, hook: missing}
+      - {op: detached_failure, hook: records}
+      - {op: detached_failure, hook: raises}
+upstream:
+  - status: 200
+    headers:
+      content-type: text/event-stream
+    events:
+      - '{"type": "message_start", "message": {"content": []}}'
+      - '{"type": "message_stop"}'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

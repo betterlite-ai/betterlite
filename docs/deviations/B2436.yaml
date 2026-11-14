@@ -1,0 +1,11 @@
+task: B2436
+deviations:
+  - what: A mapping chunk whose type is neither text nor null is refused with an error that names the field, so no frame is produced.
+    why: LiteLLM turns any value into text with str(), so a number, list or object becomes an event name through Python's repr, a habit betterlite does not port.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L460-L462
+  - what: Billing and abort failures are carried as a typed failure with a kind and a message, and the warning prints them as kind(message).
+    why: LiteLLM catches any Exception and prints its class name and text, and Rust has no exception hierarchy to read the class name from, so the failing code names its own kind.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L555-L560
+  - what: The deferred callback, its parked arguments and the detached failure hook are named fields of one slot struct that the stream shares with the proxy side.
+    why: LiteLLM reads and writes them as attributes that are created on the logging object at run time and looked up with getattr, which a typed struct cannot do.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L536-L542

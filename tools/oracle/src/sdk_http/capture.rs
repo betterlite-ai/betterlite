@@ -13,8 +13,8 @@ use super::python::PythonSdk;
 use super::result::SdkResult;
 use super::{OracleLimits, SdkHttpCall, Side};
 use super::{
-    anthropic_beta_config, embedding_executor, messages_header_stream, native,
-    vector_query_embedding,
+    anthropic_beta_config, embedding_executor, messages_header_stream, messages_stream_logging,
+    native, vector_query_embedding,
 };
 use crate::OracleError;
 use crate::compare::multipart::masked_boundary;
@@ -62,6 +62,9 @@ impl<'sdk> Sdk<'sdk> {
             }
             (Self::Native, SdkHttpCall::MessagesHeaderStream(stream)) => {
                 run_until_stopped(messages_header_stream::send(stream, api_base, env), stop)
+            }
+            (Self::Native, SdkHttpCall::MessagesStreamLogging(logging)) => {
+                run_until_stopped(messages_stream_logging::send(logging, api_base, env), stop)
             }
         }
     }

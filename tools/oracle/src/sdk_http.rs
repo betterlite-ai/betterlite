@@ -9,6 +9,7 @@ use betterlite_provider::api::vector_store_contracts::config::Params;
 
 use crate::case::{Compare, UpstreamAnswer};
 use error::SdkHttpError;
+use messages_stream_logging::call::{LoggingStep, MessagesStreamLoggingCall};
 use result::SdkResult;
 
 pub(crate) mod anthropic_beta_config;
@@ -17,6 +18,7 @@ mod child;
 pub(crate) mod embedding_executor;
 pub mod error;
 pub(crate) mod messages_header_stream;
+pub(crate) mod messages_stream_logging;
 pub(crate) mod native;
 pub(crate) mod python;
 pub mod result;
@@ -65,6 +67,7 @@ pub enum SdkHttpCall {
     VectorQueryEmbedding(VectorQueryEmbeddingCall),
     AnthropicBetaConfig(AnthropicBetaConfigCall),
     MessagesHeaderStream(MessagesHeaderStreamCall),
+    MessagesStreamLogging(MessagesStreamLoggingCall),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,6 +114,9 @@ pub struct MessagesHeaderStreamCall {
     #[serde(default)]
     pub(crate) buffered_provider_output: Option<Json>,
 }
+
+const MAX_STEPS: usize = 32;
+const MAX_PARKED: usize = 16;
 
 // the call names no address: the harness points the endpoint at its own mock, or leaves it empty
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -231,6 +237,17 @@ fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHtt
             if !matches!(stream.body, Json::Object(_)) {
                 return Err(SdkHttpError::Invalid(
                     "the Messages header stream body must be an object".to_owned(),
+                ));
+            }
+        }
+        SdkHttpCall::MessagesStreamLogging(logging) => {
+            let parked = logging
+                .steps
+                .iter()
+                .any(|step| matches!(step, LoggingStep::ParkArgs { count } if *count > MAX_PARKED));
+            if logging.steps.len() > MAX_STEPS || parked {
+                return Err(SdkHttpError::Invalid(
+                    "the stream logging call has too many steps or parked callbacks".to_owned(),
                 ));
             }
         }

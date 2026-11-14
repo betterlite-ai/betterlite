@@ -3,12 +3,12 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_logging::passthrough_stream_logging::types::EndpointType;
-use betterlite_logging::worker::Admission;
+use betterlite_logging::worker::{Admission, Callback};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
 
-use super::seams::LoggingFuture;
+use super::seams::{LoggingFuture, LoggingJob};
 use super::{ChunkError, Logged, SseChunk, convert_chunk_to_sse_format};
 use support::{Harness, at, base_time, deferred_callback, logging_object};
 
@@ -235,4 +235,12 @@ async fn direct_chunk_processor_delegation() {
             .is_empty()
     );
     assert_eq!(harness.worker.stats().accepted, 0);
+}
+
+#[test]
+fn logging_job_is_named_for_the_worker() {
+    let job = LoggingJob {
+        future: Box::pin(async { Ok(()) }),
+    };
+    assert_eq!(job.name(), "messages_stream_logging");
 }
