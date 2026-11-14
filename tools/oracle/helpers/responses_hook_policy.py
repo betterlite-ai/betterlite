@@ -110,18 +110,18 @@ class HookHandler(BaseLLMHTTPHandler):
             logging_obj=logging_obj,
         )
         model_out, input_out, provider_out, optional_out, params_out = outcome
-        return {
-            "model": model_out,
-            "input": JSON.validate_python(input_out),
-            "custom_llm_provider": provider_out,
-            "optional_params": {
-                key: JSON.validate_python(value) for key, value in optional_out.items()
-            },
-            "generic_params": {
-                "api_key": JSON.validate_python(params_out.api_key),
-                "api_base": JSON.validate_python(params_out.api_base),
-            },
+        answer: dict[str, JsonValue] = {}
+        answer["model"] = model_out
+        answer["input"] = JSON.validate_python(input_out)
+        answer["custom_llm_provider"] = provider_out
+        answer["optional_params"] = {
+            key: JSON.validate_python(value) for key, value in optional_out.items()
         }
+        answer["generic_params"] = {
+            "api_key": JSON.validate_python(params_out.api_key),
+            "api_base": JSON.validate_python(params_out.api_base),
+        }
+        return answer
 
     def tool_fingerprint(self, tool_calls: JsonValue) -> str:
         return self._fingerprint_agentic_tools(tool_calls)

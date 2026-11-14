@@ -194,10 +194,8 @@ impl DeploymentHookDispatcher for ScriptedDispatcher {
         let mut modified = request;
         // the scripted callback answers only the responses call type, as the source's callback does
         if call_type == RESPONSES_CALL_TYPE {
-            for replacement in &self.replacements {
-                if let Some(result) = replacement {
-                    modified.extend(result.clone());
-                }
+            for result in self.replacements.iter().flatten() {
+                modified.extend(result.clone());
             }
         }
         Ok(Some(modified))

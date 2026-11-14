@@ -72,10 +72,10 @@ fn loads_agentic_loop_ceiling(
     #[case] lookup: BTreeMap<String, String>,
     #[case] expected: Expected,
 ) {
-    let source = match ceiling {
-        None => DEPLOYMENT.to_owned(),
-        Some(line) => format!("{DEPLOYMENT}    max_agentic_loops: {line}\n"),
-    };
+    let source = ceiling.map_or_else(
+        || DEPLOYMENT.to_owned(),
+        |line| format!("{DEPLOYMENT}    max_agentic_loops: {line}\n"),
+    );
     let actual = load(&source, lookup);
     match expected {
         Expected::Ceilings(ceilings) => assert_eq!(actual.unwrap(), ceilings),
