@@ -18,6 +18,7 @@ fn file_formats_apply_yaml_defaults_and_json_mappings() {
 #[case::array_severity(r#"[{"match":"kill","severity":[3]}]"#, "medium")]
 #[case::object_severity(r#"[{"match":"kill","severity":{"level":3}}]"#, "medium")]
 #[case::single_object(r#"{"match":"kill","severity":1}"#, "low")]
+#[case::number_match(r#"[{"match":5,"severity":3},{"match":"kill"}]"#, "medium")]
 fn file_json_skips_non_objects_and_defaults_odd_severities(
     #[case] body: &str,
     #[case] expected: &str,

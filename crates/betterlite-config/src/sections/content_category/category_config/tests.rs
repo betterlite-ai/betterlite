@@ -125,3 +125,28 @@ fn python_invalid_branch_reset_warns_and_skips_only_invalid_pattern() {
     assert!(output.contains("syntax"));
     assert!(output.contains("(?|danger)"));
 }
+
+#[test]
+fn oniguruma_named_group_syntax_is_retained() {
+    let mut data: CategoryFileData = serde_saphyr::from_str("keywords: []").unwrap();
+    data.phrase_patterns.push("(?<name>danger)".to_owned());
+    let category = super::model::CategoryConfig::from_data(data).unwrap();
+    assert_eq!(category.phrase_patterns.len(), 1);
+    assert!(
+        category.phrase_patterns[0]
+            .regex
+            .is_match("danger")
+            .unwrap()
+    );
+}
+
+#[test]
+fn literal_ascii_flag_text_inside_a_class_is_rewritten() {
+    let mut data: CategoryFileData = serde_saphyr::from_str("keywords: []").unwrap();
+    data.phrase_patterns.push("(?a)[x(?a)]".to_owned());
+    let category = super::model::CategoryConfig::from_data(data).unwrap();
+    assert_eq!(category.phrase_patterns.len(), 1);
+    let pattern = &category.phrase_patterns[0];
+    assert!(pattern.regex.is_match("x").unwrap());
+    assert!(pattern.regex.is_match("b").unwrap());
+}
