@@ -79,13 +79,9 @@ impl crate::helpers::Helper for Op {
             .then(|| Arc::new(PlannedBatch::new(input.replies.clone())));
         let store = window_store(Arc::clone(&cache), batch.as_ref());
         let clock = FixedClock::at(input.now);
-        let response = settle(
-            input,
-            &store,
-            &clock,
-            Arc::clone(&main_script),
-            Arc::clone(&refund_script),
-        )?;
+        let script: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&main_script);
+        let refunds: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&refund_script);
+        let response = settle(input, &store, &clock, script, refunds)?;
         let calls = match &batch {
             Some(batch) => batch.calls(),
             None => main_script.calls(),

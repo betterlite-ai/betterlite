@@ -153,7 +153,7 @@ pub(super) struct PlannedBatchSource {
 
 impl RequestBatchSource for PlannedBatchSource {
     fn active_batch(&self) -> Option<Arc<dyn ScriptBatch>> {
-        let shared: Arc<dyn ScriptBatch> = Arc::clone(&self.batch);
+        let shared: Arc<dyn ScriptBatch> = Arc::<PlannedBatch>::clone(&self.batch);
         Some(shared)
     }
 }
