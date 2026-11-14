@@ -1,4 +1,7 @@
+import threading
+import time
 from collections.abc import Iterator, Mapping
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import TypedDict
 
@@ -7,7 +10,7 @@ import requests
 from litellm.proxy.client.credentials import CredentialsManagementClient as LiteCredentialsClient
 from litellm.proxy.client.exceptions import UnauthorizedError as LiteUnauthorizedError
 from litellm.proxy.client.keys import KeysManagementClient as LiteKeysClient
-from proxy_client_support import RecordingServer, Seen
+from proxy_client_support import HOST, RecordingServer, Seen
 from pydantic import JsonValue
 
 from betterlite.proxy.client._transport import HTTPError, Request, RequestError
@@ -377,7 +380,45 @@ def test_keys_error_update(
         ours.update("sk-updated-key", spend=1.0)
     assert str(actual.value) == message
     assert str(actual.value) == str(expected.value)
-    assert actual.value.__cause__ is None
+    assert actual.value.__cause__ is not None
+    assert expected.value.__cause__ is None
+
+
+class _StallHandler(BaseHTTPRequestHandler):
+    def do_POST(self) -> None:
+        self.send_response(OK)
+        self.send_header("Content-Length", "100")
+        self.end_headers()
+        self.wfile.write(b"partial")
+        time.sleep(1.5)
+
+
+class StallingServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def __init__(self) -> None:
+        super().__init__((HOST, 0), _StallHandler)
+        thread = threading.Thread(target=self.serve_forever, daemon=True)
+        thread.start()
+
+    def close(self) -> None:
+        self.shutdown()
+        self.server_close()
+
+
+def test_keys_error_stalled() -> None:
+    stalling = StallingServer()
+    url = f"http://{HOST}:{stalling.server_port}"
+    lite = LiteKeysClient(url, api_key="sk-test", timeout=1)
+    ours = KeysManagementClient(url, api_key="sk-test", timeout=1)
+    with pytest.raises(Exception, match=r"^Error updating key: None$") as expected:
+        lite.update("sk-updated-key")
+    with pytest.raises(KeyUpdateError) as actual:
+        ours.update("sk-updated-key")
+    stalling.close()
+    assert str(actual.value) == "Error updating key: None"
+    assert str(actual.value) == str(expected.value)
+    assert actual.value.__cause__ is not None
 
 
 def test_keys_error_not_object(server: RecordingServer) -> None:

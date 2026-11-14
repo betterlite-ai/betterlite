@@ -19,15 +19,17 @@ deviations:
       ruff's FBT001 and FBT002 forbid positional booleans, and the budget allows no per-line suppression.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/keys.py#L188-L193
   - what: >-
-      update raises KeyUpdateError, a subclass of Exception, with the same "Error updating key: ..." message, and
-      without chaining the original error.
+      update raises KeyUpdateError, a subclass of Exception, with the same "Error updating key: ..." message and the
+      original failure as __cause__.
     why: >-
-      ruff's TRY002 forbids raising Exception itself and B904 requires an explicit from in an except block, while
-      LiteLLM raises a plain Exception and leaves __context__ set. Code that catches Exception still catches this.
+      ruff's TRY002 forbids raising Exception itself, and B904 requires an explicit from in an except block; the
+      original error is kept rather than dropped. LiteLLM raises a plain Exception, so __cause__ stays unset and the
+      original is only __context__. Code that catches Exception still catches this.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/keys.py#L283-L290
   - what: >-
-      update catches RequestError, UnauthorizedError and ValueError, the failures its send and JSON parse can raise,
-      not every Exception.
+      update catches RequestError, UnauthorizedError, ValueError, OSError and http.client.HTTPException, the failures
+      its transport and JSON parse can raise: a refused, reset or stalled connection, a body that ends early, a 4xx
+      or 5xx status and invalid JSON. It does not catch every Exception.
     why: >-
       ruff's BLE001 forbids a blind except and the budget allows no suppression. Any other exception is a defect in
       betterlite itself and surfaces instead of becoming "Error updating key".

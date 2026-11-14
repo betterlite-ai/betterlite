@@ -1,5 +1,6 @@
 import builtins
 from collections.abc import Iterable, Mapping
+from http.client import HTTPException
 from typing import TypedDict, Unpack
 
 from pydantic import JsonValue
@@ -228,8 +229,14 @@ class KeysManagementClient:
             response = send(request, self._timeout)
             response_text = response.text
             reply = _key_reply(response)
-        except (RequestError, UnauthorizedError, ValueError):
-            raise KeyUpdateError(f"Error updating key: {response_text}") from None
+        except (
+            RequestError,
+            UnauthorizedError,
+            ValueError,
+            HTTPException,
+            OSError,
+        ) as error:
+            raise KeyUpdateError(f"Error updating key: {response_text}") from error
         else:
             return reply
 
