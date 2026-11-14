@@ -10,7 +10,7 @@ use crate::send::deps::BridgeDeps;
 
 use super::support::{
     Reply, StreamFixture, details, json, logging_state, message_frame, params_with_provider,
-    pricing_params, recorded, recording_dispatch, request, status_frame, with_agent,
+    posted, pricing_params, recorded, recording_dispatch, request, status_frame, with_agent,
 };
 
 #[tokio::test]
@@ -135,7 +135,7 @@ async fn stream_logging_reuses_the_given_object() {
 
 #[tokio::test]
 async fn stream_iterator_yields_the_agent_chunks() {
-    let (outcome, _seen) = with_agent(
+    let (outcome, seen) = with_agent(
         Reply::Sse(vec![status_frame("working"), message_frame("hi")]),
         |base| async move {
             let mut fixture = StreamFixture::new();
@@ -188,6 +188,12 @@ async fn stream_iterator_yields_the_agent_chunks() {
         Some(json(
             r#"{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}"#
         ))
+    );
+    assert!(
+        posted(&seen)
+            .body
+            .contains("\"method\":\"SendStreamingMessage\""),
+        "the streaming client sends the streaming method"
     );
 }
 
