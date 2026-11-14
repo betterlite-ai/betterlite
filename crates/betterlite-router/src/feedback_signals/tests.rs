@@ -185,6 +185,9 @@ fn assert_counted() {
     assert!(one.any_fired());
     assert_eq!(fields(merge_signal_deltas(&[all, all])), [2; 7]);
     let mut state = state();
+    assert_eq!(state.last_processed_turn, -1);
+    assert!(!state.clean_credit_awarded);
+    assert_eq!(state.terminal_status, None);
     apply_signal_delta(&mut state, all);
     apply_signal_delta(&mut state, all);
     assert_eq!(counters(&state), [2; 7]);
