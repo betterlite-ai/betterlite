@@ -5,8 +5,8 @@ use std::sync::Arc;
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
 
 use super::support::{
-    FakeBatch, FakeCache, FakeScript, FakeUsage, adjustments_with, operation, pipeline_tuples,
-    script_handle, without_scripts,
+    FakeBatch, FakeCache, FakeScript, FakeUsage, adjustments_with, batch_handle, operation,
+    pipeline_tuples, script_handle, without_scripts,
 };
 use crate::rate_limit_window_store::RedisCacheKind;
 use crate::token_adjustments::direct::{
@@ -176,7 +176,7 @@ async fn an_open_post_call_batch_takes_each_group_instead_of_running_it() {
         Arc::clone(&usage),
         Some(script_handle(&script)),
         None,
-        Some(Arc::clone(&batch)),
+        Some(batch_handle(&batch)),
     );
     let operations = [operation("{alpha}:tokens", 4.0, Some(60))];
     increment_tokens_keeping_ttl(&adjustments, &operations).await;

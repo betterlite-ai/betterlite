@@ -7,8 +7,8 @@ use betterlite_redis::batch::result::Settled;
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
 
 use super::support::{
-    FakeBatch, FakeCache, FakeScript, FakeUsage, adjustments_with, operation, pipeline_tuples,
-    script_handle,
+    FakeBatch, FakeCache, FakeScript, FakeUsage, adjustments_with, batch_handle, operation,
+    pipeline_tuples, script_handle,
 };
 use crate::limiter_records::ScriptReply;
 use crate::rate_limit_window_store::RedisCacheKind;
@@ -36,7 +36,7 @@ async fn a_deferral_without_the_script_is_not_taken() {
         Arc::clone(&usage),
         None,
         None,
-        Some(Arc::clone(&batch)),
+        Some(batch_handle(&batch)),
     );
     let keys = vec!["{alpha}:tokens".to_owned()];
     let args = vec![RedisScalar::Float(4.0), RedisScalar::Text("60".to_owned())];
@@ -84,7 +84,7 @@ async fn a_deferral_with_the_script_and_an_open_batch_is_taken() {
         Arc::clone(&usage),
         Some(script_handle(&script)),
         None,
-        Some(Arc::clone(&batch)),
+        Some(batch_handle(&batch)),
     );
     let keys = vec!["{alpha}:tokens".to_owned()];
     let args = vec![RedisScalar::Float(4.0), RedisScalar::Text("60".to_owned())];
@@ -109,7 +109,7 @@ async fn a_settled_deferral_that_succeeded_leaves_the_pipeline_alone() {
         Arc::clone(&usage),
         Some(script_handle(&script)),
         None,
-        Some(Arc::clone(&batch)),
+        Some(batch_handle(&batch)),
     );
     let operations = [operation("{alpha}:tokens", 4.0, Some(60))];
     increment_tokens_keeping_ttl(&adjustments, &operations).await;
@@ -128,7 +128,7 @@ async fn a_settled_deferral_that_failed_runs_the_regular_pipeline() {
         Arc::clone(&usage),
         Some(script_handle(&script)),
         None,
-        Some(Arc::clone(&batch)),
+        Some(batch_handle(&batch)),
     );
     let operations = [operation("{alpha}:tokens", 4.0, Some(60))];
     increment_tokens_keeping_ttl(&adjustments, &operations).await;
@@ -150,7 +150,7 @@ async fn a_cancelled_deferral_does_not_run_the_regular_pipeline() {
         Arc::clone(&usage),
         Some(script_handle(&script)),
         None,
-        Some(Arc::clone(&batch)),
+        Some(batch_handle(&batch)),
     );
     let operations = [operation("{alpha}:tokens", 4.0, Some(60))];
     increment_tokens_keeping_ttl(&adjustments, &operations).await;
@@ -169,7 +169,7 @@ async fn each_deferred_group_carries_its_own_fallback_operations() {
         Arc::clone(&usage),
         Some(script_handle(&script)),
         None,
-        Some(Arc::clone(&batch)),
+        Some(batch_handle(&batch)),
     );
     let operations = [
         operation("{foo}:tokens", 4.0, Some(60)),
