@@ -1,0 +1,139 @@
+{
+  "targets": [
+    {
+      "path": "ui/litellm-dashboard/public/assets/logos/litellm.jpg",
+      "preimage": "6673e083fda706a36e32ea96d994ab58d21255a2ba1e24ae341e1ee71b6d42da",
+      "postimage": null
+    },
+    {
+      "path": "ui/litellm-dashboard/public/assets/logos/litellm_logo.png",
+      "preimage": "494961873b06061c00d741e41d1e7fec948ff3beba509766ffa02199f8230cb1",
+      "postimage": null
+    },
+    {
+      "path": "ui/litellm-dashboard/public/assets/logos/litellm_logo_dark.png",
+      "preimage": "8da622855052e6240656f7793cb884806300e28972f39baf7da3a03b1c17bb3a",
+      "postimage": null
+    },
+    {
+      "path": "ui/litellm-dashboard/public/assets/logos/litellm_monogram.svg",
+      "preimage": "69eaed389008a423e98590466c98b80f4ab7ffec47f4bda53ee0db3890775ba0",
+      "postimage": null
+    },
+    {
+      "path": "ui/litellm-dashboard/public/assets/logos/litellm_monogram_dark.svg",
+      "preimage": "667d83f006ba0d8303355616cfe16d9ebd1d9d5347adb7204628b8236609c53f",
+      "postimage": null
+    },
+    {
+      "path": "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info_helpers.tsx",
+      "preimage": "81a8ab0150ced79e3e2d0d3d9e9fea527057f6434f100ec255c0a549171e5f1f",
+      "postimage": "f1fcff4544f744037d99caa55009bcfb47f7fb8f9adf1a03d7d585537f5a395f"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/app/(dashboard)/layout.tsx",
+      "preimage": "9fbab22f7d765eb2a688bfc8443d2492ad74ff8572110789500a0948aeedaaaa",
+      "postimage": "dad51e87062add05bc48d11574f5b5431feb428cb263f78f00b7f28d776768f1"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/app/favicon.ico",
+      "preimage": "1ca8443fd2c22c0b250857cbc29907cb39fe39589b36280a08f4ff386b9299ac",
+      "postimage": null
+    },
+    {
+      "path": "ui/litellm-dashboard/src/app/layout.tsx",
+      "preimage": "d45e53d9fb4a865a88aaf1f6e80b52835ca26c4e60c883adcf9da16336d5a79f",
+      "postimage": "e3ee5f19ea86a57e45af014f623767a555172ef27ea3ad19974fc5c20026c91d"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/app/login/LoginPage.tsx",
+      "preimage": "2006492de4323a0166b032c02a1f8f5f6433b5e9756bfde1d98f7902aad7643a",
+      "postimage": "f181e528a6ae2c6b03c20544ed3552f68aa46ec1ab09b9dec1b0c6100a1e1ee7"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/app/onboarding/OnboardingFormBody.tsx",
+      "preimage": "bc8339d6590cff26e515017178e6a430e53c0fe8f4f858355180bc22278a1bcb",
+      "postimage": "7c6cc6b2b024b5bc14012a90b48f17b9635330e792807867a9d6ccb2751f5ef8"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/components/DashboardHeader.tsx",
+      "preimage": "4bbaca1506dfa9d1c4075c7c10b707c2349f2017f751e32e6bbbca1f7e11e2c2",
+      "postimage": "f55e1d44d4027b4d0930a2e5c0aef290ab26f9842d609686fb0e9787c8dc79c8"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/components/Navbar/CommunityEngagementButtons/CommunityEngagementButtons.tsx",
+      "preimage": "093616375ac2af574eac9fdfcd18193c3f9394e1b1d4d8c79d2e6068790ac100",
+      "postimage": "c8a6561b783681d9fd944dc9db7c8e866ef61070f3fda9980bf4c81217f60738"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/components/Navbar/DocsLink/DocsLink.tsx",
+      "preimage": "ddd3e5c54eaf7ed7710f0b95669f32c7b1693bb3289a4d2d559d03de0c62ea39",
+      "postimage": "53a480d23a111f4f4db43108b109f9319f4843dfe633bb8ddebb15964eed60d3"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/components/Navbar/NotificationsBell/NotificationsBell.tsx",
+      "preimage": "383fc1e3823bc2d2cccdbf51be644b7f2297d6d04190008c1ef7ccf82eed9b76",
+      "postimage": "219c8a5e1695a46ca3512f6ef20019c7e6e5a80766775abc7e58ef8b8fb3a17b"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/components/Navbar/UserDropdown/UserDropdown.tsx",
+      "preimage": "2efa05e0e2bd2db876050a7b02737e449a04a86f34b084109d3f8733f11e6a31",
+      "postimage": "6d8777ec188f7363181726c8d17880f71d132b222b2c68cb7a94096eec9ad9d6"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/components/SidebarAccountMenu/SidebarAccountMenu.tsx",
+      "preimage": "38a9e38ce5ea701a0e777196f89e1d8d9ab495f590c9efae919c2e952486b9ee",
+      "postimage": "fa6da2e63737fb1f6b04bac793edc2c295b94deab1c7755224b8b8164a673a7f"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/components/branding/BrandLogo.tsx",
+      "preimage": null,
+      "postimage": "924f5dddfc611fbf770a8647ea96c5efb9f74c8242c020719709ad2b115c2ef8"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/components/branding/BrandWordmark.tsx",
+      "preimage": null,
+      "postimage": "c5f426992c4d8bdbedb9bc84d8b1a0bbc4191e4aca3a72a2f3007bb4c784f753"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/components/branding/brandLinks.ts",
+      "preimage": null,
+      "postimage": "fde58be1c84bae45f4309e8d873c01e289c0d06dcc8dbb23407f07470ffec881"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/components/common_components/LoadingScreen.tsx",
+      "preimage": "bc7bc237e289f8d435d34601a22322d303d64d497e25d80d555f06f7acc34e4b",
+      "postimage": "da415a2cfacf91be9fdb8c35870d21b5506406a2df21599005d7ab3d178fca49"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/components/leftnav.tsx",
+      "preimage": "5adafd8c4ae3f131aadafecf3a34161eba91d49b6b7ba0d28048bdb3d38a5bf8",
+      "postimage": "d1e41ff15734e5769e0c6df1e30775436a52b8355d93d32f98e9da73173c895a"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/components/liteadmin/LiteAdmin.tsx",
+      "preimage": "bbd53601229a21fb35e73cb84e409c5800c22dbd29d7fcc28346f564bd07f3f6",
+      "postimage": "c002cd60faed5546626c780f16903d8c14dfbddad5a9d392bc1b9a56e1594172"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/components/liteadmin/LiteAdminConversation.tsx",
+      "preimage": "22fc459ec0560132192a7bfd8073a3f973ac672db5e4a91ead949ae2a87f4300",
+      "postimage": "caf53b3e3951c039406684003876edb2f7d3bfbf1714e04e32fb710f3c2cc857"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/components/molecules/logo/Logo.tsx",
+      "preimage": "ba0789108c9bf8c7ec38cc853e188f9d131c7850a44fba82868eebd7230cbe2e",
+      "postimage": "31c966ba3a558dd543c41c8ccab112669b5788557e6ecda3e52db4cc43a14b97"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/components/navbar.tsx",
+      "preimage": "53c14142772db7f16363cbfeb81d0a505cc2fd004cea2203dea3cb6833e576ca",
+      "postimage": "34087297694d3c1bf26970fd211595d632357039422f3c148e16bb4dda1c2bbe"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/lib/logoTreatments.ts",
+      "preimage": "f7b30ec37a3eec22fe8535c99b734fc88b567d7e876860bb19c8b97461712750",
+      "postimage": "f5737f5b729548f195389f7bb2eedca9ae21be8bf847cd2177de464fa0d6fa48"
+    }
+  ]
+}

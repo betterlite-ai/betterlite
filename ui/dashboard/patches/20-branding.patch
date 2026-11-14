@@ -1,0 +1,1001 @@
+diff --git a/ui/litellm-dashboard/public/assets/logos/litellm.jpg b/ui/litellm-dashboard/public/assets/logos/litellm.jpg
+deleted file mode 100644
+index a10a1d249690c6148a6ba40893e7c0ada44adec0..0000000000000000000000000000000000000000
+Binary files a/ui/litellm-dashboard/public/assets/logos/litellm.jpg and /dev/null differ
+diff --git a/ui/litellm-dashboard/public/assets/logos/litellm_logo.png b/ui/litellm-dashboard/public/assets/logos/litellm_logo.png
+deleted file mode 100644
+index 4e47364ce693fb1eff2e709f2f202783b0b2c9cf..0000000000000000000000000000000000000000
+Binary files a/ui/litellm-dashboard/public/assets/logos/litellm_logo.png and /dev/null differ
+diff --git a/ui/litellm-dashboard/public/assets/logos/litellm_logo_dark.png b/ui/litellm-dashboard/public/assets/logos/litellm_logo_dark.png
+deleted file mode 100644
+index c7f45c18f19f99522fc787fb6e14ab6ef43c8125..0000000000000000000000000000000000000000
+Binary files a/ui/litellm-dashboard/public/assets/logos/litellm_logo_dark.png and /dev/null differ
+diff --git a/ui/litellm-dashboard/public/assets/logos/litellm_monogram.svg b/ui/litellm-dashboard/public/assets/logos/litellm_monogram.svg
+deleted file mode 100644
+index 82cbe3eeb030edc669416af7e61ebcc92788bb6f..0000000000000000000000000000000000000000
+--- a/ui/litellm-dashboard/public/assets/logos/litellm_monogram.svg
++++ /dev/null
+@@ -1,17 +0,0 @@
+-<?xml version="1.0" encoding="UTF-8"?>
+-<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 372.14 371.53">
+-  <defs>
+-    <style>
+-      .cls-1 {
+-        fill: #0117be;
+-      }
+-    </style>
+-  </defs>
+-  <path class="cls-1" d="M296.11,254.16c7.79-1.07,7.43-12.43.39-13.28-6.58-.79-14.5.86-21.17-.23l-50.86.37c-7.25,2.25-6.45,12.27,1.1,13.28l70.54-.14Z"/>
+-  <path class="cls-1" d="M309.42,196.83c-35.23-15.22-72.84-26.08-109.96-35.87-33.05-8.71-69.92-16.92-103.8-21.32-31.89-4.14-63.43-3.41-95.51-3.23v6.54c36.23-.59,71.45.42,107.34,5.91,48.38,7.41,99.06,19.56,145.78,33.98,27.15,8.38,53.59,18.79,79.2,31.01l.1,67.98c12.46-2,31.2-8.81,39.28-20.3l-.04-24.63c-10.86-17.17-45.21-32.66-62.4-40.09Z"/>
+-  <path class="cls-1" d="M14.79,115.72c-.07.12-.14.23-.21.35,23.36.36,46.79,1.59,69.97,4.75,36.98,5.04,75.62,13.61,111.4,24.06,17.99,5.25,35.13,13.22,54.25,12.22,4.13-.22,8.25-1.11,12.36-1.52l-.56-.73c-22.47-16.17-52.91-34.43-91.33-48.5C101.55,81.06,39.38,81.29.08,85.13l.05,31.74c3.47-.28,6.94-.56,10.39-.99,1.4-.02,2.84-.06,4.28-.16Z"/>
+-  <path class="cls-1" d="M333.75-.37L37.67.08C16.84.11-.03,17.02,0,37.85l.06,39.13c27.48-4.04,66.25-6.26,112.14,2.78,1.52.3,6.38,1.29,12.73,2.77,54.99,12.83,104.51,41.22,151.11,71.93,22.76,14.99,46.61,30.85,68.19,47.42,8.92,6.85,19.82,15.04,27.57,24.61l-.29-189.2c-.03-20.83-16.94-37.69-37.77-37.66Z"/>
+-  <path class="cls-1" d="M92.09,245.59h6.39s0,.03,0,.03l57.07-.09-48.14-66.6c-.53-.87-3.85-2.78-4.61-2.78h-4.75s0,.18,0,.18h-6.06s0-.09,0-.09l-91.76.14.11,69.62,91.76-.14v-.28Z"/>
+-  <path class="cls-1" d="M.4,298.26l.05,35.68c.03,20.83,16.94,37.69,37.77,37.66l296.08-.45c20.83-.03,37.69-16.94,37.66-37.77l-.09-59.31c-17.35,19.08-52.22,22.16-75.65,23.75l-295.82.45Z"/>
+-  <path class="cls-1" d="M159.06,253.3c-20.19.1-40.38.04-60.58.04v.26s-42.72.07-42.72.07c-.83.12-1.69.18-2.17,0l-53.25.08v9.76s166.32-.25,166.32-.25c-1.47-1.7-5.76-9.61-7.6-9.96Z"/>
+-</svg>
+\ No newline at end of file
+diff --git a/ui/litellm-dashboard/public/assets/logos/litellm_monogram_dark.svg b/ui/litellm-dashboard/public/assets/logos/litellm_monogram_dark.svg
+deleted file mode 100644
+index bc3771b7330010a0460b27f4ecdaddec6cca1c70..0000000000000000000000000000000000000000
+--- a/ui/litellm-dashboard/public/assets/logos/litellm_monogram_dark.svg
++++ /dev/null
+@@ -1,17 +0,0 @@
+-<?xml version="1.0" encoding="UTF-8"?>
+-<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 372.14 371.53">
+-  <defs>
+-    <style>
+-      .cls-1 {
+-        fill: #fff;
+-      }
+-    </style>
+-  </defs>
+-  <path class="cls-1" d="M296.11,254.16c7.79-1.07,7.43-12.43.39-13.28-6.58-.79-14.5.86-21.17-.23l-50.86.37c-7.25,2.25-6.45,12.27,1.1,13.28l70.54-.14Z"/>
+-  <path class="cls-1" d="M309.42,196.83c-35.23-15.22-72.84-26.08-109.96-35.87-33.05-8.71-69.92-16.92-103.8-21.32-31.89-4.14-63.43-3.41-95.51-3.23v6.54c36.23-.59,71.45.42,107.34,5.91,48.38,7.41,99.06,19.56,145.78,33.98,27.15,8.38,53.59,18.79,79.2,31.01l.1,67.98c12.46-2,31.2-8.81,39.28-20.3l-.04-24.63c-10.86-17.17-45.21-32.66-62.4-40.09Z"/>
+-  <path class="cls-1" d="M14.79,115.72c-.07.12-.14.23-.21.35,23.36.36,46.79,1.59,69.97,4.75,36.98,5.04,75.62,13.61,111.4,24.06,17.99,5.25,35.13,13.22,54.25,12.22,4.13-.22,8.25-1.11,12.36-1.52l-.56-.73c-22.47-16.17-52.91-34.43-91.33-48.5C101.55,81.06,39.38,81.29.08,85.13l.05,31.74c3.47-.28,6.94-.56,10.39-.99,1.4-.02,2.84-.06,4.28-.16Z"/>
+-  <path class="cls-1" d="M333.75-.37L37.67.08C16.84.11-.03,17.02,0,37.85l.06,39.13c27.48-4.04,66.25-6.26,112.14,2.78,1.52.3,6.38,1.29,12.73,2.77,54.99,12.83,104.51,41.22,151.11,71.93,22.76,14.99,46.61,30.85,68.19,47.42,8.92,6.85,19.82,15.04,27.57,24.61l-.29-189.2c-.03-20.83-16.94-37.69-37.77-37.66Z"/>
+-  <path class="cls-1" d="M92.09,245.59h6.39s0,.03,0,.03l57.07-.09-48.14-66.6c-.53-.87-3.85-2.78-4.61-2.78h-4.75s0,.18,0,.18h-6.06s0-.09,0-.09l-91.76.14.11,69.62,91.76-.14v-.28Z"/>
+-  <path class="cls-1" d="M.4,298.26l.05,35.68c.03,20.83,16.94,37.69,37.77,37.66l296.08-.45c20.83-.03,37.69-16.94,37.66-37.77l-.09-59.31c-17.35,19.08-52.22,22.16-75.65,23.75l-295.82.45Z"/>
+-  <path class="cls-1" d="M159.06,253.3c-20.19.1-40.38.04-60.58.04v.26s-42.72.07-42.72.07c-.83.12-1.69.18-2.17,0l-53.25.08v9.76s166.32-.25,166.32-.25c-1.47-1.7-5.76-9.61-7.6-9.96Z"/>
+-</svg>
+\ No newline at end of file
+diff --git a/ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info_helpers.tsx b/ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info_helpers.tsx
+index 3c6d9e17642cb923be9e458a18ed91aab1d5a632..91c8e1a360de5589df8d04d764995d5a85107c4f 100644
+--- a/ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info_helpers.tsx
++++ b/ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info_helpers.tsx
+@@ -1,3 +1,4 @@
++import { BRAND_WORDMARK_SRC } from "@/components/branding/BrandWordmark";
+ import aimSecurityLogo from "../../../../../public/assets/logos/aim_security.jpeg";
+ import aktoLogo from "../../../../../public/assets/logos/akto.svg";
+ import aliceLogo from "../../../../../public/assets/logos/alice.svg";
+@@ -13,7 +14,6 @@ import guardrailsAiLogo from "../../../../../public/assets/logos/guardrails_ai.j
+ import javelinLogo from "../../../../../public/assets/logos/javelin.png";
+ import lakeraAiLogo from "../../../../../public/assets/logos/lakeraai.jpeg";
+ import lassoLogo from "../../../../../public/assets/logos/lasso.png";
+-import litellmLogo from "../../../../../public/assets/logos/litellm_monogram.svg";
+ import microsoftAzureLogo from "../../../../../public/assets/logos/microsoft_azure.svg";
+ import nomaSecurityLogo from "../../../../../public/assets/logos/noma_security.png";
+ import openaiSmallLogo from "../../../../../public/assets/logos/openai_small.svg";
+@@ -212,9 +212,9 @@ export const guardrailLogoMap = {
+   "Prompt Security": promptSecurityLogo.src,
+   PromptGuard: promptguardLogo.src,
+   XecGuard: xecguardLogo.src,
+-  "LiteLLM Content Filter": litellmLogo.src,
+-  "LiteLLM LLM as a Judge": litellmLogo.src,
+-  "Hide Secrets": litellmLogo.src,
++  "LiteLLM Content Filter": BRAND_WORDMARK_SRC,
++  "LiteLLM LLM as a Judge": BRAND_WORDMARK_SRC,
++  "Hide Secrets": BRAND_WORDMARK_SRC,
+   Akto: aktoLogo.src,
+   "DeepKeep AI Firewall": deepkeepLogo.src,
+   "Qostodian Nexus": qohashLogo.src,
+@@ -223,7 +223,7 @@ export const guardrailLogoMap = {
+   Alice: aliceLogo.src,
+   "Microsoft Agent 365": microsoftAzureLogo.src,
+   "Conduct Guard": conductLogo.src,
+-  "Decision Model": litellmLogo.src,
++  "Decision Model": BRAND_WORDMARK_SRC,
+ } satisfies Record<string, string>;
+ 
+ export const getGuardrailLogo = (displayName: string): string | undefined =>
+diff --git a/ui/litellm-dashboard/src/app/(dashboard)/layout.tsx b/ui/litellm-dashboard/src/app/(dashboard)/layout.tsx
+index 72f2691906007239d8ab2825161add98bd5d6622..f8d17ff1bcdf34e3db81f0f0f595b3ac7c7ce0cc 100644
+--- a/ui/litellm-dashboard/src/app/(dashboard)/layout.tsx
++++ b/ui/litellm-dashboard/src/app/(dashboard)/layout.tsx
+@@ -11,7 +11,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
+ import { DebugWarningBanner } from "@/components/DebugWarningBanner";
+ import { NoRedisWarningBanner } from "@/components/NoRedisWarningBanner";
+ import { EnvCredentialLoginWarningBanner } from "@/components/EnvCredentialLoginWarningBanner";
+-import { LicenseExpiryBanner } from "@/components/LicenseExpiryBanner";
+ import { UserBanner } from "@/components/UserBanner";
+ import LiteAdmin from "@/components/liteadmin/LiteAdmin";
+ import { UpgradeBanner } from "@/components/UpgradeBanner";
+@@ -125,7 +124,6 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
+         <DebugWarningBanner accessToken={accessToken} />
+         <NoRedisWarningBanner accessToken={accessToken} />
+         <EnvCredentialLoginWarningBanner accessToken={accessToken} />
+-        <LicenseExpiryBanner accessToken={accessToken} />
+         <UserBanner accessToken={accessToken} />
+         <UpgradeBanner accessToken={accessToken} />
+         <main className="flex min-h-0 flex-1 overflow-hidden">
+@@ -146,7 +144,6 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
+         <DebugWarningBanner accessToken={accessToken} />
+         <NoRedisWarningBanner accessToken={accessToken} />
+         <EnvCredentialLoginWarningBanner accessToken={accessToken} />
+-        <LicenseExpiryBanner accessToken={accessToken} />
+         <UserBanner accessToken={accessToken} />
+         <UpgradeBanner accessToken={accessToken} />
+         <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
+diff --git a/ui/litellm-dashboard/src/app/favicon.ico b/ui/litellm-dashboard/src/app/favicon.ico
+deleted file mode 100644
+index 657ee1e24e82bd6cd7b67e929ae6e0e5ab1bad72..0000000000000000000000000000000000000000
+Binary files a/ui/litellm-dashboard/src/app/favicon.ico and /dev/null differ
+diff --git a/ui/litellm-dashboard/src/app/layout.tsx b/ui/litellm-dashboard/src/app/layout.tsx
+index c7eddb587c0d4189e34e4c2bfceed3ff44fbc548..6433fe21524ad291fdda4dcd6d87d145d00cd91c 100644
+--- a/ui/litellm-dashboard/src/app/layout.tsx
++++ b/ui/litellm-dashboard/src/app/layout.tsx
+@@ -9,8 +9,8 @@ import ReactQueryProvider from "@/contexts/ReactQueryProvider";
+ import { Toaster } from "@/components/ui/sonner";
+ 
+ export const metadata: Metadata = {
+-  title: "LiteLLM Dashboard",
+-  description: "LiteLLM Proxy Admin UI",
++  title: "betterlite Dashboard",
++  description: "betterlite Proxy Admin UI",
+   icons: { icon: "/get_favicon" },
+ };
+ 
+diff --git a/ui/litellm-dashboard/src/app/login/LoginPage.tsx b/ui/litellm-dashboard/src/app/login/LoginPage.tsx
+index 11cf5ffad3d442f408ce0a029be1b307dc756bc3..0494b0f32fab58401f03617959d084926b8a695e 100644
+--- a/ui/litellm-dashboard/src/app/login/LoginPage.tsx
++++ b/ui/litellm-dashboard/src/app/login/LoginPage.tsx
+@@ -2,6 +2,7 @@
+ 
+ import { useLogin } from "@/app/(dashboard)/hooks/login/useLogin";
+ import { useUIConfig } from "@/app/(dashboard)/hooks/uiConfig/useUIConfig";
++import { UPSTREAM_LITELLM_DOCS_LABEL } from "@/components/branding/brandLinks";
+ import LoadingScreen from "@/components/common_components/LoadingScreen";
+ import { exchangeLoginCode, getProxyBaseUrl, switchToWorkerUrl } from "@/components/networking";
+ import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/shared/Alert";
+@@ -42,7 +43,7 @@ function SsoEnabledNotice() {
+     <Alert variant="info" className="mt-4">
+       <Info />
+       <AlertTitle>
+-        Single Sign-On (SSO) is enabled. LiteLLM no longer automatically redirects to the SSO login flow upon loading
++        Single Sign-On (SSO) is enabled. betterlite no longer automatically redirects to the SSO login flow upon loading
+         this page. To re-enable auto-redirect-to-SSO, set{" "}
+         <code className="bg-muted px-1 py-0.5 rounded-sm text-xs">AUTO_REDIRECT_UI_LOGIN_TO_SSO=true</code> in your
+         environment configuration.
+@@ -192,7 +193,7 @@ function LoginPageContent() {
+           <CardContent>
+             <div className="flex w-full flex-col gap-4">
+               <div className="text-center">
+-                <h2 className="text-3xl font-semibold text-foreground">🚅 LiteLLM</h2>
++                <h2 className="text-3xl font-semibold text-foreground">betterlite</h2>
+               </div>
+ 
+               <Alert variant="warning">
+@@ -222,12 +223,12 @@ function LoginPageContent() {
+           <TooltipProvider>
+             <div className="flex w-full flex-col gap-4">
+               <div className="text-center">
+-                <h2 className="text-3xl font-semibold text-foreground">🚅 LiteLLM</h2>
++                <h2 className="text-3xl font-semibold text-foreground">betterlite</h2>
+               </div>
+ 
+               <div className="text-center">
+                 <h3 className="text-2xl font-semibold text-foreground">Login</h3>
+-                <p className="text-sm text-muted-foreground">Access your LiteLLM Admin UI.</p>
++                <p className="text-sm text-muted-foreground">Access your betterlite Admin UI.</p>
+               </div>
+ 
+               {!uiConfig?.hide_default_credentials_hint && (
+@@ -237,13 +238,13 @@ function LoginPageContent() {
+                   <AlertDescription>
+                     <p className="text-sm">
+                       By default, Username is <code className="bg-muted px-1 py-0.5 rounded-sm text-xs">admin</code> and
+-                      Password is your set LiteLLM Proxy
++                      Password is your set betterlite Proxy
+                       <code className="bg-muted px-1 py-0.5 rounded-sm text-xs">MASTER_KEY</code>.
+                     </p>
+                     <p className="mt-2 text-sm">
+                       Need to set UI credentials or SSO?{" "}
+                       <a href="https://docs.litellm.ai/docs/proxy/ui" target="_blank" rel="noopener noreferrer">
+-                        Check the documentation
++                        {UPSTREAM_LITELLM_DOCS_LABEL}
+                       </a>
+                       .
+                     </p>
+diff --git a/ui/litellm-dashboard/src/app/onboarding/OnboardingFormBody.tsx b/ui/litellm-dashboard/src/app/onboarding/OnboardingFormBody.tsx
+index 96eb165d43c6153efc814f556503b6def7cd77a3..66739de8a7c8abfcd31b88a29c3fa08b9dcd4ed5 100644
+--- a/ui/litellm-dashboard/src/app/onboarding/OnboardingFormBody.tsx
++++ b/ui/litellm-dashboard/src/app/onboarding/OnboardingFormBody.tsx
+@@ -1,15 +1,15 @@
+ import React from "react";
+-import { CircleAlert, Info } from "lucide-react";
++import { CircleAlert } from "lucide-react";
+ import { z } from "zod/v4";
++import { BrandWordmark } from "@/components/branding/BrandWordmark";
+ import { Alert, AlertDescription, AlertTitle } from "@/components/shared/Alert";
+ import { PasswordInput } from "@/components/shared/PasswordInput";
+ import { Field, FieldLabel, FieldGroup } from "@/components/ui/field";
+ import { FormField } from "@/components/shared/form/FormField";
+-import { Button, buttonVariants } from "@/components/ui/button";
++import { Button } from "@/components/ui/button";
+ import { Card, CardContent } from "@/components/ui/card";
+ import { Input } from "@/components/ui/input";
+ import { UiLoadingSpinner } from "@/components/ui/ui-loading-spinner";
+-import { cn } from "@/lib/cva.config";
+ import { useZodForm } from "@/lib/forms/useZodForm";
+ 
+ type OnboardingFormBodyProps = {
+@@ -38,7 +38,9 @@ export function OnboardingFormBody({ variant, userEmail, isPending, claimError,
+     <div className="mx-auto w-full max-w-md mt-10">
+       <Card>
+         <CardContent>
+-          <h5 className="text-center mb-5 text-base font-semibold text-foreground">🚅 LiteLLM</h5>
++          <h5 className="text-center mb-5 text-base font-semibold text-foreground">
++            <BrandWordmark />
++          </h5>
+           <h3 className="text-2xl font-semibold text-foreground">{actionLabel}</h3>
+           <p className="text-sm text-foreground">
+             {isResetPassword
+@@ -46,26 +48,6 @@ export function OnboardingFormBody({ variant, userEmail, isPending, claimError,
+               : "Claim your user account to login to Admin UI."}
+           </p>
+ 
+-          {variant === "signup" && (
+-            <Alert className="mt-4" variant="info">
+-              <Info />
+-              <AlertTitle>SSO</AlertTitle>
+-              <AlertDescription>
+-                <div className="flex justify-between items-center">
+-                  <span>SSO is under the Enterprise Tier.</span>
+-                  <a
+-                    className={cn(buttonVariants({ size: "sm" }))}
+-                    href="https://forms.gle/W3U4PZpJGFHWtHyA9"
+-                    target="_blank"
+-                    rel="noopener noreferrer"
+-                  >
+-                    Get Free Trial
+-                  </a>
+-                </div>
+-              </AlertDescription>
+-            </Alert>
+-          )}
+-
+           <form className="mt-10 mb-5" onSubmit={form.handleSubmit(handleSubmit)}>
+             <FieldGroup>
+               <Field>
+diff --git a/ui/litellm-dashboard/src/components/DashboardHeader.tsx b/ui/litellm-dashboard/src/components/DashboardHeader.tsx
+index 57d734d05b3b3b2bda4709e2edea363047ff9421..b0c48e1c713ee335b91f88cdce5662bb292abc87 100644
+--- a/ui/litellm-dashboard/src/components/DashboardHeader.tsx
++++ b/ui/litellm-dashboard/src/components/DashboardHeader.tsx
+@@ -9,7 +9,6 @@ import {
+ } from "@/components/ui/breadcrumb";
+ import { ToolbarSeparator } from "@/components/shared/ToolbarSeparator";
+ import { getBreadcrumb } from "@/components/leftnav";
+-import { BlogDropdown } from "@/components/Navbar/BlogDropdown/BlogDropdown";
+ import { DocsLink } from "@/components/Navbar/DocsLink/DocsLink";
+ import { CommunityEngagementButtons } from "@/components/Navbar/CommunityEngagementButtons/CommunityEngagementButtons";
+ import { NotificationsBell } from "@/components/Navbar/NotificationsBell/NotificationsBell";
+@@ -60,7 +59,6 @@ export function DashboardHeader() {
+           </>
+         )}
+         <DocsLink />
+-        <BlogDropdown />
+         {!hideCommunityLinks && <CommunityEngagementButtons />}
+         <ToolbarSeparator />
+         <ThemeToggle />
+diff --git a/ui/litellm-dashboard/src/components/Navbar/CommunityEngagementButtons/CommunityEngagementButtons.tsx b/ui/litellm-dashboard/src/components/Navbar/CommunityEngagementButtons/CommunityEngagementButtons.tsx
+index 6e84f22a2a2617253ad0d64dc22fcbf0d489cc40..2d8e5c35e6cb4412aa4e08f58074226839614f67 100644
+--- a/ui/litellm-dashboard/src/components/Navbar/CommunityEngagementButtons/CommunityEngagementButtons.tsx
++++ b/ui/litellm-dashboard/src/components/Navbar/CommunityEngagementButtons/CommunityEngagementButtons.tsx
+@@ -1,22 +1,23 @@
+ import { useDisableShowPrompts } from "@/app/(dashboard)/hooks/useDisableShowPrompts";
++import { BETTERLITE_SOURCE_URL, BETTERLITE_SUPPORT_URL } from "@/components/branding/brandLinks";
+ import { buttonVariants } from "@/components/ui/button";
+ import { ButtonGroup } from "@/components/ui/button-group";
+ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+ import { cn } from "@/lib/cva.config";
+-import { Github, Slack } from "lucide-react";
++import { Github, LifeBuoy } from "lucide-react";
+ import React from "react";
+ 
+ const COMMUNITY_LINKS = [
+   {
+-    href: "https://www.litellm.ai/support",
+-    label: "Join Slack",
+-    tooltip: "LiteLLM Slack community",
+-    Icon: Slack,
++    href: BETTERLITE_SUPPORT_URL,
++    label: "betterlite support",
++    tooltip: "betterlite issues and support",
++    Icon: LifeBuoy,
+   },
+   {
+-    href: "https://github.com/BerriAI/litellm",
+-    label: "LiteLLM on GitHub",
+-    tooltip: "LiteLLM on GitHub",
++    href: BETTERLITE_SOURCE_URL,
++    label: "betterlite source on GitHub",
++    tooltip: "betterlite source on GitHub",
+     Icon: Github,
+   },
+ ] as const;
+diff --git a/ui/litellm-dashboard/src/components/Navbar/DocsLink/DocsLink.tsx b/ui/litellm-dashboard/src/components/Navbar/DocsLink/DocsLink.tsx
+index 9b4f4c90b64a346a0e1366c2388c52543eaa2ba1..807621dd2f7517aa47f646b7da5e25d4bec27a85 100644
+--- a/ui/litellm-dashboard/src/components/Navbar/DocsLink/DocsLink.tsx
++++ b/ui/litellm-dashboard/src/components/Navbar/DocsLink/DocsLink.tsx
+@@ -1,8 +1,9 @@
++import { BETTERLITE_DOCS_URL } from "@/components/branding/brandLinks";
+ import { NAV_PRODUCT_LINK_CLASS } from "@/components/Navbar/navProductLinkClass";
+ import { ChevronDown } from "lucide-react";
+ import React from "react";
+ 
+-export const DOCS_URL = "https://docs.litellm.ai/docs/";
++export const DOCS_URL = BETTERLITE_DOCS_URL;
+ 
+ const ChevronWidthSpacer: React.FC = () => (
+   <ChevronDown className="pointer-events-none size-2.5 opacity-0" aria-hidden />
+diff --git a/ui/litellm-dashboard/src/components/Navbar/NotificationsBell/NotificationsBell.tsx b/ui/litellm-dashboard/src/components/Navbar/NotificationsBell/NotificationsBell.tsx
+index 8b9b7d1d0d2a8f62b2b09424f114527d05cd9045..47e55465875a699fe09a497d219579b1438fa337 100644
+--- a/ui/litellm-dashboard/src/components/Navbar/NotificationsBell/NotificationsBell.tsx
++++ b/ui/litellm-dashboard/src/components/Navbar/NotificationsBell/NotificationsBell.tsx
+@@ -5,6 +5,7 @@ import {
+   useHideAutoRouterAnnouncement,
+ } from "@/app/(dashboard)/hooks/useHideAutoRouterAnnouncement";
+ import { emitLocalStorageChange, setLocalStorageItem } from "@/utils/localStorageUtils";
++import { UPSTREAM_LITELLM_DOCS_LABEL } from "@/components/branding/brandLinks";
+ import { Badge } from "@/components/ui/badge";
+ import { Button, buttonVariants } from "@/components/ui/button";
+ import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
+@@ -27,7 +28,7 @@ export const NotificationsBell: React.FC = () => {
+ 
+   const content = (
+     <div className="max-w-[280px]">
+-      <PopoverTitle className="mt-0! mb-2!">LiteLLM Auto Router</PopoverTitle>
++      <PopoverTitle className="mt-0! mb-2!">betterlite Auto Router</PopoverTitle>
+       <PopoverDescription className="mb-3! text-sm leading-snug">
+         Route every request to the cheapest model that can handle it, no prompt changes needed.
+       </PopoverDescription>
+@@ -38,7 +39,7 @@ export const NotificationsBell: React.FC = () => {
+           target="_blank"
+           rel="noopener noreferrer"
+         >
+-          Read the docs
++          {UPSTREAM_LITELLM_DOCS_LABEL}
+         </a>
+         {hasUnread ? (
+           <Button variant="link" size="sm" className="px-1!" onClick={markDismissed}>
+diff --git a/ui/litellm-dashboard/src/components/Navbar/UserDropdown/UserDropdown.tsx b/ui/litellm-dashboard/src/components/Navbar/UserDropdown/UserDropdown.tsx
+index ab9a723e57a5e00e692e253aad23110f0cab386c..5c429e5ef01479079d1f9afaf2105853904db4c0 100644
+--- a/ui/litellm-dashboard/src/components/Navbar/UserDropdown/UserDropdown.tsx
++++ b/ui/litellm-dashboard/src/components/Navbar/UserDropdown/UserDropdown.tsx
+@@ -1,4 +1,5 @@
+ import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
++import { LITELLM_LICENSE_NOTICE } from "@/components/branding/brandLinks";
+ import { useDisableBlogPosts } from "@/app/(dashboard)/hooks/useDisableBlogPosts";
+ import { useDisableBouncingIcon } from "@/app/(dashboard)/hooks/useDisableBouncingIcon";
+ import { useDisableLiteAdmin } from "@/app/(dashboard)/hooks/useDisableLiteAdmin";
+@@ -12,14 +13,12 @@ import {
+ import { navAccountDisplayName } from "@/components/Navbar/navDisplayName";
+ import { uiHref } from "@/utils/uiHref";
+ import { isProxyAdminRole } from "@/utils/roles";
+-import { ChevronDown, ChevronsUpDown, Crown, KeyRound, LogOut, Mail, ShieldCheck, User } from "lucide-react";
++import { ChevronDown, ChevronsUpDown, KeyRound, LogOut, Mail, ShieldCheck, User } from "lucide-react";
+ import { useRouter } from "next/navigation";
+ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+-import { Badge } from "@/components/ui/badge";
+ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+ import { Separator } from "@/components/ui/separator";
+ import { Switch } from "@/components/ui/switch";
+-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+ import CopyButton from "@/components/shared/CopyButton";
+ import { cn } from "@/lib/cva.config";
+ import React, { useEffect, useState } from "react";
+@@ -67,15 +66,7 @@ interface UserDropdownProps {
+ }
+ 
+ const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar", collapsed = false }) => {
+-  const {
+-    userId,
+-    userEmail,
+-    userRole: role,
+-    userRoleLabel: userRole,
+-    isViewOnly,
+-    premiumUser,
+-    loginMethod,
+-  } = useAuthorized();
++  const { userId, userEmail, userRole: role, userRoleLabel: userRole, isViewOnly, loginMethod } = useAuthorized();
+   const router = useRouter();
+   const [open, setOpen] = useState(false);
+   const disableShowPrompts = useDisableShowPrompts();
+@@ -97,22 +88,6 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar
+           <Mail className="size-4" />
+           <span className="text-muted-foreground">{userEmail || "-"}</span>
+         </div>
+-        {premiumUser ? (
+-          <Badge>
+-            <Crown className="size-3" />
+-            Premium
+-          </Badge>
+-        ) : (
+-          <TooltipProvider>
+-            <Tooltip>
+-              <TooltipTrigger render={<Badge variant="outline" />}>
+-                <Crown className="size-3" />
+-                Standard
+-              </TooltipTrigger>
+-              <TooltipContent side="left">Upgrade to Premium for advanced features</TooltipContent>
+-            </Tooltip>
+-          </TooltipProvider>
+-        )}
+       </div>
+       <Separator className="my-2" />
+       <div className="flex w-full items-center justify-between gap-2">
+@@ -134,6 +109,12 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar
+         </div>
+         <span>{userRole}</span>
+       </div>
++      <a
++        href={uiHref(LITELLM_LICENSE_NOTICE)}
++        className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
++      >
++        LiteLLM license and notices (Berri AI, MIT)
++      </a>
+       <Separator className="my-2" />
+       <div className="flex w-full items-center justify-between gap-2">
+         <span className="text-muted-foreground">Hide New Feature Indicators</span>
+@@ -206,12 +187,12 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar
+       </div>
+       {canUseLiteAdmin && (
+         <div className="flex w-full items-center justify-between gap-2">
+-          <span className="text-muted-foreground">Hide LiteAdmin</span>
++          <span className="text-muted-foreground">Hide betterlite Assistant</span>
+           <Switch
+             size="sm"
+             checked={disableLiteAdmin}
+             onCheckedChange={setDisableLiteAdmin}
+-            aria-label="Toggle hide LiteAdmin"
++            aria-label="Toggle hide betterlite Assistant"
+           />
+         </div>
+       )}
+diff --git a/ui/litellm-dashboard/src/components/SidebarAccountMenu/SidebarAccountMenu.tsx b/ui/litellm-dashboard/src/components/SidebarAccountMenu/SidebarAccountMenu.tsx
+index e580b8610d08390f370041ec7eb08bbf7344e119..c7cbd4048263957f7fd4f4656036d7a65ab55be0 100644
+--- a/ui/litellm-dashboard/src/components/SidebarAccountMenu/SidebarAccountMenu.tsx
++++ b/ui/litellm-dashboard/src/components/SidebarAccountMenu/SidebarAccountMenu.tsx
+@@ -1,5 +1,6 @@
+ import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
+ import { useHealthReadinessDetails } from "@/app/(dashboard)/hooks/healthReadiness/useHealthReadinessDetails";
++import { BETTERLITE_RELEASES_URL, LITELLM_LICENSE_NOTICE } from "@/components/branding/brandLinks";
+ import { useDisableBlogPosts } from "@/app/(dashboard)/hooks/useDisableBlogPosts";
+ import { useDisableBouncingIcon } from "@/app/(dashboard)/hooks/useDisableBouncingIcon";
+ import { useDisableLiteAdmin } from "@/app/(dashboard)/hooks/useDisableLiteAdmin";
+@@ -17,12 +18,10 @@ import { Switch } from "@/components/ui/switch";
+ import { cn } from "@/lib/cva.config";
+ import { uiHref } from "@/utils/uiHref";
+ import { isProxyAdminRole } from "@/utils/roles";
+-import { ChevronsUpDown, Crown, IdCard, KeyRound, LogOut, Mail, ShieldCheck } from "lucide-react";
++import { ChevronsUpDown, IdCard, KeyRound, LogOut, Mail, ShieldCheck } from "lucide-react";
+ import { useRouter } from "next/navigation";
+ import React from "react";
+ 
+-const RELEASE_NOTES_URL = "https://docs.litellm.ai/release_notes";
+-
+ function hueFromString(seed: string): number {
+   let h = 0;
+   for (let i = 0; i < seed.length; i += 1) {
+@@ -91,7 +90,6 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
+     userRole: role,
+     userRoleLabel: userRole,
+     isViewOnly,
+-    premiumUser,
+     accessToken,
+     loginMethod,
+   } = useAuthorized();
+@@ -186,12 +184,12 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
+         data-testid="sidebar-account-menu-panel"
+       >
+         <div className="flex items-center gap-2 border-b border-border px-3 py-3">
+-          <span className="text-[15px] font-bold tracking-tight text-foreground">LiteLLM</span>
++          <span className="text-[15px] font-bold tracking-tight text-foreground">betterlite</span>
+           {!disableBouncingIcon && (
+             <span
+               className="animate-bounce text-lg leading-none"
+               style={{ animationDuration: "2s" }}
+-              title="Thanks for using LiteLLM!"
++              title="Thanks for using betterlite!"
+               aria-hidden
+             >
+               🌴
+@@ -201,7 +199,7 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
+           {version && (
+             <Badge
+               variant="outline"
+-              render={<a href={RELEASE_NOTES_URL} target="_blank" rel="noopener noreferrer" />}
++              render={<a href={BETTERLITE_RELEASES_URL} target="_blank" rel="noopener noreferrer" />}
+               className="px-1.5 py-0 font-mono text-[10px] font-medium text-muted-foreground"
+             >
+               v{version}
+@@ -210,19 +208,6 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
+         </div>
+ 
+         <div className="flex flex-col px-3 py-2">
+-          <InfoRow icon={<Crown className="size-[17px]" />} label="Tier">
+-            {premiumUser ? (
+-              <Badge variant="outline" className="gap-1 border-warning/30 bg-warning/10 text-warning">
+-                <Crown />
+-                Premium
+-              </Badge>
+-            ) : (
+-              <Badge variant="secondary" className="gap-1" title="Upgrade to Premium for advanced features">
+-                <Crown />
+-                Standard
+-              </Badge>
+-            )}
+-          </InfoRow>
+           <InfoRow icon={<ShieldCheck className="size-[17px]" />} label="Role">
+             <Badge variant="secondary">{userRole}</Badge>
+           </InfoRow>
+@@ -232,6 +217,12 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
+           <InfoRow icon={<IdCard className="size-[17px]" />} label="User ID">
+             <MonoValue value={userId} copyLabel="Copy user ID" />
+           </InfoRow>
++          <a
++            href={uiHref(LITELLM_LICENSE_NOTICE)}
++            className="mt-1 truncate text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
++          >
++            LiteLLM license and notices (Berri AI, MIT)
++          </a>
+         </div>
+ 
+         <Separator />
+@@ -250,12 +241,12 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
+           ))}
+           {canUseLiteAdmin && (
+             <div className="flex h-[38px] items-center justify-between gap-3 px-3">
+-              <span className="text-[13px] text-foreground">Hide LiteAdmin</span>
++              <span className="text-[13px] text-foreground">Hide betterlite Assistant</span>
+               <Switch
+                 size="sm"
+                 checked={disableLiteAdmin}
+                 onCheckedChange={setDisableLiteAdmin}
+-                aria-label="Toggle hide LiteAdmin"
++                aria-label="Toggle hide betterlite Assistant"
+               />
+             </div>
+           )}
+diff --git a/ui/litellm-dashboard/src/components/branding/BrandLogo.tsx b/ui/litellm-dashboard/src/components/branding/BrandLogo.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..5965cfc6298b95d1a8c4e3a26cb1511e3ddede79
+--- /dev/null
++++ b/ui/litellm-dashboard/src/components/branding/BrandLogo.tsx
+@@ -0,0 +1,41 @@
++import React, { useState } from "react";
++import { useTheme as useNextTheme } from "next-themes";
++import { BrandWordmark } from "@/components/branding/BrandWordmark";
++import { getProxyBaseUrl } from "@/components/networking";
++import { useTheme } from "@/contexts/ThemeContext";
++import { cn } from "@/lib/cva.config";
++
++interface BrandLogoProps {
++  collapsed?: boolean;
++  imageClassName?: string;
++}
++
++const LOGO_CLASS_NAME = "h-5 w-auto max-w-[150px] object-contain";
++
++export const BrandLogo: React.FC<BrandLogoProps> = ({ collapsed = false, imageClassName = LOGO_CLASS_NAME }) => {
++  const { logoUrl, logoUrlDark } = useTheme();
++  const { resolvedTheme } = useNextTheme();
++  const baseUrl = getProxyBaseUrl();
++  const monogram = collapsed ? "&variant=monogram" : "";
++  const lightSrc = logoUrl || `${baseUrl}/get_image${collapsed ? "?variant=monogram" : ""}`;
++  const darkSrc = logoUrlDark || logoUrl || `${baseUrl}/get_image?theme=dark${monogram}`;
++  const activeSrc = resolvedTheme === "dark" ? darkSrc : lightSrc;
++  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
++  const [failedSrc, setFailedSrc] = useState<string | null>(null);
++  const imageReady = loadedSrc === activeSrc && failedSrc !== activeSrc;
++
++  return (
++    <span className="flex min-w-0 items-center">
++      {!imageReady && <BrandWordmark collapsed={collapsed} />}
++      {failedSrc !== activeSrc && (
++        <img
++          src={activeSrc}
++          alt="betterlite"
++          className={cn(imageClassName, imageReady ? undefined : "hidden")}
++          onLoad={() => setLoadedSrc(activeSrc)}
++          onError={() => setFailedSrc(activeSrc)}
++        />
++      )}
++    </span>
++  );
++};
+diff --git a/ui/litellm-dashboard/src/components/branding/BrandWordmark.tsx b/ui/litellm-dashboard/src/components/branding/BrandWordmark.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..5f07d047af469e687ae7200fc80f507361472506
+--- /dev/null
++++ b/ui/litellm-dashboard/src/components/branding/BrandWordmark.tsx
+@@ -0,0 +1,23 @@
++import React from "react";
++import { cn } from "@/lib/cva.config";
++
++// A logo src that never fetches: Logo renders the text wordmark instead of an <img>.
++export const BRAND_WORDMARK_SRC = "betterlite:wordmark";
++
++interface BrandWordmarkProps {
++  collapsed?: boolean;
++  className?: string;
++}
++
++export const BrandWordmark: React.FC<BrandWordmarkProps> = ({ collapsed = false, className }) => (
++  <span
++    data-brand-wordmark="betterlite"
++    className={cn(
++      "inline-flex select-none items-center font-sans font-semibold tracking-tight text-foreground dark:text-sidebar-foreground",
++      collapsed ? "text-xl leading-none" : "text-lg leading-none",
++      className,
++    )}
++  >
++    {collapsed ? "b" : "betterlite"}
++  </span>
++);
+diff --git a/ui/litellm-dashboard/src/components/branding/brandLinks.ts b/ui/litellm-dashboard/src/components/branding/brandLinks.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..8b6a85b2f321d58b3ee52de1ea4459c3cb4087cd
+--- /dev/null
++++ b/ui/litellm-dashboard/src/components/branding/brandLinks.ts
+@@ -0,0 +1,7 @@
++export const BETTERLITE_SOURCE_URL = "https://github.com/betterlite-ai/betterlite";
++export const BETTERLITE_DOCS_URL = "https://github.com/betterlite-ai/betterlite#readme";
++export const BETTERLITE_SUPPORT_URL = "https://github.com/betterlite-ai/betterlite/issues";
++export const BETTERLITE_RELEASES_URL = "https://github.com/betterlite-ai/betterlite/releases";
++
++export const LITELLM_LICENSE_NOTICE = "notices/LiteLLM-LICENSE.txt";
++export const UPSTREAM_LITELLM_DOCS_LABEL = "Upstream LiteLLM documentation";
+diff --git a/ui/litellm-dashboard/src/components/common_components/LoadingScreen.tsx b/ui/litellm-dashboard/src/components/common_components/LoadingScreen.tsx
+index 2d46efa3a2daefa826c8d3b1b5b9d4ed1d8276ca..4cb7e6e0f4557f6c402ca3de51c02cc99248746b 100644
+--- a/ui/litellm-dashboard/src/components/common_components/LoadingScreen.tsx
++++ b/ui/litellm-dashboard/src/components/common_components/LoadingScreen.tsx
+@@ -1,10 +1,13 @@
++import { BrandWordmark } from "@/components/branding/BrandWordmark";
+ import { cx } from "@/lib/cva.config";
+ import { UiLoadingSpinner } from "../ui/ui-loading-spinner";
+ 
+ export default function LoadingScreen() {
+   return (
+     <div className={cx("h-screen", "flex items-center justify-center gap-4")}>
+-      <div className="text-lg font-medium py-2 pr-4 border-r border-r-gray-200">🚅 LiteLLM</div>
++      <div className="text-lg font-medium py-2 pr-4 border-r border-r-gray-200">
++        <BrandWordmark />
++      </div>
+ 
+       <div className="flex items-center justify-center gap-2">
+         <UiLoadingSpinner className="size-4" />
+diff --git a/ui/litellm-dashboard/src/components/leftnav.tsx b/ui/litellm-dashboard/src/components/leftnav.tsx
+index 2221b43e68dbc7514d03e0d1fbf0105c05101f19..4eebaa96024b5ee0b5a4946d0446dde9be90c310 100644
+--- a/ui/litellm-dashboard/src/components/leftnav.tsx
++++ b/ui/litellm-dashboard/src/components/leftnav.tsx
+@@ -3,8 +3,8 @@ import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
+ import useIsOrgAdmin from "@/app/(dashboard)/hooks/useIsOrgAdmin";
+ import { useHealthReadinessDetails } from "@/app/(dashboard)/hooks/healthReadiness/useHealthReadinessDetails";
+ import { useLogout } from "@/app/(dashboard)/hooks/useLogout";
+-import { getProxyBaseUrl } from "@/components/networking";
+-import { useTheme } from "@/contexts/ThemeContext";
++import { BrandLogo } from "@/components/branding/BrandLogo";
++import { BETTERLITE_RELEASES_URL, UPSTREAM_LITELLM_DOCS_LABEL } from "@/components/branding/brandLinks";
+ import { Badge } from "@/components/ui/badge";
+ import { Button } from "@/components/ui/button";
+ import { ScrollArea } from "@/components/ui/scroll-area";
+@@ -79,7 +79,6 @@ import {
+ } from "../utils/roles";
+ import BetaBadge from "./BetaBadge";
+ import SidebarAccountMenu from "./SidebarAccountMenu/SidebarAccountMenu";
+-import SidebarUsageCard from "./SidebarUsageCard";
+ import { routeSegmentForPathname, uiHref } from "@/utils/uiHref";
+ 
+ const ICON = { strokeWidth: 1.75 } as const;
+@@ -87,11 +86,6 @@ const ICON = { strokeWidth: 1.75 } as const;
+ const LOGO_CLASS_NAME =
+   "h-5 w-auto max-w-[150px] object-contain group-data-[collapsed=true]/sidebar:h-7 group-data-[collapsed=true]/sidebar:w-7";
+ 
+-function bundledLogoSrc(baseUrl: string, { dark, monogram }: { dark: boolean; monogram: boolean }): string {
+-  const query = [dark && "theme=dark", monogram && "variant=monogram"].filter(Boolean).join("&");
+-  return `${baseUrl}/get_image${query ? `?${query}` : ""}`;
+-}
+-
+ interface SidebarProps {
+   collapsed?: boolean;
+   onToggleCollapsed?: () => void;
+@@ -303,7 +297,14 @@ const menuGroups: MenuGroup[] = [
+       {
+         key: "learning-resources",
+         page: "learning-resources",
+-        label: "Learning Resources",
++        label: (
++          <span className="flex min-w-0 flex-col leading-tight">
++            <span className="truncate">Learning Resources</span>
++            <span className="truncate text-[10px] font-normal text-muted-foreground">
++              {UPSTREAM_LITELLM_DOCS_LABEL}
++            </span>
++          </span>
++        ),
+         icon: <BookOpen {...ICON} />,
+         external_url: "https://models.litellm.ai/cookbook",
+       },
+@@ -468,12 +469,9 @@ const Sidebar_: React.FC<SidebarProps> = ({
+   const { userId, accessToken, userRole, isViewOnly } = useAuthorized();
+   const isOrgAdmin = useIsOrgAdmin();
+   const { data: teams } = useTeams();
+-  const { logoUrl, logoUrlDark } = useTheme();
+-  const [erroredDarkLogo, setErroredDarkLogo] = useState<string | null>(null);
+   const { data: healthData } = useHealthReadinessDetails(accessToken);
+   const logout = useLogout(accessToken);
+ 
+-  const baseUrl = getProxyBaseUrl();
+   const version = healthData?.litellm_version;
+   const currentRoute = routeForPathname(usePathname());
+   const selectedKey = findMenuItemKey(currentRoute);
+@@ -631,29 +629,18 @@ const Sidebar_: React.FC<SidebarProps> = ({
+     );
+   };
+ 
+-  const logoSrc = logoUrl || bundledLogoSrc(baseUrl, { dark: false, monogram: collapsed });
+-  const reachableDarkLogo = logoUrlDark === erroredDarkLogo ? null : logoUrlDark;
+-  const darkLogoSrc = reachableDarkLogo || logoUrl || bundledLogoSrc(baseUrl, { dark: true, monogram: collapsed });
+-
+   return (
+     <Sidebar collapsed={collapsed}>
+       <SidebarHeader className="h-14 border-b border-border group-data-[collapsed=true]/sidebar:h-auto">
+         <div className="flex items-center justify-between gap-2 group-data-[collapsed=true]/sidebar:flex-col">
+           <div className="flex min-w-0 items-center gap-2">
+-            <Link href={uiHref("")} className="flex min-w-0 items-center" aria-label="LiteLLM home">
+-              <img src={logoSrc} alt="LiteLLM" className={cn(LOGO_CLASS_NAME, "dark:hidden")} />
+-              <img
+-                src={darkLogoSrc}
+-                alt=""
+-                aria-hidden
+-                onError={() => setErroredDarkLogo(logoUrlDark)}
+-                className={cn(LOGO_CLASS_NAME, "hidden dark:block")}
+-              />
++            <Link href={uiHref("")} className="flex min-w-0 items-center" aria-label="betterlite home">
++              <BrandLogo collapsed={collapsed} imageClassName={LOGO_CLASS_NAME} />
+             </Link>
+             {version && (
+               <Badge
+                 variant="outline"
+-                render={<a href="https://docs.litellm.ai/release_notes" target="_blank" rel="noopener noreferrer" />}
++                render={<a href={BETTERLITE_RELEASES_URL} target="_blank" rel="noopener noreferrer" />}
+                 className="px-1.5 py-0 font-mono text-[10px] font-medium text-muted-foreground group-data-[collapsed=true]/sidebar:hidden"
+               >
+                 v{version}
+@@ -687,13 +674,6 @@ const Sidebar_: React.FC<SidebarProps> = ({
+       </ScrollArea>
+ 
+       <SidebarFooter>
+-        {isAdminRole(userRole) && (
+-          <SidebarUsageCard
+-            accessToken={accessToken}
+-            collapsed={collapsed}
+-            onExpandRail={() => onToggleCollapsed?.()}
+-          />
+-        )}
+         <SidebarAccountMenu onLogout={logout} collapsed={collapsed} />
+       </SidebarFooter>
+     </Sidebar>
+diff --git a/ui/litellm-dashboard/src/components/liteadmin/LiteAdmin.tsx b/ui/litellm-dashboard/src/components/liteadmin/LiteAdmin.tsx
+index 8092eb2f5e6d2beb25d6d7b5f2ed3deb8118f26c..865113d3b72553fd876c89bbf0a0de23c6a5b087 100644
+--- a/ui/litellm-dashboard/src/components/liteadmin/LiteAdmin.tsx
++++ b/ui/litellm-dashboard/src/components/liteadmin/LiteAdmin.tsx
+@@ -63,7 +63,7 @@ function ConfiguredLiteAdmin({ session }: { session: ManagementSession }) {
+     <Popover open={open} onOpenChange={setOpen}>
+       <PopoverTrigger render={<Button className="fixed right-5 bottom-5 z-floating rounded-full shadow-lg" />}>
+         <Sparkles className="size-4" />
+-        LiteAdmin
++        betterlite Assistant
+       </PopoverTrigger>
+       <Destination
+         key={target?.baseUrl ?? "unavailable"}
+@@ -118,8 +118,8 @@ function Destination({
+             <CardContent className="space-y-3">
+               <p className="break-all font-mono text-xs">{target.baseUrl}</p>
+               <p className="text-muted-foreground">
+-                This gateway uses a different address. LiteAdmin will send your existing session credential to the
+-                address shown above.
++                This gateway uses a different address. betterlite Assistant will send your existing session credential
++                to the address shown above.
+               </p>
+             </CardContent>
+             <CardFooter>
+@@ -190,7 +190,7 @@ function LiteAdminChat({ session, open, close }: { session: LiteAdminSession; op
+           <Skeleton className="h-8" aria-label="Loading models" />
+         ) : (
+           <SearchSelect
+-            aria-label="LiteAdmin model"
++            aria-label="betterlite Assistant model"
+             options={(models.data ?? []).map((item) => ({ value: item.model_group, label: item.model_group }))}
+             value={selectedModel}
+             onValueChange={setModel}
+@@ -211,7 +211,7 @@ function LiteAdminChat({ session, open, close }: { session: LiteAdminSession; op
+         )}
+         {models.isSuccess && models.data.length === 0 && (
+           <Alert role="status">
+-            <AlertDescription>Add a chat model to your gateway to use LiteAdmin.</AlertDescription>
++            <AlertDescription>Add a chat model to your gateway to use betterlite Assistant.</AlertDescription>
+           </Alert>
+         )}
+         {tooLong && <FieldError>Keep your message within {MAX_INPUT_LENGTH.toLocaleString()} characters.</FieldError>}
+@@ -220,7 +220,7 @@ function LiteAdminChat({ session, open, close }: { session: LiteAdminSession; op
+           onChange={setInput}
+           onSubmit={send}
+           onCancel={chat.phase === "applying" ? undefined : chat.stop}
+-          placeholder="Ask LiteAdmin…"
++          placeholder="Ask betterlite Assistant…"
+           disabled={busy || !selectedModel}
+           isLoading={busy}
+           submitDisabled={submitDisabled}
+@@ -235,12 +235,12 @@ function PanelHeader({ close, children }: { close: () => void; children?: ReactN
+   return (
+     <div className="flex items-start justify-between gap-3 border-b p-4">
+       <PopoverHeader>
+-        <PopoverTitle>LiteAdmin</PopoverTitle>
++        <PopoverTitle>betterlite Assistant</PopoverTitle>
+         <PopoverDescription>Ask about your gateway. Review changes in chat.</PopoverDescription>
+       </PopoverHeader>
+       <div className="flex shrink-0">
+         {children}
+-        <Button variant="ghost" size="icon-sm" aria-label="Close LiteAdmin" onClick={close}>
++        <Button variant="ghost" size="icon-sm" aria-label="Close betterlite Assistant" onClick={close}>
+           <X className="size-4" />
+         </Button>
+       </div>
+diff --git a/ui/litellm-dashboard/src/components/liteadmin/LiteAdminConversation.tsx b/ui/litellm-dashboard/src/components/liteadmin/LiteAdminConversation.tsx
+index 826db57a736ef508ac0ecaef131759464502845c..c92f444072650b119bb57740fde16d0691e19625 100644
+--- a/ui/litellm-dashboard/src/components/liteadmin/LiteAdminConversation.tsx
++++ b/ui/litellm-dashboard/src/components/liteadmin/LiteAdminConversation.tsx
+@@ -34,7 +34,7 @@ export function LiteAdminConversation({ entries, thinking, open, reviewRef, onAn
+       <MessageScroller.Root className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+         <MessageScroller.Viewport
+           className="min-h-0 flex-1 overflow-y-auto overscroll-contain data-pending-scroll:invisible"
+-          aria-label="LiteAdmin conversation"
++          aria-label="betterlite Assistant conversation"
+         >
+           <MessageScroller.Content className="flex flex-col gap-4 p-4" aria-busy={thinking}>
+             {entries.map((entry) => (
+@@ -59,7 +59,7 @@ export function LiteAdminConversation({ entries, thinking, open, reviewRef, onAn
+             ))}
+             {thinking && (
+               <MessageScroller.Item messageId="thinking">
+-                <div role="status" aria-label="LiteAdmin is working" className="space-y-2">
++                <div role="status" aria-label="betterlite Assistant is working" className="space-y-2">
+                   <Skeleton className="h-3 w-3/4" />
+                   <Skeleton className="h-3 w-1/2" />
+                   <span className="sr-only">Working…</span>
+diff --git a/ui/litellm-dashboard/src/components/molecules/logo/Logo.tsx b/ui/litellm-dashboard/src/components/molecules/logo/Logo.tsx
+index 66c10f1e222dcd5861df4c0341d7fca6fdef378f..bb8be34ae7cc9563227c708abc070b06ae41ac64 100644
+--- a/ui/litellm-dashboard/src/components/molecules/logo/Logo.tsx
++++ b/ui/litellm-dashboard/src/components/molecules/logo/Logo.tsx
+@@ -1,4 +1,5 @@
+ import React, { useState } from "react";
++import { BRAND_WORDMARK_SRC, BrandWordmark } from "@/components/branding/BrandWordmark";
+ import { getProviderLogoAndName } from "@/components/provider_info_helpers";
+ import { resolveLogoSrc } from "@/lib/assetPaths";
+ import { cn } from "@/lib/cva.config";
+@@ -19,6 +20,10 @@ export const Logo: React.FC<LogoProps> = ({ provider, src, label, className = "w
+   const resolvedSrc = provider !== undefined ? getProviderLogoAndName(provider).logo : resolveLogoSrc(src) ?? "";
+   const name = label ?? provider ?? "";
+ 
++  if (src === BRAND_WORDMARK_SRC) {
++    return <BrandWordmark collapsed />;
++  }
++
+   if (erroredSrc === resolvedSrc || !resolvedSrc) {
+     return (
+       <div className={`${className} rounded-full bg-border flex items-center justify-center text-xs`}>
+diff --git a/ui/litellm-dashboard/src/components/navbar.tsx b/ui/litellm-dashboard/src/components/navbar.tsx
+index 8bc9b06969efc21efb57fd65f6a218927e212266..d509c181097d8a3c8a7b3e69e3f1ebc8ba8ee21b 100644
+--- a/ui/litellm-dashboard/src/components/navbar.tsx
++++ b/ui/litellm-dashboard/src/components/navbar.tsx
+@@ -2,19 +2,17 @@ import { useHealthReadinessDetails } from "@/app/(dashboard)/hooks/healthReadine
+ import { useDisableBouncingIcon } from "@/app/(dashboard)/hooks/useDisableBouncingIcon";
+ import { useDisableShowPrompts } from "@/app/(dashboard)/hooks/useDisableShowPrompts";
+ import { useWorker } from "@/hooks/useWorker";
+-import { getProxyBaseUrl } from "@/components/networking";
++import { BrandLogo } from "@/components/branding/BrandLogo";
++import { BETTERLITE_RELEASES_URL } from "@/components/branding/brandLinks";
+ import { uiHref } from "@/utils/uiHref";
+-import { useTheme } from "@/contexts/ThemeContext";
+ import { revokeSessionAndClearClientState, useLogout } from "@/app/(dashboard)/hooks/useLogout";
+ import { getLoginUrl } from "@/utils/returnUrlUtils";
+ import { Badge } from "@/components/ui/badge";
+ import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+ import Link from "next/link";
+ import React from "react";
+-import { BlogDropdown } from "./Navbar/BlogDropdown/BlogDropdown";
+ import { DocsLink } from "./Navbar/DocsLink/DocsLink";
+ import { CommunityEngagementButtons } from "./Navbar/CommunityEngagementButtons/CommunityEngagementButtons";
+-import { cn } from "@/lib/cva.config";
+ import { NotificationsBell } from "./Navbar/NotificationsBell/NotificationsBell";
+ import UserDropdown from "./Navbar/UserDropdown/UserDropdown";
+ import ThemeToggle from "./ThemeToggle/ThemeToggle";
+@@ -36,8 +34,6 @@ const Navbar: React.FC<NavbarProps> = ({
+   sidebarCollapsed = false,
+   onToggleSidebar,
+ }) => {
+-  const baseUrl = getProxyBaseUrl();
+-  const { logoUrl } = useTheme();
+   const { data: healthData } = useHealthReadinessDetails(accessToken);
+   const version = healthData?.litellm_version;
+   const disableBouncingIcon = useDisableBouncingIcon();
+@@ -45,9 +41,6 @@ const Navbar: React.FC<NavbarProps> = ({
+   const { isControlPlane, selectedWorker } = useWorker();
+   const showWorkerSwitch = isControlPlane && selectedWorker !== null;
+ 
+-  const imageUrl = logoUrl || `${baseUrl}/get_image`;
+-  const darkImageUrl = logoUrl || `${baseUrl}/get_image?theme=dark`;
+-
+   const handleLogout = useLogout(accessToken);
+ 
+   const handleWorkerSwitch = (workerId: string) => {
+@@ -78,16 +71,10 @@ const Navbar: React.FC<NavbarProps> = ({
+             )}
+ 
+             <div className="flex items-center gap-2">
+-              <Link href={uiHref("")} className="flex items-center">
++              <Link href={uiHref("")} className="flex items-center" aria-label="betterlite home">
+                 <div className="relative">
+                   <div className="flex h-10 max-w-48 items-center justify-center overflow-hidden">
+-                    <img src={imageUrl} alt="LiteLLM Brand" className={cn(NAV_LOGO_CLASS_NAME, "dark:hidden")} />
+-                    <img
+-                      src={darkImageUrl}
+-                      alt=""
+-                      aria-hidden
+-                      className={cn(NAV_LOGO_CLASS_NAME, "hidden dark:block")}
+-                    />
++                    <BrandLogo imageClassName={NAV_LOGO_CLASS_NAME} />
+                   </div>
+                 </div>
+               </Link>
+@@ -97,18 +84,13 @@ const Navbar: React.FC<NavbarProps> = ({
+                     <span
+                       className="absolute -left-2 -top-1 animate-bounce text-lg"
+                       style={{ animationDuration: "2s" }}
+-                      title="Thanks for using LiteLLM!"
++                      title="Thanks for using betterlite!"
+                     >
+                       🌑
+                     </span>
+                   )}
+                   <Badge variant="outline" className="relative z-raised cursor-pointer text-xs font-medium">
+-                    <a
+-                      href="https://docs.litellm.ai/release_notes"
+-                      target="_blank"
+-                      rel="noopener noreferrer"
+-                      className="shrink-0"
+-                    >
++                    <a href={BETTERLITE_RELEASES_URL} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                       v{version}
+                     </a>
+                   </Badge>
+@@ -135,7 +117,6 @@ const Navbar: React.FC<NavbarProps> = ({
+               className={`flex min-w-0 items-center gap-2 ${showWorkerSwitch ? "border-l border-border pl-4" : ""}`}
+             >
+               <DocsLink />
+-              <BlogDropdown />
+             </nav>
+ 
+             {!hideCommunityLinks && (
+diff --git a/ui/litellm-dashboard/src/lib/logoTreatments.ts b/ui/litellm-dashboard/src/lib/logoTreatments.ts
+index fc19c5c364d36603ab775009771627365e991d10..1448dfa686d493f8e35ed761cc1e9d3d46d2ace6 100644
+--- a/ui/litellm-dashboard/src/lib/logoTreatments.ts
++++ b/ui/litellm-dashboard/src/lib/logoTreatments.ts
+@@ -15,7 +15,6 @@ const TREATMENT_BY_ASSET: Readonly<Record<string, LogoTreatment>> = {
+   "lago.svg": "invert",
+   "lambda.svg": "invert",
+   "langflow.svg": "invert",
+-  "litellm_monogram.svg": "invert",
+   "lmstudio.svg": "invert",
+   "moonshot.svg": "invert",
+   "nebius.svg": "invert",
