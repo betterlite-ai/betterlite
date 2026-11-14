@@ -912,9 +912,44 @@ def test_straiker_event_names() -> None:
 
 
 def test_presidio_names() -> None:
-    request = presidio.PresidioAnalyzeRequest(
-        text="hello", language="en", entities=["PERSON", "US_SSN"]
+    requests = TypeAdapter(presidio.PresidioAnalyzeRequest)
+    request = requests.validate_python(
+        {
+            "text": "hello",
+            "language": "en",
+            "ad_hoc_recognizers": ["EMAIL_ADDRESS"],
+            "entities": ["PERSON", "US_SSN"],
+            "unknown_key": True,
+        }
     )
+    assert set(request) == {"text", "language", "ad_hoc_recognizers", "entities"}
     assert request["entities"] == ["PERSON", "US_SSN"]
-    item = presidio.PresidioAnalyzeResponseItem(entity_type="PERSON", start=0, end=5)
+    with pytest.raises(ValidationError):
+        requests.validate_python({"text": "hello", "entities": 1})
+
+    items = TypeAdapter(presidio.PresidioAnalyzeResponseItem)
+    item = items.validate_python(
+        {
+            "entity_type": "PERSON",
+            "start": 0,
+            "end": 5,
+            "score": 0.9,
+            "analysis_explanation": {"entity_type": "PERSON"},
+            "recognition_metadata": {"recognizer_name": "spacy"},
+        }
+    )
+    assert set(item) == {
+        "entity_type",
+        "start",
+        "end",
+        "score",
+        "analysis_explanation",
+        "recognition_metadata",
+    }
     assert item["entity_type"] == "PERSON"
+    assert item["start"] == 0
+    assert item["score"] == 0.9
+    with pytest.raises(ValidationError):
+        items.validate_python({"entity_type": 7})
+    with pytest.raises(ValidationError):
+        items.validate_python({"start": "zero"})
