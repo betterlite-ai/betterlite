@@ -50,7 +50,7 @@ fn text_parts(content: &Json) -> Vec<(usize, &str)> {
         if let Some(Json::Text(text)) = field(part, "text")
             && !text.is_empty()
         {
-            found.push((index, text));
+            found.push((index, text.as_str()));
         }
     }
     found
@@ -78,8 +78,8 @@ fn system_instruction(data: &Object) -> Option<(Location, &Json)> {
         ),
     ]
     .into_iter()
-    .find(|(_, value)| value.is_some_and(|value| !matches!(*value, Json::Null)))
-    .and_then(|(location, value)| value.map(|value| (location, value)))
+    .find(|(_, value)| value.is_some_and(|present| !matches!(*present, Json::Null)))
+    .and_then(|(location, value)| value.map(|present| (location, present)))
 }
 
 fn append_parts(parts: &mut Vec<(Location, String)>, mut path: Location, content: &Json) {

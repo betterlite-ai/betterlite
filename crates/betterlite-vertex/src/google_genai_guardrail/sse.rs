@@ -22,16 +22,16 @@ fn decode_lossy(bytes: &[u8]) -> String {
 
 #[must_use]
 pub fn decode_google_guardrail_sse(chunks: &[&[u8]]) -> Vec<String> {
-    let joined: String = chunks.iter().map(|chunk| decode_lossy(chunk)).collect();
+    let joined: String = chunks.iter().copied().map(decode_lossy).collect();
     let mut texts = Vec::new();
     for line in joined.split(|character| LINE_BOUNDARIES.contains(&character)) {
         let Some(payload) = line.strip_prefix("data:") else {
             continue;
         };
         // an empty payload and [DONE] are not JSON objects, so the parse drops them; Python's strip also removes U+001F
-        let payload = payload
+        let trimmed = payload
             .trim_matches(|character: char| character.is_whitespace() || character == '\u{1f}');
-        if let Ok(Json::Object(object)) = serde_json::from_str::<Json>(payload) {
+        if let Ok(Json::Object(object)) = serde_json::from_str::<Json>(trimmed) {
             texts.extend(response_texts(&object).1);
         }
     }
