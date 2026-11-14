@@ -1,0 +1,24 @@
+kind: helper
+name: soniox-records-caller-authorization
+call:
+  soniox_records:
+    calls:
+    - {function: validate_environment, headers: {}, api_key: explicit, environment: {}}
+    - {function: validate_environment, headers: {Authorization: "Bearer caller", X-A: "1"}, api_key: explicit, environment: {}}
+    - {function: validate_environment, headers: {}, api_key: null, environment: {SONIOX_API_KEY: environment}}
+    - {function: validate_environment, headers: {}, api_key: explicit, environment: {SONIOX_API_KEY: environment}}
+    - {function: validate_environment, headers: {}, api_key: "", environment: {SONIOX_API_KEY: environment}}
+    - {function: validate_environment, headers: {}, api_key: null, environment: {SONIOX_API_KEY: ""}}
+    - {function: validate_environment, headers: {}, api_key: null, environment: {SONIOX_API_KEY: "true"}}
+    - {function: validate_environment, headers: {}, api_key: null, environment: {}}
+    - {function: complete_url, api_base: null, environment: {}}
+    - {function: complete_url, api_base: "https://proxy.test///", environment: {}}
+    - {function: complete_url, api_base: null, environment: {SONIOX_API_BASE: "https://env.test/"}}
+    - {function: complete_url, api_base: "https://explicit.test/", environment: {SONIOX_API_BASE: "https://env.test"}}
+    - {function: complete_url, api_base: "", environment: {SONIOX_API_BASE: "https://env.test"}}
+    - {function: complete_url, api_base: null, environment: {SONIOX_API_BASE: "false"}}
+    - {function: complete_url, api_base: "https://x.test/path/", environment: {}}
+    - {function: error, message: boom, status_code: 418}
+    - {function: error, message: "", status_code: 0}
+compare: {ignore: []}
+env: {}
