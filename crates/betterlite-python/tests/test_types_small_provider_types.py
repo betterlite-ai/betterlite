@@ -273,6 +273,10 @@ def test_names_hidden_params() -> None:
     data: dict[str, JsonValue] = {"model_id": "deployment", "extra_field": 1}
     hidden: HiddenParams = adapter.validate_python(data)
     assert hidden["extra_field"] == 1
+    hidden["added"] = "extra"
+    hidden.model_id = "other"
+    assert hidden["added"] == "extra"
+    assert hidden["model_id"] == "other"
     assert hidden.get("missing") is None
     assert hidden.model_dump()[RESPONSE_MS_KEY] is None
     our_json: JsonValue = hidden.json()
