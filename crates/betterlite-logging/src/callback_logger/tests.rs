@@ -199,6 +199,7 @@ fn event(stream: bool) -> Arc<LoggerEvent> {
     Arc::new(LoggerEvent {
         payload: Arc::new(payload),
         dynamic_params: Arc::new(Json::Object(IndexMap::new())),
+        litellm_metadata: Arc::new(IndexMap::new()),
         stream,
         guardrail_snapshot: None,
     })
@@ -312,6 +313,7 @@ fn logger_event_carries_the_payload_dynamic_params_and_stream_flag() {
     let event = LoggerEvent {
         payload: Arc::new(payload),
         dynamic_params: Arc::new(params.clone()),
+        litellm_metadata: Arc::new(IndexMap::new()),
         stream: true,
         guardrail_snapshot: None,
     };
@@ -339,6 +341,7 @@ async fn a_logger_reads_the_guardrail_snapshot_from_the_event() {
     let event = Arc::new(LoggerEvent {
         payload: Arc::new(payload),
         dynamic_params: Arc::new(Json::Object(IndexMap::new())),
+        litellm_metadata: Arc::new(IndexMap::new()),
         stream: false,
         guardrail_snapshot: Some(Arc::new(snapshot)),
     });

@@ -41,7 +41,7 @@ lopdf = { version = "0.46.0", default-features = false }
 lru = "0.18.5"
 num-traits = "0.2.19"
 regex.workspace = true
-rust_decimal.workspace = true
+rust_decimal = { workspace = true, features = ["serde-with-float"] }
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
@@ -51,6 +51,7 @@ sha2.workspace = true
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "time"] }
+tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tracing.workspace = true
 url = "2.5.8"
 uuid.workspace = true
@@ -61,6 +62,5 @@ workspace = true
 rstest = "=0.27.0"
 tempfile = "3.27.0"
 tokio = { workspace = true, features = ["test-util"] }
-tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tracing-subscriber.workspace = true
 uuid.workspace = true

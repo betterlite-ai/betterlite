@@ -1,0 +1,10 @@
+kind: helper
+name: capability-lookup-failure
+call:
+  xai_chat:
+    settings: {api_base: null, oauth_api_base: null, xai_key: null, environment_key: null}
+    steps:
+      - {kind: supported, model: grok-4, supports_reasoning: null}
+      - {kind: supported, model: grok-2-1212, supports_reasoning: null}
+env: {}
+compare: {ignore: []}
