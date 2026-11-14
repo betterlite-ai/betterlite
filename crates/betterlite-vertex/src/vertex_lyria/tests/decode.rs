@@ -59,6 +59,17 @@ fn falls_back_to_the_base64_field_when_audio_content_is_empty() {
 }
 
 #[test]
+fn ignores_characters_outside_the_base64_alphabet() {
+    let body = r#"{"predictions": [{"audioContent": "@@@"}]}"#;
+    let audio = decode("lyria-002", body).unwrap();
+    assert!(audio.bytes.is_empty());
+    assert_eq!(
+        audio.content_type.as_deref(),
+        Some(DEFAULT_SPEECH_MEDIA_TYPE)
+    );
+}
+
+#[test]
 fn ignores_the_later_predictions() {
     let body = r#"{"predictions": [{"mimeType": "audio/wav"}, {"audioContent": "QUJD"}]}"#;
     let error = decode("lyria-002", body).unwrap_err();
