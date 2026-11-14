@@ -592,17 +592,6 @@ fn corpus_name(path: &Path) -> String {
         .unwrap_or_default()
 }
 
-fn expected_corpus_text(name: &str) -> &'static str {
-    match name {
-        "ok-diarized-paragraphs.json" => "\nSpeaker 0: Hello there.\n",
-        "ok-diarized-words.json" => "Speaker 0: Hi,\nSpeaker 1: you\n\nSpeaker 0: ok\n",
-        "ok-null-speaker.json" => "\nSpeaker None: x\n",
-        "ok-plain.json" => "hello there",
-        "ok-speaker-on-second-word.json" => "x",
-        other => panic!("the seed {other} has no expected transcript"),
-    }
-}
-
 #[rstest]
 fn replays_the_deepgram_transcript_corpus(
     #[files("fuzz/corpus/deepgram_transcript/*")] path: PathBuf,
@@ -618,9 +607,14 @@ fn replays_the_deepgram_transcript_corpus(
         ));
         return;
     }
+    let expected = match name.as_str() {
+        "ok-diarized-paragraphs.json" => "\nSpeaker 0: Hello there.\n",
+        "ok-diarized-words.json" => "Speaker 0: Hi,\nSpeaker 1: you\n\nSpeaker 0: ok\n",
+        "ok-null-speaker.json" => "\nSpeaker None: x\n",
+        "ok-plain.json" => "hello there",
+        "ok-speaker-on-second-word.json" => "x",
+        other => panic!("the seed {other} has no expected transcript"),
+    };
     let transcript = outcome.expect("an ok seed decodes");
-    assert_eq!(
-        transcript.text.as_deref(),
-        Some(expected_corpus_text(&name))
-    );
+    assert_eq!(transcript.text.as_deref(), Some(expected));
 }
