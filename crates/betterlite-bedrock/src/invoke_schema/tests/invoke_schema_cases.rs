@@ -325,9 +325,9 @@ fn test_output_config_unsupported_keys() {
                 key: "supports_output_config".to_owned(),
             }]
         );
-        assert_eq!(capabilities.effort_models, vec!["config-model".to_owned()]);
+        assert!(capabilities.effort_models.is_empty());
 
-        // an effort tier flag keeps every key without asking supports_output_config first
+        // an effort tier flag keeps every key after supports_output_config answers false
         let mut capabilities = Capabilities {
             native: false,
             output_config: false,
@@ -370,7 +370,7 @@ fn test_output_config_unsupported_keys() {
         assert!(body.get("output_config").is_none());
     });
     let messages = warnings.messages();
-    assert_eq!(messages.len(), 3);
+    assert_eq!(messages.len(), 4);
     assert!(
         messages
             .iter()
@@ -718,7 +718,10 @@ fn test_native_output_format_support() {
 
         // a non-dict config is replaced, and a missing one is created
         for config in [Some(text("config")), None] {
-            let mut entries = vec![("messages", list(vec![user_message(text("hi"))]))];
+            let mut entries = vec![
+                ("messages", list(vec![user_message(text("hi"))])),
+                ("output_format", schema_format(type_object())),
+            ];
             if let Some(value) = config {
                 entries.push(("output_config", value));
             }
@@ -730,7 +733,7 @@ fn test_native_output_format_support() {
             );
         }
 
-        // the legacy dict still wins for a native model
+        // the legacy dict still wins for a native model, forwarded exactly as it arrived
         let mut body = object(&[
             ("messages", list(vec![user_message(text("hi"))])),
             ("output_format", object(&[("schema", type_object())])),
@@ -742,10 +745,7 @@ fn test_native_output_format_support() {
         apply_structured_output("native-model", &mut body, &mut capabilities).await;
         assert_eq!(
             body.get("output_config"),
-            Some(&object(&[(
-                "format",
-                schema_format(object(&[("type", text("object"))]))
-            )]))
+            Some(&object(&[("format", object(&[("schema", type_object())]))]))
         );
 
         assert!(

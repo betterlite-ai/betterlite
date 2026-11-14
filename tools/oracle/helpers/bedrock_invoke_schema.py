@@ -77,8 +77,7 @@ class Collector(logging.Handler):
         self.seen = False
 
     @override
-    def emit(self, record: logging.LogRecord) -> None:
-        del record
+    def emit(self, _record: logging.LogRecord) -> None:
         self.seen = True
 
 
