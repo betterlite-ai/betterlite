@@ -1,0 +1,23 @@
+kind: helper
+name: agentic-ceiling-and-depth
+call:
+  responses_hook_policy:
+    operation: settings
+    probes:
+      - {}
+      - max_agentic_loops: 5
+      - max_agentic_loops: 5.0
+      - max_agentic_loops: ' 5 '
+      - max_agentic_loops: '+5'
+      - max_agentic_loops: '1_000'
+      - max_agentic_loops: null
+      - max_agentic_loops: true
+      - max_agentic_loops: false
+      - max_agentic_loops: 0
+      - max_agentic_loops: -2
+      - max_agentic_loops: 2.5
+      - max_agentic_loops: 'many'
+      - max_agentic_loops: [1, 2]
+      - max_agentic_loops: {a: 1}
+env: {}
+compare: {ignore: []}
