@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-batch-target-version-root-graft
+call:
+  vertex_batch_target:
+    api_base: "https://proxy.example.com/v1/"
+    project: proj
+    location: us-central1
+    model: projects/proj/locations/us-central1/endpoints/222
+env: {}
+compare: {ignore: []}

@@ -98,6 +98,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vertex_batch_payload"
+path = "fuzz_targets/vertex_batch_payload.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vertex_batch_records"
 path = "fuzz_targets/vertex_batch_records.rs"
 test = false

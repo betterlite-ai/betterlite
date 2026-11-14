@@ -35,7 +35,7 @@ serde_json = { version = "1.0.154", features = ["raw_value"] }
 serde_path_to_error = "0.1.20"
 serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
 thiserror.workspace = true
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["sync", "time"] }
 tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tracing.workspace = true
 url = "2.5.8"

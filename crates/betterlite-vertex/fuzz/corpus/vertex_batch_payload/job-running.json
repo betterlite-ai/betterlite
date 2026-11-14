@@ -1,0 +1,1 @@
+{"name":"projects/1/locations/us-central1/batchPredictionJobs/777","state":"JOB_STATE_RUNNING","createTime":"2024-01-01T00:00:00.000000Z","inputConfig":{"gcsSource":{"uris":["gs://bucket/in.jsonl"]}},"outputInfo":{"gcsOutputDirectory":"gs://bucket/out/"}}

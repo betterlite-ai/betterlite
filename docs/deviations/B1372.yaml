@@ -1,0 +1,11 @@
+task: B1372
+deviations:
+  - what: "A failed create POST is logged with its status and the first 1000 body characters on every call, because betterlite has one async execution path."
+    why: "LiteLLM logs only on its async create path, and its sync path propagates the HTTP error unlogged. A second path in betterlite would only duplicate the code."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/handler.py#L252-L281"
+  - what: "The create request and the tuned-endpoint lookup carry one request deadline (600 seconds by default) where LiteLLM relies on its pooled httpx client's timeout."
+    why: "betterlite's transport takes a deadline per request, and the create timeout never reaches the provider call at this pin either, so 600 seconds, the client default LiteLLM uses, stays the effective limit for both calls."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/handler.py#L142-L159"
+  - what: "Provider JSON bodies over 4 MiB, bodies that are not a single JSON object and wrongly typed fields are refused with a 500 that names the field path, and an error body that is not UTF-8 keeps the text before its first invalid byte."
+    why: "LiteLLM calls response.json() with no bound and fails later with a Python exception when a field has the wrong type, and httpx decodes response.text with replacement characters."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/handler.py#L283-L291"

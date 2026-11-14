@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-batch-target-collection-global
+call:
+  vertex_batch_target:
+    api_base: null
+    project: proj
+    location: global
+    model: projects/proj/locations/global/endpoints/222
+env: {}
+compare: {ignore: []}
