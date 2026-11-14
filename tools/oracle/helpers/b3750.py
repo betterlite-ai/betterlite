@@ -159,7 +159,7 @@ def request_output(server: AnalysisServer) -> Json:
     headers: dict[str, Json] = {
         name: value
         for name, value in call["headers"].items()
-        if name.startswith("x-aim-") or name == "authorization"
+        if name.startswith("x-aim-") or name in ("authorization", "content-type")
     }
     view: dict[str, Json] = {
         "path_ok": call["url"] == ANALYZE_PATH,

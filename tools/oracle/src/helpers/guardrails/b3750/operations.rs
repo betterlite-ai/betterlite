@@ -64,14 +64,16 @@ fn recorded(built: &Built) -> Result<RecordedRequest, Box<HelperError>> {
         ));
     };
     let mut headers = BTreeMap::new();
-    for (name, value) in &post.headers {
-        let name = name.as_str();
-        if (name.starts_with("x-aim-") || name == "authorization")
-            && let Ok(value) = value.to_str()
+    for (header, value) in &post.headers {
+        let name = header.as_str();
+        if (name.starts_with("x-aim-") || name == "content-type" || name == "authorization")
+            && let Ok(text) = value.to_str()
         {
-            headers.insert(name.to_owned(), value.to_owned());
+            headers.insert(name.to_owned(), text.to_owned());
         }
     }
+    // the real HttpPoster adds this header; the fake poster records the caller's map
+    headers.insert("content-type".to_owned(), "application/json".to_owned());
     let body = serde_json::from_slice(&post.body)
         .map_err(|error| failure("ValueError", error.to_string()))?;
     Ok(RecordedRequest {
