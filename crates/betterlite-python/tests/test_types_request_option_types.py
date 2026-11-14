@@ -338,6 +338,9 @@ def google_behavior(module):
             "request_tools": request.tools,
             "parameters_dict": dict(module.GenerateContentRequestParametersDict(contents=[])),
             "config_dict": dict(module.GenerateContentConfigDict(temperature=0.2)),
+            "config_positional": outcome(
+                lambda: module.GenerateContentConfigDict({"temperature": 0.2})
+            ),
             "request_missing_tools": [module.GenerateContentRequestDict().tools],
         },
         "response_dump": response.model_dump(),
@@ -555,6 +558,7 @@ class GoogleCommon(TypedDict):
     request_tools: list[JsonValue]
     parameters_dict: dict[str, JsonValue]
     config_dict: dict[str, JsonValue]
+    config_positional: Outcome
     request_missing_tools: list[JsonValue]
 
 
@@ -815,6 +819,7 @@ def test_google_genai_names(report: Report) -> None:
     assert list(betterlite["common"]["parameters_dict"]) == ["contents"]
     assert betterlite["common"]["parameters_dict"]["contents"] == []
     assert betterlite["common"]["config_dict"] == {"temperature": 0.2}
+    assert betterlite["common"]["config_positional"]["error"] == "TypeError"
     assert betterlite["common"]["plain_dump"] == {}
     assert betterlite["common"]["response_hidden"] == {"model_id": "m"}
     assert betterlite["response_dump"] == {"prompt": "hi"}
