@@ -49,8 +49,6 @@ enum Step {
     ApplyOutputConfig {
         model: String,
         #[serde(default)]
-        data: IndexMap<String, Json>,
-        #[serde(default)]
         optional_params: IndexMap<String, Json>,
         global_drop_params: bool,
     },
@@ -102,7 +100,11 @@ async fn run_steps(
     for step in &input.steps {
         warnings.clear();
         let mut environment = fixture.environment(&resolution, &mut keys, &dynamic);
-        answers.push(answer(step, &context, &mut environment).await?);
+        // LiteLLM raises here; the case compares that the step raised, not the message
+        answers.push(match answer(step, &context, &mut environment).await {
+            Ok(value) => value,
+            Err(_) => json!({"error": {"raised": true}}),
+        });
     }
     Ok(Value::Array(answers))
 }
@@ -135,15 +137,11 @@ fn helper_error(error: &ParamsError) -> Box<HelperError> {
     Box::new(HelperError {
         class: class.to_owned(),
         status: error.status_code(),
-        error_type: None,
-        param: None,
-        code: None,
+        error_type: Some(None),
+        param: Some(None),
+        code: Some(None),
         message: format!("litellm.{class}: {error}"),
     })
-}
-
-fn output_config_value(map: &IndexMap<String, Json>) -> Result<Value, Box<HelperError>> {
-    serde_json::to_value(map.get("output_config")).or_value_error()
 }
 
 async fn answer<Source, Transport>(
@@ -187,7 +185,6 @@ where
         }
         Step::ApplyOutputConfig {
             model,
-            data,
             optional_params,
             global_drop_params,
         } => {
@@ -196,7 +193,8 @@ where
                 provider: PROVIDER,
                 global_drop: *global_drop_params,
             };
-            let mut updated_data = data.clone();
+            // transform_request builds its body from {**optional_params} before this runs
+            let mut updated_data = optional_params.clone();
             let mut updated_optional = optional_params.clone();
             if let Err(error) = apply_output_config(
                 &request,
@@ -210,8 +208,14 @@ where
                 return Err(helper_error(&error));
             }
             Ok(json!({
-                "data": {"output_config": output_config_value(&updated_data)?},
-                "optional_params": {"output_config": output_config_value(&updated_optional)?},
+                "data": {
+                    "output_config": serde_json::to_value(updated_data.get("output_config"))
+                        .or_value_error()?,
+                },
+                "optional_params": {
+                    "output_config": serde_json::to_value(updated_optional.get("output_config"))
+                        .or_value_error()?,
+                },
                 "warning": context.warnings.first(),
             }))
         }

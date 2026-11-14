@@ -1,11 +1,18 @@
 import logging
-from collections.abc import Callable
-from typing import Literal, Protocol, TypeAlias, TypedDict
+from collections.abc import Generator
+from contextlib import contextmanager
+from typing import Literal, Protocol, TypeAlias, TypeVar, TypedDict
 
 import litellm
+from litellm.exceptions import BadRequestError
 from litellm.llms.anthropic.chat.transformation import AnthropicConfig
 from pydantic import JsonValue as Json
 from typing_extensions import override
+
+Params = dict[str, Json]
+MessageT = TypeVar("MessageT")
+# the class object itself carries Any, so it enters through an annotated name
+RaisedError: type[Exception] = BadRequestError
 
 
 class Fixture(TypedDict):
@@ -25,7 +32,6 @@ class MapStep(TypedDict):
 class OutputStep(TypedDict):
     function: Literal["apply_output_config"]
     model: str
-    data: dict[str, Json]
     optional_params: dict[str, Json]
     global_drop_params: bool
 
@@ -49,8 +55,15 @@ class ParamMapper(Protocol):
     ) -> dict[str, Json]: ...
 
 
-class Transformer(Protocol):
-    transform_request: Callable[..., dict[str, Json]]
+class Transformer(Protocol[MessageT]):
+    def transform_request(
+        self,
+        model: str,
+        messages: list[MessageT],
+        optional_params: dict[str, Json],
+        litellm_params: dict[str, Json],
+        headers: dict[str, Json],
+    ) -> dict[str, Json]: ...
 
 
 class CostMapHost(Protocol):
@@ -70,45 +83,48 @@ class Warnings(logging.Handler):
         return self.messages[0] if self.messages else None
 
 
-def map_answer(config: ParamMapper, step: MapStep) -> Json:
-    optional_params: dict[str, Json] = dict(step["optional_params"])
+@contextmanager
+def capturing(*, global_drop_params: bool, modify_params: bool) -> Generator[Warnings]:
     warnings = Warnings()
     logger = logging.getLogger("LiteLLM")
     logger.addHandler(warnings)
-    previous = litellm.drop_params
-    litellm.drop_params = step["global_drop_params"]
+    previous_drop = litellm.drop_params
+    previous_modify = litellm.modify_params
+    litellm.drop_params = global_drop_params
+    litellm.modify_params = modify_params
     try:
+        yield warnings
+    finally:
+        litellm.drop_params = previous_drop
+        litellm.modify_params = previous_modify
+        logger.removeHandler(warnings)
+
+
+def map_answer(config: ParamMapper, step: MapStep) -> Json:
+    optional_params: Params = dict(step["optional_params"])
+    with capturing(global_drop_params=step["global_drop_params"], modify_params=False) as warnings:
         mapped = config.map_openai_params(
             non_default_params=step["non_default_params"],
             optional_params=optional_params,
             model=step["model"],
             drop_params=step["drop_params"],
         )
-    finally:
-        litellm.drop_params = previous
-        logger.removeHandler(warnings)
     return {"optional_params": mapped, "warning": warnings.first()}
 
 
-def output_answer(request: Transformer, step: OutputStep) -> Json:
-    optional_params: dict[str, Json] = dict(step["optional_params"])
-    messages: list[dict[str, Json]] = [{"role": "user", "content": "hello"}]
-    warnings = Warnings()
-    logger = logging.getLogger("LiteLLM")
-    logger.addHandler(warnings)
-    previous = litellm.drop_params
-    litellm.drop_params = step["global_drop_params"]
-    try:
-        data: dict[str, Json] = request.transform_request(
+def output_answer(request: Transformer[MessageT], step: OutputStep) -> Json:
+    optional_params: Params = dict(step["optional_params"])
+    litellm_params: Params = {}
+    headers: Params = {}
+    messages: list[MessageT] = []
+    with capturing(global_drop_params=step["global_drop_params"], modify_params=True) as warnings:
+        data = request.transform_request(
             model=step["model"],
             messages=messages,
             optional_params=optional_params,
-            litellm_params={},
-            headers={},
+            litellm_params=litellm_params,
+            headers=headers,
         )
-    finally:
-        litellm.drop_params = previous
-        logger.removeHandler(warnings)
     return {
         "data": {"output_config": data.get("output_config")},
         "optional_params": {"output_config": optional_params.get("output_config")},
@@ -117,12 +133,19 @@ def output_answer(request: Transformer, step: OutputStep) -> Json:
 
 
 def answer(step: Step) -> Json:
-    if step["function"] == "map_openai_params":
-        return map_answer(AnthropicConfig(), step)
-    return output_answer(AnthropicConfig(), step)
+    try:
+        if step["function"] == "map_openai_params":
+            return map_answer(AnthropicConfig(), step)
+        return output_answer(AnthropicConfig(), step)
+    except RaisedError:
+        return {"error": {"raised": True}}
 
 
 def run(input_value: Input) -> list[Json]:
     host: CostMapHost = litellm
+    previous = host.model_cost
     host.model_cost = input_value["fixture"]["model_cost"]
-    return [answer(step) for step in input_value["steps"]]
+    try:
+        return [answer(step) for step in input_value["steps"]]
+    finally:
+        host.model_cost = previous
