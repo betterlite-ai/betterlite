@@ -782,3 +782,54 @@ async fn plan_dispatch_sends_a_missing_surface_to_the_anthropic_path() {
         Some(&json!("anthropic"))
     );
 }
+
+#[tokio::test]
+async fn request_patch_rejects_a_non_object_agentic_loop_params() {
+    let tool_calls = call_list(ONE_CALL);
+    let searcher = ScriptedSearches::with_texts(&["one"]);
+    let messages = message_list(ONE_MESSAGE);
+    let optional_params = map("{}");
+    let kwargs = map("{}");
+    let details = map(r#"{"agentic_loop_params": 5}"#);
+    let logging = FollowupLogging {
+        call_id: Some("call-abc"),
+        model_call_details: &details,
+    };
+    let request = AnthropicPatchRequest {
+        model: MODEL,
+        messages: &messages,
+        tool_calls: &tool_calls,
+        thinking_blocks: &[],
+        optional_params: &optional_params,
+        logging: Some(&logging),
+        kwargs: &kwargs,
+    };
+    let result = build_request_patch(searcher.as_ref(), &request).await;
+    assert!(matches!(
+        result,
+        Err(AnthropicFollowupError::InvalidAgenticLoopParams(_))
+    ));
+}
+
+#[tokio::test]
+async fn anthropic_plan_rejects_a_malformed_thinking_block() {
+    let searcher = ScriptedSearches::new(Vec::new());
+    let blocks: Vec<ResponseJson> = vec![json!({"type": "thinking", "thinking": "hmm"})];
+    let tools = tools_dict(Vec::new(), "anthropic", Some(blocks));
+    let followup = followup(&searcher);
+    let messages = message_list(ONE_MESSAGE);
+    let optional_params = map("{}");
+    let kwargs = map("{}");
+    let request = AnthropicPlanRequest {
+        model: MODEL,
+        messages: &messages,
+        optional_params: &optional_params,
+        logging: None,
+        kwargs: &kwargs,
+    };
+    let result = followup.build_plan(&tools, &request).await;
+    assert!(matches!(
+        result,
+        Err(AnthropicFollowupError::InvalidThinkingBlock(_))
+    ));
+}
