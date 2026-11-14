@@ -356,8 +356,9 @@ async fn migration_flags_case_and_whitespace(#[case] value: &str, #[case] expect
         DbAdminCommand::DatabaseViews => panic!("the migrate operation produced another command"),
         DbAdminCommand::DailyToolSpend(_)
         | DbAdminCommand::KeyTotalSpend
-        | DbAdminCommand::KeyTotalSpendFromLogs => {
-            panic!("the migrate operation produced a spend backfill command")
+        | DbAdminCommand::KeyTotalSpendFromLogs
+        | DbAdminCommand::SpendPartition(_) => {
+            panic!("the migrate operation produced a spend command")
         }
     }
 }
@@ -383,8 +384,9 @@ async fn push_inverts_use_migrate(#[case] value: &str, #[case] use_migrate: bool
         DbAdminCommand::DatabaseViews => panic!("the migrate operation produced another command"),
         DbAdminCommand::DailyToolSpend(_)
         | DbAdminCommand::KeyTotalSpend
-        | DbAdminCommand::KeyTotalSpendFromLogs => {
-            panic!("the migrate operation produced a spend backfill command")
+        | DbAdminCommand::KeyTotalSpendFromLogs
+        | DbAdminCommand::SpendPartition(_) => {
+            panic!("the migrate operation produced a spend command")
         }
     }
 }
