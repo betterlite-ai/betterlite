@@ -41,11 +41,10 @@ deviations:
   - what: >-
       The money headers betterlite computes (the key spend, the key max budget, the classifier
       cost and the uncached input cost) carry the Decimal's own text. A spend sum of 0.1 and 0.2
-      reads 0.3 where Python's float reads 0.30000000000000004; an uncached input cost or
-      classifier cost read from an integer JSON number stays 2 where LiteLLM's float holds and
-      prints 2.0; and a value outside Python's fixed-notation range reads plain digits where
-      LiteLLM writes scientific notation, so 1e16 prints as 1e+16 there and 10000000000000000
-      here.
+      reads 0.3 where Python's float reads 0.30000000000000004; a classifier cost stored as the
+      float 2.0 reads 2 where LiteLLM prints 2.0; and a value outside Python's fixed-notation
+      range reads plain digits where LiteLLM writes scientific notation, so 1e16 prints as 1e+16
+      there and 10000000000000000 here.
     why: >-
       money stays Decimal end to end, and formatting it through an f64 would put the value back
       through binary floating point; the header carries the same money.
