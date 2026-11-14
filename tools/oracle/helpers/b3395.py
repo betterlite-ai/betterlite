@@ -4,7 +4,6 @@ from collections import deque
 from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 
 import litellm
-from litellm._logging import verbose_proxy_logger
 from litellm.proxy.hooks.litellm_skills.main import SkillsInjectionHook
 from litellm.types.llms.anthropic_messages.anthropic_response import AnthropicMessagesResponse
 from pydantic import JsonValue, TypeAdapter
@@ -89,8 +88,9 @@ class ScriptedMessages:
 
 def run(input_value: Input) -> Object:
     handler = Lines()
-    verbose_proxy_logger.setLevel(logging.DEBUG)
-    verbose_proxy_logger.addHandler(handler)
+    logger = logging.getLogger("LiteLLM Proxy")
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(handler)
     scripted = ScriptedMessages(input_value["replies"])
     litellm.anthropic.acreate = scripted.acreate  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L590
     files: dict[str, Entry] = {
