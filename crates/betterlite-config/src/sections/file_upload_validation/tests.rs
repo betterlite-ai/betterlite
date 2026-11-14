@@ -68,6 +68,7 @@ mod loads_settings {
     #[case::text("general_settings: {max_file_size_mb: '1'}")]
     #[case::integral_float("general_settings: {max_file_size_mb: 1.0}")]
     #[case::list("general_settings: {max_file_size_mb: [1]}")]
+    #[case::beyond_i64("general_settings: {max_file_size_mb: 9223372036854775808}")]
     fn rejects_strict_integers(#[case] source: &str) {
         assert!(matches!(
             load(source),
@@ -104,6 +105,7 @@ mod loads_settings {
     #[case::trailing_underscore("general_settings: {max_batch_file_size_mb: '1_'}")]
     #[case::double_underscore("general_settings: {max_batch_file_size_mb: '1__0'}")]
     #[case::underscored_fraction("general_settings: {max_batch_file_size_mb: '1_0.0_0'}")]
+    #[case::beyond_i64("general_settings: {max_batch_file_size_mb: '9223372036854775808'}")]
     fn rejects_lax_batch_integers(#[case] source: &str) {
         assert!(matches!(
             load(source),
