@@ -107,7 +107,13 @@ fn answer(call: &Call) -> Value {
             api_key,
             environment,
         } => headers_answer(headers, api_key.as_ref(), environment),
-        Call::Transcript { body } => transcript_answer(body),
+        Call::Transcript { body } => {
+            let Ok(found) = decode_eleven_transcript(body.as_bytes(), MAX_REPLY_BYTES) else {
+                return json!({ "ok": false });
+            };
+            let hidden = found.hidden.clone();
+            json!({ "ok": true, "response": found, "hidden": hidden })
+        }
     }
 }
 
@@ -178,15 +184,5 @@ fn headers_answer(
     validate_environment(headers, &keys).map_or_else(
         |_| json!({ "ok": false }),
         |updated| json!({ "ok": true, "headers": updated }),
-    )
-}
-
-fn transcript_answer(body: &str) -> Value {
-    decode_eleven_transcript(body.as_bytes(), MAX_REPLY_BYTES).map_or_else(
-        |_| json!({ "ok": false }),
-        |found| {
-            let hidden = found.hidden.clone();
-            json!({ "ok": true, "response": found, "hidden": hidden })
-        },
     )
 }

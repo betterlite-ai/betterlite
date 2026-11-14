@@ -37,6 +37,7 @@ class Config(Protocol):
         non_default_params: dict[str, JsonValue],
         optional_params: dict[str, JsonValue],
         model: str,
+        *,
         drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
@@ -49,13 +50,16 @@ class FormView(Protocol):
     files: dict[str, JsonValue] | None
 
 
-BASE: BaseAudioTranscriptionConfig | None = (
-    ProviderConfigManager.get_provider_audio_transcription_config(
+def load_base() -> BaseAudioTranscriptionConfig:
+    base = ProviderConfigManager.get_provider_audio_transcription_config(
         model=MODEL, provider=LlmProviders.ELEVENLABS
     )
-)
-if BASE is None:
-    raise RuntimeError("LiteLLM has no ElevenLabs audio transcription config")
+    if base is None:
+        raise RuntimeError("LiteLLM has no ElevenLabs audio transcription config")
+    return base
+
+
+BASE: Final[BaseAudioTranscriptionConfig] = load_base()
 CONFIG: Config = BASE
 OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 STRINGS: Final[TypeAdapter[dict[str, str]]] = TypeAdapter(dict[str, str])
@@ -163,7 +167,7 @@ def map_answer(call: MapCall) -> Mapped:
         drop_params=False,
     )
     supported = [str(name) for name in BASE.get_supported_openai_params(MODEL)]
-    return {"ok": True, "supported": supported, "mapped": mapped}
+    return Mapped(ok=True, supported=supported, mapped=mapped)
 
 
 def form_answer(request: FormView) -> Requested:
