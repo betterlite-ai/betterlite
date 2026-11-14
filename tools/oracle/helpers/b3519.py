@@ -248,7 +248,9 @@ def registry_answer(input_value: Input) -> JsonValue:
     resolved: dict[str, JsonValue] = {}
     for name in names:
         found = TOOLS.resolve_sandbox_tool(name)
-        resolved[name] = None if found is None else TOOL.validate_python(found)
+        resolved[name] = (
+            None if found is None else JSON.validate_python(TOOL.validate_python(found))
+        )
     return JSON.validate_python({"resolved": resolved})
 
 
