@@ -50,20 +50,10 @@ fn matches_regex_without_a_value_never_matches() {
 #[case::empty_pattern_matches_empty("", "", true)]
 #[case::empty_pattern_rejects_text("", "read", false)]
 #[case::everything(".*", "read_file", true)]
-fn matches_regex_requires_the_whole_value(
-    #[case] source: &str,
-    #[case] value: &str,
-    #[case] expected: bool,
-) {
-    let pattern = CompiledPattern::compile(source).unwrap();
-    assert_eq!(matches_regex(Some(&pattern), Some(value)), expected);
-}
-
-#[rstest]
-#[case::second_alternative("a|ab", "ab", true)]
 #[case::first_alternative("a|ab", "a", true)]
+#[case::second_alternative("a|ab", "ab", true)]
 #[case::no_alternative("a|ab", "b", false)]
-fn matches_regex_fullmatches_each_alternative(
+fn matches_regex_requires_the_whole_value(
     #[case] source: &str,
     #[case] value: &str,
     #[case] expected: bool,

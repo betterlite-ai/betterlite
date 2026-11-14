@@ -76,10 +76,13 @@ fn compile_pattern(
 
 #[must_use]
 pub fn matches_regex(pattern: Option<&CompiledPattern>, value: Option<&str>) -> bool {
-    match pattern {
-        None => true,
-        Some(pattern) => value.is_some_and(|text| pattern.regex.is_match(text)),
-    }
+    let Some(compiled) = pattern else {
+        return true;
+    };
+    let Some(text) = value else {
+        return false;
+    };
+    compiled.regex.is_match(text)
 }
 
 #[must_use]
