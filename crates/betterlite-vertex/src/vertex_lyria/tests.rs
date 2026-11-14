@@ -771,9 +771,16 @@ fn falls_back_to_the_sniffer_for_an_empty_mime_type() {
 
 #[test]
 fn falls_back_to_the_provider_mime_type() {
-    let body = r#"{"predictions": [{"audioContent": "QUJD", "mimeType": "audio/mpeg"}]}"#;
+    let body = r#"{"predictions": [{"audioContent": "ZkxhQwA=", "mimeType": "audio/wav"}]}"#;
     let audio = decode("lyria-002", body).unwrap();
-    assert_eq!(audio.content_type.as_deref(), Some("audio/mpeg"));
+    assert_eq!(audio.content_type.as_deref(), Some("audio/wav"));
+}
+
+#[test]
+fn keeps_the_provider_mime_type_on_an_interaction_audio_item() {
+    let body = r#"{"steps": [{"type": "audio", "data": "ZkxhQwA=", "mime_type": "audio/wav"}]}"#;
+    let audio = decode("lyria-3-pro-preview", body).unwrap();
+    assert_eq!(audio.content_type.as_deref(), Some("audio/wav"));
 }
 
 #[test]
@@ -866,6 +873,13 @@ fn scans_outputs_when_steps_is_absent() {
         audio.content_type.as_deref(),
         Some(DEFAULT_SPEECH_MEDIA_TYPE)
     );
+}
+
+#[test]
+fn scans_outputs_when_steps_is_empty() {
+    let body = r#"{"steps": [], "outputs": [{"type": "audio", "data": "QUJD"}]}"#;
+    let audio = decode("lyria-3-pro-preview", body).unwrap();
+    assert_eq!(audio.bytes.as_slice(), b"ABC");
 }
 
 #[test]

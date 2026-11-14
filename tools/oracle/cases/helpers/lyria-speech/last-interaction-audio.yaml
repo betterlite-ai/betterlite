@@ -11,6 +11,8 @@ call:
       - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [{"type": "text", "data": "QUJD"}, {"type": "audio", "data": ""}, {"type": "audio"}]}'}
       - {model: lyria-3-pro-preview, status: 200, body: '{}'}
       - {model: lyria-3-pro-preview, status: 200, body: '{"steps": null, "outputs": [{"type": "audio", "data": "QUJD"}]}'}
+      - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [], "outputs": [{"type": "audio", "data": "QUJD"}]}'}
+      - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [{"type": "audio", "data": "ZkxhQwA=", "mime_type": "audio/wav"}]}'}
       - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [{"type": "model_output", "content": [{"type": "model_output", "content": [{"type": "audio", "data": "QUJD"}]}]}]}'}
       - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [{"type": "audio", "data": "", "content": [{"type": "audio", "data": "QUJD"}]}]}'}
       - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [{"type": "model_output", "content": null}]}'}

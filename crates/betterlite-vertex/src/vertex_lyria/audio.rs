@@ -122,7 +122,11 @@ fn interactions_audio(
 ) -> Result<(String, Option<String>), VertexLyriaError> {
     let response: InteractionResponse =
         serde_json::from_slice(body).map_err(VertexLyriaError::ResponseJson)?;
-    let steps = response.steps.or(response.outputs).unwrap_or_default();
+    let steps = response
+        .steps
+        .filter(|steps| !steps.is_empty())
+        .or(response.outputs)
+        .unwrap_or_default();
     let mut audio: Option<String> = None;
     let mut mime_type: Option<String> = None;
     for step in &steps {
