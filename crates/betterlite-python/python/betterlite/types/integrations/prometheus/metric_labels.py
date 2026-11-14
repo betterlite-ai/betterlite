@@ -1,29 +1,29 @@
 from typing import ClassVar, Final
 
 from betterlite.types.integrations.prometheus.core import (
-    DEFINED_PROMETHEUS_METRICS, _sanitize_prometheus_label_name)
+    DEFINED_PROMETHEUS_METRICS,
+    _sanitize_prometheus_label_name,
+)
 from betterlite.types.integrations.prometheus.labels import UserAPIKeyLabelNames
 from betterlite.types.integrations.prometheus.settings import PrometheusLabelSettings
 from betterlite.types.integrations.prometheus.validation import (
-    _resolve_deployment_and_latency_caller_identity_labels)
+    _resolve_deployment_and_latency_caller_identity_labels,
+)
 
 _EMPTY: Final[list[str]] = []
 _PROXY_TOTAL_REQUESTS: Final = "litellm_proxy_total_requests_metric"
 _PROXY_FAILED_REQUESTS: Final = "litellm_proxy_failed_requests_metric"
-_USER_BUDGET_METRICS: Final[frozenset[str]] = frozenset({
-    "litellm_remaining_user_budget_metric", "litellm_user_max_budget_metric",
-    "litellm_user_budget_remaining_hours_metric"})
-_ORG_LABEL_METRICS: Final[frozenset[str]] = frozenset({
-    "litellm_llm_api_latency_metric", "litellm_llm_api_time_to_first_token_metric",
-    "litellm_request_total_latency_metric", "litellm_request_queue_time_seconds",
-    "litellm_proxy_total_requests_metric", "litellm_proxy_failed_requests_metric",
-    "litellm_deployment_latency_per_output_token", "litellm_requests_metric",
-    "litellm_spend_metric", "litellm_input_tokens_metric", "litellm_total_tokens_metric",
-    "litellm_output_tokens_metric", "litellm_video_duration_seconds_metric",
-    "litellm_images_generated_metric"})
-_INPUT_SEQUENCE_LENGTH_METRICS: Final[frozenset[str]] = frozenset({
-    "litellm_llm_api_latency_metric", "litellm_llm_api_time_to_first_token_metric",
-    "litellm_request_total_latency_metric"})
+_USER_BUDGET_METRICS: Final[frozenset[str]] = frozenset({"litellm_remaining_user_budget_metric",
+    "litellm_user_max_budget_metric", "litellm_user_budget_remaining_hours_metric"})
+_ORG_LABEL_METRICS: Final[frozenset[str]] = frozenset({"litellm_llm_api_latency_metric",
+    "litellm_llm_api_time_to_first_token_metric", "litellm_request_total_latency_metric",
+    "litellm_request_queue_time_seconds", "litellm_proxy_total_requests_metric",
+    "litellm_proxy_failed_requests_metric", "litellm_deployment_latency_per_output_token",
+    "litellm_requests_metric", "litellm_spend_metric", "litellm_input_tokens_metric",
+    "litellm_total_tokens_metric", "litellm_output_tokens_metric",
+    "litellm_video_duration_seconds_metric", "litellm_images_generated_metric"})
+_INPUT_SEQUENCE_LENGTH_METRICS: Final[frozenset[str]] = frozenset({"litellm_llm_api_latency_metric",
+    "litellm_llm_api_time_to_first_token_metric", "litellm_request_total_latency_metric"})
 _LLM_API_LATENCY_LABELS: Final[list[str]] = ["model", "hashed_api_key", "api_key_alias", "team",
     "team_alias", "requested_model", "end_user", "user", "model_id", "api_provider", "service_tier"]
 _REQUEST_TOTAL_LATENCY_LABELS: Final[list[str]] = ["end_user", "hashed_api_key", "api_key_alias",
