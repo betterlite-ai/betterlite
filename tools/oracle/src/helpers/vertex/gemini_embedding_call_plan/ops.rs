@@ -37,7 +37,8 @@ fn declared(value: &Value) -> EmbeddingInput {
 pub(super) fn run(input: &Input) -> Value {
     let mut calls = Vec::with_capacity(input.inputs.len());
     for value in &input.inputs {
-        let (elements, has_file_refs) = flatten_and_detect_file_refs(&declared(value));
+        let parsed = declared(value);
+        let (elements, has_file_refs) = flatten_and_detect_file_refs(&parsed);
         calls.push(json!({"elements": elements, "has_file_refs": has_file_refs}));
     }
     json!({"calls": calls})
