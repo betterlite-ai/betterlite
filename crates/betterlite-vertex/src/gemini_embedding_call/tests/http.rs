@@ -1,3 +1,4 @@
+use betterlite_http::proxy::limits::TransportLimits;
 use rstest::rstest;
 
 use super::support::json;
@@ -48,6 +49,11 @@ fn metadata_fields_must_be_text(#[case] reply: &str, #[case] field: &str) {
         GeminiEmbeddingCallError::MetadataField { file: ref name, field: named }
             if name == "files/a" && named == field
     ));
+}
+
+#[test]
+fn the_body_limit_matches_the_pooled_client() {
+    assert_eq!(EMBEDDING_BODY_LIMIT, TransportLimits::DEFAULT.body_bytes);
 }
 
 #[test]

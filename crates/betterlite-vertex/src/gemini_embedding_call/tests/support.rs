@@ -40,15 +40,23 @@ pub(super) struct Sent {
 // Answers in order, so a test lists the replies the call is expected to ask for
 #[derive(Clone, Default)]
 pub(super) struct Script {
-    replies: Arc<Mutex<VecDeque<(u16, String)>>>,
+    replies: Arc<Mutex<VecDeque<(u16, Vec<u8>)>>>,
     sent: Arc<Mutex<Vec<Sent>>>,
 }
 
 impl Script {
     pub(super) fn answering(replies: &[(u16, &str)]) -> Self {
-        let queued: VecDeque<(u16, String)> = replies
+        let bytes: Vec<(u16, &[u8])> = replies
             .iter()
-            .map(|(status, body)| (*status, (*body).to_owned()))
+            .map(|(status, body)| (*status, body.as_bytes()))
+            .collect();
+        Self::answering_bytes(&bytes)
+    }
+
+    pub(super) fn answering_bytes(replies: &[(u16, &[u8])]) -> Self {
+        let queued: VecDeque<(u16, Vec<u8>)> = replies
+            .iter()
+            .map(|(status, body)| (*status, (*body).to_vec()))
             .collect();
         Self {
             replies: Arc::new(Mutex::new(queued)),
@@ -84,7 +92,7 @@ impl EmbeddingTransport for Script {
             Some((status, body)) => Ok(UpstreamResponse {
                 status,
                 headers: HeaderMap::new(),
-                body: body.into_bytes(),
+                body,
             }),
             None => Err(TransportError::Closed),
         })

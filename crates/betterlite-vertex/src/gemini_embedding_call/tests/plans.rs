@@ -1,14 +1,16 @@
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use rstest::rstest;
 
 use super::support::{Fixture, input, secret};
-use crate::endpoint_target::target::TargetProvider;
-use crate::gemini_embedding_call::call::Execution;
+use crate::endpoint_target::target::{AuthHeader, EndpointTarget, TargetProvider};
+use crate::gemini_embedding_call::call::{DEFAULT_TIMEOUT, Execution};
 use crate::gemini_embedding_call::error::GeminiEmbeddingCallError;
 use crate::gemini_embedding_call::plan::{
     ClientSource, Facade, Timeouts, flatten_and_detect_file_refs, plan_call,
 };
+use crate::gemini_embedding_call::transport::embedding_request;
 
 #[rstest]
 #[case::text(r#""hello""#, &["hello"], false)]
@@ -42,7 +44,7 @@ fn each_provider_uses_its_own_facade(#[case] provider: TargetProvider, #[case] f
 #[rstest]
 #[case::vertex_walks_the_top_level(TargetProvider::Vertex, Some("k"), r#"["files/a",["files/b"],"c","files/a"]"#, &["files/a", "files/a"])]
 #[case::vertex_without_a_key_resolves_nothing(TargetProvider::Vertex, None, r#"["files/a"]"#, &[])]
-#[case::vertex_single_text(TargetProvider::Vertex, Some("k"), r#""files/a""#, &["files/a"])]
+#[case::vertex_single_path(TargetProvider::Vertex, Some("k"), r#""files/a""#, &["files/a"])]
 #[case::studio_flattens(TargetProvider::Gemini, Some("k"), r#"["files/a",["files/b"],"c","files/a"]"#, &["files/a", "files/b", "files/a"])]
 #[case::studio_without_references(TargetProvider::Gemini, None, r#"["a",["b"]]"#, &[])]
 #[case::studio_empty_key_counts_as_set(TargetProvider::Gemini, Some(""), r#""files/a""#, &["files/a"])]
@@ -61,7 +63,7 @@ fn files_to_resolve_follow_the_provider(
 #[rstest]
 #[case::single(r#""files/a""#)]
 #[case::nested(r#"["a",["files/b"]]"#)]
-fn studio_file_references_need_a_key(#[case] source: &str) {
+fn missing_api_key(#[case] source: &str) {
     let fixture = Fixture::new(source);
     let error = plan_call(
         &fixture.call(TargetProvider::Gemini, Execution::Sync),
@@ -124,4 +126,51 @@ fn client_and_timeouts_follow_the_execution(
     let plan = plan_call(&fixture.call(TargetProvider::Vertex, execution), supplied).unwrap();
     assert_eq!(plan.client, client);
     assert_eq!(plan.timeouts, timeouts);
+}
+
+#[test]
+fn default_timeout_is_300_seconds() {
+    assert_eq!(DEFAULT_TIMEOUT, Duration::from_secs(300));
+}
+
+#[test]
+fn timeout_none_modes() {
+    let fixture = Fixture::new(r#""hello""#);
+    let created = plan_call(
+        &fixture.call(TargetProvider::Vertex, Execution::Sync),
+        false,
+    )
+    .unwrap();
+    assert_eq!(created.client, ClientSource::Created);
+    assert_eq!(created.timeouts, Some(FALLBACK));
+    let supplied = plan_call(&fixture.call(TargetProvider::Vertex, Execution::Sync), true).unwrap();
+    assert_eq!(supplied.client, ClientSource::Supplied);
+    assert_eq!(supplied.timeouts, None);
+    let asynchronous = plan_call(
+        &fixture.call(TargetProvider::Vertex, Execution::Async),
+        true,
+    )
+    .unwrap();
+    assert_eq!(asynchronous.client, ClientSource::Created);
+    assert_eq!(asynchronous.timeouts, Some(FALLBACK));
+}
+
+#[test]
+fn extra_header_precedence() {
+    let mut auth = BTreeMap::new();
+    auth.insert(String::from("x-goog-api-key"), secret("studio-key"));
+    let target = EndpointTarget {
+        url: String::from("https://example.test/embed"),
+        auth: Some(AuthHeader::Headers(auth)),
+    };
+    let extra = [
+        (String::from("Content-Type"), String::from("text/plain")),
+        (String::from("X-Goog-Api-Key"), String::from("override")),
+    ]
+    .into_iter()
+    .collect::<BTreeMap<_, _>>();
+    let request =
+        embedding_request(&target, &extra, b"{}".to_vec(), Duration::from_secs(300)).unwrap();
+    assert_eq!(request.headers["content-type"], "text/plain");
+    assert_eq!(request.headers["x-goog-api-key"], "override");
 }

@@ -26,6 +26,18 @@ use super::transport::{EmbeddingTransport, embedding_request, file_request};
 
 const OK: u16 = 200;
 
+// httpx decodes a reply body with errors="replace": one U+FFFD per invalid sequence
+fn body_text(bytes: &[u8]) -> String {
+    let mut text = String::with_capacity(bytes.len());
+    for chunk in bytes.utf8_chunks() {
+        text.push_str(chunk.valid());
+        if !chunk.invalid().is_empty() {
+            text.push(char::REPLACEMENT_CHARACTER);
+        }
+    }
+    text
+}
+
 pub struct Clients<'client, Transport> {
     pub supplied: Option<&'client Transport>,
     pub pooled: &'client Transport,
@@ -102,7 +114,7 @@ where
             return Err(GeminiEmbeddingCallError::FileStatus {
                 file: file.clone(),
                 status: reply.status,
-                body: String::from_utf8_lossy(&reply.body).into_owned(),
+                body: body_text(&reply.body),
             });
         }
         let metadata = file_metadata(file, &decode_embedding_http(&reply.body)?)?;
@@ -162,7 +174,7 @@ where
     if reply.status != OK {
         return Err(GeminiEmbeddingCallError::PostStatus {
             status: reply.status,
-            body: String::from_utf8_lossy(&reply.body).into_owned(),
+            body: body_text(&reply.body),
         });
     }
     decode_embedding_http(&reply.body)

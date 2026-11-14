@@ -93,10 +93,11 @@ async fn studio_fetches_every_file_occurrence_then_posts_the_metadata() {
     let mut fixture = Fixture::new(r#"["files/a",["files/b","files/a"]]"#);
     fixture.api_key = Some(secret("gk"));
     let other = r#"{"mimeType":"image/png","uri":"https://generativelanguage.googleapis.com/v1beta/files/b"}"#;
+    let later = r#"{"mimeType":"text/plain","uri":"https://generativelanguage.googleapis.com/v1beta/files/a2"}"#;
     let pooled = Script::answering(&[
         (200, PDF),
         (200, other),
-        (200, PDF),
+        (200, later),
         (200, r#"{"embeddings":[{"values":[0.5]},{"values":[0.5]}]}"#),
     ]);
     run(
@@ -123,9 +124,13 @@ async fn studio_fetches_every_file_occurrence_then_posts_the_metadata() {
     assert_eq!(header(&sent[0], "content-type"), None);
     let body = std::str::from_utf8(&sent[3].body).unwrap();
     assert!(
-        body.contains(r#""file_uri":"https://generativelanguage.googleapis.com/v1beta/files/a""#)
+        body.contains(r#""file_uri":"https://generativelanguage.googleapis.com/v1beta/files/a2""#)
     );
     assert!(body.contains(r#""mime_type":"image/png""#));
+    assert!(body.contains(r#""mime_type":"text/plain""#));
+    assert!(
+        !body.contains(r#""file_uri":"https://generativelanguage.googleapis.com/v1beta/files/a""#)
+    );
 }
 
 #[tokio::test]
@@ -312,6 +317,23 @@ async fn a_file_lookup_must_answer_200(#[case] status: u16) {
         format!("Error fetching file files/a: {status} denied")
     );
     assert_eq!(pooled.sent().len(), 1);
+}
+
+#[tokio::test]
+async fn a_failed_lookup_replaces_invalid_utf8_in_its_message() {
+    let mut fixture = Fixture::new(r#""files/a""#);
+    fixture.api_key = Some(secret("gk"));
+    let pooled = Script::answering_bytes(&[(500, b"bad \xff body")]);
+    let error = run(
+        &fixture.call(TargetProvider::Gemini, Execution::Sync),
+        pooled_only(&pooled),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Error fetching file files/a: 500 bad \u{FFFD} body"
+    );
 }
 
 #[rstest]
