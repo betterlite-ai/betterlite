@@ -531,7 +531,7 @@ fn a_corpus_reply_becomes_a_completed_vector_store() {
 #[case(r#"{"createTime":-5}"#, -5)]
 #[case(r#"{"createTime":1704067200.0}"#, 0)]
 #[case(r#"{"createTime":"2024-01-01T00:00:00Z"}"#, 1_704_067_200)]
-#[case(r#"{"createTime":"2024-01-01T00:00:00+02:00"}"#, 1_704_031_200)]
+#[case(r#"{"createTime":"2024-01-01T00:00:00+02:00"}"#, 1_704_060_000)]
 #[case(r#"{"createTime":"not-a-time"}"#, 0)]
 #[case(r#"{"createTime":""}"#, 0)]
 #[case(r#"{"createTime":null}"#, 0)]
