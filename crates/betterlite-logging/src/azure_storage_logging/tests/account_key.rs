@@ -6,6 +6,7 @@ use super::support::{ACCOUNT, Reply, fixture, payload};
 use crate::azure_storage_logging::logger::SERVICE_CLIENT_TTL;
 
 const DIRECTORY_URL: &str = "https://acct.dfs.core.windows.net/logs/2023-11-14";
+const EXISTS_URL: &str = "https://acct.blob.core.windows.net/logs/2023-11-14";
 
 #[tokio::test]
 async fn the_account_key_path_creates_the_dated_directory_and_the_file() {
@@ -20,7 +21,7 @@ async fn the_account_key_path_creates_the_dated_directory_and_the_file() {
     assert_eq!(calls.len(), 5);
     let exists = calls.first().expect("the directory probe");
     assert_eq!(exists.method, "HEAD");
-    assert_eq!(exists.url, DIRECTORY_URL);
+    assert_eq!(exists.url, EXISTS_URL);
     let create_directory = calls.get(1).expect("the directory create");
     assert_eq!(create_directory.method, "PUT");
     assert_eq!(
@@ -45,7 +46,7 @@ async fn the_account_key_path_creates_the_dated_directory_and_the_file() {
     assert_eq!(
         flush.url,
         format!(
-            "{DIRECTORY_URL}/id-1.json?action=flush&position={}",
+            "{DIRECTORY_URL}/id-1.json?action=flush&position={}&retainUncommittedData=false&close=false",
             append.body.len()
         )
     );

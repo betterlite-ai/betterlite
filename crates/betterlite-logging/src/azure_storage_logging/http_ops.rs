@@ -93,10 +93,11 @@ pub fn flush_data_request(
     auth: &StorageAuthorization<'_>,
     now: Duration,
     position: usize,
+    extra_query: &str,
 ) -> Result<StorageRequest, SigningError> {
     storage_request(
         Method::PATCH,
-        format!("{base_url}?action=flush&position={position}"),
+        format!("{base_url}?action=flush&position={position}{extra_query}"),
         auth,
         now,
         vec![("Content-Length".to_owned(), "0".to_owned())],

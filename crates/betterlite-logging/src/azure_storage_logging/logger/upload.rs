@@ -22,6 +22,8 @@ use crate::azure_storage_logging::transport::{StorageRequest, StorageResponse};
 
 const FIRST_ERROR_STATUS: u16 = 400;
 const NOT_FOUND: u16 = 404;
+// the SDK's flush_data adds these two to LiteLLM's REST flush
+const SDK_FLUSH_QUERY: &str = "&retainUncommittedData=false&close=false";
 
 impl AzureBlobStorageLogger {
     pub async fn upload_payload(
@@ -65,7 +67,7 @@ impl AzureBlobStorageLogger {
             .await?;
         let _flushed = self
             .execute(
-                flush_data_request(&base_url, &auth, now, json_payload.len())?,
+                flush_data_request(&base_url, &auth, now, json_payload.len(), "")?,
                 "flush",
             )
             .await?;
@@ -91,11 +93,13 @@ impl AzureBlobStorageLogger {
             &endpoint,
             &[self.settings.file_system.as_str(), directory.as_str()],
         );
+        // the SDK's directory exists() is a HEAD on the blob endpoint
+        let exists_url = storage_url(
+            &self.settings.blob_endpoint(),
+            &[self.settings.file_system.as_str(), directory.as_str()],
+        );
         let exists = self
-            .execute(
-                directory_exists_request(&directory_url, &auth, now)?,
-                "exists",
-            )
+            .execute(directory_exists_request(&exists_url, &auth, now)?, "exists")
             .await?;
         if exists.status == NOT_FOUND {
             let _made = self
@@ -119,7 +123,7 @@ impl AzureBlobStorageLogger {
             .await?;
         let _flushed = self
             .execute(
-                flush_data_request(&base_url, &auth, now, position)?,
+                flush_data_request(&base_url, &auth, now, position, SDK_FLUSH_QUERY)?,
                 "flush",
             )
             .await?;

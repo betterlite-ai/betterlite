@@ -23,16 +23,22 @@ use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use tokio_util::sync::CancellationToken;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use crate::helpers::{Helper, HelperResult, OrHelperError};
 
 const START_SECONDS: u64 = 1_700_000_000;
 const TOKEN_SUFFIX: &str = "/oauth2/v2.0/token";
+const MARKERS: [(&str, &str); 4] = [
+    ("resource=directory", "create_directory"),
+    ("resource=file", "create_file"),
+    ("action=append", "append"),
+    ("action=flush", "flush"),
+];
+const START_DATE: &str = "2023-11-14";
 
 pub(crate) struct Op;
 
 #[derive(Deserialize)]
 pub(crate) struct Input {
-    #[serde(default)]
     scenarios: Vec<Scenario>,
 }
 
@@ -76,16 +82,7 @@ impl Helper for Op {
         let runtime = Builder::new_current_thread()
             .enable_time()
             .build()
-            .map_err(|error| {
-                Box::new(HelperError {
-                    class: "RuntimeError".to_owned(),
-                    status: None,
-                    error_type: None,
-                    param: None,
-                    code: None,
-                    message: error.to_string(),
-                })
-            })?;
+            .or_config_error()?;
         let results: Vec<Value> = input
             .scenarios
             .iter()
@@ -101,6 +98,10 @@ async fn drive(scenario: &Scenario) -> Value {
         Ok(settings) => settings,
         Err(error) => return json!({ "initialized": false, "error": error.to_string() }),
     };
+    let endpoints = json!({
+        "dfs": format!("https://{}.dfs.{}", settings.account_name, settings.endpoint_suffix),
+        "blob": settings.blob_endpoint(),
+    });
     let transport = Arc::new(ScriptedTransport {
         replies: Mutex::new(scenario.replies.iter().cloned().collect()),
         calls: Mutex::new(Vec::new()),
@@ -123,6 +124,15 @@ async fn drive(scenario: &Scenario) -> Value {
     for action in &scenario.actions {
         results.push(perform(action, &logger, &clock, &base).await);
     }
+    report(&logger, &transport, endpoints, results)
+}
+
+fn report(
+    logger: &AzureBlobStorageLogger,
+    transport: &ScriptedTransport,
+    endpoints: Value,
+    results: Vec<Value>,
+) -> Value {
     let queue: Vec<String> = logger
         .queue
         .pending()
@@ -131,6 +141,7 @@ async fn drive(scenario: &Scenario) -> Value {
         .collect();
     json!({
         "initialized": true,
+        "endpoints": endpoints,
         "actions": results,
         "queue": queue,
         "calls": transport
@@ -166,7 +177,7 @@ async fn perform(
     match action {
         Action::Event { id, failure } => {
             let Ok(payload) = payload_for(base, id) else {
-                return json!({ "raised": "payload" });
+                return json!({ "raised": true });
             };
             let queued = Arc::new(LoggerEvent {
                 payload: Arc::new(payload),
@@ -181,17 +192,17 @@ async fn perform(
             };
             outcome
                 .err()
-                .map_or(Value::Null, |error| json!({ "raised": error.to_string() }))
+                .map_or(Value::Null, |_| json!({ "raised": true }))
         }
         Action::Upload { id } => {
             let Ok(payload) = payload_for(base, id) else {
-                return json!({ "raised": "payload" });
+                return json!({ "raised": true });
             };
             logger
                 .upload_payload(&payload)
                 .await
                 .err()
-                .map_or(Value::Null, |error| json!({ "raised": error.to_string() }))
+                .map_or(Value::Null, |_| json!({ "raised": true }))
         }
         Action::Flush => {
             let _report = logger.flush_queue().await;
@@ -238,19 +249,10 @@ fn operation(call: &StorageRequest) -> &'static str {
     if call.method == http::Method::HEAD {
         return "exists";
     }
-    if url.contains("resource=directory") {
-        return "create_directory";
-    }
-    if url.contains("resource=file") {
-        return "create_file";
-    }
-    if url.contains("action=append") {
-        return "append";
-    }
-    if url.contains("action=flush") {
-        return "flush";
-    }
-    "other"
+    MARKERS
+        .iter()
+        .find(|pair| url.contains(pair.0))
+        .map_or("other", |pair| pair.1)
 }
 
 fn describe(call: &StorageRequest) -> Value {
@@ -258,17 +260,15 @@ fn describe(call: &StorageRequest) -> Value {
     if op == "entra_token" {
         return json!({ "op": op });
     }
-    let mut described = json!({ "op": op, "url": call.url });
-    if op == "append" {
-        let text = std::str::from_utf8(&call.body).unwrap_or_default();
-        let body: Option<Value> = serde_json::from_str(text.trim_end_matches('\n')).ok();
-        if let Some(fields) = described.as_object_mut() {
-            fields.insert("body".to_owned(), json!(body));
-            fields.insert("trailing_newline".to_owned(), json!(text.ends_with('\n')));
-        }
+    let url = call.url.replace(START_DATE, "{date}");
+    if op != "append" {
+        return json!({ "op": op, "url": url });
     }
-    described
+    let text = std::str::from_utf8(&call.body).unwrap_or_default();
+    let body: Option<Value> = serde_json::from_str(text.trim_end_matches('\n')).ok();
+    json!({ "op": op, "url": url, "body": body, "trailing_newline": text.ends_with('\n') })
 }
+
 #[async_trait]
 impl StorageTransport for ScriptedTransport {
     async fn send(

@@ -32,3 +32,8 @@ deviations:
       depends on betterlite-logging, so importing it here is a crate cycle; the architect must wire it from a crate
       that may depend on both.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/get_azure_ad_token_provider.py#L37-L135
+  - what: >-
+      An account-key upload that fails (a 4xx or 5xx from the directory, create, append or flush request) returns the
+      error, so flush keeps the event queued. LiteLLM catches every exception in that path and logs it.
+    why: A swallowed error reports success for a record that was never stored, and the flush then drops the event.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L402-L406
