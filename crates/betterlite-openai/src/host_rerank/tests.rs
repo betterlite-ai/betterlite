@@ -336,6 +336,21 @@ fn infinity_refuses_shapes_it_cannot_hold(#[case] body: &str) {
 }
 
 #[rstest]
+#[case::jina(HostProvider::Jina)]
+#[case::infinity(HostProvider::Infinity)]
+fn a_wrong_shape_is_a_decode_error_and_not_a_json_failure(#[case] provider: HostProvider) {
+    let (wrong, _) = decode(provider, 200, b"[]");
+    assert!(matches!(
+        wrong,
+        Err(HostRerankError::Decode {
+            source: ShapeDecodeError::Json(_)
+        })
+    ));
+    let (syntax, _) = decode(provider, 200, b"{");
+    assert!(matches!(syntax, Err(HostRerankError::Json { .. })));
+}
+
+#[rstest]
 #[case::bytes(vec![b' '; 0x0080_0001], true)]
 #[case::bytes_at_the_limit([b"[]".as_slice(), &[b' '; 0x0080_0000 - 2]].concat(), false)]
 #[case::items_at_the_limit(format!("{{\"results\":[{}]}}", vec!["null"; 199_999].join(",")).into_bytes(), false)]
