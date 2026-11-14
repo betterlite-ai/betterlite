@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 use tokio::task::yield_now;
 
@@ -185,10 +186,15 @@ pub(crate) fn command_names(server: &FakeServer) -> Vec<String> {
         .collect()
 }
 
+// the flush reaches the fake server over a real socket, so the bound is wall time and the yields keep the paused clock still
 pub(crate) async fn wait_for_commands(server: &FakeServer, expected: usize) {
-    let mut passes = 0_u32;
-    while command_names(server).len() < expected && passes < 256_u32 {
+    let started = Instant::now();
+    while command_names(server).len() < expected {
+        assert!(
+            started.elapsed() < Duration::from_secs(60),
+            "the fake server saw {:?}",
+            command_names(server)
+        );
         yield_now().await;
-        passes = passes.saturating_add(1);
     }
 }

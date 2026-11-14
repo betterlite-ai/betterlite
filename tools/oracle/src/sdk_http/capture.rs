@@ -19,7 +19,6 @@ use super::{
 use crate::OracleError;
 use crate::compare::multipart::masked_boundary;
 use crate::mock::{MockProvider, ProviderRequest};
-use crate::routing_mock_scripts::MockScript;
 
 pub(crate) struct Execution {
     pub(crate) result: Result<SdkResult, SdkHttpError>,
@@ -126,15 +125,17 @@ pub(crate) struct Capture {
 
 pub(crate) struct Run<'run> {
     pub(crate) call: &'run SdkHttpCall,
-    pub(crate) script: MockScript,
     pub(crate) env: &'run BTreeMap<String, String>,
     pub(crate) limits: &'run OracleLimits,
     pub(crate) cancelled: &'run AtomicBool,
 }
 
 // every implementation gets its own mock, so one side's traffic can never fill the other's answers
-pub(crate) fn capture(sdk: &Sdk<'_>, run: Run<'_>) -> Result<Capture, OracleError> {
-    let mock = MockProvider::start(run.script)?;
+pub(crate) fn capture(
+    sdk: &Sdk<'_>,
+    mock: MockProvider,
+    run: &Run<'_>,
+) -> Result<Capture, OracleError> {
     let api_base = format!("{}/v1", mock.base_url);
     let deadline = Instant::now()
         .checked_add(run.limits.max_execution)
