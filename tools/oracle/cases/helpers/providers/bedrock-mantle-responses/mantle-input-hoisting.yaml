@@ -1,0 +1,37 @@
+kind: helper
+name: mantle-input-hoisting
+call:
+  bedrock_mantle_responses:
+    mantle_input_hoisting:
+      cases:
+        - model: us-east-1/openai.gpt-oss-120b
+          input:
+            - {type: message, role: user, content: hi}
+            - {type: additional_tools, tools: [{type: function, name: hoisted, parameters: {}}]}
+          params: {temperature: 0.5}
+        - model: us-east-1/openai.gpt-oss-120b
+          input:
+            - {type: additional_tools, tools: [{type: function, name: hoisted, parameters: {}}, {type: web_search_preview}]}
+          params: {tools: [{type: function, name: existing, parameters: {}}]}
+        - model: us-east-1/openai.gpt-oss-120b
+          input:
+            - {type: additional_tools}
+            - {type: message, role: user, content: hi}
+        - model: us-east-1/openai.gpt-oss-120b
+          input:
+            - {type: additional_tools, tools: []}
+        - model: us-east-1/openai.gpt-oss-120b
+          input:
+            - {type: agent_message, content: [{type: output_text, text: hello}]}
+        - model: us-east-1/openai.gpt-oss-120b
+          input:
+            - {type: context_compaction}
+            - {type: agent_message, content: [{type: output_text, text: hi}]}
+        - model: us-east-1/openai.gpt-oss-120b
+          input:
+            - {type: additional_tools, tools: [{type: code_interpreter}]}
+        - model: openai.gpt-oss-120b
+          input: hello
+          params: {temperature: 0.5}
+env: {}
+compare: {ignore: []}
