@@ -1,0 +1,26 @@
+kind: helper
+name: nimble-domain-split
+call:
+  b8025:
+    provider: nimble
+    calls:
+      - operation: request
+        query: rust search
+        optional_params:
+          search_domain_filter: [news.test, "-spam.test", docs.test, "-", ""]
+      - operation: request
+        query: [rust, search]
+        optional_params:
+          search_domain_filter: [docs.test]
+          location: us
+          max_tokens_per_page: 5
+      - operation: request
+        query: rust
+        optional_params:
+          search_domain_filter: not-a-list
+      - operation: request
+        query: rust
+        optional_params:
+          search_domain_filter: [news.test, 5]
+env: {}
+compare: {ignore: []}

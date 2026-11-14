@@ -1,0 +1,11 @@
+kind: helper
+name: studio-transcription-request-seed
+call:
+  studio_transcription:
+    steps:
+      - {step: supported}
+      - {step: subtitle}
+      - {step: request, model: gemini/gemini-3.5-transcribe, content: audio, optional: {language: en, response_format: srt}}
+      - {step: params, optional: {language: fr}, non_default: {timestamp_granularities: [word], prompt: ignored}}
+env: {}
+compare: {ignore: []}

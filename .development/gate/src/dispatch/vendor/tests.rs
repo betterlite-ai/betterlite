@@ -5,7 +5,7 @@ use std::fs::{self, File};
 use std::path::Path;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::dispatch::seat::Seat;
 use crate::dispatch::vendor::{
@@ -167,13 +167,13 @@ fn a_worker_also_needs_a_writer_seat_and_a_reviewer_does_not() {
     claude.max_writers = Some(1);
     let worker = take_seat(git.path(), git.path(), &agents, &claude, Seat::Worker).unwrap();
     assert!(!seat_free(git.path(), &agents, &claude, Seat::Worker).unwrap());
-    assert!(seat_free(git.path(), &agents, &claude, Seat::Reviewer).unwrap());
+    wait_until_free(git.path(), &agents, &claude, Seat::Reviewer);
     drop(worker);
-    let first = take_seat(git.path(), git.path(), &agents, &claude, Seat::Reviewer).unwrap();
-    let second = take_seat(git.path(), git.path(), &agents, &claude, Seat::Reviewer).unwrap();
+    let first = take_when_free(git.path(), &agents, &claude, Seat::Reviewer);
+    let second = take_when_free(git.path(), &agents, &claude, Seat::Reviewer);
     assert!(!seat_free(git.path(), &agents, &claude, Seat::Worker).unwrap());
     drop((first, second));
-    assert!(seat_free(git.path(), &agents, &claude, Seat::Worker).unwrap());
+    wait_until_free(git.path(), &agents, &claude, Seat::Worker);
 }
 
 #[test]
@@ -192,7 +192,7 @@ fn an_expired_limit_allows_one_probe_instead_of_a_stampede() {
     assert!(probe.is_some());
     assert!(!seat_free(git.path(), &agents, &codex(), Seat::Worker).unwrap());
     drop(probe);
-    assert!(seat_free(git.path(), &agents, &codex(), Seat::Worker).unwrap());
+    wait_until_free(git.path(), &agents, &codex(), Seat::Worker);
 }
 
 #[test]
@@ -288,4 +288,30 @@ fn a_run_waits_for_its_seat_while_the_upload_backlog_is_over_the_limit() {
         fs::write(net.path().join("tcp"), sockets(&[0])).unwrap();
         assert!(receiver.recv_timeout(Duration::from_secs(15)).unwrap());
     });
+}
+
+// a child that a parallel test forks keeps any seat lock held at that moment until it execs, so a seat expected free is polled
+fn wait_until_free(git: &Path, agents: &Agents, vendor: &Vendor, seat: Seat) {
+    let started = Instant::now();
+    while !seat_free(git, agents, vendor, seat).unwrap() {
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the seat stayed taken"
+        );
+        thread::sleep(Duration::from_millis(1));
+    }
+}
+
+fn take_when_free(git: &Path, agents: &Agents, vendor: &Vendor, seat: Seat) -> Vec<File> {
+    let started = Instant::now();
+    loop {
+        if let Some(held) = take_seat(git, git, agents, vendor, seat).unwrap() {
+            return held;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "no seat came free"
+        );
+        thread::sleep(Duration::from_millis(1));
+    }
 }

@@ -475,15 +475,36 @@ doc = false
 bench = false
 
 [[bin]]
-name = "text_request"
-path = "fuzz_targets/text_request.rs"
+name = "openai_response_resources"
+path = "fuzz_targets/openai_response_resources.rs"
 test = false
 doc = false
 bench = false
 
 [[bin]]
-name = "openai_response_resources"
-path = "fuzz_targets/openai_response_resources.rs"
+name = "volcengine_stream_event"
+path = "fuzz_targets/volcengine_stream_event.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xai_chat_reply"
+path = "fuzz_targets/xai_chat_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "hosted_vllm_embedding_reply"
+path = "fuzz_targets/hosted_vllm_embedding_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "text_request"
+path = "fuzz_targets/text_request.rs"
 test = false
 doc = false
 bench = false
