@@ -851,3 +851,8 @@ def test_names_rag_query_response() -> None:
 
     assert response.__mro__[1] is betterlite_utils.ModelResponse
     assert "choices" in response.model_fields
+
+
+def test_names_providers_absent() -> None:
+    assert "SearchProvider" not in dir(betterlite_search)
+    assert "SearchProviders" not in dir(betterlite_search)
