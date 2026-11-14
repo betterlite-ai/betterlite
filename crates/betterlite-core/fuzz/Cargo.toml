@@ -230,3 +230,10 @@ path = "fuzz_targets/messages_sse_events.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "deepgram_transcript"
+path = "fuzz_targets/deepgram_transcript.rs"
+test = false
+doc = false
+bench = false

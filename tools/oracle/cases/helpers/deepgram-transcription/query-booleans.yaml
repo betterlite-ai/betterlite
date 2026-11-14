@@ -1,0 +1,30 @@
+kind: helper
+name: deepgram-transcription-query-booleans
+call:
+  deepgram_transcription:
+    env: {DEEPGRAM_API_BASE: "https://env.example/v1/", DEEPGRAM_API_KEY: env-key}
+    steps:
+      - step: url
+        model: nova-3
+        api_base: null
+        options:
+          OPENAI_TRANSCRIPTION_PARAMS: internal
+          diarize: true
+          keywords: null
+          language: de
+          model: ignored
+          punctuate: false
+          smart_format: ""
+          utterances: 0
+      - step: url
+        model: nova-3
+        api_base: "https://explicit.example/v1///"
+        options: {diarize: true, tier: "a b&c=d*e"}
+      - step: url
+        model: "my model/v1"
+        api_base: ""
+        options: {redact: pci, search: "x~y"}
+      - {step: auth, api_key: null}
+      - {step: auth, api_key: explicit-key}
+env: {}
+compare: {ignore: []}

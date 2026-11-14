@@ -1,0 +1,20 @@
+kind: helper
+name: deepgram-transcription-paragraph-priority
+call:
+  deepgram_transcription:
+    env: {}
+    steps:
+      - step: reply
+        body: '{"metadata": {"duration": 4}, "results": {"channels": [{"alternatives": [{"transcript": "flat", "paragraphs": {"transcript": "\nSpeaker 0: from paragraphs\n"}, "words": [{"word": "hi", "start": 0, "end": 1, "speaker": 0, "punctuated_word": "Hi."}]}]}]}}'
+      - step: reply
+        body: '{"metadata": {"duration": 4}, "results": {"channels": [{"alternatives": [{"transcript": "flat", "paragraphs": {"transcript": "not used"}, "words": [{"word": "hi", "start": 0, "end": 1}]}]}]}}'
+      - step: reply
+        body: '{"metadata": {"duration": 4}, "results": {"channels": [{"alternatives": [{"paragraphs": {"transcript": "only paragraphs"}, "words": [{"word": "hi", "start": 0, "end": 1, "speaker": 1}]}]}]}}'
+      - step: reply
+        body: '{"metadata": {"duration": 4}, "results": {"channels": [{"alternatives": [{"transcript": "flat", "paragraphs": null, "words": [{"word": "hi", "start": 0, "end": 1}]}]}]}}'
+      - step: reply
+        body: '{"metadata": {"duration": 4}, "results": {"channels": [{"alternatives": [{"transcript": "flat", "paragraphs": null, "words": [{"word": "hi", "start": 0, "end": 1, "speaker": 0}]}]}]}}'
+      - step: reply
+        body: '{"metadata": {"duration": 4}, "results": {"channels": [{"alternatives": [{"transcript": "flat", "paragraphs": {}, "words": [{"word": "hi", "start": 0, "end": 1, "speaker": 0}]}]}]}}'
+env: {}
+compare: {ignore: []}

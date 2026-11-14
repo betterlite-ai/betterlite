@@ -1,0 +1,14 @@
+kind: helper
+name: deepgram-transcription-missing-token
+call:
+  deepgram_transcription:
+    env: {}
+    steps:
+      - {step: auth, api_key: null}
+      - {step: auth, api_key: sk-direct}
+      - step: url
+        model: nova-3
+        api_base: null
+        options: {}
+env: {}
+compare: {ignore: []}

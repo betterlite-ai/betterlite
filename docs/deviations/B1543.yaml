@@ -1,0 +1,5 @@
+task: B1543
+deviations:
+  - what: A Deepgram reply body larger than 16 MiB is refused before it is parsed, and the failure is a transform error.
+    why: LiteLLM parses any body the upstream sends, and an unbounded reply lets one upstream response use unlimited memory in the gateway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepgram/audio_transcription/transformation.py#L79
