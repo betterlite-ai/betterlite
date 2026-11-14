@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections import deque
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
 
 import litellm.anthropic_interface
@@ -16,6 +16,9 @@ JSON: Final = TypeAdapter(JsonValue)
 
 Object: TypeAlias = dict[str, JsonValue]
 Entry: TypeAlias = None | bool | int | float | str | bytes | list["Entry"] | dict[str, "Entry"]
+CallHook: TypeAlias = Callable[
+    [dict[str, Entry], Object, None], Coroutine[None, None, Object | None]
+]
 
 
 class ResponseReply(TypedDict):
@@ -66,13 +69,8 @@ class Lines(logging.Handler):
             self.lines.append({"level": record.levelname, "message": message})
 
 
-class DeploymentHook(Protocol):
-    def async_post_call_success_deployment_hook(
-        self,
-        request_data: dict[str, Entry],
-        response: Object,
-        call_type: None,
-    ) -> Coroutine[object, object, Object | None]: ...
+class HookBuilder(Protocol):
+    def __call__(self, *, max_iterations: int) -> SkillsInjectionHook: ...
 
 
 class ScriptedMessages:
@@ -108,13 +106,13 @@ def run(input_value: Input) -> Object:
     logger = logging.getLogger("LiteLLM Proxy")
     previous_level = logger.level
     previous_handlers = list(logger.handlers)
-    # LiteLLM's own handler writes records below WARNING to stdout; route them to the capture instead.
+    # LiteLLM's handler writes sub-WARNING records to stdout; capture them here instead
     for existing in previous_handlers:
         logger.removeHandler(existing)
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
     scripted = ScriptedMessages(input_value["replies"])
-    # litellm.anthropic is the dynamically assigned anthropic_interface module; write the attribute there
+    # litellm.anthropic is anthropic_interface, assigned dynamically; write the attribute there
     object.__setattr__(litellm.anthropic_interface, "acreate", scripted.acreate)
     files: dict[str, Entry] = {
         skill_id: {path: text.encode() for path, text in paths.items()}
@@ -132,13 +130,12 @@ def run(input_value: Input) -> Object:
     }
     if "max_tokens" in input_value:
         request_data["max_tokens"] = input_value["max_tokens"]
-    hook = cast(DeploymentHook, SkillsInjectionHook(max_iterations=input_value["max_iterations"]))  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L106-L121
+    # SkillsInjectionHook.__init__ takes **kwargs untyped, so type the class before calling it
+    build: HookBuilder = SkillsInjectionHook
+    limit = input_value["max_iterations"]
+    call_hook = cast(CallHook, build(max_iterations=limit).async_post_call_success_deployment_hook)  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L106-L121
     try:
-        outcome = asyncio.run(
-            hook.async_post_call_success_deployment_hook(
-                request_data, input_value["response"], None
-            )
-        )
+        outcome = asyncio.run(call_hook(request_data, input_value["response"], None))
     finally:
         logger.removeHandler(handler)
         for existing in previous_handlers:
