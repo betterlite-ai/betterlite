@@ -48,11 +48,7 @@ impl Helper for Op {
         let (yielded, collected) = match input.mode {
             // LiteLLM's sync iterator hands out one event per next() call and never logs at the end
             Mode::Sync => {
-                let mut stream = GoogleGenAiStream::new(
-                    std::iter::once(Ok(body)),
-                    stream_metadata(input),
-                    LINE_LIMIT,
-                );
+                let mut stream = GoogleGenAiStream::new(std::iter::once(Ok(body)), LINE_LIMIT);
                 let yielded = stream
                     .by_ref()
                     .collect::<Result<Vec<_>, _>>()

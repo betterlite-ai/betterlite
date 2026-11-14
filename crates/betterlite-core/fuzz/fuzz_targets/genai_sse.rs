@@ -1,9 +1,6 @@
 #![no_main]
 
-use betterlite_core::google_genai::metadata::GenAiStreamMetadata;
-use betterlite_core::google_genai::provider::GenAiProvider;
 use betterlite_core::google_genai::streaming::{GenAiStreamError, GoogleGenAiStream};
-use betterlite_models::decisions::HiddenParams;
 use libfuzzer_sys::fuzz_target;
 
 const LINE_LIMIT: usize = 0x0010_0000;
@@ -28,20 +25,11 @@ fuzz_target!(|data: &[u8]| {
 
 // the steps handed out must not depend on where the reads split the input
 fn events(chunks: Vec<Vec<u8>>) -> Vec<Step> {
-    let stream = GoogleGenAiStream::new(chunks.into_iter().map(Ok), metadata(), LINE_LIMIT);
+    let stream = GoogleGenAiStream::new(chunks.into_iter().map(Ok), LINE_LIMIT);
     stream
         .map(|item| match item {
             Ok(event) => Step::Event(event),
             Err(_) => Step::Failed,
         })
         .collect()
-}
-
-fn metadata() -> GenAiStreamMetadata {
-    GenAiStreamMetadata {
-        model: String::new(),
-        provider: GenAiProvider::Gemini,
-        request_body: HiddenParams::new(),
-        hidden_params: HiddenParams::new(),
-    }
 }

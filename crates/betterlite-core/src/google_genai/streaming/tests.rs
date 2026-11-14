@@ -329,8 +329,7 @@ fn body(lines: &[&str]) -> Vec<u8> {
 }
 
 fn sync_stream(chunks: Vec<Vec<u8>>) -> GoogleGenAiStream {
-    let stream_metadata = metadata(GenAiProvider::Gemini);
-    GoogleGenAiStream::new(chunks.into_iter().map(Ok), stream_metadata, LINE_LIMIT)
+    GoogleGenAiStream::new(chunks.into_iter().map(Ok), LINE_LIMIT)
 }
 
 fn async_stream_from_source(
@@ -414,7 +413,6 @@ fn sync_stream_skips_blank_lines_that_open_no_event() {
 fn sync_stream_resets_the_event_size_after_each_event() {
     let mut stream = GoogleGenAiStream::new(
         vec![Ok(body(&["data: a", "", "data: b", ""]))].into_iter(),
-        metadata(GenAiProvider::Gemini),
         SMALL_LINE_LIMIT,
     );
     let events = sync_events(&mut stream);
@@ -437,7 +435,7 @@ fn sync_stream_emits_the_event_left_open_at_end_of_input() {
 
 #[test]
 fn sync_stream_keeps_a_large_inline_media_event_whole() {
-    let payload = "QUJD".repeat(131_072);
+    let payload = "QUJD".repeat(0x0002_0000);
     let line =
         format!("data: {{\"inlineData\":{{\"mimeType\":\"image/png\",\"data\":\"{payload}\"}}}}");
     let bytes = body(&[line.as_str(), ""]);
@@ -464,11 +462,7 @@ fn sync_stream_reassembles_a_utf8_sequence_split_across_reads() {
 fn sync_stream_stops_at_a_transport_failure() {
     let chunks: Vec<Result<Vec<u8>, HttpError>> =
         vec![Ok(b"data: a\n\ndata: b".to_vec()), Err(HttpError::Timeout)];
-    let mut stream = GoogleGenAiStream::new(
-        chunks.into_iter(),
-        metadata(GenAiProvider::Gemini),
-        LINE_LIMIT,
-    );
+    let mut stream = GoogleGenAiStream::new(chunks.into_iter(), LINE_LIMIT);
     let first = stream
         .next()
         .expect("the first event")
@@ -486,11 +480,7 @@ fn sync_stream_reports_a_long_line_after_the_events_before_it() {
     let input = b"data: a\n\ndata: 0123456789\n\n";
     let chunks: Vec<Result<Vec<u8>, HttpError>> =
         input.chunks(1).map(|byte| Ok(byte.to_vec())).collect();
-    let mut stream = GoogleGenAiStream::new(
-        chunks.into_iter(),
-        metadata(GenAiProvider::Gemini),
-        SMALL_LINE_LIMIT,
-    );
+    let mut stream = GoogleGenAiStream::new(chunks.into_iter(), SMALL_LINE_LIMIT);
     let first = stream
         .next()
         .expect("the first event")
@@ -513,7 +503,6 @@ fn sync_stream_reports_a_long_line_after_the_events_before_it() {
 fn sync_stream_refuses_a_long_line_inside_one_read() {
     let mut stream = GoogleGenAiStream::new(
         vec![Ok(b"data: 0123456789\n\n".to_vec())].into_iter(),
-        metadata(GenAiProvider::Gemini),
         SMALL_LINE_LIMIT,
     );
     let failure = stream
@@ -533,11 +522,7 @@ fn sync_stream_refuses_a_long_line_inside_one_read() {
 fn sync_stream_stops_at_an_over_limit_line_before_reading_more() {
     let chunks: Vec<Result<Vec<u8>, HttpError>> =
         vec![Ok(b"data: 0123456789".to_vec()), Err(HttpError::Timeout)];
-    let mut stream = GoogleGenAiStream::new(
-        chunks.into_iter(),
-        metadata(GenAiProvider::Gemini),
-        SMALL_LINE_LIMIT,
-    );
+    let mut stream = GoogleGenAiStream::new(chunks.into_iter(), SMALL_LINE_LIMIT);
     let failure = stream
         .next()
         .expect("the limit error")
@@ -555,7 +540,6 @@ fn sync_stream_stops_at_an_over_limit_line_before_reading_more() {
 fn sync_stream_refuses_a_line_exactly_at_the_limit_as_an_event() {
     let mut stream = GoogleGenAiStream::new(
         vec![Ok(body(&["data: 012", ""]))].into_iter(),
-        metadata(GenAiProvider::Gemini),
         SMALL_LINE_LIMIT,
     );
     let failure = stream
@@ -575,7 +559,6 @@ fn sync_stream_refuses_a_line_exactly_at_the_limit_as_an_event() {
 fn sync_stream_refuses_an_event_one_byte_past_the_limit() {
     let mut stream = GoogleGenAiStream::new(
         vec![Ok(body(&["data: ab", ""]))].into_iter(),
-        metadata(GenAiProvider::Gemini),
         SMALL_LINE_LIMIT,
     );
     let failure = stream
@@ -594,11 +577,7 @@ fn sync_stream_refuses_an_event_one_byte_past_the_limit() {
 #[test]
 fn sync_stream_refuses_an_event_that_grows_past_the_limit() {
     let input = body(&["data: a", "data: b"]);
-    let mut stream = GoogleGenAiStream::new(
-        vec![Ok(input)].into_iter(),
-        metadata(GenAiProvider::Gemini),
-        SMALL_LINE_LIMIT,
-    );
+    let mut stream = GoogleGenAiStream::new(vec![Ok(input)].into_iter(), SMALL_LINE_LIMIT);
     let failure = stream
         .next()
         .expect("the limit error")
@@ -888,7 +867,9 @@ async fn async_stream_returns_the_end_before_the_completion_log_finishes() {
         metadata(GenAiProvider::Gemini),
         Some(logging),
     );
-    let end = timeout(Duration::from_secs(5), stream.next_event())
+    let event = stream.next_event().await.expect("the event parses");
+    assert_eq!(event, Some(b"data: a\n\n".to_vec()));
+    let end = timeout(LOG_WAIT, stream.next_event())
         .await
         .expect("the end of the stream does not wait for the completion log")
         .expect("the end parses");

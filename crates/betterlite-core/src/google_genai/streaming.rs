@@ -34,7 +34,6 @@ pub enum GenAiStreamError {
 
 pub struct GoogleGenAiStream {
     pub(crate) collected_chunks: Vec<Vec<u8>>,
-    pub(crate) metadata: GenAiStreamMetadata,
     decoder: GenAiEventDecoder,
     source: Box<dyn Iterator<Item = Result<Vec<u8>, HttpError>> + Send>,
     failure: Option<GenAiStreamError>,
@@ -45,13 +44,12 @@ pub struct GoogleGenAiStream {
 impl GoogleGenAiStream {
     // LiteLLM's GoogleGenAIGenerateContentStreamingIterator, fed the lines response.iter_lines() yields
     #[must_use]
-    pub fn new<Source>(source: Source, metadata: GenAiStreamMetadata, line_limit: usize) -> Self
+    pub fn new<Source>(source: Source, line_limit: usize) -> Self
     where
         Source: Iterator<Item = Result<Vec<u8>, HttpError>> + Send + 'static,
     {
         Self {
             collected_chunks: Vec::new(),
-            metadata,
             decoder: GenAiEventDecoder::new(line_limit),
             source: Box::new(source),
             failure: None,
@@ -62,6 +60,7 @@ impl GoogleGenAiStream {
 
     // the chunks the stream collected for the pass-through completion log
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions
     pub fn collected_chunks(&self) -> &[Vec<u8>] {
         &self.collected_chunks
     }
@@ -154,6 +153,7 @@ impl AsyncGoogleGenAiStream {
 
     // the chunks the stream collected for the pass-through completion log
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions
     pub fn collected_chunks(&self) -> &[Vec<u8>] {
         &self.collected_chunks
     }
