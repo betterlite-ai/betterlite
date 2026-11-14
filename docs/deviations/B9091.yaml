@@ -1,0 +1,8 @@
+task: B9091
+deviations:
+  - what: The dashboard is built into a static sidecar that sits next to the betterlite binary and is installed by replacing that directory, instead of being copied into the Python package's proxy/_experimental/out directory.
+    why: There is no Python package to carry the assets, so the binary serves a plain directory beside it, and replacing the whole directory removes the stale content-hashed files that LiteLLM's copy step leaves behind.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/build_ui.sh#L46-L61
+  - what: The page font is the Tailwind system sans-serif stack, not Google's Inter.
+    why: next/font downloads Inter from Google at build time, which a build without network access and a self-contained sidecar cannot do.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/layout.tsx#L1-L12
