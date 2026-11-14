@@ -97,9 +97,15 @@ pub fn decode_deepgram_transcript(
             limit: REPLY_MAX_BYTES,
         });
     }
-    project(body).map_err(|source| DeepgramTranscriptionError::Transform {
-        body: String::from_utf8_lossy(body).into_owned(),
-        source: Box::new(source),
+    project(body).map_err(|source| {
+        let text = str::from_utf8(body).map_or_else(
+            |_| format!("{} bytes that are not UTF-8", body.len()),
+            str::to_owned,
+        );
+        DeepgramTranscriptionError::Transform {
+            body: text,
+            source: Box::new(source),
+        }
     })
 }
 
@@ -171,14 +177,12 @@ fn select_text(
         Some(Some(paragraphs)) => paragraphs
             .transcript
             .ok_or(DeepgramTranscriptionError::NoParagraphTranscript),
-        None => reconstruct_diarized_transcript(words).map(Some),
+        None => reconstruct_diarized_text(words).map(Some),
     }
 }
 
 // the final run gets a leading and trailing newline, so the last two runs sit a blank line apart
-pub fn reconstruct_diarized_transcript(
-    words: &[Word],
-) -> Result<String, DeepgramTranscriptionError> {
+pub fn reconstruct_diarized_text(words: &[Word]) -> Result<String, DeepgramTranscriptionError> {
     // a word without a speaker prints as None, the way LiteLLM's f-string does
     let label =
         |speaker: Option<&Number>| speaker.map_or_else(|| "None".to_owned(), Number::to_string);

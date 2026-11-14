@@ -5,10 +5,8 @@ use betterlite_openai::api::audio_file_input::{
 use betterlite_openai::api::transcription_contract::{
     AudioTranscriptionData, AudioTranscriptionRequestData,
 };
-use betterlite_openai::openai_base_config::Headers;
-use indexmap::IndexMap;
+use betterlite_openai::openai_base_config::{Headers, Object};
 use secrecy::{ExposeSecret, SecretString};
-use serde_json::Value;
 use url::form_urlencoded;
 
 use super::error::DeepgramTranscriptionError;
@@ -26,10 +24,7 @@ pub struct DeepgramTranscriptionConfig {
 }
 
 #[must_use]
-pub fn map_openai_params(
-    non_default_params: &IndexMap<String, Value>,
-    mut optional_params: IndexMap<String, Value>,
-) -> IndexMap<String, Value> {
+pub fn map_openai_params(non_default_params: &Object, mut optional_params: Object) -> Object {
     for (name, value) in non_default_params {
         if SUPPORTED_OPENAI_PARAMS.contains(&name.as_str()) {
             optional_params.insert(name.clone(), value.clone());
@@ -39,7 +34,7 @@ pub fn map_openai_params(
 }
 
 // the audio goes out as the raw request body, with no multipart files
-pub fn transform_audio_transcription_request(
+pub fn raw_audio_request(
     audio_file: AudioFile<'_>,
     files: &dyn AuthorizedAudioFiles,
 ) -> Result<AudioTranscriptionRequestData, DeepgramTranscriptionError> {
@@ -58,7 +53,7 @@ impl DeepgramTranscriptionConfig {
         &self,
         api_base: Option<&str>,
         model: &str,
-        optional_params: &IndexMap<String, Value>,
+        optional_params: &Object,
     ) -> String {
         let base = api_base.unwrap_or(&self.api_base).trim_end_matches('/');
         let mut pairs = form_urlencoded::Serializer::new(String::new());
@@ -69,11 +64,13 @@ impl DeepgramTranscriptionConfig {
             if value.is_null() || reserved {
                 continue;
             }
-            match value {
-                Value::String(text) => pairs.append_pair(name, text),
-                Value::Bool(flag) => pairs.append_pair(name, if *flag { "true" } else { "false" }),
-                other => pairs.append_pair(name, &other.to_string()),
-            };
+            if let Some(text) = value.as_str() {
+                pairs.append_pair(name, text);
+            } else if let Some(flag) = value.as_bool() {
+                pairs.append_pair(name, if flag { "true" } else { "false" });
+            } else {
+                pairs.append_pair(name, &value.to_string());
+            }
         }
         // Python's quote_plus leaves ~ alone and encodes *, the reverse of form_urlencoded
         let query = pairs.finish().replace('*', "%2A").replace("%7E", "~");
