@@ -642,9 +642,9 @@ fn decode_create_wraps_invalid_json() {
             assert_eq!(status, 422);
             assert_eq!(source.line(), 1);
         }
-        other @ StudioFileSearchError::MissingKey
-        | other @ StudioFileSearchError::SearchReply { .. }
-        | other @ StudioFileSearchError::Json { .. } => panic!("unexpected error: {other}"),
+        other @ (StudioFileSearchError::MissingKey
+        | StudioFileSearchError::SearchReply { .. }
+        | StudioFileSearchError::Json { .. }) => panic!("unexpected error: {other}"),
     }
 }
 
@@ -848,9 +848,9 @@ fn decode_search_wraps_invalid_json() {
             assert_eq!(status, 500);
             assert_eq!(source.line(), 1);
         }
-        other @ StudioFileSearchError::MissingKey
-        | other @ StudioFileSearchError::CreateReply { .. }
-        | other @ StudioFileSearchError::Json { .. } => panic!("unexpected error: {other}"),
+        other @ (StudioFileSearchError::MissingKey
+        | StudioFileSearchError::CreateReply { .. }
+        | StudioFileSearchError::Json { .. }) => panic!("unexpected error: {other}"),
     }
 }
 
@@ -872,9 +872,9 @@ fn decode_reports_the_reply_status_and_headers() {
             assert_eq!(status, 429);
             assert_eq!(carried, headers);
         }
-        other @ StudioFileSearchError::MissingKey
-        | other @ StudioFileSearchError::CreateReply { .. }
-        | other @ StudioFileSearchError::Json { .. } => panic!("unexpected error: {other}"),
+        other @ (StudioFileSearchError::MissingKey
+        | StudioFileSearchError::CreateReply { .. }
+        | StudioFileSearchError::Json { .. }) => panic!("unexpected error: {other}"),
     }
 }
 

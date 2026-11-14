@@ -1,6 +1,6 @@
 import os
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict
 
 import httpx
@@ -48,8 +48,8 @@ class Input(TypedDict):
 
 
 class Credentials(TypedDict, total=False):
-    headers: dict[str, str] | None
-    query_params: dict[str, str] | None
+    headers: dict[str, str]
+    query_params: dict[str, str]
 
 
 class SearchOptions(TypedDict, total=False):
@@ -89,11 +89,12 @@ LOGGING: Final = LoggingRecord()
 
 
 class VectorStoreConfig(Protocol):
+    # ast-grep-ignore: no-long-names
     def get_vector_store_endpoints_by_type(self) -> VectorStoreIndexEndpoints: ...
 
     def get_auth_credentials(self, litellm_params: dict[str, JsonValue]) -> Credentials: ...
 
-    def get_supported_openai_params(self, model: str) -> list[str]: ...
+    def get_supported_openai_params(self, model: str) -> Sequence[str]: ...
 
     def validate_environment(
         self, headers: Headers, litellm_params: GenericLiteLLMParams | None
@@ -177,10 +178,6 @@ def url_outcome(call: Call) -> JsonValue:
     return {"url": CONFIG.get_complete_url(call.get("api_base"), {})}
 
 
-def search_params(call: Call) -> SearchOptions:
-    return {"filters": call.get("filters"), "max_num_results": call.get("max_num_results")}
-
-
 def search_outcome(call: Call) -> JsonValue:
     environment(call.get("environment"))
     litellm_params: dict[str, JsonValue] = {
@@ -193,7 +190,7 @@ def search_outcome(call: Call) -> JsonValue:
     url, body = CONFIG.transform_search_vector_store_request(
         "" if store_id is None else store_id,
         "" if query is None else query,
-        search_params(call),
+        {"filters": call.get("filters"), "max_num_results": call.get("max_num_results")},
         api_base,
         LOGGING,
         litellm_params,
@@ -204,7 +201,7 @@ def search_outcome(call: Call) -> JsonValue:
 
 def search_reply(call: Call) -> JsonValue:
     query = call.get("query")
-    LOGGING.model_call_details["query"] = "" if query is None else query
+    LOGGING.model_call_details["query"] = JSON.validate_python("" if query is None else query)
     record = CONFIG.transform_search_vector_store_response(raw_response(call), LOGGING)
     return JSON.validate_python(record)
 
@@ -241,4 +238,5 @@ def resolve(call: Call) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    return {"calls": [resolve(call) for call in input_value["calls"]]}
+    answers: list[JsonValue] = [resolve(call) for call in input_value["calls"]]
+    return {"calls": answers}
