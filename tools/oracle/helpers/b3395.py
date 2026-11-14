@@ -1,18 +1,17 @@
 import asyncio
 import logging
 from collections import deque
-from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
+from collections.abc import Coroutine
+from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
 
-import litellm
+import litellm.anthropic_interface
 from litellm.proxy.hooks.litellm_skills.main import SkillsInjectionHook
-from litellm.types.llms.anthropic_messages.anthropic_response import AnthropicMessagesResponse
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
 PREFIX: Final = "SkillsInjectionHook: "
 # betterlite's execute_code belongs to B3394 and does not log this line
 EXECUTING: Final = "SkillsInjectionHook: Executing code ("
-RESPONSE: Final = TypeAdapter(AnthropicMessagesResponse)
 JSON: Final = TypeAdapter(JsonValue)
 
 Object: TypeAlias = dict[str, JsonValue]
@@ -48,6 +47,13 @@ class Input(TypedDict):
     replies: list[Reply]
 
 
+class RecordedCall(TypedDict):
+    model: str
+    messages: list[Entry]
+    tools: list[Entry]
+    max_tokens: int
+
+
 class Lines(logging.Handler):
     def __init__(self) -> None:
         super().__init__(level=logging.DEBUG)
@@ -60,9 +66,18 @@ class Lines(logging.Handler):
             self.lines.append({"level": record.levelname, "message": message})
 
 
+class DeploymentHook(Protocol):
+    def async_post_call_success_deployment_hook(
+        self,
+        request_data: dict[str, Entry],
+        response: Object,
+        call_type: None,
+    ) -> Coroutine[object, object, Object | None]: ...
+
+
 class ScriptedMessages:
     def __init__(self, replies: list[Reply]) -> None:
-        self.replies = deque(replies)
+        self.replies: deque[Reply] = deque(replies)
         self.calls: list[JsonValue] = []
 
     async def acreate(
@@ -72,27 +87,35 @@ class ScriptedMessages:
         messages: list[Entry],
         tools: list[Entry],
         max_tokens: int,
-    ) -> AnthropicMessagesResponse | None:
-        self.calls.append(
-            JSON.validate_python(
-                {"model": model, "messages": messages, "tools": tools, "max_tokens": max_tokens}
-            )
-        )
+    ) -> Object | None:
+        call: RecordedCall = {
+            "model": model,
+            "messages": messages,
+            "tools": tools,
+            "max_tokens": max_tokens,
+        }
+        self.calls.append(JSON.validate_python(call))
         reply = self.replies.popleft()
         if reply["kind"] == "error":
             raise RuntimeError(reply["message"])
         if reply["kind"] == "none":
             return None
-        return RESPONSE.validate_python(reply["response"])
+        return reply["response"]
 
 
 def run(input_value: Input) -> Object:
     handler = Lines()
     logger = logging.getLogger("LiteLLM Proxy")
-    logger.setLevel(logging.DEBUG)
+    previous_level = logger.level
+    previous_handlers = list(logger.handlers)
+    # LiteLLM's own handler writes records below WARNING to stdout; route them to the capture instead.
+    for existing in previous_handlers:
+        logger.removeHandler(existing)
     logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)
     scripted = ScriptedMessages(input_value["replies"])
-    litellm.anthropic.acreate = scripted.acreate  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L590
+    # litellm.anthropic is the dynamically assigned anthropic_interface module; write the attribute there
+    object.__setattr__(litellm.anthropic_interface, "acreate", scripted.acreate)
     files: dict[str, Entry] = {
         skill_id: {path: text.encode() for path, text in paths.items()}
         for skill_id, paths in input_value["skill_files"].items()
@@ -109,14 +132,16 @@ def run(input_value: Input) -> Object:
     }
     if "max_tokens" in input_value:
         request_data["max_tokens"] = input_value["max_tokens"]
-    hook = SkillsInjectionHook(max_iterations=input_value["max_iterations"])
-    outcome = asyncio.run(
-        hook.async_post_call_success_deployment_hook(
-            request_data, RESPONSE.validate_python(input_value["response"]), None
+    hook = cast(DeploymentHook, SkillsInjectionHook(max_iterations=input_value["max_iterations"]))  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L106-L121
+    try:
+        outcome = asyncio.run(
+            hook.async_post_call_success_deployment_hook(
+                request_data, input_value["response"], None
+            )
         )
-    )
-    return {
-        "result": JSON.validate_python(outcome),
-        "continuation_calls": scripted.calls,
-        "logs": handler.lines,
-    }
+    finally:
+        logger.removeHandler(handler)
+        for existing in previous_handlers:
+            logger.addHandler(existing)
+        logger.setLevel(previous_level)
+    return {"result": outcome, "continuation_calls": scripted.calls, "logs": handler.lines}
