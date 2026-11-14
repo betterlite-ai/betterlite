@@ -15,8 +15,8 @@ deviations:
   - what: The async functions accept an optional async client, which LiteLLM's dispatcher never forwards.
     why: LiteLLM's async_* methods already have a client parameter, and the dispatcher drops it only by omission; no caller at the pin supplies one, so a direct async call keeps the parameter.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L303-L311
-  - what: A non-2xx answer to the versions GET becomes the provider's error through handle_error, and no post_call is recorded for it.
-    why: LiteLLM's GET does not raise, so its post_call logs the failing body first and the Gemini transform raises afterwards; betterlite checks the status in the transport so all four operations take one error path, and the error class is the same GeminiError the transform raises.
+  - what: A non-2xx answer to the DELETE or to the versions GET becomes the provider's error through handle_error, and no post_call is recorded for it.
+    why: LiteLLM's handler never raises on the status, so its post_call logs the failing body first and the Gemini transform's _raise_for_status raises afterwards, outside _handle_error; betterlite checks the status in the transport so all four operations take one error path, and get_error_class builds the same GeminiError the transform raises.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/agents/transformation.py#L121-L127
   - what: post_call records original_response and additional_args only.
     why: LiteLLM's Logging.post_call also writes input, api_key and log_event_type; those keys belong to B247's logging pipeline, which owns model_call_details, so the transport writes only the two arguments this call passes.

@@ -182,7 +182,7 @@ where
     }
 }
 
-// LiteLLM's delete raises for any non-2xx answer, and its GET transforms raise the same error class
+// LiteLLM's response transforms raise for any non-2xx answer, after its post_call has run
 fn ensure_success(response: UpstreamResponse) -> Result<UpstreamResponse, RequestFailure> {
     if (200..300).contains(&response.status_code) {
         return Ok(response);
