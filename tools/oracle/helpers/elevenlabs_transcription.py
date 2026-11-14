@@ -5,10 +5,11 @@ from typing import Final, Literal, Protocol, TypeAlias, TypedDict
 import httpx
 import litellm
 from litellm.llms.base_llm.audio_transcription.transformation import (
+    AudioTranscriptionRequestData,
     BaseAudioTranscriptionConfig,
 )
 from litellm.types.llms.openai import AllMessageValues
-from litellm.types.utils import LlmProviders
+from litellm.types.utils import FileTypes, LlmProviders
 from litellm.utils import ProviderConfigManager
 from pydantic import JsonValue, TypeAdapter
 
@@ -43,6 +44,23 @@ class Config(Protocol):
 
     @property
     def validate_environment(self) -> Authenticate: ...
+
+    def get_complete_url(
+        self,
+        api_base: str | None,
+        api_key: str | None,
+        model: str,
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+    ) -> str: ...
+
+    def transform_audio_transcription_request(  # ast-grep-ignore: no-long-names
+        self,
+        model: str,
+        audio_file: FileTypes,
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+    ) -> AudioTranscriptionRequestData: ...
 
 
 class FormView(Protocol):
@@ -188,7 +206,7 @@ def form_answer(request: FormView) -> Requested:
 def request_answer(call: RequestCall) -> Requested:
     content = call["content"].encode()
     audio = content if call["filename"] is None else (call["filename"], content)
-    request = BASE.transform_audio_transcription_request(
+    request = CONFIG.transform_audio_transcription_request(
         model=call["model"],
         audio_file=audio,
         optional_params=call["optional_params"],
@@ -199,7 +217,7 @@ def request_answer(call: RequestCall) -> Requested:
 
 def url_answer(call: UrlCall) -> Located:
     apply_environment(call["environment"])
-    url = BASE.get_complete_url(
+    url = CONFIG.get_complete_url(
         api_base=call["api_base"],
         api_key=None,
         model=MODEL,
