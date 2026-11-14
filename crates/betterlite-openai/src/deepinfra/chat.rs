@@ -75,10 +75,14 @@ pub fn map_openai_params(request: MapRequest<'_>) -> Result<(), DeepInfraError> 
     } = request;
     let supported = supported_openai_params(supports_reasoning);
     for (name, given) in non_default_params {
-        let value = if name == "temperature" && model == MISTRAL && is_zero(given) {
+        // Python compares the value to 0, which is true for both zero signs and no other integer or float
+        let value = if name == "temperature"
+            && model == MISTRAL
+            && matches!(given, Json::Number(number) if number.as_f64().is_some_and(|parsed| parsed.to_bits() & 0x7fff_ffff_ffff_ffff == 0))
+        {
             Number::from_f64(minimum_temperature)
                 .map(Json::Number)
-                .ok_or(DeepInfraError::UnrepresentableMinimumTemperature)?
+                .ok_or(DeepInfraError::UnrepresentableTemperature)?
         } else {
             given.clone()
         };
@@ -98,11 +102,6 @@ pub fn map_openai_params(request: MapRequest<'_>) -> Result<(), DeepInfraError> 
         }
     }
     Ok(())
-}
-
-// Python compares the value to 0, which is true for both zero signs and no other integer or float
-fn is_zero(value: &Json) -> bool {
-    matches!(value, Json::Number(number) if number.as_f64().is_some_and(|parsed| parsed.to_bits() & 0x7fff_ffff_ffff_ffff == 0))
 }
 
 pub struct ChatTransform<'request> {

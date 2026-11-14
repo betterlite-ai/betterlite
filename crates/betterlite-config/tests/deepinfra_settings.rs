@@ -148,6 +148,8 @@ fn deepinfra_rerank_key_only_falls_back_for_a_missing_key(
     #[case] expected: Option<&str>,
 ) {
     let supplied = explicit_key.map(secret);
-    let key = settings("", environment).rerank_key(supplied.as_ref());
+    let loaded = settings("", environment);
+    // the rerank config only consults the environment key when the caller supplied none, and an empty caller key is kept
+    let key = supplied.as_ref().or(loaded.api_key.as_ref()).cloned();
     assert_eq!(exposed(key.as_ref()).as_deref(), expected);
 }

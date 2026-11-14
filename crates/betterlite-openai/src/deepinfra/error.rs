@@ -9,7 +9,7 @@ pub enum DeepInfraError {
     #[error("DeepInfra does not capture a chat setting named {name}")]
     UnknownSetting { name: String },
     #[error("the minimum non-zero temperature cannot be written as a JSON number")]
-    UnrepresentableMinimumTemperature,
+    UnrepresentableTemperature,
 }
 
 impl DeepInfraError {
@@ -18,7 +18,7 @@ impl DeepInfraError {
     pub const fn status_code(&self) -> u16 {
         match self {
             Self::UnsupportedToolChoice => 400,
-            Self::UnknownSetting { .. } | Self::UnrepresentableMinimumTemperature => 500,
+            Self::UnknownSetting { .. } | Self::UnrepresentableTemperature => 500,
         }
     }
 }

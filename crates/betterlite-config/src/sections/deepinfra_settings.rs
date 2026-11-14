@@ -55,12 +55,6 @@ impl Settings {
             .or_else(|| self.api_key.clone());
         (base, key)
     }
-
-    // the rerank config only consults the environment key when the caller supplied none, and an empty caller key is kept
-    #[must_use]
-    pub fn rerank_key(&self, api_key: Option<&SecretString>) -> Option<SecretString> {
-        api_key.or(self.api_key.as_ref()).cloned()
-    }
 }
 
 impl Section for Raw {
