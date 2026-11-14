@@ -12,7 +12,8 @@ pub struct Raw {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawLiteLlmSettings {
-    disable_copilot_system_to_assistant: Option<bool>,
+    #[serde(rename = "disable_copilot_system_to_assistant")]
+    disable_system_to_assistant: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -30,7 +31,7 @@ impl Section for Raw {
     {
         Ok(environment::resolve(
             lookup,
-            self.litellm_settings.disable_copilot_system_to_assistant,
+            self.litellm_settings.disable_system_to_assistant,
         ))
     }
 }
