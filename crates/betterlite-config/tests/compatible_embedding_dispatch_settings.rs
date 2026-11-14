@@ -76,6 +76,20 @@ fn loads_every_environment_alias(
     (Some("http://explicit/v1"), Some("sk-explicit")),
     (Some("http://explicit/v1"), Some("sk-explicit"))
 )]
+#[case::openai_like_explicit_base_beats_the_global_base(
+    EmbeddingFamily::OpenAiLike,
+    ENVIRONMENT,
+    globals(Some("https://global/v1"), None, None, None),
+    (Some("http://explicit/v1"), None),
+    (Some("http://explicit/v1"), Some("sk-openai-like"))
+)]
+#[case::openai_like_api_key_beats_the_openai_like_key(
+    EmbeddingFamily::OpenAiLike,
+    &[],
+    globals(None, Some("sk-api"), Some("sk-like"), None),
+    (None, None),
+    (None, Some("sk-api"))
+)]
 #[case::openai_like_global_base_and_key_win(
     EmbeddingFamily::OpenAiLike,
     ENVIRONMENT,
