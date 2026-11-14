@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_azure::azure_arc_identity::ArcTransport;
 use betterlite_azure::azure_certificate::assertion::RandomIds;
 use betterlite_azure::azure_certificate::credential::StdFiles;
 use betterlite_azure::azure_client_secret::provider::ProviderCache;
@@ -14,11 +13,9 @@ use betterlite_azure::azure_default_chain::native::NativeGrants;
 use betterlite_azure::azure_default_chain::provider::{
     ProviderRequest, get_azure_ad_token_provider,
 };
-use betterlite_azure::azure_hosted_identity::request::{HostedIo, HostedTransport};
+use betterlite_azure::azure_hosted_identity::request::HostedIo;
 use betterlite_azure::azure_managed_identity::environment::ManagedIdentityEnvironment;
-use betterlite_azure::azure_managed_identity::imds::ImdsTransport;
 use betterlite_azure::azure_managed_identity::runtime::{FsTokenFiles, ImdsIo};
-use betterlite_azure::azure_username_password::transport::Transport as PasswordTransport;
 use betterlite_azure::oidc_exchange::AzureOidcExchange;
 use betterlite_config::sections::azure_client_secret::Settings as ClientSecretSettings;
 use betterlite_config::sections::azure_default_chain::AzureCredentialType;
@@ -43,7 +40,7 @@ pub struct SdkAzureGrants<H: AzureIo> {
     pub exchange: AzureOidcExchange,
     pub authority_host: Option<String>,
     pub client_secret_settings: ClientSecretSettings,
-    pub client_secrets: Mutex<Option<ProviderCache>>,
+    pub client_secrets: KeptProvider,
     pub managed_identity_tokens: TokenCache,
     pub default_tokens: TokenCache,
 }
@@ -105,65 +102,75 @@ impl TokenCache {
     }
 }
 
+// NativeGrants owns its provider cache, so the kept one is moved in for a fetch and back out after it
+#[derive(Default)]
+pub struct KeptProvider {
+    slot: Mutex<Option<ProviderCache>>,
+}
+
+impl KeptProvider {
+    // the guard stays held for the whole fetch, so concurrent fetches queue behind one provider cache
+    fn lend<C, W, T>(&self, create: C, work: W) -> T
+    where
+        C: FnOnce() -> ProviderCache,
+        W: FnOnce(ProviderCache) -> (ProviderCache, T),
+    {
+        let mut slot = self.slot.lock().unwrap_or_else(PoisonError::into_inner);
+        let cache = slot.take().unwrap_or_else(create);
+        let (returned, result) = work(cache);
+        *slot = Some(returned);
+        drop(slot);
+        result
+    }
+}
+
 impl<H: AzureIo> SdkAzureGrants<H> {
-    // NativeGrants owns its provider cache, so the kept one is moved in for the fetch and back out after it
     fn token_through<F>(&self, fetch: F) -> Result<ChainToken, AzureGrantError>
     where
         F: FnOnce(&NativeGrants<'_, ProductionHost>) -> Result<ChainToken, AzureGrantError>,
     {
-        // the guard stays held for the whole fetch, so concurrent fetches queue behind one provider cache
-        let mut kept = self
-            .client_secrets
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        let cache = kept.take().unwrap_or_else(|| {
-            ProviderCache::new(
-                Arc::<H>::clone(&self.http),
-                Arc::<ProductionClock>::clone(&self.clock),
-                self.client_secret_settings.clone(),
-            )
-        });
-        let native = self.native_grants(cache);
-        let result = fetch(&native);
-        *kept = Some(
-            native
-                .client_secrets
-                .into_inner()
-                .unwrap_or_else(PoisonError::into_inner),
-        );
-        result
-    }
-
-    fn native_grants(&self, cache: ProviderCache) -> NativeGrants<'_, ProductionHost> {
-        let hosted: &dyn HostedTransport = &*self.http;
-        let imds: &dyn ImdsTransport = &*self.http;
-        let arc: &dyn ArcTransport = &*self.http;
-        let password: &dyn PasswordTransport = &*self.http;
-        NativeGrants {
-            transport: Arc::<H>::clone(&self.http),
-            clock: Arc::<ProductionClock>::clone(&self.clock),
-            client_secrets: Mutex::new(cache),
-            files: &self.files,
-            ids: Arc::<RandomIds>::clone(&self.ids),
-            token_files: &self.token_files,
-            exchange: &self.exchange,
-            managed_environment: &self.environment,
-            host: &self.host,
-            hosted: HostedIo {
-                transport: hosted,
-                clock: &*self.clock,
-                redactor: &self.redactor,
+        self.client_secrets.lend(
+            || {
+                ProviderCache::new(
+                    Arc::<H>::clone(&self.http),
+                    Arc::<ProductionClock>::clone(&self.clock),
+                    self.client_secret_settings.clone(),
+                )
             },
-            arc,
-            imds: ImdsIo {
-                transport: imds,
-                scheduler: &self.scheduler,
-                ids: &*self.ids,
-                clock: &*self.clock,
+            |cache| {
+                let native = NativeGrants {
+                    transport: Arc::<H>::clone(&self.http),
+                    clock: Arc::<ProductionClock>::clone(&self.clock),
+                    client_secrets: Mutex::new(cache),
+                    files: &self.files,
+                    ids: Arc::<RandomIds>::clone(&self.ids),
+                    token_files: &self.token_files,
+                    exchange: &self.exchange,
+                    managed_environment: &self.environment,
+                    host: &self.host,
+                    hosted: HostedIo {
+                        transport: &*self.http,
+                        clock: &*self.clock,
+                        redactor: &self.redactor,
+                    },
+                    arc: &*self.http,
+                    imds: ImdsIo {
+                        transport: &*self.http,
+                        scheduler: &self.scheduler,
+                        ids: &*self.ids,
+                        clock: &*self.clock,
+                    },
+                    password_transport: &*self.http,
+                    authority_host: self.authority_host.clone(),
+                };
+                let result = fetch(&native);
+                let returned = native
+                    .client_secrets
+                    .into_inner()
+                    .unwrap_or_else(PoisonError::into_inner);
+                (returned, result)
             },
-            password_transport: password,
-            authority_host: self.authority_host.clone(),
-        }
+        )
     }
 }
 

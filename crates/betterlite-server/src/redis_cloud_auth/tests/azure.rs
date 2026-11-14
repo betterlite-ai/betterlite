@@ -105,7 +105,7 @@ fn production_grants(
         exchange,
         authority_host: None,
         client_secret_settings: ClientSecretSettings::default(),
-        client_secrets: Mutex::new(None),
+        client_secrets: KeptProvider::default(),
         managed_identity_tokens: TokenCache::default(),
         default_tokens: TokenCache::default(),
     }

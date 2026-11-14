@@ -59,7 +59,7 @@ use tokio::task::JoinSet;
 use super::aws::SdkAwsCredentials;
 use super::azure::{AzureGrantError, AzureGrants, AzureRedisTokens};
 use super::azure_http::AzureHttp;
-use super::azure_production::{SdkAzureGrants, TokenCache};
+use super::azure_production::{KeptProvider, SdkAzureGrants, TokenCache};
 use super::azure_runtime::{ProductionClock, ProductionHost, ThreadScheduler};
 use super::gcp::{AdcError, AdcTokenSource, IamTokenError, IamTokenFetcher, decode_iam_token};
 use super::gcp_production::VertexAdcTokenSource;
