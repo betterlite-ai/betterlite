@@ -25,10 +25,10 @@ pub(crate) fn field_text<'source>(
     field: &'static str,
 ) -> Result<Option<&'source str>, HangingRequestError> {
     match source.get(field) {
-        Some(value) if !matches!(value, Json::Null) => as_text(value)
+        Some(Json::Null) | None => Ok(None),
+        Some(value) => as_text(value)
             .map(Some)
             .ok_or(HangingRequestError::FieldType { field }),
-        Some(Json::Null) | None => Ok(None),
     }
 }
 

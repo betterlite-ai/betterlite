@@ -5,8 +5,6 @@ use indexmap::IndexMap;
 use crate::hanging_requests::check::AlertingHangingRequestCheck;
 use crate::hanging_requests::error::HangingRequestError;
 
-use super::settings::RequestAlertSettingsSource;
-
 pub async fn response_taking_too_long(
     check: &AlertingHangingRequestCheck,
     request_data: Option<&IndexMap<String, Json>>,

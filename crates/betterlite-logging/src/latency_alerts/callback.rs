@@ -10,7 +10,6 @@ use crate::hanging_requests::check::AlertingHangingRequestCheck;
 use super::deployment::deployment_latencies;
 use super::helper::{SlowResponseRequest, slow_response_parameters};
 use super::presentation::{float_text, rounded_to_two};
-use super::settings::RequestAlertSettingsSource;
 use super::sink::AlertSink;
 
 #[derive(Debug, thiserror::Error)]
@@ -57,7 +56,7 @@ pub async fn slow_response_callback(
         float_text(settings.alerting_threshold_seconds)
     );
     let empty_kwargs = IndexMap::new();
-    let sink: &dyn AlertSink = &check.sink;
+    let sink: &dyn AlertSink = check.sink.as_ref();
     sink.send_alert(Alert {
         message: slow_message.as_str(),
         level: AlertLevel::Low,
