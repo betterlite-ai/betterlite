@@ -35,16 +35,7 @@ pub(super) fn record_outcome(
     compressed: &Compressed,
     log_target: Option<&mut GuardrailLogTarget>,
 ) {
-    let (status, response) = if compressed.result.succeeded {
-        let stats = guardrail_value(&JsonValue::Object(compressed.result.stats.clone()));
-        (GuardrailStatus::Success, stats)
-    } else {
-        let error = GuardrailValue::Object(BTreeMap::from([(
-            "error".to_owned(),
-            GuardrailValue::Text(UNAVAILABLE_MESSAGE.to_owned()),
-        )]));
-        (GuardrailStatus::GuardrailFailedToRespond, error)
-    };
+    let (status, response) = outcome(compressed);
     let mut settings = GuardrailSettings::default();
     settings
         .guardrail_name
@@ -77,6 +68,18 @@ pub(super) fn record_outcome(
         tracing::warn!(%error, "Headroom: guardrail record could not be written");
     }
     append_applied(request_data, guardrail.guardrail_name.as_deref());
+}
+
+fn outcome(compressed: &Compressed) -> (GuardrailStatus, GuardrailValue) {
+    if compressed.result.succeeded {
+        let stats = guardrail_value(&JsonValue::Object(compressed.result.stats.clone()));
+        return (GuardrailStatus::Success, stats);
+    }
+    let error = GuardrailValue::Object(BTreeMap::from([(
+        "error".to_owned(),
+        GuardrailValue::Text(UNAVAILABLE_MESSAGE.to_owned()),
+    )]));
+    (GuardrailStatus::GuardrailFailedToRespond, error)
 }
 
 pub(super) fn guardrail_value(value: &JsonValue) -> GuardrailValue {
