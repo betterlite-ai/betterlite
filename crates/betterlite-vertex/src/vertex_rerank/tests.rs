@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
+use betterlite_config::sections::vertex_credential_sources::vertex_settings::AdcEnvironment;
 use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::api::rerank_contracts::records::RerankDocument;
 use betterlite_openai::api::vector_store_records::records::score::Score;
@@ -223,8 +224,11 @@ async fn the_url_is_the_global_ranking_config_of_the_resolved_project() {
     let vertex = VertexSettings::default();
     let call = VertexParams {
         project: Some("param-project"),
+        ai_project: None,
+        location: None,
+        ai_location: None,
         credentials: Some(&credentials),
-        ..VertexParams::default()
+        ai_credentials: None,
     };
     let url = complete_url(call, &vertex, |found, project| {
         assert_eq!(found.and_then(ConfiguredCredentials::as_text), Some("{}"));
@@ -252,7 +256,9 @@ async fn an_empty_resolved_project_falls_back_to_the_configured_one(
 ) {
     let vertex = VertexSettings {
         project: configured.map(str::to_owned),
-        ..VertexSettings::default()
+        location: None,
+        credentials: None,
+        adc: AdcEnvironment::default(),
     };
     let outcome = complete_url(VertexParams::default(), &vertex, |_, _| {
         ready(Ok(access("tok", resolved)))
@@ -437,6 +443,7 @@ fn the_response_id_embeds_the_injected_uuid() {
         response.id.as_deref(),
         Some("vertex_ai_rerank_00000000-0000-0000-0000-000000001234")
     );
+    assert_eq!(response.results, Some(Vec::new()));
 }
 
 #[rstest]

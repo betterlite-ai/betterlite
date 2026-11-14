@@ -20,15 +20,15 @@ pub struct RankRecord {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RankRequest {
     pub model: String,
     pub query: String,
     pub records: Vec<RankRecord>,
-    #[serde(rename = "topN", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub top_n: Option<i64>,
-    #[serde(rename = "ignoreRecordDetailsInResponse")]
     pub ignore_record_details: bool,
-    #[serde(rename = "userLabels", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user_labels: Option<BTreeMap<String, String>>,
 }
 
@@ -40,30 +40,22 @@ pub fn map_rerank_params(
     top_n: Option<i64>,
     return_documents: Option<bool>,
 ) -> Extra {
-    let mut mapped = Extra::from_iter([
-        (String::from("query"), Json::Text(query.to_owned())),
-        (
-            String::from("documents"),
-            Json::List(documents.iter().map(RerankDocument::as_json).collect()),
-        ),
-        (
-            String::from("top_n"),
-            top_n.map_or(Json::Null, |count| Json::Number(Number::from(count))),
-        ),
-        (
-            String::from("return_documents"),
-            return_documents.map_or(Json::Null, Json::Bool),
-        ),
-    ]);
-    mapped.extend(
-        non_default_params
-            .iter()
-            .map(|(name, value)| (name.clone(), value.clone())),
+    let document_values = Json::List(documents.iter().map(RerankDocument::as_json).collect());
+    let mut mapped = Extra::new();
+    mapped.insert(String::from("query"), Json::Text(query.to_owned()));
+    mapped.insert(String::from("documents"), document_values);
+    mapped.insert(
+        String::from("top_n"),
+        top_n.map_or(Json::Null, |count| Json::Number(Number::from(count))),
     );
+    mapped.insert(
+        String::from("return_documents"),
+        return_documents.map_or(Json::Null, Json::Bool),
+    );
+    mapped.extend(non_default_params.clone());
     mapped
 }
 
-// query and documents are required by presence, so an empty string or list is still a request
 pub fn transform_request(
     model: &str,
     params: &Extra,
@@ -103,9 +95,7 @@ fn top_n(params: &Extra) -> Result<Option<i64>, VertexRerankError> {
     match params.get("top_n") {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Number(number)) if number.is_i64() => Ok(number.as_i64()),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(VertexRerankError::FieldType("top_n", "a whole number"))
-        }
+        Some(_) => Err(VertexRerankError::FieldType("top_n", "a whole number")),
     }
 }
 
@@ -113,9 +103,10 @@ fn return_documents(params: &Extra) -> Result<bool, VertexRerankError> {
     match params.get("return_documents") {
         None | Some(Json::Null) => Ok(true),
         Some(Json::Bool(flag)) => Ok(*flag),
-        Some(Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => Err(
-            VertexRerankError::FieldType("return_documents", "true or false"),
-        ),
+        Some(_) => Err(VertexRerankError::FieldType(
+            "return_documents",
+            "a boolean",
+        )),
     }
 }
 
@@ -158,9 +149,7 @@ fn document_text<'fields>(
     match fields.get(field) {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(text)) => Ok(Some(text)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(VertexRerankError::DocumentField { index, field })
-        }
+        Some(_) => Err(VertexRerankError::DocumentField { index, field }),
     }
 }
 

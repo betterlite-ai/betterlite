@@ -47,7 +47,6 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
             .build()
             .or_value_error()?;
         runtime
@@ -55,7 +54,6 @@ impl Helper for Op {
     }
 }
 
-// the access token lookup is scripted on both sides: a fixed token, the project the case names, and a record of what it was asked
 fn scripted<'run>(
     lookups: &'run Mutex<Vec<Value>>,
     project: &'run str,
@@ -87,8 +85,11 @@ async fn target(input: &Input) -> HelperResult {
         .map(|text| ConfiguredCredentials::Text(SecretString::from(text)));
     let params = VertexParams {
         project: input.vertex_project.as_deref(),
+        ai_project: None,
+        location: None,
+        ai_location: None,
         credentials: credentials.as_ref(),
-        ..VertexParams::default()
+        ai_credentials: None,
     };
     let vertex = VertexSettings::default();
     let lookups = Mutex::new(Vec::new());
@@ -141,10 +142,8 @@ fn rank(input: &Input) -> HelperResult {
         .collect();
     let search_units = answer
         .meta
-        .and_then(|meta| meta.billed_units)
-        .flatten()
-        .and_then(|billed| billed.search_units)
-        .flatten();
+        .and_then(|meta| meta.billed_units.flatten())
+        .and_then(|billed| billed.search_units.flatten());
     Ok(json!({
         "request": serde_json::to_value(&request).or_value_error()?,
         "response": {"id": answer.id, "results": results, "search_units": search_units},

@@ -18,9 +18,7 @@ pub enum VertexRerankError {
     DocumentText { index: usize, source: FormatError },
     #[error("the vertex credential lookup failed")]
     Credentials(#[source] CredentialCacheError),
-    #[error(
-        "Vertex AI project ID is required. Please set 'VERTEXAI_PROJECT', 'litellm.vertex_project', or pass 'vertex_project' parameter"
-    )]
+    #[error("a Vertex AI project is required; set vertex_project or VERTEXAI_PROJECT")]
     MissingProject,
     #[error("the rerank response is {size} bytes, over the limit")]
     TooLarge { size: usize },

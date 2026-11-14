@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::{
     RerankBilledUnits, RerankResponse, RerankResponseMeta, RerankResponseResult,
@@ -44,7 +46,6 @@ pub fn decode_vertex_rerank(bytes: &[u8]) -> Result<Vec<RankedRecord>, VertexRer
     Ok(ranked)
 }
 
-// a record without a score (details ignored) ranks as exactly 1
 fn ranked_record(
     position: usize,
     fields: &IndexMap<String, Json>,
@@ -59,14 +60,11 @@ fn ranked_record(
         None | Some(Json::Null) => Score(Decimal::ONE),
         Some(Json::Number(number)) => Score::try_from(number.clone())
             .map_err(|source| VertexRerankError::Score { position, source })?,
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            return Err(VertexRerankError::ScoreType { position });
-        }
+        Some(_) => return Err(VertexRerankError::ScoreType { position }),
     };
     Ok(RankedRecord { index, score })
 }
 
-// billing counts the submitted records, and results sort by descending score with ties in provider order
 #[must_use]
 pub fn transform_response(
     mut records: Vec<RankedRecord>,
@@ -88,12 +86,13 @@ pub fn transform_response(
         id: Some(format!("vertex_ai_rerank_{id}")),
         results: Some(results),
         meta: Some(RerankResponseMeta {
+            api_version: None,
             billed_units: Some(Some(RerankBilledUnits {
                 search_units: Some(Some(search_units)),
-                ..RerankBilledUnits::default()
+                total_tokens: None,
             })),
-            ..RerankResponseMeta::default()
+            tokens: None,
         }),
-        ..RerankResponse::default()
+        hidden_params: BTreeMap::new(),
     }
 }

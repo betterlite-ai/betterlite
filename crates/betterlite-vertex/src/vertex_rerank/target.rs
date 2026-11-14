@@ -40,21 +40,16 @@ where
 {
     let access = authenticate(params, vertex, make_lookup).await?;
     // the loaded setting already folds VERTEXAI_PROJECT and the module project
-    let project = Some(access.project.as_str())
-        .filter(|project| !project.is_empty())
-        .or_else(|| {
-            vertex
-                .project
-                .as_deref()
-                .filter(|project| !project.is_empty())
-        })
+    let configured = vertex.project.as_deref().unwrap_or_default();
+    let project = [access.project.as_str(), configured]
+        .into_iter()
+        .find(|project| !project.is_empty())
         .ok_or(VertexRerankError::MissingProject)?;
     Ok(format!(
         "https://discoveryengine.googleapis.com/v1/projects/{project}/locations/global/rankingConfigs/default_ranking_config:rank"
     ))
 }
 
-// validate_environment: Bearer, JSON and the billing project, then every caller header over them
 pub async fn request_headers<'text, Lookup, Make>(
     params: VertexParams<'text>,
     vertex: &'text VertexSettings,
