@@ -24,6 +24,8 @@ pub enum GenAiStreamError {
     },
     #[error(transparent)]
     Lines(#[from] AlephAlphaError),
+    #[error("a streamed event is longer than {limit} bytes")]
+    EventTooLong { limit: usize },
     #[error("Use AsyncGoogleGenAIGenerateContentStreamingIterator for async iteration")]
     AsyncIterationOnSyncStream,
     #[error("Use GoogleGenAIGenerateContentStreamingIterator for sync iteration")]
@@ -64,9 +66,13 @@ impl Iterator for GoogleGenAiStream {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let Some(event) = self.decoder.next_event() {
-                self.collected_chunks.push(event.clone());
-                return Some(Ok(event));
+            match self.decoder.next_event() {
+                Ok(Some(event)) => {
+                    self.collected_chunks.push(event.clone());
+                    return Some(Ok(event));
+                }
+                Ok(None) => {}
+                Err(failure) => self.failure = Some(failure),
             }
             if let Some(failure) = self.failure.take() {
                 self.finished = true;
@@ -147,9 +153,13 @@ impl AsyncGoogleGenAiStream {
     // LiteLLM's __anext__: one event per pull, then the collected bytes reach the pass-through logging handler
     pub async fn next_event(&mut self) -> Result<Option<Vec<u8>>, GenAiStreamError> {
         loop {
-            if let Some(event) = self.decoder.next_event() {
-                self.collected_chunks.push(event.clone());
-                return Ok(Some(event));
+            match self.decoder.next_event() {
+                Ok(Some(event)) => {
+                    self.collected_chunks.push(event.clone());
+                    return Ok(Some(event));
+                }
+                Ok(None) => {}
+                Err(failure) => self.failure = Some(failure),
             }
             if let Some(failure) = self.failure.take() {
                 self.finished = true;
@@ -158,7 +168,7 @@ impl AsyncGoogleGenAiStream {
                 return Err(failure);
             }
             if self.finished {
-                self.log_at_eof().await;
+                self.log_at_eof();
                 return Ok(None);
             }
             match self.source.next().await {
@@ -180,20 +190,18 @@ impl AsyncGoogleGenAiStream {
         }
     }
 
-    // LiteLLM's _handle_async_streaming_logging, once the collected chunks are complete
-    async fn log_at_eof(&mut self) {
+    // LiteLLM's _handle_async_streaming_logging runs in a task of its own, so the end of the stream never waits on it
+    fn log_at_eof(&mut self) {
         let Some(logging) = self.logging.take() else {
             return;
         };
         let end_time = self.clock.now();
-        logging
-            .route(
-                &self.metadata,
-                &self.collected_chunks,
-                self.start_time,
-                end_time,
-            )
-            .await;
+        logging.schedule_route(
+            self.metadata.clone(),
+            self.collected_chunks.clone(),
+            self.start_time,
+            end_time,
+        );
     }
 }
 
