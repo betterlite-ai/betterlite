@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+
+use crate::primitives::json_value::JsonValue;
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct DetectPayload {
@@ -26,7 +28,7 @@ pub struct Summary {
     pub prompt_injection: Option<i64>,
     pub jailbreak: Option<i64>,
     #[serde(flatten)]
-    pub other: BTreeMap<String, GuardrailValue>,
+    pub other: IndexMap<String, JsonValue>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
@@ -37,10 +39,8 @@ pub struct Details {
     pub toxicity: Option<ToxicityDetail>,
     pub keyword_detected: Option<KeywordDetail>,
     pub bias: Option<BiasDetail>,
-    pub prompt_injection: Option<BTreeMap<String, GuardrailValue>>,
-    pub jailbreak: Option<BTreeMap<String, GuardrailValue>>,
     #[serde(flatten)]
-    pub other: BTreeMap<String, GuardrailValue>,
+    pub other: BTreeMap<String, JsonValue>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
@@ -55,7 +55,7 @@ pub struct PolicyViolationDetail {
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct PiiDetail {
-    pub pii: BTreeMap<String, GuardrailValue>,
+    pub pii: IndexMap<String, JsonValue>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]

@@ -7,6 +7,7 @@ use secrecy::ExposeSecret as _;
 use super::error::EnkryptAiError;
 use super::wire::{DetectPayload, DetectionResponse};
 use super::{API_PATH, EnkryptAiGuardrail};
+use crate::primitives::json_value::JsonValue;
 
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 
@@ -21,22 +22,71 @@ pub(crate) struct Response {
 }
 
 pub(crate) async fn send(guardrail: &EnkryptAiGuardrail, text: &str) -> Response {
-    match post(guardrail, text).await {
-        Ok(raw) => parse(raw),
-        Err(error) => Response {
-            raw: GuardrailValue::Object(BTreeMap::from([(
-                "error".to_owned(),
-                GuardrailValue::Text(error.to_string()),
-            )])),
-            parsed: Parsed::Malformed(error),
+    let body = match post(guardrail, text).await {
+        Ok(body) => body,
+        Err(error) => return failed(error),
+    };
+    let raw = match serde_json::from_slice::<JsonValue>(&body) {
+        Ok(raw) => raw,
+        Err(source) => return failed(EnkryptAiError::ResponseJson { source }),
+    };
+    let parsed = match raw {
+        JsonValue::Object(_) => match serde_json::from_slice::<DetectionResponse>(&body) {
+            Ok(response) => Parsed::Response(response),
+            Err(source) => Parsed::Malformed(EnkryptAiError::ResponseShape { source }),
         },
+        JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::String(_)
+        | JsonValue::Array(_) => Parsed::Malformed(EnkryptAiError::MalformedResponse),
+    };
+    Response {
+        raw: guardrail_value(raw),
+        parsed,
     }
 }
 
-async fn post(
-    guardrail: &EnkryptAiGuardrail,
-    text: &str,
-) -> Result<GuardrailValue, EnkryptAiError> {
+fn failed(error: EnkryptAiError) -> Response {
+    Response {
+        raw: GuardrailValue::Object(BTreeMap::from([(
+            "error".to_owned(),
+            GuardrailValue::Text(error.to_string()),
+        )])),
+        parsed: Parsed::Malformed(error),
+    }
+}
+
+// GuardrailValue cannot read a float out of JSON when serde_json keeps numbers as text
+fn guardrail_value(value: JsonValue) -> GuardrailValue {
+    match value {
+        JsonValue::Null => GuardrailValue::Null,
+        JsonValue::Bool(flag) => GuardrailValue::Boolean(flag),
+        JsonValue::Number(number) => {
+            if let Some(signed) = number.as_i64() {
+                GuardrailValue::SignedInteger(signed)
+            } else if let Some(unsigned) = number.as_u64() {
+                GuardrailValue::UnsignedInteger(unsigned)
+            } else if let Some(decimal) = number.as_f64() {
+                GuardrailValue::Decimal(decimal)
+            } else {
+                GuardrailValue::Text(number.to_string())
+            }
+        }
+        JsonValue::String(text) => GuardrailValue::Text(text),
+        JsonValue::Array(items) => {
+            GuardrailValue::Array(items.into_iter().map(guardrail_value).collect())
+        }
+        JsonValue::Object(fields) => GuardrailValue::Object(
+            fields
+                .into_iter()
+                .map(|(name, field)| (name, guardrail_value(field)))
+                .collect(),
+        ),
+    }
+}
+
+async fn post(guardrail: &EnkryptAiGuardrail, text: &str) -> Result<Vec<u8>, EnkryptAiError> {
     let url = format!("{}{}", guardrail.settings.api_base, API_PATH);
     let payload = DetectPayload {
         text: text.to_owned(),
@@ -56,26 +106,7 @@ async fn post(
             status: status.as_u16(),
         });
     }
-    let body = read_capped(response).await?;
-    serde_json::from_slice(&body).map_err(|source| EnkryptAiError::ResponseJson { source })
-}
-
-fn parse(raw: GuardrailValue) -> Response {
-    if !matches!(raw, GuardrailValue::Object(_)) {
-        return Response {
-            raw,
-            parsed: Parsed::Malformed(EnkryptAiError::MalformedResponse),
-        };
-    }
-    let value = serde_json::to_value(&raw).map_err(|source| EnkryptAiError::Serialize { source });
-    let parsed = match value {
-        Ok(value) => match serde_json::from_value::<DetectionResponse>(value) {
-            Ok(response) => Parsed::Response(response),
-            Err(source) => Parsed::Malformed(EnkryptAiError::ResponseShape { source }),
-        },
-        Err(error) => Parsed::Malformed(error),
-    };
-    Response { raw, parsed }
+    read_capped(response).await
 }
 
 impl EnkryptAiGuardrail {

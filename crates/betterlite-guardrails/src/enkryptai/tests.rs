@@ -154,9 +154,8 @@ fn parse_value(body: &str) -> GuardrailValue {
     serde_json::from_str(body).expect("json value")
 }
 
-fn parsed_response(raw: &GuardrailValue) -> DetectionResponse {
-    let value = serde_json::to_value(raw).expect("value");
-    serde_json::from_value(value).expect("response")
+fn parsed_response(body: &str) -> DetectionResponse {
+    serde_json::from_str(body).expect("response")
 }
 
 #[tokio::test]
@@ -258,6 +257,41 @@ async fn enkryptai_guardrail_records_success_information() {
         GuardrailValue::Decimal(1_700_000_000.0)
     );
     assert_eq!(field(&records[0], "duration"), GuardrailValue::Decimal(0.0));
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn enkryptai_guardrail_records_each_kind_of_number() {
+    let (base, _state, mut server) = serve(vec![Reply {
+        status: StatusCode::OK,
+        body: r#"{"summary":{"nsfw":1},"details":{"nsfw":{"score":0.9,"count":-3,"big":18446744073709551615}}}"#.to_owned(),
+    }])
+    .await;
+    let mut request_data = BTreeMap::new();
+    guardrail(&base)
+        .apply(inputs(&["bad"]), &mut request_data, None)
+        .await
+        .expect_err("detected");
+    let records = record_objects(&request_data);
+    let nsfw = GuardrailValue::Object(BTreeMap::from([
+        ("score".to_owned(), GuardrailValue::Decimal(0.9)),
+        ("count".to_owned(), GuardrailValue::SignedInteger(-3)),
+        ("big".to_owned(), GuardrailValue::UnsignedInteger(u64::MAX)),
+    ]));
+    let expected = GuardrailValue::Object(BTreeMap::from([
+        (
+            "summary".to_owned(),
+            GuardrailValue::Object(BTreeMap::from([(
+                "nsfw".to_owned(),
+                GuardrailValue::SignedInteger(1),
+            )])),
+        ),
+        (
+            "details".to_owned(),
+            GuardrailValue::Object(BTreeMap::from([("nsfw".to_owned(), nsfw)])),
+        ),
+    ]));
+    assert_eq!(field(&records[0], "guardrail_response"), expected);
     server.shutdown().await;
 }
 
@@ -696,8 +730,7 @@ async fn enkryptai_guardrail_rejects_an_invalid_policy_header() {
 #[case::unknown_float_one(r#"{"summary":{"nsfw":1.0}}"#, true)]
 #[case::missing_fields(r#"{}"#, false)]
 fn enkryptai_guardrail_processes_the_summary(#[case] body: &str, #[case] detected: bool) {
-    let value = parse_value(body);
-    let response = parsed_response(&value);
+    let response = parsed_response(body);
     let processed: Processed = process(&response);
     assert_eq!(!processed.attacks.is_empty(), detected);
 }
@@ -705,8 +738,7 @@ fn enkryptai_guardrail_processes_the_summary(#[case] body: &str, #[case] detecte
 #[test]
 fn enkryptai_guardrail_collects_the_detected_attacks_in_order() {
     let body = r#"{"summary":{"policy_violation":1,"pii":1,"toxicity":["toxic"],"keyword_detected":1,"bias":1,"prompt_injection":1,"jailbreak":1},"details":{"policy_violation":{"violating_policy":"p","explanation":"e"},"pii":{"pii":{"email":1}},"toxicity":{"toxic":0.9},"keyword_detected":{"detected_keywords":["k"]},"bias":{"bias_detected":true},"prompt_injection":{"score":0.8},"jailbreak":{"score":0.9}}}"#;
-    let value = parse_value(body);
-    let response = parsed_response(&value);
+    let response = parsed_response(body);
     let processed = process(&response);
     assert_eq!(
         processed.attacks,
@@ -724,14 +756,12 @@ fn enkryptai_guardrail_collects_the_detected_attacks_in_order() {
 
 #[test]
 fn enkryptai_guardrail_processes_unknown_integer_detectors() {
-    let zero = parsed_response(&parse_value(r#"{"summary":{"nsfw":0}}"#));
+    let zero = parsed_response(r#"{"summary":{"nsfw":0}}"#);
     assert!(process(&zero).attacks.is_empty());
-    let one = parsed_response(&parse_value(
-        r#"{"summary":{"nsfw":1},"details":{"nsfw":{"score":0.9}}}"#,
-    ));
+    let one = parsed_response(r#"{"summary":{"nsfw":1},"details":{"nsfw":{"score":0.9}}}"#);
     let processed = process(&one);
     assert_eq!(processed.attacks, vec!["nsfw"]);
-    let float = parsed_response(&parse_value(r#"{"summary":{"nsfw":1.0}}"#));
+    let float = parsed_response(r#"{"summary":{"nsfw":1.0}}"#);
     assert_eq!(process(&float).attacks, vec!["nsfw"]);
 }
 

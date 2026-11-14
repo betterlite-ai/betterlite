@@ -31,7 +31,7 @@ pub(crate) struct Op;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
-enum Input {
+pub(crate) enum Input {
     Construct {
         settings: Settings,
     },
@@ -44,7 +44,7 @@ enum Input {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
-struct Settings {
+pub(crate) struct Settings {
     api_key: Option<String>,
     api_base: Option<String>,
     policy_name: Option<String>,
@@ -73,41 +73,32 @@ fn helper_error(class: &str, message: String) -> Box<HelperError> {
 }
 
 fn configure(settings: &Settings) -> Result<Configured, Box<HelperError>> {
-    let owned = settings.clone();
     let document = json!({
         "guardrails": [{
             "guardrail_name": "guardrail",
             "litellm_params": {
                 "guardrail": "enkryptai",
-                "api_key": owned.api_key,
-                "api_base": owned.api_base,
-                "policy_name": owned.policy_name,
-                "deployment_name": owned.deployment_name,
-                "detectors": owned.detectors,
-                "block_on_violation": owned.block_on_violation,
+                "api_key": settings.api_key,
+                "api_base": settings.api_base,
+                "policy_name": settings.policy_name,
+                "deployment_name": settings.deployment_name,
+                "detectors": settings.detectors,
+                "block_on_violation": settings.block_on_violation,
             }
         }]
     });
-    let loaded = ConfigLoader {
+    let config = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     }
-    .load(&document.to_string());
-    let outcome = loaded.map(|config| {
-        config
-            .sections
-            .enkryptai_detection
-            .guardrails
-            .into_iter()
-            .next()
-    });
-    match outcome {
-        Ok(Some(configured)) => Ok(configured),
-        Ok(None) => Err(helper_error(
-            "ConfigError",
-            "no EnkryptAI guardrail".to_owned(),
-        )),
-        Err(error) => Err(config_failure(error)),
-    }
+    .load(&document.to_string())
+    .map_err(config_failure)?;
+    config
+        .sections
+        .enkryptai_detection
+        .guardrails
+        .into_iter()
+        .next()
+        .ok_or_else(|| helper_error("ConfigError", "no EnkryptAI guardrail".to_owned()))
 }
 
 fn config_failure(error: ConfigError) -> Box<HelperError> {

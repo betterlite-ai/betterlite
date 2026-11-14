@@ -1,6 +1,5 @@
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-
 use crate::guardrail_records::record::GuardrailStatus;
+use crate::primitives::json_value::JsonValue;
 
 use super::wire::DetectionResponse;
 
@@ -52,10 +51,13 @@ pub fn process(response: &DetectionResponse) -> Processed {
     Processed { attacks }
 }
 
-fn is_detected(value: &GuardrailValue) -> bool {
+fn is_detected(value: &JsonValue) -> bool {
     match value {
-        GuardrailValue::SignedInteger(1) | GuardrailValue::UnsignedInteger(1) => true,
-        GuardrailValue::Decimal(number) => *number == 1.0,
-        _ => false,
+        JsonValue::Number(number) => number.as_f64() == Some(1.0),
+        JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::String(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_) => false,
     }
 }

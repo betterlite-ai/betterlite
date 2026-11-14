@@ -12,7 +12,6 @@ use crate::sections::guardrail_identity::item::GuardrailValue;
 use crate::sections::guardrail_params::mode::LitellmParamsMode;
 
 mod resolve;
-#[path = "deepkeep_firewall/timeout.rs"]
 mod timeout;
 
 pub const UI_FRIENDLY_NAME: &str = "EnkryptAI";

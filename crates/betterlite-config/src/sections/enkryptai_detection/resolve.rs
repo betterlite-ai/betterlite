@@ -27,8 +27,11 @@ impl Entry {
             .map(|value| resolve_string(value, &format!("{prefix}.policy_name"), lookup))
             .transpose()?
             .filter(|value| !value.is_empty());
-        let timeout =
-            super::timeout::resolve(parameters.timeout, &format!("{prefix}.timeout"), lookup)?;
+        let timeout_path = format!("{prefix}.timeout");
+        let timeout = match parameters.timeout {
+            Some(seconds) => seconds.into_duration(&timeout_path, lookup)?,
+            None => super::timeout::DEFAULT,
+        };
         Ok(Configured {
             guardrail_name: self.guardrail_name,
             api_key,

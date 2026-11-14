@@ -52,8 +52,6 @@ fn describe(attack: &str, response: &DetectionResponse) -> Result<String, serde_
                 .as_ref()
                 .is_some_and(|detail| detail.bias_detected)
         )),
-        "prompt_injection" => unknown(details.prompt_injection.as_ref()),
-        "jailbreak" => unknown(details.jailbreak.as_ref()),
         other => unknown(details.other.get(other)),
     }
 }
