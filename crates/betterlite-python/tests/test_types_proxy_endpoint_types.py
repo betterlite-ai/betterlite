@@ -310,36 +310,31 @@ def test_budget_snapshot_names() -> None:
     invalid: dict[str, JsonValue] = {"user_api_key_budget_reset_at": "not-a-date"}
     assert litellm_carried_budget.KeyBudgetSnapshot.from_metadata(invalid) is None
     assert carried_budget.KeyBudgetSnapshot.from_metadata(invalid) is None
-    other_snapshots: tuple[tuple[type[BaseModel], type[BaseModel], dict[str, JsonValue]], ...] = (
-        (
-            litellm_carried_budget.TeamBudgetSnapshot,
-            carried_budget.TeamBudgetSnapshot,
-            {
-                "user_api_key_team_budget_reset_at": "2026-01-01T00:00:00Z",
-                "user_api_key_team_table_max_budget": 5.5,
-            },
-        ),
-        (
-            litellm_carried_budget.UserBudgetSnapshot,
-            carried_budget.UserBudgetSnapshot,
-            {
-                "user_api_key_user_budget_reset_at": "2026-01-01T00:00:00Z",
-                "user_api_key_user_table_max_budget": 7.5,
-                "user_api_key_user_alias": "alias",
-            },
-        ),
-        (
-            litellm_carried_budget.OrgBudgetSnapshot,
-            carried_budget.OrgBudgetSnapshot,
-            {"user_api_key_org_spend": 1.5, "user_api_key_org_max_budget": None},
-        ),
-    )
-    for their_class, our_class, entries in other_snapshots:
-        their_other = their_class.from_metadata(entries)
-        our_other = our_class.from_metadata(entries)
-        assert their_other is not None
-        assert our_other is not None
-        assert dict(our_other.metadata_entries()) == dict(their_other.metadata_entries())
+    team: dict[str, JsonValue] = {
+        "user_api_key_team_budget_reset_at": "2026-01-01T00:00:00Z",
+        "user_api_key_team_table_max_budget": 5.5,
+    }
+    their_team = litellm_carried_budget.TeamBudgetSnapshot.from_metadata(team)
+    our_team = carried_budget.TeamBudgetSnapshot.from_metadata(team)
+    assert their_team is not None
+    assert our_team is not None
+    assert dict(our_team.metadata_entries()) == dict(their_team.metadata_entries())
+    user: dict[str, JsonValue] = {
+        "user_api_key_user_budget_reset_at": "2026-01-01T00:00:00Z",
+        "user_api_key_user_table_max_budget": 7.5,
+        "user_api_key_user_alias": "alias",
+    }
+    their_user = litellm_carried_budget.UserBudgetSnapshot.from_metadata(user)
+    our_user = carried_budget.UserBudgetSnapshot.from_metadata(user)
+    assert their_user is not None
+    assert our_user is not None
+    assert dict(our_user.metadata_entries()) == dict(their_user.metadata_entries())
+    org: dict[str, JsonValue] = {"user_api_key_org_spend": 1.5, "user_api_key_org_max_budget": None}
+    their_org = litellm_carried_budget.OrgBudgetSnapshot.from_metadata(org)
+    our_org = carried_budget.OrgBudgetSnapshot.from_metadata(org)
+    assert their_org is not None
+    assert our_org is not None
+    assert dict(our_org.metadata_entries()) == dict(their_org.metadata_entries())
     by_field: dict[str, JsonValue] = {"budget_reset_at": "2026-01-01T00:00:00Z"}
     their_by_field = litellm_carried_budget.KeyBudgetSnapshot.model_validate(by_field)
     our_by_field = carried_budget.KeyBudgetSnapshot.model_validate(by_field)
