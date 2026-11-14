@@ -16,6 +16,8 @@ description: >-
   (provider, status, request_id, user, spend tracking) and logs response verdicts even when monitor_mode suppresses blocking.
 scope:
   paths:
+    - "crates/betterlite-guardrails/src/noma_v2/action.rs"
+    - "crates/betterlite-guardrails/src/noma_v2/**"
     - crates/betterlite-guardrails/src/noma_v2.rs
     - crates/betterlite-guardrails/src/noma_v2
     - crates/betterlite-guardrails/src/noma_v2/tests.rs

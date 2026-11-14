@@ -1,0 +1,29 @@
+kind: helper
+name: plan-office-families
+call:
+  b3733:
+    function: plan_file_scans
+    messages:
+      - role: user
+        content:
+          - {type: document, source: {data: bGVnYWN5LXdvcmQ=, media_type: application/msword}}
+          - {type: document, source: {data: d29yZC1ieXRlcw==, media_type: application/vnd.openxmlformats-officedocument.wordprocessingml.document}}
+          - {type: document, source: {data: dGVtcGxhdGUtd29yZA==, media_type: application/vnd.openxmlformats-officedocument.wordprocessingml.template}}
+          - {type: document, source: {data: d29yZC1ieXRlcw==, media_type: application/vnd.ms-word.document.macroenabled.12}}
+          - {type: document, source: {data: dGVtcGxhdGUtd29yZA==, media_type: application/vnd.ms-word.template.macroenabled.12}}
+          - {type: document, source: {data: ZXhjZWwtYnl0ZXM=, media_type: application/vnd.ms-excel}}
+          - {type: document, source: {data: ZXhjZWwtYnl0ZXM=, media_type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet}}
+          - {type: document, source: {data: bWFjcm8tZXhjZWw=, media_type: application/vnd.openxmlformats-officedocument.spreadsheetml.template}}
+          - {type: document, source: {data: bWFjcm8tZXhjZWw=, media_type: application/vnd.ms-excel.sheet.macroenabled.12}}
+          - {type: document, source: {data: ZXhjZWwtYnl0ZXM=, media_type: application/vnd.ms-excel.template.macroenabled.12}}
+          - {type: document, source: {data: cHB0LWJ5dGVz, media_type: application/vnd.ms-powerpoint}}
+          - {type: document, source: {data: cHB0LWJ5dGVz, media_type: application/vnd.openxmlformats-officedocument.presentationml.presentation}}
+          - {type: document, source: {data: c2xpZGVzaG93LXBwdA==, media_type: application/vnd.openxmlformats-officedocument.presentationml.template}}
+          - {type: document, source: {data: c2xpZGVzaG93LXBwdA==, media_type: application/vnd.openxmlformats-officedocument.presentationml.slideshow}}
+          - {type: document, source: {data: bWFjcm8tcHB0, media_type: application/vnd.ms-powerpoint.presentation.macroenabled.12}}
+          - {type: document, source: {data: bWFjcm8tcHB0, media_type: application/vnd.ms-powerpoint.template.macroenabled.12}}
+          - {type: document, source: {data: c2xpZGVzaG93LXBwdA==, media_type: application/vnd.ms-powerpoint.slideshow.macroenabled.12}}
+          - {type: document, source: {data: YSxiLGM=, media_type: text/csv}}
+          - {type: document, source: {data: cGxhaW4gdGV4dA==, media_type: text/plain}}
+env: {}
+compare: {ignore: []}
