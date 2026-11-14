@@ -4,19 +4,6 @@ severity: error
 message: a match on classes names every class of the union, so mypy proves it exhaustive; a catch-all arm (case _, or a bare name such as case _other) turns it back into an isinstance check
 ignores:
   # files that had a bare-name catch-all on 2026-11-13; cleanup tasks take them off
-  - crates/betterlite-python/python/betterlite/types/utils/adapter_stream.py
-  - crates/betterlite-python/python/betterlite/types/utils/base.py
-  - crates/betterlite-python/python/betterlite/types/utils/choices.py
-  - crates/betterlite-python/python/betterlite/types/utils/grader_content.py
-  - crates/betterlite-python/python/betterlite/types/utils/media.py
-  - crates/betterlite-python/python/betterlite/types/utils/message.py
-  - crates/betterlite-python/python/betterlite/types/utils/response.py
-  - crates/betterlite-python/python/betterlite/types/utils/small_types.py
-  - crates/betterlite-python/python/betterlite/types/utils/text_completion.py
-  - crates/betterlite-python/python/betterlite/types/utils/tool_calls.py
-  - crates/betterlite-python/python/betterlite/types/utils/usage.py
-  - crates/betterlite-python/python/betterlite/types/utils/values.py
-  - crates/betterlite-python/tests/test_chat_response_objects.py
   - tools/oracle/helpers/azure_default_chain/__init__.py
   - tools/oracle/helpers/b3512.py
   - tools/oracle/helpers/gemini_embedding_records.py
