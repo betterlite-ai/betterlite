@@ -436,6 +436,13 @@ fn key_limits_come_from_the_serialized_key() {
     }}}),
     Some("openai/gpt-4o")
 )]
+#[case::a_text_bucket_is_skipped(
+    json!({"logging": {"litellm_params": {
+        "litellm_metadata": "text",
+        "metadata": {"deployment": "openai/gpt-4o"}
+    }}}),
+    Some("openai/gpt-4o")
+)]
 #[case::nowhere(json!({"logging": {"litellm_params": {"metadata": {}}}}), None)]
 #[case::no_params(json!({"logging": {}}), None)]
 fn deployment_name_reads_both_buckets(#[case] input: JsonValue, #[case] expected: Option<&str>) {
@@ -610,6 +617,33 @@ fn a_falsey_remaining_limit_leaves_its_header_out() {
     );
     assert_eq!(
         header(&headers, "x-litellm-key-remaining-tokens-group"),
+        None
+    );
+}
+
+#[test]
+fn a_non_object_metadata_bucket_adds_no_remaining_headers() {
+    let headers = build(json!({"request_data": {"metadata": "text"}}));
+    assert_eq!(
+        header(&headers, "x-litellm-key-remaining-requests-None"),
+        None
+    );
+    assert_eq!(
+        header(&headers, "x-litellm-key-spend").as_deref(),
+        Some("0.0")
+    );
+}
+
+#[test]
+fn a_non_scalar_model_group_leaves_the_remaining_headers_out() {
+    let headers = build(json!({
+        "request_data": {"metadata": {
+            "model_group": {"a": 1},
+            "litellm-key-remaining-requests-None": 5
+        }}
+    }));
+    assert_eq!(
+        header(&headers, "x-litellm-key-remaining-requests-None"),
         None
     );
 }

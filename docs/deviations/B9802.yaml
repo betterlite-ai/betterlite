@@ -21,6 +21,3 @@ deviations:
   - what: A model_group that is a JSON list or object leaves both remaining-limit headers out; LiteLLM builds the lookup key and the header name from its repr and reads the metadata with that key.
     why: the group name is the proxy's own string, and porting repr would put "{'a': 1}" in a header name.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L443-L460
-  - what: A request data value that no JSON scalar here can hold (an integer past 64 bits, say) leaves the guardrail headers out, because the request data is read back through our typed metadata model first; LiteLLM reads the same map directly.
-    why: our guardrail metadata model keeps whole numbers in signed or unsigned 64-bit fields, and one unrepresentable value must not fail the response.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L477-L529
