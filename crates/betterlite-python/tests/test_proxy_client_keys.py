@@ -308,19 +308,19 @@ def test_keys_request_no_apikey(server: RecordingServer) -> None:
     assert server.requests[-1] == server.requests[0]
 
 
-@pytest.mark.parametrize("operation", ["generate", "delete", "list"])
-def test_keys_error_denied(server: RecordingServer, operation: str) -> None:
+def test_keys_error_denied(server: RecordingServer) -> None:
     lite = LiteKeysClient(server.url, api_key="sk-test", timeout=TIMEOUT)
     ours = KeysManagementClient(server.url, api_key="sk-test", timeout=TIMEOUT)
-    server.reply(DENIED, DENIED_BODY)
-    with pytest.raises(LiteUnauthorizedError) as expected:
-        key_call(lite, operation)
-    server.reply(DENIED, DENIED_BODY)
-    with pytest.raises(UnauthorizedError) as actual:
-        key_call(ours, operation)
-    assert str(actual.value) == str(expected.value)
-    assert actual.value.__cause__ is not None
-    assert expected.value.__cause__ is None
+    for operation in ["generate", "delete", "list"]:
+        server.reply(DENIED, DENIED_BODY)
+        with pytest.raises(LiteUnauthorizedError) as expected:
+            key_call(lite, operation)
+        server.reply(DENIED, DENIED_BODY)
+        with pytest.raises(UnauthorizedError) as actual:
+            key_call(ours, operation)
+        assert str(actual.value) == str(expected.value)
+        assert actual.value.__cause__ is not None
+        assert expected.value.__cause__ is None
 
 
 @pytest.mark.parametrize(
