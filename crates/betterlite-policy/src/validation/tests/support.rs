@@ -13,14 +13,15 @@ use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::layer::{Context, Layer};
 
 use crate::pipeline::{GuardrailPipeline, PipelineAction, PipelineMode, PipelineStep};
-use crate::validation::lookup::{AliasDatabase, GuardrailRegistry, ModelRouter};
+use crate::validation::PolicyValidator;
+use crate::validation::lookup::{AliasDatabase, GuardrailRegistry, ModelRouter, NoRouter};
 use crate::values::{Policy, PolicyGuardrails};
 
 #[derive(Debug, thiserror::Error)]
 #[error("backend down")]
-pub struct FakeFailure;
+pub(super) struct FakeFailure;
 
-pub struct FakeRegistry {
+pub(super) struct FakeRegistry {
     pub names: Option<Vec<String>>,
     pub calls: AtomicUsize,
 }
@@ -34,7 +35,7 @@ impl GuardrailRegistry for FakeRegistry {
     }
 }
 
-pub struct FakeDatabase {
+pub(super) struct FakeDatabase {
     pub teams: Vec<String>,
     pub keys: Vec<String>,
     pub failing: bool,
@@ -42,15 +43,18 @@ pub struct FakeDatabase {
 }
 
 impl FakeDatabase {
-    fn answer(&self, kind: &str, alias: &str, known: &[String]) -> Result<bool, FakeFailure> {
+    fn record(&self, kind: &str, alias: &str) {
         self.queries.lock().unwrap().push(format!("{kind}:{alias}"));
+    }
+
+    fn answer(&self, known: &[String], alias: &str) -> Result<bool, FakeFailure> {
         if self.failing {
             return Err(FakeFailure);
         }
         Ok(known.iter().any(|entry| entry == alias))
     }
 
-    pub fn recorded(&self) -> Vec<String> {
+    pub(super) fn recorded(&self) -> Vec<String> {
         self.queries.lock().unwrap().clone()
     }
 }
@@ -62,18 +66,20 @@ impl AliasDatabase for FakeDatabase {
         &self,
         team_alias: &str,
     ) -> impl Future<Output = Result<bool, FakeFailure>> + Send {
-        ready(self.answer("team", team_alias, &self.teams))
+        self.record("team", team_alias);
+        ready(self.answer(&self.teams, team_alias))
     }
 
     fn key_alias_exists(
         &self,
         key_alias: &str,
     ) -> impl Future<Output = Result<bool, FakeFailure>> + Send {
-        ready(self.answer("key", key_alias, &self.keys))
+        self.record("key", key_alias);
+        ready(self.answer(&self.keys, key_alias))
     }
 }
 
-pub struct FakeRouter {
+pub(super) struct FakeRouter {
     pub model_names: Vec<String>,
     pub patterns: Vec<String>,
     pub failing_names: bool,
@@ -100,18 +106,18 @@ impl ModelRouter for FakeRouter {
     }
 }
 
-pub fn texts(values: &[&str]) -> Vec<String> {
+pub(super) fn texts(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| String::from(*value)).collect()
 }
 
-pub fn registry(names: &[&str]) -> FakeRegistry {
+pub(super) fn registry(names: &[&str]) -> FakeRegistry {
     FakeRegistry {
         names: Some(texts(names)),
         calls: AtomicUsize::new(0),
     }
 }
 
-pub fn database(teams: &[&str], keys: &[&str]) -> FakeDatabase {
+pub(super) fn database(teams: &[&str], keys: &[&str]) -> FakeDatabase {
     FakeDatabase {
         teams: texts(teams),
         keys: texts(keys),
@@ -120,7 +126,7 @@ pub fn database(teams: &[&str], keys: &[&str]) -> FakeDatabase {
     }
 }
 
-pub fn router(model_names: &[&str], patterns: &[&str]) -> FakeRouter {
+pub(super) fn router(model_names: &[&str], patterns: &[&str]) -> FakeRouter {
     FakeRouter {
         model_names: texts(model_names),
         patterns: texts(patterns),
@@ -130,7 +136,7 @@ pub fn router(model_names: &[&str], patterns: &[&str]) -> FakeRouter {
     }
 }
 
-pub fn policy(inherit: Option<&str>, add: &[&str], remove: &[&str]) -> Policy {
+pub(super) fn policy(inherit: Option<&str>, add: &[&str], remove: &[&str]) -> Policy {
     Policy {
         inherit: inherit.map(str::to_owned),
         description: None,
@@ -143,27 +149,34 @@ pub fn policy(inherit: Option<&str>, add: &[&str], remove: &[&str]) -> Policy {
     }
 }
 
-pub fn pipeline_policy(add: &[&str], steps: &[&str]) -> Policy {
-    let mut piped = policy(None, add, &[]);
-    let steps = steps
-        .iter()
-        .map(|guardrail| PipelineStep {
-            guardrail: (*guardrail).to_owned(),
-            on_fail: PipelineAction::Block,
-            on_pass: PipelineAction::Allow,
-            on_error: None,
-            pass_data: false,
-            modify_response_message: None,
-        })
-        .collect();
-    piped.pipeline = Some(GuardrailPipeline {
+fn pipeline_step(guardrail: &str) -> PipelineStep {
+    PipelineStep {
+        guardrail: guardrail.to_owned(),
+        on_fail: PipelineAction::Block,
+        on_pass: PipelineAction::Allow,
+        on_error: None,
+        pass_data: false,
+        modify_response_message: None,
+    }
+}
+
+fn pre_call_pipeline(steps: &[&str]) -> GuardrailPipeline {
+    GuardrailPipeline {
         mode: PipelineMode::PreCall,
-        steps,
-    });
+        steps: steps
+            .iter()
+            .map(|guardrail| pipeline_step(guardrail))
+            .collect(),
+    }
+}
+
+pub(super) fn pipeline_policy(add: &[&str], steps: &[&str]) -> Policy {
+    let mut piped = policy(None, add, &[]);
+    piped.pipeline = Some(pre_call_pipeline(steps));
     piped
 }
 
-pub fn policies(entries: Vec<(&str, Policy)>) -> BTreeMap<String, Policy> {
+pub(super) fn policies(entries: Vec<(&str, Policy)>) -> BTreeMap<String, Policy> {
     entries
         .into_iter()
         .map(|(name, entry)| (name.to_owned(), entry))
@@ -192,13 +205,13 @@ impl<S: Subscriber> Layer<S> for WarningCapture {
     }
 }
 
-pub struct Warnings {
+pub(super) struct Warnings {
     messages: Arc<Mutex<Vec<String>>>,
     _guard: DefaultGuard,
 }
 
 impl Warnings {
-    pub fn capture() -> Self {
+    pub(super) fn capture() -> Self {
         let messages = Arc::new(Mutex::new(Vec::new()));
         let subscriber = tracing_subscriber::registry().with(WarningCapture(Arc::clone(&messages)));
         Self {
@@ -207,7 +220,87 @@ impl Warnings {
         }
     }
 
-    pub fn messages(&self) -> Vec<String> {
+    pub(super) fn messages(&self) -> Vec<String> {
         self.messages.lock().unwrap().clone()
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) enum AliasKind {
+    Team,
+    Key,
+}
+
+impl AliasKind {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Team => "team alias",
+            Self::Key => "key alias",
+        }
+    }
+
+    const fn prefix(self) -> &'static str {
+        match self {
+            Self::Team => "team",
+            Self::Key => "key",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) enum AliasOutcome {
+    Found,
+    Missing,
+    Failure,
+}
+
+struct AliasProbe {
+    found: bool,
+    warnings: Vec<String>,
+    recorded: Vec<String>,
+}
+
+async fn probe_alias(kind: AliasKind, known: &[&str], failing: bool, alias: &str) -> AliasProbe {
+    let warnings = Warnings::capture();
+    let mut fake = match kind {
+        AliasKind::Team => database(known, &[]),
+        AliasKind::Key => database(&[], known),
+    };
+    fake.failing = failing;
+    let validator = PolicyValidator {
+        guardrails: registry(&[]),
+        database: Some(fake),
+        router: None::<NoRouter>,
+    };
+    let found = match kind {
+        AliasKind::Team => validator.check_team_alias_exists(alias).await,
+        AliasKind::Key => validator.check_key_alias_exists(alias).await,
+    };
+    AliasProbe {
+        found,
+        warnings: warnings.messages(),
+        recorded: validator.database.as_ref().unwrap().recorded(),
+    }
+}
+
+pub(super) async fn check_alias_case(
+    kind: AliasKind,
+    alias: &str,
+    known: &[&str],
+    outcome: AliasOutcome,
+) {
+    let probe = probe_alias(kind, known, matches!(outcome, AliasOutcome::Failure), alias).await;
+    assert_eq!(probe.found, !matches!(outcome, AliasOutcome::Missing));
+    if matches!(outcome, AliasOutcome::Failure) {
+        assert_eq!(
+            probe.warnings,
+            vec![format!(
+                "Could not check {} '{alias}': {FakeFailure}",
+                kind.label()
+            )]
+        );
+    } else {
+        assert!(probe.warnings.is_empty());
+    }
+    assert_eq!(probe.recorded, vec![format!("{}:{alias}", kind.prefix())]);
 }

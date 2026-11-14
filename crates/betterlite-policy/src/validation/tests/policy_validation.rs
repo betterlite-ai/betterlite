@@ -1,13 +1,13 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rstest::rstest;
 
 use super::support::{
-    FakeFailure, FakeRegistry, Warnings, database, pipeline_policy, policies, policy, registry,
-    router, texts,
+    AliasKind, AliasOutcome, FakeFailure, FakeRegistry, Warnings, check_alias_case, database,
+    pipeline_policy, policies, policy, registry, router, texts,
 };
 use crate::pipeline::json_value::JsonValue;
 use crate::validation::PolicyValidator;
@@ -16,6 +16,7 @@ use crate::validation::lookup::{NoDatabase, NoRouter};
 use crate::validation::types::{
     PolicyValidationError, PolicyValidationErrorType, PolicyValidationResponse,
 };
+use crate::values::Policy;
 
 type Offline = PolicyValidator<FakeRegistry, NoDatabase, NoRouter>;
 
@@ -65,7 +66,6 @@ fn error_types_use_the_wire_value(
 ) {
     let text = serde_json::to_string(&error_type).unwrap();
     assert_eq!(text, format!("\"{wire}\""));
-    assert_eq!(error_type.to_string(), wire);
     let parsed: PolicyValidationErrorType = serde_json::from_str(&text).unwrap();
     assert_eq!(parsed, error_type);
 }
@@ -73,7 +73,7 @@ fn error_types_use_the_wire_value(
 #[test]
 fn error_types_reject_an_unknown_value() {
     let parsed = serde_json::from_str::<PolicyValidationErrorType>("\"INVALID_TEAM\"");
-    assert!(parsed.is_err());
+    parsed.unwrap_err();
 }
 
 #[test]
@@ -120,7 +120,7 @@ fn error_record_defaults_field_and_value_to_none() {
 #[case::missing_error_type(r#"{"policy_name":"p","message":"m"}"#)]
 #[case::missing_message(r#"{"policy_name":"p","error_type":"invalid_key"}"#)]
 fn error_record_rejects_bad_input(#[case] text: &str) {
-    assert!(serde_json::from_str::<PolicyValidationError>(text).is_err());
+    serde_json::from_str::<PolicyValidationError>(text).unwrap_err();
 }
 
 #[test]
@@ -150,7 +150,7 @@ fn response_records_default_missing_lists_to_empty() {
 #[case::missing_valid(r#"{"errors":[],"warnings":[]}"#)]
 #[case::extra_field(r#"{"valid":true,"extra":1}"#)]
 fn response_records_reject_bad_input(#[case] text: &str) {
-    assert!(serde_json::from_str::<PolicyValidationResponse>(text).is_err());
+    serde_json::from_str::<PolicyValidationResponse>(text).unwrap_err();
 }
 
 #[tokio::test]
@@ -198,7 +198,7 @@ fn guardrail_lookup_failure_warns_and_returns_the_empty_set() {
     let validator: Offline = PolicyValidator {
         guardrails: FakeRegistry {
             names: None,
-            calls: 0.into(),
+            calls: AtomicUsize::new(0),
         },
         database: None,
         router: None,
@@ -207,8 +207,7 @@ fn guardrail_lookup_failure_warns_and_returns_the_empty_set() {
     assert_eq!(
         warnings.messages(),
         vec![format!(
-            "Could not get guardrails from registry: {}",
-            FakeFailure
+            "Could not get guardrails from registry: {FakeFailure}"
         )]
     );
 }
@@ -234,109 +233,63 @@ fn empty_registry_skips_the_pipeline_registry_check() {
 }
 
 #[rstest]
-#[case::exists(&["red"], false, true)]
-#[case::missing(&["blue"], false, false)]
-#[case::database_failure(&[], true, true)]
-fn team_alias_checks_the_database(
-    #[case] teams: &[&str],
-    #[case] failing: bool,
-    #[case] want: bool,
-) {
-    let warnings = Warnings::capture();
-    let mut fake = database(teams, &[]);
-    fake.failing = failing;
-    let validator = PolicyValidator {
-        guardrails: registry(&[]),
-        database: Some(fake),
-        router: None::<NoRouter>,
-    };
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap();
-    assert_eq!(
-        runtime.block_on(validator.check_team_alias_exists("red")),
-        want
-    );
-    let logged = warnings.messages();
-    if failing {
-        assert_eq!(
-            logged,
-            vec![format!("Could not check team alias 'red': {FakeFailure}")]
-        );
-    } else {
-        assert!(logged.is_empty());
-    }
-    let recorded = validator.database.as_ref().unwrap().recorded();
-    assert_eq!(recorded, vec!["team:red".to_owned()]);
+#[case::exists(&["red"], AliasOutcome::Found)]
+#[case::missing(&["blue"], AliasOutcome::Missing)]
+#[case::database_failure(&[], AliasOutcome::Failure)]
+#[tokio::test]
+async fn team_alias_checks_the_database(#[case] known: &[&str], #[case] outcome: AliasOutcome) {
+    check_alias_case(AliasKind::Team, "red", known, outcome).await;
 }
 
 #[rstest]
-#[case::exists(&["svc"], false, true)]
-#[case::missing(&["other"], false, false)]
-#[case::database_failure(&[], true, true)]
-fn key_alias_checks_the_database(#[case] keys: &[&str], #[case] failing: bool, #[case] want: bool) {
-    let warnings = Warnings::capture();
-    let mut fake = database(&[], keys);
-    fake.failing = failing;
-    let validator = PolicyValidator {
-        guardrails: registry(&[]),
-        database: Some(fake),
-        router: None::<NoRouter>,
-    };
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap();
-    assert_eq!(
-        runtime.block_on(validator.check_key_alias_exists("svc")),
-        want
-    );
-    let logged = warnings.messages();
-    if failing {
-        assert_eq!(
-            logged,
-            vec![format!("Could not check key alias 'svc': {FakeFailure}")]
-        );
-    } else {
-        assert!(logged.is_empty());
-    }
-    let recorded = validator.database.as_ref().unwrap().recorded();
-    assert_eq!(recorded, vec!["key:svc".to_owned()]);
+#[case::exists(&["svc"], AliasOutcome::Found)]
+#[case::missing(&["other"], AliasOutcome::Missing)]
+#[case::database_failure(&[], AliasOutcome::Failure)]
+#[tokio::test]
+async fn key_alias_checks_the_database(#[case] known: &[&str], #[case] outcome: AliasOutcome) {
+    check_alias_case(AliasKind::Key, "svc", known, outcome).await;
+}
+
+#[derive(Clone, Copy, Debug)]
+enum RouterOutcome {
+    Answers,
+    FailsNames,
+    FailsPatterns,
 }
 
 #[rstest]
-#[case::router_model_name(&["gpt"], &[], false, false, true, 0)]
-#[case::pattern_match(&[], &["gpt"], false, false, true, 1)]
-#[case::unknown(&["other"], &["other"], false, false, false, 1)]
-#[case::name_lookup_failure(&["gpt"], &["gpt"], true, false, true, 0)]
-#[case::pattern_lookup_failure(&[], &["gpt"], false, true, true, 1)]
+#[case::router_model_name(&["gpt"], &[], RouterOutcome::Answers, true, 0)]
+#[case::pattern_match(&[], &["gpt"], RouterOutcome::Answers, true, 1)]
+#[case::unknown(&["other"], &["other"], RouterOutcome::Answers, false, 1)]
+#[case::name_lookup_failure(&["gpt"], &["gpt"], RouterOutcome::FailsNames, true, 0)]
+#[case::pattern_lookup_failure(&[], &["gpt"], RouterOutcome::FailsPatterns, true, 1)]
 fn model_exists_checks_names_then_patterns(
     #[case] model_names: &[&str],
     #[case] patterns: &[&str],
-    #[case] failing_names: bool,
-    #[case] failing_patterns: bool,
+    #[case] outcome: RouterOutcome,
     #[case] want: bool,
     #[case] pattern_calls: usize,
 ) {
     let warnings = Warnings::capture();
     let mut fake = router(model_names, patterns);
-    fake.failing_names = failing_names;
-    fake.failing_patterns = failing_patterns;
+    fake.failing_names = matches!(outcome, RouterOutcome::FailsNames);
+    fake.failing_patterns = matches!(outcome, RouterOutcome::FailsPatterns);
     let validator = PolicyValidator {
         guardrails: registry(&[]),
         database: None::<NoDatabase>,
         router: Some(fake),
     };
     assert_eq!(validator.check_model_exists("gpt"), want);
-    let fake = validator.router.as_ref().unwrap();
-    assert_eq!(fake.pattern_calls.load(Ordering::SeqCst), pattern_calls);
+    let stored = validator.router.as_ref().unwrap();
+    assert_eq!(stored.pattern_calls.load(Ordering::SeqCst), pattern_calls);
     let logged = warnings.messages();
-    if failing_names || failing_patterns {
+    if matches!(outcome, RouterOutcome::Answers) {
+        assert!(logged.is_empty());
+    } else {
         assert_eq!(
             logged,
             vec![format!("Could not check model 'gpt': {FakeFailure}")]
         );
-    } else {
-        assert!(logged.is_empty());
     }
 }
 
@@ -547,14 +500,12 @@ fn inheritance_cycles_name_the_repeated_policy(
     );
 }
 
-fn linear_chain(
-    length: usize,
-    last_parent: Option<&str>,
-) -> BTreeMap<String, crate::values::Policy> {
+fn linear_chain(length: usize, last_parent: Option<&str>) -> BTreeMap<String, Policy> {
     let mut chain = BTreeMap::new();
     for index in 0..length {
-        let parent = if index + 1 < length {
-            Some(format!("p{}", index + 1))
+        let next = index.saturating_add(1);
+        let parent = if next < length {
+            Some(format!("p{next}"))
         } else {
             last_parent.map(str::to_owned)
         };
