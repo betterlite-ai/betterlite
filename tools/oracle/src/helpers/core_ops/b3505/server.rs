@@ -48,7 +48,7 @@ fn accept(listener: &TcpListener) -> Option<TcpStream> {
                 if stream.set_nonblocking(false).is_err() {
                     return None;
                 }
-                return Some(stream);
+                break Some(stream);
             }
             Err(error) if error.kind() == ErrorKind::WouldBlock => {
                 if started.elapsed() >= CONNECT_TIMEOUT {
