@@ -1,32 +1,26 @@
-from collections.abc import Sequence
 from typing import ClassVar, Final
 
 from betterlite.types.integrations.prometheus.core import (
-    DEFINED_PROMETHEUS_METRICS,
-    _sanitize_prometheus_label_name,
-)
+    DEFINED_PROMETHEUS_METRICS, _sanitize_prometheus_label_name)
 from betterlite.types.integrations.prometheus.labels import UserAPIKeyLabelNames
 from betterlite.types.integrations.prometheus.settings import PrometheusLabelSettings
 from betterlite.types.integrations.prometheus.validation import (
-    _resolve_deployment_and_latency_caller_identity_labels,
-)
+    _resolve_deployment_and_latency_caller_identity_labels)
 
 _EMPTY: Final[list[str]] = []
 _PROXY_TOTAL_REQUESTS: Final = "litellm_proxy_total_requests_metric"
 _PROXY_FAILED_REQUESTS: Final = "litellm_proxy_failed_requests_metric"
-_USER_BUDGET_METRICS: Final[frozenset[str]] = frozenset(
-    {"litellm_remaining_user_budget_metric", "litellm_user_max_budget_metric",
-    "litellm_user_budget_remaining_hours_metric"}
-)
-_ORG_LABEL_METRICS: Final[frozenset[str]] = frozenset(
-    {"litellm_llm_api_latency_metric", "litellm_llm_api_time_to_first_token_metric",
+_USER_BUDGET_METRICS: Final[frozenset[str]] = frozenset({
+    "litellm_remaining_user_budget_metric", "litellm_user_max_budget_metric",
+    "litellm_user_budget_remaining_hours_metric"})
+_ORG_LABEL_METRICS: Final[frozenset[str]] = frozenset({
+    "litellm_llm_api_latency_metric", "litellm_llm_api_time_to_first_token_metric",
     "litellm_request_total_latency_metric", "litellm_request_queue_time_seconds",
     "litellm_proxy_total_requests_metric", "litellm_proxy_failed_requests_metric",
     "litellm_deployment_latency_per_output_token", "litellm_requests_metric",
     "litellm_spend_metric", "litellm_input_tokens_metric", "litellm_total_tokens_metric",
     "litellm_output_tokens_metric", "litellm_video_duration_seconds_metric",
-    "litellm_images_generated_metric"}
-)
+    "litellm_images_generated_metric"})
 _INPUT_SEQUENCE_LENGTH_METRICS: Final[frozenset[str]] = frozenset({
     "litellm_llm_api_latency_metric", "litellm_llm_api_time_to_first_token_metric",
     "litellm_request_total_latency_metric"})
@@ -89,9 +83,8 @@ _BATCH: Final[list[str]] = ["model", "api_provider", "user", "user_email", "api_
 _BATCH_TIME: Final[list[str]] = ["model", "api_provider"]
 _MCP_TOOL_CALL_LABELS: Final[list[str]] = ["mcp_tool_name", "mcp_server_name", "hashed_api_key",
     "api_key_alias", "team", "team_alias", "user", "end_user"]
-
 _DEFAULT_SETTINGS: Final = PrometheusLabelSettings()
-_METRIC_LABELS: Final[dict[str, Sequence[str]]] = {
+_METRIC_LABELS: Final[dict[str, list[str] | tuple[str, ...]]] = {
     "litellm_llm_api_latency_metric": _LLM_API_LATENCY_LABELS,
     "litellm_llm_api_time_to_first_token_metric": _LLM_API_LATENCY_LABELS,
     "litellm_request_total_latency_metric": _REQUEST_TOTAL_LATENCY_LABELS,
@@ -167,17 +160,21 @@ _METRIC_LABELS: Final[dict[str, Sequence[str]]] = {
 
 class PrometheusMetricLabels:
     litellm_llm_api_latency_metric = _LLM_API_LATENCY_LABELS
-    litellm_llm_api_time_to_first_token_metric = _LLM_API_LATENCY_LABELS  # ast-grep-ignore
-    litellm_request_total_latency_metric = _REQUEST_TOTAL_LATENCY_LABELS  # ast-grep-ignore
+    litellm_llm_api_time_to_first_token_metric = (  # ast-grep-ignore: no-long-names
+        _LLM_API_LATENCY_LABELS)
+    litellm_request_total_latency_metric = (  # ast-grep-ignore: no-long-names
+        _REQUEST_TOTAL_LATENCY_LABELS)
     litellm_request_queue_time_seconds = _QUEUE_TIME  # ast-grep-ignore: no-long-names
     litellm_guardrail_latency_seconds = _EMPTY  # ast-grep-ignore: no-long-names
     litellm_guardrail_errors_total = _EMPTY
     litellm_guardrail_requests_total = _EMPTY  # ast-grep-ignore: no-long-names
     litellm_proxy_total_requests_metric = _PROXY_TOTAL  # ast-grep-ignore: no-long-names
     litellm_proxy_failed_requests_metric = _PROXY_FAILED_LABELS  # ast-grep-ignore: no-long-names
-    litellm_deployment_latency_per_output_token = _OUTPUT_TOKEN_LATENCY_LABELS  # ast-grep-ignore
+    litellm_deployment_latency_per_output_token = (  # ast-grep-ignore: no-long-names
+        _OUTPUT_TOKEN_LATENCY_LABELS)
     litellm_overhead_latency_metric = _DEPLOYMENT_LIMIT_LABELS  # ast-grep-ignore: no-long-names
-    litellm_overhead_with_guardrails_latency_metric = _DEPLOYMENT_LIMIT_LABELS  # ast-grep-ignore
+    litellm_overhead_with_guardrails_latency_metric = (  # ast-grep-ignore: no-long-names
+        _DEPLOYMENT_LIMIT_LABELS)
     litellm_remaining_requests_metric = _DEPLOYMENT_LIMIT_LABELS  # ast-grep-ignore: no-long-names
     litellm_remaining_tokens_metric = _DEPLOYMENT_LIMIT_LABELS  # ast-grep-ignore: no-long-names
     litellm_requests_metric = _REQUESTS
@@ -213,15 +210,18 @@ class PrometheusMetricLabels:
     litellm_remaining_user_budget_metric = _USER_BUDGET  # ast-grep-ignore: no-long-names
     litellm_user_max_budget_metric = _USER_BUDGET
     litellm_user_budget_remaining_hours_metric = _USER_BUDGET  # ast-grep-ignore: no-long-names
-    litellm_remaining_customer_budget_metric = _CUSTOMER_BUDGET_LABELS  # ast-grep-ignore
+    litellm_remaining_customer_budget_metric = (  # ast-grep-ignore: no-long-names
+        _CUSTOMER_BUDGET_LABELS)
     litellm_customer_max_budget_metric = _CUSTOMER_BUDGET_LABELS  # ast-grep-ignore: no-long-names
-    litellm_customer_budget_remaining_hours_metric = _CUSTOMER_BUDGET_LABELS  # ast-grep-ignore
+    litellm_customer_budget_remaining_hours_metric = (  # ast-grep-ignore: no-long-names
+        _CUSTOMER_BUDGET_LABELS)
     litellm_remaining_api_key_requests_for_model = _MODEL_LIMITS  # ast-grep-ignore: no-long-names
     litellm_remaining_api_key_tokens_for_model = _MODEL_LIMITS  # ast-grep-ignore: no-long-names
     litellm_callback_logging_failures_metric = _CALLBACK  # ast-grep-ignore: no-long-names
     litellm_deployment_failure_responses = _FAIL_RESPONSES  # ast-grep-ignore: no-long-names
     litellm_deployment_total_requests = _DEPLOYMENT_TOTAL_LABELS  # ast-grep-ignore: no-long-names
-    litellm_deployment_success_responses = _DEPLOYMENT_TOTAL_LABELS  # ast-grep-ignore
+    litellm_deployment_success_responses = (  # ast-grep-ignore: no-long-names
+        _DEPLOYMENT_TOTAL_LABELS)
     litellm_api_key_rate_limit_allowed_metric = _KEY_RATE  # ast-grep-ignore: no-long-names
     litellm_api_key_rate_limit_used_metric = _KEY_RATE  # ast-grep-ignore: no-long-names
     litellm_team_rate_limit_allowed_metric = _TEAM_RATE  # ast-grep-ignore: no-long-names
