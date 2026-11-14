@@ -479,6 +479,10 @@ fn assert_no_io(harness: &Harness) {
     r#"{"tool_choice":{"functionCallingConfig":{"mode":"NONE"}},"include_server_side_tool_invocations":false}"#,
     r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"toolConfig":{"functionCallingConfig":{"mode":"NONE"}}}"#
 )]
+#[case::null_config_value_takes_the_default(
+    r#"{"temperature":null}"#,
+    r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}"#
+)]
 fn body_cases(#[case] optional_params: &str, #[case] expected: &str) {
     let (harness, result) = run_vertex(optional_params);
     assert_body(&result.expect("the body builds"), expected);
@@ -750,4 +754,41 @@ fn inline_policy_no_io() {
     );
     assert_eq!(harness.fetcher.calls(), 0);
     assert_eq!(harness.transport.calls(), 0);
+}
+
+#[test]
+fn async_keeps_the_cached_content() {
+    let harness = Harness::new();
+    let input = vertex_input(
+        "gemini-2.5-pro",
+        USER_MESSAGES,
+        r#"{"cached_content":"cached-1"}"#,
+    );
+    let transformed = harness.run_async(&input).expect("the body builds");
+    assert_body(
+        &transformed,
+        r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"cachedContent":"cached-1"}"#,
+    );
+    assert_eq!(harness.transport.calls(), 0);
+}
+
+#[test]
+fn the_first_inlined_media_names_the_param() {
+    let harness = Harness::new();
+    let input = media_input(
+        VertexCapabilityProvider::Gemini,
+        r#"[{"role":"user","content":[{"type":"file","file":{"file_id":"https://example.com/report.pdf","format":"application/pdf"}}]}]"#,
+    );
+    assert_eq!(remote_media_error(&harness, &input).param(), Some("file"));
+}
+
+#[test]
+fn references_do_not_name_the_param() {
+    let harness = Harness::new();
+    let input = media_input(
+        VertexCapabilityProvider::Gemini,
+        r#"[{"role":"user","content":[{"type":"file","file":{"file_id":"https://generativelanguage.googleapis.com/v1beta/files/abc123","format":"image/png"}}]},{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example.com/cat.png"}}]}]"#,
+    );
+    let error = remote_media_error(&harness, &input);
+    assert_eq!(error.param(), Some("image_url"));
 }
