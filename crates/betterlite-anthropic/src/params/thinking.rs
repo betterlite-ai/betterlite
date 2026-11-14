@@ -1,4 +1,3 @@
-use betterlite_config::sections::anthropic_capability_catalog::Settings;
 use betterlite_models::decisions::Json;
 use betterlite_models::lemonade_model_metadata::ModelInfoClient;
 use betterlite_models::model_capability_predicates::CapabilityEnvironment;
@@ -19,7 +18,7 @@ use crate::params::value;
 pub const DROP_ADAPTIVE_THINKING_WARNING: &str = "Dropping adaptive `thinking` for model=%s: max_tokens is too small to fit the minimum thinking budget.";
 
 // LiteLLM's REASONING_EFFORT_TO_OUTPUT_CONFIG_EFFORT keeps minimal as low and the rest as named
-const fn effort_level(effort: &str) -> Option<&'static str> {
+fn effort_level(effort: &str) -> Option<&'static str> {
     match effort {
         "minimal" | "low" => Some("low"),
         "medium" => Some("medium"),
@@ -56,32 +55,28 @@ fn drop_adaptive(model: &str, optional_params: &mut IndexMap<String, Json>) {
     optional_params.shift_remove("thinking");
 }
 
-// Python's `max_completion_tokens or max_tokens`, then the int a budget can compare against
+// Python's `max_completion_tokens or max_tokens`: falsy still caps, null is absent
 fn cap_tokens(non_default_params: &IndexMap<String, Json>) -> Result<Option<i64>, ParamsError> {
-    let carries = |value: &Json| !match value {
-        Json::Null | Json::Bool(false) => true,
-        Json::Bool(true) => false,
-        Json::Number(number) => number.as_f64() == Some(0.0_f64),
-        Json::Text(text) => text.is_empty(),
-        Json::List(items) => items.is_empty(),
-        Json::Object(fields) => fields.is_empty(),
+    let truthy = |value: &Json| match value {
+        Json::Null => false,
+        Json::Bool(value) => *value,
+        Json::Number(number) => number.as_f64() != Some(0.0_f64),
+        Json::Text(text) => !text.is_empty(),
+        Json::List(items) => !items.is_empty(),
+        Json::Object(fields) => !fields.is_empty(),
     };
-    let chosen = non_default_params
-        .get("max_completion_tokens")
-        .filter(|value| carries(value))
-        .or_else(|| {
-            non_default_params
-                .get("max_tokens")
-                .filter(|value| carries(value))
-        });
-    let Some(value) = chosen else {
-        return Ok(None);
+    let chosen = match non_default_params.get("max_completion_tokens") {
+        Some(value) if truthy(value) => Some(value),
+        _ => non_default_params.get("max_tokens"),
     };
-    value::integer(value)
-        .map(Some)
-        .ok_or(ParamsError::NotNumber {
-            field: "max_tokens",
-        })
+    match chosen {
+        None | Some(Json::Null) => Ok(None),
+        Some(value) => value::integer(value)
+            .map(Some)
+            .ok_or(ParamsError::NotNumber {
+                field: "max_tokens",
+            }),
+    }
 }
 
 async fn cap_adaptive<Source, Transport>(
@@ -251,6 +246,7 @@ pub fn update_max_tokens(
     let requested = value::base_params(non_default_params)?;
     let mut options = value::base_params(optional_params)?;
     add_thinking_max_tokens(&requested, &mut options, request.default_max_tokens)?;
-    *optional_params = value::json_params(options)?;
+    *optional_params =
+        serde_json::from_value(serde_json::Value::Object(options)).map_err(ParamsError::Decode)?;
     Ok(())
 }

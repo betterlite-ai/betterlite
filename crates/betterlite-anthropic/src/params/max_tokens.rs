@@ -1,8 +1,8 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use num_traits::cast::cast;
 
 use crate::params::error::ParamsError;
-use crate::params::value;
 
 // Both spellings overwrite max_tokens, so the last one in request order wins
 pub fn apply(
@@ -12,11 +12,14 @@ pub fn apply(
 ) -> Result<(), ParamsError> {
     let max_tokens = match value {
         Json::Bool(_) => value.clone(),
-        Json::Number(number) if value::is_integer_literal(number) => value.clone(),
+        Json::Number(number) if !number.to_string().contains(['.', 'e', 'E']) => value.clone(),
         Json::Number(number) => {
-            let tokens =
-                value::rounded_tokens(number).ok_or(ParamsError::OutOfRange { field: param })?;
-            Json::Number(serde_json::Number::from(tokens))
+            let parsed = number
+                .as_f64()
+                .ok_or(ParamsError::OutOfRange { field: param })?;
+            let tokens = cast::<f64, i64>(parsed.round_ties_even())
+                .ok_or(ParamsError::OutOfRange { field: param })?;
+            Json::Number(serde_json::Number::from(tokens.max(1)))
         }
         Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_) => {
             return Err(ParamsError::NotNumber { field: param });

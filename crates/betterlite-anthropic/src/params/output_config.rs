@@ -68,6 +68,7 @@ where
     let Some(Json::Object(config)) = optional_params.get("output_config") else {
         return Ok(());
     };
+    let config = config.clone();
     if config.is_empty() {
         return Ok(());
     }
@@ -80,7 +81,7 @@ where
             "{}",
             DROP_OUTPUT_CONFIG_WARNING.replacen("%s", request.model, 1)
         );
-        preserve_format(config, data, optional_params);
+        preserve_format(&config, data, optional_params);
         return Ok(());
     }
     let validated = match config.get("effort") {
@@ -103,6 +104,6 @@ where
     {
         return Err(ParamsError::EffortUnsupported { message });
     }
-    data.insert("output_config".to_owned(), Json::Object(config.clone()));
+    data.insert("output_config".to_owned(), Json::Object(config));
     Ok(())
 }

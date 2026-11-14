@@ -26,8 +26,20 @@ fn append_params(
 ) -> Result<(), ParamsError> {
     let mut base = value::base_params(optional_params)?;
     append_tools(&mut base, tools)?;
-    *optional_params = value::json_params(base)?;
+    *optional_params =
+        serde_json::from_value(serde_json::Value::Object(base)).map_err(ParamsError::Decode)?;
     Ok(())
+}
+
+// A single mapped tool goes through the same append as a whole request's tools
+fn append_tool<T: serde::Serialize>(
+    optional_params: &mut IndexMap<String, Json>,
+    tool: &T,
+) -> Result<(), ParamsError> {
+    append_params(
+        optional_params,
+        vec![serde_json::to_value(tool).map_err(ParamsError::Encode)?],
+    )
 }
 
 pub fn apply_tools(
@@ -48,7 +60,9 @@ pub fn apply_tools(
     if !mapping.mcp_servers.is_empty() {
         optional_params.insert(
             "mcp_servers".to_owned(),
-            value::encode(&mapping.mcp_servers)?,
+            serde_json::to_value(&mapping.mcp_servers)
+                .and_then(serde_json::from_value::<Json>)
+                .map_err(ParamsError::Encode)?,
         );
     }
     Ok(())
@@ -77,7 +91,9 @@ pub fn apply_tool_choice(
     let Some(chosen) = map_tool_choice(choice.as_ref(), parallel)? else {
         return Ok(());
     };
-    let encoded_choice = value::encode(&chosen)?;
+    let encoded_choice = serde_json::to_value(&chosen)
+        .and_then(serde_json::from_value::<Json>)
+        .map_err(ParamsError::Encode)?;
     let forced = apply_forced_tool_choice(
         request.model,
         &encoded_choice,
@@ -102,7 +118,9 @@ where
     if value::as_object(value).is_none() {
         return Ok(());
     }
-    let format: ResponseFormat = value::decode(value)?;
+    let format: ResponseFormat =
+        serde_json::from_value(serde_json::to_value(value).map_err(ParamsError::Encode)?)
+            .map_err(ParamsError::Decode)?;
     let native = supports_model_capability(
         request.model,
         "supports_native_structured_output",
@@ -113,7 +131,10 @@ where
     .await;
     if native {
         if let Some(output) = map_output(Some(&format))? {
-            optional_params.insert("output_format".to_owned(), value::encode(&output)?);
+            let encoded = serde_json::to_value(&output)
+                .and_then(serde_json::from_value::<Json>)
+                .map_err(ParamsError::Encode)?;
+            optional_params.insert("output_format".to_owned(), encoded);
         }
         optional_params.insert("json_mode".to_owned(), Json::Bool(true));
         return Ok(());
@@ -130,8 +151,7 @@ where
         choice.insert("type".to_owned(), Json::Text("tool".to_owned()));
         optional_params.insert("tool_choice".to_owned(), Json::Object(choice));
     }
-    let encoded_tool = serde_json::to_value(&tool).map_err(ParamsError::Encode)?;
-    append_params(optional_params, vec![encoded_tool])?;
+    append_tool(optional_params, &tool)?;
     optional_params.insert("json_mode".to_owned(), Json::Bool(true));
     Ok(())
 }
@@ -143,8 +163,8 @@ pub fn apply_web_search(
     if value::as_object(value).is_none() {
         return Ok(());
     }
-    let options: WebSearchOptions = value::decode(value)?;
-    let tool = map_web_search_tool(&options)?;
-    let encoded_tool = serde_json::to_value(&tool).map_err(ParamsError::Encode)?;
-    append_params(optional_params, vec![encoded_tool])
+    let options: WebSearchOptions =
+        serde_json::from_value(serde_json::to_value(value).map_err(ParamsError::Encode)?)
+            .map_err(ParamsError::Decode)?;
+    append_tool(optional_params, &map_web_search_tool(&options)?)
 }

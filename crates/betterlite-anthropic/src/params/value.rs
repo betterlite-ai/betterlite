@@ -1,9 +1,6 @@
 use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::Json as PromptJson;
 use indexmap::IndexMap;
-use num_traits::cast::cast;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
 use crate::params::error::ParamsError;
@@ -24,25 +21,13 @@ pub const fn as_object(value: &Json) -> Option<&IndexMap<String, Json>> {
     }
 }
 
-// LiteLLM passes an int through untouched and rounds anything else, so the literal decides which
-#[must_use]
-pub fn is_integer_literal(number: &serde_json::Number) -> bool {
-    !number.to_string().contains(['.', 'e', 'E'])
-}
-
 // Python's int(value) over the shapes a request can carry: booleans and integer literals
 pub fn integer(value: &Json) -> Option<i64> {
     match value {
         Json::Bool(flag) => Some(i64::from(*flag)),
-        Json::Number(number) if is_integer_literal(number) => number.as_i64(),
+        Json::Number(number) if !number.to_string().contains(['.', 'e', 'E']) => number.as_i64(),
         Json::Null | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
     }
-}
-
-// CPython's round() for floats rounds half to even, which f64::round does not
-pub fn rounded_tokens(number: &serde_json::Number) -> Option<i64> {
-    let parsed = number.as_f64()?;
-    cast::<f64, i64>(parsed.round_ties_even()).map(|tokens| tokens.max(1))
 }
 
 #[must_use]
@@ -62,22 +47,6 @@ pub fn prompt_json(value: &Json) -> PromptJson {
     }
 }
 
-pub fn encode<T>(value: &T) -> Result<Json, ParamsError>
-where
-    T: Serialize,
-{
-    let serialized = serde_json::to_value(value).map_err(ParamsError::Encode)?;
-    serde_json::from_value(serialized).map_err(ParamsError::Encode)
-}
-
-pub fn decode<T>(value: &Json) -> Result<T, ParamsError>
-where
-    T: DeserializeOwned,
-{
-    let serialized = serde_json::to_value(value).map_err(ParamsError::Encode)?;
-    serde_json::from_value(serialized).map_err(ParamsError::Decode)
-}
-
 // B2202's base helpers take serde_json's map; key order is outside the compatibility contract
 pub fn base_params(params: &IndexMap<String, Json>) -> Result<Map<String, Value>, ParamsError> {
     let encoded = serde_json::to_value(params).map_err(ParamsError::Encode)?;
@@ -87,8 +56,4 @@ pub fn base_params(params: &IndexMap<String, Json>) -> Result<Map<String, Value>
             Err(ParamsError::NotAnObject)
         }
     }
-}
-
-pub fn json_params(fields: Map<String, Value>) -> Result<IndexMap<String, Json>, ParamsError> {
-    serde_json::from_value(Value::Object(fields)).map_err(ParamsError::Decode)
 }

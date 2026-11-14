@@ -69,7 +69,7 @@ where
                 thinking::apply_reasoning_effort(request, optional_params, value, environment)
                     .await?;
             }
-            _ => options::apply_plain(request, non_default_params, optional_params, param, value)?,
+            _ => options::apply(request, non_default_params, optional_params, param, value)?,
         }
     }
     thinking::update_max_tokens(request, non_default_params, optional_params)

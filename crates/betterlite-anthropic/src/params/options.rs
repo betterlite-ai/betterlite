@@ -11,15 +11,8 @@ use crate::option_primitives::user_id::UserIdPolicy;
 use crate::params::error::ParamsError;
 use crate::params::{ParamsRequest, max_tokens, tools, value};
 
-// Only a literal true streams; any other value, false included, stays unmapped
-pub fn apply_stream(optional_params: &mut IndexMap<String, Json>, value: &Json) {
-    if matches!(value, Json::Bool(true)) {
-        optional_params.insert("stream".to_owned(), Json::Bool(true));
-    }
-}
-
-// The parameters whose mapping needs no await, in the arms LiteLLM's loop gives them
-pub fn apply_plain(
+// Every parameter LiteLLM's loop maps without an await, in the arms it gives them
+pub fn apply(
     request: &ParamsRequest<'_>,
     non_default_params: &IndexMap<String, Json>,
     optional_params: &mut IndexMap<String, Json>,
@@ -35,30 +28,11 @@ pub fn apply_plain(
         "tool_choice" | "parallel_tool_calls" => {
             tools::apply_tool_choice(request, non_default_params, optional_params)?;
         }
-        "stream" => apply_stream(optional_params, value),
-        "stop" | "user" | "context_management" | "cache_control" => {
-            apply_small(optional_params, param, value, request.drop.global)?;
+        "stream" if matches!(value, Json::Bool(true)) => {
+            optional_params.insert("stream".to_owned(), Json::Bool(true));
         }
-        "temperature" | "top_p" | "speed" => apply_gated(request, optional_params, param, value)?,
-        "web_search_options" => tools::apply_web_search(optional_params, value)?,
-        "extra_headers" => {
-            optional_params.insert("extra_headers".to_owned(), value.clone());
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
-// The projections LiteLLM maps without a model gate: stop, user, context_management, cache_control
-pub fn apply_small(
-    optional_params: &mut IndexMap<String, Json>,
-    param: &str,
-    value: &Json,
-    global_drop: bool,
-) -> Result<(), ParamsError> {
-    match param {
         "stop" => {
-            let Some(sequences) = map_stop_sequences(value, global_drop)? else {
+            let Some(sequences) = map_stop_sequences(value, request.drop.global)? else {
                 return Ok(());
             };
             let mapped = sequences.into_iter().map(Json::Text).collect();
@@ -83,61 +57,48 @@ pub fn apply_small(
         "cache_control" if matches!(value, Json::Object(_)) => {
             optional_params.insert("cache_control".to_owned(), value.clone());
         }
+        "temperature" | "top_p" => {
+            let sampling_param = if param == "temperature" {
+                SamplingParam::Temperature
+            } else {
+                SamplingParam::TopP
+            };
+            let kept = apply_sampling_param(
+                &SamplingRequest {
+                    model: request.model,
+                    param: sampling_param,
+                    value,
+                    drop: request.drop,
+                },
+                request.catalogs,
+            )?;
+            if let Some(kept) = kept {
+                optional_params.insert(sampling_param.key().to_owned(), kept);
+            }
+        }
+        "speed" => {
+            if value::as_str(value).is_none() {
+                return Ok(());
+            }
+            optional_params.insert("speed".to_owned(), value.clone());
+            let speed = SpeedRequest {
+                model: request.model,
+                speed: SpeedParam::Present(value),
+                drop: request.drop,
+                custom_llm_provider: Some(request.provider),
+            };
+            if matches!(
+                maybe_drop_speed_param(&speed, request.catalogs)?,
+                SpeedDecision::Drop
+            ) {
+                optional_params.shift_remove("speed");
+            }
+        }
+        "web_search_options" => tools::apply_web_search(optional_params, value)?,
+        "extra_headers" => {
+            optional_params.insert("extra_headers".to_owned(), value.clone());
+        }
         _ => {}
     }
     Ok(())
-}
-
-// temperature and top_p fall to the sampling gate, speed to the fast-mode gate
-pub fn apply_gated(
-    request: &ParamsRequest<'_>,
-    optional_params: &mut IndexMap<String, Json>,
-    param: &str,
-    value: &Json,
-) -> Result<(), ParamsError> {
-    if param == "speed" {
-        return apply_speed(request, optional_params, value);
-    }
-    let sampling_param = if param == "temperature" {
-        SamplingParam::Temperature
-    } else {
-        SamplingParam::TopP
-    };
-    let kept = apply_sampling_param(
-        &SamplingRequest {
-            model: request.model,
-            param: sampling_param,
-            value,
-            drop: request.drop,
-        },
-        request.catalogs,
-    )?;
-    if let Some(kept) = kept {
-        optional_params.insert(sampling_param.key().to_owned(), kept);
-    }
-    Ok(())
-}
-
-fn apply_speed(
-    request: &ParamsRequest<'_>,
-    optional_params: &mut IndexMap<String, Json>,
-    value: &Json,
-) -> Result<(), ParamsError> {
-    if value::as_str(value).is_none() {
-        return Ok(());
-    }
-    optional_params.insert("speed".to_owned(), value.clone());
-    let speed = SpeedRequest {
-        model: request.model,
-        speed: SpeedParam::Present(value),
-        drop: request.drop,
-        custom_llm_provider: Some(request.provider),
-    };
-    match maybe_drop_speed_param(&speed, request.catalogs)? {
-        SpeedDecision::Keep => Ok(()),
-        SpeedDecision::Drop => {
-            optional_params.shift_remove("speed");
-            Ok(())
-        }
-    }
 }
