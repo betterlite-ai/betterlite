@@ -1,0 +1,14 @@
+kind: helper
+name: voyage-media-rank-content-object-and-option-overlay
+call:
+  voyage_media_rank:
+    multimodal:
+      - {model: voyage-multimodal-3, input: [{id: doc-1, content: [hello, {type: image_url, image_url: "https://example.test/a.png"}]}], options: {}, base: "https://example.test/v1", api_key: null, env: {VOYAGE_API_KEY: first}, reply: {status: 200, body: '{"model":"returned","data":[{"embedding":[1,2],"index":0}],"object":"list","usage":{"total_tokens":4}}'}}
+      - {model: voyage-multimodal-3, input: "hello", options: {dimensions: 8, model: other, inputs: ["replacement"]}, base: null, api_key: null, env: {}, reply: {status: 200, body: '{"model":null,"object":null,"data":null,"usage":{"total_tokens":null}}'}}
+      - {model: voyage-3, input: [7], options: {}, base: null, api_key: null, env: {}, reply: {status: 200, body: '{}'}}
+    rerank:
+      - {model: voyage-rerank-2, query: q, documents: [a, {text: b}], top_n: 3, return_documents: false, rank_fields: [title], max_chunks_per_doc: 4, max_tokens_per_doc: 8, instruction: rank, base: "https://example.test/v1/", api_key: null, env: {VOYAGE_API_KEY: key}, headers: {}, reply: {status: 200, body: '{"data":[{"index":1,"relevance_score":0.875,"document":"doc"}]}'}, uuid: "00000000-0000-4000-8000-000000000001"}
+      - {model: voyage-rerank-2, query: q, documents: [a], top_n: null, return_documents: null, rank_fields: null, max_chunks_per_doc: null, max_tokens_per_doc: null, instruction: null, base: "https://example.test/v1/rerank", api_key: null, env: {VOYAGE_API_KEY: key}, headers: {}, reply: {status: 200, body: '{"data":[]}'}, uuid: "00000000-0000-4000-8000-000000000001"}
+      - {model: voyage-rerank-2, query: q, documents: [a], top_n: null, return_documents: null, rank_fields: null, max_chunks_per_doc: null, max_tokens_per_doc: null, instruction: null, base: "https://example.test/v1", api_key: null, env: {VOYAGE_API_KEY: key}, headers: {}, reply: {status: 200, body: '{"data":[]}'}, uuid: "00000000-0000-4000-8000-000000000001"}
+env: {}
+compare: {ignore: []}

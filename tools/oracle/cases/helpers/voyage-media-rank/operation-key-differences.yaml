@@ -1,0 +1,12 @@
+kind: helper
+name: voyage-media-rank-operation-key-differences
+call:
+  voyage_media_rank:
+    multimodal:
+      - {model: voyage-multimodal-3, input: hello, options: {}, base: null, api_key: null, env: {VOYAGE_AI_TOKEN: third}, reply: {status: 200, body: '{}'}}
+    rerank:
+      - {model: voyage-rerank-2, query: q, documents: [a, b], top_n: null, return_documents: null, rank_fields: null, max_chunks_per_doc: null, max_tokens_per_doc: null, instruction: null, base: null, api_key: null, env: {VOYAGE_AI_TOKEN: third}, headers: {}, reply: {status: 200, body: '{"data":[]}'}, uuid: "00000000-0000-4000-8000-000000000001"}
+      - {model: voyage-rerank-2, query: q, documents: [a], top_n: null, return_documents: null, rank_fields: null, max_chunks_per_doc: null, max_tokens_per_doc: null, instruction: null, base: null, api_key: "", env: {VOYAGE_API_KEY: ignored}, headers: {X-Caller: discard}, reply: {status: 200, body: '{"data":[]}'}, uuid: "00000000-0000-4000-8000-000000000001"}
+      - {model: voyage-rerank-2, query: q, documents: [a], top_n: null, return_documents: null, rank_fields: null, max_chunks_per_doc: null, max_tokens_per_doc: null, instruction: null, base: null, api_key: null, env: {VOYAGE_API_KEY: "", VOYAGE_AI_API_KEY: ""}, headers: {}, reply: {status: 200, body: '{"data":[]}'}, uuid: "00000000-0000-4000-8000-000000000001"}
+env: {}
+compare: {ignore: []}

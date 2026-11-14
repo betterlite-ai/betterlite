@@ -1,0 +1,11 @@
+kind: helper
+name: voyage-media-rank-document-id-and-token-cost
+call:
+  voyage_media_rank:
+    multimodal: []
+    rerank:
+      - {model: voyage-rerank-2, query: q, documents: [a, {text: b}], top_n: null, return_documents: null, rank_fields: null, max_chunks_per_doc: null, max_tokens_per_doc: null, instruction: null, base: null, api_key: null, env: {VOYAGE_API_KEY: key}, headers: {}, reply: {status: 200, body: '{"data":[{"index":1,"relevance_score":0.875,"document":"doc"},{"index":2,"relevance_score":0.25,"document":{"text":"kept","page":2}}],"usage":{"total_tokens":7}}'}, uuid: "00000000-0000-4000-8000-000000000001"}
+      - {model: voyage-rerank-2, query: q, documents: [a], top_n: null, return_documents: null, rank_fields: null, max_chunks_per_doc: null, max_tokens_per_doc: null, instruction: null, base: null, api_key: null, env: {VOYAGE_API_KEY: key}, headers: {}, reply: {status: 200, body: '{"id":"given","data":[{"index":0,"relevance_score":1,"document":4}]}'}, uuid: "00000000-0000-4000-8000-000000000001"}
+      - {model: voyage-rerank-2, query: q, documents: [a], top_n: null, return_documents: null, rank_fields: null, max_chunks_per_doc: null, max_tokens_per_doc: null, instruction: null, base: null, api_key: null, env: {VOYAGE_API_KEY: key}, headers: {}, reply: {status: 200, body: '{"id":"","data":[],"usage":{"total_tokens":null}}'}, uuid: "00000000-0000-4000-8000-000000000001"}
+env: {}
+compare: {ignore: []}

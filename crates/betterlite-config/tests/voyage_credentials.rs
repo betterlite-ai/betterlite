@@ -1,20 +1,27 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::loader::{ConfigError, ConfigLoader};
+use betterlite_config::loader::{ConfigError, ConfigLoader, EnvironmentLookup};
+use betterlite_openai::voyage_multimodal::{VoyageMultimodalError, credentials as multimodal_key};
+use betterlite_openai::voyage_rerank::{VoyageRerankError, api_key as rerank_key};
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
-fn credentials(environment: &[(&str, &str)]) -> Result<Option<String>, ConfigError> {
-    let lookup = environment
+fn environment(environment: &[(&str, &str)]) -> BTreeMap<String, String> {
+    environment
         .iter()
         .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
-        .collect::<BTreeMap<_, _>>();
-    Ok(ConfigLoader { lookup }
-        .load("")?
-        .sections
-        .voyage_credentials
-        .api_key
-        .map(|secret| secret.expose_secret().to_owned()))
+        .collect()
+}
+
+fn credentials(environment: &[(&str, &str)]) -> Result<Option<String>, ConfigError> {
+    Ok(ConfigLoader {
+        lookup: self::environment(environment),
+    }
+    .load("")?
+    .sections
+    .voyage_credentials
+    .api_key
+    .map(|secret| secret.expose_secret().to_owned()))
 }
 
 #[rstest]
@@ -32,4 +39,34 @@ fn voyage_credential_aliases(#[case] env: &[(&str, &str)], #[case] expected: Opt
         credentials(env).expect("empty config loads").as_deref(),
         expected
     );
+}
+
+#[test]
+fn rerank_ignores_token_alias() {
+    let token_only = environment(&[("VOYAGE_AI_TOKEN", "third")]);
+    let resolved = rerank_key(None, |name| token_only.lookup(name));
+    assert!(matches!(resolved, Err(VoyageRerankError::MissingApiKey)));
+    let with_second = environment(&[
+        ("VOYAGE_AI_TOKEN", "third"),
+        ("VOYAGE_AI_API_KEY", "second"),
+    ]);
+    let resolved = rerank_key(None, |name| with_second.lookup(name)).expect("second alias");
+    assert_eq!(resolved, "second");
+}
+
+#[test]
+fn multimodal_requires_truthy_key() {
+    let all_empty = environment(&[
+        ("VOYAGE_API_KEY", ""),
+        ("VOYAGE_AI_API_KEY", ""),
+        ("VOYAGE_AI_TOKEN", ""),
+    ]);
+    let resolved = multimodal_key(None, |name| all_empty.lookup(name));
+    assert!(matches!(
+        resolved,
+        Err(VoyageMultimodalError::MissingApiKey)
+    ));
+    let token_only = environment(&[("VOYAGE_AI_TOKEN", "third")]);
+    let resolved = multimodal_key(None, |name| token_only.lookup(name)).expect("token alias");
+    assert_eq!(resolved, "third");
 }

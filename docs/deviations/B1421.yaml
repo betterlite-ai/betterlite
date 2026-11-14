@@ -1,0 +1,19 @@
+task: B1421
+deviations:
+  - what: >-
+      A Voyage rerank reply whose data entry lacks a numeric index or relevance_score,
+      whose data is not a list, or whose usage is not an object fails with a typed
+      bad-gateway error instead of LiteLLM's uncaught KeyError, TypeError or pydantic
+      ValidationError, which the proxy answers as a 500.
+    why: >-
+      A malformed provider reply is not the caller's input, so a 502 names the gateway
+      side; no working LiteLLM setup depends on a 500 from its own KeyError.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/voyage/rerank/transformation.py#L112-L125
+  - what: >-
+      A multimodal content value that is truthy but not a list, or a content item that
+      is not an object, fails with a request error that names the content field instead
+      of LiteLLM's uncaught TypeError or AttributeError, which the proxy answers as a 500.
+    why: >-
+      The declared content type is a list of objects, so a differently shaped value is a
+      caller error and gets a 4xx that names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/voyage/embedding/transformation_multimodal.py#L118-L127

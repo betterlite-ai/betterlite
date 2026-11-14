@@ -1,0 +1,9 @@
+kind: helper
+name: voyage-media-rank-top-k-url-and-status
+call:
+  voyage_media_rank:
+    multimodal: []
+    rerank:
+      - {model: voyage-rerank-2, query: q, documents: [a], top_n: 3, return_documents: false, rank_fields: null, max_chunks_per_doc: null, max_tokens_per_doc: null, instruction: null, base: null, api_key: null, env: {VOYAGE_API_KEY: key}, headers: {}, reply: {status: 201, body: "created"}, uuid: "00000000-0000-4000-8000-000000000001"}
+env: {}
+compare: {ignore: []}
