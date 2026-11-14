@@ -3,7 +3,7 @@ use std::time::Duration;
 use http::Method;
 use rstest::rstest;
 
-use super::support::{Fixture, MODEL, Script, Sent, json, run, secret};
+use super::super::support::{Fixture, MODEL, Script, Sent, json, run, secret};
 use crate::endpoint_target::error::EndpointTargetError;
 use crate::endpoint_target::target::TargetProvider;
 use crate::gemini_embedding_call::call::Execution;

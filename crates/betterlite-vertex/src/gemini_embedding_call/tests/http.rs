@@ -1,3 +1,5 @@
+mod execute;
+
 use betterlite_http::proxy::limits::TransportLimits;
 use rstest::rstest;
 
