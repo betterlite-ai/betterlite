@@ -61,7 +61,7 @@ struct CloudZeroUsageRow {
     date: String,
     user_id: Option<String>,
     api_key: String,
-    model: String,
+    model: Option<String>,
     model_group: Option<String>,
     custom_llm_provider: Option<String>,
     prompt_tokens: i64,
@@ -130,7 +130,7 @@ pub async fn get_usage_data(
         let bound = query.bind();
         client.query(&query.sql, &bound).await.map_err(backend)
     };
-    let usage: UsageData = loaded?
+    let usage = loaded?
         .iter()
         .map(decode_usage_row)
         .collect::<Result<Vec<UsageRow>, CloudZeroUsageError>>()?;

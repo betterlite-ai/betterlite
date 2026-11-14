@@ -35,6 +35,9 @@ mod finops_usage_queries {
         ),
         include_str!("../../../migrations/20250526154401_allow_null_entity_id/migration.sql"),
         include_str!(
+            "../../../migrations/20250707230009_add_mcp_namespaced_tool_name/migration.sql"
+        ),
+        include_str!(
             "../../../migrations/20251219110931_add_deleted_keys_and_deleted_teams_tables/migration.sql"
         ),
     );
@@ -83,6 +86,9 @@ mod finops_usage_queries {
     const USAGE_INSERT: &str = r#"INSERT INTO "LiteLLM_DailyUserSpend"
         (id, user_id, date, api_key, model, spend, created_at, updated_at)
         VALUES ($1, 'user-1', $2, $3, 'gpt-4o', 1.5, $4, $5)"#;
+    const USAGE_NULL_MODEL_INSERT: &str = r#"INSERT INTO "LiteLLM_DailyUserSpend"
+        (id, user_id, date, api_key, model, spend, created_at, updated_at)
+        VALUES ($1, 'user-1', $2, $3, NULL, 1.5, $4, $5)"#;
     const BUDGET_INSERT: &str = r#"INSERT INTO "LiteLLM_BudgetTable" (budget_id, created_by, updated_by)
         VALUES ($1, 'test', 'test')"#;
     const ORGANIZATION_INSERT: &str = r#"INSERT INTO "LiteLLM_OrganizationTable"
@@ -206,6 +212,10 @@ mod finops_usage_queries {
 
     async fn insert_usage(store: &PostgresStore, row: &UsageFixture<'_>) {
         insert(store, USAGE_INSERT, &row.values()).await;
+    }
+
+    async fn insert_usage_without_model(store: &PostgresStore, row: &UsageFixture<'_>) {
+        insert(store, USAGE_NULL_MODEL_INSERT, &row.values()).await;
     }
 
     async fn insert_usage_rows(store: &PostgresStore, rows: &[UsageFixture<'_>]) {
@@ -498,6 +508,24 @@ mod finops_usage_queries {
         );
         assert_eq!(text_of(loaded, "created_at"), Some("2026-06-15T12:00:00Z"));
         assert_eq!(text_of(loaded, "updated_at"), Some("2026-06-15T12:00:00Z"));
+        close(fixture, store).await;
+    }
+
+    #[tokio::test]
+    async fn dataframe_rows_keep_null_model_as_null() {
+        let (fixture, store) = database().await;
+        let rows = [
+            usage_row("with-model", "sk-with-model", "2026-06-16", moment(16, 12)),
+            usage_row("null-model", "sk-null-model", "2026-06-15", moment(15, 12)),
+        ];
+        insert_usage(&store, &rows[0]).await;
+        insert_usage_without_model(&store, &rows[1]).await;
+        let usage = get_usage_data(&store, None, None, None).await.unwrap();
+        assert_eq!(ids(&usage), ["with-model", "null-model"]);
+        let null_model = by_id(&usage, "null-model");
+        assert_eq!(null_model.get("model"), Some(&JsonData::Null));
+        let with_model = by_id(&usage, "with-model");
+        assert_eq!(text_of(with_model, "model"), Some("gpt-4o"));
         close(fixture, store).await;
     }
 
