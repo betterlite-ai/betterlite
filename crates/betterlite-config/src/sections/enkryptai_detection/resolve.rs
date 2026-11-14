@@ -14,20 +14,7 @@ impl Entry {
     {
         let prefix = format!("guardrails.{index}.litellm_params");
         let parameters = self.litellm_params;
-        let api_key = SecretString::from(
-            resolve_value(
-                parameters
-                    .api_key
-                    .map(|secret| secret.expose_secret().to_owned()),
-                API_KEY_VARIABLE,
-                &format!("{prefix}.api_key"),
-                lookup,
-            )?
-            .ok_or_else(|| ConfigError::MissingEnvironment {
-                variable: API_KEY_VARIABLE.to_owned(),
-                path: format!("{prefix}.api_key"),
-            })?,
-        );
+        let api_key = resolve_api_key(parameters.api_key, &prefix, lookup)?;
         let api_base = resolve_value(
             parameters.api_base,
             API_BASE_VARIABLE,
@@ -56,6 +43,28 @@ impl Entry {
     }
 }
 
+fn resolve_api_key<L>(
+    configured: Option<SecretString>,
+    prefix: &str,
+    lookup: &L,
+) -> Result<SecretString, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let path = format!("{prefix}.api_key");
+    let key = resolve_value(
+        configured.map(|secret| secret.expose_secret().to_owned()),
+        API_KEY_VARIABLE,
+        &path,
+        lookup,
+    )?;
+    key.map(SecretString::from)
+        .ok_or_else(|| ConfigError::MissingEnvironment {
+            variable: API_KEY_VARIABLE.to_owned(),
+            path,
+        })
+}
+
 fn resolve_value<L>(
     configured: Option<String>,
     variable: &str,
@@ -65,10 +74,10 @@ fn resolve_value<L>(
 where
     L: EnvironmentLookup,
 {
-    let candidate = configured
+    let Some(candidate) = configured
         .filter(|value| !value.is_empty())
-        .or_else(|| lookup.lookup(variable));
-    let Some(candidate) = candidate else {
+        .or_else(|| lookup.lookup(variable))
+    else {
         return Ok(None);
     };
     let resolved = resolve_string(candidate, path, lookup)?;

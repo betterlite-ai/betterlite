@@ -490,21 +490,16 @@ async fn enkryptai_guardrail_batch_evaluates_each_text() {
 
 #[tokio::test]
 async fn enkryptai_guardrail_batch_stops_at_the_first_detected_text() {
-    let (base, state, mut server) = serve(vec![
-        Reply {
-            status: StatusCode::OK,
-            body: r#"{"summary":{},"details":{}}"#.to_owned(),
-        },
-        Reply {
-            status: StatusCode::OK,
-            body: r#"{"summary":{"jailbreak":1},"details":{"jailbreak":{"score":0.9}}}"#.to_owned(),
-        },
-        Reply {
-            status: StatusCode::OK,
-            body: r#"{"summary":{},"details":{}}"#.to_owned(),
-        },
-    ])
-    .await;
+    let replies = [
+        r#"{"summary":{},"details":{}}"#,
+        r#"{"summary":{"jailbreak":1},"details":{"jailbreak":{"score":0.9}}}"#,
+        r#"{"summary":{},"details":{}}"#,
+    ]
+    .map(|body| Reply {
+        status: StatusCode::OK,
+        body: body.to_owned(),
+    });
+    let (base, state, mut server) = serve(Vec::from(replies)).await;
     let mut request_data = BTreeMap::new();
     let result = guardrail(&base)
         .apply(
