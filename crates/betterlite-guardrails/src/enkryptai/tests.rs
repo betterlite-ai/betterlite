@@ -721,6 +721,20 @@ fn enkryptai_guardrail_collects_attack_details_from_the_response() {
 }
 
 #[test]
+fn enkryptai_guardrail_processes_unknown_integer_detectors() {
+    let zero = parsed_response(&parse_value(r#"{"summary":{"nsfw":0}}"#));
+    assert!(process(&zero).expect("process").attacks.is_empty());
+    let one = parsed_response(&parse_value(
+        r#"{"summary":{"nsfw":1},"details":{"nsfw":{"score":0.9}}}"#,
+    ));
+    let processed = process(&one).expect("process");
+    assert_eq!(processed.attacks, vec!["nsfw"]);
+    assert_eq!(processed.details["nsfw"], parse_value(r#"{"score":0.9}"#));
+    let float = parsed_response(&parse_value(r#"{"summary":{"nsfw":1.0}}"#));
+    assert_eq!(process(&float).expect("process").attacks, vec!["nsfw"]);
+}
+
+#[test]
 fn enkryptai_config_loads_defaults_and_the_environment_key() {
     let lookup = BTreeMap::from([("ENKRYPTAI_API_KEY".to_owned(), "env-key".to_owned())]);
     let source =
@@ -784,6 +798,30 @@ fn enkryptai_config_rejects_a_missing_api_key() {
     .load(source)
     .expect_err("missing key");
     assert!(error.to_string().contains("ENKRYPTAI_API_KEY"));
+}
+
+#[test]
+fn enkryptai_config_uses_the_environment_for_an_empty_configured_key() {
+    let lookup = BTreeMap::from([("ENKRYPTAI_API_KEY".to_owned(), "env-key".to_owned())]);
+    let source = "guardrails:\n  - guardrail_name: guard\n    litellm_params:\n      guardrail: enkryptai\n      api_key: ''\n";
+    let config = ConfigLoader { lookup }.load(source).expect("config");
+    assert_eq!(
+        config.sections.enkryptai_detection.guardrails[0]
+            .api_key
+            .expose_secret(),
+        "env-key"
+    );
+}
+
+#[test]
+fn enkryptai_config_rejects_an_invalid_timeout() {
+    let source = "guardrails:\n  - guardrail_name: guard\n    litellm_params:\n      guardrail: enkryptai\n      api_key: key\n      timeout: nope\n";
+    let error = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(source)
+    .expect_err("invalid timeout");
+    assert!(error.to_string().contains("timeout must be numeric"));
 }
 
 #[test]
