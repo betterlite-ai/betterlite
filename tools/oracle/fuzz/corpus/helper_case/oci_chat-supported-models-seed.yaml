@@ -1,0 +1,10 @@
+kind: helper
+name: oci-chat-supported-models-seed
+call:
+  b5843:
+    function: supported
+    models:
+      - cohere.command-r
+      - meta.llama-3.3-70b-instruct
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,59 @@
+kind: helper
+name: oci-chat-response-error-key-and-non-object
+call:
+  b5843:
+    function: response
+    responses:
+      - model: meta.llama-3.3-70b-instruct
+        status: 200
+        body:
+          modelId: meta.llama
+          modelVersion: "1"
+          chatResponse:
+            apiFormat: GENERIC
+            timeCreated: "2024-01-01T00:00:00Z"
+            choices:
+              - index: 0
+                finishReason: TOOL_CALL
+                message:
+                  role: ASSISTANT
+                  content:
+                    - type: TEXT
+                      text: "hi "
+                    - type: TEXT
+                      text: "there"
+                  toolCalls:
+                    - id: call_1
+                      type: FUNCTION
+                      name: lookup
+                      arguments: "{}"
+            usage:
+              promptTokens: 3
+              completionTokens: 5
+              totalTokens: 8
+      - model: cohere.command-r
+        status: 200
+        body:
+          modelId: cohere.command-r
+          modelVersion: "1.0"
+          chatResponse:
+            text: hello
+            apiFormat: COHERE
+            finishReason: COMPLETE
+            usage:
+              promptTokens: 2
+              completionTokens: 3
+              totalTokens: 5
+      - model: meta.llama-3.3-70b-instruct
+        status: 502
+        body:
+          error: boom
+      - model: meta.llama-3.3-70b-instruct
+        status: 201
+        body: []
+      - model: meta.llama-3.3-70b-instruct
+        status: 201
+        body:
+          error: null
+env: {}
+compare: {ignore: []}
