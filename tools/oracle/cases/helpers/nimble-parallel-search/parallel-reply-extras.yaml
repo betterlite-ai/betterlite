@@ -1,0 +1,38 @@
+kind: helper
+name: parallel-reply-extras
+call:
+  b8025:
+    provider: parallel_ai
+    calls:
+      - operation: reply
+        body:
+          search_id: search-1
+          session_id: session-1
+          results:
+            - title: First
+              url: https://one.test
+              publish_date: "2024-05-05"
+              excerpts: [alpha, beta]
+            - url: https://two.test
+              excerpts: []
+            - excerpts: null
+          usage:
+            - name: sku_search
+              count: 2
+          warnings:
+            - type: info
+              message: one warning
+      - operation: reply
+        body:
+          results: []
+          warnings: []
+      - operation: reply
+        body:
+          search_id: null
+          session_id: null
+          results: []
+      - operation: reply
+        body:
+          results: null
+env: {}
+compare: {ignore: []}

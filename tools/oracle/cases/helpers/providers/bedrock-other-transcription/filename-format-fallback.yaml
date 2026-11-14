@@ -1,0 +1,31 @@
+kind: helper
+name: filename-format-fallback
+call:
+  bedrock_other_transcription:
+    calls:
+      - mode: sync
+        model: bedrock/voxtral
+        file: {kind: tuple, filename: voice.xyz, content: RIFF}
+        custom_llm_provider: bedrock
+        optional_params: {}
+        reply_text: hello
+      - mode: async
+        model: bedrock/voxtral
+        file: {kind: tuple, filename: noextension, content: RIFF}
+        custom_llm_provider: bedrock
+        optional_params: {}
+        reply_text: hello
+      - mode: sync
+        model: bedrock/voxtral
+        file: {kind: tuple, filename: trailing., content: RIFF}
+        custom_llm_provider: bedrock
+        optional_params: {}
+        reply_text: hello
+      - mode: async
+        model: bedrock/voxtral
+        file: {kind: tuple, filename: .wav, content: RIFF}
+        custom_llm_provider: bedrock
+        optional_params: {}
+        reply_text: hello
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,15 @@
+kind: helper
+name: literal-and-resolved-roster-ids-both-count
+call:
+  scim_member_partition:
+    members: []
+    metadata: []
+    entries: []
+    created_ids: []
+    removals:
+      - {value: placeholder-id, roster: [placeholder-id, u1], resolved: [u1]}
+      - {value: u1, roster: [u1], resolved: [u1]}
+      - {value: absent, roster: [other], resolved: [u1]}
+env: {}
+compare:
+  ignore: []

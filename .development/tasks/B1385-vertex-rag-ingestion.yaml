@@ -100,5 +100,5 @@ pitfalls:
   - A failed corpus import does not delete the GCS object already uploaded.
   - The source's wait_for_import=false branch never awaits the SDK coroutine and therefore performs no import.
   - Explicit upload credentials do not replace the application-default identity used by vertexai.init.
-budget: {max_changed_lines: 750, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: standard
