@@ -131,13 +131,27 @@ fn transcription_secret_safe_failure() {
         "header value leaked"
     );
     assert!(
-        format!("{validated:?}").contains("x-amz-security-token"),
-        "header names stay visible"
-    );
-    assert!(
         !rendered.contains("ambient-secret"),
         "ambient secret leaked"
     );
+}
+
+#[test]
+fn transcription_debug_names_stay_visible() {
+    let validated = environment_with_header(HOSTED_ONE);
+    let key = SecretString::from("api-key-value".to_owned());
+    let options = params(HOSTED_ONE);
+    let call = TranscriptionCall {
+        model: "bedrock/m",
+        api_key: Some(&key),
+        api_base: None,
+        custom_llm_provider: "bedrock",
+        extra_headers: None,
+        optional_params: &options,
+        timeout: None,
+    };
+    let rendered = format!("{validated:?}");
+    assert!(rendered.contains("x-amz-security-token"), "{rendered}");
     let call_text = format!("{call:?}");
     assert!(call_text.contains("TranscriptionCall"), "{call_text}");
     assert!(call_text.contains("aws_access_key_id"), "{call_text}");

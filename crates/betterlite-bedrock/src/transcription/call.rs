@@ -78,7 +78,10 @@ where
     T: TranscriptionTransport,
     C: ChainCredentials,
 {
-    async fn send(&self, arguments: &BindingArguments<'_>) -> Result<Vec<u8>, CallError> {
+    async fn signed_request(
+        &self,
+        arguments: &BindingArguments<'_>,
+    ) -> Result<OutboundRequest, CallError> {
         let call = arguments.call;
         let validated = validate_environment(
             string_headers(call.extra_headers)?,
@@ -103,14 +106,18 @@ where
             Some(seconds) => Duration::try_from_secs_f64(seconds)
                 .map_err(|source| CallError::Timeout { seconds, source })?,
         };
-        let outbound = OutboundRequest {
+        Ok(OutboundRequest {
             method: Method::POST,
             url: Url::parse(&signed.url).map_err(CallError::Endpoint)?,
             query: Vec::new(),
             headers: header_map(&signed.headers)?,
             body: RequestBody::Json(signed.body),
             deadline,
-        };
+        })
+    }
+
+    async fn send(&self, arguments: &BindingArguments<'_>) -> Result<Vec<u8>, CallError> {
+        let outbound = self.signed_request(arguments).await?;
         let response = self
             .transport
             .send(outbound)
