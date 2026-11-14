@@ -2,7 +2,6 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::str::from_utf8;
 
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::Json;
@@ -401,18 +400,27 @@ fn the_malformed_duration_is_omitted() {
     assert_eq!(answer(200, valid)["duration"].to_string(), "2.5");
 }
 
+const VALID_SEEDS: [(&str, &str, Option<&str>); 4] = [
+    ("valid-empty.json", "", None),
+    ("valid-extra-fields.json", "hi", Some("1.0")),
+    ("valid-malformed-duration.json", "hi", None),
+    ("valid-transcripts.json", "hello", Some("2.5")),
+];
+
 #[rstest]
 fn replays_the_vertex_recognition_corpus(
     #[files("fuzz/corpus/vertex_recognition/*")] path: PathBuf,
 ) {
-    let bytes = fs::read(path).unwrap();
-    let reply = UpstreamResponse {
-        status: 200,
-        headers: HeaderMap::new(),
-        body: bytes.clone(),
-    };
-    drop(decode_vertex_recognition(&reply));
-    if let Ok(text) = from_utf8(&bytes) {
-        assert!(parse_duration_seconds(Some(text)).is_none() || text.ends_with('s'));
+    let name = path.file_name().unwrap().to_str().unwrap();
+    let body = fs::read_to_string(&path).unwrap();
+    if name == "invalid-null-results.json" {
+        let error = decode_vertex_recognition(&reply(200, &body)).unwrap_err();
+        assert!(matches!(error, VertexRecognitionError::Shape { .. }));
+        return;
     }
+    let (_, text, duration) = VALID_SEEDS.iter().find(|seed| seed.0 == name).unwrap();
+    let value = answer(200, &body);
+    assert_eq!(value["text"], *text);
+    let rendered = value.get("duration").map(ToString::to_string);
+    assert_eq!(rendered.as_deref(), *duration);
 }
