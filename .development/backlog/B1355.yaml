@@ -1,7 +1,7 @@
 id: B1355
 milestone: M3 providers
 title: Vertex Gemini native audio transcription and token usage
-status: todo
+status: done
 depends_on: [B1354, B1301, B1302, B1305, B175, B171]
 file: tasks/B1355-vertex-gemini-transcription.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/vertex_ai_gemini_transcription.py"
 parent: B033
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1829
