@@ -24,3 +24,6 @@ deviations:
   - what: GenericGuardrailAPIResponse.from_dict takes dict[str, JsonValue] instead of a bare dict, and its structured_messages attribute holds the role-keyed rows.
     why: The wheel types every JSON payload it accepts and keeps the whole payload to JSON values instead of an untyped dict.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/generic_guardrail_api.py#L203-L216
+  - what: The ported models carry no pydantic Field descriptions and no class docstrings, so model_json_schema() has no description keys where LiteLLM's does, and the provider_specific_params UI response shows the field name instead of LiteLLM's help text. Keys, required keys, types, Literal values, defaults, constraints and json_schema_extra entries are unchanged.
+    why: The repository keeps no docstrings and caps a module at 300 lines; the description prose is most of the LiteLLM files, while every key, type, default and limit stays identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/generic_guardrail_api.py#L41-L44

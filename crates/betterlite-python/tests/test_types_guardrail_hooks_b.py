@@ -9,6 +9,7 @@ from betterlite.types.proxy.guardrails.guardrail_hooks import (
     compresr,
     conduct,
     crowdstrike_aidr,
+    decision_model,
     deepkeep,
     dynamoai,
     enkryptai,
@@ -486,6 +487,7 @@ def describe(module_name, module):
     shapes = {}
     types = {}
     order = {}
+    frozen = {}
     for name in names:
         value = vars(module)[name]
         if is_typeddict(value):
@@ -494,6 +496,7 @@ def describe(module_name, module):
         elif isinstance(value, type) and issubclass(value, BaseModel):
             schema = value.model_json_schema()
             order[name] = list(value.model_fields)
+            frozen[name] = value.model_config.get("frozen")
         else:
             continue
         shapes[name] = schema_fields(schema)
@@ -509,6 +512,7 @@ def describe(module_name, module):
         "shapes": shapes,
         "types": types,
         "order": order,
+        "frozen": frozen,
         "ui_extras": extras,
     }
 
@@ -629,6 +633,7 @@ class ModuleDescription(TypedDict):
     shapes: dict[str, Shape]
     types: dict[str, dict[str, JsonValue]]
     order: dict[str, list[str]]
+    frozen: dict[str, bool | None]
     ui_extras: dict[str, JsonValue]
 
 
@@ -673,6 +678,7 @@ def test_covered_names(report: FullReport, module_name: str) -> None:
     assert ours["shapes"] == theirs["shapes"], module_name
     assert ours["types"] == theirs["types"], module_name
     assert ours["order"] == theirs["order"], module_name
+    assert ours["frozen"] == theirs["frozen"], module_name
     assert ours["ui_extras"] == theirs["ui_extras"], module_name
 
 
@@ -794,6 +800,18 @@ def test_enum_names() -> None:
     assert applicable == ["INPUT", "OUTPUT", "ALL"]
     assert dynamoai.DynamoTextType("MODEL_INPUT") is dynamoai.DynamoTextType.MODEL_INPUT
     assert str(dynamoai.DynamoTextType.MODEL_INPUT) == "MODEL_INPUT"
+
+
+def test_frozen_names() -> None:
+    check = decision_model.DecisionModelCheck(name="harm", instructions="flag harm")
+    with pytest.raises(ValidationError):
+        check.threshold = 0.1
+    config = decision_model.DecisionModelGuardrailConfigModel(
+        decision_model="judge",
+        checks=(check,),
+    )
+    with pytest.raises(ValidationError):
+        config.max_input_chars = 1
 
 
 def test_tool_param_names() -> None:
