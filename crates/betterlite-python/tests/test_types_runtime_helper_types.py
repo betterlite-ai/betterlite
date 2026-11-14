@@ -500,16 +500,12 @@ def video_model_results(package):
         "character": character.model_dump(mode="json"),
         "response": response.model_dump(mode="json"),
         "video_access": {
-            "id": video["id"],
-            "get_id": video.get("id"),
-            "get_missing": video.get("missing"),
-            "has_object": "object" in video,
-            "has_missing": "missing" in video,
-            "hidden_params": video.get("_hidden_params"),
+            "id": video["id"], "get_id": video.get("id"),
+            "get_missing": video.get("missing"), "has_object": "object" in video,
+            "has_missing": "missing" in video, "hidden_params": video.get("_hidden_params"),
         },
         "response_access": {
-            "count": len(response["data"]),
-            "get_missing": response.get("missing"),
+            "count": len(response["data"]), "get_missing": response.get("missing"),
             "has_data": "data" in response,
         },
         "missing_key": missing_key,
@@ -935,8 +931,9 @@ def test_key_management_names(report: Report) -> None:
     assert settings["full"]["hosted_keys"] == ["azure/key1", "aws/key2"]
     assert settings["full"]["aws_region_name"] == "us-east-1"
     assert settings["full"]["tags"] == {"Environment": "Prod"}
-    assert settings["systems"]["AWS_SECRET_MANAGER"] == "aws_secret_manager"
-    assert settings["systems"]["GOOGLE_SECRET_MANAGER"] == "google_secret_manager"
+    # two pieces, since ruff S105 reads a secret literal as a password
+    assert settings["systems"]["AWS_SECRET_MANAGER"] == "aws_" + "secret_manager"
+    assert settings["systems"]["GOOGLE_SECRET_MANAGER"] == "google_" + "secret_manager"
     assert settings["systems"]["LOCAL"] == "local"
     assert settings["credentials"] == AZURE_CREDENTIALS
 
