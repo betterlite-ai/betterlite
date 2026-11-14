@@ -225,13 +225,7 @@ fn milliseconds_from_text(text: &str) -> Option<FloatMilliseconds> {
     let exact = cleaned
         .parse::<Decimal>()
         .ok()
-        .filter(|number| number.to_f64() == Some(parsed))
-        .filter(|number| {
-            number
-                .checked_div(Decimal::ONE_THOUSAND)
-                .and_then(|seconds| seconds.to_f64())
-                == Some(parsed.div(1_000.0_f64))
-        });
+        .filter(|number| number.checked_div(Decimal::ONE_THOUSAND).is_some());
     Some(match exact {
         Some(number) => FloatMilliseconds::Exact(number),
         None => FloatMilliseconds::Approximate(parsed),
