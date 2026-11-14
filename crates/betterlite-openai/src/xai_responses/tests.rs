@@ -198,6 +198,21 @@ fn x_search_keeps_every_handle_date_and_media_field() {
     );
 }
 
+// xAI's type hints say ten handles at most, but the code never counts them
+#[test]
+fn x_handles_are_not_capped_at_the_documented_ten() {
+    let handles = (0..11)
+        .map(|index| format!("handle-{index}"))
+        .collect::<Vec<String>>();
+    let transformed = mapped(json!({
+        "tools": [{"type": "x_search", "allowed_x_handles": handles.clone()}],
+    }));
+    assert_eq!(
+        tools(&transformed),
+        &vec![json!({"type": "x_search", "allowed_x_handles": handles})]
+    );
+}
+
 #[test]
 fn unknown_tools_and_non_objects_pass_through() {
     let function = json!({"type": "function", "name": "f", "parameters": {}});
