@@ -3456,6 +3456,7 @@ dependencies = [
  "jiff",
  "libfuzzer-sys",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
