@@ -2,7 +2,7 @@ import importlib
 import inspect
 from enum import Enum
 from types import ModuleType
-from typing import Final, TypeVar, get_args
+from typing import Final, Protocol, TypeVar, get_args
 
 import pytest
 from pydantic import JsonValue, TypeAdapter
@@ -37,6 +37,7 @@ ALIASES: Final = {
     "meta": ("MuseMode", "MuseAudioEncoding", "MuseSampleRate"),
 }
 RESPONSE_MS_KEY: Final = "_response_ms"
+RESPONSE_MS_VALUE: Final = 5.0
 VERIFY_TYPE_COUNT: Final = 3
 SAMPLE_FIRST: Final = 5
 SAMPLE_SECOND: Final = 2
@@ -51,6 +52,14 @@ class OurSample(LiteLLMPydanticObjectBase):
 class OurResponse(betterlite_base.BaseLiteLLMOpenAIResponseObject):
     first: int = 1
     second: int = 2
+
+
+class HiddenParamsLike(Protocol):
+    def __setitem__(self, key: str, value: JsonValue) -> None: ...
+
+    def model_dump(self) -> dict[str, JsonValue]: ...
+
+    def json(self) -> JsonValue: ...
 
 
 def module_of(module_name: str) -> ModuleType:
@@ -265,7 +274,7 @@ def test_names_triton_empty() -> None:
 
 def test_names_hidden_params() -> None:
     our_class: type = defined_classes("betterlite.types.llms.base")["HiddenParams"]
-    their_class: type = defined_classes("litellm.types.llms.base")["HiddenParams"]
+    their_class: type[HiddenParamsLike] = defined_classes("litellm.types.llms.base")["HiddenParams"]
     ours: JsonValue = dumped_of(our_class, {"model_id": "deployment", "extra_field": 1})
     theirs: JsonValue = dumped_of(their_class, {"model_id": "deployment", "extra_field": 1})
     assert ours == theirs
@@ -282,6 +291,18 @@ def test_names_hidden_params() -> None:
     our_json: JsonValue = hidden.json()
     our_dump: JsonValue = hidden.model_dump()
     assert our_json == our_dump
+    their_adapter: TypeAdapter[HiddenParamsLike] = TypeAdapter(their_class)
+    their_hidden: HiddenParamsLike = their_adapter.validate_python(data)
+    hidden[RESPONSE_MS_KEY] = RESPONSE_MS_VALUE
+    their_hidden[RESPONSE_MS_KEY] = RESPONSE_MS_VALUE
+    their_hidden["added"] = "extra"
+    their_hidden["model_id"] = "other"
+    assert hidden.model_dump()[RESPONSE_MS_KEY] == RESPONSE_MS_VALUE
+    assert their_hidden.model_dump()[RESPONSE_MS_KEY] == RESPONSE_MS_VALUE
+    assert mapping(hidden.json())[RESPONSE_MS_KEY] == RESPONSE_MS_VALUE
+    assert mapping(their_hidden.json())[RESPONSE_MS_KEY] == RESPONSE_MS_VALUE
+    assert hidden.model_dump() == their_hidden.model_dump()
+    assert hidden.json() == their_hidden.json()
     with pytest.raises(AttributeError):
         _ = hidden["absent"]
 
