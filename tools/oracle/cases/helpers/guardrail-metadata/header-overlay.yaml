@@ -1,0 +1,6 @@
+kind: helper
+name: header-overlay
+call:
+  b8994: {"function": "headers", "request_data": {"metadata": {"applied_guardrails": ["pii"], "policy_sources": {"team-policy": "team:acme, reason"}, "semantic-similarity": 0.85}, "litellm_metadata": {"applied_guardrails": ["moderation"], "applied_policies": [], "_pillar_response_headers_trusted": true, "pillar_flagged": true}}}
+env: {}
+compare: {ignore: []}
