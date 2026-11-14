@@ -11,6 +11,7 @@ use super::params::{BridgeCall, ParamsError, build_completion_params, optional_t
 use super::streaming::{EventContent, stream_event};
 use super::{A2AStreamingContext, EventSource, response_to_a2a};
 use crate::provider_selector::{A2AProviderConfig, get_provider_config};
+use crate::watsonx_run::accumulator::MAX_TEXT_BYTES;
 
 mod tests;
 
@@ -25,6 +26,8 @@ where
     Params(#[from] ParamsError),
     #[error("the A2A completion call failed")]
     Completion(#[source] C),
+    #[error("the A2A streamed answer text passed {max} bytes")]
+    TextTooLong { max: usize },
     #[error("the A2A completion event could not be encoded")]
     Encode(#[source] serde_json::Error),
 }
@@ -189,7 +192,16 @@ where
         let mut text = String::new();
         while let Some(next) = chunks.next().await {
             match next {
-                Ok(chunk) => text.push_str(chunk.first_content().unwrap_or_default()),
+                Ok(chunk) => {
+                    let content = chunk.first_content().unwrap_or_default();
+                    if text.len().saturating_add(content.len()) > MAX_TEXT_BYTES {
+                        yield Err(CompletionError::TextTooLong {
+                            max: MAX_TEXT_BYTES,
+                        });
+                        return;
+                    }
+                    text.push_str(content);
+                }
                 Err(error) => {
                     yield Err(CompletionError::Completion(error));
                     return;

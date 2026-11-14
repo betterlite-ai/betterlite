@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_core::agents::json::AgentJson;
 use rstest::rstest;
 
+use crate::completion_bridge::A2A_USER_API_KEY_HASH_PARAM;
 use crate::completion_bridge::completion::CompletionChunk;
 use crate::completion_bridge::dispatch::{
     BridgeError, CompletionError, handle_non_streaming, handle_non_streaming_direct,
@@ -12,9 +13,11 @@ use crate::completion_bridge::params::ParamsError;
 use crate::completion_bridge::tests::Source;
 use crate::completion_bridge::tests::support::{
     TestFailure, bridge_call, chunk, collect_events, litellm_params, model_response, parsed,
-    provider, recorded_calls, recorder, selected_configs, selector_params, send_params, summaries,
+    provider, provider_calls, recorded_calls, recorder, selected_configs, selector_params,
+    send_params, summaries,
 };
 use crate::provider_selector::A2AProviderConfig;
+use crate::watsonx_run::accumulator::MAX_TEXT_BYTES;
 
 #[rstest]
 #[case::pydantic_ai(Some("pydantic_ai_agents"), None, A2AProviderConfig::PydanticAI)]
@@ -394,6 +397,89 @@ async fn streaming_provider_failures_are_a_single_error() {
         &events[0],
         Err(BridgeError::Provider(TestFailure("provider-boom")))
     ));
+}
+
+#[tokio::test]
+async fn provider_configs_receive_the_original_call() {
+    let mut params = selector_params(Some("pydantic_ai_agents"), None);
+    params.insert(A2A_USER_API_KEY_HASH_PARAM.to_owned(), parsed(r#""hash""#));
+    let message = send_params();
+    let mut call = bridge_call("req-1", &message, &params);
+    call.api_base = Some("https://card.example/v1");
+    let dynamic = BTreeMap::from([("X-Trace".to_owned(), "dynamic".to_owned())]);
+    call.agent_extra_headers = Some(&dynamic);
+    let completion = recorder();
+    let providers = provider();
+    let mut source = Source::default();
+    handle_non_streaming(&call, &completion, &providers, &mut source)
+        .await
+        .expect("the fixture dispatch succeeds");
+    let events =
+        collect_events(handle_streaming(&call, &completion, &providers, Source::default()).await)
+            .await;
+    assert!(events.is_empty());
+    let received = provider_calls(&providers);
+    assert_eq!(received.len(), 2);
+    assert_eq!(received[0].litellm_params, params);
+    assert_eq!(received[1].litellm_params, params);
+    assert_eq!(
+        received[0].api_base.as_deref(),
+        Some("https://card.example/v1")
+    );
+    assert_eq!(
+        received[1].api_base.as_deref(),
+        Some("https://card.example/v1")
+    );
+    assert_eq!(received[0].agent_extra_headers.as_ref(), Some(&dynamic));
+    assert_eq!(received[1].agent_extra_headers.as_ref(), Some(&dynamic));
+}
+
+#[tokio::test]
+async fn streaming_stops_after_the_text_cap() {
+    let params = litellm_params(&[]);
+    let message = send_params();
+    let call = bridge_call("req-1", &message, &params);
+    let mut completion = recorder();
+    let full = "x".repeat(MAX_TEXT_BYTES);
+    completion.chunks = Ok(vec![Ok(chunk(&full)), Ok(chunk("y"))]);
+    let providers = provider();
+    let events =
+        collect_events(handle_streaming(&call, &completion, &providers, Source::default()).await)
+            .await;
+    assert_eq!(
+        summaries(&events[..2]).join("|"),
+        "task:submitted|status:working:false"
+    );
+    assert_eq!(events.len(), 3);
+    assert!(matches!(
+        &events[2],
+        Err(BridgeError::Completion(CompletionError::TextTooLong {
+            max: MAX_TEXT_BYTES
+        }))
+    ));
+}
+
+#[tokio::test]
+async fn streaming_accepts_text_exactly_at_the_cap() {
+    let params = litellm_params(&[]);
+    let message = send_params();
+    let call = bridge_call("req-1", &message, &params);
+    let mut completion = recorder();
+    let full = "x".repeat(MAX_TEXT_BYTES);
+    completion.chunks = Ok(vec![Ok(chunk(&full))]);
+    let providers = provider();
+    let events =
+        collect_events(handle_streaming(&call, &completion, &providers, Source::default()).await)
+            .await;
+    assert_eq!(events.len(), 4);
+    let artifact = events[2].as_ref().expect("the artifact is an event");
+    assert_eq!(artifact["result"]["kind"], "artifact-update");
+    assert_eq!(
+        artifact["result"]["artifact"]["parts"][0]["text"]
+            .as_str()
+            .map(str::len),
+        Some(MAX_TEXT_BYTES)
+    );
 }
 
 fn parsed_chunk(text: &str) -> CompletionChunk {

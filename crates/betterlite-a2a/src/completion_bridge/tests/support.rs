@@ -62,10 +62,18 @@ impl CompletionPort for RecordingCompletion {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ProviderCall {
+    pub(crate) litellm_params: BTreeMap<String, AgentJson>,
+    pub(crate) api_base: Option<String>,
+    pub(crate) agent_extra_headers: Option<BTreeMap<String, String>>,
+}
+
 pub(crate) struct RecordingProvider {
     pub(crate) answer: Result<AgentJson, TestFailure>,
     pub(crate) events: Result<Vec<Result<AgentJson, TestFailure>>, TestFailure>,
     pub(crate) configs: Mutex<Vec<A2AProviderConfig>>,
+    pub(crate) calls: Mutex<Vec<ProviderCall>>,
 }
 
 pub(crate) fn provider() -> RecordingProvider {
@@ -75,6 +83,15 @@ pub(crate) fn provider() -> RecordingProvider {
         )),
         events: Ok(Vec::new()),
         configs: Mutex::new(Vec::new()),
+        calls: Mutex::new(Vec::new()),
+    }
+}
+
+fn provider_call(call: &BridgeCall<'_>) -> ProviderCall {
+    ProviderCall {
+        litellm_params: call.litellm_params.clone(),
+        api_base: call.api_base.map(str::to_owned),
+        agent_extra_headers: call.agent_extra_headers.cloned(),
     }
 }
 
@@ -84,24 +101,32 @@ impl A2AProviderDispatch for RecordingProvider {
     fn handle_non_streaming(
         &self,
         config: A2AProviderConfig,
-        _call: &BridgeCall<'_>,
+        call: &BridgeCall<'_>,
     ) -> impl Future<Output = Result<AgentJson, Self::Error>> + Send {
         self.configs
             .lock()
             .expect("the fixture lock is not poisoned")
             .push(config);
+        self.calls
+            .lock()
+            .expect("the fixture lock is not poisoned")
+            .push(provider_call(call));
         ready(self.answer.clone())
     }
 
     fn handle_streaming(
         &self,
         config: A2AProviderConfig,
-        _call: &BridgeCall<'_>,
+        call: &BridgeCall<'_>,
     ) -> impl Future<Output = Result<BridgeEvents<'static, Self::Error>, Self::Error>> + Send {
         self.configs
             .lock()
             .expect("the fixture lock is not poisoned")
             .push(config);
+        self.calls
+            .lock()
+            .expect("the fixture lock is not poisoned")
+            .push(provider_call(call));
         ready(
             self.events
                 .clone()
@@ -165,6 +190,14 @@ pub(crate) fn recorded_calls(completion: &RecordingCompletion) -> Vec<Completion
 pub(crate) fn selected_configs(providers: &RecordingProvider) -> Vec<A2AProviderConfig> {
     providers
         .configs
+        .lock()
+        .expect("the fixture lock is not poisoned")
+        .clone()
+}
+
+pub(crate) fn provider_calls(providers: &RecordingProvider) -> Vec<ProviderCall> {
+    providers
+        .calls
         .lock()
         .expect("the fixture lock is not poisoned")
         .clone()

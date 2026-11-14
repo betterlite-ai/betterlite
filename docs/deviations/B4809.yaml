@@ -12,3 +12,12 @@ deviations:
   - what: A failure inside the streaming completion is the stream's next Err item; LiteLLM raises an exception out of the async generator at the same point, after the task and working events and before the completed status.
     why: Rust streams carry failures in their item type, and the bridge's stream item is Result<AgentJson, BridgeError<...>>; an error item ends the stream exactly where the exception ends LiteLLM's generator, with no artifact or completed status after it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/litellm_completion_bridge/handler.py#L183-L298
+  - what: >-
+      The streaming bridge caps the accumulated artifact text at MAX_TEXT_BYTES (4 MiB, the same bound the
+      Watsonx accumulator applies to agent text) and ends the stream with a TextTooLong error item when the
+      next chunk would push it past the cap. LiteLLM appends every choice-zero delta.content without a limit.
+    why: >-
+      An agent backend that streams without end would otherwise make the gateway buffer the whole response
+      before the artifact event; the cap turns an unbounded stream into an error item after the working
+      status, the same place a completion failure ends the stream.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/litellm_completion_bridge/handler.py#L267-L277
