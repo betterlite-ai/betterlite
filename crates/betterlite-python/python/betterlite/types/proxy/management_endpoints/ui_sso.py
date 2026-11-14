@@ -56,7 +56,6 @@ class MicrosoftGraphAPIUserGroupResponse(TypedDict, total=False):
     value: list[MicrosoftGraphAPIUserGroupDirectoryObject] | None
 
 
-# ast-grep-ignore: no-long-names
 class MicrosoftServicePrincipalTeam(TypedDict, total=False):
     principalDisplayName: str | None
     principalId: str | None
