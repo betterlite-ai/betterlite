@@ -190,11 +190,11 @@ fn insert_remaining_limits(headers: &mut HeaderSet, request_data: &JsonMap) {
     };
     let model_group = metadata.get("model_group");
     let group_text = match model_group {
-        Some(value) if !value.is_null() => match header_text("model_group", value) {
+        Some(value) => match header_text("model_group", value) {
             Some(text) => text,
             None => return,
         },
-        None | Some(_) => "None".to_owned(),
+        None => "None".to_owned(),
     };
     let header_group = model_group.filter(|value| non_empty(value)).map_or_else(
         || "None".to_owned(),

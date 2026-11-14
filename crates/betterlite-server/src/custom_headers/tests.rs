@@ -433,6 +433,15 @@ fn a_spend_sum_outside_the_decimal_range_keeps_the_spend() {
 }
 
 #[test]
+fn a_zero_response_cost_leaves_the_spend_text_unchanged() {
+    let headers = build(json!({"response_cost": "0.000"}));
+    assert_eq!(
+        header(&headers, "x-litellm-key-spend").as_deref(),
+        Some("0.0")
+    );
+}
+
+#[test]
 fn an_input_cost_difference_outside_the_decimal_range_leaves_the_header_out() {
     let headers = build(json!({
         "logging": {"call_type": "completion", "cost_breakdown": {
@@ -640,6 +649,13 @@ fn remaining_limits_use_none_when_the_model_group_is_missing() {
     }));
     assert_eq!(
         header(&headers, "x-litellm-key-remaining-requests-None").as_deref(),
+        Some("7")
+    );
+    let explicit_null = build(json!({
+        "request_data": {"metadata": {"model_group": null, "litellm-key-remaining-requests-None": 7}}
+    }));
+    assert_eq!(
+        header(&explicit_null, "x-litellm-key-remaining-requests-None").as_deref(),
         Some("7")
     );
 }
