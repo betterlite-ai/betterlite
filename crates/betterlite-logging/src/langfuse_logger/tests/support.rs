@@ -91,13 +91,11 @@ pub(crate) fn lookup(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
 
 pub(crate) fn settings(variables: &[(&str, &str)]) -> Settings {
     let lookup = lookup(variables);
-    ConfigLoader {
-        lookup: lookup.clone(),
-    }
-    .load("")
-    .expect("the langfuse settings load")
-    .sections
-    .langfuse_settings
+    ConfigLoader { lookup }
+        .load("")
+        .expect("the langfuse settings load")
+        .sections
+        .langfuse_settings
 }
 
 pub(crate) fn proxied() -> ProxiedClient {
@@ -456,7 +454,7 @@ pub(crate) fn object(value: Json) -> IndexMap<String, Json> {
 
 pub(crate) fn cache() -> DynamicLoggerCache<Arc<LangFuseLogger>> {
     let removal: RemovalEffect<Arc<LangFuseLogger>> = Arc::new(|logger| logger.stop());
-    DynamicLoggerCache::new(removal, Arc::new(|| 0.0))
+    DynamicLoggerCache::new(removal, Arc::new(|| 0.0_f64))
 }
 
 pub(crate) fn secret(value: &str) -> SecretString {

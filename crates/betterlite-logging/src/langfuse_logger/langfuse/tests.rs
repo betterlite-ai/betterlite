@@ -7,7 +7,11 @@ use crate::langfuse_logger::langfuse::{
     LangFuseLogger, LangfuseLoggedEvent, LangfuseLoggingConfig,
 };
 
-fn assert_send_sync<T: Send + Sync>() {}
+fn assert_send_sync<T>()
+where
+    T: Send + Sync,
+{
+}
 
 #[test]
 fn type_definitions() {
