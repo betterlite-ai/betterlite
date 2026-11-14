@@ -13,7 +13,7 @@ from betterlite.types.interactions.enums import (
 class Function(BaseModel):
     name: str | None = None
     description: str | None = None
-    parameters: dict[str, JsonValue] | None = None
+    parameters: JsonValue = None
     type: Literal["function"]
 
 

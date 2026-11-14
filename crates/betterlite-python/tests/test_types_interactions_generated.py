@@ -36,6 +36,7 @@ EMPTY_PAYLOAD: Final[dict[str, JsonValue]] = {}
 AWARE_TIME: Final = "2026-01-01T00:00:00Z"
 NAIVE_TIME: Final = "2026-01-01T00:00:00"
 TAG_ERROR: Final = "does not match any of the expected tags"
+JSON_SCHEMA_REF: Final = "#/$defs/JsonValue"
 
 
 CONTENT_PAYLOADS: Final[tuple[dict[str, JsonValue], ...]] = (
@@ -66,6 +67,9 @@ CONTENT_PAYLOADS: Final[tuple[dict[str, JsonValue], ...]] = (
 TOOL_PAYLOADS: Final[tuple[dict[str, JsonValue], ...]] = (
     {"type": "function", "name": "f"},
     {"type": "function", "parameters": {"type": "object", "properties": {}}},
+    {"type": "function", "parameters": True},
+    {"type": "function", "parameters": ["a"]},
+    {"type": "function", "parameters": "s"},
     {"type": "google_search"},
     {"type": "code_execution"},
     {"type": "url_context"},
@@ -245,15 +249,37 @@ def definition_names(schema: JsonValue) -> list[str]:
     return sorted(name for name in names if name != "JsonValue")
 
 
+def schema_shape(value: JsonValue) -> JsonValue:
+    match value:
+        case dict():
+            return dict_shape(value)
+        case list():
+            return [schema_shape(item) for item in value]
+        case str() | bool() | int() | float() | None:
+            return value
+
+
+def dict_shape(value: dict[str, JsonValue]) -> JsonValue:
+    found: dict[str, JsonValue] = {}
+    for key, item in value.items():
+        if key in {"title", "description"}:
+            continue
+        if key == "$ref" and item == JSON_SCHEMA_REF:
+            found["anyOf"] = [{}, {"type": "null"}]
+            continue
+        if key == "additionalProperties" and item == {"$ref": JSON_SCHEMA_REF}:
+            found[key] = True
+            continue
+        found[key] = schema_shape(item)
+    return found
+
+
 def schema_view(cls: type) -> dict[str, JsonValue]:
     schema: dict[str, JsonValue] = schema_of(cls)
     properties: dict[str, JsonValue] = mapping(schema.get("properties"))
     fields: dict[str, JsonValue] = {}
     for name, property_schema in properties.items():
-        fields[name] = {
-            "literals": text_list(schema_literals(property_schema)),
-            "default": mapping(property_schema).get("default"),
-        }
+        fields[name] = schema_shape(property_schema)
     view: dict[str, JsonValue] = {
         "required": text_list(strings(schema.get("required"))),
         "keys": text_list(sorted(properties)),
