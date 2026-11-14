@@ -364,6 +364,29 @@ async fn source_failure_after_a_chunk_is_the_only_output() {
 }
 
 #[tokio::test]
+async fn source_failure_after_a_tool_chunk_skips_the_inspection() {
+    let translation = FakeTranslation::planned(vec![Plan::Pass]);
+    let guardrail = FakeGuardrail;
+    let mut data = BTreeMap::new();
+    let keys = BTreeMap::new();
+    let outputs = collect_results(
+        params(&translation, &guardrail, &mut data, &keys),
+        vec![Ok(tool_chunk()), Err(SourceFailure)],
+    )
+    .await;
+    assert_eq!(
+        outputs,
+        vec![
+            Ok(item(tool_chunk())),
+            Err(StreamLoopError::Source {
+                detail: SourceFailure.to_string(),
+            }),
+        ]
+    );
+    assert!(translation.calls().is_empty());
+}
+
+#[tokio::test]
 async fn source_failure_keeps_the_queued_output_before_the_error() {
     let translation = FakeTranslation::planned(vec![Plan::Rewrite {
         index: 0,
