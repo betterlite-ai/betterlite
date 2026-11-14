@@ -115,10 +115,9 @@ pub fn unresolved_digests(
 pub fn daily_owners(rows: &[DailyOwnerRow], keys: &BTreeSet<String>) -> BTreeMap<String, String> {
     let mut owners = BTreeMap::new();
     for row in rows {
-        if !keys.contains(&row.hashed_api_key) {
-            continue;
-        }
-        if let Some(owner) = unanimous(row.first_owner.as_deref(), row.last_owner.as_deref()) {
+        if keys.contains(&row.hashed_api_key)
+            && let Some(owner) = unanimous(row.first_owner.as_deref(), row.last_owner.as_deref())
+        {
             owners.insert(row.hashed_api_key.clone(), owner);
         }
     }
