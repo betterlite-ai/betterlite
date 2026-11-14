@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Protocol
 
@@ -78,7 +79,9 @@ class EmbeddingConfig(Protocol):
 
 
 CHAT: ChatConfig = HostedVLLMChatConfig()
-EMBEDDING: EmbeddingConfig = HostedVLLMEmbeddingConfig()
+# the embedding config inherits an untyped __init__, so bind the class as a typed factory
+EMBEDDING_FACTORY: Callable[[], EmbeddingConfig] = HostedVLLMEmbeddingConfig
+EMBEDDING: EmbeddingConfig = EMBEDDING_FACTORY()
 
 
 class Recorder:

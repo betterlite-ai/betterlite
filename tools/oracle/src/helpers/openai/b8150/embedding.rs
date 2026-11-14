@@ -95,6 +95,7 @@ fn response_failure(error: HostedVllmEmbeddingError) -> Box<HelperError> {
             code: None,
             message,
         }),
-        other => invalid(other.to_string()),
+        other @ (HostedVllmEmbeddingError::MissingApiBase
+        | HostedVllmEmbeddingError::Shape { .. }) => invalid(other.to_string()),
     }
 }
