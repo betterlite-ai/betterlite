@@ -7,15 +7,11 @@ pub async fn apply_reservation_aware_tokens(
     adjustments: &TokenAdjustments,
     operations: &[ReservationAwareIncrement],
 ) -> Result<(), TokenAdjustmentError> {
-    for operation in operations {
-        if operation.window_key.is_none() || operation.expected_window_start.is_none() {
-            adjustments.usage.increment(&operation.operation).await;
-        }
-    }
     let mut local: Vec<ReservationAwareIncrement> = Vec::new();
     let mut redis: Vec<ReservationAwareIncrement> = Vec::new();
     for operation in operations {
         if operation.window_key.is_none() || operation.expected_window_start.is_none() {
+            adjustments.usage.increment(&operation.operation).await;
             continue;
         }
         match operation.reservation_backend {
