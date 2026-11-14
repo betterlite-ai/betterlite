@@ -81,7 +81,7 @@ fn cli_metadata_keeps_only_known_users_with_the_full_key_as_alias() {
             KeyMetadata {
                 key_alias: Some("cli-session-known".to_owned()),
                 user_id: Some("known".to_owned()),
-                ..KeyMetadata::default()
+                ..meta_with(None)
             }
         )])
     );
@@ -112,7 +112,7 @@ fn user(email: &str, teams: &[&str]) -> UserDetails {
 fn meta_with(user_id: Option<&str>) -> KeyMetadata {
     KeyMetadata {
         user_id: user_id.map(str::to_owned),
-        ..KeyMetadata::default()
+        ..meta_with(None)
     }
 }
 
@@ -279,7 +279,7 @@ fn unresolved_digests_are_the_requested_ones_without_metadata() {
         "a".to_owned(),
         KeyMetadata {
             key_alias: Some("alias".to_owned()),
-            ..KeyMetadata::default()
+            ..meta_with(None)
         },
     )]);
     let digests = BTreeSet::from(["a".to_owned(), "b".to_owned()]);
@@ -371,7 +371,7 @@ fn recovered_alias(alias: Option<&str>) -> BTreeMap<String, KeyMetadata> {
             key_alias: alias.map(str::to_owned),
             team_id: Some("recovered-team".to_owned()),
             user_email: Some("recovered@example.com".to_owned()),
-            ..KeyMetadata::default()
+            ..meta_with(None)
         },
     )])
 }
@@ -451,7 +451,7 @@ fn empty_recovered_alias_and_team_keep_the_row_values() {
         KeyMetadata {
             key_alias: Some(String::new()),
             team_id: Some(String::new()),
-            ..KeyMetadata::default()
+            ..meta_with(None)
         },
     )]);
     let projected = row_with_recovered_fields(&row, &recovered, &ExportFields::default());
@@ -488,7 +488,7 @@ fn row_email_wins_only_when_it_is_truthy(#[case] email: JsonData, #[case] row_wi
         "key".to_owned(),
         KeyMetadata {
             user_email: Some("recovered@example.com".to_owned()),
-            ..KeyMetadata::default()
+            ..meta_with(None)
         },
     )]);
     let projected = row_with_recovered_fields(&row, &recovered, &ExportFields::default());
@@ -773,7 +773,7 @@ async fn postgres_cli_keys_recover_the_existing_user_only() {
             KeyMetadata {
                 key_alias: Some("cli-session-known".to_owned()),
                 user_id: Some("known".to_owned()),
-                ..KeyMetadata::default()
+                ..meta_with(None)
             }
         )])
     );
@@ -797,7 +797,7 @@ async fn postgres_user_detail_read_binds_one_array_beyond_one_chunk() {
                 format!("key-{index}"),
                 KeyMetadata {
                     user_id: Some(format!("user-{index}")),
-                    ..KeyMetadata::default()
+                    ..meta_with(None)
                 },
             )
         })

@@ -63,8 +63,10 @@ pub fn cli_metadata(
                 key.clone(),
                 KeyMetadata {
                     key_alias: Some(key.clone()),
+                    team_id: None,
                     user_id: Some(user_id.clone()),
-                    ..KeyMetadata::default()
+                    user_email: None,
+                    key_exists: None,
                 },
             )
         })

@@ -1,6 +1,6 @@
-// LiteLLM's fullmatch(r"[a-fA-F0-9]{64}") accepts exactly 64 ASCII hex digits.
 #[must_use]
 pub fn is_valid_sha256_hash(value: &str) -> bool {
+    // LiteLLM's fullmatch(r"[a-fA-F0-9]{64}") accepts exactly 64 ASCII hex digits.
     if value.len() != 64 {
         return false;
     }

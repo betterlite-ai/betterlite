@@ -64,7 +64,10 @@ fn value<T>(row: &Row, column: &str) -> Result<T, DriverError>
 where
     T: for<'row> FromSql<'row>,
 {
-    row.try_get(column).map_err(|driver| DriverError { driver })
+    match row.try_get(column) {
+        Ok(value) => Ok(value),
+        Err(driver) => Err(DriverError { driver }),
+    }
 }
 
 #[must_use]
@@ -90,7 +93,8 @@ pub fn token_metadata(
                     key_alias: row.key_alias.clone(),
                     team_id: row.team_id.clone(),
                     user_id: row.user_id.clone(),
-                    ..KeyMetadata::default()
+                    user_email: None,
+                    key_exists: None,
                 },
             )
         })
