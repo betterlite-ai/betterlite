@@ -89,11 +89,6 @@ pub(super) async fn quiesce(signal: &watch::Sender<GateState>) {
     );
 }
 
-pub(super) async fn wait_true(signal: &watch::Sender<bool>) {
-    let mut viewer = signal.subscribe();
-    drop(viewer.wait_for(|value| *value).await);
-}
-
 // One recorder per stream, so each probe observes only its own billing calls
 pub(super) struct StreamState {
     pub(super) recorder: Recorder,

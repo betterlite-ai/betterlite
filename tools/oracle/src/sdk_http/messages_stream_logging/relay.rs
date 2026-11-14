@@ -24,7 +24,7 @@ use super::call::{
 use super::outcome::Flag;
 use super::recording::{StepClock, Warnings, drain, logging_object};
 use super::session::await_parked;
-use super::state::{Gate, GateSource, StreamState, quiesce, wait_true};
+use super::state::{Gate, GateSource, StreamState, quiesce};
 use crate::sdk_http::error::SdkHttpError;
 use crate::sdk_http::result::SdkResult;
 use crate::sdk_http::vector_query_embedding::outbound_client;
@@ -181,8 +181,14 @@ impl Session {
     async fn wait(&self, until: WaitUntil) {
         match until {
             WaitUntil::Idle => quiesce(&self.gate.state).await,
-            WaitUntil::Parked => wait_true(&self.state.recorded).await,
-            WaitUntil::Hook => wait_true(&self.state.fired).await,
+            WaitUntil::Parked => {
+                let mut viewer = self.state.recorded.subscribe();
+                drop(viewer.wait_for(|value| *value).await);
+            }
+            WaitUntil::Hook => {
+                let mut viewer = self.state.fired.subscribe();
+                drop(viewer.wait_for(|value| *value).await);
+            }
         }
     }
 

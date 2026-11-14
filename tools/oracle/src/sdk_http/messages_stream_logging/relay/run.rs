@@ -7,7 +7,6 @@ use super::super::Http;
 use super::super::recording::Warnings;
 use super::Session;
 use super::call::{MessagesNativeStreamCall, Observation, RelayOp, RelayStep, StepOutcome};
-use super::state::wait_true;
 use crate::sdk_http::error::SdkHttpError;
 
 pub(super) struct Run<'run> {
@@ -46,7 +45,8 @@ impl Run<'_> {
     // Billing for every stream is parked or queued by its pump; the worker is drained once all ran
     async fn settle(&self) -> Result<Observation, SdkHttpError> {
         for session in self.sessions.values() {
-            wait_true(&session.state.recorded).await;
+            let mut viewer = session.state.recorded.subscribe();
+            drop(viewer.wait_for(|value| *value).await);
             session.worker.flush().await;
         }
         let streams = self
