@@ -63,8 +63,10 @@ fn header_map(headers: &[(String, String)]) -> Result<HeaderMap, CallError> {
     Ok(map)
 }
 
+// LiteLLM reads response.text, which decodes any bytes; betterlite refuses bytes that are not UTF-8
 fn error_body(body: &[u8]) -> String {
-    let text = String::from_utf8_lossy(body);
+    let text = String::from_utf8(body.to_vec())
+        .unwrap_or_else(|error| format!("{} bytes that are not UTF-8", error.as_bytes().len()));
     let kept: String = text.chars().take(ERROR_BODY_CHARS).collect();
     if text.chars().count() > ERROR_BODY_CHARS {
         format!("{kept}... (truncated)")

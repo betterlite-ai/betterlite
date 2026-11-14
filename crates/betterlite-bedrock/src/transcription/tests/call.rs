@@ -9,7 +9,7 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::transcription::transport::TranscriptionTransport;
-use http::HeaderMap;
+use http::{HeaderMap, Method};
 use secrecy::SecretString;
 
 use super::support::{env, params};
@@ -153,7 +153,7 @@ async fn host_supplied_call_signs_and_decodes_the_reply() {
     let sent = binding.transport.sent();
     assert_eq!(sent.len(), 1);
     let request = &sent[0];
-    assert_eq!(request.method, http::Method::POST);
+    assert_eq!(request.method, Method::POST);
     assert_eq!(
         request.url.as_str(),
         "https://bedrock-runtime.us-east-1.amazonaws.com/model/m/converse"
@@ -180,7 +180,11 @@ async fn host_supplied_call_signs_and_decodes_the_reply() {
         panic!("an object body is expected");
     };
     assert!(fields.contains_key("messages") && fields.contains_key("inferenceConfig"));
-    assert!(String::from_utf8_lossy(body).contains(r#""bytes":"QQ==""#));
+    assert!(
+        String::from_utf8(body.clone())
+            .unwrap()
+            .contains(r#""bytes":"QQ==""#)
+    );
     assert!(binding.credentials.asked.lock().unwrap().is_empty());
 }
 
