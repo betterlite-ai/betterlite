@@ -9,7 +9,13 @@ use super::models::{ESTIMATE_VERSION, EstimatorModel, RESPONSE_CONTRACT};
 use super::options::{EstimatorOptions, configured_models, estimator_options};
 
 #[derive(Serialize)]
-struct CacheContext<'a>(&'a str, &'a str, &'a str, &'a str, &'a EstimatorOptions);
+struct CacheContext<'text>(
+    &'text str,
+    &'text str,
+    &'text str,
+    &'text str,
+    &'text EstimatorOptions,
+);
 
 pub async fn cache_context<Predicates>(
     settings: &ROISettings,

@@ -47,6 +47,6 @@ pub fn configured_models(
 ) -> Vec<EstimatorModel> {
     models.map_or_else(
         || vec![(settings.estimator_model.clone(), None)],
-        |resolved| resolved.to_vec(),
+        <[EstimatorModel]>::to_vec,
     )
 }

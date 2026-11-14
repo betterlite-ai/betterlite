@@ -14,8 +14,8 @@ const PROMPT: &str = "Estimate this pull request.";
 
 #[derive(Serialize)]
 struct ObjectFixture {
-    a: bool,
-    b: BTreeMap<String, i32>,
+    flag: bool,
+    map: BTreeMap<String, i32>,
 }
 
 #[derive(Serialize)]
@@ -100,10 +100,13 @@ fn json_dumps_text_matches_json_dumps_default_separators() {
         r#"[1, "x", null]"#
     );
     let object = ObjectFixture {
-        a: true,
-        b: BTreeMap::new(),
+        flag: true,
+        map: BTreeMap::new(),
     };
-    assert_eq!(json_dumps_text(&object).unwrap(), r#"{"a": true, "b": {}}"#);
+    assert_eq!(
+        json_dumps_text(&object).unwrap(),
+        r#"{"flag": true, "map": {}}"#
+    );
     let title = TitleFixture {
         title: "\u{e9}".to_owned(),
     };

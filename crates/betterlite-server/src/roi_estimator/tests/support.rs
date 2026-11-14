@@ -21,19 +21,19 @@ pub(super) const OK_CONTENT: &str = r#"{"hours": 3.5, "reasoning": "Small change
 pub(super) const EVIDENCE: &str = r#"{"repo": "octocat/hello", "number": 12, "title": "Add the thing", "body": "Line one\nline two", "changes": {"additions": 10, "deletions": 2, "files": 3, "commits": 2}, "files": [{"filename": "a.py", "status": "added", "additions": 10, "deletions": 0}, {"filename": null, "status": null, "additions": null, "deletions": null}], "commits": [{"sha": "abc", "message": "first", "additions": 5}, {"sha": "def", "message": "second", "changed_files": null}]}"#;
 
 #[derive(Serialize)]
-struct CompletionFixture<'a> {
-    choices: Vec<ChoiceFixture<'a>>,
+struct CompletionFixture<'wire> {
+    choices: Vec<ChoiceFixture<'wire>>,
 }
 
 #[derive(Serialize)]
-struct ChoiceFixture<'a> {
-    finish_reason: Option<&'a str>,
-    message: MessageFixture<'a>,
+struct ChoiceFixture<'wire> {
+    finish_reason: Option<&'wire str>,
+    message: MessageFixture<'wire>,
 }
 
 #[derive(Serialize)]
-struct MessageFixture<'a> {
-    content: Option<&'a str>,
+struct MessageFixture<'wire> {
+    content: Option<&'wire str>,
 }
 
 pub(super) struct ModelSupport {
@@ -120,7 +120,7 @@ pub(super) fn settings(model: &str, prompt: &str) -> ROISettings {
 
 pub(super) fn assert_hours(estimate: &ROIEstimate, expected: f64) {
     let hours = estimate.hours.expect("the estimate carries hours");
-    assert!((hours - expected).abs() < f64::EPSILON);
+    assert_eq!(hours.to_bits(), expected.to_bits());
 }
 
 pub(super) fn completion(raw_json: &str) -> CompletionObject {

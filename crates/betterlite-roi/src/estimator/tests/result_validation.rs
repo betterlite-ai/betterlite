@@ -14,7 +14,7 @@ fn parse_result(raw: &str) -> Result<ROIEstimatorResult, serde_json::Error> {
 }
 
 fn assert_hours(result: &ROIEstimatorResult, expected: f64) {
-    assert!((result.hours - expected).abs() < f64::EPSILON);
+    assert_eq!(result.hours.to_bits(), expected.to_bits());
 }
 
 #[rstest]
