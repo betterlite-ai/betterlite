@@ -11,8 +11,8 @@ use secrecy::SecretString;
 use uuid::Uuid;
 
 use super::chat::{
-    BASE_OPENAI_PARAMS, ChatTransform, DeepInfraChatSettings, MapRequest, map_openai_params,
-    supported_openai_params, transform_request,
+    ChatTransform, DeepInfraChatSettings, MapRequest, map_openai_params, supported_openai_params,
+    transform_request,
 };
 use super::rerank::response::{
     BaseLlmException, LoggingFailure, RerankDecodeError, RerankLogging, ResponseRequest,
@@ -90,9 +90,25 @@ fn chat_transform(
 
 #[test]
 fn the_supported_list_is_the_pinned_list_with_reasoning_last() {
-    let base: Vec<&str> = BASE_OPENAI_PARAMS.split_whitespace().collect();
-    assert_eq!(supported_openai_params(false), base);
-    let mut expected = base.clone();
+    let pinned = [
+        "stream",
+        "frequency_penalty",
+        "function_call",
+        "functions",
+        "logit_bias",
+        "max_tokens",
+        "max_completion_tokens",
+        "n",
+        "presence_penalty",
+        "stop",
+        "temperature",
+        "top_p",
+        "response_format",
+        "tools",
+        "tool_choice",
+    ];
+    assert_eq!(supported_openai_params(false), pinned);
+    let mut expected = pinned.to_vec();
     expected.push("reasoning_effort");
     assert_eq!(supported_openai_params(true), expected);
 }
@@ -668,6 +684,9 @@ fn the_post_call_hook_runs_between_the_json_parse_and_the_field_reads() {
 // rust_decimal cannot hold 1e300 exactly, so the score conversion fails and the supplied response comes back
 #[case::score_past_the_decimal_range(b"{\"scores\": [1e300]}".as_slice())]
 #[case::request_id_not_a_string(b"{\"request_id\": 4}".as_slice())]
+#[case::request_id_true(b"{\"request_id\": true}".as_slice())]
+#[case::request_id_in_a_list(b"{\"request_id\": [1]}".as_slice())]
+#[case::request_id_in_an_object(b"{\"request_id\": {\"a\": 1}}".as_slice())]
 fn a_failed_projection_returns_the_supplied_response(#[case] body: &[u8]) {
     let projected = project(body, &mut Recording::new(false), supplied_response());
     assert_eq!(projected.id.as_deref(), Some("supplied"));
@@ -680,6 +699,23 @@ fn a_failed_projection_returns_the_supplied_response(#[case] body: &[u8]) {
         projected.hidden_params.get("model"),
         Some(&ModelJson::Text(String::from("rerank-model")))
     );
+}
+
+#[rstest]
+#[case::null(r#"{"request_id": null}"#)]
+#[case::bool_false(r#"{"request_id": false}"#)]
+#[case::zero(r#"{"request_id": 0}"#)]
+#[case::negative_zero(r#"{"request_id": -0.0}"#)]
+#[case::empty_text(r#"{"request_id": ""}"#)]
+#[case::empty_list(r#"{"request_id": []}"#)]
+#[case::empty_object(r#"{"request_id": {}}"#)]
+fn a_falsey_request_id_becomes_the_generated_uuid(#[case] body: &str) {
+    let projected = project(
+        body.as_bytes(),
+        &mut Recording::new(false),
+        RerankResponse::default(),
+    );
+    assert_eq!(projected.id, Some(generated().to_string()));
 }
 
 #[test]
