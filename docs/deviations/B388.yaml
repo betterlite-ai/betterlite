@@ -9,3 +9,6 @@ deviations:
   - what: An unknown key under adaptive_router_config or model_info.adaptive_router_preferences fails the config load instead of being ignored.
     why: Rule no-silent-drops requires an error that names the key; pydantic's BaseModel ignores extras, so a misspelled weight or strength would otherwise leave the adaptive router misconfigured without a message.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L1221-L1245
+  - what: model_info.adaptive_router_preferences is validated on every deployment at config load, while LiteLLM validates it only for the models an adaptive router lists in available_models.
+    why: The config loader types the whole model_list in one pass, so a stale preferences block on a model no router uses fails the load instead of staying dormant until a router references it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9412-L9425

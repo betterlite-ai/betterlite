@@ -4,6 +4,13 @@ use rstest::rstest;
 
 use super::classifier::Classifier;
 use super::config::{AdaptiveRouterWeights, resolve};
+use super::constants::{
+    ADAPTIVE_MODEL_HEADER, BASE_TIER_WEIGHT, CHOSEN_MODEL_KEY, COLD_START_MASS,
+    DEFAULT_COST_WEIGHT, DEFAULT_QUALITY_WEIGHT, LOOP_REPEAT_THRESHOLD, MIN_QUALITY_TIER_HEADER,
+    MIN_QUALITY_TIER_METADATA_KEY, MIN_TURNS_FOR_CLEAN_CREDIT, MISALIGNMENT_JACCARD_THRESHOLD,
+    OWNER_CACHE_TTL_SECONDS, SAMPLE_CAP, SIGNAL_GATE_MIN_MESSAGES, STAGNATION_JACCARD_NEAR_DUP,
+    STRENGTH_BONUS, TOOL_CALL_HISTORY_MAX,
+};
 use super::error::AdaptiveClassificationError;
 use super::minimum_quality::minimum_quality_tier;
 use super::request_type::RequestType;
@@ -201,6 +208,31 @@ fn classifier_keeps_the_first_two_thousand_characters() {
     assert_eq!(classify(&multibyte), RequestType::CodeGeneration);
     let past_boundary = format!("{} write python", "é".repeat(1990));
     assert_eq!(classify(&past_boundary), RequestType::General);
+}
+
+#[test]
+fn constants_keep_the_pinned_values() {
+    assert_eq!(DEFAULT_QUALITY_WEIGHT.to_bits(), 0.7_f64.to_bits());
+    assert_eq!(DEFAULT_COST_WEIGHT.to_bits(), 0.3_f64.to_bits());
+    assert_eq!(BASE_TIER_WEIGHT.map(|entry| entry.0), [1, 2, 3]);
+    assert_eq!(
+        BASE_TIER_WEIGHT.map(|entry| entry.1.to_bits()),
+        [0.3_f64.to_bits(), 0.5_f64.to_bits(), 0.7_f64.to_bits()]
+    );
+    assert_eq!(STRENGTH_BONUS.to_bits(), 0.3_f64.to_bits());
+    assert_eq!(COLD_START_MASS.to_bits(), 10.0_f64.to_bits());
+    assert_eq!(SAMPLE_CAP, 200);
+    assert_eq!(MIN_TURNS_FOR_CLEAN_CREDIT, 3);
+    assert_eq!(OWNER_CACHE_TTL_SECONDS, 86_400);
+    assert_eq!(SIGNAL_GATE_MIN_MESSAGES, 4);
+    assert_eq!(MISALIGNMENT_JACCARD_THRESHOLD.to_bits(), 0.45_f64.to_bits());
+    assert_eq!(STAGNATION_JACCARD_NEAR_DUP.to_bits(), 0.5_f64.to_bits());
+    assert_eq!(LOOP_REPEAT_THRESHOLD, 3);
+    assert_eq!(TOOL_CALL_HISTORY_MAX, 20);
+    assert_eq!(MIN_QUALITY_TIER_HEADER, "x-litellm-min-quality-tier");
+    assert_eq!(MIN_QUALITY_TIER_METADATA_KEY, "min_quality_tier");
+    assert_eq!(CHOSEN_MODEL_KEY, "adaptive_router_chosen_model");
+    assert_eq!(ADAPTIVE_MODEL_HEADER, "x-litellm-adaptive-router-model");
 }
 
 #[rstest]
