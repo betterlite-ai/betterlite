@@ -78,31 +78,21 @@ pub(super) fn replace_last_user_message(
     Ok(())
 }
 
-// The first choice whose message carries a non-empty string content, as LiteLLM scans
+// The first chat choice whose message carries a non-empty string content, as LiteLLM scans
 pub(super) fn message_content(response: &GuardrailValue) -> Result<Option<&str>, NomaError> {
     let Some(fields) = as_object(response) else {
         return Ok(None);
     };
-    let choices = match fields.get("choices") {
-        None | Some(GuardrailValue::Null) => return Ok(None),
-        Some(GuardrailValue::Array(choices)) => choices,
-        Some(_) => {
-            return Err(NomaError::ResponseField { field: "choices" });
-        }
+    let Some(GuardrailValue::Array(choices)) = fields.get("choices") else {
+        return Ok(None);
     };
     for choice in choices {
-        let Some(choice_fields) = as_object(choice) else {
-            return Err(NomaError::ResponseField { field: "choices" });
-        };
-        let message = match choice_fields.get("message") {
-            None | Some(GuardrailValue::Null) => {
-                return Err(NomaError::ResponseField {
-                    field: "choices.message",
-                });
-            }
-            Some(message) => as_object(message).ok_or(NomaError::ResponseField {
-                field: "choices.message",
-            })?,
+        // A choice without a message object is no chat choice, so LiteLLM skips it
+        let Some(message) = as_object(choice)
+            .and_then(|choice_fields| choice_fields.get("message"))
+            .and_then(as_object)
+        else {
+            continue;
         };
         let content = match message.get("content") {
             None | Some(GuardrailValue::Null) => continue,

@@ -4,6 +4,8 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
+use super::error::NomaError;
+
 // LiteLLM's scan answer; the provider may add fields, which ride along in `rest`
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub struct ScanResponse {
@@ -25,6 +27,15 @@ pub struct ScanResponse {
     pub scan_result: Option<Option<GuardrailValue>>,
     #[serde(flatten)]
     pub rest: BTreeMap<String, GuardrailValue>,
+}
+
+impl ScanResponse {
+    // Parses through a JSON value first, so a repeated key keeps its last value as in Python
+    pub fn from_body(body: &[u8]) -> Result<Self, NomaError> {
+        let parsed =
+            serde_json::from_slice(body).map_err(|source| NomaError::ResponseJson { source })?;
+        serde_json::from_value(parsed).map_err(|source| NomaError::ResponseShape { source })
+    }
 }
 
 #[derive(Debug, Serialize)]

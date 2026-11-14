@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -7,6 +9,7 @@ use rstest::rstest;
 
 use crate::guardrail_records::record::GuardrailStatus;
 use crate::noma_scan_policy::error::NomaError;
+use crate::noma_scan_policy::wire::ScanResponse;
 use crate::noma_scan_policy::{DEFAULT_APPLICATION_ID, ScanCallContext};
 
 use super::support::{
@@ -193,6 +196,30 @@ async fn requests_without_scannable_messages_skip_the_api(#[case] body: &str) {
         .unwrap();
     assert_eq!(outcome, None);
     assert_eq!(request_count(&mock), 0);
+    assert_eq!(model_response, value(body));
+}
+
+#[tokio::test]
+async fn a_chat_choice_after_a_non_chat_choice_is_scanned() {
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let policy = policy(&mock.base);
+    let mut request_data = data(USER_MESSAGES);
+    let mut model_response = value(
+        r#"{"id": "resp-1", "choices": [{"delta": {"content": "skip"}}, {"message": {"content": "scan me"}}]}"#,
+    );
+    let user_auth = data("{}");
+    let extra_data = data("{}");
+    policy
+        .process_llm_response_check(
+            &mut request_data,
+            &mut model_response,
+            context(&user_auth, &extra_data),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    let seen = captured(&mock);
+    assert_eq!(parts(&seen.input[0])[0].text, "scan me");
 }
 
 #[rstest]
@@ -242,6 +269,35 @@ async fn the_configured_timeout_ends_a_slow_scan() {
     settings.api_base = Some(mock.base.clone());
     settings.timeout = Some(Duration::from_millis(50));
     let policy = policy_with(settings);
+    let mut request_data = data(USER_MESSAGES);
+    let user_auth = data("{}");
+    let extra_data = data("{}");
+    let error = policy
+        .process_user_message_check(&mut request_data, context(&user_auth, &extra_data))
+        .await
+        .unwrap_err();
+    let NomaError::Transport { source } = error else {
+        panic!("expected a transport error");
+    };
+    assert!(source.is_timeout());
+    assert!(records(&request_data).is_empty());
+}
+
+#[test]
+fn replays_the_noma_scan_response_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/noma_scan_response");
+    let paths: Vec<_> = fs::read_dir(corpus).unwrap().collect();
+    assert!(!paths.is_empty());
+    assert!(paths.into_iter().all(|entry| {
+        let bytes = fs::read(entry.unwrap().path()).unwrap();
+        ScanResponse::from_body(&bytes).is_ok()
+    }));
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_unset_timeout_still_ends_a_stalled_scan() {
+    let mock = slow_noma(Duration::from_secs(700)).await;
+    let policy = policy(&mock.base);
     let mut request_data = data(USER_MESSAGES);
     let user_auth = data("{}");
     let extra_data = data("{}");
@@ -365,6 +421,12 @@ async fn llm_response_check_scans_the_first_nonempty_content(
 #[case::empty_content(r#"{"id": "resp-1", "choices": [{"message": {"content": ""}}]}"#)]
 #[case::null_content(r#"{"id": "resp-1", "choices": [{"message": {"content": null}}]}"#)]
 #[case::no_content(r#"{"id": "resp-1", "choices": [{"message": {}}]}"#)]
+#[case::choices_not_a_list(r#"{"id": "resp-1", "choices": "x"}"#)]
+#[case::choice_not_an_object(r#"{"id": "resp-1", "choices": [7]}"#)]
+#[case::message_not_an_object(r#"{"id": "resp-1", "choices": [{"message": 7}]}"#)]
+#[case::null_message(r#"{"id": "resp-1", "choices": [{"message": null}]}"#)]
+#[case::text_completion(r#"{"id": "resp-1", "choices": [{"text": "hi"}]}"#)]
+#[case::streamed_delta(r#"{"id": "resp-1", "choices": [{"delta": {"content": "hi"}}]}"#)]
 #[tokio::test]
 async fn responses_without_text_are_not_scanned(#[case] body: &str) {
     let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
@@ -386,9 +448,6 @@ async fn responses_without_text_are_not_scanned(#[case] body: &str) {
 }
 
 #[rstest]
-#[case::choices_not_a_list(r#"{"id": "resp-1", "choices": "x"}"#)]
-#[case::choice_not_an_object(r#"{"id": "resp-1", "choices": [7]}"#)]
-#[case::message_not_an_object(r#"{"id": "resp-1", "choices": [{"message": 7}]}"#)]
 #[case::content_not_a_string(r#"{"id": "resp-1", "choices": [{"message": {"content": 7}}]}"#)]
 #[case::id_not_a_string(r#"{"id": 7, "choices": []}"#)]
 #[tokio::test]

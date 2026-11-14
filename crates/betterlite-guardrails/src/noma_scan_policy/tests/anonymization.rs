@@ -234,8 +234,16 @@ async fn anonymization_replaces_every_choice_with_content() {
     r#"{"aggregatedScanResult": true, "scanResult": [{"role": "user", "results": 7}]}"#,
     "scanResult.results"
 )]
+#[case::non_object_item_when_safe(
+    r#"{"aggregatedScanResult": false, "scanResult": [7]}"#,
+    "scanResult"
+)]
+#[case::non_object_results_when_safe(
+    r#"{"aggregatedScanResult": false, "scanResult": [{"role": "user", "results": 7}]}"#,
+    "scanResult.results"
+)]
 #[case::non_object_anonymized_content(
-    r#"{"aggregatedScanResult": true, "scanResult": [{"role": "user", "results": {"anonymizedContent": 7}}]}"#,
+    r#"{"aggregatedScanResult": false, "scanResult": [{"role": "user", "results": {"anonymizedContent": 7}}]}"#,
     "anonymizedContent"
 )]
 #[tokio::test]

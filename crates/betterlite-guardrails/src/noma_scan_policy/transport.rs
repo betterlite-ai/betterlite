@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_http::proxy::limits::{ReadError, read_bounded};
@@ -14,6 +15,8 @@ use super::{DEFAULT_API_BASE, NomaScanPolicy};
 
 const AIDR_ENDPOINT: &str = "/ai-dr/v2/prompt/scan";
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+// LiteLLM's AsyncHTTPHandler falls back to its 600 second total timeout
+const DEFAULT_SCAN_TIMEOUT: Duration = Duration::from_secs(600);
 
 pub(super) struct ScanTarget<'target> {
     pub(super) user_auth: &'target BTreeMap<String, GuardrailValue>,
@@ -22,7 +25,7 @@ pub(super) struct ScanTarget<'target> {
 }
 
 impl NomaScanPolicy {
-    pub(crate) async fn call_noma_api(
+    pub(super) async fn call_noma_api(
         &self,
         input_items: &[Box<RawValue>],
         request_data: &BTreeMap<String, GuardrailValue>,
@@ -48,11 +51,12 @@ impl NomaScanPolicy {
             api_base: base.to_owned(),
             source,
         })?;
-        let mut request = self.client.post(endpoint).headers(headers).json(&payload);
-        if let Some(timeout) = self.settings.timeout {
-            request = request.timeout(timeout);
-        }
-        let mut response = request
+        let mut response = self
+            .client
+            .post(endpoint)
+            .headers(headers)
+            .json(&payload)
+            .timeout(self.settings.timeout.unwrap_or(DEFAULT_SCAN_TIMEOUT))
             .send()
             .await
             .map_err(|source| NomaError::Transport { source })?;
@@ -66,9 +70,7 @@ impl NomaScanPolicy {
                 ReadError::TooLarge { limit } => NomaError::ResponseTooLarge { limit },
                 ReadError::Failed(source) => NomaError::Transport { source },
             })?;
-        let parsed =
-            serde_json::from_slice(&body).map_err(|source| NomaError::ResponseJson { source })?;
-        serde_json::from_value(parsed).map_err(|source| NomaError::ResponseShape { source })
+        ScanResponse::from_body(&body)
     }
 }
 
