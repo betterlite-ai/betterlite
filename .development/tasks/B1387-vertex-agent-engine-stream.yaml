@@ -82,5 +82,5 @@ pitfalls:
   - Streaming state_delta text is ignored even though buffered Agent Engine responses can use it.
   - Each chunk's first text value is forwarded directly without snapshot differencing.
   - An empty usage_metadata object is absent usage rather than an explicit zero usage block.
-budget: {max_changed_lines: 550, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: standard

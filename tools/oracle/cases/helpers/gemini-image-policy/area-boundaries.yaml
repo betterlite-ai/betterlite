@@ -1,0 +1,56 @@
+kind: helper
+name: gemini-image-policy-area-boundaries
+call:
+  gemini_image_policy:
+    settings: {}
+    cases:
+      - model: gemini-b1334-image
+        catalog_supports_image_size: null
+        params: {size: 767x768}
+        supported_params: ["n", size, imageConfig, tools, web_search_options]
+        optional_params: {}
+        parse_image_config_string: false
+        pre_mapped: null
+        response: {}
+      - model: gemini-b1334-image
+        catalog_supports_image_size: null
+        params: {size: 768x768}
+        supported_params: ["n", size, imageConfig, tools, web_search_options]
+        optional_params: {}
+        parse_image_config_string: false
+        pre_mapped: null
+        response: {}
+      - model: gemini-b1334-image
+        catalog_supports_image_size: null
+        params: {size: 1535x1536}
+        supported_params: ["n", size, imageConfig, tools, web_search_options]
+        optional_params: {}
+        parse_image_config_string: false
+        pre_mapped: null
+        response: {}
+      - model: gemini-b1334-image
+        catalog_supports_image_size: null
+        params: {size: 1536x1536}
+        supported_params: ["n", size, imageConfig, tools, web_search_options]
+        optional_params: {}
+        parse_image_config_string: false
+        pre_mapped: null
+        response: {}
+      - model: gemini-b1334-image
+        catalog_supports_image_size: null
+        params: {size: 3071x3072}
+        supported_params: ["n", size, imageConfig, tools, web_search_options]
+        optional_params: {}
+        parse_image_config_string: false
+        pre_mapped: null
+        response: {}
+      - model: gemini-b1334-image
+        catalog_supports_image_size: null
+        params: {size: 3072x3072}
+        supported_params: ["n", size, imageConfig, tools, web_search_options]
+        optional_params: {}
+        parse_image_config_string: false
+        pre_mapped: null
+        response: {}
+env: {}
+compare: {ignore: []}

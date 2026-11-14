@@ -1,0 +1,24 @@
+kind: helper
+name: cost-category-embedding-millions
+call:
+  b5831:
+    model_cost: {}
+    chat_supported: []
+    chat_map: []
+    chat_messages: []
+    completion: []
+    rerank_requests: []
+    rerank_responses: []
+    cost_categories:
+    - {model: embed-100m, call_type: embedding}
+    - {model: embed-150m, call_type: embedding}
+    - {model: embed-151m, call_type: embedding}
+    - {model: embed-350m, call_type: embedding}
+    - {model: embed-351m, call_type: embedding}
+    - {model: Embed-200M, call_type: aembedding}
+    - {model: embed-model, call_type: aembedding}
+    - {model: embed-100m, call_type: other}
+    cost_registry: []
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,38 @@
+kind: sdk_http
+name: deferred-billing-and-teardown
+env: {}
+call:
+  messages_stream_logging:
+    body:
+      model: claude-sonnet-4-20250514
+      max_tokens: 1
+      messages:
+        - {role: user, content: hi}
+    steps:
+      - {op: collect, first_chunk: false}
+      - {op: bill, teardown: false}
+      - {op: arm_deferred}
+      - {op: bill, teardown: false}
+      - {op: dispatch}
+      - {op: arm_deferred}
+      - {op: bill, teardown: true}
+      - {op: park_args, count: 0}
+      - {op: dispatch}
+      - {op: arm_deferred}
+      - {op: dispatch}
+      - {op: park_args, count: 2}
+      - {op: dispatch}
+      - {op: park_args, count: 1}
+      - {op: dispatch}
+upstream:
+  - status: 200
+    headers:
+      content-type: text/event-stream
+    events:
+      - '{"type": "message_start", "message": {"content": []}}'
+      - '{"type": "message_stop"}'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
