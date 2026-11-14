@@ -207,10 +207,13 @@ pub fn get_error_class(message: &str, status_code: u16) -> OciError {
 }
 
 #[must_use]
-pub async fn uses_max_completion_tokens<Predicates: CapabilityPredicates + Send>(
+pub async fn uses_max_completion_tokens<Predicates>(
     model: &str,
     predicates: &mut Predicates,
-) -> bool {
+) -> bool
+where
+    Predicates: CapabilityPredicates + Send,
+{
     if model.is_empty() {
         return false;
     }

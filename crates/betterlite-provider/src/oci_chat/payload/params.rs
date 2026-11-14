@@ -5,7 +5,7 @@ use serde_json::Number;
 
 use crate::oci_chat::config::{OciParam, param_map, uses_max_completion_tokens};
 use crate::oci_chat::payload::format::{normalize_response_format, normalize_tool_choice};
-use crate::oci_chat::payload::{encode_error, json_of};
+use crate::oci_chat::payload::typed;
 use crate::oci_chat_wire::cohere::request::adapt_cohere_tools;
 use crate::oci_chat_wire::generic::request::adapt_generic_tools;
 use crate::oci_chat_wire::types::oci::OciVendor;
@@ -13,12 +13,15 @@ use crate::oci_common::OciError;
 
 const DEFAULT_MAX_TOKENS: i64 = 4096;
 
-pub(super) async fn get_optional_params<Predicates: CapabilityPredicates + Send>(
+pub(super) async fn get_optional_params<Predicates>(
     vendor: OciVendor,
     optional_params: &Object,
     model: &str,
     predicates: &mut Predicates,
-) -> Result<Object, OciError> {
+) -> Result<Object, OciError>
+where
+    Predicates: CapabilityPredicates + Send,
+{
     let token_key = choose_token_key(vendor, model, predicates).await;
     let mut selected = select_params(vendor, optional_params, token_key);
     normalize_reasoning_effort(&mut selected);
@@ -34,11 +37,14 @@ pub(super) async fn get_optional_params<Predicates: CapabilityPredicates + Send>
     Ok(selected)
 }
 
-async fn choose_token_key<Predicates: CapabilityPredicates + Send>(
+async fn choose_token_key<Predicates>(
     vendor: OciVendor,
     model: &str,
     predicates: &mut Predicates,
-) -> &'static str {
+) -> &'static str
+where
+    Predicates: CapabilityPredicates + Send,
+{
     if vendor == OciVendor::Cohere
         || model.is_empty()
         || !uses_max_completion_tokens(model, predicates).await
@@ -90,13 +96,9 @@ fn normalize_reasoning_effort(selected: &mut Object) {
 }
 
 fn adapt_tools(tools: &Json, vendor: OciVendor) -> Result<Json, OciError> {
-    let bytes = serde_json::to_vec(tools).map_err(|source| encode_error(&source))?;
-    let parsed: Vec<Tool> = serde_json::from_slice(&bytes).map_err(|source| OciError {
-        status: 400,
-        message: format!("`tools` is not a list of OpenAI tool definitions: {source}"),
-    })?;
+    let parsed: Vec<Tool> = typed(tools, "a list of OpenAI tool definitions")?;
     match vendor {
-        OciVendor::Cohere => json_of(&adapt_cohere_tools(&parsed)?),
-        OciVendor::Generic => json_of(&adapt_generic_tools(&parsed)?),
+        OciVendor::Cohere => typed(&adapt_cohere_tools(&parsed)?, "Json"),
+        OciVendor::Generic => typed(&adapt_generic_tools(&parsed)?, "Json"),
     }
 }

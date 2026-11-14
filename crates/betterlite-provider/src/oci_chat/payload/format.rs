@@ -3,9 +3,6 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use crate::oci_chat_wire::types::oci::OciVendor;
 use crate::oci_common::OciError;
 
-const MISSING_FUNCTION_NAME: &str =
-    "Invalid tool_choice for OCI: 'FUNCTION' type requires a non-empty function name";
-
 const OK_TOOL_CHOICE_TYPES: [&str; 3] = ["AUTO", "NONE", "REQUIRED"];
 
 pub(super) fn normalize_tool_choice(choice: &Json) -> Result<Json, OciError> {
@@ -52,7 +49,7 @@ fn tool_choice_from_object(fields: &Object) -> Result<Json, OciError> {
             Some(Json::Text(name)) if !name.is_empty() => Ok(typed_object("FUNCTION", Some(name))),
             _ => Err(OciError {
                 status: 400,
-                message: MISSING_FUNCTION_NAME.to_owned(),
+                message: "Invalid tool_choice for OCI: 'FUNCTION' type requires a non-empty function name".to_owned(),
             }),
         };
     }

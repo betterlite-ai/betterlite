@@ -4,7 +4,6 @@ from typing import Literal, NotRequired, TypeAlias, TypedDict
 import httpx
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.llms.oci.chat.transformation import (
     OCIChatConfig,
@@ -167,8 +166,8 @@ def response_result(credentials: dict[str, JsonValue], call: ResponseCall) -> Js
                 "content": choice["message"].get("content"),
                 "finish_reason": choice.get("finish_reason"),
             }
-        case CustomStreamWrapper():
-            raise ValueError("the OCI chat reply streamed")
+        case _:
+            raise ValueError("the OCI chat reply was not a plain response")
 
 
 def stream_items(reads: list[str]) -> list[JsonValue]:

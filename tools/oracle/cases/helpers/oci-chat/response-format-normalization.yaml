@@ -107,7 +107,7 @@ call:
           response_format:
             type: json_schema
             json_schema:
-              name: n
+              name: "n"
               description: d
               schema:
                 type: object
@@ -154,7 +154,7 @@ call:
           response_format:
             type: json_schema
             json_schema:
-              name: n
+              name: "n"
               schema:
                 type: object
               strict: true
@@ -170,7 +170,7 @@ call:
           response_format:
             type: json_schema
             json_schema:
-              name: n
+              name: "n"
               schema: null
         reply: cohere
         status: 200

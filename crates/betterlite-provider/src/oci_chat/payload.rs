@@ -40,13 +40,16 @@ pub enum OciChatRequest {
     Generic(OciChatRequestPayload),
 }
 
-pub async fn transform_request<Predicates: CapabilityPredicates + Send>(
+pub async fn transform_request<Predicates>(
     model: &str,
     messages: &[ChatMessage],
     optional_params: &Object,
     credentials: &OciCredentials,
     predicates: &mut Predicates,
-) -> Result<OciCompletionPayload, OciError> {
+) -> Result<OciCompletionPayload, OciError>
+where
+    Predicates: CapabilityPredicates + Send,
+{
     let Some(compartment_id) = credentials
         .oci_compartment_id
         .as_deref()
@@ -145,12 +148,12 @@ fn cohere_request(
     );
     fields.insert(
         String::from("chatHistory"),
-        json_of(&adapt_cohere_messages(&history))?,
+        typed(&adapt_cohere_messages(&history), "Json")?,
     );
     if !preamble.is_empty() {
         fields.insert(String::from("preambleOverride"), Json::Text(preamble));
     }
-    typed_request(fields, "CohereChatRequest")
+    typed(&Json::Object(fields), "CohereChatRequest")
 }
 
 fn generic_request(
@@ -164,23 +167,21 @@ fn generic_request(
     );
     fields.insert(
         String::from("messages"),
-        json_of(&adapt_generic_messages(messages)?)?,
+        typed(&adapt_generic_messages(messages)?, "Json")?,
     );
-    typed_request(fields, "OCIChatRequestPayload")
+    typed(&Json::Object(fields), "OCIChatRequestPayload")
 }
 
-fn typed_request<T: DeserializeOwned>(fields: Object, type_name: &str) -> Result<T, OciError> {
-    let bytes =
-        serde_json::to_vec(&Json::Object(fields)).map_err(|source| encode_error(&source))?;
+fn typed<S, T>(value: &S, type_name: &str) -> Result<T, OciError>
+where
+    S: Serialize,
+    T: DeserializeOwned,
+{
+    let bytes = serde_json::to_vec(value).map_err(|source| encode_error(&source))?;
     serde_json::from_slice(&bytes).map_err(|source| OciError {
         status: 400,
         message: format!("the OCI chat request does not fit {type_name}: {source}"),
     })
-}
-
-fn json_of<T: Serialize>(value: &T) -> Result<Json, OciError> {
-    let bytes = serde_json::to_vec(value).map_err(|source| encode_error(&source))?;
-    serde_json::from_slice(&bytes).map_err(|source| encode_error(&source))
 }
 
 pub(crate) fn encode_error(source: &serde_json::Error) -> OciError {

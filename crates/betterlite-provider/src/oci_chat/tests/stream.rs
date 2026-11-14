@@ -128,7 +128,7 @@ fn sse_decoder_handles_other_lines_and_bad_json() {
 #[test]
 fn sse_decoder_accepts_a_line_of_exactly_the_cap_across_reads() {
     let mut decoder = SseDecoder::default();
-    let half = MAX_LINE_BYTES / 2;
+    let half: usize = 0x0008_0000;
     assert!(decoder.push(&"x".repeat(half)).unwrap().is_empty());
     assert!(
         decoder
@@ -142,7 +142,7 @@ fn sse_decoder_accepts_a_line_of_exactly_the_cap_across_reads() {
 #[test]
 fn sse_decoder_rejects_an_unfinished_line_past_the_cap() {
     let mut decoder = SseDecoder::default();
-    let half = MAX_LINE_BYTES / 2;
+    let half: usize = 0x0008_0000;
     assert!(decoder.push(&"x".repeat(half)).unwrap().is_empty());
     let refusal = decoder
         .push(&"x".repeat(MAX_LINE_BYTES - half + 1))

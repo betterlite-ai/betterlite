@@ -118,18 +118,6 @@ call:
         params:
           stream: false
           tool_choice:
-            type: function
-            name: lookup
-        reply: generic
-        status: 200
-        drop_params: false
-      - model: meta.llama-3.3-70b-instruct
-        messages:
-          - role: user
-            content: "hi"
-        params:
-          stream: false
-          tool_choice:
             type: required
         reply: generic
         status: 200
