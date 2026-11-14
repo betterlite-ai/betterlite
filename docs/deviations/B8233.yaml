@@ -1,0 +1,17 @@
+task: B8233
+deviations:
+  - what: The gateway entrypoint runs betterlite-gateway directly, so NUM_WORKERS has no effect; LiteLLM runs a Python supervisor with --workers "${NUM_WORKERS:-1}" under component_entrypoint.sh.
+    why: betterlite-gateway is one process (B4471); gateway/launch.py and its uvicorn worker and pgbouncer supervisor belong to B131.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/Dockerfile#L125-L126
+  - what: The images are packaging/docker/Dockerfile.gateway and packaging/docker/Dockerfile.backend, not gateway/Dockerfile and backend/Dockerfile.
+    why: B5071 and B5073 keep every Dockerfile in packaging/docker/, with the repository root as the build context.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/Dockerfile#L1-L2
+  - what: The builder stage is rust:1.98.0-bookworm and compiles the workspace with cargo build --release --locked; LiteLLM installs a Python venv, uv and the Rust bridge in its Wolfi builder stage.
+    why: The binaries are Rust, so the image builds them from source and the Wolfi runtime needs no Python toolchain.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/Dockerfile#L24-L48
+  - what: Neither runtime stage carries Python, uv, Node, Prisma, a venv, PYTHONPATH or LiteLLM's Python environment variables (PYTHONDONTWRITEBYTECODE, PYTHONUNBUFFERED, PRISMA_BINARY_CACHE_DIR, UV_*), and there is no rust_bridge copy step.
+    why: The native server has no Python runtime; those layers and variables exist only for LiteLLM's Python environment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/Dockerfile#L103-L119
+  - what: The images are checked as text by packaging/docker/tests/component_images.sh and never built by the gate.
+    why: The gate sandbox cannot reach the Docker socket and CI has no docker binary.
+    link: ""
