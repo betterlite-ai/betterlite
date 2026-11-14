@@ -20,7 +20,7 @@ pub(super) const fn present(value: Option<&str>) -> Option<&str> {
 
 pub(super) fn present_secret(secret: Option<&SecretString>) -> Option<&str> {
     match secret {
-        Some(secret) if !secret.expose_secret().is_empty() => Some(secret.expose_secret()),
+        Some(value) if !value.expose_secret().is_empty() => Some(value.expose_secret()),
         _ => None,
     }
 }
@@ -31,7 +31,9 @@ where
 {
     match serde_json::to_value(request).map_err(|source| EvalsError::RequestEncode { source })? {
         Value::Object(fields) => Ok(fields),
-        _ => Err(EvalsError::RequestNotObject),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
+            Err(EvalsError::RequestNotObject)
+        }
     }
 }
 
@@ -39,9 +41,8 @@ pub(super) fn parse_reply<T>(raw_response: &EvalsHttpResponse<'_>) -> Result<T, 
 where
     T: DeserializeOwned,
 {
-    decode_eval_reply(raw_response.text.as_bytes()).and_then(|value| {
-        serde_json::from_value(value).map_err(|source| EvalsError::ReplyModel { source })
-    })
+    let value = decode_eval_reply(raw_response.text.as_bytes())?;
+    serde_json::from_value(value).map_err(|source| EvalsError::ReplyModel { source })
 }
 
 pub(super) fn context_api_base<'call>(context: &EvalsRequestContext<'call>) -> &'call str {

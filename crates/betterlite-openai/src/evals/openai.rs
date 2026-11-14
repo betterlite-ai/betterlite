@@ -50,13 +50,13 @@ impl BaseEvalsAPIConfig for OpenAiEvalsConfig {
         endpoint: &str,
         eval_id: Option<&str>,
     ) -> Result<String, Self::Error> {
-        let api_base = api_base.unwrap_or(fields::EVALS_API_BASE);
-        match eval_id.filter(|eval_id| !eval_id.is_empty()) {
-            Some(eval_id) => {
-                let encoded = encode_segment(eval_id, "eval_id")?;
-                Ok(format!("{api_base}/v1/evals/{encoded}"))
+        let base = api_base.unwrap_or(fields::EVALS_API_BASE);
+        match eval_id.filter(|segment| !segment.is_empty()) {
+            Some(segment) => {
+                let encoded = encode_segment(segment, "eval_id")?;
+                Ok(format!("{base}/v1/evals/{encoded}"))
             }
-            None => Ok(format!("{api_base}/v1/{endpoint}")),
+            None => Ok(format!("{base}/v1/{endpoint}")),
         }
     }
 
