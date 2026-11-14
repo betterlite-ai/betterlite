@@ -122,6 +122,13 @@ fn the_score_is_one_minus_distance_clamped(#[case] distance: &str, #[case] expec
 }
 
 #[test]
+fn a_float32_distance_next_to_one_keeps_its_tiny_score() {
+    let score = one_score("0.99999994").unwrap();
+    let value: f64 = score.parse().unwrap();
+    assert!((5e-8..7e-8).contains(&value), "{score}");
+}
+
+#[test]
 fn an_absent_distance_gives_no_score() {
     let response = decode(r#"{"vectors": [{"metadata": {"source_text": "t"}}]}"#, None);
     assert!(response.data.unwrap()[0].score.is_none());

@@ -26,9 +26,7 @@ pub struct QueryRequest {
 }
 
 pub fn build_query_request(input: &QueryInput<'_>) -> Result<QueryRequest, S3VectorsSearchError> {
-    let fallback_bucket_name =
-        text_param(input.litellm_params, "vector_bucket_name")?.filter(|name| !name.is_empty());
-    let (bucket_name, index_name) = split_store_id(input.vector_store_id, fallback_bucket_name)?;
+    let (bucket_name, index_name) = split_store_id(input.vector_store_id, input.litellm_params)?;
     let mut floats = Vec::with_capacity(input.query_vector.len());
     for (index, value) in input.query_vector.iter().enumerate() {
         let number =
@@ -59,17 +57,18 @@ pub fn build_query_request(input: &QueryInput<'_>) -> Result<QueryRequest, S3Vec
 // B3458 keeps its split private, so the same rule lives here
 fn split_store_id<'id>(
     store_id: &'id str,
-    fallback_bucket_name: Option<&'id str>,
-) -> Result<(&'id str, &'id str), S3VectorsInputError> {
+    litellm_params: &'id Params,
+) -> Result<(&'id str, &'id str), S3VectorsSearchError> {
     let (bucket_name, index_name) = match store_id.split_once(':') {
         Some(parts) => parts,
         None => (
-            fallback_bucket_name.ok_or(S3VectorsInputError::StoreId)?,
+            text_param(litellm_params, "vector_bucket_name")?
+                .ok_or(S3VectorsInputError::StoreId)?,
             store_id,
         ),
     };
     if bucket_name.is_empty() || index_name.is_empty() {
-        return Err(S3VectorsInputError::StoreId);
+        return Err(S3VectorsInputError::StoreId.into());
     }
     Ok((bucket_name, index_name))
 }

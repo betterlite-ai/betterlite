@@ -118,6 +118,16 @@ fn a_non_text_bucket_is_refused_by_name() {
     ));
 }
 
+#[test]
+fn a_bucket_in_the_store_id_never_reads_the_fallback() {
+    let litellm_params = params(r#"{"vector_bucket_name": 12}"#);
+    let request = build_query_request(&input("docs:idx", &litellm_params, None)).unwrap();
+    assert_eq!(
+        request.body.get("vectorBucketName"),
+        Some(&Json::Text("docs".to_owned()))
+    );
+}
+
 #[rstest]
 #[case::nan(f64::NAN, 1)]
 #[case::infinity(f64::INFINITY, 1)]
