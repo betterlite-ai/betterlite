@@ -1,0 +1,17 @@
+kind: helper
+name: chirp-backend-policy-failure-close-reason
+call:
+  chirp_backend_policy:
+    kind: deliver
+    elapsed_seconds: 0.0
+    speech_active: false
+    item_kind: stream_failure
+    turn: 0
+    event: ''
+    reason: >-
+      Google Speech-to-Text streaming failed: the stream ended before the backend relayed
+      a single response and the upstream transport reported a reset while the recognizer
+      was still waiting for audio
+    discarded_turns: []
+env: {}
+compare: {ignore: []}

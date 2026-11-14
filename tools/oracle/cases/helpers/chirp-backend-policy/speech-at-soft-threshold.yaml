@@ -1,0 +1,14 @@
+kind: helper
+name: chirp-backend-policy-speech-at-soft-threshold
+call:
+  chirp_backend_policy:
+    kind: deadline
+    elapsed_seconds: 250.0
+    speech_active: true
+    item_kind: closed
+    turn: 0
+    event: ''
+    reason: ''
+    discarded_turns: []
+env: {}
+compare: {ignore: []}

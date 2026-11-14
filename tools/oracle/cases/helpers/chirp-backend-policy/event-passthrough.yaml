@@ -1,0 +1,14 @@
+kind: helper
+name: chirp-backend-policy-event-passthrough
+call:
+  chirp_backend_policy:
+    kind: deliver
+    elapsed_seconds: 0.0
+    speech_active: false
+    item_kind: event
+    turn: 0
+    event: '{"kind":"turn_finished"}'
+    reason: ''
+    discarded_turns: []
+env: {}
+compare: {ignore: []}
