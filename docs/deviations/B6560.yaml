@@ -1,0 +1,8 @@
+task: B6560
+deviations:
+  - what: Provider settings are written as data tables and no longer read off the classes.
+    why: Rust has no annotation reflection. Each table is checked against LiteLLM's real class by an oracle case, so a drift shows up as a failing case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1621-L1778
+  - what: A model nested deeper than the limit returns an error value and B3684 maps it to 400, where LiteLLM raises HTTPException inside the helper.
+    why: A pure function should not know HTTP. The status and text the client sees are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1845-L1910
