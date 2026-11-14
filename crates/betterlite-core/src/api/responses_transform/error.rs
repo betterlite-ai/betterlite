@@ -4,6 +4,11 @@ use thiserror::Error;
 pub enum ResponsesTransformError {
     #[error("{field} must be a string")]
     NotText { field: &'static str },
+    #[error("{field}: expected {expected}")]
+    FieldType {
+        field: &'static str,
+        expected: &'static str,
+    },
     #[error("{field} must be an object")]
     NotObject { field: &'static str },
     #[error("{field} must be a string, an object or a list of them")]

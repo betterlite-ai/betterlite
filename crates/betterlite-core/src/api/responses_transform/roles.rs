@@ -39,11 +39,11 @@ pub(super) fn responses_role(
 }
 
 fn step_role(kind: Option<&JsonValue>) -> Option<&'static str> {
-    let Some(JsonValue::Text(kind)) = kind else {
+    let Some(JsonValue::Text(text)) = kind else {
         return None;
     };
     for (step_type, role) in STEP_TYPE_ROLES {
-        if step_type == kind.as_str() {
+        if step_type == text.as_str() {
             return Some(role);
         }
     }

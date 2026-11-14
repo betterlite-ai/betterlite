@@ -9,7 +9,7 @@ pub(super) fn transform_message(
 ) -> Result<JsonValue, ResponsesTransformError> {
     let mut items = Vec::with_capacity(content.len());
     for item in content {
-        items.push(transform_content_item(*item, role)?);
+        items.push(transform_content_item(item, role)?);
     }
     let mut message = IndexMap::with_capacity(2);
     message.insert(String::from("role"), JsonValue::Text(role.to_owned()));

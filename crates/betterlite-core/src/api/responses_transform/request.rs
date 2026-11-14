@@ -3,7 +3,6 @@ use betterlite_models::controls::json_value::JsonValue;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Deserializer, Number};
-use serde_with::rust::double_option;
 
 use super::error::ResponsesTransformError;
 use super::input::transform_input;
@@ -43,47 +42,6 @@ struct GenerationConfig {
     top_p: Option<Number>,
     max_output_tokens: Option<i64>,
 }
-
-// the extra kwargs are the Responses request's own keys, so an absent one differs from an explicit null
-#[derive(Deserialize)]
-struct ExtraFields {
-    #[serde(default, with = "double_option")]
-    model: Option<Option<String>>,
-    #[serde(default, with = "double_option")]
-    input: Option<Option<JsonValue>>,
-    #[serde(default, with = "double_option")]
-    instructions: Option<Option<String>>,
-    #[serde(default, with = "double_option")]
-    tools: Option<Option<Vec<JsonValue>>>,
-    #[serde(default, with = "double_option")]
-    temperature: Option<Option<Number>>,
-    #[serde(default, with = "double_option")]
-    top_p: Option<Option<Number>>,
-    #[serde(default, with = "double_option")]
-    max_output_tokens: Option<Option<i64>>,
-    #[serde(default, with = "double_option")]
-    stream: Option<Option<bool>>,
-    #[serde(default, with = "double_option")]
-    store: Option<Option<bool>>,
-    #[serde(default, with = "double_option")]
-    metadata: Option<Option<JsonValue>>,
-    #[serde(default, with = "double_option")]
-    user: Option<Option<String>>,
-}
-
-const EXTRA_FIELDS: [&str; 11] = [
-    "model",
-    "input",
-    "instructions",
-    "tools",
-    "temperature",
-    "top_p",
-    "max_output_tokens",
-    "stream",
-    "store",
-    "metadata",
-    "user",
-];
 
 pub fn to_responses_request(
     model: &str,
@@ -153,56 +111,127 @@ fn apply_optional_params(
     Ok(())
 }
 
+// LiteLLM updates the request dict with its extra kwargs, so an absent key keeps the mapped value while a null clears it
 fn apply_extras(
     request: &mut ResponsesRequest,
     extras: &Params,
 ) -> Result<(), ResponsesTransformError> {
-    let sent: ExtraFields = request_fields(extras)?;
-    apply_extra_fields(request, sent)?;
     for (name, value) in extras {
-        if !EXTRA_FIELDS.contains(&name.as_str()) {
-            request.passthrough.insert(name.clone(), value.clone());
+        match name.as_str() {
+            "model" => {
+                request.model =
+                    nullable_text("model", value)?.ok_or(ResponsesTransformError::FieldType {
+                        field: "model",
+                        expected: "a string",
+                    })?;
+            }
+            "input" => request.input = explicit_value(value),
+            "instructions" => request.instructions = nullable_text("instructions", value)?,
+            "tools" => request.tools = nullable_tools(value)?,
+            "temperature" => request.temperature = nullable_number("temperature", value)?,
+            "top_p" => request.top_p = nullable_number("top_p", value)?,
+            "max_output_tokens" => {
+                request.max_output_tokens = nullable_tokens(value)?;
+            }
+            "stream" => request.stream = nullable_bool("stream", value)?,
+            "store" => request.store = nullable_bool("store", value)?,
+            "metadata" => request.metadata = explicit_value(value),
+            "user" => request.user = nullable_text("user", value)?,
+            _ => {
+                request.passthrough.insert(name.clone(), value.clone());
+            }
         }
     }
     Ok(())
 }
 
-fn apply_extra_fields(
-    request: &mut ResponsesRequest,
-    sent: ExtraFields,
-) -> Result<(), ResponsesTransformError> {
-    if let Some(model) = sent.model {
-        request.model = model.ok_or(ResponsesTransformError::NotText { field: "model" })?;
+fn explicit_value(value: &JsonValue) -> Option<JsonValue> {
+    match value {
+        JsonValue::Null => None,
+        JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::Text(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_) => Some(value.clone()),
     }
-    if let Some(input) = sent.input {
-        request.input = input;
+}
+
+fn nullable_text(
+    field: &'static str,
+    value: &JsonValue,
+) -> Result<Option<String>, ResponsesTransformError> {
+    match value {
+        JsonValue::Null => Ok(None),
+        JsonValue::Text(text) => Ok(Some(text.clone())),
+        JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
+            Err(ResponsesTransformError::FieldType {
+                field,
+                expected: "a string",
+            })
+        }
     }
-    if let Some(instructions) = sent.instructions {
-        request.instructions = instructions;
+}
+
+fn nullable_bool(
+    field: &'static str,
+    value: &JsonValue,
+) -> Result<Option<bool>, ResponsesTransformError> {
+    match value {
+        JsonValue::Null => Ok(None),
+        JsonValue::Bool(flag) => Ok(Some(*flag)),
+        JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
+            Err(ResponsesTransformError::FieldType {
+                field,
+                expected: "a boolean",
+            })
+        }
     }
-    if let Some(tools) = sent.tools {
-        request.tools = tools.map(JsonValue::Array);
+}
+
+fn nullable_number(
+    field: &'static str,
+    value: &JsonValue,
+) -> Result<Option<Number>, ResponsesTransformError> {
+    match value {
+        JsonValue::Null => Ok(None),
+        JsonValue::Number(number) => Ok(Some(number.clone())),
+        JsonValue::Bool(_) | JsonValue::Text(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
+            Err(ResponsesTransformError::FieldType {
+                field,
+                expected: "a number",
+            })
+        }
     }
-    if let Some(temperature) = sent.temperature {
-        request.temperature = temperature;
+}
+
+fn nullable_tokens(value: &JsonValue) -> Result<Option<i64>, ResponsesTransformError> {
+    match value {
+        JsonValue::Null => Ok(None),
+        JsonValue::Number(number) => match number.as_i64() {
+            Some(tokens) => Ok(Some(tokens)),
+            None => Err(ResponsesTransformError::FieldType {
+                field: "max_output_tokens",
+                expected: "an integer",
+            }),
+        },
+        JsonValue::Bool(_) | JsonValue::Text(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
+            Err(ResponsesTransformError::FieldType {
+                field: "max_output_tokens",
+                expected: "an integer",
+            })
+        }
     }
-    if let Some(top_p) = sent.top_p {
-        request.top_p = top_p;
+}
+
+fn nullable_tools(value: &JsonValue) -> Result<Option<JsonValue>, ResponsesTransformError> {
+    match value {
+        JsonValue::Null => Ok(None),
+        JsonValue::Array(_) => Ok(Some(value.clone())),
+        JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Object(_) => {
+            Err(ResponsesTransformError::FieldType {
+                field: "tools",
+                expected: "a list",
+            })
+        }
     }
-    if let Some(max_output_tokens) = sent.max_output_tokens {
-        request.max_output_tokens = max_output_tokens;
-    }
-    if let Some(stream) = sent.stream {
-        request.stream = stream;
-    }
-    if let Some(store) = sent.store {
-        request.store = store;
-    }
-    if let Some(metadata) = sent.metadata {
-        request.metadata = metadata;
-    }
-    if let Some(user) = sent.user {
-        request.user = user;
-    }
-    Ok(())
 }

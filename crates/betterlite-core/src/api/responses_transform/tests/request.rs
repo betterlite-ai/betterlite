@@ -194,7 +194,7 @@ fn wrong_typed_optional_params_error(#[case] optional_params: &str, #[case] fiel
 }
 
 #[rstest]
-#[case::model(r#"{"model": null}"#, "model must be a string")]
+#[case::model(r#"{"model": null}"#, "model: expected a string")]
 #[case::model_type(r#"{"model": 5}"#, "model: ")]
 #[case::instructions(r#"{"instructions": 5}"#, "instructions: ")]
 #[case::tools(r#"{"tools": 4}"#, "tools: ")]
@@ -223,6 +223,19 @@ fn extras_carry_an_input_and_a_metadata_override() {
     );
     assert_eq!(built.input, Some(JsonValue::Text(String::from("override"))));
     assert_eq!(built.metadata, Some(value(r#"{"b": 2}"#)));
+}
+
+#[test]
+fn a_null_input_and_metadata_clear_them() {
+    let input = value("\"base\"");
+    let built = build_request(
+        "m",
+        Some(&input),
+        r#"{"metadata": {"a": 1}}"#,
+        r#"{"input": null, "metadata": null}"#,
+    );
+    assert_eq!(built.input, None);
+    assert_eq!(built.metadata, None);
 }
 
 #[test]
