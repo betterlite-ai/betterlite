@@ -1,4 +1,3 @@
-import asyncio
 import sys
 from types import ModuleType
 from typing import NotRequired, TypedDict, cast
@@ -19,8 +18,7 @@ class _FunctionResponse(BaseModel):
     response: dict[str, JsonValue] | None = None
 
 
-# google-genai is absent from the oracle venv, so the record the pinned counter projects through is
-# carried here: the same fields, aliases, extra-forbid and None-dropping google-genai declares
+# google-genai is absent from the oracle venv, so this record mirrors the fields it declares
 class _GoogleGenAiTypes(ModuleType):
     FunctionResponse: type[_FunctionResponse] = _FunctionResponse
 
@@ -47,15 +45,6 @@ def run(input_value: Input) -> dict[str, JsonValue]:
     counter = GoogleAIStudioTokenCounter()
     calls: list[JsonValue] = []
     for call in input_value["calls"]:
-        _headers, url = asyncio.run(
-            counter.validate_environment(
-                api_base=call.get("api_base"),
-                api_key=None,
-                headers={},
-                model=call["model"],
-                litellm_params={},
-            )
-        )
-        cleaned = cast(JsonValue, counter._clean_contents_for_gemini_api(call["contents"]))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/count_tokens/handler.py#L16
+        cleaned, url = (cast(JsonValue, counter._clean_contents_for_gemini_api(call["contents"])), counter._construct_url(call["model"], call.get("api_base")))  # noqa: SLF001, E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/count_tokens/handler.py#L16-L54
         calls.append({"contents": cleaned, "original": call["contents"], "url": url})
     return {"calls": calls}
