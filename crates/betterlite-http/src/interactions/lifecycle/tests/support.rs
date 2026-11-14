@@ -1,4 +1,4 @@
-use std::io::{Error as IoError, Read, Write as _};
+use std::io::{Error as IoError, Read as _, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::str::{Utf8Error, from_utf8};
 use std::sync::Mutex;
@@ -80,7 +80,7 @@ impl Fixture {
         &self,
         tag: &str,
         response: &UpstreamResponse,
-        logging: &mut Logging,
+        logging: &Logging,
         interaction_id: Option<&str>,
     ) -> Result<String, FixtureError> {
         let input = logging
@@ -215,10 +215,10 @@ pub(super) fn clients() -> HttpClients {
     )
 }
 
-pub(super) fn build_handler<'config, ClientType>(
-    fixture: &'config Fixture,
+pub(super) fn build_handler<ClientType>(
+    fixture: &Fixture,
     supplied: Option<ClientType>,
-) -> InteractionsHttpHandler<'config, Fixture, ClientType> {
+) -> InteractionsHttpHandler<'_, Fixture, ClientType> {
     InteractionsHttpHandler {
         config: fixture,
         clients: clients(),
@@ -227,15 +227,15 @@ pub(super) fn build_handler<'config, ClientType>(
     }
 }
 
-pub(super) fn sync_handler<'config>(
-    fixture: &'config Fixture,
-) -> InteractionsHttpHandler<'config, Fixture, BlockingClient> {
+pub(super) fn sync_handler(
+    fixture: &Fixture,
+) -> InteractionsHttpHandler<'_, Fixture, BlockingClient> {
     build_handler(fixture, None)
 }
 
-pub(super) fn async_handler<'config>(
-    fixture: &'config Fixture,
-) -> InteractionsHttpHandler<'config, Fixture, reqwest::Client> {
+pub(super) fn async_handler(
+    fixture: &Fixture,
+) -> InteractionsHttpHandler<'_, Fixture, reqwest::Client> {
     build_handler(fixture, None)
 }
 

@@ -23,8 +23,10 @@ fn delete_interaction_deletes_the_interaction_through_the_config() {
         base::reply("200 OK", &[("x-request-id", "r1")], "{\"id\":\"int_1\"}"),
         None,
     );
-    let mut fixture = Fixture::default();
-    fixture.headers = api_key_header();
+    let fixture = Fixture {
+        headers: api_key_header(),
+        ..Fixture::default()
+    };
     let mut call = Call::new(serving.address);
     call.params.insert(
         "custom_llm_provider".to_owned(),
@@ -65,8 +67,10 @@ fn delete_interaction_deletes_the_interaction_through_the_config() {
 #[test]
 fn delete_interaction_sends_no_body_when_the_transform_returns_data() {
     let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
-    let mut fixture = Fixture::default();
-    fixture.delete_data = base::params(r#"{"ignored": "yes"}"#);
+    let fixture = Fixture {
+        delete_data: base::params(r#"{"ignored": "yes"}"#),
+        ..Fixture::default()
+    };
     let mut handler = sync_handler(&fixture);
 
     handler
@@ -168,8 +172,10 @@ fn delete_interaction_reads_a_non_utf8_error_body_as_replacement_text() {
 #[test]
 fn delete_interaction_keeps_a_transform_error_out_of_the_error_handler() {
     let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
-    let mut fixture = Fixture::default();
-    fixture.fail_transform_status = Some(200);
+    let fixture = Fixture {
+        fail_transform_status: Some(200),
+        ..Fixture::default()
+    };
     let mut handler = sync_handler(&fixture);
 
     let error = handler
@@ -407,14 +413,70 @@ fn delete_interaction_skips_the_proxy_check_for_a_supplied_client() {
     serving.request.join().unwrap();
 }
 
+#[rstest]
+#[case::unsupported_scheme("https://127.0.0.1:1", "UnsupportedProxyScheme { scheme: \"https\" }")]
+#[case::invalid_url("http://", "InvalidProxyUrl { name: \"http\" }")]
+#[tokio::test]
+async fn async_delete_interaction_refuses_a_proxy_it_cannot_use_instead_of_connecting_directly(
+    #[case] proxy: &str,
+    #[case] expected: &str,
+) {
+    let fixture = Fixture::default();
+    let mut handler = InteractionsHttpHandler {
+        config: &fixture,
+        clients: HttpClients::new(
+            base::policy(Verification::Enabled, None),
+            base::proxy_policy(&[("HTTP_PROXY", proxy)]),
+        ),
+        logging: Logging::default(),
+        supplied: None,
+    };
+
+    let error = handler
+        .async_delete_interaction(&Call::new(dead_address()).request())
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(&error, LifecycleError::Transport(failure) if format!("{failure:?}") == expected),
+        "{error:?}"
+    );
+}
+
+#[tokio::test]
+async fn async_delete_interaction_skips_the_proxy_check_for_a_supplied_client() {
+    let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
+    let fixture = Fixture::default();
+    let supplied = base_builder().build().unwrap();
+    let mut handler = InteractionsHttpHandler {
+        config: &fixture,
+        clients: HttpClients::new(
+            base::policy(Verification::Enabled, None),
+            base::proxy_policy(&[("HTTP_PROXY", "https://127.0.0.1:1")]),
+        ),
+        logging: Logging::default(),
+        supplied: Some(supplied),
+    };
+
+    let output = handler
+        .async_delete_interaction(&Call::new(serving.address).request())
+        .await
+        .unwrap();
+
+    assert_eq!(output, "{}");
+    serving.request.join().unwrap();
+}
+
 #[tokio::test]
 async fn async_delete_interaction_deletes_the_interaction_through_the_config() {
     let serving = serve_with_body(
         base::reply("200 OK", &[("x-request-id", "r1")], "{\"id\":\"int_1\"}"),
         None,
     );
-    let mut fixture = Fixture::default();
-    fixture.headers = api_key_header();
+    let fixture = Fixture {
+        headers: api_key_header(),
+        ..Fixture::default()
+    };
     let mut handler = async_handler(&fixture);
 
     let output = handler

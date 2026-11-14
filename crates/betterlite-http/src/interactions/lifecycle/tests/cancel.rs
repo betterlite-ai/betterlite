@@ -20,9 +20,11 @@ fn cancel_interaction_posts_the_transformed_body_as_json() {
         ),
         None,
     );
-    let mut fixture = Fixture::default();
-    fixture.headers = api_key_header();
-    fixture.cancel_data = base::params(r#"{"action": "cancel", "reason": "user"}"#);
+    let fixture = Fixture {
+        headers: api_key_header(),
+        cancel_data: base::params(r#"{"action": "cancel", "reason": "user"}"#),
+        ..Fixture::default()
+    };
     let mut handler = sync_handler(&fixture);
 
     let output = handler
@@ -187,8 +189,10 @@ async fn async_cancel_interaction_posts_the_transformed_body_as_json() {
         base::reply("200 OK", &[], "{\"status\":\"cancelled\"}"),
         None,
     );
-    let mut fixture = Fixture::default();
-    fixture.cancel_data = base::params(r#"{"action": "cancel", "reason": "user"}"#);
+    let fixture = Fixture {
+        cancel_data: base::params(r#"{"action": "cancel", "reason": "user"}"#),
+        ..Fixture::default()
+    };
     let mut handler = async_handler(&fixture);
 
     let output = handler
