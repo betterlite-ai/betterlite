@@ -1,0 +1,55 @@
+kind: helper
+name: fireworks-ai-chat-params-extra-body-strip-and-truncate
+call:
+  b6071:
+    catalog: []
+    steps:
+      - op: map_extra_body
+        model: "plain-model"
+        optional_params:
+          temperature: 0.5
+          extra_body: {stop_token_ids: [1, 2], nvext: true, truncate_prompt_tokens: 42, custom: {kept: true}}
+      - op: map_extra_body
+        model: "plain-model"
+        optional_params: {extra_body: {truncate_prompt_tokens: null, custom: "kept"}}
+      - op: map_extra_body
+        model: "plain-model"
+        optional_params: {extra_body: {truncate_prompt_tokens: 5, prompt_truncate_len: 9}}
+      - op: map_extra_body
+        model: "plain-model"
+        optional_params: {prompt_truncate_len: 7, extra_body: {truncate_prompt_tokens: 5}}
+      - op: map_extra_body
+        model: "plain-model"
+        optional_params: {extra_body: {stop_token_ids: [3]}}
+      - op: map_extra_body
+        model: "plain-model"
+        optional_params: {extra_body: "not-a-map", temperature: 0.1}
+      - op: map_extra_body
+        model: "plain-model"
+        optional_params: {extra_body: {}, temperature: 0.1}
+      - op: map_extra_body
+        model: "plain-model"
+        optional_params: {extra_body: {best_of: 2, use_beam_search: false, include_reasoning: true, spaces_between_special_tokens: false, custom: 1}}
+      - op: map_extra_body
+        model: "plain-model"
+        optional_params:
+          extra_body:
+            add_generation_prompt: true
+            add_special_tokens: true
+            allowed_token_ids: [1]
+            bad_words: ["x"]
+            best_of: 2
+            continue_final_message: false
+            detokenize: true
+            guided_decoding_backend: "outlines"
+            guided_regex: "^a$"
+            include_reasoning: true
+            include_stop_str_in_output: true
+            nvext: {}
+            skip_special_tokens: true
+            spaces_between_special_tokens: false
+            stop_token_ids: [7]
+            use_beam_search: true
+            custom: "kept"
+env: {}
+compare: {ignore: []}
