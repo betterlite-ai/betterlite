@@ -15,6 +15,7 @@ betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 chrono.workspace = true
+futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 hex = "0.4.3"
 http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
@@ -25,14 +26,16 @@ serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 serde_with = "3.24.0"
 sha2 = "0.11.1"
+subtle.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
 url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]
 rstest = "=0.27.0"
-tokio.workspace = true
+tokio = { workspace = true, features = ["test-util", "time"] }
 tracing-subscriber.workspace = true
 
 [lints]
