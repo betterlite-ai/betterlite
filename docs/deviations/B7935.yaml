@@ -1,0 +1,50 @@
+task: B7935
+deviations:
+  - what: >-
+      The ported config models derive from the wheel's ResponseObject instead of pydantic's
+      BaseModel. ResponseObject sets extra="allow", so an unknown key survives validation and
+      appears in model_dump(), and model_json_schema() carries additionalProperties: true where
+      LiteLLM's schema has none. This covers PanwPrismaAirsGuardrailConfigModel,
+      PillarGuardrailConfigModel, PromptGuardConfigModel, PromptSecurityGuardrailConfigModel,
+      QostodianNexusConfigModel, QualifireGuardrailConfigModel, RepelloAIGuardrailConfigModel,
+      SingulrGuardrailConfigModel and StraikerGuardrailConfigModel.
+    why: >-
+      Every ported pydantic model under betterlite.types that hangs off GuardrailConfigModel goes
+      on ResponseObject, as B7930 and B7932 set for the guardrail types. The declared fields,
+      required keys, defaults, Literal values, validation errors and dumps of the declared fields
+      match LiteLLM; only keys LiteLLM never declares differ. The standalone webhook and payload
+      models in straiker.py and singulr.py stay on pydantic's BaseModel, so their extra="ignore"
+      and extra="allow" settings match LiteLLM exactly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/base.py#L9
+  - what: >-
+      Config models LiteLLM leaves on the unparametrized GuardrailConfigModel are spelled
+      GuardrailConfigModel[BaseModel] here. Pydantic resolves an unbound TypeVar to its BaseModel
+      bound, so optional_params has the same BaseModel | None type, schema and validation on both
+      sides; the parametrized spelling keeps model_dump() working where LiteLLM's unparametrized
+      generic builds a mock serializer for a set optional_params value.
+    why: >-
+      basedpyright strict reports a generic base class used without type arguments, and BaseModel
+      is the bound the unparametrized generic resolves to at runtime.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/panw_prisma_airs.py#L8
+  - what: >-
+      Fields LiteLLM types as dict[str, object], list[dict[str, object]] or a bare object are
+      JsonValue here: PresidioAnalyzeResponseItem.analysis_explanation and
+      recognition_metadata, RepelloAIViolatedPolicy.details, RepelloAIAnalyzeResponse
+      policies_applied, the SingulrGuardrailPayload messages and tools entries,
+      SingulrMcpGuardrailPayload.tool_arguments, and the StraikerWebhookContent
+      structured_messages, tools and tool_calls entries and StraikerWebhookRequest.metadata.
+    why: >-
+      The Python rules forbid Any and a bare object in annotations, and JsonValue is the JSON type
+      the wheel uses. A JSON body validates the same; a non-JSON Python object, which object and
+      dict[str, object] accept, is rejected here. The JSON schema of the field is the same open
+      object or array of them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/presidio.py#L15-L21
+  - what: >-
+      The ported models carry no pydantic Field descriptions and no class docstrings, so
+      model_json_schema() has no description keys where LiteLLM's does. The json_schema_extra
+      marker that drives the admin UI, secret on StraikerGuardrailConfigModel.api_key, is kept.
+    why: >-
+      The repository keeps no docstrings and caps a module at 300 lines; the description prose is
+      most of the LiteLLM files. Keys, required keys, types, Literal values, defaults and
+      constraints are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/straiker.py#L178-L183
