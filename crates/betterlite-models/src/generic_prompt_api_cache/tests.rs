@@ -5,7 +5,7 @@ use rstest::rstest;
 use crate::decisions::Json;
 use crate::generic_prompt_api::test_support::{system_content, template_manager, variables};
 use crate::generic_prompt_api_cache::PromptCache;
-use crate::prompt_contracts::PromptCompileRequest;
+use crate::prompt_contracts::{PromptCompileRequest, PromptManagementClient};
 
 #[rstest]
 #[case::all_present(Some("welcome"), Some("prod"), Some(3), "welcome:prod:3")]
@@ -118,14 +118,8 @@ fn label_and_version_each_get_their_own_cache_entry() {
     manager.compile_prompt_helper(&labeled).unwrap();
     assert_eq!(requests.lock().unwrap().len(), 2);
     let keys: Vec<String> = {
-        let mut keys: Vec<String> = manager
-            .prompt_cache
-            .entries
-            .lock()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect();
+        let entries = manager.prompt_cache.entries.lock().unwrap();
+        let mut keys: Vec<String> = entries.iter().map(|(key, _)| key.clone()).collect();
         keys.sort();
         keys
     };
@@ -152,4 +146,43 @@ fn clear_cache_makes_the_next_compile_fetch_again() {
     assert!(manager.prompt_cache.entries.lock().unwrap().is_empty());
     manager.compile_prompt_helper(&request).unwrap();
     assert_eq!(requests.lock().unwrap().len(), 2);
+}
+
+#[test]
+fn a_thousand_and_first_insert_keeps_one_thousand_entries_and_drops_the_first_key() {
+    let cache = PromptCache::default();
+    for index in 0..1001 {
+        cache.insert(
+            PromptCache::get_cache_key(Some(&format!("prompt-{index}")), None, None),
+            PromptManagementClient::default(),
+        );
+    }
+    let entries = cache.entries.lock().unwrap();
+    assert_eq!(entries.len(), 1000);
+    assert!(!entries.contains(&PromptCache::get_cache_key(Some("prompt-0"), None, None)));
+}
+
+#[test]
+fn a_read_just_before_the_cache_fills_keeps_that_key_and_drops_the_least_recently_used() {
+    let cache = PromptCache::default();
+    for index in 0..1000 {
+        cache.insert(
+            PromptCache::get_cache_key(Some(&format!("prompt-{index}")), None, None),
+            PromptManagementClient::default(),
+        );
+    }
+    let read = cache
+        .common_caching_logic(Some("prompt-0"), None, None, None)
+        .unwrap();
+    assert!(read.is_some());
+
+    cache.insert(
+        PromptCache::get_cache_key(Some("prompt-1000"), None, None),
+        PromptManagementClient::default(),
+    );
+
+    let entries = cache.entries.lock().unwrap();
+    assert_eq!(entries.len(), 1000);
+    assert!(entries.contains(&PromptCache::get_cache_key(Some("prompt-0"), None, None)));
+    assert!(!entries.contains(&PromptCache::get_cache_key(Some("prompt-1"), None, None)));
 }
