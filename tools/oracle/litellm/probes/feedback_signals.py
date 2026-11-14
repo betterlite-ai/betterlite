@@ -56,6 +56,8 @@ class StateOutput(Strict):
     failure_count: int
     loop_count: int
     exhaustion_count: int
+    last_user_content: str | None
+    last_assistant_content: str | None
     tool_call_history: list[str]
     turn_count: int
     last_processed_turn: int
@@ -110,6 +112,8 @@ def state_output(state: SessionState) -> StateOutput:
         failure_count=state.failure_count,
         loop_count=state.loop_count,
         exhaustion_count=state.exhaustion_count,
+        last_user_content=state.last_user_content,
+        last_assistant_content=state.last_assistant_content,
         tool_call_history=state.tool_call_history,
         turn_count=state.turn_count,
         last_processed_turn=state.last_processed_turn,
