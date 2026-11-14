@@ -21,7 +21,7 @@ pub struct TranscriptWord {
     pub end: Option<Number>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ElevenTranscript {
     pub text: Option<String>,
     pub task: TranscriptTask,
