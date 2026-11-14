@@ -275,7 +275,7 @@ fn parse_data_uri(raw: &str) -> (Option<&str>, Option<&str>) {
     let Some((header, data)) = rest.split_once(";base64,") else {
         return (None, None);
     };
-    ((!header.is_empty()).then_some(header), Some(data))
+    (Some(header), Some(data))
 }
 
 fn mime_to_byte_data_type(mime: Option<&str>) -> Option<ByteDataType> {
