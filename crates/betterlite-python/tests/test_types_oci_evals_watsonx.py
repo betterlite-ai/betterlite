@@ -359,7 +359,7 @@ def test_watsonx_names(report: NamesReport) -> None:
     assert report["betterlite"]["watsonx"] == expected
 
 
-def test_oci_wire_dumps(report: NamesReport) -> None:
+def test_oci_wire_names(report: NamesReport) -> None:
     dumps = report["dumps"]
     assert dumps["betterlite"]["completion"] == dumps["litellm"]["completion"]
     assert dumps["betterlite"]["cohere"] == dumps["litellm"]["cohere"]
