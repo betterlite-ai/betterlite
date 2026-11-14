@@ -249,13 +249,13 @@ fn direct_empty_fields_no_alias(
 #[rstest]
 #[case::resolved_model("gpt-4o-mini", "gpt-4o-mini")]
 #[case::empty_resolved("", "openai/gpt-4o-mini")]
-fn first_alias_success(#[case] resolved: &str, #[case] expected_model: &str) {
+fn first_alias_success(#[case] returned: &str, #[case] expected_model: &str) {
     let resolver = ScriptedResolver::default();
     resolver.script("tpm-locked", vec![Step::Failure]);
     resolver.script(
         "openai/gpt-4o-mini",
         vec![Step::Success {
-            model: resolved.to_owned(),
+            model: returned.to_owned(),
             provider: ProviderIdentity::Known(ProviderId::Openai),
         }],
     );

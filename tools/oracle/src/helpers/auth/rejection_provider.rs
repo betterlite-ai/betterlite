@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_auth::rejection_provider::{DeploymentSnapshot, ProviderResolution, SnapshotError};
 // ast-grep-ignore: no-long-names
-use betterlite_auth::rejection_provider::resolve_llm_provider_for_rate_limit;
+use betterlite_auth::rejection_provider::resolve_llm_provider_for_rate_limit as attribute_rejection;
 use betterlite_models::decisions::Json;
 use betterlite_models::resolution::{ProviderIdentity, ResolutionError, ResolvedModel};
 use serde::Deserialize;
@@ -152,7 +152,7 @@ impl crate::helpers::Helper for Op {
         let count = DebugCount::default();
         let subscriber = tracing_subscriber::registry().with(count.clone());
         let (model, provider) = with_default(subscriber, || {
-            resolve_llm_provider_for_rate_limit(input.model.as_deref(), &lookup, &snapshot)
+            attribute_rejection(input.model.as_deref(), &lookup, &snapshot)
         });
         let calls = lookup
             .calls

@@ -32,7 +32,7 @@ pub fn resolve_llm_provider_for_rate_limit(
         return (String::new(), PROXY_LLM_PROVIDER_FALLBACK.to_owned());
     };
     match resolver.resolve(requested) {
-        Ok(resolved) => resolved_fields(resolved, requested),
+        Ok(found) => resolved_fields(found, requested),
         Err(error) => {
             if let Some(alias) = resolve_from_router_alias(requested, resolver, snapshot) {
                 return alias;
@@ -46,10 +46,10 @@ pub fn resolve_llm_provider_for_rate_limit(
 }
 
 // `resolved_model or model` and `custom_llm_provider or PROXY_LLM_PROVIDER_FALLBACK`, as LiteLLM returns them.
-fn resolved_fields(resolved: ResolvedModel, original_model: &str) -> (String, String) {
+fn resolved_fields(found: ResolvedModel, original_model: &str) -> (String, String) {
     let ResolvedModel {
         model, provider, ..
-    } = resolved;
+    } = found;
     let resolved_model = if model.is_empty() {
         original_model.to_owned()
     } else {
@@ -98,13 +98,13 @@ fn resolve_from_router_alias(
 ) -> Option<(String, String)> {
     let deployments = snapshot.model_list().ok()??;
     for underlying in alias_candidates(model, deployments) {
-        let Ok(resolved) = resolver.resolve(underlying) else {
+        let Ok(found) = resolver.resolve(underlying) else {
             continue;
         };
-        if resolved.provider.slug().is_empty() {
+        if found.provider.slug().is_empty() {
             continue;
         }
-        return Some(resolved_fields(resolved, underlying));
+        return Some(resolved_fields(found, underlying));
     }
     None
 }
