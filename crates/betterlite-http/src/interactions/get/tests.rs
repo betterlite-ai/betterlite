@@ -198,6 +198,9 @@ fn get_interaction_retrieves_the_interaction_through_the_config() {
     fixture
         .headers
         .insert("x-goog-api-key".to_owned(), SecretString::from("key-1"));
+    fixture
+        .headers
+        .insert("x-validated".to_owned(), SecretString::from("v1"));
     let mut clients = clients();
     let mut logging = Logging::default();
     let mut call = Call::new(serving.address);
@@ -221,7 +224,7 @@ fn get_interaction_retrieves_the_interaction_through_the_config() {
         fixture.calls(),
         vec![
             "environment||1|2".to_owned(),
-            "request|int_1|1|2".to_owned(),
+            "request|int_1|2|2".to_owned(),
             "response|200|int_1|r1".to_owned(),
         ]
     );
@@ -612,5 +615,104 @@ async fn async_get_interaction_passes_a_failing_status_to_the_response_transform
         error,
         GetInteractionError::Provider(FixtureError::Refused(500))
     ));
+    serving.request.join().unwrap();
+}
+
+#[rstest]
+#[case::unsupported_scheme("https://127.0.0.1:1", "UnsupportedProxyScheme { scheme: \"https\" }")]
+#[case::invalid_url("http://", "InvalidProxyUrl { name: \"http\" }")]
+fn get_interaction_refuses_a_proxy_it_cannot_use_instead_of_connecting_directly(
+    #[case] proxy: &str,
+    #[case] expected: &str,
+) {
+    let fixture = Fixture::default();
+    let mut clients = HttpClients::new(
+        support::policy(Verification::Enabled, None),
+        support::proxy_policy(&[("HTTP_PROXY", proxy)]),
+    );
+    let mut logging = Logging::default();
+    let call = Call::new(dead_address());
+
+    let error =
+        get_interaction(&fixture, &mut clients, &mut logging, None, call.request()).unwrap_err();
+
+    assert!(
+        matches!(&error, GetInteractionError::Transport(failure) if format!("{failure:?}") == expected),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn get_interaction_skips_the_proxy_check_for_a_supplied_client() {
+    let serving = support::serve_once(support::reply("200 OK", &[], "{}"), None);
+    let fixture = Fixture::default();
+    let mut clients = HttpClients::new(
+        support::policy(Verification::Enabled, None),
+        support::proxy_policy(&[("HTTP_PROXY", "https://127.0.0.1:1")]),
+    );
+    let mut logging = Logging::default();
+    let supplied = BlockingClientBuilder::new().build().unwrap();
+
+    let output = get_interaction(
+        &fixture,
+        &mut clients,
+        &mut logging,
+        Some(supplied),
+        Call::new(serving.address).request(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "{}");
+    serving.request.join().unwrap();
+}
+
+#[rstest]
+#[case::unsupported_scheme("https://127.0.0.1:1", "UnsupportedProxyScheme { scheme: \"https\" }")]
+#[case::invalid_url("http://", "InvalidProxyUrl { name: \"http\" }")]
+#[tokio::test]
+async fn async_get_interaction_refuses_a_proxy_it_cannot_use_instead_of_connecting_directly(
+    #[case] proxy: &str,
+    #[case] expected: &str,
+) {
+    let fixture = Fixture::default();
+    let mut clients = HttpClients::new(
+        support::policy(Verification::Enabled, None),
+        support::proxy_policy(&[("HTTP_PROXY", proxy)]),
+    );
+    let mut logging = Logging::default();
+    let call = Call::new(dead_address());
+
+    let error = async_get_interaction(&fixture, &mut clients, &mut logging, None, call.request())
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(&error, GetInteractionError::Transport(failure) if format!("{failure:?}") == expected),
+        "{error:?}"
+    );
+}
+
+#[tokio::test]
+async fn async_get_interaction_skips_the_proxy_check_for_a_supplied_client() {
+    let serving = support::serve_once(support::reply("200 OK", &[], "{}"), None);
+    let fixture = Fixture::default();
+    let mut clients = HttpClients::new(
+        support::policy(Verification::Enabled, None),
+        support::proxy_policy(&[("HTTP_PROXY", "https://127.0.0.1:1")]),
+    );
+    let mut logging = Logging::default();
+    let supplied = base_builder().build().unwrap();
+
+    let output = async_get_interaction(
+        &fixture,
+        &mut clients,
+        &mut logging,
+        Some(supplied),
+        Call::new(serving.address).request(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(output, "{}");
     serving.request.join().unwrap();
 }

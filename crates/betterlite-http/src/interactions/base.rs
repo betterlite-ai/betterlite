@@ -115,6 +115,10 @@ pub enum RequestFailure {
     HeaderName(#[source] reqwest::header::InvalidHeaderName),
     #[error("the request header value is not valid")]
     HeaderValue(#[source] reqwest::header::InvalidHeaderValue),
+    #[error("the proxy for this request uses {scheme}://, and only http:// proxies are supported")]
+    UnsupportedProxyScheme { scheme: String },
+    #[error("the {name} proxy URL is not valid")]
+    InvalidProxyUrl { name: String },
     #[error("litellm_params.{field} cannot be a query parameter")]
     QueryValue { field: String },
     #[error("the request to the provider failed")]

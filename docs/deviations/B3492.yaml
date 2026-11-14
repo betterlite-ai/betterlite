@@ -6,7 +6,7 @@ deviations:
   - what: _async_client reads custom_llm_provider from litellm_params, falls back to "gemini" when the field is absent, null or empty, and returns a typed ClientError for a name betterlite has no provider for; a supplied client is returned before the provider is read.
     why: litellm_params.get returns None for an unset field and Python's or treats the empty string the same way, while litellm.LlmProviders raises ValueError for an unknown name; betterlite's closed ProviderId enum carries the same failure as a typed error, and the short circuit keeps LiteLLM's order.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L61-L73
-  - what: The native clients never follow a redirect, disable reqwest's protocol retries, cap the buffered response at the shared transport's 16 MiB, and send a request through a proxy route that betterlite cannot use (an https or invalid proxy setting) directly instead of failing.
+  - what: The native clients never follow a redirect, disable reqwest's protocol retries and cap the buffered response at the shared transport's 16 MiB.
     why: The shared transport refuses redirects so a provider key is not replayed to another host (B173 records the same for its path); LiteLLM's httpx handlers follow redirects and read an unbounded body. The forward routes of the resolved proxy policy and its NO_PROXY list do apply to both clients.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1404-L1424
   - what: A response header that repeats joins its values with ", " instead of keeping the last one.
@@ -21,3 +21,6 @@ deviations:
   - what: litellm_params.api_base must be a string when it is set; any other JSON type is a ClientError naming the field.
     why: LiteLLM reads api_base with `or ""` from a field GenericLiteLLMParams declares as a string, so a typed wrong value never reaches the transform there; betterlite carries the params as open JSON and refuses the wrong type before the provider contract sees it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L371-L376
+  - what: A client built here refuses a request whose proxy setting betterlite cannot use (an https or other non-http proxy scheme, or an unparsable proxy URL) with a typed error naming the scheme or the setting.
+    why: LiteLLM's httpx clients send such a request through the configured proxy, but betterlite's proxy policy carries only http:// forwarders, and connecting directly would bypass the proxy a deployment demands; a client the caller supplies keeps its own proxy settings and is not checked.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1404-L1424

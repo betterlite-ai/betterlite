@@ -33,7 +33,7 @@ pub(crate) struct ClientKey {
 // _get_httpx_client and get_async_httpx_client: one client per TLS setting, and per provider for the async form
 pub struct HttpClients {
     tls: TlsPolicy,
-    proxy: Arc<ProxyPolicy>,
+    pub(crate) proxy: Arc<ProxyPolicy>,
     pub(crate) async_clients: BTreeMap<ClientKey, Client>,
     pub(crate) sync_clients: BTreeMap<Option<bool>, BlockingClient>,
 }

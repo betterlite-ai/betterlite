@@ -1,5 +1,6 @@
 use std::str::FromStr as _;
 
+use betterlite_config::proxy::{ProxyPolicy, ProxyRoute};
 use betterlite_models::controls::json_value::JsonValue;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -58,6 +59,19 @@ fn repeated_pairs(
         pairs.push((name.to_owned(), text));
     }
     Ok(())
+}
+
+// a proxy setting betterlite cannot use is refused, so the provider key never goes out directly instead
+pub(crate) fn refuse_unusable_proxy(policy: &ProxyPolicy, url: &Url) -> Result<(), RequestFailure> {
+    match policy.route(url) {
+        Some(ProxyRoute::Unsupported { scheme }) => Err(RequestFailure::UnsupportedProxyScheme {
+            scheme: scheme.clone(),
+        }),
+        Some(ProxyRoute::Invalid { name }) => {
+            Err(RequestFailure::InvalidProxyUrl { name: name.clone() })
+        }
+        Some(ProxyRoute::Forward(_)) | None => Ok(()),
+    }
 }
 
 pub(crate) fn request_headers(headers: &RequestHeaders) -> Result<HeaderMap, RequestFailure> {

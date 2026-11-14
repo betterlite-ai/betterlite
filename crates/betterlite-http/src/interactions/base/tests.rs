@@ -10,10 +10,11 @@ use reqwest::blocking::ClientBuilder as BlockingClientBuilder;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use rstest::rstest;
 use secrecy::SecretString;
+use url::Url;
 
 use super::clients::{HttpClients, async_client, client_policy};
 use super::transport::response::{read_body, response_headers};
-use super::transport::{query_pairs, request_headers, request_url};
+use super::transport::{query_pairs, refuse_unusable_proxy, request_headers, request_url};
 use super::{
     CallFailure, ClientError, DEFAULT_PROVIDER, ErrorClasses, Params, PreparedRequest,
     RequestFailure, RequestHeaders, ResponseHeaders, api_base, handle_error,
@@ -366,6 +367,29 @@ fn a_host_the_policy_bypasses_skips_the_proxy() {
     assert_eq!(answer.status().as_u16(), 200);
     let sent = serving.request.join().unwrap();
     assert_eq!(sent.lines().next(), Some("GET /x HTTP/1.1"));
+}
+
+#[rstest]
+#[case::https_proxy("https://127.0.0.1:1", "UnsupportedProxyScheme { scheme: \"https\" }")]
+#[case::unparsable_proxy("http://", "InvalidProxyUrl { name: \"http\" }")]
+fn a_proxy_setting_betterlite_cannot_use_is_refused(#[case] proxy: &str, #[case] expected: &str) {
+    let policy = support::proxy_policy(&[("HTTP_PROXY", proxy)]);
+    let url = Url::parse("http://provider.example/x").unwrap();
+
+    let failure = refuse_unusable_proxy(&policy, &url).unwrap_err();
+
+    assert_eq!(format!("{failure:?}"), expected);
+}
+
+#[rstest]
+#[case::forward_route(&[("HTTP_PROXY", "http://127.0.0.1:1")])]
+#[case::no_route(&[])]
+#[case::other_scheme(&[("HTTPS_PROXY", "https://127.0.0.1:1")])]
+fn a_proxy_setting_betterlite_can_use_passes(#[case] variables: &[(&str, &str)]) {
+    let policy = support::proxy_policy(variables);
+    let url = Url::parse("http://provider.example/x").unwrap();
+
+    assert!(refuse_unusable_proxy(&policy, &url).is_ok());
 }
 
 #[rstest]

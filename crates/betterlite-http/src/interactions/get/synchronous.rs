@@ -1,3 +1,4 @@
+use betterlite_config::proxy::ProxyPolicy;
 use reqwest::blocking::Client as BlockingClient;
 use reqwest::blocking::Response as BlockingResponse;
 
@@ -6,9 +7,8 @@ use super::{
     prepare,
 };
 use crate::interactions::base::clients::HttpClients;
-use crate::interactions::base::transport::request_headers;
-use crate::interactions::base::transport::request_url;
 use crate::interactions::base::transport::response::{read_body, response_headers};
+use crate::interactions::base::transport::{refuse_unusable_proxy, request_headers, request_url};
 use crate::interactions::base::{
     Logging, MAX_RESPONSE_BYTES, PreparedRequest, RequestFailure, RequestHeaders, UpstreamResponse,
 };
@@ -23,11 +23,13 @@ pub fn get_interaction<C>(
 where
     C: GetInteractionConfig,
 {
+    let own_client = supplied.is_none();
     let client = clients
         .sync_client(request.litellm_params, supplied)
         .map_err(GetInteractionError::Client)?;
     let (headers, prepared) = prepare(config, logging, &request)?;
-    let sent = send_blocking(&client, &prepared, &headers)
+    let proxy = own_client.then_some(&*clients.proxy);
+    let sent = send_blocking(&client, proxy, &prepared, &headers)
         .and_then(finish_blocking)
         .map_err(|failure| handle_failure(config, failure))?;
     finish(config, logging, sent)
@@ -35,10 +37,14 @@ where
 
 fn send_blocking(
     client: &BlockingClient,
+    proxy: Option<&ProxyPolicy>,
     prepared: &PreparedRequest,
     headers: &RequestHeaders,
 ) -> Result<BlockingResponse, RequestFailure> {
     let url = request_url(prepared)?;
+    if let Some(policy) = proxy {
+        refuse_unusable_proxy(policy, &url)?;
+    }
     client
         .get(url)
         .headers(request_headers(headers)?)
