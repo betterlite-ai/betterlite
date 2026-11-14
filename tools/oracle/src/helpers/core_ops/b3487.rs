@@ -15,7 +15,7 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 
 const LINE_LIMIT: usize = 0x0010_0000;
 
@@ -37,40 +37,36 @@ enum Mode {
 
 pub(crate) struct Op;
 
+type Events = (Vec<Vec<u8>>, Vec<Vec<u8>>);
+
 impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
         let provider = GenAiProvider::from_spelling(&input.provider);
         let body = line_bytes(&input.lines);
-        match input.mode {
-            Mode::Sync => sync_answer(input, provider, body),
-            Mode::Async => async_answer(input, provider, body),
-        }
+        let (yielded, collected) = match input.mode {
+            // LiteLLM's sync iterator hands out one event per next() call and never logs at the end
+            Mode::Sync => {
+                let mut stream = GoogleGenAiStream::new(
+                    std::iter::once(Ok(body)),
+                    stream_metadata(input),
+                    LINE_LIMIT,
+                );
+                let yielded = stream
+                    .by_ref()
+                    .collect::<Result<Vec<_>, _>>()
+                    .or_value_error()?;
+                (yielded, stream.collected_chunks().to_vec())
+            }
+            Mode::Async => async_events(input, body)?,
+        };
+        Ok(answer(provider, &input.model, &yielded, &collected))
     }
-}
-
-// LiteLLM's sync iterator hands out one event per next() call and never logs at the end
-fn sync_answer(input: &Input, provider: GenAiProvider, body: Vec<u8>) -> HelperResult {
-    let mut stream = GoogleGenAiStream::new(
-        std::iter::once(Ok(body)),
-        stream_metadata(input),
-        LINE_LIMIT,
-    );
-    let mut yielded = Vec::new();
-    for item in &mut stream {
-        yielded.push(item.or_value_error()?);
-    }
-    Ok(answer(
-        provider,
-        &input.model,
-        &yielded,
-        stream.collected_chunks(),
-    ))
 }
 
 // LiteLLM's async iterator hands out one event per __anext__ call and logs at the end
-fn async_answer(input: &Input, provider: GenAiProvider, body: Vec<u8>) -> HelperResult {
+fn async_events(input: &Input, body: Vec<u8>) -> Result<Events, Box<HelperError>> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -89,12 +85,7 @@ fn async_answer(input: &Input, provider: GenAiProvider, body: Vec<u8>) -> Helper
         while let Some(event) = stream.next_event().await.or_value_error()? {
             yielded.push(event);
         }
-        Ok(answer(
-            provider,
-            &input.model,
-            &yielded,
-            stream.collected_chunks(),
-        ))
+        Ok((yielded, stream.collected_chunks().to_vec()))
     })
 }
 

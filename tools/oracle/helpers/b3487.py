@@ -1,12 +1,13 @@
 import asyncio
 import base64
-import datetime
+import datetime as dt
 from collections.abc import AsyncIterator, Iterator
-from typing import Literal, TypedDict
+from typing import Literal, TypeAlias, TypedDict
 
+import httpx
 from litellm.google_genai.streaming_iterator import (
-    AsyncGoogleGenAIGenerateContentStreamingIterator,
-    GoogleGenAIGenerateContentStreamingIterator,
+    AsyncGoogleGenAIGenerateContentStreamingIterator as AsyncNativeIterator,
+    GoogleGenAIGenerateContentStreamingIterator as NativeSyncIterator,
 )
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.google_genai.transformation import (
@@ -33,17 +34,17 @@ class Output(TypedDict):
     yielded_matches_collected: bool
 
 
-class FakeResponse:
-    def __init__(self, lines: list[str]) -> None:
-        self.lines = lines
+class IteratorArgs(TypedDict):
+    response: httpx.Response
+    model: str
+    logging_obj: Logging
+    generate_content_provider_config: GenAiConfig  # ast-grep-ignore: no-long-names
+    litellm_metadata: dict[str, JsonValue]
+    custom_llm_provider: str
+    request_body: dict[str, JsonValue]
 
-    def iter_lines(self) -> Iterator[str]:
-        for line in self.lines:
-            yield line
 
-    async def aiter_lines(self) -> AsyncIterator[str]:
-        for line in self.lines:
-            yield line
+NativeIterator: TypeAlias = NativeSyncIterator | AsyncNativeIterator
 
 
 def logging_object(model: str) -> Logging:
@@ -53,7 +54,7 @@ def logging_object(model: str) -> Logging:
         messages=messages,
         stream=True,
         call_type="agenerate_content_stream",
-        start_time=datetime.datetime.now(datetime.UTC),
+        start_time=dt.datetime.now(dt.UTC),
         litellm_call_id="call-1",
         function_id="function-1",
     )
@@ -74,71 +75,46 @@ def provider_config(model: str, provider: LlmProviders) -> GenAiConfig:
     return selected
 
 
-def answer(
-    provider: str,
-    model: str,
-    endpoint: str,
-    yielded: list[bytes],
-    collected: list[bytes],
-) -> Output:
+def response_of(input_value: Input) -> httpx.Response:
+    content = "".join(f"{line}\n" for line in input_value["lines"])
+    return httpx.Response(200, content=content)
+
+
+def iterator_args(input_value: Input) -> IteratorArgs:
+    return IteratorArgs(
+        response=response_of(input_value),
+        model=input_value["model"],
+        logging_obj=logging_object(input_value["model"]),
+        generate_content_provider_config=provider_config(
+            input_value["model"], native_provider(input_value["provider"])
+        ),
+        litellm_metadata={},
+        custom_llm_provider=input_value["provider"],
+        request_body={},
+    )
+
+
+def answer(iterator: NativeIterator, yielded: list[bytes]) -> Output:
     return {
-        "provider": provider,
-        "model": model,
-        "endpoint": endpoint,
+        "provider": iterator.custom_llm_provider,
+        "model": iterator.model,
+        "endpoint": iterator.endpoint_type.name,
         "yielded": [base64.b64encode(chunk).decode("ascii") for chunk in yielded],
-        "collected": [base64.b64encode(chunk).decode("ascii") for chunk in collected],
-        "yielded_matches_collected": yielded == collected,
+        "collected": [base64.b64encode(chunk).decode("ascii") for chunk in iterator.collected_chunks],
+        "yielded_matches_collected": yielded == iterator.collected_chunks,
     }
 
 
 def sync_events(input_value: Input) -> Output:
-    litellm_metadata: dict[str, JsonValue] = {}
-    request_body: dict[str, JsonValue] = {}
-    iterator = GoogleGenAIGenerateContentStreamingIterator(
-        response=FakeResponse(input_value["lines"]),
-        model=input_value["model"],
-        logging_obj=logging_object(input_value["model"]),
-        generate_content_provider_config=provider_config(
-            input_value["model"], native_provider(input_value["provider"])
-        ),
-        litellm_metadata=litellm_metadata,
-        custom_llm_provider=input_value["provider"],
-        request_body=request_body,
-    )
+    iterator = NativeSyncIterator(**iterator_args(input_value))
     stream: Iterator[bytes] = iterator
-    yielded = list(stream)
-    return answer(
-        iterator.custom_llm_provider,
-        iterator.model,
-        iterator.endpoint_type.name,
-        yielded,
-        iterator.collected_chunks,
-    )
+    return answer(iterator, list(stream))
 
 
 async def async_events(input_value: Input) -> Output:
-    litellm_metadata: dict[str, JsonValue] = {}
-    request_body: dict[str, JsonValue] = {}
-    iterator = AsyncGoogleGenAIGenerateContentStreamingIterator(
-        response=FakeResponse(input_value["lines"]),
-        model=input_value["model"],
-        logging_obj=logging_object(input_value["model"]),
-        generate_content_provider_config=provider_config(
-            input_value["model"], native_provider(input_value["provider"])
-        ),
-        litellm_metadata=litellm_metadata,
-        custom_llm_provider=input_value["provider"],
-        request_body=request_body,
-    )
+    iterator = AsyncNativeIterator(**iterator_args(input_value))
     stream: AsyncIterator[bytes] = iterator
-    yielded = [chunk async for chunk in stream]
-    return answer(
-        iterator.custom_llm_provider,
-        iterator.model,
-        iterator.endpoint_type.name,
-        yielded,
-        iterator.collected_chunks,
-    )
+    return answer(iterator, [chunk async for chunk in stream])
 
 
 def run(input_value: Input) -> Output:
