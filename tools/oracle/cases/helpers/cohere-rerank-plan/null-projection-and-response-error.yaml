@@ -1,0 +1,23 @@
+kind: helper
+name: cohere-rerank-plan-null-projection-and-response-error
+call:
+  cohere_rerank_plan:
+    calls:
+      - version: v1
+        model: rerank-v3.0
+        api_key: test-key
+        headers: {}
+        settings: {}
+        options:
+          query: why
+          documents: [first]
+          top_n: null
+          rank_fields: null
+          return_documents: null
+          max_chunks_per_doc: null
+          instruction: null
+        non_default: {}
+        responses:
+          - {status: 500, body: '{"id":"r1","results":[{"index":0,"relevance_score":0.5}]}'}
+compare: {ignore: []}
+env: {}

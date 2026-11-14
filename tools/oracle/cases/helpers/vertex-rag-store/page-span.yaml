@@ -1,0 +1,16 @@
+kind: helper
+name: vertex-rag-store-page-span
+call:
+  vertex_rag_store:
+    calls:
+      - function: search
+        vector_store_id: projects/p/locations/us-central1/ragCorpora/corpus
+        query: pages
+        api_base: https://host/v1
+        litellm_params: {}
+        optional_params: {}
+        response:
+          status: 200
+          body: '{"contexts":{"contexts":[{"text":"p","sourceUri":"gs://b/p.pdf","pageSpan":{"firstPage":2,"lastPage":3}},{"text":"q","pageSpan":{}}]}}'
+env: {}
+compare: {ignore: []}

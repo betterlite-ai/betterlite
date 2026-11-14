@@ -1,0 +1,23 @@
+kind: helper
+name: agentic-followup-precedence
+call:
+  responses_hook_policy:
+    operation: followup
+    request_kwargs:
+      model: gpt-4o
+      temperature: 1
+      api_key: sk-old
+      top_p: 0.1
+      _agentic_loop_depth: 7
+    patch_kwargs:
+      api_key: sk-new
+      top_p: 0.9
+      max_agentic_loops: 9
+      _agentic_loop_fingerprints: ['patched']
+    request_params: [model, temperature]
+    depth: 1
+    max_loops: 3
+    fingerprints: ['old']
+    fingerprint: 'new'
+env: {}
+compare: {ignore: []}
