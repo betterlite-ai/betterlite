@@ -390,6 +390,7 @@ fn delete_agent_reports_a_failing_environment_without_logging() {
         "{error:?}"
     );
     assert_eq!(fixture.calls(), vec!["environment|0|1".to_owned()]);
+    assert_eq!(clients.sync_clients.len(), 1);
     assert!(logging.pre_call.is_none());
     assert!(logging.model_call_details.is_empty());
 }
@@ -548,4 +549,33 @@ async fn async_delete_agent_returns_the_provider_error_for_a_failing_status() {
     );
     assert!(logging.model_call_details.is_empty());
     serving.request.join().unwrap();
+}
+
+#[tokio::test]
+async fn async_delete_agent_reports_a_failing_environment_without_logging() {
+    let fixture = failing_environment();
+    let mut clients = clients();
+    let mut logging = Logging::default();
+    let call = Call::new(dead_address());
+
+    let error = async_delete_agent(
+        &fixture,
+        &mut clients,
+        &mut logging,
+        None,
+        &call.agent_request(),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        matches!(
+            error,
+            AgentsDeleteVersionsError::Provider(FixtureError::Field("headers"))
+        ),
+        "{error:?}"
+    );
+    assert_eq!(clients.async_clients.len(), 1);
+    assert!(logging.pre_call.is_none());
+    assert!(logging.model_call_details.is_empty());
 }

@@ -248,6 +248,7 @@ fn versions_reports_a_failing_environment_without_logging() {
         "{error:?}"
     );
     assert_eq!(fixture.calls(), vec!["environment|0|1".to_owned()]);
+    assert_eq!(clients.sync_clients.len(), 1);
     assert!(logging.pre_call.is_none());
 }
 

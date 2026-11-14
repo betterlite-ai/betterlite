@@ -27,7 +27,7 @@ deviations:
   - what: A reply body that is not UTF-8 keeps the text up to its first invalid byte, both in post_call's original_response and in the provider error message.
     why: httpx's response.text decodes with the charset and replacement characters; betterlite's transports refuse mangled text the same way gigachat_tokens does.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L332
-  - what: litellm_params.api_base must be a string when it is set; any other JSON type is a Parameters error naming the field before the config sees it.
+  - what: litellm_params.api_base must be a string when it is set; any other JSON type is a Parameters error naming the field instead of reaching the transform.
     why: LiteLLM reads api_base with `or ""` from a field GenericLiteLLMParams declares as a string, so a typed wrong value never reaches the transform there; betterlite carries the params as open JSON and refuses the wrong type where B3492 does.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L317-L321
   - what: The clients come from B3492's base module, so an owned client refuses redirects, disables protocol retries, caps the buffered reply at the shared limit and refuses a proxy setting betterlite cannot use; a client the caller supplies keeps its own settings.
