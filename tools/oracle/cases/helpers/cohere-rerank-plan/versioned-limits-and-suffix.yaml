@@ -1,0 +1,35 @@
+kind: helper
+name: cohere-rerank-plan-versioned-limits-and-suffix
+call:
+  cohere_rerank_plan:
+    calls:
+      - version: v1
+        model: rerank-v3.0
+        api_base: https://gateway.test/cohere///
+        api_key: test-key
+        headers: {}
+        settings: {}
+        options:
+          query: how tall
+          documents: [first, {title: second}]
+          top_n: 2
+          rank_fields: [title]
+          max_chunks_per_doc: 4
+          max_tokens_per_doc: 9
+        non_default: {extension: kept out}
+        responses: []
+      - version: v2
+        model: rerank-v4.0
+        api_base: https://gateway.test/cohere
+        api_key: test-key
+        headers: {}
+        settings: {}
+        options:
+          query: how tall
+          documents: [first]
+          max_chunks_per_doc: 4
+          max_tokens_per_doc: 7
+        non_default: {}
+        responses: []
+compare: {ignore: []}
+env: {}
