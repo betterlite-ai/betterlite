@@ -291,13 +291,13 @@ fn harness(scripts: Vec<Script>) -> Harness {
         recorder: Arc::clone(&recorder),
         scripts: Mutex::new(VecDeque::from(scripts)),
     });
-    let resolver: Arc<dyn AccessTokenResolver> = tokens.clone();
+    let resolver: Arc<dyn AccessTokenResolver> = Arc::<RecordingTokens>::clone(&tokens);
     let target = SpeechStreamingTarget {
         api_endpoint: "speech.googleapis.com".to_owned(),
         recognizer: RECOGNIZER.to_owned(),
         token: resolver,
     };
-    let clock_source: Arc<dyn ChirpClock> = clock.clone();
+    let clock_source: Arc<dyn ChirpClock> = Arc::<TestClock>::clone(&clock);
     let backend = ChirpBackend::new(target, factory, clock_source);
     Harness {
         backend,
