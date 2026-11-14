@@ -5,6 +5,8 @@ from typing import Final, TypedDict
 import pytest
 from pydantic import JsonValue, TypeAdapter
 
+from betterlite.types.llms.openai.chat import ResponsesAPIStreamEvents
+
 NAMES: Final = frozenset({
     "ALL_RESPONSES_API_TOOL_PARAMS", "AllEmbeddingInputValues",
     "ChatCompletionAssistantContentValue", "ChatCompletionDeltaChunk",
@@ -806,6 +808,7 @@ def test_openai_chat_names(report: Report) -> None:
     assert event_shape is not None
     assert event_shape["kind"] == "enum"
     assert dict(event_shape["enum_members"]) == EVENT_MEMBERS
+    assert all(member == member.value for member in ResponsesAPIStreamEvents)
     tool_choice = betterlite_shapes["ChatCompletionToolChoiceValues"]
     assert tool_choice is not None
     assert tool_choice["members"] == ["literal", "ChatCompletionToolChoiceObjectParam"]
