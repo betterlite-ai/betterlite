@@ -4,7 +4,6 @@ use std::sync::{Mutex, PoisonError};
 
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
-use betterlite_config::sections::vertex_credential_sources::vertex_settings::AdcEnvironment;
 use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::api::rerank_contracts::records::RerankDocument;
 use betterlite_vertex::credential_sources::getters::VertexParams;
@@ -24,7 +23,6 @@ mod tests;
 
 pub(crate) struct Op;
 
-// api_base is part of the call so the case shows that the target ignores it
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
@@ -52,7 +50,8 @@ impl Helper for Op {
             .enable_all()
             .build()
             .or_value_error()?;
-        runtime.block_on(exchange(input))
+        runtime
+            .block_on(async { Ok(json!({"target": target(input).await?, "rank": rank(input)?})) })
     }
 }
 
@@ -81,10 +80,6 @@ fn scripted<'run>(
     }
 }
 
-async fn exchange(input: &Input) -> HelperResult {
-    Ok(json!({"target": target(input).await?, "rank": rank(input)?}))
-}
-
 async fn target(input: &Input) -> HelperResult {
     let credentials = input
         .vertex_credentials
@@ -95,12 +90,7 @@ async fn target(input: &Input) -> HelperResult {
         credentials: credentials.as_ref(),
         ..VertexParams::default()
     };
-    let vertex = VertexSettings {
-        project: None,
-        location: None,
-        credentials: None,
-        adc: AdcEnvironment::default(),
-    };
+    let vertex = VertexSettings::default();
     let lookups = Mutex::new(Vec::new());
     let url = complete_url(params, &vertex, scripted(&lookups, &input.access_project))
         .await

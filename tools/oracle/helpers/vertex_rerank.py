@@ -13,15 +13,6 @@ from pydantic import JsonValue, TypeAdapter
 JSON = TypeAdapter(JsonValue)
 
 
-class FixedUuid:
-    def __init__(self) -> None:
-        self.issued = 0
-
-    def uuid4(self) -> uuid.UUID:
-        self.issued += 1
-        return uuid.UUID(int=self.issued)
-
-
 class ScriptedRerank(VertexAIRerankConfig):
     def __init__(self, project: str) -> None:
         super().__init__()
@@ -61,15 +52,12 @@ class Input(TypedDict):
 
 
 def run(data: Input) -> JsonValue:
-    uuid.uuid4 = FixedUuid().uuid4
+    uuid.uuid4 = lambda: uuid.UUID(int=1)
     config = ScriptedRerank(data["access_project"])
-    optional: dict[str, JsonValue] = {}
-    project = data.get("vertex_project")
-    if project is not None:
-        optional["vertex_project"] = project
-    credentials = data.get("vertex_credentials")
-    if credentials is not None:
-        optional["vertex_credentials"] = credentials
+    optional: dict[str, JsonValue] = {
+        "vertex_project": data.get("vertex_project"),
+        "vertex_credentials": data.get("vertex_credentials"),
+    }
     url = config.get_complete_url(data.get("api_base"), data["model"], optional)
     headers = config.validate_environment(data["headers"], data["model"], None, optional)
     mapped = config.map_cohere_rerank_params(

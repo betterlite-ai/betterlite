@@ -8,21 +8,14 @@ use crate::token_cache::error::CredentialCacheError;
 pub enum VertexRerankError {
     #[error("{field} is required for Vertex AI rerank")]
     MissingField { field: &'static str },
-    #[error("the {field} value must be {expected}")]
-    FieldType {
-        field: &'static str,
-        expected: &'static str,
-    },
+    #[error("the {0} value must be {1}")]
+    FieldType(&'static str, &'static str),
     #[error("the document at index {index} must be text or an object")]
     DocumentType { index: usize },
     #[error("the {field} of the document at index {index} must be text")]
     DocumentField { index: usize, field: &'static str },
     #[error("the document at index {index} cannot be written as text")]
-    DocumentText {
-        index: usize,
-        #[source]
-        source: FormatError,
-    },
+    DocumentText { index: usize, source: FormatError },
     #[error("the vertex credential lookup failed")]
     Credentials(#[source] CredentialCacheError),
     #[error(
@@ -46,7 +39,6 @@ pub enum VertexRerankError {
     #[error("the score of the record at position {position} is out of range")]
     Score {
         position: usize,
-        #[source]
         source: DecimalLexemeError,
     },
 }

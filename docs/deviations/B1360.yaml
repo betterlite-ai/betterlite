@@ -1,23 +1,8 @@
 task: B1360
 deviations:
-- what: >-
-    A record id is read as an integer only from an integer JSON number or from text holding an
-    optionally signed decimal integer with surrounding whitespace. LiteLLM calls int() on whatever
-    the provider sent, so it also accepts digit groups with underscores such as "1_0" and a
-    float such as 1.0; betterlite rejects those with an error that names the record position.
-  why: >-
-    Discovery Engine echoes back the string ids the request carried, which are plain zero-based
-    counts, so no working setup sends the other spellings. docs/compatibility.md does not port
-    Python's int() parsing habits.
-  link: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rerank/transformation.py#L190
-- what: >-
-    The response body is refused when it is over the shared response byte limit, and a score
-    outside the exact decimal range (1e30 for example) is an error. LiteLLM reads any size body
-    and keeps the score as a float, ordering ties by the float value.
-  why: >-
-    The task requires bounded decoding with decode_vertex_rerank, and the typed relevance score is
-    an exact decimal, so a value it cannot hold is refused instead of rounded. A real ranking
-    score lies between 0 and 1.
-  link: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rerank/transformation.py#L175
+- what: A record id is read from an integer JSON number or from text holding a signed decimal integer with surrounding whitespace. LiteLLM calls int() on it, so it also takes "1_0" and the float 1.0, and betterlite refuses both with an error that names the record position.
+  why: Discovery Engine echoes the plain zero-based string ids the request carried, and docs/compatibility.md does not port Python's int() parsing.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rerank/transformation.py#L190
+- what: A response body over the shared byte limit, or a score outside the exact decimal range such as 1e30, is an error. LiteLLM reads any size and keeps the score as a float.
+  why: The task requires bounded decoding with decode_vertex_rerank, and the relevance score is an exact decimal that is refused instead of rounded. A real ranking score lies between 0 and 1.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rerank/transformation.py#L175

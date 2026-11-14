@@ -32,7 +32,6 @@ pub struct RankRequest {
     pub user_labels: Option<BTreeMap<String, String>>,
 }
 
-// LiteLLM's map_cohere_rerank_params: the four rerank fields first, then every non-default param over them
 #[must_use]
 pub fn map_rerank_params(
     non_default_params: &Extra,
@@ -41,23 +40,26 @@ pub fn map_rerank_params(
     top_n: Option<i64>,
     return_documents: Option<bool>,
 ) -> Extra {
-    let mut mapped = Extra::new();
-    mapped.insert(String::from("query"), Json::Text(query.to_owned()));
-    mapped.insert(
-        String::from("documents"),
-        Json::List(documents.iter().map(RerankDocument::as_json).collect()),
+    let mut mapped = Extra::from_iter([
+        (String::from("query"), Json::Text(query.to_owned())),
+        (
+            String::from("documents"),
+            Json::List(documents.iter().map(RerankDocument::as_json).collect()),
+        ),
+        (
+            String::from("top_n"),
+            top_n.map_or(Json::Null, |count| Json::Number(Number::from(count))),
+        ),
+        (
+            String::from("return_documents"),
+            return_documents.map_or(Json::Null, Json::Bool),
+        ),
+    ]);
+    mapped.extend(
+        non_default_params
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone())),
     );
-    mapped.insert(
-        String::from("top_n"),
-        top_n.map_or(Json::Null, |count| Json::Number(Number::from(count))),
-    );
-    mapped.insert(
-        String::from("return_documents"),
-        return_documents.map_or(Json::Null, Json::Bool),
-    );
-    for (name, value) in non_default_params {
-        mapped.insert(name.clone(), value.clone());
-    }
     mapped
 }
 
@@ -67,15 +69,19 @@ pub fn transform_request(
     params: &Extra,
     litellm_params: Option<&Json>,
 ) -> Result<RankRequest, VertexRerankError> {
-    let query = required_text(params, "query")?;
-    let documents = required_list(params, "documents")?;
+    let Json::Text(query) = required(params, "query")? else {
+        return Err(VertexRerankError::FieldType("query", "text"));
+    };
+    let Json::List(documents) = required(params, "documents")? else {
+        return Err(VertexRerankError::FieldType("documents", "a list"));
+    };
     let mut records = Vec::with_capacity(documents.len());
     for (index, document) in documents.iter().enumerate() {
         records.push(record(index, document)?);
     }
     Ok(RankRequest {
         model: model.to_owned(),
-        query: query.to_owned(),
+        query: query.clone(),
         records,
         top_n: top_n(params)?,
         ignore_record_details: !return_documents(params)?,
@@ -83,35 +89,13 @@ pub fn transform_request(
     })
 }
 
-fn required_text<'params>(
+fn required<'params>(
     params: &'params Extra,
     field: &'static str,
-) -> Result<&'params str, VertexRerankError> {
+) -> Result<&'params Json, VertexRerankError> {
     match params.get(field) {
         None | Some(Json::Null) => Err(VertexRerankError::MissingField { field }),
-        Some(Json::Text(text)) => Ok(text),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(VertexRerankError::FieldType {
-                field,
-                expected: "text",
-            })
-        }
-    }
-}
-
-fn required_list<'params>(
-    params: &'params Extra,
-    field: &'static str,
-) -> Result<&'params [Json], VertexRerankError> {
-    match params.get(field) {
-        None | Some(Json::Null) => Err(VertexRerankError::MissingField { field }),
-        Some(Json::List(items)) => Ok(items),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-            Err(VertexRerankError::FieldType {
-                field,
-                expected: "a list",
-            })
-        }
+        Some(value) => Ok(value),
     }
 }
 
@@ -120,10 +104,7 @@ fn top_n(params: &Extra) -> Result<Option<i64>, VertexRerankError> {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Number(number)) if number.is_i64() => Ok(number.as_i64()),
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(VertexRerankError::FieldType {
-                field: "top_n",
-                expected: "a whole number",
-            })
+            Err(VertexRerankError::FieldType("top_n", "a whole number"))
         }
     }
 }
@@ -132,12 +113,9 @@ fn return_documents(params: &Extra) -> Result<bool, VertexRerankError> {
     match params.get("return_documents") {
         None | Some(Json::Null) => Ok(true),
         Some(Json::Bool(flag)) => Ok(*flag),
-        Some(Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(VertexRerankError::FieldType {
-                field: "return_documents",
-                expected: "true or false",
-            })
-        }
+        Some(Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => Err(
+            VertexRerankError::FieldType("return_documents", "true or false"),
+        ),
     }
 }
 
