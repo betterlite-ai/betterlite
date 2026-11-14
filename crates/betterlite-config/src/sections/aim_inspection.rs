@@ -67,8 +67,8 @@ where
     L: EnvironmentLookup,
 {
     value
-        .filter(|value| !value.is_empty())
-        .or_else(|| lookup.lookup(variable).filter(|value| !value.is_empty()))
+        .filter(|text| !text.is_empty())
+        .or_else(|| lookup.lookup(variable).filter(|text| !text.is_empty()))
 }
 
 impl Entry {
