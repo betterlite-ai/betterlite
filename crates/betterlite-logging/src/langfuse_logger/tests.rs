@@ -350,7 +350,7 @@ mod lifecycle_tests {
             support::start(),
         );
         let (log, guard) = support::capture_log();
-        logger.log_event_on_langfuse(&call).await;
+        let _event = logger.log_event_on_langfuse(&call).await;
         assert!(!logger.flush().await);
         assert!(
             log.contents()
@@ -529,7 +529,7 @@ mod event_dispatch_tests {
             &litellm_params,
             support::start(),
         );
-        logger.log_event_on_langfuse(&call).await;
+        let _event = logger.log_event_on_langfuse(&call).await;
         assert!(logger.flush().await);
         let spans = recording.spans();
         assert_eq!(
@@ -566,7 +566,7 @@ mod event_dispatch_tests {
             &litellm_params,
             support::start(),
         );
-        logger.log_event_on_langfuse(&call).await;
+        let _event = logger.log_event_on_langfuse(&call).await;
         assert!(logger.flush().await);
         let spans = recording.spans();
         let parameters = support::object(support::attribute_json(
@@ -601,7 +601,7 @@ mod event_dispatch_tests {
             &litellm_params,
             support::start(),
         );
-        logger.log_event_on_langfuse(&call).await;
+        let _event = logger.log_event_on_langfuse(&call).await;
         assert!(logger.flush().await);
         let spans = recording.spans();
         let passed =

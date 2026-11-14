@@ -26,7 +26,7 @@ use tracing_subscriber::fmt::MakeWriter;
 
 use crate::dynamic_logger_cache::{DynamicLoggerCache, RemovalEffect};
 use crate::fields::payload::StandardLoggingPayload;
-use crate::langfuse_channels::{LangfuseChannelRequest, LangfuseTracing, acquire_langfuse_tracing};
+use crate::langfuse_channels::{LangfuseTracing, acquire_langfuse_tracing};
 use crate::langfuse_logger::budget::LangfuseClientBudget;
 use crate::langfuse_logger::langfuse::{LangFuseLogger, LangfuseCall};
 use crate::langfuse_logger::{
