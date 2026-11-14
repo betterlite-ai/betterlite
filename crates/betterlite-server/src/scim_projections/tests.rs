@@ -47,7 +47,7 @@ where
     json_data(&serde_json::to_string(value).unwrap())
 }
 
-fn field<'a>(value: &'a JsonData, name: &str) -> &'a JsonData {
+fn field<'value>(value: &'value JsonData, name: &str) -> &'value JsonData {
     let JsonData::Object(fields) = value else {
         panic!("{name} read from a non-object");
     };
@@ -57,7 +57,7 @@ fn field<'a>(value: &'a JsonData, name: &str) -> &'a JsonData {
     found
 }
 
-fn element<'a>(value: &'a JsonData, index: usize) -> &'a JsonData {
+fn element(value: &JsonData, index: usize) -> &JsonData {
     let JsonData::Array(items) = value else {
         panic!("index {index} read from a non-array");
     };
