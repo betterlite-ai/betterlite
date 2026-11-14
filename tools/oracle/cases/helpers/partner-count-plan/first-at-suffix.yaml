@@ -1,0 +1,11 @@
+kind: helper
+name: partner-count-plan-first-at-suffix
+call:
+  partner_count_plan:
+    cases:
+    - model: claude-sonnet-4-6@20251001@extra
+      project: my-project
+      location: europe-west1
+compare:
+  ignore: []
+env: {}
