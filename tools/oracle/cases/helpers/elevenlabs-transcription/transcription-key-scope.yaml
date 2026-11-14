@@ -1,0 +1,16 @@
+kind: helper
+name: elevenlabs-transcription-transcription-key-scope
+call:
+  elevenlabs_transcription:
+    calls:
+    - {function: headers, headers: {}, api_key: explicit, environment: {ELEVENLABS_API_KEY: env}}
+    - {function: headers, headers: {}, api_key: "", environment: {ELEVENLABS_API_KEY: env}}
+    - {function: headers, headers: {}, api_key: null, environment: {ELEVENLABS_API_KEY: ""}}
+    - {function: headers, headers: {}, api_key: null, environment: {}}
+    - {function: headers, headers: {}, api_key: null, environment: {ELEVENLABS_API_KEY: "true"}}
+    - {function: headers, headers: {}, api_key: null, environment: {ELEVENLABS_API_KEY: " False "}}
+    - {function: headers, headers: {}, api_key: "false", environment: {ELEVENLABS_API_KEY: env}}
+    - {function: headers, headers: {Content-Type: text/plain, xi-api-key: old, X-Trace: "1"}, api_key: k, environment: {}}
+    - {function: headers, headers: {}, api_key: null, environment: {ELEVENLABS_API_KEY: "yes"}}
+compare: {ignore: []}
+env: {}
