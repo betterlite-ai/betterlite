@@ -23,10 +23,6 @@ impl AtomicSettlement<'_> {
             }
         };
         let values = counter_values_from_reply(&reply)?;
-        let response = build_atomic_response(&values, meta)?;
-        if response.overall_code == "OVER_LIMIT" {
-            self.refund_counter_increments(&[]).await;
-        }
-        Ok(response)
+        build_atomic_response(&values, meta)
     }
 }
