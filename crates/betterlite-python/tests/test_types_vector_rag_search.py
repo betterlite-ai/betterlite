@@ -856,3 +856,10 @@ def test_names_rag_query_response() -> None:
 def test_names_providers_absent() -> None:
     assert "SearchProvider" not in dir(betterlite_search)
     assert "SearchProviders" not in dir(betterlite_search)
+
+
+def test_names_typeddict_origin() -> None:
+    assert type(betterlite_stores.LiteLLM_VectorStoreConfig).__module__ == "typing_extensions"
+    assert type(betterlite_files.VectorStoreFileObject).__module__ == "typing_extensions"
+    assert type(betterlite_rag.RAGRetrievalConfig).__module__ == "typing_extensions"
+    assert type(betterlite_search.SearchTool).__module__ == "typing_extensions"

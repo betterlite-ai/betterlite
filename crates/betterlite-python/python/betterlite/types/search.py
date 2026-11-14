@@ -1,6 +1,5 @@
-from typing import Required, TypedDict
-
 from pydantic import JsonValue
+from typing_extensions import Required, TypedDict
 
 
 class SearchToolLiteLLMParams(TypedDict, total=False):

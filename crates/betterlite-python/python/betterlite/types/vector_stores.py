@@ -2,10 +2,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal, TypedDict
+from typing import Literal
 
 from pydantic import BaseModel, JsonValue
-from typing_extensions import ReadOnly
+from typing_extensions import ReadOnly, TypedDict
 
 
 # ast-grep-ignore: no-long-names

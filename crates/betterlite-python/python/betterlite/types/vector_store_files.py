@@ -1,7 +1,8 @@
 from enum import StrEnum
-from typing import Literal, TypedDict
+from typing import Literal
 
 from pydantic import JsonValue
+from typing_extensions import TypedDict
 
 
 class VectorStoreFileStatus(StrEnum):

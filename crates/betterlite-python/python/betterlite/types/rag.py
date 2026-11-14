@@ -1,8 +1,8 @@
 from collections.abc import Mapping
-from typing import ClassVar, Literal, TypedDict
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, JsonValue
-from typing_extensions import ReadOnly
+from typing_extensions import ReadOnly, TypedDict
 
 from betterlite.types.utils import ModelResponse
 
