@@ -166,13 +166,12 @@ pub fn attach_details(
     if details.is_empty() {
         return recovered.clone();
     }
-    recovered
-        .iter()
-        .map(|(api_key, meta)| {
-            (
-                api_key.clone(),
-                meta_with_user_details(api_key, meta, details),
-            )
-        })
-        .collect()
+    let mut attached = BTreeMap::new();
+    for (api_key, meta) in recovered {
+        attached.insert(
+            api_key.clone(),
+            meta_with_user_details(api_key, meta, details),
+        );
+    }
+    attached
 }

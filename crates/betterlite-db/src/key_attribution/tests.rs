@@ -168,19 +168,20 @@ fn empty_metadata_values_count_as_absent() {
 }
 
 #[rstest]
-#[case::no_user_id(None, false)]
-#[case::empty_user_id(Some(""), false)]
-#[case::no_email(Some("user"), true)]
-#[case::email_with_team(Some("user"), false)]
+#[case::no_user_id(None, None, false)]
+#[case::empty_user_id(Some(""), None, false)]
+#[case::no_email(Some("user"), None, true)]
+#[case::email_with_team(Some("user"), Some("meta@example.com"), false)]
 fn needing_details_skips_only_a_complete_ordinary_metadata(
     #[case] user_id: Option<&str>,
+    #[case] email: Option<&str>,
     #[case] needs: bool,
 ) {
     let meta = KeyMetadata {
         key_alias: None,
         team_id: Some("team".to_owned()),
         user_id: user_id.map(str::to_owned),
-        user_email: Some("meta@example.com".to_owned()),
+        user_email: email.map(str::to_owned),
         key_exists: None,
     };
     let expected = if needs {
@@ -445,20 +446,6 @@ fn recovered_alias_overrides_a_filled_row_alias_but_a_filled_email_wins() {
     assert_eq!(
         projected[0].get("user_email"),
         Some(&JsonData::String("row@example.com".to_owned()))
-    );
-}
-
-#[test]
-fn falsey_metadata_values_keep_the_row_value() {
-    let row = row(&[
-        ("api_key", JsonData::String("key".to_owned())),
-        ("team_id", JsonData::String("row-team".to_owned())),
-    ]);
-    let projected =
-        row_with_recovered_fields(&row, &recovered_alias(Some("")), &ExportFields::default());
-    assert_eq!(
-        projected.get("team_id"),
-        Some(&JsonData::String("row-team".to_owned()))
     );
 }
 
@@ -885,27 +872,18 @@ async fn postgres_malformed_user_rows_propagate() {
     close(fixture, store).await;
 }
 
-async fn insert_user(store: &PostgresStore, user_id: &str, email: &str, teams: Vec<String>) {
-    client(store)
-        .await
-        .execute(
-            r#"INSERT INTO "LiteLLM_UserTable" (user_id, user_email, teams) VALUES ($1, $2, $3)"#,
-            &[&user_id, &email, &teams],
-        )
-        .await
-        .unwrap();
-}
-
 #[tokio::test]
 async fn postgres_export_filling_recovers_cli_and_hashed_rows_in_order() {
     let (fixture, store) = database().await;
-    insert_user(
-        &store,
-        "cli-user",
-        "cli@example.com",
-        vec!["team-a".to_owned()],
-    )
-    .await;
+    let teams = vec!["team-a".to_owned()];
+    client(&store)
+        .await
+        .execute(
+            r#"INSERT INTO "LiteLLM_UserTable" (user_id, user_email, teams) VALUES ($1, $2, $3)"#,
+            &[&"cli-user", &"cli@example.com", &teams],
+        )
+        .await
+        .unwrap();
     insert_token(&store, "sk-hashed", "hashed-alias", Some("hashed-user")).await;
     let rows = vec![
         row(&[

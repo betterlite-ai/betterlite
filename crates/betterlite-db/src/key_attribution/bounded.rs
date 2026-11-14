@@ -27,13 +27,14 @@ pub async fn bounded_rows(
     params: &[&(dyn ToSql + Sync)],
     planner_settings: &[&str],
 ) -> Result<Vec<Row>, BoundedReadError> {
-    let read = read_rows(store, sql, params, planner_settings);
-    match timeout(Duration::from_millis(TRANSACTION_TIMEOUT_MILLIS), read).await {
-        Ok(rows) => rows.map_err(|source| BoundedReadError::Database { source }),
-        Err(_) => Err(BoundedReadError::TransactionTimeout {
+    let pending = read_rows(store, sql, params, planner_settings);
+    let Ok(loaded) = timeout(Duration::from_millis(TRANSACTION_TIMEOUT_MILLIS), pending).await
+    else {
+        return Err(BoundedReadError::TransactionTimeout {
             millis: TRANSACTION_TIMEOUT_MILLIS,
-        }),
-    }
+        });
+    };
+    loaded.map_err(|source| BoundedReadError::Database { source })
 }
 
 async fn read_rows(

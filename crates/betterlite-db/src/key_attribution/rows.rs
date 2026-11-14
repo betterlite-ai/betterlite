@@ -50,13 +50,14 @@ fn token_values(row: &Row) -> Result<TokenDigestRow, tokio_postgres::Error> {
 }
 
 pub fn owner_rows(rows: &[Row]) -> Result<Vec<DailyOwnerRow>, KeyAttributionError> {
-    rows.iter()
-        .map(|row| {
-            owner_values(row).map_err(|driver| KeyAttributionError::DailyOwner {
-                source: DriverError { driver },
-            })
-        })
-        .collect()
+    let mut owners = Vec::with_capacity(rows.len());
+    for row in rows {
+        let owner = owner_values(row).map_err(|driver| KeyAttributionError::DailyOwner {
+            source: DriverError { driver },
+        })?;
+        owners.push(owner);
+    }
+    Ok(owners)
 }
 
 fn owner_values(row: &Row) -> Result<DailyOwnerRow, tokio_postgres::Error> {
@@ -112,11 +113,14 @@ pub fn unresolved_digests(
 
 #[must_use]
 pub fn daily_owners(rows: &[DailyOwnerRow], keys: &BTreeSet<String>) -> BTreeMap<String, String> {
-    rows.iter()
-        .filter(|row| keys.contains(&row.hashed_api_key))
-        .filter_map(|row| {
-            unanimous(row.first_owner.as_deref(), row.last_owner.as_deref())
-                .map(|owner| (row.hashed_api_key.clone(), owner))
-        })
-        .collect()
+    let mut owners = BTreeMap::new();
+    for row in rows {
+        if !keys.contains(&row.hashed_api_key) {
+            continue;
+        }
+        if let Some(owner) = unanimous(row.first_owner.as_deref(), row.last_owner.as_deref()) {
+            owners.insert(row.hashed_api_key.clone(), owner);
+        }
+    }
+    owners
 }

@@ -46,7 +46,7 @@ pub fn missing_keys(
         .collect()
 }
 
-fn alias_is_missing(alias: Option<&JsonData>) -> bool {
+const fn alias_is_missing(alias: Option<&JsonData>) -> bool {
     match alias {
         None | Some(JsonData::Null) => true,
         Some(JsonData::String(text)) => text.is_empty(),
@@ -67,14 +67,22 @@ pub fn row_with_recovered_fields(
         return row.clone();
     };
     let mut projected = row.clone();
-    let alias = match meta.key_alias.as_deref().filter(|alias| !alias.is_empty()) {
-        Some(alias) => JsonData::String(alias.to_owned()),
-        None => row.get(&fields.alias).cloned().unwrap_or(JsonData::Null),
-    };
-    let team = match meta.team_id.as_deref().filter(|team| !team.is_empty()) {
-        Some(team) => JsonData::String(team.to_owned()),
-        None => row.get(&fields.team_id).cloned().unwrap_or(JsonData::Null),
-    };
+    let alias = meta
+        .key_alias
+        .as_deref()
+        .filter(|alias| !alias.is_empty())
+        .map_or_else(
+            || row.get(&fields.alias).cloned().unwrap_or(JsonData::Null),
+            |alias| JsonData::String(alias.to_owned()),
+        );
+    let team = meta
+        .team_id
+        .as_deref()
+        .filter(|team| !team.is_empty())
+        .map_or_else(
+            || row.get(&fields.team_id).cloned().unwrap_or(JsonData::Null),
+            |team| JsonData::String(team.to_owned()),
+        );
     let email = row
         .get(&fields.user_email)
         .filter(|value| json_value_is_set(value))

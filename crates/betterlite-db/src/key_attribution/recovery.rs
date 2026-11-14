@@ -71,17 +71,17 @@ pub async fn recover_daily_spend_owners(
         return Ok(BTreeMap::new());
     }
     let values: Vec<String> = keys.iter().cloned().collect();
-    match bounded_rows(store, DAILY_USER_SPEND_OWNER_SQL, &[&values], &[]).await {
-        Ok(rows) => Ok(daily_owners(&owner_rows(&rows)?, keys)),
-        Err(error) => {
+    let rows = bounded_rows(store, DAILY_USER_SPEND_OWNER_SQL, &[&values], &[])
+        .await
+        .inspect_err(|error| {
             tracing::warn!(
                 keys = keys.len(),
                 %error,
                 "daily-spend key owner recovery failed; continuing without owner evidence"
             );
-            Ok(BTreeMap::new())
-        }
-    }
+        })
+        .unwrap_or_default();
+    Ok(daily_owners(&owner_rows(&rows)?, keys))
 }
 
 pub async fn recover_cli_session_keys(
