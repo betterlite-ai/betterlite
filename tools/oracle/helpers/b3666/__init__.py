@@ -221,8 +221,7 @@ async def already_ran(args: DataInput) -> Json:
 
 async def stamped_key_fields(args: DataInput) -> Json:
     probe = build_probe(args)
-    guarded = WIRE.dump_json({"guardrails": [], **args["data"]}).decode()
-    kwargs = REQUEST.validate_json(guarded)
+    kwargs = REQUEST.validate_json(WIRE.dump_json({"guardrails": [], **args["data"]}).decode())
     await probe.async_pre_call_deployment_hook(kwargs, CallTypes.completion)
     [key] = probe.keys
     return {
