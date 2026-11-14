@@ -133,6 +133,28 @@ async fn sampling_rate_above_the_stream_never_samples() {
 }
 
 #[tokio::test]
+async fn sampling_rate_zero_never_samples_before_the_end() {
+    let translation = FakeTranslation::planned(vec![Plan::Rewrite {
+        index: 0,
+        text: "ab",
+        holdback: 0,
+    }]);
+    let guardrail = FakeGuardrail;
+    let mut data = BTreeMap::new();
+    let keys = BTreeMap::new();
+    let mut loop_params = params(&translation, &guardrail, &mut data, &keys);
+    loop_params.sampling_rate = 0;
+    let outputs = collect_outputs(loop_params, vec![text_chunk("a"), text_chunk("b")]).await;
+    assert_eq!(
+        outputs,
+        vec![Ok(item(synthetic("ab", Some("assistant"), None)))]
+    );
+    let calls = translation.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].items.len(), 2);
+}
+
+#[tokio::test]
 async fn tool_call_flushes_text_before_the_passthrough() {
     let translation = FakeTranslation::planned(vec![
         Plan::Rewrite {
