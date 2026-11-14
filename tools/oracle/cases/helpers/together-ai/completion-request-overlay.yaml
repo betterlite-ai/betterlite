@@ -16,7 +16,7 @@ call:
     - model: together/llama
       messages:
       - {role: user, content: hello}
-      optional_params: {prompt: other prompt}
+      optional_params: {model: together/other, prompt: other prompt}
     - model: together/llama
       messages:
       - {role: user, content: hello}

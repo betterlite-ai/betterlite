@@ -9,10 +9,12 @@ from litellm.caching.llm_caching_handler import LLMClientCache
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.llms.together_ai import cost_calculator
 from litellm.llms.together_ai.chat.transformation import TogetherAIChatConfig
+from litellm.llms.together_ai.completion.transformation import TogetherAITextCompletionConfig
 from litellm.llms.together_ai.rerank.handler import TogetherAIRerank
+from litellm.types.llms.openai import OpenAITextCompletionUserMessage as UserMessage
 from litellm.types.rerank import RerankResponse
 from litellm.types.utils import CallTypes
-from openai import APIStatusError, InternalServerError, OpenAI
+from openai import APIStatusError
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
@@ -25,7 +27,6 @@ CHAT_REPLY: dict[str, JsonValue] = {
     "choices": [{**CHOICE, "message": {"role": "assistant", "content": "hi"}}],
     "usage": USAGE,
 }
-TEXT_REPLY: dict[str, JsonValue] = {"choices": [{**CHOICE, "text": "hi"}], "usage": USAGE}
 CALL_TYPES: dict[str, CallTypes] = {
     "embedding": CallTypes.embedding,
     "aembedding": CallTypes.aembedding,
@@ -83,16 +84,15 @@ class ChatMessagesStep(TypedDict):
     messages: list[dict[str, JsonValue]]
 
 
-class CompletionParams(TypedDict, total=False):
-    temperature: float
-    stop: list[str]
-    prompt: str
+class TextMessage(TypedDict):
+    role: Literal["user"]
+    content: str | list[str] | list[int] | list[list[int]] | None
 
 
 class CompletionStep(TypedDict):
     model: str
-    messages: list[JsonValue]
-    optional_params: CompletionParams
+    messages: list[TextMessage]
+    optional_params: dict[str, JsonValue]
 
 
 class RerankRequestStep(TypedDict):
@@ -143,6 +143,16 @@ class CostCalculator(Protocol):
 COSTS: CostCalculator = cost_calculator
 
 
+class TextConfig(Protocol):
+    def transform_text_completion_request(  # ast-grep-ignore: no-long-names
+        self,
+        model: str,
+        messages: list[UserMessage],
+        optional_params: dict[str, JsonValue],
+        headers: dict[str, str],
+    ) -> dict[str, JsonValue]: ...
+
+
 class ChatConfig(Protocol):
     def get_supported_openai_params(self, model: str) -> list[str]: ...
 
@@ -157,6 +167,7 @@ class ChatConfig(Protocol):
 
 
 CHAT: ChatConfig = TogetherAIChatConfig()
+TEXT: TextConfig = TogetherAITextCompletionConfig()
 
 
 def chat_supported(step: ModelStep) -> JsonValue:
@@ -190,23 +201,17 @@ def chat_messages(step: ChatMessagesStep) -> JsonValue:
 
 
 def completion(step: CompletionStep) -> JsonValue:
-    recorder = Recorder(TEXT_REPLY)
+    messages = [
+        UserMessage(role="user", content=message["content"]) for message in step["messages"]
+    ]
     try:
-        litellm.completion(
-            model=f"together_ai/{step['model']}",
-            messages=step["messages"],
-            text_completion=True,
-            client=OpenAI(
-                api_key="k",
-                base_url="https://together.test/v1",
-                http_client=httpx.Client(transport=httpx.MockTransport(recorder.handle)),
-            ),
-            **step["optional_params"],
+        request = TEXT.transform_text_completion_request(
+            step["model"], messages, step["optional_params"], {}
         )
-    except InternalServerError as error:
+    except ValueError as error:
         kind = "integers" if INTEGERS in str(error) else "multiple_prompts"
         return {"ok": False, "error": {"kind": kind}}
-    return {"ok": True, "value": recorder.body}
+    return {"ok": True, "value": request}
 
 
 def rerank(client: CapturedClient, step: RerankRequestStep) -> RerankResponse:
