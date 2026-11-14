@@ -475,6 +475,17 @@ def test_api_response_dump() -> None:
     assert ours.error is None
 
 
+def test_api_response_web_search() -> None:
+    query: dict[str, JsonValue] = {"query": "cats"}
+    call = build_web_search_call("abc", query, WEB_SEARCH_CONTENT)
+    reference_call = litellm_responses.build_web_search_call("abc", query, WEB_SEARCH_CONTENT)
+    ours = ResponsesAPIResponse(id="resp_1", created_at=1, output=[call])
+    values: dict[str, InitValue] = {"id": "resp_1", "created_at": 1, "output": [reference_call]}
+    reference = reference_response(values)
+    assert_same("web_search_output", reference, ours)
+    assert ours.output_text == reference.output_text
+
+
 def test_api_response_usage_dict() -> None:
     ours = ResponsesAPIResponse(**RESPONSE_VALUES, output=[])
     reference = reference_response({**RESPONSE_VALUES, "output": []})
