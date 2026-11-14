@@ -26,28 +26,22 @@ class Seed(TypedDict):
 
 
 class Transform(TypedDict):
-    kind: Literal["unchanged", "set_revision", "drop_job", "failing"]
+    kind: Literal["unchanged", "set_revision", "drop_job"]
     revision: NotRequired[int]
     job_id: NotRequired[str]
 
 
 class Call(TypedDict):
     operation: Literal[
-        "lenses",
-        "get",
-        "create",
         "update",
         "jobs",
         "job",
-        "workers",
-        "worker",
         "save_worker",
         "set_worker_billing",
         "revoke_worker",
         "heartbeat",
     ]
     lens_id: NotRequired[str]
-    lens: NotRequired[dict[str, JsonValue]]
     attempts: NotRequired[int]
     changed_only: NotRequired[bool]
     transform: NotRequired[Transform]

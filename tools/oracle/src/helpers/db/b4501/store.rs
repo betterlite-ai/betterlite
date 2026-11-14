@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::ready;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use betterlite_db::daily_spend_sql::bind::SqlBind;
@@ -7,12 +8,11 @@ use betterlite_lens::models::decode::decode;
 use betterlite_lens::models::job::{Job, Lens, Worker};
 use serde_json::{Value, json};
 
+use super::Seed;
 use super::failure;
-use super::input::Seed;
 use crate::helpers::HelperError;
 
 mod queries;
-mod writes;
 
 pub(crate) struct Store {
     lenses: BTreeMap<String, StoredLens>,
@@ -46,8 +46,7 @@ impl Database for FakeDatabase {
         query: &'database str,
         args: &'database [SqlBind],
     ) -> QueryFuture<'database> {
-        let rows = lock_store(&self.store).query(query, args);
-        Box::pin(async move { Ok(rows) })
+        Box::pin(ready(Ok(lock_store(&self.store).query(query, args))))
     }
 
     fn execute_raw<'database>(
@@ -55,8 +54,7 @@ impl Database for FakeDatabase {
         query: &'database str,
         args: &'database [SqlBind],
     ) -> ExecuteFuture<'database> {
-        let count = lock_store(&self.store).execute(query, args);
-        Box::pin(async move { Ok(count) })
+        Box::pin(ready(Ok(lock_store(&self.store).execute(query, args))))
     }
 }
 
@@ -77,35 +75,26 @@ pub(crate) fn build(seed: &Seed, conflicts: u32) -> Result<Store, Box<HelperErro
     for (lens_id, row) in &seed.lenses {
         let lens = decode::<Lens>(row.data.to_string().as_bytes()).map_err(failure)?;
         let data = serde_json::to_value(&lens).map_err(failure)?;
-        store.lenses.insert(
-            lens_id.clone(),
-            StoredLens {
-                version: row.version,
-                data,
-            },
-        );
+        let stored = StoredLens {
+            version: row.version,
+            data,
+        };
+        store.lenses.insert(lens_id.clone(), stored);
     }
     for (job_id, row) in &seed.runs {
         let job = decode::<Job>(row.data.to_string().as_bytes()).map_err(failure)?;
         let data = serde_json::to_value(&job).map_err(failure)?;
-        store.runs.insert(
-            job_id.clone(),
-            StoredRun {
-                lens_id: row.lens_id.clone(),
-                data,
-            },
-        );
+        let lens_id = row.lens_id.clone();
+        store
+            .runs
+            .insert(job_id.clone(), StoredRun { lens_id, data });
     }
     for (worker_id, row) in &seed.workers {
         let worker = decode::<Worker>(row.data.to_string().as_bytes()).map_err(failure)?;
         let data = serde_json::to_value(&worker).map_err(failure)?;
-        store.workers.insert(
-            worker_id.clone(),
-            StoredWorker {
-                token_hash: row.token_hash.clone(),
-                data,
-            },
-        );
+        let token_hash = row.token_hash.clone();
+        let stored = StoredWorker { token_hash, data };
+        store.workers.insert(worker_id.clone(), stored);
     }
     Ok(store)
 }
@@ -146,12 +135,6 @@ fn integer_argument(args: &[SqlBind], index: usize) -> Option<i64> {
     match args.get(index) {
         Some(SqlBind::Integer(Some(value))) => Some(*value),
         _ => None,
-    }
-}
-
-fn set_version(data: &mut Value, version: i64) {
-    if let Value::Object(fields) = data {
-        fields.insert("version".to_owned(), json!(version));
     }
 }
 

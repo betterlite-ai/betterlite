@@ -1,6 +1,6 @@
 import asyncio
 
-from litellm.proxy.lens.models import Lens, Worker
+from litellm.proxy.lens.models import Worker
 from litellm.proxy.lens.repository import LensRepository
 from pydantic import JsonValue
 
@@ -8,18 +8,8 @@ from .model import Call, Output, dump
 from .store import CountingTransform, Store
 
 
-def read_lens_call(
-    repository: LensRepository, call: Call
-) -> tuple[JsonValue, int] | None:
+def read_call(repository: LensRepository, call: Call) -> tuple[JsonValue, int] | None:
     operation = call["operation"]
-    if operation == "lenses":
-        return ([dump(lens) for lens in asyncio.run(repository.lenses())], 0)
-    if operation == "get":
-        lens_id = call.get("lens_id")
-        if lens_id is None:
-            raise ValueError("get needs lens_id")
-        found = asyncio.run(repository.get(lens_id))
-        return (None if found is None else dump(found), 0)
     if operation == "jobs":
         lens_id = call.get("lens_id")
         offset = call.get("offset")
@@ -36,13 +26,7 @@ def read_lens_call(
     return None
 
 
-def write_lens_call(repository: LensRepository, call: Call) -> tuple[JsonValue, int]:
-    if call["operation"] == "create":
-        payload = call.get("lens")
-        if payload is None:
-            raise ValueError("create needs a lens")
-        created = asyncio.run(repository.create(Lens.model_validate(payload)))
-        return (dump(created), 0)
+def update_call(repository: LensRepository, call: Call) -> tuple[JsonValue, int]:
     lens_id = call.get("lens_id")
     attempts = call.get("attempts")
     changed_only = call.get("changed_only")
@@ -56,20 +40,7 @@ def write_lens_call(repository: LensRepository, call: Call) -> tuple[JsonValue, 
     return (None if updated is None else dump(updated), counting.calls)
 
 
-def read_worker_call(repository: LensRepository, call: Call) -> JsonValue | None:
-    operation = call["operation"]
-    if operation == "workers":
-        return [dump(worker) for worker in asyncio.run(repository.workers())]
-    if operation == "worker":
-        token_hash = call.get("token_hash")
-        if token_hash is None:
-            raise ValueError("worker needs token_hash")
-        found = asyncio.run(repository.worker(token_hash))
-        return None if found is None else dump(found)
-    return None
-
-
-def write_worker_call(repository: LensRepository, call: Call) -> JsonValue:
+def worker_call(repository: LensRepository, call: Call) -> JsonValue:
     operation = call["operation"]
     if operation == "save_worker":
         payload = call.get("worker")
@@ -108,9 +79,7 @@ def output(store: Store, result: JsonValue, transform_calls: int) -> Output:
         runs.append({"id": job_id, "lens_id": run["lens_id"], "data": dump(run["job"])})
     workers: list[dict[str, JsonValue]] = []
     for worker_id, row in sorted(store.workers.items()):
-        workers.append(
-            {"id": worker_id, "token_hash": row["token_hash"], "data": row["data"]}
-        )
+        workers.append({"id": worker_id, "token_hash": row["token_hash"], "data": row["data"]})
     return {
         "result": result,
         "transform_calls": transform_calls,

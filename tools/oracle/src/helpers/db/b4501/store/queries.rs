@@ -2,48 +2,48 @@ use betterlite_db::daily_spend_sql::bind::SqlBind;
 use betterlite_db::lens_repository::database::Row;
 use serde_json::Value;
 
-use super::{StoredLens, StoredRun, displaced_jobs, integer_argument, set_version, text_argument};
-
-enum Kind {
-    Update,
-    Worker,
-    Run,
-    Lens,
-}
+use super::{
+    Store, StoredLens, StoredRun, StoredWorker, displaced_jobs, integer_argument, text_argument,
+};
 
 impl Store {
     pub(super) fn query(&mut self, query: &str, args: &[SqlBind]) -> Vec<Row> {
-        match query_kind(query) {
-            Kind::Update => self.update_lens(args),
-            Kind::Worker => self.worker_query(query, args),
-            Kind::Run => self.run_query(query, args),
-            Kind::Lens => self.lens_query(query, args),
+        if query.starts_with("WITH previous") {
+            return self.update_lens(args);
         }
-    }
-
-    fn lens_query(&mut self, query: &str, args: &[SqlBind]) -> Vec<Row> {
-        if query.contains("ORDER BY id") {
-            return self.lens_rows(None);
+        if query.contains("LiteLLM_LensWorker") {
+            return self.bill_worker(args);
         }
-        self.lens_rows(text_argument(args, 0))
-    }
-
-    fn lens_rows(&self, lens_id: Option<&str>) -> Vec<Row> {
-        self.lenses
-            .iter()
-            .filter(|(id, _)| lens_id.is_none_or(|wanted| *id == wanted))
-            .map(|(_, row)| row_of(&row.data))
-            .collect()
-    }
-
-    fn run_query(&mut self, query: &str, args: &[SqlBind]) -> Vec<Row> {
         let Some(lens_id) = text_argument(args, 0) else {
             return Vec::new();
         };
         if query.contains("LIMIT 50") {
             return self.jobs_page(lens_id, integer_argument(args, 1).unwrap_or_default());
         }
-        self.single_job(lens_id, text_argument(args, 1).unwrap_or_default())
+        if query.contains("LiteLLM_LensRun") {
+            return self.single_job(lens_id, text_argument(args, 1).unwrap_or_default());
+        }
+        self.lenses
+            .get(lens_id)
+            .map(|row| row_of(&row.data))
+            .into_iter()
+            .collect()
+    }
+
+    pub(super) fn execute(&mut self, query: &str, args: &[SqlBind]) -> u64 {
+        let texts: Vec<&str> = (0..args.len())
+            .filter_map(|index| text_argument(args, index))
+            .collect();
+        match texts.as_slice() {
+            &[worker_id, token_hash, data] => self.insert_worker(worker_id, token_hash, data),
+            &[now, worker_id] if query.contains("{last_seen}") => {
+                self.patch_worker(worker_id, "last_seen", Value::String(now.to_owned()));
+            }
+            &[data, worker_id] => self.replace_worker(worker_id, data),
+            &[worker_id] => self.patch_worker(worker_id, "revoked", Value::Bool(true)),
+            _ => return 0,
+        }
+        1
     }
 
     fn jobs_page(&self, lens_id: &str, offset: i64) -> Vec<Row> {
@@ -101,32 +101,6 @@ impl Store {
         Vec::new()
     }
 
-    fn worker_query(&mut self, query: &str, args: &[SqlBind]) -> Vec<Row> {
-        if query.contains("RETURNING") {
-            return self.bill_worker(args);
-        }
-        if query.contains("token_hash=$1") {
-            return self.workers_by_hash(text_argument(args, 0));
-        }
-        self.worker_rows()
-    }
-
-    fn worker_rows(&self) -> Vec<Row> {
-        let mut rows = Vec::new();
-        for row in self.workers.values() {
-            rows.push(row_of(&row.data));
-        }
-        rows
-    }
-
-    fn workers_by_hash(&self, token_hash: Option<&str>) -> Vec<Row> {
-        self.workers
-            .values()
-            .filter(|row| Some(row.token_hash.as_str()) == token_hash)
-            .map(|row| row_of(&row.data))
-            .collect()
-    }
-
     fn bill_worker(&mut self, args: &[SqlBind]) -> Vec<Row> {
         let (Some(key_id), Some(worker_id)) = (text_argument(args, 0), text_argument(args, 1))
         else {
@@ -138,12 +112,11 @@ impl Store {
         if row.data.get("revoked") == Some(&Value::Bool(true)) {
             return Vec::new();
         }
-        if let Value::Object(fields) = &mut row.data {
-            fields.insert(
-                "analysis_key_id".to_owned(),
-                Value::String(key_id.to_owned()),
-            );
-        }
+        patch(
+            &mut row.data,
+            "analysis_key_id",
+            Value::String(key_id.to_owned()),
+        );
         Vec::from([row_of(&row.data)])
     }
 
@@ -153,31 +126,23 @@ impl Store {
             text_argument(args, 1),
             integer_argument(args, 2),
         ) else {
-            return Vec::from([Row {
-                data: "0".to_owned(),
-            }]);
+            return count_row("0");
         };
         if self.conflicts > 0 {
             self.conflicts = self.conflicts.saturating_sub(1);
             if let Some(row) = self.lenses.get_mut(lens_id) {
                 row.version = row.version.saturating_add(1);
-                set_version(&mut row.data, row.version);
+                patch(&mut row.data, "version", Value::from(row.version));
             }
         }
         let Some(row) = self.lenses.get(lens_id) else {
-            return Vec::from([Row {
-                data: "0".to_owned(),
-            }]);
+            return count_row("0");
         };
         if row.version != version {
-            return Vec::from([Row {
-                data: "0".to_owned(),
-            }]);
+            return count_row("0");
         }
         let Ok(new_data) = serde_json::from_str::<Value>(data) else {
-            return Vec::from([Row {
-                data: "0".to_owned(),
-            }]);
+            return count_row("0");
         };
         let displaced = displaced_jobs(&row.data, &new_data);
         self.lenses.insert(
@@ -193,27 +158,48 @@ impl Store {
                 data: job,
             });
         }
-        Vec::from([Row {
-            data: "1".to_owned(),
-        }])
+        count_row("1")
+    }
+
+    fn insert_worker(&mut self, worker_id: &str, token_hash: &str, text: &str) {
+        if let Ok(data) = serde_json::from_str::<Value>(text) {
+            let stored = StoredWorker {
+                token_hash: token_hash.to_owned(),
+                data,
+            };
+            self.workers.insert(worker_id.to_owned(), stored);
+        }
+    }
+
+    fn replace_worker(&mut self, worker_id: &str, text: &str) {
+        let parsed = serde_json::from_str::<Value>(text);
+        if let (Ok(data), Some(row)) = (parsed, self.workers.get_mut(worker_id)) {
+            row.data = data;
+        }
+    }
+
+    fn patch_worker(&mut self, worker_id: &str, field: &str, value: Value) {
+        if let Some(row) = self.workers.get_mut(worker_id) {
+            patch(&mut row.data, field, value);
+        }
     }
 }
 
-fn query_kind(query: &str) -> Kind {
-    if query.starts_with("WITH previous") {
-        return Kind::Update;
-    }
-    if query.contains("LiteLLM_LensWorker") {
-        return Kind::Worker;
-    }
-    if query.contains("LiteLLM_LensRun") {
-        return Kind::Run;
-    }
-    Kind::Lens
+fn count_row(value: &str) -> Vec<Row> {
+    let row = Row {
+        data: value.to_owned(),
+    };
+    Vec::from([row])
 }
 
 fn row_of(data: &Value) -> Row {
-    let text = data.to_string();
-    let row = Row { data: text };
-    row
+    Row {
+        data: data.to_string(),
+    }
+}
+
+fn patch(data: &mut Value, field: &str, value: Value) {
+    if let Value::Object(fields) = data {
+        fields.insert(field.to_owned(), value);
+    }
 }
