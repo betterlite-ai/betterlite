@@ -28,6 +28,16 @@ deviations:
       handler cannot set a per-request connect phase. The value LiteLLM uses is still carried on ClientTimeout
       and pinned by the plan tests, and the pooled client's limits belong to the task that installs it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/multimodal_embeddings/embedding_handler.py#L77
+  - what: >-
+      A sync multimodal call that runs past its timeout raises the shared Vertex timeout error, whose message is
+      "Timeout error occurred." and whose status is 408. LiteLLM's sync branch posts through HTTPHandler.post,
+      which wraps httpx's timeout in litellm.Timeout with the message "Connection timed out after {timeout}
+      seconds."; the status is 408 either way.
+    why: >-
+      This crate raises one typed error for every embedding handler, and the async multimodal and text handlers
+      already declare that message. The status a client acts on stays 408, and the sync wrapper's message text
+      is not part of any declared answer shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1516-L1521
 kept_bugs:
   - what: >-
       The text embedding facade's async handoff ignores a client the caller supplied, so the call posts through
