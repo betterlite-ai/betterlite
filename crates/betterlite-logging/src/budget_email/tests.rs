@@ -516,8 +516,8 @@ async fn team_member_emails_returns_every_member_email() {
     seed(
         &pool,
         r#"
-        INSERT INTO "LiteLLM_TeamTable" (team_id, team_alias, members_with_roles) VALUES
-            ('team-1', 'Alpha', '[{"user_id":"u1","role":"user"},{"user_id":"u2","role":"admin"}]'::JSONB);
+        INSERT INTO "LiteLLM_TeamTable" (team_id, team_alias, admins, members, models, members_with_roles) VALUES
+            ('team-1', 'Alpha', '{}'::TEXT[], '{}'::TEXT[], '{}'::TEXT[], '[{"user_id":"u1","role":"user"},{"user_id":"u2","role":"admin"}]'::JSONB);
         INSERT INTO "LiteLLM_UserTable" (user_id, user_email) VALUES
             ('u1', 'one@example.com'),
             ('u2', 'two@example.com');
@@ -545,8 +545,8 @@ async fn team_member_emails_skips_blank_ids_and_missing_emails() {
     seed(
         &pool,
         r#"
-        INSERT INTO "LiteLLM_TeamTable" (team_id, members_with_roles) VALUES
-            ('team-1', '[{"user_id":"","role":"user"},{"user_id":"u2","role":"user"},{"user_email":"ignored@example.com","role":"user"}]'::JSONB);
+        INSERT INTO "LiteLLM_TeamTable" (team_id, admins, members, models, members_with_roles) VALUES
+            ('team-1', '{}'::TEXT[], '{}'::TEXT[], '{}'::TEXT[], '[{"user_id":"","role":"user"},{"user_id":"u2","role":"user"},{"user_email":"ignored@example.com","role":"user"}]'::JSONB);
         INSERT INTO "LiteLLM_UserTable" (user_id, user_email) VALUES
             ('', 'blank@example.com'),
             ('u2', NULL),
@@ -571,7 +571,8 @@ async fn team_member_emails_returns_empty_for_an_unknown_team() {
     seed(
         &pool,
         r#"
-        INSERT INTO "LiteLLM_TeamTable" (team_id, team_alias) VALUES ('other', 'Beta');
+        INSERT INTO "LiteLLM_TeamTable" (team_id, team_alias, admins, members, models) VALUES
+            ('other', 'Beta', '{}'::TEXT[], '{}'::TEXT[], '{}'::TEXT[]);
         INSERT INTO "LiteLLM_UserTable" (user_id, user_email) VALUES ('u1', 'one@example.com');
         "#,
     )
@@ -593,7 +594,8 @@ async fn team_member_emails_returns_empty_for_an_empty_roster() {
     seed(
         &pool,
         r#"
-        INSERT INTO "LiteLLM_TeamTable" (team_id, team_alias) VALUES ('team-1', 'Alpha');
+        INSERT INTO "LiteLLM_TeamTable" (team_id, team_alias, admins, members, models) VALUES
+            ('team-1', 'Alpha', '{}'::TEXT[], '{}'::TEXT[], '{}'::TEXT[]);
         INSERT INTO "LiteLLM_UserTable" (user_id, user_email) VALUES ('u1', 'one@example.com');
         "#,
     )
@@ -615,8 +617,8 @@ async fn team_member_emails_reports_a_broken_team_row() {
     seed(
         &pool,
         r#"
-        INSERT INTO "LiteLLM_TeamTable" (team_id, members_with_roles) VALUES
-            ('team-1', '"not a roster"'::JSONB);
+        INSERT INTO "LiteLLM_TeamTable" (team_id, admins, members, models, members_with_roles) VALUES
+            ('team-1', '{}'::TEXT[], '{}'::TEXT[], '{}'::TEXT[], '"not a roster"'::JSONB);
         "#,
     )
     .await;
@@ -635,8 +637,8 @@ async fn team_budget_alert_sends_to_all_member_emails() {
     seed(
         &pool,
         r#"
-        INSERT INTO "LiteLLM_TeamTable" (team_id, team_alias, members_with_roles) VALUES
-            ('team-1', 'Alpha', '[{"user_id":"u1","role":"user"},{"user_id":"u2","role":"admin"}]'::JSONB);
+        INSERT INTO "LiteLLM_TeamTable" (team_id, team_alias, admins, members, models, members_with_roles) VALUES
+            ('team-1', 'Alpha', '{}'::TEXT[], '{}'::TEXT[], '{}'::TEXT[], '[{"user_id":"u1","role":"user"},{"user_id":"u2","role":"admin"}]'::JSONB);
         INSERT INTO "LiteLLM_UserTable" (user_id, user_email) VALUES
             ('u1', 'one@example.com'),
             ('u2', 'two@example.com');
