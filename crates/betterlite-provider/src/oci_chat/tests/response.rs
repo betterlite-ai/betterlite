@@ -100,8 +100,7 @@ fn response_ignores_a_null_error_key() {
 #[case::text(502, r#"{"error": "boom"}"#, "boom")]
 #[case::object(500, r#"{"error": {"message": "x"}}"#, r#"{"message":"x"}"#)]
 #[case::number(400, r#"{"error": 7}"#, "7")]
-#[tokio::test]
-async fn response_maps_the_error_key(
+fn response_maps_the_error_key(
     #[case] status: u16,
     #[case] given: &str,
     #[case] message: &str,
