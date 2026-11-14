@@ -367,7 +367,8 @@ fn chunks_empty_fragment_keeps_the_valid_json_mode() {
 fn chunks_whitespace_only_fragment_switches_to_accumulated_mode() {
     let mut decoder = decoder();
     assert!(decoder.push(b"   ").unwrap().is_none());
-    let chunk = decoder.push(br#"7{"responseId":"r1"}"#).unwrap().unwrap();
+    assert!(decoder.push(b"7").unwrap().is_none());
+    let chunk = decoder.push(br#"{"responseId":"r1"}"#).unwrap().unwrap();
     assert_eq!(chunk.id, "r1");
 }
 
