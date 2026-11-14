@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use comfy_table::Table;
 use http::Method;
 use serde::Deserialize;
@@ -19,12 +21,6 @@ struct ModelRow {
     id: String,
     #[serde(default)]
     owned_by: String,
-}
-
-#[derive(Deserialize)]
-struct ModelsResponse {
-    #[serde(default, with = "serde_with::rust::double_option")]
-    data: Option<Option<Box<RawValue>>>,
 }
 
 pub(super) fn pick(
@@ -67,12 +63,10 @@ fn fetch_models(client: &Client) -> Result<Vec<ModelRow>, ChatError> {
 }
 
 fn parse_models(body: &[u8]) -> Result<Vec<ModelRow>, ChatError> {
-    let view: ModelsResponse = serde_json::from_slice(body).map_err(ChatError::Models)?;
-    let Some(present) = view.data else {
+    let fields: BTreeMap<String, Box<RawValue>> =
+        serde_json::from_slice(body).map_err(ChatError::Models)?;
+    let Some(data) = fields.get("data") else {
         return Err(ChatError::ModelsData);
-    };
-    let Some(data) = present else {
-        return Ok(Vec::new());
     };
     let Ok(items) = serde_json::from_str::<Vec<&RawValue>>(data.get()) else {
         return Ok(Vec::new());

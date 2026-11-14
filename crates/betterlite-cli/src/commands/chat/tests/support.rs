@@ -74,10 +74,10 @@ impl ConversationStore for FakeStore {
                 source: io::Error::other("the file is not readable"),
             });
         }
-        match self.files.get(filename) {
-            Some(messages) => Ok(messages.clone()),
-            None => Err(ConversationError::NotFound),
-        }
+        self.files
+            .get(filename)
+            .cloned()
+            .ok_or(ConversationError::NotFound)
     }
 }
 

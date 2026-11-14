@@ -1,3 +1,6 @@
+use std::mem::take;
+use std::str::from_utf8;
+
 use serde::Deserialize;
 use serde_json::value::RawValue;
 
@@ -39,7 +42,7 @@ struct StreamDelta {
 }
 
 pub fn decode_line(line: &[u8]) -> Result<LineEvent, StreamLineError> {
-    let Ok(text) = std::str::from_utf8(line) else {
+    let Ok(text) = from_utf8(line) else {
         return Err(StreamLineError::NotUtf8);
     };
     if text.is_empty() {
@@ -84,7 +87,7 @@ impl StreamLines {
                     limit: MAX_LINE_BYTES,
                 });
             }
-            let line = std::mem::take(&mut self.pending);
+            let line = take(&mut self.pending);
             events.push(decode_line(line.strip_suffix(b"\r").unwrap_or(&line))?);
             rest = tail.get(1..).unwrap_or_default();
         }
@@ -101,7 +104,7 @@ impl StreamLines {
         if self.pending.is_empty() {
             return Ok(None);
         }
-        let line = std::mem::take(&mut self.pending);
+        let line = take(&mut self.pending);
         let event = decode_line(line.strip_suffix(b"\r").unwrap_or(&line))?;
         Ok(Some(event))
     }

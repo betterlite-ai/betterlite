@@ -96,7 +96,7 @@ impl Session<'_> {
         let content = stream::stream_reply(
             self.client,
             self.terminal,
-            StreamRequest {
+            &StreamRequest {
                 model: &self.model,
                 messages: &self.messages,
                 temperature: self.temperature,
@@ -139,13 +139,12 @@ impl Session<'_> {
     }
 
     fn fallback(&mut self) {
-        self.messages = match &self.system {
-            Some(system) => vec![Message {
+        self.messages = self.system.as_ref().map_or_else(Vec::new, |system| {
+            vec![Message {
                 role: String::from("system"),
                 content: system.clone(),
-            }],
-            None => Vec::new(),
-        };
+            }]
+        });
     }
 
     fn save(&mut self, input: &str) -> Result<(), ChatError> {
@@ -180,7 +179,9 @@ impl Session<'_> {
     fn report_load(&mut self, error: &ConversationError, filename: &str) -> Result<(), ChatError> {
         let text = match error {
             ConversationError::NotFound => format!("File not found: {filename}"),
-            other => format!("Error loading conversation: {other}"),
+            ConversationError::Read { .. }
+            | ConversationError::Write { .. }
+            | ConversationError::Format { .. } => format!("Error loading conversation: {error}"),
         };
         self.terminal.write_line(&text)?;
         self.fallback();
@@ -210,8 +211,8 @@ fn conversation_filename(input: &str) -> Option<String> {
     let mut parts = input.split_whitespace();
     let _command = parts.next();
     let name = parts.next()?;
-    if name.ends_with(".json") {
-        return Some(name.to_owned());
-    }
-    Some(format!("{name}.json"))
+    Some(
+        name.strip_suffix(".json")
+            .map_or_else(|| format!("{name}.json"), |_stem| name.to_owned()),
+    )
 }

@@ -34,7 +34,7 @@ pub(super) fn request_payload(
     }
 }
 
-fn json_payload(body: Vec<u8>, keep_content_type: bool) -> Payload {
+const fn json_payload(body: Vec<u8>, keep_content_type: bool) -> Payload {
     if keep_content_type {
         return Payload::Raw(body);
     }

@@ -1,3 +1,4 @@
+use std::str::from_utf8;
 use std::time::Duration;
 
 use betterlite_http::error::HttpError;
@@ -22,6 +23,19 @@ pub(super) struct StreamRequest<'request> {
     pub(super) max_tokens: Option<i64>,
 }
 
+impl StreamRequest<'_> {
+    fn encode(&self) -> Result<Vec<u8>, ChatError> {
+        serde_json::to_vec(&CompletionsBody {
+            model: self.model,
+            messages: self.messages,
+            stream: true,
+            temperature: self.temperature,
+            max_tokens: self.max_tokens,
+        })
+        .map_err(ChatError::Encode)
+    }
+}
+
 #[derive(Serialize)]
 struct CompletionsBody<'body> {
     model: &'body str,
@@ -44,136 +58,86 @@ struct StreamErrorDetail {
     message: Option<String>,
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "the streamed response type cannot be named outside betterlite-http, so opening it, reading an error body and the chunk loop share one function"
-)]
 pub(super) fn stream_reply(
     client: &Client,
     terminal: &mut dyn Terminal,
-    request: StreamRequest<'_>,
+    request: &StreamRequest<'_>,
 ) -> Result<String, ChatError> {
-    let body = serde_json::to_vec(&CompletionsBody {
-        model: request.model,
-        messages: request.messages,
-        stream: true,
-        temperature: request.temperature,
-        max_tokens: request.max_tokens,
-    })
-    .map_err(ChatError::Encode)?;
+    match open_and_read(client, terminal, request) {
+        Ok(content) => Ok(content),
+        Err(error) => {
+            terminal.write_error_line(&format!("Error: {error}"))?;
+            Ok(String::new())
+        }
+    }
+}
+
+fn block_on_timeout<Value>(
+    client: &Client,
+    future: impl Future<Output = Value>,
+) -> Result<Value, ChatError> {
+    // tokio::time::timeout reads the current runtime when it is created
+    let _entered = client.runtime.enter();
+    client
+        .runtime
+        .block_on(timeout(STREAM_TIMEOUT, future))
+        .map_err(|_elapsed| ChatError::Timeout {
+            seconds: STREAM_TIMEOUT.as_secs(),
+        })
+}
+
+// the streamed response type cannot be named outside betterlite-http, so opening it and reading it share this function
+fn open_and_read(
+    client: &Client,
+    terminal: &mut dyn Terminal,
+    request: &StreamRequest<'_>,
+) -> Result<String, ChatError> {
     let headers = build_headers(
         vec![(String::from(CONTENT_TYPE.0), String::from(CONTENT_TYPE.1))],
         client.api_key.as_ref(),
-    )
-    .map_err(ChatError::Client)?;
-    let url = client
-        .resolve(CHAT_COMPLETIONS_PATH)
-        .map_err(ChatError::Client)?;
+    )?;
     let built = client
         .http
         .client
-        .post(url)
+        .post(client.resolve(CHAT_COMPLETIONS_PATH)?)
         .headers(headers)
-        .body(body)
+        .body(request.encode()?)
         .build()
-        .map_err(|source| ChatError::Http(HttpError::Request(source)))?;
-    let _entered = client.runtime.enter();
-    let mut response = match client
-        .runtime
-        .block_on(timeout(STREAM_TIMEOUT, client.http.execute(built)))
-    {
-        Ok(Ok(response)) => response,
-        Ok(Err(source)) => return report(terminal, ChatError::Http(source)),
-        Err(_elapsed) => {
-            return report(
-                terminal,
-                ChatError::Timeout {
-                    seconds: STREAM_TIMEOUT.as_secs(),
-                },
-            );
-        }
-    };
+        .map_err(HttpError::Request)?;
+    let mut response = block_on_timeout(client, client.http.execute(built))??;
     let status = response.status().as_u16();
     if status == 401 {
-        return report(terminal, ChatError::Status { status });
+        return Err(ChatError::Status { status });
     }
     if status >= 400 {
-        let read = client.runtime.block_on(timeout(
-            STREAM_TIMEOUT,
-            read_bounded(&mut response, BODY_LIMIT_BYTES),
-        ));
-        let error_body = match read {
-            Ok(Ok(error_body)) => error_body,
-            Ok(Err(ReadError::TooLarge { limit })) => {
-                return report(terminal, ChatError::BodyTooLarge { limit });
-            }
-            Ok(Err(ReadError::Failed(source))) => {
-                return report(terminal, ChatError::Http(HttpError::Request(source)));
-            }
-            Err(_elapsed) => {
-                return report(
-                    terminal,
-                    ChatError::Timeout {
-                        seconds: STREAM_TIMEOUT.as_secs(),
-                    },
-                );
-            }
-        };
-        return report_http_error(terminal, status, &error_body);
+        let read = block_on_timeout(client, read_bounded(&mut response, BODY_LIMIT_BYTES))?;
+        return report_http_error(terminal, status, read);
     }
-    let header_limit = client.http.limits.header_bytes;
-    if check_headers(response.headers(), header_limit).is_err() {
-        return report(
-            terminal,
-            ChatError::Headers {
-                limit: header_limit,
-            },
-        );
-    }
+    let limit = client.http.limits.header_bytes;
+    check_headers(response.headers(), limit).map_err(|_too_large| ChatError::Headers { limit })?;
+    let content = read_events(terminal, || {
+        block_on_timeout(client, response.chunk())?
+            .map_err(|source| ChatError::Http(HttpError::Request(source)))
+    })?;
+    terminal.write_line("")?;
+    Ok(content)
+}
+
+fn read_events<Chunk: AsRef<[u8]>>(
+    terminal: &mut dyn Terminal,
+    mut next_chunk: impl FnMut() -> Result<Option<Chunk>, ChatError>,
+) -> Result<String, ChatError> {
     let mut lines = StreamLines::default();
     let mut content = String::new();
-    loop {
-        match client
-            .runtime
-            .block_on(timeout(STREAM_TIMEOUT, response.chunk()))
-        {
-            Ok(Ok(Some(chunk))) => {
-                let events = match lines.push(&chunk) {
-                    Ok(events) => events,
-                    Err(source) => return report(terminal, ChatError::Line(source)),
-                };
-                match write_events(terminal, events, &mut content) {
-                    Ok(true) => break,
-                    Ok(false) => {}
-                    Err(error) => return report(terminal, error),
-                }
-            }
-            Ok(Ok(None)) => {
-                match lines.finish() {
-                    Ok(Some(event)) => {
-                        if let Err(error) = write_events(terminal, vec![event], &mut content) {
-                            return report(terminal, error);
-                        }
-                    }
-                    Ok(None) => {}
-                    Err(source) => return report(terminal, ChatError::Line(source)),
-                }
-                break;
-            }
-            Ok(Err(source)) => {
-                return report(terminal, ChatError::Http(HttpError::Request(source)));
-            }
-            Err(_elapsed) => {
-                return report(
-                    terminal,
-                    ChatError::Timeout {
-                        seconds: STREAM_TIMEOUT.as_secs(),
-                    },
-                );
-            }
+    while let Some(chunk) = next_chunk()? {
+        let events = lines.push(chunk.as_ref())?;
+        if write_events(terminal, events, &mut content)? {
+            return Ok(content);
         }
     }
-    terminal.write_line("")?;
+    if let Some(event) = lines.finish()? {
+        write_events(terminal, vec![event], &mut content)?;
+    }
     Ok(content)
 }
 
@@ -200,25 +164,25 @@ pub(super) fn write_events(
     Ok(false)
 }
 
-fn report(terminal: &mut dyn Terminal, error: ChatError) -> Result<String, ChatError> {
-    terminal.write_error_line(&format!("Error: {error}"))?;
-    Ok(String::new())
-}
-
 fn report_http_error(
     terminal: &mut dyn Terminal,
     status: u16,
-    body: &[u8],
+    read: Result<Vec<u8>, ReadError>,
 ) -> Result<String, ChatError> {
+    let body = match read {
+        Ok(body) => body,
+        Err(ReadError::TooLarge { limit }) => return Err(ChatError::BodyTooLarge { limit }),
+        Err(ReadError::Failed(source)) => return Err(ChatError::Http(HttpError::Request(source))),
+    };
     terminal.write_error_line(&format!("Error: HTTP {status}"))?;
-    let detail = match serde_json::from_slice::<StreamErrorBody>(body) {
+    let detail = match serde_json::from_slice::<StreamErrorBody>(&body) {
         Ok(view) => view
             .error
             .and_then(|found| found.message)
             .unwrap_or_else(|| String::from("Unknown error")),
-        Err(_shape) => match serde_json::from_slice::<&RawValue>(body) {
+        Err(_shape) => match serde_json::from_slice::<&RawValue>(&body) {
             Ok(_json) => String::from("Unknown error"),
-            Err(_not_json) => match std::str::from_utf8(body) {
+            Err(_not_json) => match from_utf8(&body) {
                 Ok(text) => text.to_owned(),
                 Err(_invalid) => ChatError::NotUtf8.to_string(),
             },

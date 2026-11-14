@@ -17,7 +17,9 @@ use crate::commands::BODY_LIMIT_BYTES;
 use crate::commands::chat::stream_line::{
     LineEvent, MAX_LINE_BYTES, StreamLineError, StreamLines, decode_line,
 };
-use crate::commands::tests::support::{Answer, TestServer, client as plain_client};
+use crate::commands::tests::support::{
+    Answer, RecordedRequest, TestServer, client as plain_client,
+};
 
 use super::{ChatArgs, Message};
 use support::{FakeStore, FakeTerminal, chat_args, client, run_chat, stream_body};
@@ -51,7 +53,7 @@ fn run_once(
     (result, terminal)
 }
 
-fn chat_body(requests: &[crate::commands::tests::support::RecordedRequest]) -> RecordedChat {
+fn chat_body(requests: &[RecordedRequest]) -> RecordedChat {
     let chat = requests
         .iter()
         .find(|request| request.path() == "/chat/completions")
@@ -394,7 +396,7 @@ fn commands_model_switch_ignores_an_empty_id() {
 fn stream_sends_the_completion_request_fields() {
     let server = TestServer::start(vec![Answer::json(200, &stream_body(&["Hello"]))]);
     let mut args = chat_args(Some("gpt-4o"));
-    args.temperature = 0.5;
+    args.temperature = 0.5_f64;
     args.max_tokens = Some(128);
     args.system = Some(String::from("be nice"));
     let mut store = FakeStore::default();
@@ -414,7 +416,7 @@ fn stream_sends_the_completion_request_fields() {
     let body: RecordedChat = serde_json::from_slice(&chat.body).expect("the chat body");
     assert_eq!(body.model, "gpt-4o");
     assert!(body.stream);
-    assert_eq!(body.temperature, 0.5);
+    assert_eq!(body.temperature.to_bits(), 0.5_f64.to_bits());
     assert_eq!(body.max_tokens, Some(128));
     assert_eq!(body.messages.len(), 2);
     assert_eq!(body.messages[0].role, "system");
@@ -444,15 +446,13 @@ fn stream_omits_max_tokens_when_it_is_not_given() {
     );
     let body: RecordedChat = serde_json::from_slice(&chat.body).expect("the chat body");
     assert_eq!(body.max_tokens, None);
-    assert_eq!(body.temperature, 0.7);
+    assert_eq!(body.temperature.to_bits(), 0.7_f64.to_bits());
 }
 
 #[test]
 fn stream_writes_the_deltas_as_fragments_and_stops_at_done() {
-    let body = format!(
-        "data: {{\"choices\":[{{\"delta\":{{\"content\":\"He\"}}}}]}}\n\ndata: {{\"choices\":[{{\"delta\":{{\"content\":\"llo\"}}}}]}}\n\ndata: [DONE]\n\ndata: {{\"choices\":[{{\"delta\":{{\"content\":\"after\"}}}}]}}\n"
-    );
-    let server = TestServer::start(vec![Answer::json(200, &body)]);
+    let body = "data: {\"choices\":[{\"delta\":{\"content\":\"He\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"llo\"}}]}\n\ndata: [DONE]\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"after\"}}]}\n";
+    let server = TestServer::start(vec![Answer::json(200, body)]);
     let args = chat_args(Some("gpt-4o"));
     let mut store = FakeStore::default();
 
@@ -768,7 +768,7 @@ fn stream_reports_response_headers_past_the_limit() {
 #[case::past_the_cap(1, true)]
 fn stream_caps_the_collected_reply(#[case] extra: usize, #[case] rejected: bool) {
     let mut terminal = FakeTerminal::new(&[]);
-    let mut collected = "x".repeat(BODY_LIMIT_BYTES + extra);
+    let mut collected = "x".repeat(BODY_LIMIT_BYTES.saturating_add(extra));
     let events = vec![LineEvent::Content(String::new())];
 
     let result = super::stream::write_events(&mut terminal, events, &mut collected);

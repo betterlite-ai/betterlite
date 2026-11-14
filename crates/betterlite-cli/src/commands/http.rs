@@ -2,6 +2,7 @@ use std::io::Write;
 
 use clap::{Args, Subcommand};
 use http::Method;
+use http::method::InvalidMethod;
 
 use crate::cli_context::CliContext;
 
@@ -60,7 +61,7 @@ pub enum HttpError {
     Method {
         method: String,
         #[source]
-        source: http::method::InvalidMethod,
+        source: InvalidMethod,
     },
     #[error("the response body is not valid JSON")]
     Response {

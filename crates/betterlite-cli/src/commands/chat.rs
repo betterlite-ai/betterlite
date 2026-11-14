@@ -1,5 +1,6 @@
 use std::io::{self, BufRead as _, Write as _};
 
+use betterlite_http::error::HttpError;
 use clap::Args;
 use serde::{Deserialize, Serialize};
 
@@ -50,7 +51,7 @@ pub enum ChatError {
     #[error(transparent)]
     Client(#[from] super::ClientError),
     #[error(transparent)]
-    Http(#[from] betterlite_http::error::HttpError),
+    Http(#[from] HttpError),
     #[error("the proxy answered HTTP {status}")]
     Status { status: u16 },
     #[error("the models response has no data field")]
