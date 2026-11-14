@@ -181,6 +181,35 @@ fn request_data(input: &Input) -> SkillsRequestData {
     }
 }
 
+fn helper_output(result: Value, continuation: &ScriptedContinuation, lines: &Lines) -> Value {
+    let calls = continuation
+        .calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    let logs = lines
+        .0
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    json!({
+        "result": result,
+        "continuation_calls": calls,
+        "logs": logs,
+    })
+}
+
+fn result_value(response: Option<HookResponse>) -> HelperResult {
+    match response {
+        None => Ok(Value::Null),
+        Some(HookResponse::Dict(fields)) => Ok(Value::Object(fields)),
+        Some(HookResponse::Object(_)) => Err(failure(
+            "UnexpectedResponse",
+            "a dict response came back as an object response".to_owned(),
+        )),
+    }
+}
+
 pub(crate) struct Op;
 
 impl Helper for Op {
@@ -212,30 +241,8 @@ impl Helper for Op {
             &continuation,
         ));
         drop(guard);
-        let result = match outcome.map_err(|error| failure("SkillsLoopError", error.to_string()))? {
-            None => Value::Null,
-            Some(HookResponse::Dict(fields)) => Value::Object(fields),
-            Some(HookResponse::Object(_)) => {
-                return Err(failure(
-                    "UnexpectedResponse",
-                    "a dict response came back as an object response".to_owned(),
-                ));
-            }
-        };
-        let calls = continuation
-            .calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        let logs = lines
-            .0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        Ok(json!({
-            "result": result,
-            "continuation_calls": calls,
-            "logs": logs,
-        }))
+        let reply = outcome.map_err(|error| failure("SkillsLoopError", error.to_string()))?;
+        let result = result_value(reply)?;
+        Ok(helper_output(result, &continuation, &lines))
     }
 }
