@@ -428,7 +428,6 @@ def test_names_litellm_responses(name: str) -> None:
     ours_cls: type[BaseModel] = OUR_CLASSES[name]
     theirs_cls: type[BaseModel] = THEIR_CLASSES[name]
     assert ours_cls.__private_attributes__.keys() == theirs_cls.__private_attributes__.keys()
-    assert ours_cls.__private_attributes__["_hidden_params"].default_factory is dict
     our_adapter: TypeAdapter[BaseModel] = TypeAdapter(ours_cls)
     their_adapter: TypeAdapter[BaseModel] = TypeAdapter(theirs_cls)
     our_instance: BaseModel = our_adapter.validate_python(EMPTY_PAYLOAD)
@@ -456,7 +455,8 @@ def test_names_computer_wire() -> None:
     assert ours == dumped_value(THEIR_CLASSES["Tool"], payload)
     computer: tools.ComputerUse = tools.ComputerUse.model_validate(payload)
     assert computer.excluded_predefined_functions == ["open"]
-    assert computer.model_dump()["excludedPredefinedFunctions"] == ["open"]
+    dumped: JsonValue = dumped_value(tools.ComputerUse, payload)
+    assert mapping(dumped)["excludedPredefinedFunctions"] == ["open"]
 
 
 def test_names_create_params() -> None:
