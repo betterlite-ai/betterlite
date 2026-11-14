@@ -95,7 +95,7 @@ class LiteTeams(Protocol):
 
 class TimeoutProbe:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, float]] = []
+        self.calls: list[tuple[str, int | float]] = []
 
     def __call__(self, request: Request, timeout: float) -> Response:
         self.calls.append((request.url, timeout))

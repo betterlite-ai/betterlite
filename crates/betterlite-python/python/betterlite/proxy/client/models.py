@@ -43,13 +43,15 @@ def _find_model(
     for model in models:
         match model:
             case dict() as entry:
-                match entry.get("model_info"):
-                    case {"id": str() as identifier} if model_id and identifier == model_id:
+                match entry:
+                    case {"model_info": {"id": str() as identifier}} if (
+                        model_id and identifier == model_id
+                    ):
                         return entry
-                    case dict() | list() | str() | bool() | int() | float() | None:
-                        pass
-                if model_name and entry.get("model_name") == model_name:
-                    return entry
+                    case {"model_name": str() as name} if model_name and name == model_name:
+                        return entry
+                    case dict():
+                        continue
             case list() | str() | bool() | int() | float() | None:
                 continue
     return None
