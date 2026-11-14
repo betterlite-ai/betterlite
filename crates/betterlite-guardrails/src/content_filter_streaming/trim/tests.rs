@@ -251,6 +251,54 @@ fn trim_scans_the_halves_as_the_suppressed_whole_scan_did() {
 }
 
 #[test]
+fn trim_stays_suppressed_after_the_seen_phrase_left_the_buffer() {
+    let mut categories = CategoryLoadResult::default();
+    categories
+        .loaded_categories
+        .insert("stream".to_owned(), category(&["allowed phrase"]));
+    categories.category_keywords.insert(
+        "target".to_owned(),
+        (
+            "stream".to_owned(),
+            "high".to_owned(),
+            ContentFilterAction::Mask,
+        ),
+    );
+    let source = source(&categories, &[], &[]);
+    let buffered = format!(
+        "{} target {}{}{}",
+        "x".repeat(10),
+        "x".repeat(600),
+        "x".repeat(414),
+        "x".repeat(6)
+    );
+    let state = StreamedChoiceState {
+        buffered_text: buffered.clone(),
+        yielded_masked_text_len: 988,
+        committed_detections: Vec::new(),
+        latest_detections: Vec::new(),
+        next_trim_len: 0,
+        seen_exception_phrases: vec!["allowed phrase".to_owned()],
+        open_sentence_words: Vec::new(),
+    };
+    let scan_plan = StreamedScanPlan {
+        context_chars: 512,
+        exception_phrases: vec!["allowed phrase".to_owned()],
+        conditional_words: Vec::new(),
+    };
+    let trimmed = trim_streamed_choice_buffer(&source, state, &buffered, &scan_plan);
+    // the phrase is gone from the buffer but stays in the state, so the keyword in the head stays unmasked
+    assert_eq!(trimmed.buffered_text.len(), 512);
+    assert_eq!(trimmed.yielded_masked_text_len, 988 - 526);
+    assert_eq!(trimmed.next_trim_len, 0);
+    assert_eq!(
+        trimmed.seen_exception_phrases,
+        vec!["allowed phrase".to_owned()]
+    );
+    assert!(trimmed.committed_detections.is_empty());
+}
+
+#[test]
 fn trim_trims_when_the_exception_phrase_stays_in_the_tail() {
     let mut categories = CategoryLoadResult::default();
     categories
