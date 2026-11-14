@@ -11,6 +11,7 @@ description: >-
   daily metric extends `ModelInsightMetric` and the task summary extends `ModelInsightTask`.
 scope:
   paths:
+  - "crates/betterlite-python/python/betterlite/types"
   - crates/betterlite-python/python/betterlite/types/roi_calculator.py
   - crates/betterlite-python/python/betterlite/types/memory_management.py
   - crates/betterlite-python/python/betterlite/types/model_insights.py
