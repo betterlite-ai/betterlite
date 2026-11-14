@@ -14,7 +14,6 @@ use uuid::Uuid;
 use super::{
     FOUR, SERVICE_ONE, THREE_USERS, apply, call_count, data, default_input, fail_open_input,
     guardrail, guardrail_with_clock, inputs, json, mock, only_call, record_response, record_status,
-    structure,
 };
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::headroom_failure::NOT_FOUND_HINT;
@@ -356,17 +355,26 @@ async fn an_invalid_utf8_error_body_is_reported_with_replacement_characters() {
 }
 
 #[tokio::test]
-async fn an_invalid_utf8_byte_inside_a_json_string_is_replaced_and_parsed() {
+async fn an_invalid_utf8_byte_in_a_200_reply_is_non_json_with_a_lossy_preview() {
     let mut payload = br#"{"messages":[{"role":"user","content":"sh"#.to_vec();
     payload.push(0xff);
     payload.extend_from_slice(br#"rt"}]}"#);
     let server = mock(StatusCode::OK, payload).await;
     let guardrail = guardrail(&server.base);
     let mut request = data("{}");
-    let returned = apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
+    let error = apply(&guardrail, inputs(FOUR), &mut request)
+        .await
+        .unwrap_err();
+    let (_status, detail) = detail_of(error);
     assert_eq!(
-        structure(&returned)[1].get("content"),
-        Some(&serde_json::Value::String("sh\u{fffd}rt".to_owned()))
+        detail.get("error"),
+        Some(&GuardrailValue::Text(NON_JSON_ERROR.to_owned()))
+    );
+    assert_eq!(
+        detail.get("body"),
+        Some(&GuardrailValue::Text(
+            "{\"messages\":[{\"role\":\"user\",\"content\":\"sh\u{fffd}rt\"}]}".to_owned()
+        ))
     );
 }
 

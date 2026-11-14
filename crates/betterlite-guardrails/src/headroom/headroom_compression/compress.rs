@@ -92,7 +92,7 @@ impl HeadroomGuardrail {
             return failure(fallback, request.rows, SERVICE_ERROR, detail)
                 .map_err(CompressError::Failure);
         }
-        parse_body(&text, request.rows, fallback).map_err(CompressError::Failure)
+        parse_body(&body, &text, request.rows, fallback).map_err(CompressError::Failure)
     }
 }
 
@@ -127,11 +127,12 @@ fn failure(
 }
 
 fn parse_body(
+    bytes: &[u8],
     text: &str,
     rows: &[JsonValue],
     fallback: UnreachableFallback,
 ) -> Result<CompressResult, CompressFailure> {
-    let Ok(body) = serde_json::from_str::<JsonValue>(text) else {
+    let Ok(body) = serde_json::from_slice::<JsonValue>(bytes) else {
         return failure(
             fallback,
             rows,
