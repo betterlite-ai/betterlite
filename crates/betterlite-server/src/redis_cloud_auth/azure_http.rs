@@ -159,7 +159,10 @@ const fn request_method(method: HttpMethod) -> Method {
     }
 }
 
-fn secret_headers<Name: AsRef<str>>(headers: &[(Name, SecretString)]) -> Vec<(String, String)> {
+fn secret_headers<Name>(headers: &[(Name, SecretString)]) -> Vec<(String, String)>
+where
+    Name: AsRef<str>,
+{
     headers
         .iter()
         .map(|(name, value)| (name.as_ref().to_owned(), value.expose_secret().to_owned()))
