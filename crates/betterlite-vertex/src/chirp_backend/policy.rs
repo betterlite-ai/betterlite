@@ -26,7 +26,10 @@ pub fn rotation_due(
     deadline_seconds: f64,
 ) -> bool {
     let seconds = elapsed.as_secs_f64();
-    seconds >= deadline_seconds || (seconds >= rotation_seconds && !speech_active)
+    if seconds >= deadline_seconds {
+        return true;
+    }
+    seconds >= rotation_seconds && !speech_active
 }
 
 pub fn deliver(

@@ -289,7 +289,7 @@ fn harness(scripts: Vec<Script>) -> Harness {
     let tokens = Arc::new(RecordingTokens::default());
     let factory = Arc::new(Factory {
         recorder: Arc::clone(&recorder),
-        scripts: Mutex::new(scripts.into()),
+        scripts: Mutex::new(VecDeque::from(scripts)),
     });
     let resolver: Arc<dyn AccessTokenResolver> = Arc::clone(&tokens);
     let target = SpeechStreamingTarget {
@@ -772,12 +772,22 @@ async fn close_queues_the_closed_sentinel_after_buffered_events() {
     ));
 }
 
-#[tokio::test]
-async fn full_outbox_close() {
-    let mut harness = harness(Vec::new());
+async fn fill_outbox(harness: &mut Harness) {
     for _ in 0..256 {
         harness.send_text(FINISH).await;
     }
+}
+
+async fn drain_outbox(harness: &mut Harness) {
+    for _ in 0..256 {
+        assert_eq!(harness.recv().await, r#"{"kind":"turn_finished"}"#);
+    }
+}
+
+#[tokio::test]
+async fn full_outbox_close() {
+    let mut harness = harness(Vec::new());
+    fill_outbox(&mut harness).await;
     wait_for_outbox(&harness.backend, 256).await;
     harness.backend.close().await;
     assert_eq!(
@@ -785,9 +795,7 @@ async fn full_outbox_close() {
         256,
         "a full outbox leaves no room for the closed sentinel"
     );
-    for _ in 0..256 {
-        assert_eq!(harness.recv().await, r#"{"kind":"turn_finished"}"#);
-    }
+    drain_outbox(&mut harness).await;
     let error = harness
         .backend
         .recv()
