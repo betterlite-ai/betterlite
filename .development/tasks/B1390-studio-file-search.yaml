@@ -88,5 +88,5 @@ pitfalls:
   - max_num_results=100 still requests candidateCount=1 and does not cap the returned grounding records.
   - Support-text deduplication spans previously processed candidates as well as the current candidate.
   - The create result keeps fileSearchStores/ in its id instead of returning only the last path segment.
-budget: {max_changed_lines: 725, max_new_expects: 1}
+budget: {max_changed_lines: 1050, max_new_expects: 1}
 review_level: standard
