@@ -66,13 +66,13 @@ def install(recorder: Recorder) -> None:
     module = HandlerModule(HANDLER_MODULE)
     module.PassThroughStreamingHandler = recorder
     sys.modules[HANDLER_MODULE] = module
-class IteratorFactory(Protocol):
+class Factory(Protocol):
     def get_async_streaming_response_iterator(  # ast-grep-ignore: no-long-names
-        self, httpx_response: httpx.Response, request_body: dict[str, Json], litellm_logging_obj: Logging, /
+        self, response: httpx.Response, body: dict[str, Json], logging_obj: Logging, /
     ) -> AsyncIterator[bytes]: ...
-def relay_stream(factory: IteratorFactory, response: httpx.Response, supplied: Logging) -> AsyncIterator[bytes]:
+def relay(factory: Factory, reply: httpx.Response, supplied: Logging) -> AsyncIterator[bytes]:
     body: dict[str, Json] = {"model": "supplied"}
-    return factory.get_async_streaming_response_iterator(response, body, supplied)
+    return factory.get_async_streaming_response_iterator(reply, body, supplied)
 class RecordedLogging(Logging):
     def __init__(self) -> None:
         details: dict[str, Json] = {}
@@ -122,10 +122,10 @@ class SingleChunk(AsyncIterator[bytes | dict[str, Json]]):
 class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
     def __init__(self, body: dict[str, Json], api_base: str, client: httpx.AsyncClient) -> None:
         logging_obj = RecordedLogging()
-        seeded = streaming_iterator.BaseAnthropicMessagesStreamingIterator(logging_obj, body)
-        self.litellm_logging_obj = seeded.litellm_logging_obj
+        base = streaming_iterator.BaseAnthropicMessagesStreamingIterator(logging_obj, body)
+        self.litellm_logging_obj = base.litellm_logging_obj
         self.request_body: dict[str, Json] = body
-        self.start_time, self.completion_start_time = seeded.start_time, seeded.completion_start_time
+        self.start_time, self.completion_start_time = base.start_time, base.completion_start_time
         self.logging = logging_obj
         self.body = body
         self.url = f"{api_base}/messages"
@@ -269,7 +269,7 @@ class DelegateStep(StepModel):
         supplied = RecordedLogging()
         session.supplied = supplied
         async with session.client.stream("POST", session.url, json=session.body) as reply:
-            relayed = relay_stream(session, reply, supplied)
+            relayed = relay(session, reply, supplied)
             relayed_bytes = b"".join([chunk async for chunk in relayed])
         session.text = relayed_bytes.decode(errors="replace")
 Step = Annotated[
