@@ -56,15 +56,12 @@ pub(crate) struct State {
     pub(crate) stopped: AtomicBool,
 }
 
-pub(crate) struct MemoryFiles {
-    pub(crate) state: Arc<State>,
-    pub(crate) path: PathBuf,
-}
+pub(crate) struct MemoryFiles(pub(crate) Arc<State>);
 
 #[async_trait::async_trait]
 impl CredentialFiles for MemoryFiles {
     fn read(&self) -> Option<CliTokenRecord> {
-        self.state
+        self.0
             .record
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -73,7 +70,7 @@ impl CredentialFiles for MemoryFiles {
 
     async fn stage(&self, _record: &CliTokenRecord) -> Result<StagedFile, TokenRecordError> {
         Ok(StagedFile {
-            path: self.path.clone(),
+            path: PathBuf::from("token.json"),
         })
     }
 
@@ -96,6 +93,7 @@ impl CredentialFiles for MemoryFiles {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct DisabledVault;
 
 impl SecretVault for DisabledVault {
@@ -112,6 +110,7 @@ impl SecretVault for DisabledVault {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct FixedClock;
 
 impl Clock for FixedClock {
@@ -126,6 +125,7 @@ impl WallClock for FixedClock {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct UnusedHttp;
 
 impl Http for UnusedHttp {
@@ -159,6 +159,7 @@ impl PollTransport for UnusedHttp {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct ZeroEntropy;
 
 impl Entropy for ZeroEntropy {
@@ -168,6 +169,7 @@ impl Entropy for ZeroEntropy {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct NoSleeper;
 
 impl Sleeper for NoSleeper {
@@ -257,26 +259,35 @@ where
     }
 }
 
-pub(crate) struct ScriptedStop {
-    pub(crate) state: Arc<State>,
-    pub(crate) settings: PathBuf,
-    pub(crate) backup: PathBuf,
+#[derive(Default)]
+pub(crate) struct SignalWatch {
     #[cfg(unix)]
     pub(crate) real: Option<SignalStop>,
     pub(crate) installed: Mutex<Option<SyncSender<()>>>,
+}
+
+pub(crate) struct ScriptedStop {
+    pub(crate) state: Arc<State>,
+    pub(crate) home: PathBuf,
+    pub(crate) watch: SignalWatch,
 }
 
 impl StopSource for ScriptedStop {
     fn install(&self) -> Result<(), UpError> {
         #[cfg(unix)]
         {
-            if let Some(real) = &self.real {
+            if let Some(real) = &self.watch.real {
                 real.install()?;
             }
         }
         let snapshot = Snapshot {
-            settings: json_file(&self.settings),
-            backup: json_file(&self.backup),
+            settings: json_file(&self.home.join(".claude").join("settings.json")),
+            backup: json_file(
+                &self
+                    .home
+                    .join(".litellm")
+                    .join("claude_settings_backup.json"),
+            ),
         };
         *self
             .state
@@ -285,6 +296,7 @@ impl StopSource for ScriptedStop {
             .unwrap_or_else(PoisonError::into_inner) = Some(snapshot);
         self.state.stopped.store(true, Ordering::SeqCst);
         let installed = self
+            .watch
             .installed
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -298,7 +310,7 @@ impl StopSource for ScriptedStop {
     fn wait(&self) {
         #[cfg(unix)]
         {
-            if let Some(real) = &self.real {
+            if let Some(real) = &self.watch.real {
                 real.wait();
             }
         }
@@ -334,38 +346,8 @@ pub(crate) struct Doubles {
     pub(crate) stop: ScriptedStop,
 }
 
-impl Doubles {
-    fn new(state: &Arc<State>, root: &Path) -> Self {
-        Self {
-            files: MemoryFiles {
-                state: Arc::clone(state),
-                path: root.join(".litellm").join("token.json"),
-            },
-            probe: RecordingProbe {
-                status: 200,
-                unreachable: false,
-                state: Arc::clone(state),
-            },
-            login: ScriptedLogin {
-                token: None,
-                state: Arc::clone(state),
-                real: false,
-            },
-            stop: ScriptedStop {
-                state: Arc::clone(state),
-                settings: root.join(".claude").join("settings.json"),
-                backup: root.join(".litellm").join("claude_settings_backup.json"),
-                #[cfg(unix)]
-                real: None,
-                installed: Mutex::new(None),
-            },
-        }
-    }
-}
-
-pub(crate) struct World {
-    pub(crate) context: CliContext,
-    pub(crate) environment: FakeEnvironment,
+#[derive(Default)]
+pub(crate) struct Quiet {
     pub(crate) vault: DisabledVault,
     pub(crate) private_files: PrivateFiles,
     pub(crate) http: Arc<UnusedHttp>,
@@ -373,9 +355,14 @@ pub(crate) struct World {
     pub(crate) entropy: ZeroEntropy,
     pub(crate) sleeper: NoSleeper,
     pub(crate) selection: SelectionTerminal,
+}
+
+pub(crate) struct World {
+    pub(crate) context: CliContext,
+    pub(crate) environment: FakeEnvironment,
+    pub(crate) quiet: Quiet,
     pub(crate) interrupt: NeverInterrupted,
     pub(crate) token_path: PathBuf,
-    pub(crate) binary_path: PathBuf,
     pub(crate) home: TempDir,
     pub(crate) terminal: FakeTerminal,
     pub(crate) state: Arc<State>,
@@ -387,7 +374,6 @@ pub(crate) struct World {
 impl World {
     pub(crate) fn new(interactive: bool) -> Self {
         let home = tempfile::tempdir().expect("a temporary home");
-        let root = home.path().to_path_buf();
         let state = Arc::new(State::default());
         Self {
             context: CliContext {
@@ -396,18 +382,30 @@ impl World {
                 api_key: None,
                 api_key_from_token_file: false,
             },
-            environment: FakeEnvironment { home: root.clone() },
-            vault: DisabledVault,
-            private_files: PrivateFiles::default(),
-            http: Arc::new(UnusedHttp),
-            clock: Arc::new(FixedClock),
-            entropy: ZeroEntropy,
-            sleeper: NoSleeper,
-            selection: SelectionTerminal::default(),
+            environment: FakeEnvironment {
+                home: home.path().to_path_buf(),
+            },
+            quiet: Quiet::default(),
             interrupt: NeverInterrupted,
-            token_path: root.join(".litellm").join("token.json"),
-            binary_path: PathBuf::from("/opt/betterlite"),
-            doubles: Doubles::new(&state, &root),
+            token_path: home.path().join(".litellm").join("token.json"),
+            doubles: Doubles {
+                files: MemoryFiles(Arc::clone(&state)),
+                probe: RecordingProbe {
+                    status: 200,
+                    unreachable: false,
+                    state: Arc::clone(&state),
+                },
+                login: ScriptedLogin {
+                    token: None,
+                    state: Arc::clone(&state),
+                    real: false,
+                },
+                stop: ScriptedStop {
+                    state: Arc::clone(&state),
+                    home: home.path().to_path_buf(),
+                    watch: SignalWatch::default(),
+                },
+            },
             home,
             terminal: FakeTerminal { interactive },
             state,
@@ -419,10 +417,11 @@ impl World {
     #[cfg(unix)]
     pub(crate) fn use_real_signals(&mut self) -> Receiver<()> {
         let (sender, receiver) = mpsc::sync_channel(1);
-        self.doubles.stop.real = Some(SignalStop::default());
+        self.doubles.stop.watch.real = Some(SignalStop::default());
         *self
             .doubles
             .stop
+            .watch
             .installed
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some(sender);
@@ -457,17 +456,17 @@ impl World {
             context: &self.context,
             environment: &self.environment,
             files: &self.doubles.files,
-            vault: &mut self.vault,
-            private_files: &self.private_files,
-            http: Arc::clone(&self.http),
-            clock: Arc::clone(&self.clock),
-            entropy: &mut self.entropy,
-            sleeper: &self.sleeper,
-            selection: &mut self.selection,
+            vault: &mut self.quiet.vault,
+            private_files: &self.quiet.private_files,
+            http: Arc::clone(&self.quiet.http),
+            clock: Arc::clone(&self.quiet.clock),
+            entropy: &mut self.quiet.entropy,
+            sleeper: &self.quiet.sleeper,
+            selection: &mut self.quiet.selection,
             browser: &ignore_message,
             interrupt: &self.interrupt,
             token_path: &self.token_path,
-            binary_path: Some(&self.binary_path),
+            binary_path: Some(Path::new("/opt/betterlite")),
             home: Some(self.home.path()),
             expiration_hours: 24,
             warn: &ignore_message,

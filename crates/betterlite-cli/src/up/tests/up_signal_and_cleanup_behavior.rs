@@ -79,7 +79,7 @@ fn dropping_the_restore_guard_restores_the_settings() {
     {
         let _guard = RestoreOnce {
             home: world.home_path(),
-            files: &world.private_files,
+            files: &world.quiet.private_files,
             stdout: &mut stdout,
             stderr: &mut stderr,
             done: AtomicBool::new(false),
@@ -105,7 +105,7 @@ fn dropping_the_restore_guard_reports_a_corrupt_backup_on_stderr() {
     {
         let _guard = RestoreOnce {
             home: world.home_path(),
-            files: &world.private_files,
+            files: &world.quiet.private_files,
             stdout: &mut stdout,
             stderr: &mut stderr,
             done: AtomicBool::new(false),

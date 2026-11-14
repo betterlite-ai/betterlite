@@ -138,7 +138,7 @@ fn up_remembers_that_the_settings_did_not_exist() {
 fn down_without_a_backup_reports_nothing_to_restore() {
     let world = prepared(None);
     let mut stdout = Vec::new();
-    restore_and_report(world.home_path(), &world.private_files, &mut stdout)
+    restore_and_report(world.home_path(), &world.quiet.private_files, &mut stdout)
         .expect("there is nothing to restore");
     assert_eq!(utf8(&stdout), "Nothing to restore.\n");
 }
@@ -148,7 +148,7 @@ fn down_reports_a_corrupted_backup_with_its_path() {
     let world = prepared(None);
     seed(&world.backup_path(), "{not json");
     let mut stdout = Vec::new();
-    let error = restore_and_report(world.home_path(), &world.private_files, &mut stdout)
+    let error = restore_and_report(world.home_path(), &world.quiet.private_files, &mut stdout)
         .expect_err("the backup cannot be read");
     let backup_path = world.backup_path();
     let path = backup_path.display();
