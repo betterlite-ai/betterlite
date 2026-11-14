@@ -1,6 +1,8 @@
 use std::cell::Cell;
 use std::collections::BTreeMap;
+use std::fs;
 use std::future::IntoFuture as _;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -164,6 +166,13 @@ pub(crate) fn value(text: &str) -> GuardrailValue {
 pub(crate) fn response(text: &str) -> ScanResponse {
     let parsed = serde_json::from_str(text).unwrap();
     serde_json::from_value(parsed).unwrap()
+}
+
+pub(crate) fn corpus_answer(name: &str) -> ScanResponse {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("fuzz/corpus/noma_scan_response")
+        .join(name);
+    ScanResponse::from_body(&fs::read(path).unwrap()).unwrap()
 }
 
 pub(crate) fn settings() -> NomaSettings {

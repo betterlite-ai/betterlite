@@ -10,11 +10,12 @@ use rstest::rstest;
 use crate::guardrail_records::record::GuardrailStatus;
 use crate::noma_scan_policy::error::NomaError;
 use crate::noma_scan_policy::wire::ScanResponse;
-use crate::noma_scan_policy::{DEFAULT_APPLICATION_ID, ScanCallContext};
+use crate::noma_scan_policy::{DEFAULT_APPLICATION_ID, NomaScanPolicy, ScanCallContext};
 
 use super::support::{
-    SAFE_REPLY, USER_MESSAGES, captured, captured_headers, captured_path, context, data, mock_noma,
-    parts, policy, policy_with, records, request_count, settings, slow_noma, value,
+    SAFE_REPLY, USER_MESSAGES, captured, captured_headers, captured_path, context, corpus_answer,
+    data, mock_noma, parts, policy, policy_with, records, request_count, settings, slow_noma,
+    value,
 };
 
 #[tokio::test]
@@ -198,29 +199,6 @@ async fn requests_without_scannable_messages_skip_the_api(#[case] body: &str) {
     assert_eq!(request_count(&mock), 0);
 }
 
-#[tokio::test]
-async fn a_chat_choice_after_a_non_chat_choice_is_scanned() {
-    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
-    let policy = policy(&mock.base);
-    let mut request_data = data(USER_MESSAGES);
-    let mut model_response = value(
-        r#"{"id": "resp-1", "choices": [{"delta": {"content": "skip"}}, {"message": {"content": "scan me"}}]}"#,
-    );
-    let user_auth = data("{}");
-    let extra_data = data("{}");
-    policy
-        .process_llm_response_check(
-            &mut request_data,
-            &mut model_response,
-            context(&user_auth, &extra_data),
-        )
-        .await
-        .unwrap()
-        .unwrap();
-    let seen = captured(&mock);
-    assert_eq!(parts(&seen.input[0])[0].text, "scan me");
-}
-
 #[rstest]
 #[case::not_json("not json", "json")]
 #[case::not_an_object("[]", "shape")]
@@ -261,12 +239,18 @@ async fn api_status_failures_are_reported_and_write_no_record(#[case] status: St
     assert!(records(&request_data).is_empty());
 }
 
-#[tokio::test]
-async fn the_configured_timeout_ends_a_slow_scan() {
-    let mock = slow_noma(Duration::from_secs(30)).await;
+#[rstest]
+#[case::configured(Some(Duration::from_millis(50)), Duration::from_secs(30))]
+#[case::unset(None, Duration::from_secs(700))]
+#[tokio::test(start_paused = true)]
+async fn a_stalled_scan_ends_at_its_deadline(
+    #[case] timeout: Option<Duration>,
+    #[case] delay: Duration,
+) {
+    let mock = slow_noma(delay).await;
     let mut settings = settings();
     settings.api_base = Some(mock.base.clone());
-    settings.timeout = Some(Duration::from_millis(50));
+    settings.timeout = timeout;
     let policy = policy_with(settings);
     let mut request_data = data(USER_MESSAGES);
     let user_auth = data("{}");
@@ -293,22 +277,43 @@ fn replays_the_noma_scan_response_corpus() {
     }));
 }
 
-#[tokio::test(start_paused = true)]
-async fn an_unset_timeout_still_ends_a_stalled_scan() {
-    let mock = slow_noma(Duration::from_secs(700)).await;
-    let policy = policy(&mock.base);
-    let mut request_data = data(USER_MESSAGES);
-    let user_auth = data("{}");
-    let extra_data = data("{}");
-    let error = policy
-        .process_user_message_check(&mut request_data, context(&user_auth, &extra_data))
-        .await
-        .unwrap_err();
-    let NomaError::Transport { source } = error else {
-        panic!("expected a transport error");
-    };
-    assert!(source.is_timeout());
-    assert!(records(&request_data).is_empty());
+#[test]
+fn the_corpus_extra_fields_ride_along_in_rest() {
+    let answer = corpus_answer("extra_fields.json");
+    assert_eq!(
+        answer.rest.get("provider"),
+        Some(&value(r#"{"id": "abc"}"#))
+    );
+    assert_eq!(answer.rest.get("extra"), Some(&GuardrailValue::Null));
+    assert_eq!(
+        answer.aggregated_scan_result,
+        Some(Some(GuardrailValue::Text(String::from("yes"))))
+    );
+    assert_eq!(
+        answer.scan_result,
+        Some(Some(value(r#"{"unexpected": [1, 2.5, "x"]}"#)))
+    );
+}
+
+#[test]
+fn the_corpus_null_fields_stay_explicit_nulls() {
+    let answer = corpus_answer("null_fields.json");
+    assert_eq!(answer.aggregated_scan_result, Some(None));
+    assert_eq!(answer.scan_result, Some(None));
+    assert!(answer.rest.is_empty());
+}
+
+#[test]
+fn the_corpus_repeated_key_keeps_the_last_value() {
+    let answer = corpus_answer("repeated_key.json");
+    assert_eq!(
+        answer.aggregated_scan_result,
+        Some(Some(GuardrailValue::Boolean(false)))
+    );
+    assert_eq!(
+        NomaScanPolicy::determine_guardrail_status(&answer),
+        GuardrailStatus::Success
+    );
 }
 
 #[rstest]
@@ -384,6 +389,10 @@ async fn a_non_string_user_field_names_the_field() {
 #[case::skips_empty(
     r#"{"id": "resp-1", "choices": [{"message": {"content": ""}}, {"message": {"content": "second"}}]}"#,
     "second"
+)]
+#[case::after_a_non_chat_choice(
+    r#"{"id": "resp-1", "choices": [{"delta": {"content": "skip"}}, {"message": {"content": "scan me"}}]}"#,
+    "scan me"
 )]
 #[tokio::test]
 async fn llm_response_check_scans_the_first_nonempty_content(

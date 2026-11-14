@@ -71,6 +71,25 @@ async fn a_scan_writes_a_standard_logging_record() {
 }
 
 #[tokio::test]
+async fn the_record_keeps_the_extra_fields_the_provider_sent() {
+    let reply = r#"{"aggregatedScanResult": false, "scanResult": [], "provider": {"id": "abc"}, "extra": null}"#;
+    let mock = mock_noma(StatusCode::OK, reply).await;
+    let policy = policy(&mock.base);
+    let mut request_data = data(USER_MESSAGES);
+    let user_auth = data("{}");
+    let extra_data = data("{}");
+    policy
+        .process_user_message_check(&mut request_data, context(&user_auth, &extra_data))
+        .await
+        .unwrap();
+    let records = records(&request_data);
+    assert_eq!(
+        response_of(&records[0]),
+        &GuardrailValue::Object(data(reply))
+    );
+}
+
+#[tokio::test]
 async fn the_record_goes_into_litellm_metadata_when_present() {
     let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
     let policy = policy(&mock.base);
