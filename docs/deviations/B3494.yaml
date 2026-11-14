@@ -1,0 +1,14 @@
+task: B3494
+deviations:
+  - what: The DELETE transport sends no body, so the body transform_delete_interaction_request puts on PreparedRequest.params never reaches the provider.
+    why: LiteLLM's delete_interaction unpacks url and data from transform_delete_interaction_request and calls httpx.delete() with url, headers and timeout only, so the data is computed and discarded; betterlite keeps the same provider contract shape and ignores the body for a delete.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L495-L513
+  - what: delete_interaction, async_delete_interaction, cancel_interaction and async_cancel_interaction send the caller's timeout, or litellm.request_timeout when the caller names none, while get_interaction sends no deadline of its own.
+    why: LiteLLM passes timeout or request_timeout at lines 512, 566, 634 and 688, and the GET methods at lines 390-394 and 443-447 omit the argument; betterlite keeps each operation's deadline on its own transport.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L509-L513
+  - what: Sync and async delete and cancel are separate functions, delete_interaction and async_delete_interaction for one, cancel_interaction and async_cancel_interaction for the other, with no _is_async parameter that returns a coroutine.
+    why: LiteLLM's sync methods accept _is_async and return the coroutine from their async counterpart without awaiting it; that dispatcher exists for Python callers, while a Rust caller picks the sync or async function it needs and the compiler checks which one it awaits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L473-L482
+  - what: The error message an HTTP failure becomes is the response body decoded as UTF-8 with errors="replace", one U+FFFD per invalid sequence, and the charset parameter of Content-Type is not read.
+    why: LiteLLM hands _handle_error e.response.text, which httpx builds with the charset the response header declares and falls back to UTF-8 decoded with errors="replace"; betterlite decodes only UTF-8, the encoding provider JSON error bodies use, and keeps the replacement behavior for bytes outside it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L46-L53

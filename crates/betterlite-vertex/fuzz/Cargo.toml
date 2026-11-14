@@ -13,9 +13,11 @@ cargo-fuzz = true
 
 [dependencies]
 betterlite-bedrock = { path = "../../betterlite-bedrock" }
+betterlite-http = { path = "../../betterlite-http" }
 betterlite-models = { path = "../../betterlite-models" }
 betterlite-tokenizer = { path = "../../betterlite-tokenizer" }
 betterlite-vertex = { path = ".." }
+http = "1.5.0"
 indexmap = "2.14.2"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 libfuzzer-sys = "0.4.9"
@@ -66,6 +68,13 @@ bench = false
 [[bin]]
 name = "google_native_content"
 path = "fuzz_targets/google_native_content.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "image_options"
+path = "fuzz_targets/image_options.rs"
 test = false
 doc = false
 bench = false
@@ -134,8 +143,36 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vertex_speech_audio"
+path = "fuzz_targets/vertex_speech_audio.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_rerank"
+path = "fuzz_targets/vertex_rerank.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_recognition"
+path = "fuzz_targets/vertex_recognition.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vertex_timestamp"
 path = "fuzz_targets/vertex_timestamp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_tuning_job"
+path = "fuzz_targets/vertex_tuning_job.rs"
 test = false
 doc = false
 bench = false

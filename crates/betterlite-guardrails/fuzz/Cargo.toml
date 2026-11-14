@@ -14,6 +14,7 @@ cargo-fuzz = true
 [dependencies]
 betterlite-config = { path = "../../betterlite-config" }
 betterlite-guardrails = { path = ".." }
+betterlite-prompts = { path = "../../betterlite-prompts" }
 libfuzzer-sys = "0.4.9"
 serde_json = "1.0.154"
 
@@ -111,6 +112,20 @@ bench = false
 [[bin]]
 name = "guardrail_message_scope_sse_chunk"
 path = "fuzz_targets/guardrail_message_scope_sse_chunk.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "noma_scan_response"
+path = "fuzz_targets/noma_scan_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "model_armor_files"
+path = "fuzz_targets/model_armor_files.rs"
 test = false
 doc = false
 bench = false

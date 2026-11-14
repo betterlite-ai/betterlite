@@ -1,0 +1,17 @@
+kind: helper
+name: deepgram-transcription-raw-audio-request
+call:
+  deepgram_transcription:
+    env: {}
+    steps:
+      - {step: request, audio: bytes, filename: "", content: "ID3 raw audio"}
+      - {step: request, audio: tuple, filename: clip.mp3, content: "tuple audio"}
+      - {step: request, audio: bytes, filename: "", content: ""}
+      - step: params
+        optional: {diarize: true, language: en}
+        non_default: {language: de, temperature: 0.2, diarize: false}
+      - step: params
+        optional: {}
+        non_default: {response_format: json, prompt: hello}
+env: {}
+compare: {ignore: []}
