@@ -575,6 +575,7 @@ async fn postgres_failure_effects() {
     ]);
     let report = import_csv(&postgres, &data).await;
     assert_eq!(report.migrated(), 2);
+    assert_eq!(report.skipped(), 0);
     assert_eq!(report.failed(), 1);
     assert_eq!(failed_token(&report).as_deref(), Some("tok-overflow"));
     assert!(postgres.token_present("tok-first").await);
