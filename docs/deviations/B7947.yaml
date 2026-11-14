@@ -103,6 +103,16 @@ deviations:
       strict typing. The validation schema, required keys, defaults and every dump match LiteLLM.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L123-L133
   - what: >-
+      Class docstrings are not ported, so the models' JSON schemas carry no root description where
+      LiteLLM's do: LiteLLM_UserScimMetadata, the team request and response models, TeamListItem,
+      TeamMemberInfoResponse and the public preset models are affected. The six ui_sso models do
+      carry LiteLLM's descriptions, through json_schema_extra.
+    why: >-
+      The repository keeps no docstrings, and a module is capped at 300 lines; the team module is
+      already near that cap. Field schemas, required keys, defaults and validation match, and only
+      the root description text is missing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/team_endpoints.py#L88
+  - what: >-
       The class LiteLLM names LiteLLM_UserScimMetadata is declared as UserScimMetadata, and the
       module binds the LiteLLM name to it.
     why: >-
