@@ -24,7 +24,7 @@ vi.mock("@/components/networking", () => ({
 }));
 
 const renderLogo = (collapsed = false, dark = false) => {
-  const logo = <BrandLogo collapsed={collapsed} />;
+  const logo = <BrandLogo collapsed={collapsed} darkLogoSrcs={[themeState.logoUrlDark]} />;
   return render(
     dark ? (
       <NextThemesProvider attribute="class" defaultTheme="dark">
@@ -104,6 +104,24 @@ describe("BrandLogo", () => {
     await waitFor(() => {
       expect(brandImage()).toHaveAttribute("src", "https://cdn.test/logo-dark.png");
     });
+  });
+
+  it("moves on from a failed dark logo to the light logo and then the bundled dark image", async () => {
+    themeState.logoUrl = "https://cdn.test/logo.png";
+    themeState.logoUrlDark = "https://cdn.test/logo-dark.png";
+
+    renderLogo(false, true);
+
+    await waitFor(() => {
+      expect(brandImage()).toHaveAttribute("src", "https://cdn.test/logo-dark.png");
+    });
+    fireEvent.error(brandImage());
+    expect(brandImage()).toHaveAttribute("src", "https://cdn.test/logo.png");
+    fireEvent.error(brandImage());
+    expect(brandImage()).toHaveAttribute("src", "http://proxy.test:4000/get_image?theme=dark");
+    fireEvent.error(brandImage());
+    expect(screen.queryByRole("img", { name: "betterlite" })).not.toBeInTheDocument();
+    expect(screen.getByText("betterlite")).toBeInTheDocument();
   });
 
   it("reuses the light configured logo in a dark theme when no dark one is set", async () => {

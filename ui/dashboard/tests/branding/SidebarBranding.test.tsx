@@ -1,5 +1,6 @@
+import { ThemeProvider as NextThemesProvider } from "next-themes";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { renderWithProviders, screen, within } from "../test-utils";
+import { renderWithProviders, screen, waitFor, within } from "../test-utils";
 import Sidebar from "@/components/leftnav";
 import { BETTERLITE_RELEASES_URL } from "@/components/branding/brandLinks";
 
@@ -48,10 +49,15 @@ vi.mock("@/app/(dashboard)/hooks/useLogout", () => ({
   revokeSessionAndClearClientState: vi.fn(),
 }));
 
+const theme = vi.hoisted(() => ({
+  logoUrl: null as string | null,
+  logoUrlDark: null as string | null,
+}));
+
 vi.mock("@/contexts/ThemeContext", () => ({
   useTheme: () => ({
-    logoUrl: null,
-    logoUrlDark: null,
+    logoUrl: theme.logoUrl,
+    logoUrlDark: theme.logoUrlDark,
     faviconUrl: null,
     setLogoUrl: vi.fn(),
     setLogoUrlDark: vi.fn(),
@@ -63,6 +69,8 @@ const renderSidebar = () => renderWithProviders(<Sidebar collapsed={false} />);
 
 describe("shared sidebar branding", () => {
   beforeEach(() => {
+    theme.logoUrl = null;
+    theme.logoUrlDark = null;
     auth.current = {
       userId: "test-user-id",
       accessToken: "test-access-token",
@@ -95,6 +103,25 @@ describe("shared sidebar branding", () => {
     expect(image).toHaveClass("hidden");
   });
 
+  it("tries the configured dark logo first under a dark theme", async () => {
+    theme.logoUrl = "https://cdn.test/logo.png";
+    theme.logoUrlDark = "https://cdn.test/logo-dark.png";
+
+    renderWithProviders(
+      <NextThemesProvider attribute="class" defaultTheme="dark">
+        <Sidebar collapsed={false} />
+      </NextThemesProvider>,
+    );
+
+    const home = screen.getByRole("link", { name: "betterlite home" });
+    await waitFor(() => {
+      expect(within(home).getByRole("img", { name: "betterlite" })).toHaveAttribute(
+        "src",
+        "https://cdn.test/logo-dark.png",
+      );
+    });
+  });
+
   it("sends the installed version to betterlite's release history", () => {
     renderSidebar();
 
@@ -122,7 +149,7 @@ describe("shared sidebar branding", () => {
     expect(screen.queryByText("Seats")).not.toBeInTheDocument();
     const licenseCalls = transport.mock.calls
       .map(([input]) => String(input))
-      .filter((url) => url.includes("/license") || url.includes("remaining"));
+      .filter((url) => url.includes("/health/license") || url.includes("/user/available_users"));
     expect(licenseCalls).toEqual([]);
     vi.unstubAllGlobals();
   });

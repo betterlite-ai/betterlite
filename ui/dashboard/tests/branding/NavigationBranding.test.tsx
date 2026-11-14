@@ -1,4 +1,5 @@
 import userEvent from "@testing-library/user-event";
+import { ThemeProvider as NextThemesProvider } from "next-themes";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders, screen, waitFor, within } from "../test-utils";
 import Navbar from "@/components/navbar";
@@ -53,10 +54,15 @@ vi.mock("@/hooks/useWorker", () => ({
   }),
 }));
 
+const theme = vi.hoisted(() => ({
+  logoUrl: null as string | null,
+  logoUrlDark: null as string | null,
+}));
+
 vi.mock("@/contexts/ThemeContext", () => ({
   useTheme: () => ({
-    logoUrl: null,
-    logoUrlDark: null,
+    logoUrl: theme.logoUrl,
+    logoUrlDark: theme.logoUrlDark,
     faviconUrl: null,
     setLogoUrl: vi.fn(),
     setLogoUrlDark: vi.fn(),
@@ -74,6 +80,8 @@ const renderNavbar = () =>
 describe("shared navbar branding", () => {
   beforeEach(() => {
     health.version = "1.105.1";
+    theme.logoUrl = null;
+    theme.logoUrlDark = null;
   });
 
   it("links the home mark to the UI root as betterlite", () => {
@@ -91,6 +99,22 @@ describe("shared navbar branding", () => {
     const image = within(home).getByRole("img", { name: "betterlite" });
     expect(image).toHaveAttribute("src", expect.stringMatching(/\/get_image$/));
     expect(image).toHaveClass("hidden");
+  });
+
+  it("keeps LiteLLM's dark-mode precedence, where logo_url wins over logo_url_dark", async () => {
+    theme.logoUrl = "https://cdn.test/logo.png";
+    theme.logoUrlDark = "https://cdn.test/logo-dark.png";
+
+    renderWithProviders(
+      <NextThemesProvider attribute="class" defaultTheme="dark">
+        <Navbar accessToken="test-token" isPublicPage={false} sidebarCollapsed={false} />
+      </NextThemesProvider>,
+    );
+
+    const home = screen.getByRole("link", { name: "betterlite home" });
+    await waitFor(() => {
+      expect(within(home).getByRole("img", { name: "betterlite" })).toHaveAttribute("src", "https://cdn.test/logo.png");
+    });
   });
 
   it("sends the version badge to betterlite's release history", () => {

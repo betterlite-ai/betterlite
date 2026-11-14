@@ -590,10 +590,10 @@ index e580b8610d08390f370041ec7eb08bbf7344e119..c7cbd4048263957f7fd4f4656036d7a6
            )}
 diff --git a/ui/litellm-dashboard/src/components/branding/BrandLogo.tsx b/ui/litellm-dashboard/src/components/branding/BrandLogo.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..5965cfc6298b95d1a8c4e3a26cb1511e3ddede79
+index 0000000000000000000000000000000000000000..9de48957f4ebc3c0a756b83c3514a7d1a35cac09
 --- /dev/null
 +++ b/ui/litellm-dashboard/src/components/branding/BrandLogo.tsx
-@@ -0,0 +1,41 @@
+@@ -0,0 +1,50 @@
 +import React, { useState } from "react";
 +import { useTheme as useNextTheme } from "next-themes";
 +import { BrandWordmark } from "@/components/branding/BrandWordmark";
@@ -604,32 +604,41 @@ index 0000000000000000000000000000000000000000..5965cfc6298b95d1a8c4e3a26cb1511e
 +interface BrandLogoProps {
 +  collapsed?: boolean;
 +  imageClassName?: string;
++  // The sidebar passes logo_url_dark first; LiteLLM's navbar ignores it and passes none.
++  darkLogoSrcs?: ReadonlyArray<string | null | undefined>;
 +}
 +
 +const LOGO_CLASS_NAME = "h-5 w-auto max-w-[150px] object-contain";
 +
-+export const BrandLogo: React.FC<BrandLogoProps> = ({ collapsed = false, imageClassName = LOGO_CLASS_NAME }) => {
-+  const { logoUrl, logoUrlDark } = useTheme();
++export const BrandLogo: React.FC<BrandLogoProps> = ({
++  collapsed = false,
++  imageClassName = LOGO_CLASS_NAME,
++  darkLogoSrcs = [],
++}) => {
++  const { logoUrl } = useTheme();
 +  const { resolvedTheme } = useNextTheme();
 +  const baseUrl = getProxyBaseUrl();
 +  const monogram = collapsed ? "&variant=monogram" : "";
-+  const lightSrc = logoUrl || `${baseUrl}/get_image${collapsed ? "?variant=monogram" : ""}`;
-+  const darkSrc = logoUrlDark || logoUrl || `${baseUrl}/get_image?theme=dark${monogram}`;
-+  const activeSrc = resolvedTheme === "dark" ? darkSrc : lightSrc;
++  const lightCandidates = [logoUrl, `${baseUrl}/get_image${collapsed ? "?variant=monogram" : ""}`];
++  const darkCandidates = [...darkLogoSrcs, logoUrl, `${baseUrl}/get_image?theme=dark${monogram}`];
++  const candidates = (resolvedTheme === "dark" ? darkCandidates : lightCandidates).filter((src): src is string =>
++    Boolean(src),
++  );
 +  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
-+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
-+  const imageReady = loadedSrc === activeSrc && failedSrc !== activeSrc;
++  const [failedSrcs, setFailedSrcs] = useState<ReadonlyArray<string>>([]);
++  const activeSrc = candidates.find((src) => !failedSrcs.includes(src)) ?? null;
++  const imageReady = activeSrc !== null && loadedSrc === activeSrc;
 +
 +  return (
 +    <span className="flex min-w-0 items-center">
 +      {!imageReady && <BrandWordmark collapsed={collapsed} />}
-+      {failedSrc !== activeSrc && (
++      {activeSrc !== null && (
 +        <img
 +          src={activeSrc}
 +          alt="betterlite"
 +          className={cn(imageClassName, imageReady ? undefined : "hidden")}
 +          onLoad={() => setLoadedSrc(activeSrc)}
-+          onError={() => setFailedSrc(activeSrc)}
++          onError={() => setFailedSrcs((previous) => [...previous, activeSrc])}
 +        />
 +      )}
 +    </span>
@@ -697,21 +706,20 @@ index 2d46efa3a2daefa826c8d3b1b5b9d4ed1d8276ca..4cb7e6e0f4557f6c402ca3de51c02cc9
        <div className="flex items-center justify-center gap-2">
          <UiLoadingSpinner className="size-4" />
 diff --git a/ui/litellm-dashboard/src/components/leftnav.tsx b/ui/litellm-dashboard/src/components/leftnav.tsx
-index 2221b43e68dbc7514d03e0d1fbf0105c05101f19..4eebaa96024b5ee0b5a4946d0446dde9be90c310 100644
+index 2221b43e68dbc7514d03e0d1fbf0105c05101f19..2941801aba40734f2dc2acb0696ae7917c07fe65 100644
 --- a/ui/litellm-dashboard/src/components/leftnav.tsx
 +++ b/ui/litellm-dashboard/src/components/leftnav.tsx
-@@ -3,8 +3,8 @@ import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
+@@ -3,7 +3,8 @@ import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
  import useIsOrgAdmin from "@/app/(dashboard)/hooks/useIsOrgAdmin";
  import { useHealthReadinessDetails } from "@/app/(dashboard)/hooks/healthReadiness/useHealthReadinessDetails";
  import { useLogout } from "@/app/(dashboard)/hooks/useLogout";
 -import { getProxyBaseUrl } from "@/components/networking";
--import { useTheme } from "@/contexts/ThemeContext";
 +import { BrandLogo } from "@/components/branding/BrandLogo";
 +import { BETTERLITE_RELEASES_URL, UPSTREAM_LITELLM_DOCS_LABEL } from "@/components/branding/brandLinks";
+ import { useTheme } from "@/contexts/ThemeContext";
  import { Badge } from "@/components/ui/badge";
  import { Button } from "@/components/ui/button";
- import { ScrollArea } from "@/components/ui/scroll-area";
-@@ -79,7 +79,6 @@ import {
+@@ -79,7 +80,6 @@ import {
  } from "../utils/roles";
  import BetaBadge from "./BetaBadge";
  import SidebarAccountMenu from "./SidebarAccountMenu/SidebarAccountMenu";
@@ -719,7 +727,7 @@ index 2221b43e68dbc7514d03e0d1fbf0105c05101f19..4eebaa96024b5ee0b5a4946d0446dde9
  import { routeSegmentForPathname, uiHref } from "@/utils/uiHref";
 
  const ICON = { strokeWidth: 1.75 } as const;
-@@ -87,11 +86,6 @@ const ICON = { strokeWidth: 1.75 } as const;
+@@ -87,11 +87,6 @@ const ICON = { strokeWidth: 1.75 } as const;
  const LOGO_CLASS_NAME =
    "h-5 w-auto max-w-[150px] object-contain group-data-[collapsed=true]/sidebar:h-7 group-data-[collapsed=true]/sidebar:w-7";
 
@@ -731,7 +739,7 @@ index 2221b43e68dbc7514d03e0d1fbf0105c05101f19..4eebaa96024b5ee0b5a4946d0446dde9
  interface SidebarProps {
    collapsed?: boolean;
    onToggleCollapsed?: () => void;
-@@ -303,7 +297,14 @@ const menuGroups: MenuGroup[] = [
+@@ -303,7 +298,14 @@ const menuGroups: MenuGroup[] = [
        {
          key: "learning-resources",
          page: "learning-resources",
@@ -747,20 +755,21 @@ index 2221b43e68dbc7514d03e0d1fbf0105c05101f19..4eebaa96024b5ee0b5a4946d0446dde9
          icon: <BookOpen {...ICON} />,
          external_url: "https://models.litellm.ai/cookbook",
        },
-@@ -468,12 +469,9 @@ const Sidebar_: React.FC<SidebarProps> = ({
+@@ -468,12 +470,10 @@ const Sidebar_: React.FC<SidebarProps> = ({
    const { userId, accessToken, userRole, isViewOnly } = useAuthorized();
    const isOrgAdmin = useIsOrgAdmin();
    const { data: teams } = useTeams();
 -  const { logoUrl, logoUrlDark } = useTheme();
 -  const [erroredDarkLogo, setErroredDarkLogo] = useState<string | null>(null);
    const { data: healthData } = useHealthReadinessDetails(accessToken);
++  const { logoUrlDark } = useTheme();
    const logout = useLogout(accessToken);
 
 -  const baseUrl = getProxyBaseUrl();
    const version = healthData?.litellm_version;
    const currentRoute = routeForPathname(usePathname());
    const selectedKey = findMenuItemKey(currentRoute);
-@@ -631,29 +629,18 @@ const Sidebar_: React.FC<SidebarProps> = ({
+@@ -631,29 +631,18 @@ const Sidebar_: React.FC<SidebarProps> = ({
      );
    };
 
@@ -783,7 +792,7 @@ index 2221b43e68dbc7514d03e0d1fbf0105c05101f19..4eebaa96024b5ee0b5a4946d0446dde9
 -                className={cn(LOGO_CLASS_NAME, "hidden dark:block")}
 -              />
 +            <Link href={uiHref("")} className="flex min-w-0 items-center" aria-label="betterlite home">
-+              <BrandLogo collapsed={collapsed} imageClassName={LOGO_CLASS_NAME} />
++              <BrandLogo collapsed={collapsed} imageClassName={LOGO_CLASS_NAME} darkLogoSrcs={[logoUrlDark]} />
              </Link>
              {version && (
                <Badge
@@ -793,7 +802,7 @@ index 2221b43e68dbc7514d03e0d1fbf0105c05101f19..4eebaa96024b5ee0b5a4946d0446dde9
                  className="px-1.5 py-0 font-mono text-[10px] font-medium text-muted-foreground group-data-[collapsed=true]/sidebar:hidden"
                >
                  v{version}
-@@ -687,13 +674,6 @@ const Sidebar_: React.FC<SidebarProps> = ({
+@@ -687,13 +676,6 @@ const Sidebar_: React.FC<SidebarProps> = ({
        </ScrollArea>
 
        <SidebarFooter>
@@ -917,7 +926,7 @@ index 66c10f1e222dcd5861df4c0341d7fca6fdef378f..bb8be34ae7cc9563227c708abc070b06
      return (
        <div className={`${className} rounded-full bg-border flex items-center justify-center text-xs`}>
 diff --git a/ui/litellm-dashboard/src/components/navbar.tsx b/ui/litellm-dashboard/src/components/navbar.tsx
-index 8bc9b06969efc21efb57fd65f6a218927e212266..d509c181097d8a3c8a7b3e69e3f1ebc8ba8ee21b 100644
+index 8bc9b06969efc21efb57fd65f6a218927e212266..54d2c67a482f68ba725bce974b5a4126b731d07c 100644
 --- a/ui/litellm-dashboard/src/components/navbar.tsx
 +++ b/ui/litellm-dashboard/src/components/navbar.tsx
 @@ -2,19 +2,17 @@ import { useHealthReadinessDetails } from "@/app/(dashboard)/hooks/healthReadine
@@ -961,7 +970,7 @@ index 8bc9b06969efc21efb57fd65f6a218927e212266..d509c181097d8a3c8a7b3e69e3f1ebc8
    const handleLogout = useLogout(accessToken);
 
    const handleWorkerSwitch = (workerId: string) => {
-@@ -78,16 +71,10 @@ const Navbar: React.FC<NavbarProps> = ({
+@@ -78,16 +71,11 @@ const Navbar: React.FC<NavbarProps> = ({
              )}
 
              <div className="flex items-center gap-2">
@@ -976,11 +985,12 @@ index 8bc9b06969efc21efb57fd65f6a218927e212266..d509c181097d8a3c8a7b3e69e3f1ebc8
 -                      aria-hidden
 -                      className={cn(NAV_LOGO_CLASS_NAME, "hidden dark:block")}
 -                    />
++                    {/* LiteLLM's navbar ignores logo_url_dark in dark mode, so no dark logo is passed. */}
 +                    <BrandLogo imageClassName={NAV_LOGO_CLASS_NAME} />
                    </div>
                  </div>
                </Link>
-@@ -97,18 +84,13 @@ const Navbar: React.FC<NavbarProps> = ({
+@@ -97,18 +85,13 @@ const Navbar: React.FC<NavbarProps> = ({
                      <span
                        className="absolute -left-2 -top-1 animate-bounce text-lg"
                        style={{ animationDuration: "2s" }}
@@ -1001,7 +1011,7 @@ index 8bc9b06969efc21efb57fd65f6a218927e212266..d509c181097d8a3c8a7b3e69e3f1ebc8
                        v{version}
                      </a>
                    </Badge>
-@@ -135,7 +117,6 @@ const Navbar: React.FC<NavbarProps> = ({
+@@ -135,7 +118,6 @@ const Navbar: React.FC<NavbarProps> = ({
                className={`flex min-w-0 items-center gap-2 ${showWorkerSwitch ? "border-l border-border pl-4" : ""}`}
              >
                <DocsLink />

@@ -93,7 +93,7 @@
     {
       "path": "ui/litellm-dashboard/src/components/branding/BrandLogo.tsx",
       "preimage": null,
-      "postimage": "924f5dddfc611fbf770a8647ea96c5efb9f74c8242c020719709ad2b115c2ef8"
+      "postimage": "bb95e2b8bb0233ae62e2847c4115a51df5afe1dd54a32da3c4ce7df17703b636"
     },
     {
       "path": "ui/litellm-dashboard/src/components/branding/BrandWordmark.tsx",
@@ -113,7 +113,7 @@
     {
       "path": "ui/litellm-dashboard/src/components/leftnav.tsx",
       "preimage": "5adafd8c4ae3f131aadafecf3a34161eba91d49b6b7ba0d28048bdb3d38a5bf8",
-      "postimage": "d1e41ff15734e5769e0c6df1e30775436a52b8355d93d32f98e9da73173c895a"
+      "postimage": "349dff8227b47715b09a10bb6a4bd85245c24dba4e3dd726a22a5a62f4708252"
     },
     {
       "path": "ui/litellm-dashboard/src/components/liteadmin/LiteAdmin.tsx",
@@ -133,7 +133,7 @@
     {
       "path": "ui/litellm-dashboard/src/components/navbar.tsx",
       "preimage": "53c14142772db7f16363cbfeb81d0a505cc2fd004cea2203dea3cb6833e576ca",
-      "postimage": "34087297694d3c1bf26970fd211595d632357039422f3c148e16bb4dda1c2bbe"
+      "postimage": "3fcb5250ff65a05ad95fd431d4a9bbc3adedc7682b35cffb7e7e1b99c94c1ca1"
     },
     {
       "path": "ui/litellm-dashboard/src/lib/logoTreatments.test.ts",

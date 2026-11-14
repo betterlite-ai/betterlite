@@ -30,6 +30,11 @@ vi.mock("@/app/(dashboard)/hooks/healthReadiness/useHealthReadinessDetails", () 
   useHealthReadinessDetails: () => ({ data: { litellm_version: "1.99.0" } }),
 }));
 
+vi.mock("@/lib/serverRootPath", () => ({
+  serverRootPath: "/proxy",
+  setServerRootPath: vi.fn(),
+}));
+
 const ADMIN_AUTH = {
   userId: "test-user-id",
   userEmail: "test@example.com",
@@ -86,7 +91,7 @@ describe("sidebar account menu branding", () => {
       panel.getByRole("link", {
         name: "LiteLLM license and notices (Berri AI, MIT)",
       }),
-    ).toHaveAttribute("href", "/ui/notices/LiteLLM-LICENSE.txt");
+    ).toHaveAttribute("href", "/proxy/ui/notices/LiteLLM-LICENSE.txt");
   });
 
   it("renames the assistant toggle for proxy admins", async () => {
@@ -140,7 +145,7 @@ describe("navbar account menu branding", () => {
       panel.getByRole("link", {
         name: "LiteLLM license and notices (Berri AI, MIT)",
       }),
-    ).toHaveAttribute("href", "/ui/notices/LiteLLM-LICENSE.txt");
+    ).toHaveAttribute("href", "/proxy/ui/notices/LiteLLM-LICENSE.txt");
   });
 
   it("renames the assistant toggle for proxy admins", async () => {

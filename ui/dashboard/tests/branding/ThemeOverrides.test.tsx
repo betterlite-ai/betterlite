@@ -2,7 +2,7 @@ import { ThemeProvider as NextThemesProvider } from "next-themes";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "../test-utils";
 import { BrandLogo } from "@/components/branding/BrandLogo";
-import { ThemeProvider } from "@/contexts/ThemeContext";
+import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 
 vi.mock("@/components/networking", () => ({
   getProxyBaseUrl: () => "http://proxy.test:4000",
@@ -16,10 +16,15 @@ const themeResponse = (values: Record<string, unknown>) =>
     headers: { "Content-Type": "application/json" },
   });
 
+const SidebarLogo = () => {
+  const { logoUrlDark } = useTheme();
+  return <BrandLogo darkLogoSrcs={[logoUrlDark]} />;
+};
+
 const renderThemed = (dark = false) => {
   const tree = (
     <ThemeProvider accessToken="test-token">
-      <BrandLogo />
+      <SidebarLogo />
     </ThemeProvider>
   );
   return render(
