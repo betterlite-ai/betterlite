@@ -43,13 +43,16 @@ pub enum Lenient<T> {
 }
 
 impl<T> Lenient<T> {
-    pub(super) fn value(&self) -> Option<&T> {
+    pub(super) const fn value(&self) -> Option<&T> {
         match self {
             Self::Value(value) => Some(value),
             Self::Other(IgnoredAny) => None,
         }
     }
 }
+
+// Flattening this map makes serde read an object only, so a JSON array is not taken as positional fields.
+type Rest = BTreeMap<String, Option<IgnoredAny>>;
 
 // Missing is a counter the payload does not carry, so only it falls back to the other field name.
 #[derive(Default, Deserialize)]
@@ -62,7 +65,6 @@ enum Count {
     Missing,
 }
 
-// The flattened map makes serde read an object only, so a JSON array is not taken as positional fields.
 #[derive(Deserialize)]
 pub struct TokenCounts {
     #[serde(default)]
@@ -74,14 +76,14 @@ pub struct TokenCounts {
     #[serde(default)]
     completion_tokens: Count,
     #[serde(flatten)]
-    _rest: BTreeMap<String, IgnoredAny>,
+    _rest: Rest,
 }
 
 #[derive(Deserialize)]
 pub struct Carrier {
     pub(super) usage: Option<Lenient<TokenCounts>>,
     #[serde(flatten)]
-    _rest: BTreeMap<String, IgnoredAny>,
+    _rest: Rest,
 }
 
 #[derive(Deserialize)]
@@ -92,7 +94,7 @@ pub struct Payload {
     pub(super) response: Option<Lenient<Carrier>>,
     pub(super) usage: Option<Lenient<TokenCounts>>,
     #[serde(flatten)]
-    _rest: BTreeMap<String, IgnoredAny>,
+    _rest: Rest,
 }
 
 #[must_use]
@@ -122,7 +124,7 @@ pub fn usage_from_body(body: &[u8]) -> (u64, u64) {
 fn token_field(primary: &Count, fallback: &Count) -> u64 {
     let count = match primary {
         Count::Missing => fallback,
-        present => present,
+        Count::Number(_) | Count::Unusable(_) => primary,
     };
     let number = match count {
         Count::Number(number) => number,

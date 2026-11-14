@@ -37,16 +37,16 @@ pub fn compute_cost(
     input_tokens: u64,
     output_tokens: u64,
 ) -> Decimal {
-    let Some(model) = model else {
+    let Some(name) = model else {
         return Decimal::ZERO;
     };
     if input_tokens == 0 && output_tokens == 0 {
         return Decimal::ZERO;
     }
-    match prices.cost_per_token(model, input_tokens, output_tokens) {
+    match prices.cost_per_token(name, input_tokens, output_tokens) {
         Ok(cost) => cost,
         Err(error) => {
-            tracing::debug!(%error, model, "harness endpoint: cost lookup failed");
+            tracing::debug!(%error, model = name, "harness endpoint: cost lookup failed");
             Decimal::ZERO
         }
     }

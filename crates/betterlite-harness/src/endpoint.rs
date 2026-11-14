@@ -59,15 +59,15 @@ pub struct ModelEndpoint {
     pub api_base: Option<String>,
     pub metadata: JsonObject,
     pub token: SecretString,
-    usage: Mutex<UsageTracker>,
-    prices: Arc<dyn CostPerToken>,
+    pub usage: Mutex<UsageTracker>,
+    pub prices: Arc<dyn CostPerToken>,
 }
 
 impl ModelEndpoint {
     pub fn new(
         setup: EndpointSetup,
         prices: Arc<dyn CostPerToken>,
-        random: Arc<dyn RandomBytes>,
+        random: &dyn RandomBytes,
     ) -> Result<Self, EndpointError> {
         let mut bytes = [0_u8; HARNESS_SESSION_TOKEN_BYTES];
         random
@@ -118,13 +118,13 @@ impl ModelEndpoint {
     }
 
     #[must_use]
-    pub fn error(&self, failure: &Failure, status: Option<u16>) -> ErrorReply {
+    pub fn error(&self, failure: &Failure, explicit_status: Option<u16>) -> ErrorReply {
         let message = redact::sanitize(&failure.message, &self.secrets());
-        let status = match status {
-            Some(status) if status != 0 => status,
+        let status = match explicit_status {
+            Some(code) if code != 0 => code,
             _ => failure
                 .status
-                .filter(|status| (400..=599).contains(status))
+                .filter(|code| (400..=599).contains(code))
                 .unwrap_or(500),
         };
         ErrorReply {
@@ -145,15 +145,14 @@ impl ModelEndpoint {
         output_tokens: u64,
         cost: Option<Decimal>,
     ) {
-        let cost = match cost {
-            Some(cost) => cost,
-            None => compute_cost(self.prices.as_ref(), model, input_tokens, output_tokens),
-        };
+        let charge = cost.unwrap_or_else(|| {
+            compute_cost(self.prices.as_ref(), model, input_tokens, output_tokens)
+        });
         let mut usage = match self.usage.lock() {
             Ok(usage) => usage,
             Err(poisoned) => poisoned.into_inner(),
         };
-        usage.add(input_tokens, output_tokens, cost);
+        usage.add(input_tokens, output_tokens, charge);
     }
 
     #[must_use]

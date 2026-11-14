@@ -22,10 +22,7 @@ pub const ROUTE_PREFIXES: [&str; 2] = ["", "/v1"];
 #[must_use]
 pub fn route_of(path: &str) -> Option<Route> {
     let stripped = path.trim_matches('/');
-    match stripped.strip_prefix("v1/") {
-        Some(route) => known_route(route),
-        None => known_route(stripped),
-    }
+    known_route(stripped.strip_prefix("v1/").unwrap_or(stripped))
 }
 
 fn known_route(route: &str) -> Option<Route> {

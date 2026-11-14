@@ -23,7 +23,7 @@ pub enum EncodeError {
 }
 
 #[must_use]
-pub fn stream_trailer(route: Route) -> Option<&'static [u8]> {
+pub const fn stream_trailer(route: Route) -> Option<&'static [u8]> {
     match route {
         Route::Chat => Some(b"data: [DONE]\n\n"),
         Route::Messages | Route::Responses => None,
@@ -55,13 +55,14 @@ fn event_frame(event: &JsonObject) -> Result<Vec<u8>, EncodeError> {
 }
 
 fn frame_event(event_type: Option<&str>, data: &str) -> Vec<u8> {
-    match event_type {
-        Some(name) => format!("event: {name}\ndata: {data}\n\n").into_bytes(),
-        None => format!("data: {data}\n\n").into_bytes(),
-    }
+    let head = event_type.map_or_else(String::new, |name| format!("event: {name}\n"));
+    format!("{head}data: {data}\n\n").into_bytes()
 }
 
-fn json<T: ?Sized + Serialize>(value: &T) -> Result<String, EncodeError> {
+fn json<T>(value: &T) -> Result<String, EncodeError>
+where
+    T: ?Sized + Serialize,
+{
     match serde_json::to_string(value) {
         Ok(data) => Ok(data),
         Err(source) => Err(EncodeError::Json { source }),

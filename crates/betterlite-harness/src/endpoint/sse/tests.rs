@@ -15,7 +15,15 @@ fn line_of(total: usize) -> Vec<u8> {
 
 fn feed_parts(parts: &[&[u8]]) -> SSEUsageParser {
     let mut parser = SSEUsageParser::default();
-    parts.iter().for_each(|part| parser.feed(part));
+    parts.iter().copied().for_each(|part| parser.feed(part));
+    parser
+}
+
+fn feed_split(bytes: &[u8], at: usize) -> SSEUsageParser {
+    let mut parser = SSEUsageParser::default();
+    let (head, tail) = bytes.split_at(at);
+    parser.feed(head);
+    parser.feed(tail);
     parser
 }
 
@@ -23,7 +31,7 @@ fn feed_parts(parts: &[&[u8]]) -> SSEUsageParser {
 fn a_stream_without_a_newline_stays_under_the_cap_and_later_lines_parse() {
     let chunk = vec![b'x'; 1 << 20];
     let mut parser = SSEUsageParser::default();
-    (0..40).for_each(|_| {
+    (0_u8..40_u8).for_each(|_| {
         parser.feed(&chunk);
         assert!(parser.buffer.len() <= MAX_PENDING_LINE);
     });
@@ -54,8 +62,7 @@ fn a_line_of_exactly_the_cap_gives_its_usage_when_the_newline_comes_later() {
 fn a_line_of_exactly_the_cap_gives_its_usage_when_it_is_split_before_the_end() {
     let mut line = line_of(MAX_PENDING_LINE);
     line.push(b'\n');
-    let (head, tail) = line.split_at(MAX_PENDING_LINE.saturating_sub(10));
-    let parser = feed_parts(&[head, tail]);
+    let parser = feed_split(&line, MAX_PENDING_LINE.saturating_sub(10));
     assert_eq!((parser.input_tokens, parser.output_tokens), (5, 6));
 }
 
@@ -73,8 +80,7 @@ fn a_line_over_the_cap_is_dropped_in_one_feed() {
 fn a_line_over_the_cap_is_dropped_when_its_end_joins_a_pending_part() {
     let mut line = line_of(MAX_PENDING_LINE.saturating_add(1));
     line.push(b'\n');
-    let (head, tail) = line.split_at(MAX_PENDING_LINE.saturating_sub(10));
-    let mut parser = feed_parts(&[head, tail]);
+    let mut parser = feed_split(&line, MAX_PENDING_LINE.saturating_sub(10));
     assert_eq!((parser.input_tokens, parser.output_tokens), (0, 0));
     parser.feed(SMALL_LINE);
     assert_eq!((parser.input_tokens, parser.output_tokens), (3, 4));

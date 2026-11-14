@@ -1,5 +1,7 @@
 mod tests;
 
+use std::mem;
+
 use super::usage::{Lenient, Payload, usage_from_mapping};
 
 // A response.completed event carries the whole response, base64 image output included, so a smaller cap drops real usage.
@@ -9,8 +11,8 @@ const MAX_PENDING_LINE: usize = 0x200_0000;
 pub struct SSEUsageParser {
     pub input_tokens: u64,
     pub output_tokens: u64,
-    buffer: Vec<u8>,
-    skipping: bool,
+    pub buffer: Vec<u8>,
+    pub skipping: bool,
 }
 
 impl SSEUsageParser {
@@ -41,7 +43,7 @@ impl SSEUsageParser {
         if self.skipping {
             self.skipping = false;
         } else if self.buffer.len().saturating_add(tail.len()) <= MAX_PENDING_LINE {
-            let mut line = std::mem::take(&mut self.buffer);
+            let mut line = mem::take(&mut self.buffer);
             line.extend_from_slice(tail);
             self.feed_line(&line);
         } else {
@@ -51,17 +53,17 @@ impl SSEUsageParser {
 
     pub fn close(&mut self) {
         if !self.buffer.is_empty() {
-            let line = std::mem::take(&mut self.buffer);
+            let line = mem::take(&mut self.buffer);
             self.feed_line(&line);
         }
     }
 
     fn feed_line(&mut self, line: &[u8]) {
         let text = line.trim_ascii();
-        let Some(payload) = text.strip_prefix(b"data:") else {
+        let Some(data) = text.strip_prefix(b"data:") else {
             return;
         };
-        let payload = payload.trim_ascii();
+        let payload = data.trim_ascii();
         let Ok(event) = serde_json::from_slice::<Payload>(payload) else {
             return;
         };
@@ -75,7 +77,7 @@ impl SSEUsageParser {
             .as_ref()
             .and_then(Lenient::value)
             .map_or("", String::as_str);
-        let counts = match kind {
+        let selected = match kind {
             "message_start" => event
                 .message
                 .as_ref()
@@ -88,13 +90,13 @@ impl SSEUsageParser {
                 .and_then(|response| response.usage.as_ref()),
             _ => event.usage.as_ref(),
         };
-        if let Some(counts) = counts.and_then(Lenient::value) {
+        if let Some(counts) = selected.and_then(Lenient::value) {
             self.set(usage_from_mapping(counts));
         }
     }
 
     // message_delta output_tokens is the running total, so a later event replaces the earlier count
-    fn set(&mut self, tokens: (u64, u64)) {
+    const fn set(&mut self, tokens: (u64, u64)) {
         if tokens.0 != 0 {
             self.input_tokens = tokens.0;
         }

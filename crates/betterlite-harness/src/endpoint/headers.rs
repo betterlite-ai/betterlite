@@ -45,17 +45,16 @@ pub fn extract_token(headers: &HeaderMap) -> Option<SecretString> {
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default();
-    let scheme = authorization.get(..BEARER_SCHEME.len());
-    let token = authorization.get(BEARER_SCHEME.len()..);
-    if let (Some(scheme), Some(token)) = (scheme, token)
-        && scheme.eq_ignore_ascii_case(BEARER_SCHEME)
-    {
+    let bearer = authorization
+        .split_at_checked(BEARER_SCHEME.len())
+        .filter(|(scheme, _)| scheme.eq_ignore_ascii_case(BEARER_SCHEME));
+    if let Some((_, token)) = bearer {
         return Some(SecretString::from(token.trim().to_owned()));
     }
     headers
         .get("x-api-key")
         .and_then(|value| value.to_str().ok())
-        .map(|token| SecretString::from(token.to_owned()))
+        .map(|key| SecretString::from(key.to_owned()))
 }
 
 pub fn gateway_headers(
@@ -73,16 +72,16 @@ pub fn gateway_headers(
             headers.append(name.clone(), value.clone());
         }
     }
-    let authorization = format!("Bearer {}", gateway.api_key.expose_secret());
+    let bearer = format!("Bearer {}", gateway.api_key.expose_secret());
     let mut authorization =
-        HeaderValue::from_str(&authorization).map_err(|source| HeaderError::Value {
+        HeaderValue::from_str(&bearer).map_err(|source| HeaderError::Value {
             name: "authorization",
             source,
         })?;
     authorization.set_sensitive(true);
     headers.insert(AUTHORIZATION, authorization);
-    let tags = format!("harness,{}", harness_tag(harness));
-    let tags = HeaderValue::from_str(&tags).map_err(|source| HeaderError::Value {
+    let tag_text = format!("harness,{}", harness_tag(harness));
+    let tags = HeaderValue::from_str(&tag_text).map_err(|source| HeaderError::Value {
         name: "x-litellm-tags",
         source,
     })?;

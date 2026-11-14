@@ -136,7 +136,7 @@ fn default_setup() -> EndpointSetup {
 }
 
 fn model_endpoint_with(setup: EndpointSetup, prices: Arc<dyn CostPerToken>) -> ModelEndpoint {
-    ModelEndpoint::new(setup, prices, Arc::new(FixedRandom(0xFB))).unwrap()
+    ModelEndpoint::new(setup, prices, &FixedRandom(0xFB)).unwrap()
 }
 
 fn model_endpoint(prices: Arc<dyn CostPerToken>) -> ModelEndpoint {
@@ -306,7 +306,7 @@ fn sse_parser_ignores_the_done_trailer() {
 
 #[test]
 fn sse_parser_accepts_data_without_a_space() {
-    assert_eq!(parse("data:{\"input_tokens\":3}\n"), (3, 0));
+    assert_eq!(parse("data:{\"usage\":{\"input_tokens\":3}}\n"), (3, 0));
 }
 
 #[test]
@@ -316,7 +316,7 @@ fn sse_parser_skips_malformed_and_non_object_events() {
          data: [1,2]\n\
          data: [null,null,null,{\"input_tokens\":5}]\n\
          data: \"text\"\n\
-         data: {\"input_tokens\":4}\n",
+         data: {\"usage\":{\"input_tokens\":4}}\n",
     );
     assert_eq!(tokens, (4, 0));
 }
@@ -355,7 +355,7 @@ fn sse_parser_reads_usage_across_split_feeds() {
 #[test]
 fn sse_parser_close_reads_a_line_without_a_newline() {
     let mut parser = SSEUsageParser::default();
-    parser.feed(b"data: {\"input_tokens\":9,\"output_tokens\":4}");
+    parser.feed(b"data: {\"usage\":{\"input_tokens\":9,\"output_tokens\":4}}");
     assert_eq!((parser.input_tokens, parser.output_tokens), (0, 0));
     parser.close();
     assert_eq!((parser.input_tokens, parser.output_tokens), (9, 4));
@@ -364,7 +364,7 @@ fn sse_parser_close_reads_a_line_without_a_newline() {
 #[test]
 fn sse_parser_close_without_a_remainder_changes_nothing() {
     let mut parser = SSEUsageParser::default();
-    parser.feed(b"data: {\"input_tokens\":9}\n");
+    parser.feed(b"data: {\"usage\":{\"input_tokens\":9}}\n");
     parser.close();
     parser.close();
     assert_eq!((parser.input_tokens, parser.output_tokens), (9, 0));
@@ -375,9 +375,9 @@ fn replays_the_sse_parser_corpus(#[files("fuzz/corpus/sse_parser/*")] path: Path
     let bytes = fs::read(&path).unwrap();
     let name = path.file_stem().unwrap().to_str().unwrap();
     let (_, expected) = name.rsplit_once('~').unwrap();
-    let (input, output) = expected.split_once('+').unwrap();
-    let input: u64 = input.parse().unwrap();
-    let output: u64 = output.parse().unwrap();
+    let (input_text, output_text) = expected.split_once('+').unwrap();
+    let input: u64 = input_text.parse().unwrap();
+    let output: u64 = output_text.parse().unwrap();
     let mut whole = SSEUsageParser::default();
     whole.feed(&bytes);
     whole.close();
@@ -456,10 +456,10 @@ fn bundled_catalog_answers_the_price_lookups() {
             .raw_cost_map_entry("not-a-model-in-the-catalog")
             .is_none()
     );
-    let priced = prices.effective_priced_model("gpt-4o", None).unwrap();
-    assert!(priced.record.contains_key("input_cost_per_token"));
-    assert!(priced.tiered_pricing.is_empty());
-    assert!(priced.off_peak_pricing.is_none());
+    let model = prices.effective_priced_model("gpt-4o", None).unwrap();
+    assert!(model.record.contains_key("input_cost_per_token"));
+    assert!(model.tiered_pricing.is_empty());
+    assert!(model.off_peak_pricing.is_none());
     assert!(
         prices
             .effective_priced_model("not-a-model-in-the-catalog", None)
@@ -596,7 +596,7 @@ fn gateway_headers_carry_the_session_metadata() {
 
 #[test]
 fn gateway_headers_escape_non_ascii_metadata_so_the_header_stays_valid() {
-    let metadata = object(r#"{"team":"ü ✓"}"#);
+    let metadata = object(r#"{"team":"\u00fc \u2713"}"#);
     let outgoing =
         gateway_headers(&HeaderMap::new(), &gateway(), Harness::Codex, &metadata).unwrap();
     assert_eq!(
@@ -729,7 +729,7 @@ fn error_reply_keeps_the_error_type_and_redacts_secrets() {
 fn endpoint_generates_a_url_safe_session_token() {
     let endpoint = priced_endpoint();
     let token = endpoint.token.expose_secret();
-    assert_eq!(token, "-_v7".repeat(10) + "-_s");
+    assert_eq!(token, format!("{}-_s", "-_v7".repeat(10)));
     assert_eq!(HARNESS_SESSION_TOKEN_BYTES, 32);
 }
 
@@ -738,7 +738,7 @@ fn endpoint_fails_when_the_random_source_fails() {
     let result = ModelEndpoint::new(
         default_setup(),
         Arc::new(FixedPrices(Decimal::ZERO)),
-        Arc::new(FailingRandom),
+        &FailingRandom,
     );
     assert!(matches!(result, Err(EndpointError::Token { .. })));
 }
