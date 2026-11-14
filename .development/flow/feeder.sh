@@ -6,14 +6,8 @@ worktrees=${BETTERLITE_WORKTREES:-$(dirname "${main}")/betterlite-worktrees}
 L=${worktrees}/logs
 export BETTERLITE_LOGS=${L}
 events=${L}/flow-events.log
-GH_TOKEN=$(gh auth token --user HardMax71)
-export GH_TOKEN
-export GH_REPO=betterlite-ai/betterlite
 # since stage 3 a dispatch builds nothing, so RAM, disk and the vendor seats hold one back in next-slot.sh, and this cap only bounds the open checkouts (about 0.5 GB each)
 cap=${BETTERLITE_MAX_FLOWS:-200}
-# Max wants open PRs landed before new tasks start (11-14): no fresh pick while this many task PRs are open
-max_prs=${BETTERLITE_MAX_OPEN_PRS:-50}
-holding=
 mkdir -p "${L}/flows"
 while [[ ! -f "${L}/feeder.STOP" ]]; do
   while [[ -e "${main}/.git/betterlite/maintenance" ]] || [[ -e "${L}/maintenance.STOP" ]]; do sleep 60; done
@@ -48,10 +42,9 @@ while [[ ! -f "${L}/feeder.STOP" ]]; do
   room=2
   # queued args come back up to 6 a round, so a batch of parked tasks restarts within the hour (Max, 11-14); fresh picks keep 2
   resume=6
-  if [[ "${waiting}" -ge 2 ]]; then
-    room=0
-    resume=0
-  fi
+  # open work goes first and a fresh task only takes capacity it leaves (Max, 11-14): one flow waiting in next-slot.sh stops fresh picks, two stop resumes too
+  [[ "${waiting}" -ge 1 ]] && room=0
+  [[ "${waiting}" -ge 2 ]] && resume=0
   # a task within 10 steps of the longest open chain may run up to 4 flows over the cap (Max, 11-12), since that chain sets the end date
   chain_room=${room}
   [[ $((cap + 4 - count)) -lt "${chain_room}" ]] && chain_room=$((cap + 4 - count))
@@ -62,12 +55,17 @@ while [[ ! -f "${L}/feeder.STOP" ]]; do
   stale=$(LC_ALL=C sort -n <<< "${stale}")
   stale=$(cut -d' ' -f2- <<< "${stale}")
   for args in ${stale}; do
-    [[ "${resume}" -gt 0 ]] || break
     id=$(basename "${args}" .args)
     grep -q -x -F "${id}" <<< "${flows}" && continue
     if grep -q '^status: done' "${main}/.development/backlog/${id}.yaml" 2> /dev/null; then
       rm -f -- "${args}"
       continue
+    fi
+    # a queued flow left for the next round keeps fresh picks out of this one
+    if [[ "${resume}" -le 0 ]]; then
+      room=0
+      chain_room=0
+      break
     fi
     if ! run=$(jq -e -r .run "${args}" 2> /dev/null); then
       mv -- "${args}" "${args}.unread"
@@ -86,16 +84,6 @@ while [[ ! -f "${L}/feeder.STOP" ]]; do
     chain_room=$((chain_room - 1))
     sleep 5
   done
-  # a count that fails picks nothing this round
-  prs=$(gh pr list --state open --limit 500 --json headRefName --jq '[.[] | select(.headRefName | startswith("task/"))] | length')
-  if [[ "${prs:-${max_prs}}" -ge "${max_prs}" ]]; then
-    chain_room=0
-    [[ -n "${holding}" ]] || printf '%(%H:%M)T %s\n' -1 "(feeder) no fresh picks while ${prs:-an unknown number of} task PRs are open, the limit is ${max_prs}; queued and running tasks go on" >> "${events}"
-    holding=1
-  elif [[ -n "${holding}" ]]; then
-    printf '%(%H:%M)T %s\n' -1 "(feeder) fresh picks start again with ${prs} task PRs open" >> "${events}"
-    holding=
-  fi
   if [[ "${chain_room}" -gt 0 ]]; then
     # free.pl marks each held id in progress, so the ids go in as separate arguments
     read -r -d '' -a held_ids <<< "${held}"
