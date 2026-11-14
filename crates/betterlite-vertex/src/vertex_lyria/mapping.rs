@@ -38,6 +38,27 @@ pub fn map_openai_params(
         })?;
     let base_model = model.strip_prefix("vertex_ai/").unwrap_or(model);
     let mut params = optional_params.clone();
+    drop_unsupported(&mut params, base_model, drop)?;
+    drop_undeclared_format(
+        &mut params,
+        &model_info.supported_audio_formats,
+        base_model,
+        drop,
+    )?;
+    Ok(LyriaMapping {
+        voice: match voice {
+            Some(SpeechVoice::Name(name)) => Some(name.clone()),
+            Some(SpeechVoice::Options(_)) | None => None,
+        },
+        params,
+    })
+}
+
+fn drop_unsupported(
+    params: &mut Object,
+    model: &str,
+    drop: DropParams,
+) -> Result<(), VertexLyriaError> {
     let unsupported: Vec<&str> = UNSUPPORTED_PARAMS
         .into_iter()
         .filter(|param| {
@@ -46,19 +67,28 @@ pub fn map_openai_params(
                 .is_some_and(|value| !matches!(value, Json::Null))
         })
         .collect();
-    if !unsupported.is_empty() {
-        if !drop.call && !drop.global {
-            return Err(VertexLyriaError::UnsupportedParams {
-                model: base_model.to_owned(),
-                params: unsupported.join(", "),
-            });
-        }
-        for param in &unsupported {
-            params.shift_remove(*param);
-        }
+    if unsupported.is_empty() {
+        return Ok(());
     }
-    let mut supported: Vec<&str> = model_info
-        .supported_audio_formats
+    if !drop.call && !drop.global {
+        return Err(VertexLyriaError::UnsupportedParams {
+            model: model.to_owned(),
+            params: unsupported.join(", "),
+        });
+    }
+    for param in &unsupported {
+        params.shift_remove(*param);
+    }
+    Ok(())
+}
+
+fn drop_undeclared_format(
+    params: &mut Object,
+    supported_audio_formats: &[AudioFormat],
+    model: &str,
+    drop: DropParams,
+) -> Result<(), VertexLyriaError> {
+    let mut supported: Vec<&str> = supported_audio_formats
         .iter()
         .map(|format| format_name(*format))
         .collect();
@@ -72,20 +102,14 @@ pub fn map_openai_params(
     {
         if !drop.call && !drop.global {
             return Err(VertexLyriaError::UnsupportedFormat {
-                model: base_model.to_owned(),
+                model: model.to_owned(),
                 format: format_text(value),
                 supported: supported.join(", "),
             });
         }
         params.shift_remove("response_format");
     }
-    Ok(LyriaMapping {
-        voice: match voice {
-            Some(SpeechVoice::Name(name)) => Some(name.clone()),
-            Some(SpeechVoice::Options(_)) | None => None,
-        },
-        params,
-    })
+    Ok(())
 }
 
 const fn format_name(format: AudioFormat) -> &'static str {
