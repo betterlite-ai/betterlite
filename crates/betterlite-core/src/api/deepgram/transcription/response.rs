@@ -53,7 +53,7 @@ struct Paragraphs {
     transcript: Member<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct Word {
     pub word: String,
     pub start: Number,
@@ -77,7 +77,7 @@ pub struct TranscriptionWord {
     pub end: Number,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct DeepgramTranscription {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
@@ -168,13 +168,13 @@ fn select_text(
     paragraphs: Member<Paragraphs>,
     words: &[Word],
 ) -> Result<Option<String>, DeepgramTranscriptionError> {
-    let diarized = words.first().is_some_and(|word| word.speaker.is_some());
-    if !diarized {
+    let has_speakers = words.first().is_some_and(|word| word.speaker.is_some());
+    if !has_speakers {
         return transcript.ok_or(DeepgramTranscriptionError::NoTranscript);
     }
     match paragraphs {
         Some(None) => Err(DeepgramTranscriptionError::NullParagraphs),
-        Some(Some(paragraphs)) => paragraphs
+        Some(Some(diarized)) => diarized
             .transcript
             .ok_or(DeepgramTranscriptionError::NoParagraphTranscript),
         None => reconstruct_diarized_text(words).map(Some),

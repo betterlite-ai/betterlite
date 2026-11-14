@@ -80,13 +80,12 @@ impl DeepgramTranscriptionConfig {
             if value.is_null() || reserved {
                 continue;
             }
-            if let Some(text) = value.as_str() {
-                pairs.append_pair(name, text);
-            } else if let Some(flag) = value.as_bool() {
-                pairs.append_pair(name, if flag { "true" } else { "false" });
-            } else {
-                pairs.append_pair(name, &value.to_string());
-            }
+            let text = match (value.as_str(), value.as_bool()) {
+                (Some(text), _) => text.to_owned(),
+                (None, Some(flag)) => flag.to_string(),
+                (None, None) => value.to_string(),
+            };
+            pairs.append_pair(name, &text);
         }
         // Python's quote_plus leaves ~ alone and encodes *, the reverse of form_urlencoded
         let query = pairs.finish().replace('*', "%2A").replace("%7E", "~");
