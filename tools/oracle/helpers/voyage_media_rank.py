@@ -19,8 +19,6 @@ from typing_extensions import override
 
 JsonObject: TypeAlias = dict[str, JsonValue]
 EMPTY: Final[JsonObject] = {}
-ALIASES: Final = ("VOYAGE_API_KEY", "VOYAGE_AI_API_KEY", "VOYAGE_AI_TOKEN")
-DROP_PARAMS: Final = False
 
 
 class MultimodalConfig(Protocol):
@@ -28,38 +26,22 @@ class MultimodalConfig(Protocol):
     def get_supported_openai_params(self) -> Callable[[str], list[JsonValue]]: ...
 
     @property
-    def map_openai_params(
-        self,
-    ) -> Callable[[JsonObject, JsonObject, str, bool], JsonObject]: ...
+    def map_openai_params(self) -> Callable[[JsonObject, JsonObject, str, bool], JsonObject]: ...
 
     @property
-    def transform_embedding_request(
-        self,
-    ) -> Callable[
+    def transform_embedding_request(self) -> Callable[
         [str, AllEmbeddingInputValues, JsonObject, JsonObject], JsonObject
     ]: ...
 
     @property
-    def transform_embedding_response(
-        self,
-    ) -> Callable[
-        [
-            str,
-            httpx.Response,
-            EmbeddingResponse,
-            Logging,
-            str | None,
-            JsonObject,
-            JsonObject,
-            JsonObject,
-        ],
-        EmbeddingResponse,
+    def transform_embedding_response(self) -> Callable[
+        [str, httpx.Response, EmbeddingResponse, Logging, str | None], EmbeddingResponse
     ]: ...
 
     @property
-    def get_complete_url(
-        self,
-    ) -> Callable[[str | None, str | None, str, JsonObject, JsonObject], str]: ...
+    def get_complete_url(self) -> Callable[
+        [str | None, str | None, str, JsonObject, JsonObject], str
+    ]: ...
 
 
 class RerankConfig(Protocol):
@@ -69,68 +51,32 @@ class RerankConfig(Protocol):
     ) -> Callable[[str], list[JsonValue]]: ...
 
     @property
-    def map_cohere_rerank_params(
-        self,
-    ) -> Callable[
-        [
-            JsonObject,
-            str,
-            bool,
-            str,
-            list[str | dict[str, JsonValue]],
-            str | None,
-            int | None,
-            list[str] | None,
-            bool | None,
-            int | None,
-            int | None,
-            str | None,
-        ],
+    def map_cohere_rerank_params(self) -> Callable[
+        [JsonObject, str, bool, str, list[str | dict[str, JsonValue]], str | None, int | None,
+         list[str] | None, bool | None, int | None, int | None, str | None],
         JsonObject,
     ]: ...
 
     @property
-    def transform_rerank_request(
-        self,
-    ) -> Callable[[str, JsonObject, JsonObject, JsonObject | None], JsonObject]: ...
-
-    @property
-    def validate_environment(
-        self,
-    ) -> Callable[
-        [JsonObject, str, str | None, JsonObject | None, JsonObject | None],
-        JsonObject,
+    def transform_rerank_request(self) -> Callable[
+        [str, JsonObject, JsonObject, JsonObject | None], JsonObject
     ]: ...
 
     @property
-    def transform_rerank_response(
-        self,
-    ) -> Callable[
-        [
-            str,
-            httpx.Response,
-            RerankResponse,
-            Logging,
-            str | None,
-            JsonObject,
-            JsonObject,
-            JsonObject,
-        ],
-        RerankResponse,
+    def validate_environment(self) -> Callable[
+        [JsonObject, str, str | None, JsonObject | None, JsonObject | None], JsonObject
     ]: ...
 
     @property
-    def get_complete_url(
-        self,
-    ) -> Callable[[str | None, str, JsonObject | None], str]: ...
+    def transform_rerank_response(self) -> Callable[
+        [str, httpx.Response, RerankResponse, Logging, str | None], RerankResponse
+    ]: ...
+
+    @property
+    def get_complete_url(self) -> Callable[[str | None, str, JsonObject | None], str]: ...
 
 
-class MultimodalConfigImpl(MultimodalImpl):
-    def __init__(self) -> None:
-        pass
-
-
-MULTIMODAL: MultimodalConfig = MultimodalConfigImpl()
+MULTIMODAL: MultimodalConfig = MultimodalImpl()
 RERANK: RerankConfig = RerankImpl()
 
 
@@ -211,8 +157,6 @@ class RerankProjection(TypedDict):
 
 
 class FixedUuid(ModuleType):
-    fixed: str
-
     def __init__(self, fixed: str) -> None:
         super().__init__("litellm._uuid")
         self.fixed = fixed
@@ -228,73 +172,43 @@ class RecordingLogging(Logging):
         self.calls = []
 
     @override
-    def post_call(
-        self,
-        original_response: str,
-        input: JsonValue = None,
-        api_key: JsonValue = None,
-        additional_args: JsonValue = None,
-    ) -> None:
-        del input, api_key, additional_args
+    def post_call(self, original_response: str, *_args: JsonValue, **_kwargs: JsonValue) -> None:
         self.calls.append(original_response)
 
 
 def apply_env(environment: dict[str, str]) -> None:
-    for name in ALIASES:
+    for name in ("VOYAGE_API_KEY", "VOYAGE_AI_API_KEY", "VOYAGE_AI_TOKEN"):
         os.environ.pop(name, None)
     for name, value in environment.items():
         os.environ[name] = value
 
 
-def json_number(value: float) -> int | float:
-    if value.is_integer():
-        return int(value)
-    return value
-
-
 def multimodal_result(call: MultimodalCall) -> JsonValue:
     apply_env(call["env"])
+    model = call["model"]
     try:
+        options = {
+            name: value for name, value in call["options"].items() if name != "dimensions"
+        }
+        mapped = MULTIMODAL.map_openai_params(call["options"], options, model, False)
         request: JsonValue = {
             "ok": True,
-            "value": MULTIMODAL.transform_embedding_request(
-                call["model"],
-                call["input"],
-                MULTIMODAL.map_openai_params(
-                    call["options"],
-                    {
-                        name: value
-                        for name, value in call["options"].items()
-                        if name != "dimensions"
-                    },
-                    call["model"],
-                    DROP_PARAMS,
-                ),
-                EMPTY,
-            ),
+            "value": MULTIMODAL.transform_embedding_request(model, call["input"], mapped, EMPTY),
         }
     except ValueError:
         request = {"ok": False, "status": None}
     raw = httpx.Response(call["reply"]["status"], content=call["reply"]["body"])
     logging = Logging(
-        model=call["model"],
-        messages=None,
-        stream=False,
-        call_type="embedding",
-        start_time=dt.datetime.now(dt.UTC),
-        litellm_call_id="voyage-media-rank",
+        model=model, messages=None, stream=False, call_type="embedding",
+        start_time=dt.datetime.now(dt.UTC), litellm_call_id="voyage-media-rank",
         function_id="voyage-media-rank",
     )
-    answer = MULTIMODAL.transform_embedding_response(
-        call["model"], raw, EmbeddingResponse(), logging, None, EMPTY, EMPTY, EMPTY
-    )
+    answer = MULTIMODAL.transform_embedding_response(model, raw, EmbeddingResponse(), logging, None)
     fields = TypeAdapter(EmbeddingReply).validate_json(answer.model_dump_json())
     return {
-        "is_multimodal": MultimodalImpl.is_multimodal_embeddings(call["model"]),
-        "supported_params": MULTIMODAL.get_supported_openai_params(call["model"]),
-        "url": MULTIMODAL.get_complete_url(
-            call["base"], call["api_key"], call["model"], EMPTY, EMPTY
-        ),
+        "is_multimodal": MultimodalImpl.is_multimodal_embeddings(model),
+        "supported_params": MULTIMODAL.get_supported_openai_params(model),
+        "url": MULTIMODAL.get_complete_url(call["base"], call["api_key"], model, EMPTY, EMPTY),
         "request": request,
         "response": {
             "ok": True,
@@ -315,23 +229,22 @@ def rerank_reply_fields(response: RerankResponse) -> JsonValue:
     reply = TypeAdapter(RerankProjection).validate_json(response.model_dump_json())
     results: list[JsonValue] = []
     for result in reply["results"]:
+        score = result["relevance_score"]
         item: JsonObject = {
             "index": result["index"],
-            "relevance_score": json_number(result["relevance_score"]),
+            "relevance_score": int(score) if score.is_integer() else score,
         }
         if "document" in result:
             item["document"] = result["document"]
         results.append(item)
-    billed = reply["meta"]["billed_units"]
     tokens = reply["meta"]["tokens"]
     return {
         "id": reply["id"],
         "results": results,
         "meta": {
-            "billed_units": {"total_tokens": billed["total_tokens"]},
+            "billed_units": {"total_tokens": reply["meta"]["billed_units"]["total_tokens"]},
             "tokens": {
-                "input_tokens": tokens["input_tokens"],
-                "output_tokens": tokens["output_tokens"],
+                "input_tokens": tokens["input_tokens"], "output_tokens": tokens["output_tokens"],
             },
         },
     }
@@ -339,11 +252,12 @@ def rerank_reply_fields(response: RerankResponse) -> JsonValue:
 
 def rerank_result(call: RerankCall) -> JsonValue:
     apply_env(call["env"])
+    model = call["model"]
     try:
         headers: JsonValue = {
             "ok": True,
             "value": RERANK.validate_environment(
-                call["headers"], call["model"], call["api_key"], None, None
+                call["headers"], model, call["api_key"], None, None
             ),
         }
     except ValueError:
@@ -351,20 +265,11 @@ def rerank_result(call: RerankCall) -> JsonValue:
     request: JsonValue = {
         "ok": True,
         "value": RERANK.transform_rerank_request(
-            call["model"],
+            model,
             RERANK.map_cohere_rerank_params(
-                EMPTY,
-                call["model"],
-                DROP_PARAMS,
-                call["query"],
-                call["documents"],
-                None,
-                call["top_n"],
-                call["rank_fields"],
-                call["return_documents"],
-                call["max_chunks_per_doc"],
-                call["max_tokens_per_doc"],
-                call["instruction"],
+                EMPTY, model, False, call["query"], call["documents"],
+                None, call["top_n"], call["rank_fields"], call["return_documents"],
+                call["max_chunks_per_doc"], call["max_tokens_per_doc"], call["instruction"],
             ),
             EMPTY,
             None,
@@ -373,11 +278,9 @@ def rerank_result(call: RerankCall) -> JsonValue:
     ModuleType.__setattr__(rerank_transformation, "uuid", FixedUuid(call["uuid"]))
     raw = httpx.Response(call["reply"]["status"], content=call["reply"]["body"])
     logging = RecordingLogging()
-    answer = RERANK.transform_rerank_response(
-        call["model"], raw, RerankResponse(), logging, None, EMPTY, EMPTY, EMPTY
-    )
+    answer = RERANK.transform_rerank_response(model, raw, RerankResponse(), logging, None)
     return {
-        "supported_params": RERANK.get_supported_cohere_rerank_params(call["model"]),
+        "supported_params": RERANK.get_supported_cohere_rerank_params(model),
         "headers": headers,
         "url": RERANK.get_complete_url(call["base"], call["model"], None),
         "request": request,
