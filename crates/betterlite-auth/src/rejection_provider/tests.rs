@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
@@ -48,11 +48,14 @@ impl ScriptedResolver {
 
 impl ProviderResolution for ScriptedResolver {
     fn resolve(&self, model: &str) -> Result<ResolvedModel, ResolutionError> {
-        self.calls.lock().unwrap().push(model.to_owned());
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(model.to_owned());
         let next = self
             .outcomes
             .lock()
-            .unwrap()
+            .unwrap_or_else(PoisonError::into_inner)
             .get_mut(model)
             .and_then(VecDeque::pop_front);
         match next {
@@ -124,6 +127,20 @@ fn row(model_name: Json, params: Json) -> Json {
     ]))
 }
 
+fn alias_row(underlying: &str) -> Json {
+    row(
+        Json::Text("tpm-locked".to_owned()),
+        params(Json::Text(underlying.to_owned())),
+    )
+}
+
+fn openai(model: &str) -> Step {
+    Step::Success {
+        model: model.to_owned(),
+        provider: ProviderIdentity::Known(ProviderId::Openai),
+    }
+}
+
 fn params(model: Json) -> Json {
     Json::Object(JsonObject::from([("model".to_owned(), model)]))
 }
@@ -141,10 +158,7 @@ fn absent_model_no_lookup(#[case] model: Option<&str>) {
         }],
     );
     let deployments = FixedSnapshot {
-        source: SnapshotSource::Rows(vec![row(
-            Json::Text("tpm-locked".to_owned()),
-            params(Json::Text("openai/gpt-4o-mini".to_owned())),
-        )]),
+        source: SnapshotSource::Rows(vec![alias_row("openai/gpt-4o-mini")]),
         reads: AtomicUsize::new(0),
     };
     let (result, debug_events) =
@@ -260,10 +274,7 @@ fn first_alias_success(#[case] returned: &str, #[case] expected_model: &str) {
         }],
     );
     let deployments = FixedSnapshot {
-        source: SnapshotSource::Rows(vec![row(
-            Json::Text("tpm-locked".to_owned()),
-            params(Json::Text("openai/gpt-4o-mini".to_owned())),
-        )]),
+        source: SnapshotSource::Rows(vec![alias_row("openai/gpt-4o-mini")]),
         reads: AtomicUsize::new(0),
     };
     let (result, debug_events) = observed(|| {
@@ -277,55 +288,50 @@ fn first_alias_success(#[case] returned: &str, #[case] expected_model: &str) {
     assert_eq!(debug_events, 0);
 }
 
+fn malformed_rows() -> Vec<Json> {
+    vec![
+        Json::Text("not-a-deployment".to_owned()),
+        Json::Number(serde_json::Number::from(7_u8)),
+        Json::Null,
+        Json::Object(JsonObject::from([(
+            "model_name".to_owned(),
+            Json::Number(serde_json::Number::from(7_u8)),
+        )])),
+        row(
+            Json::Text("tpm-locked".to_owned()),
+            Json::Text("openai/params-not-an-object".to_owned()),
+        ),
+        Json::Object(JsonObject::from([(
+            "model_name".to_owned(),
+            Json::Text("tpm-locked".to_owned()),
+        )])),
+        row(
+            Json::Text("tpm-locked".to_owned()),
+            Json::Object(JsonObject::new()),
+        ),
+        row(
+            Json::Text("tpm-locked".to_owned()),
+            params(Json::Number(serde_json::Number::from(3_u8))),
+        ),
+        row(
+            Json::Text("tpm-locked".to_owned()),
+            params(Json::Text(String::new())),
+        ),
+        row(
+            Json::Text("other".to_owned()),
+            params(Json::Text("openai/other".to_owned())),
+        ),
+        alias_row("openai/gpt-4o-mini"),
+    ]
+}
+
 #[test]
 fn malformed_deployments_skipped() {
     let resolver = ScriptedResolver::default();
     resolver.script("tpm-locked", vec![Step::Failure]);
-    resolver.script(
-        "openai/gpt-4o-mini",
-        vec![Step::Success {
-            model: "gpt-4o-mini".to_owned(),
-            provider: ProviderIdentity::Known(ProviderId::Openai),
-        }],
-    );
+    resolver.script("openai/gpt-4o-mini", vec![openai("gpt-4o-mini")]);
     let deployments = FixedSnapshot {
-        source: SnapshotSource::Rows(vec![
-            Json::Text("not-a-deployment".to_owned()),
-            Json::Number(serde_json::Number::from(7_u8)),
-            Json::Null,
-            Json::Object(JsonObject::from([(
-                "model_name".to_owned(),
-                Json::Number(serde_json::Number::from(7_u8)),
-            )])),
-            row(
-                Json::Text("tpm-locked".to_owned()),
-                Json::Text("openai/params-not-an-object".to_owned()),
-            ),
-            Json::Object(JsonObject::from([(
-                "model_name".to_owned(),
-                Json::Text("tpm-locked".to_owned()),
-            )])),
-            row(
-                Json::Text("tpm-locked".to_owned()),
-                Json::Object(JsonObject::new()),
-            ),
-            row(
-                Json::Text("tpm-locked".to_owned()),
-                params(Json::Number(serde_json::Number::from(3_u8))),
-            ),
-            row(
-                Json::Text("tpm-locked".to_owned()),
-                params(Json::Text(String::new())),
-            ),
-            row(
-                Json::Text("other".to_owned()),
-                params(Json::Text("openai/other".to_owned())),
-            ),
-            row(
-                Json::Text("tpm-locked".to_owned()),
-                params(Json::Text("openai/gpt-4o-mini".to_owned())),
-            ),
-        ]),
+        source: SnapshotSource::Rows(malformed_rows()),
         reads: AtomicUsize::new(0),
     };
     let (result, debug_events) = observed(|| {
@@ -353,14 +359,8 @@ fn alias_failed_candidate_continues() {
     );
     let deployments = FixedSnapshot {
         source: SnapshotSource::Rows(vec![
-            row(
-                Json::Text("tpm-locked".to_owned()),
-                params(Json::Text("unknown/one".to_owned())),
-            ),
-            row(
-                Json::Text("tpm-locked".to_owned()),
-                params(Json::Text("openai/gpt-4o-mini".to_owned())),
-            ),
+            alias_row("unknown/one"),
+            alias_row("openai/gpt-4o-mini"),
         ]),
         reads: AtomicUsize::new(0),
     };
@@ -390,23 +390,11 @@ fn alias_missing_provider_continues() {
             provider: ProviderIdentity::Custom(String::new()),
         }],
     );
-    resolver.script(
-        "openai/gpt-4o-mini",
-        vec![Step::Success {
-            model: "gpt-4o-mini".to_owned(),
-            provider: ProviderIdentity::Known(ProviderId::Openai),
-        }],
-    );
+    resolver.script("openai/gpt-4o-mini", vec![openai("gpt-4o-mini")]);
     let deployments = FixedSnapshot {
         source: SnapshotSource::Rows(vec![
-            row(
-                Json::Text("tpm-locked".to_owned()),
-                params(Json::Text("openai/anonymous".to_owned())),
-            ),
-            row(
-                Json::Text("tpm-locked".to_owned()),
-                params(Json::Text("openai/gpt-4o-mini".to_owned())),
-            ),
+            alias_row("openai/anonymous"),
+            alias_row("openai/gpt-4o-mini"),
         ]),
         reads: AtomicUsize::new(0),
     };
@@ -502,10 +490,7 @@ fn provider_failure_never_masks_budget() {
     resolver.script("tpm-locked", vec![Step::Failure]);
     resolver.script("openai/gpt-4o-mini", vec![Step::Failure]);
     let deployments = FixedSnapshot {
-        source: SnapshotSource::Rows(vec![row(
-            Json::Text("tpm-locked".to_owned()),
-            params(Json::Text("openai/gpt-4o-mini".to_owned())),
-        )]),
+        source: SnapshotSource::Rows(vec![alias_row("openai/gpt-4o-mini")]),
         reads: AtomicUsize::new(0),
     };
     let (result, debug_events) = observed(|| {
