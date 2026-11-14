@@ -1,0 +1,20 @@
+kind: helper
+name: mcp-client-credentials-bearer-retry-once
+call:
+  b4661:
+    function: bearer
+    scenarios:
+      - access_token: stale
+        statuses: [401, 200]
+        refetch: ["fresh"]
+      - access_token: stale
+        statuses: [401]
+        refetch: [null]
+      - access_token: stale
+        statuses: [401, 401]
+        refetch: ["fresh"]
+      - access_token: stale
+        statuses: [200]
+        refetch: []
+env: {}
+compare: {ignore: []}
