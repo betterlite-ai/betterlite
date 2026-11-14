@@ -1427,10 +1427,14 @@ dependencies = [
 name = "betterlite-compression"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "betterlite-semantic",
  "regex",
+ "rstest",
  "serde_json",
  "strum",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -1488,6 +1492,7 @@ dependencies = [
 name = "betterlite-context"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-config",
  "betterlite-models",
  "betterlite-redact",
@@ -1502,6 +1507,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "thiserror",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -1594,8 +1600,11 @@ dependencies = [
  "betterlite-config",
  "rstest",
  "rust_decimal",
+ "serde",
+ "serde_json",
  "strum",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -1800,6 +1809,7 @@ dependencies = [
  "betterlite-env",
  "betterlite-http",
  "betterlite-models",
+ "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
  "chrono",
@@ -1859,10 +1869,17 @@ name = "betterlite-harness"
 version = "0.1.0"
 dependencies = [
  "async-stream",
+ "base64 0.23.1",
+ "betterlite-core",
+ "betterlite-models",
+ "chrono",
  "futures-core",
  "futures-util",
+ "getrandom 0.4.3",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
+ "jiff",
  "rstest",
  "rust_decimal",
  "rustix",
@@ -1872,6 +1889,7 @@ dependencies = [
  "sha2 0.11.1",
  "similar 3.2.1",
  "soft-canonicalize",
+ "subtle",
  "tempfile",
  "thiserror",
  "tokio",
@@ -1906,6 +1924,7 @@ dependencies = [
  "aws-types",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-models",
  "bytes",
  "crc32fast",
  "futures-util",
@@ -2259,6 +2278,7 @@ dependencies = [
  "http 1.5.0",
  "httparse",
  "indexmap 2.14.2",
+ "jiff",
  "lru",
  "mime_guess",
  "nix",
@@ -2578,10 +2598,13 @@ version = "0.1.0"
 dependencies = [
  "betterlite-auth",
  "fancy-regex 0.19.2",
+ "indexmap 2.14.2",
+ "mutants",
  "rstest",
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "tracing",
  "tracing-subscriber",
 ]
@@ -3140,6 +3163,7 @@ dependencies = [
  "aws-smithy-types",
  "axum",
  "base64 0.23.1",
+ "betterlite-a2a",
  "betterlite-auth",
  "betterlite-billing",
  "betterlite-cache",
@@ -3441,6 +3465,7 @@ version = "0.0.0"
 dependencies = [
  "betterlite-bedrock",
  "betterlite-models",
+ "betterlite-tokenizer",
  "betterlite-vertex",
  "indexmap 2.14.2",
  "jiff",
