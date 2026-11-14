@@ -6,7 +6,7 @@ use betterlite_openai::api::audio_subtitles::render::{
 use betterlite_openai::openai_base_config::{Headers, Object};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::{from_value, to_value};
+use serde_json::{Value, from_value, to_value};
 
 use super::auth::{MISSING_KEY, resolve_api_base, resolve_api_key, validate_environment};
 use super::error::{RecordsError, SonioxException};
@@ -781,17 +781,14 @@ fn a_supplied_response_is_updated_and_kept() {
         build_response_from_payload(&payload, Some(supplied), None).expect("an updated response");
 
     assert_eq!(built.text.as_deref(), Some("\n[en] hi"));
-    assert_eq!(
-        built.extra.get("custom").and_then(|value| value.as_i64()),
-        Some(7)
-    );
+    assert_eq!(built.extra.get("custom").and_then(Value::as_i64), Some(7));
     assert_eq!(
         built.extra.get("task").and_then(|value| value.as_str()),
         Some(TRANSCRIBE_TASK)
     );
     assert_eq!(
-        built.extra.get("duration").and_then(|value| value.as_f64()),
-        Some(2.0)
+        built.extra.get("duration").and_then(Value::as_f64),
+        Some(2.0_f64)
     );
     assert_eq!(built.usage, Some(usage));
     assert!(built.hidden_params.contains_key("kept"));
@@ -814,7 +811,7 @@ fn a_supplied_response_keeps_its_duration_when_none_is_new() {
         build_response_from_payload(&payload, Some(supplied), None).expect("an updated response");
 
     assert_eq!(
-        built.extra.get("duration").and_then(|value| value.as_f64()),
-        Some(99.0)
+        built.extra.get("duration").and_then(Value::as_f64),
+        Some(99.0_f64)
     );
 }

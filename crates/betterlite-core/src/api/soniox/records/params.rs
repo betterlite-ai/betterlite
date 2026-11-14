@@ -24,7 +24,7 @@ fn merge_language_hints(non_default: &Object, optional: &mut Object) -> Result<(
             field: LANGUAGE,
             source,
         })?;
-    let Some(requested) = language.filter(|value| !value.is_empty()) else {
+    let Some(requested) = language.filter(|text| !text.is_empty()) else {
         return Ok(());
     };
     let existing = language_hints(optional)?;
