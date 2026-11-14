@@ -4,8 +4,8 @@ use std::time::TryFromFloatSecsError;
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::error::details::ResponseDetails;
 use betterlite_error::error::{ErrorClass, ErrorContext};
-use betterlite_http::interactions::agents_create_read::AgentRequestError;
-use betterlite_http::interactions::agents_delete_versions::AgentsDeleteVersionsError;
+use betterlite_http::interactions::agents_create_read::AgentRequestError as ReadError;
+use betterlite_http::interactions::agents_delete_versions::AgentsDeleteVersionsError as WriteError;
 use betterlite_http::interactions::base::{ClientError, RequestFailure};
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_redact::secret::Redactor;
@@ -40,40 +40,35 @@ where
         source: TryFromFloatSecsError,
     },
     #[error("{0}")]
-    Provider(Provider),
+    Provider(#[source] Provider),
 }
 
-impl<Provider> From<AgentRequestError<Provider>> for AgentItemError<Provider>
-where
-    Provider: ProviderFailure,
-{
-    fn from(source: AgentRequestError<Provider>) -> Self {
-        match source {
-            AgentRequestError::Client(error) | AgentRequestError::Parameters(error) => {
-                Self::Client(Box::new(error))
+// both transports carry the same client, provider and transport failures into the item error
+macro_rules! carried_error {
+    ($carried:ident, $($timeout:tt)*) => {
+        impl<Provider> From<$carried<Provider>> for AgentItemError<Provider>
+        where
+            Provider: ProviderFailure,
+        {
+            fn from(carried: $carried<Provider>) -> Self {
+                match carried {
+                    $carried::Client(error) | $carried::Parameters(error) => {
+                        Self::Client(Box::new(error))
+                    }
+                    $carried::Provider(error) => Self::Provider(error),
+                    $carried::Transport(failure) => Self::Transport(Box::new(failure)),
+                    $($timeout)*
+                }
             }
-            AgentRequestError::Provider(error) => Self::Provider(error),
-            AgentRequestError::Transport(failure) => Self::Transport(Box::new(failure)),
         }
-    }
+    };
 }
 
-impl<Provider> From<AgentsDeleteVersionsError<Provider>> for AgentItemError<Provider>
-where
-    Provider: ProviderFailure,
-{
-    fn from(source: AgentsDeleteVersionsError<Provider>) -> Self {
-        match source {
-            AgentsDeleteVersionsError::Client(error)
-            | AgentsDeleteVersionsError::Parameters(error) => Self::Client(Box::new(error)),
-            AgentsDeleteVersionsError::Provider(error) => Self::Provider(error),
-            AgentsDeleteVersionsError::Transport(failure) => Self::Transport(Box::new(failure)),
-            AgentsDeleteVersionsError::Timeout { seconds, source } => {
-                Self::Timeout { seconds, source }
-            }
-        }
-    }
-}
+carried_error!(ReadError,);
+carried_error!(
+    WriteError,
+    WriteError::Timeout { seconds, source } => Self::Timeout { seconds, source },
+);
 
 #[derive(Debug, Error)]
 #[error("{error}")]
@@ -111,7 +106,10 @@ where
             }
         },
         AgentItemError::Provider(carried) => dispatch(
-            &DispatchInput::Raw(Box::new(provider_exception(carried, name, provider))),
+            &DispatchInput::Raw(Box::new(RawException {
+                status_code: Some(carried.status_code()),
+                ..exception(carried.message(), name, provider)
+            })),
             redactor,
         ),
         AgentItemError::Logging(_)
@@ -160,20 +158,6 @@ fn field_type_class(field: &str, expected: &str, name: &str, provider: Option<&s
     ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, None)))
 }
 
-fn provider_exception<Provider>(
-    carried: &Provider,
-    name: &str,
-    provider: Option<&str>,
-) -> RawException
-where
-    Provider: ProviderFailure,
-{
-    RawException {
-        status_code: Some(carried.status_code()),
-        ..exception(carried.message(), name, provider)
-    }
-}
-
 // anything that is not a provider status reaches exception_type's catchall, whose status is unknown
 fn item_exception<Provider>(
     error: &AgentItemError<Provider>,
@@ -183,10 +167,9 @@ fn item_exception<Provider>(
 where
     Provider: ProviderFailure,
 {
-    RawException {
-        exception_type: "ValueError".to_owned(),
-        ..exception(error.to_string(), name, provider)
-    }
+    let mut exception = exception(error.to_string(), name, provider);
+    exception.exception_type = "ValueError".to_owned();
+    exception
 }
 
 fn exception(message: String, name: &str, provider: Option<&str>) -> RawException {
