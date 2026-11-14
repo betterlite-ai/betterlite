@@ -1,6 +1,6 @@
 import subprocess
 import sys
-from typing import Final, TypeVar, TypedDict
+from typing import Final, TypedDict, TypeVar
 
 import pytest
 from pydantic import JsonValue, TypeAdapter
