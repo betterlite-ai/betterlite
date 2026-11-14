@@ -24,11 +24,14 @@ deviations:
       AgentResponse.identity is dict[str, JsonValue] | None. LiteLLM types them as
       EntraIdentityConfig | None and AgentIdentityBinding | None, so the Entra fields are not checked
       here, unknown keys are kept instead of rejected, and tenant_id, client_id and
-      service_principal_id keep their text instead of being normalized to a UUID.
+      service_principal_id keep their text instead of being normalized to a UUID. The execution_mode
+      fields hold the same Literal values as AgentExecutionMode, and that name plus the two identity
+      types cannot be imported from betterlite.types.agents, while litellm.types.agents re-exports them.
     why: >-
-      EntraIdentityConfig and AgentIdentityBinding live in litellm/types/proxy/agent_identity.py, which
-      B7949 ports as betterlite.types.proxy.agent_identity. That module does not exist at this pin, so
-      importing it would make this task depend on an unbuilt task's file.
+      EntraIdentityConfig, AgentIdentityBinding and AgentExecutionMode live in
+      litellm/types/proxy/agent_identity.py, which B7949 ports as betterlite.types.proxy.agent_identity.
+      That module does not exist at this pin, so importing it would make this task depend on an unbuilt
+      task's file.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/agent_identity.py#L10-L46
   - what: >-
       AgentResponse.agent_card_params is dict[str, JsonValue]. LiteLLM types it as dict[str, Any], so a
