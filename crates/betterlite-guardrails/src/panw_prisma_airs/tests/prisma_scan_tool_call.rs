@@ -9,6 +9,7 @@ use crate::panw_prisma_airs::audit::{Direction, GuardrailAudit};
 use crate::panw_prisma_airs::error_detail::{ErrorCode, ErrorType, GuardrailHttpError};
 use crate::panw_prisma_airs::tool_scan::scan_tool_calls_for_guardrail;
 use crate::panw_prisma_airs::tool_scan::{ToolCall, ToolScan};
+use crate::panw_prisma_airs::verdict::Action;
 
 const WEATHER: &str = r#"[{"function":{"name":"get_weather","arguments":"{\"city\":\"Paris\"}"}}]"#;
 const ALLOW: &str = r#"{"action":"allow","category":"benign","scan_id":"scan-1"}"#;
@@ -335,6 +336,7 @@ async fn a_hundred_and_twenty_nine_tool_calls_are_blocked_before_any_scan() {
     let outcome = run(Setup::new(ALLOW), &calls).await;
     let error = outcome.result.as_ref().expect_err("over the cap");
     assert_eq!(error.status, 400);
+    assert_eq!(error.detail.error.action, Some(Action::Block));
     assert_eq!(error.detail.error.kind, ErrorType::GuardrailViolation);
     assert_eq!(error.detail.error.code, ErrorCode::PanwPrismaAirsBlocked);
     assert_eq!(error.detail.error.category, "tool_call_limit");
