@@ -188,6 +188,10 @@ async fn defaults_match_custom_logger() {
     let plan = callback.build_agentic_loop_plan(&loop_call).await.unwrap();
     assert!(!plan.run_agentic_loop);
     assert!(plan.request_patch.is_none());
+    assert!(plan.response_override.is_none());
+    assert!(!plan.terminate);
+    assert!(plan.stop_reason.is_none());
+    assert!(plan.metadata.is_empty());
 
     assert!(
         callback
