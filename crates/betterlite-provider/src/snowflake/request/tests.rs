@@ -398,10 +398,12 @@ async fn tools_that_are_not_a_list_are_an_error_naming_the_field() {
 
 #[tokio::test]
 async fn the_async_variant_inlines_remote_media_for_claude_models_only() {
-    let source =
-        MediaSource::with(&[("https://example.test/cat.png", "data:image/png;base64,AAA")]);
+    let source = MediaSource::with(&[(
+        "https://example.test/doc.pdf",
+        "data:application/pdf;base64,AAA",
+    )]);
     let turns = messages(
-        r#"[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example.test/cat.png"}}]}]"#,
+        r#"[{"role":"user","content":[{"type":"file","file":{"file_id":"https://example.test/doc.pdf"}}]}]"#,
     );
     let body = async_transform_request(
         "snowflake/claude-3-5-sonnet",
@@ -411,11 +413,11 @@ async fn the_async_variant_inlines_remote_media_for_claude_models_only() {
     )
     .await
     .unwrap();
-    assert_eq!(source.converted(), ["https://example.test/cat.png"]);
+    assert_eq!(source.converted(), ["https://example.test/doc.pdf"]);
     assert_eq!(
         body["messages"],
         parsed(
-            r#"[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AAA"}}]}]"#
+            r#"[{"role":"user","content":[{"type":"file","file":{"file_data":"data:application/pdf;base64,AAA","format":"application/pdf"}}]}]"#
         )
     );
     source.conversions.lock().unwrap().clear();
@@ -426,7 +428,7 @@ async fn the_async_variant_inlines_remote_media_for_claude_models_only() {
     assert_eq!(
         openai["messages"],
         parsed(
-            r#"[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example.test/cat.png"}}]}]"#
+            r#"[{"role":"user","content":[{"type":"file","file":{"file_id":"https://example.test/doc.pdf"}}]}]"#
         )
     );
 }

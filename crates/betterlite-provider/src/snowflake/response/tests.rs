@@ -215,6 +215,30 @@ fn a_claude_reply_without_id_model_or_usage_takes_the_defaults() {
 }
 
 #[test]
+fn a_redacted_thinking_only_reply_leaves_the_reasoning_split_unset() {
+    let recorder = Recorder::default();
+    let turns = vec![parsed(r#"{"role":"user","content":"hi"}"#)];
+    let request = parsed("{}");
+    let body = r#"{"id":"msg_1","model":"claude-3-5-sonnet","content":[{"type":"redacted_thinking","data":"opaque"}],"usage":{"input_tokens":1,"output_tokens":4}}"#;
+    let reply = claude_reply(body, &turns, &request, &recorder);
+    assert_eq!(reply.usage.completion_tokens, 4);
+    assert_eq!(reply.usage.completion_tokens_details.reasoning, None);
+    assert_eq!(reply.usage.completion_tokens_details.text, None);
+}
+
+#[test]
+fn a_tool_search_server_block_counts_as_a_tool_search_request() {
+    let recorder = Recorder::default();
+    let turns = vec![parsed(r#"{"role":"user","content":"hi"}"#)];
+    let request = parsed("{}");
+    let body = r#"{"id":"msg_1","model":"claude-3-5-sonnet","content":[{"type":"server_tool_use","id":"srv_1","name":"tool_search_tool_regex","input":{}},{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":4}}"#;
+    let reply = claude_reply(body, &turns, &request, &recorder);
+    let server_tool_use = reply.usage.server_tool_use.unwrap();
+    assert_eq!(server_tool_use.tool_search, Some(1));
+    assert_eq!(server_tool_use.web_search, None);
+}
+
+#[test]
 fn an_empty_claude_message_has_no_content_and_no_tool_calls() {
     let recorder = Recorder::default();
     let turns = vec![parsed(r#"{"role":"user","content":"hi"}"#)];
