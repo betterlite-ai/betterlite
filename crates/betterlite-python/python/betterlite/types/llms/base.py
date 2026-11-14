@@ -1,5 +1,5 @@
 from collections.abc import Callable, ItemsView
-from typing import ClassVar, Literal, Unpack, overload
+from typing import ClassVar, Literal, Never, Unpack, overload
 
 from pydantic import BaseModel, ConfigDict, JsonValue, PrivateAttr
 from pydantic.main import IncEx
@@ -24,7 +24,7 @@ class LiteLLMPydanticObjectBase(BaseModel):
         by_alias: bool = False, exclude_unset: bool = False,
         exclude_defaults: bool = False, exclude_none: bool = False,
         encoder: Callable[[JsonValue], JsonValue] | None = None,
-        models_as_dict: bool = False, **dumps_kwargs: JsonValue,
+        models_as_dict: bool = False, **dumps_kwargs: Never,
     ) -> str: ...
 
     @override
@@ -38,7 +38,7 @@ class LiteLLMPydanticObjectBase(BaseModel):
         fallback: Callable[[JsonValue], JsonValue] | None = None,
         serialize_as_any: bool = False, polymorphic_serialization: bool | None = None,
         encoder: Callable[[JsonValue], JsonValue] | None = None,
-        models_as_dict: bool = False, **dumps_kwargs: JsonValue,
+        models_as_dict: bool = False, **dumps_kwargs: Never,
     ) -> JsonValue:
         # the second overload only matches pydantic's deprecated signature; LiteLLM dumps here
         if encoder is not None or models_as_dict or dumps_kwargs:
@@ -57,6 +57,7 @@ class LiteLLMPydanticObjectBase(BaseModel):
         return self.model_fields_set
 
 
+# ast-grep-ignore: no-long-names
 class BaseLiteLLMOpenAIResponseObject(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="allow", protected_namespaces=())
 

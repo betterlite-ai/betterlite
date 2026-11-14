@@ -1,6 +1,6 @@
-from typing import Literal, TypeAlias
+from typing import Literal, NotRequired, TypeAlias
 
-from typing_extensions import NotRequired, ReadOnly, TypedDict
+from typing_extensions import ReadOnly, TypedDict
 
 MuseMode: TypeAlias = Literal["PUSH_TO_TALK", "ENDPOINTING"]
 MuseAudioEncoding: TypeAlias = Literal["PCM_16KHZ", "PCM_24KHZ"]

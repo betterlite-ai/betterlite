@@ -3,6 +3,7 @@ from typing import Final, Literal
 from typing_extensions import TypedDict
 
 
+# ast-grep-ignore: no-long-names
 class StabilityImageGenerationRequest(TypedDict, total=False):
     prompt: str
     negative_prompt: str | None
@@ -16,10 +17,12 @@ class StabilityImageGenerationRequest(TypedDict, total=False):
     style_preset: str | None
 
 
+# ast-grep-ignore: no-long-names
 class StabilityImageEditRequest(StabilityImageGenerationRequest):
     mask: str | None
 
 
+# ast-grep-ignore: no-long-names
 class StabilityImageGenerationResponse(TypedDict, total=False):
     image: str
     finish_reason: str
@@ -76,6 +79,7 @@ class StabilitySearchReplaceRequest(TypedDict, total=False):
     grow_mask: int | None
 
 
+# ast-grep-ignore: no-long-names
 class StabilityRemoveBackgroundRequest(TypedDict, total=False):
     image: str
     output_format: Literal["png", "webp"] | None
@@ -96,6 +100,7 @@ class StabilityEditResponse(TypedDict, total=False):
     seed: int
 
 
+# ast-grep-ignore: no-long-names
 OPENAI_SIZE_TO_STABILITY_ASPECT_RATIO: Final = {
     "1024x1024": "1:1",
     "1792x1024": "16:9",

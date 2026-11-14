@@ -1,6 +1,6 @@
-from typing import Literal, TypeAlias
+from typing import Literal, Required, TypeAlias
 
-from typing_extensions import Required, TypedDict
+from typing_extensions import TypedDict
 
 
 class ImageEmbeddingInput(TypedDict, total=False):

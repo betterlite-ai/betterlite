@@ -6,6 +6,7 @@ class AimlImageSize(TypedDict, total=False):
     height: int
 
 
+# ast-grep-ignore: no-long-names
 class AimlImageGenerationRequestParams(TypedDict, total=False):
     model: str
     prompt: str

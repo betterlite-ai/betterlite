@@ -2,6 +2,7 @@ from pydantic import JsonValue
 from typing_extensions import TypedDict
 
 
+# ast-grep-ignore: no-long-names
 class RecraftImageGenerationRequestParams(TypedDict, total=False):
     prompt: str
     text_layout: list[dict[str, JsonValue]] | None
