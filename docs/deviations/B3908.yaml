@@ -1,0 +1,82 @@
+task: B3908
+deviations:
+  - what: >-
+      The prompt REST-client cache holds at most ten clients, keeps them in a hand-written least-recently-used
+      order, and keys them on a digest of all six langfuse_client_init arguments. LiteLLM uses
+      functools.lru_cache(maxsize=10) with those same six arguments.
+    why: >-
+      The bound, the eviction order and the key are the pin's; only the container differs, since a std BTreeMap with
+      a use counter keeps the dependency list unchanged and stores no credential text, only its SHA-256 digest.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_prompt_management.py#L50-L57
+  - what: >-
+      A callback failure is returned as LoggerError::Delivery from the logger and the pipeline logs it and calls
+      handle_callback_failure("langfuse"); LiteLLM catches the exception inside the async event, calls
+      verbose_logger.exception and then handle_callback_failure("langfuse").
+    why: >-
+      The logging crate's callback contract reports a failure to the caller instead of swallowing it, and the
+      success and failure pipelines reproduce LiteLLM's log line and failure counter from that error. No exception
+      reaches the request either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_prompt_management.py#L329-L333
+  - what: >-
+      Each success and failure callback builds its own DynamicLoggerCache and drops it when the call returns;
+      LiteLLM's is a module-level singleton shared by every langfuse prompt-management callback.
+    why: >-
+      The task requires a per-call cache so the prompt manager keeps no dynamic logger between requests. A dynamic
+      logger built for one request is therefore not retained; LiteLLM keeps it (and its tracing channel) for the
+      process lifetime. Requests that use the deployment credentials take the same global logger in both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_prompt_management.py#L47
+  - what: >-
+      The installed-Langfuse-package version check (installed_langfuse_version,
+      raise_if_unsupported_langfuse_version) is not built; prompt client construction starts at
+      check_prompt_cache_ttl. LiteLLM fails every langfuse_client_init call when the Python package is outside
+      its supported range.
+    why: >-
+      betterlite links no Langfuse Python package, so there is no installed version to read. B3900 records the same
+      deviation for the logger it owns, and B3907 does so for LangFuseLogger.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_prompt_management.py#L74
+  - what: >-
+      should_run_prompt_management returns a plain bool and suppresses every failure to resolve a client or fetch
+      the prompt, logging the fetch error at debug level. LiteLLM lets those exceptions out of the method, where
+      PromptManagementBase.get_chat_completion_prompt fails the request.
+    why: >-
+      The task defines the validation as a boolean gate with the fetch exception swallowed, so an unreachable or
+      missing prompt sends the caller's model, messages and parameters to the model provider instead of failing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_prompt_management.py#L226-L243
+  - what: >-
+      A failure event without a non-empty error_str logs "Unknown error" as its status message. LiteLLM falls back
+      to str(kwargs["exception"]) and only then to "Unknown error".
+    why: >-
+      LoggerEvent carries the standard logging payload, whose error_str is the text LiteLLM itself builds from the
+      exception; the raw exception object is not part of the event contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_prompt_management.py#L344-L349
+  - what: >-
+      The prompt manager holds a LangFuseLogger built at construction and passes it to the handler as the global
+      logger; LiteLLM passes itself, because LangfusePromptManagement subclasses LangFuseLogger.
+    why: >-
+      Betterlite composes instead of inheriting, so the same logger instance is selected for requests without
+      dynamic credentials; dynamic credentials still build and cache their own logger.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_prompt_management.py#L114-L118
+  - what: >-
+      A placeholder variable whose value is not a string is substituted as its standard JSON text, and a resolved
+      placeholder message's non-string content the same way. LiteLLM uses Python str(), which prints a dict with
+      single quotes and None as "None".
+    why: >-
+      docs/compatibility.md renders values as standard JSON. Both forms preserve the value; only the Python repr
+      spelling differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_prompt_management.py#L192-L203
+  - what: >-
+      The langfuse callback built by the catalog requires a tokio runtime at construction; without one it is
+      reported as an initialisation failure and skipped, as LiteLLM skips a logger whose constructor raises.
+    why: >-
+      LangFuseLogger owns a tracing channel bound to a runtime handle, so a manager cannot be built outside a
+      runtime. The registry initialises callbacks from the server runtime.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_prompt_management.py#L114-L118
+  - what: >-
+      The callback does not enrich the logged generation with the request's user id, api_base and proxy headers,
+      vertex_location, aws_region_name, preset cache key, or the realtime audio input and masker that LiteLLM
+      reads from kwargs; it logs the payload's messages, model parameters, call type, times, trace id and, on
+      success, the response.
+    why: >-
+      LoggerEvent carries the standard logging payload, its dynamic parameters and its metadata, not the request
+      kwargs. The fields the payload owns are logged identically; the kwargs-only ones have no source in the event.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_prompt_management.py#L318-L336
