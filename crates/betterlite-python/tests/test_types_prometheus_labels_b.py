@@ -414,14 +414,15 @@ def test_names_label_value_fields() -> None:
 
 
 def test_names_value_rejects_keys() -> None:
-    parameters = inspect.signature(UserAPIKeyLabelValues).parameters
-    kinds = {parameter.kind for parameter in parameters.values()}
-    assert kinds == {inspect.Parameter.KEYWORD_ONLY}
-    accepted = UserAPIKeyLabelValues()
+    signature = inspect.signature(UserAPIKeyLabelValues)
+    kinds = {parameter.kind.name for parameter in signature.parameters.values()}
+    assert kinds == {"KEYWORD_ONLY"}
     with pytest.raises(TypeError):
-        _ = replace(accepted, bogus="1")
+        _ = signature.bind("end_user")
     with pytest.raises(TypeError):
-        _ = replace(accepted, api_key_hash="hashed")
+        _ = signature.bind(bogus="1")
+    with pytest.raises(TypeError):
+        _ = signature.bind(api_key_hash="hashed")
 
 
 def test_names_metric_config() -> None:
