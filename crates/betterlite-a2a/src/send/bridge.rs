@@ -1,8 +1,8 @@
 use betterlite_core::agents::json::AgentJson;
 use betterlite_core::agents::provider::a2a::LiteLLMSendMessageResponse;
-use futures_util::FutureExt as _;
+use futures_core::Stream;
 use futures_util::StreamExt as _;
-use futures_util::stream::BoxStream;
+use futures_util::stream::{BoxStream, once};
 
 use crate::completion_bridge::EventSource;
 use crate::completion_bridge::completion::CompletionPort;
@@ -73,18 +73,29 @@ where
             api_base: call.api_base.as_deref(),
             agent_extra_headers: call.agent_extra_headers.as_ref(),
         };
-        // the boxed future keeps dispatch's Mode bound out of the stream's Send check (rust-lang/rust#100013)
-        let mut events = dispatch::<Streamed, C, P, _>(
-            &bridge_call,
-            completion,
-            providers,
-            &mut source,
-        )
-        .boxed()
-        .await;
+        let mut events = bridge_events(&bridge_call, completion, providers, &mut source);
         while let Some(event) = events.next().await {
-            yield event.map_err(SendEntryError::<C::Error, P::Error>::Bridge);
+            yield event;
         }
     }
     .boxed()
+}
+
+// the Send bound keeps dispatch's Mode future out of the stream's Send check (rust-lang/rust#100013)
+fn bridge_events<'call, C, P, S>(
+    call: &'call BridgeCall<'_>,
+    completion: &'call C,
+    providers: &'call P,
+    source: &'call mut S,
+) -> impl Stream<Item = Result<AgentJson, SendEntryError<C::Error, P::Error>>> + Send + 'call
+where
+    C: CompletionPort,
+    P: A2AProviderDispatch,
+    S: EventSource + Send + 'call,
+{
+    once(dispatch::<Streamed, C, P, S>(
+        call, completion, providers, source,
+    ))
+    .flatten()
+    .map(|event| event.map_err(SendEntryError::<C::Error, P::Error>::Bridge))
 }
