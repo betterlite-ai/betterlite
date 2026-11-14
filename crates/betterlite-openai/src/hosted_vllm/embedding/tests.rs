@@ -53,6 +53,17 @@ fn full_reply() -> Value {
     })
 }
 
+fn provider_parts(error: HostedVllmEmbeddingError) -> (String, u16) {
+    match error {
+        HostedVllmEmbeddingError::Provider {
+            message,
+            status_code,
+            ..
+        } => (message, status_code),
+        other => panic!("unexpected error: {other}"),
+    }
+}
+
 fn params(value: Value) -> Object {
     match value {
         Value::Object(fields) => fields,
@@ -512,6 +523,218 @@ fn non_provider_errors_report_status_500() {
     assert_eq!(missing.status_code(), 500);
     let shape = transform_embedding_response(b"{}", &mut |_text| {}).expect_err("reply must fail");
     assert_eq!(shape.status_code(), 500);
+}
+
+#[test]
+fn a_meaningful_error_in_a_full_reply_is_a_provider_error() {
+    let mut body = full_reply();
+    body.as_object_mut().expect("object").insert(
+        String::from("error"),
+        json!({"message": "boom", "code": 400}),
+    );
+    assert_eq!(
+        provider_parts(reply_error(body)),
+        (String::from("boom"), 400)
+    );
+}
+
+#[test]
+fn an_error_only_reply_reports_status_422() {
+    assert_eq!(
+        provider_parts(reply_error(json!({"error": {"message": "boom"}}))),
+        (String::from("boom"), 422)
+    );
+}
+
+#[test]
+fn an_error_message_alone_is_meaningful_with_no_code() {
+    let mut body = full_reply();
+    body.as_object_mut()
+        .expect("object")
+        .insert(String::from("error"), json!({"message": "boom"}));
+    assert_eq!(
+        provider_parts(reply_error(body)),
+        (String::from("boom"), 422)
+    );
+}
+
+#[test]
+fn a_blank_error_message_with_a_code_is_meaningful() {
+    let mut body = full_reply();
+    body.as_object_mut()
+        .expect("object")
+        .insert(String::from("error"), json!({"message": "", "code": 429}));
+    assert_eq!(provider_parts(reply_error(body)), (String::new(), 429));
+}
+
+#[test]
+fn an_error_code_alone_uses_the_default_message() {
+    let mut body = full_reply();
+    body.as_object_mut()
+        .expect("object")
+        .insert(String::from("error"), json!({"code": 429}));
+    assert_eq!(
+        provider_parts(reply_error(body)),
+        (String::from("Error in response object"), 429)
+    );
+}
+
+#[test]
+fn a_string_error_is_meaningful_with_status_422() {
+    let mut body = full_reply();
+    body.as_object_mut()
+        .expect("object")
+        .insert(String::from("error"), json!("boom"));
+    assert_eq!(
+        provider_parts(reply_error(body)),
+        (String::from("Error in response object"), 422)
+    );
+}
+
+#[test]
+fn a_non_integer_error_code_reports_status_422() {
+    let mut body = full_reply();
+    body.as_object_mut().expect("object").insert(
+        String::from("error"),
+        json!({"message": "boom", "code": "rate_limit"}),
+    );
+    assert_eq!(
+        provider_parts(reply_error(body)),
+        (String::from("boom"), 422)
+    );
+}
+
+#[test]
+fn a_large_error_code_reports_status_422() {
+    let mut body = full_reply();
+    body.as_object_mut()
+        .expect("object")
+        .insert(String::from("error"), json!({"code": 70000}));
+    assert_eq!(
+        provider_parts(reply_error(body)),
+        (String::from("Error in response object"), 422)
+    );
+}
+
+#[test]
+fn a_structured_error_message_is_encoded_as_json() {
+    let mut body = full_reply();
+    body.as_object_mut().expect("object").insert(
+        String::from("error"),
+        json!({"message": {"reason": "boom"}}),
+    );
+    assert_eq!(
+        provider_parts(reply_error(body)),
+        (String::from(r#"{"reason":"boom"}"#), 422)
+    );
+}
+
+#[test]
+fn a_truthy_error_message_that_is_not_a_string_is_meaningful() {
+    let mut body = full_reply();
+    body.as_object_mut()
+        .expect("object")
+        .insert(String::from("error"), json!({"message": true}));
+    assert_eq!(
+        provider_parts(reply_error(body)),
+        (String::from("true"), 422)
+    );
+}
+
+#[test]
+fn a_nonzero_number_error_message_is_meaningful() {
+    let mut body = full_reply();
+    body.as_object_mut()
+        .expect("object")
+        .insert(String::from("error"), json!({"message": 5}));
+    assert_eq!(provider_parts(reply_error(body)), (String::from("5"), 422));
+}
+
+#[test]
+fn a_null_error_in_a_reply_is_ignored() {
+    let mut body = full_reply();
+    body.as_object_mut()
+        .expect("object")
+        .insert(String::from("error"), Value::Null);
+    assert_eq!(
+        reply(body).expect("reply").get("model"),
+        Some(&json!("my-model"))
+    );
+}
+
+#[test]
+fn an_empty_string_error_is_ignored() {
+    let mut body = full_reply();
+    body.as_object_mut()
+        .expect("object")
+        .insert(String::from("error"), json!(""));
+    assert_eq!(
+        reply(body).expect("reply").get("model"),
+        Some(&json!("my-model"))
+    );
+}
+
+#[test]
+fn an_empty_error_object_is_ignored() {
+    let mut body = full_reply();
+    body.as_object_mut()
+        .expect("object")
+        .insert(String::from("error"), json!({}));
+    assert_eq!(
+        reply(body).expect("reply").get("model"),
+        Some(&json!("my-model"))
+    );
+}
+
+#[test]
+fn a_null_error_message_with_a_null_code_is_ignored() {
+    let mut body = full_reply();
+    body.as_object_mut().expect("object").insert(
+        String::from("error"),
+        json!({"message": null, "code": null}),
+    );
+    assert_eq!(
+        reply(body).expect("reply").get("model"),
+        Some(&json!("my-model"))
+    );
+}
+
+#[test]
+fn an_empty_error_message_with_a_null_code_is_ignored() {
+    let mut body = full_reply();
+    body.as_object_mut()
+        .expect("object")
+        .insert(String::from("error"), json!({"message": "", "code": null}));
+    assert_eq!(
+        reply(body).expect("reply").get("model"),
+        Some(&json!("my-model"))
+    );
+}
+
+#[test]
+fn a_zero_error_message_with_a_null_code_is_ignored() {
+    let mut body = full_reply();
+    body.as_object_mut()
+        .expect("object")
+        .insert(String::from("error"), json!({"message": 0}));
+    assert_eq!(
+        reply(body).expect("reply").get("model"),
+        Some(&json!("my-model"))
+    );
+}
+
+#[test]
+fn an_empty_container_or_false_error_message_is_ignored() {
+    for message in [json!([]), json!({}), json!(false)] {
+        let mut body = full_reply();
+        body.as_object_mut()
+            .expect("object")
+            .insert(String::from("error"), json!({"message": message}));
+        assert_eq!(
+            reply(body).expect("reply").get("model"),
+            Some(&json!("my-model"))
+        );
+    }
 }
 
 #[rstest]
