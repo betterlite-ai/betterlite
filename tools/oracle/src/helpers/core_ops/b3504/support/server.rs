@@ -7,7 +7,6 @@ use std::thread;
 use std::time::Duration;
 
 use serde_json::{Value, json};
-use url::form_urlencoded;
 
 use super::Reply;
 use super::helper_failure;
@@ -146,14 +145,8 @@ fn request_record(sent: &str, extra: &BTreeSet<String>) -> Value {
     json!({
         "method": method,
         "path": path,
-        "query": query_map(query),
+        "query": query,
         "headers": headers,
         "body": body,
     })
-}
-
-fn query_map(query: &str) -> BTreeMap<String, String> {
-    form_urlencoded::parse(query.as_bytes())
-        .map(|(name, value)| (name.into_owned(), value.into_owned()))
-        .collect()
 }

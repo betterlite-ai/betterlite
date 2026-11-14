@@ -6,9 +6,10 @@ import threading
 from collections.abc import Awaitable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import ClassVar, Final, Literal, NotRequired, TypedDict
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import urlsplit
 
 import litellm
+from litellm.interactions import agents as agents_api
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.types.agents import AgentCreateResponse, AgentListResponse
 from pydantic import JsonValue, TypeAdapter
@@ -91,7 +92,7 @@ class _Handler(BaseHTTPRequestHandler):
             {
                 "method": self.command,
                 "path": target.path,
-                "query": JSON.validate_python(dict(parse_qsl(target.query))),
+                "query": target.query,
                 "headers": JSON.validate_python(kept),
                 "body": body,
             }
@@ -138,7 +139,7 @@ def agent_name(call: Call) -> str:
 def answer(call: Call, logging_obj: Logging, kwargs: dict[str, JsonValue]) -> JsonValue:
     if call["function"] in ("create", "acreate"):
         if call["function"] == "create":
-            created: AgentCreateResponse | Awaitable[AgentCreateResponse] = litellm.create_agent(
+            created: AgentCreateResponse | Awaitable[AgentCreateResponse] = agents_api.create(
                 name=agent_name(call),
                 base_agent=call.get("base_agent"),
                 instructions=call.get("instructions"),
@@ -150,7 +151,7 @@ def answer(call: Call, logging_obj: Logging, kwargs: dict[str, JsonValue]) -> Js
                 **kwargs,
             )
         else:
-            created = litellm.acreate_agent(
+            created = agents_api.acreate(
                 name=agent_name(call),
                 base_agent=call.get("base_agent"),
                 instructions=call.get("instructions"),
@@ -163,14 +164,14 @@ def answer(call: Call, logging_obj: Logging, kwargs: dict[str, JsonValue]) -> Js
             )
         return JSON.validate_json(asyncio.run(resolve_created(created)).model_dump_json())
     if call["function"] == "list":
-        listed: AgentListResponse | Awaitable[AgentListResponse] = litellm.list_agents(
+        listed: AgentListResponse | Awaitable[AgentListResponse] = agents_api.list(
             custom_llm_provider=call.get("custom_llm_provider"),
             extra_headers=call.get("extra_headers"),
             litellm_logging_obj=logging_obj,
             **kwargs,
         )
     else:
-        listed = litellm.alist_agents(
+        listed = agents_api.alist(
             custom_llm_provider=call.get("custom_llm_provider"),
             extra_headers=call.get("extra_headers"),
             litellm_logging_obj=logging_obj,
