@@ -120,8 +120,7 @@ where
                 );
             }
         };
-        input_list.push(function_call_item(tool_call)?);
-        input_list.push(function_call_output_item(tool_call, &stdout)?);
+        append_execution_items(&mut input_list, tool_call, &stdout)?;
         code_interpreter_calls.push(CodeInterpreterCall::completed(
             code_parsing::parse_code(&tool_call.arguments),
             container_id.clone(),
@@ -131,24 +130,24 @@ where
     Ok((input_list, code_interpreter_calls))
 }
 
-fn function_call_item(tool_call: &CodeExecutionToolCall) -> Result<Value, serde_json::Error> {
-    serde_json::to_value(FunctionCallItem {
+// The model call and its sandbox output land next to each other, in the order the call ran
+fn append_execution_items(
+    input_list: &mut Vec<Value>,
+    tool_call: &CodeExecutionToolCall,
+    stdout: &str,
+) -> Result<(), serde_json::Error> {
+    input_list.push(serde_json::to_value(FunctionCallItem {
         kind: "function_call",
         call_id: tool_call.call_id.as_deref(),
         name: CODE_EXECUTION_TOOL_NAME,
         arguments: &tool_call.arguments,
-    })
-}
-
-fn function_call_output_item(
-    tool_call: &CodeExecutionToolCall,
-    stdout: &str,
-) -> Result<Value, serde_json::Error> {
-    serde_json::to_value(FunctionCallOutputItem {
+    })?);
+    input_list.push(serde_json::to_value(FunctionCallOutputItem {
         kind: "function_call_output",
         call_id: tool_call.call_id.as_deref(),
         output: stdout,
-    })
+    })?);
+    Ok(())
 }
 
 include!("responses_plan/tests/cases.rs");
