@@ -39,6 +39,7 @@ async fn completion_cases(#[case] case: u8) {
             responses::completion_replaces_content().await;
             responses::empty_completion_keeps_content().await;
             responses::prompt_is_rebuilt().await;
+            responses::created_clamps_a_clock_before_the_epoch().await;
             responses::failures().await;
             responses::tokenizer_choice().await;
         }

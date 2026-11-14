@@ -1,0 +1,23 @@
+task: B586
+deviations:
+  - what: Header names are matched without regard to case, so a caller header named Accept or X-Api-Key is replaced by the fixed header, where LiteLLM keeps both spellings in its dict.
+    why: HTTP header names are case-insensitive and the header map folds them to one spelling, so two spellings of one header cannot exist.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/completion/transformation.py#L96-L103
+  - what: An API key that is not a valid header value (a newline, for example) is refused with an error that does not show the key.
+    why: LiteLLM hands the key to the HTTP client, which fails later with a message that can carry the value, and the secret must not reach a log.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/completion/transformation.py#L96-L103
+  - what: A reply with an empty completion and no earlier content counts the completion as zero tokens, where LiteLLM calls the tokenizer on None and raises.
+    why: tiktoken's encode raises a TypeError on None, so no working setup can rely on that path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/completion/transformation.py#L203-L208
+  - what: An error value that is not a string gives its JSON text as the message, where LiteLLM gives Python's str() of the decoded value.
+    why: The Python repr of a dict or None is a Python runtime detail (single quotes, None) that docs/compatibility.md leaves out.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/completion/transformation.py#L194-L198
+  - what: A reply body that is not valid UTF-8, a completion or stop_reason of the wrong type, and a missing completion or stop_reason each give a typed error, where LiteLLM raises a Python TypeError or KeyError or decodes with replacement characters.
+    why: A wrongly typed field is an error that names the field, as docs/compatibility.md says.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/completion/transformation.py#L190-L202
+  - what: A stream chunk that is not a JSON object, an index that is not an integer (a string or a fraction, which int() converts in Python) and a stop_reason that is not text give a typed error, where LiteLLM raises a Python exception or passes the value on.
+    why: A value of the wrong type is an error that names the field, as docs/compatibility.md says.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/completion/transformation.py#L264-L290
+  - what: A clock before 1970 gives created 0 where LiteLLM gives a negative int.
+    why: created is an unsigned count of seconds in the response type, and no working setup runs a clock before 1970.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/completion/transformation.py#L209

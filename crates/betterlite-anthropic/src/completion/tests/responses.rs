@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_openai::chat::response::ChatResponse;
+use chrono::{DateTime, Utc};
 
 use crate::completion::error::CompletionError;
 use crate::completion::prompt::{CustomPromptEntry, PromptSource};
@@ -93,6 +94,26 @@ pub(super) async fn empty_completion_keeps_content() {
 pub(super) async fn prompt_is_rebuilt() {
     let custom = answer(&templates(), 200, HELLO_WORLD, blank_response(None)).await;
     assert_eq!(custom.unwrap().usage.prompt_tokens, count("<U:hello|>"));
+}
+
+// a clock before 1970 gives created 0 where Python's int(time.time()) would be negative
+pub(super) async fn created_clamps_a_clock_before_the_epoch() {
+    let prompts = factory();
+    let none = BTreeMap::new();
+    let source = PromptSource {
+        custom_prompt_dict: &none,
+        prompts: &prompts,
+        now: DateTime::<Utc>::MIN_UTC,
+    };
+    let messages = user_messages();
+    let input = ResponseInput {
+        model: "claude-2",
+        messages: &messages,
+        status_code: 200,
+        body: HELLO_WORLD.as_bytes(),
+    };
+    let done = transform_response(&source, &input, blank_response(None), &tiktoken()).await;
+    assert_eq!(done.unwrap().created, 0);
 }
 
 pub(super) async fn failures() {
