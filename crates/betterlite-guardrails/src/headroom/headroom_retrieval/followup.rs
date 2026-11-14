@@ -99,33 +99,25 @@ enum ResponsesItem {
     },
 }
 
-#[derive(Serialize)]
-#[serde(untagged)]
-enum ResponsesFollowupItem {
-    Assistant(ResponsesAssistantOut),
-    Item(ResponsesItem),
+fn followup<T>(value: &T) -> Result<FollowupMessage, RetrievalError>
+where
+    T: Serialize + ?Sized,
+{
+    match to_raw_value(value) {
+        Ok(raw) => Ok(FollowupMessage(raw)),
+        Err(source) => Err(RetrievalError::from(source)),
+    }
 }
 
-pub(crate) fn append(
-    response: &ModelResponse,
-    messages: &[FollowupMessage],
-    retrieved: &[Retrieved],
-) -> Result<Vec<FollowupMessage>, RetrievalError> {
-    let built = match response.format() {
-        ResponseFormat::Responses => responses_messages(response, retrieved)?,
-        ResponseFormat::Anthropic => anthropic_messages(response, retrieved)?,
-        ResponseFormat::Chat => chat_messages(response, retrieved)?,
-    };
-    let mut follow_up = messages.to_vec();
-    follow_up.extend(built);
-    Ok(follow_up)
+fn arguments_json(call: &RetrieveCall) -> Result<String, RetrievalError> {
+    match serde_json::to_string(&call.arguments) {
+        Ok(encoded) => Ok(encoded),
+        Err(source) => Err(RetrievalError::from(source)),
+    }
 }
 
-fn chat_messages(
-    response: &ModelResponse,
-    retrieved: &[Retrieved],
-) -> Result<Vec<FollowupMessage>, RetrievalError> {
-    let tool_calls = retrieved
+fn chat_tool_calls(retrieved: &[Retrieved]) -> Result<Vec<ChatToolCallOut>, RetrievalError> {
+    retrieved
         .iter()
         .map(|retrieved| {
             Ok(ChatToolCallOut {
@@ -133,90 +125,82 @@ fn chat_messages(
                 kind: FUNCTION_KIND,
                 function: ChatFunctionOut {
                     name: retrieved.call.name.clone(),
-                    arguments: serde_json::to_string(&retrieved.call.arguments)?,
+                    arguments: arguments_json(&retrieved.call)?,
                 },
             })
         })
-        .collect::<Result<Vec<_>, serde_json::Error>>()?;
-    let assistant = ChatAssistantOut {
-        role: ASSISTANT_ROLE,
-        content: assistant_text(&response.view),
-        tool_calls,
-    };
-    let mut messages = vec![FollowupMessage(to_raw_value(&assistant)?)];
-    for retrieved in retrieved {
-        messages.push(FollowupMessage(to_raw_value(&ChatToolResultOut {
-            role: TOOL_ROLE,
-            tool_call_id: retrieved.call.id.clone(),
-            content: retrieved.content.clone(),
-        })?));
-    }
-    Ok(messages)
-}
-
-fn anthropic_messages(
-    response: &ModelResponse,
-    retrieved: &[Retrieved],
-) -> Result<Vec<FollowupMessage>, RetrievalError> {
-    let mut blocks = Vec::new();
-    if let Some(text) = assistant_text(&response.view) {
-        blocks.push(AnthropicBlock::Text { text });
-    }
-    for retrieved in retrieved {
-        blocks.push(AnthropicBlock::ToolUse {
-            id: retrieved.call.id.clone(),
-            name: retrieved.call.name.clone(),
-            input: retrieved.call.arguments.clone(),
-        });
-    }
-    let assistant = AnthropicAssistantOut {
-        role: ASSISTANT_ROLE,
-        content: blocks,
-    };
-    let results = retrieved
-        .iter()
-        .map(|retrieved| AnthropicToolResultOut {
-            kind: "tool_result",
-            tool_use_id: retrieved.call.id.clone(),
-            content: retrieved.content.clone(),
-        })
-        .collect();
-    let user = AnthropicUserOut {
-        role: USER_ROLE,
-        content: results,
-    };
-    Ok(vec![
-        FollowupMessage(to_raw_value(&assistant)?),
-        FollowupMessage(to_raw_value(&user)?),
-    ])
-}
-
-fn responses_messages(
-    response: &ModelResponse,
-    retrieved: &[Retrieved],
-) -> Result<Vec<FollowupMessage>, RetrievalError> {
-    let mut items = Vec::new();
-    if let Some(text) = assistant_text(&response.view) {
-        items.push(ResponsesFollowupItem::Assistant(ResponsesAssistantOut {
-            role: ASSISTANT_ROLE,
-            content: text,
-        }));
-    }
-    for retrieved in retrieved {
-        items.push(ResponsesFollowupItem::Item(ResponsesItem::FunctionCall {
-            call_id: retrieved.call.id.clone(),
-            name: retrieved.call.name.clone(),
-            arguments: serde_json::to_string(&retrieved.call.arguments)?,
-        }));
-        items.push(ResponsesFollowupItem::Item(
-            ResponsesItem::FunctionCallOutput {
-                call_id: retrieved.call.id.clone(),
-                output: retrieved.content.clone(),
-            },
-        ));
-    }
-    items
-        .iter()
-        .map(|item| Ok(FollowupMessage(to_raw_value(item)?)))
         .collect()
+}
+
+pub(crate) fn append(
+    response: &ModelResponse,
+    messages: &[FollowupMessage],
+    retrieved: &[Retrieved],
+) -> Result<Vec<FollowupMessage>, RetrievalError> {
+    let mut follow_up = messages.to_vec();
+    match response.format() {
+        ResponseFormat::Responses => {
+            if let Some(content) = assistant_text(&response.view) {
+                follow_up.push(followup(&ResponsesAssistantOut {
+                    role: ASSISTANT_ROLE,
+                    content,
+                })?);
+            }
+            for retrieved in retrieved {
+                follow_up.push(followup(&ResponsesItem::FunctionCall {
+                    call_id: retrieved.call.id.clone(),
+                    name: retrieved.call.name.clone(),
+                    arguments: arguments_json(&retrieved.call)?,
+                })?);
+                follow_up.push(followup(&ResponsesItem::FunctionCallOutput {
+                    call_id: retrieved.call.id.clone(),
+                    output: retrieved.content.clone(),
+                })?);
+            }
+        }
+        ResponseFormat::Anthropic => {
+            let mut blocks = Vec::new();
+            if let Some(text) = assistant_text(&response.view) {
+                blocks.push(AnthropicBlock::Text { text });
+            }
+            for retrieved in retrieved {
+                blocks.push(AnthropicBlock::ToolUse {
+                    id: retrieved.call.id.clone(),
+                    name: retrieved.call.name.clone(),
+                    input: retrieved.call.arguments.clone(),
+                });
+            }
+            follow_up.push(followup(&AnthropicAssistantOut {
+                role: ASSISTANT_ROLE,
+                content: blocks,
+            })?);
+            let results = retrieved
+                .iter()
+                .map(|retrieved| AnthropicToolResultOut {
+                    kind: "tool_result",
+                    tool_use_id: retrieved.call.id.clone(),
+                    content: retrieved.content.clone(),
+                })
+                .collect();
+            follow_up.push(followup(&AnthropicUserOut {
+                role: USER_ROLE,
+                content: results,
+            })?);
+        }
+        ResponseFormat::Chat => {
+            follow_up.push(followup(&ChatAssistantOut {
+                role: ASSISTANT_ROLE,
+                content: assistant_text(&response.view),
+                tool_calls: chat_tool_calls(retrieved)?,
+            })?);
+            for retrieved in retrieved {
+                follow_up.push(followup(&ChatToolResultOut {
+                    role: TOOL_ROLE,
+                    tool_call_id: retrieved.call.id.clone(),
+                    content: retrieved.content.clone(),
+                })?);
+            }
+        }
+    }
+    Ok(follow_up)
 }

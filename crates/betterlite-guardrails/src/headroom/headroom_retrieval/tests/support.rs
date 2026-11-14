@@ -278,11 +278,15 @@ pub(crate) struct GateCall {
 
 impl GateCall {
     pub(crate) fn view(&self) -> AgenticCall<'_> {
+        let response = &self.response;
+        let model = &self.model;
+        let messages = &self.messages;
+        let tools = self.tools.as_deref();
         AgenticCall {
-            response: &self.response,
-            model: &self.model,
-            messages: &self.messages,
-            tools: self.tools.as_deref(),
+            response,
+            model,
+            messages,
+            tools,
             stream: self.stream,
             custom_llm_provider: &self.custom_llm_provider,
             kwargs: &self.kwargs,
@@ -291,13 +295,17 @@ impl GateCall {
 }
 
 pub(crate) fn gate_call(response: &str) -> GateCall {
+    let response = raw(response);
+    let tools = Some(vec![request_tool()]);
+    let model = "gpt-4o".to_owned();
+    let custom_llm_provider = "openai".to_owned();
     GateCall {
-        response: raw(response),
-        model: "gpt-4o".to_owned(),
+        response,
+        model,
         messages: Vec::new(),
-        tools: Some(vec![request_tool()]),
+        tools,
         stream: false,
-        custom_llm_provider: "openai".to_owned(),
+        custom_llm_provider,
         kwargs: JsonMap::new(),
     }
 }

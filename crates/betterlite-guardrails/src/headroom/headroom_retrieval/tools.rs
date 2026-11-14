@@ -60,11 +60,11 @@ pub(crate) fn request_holds_retrieve_tool(tools: Option<&[FollowupMessage]>) -> 
     let Some(tools) = tools else {
         return false;
     };
-    let parsed: Vec<Json> = tools
-        .iter()
-        .filter_map(|tool| serde_json::from_str(tool.0.get()).ok())
-        .collect();
-    has_tool_with_name(&parsed, HEADROOM_RETRIEVE_TOOL_NAME)
+    tools.iter().any(|tool| {
+        serde_json::from_str::<Json>(tool.0.get()).is_ok_and(|parsed| {
+            has_tool_with_name(std::slice::from_ref(&parsed), HEADROOM_RETRIEVE_TOOL_NAME)
+        })
+    })
 }
 
 pub(crate) fn value_holds_retrieve_tool(tools: Option<&decisions::Json>) -> bool {
@@ -74,8 +74,8 @@ pub(crate) fn value_holds_retrieve_tool(tools: Option<&decisions::Json>) -> bool
     let Ok(encoded) = serde_json::to_string(tools) else {
         return false;
     };
-    let Ok(Json::List(tools)) = serde_json::from_str::<Json>(&encoded) else {
+    let Ok(Json::List(parsed)) = serde_json::from_str::<Json>(&encoded) else {
         return false;
     };
-    has_tool_with_name(&tools, HEADROOM_RETRIEVE_TOOL_NAME)
+    has_tool_with_name(&parsed, HEADROOM_RETRIEVE_TOOL_NAME)
 }

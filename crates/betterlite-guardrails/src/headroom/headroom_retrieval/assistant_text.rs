@@ -23,6 +23,7 @@ fn chat_text(choices: &JsonValue) -> Option<String> {
     (!text.is_empty()).then_some(text)
 }
 
+// content_text::content_to_text reads a GuardrailValue from config; these response fields are primitives::JsonValue
 fn content_to_text(content: Option<&JsonValue>) -> String {
     match content {
         Some(JsonValue::String(text)) => text.clone(),

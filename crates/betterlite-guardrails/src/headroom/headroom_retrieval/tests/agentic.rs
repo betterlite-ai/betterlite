@@ -10,24 +10,21 @@ const RESPONSES: &str = r#"{"output":[{"type":"function_call","call_id":"call_1"
 const ANTHROPIC: &str = r#"{"content":[{"type":"tool_use","id":"toolu_1","name":"headroom_retrieve","input":{"hash":"abcdef123456"}}]}"#;
 const EXTRACTED: &str = r#"[{"id":"call_1","type":"function","name":"headroom_retrieve","arguments":{"hash":"abcdef123456"}}]"#;
 
-async fn gate(response: &str) -> AgenticGate {
+async fn gate_result(response: &str) -> Result<AgenticGate, AgenticHookError> {
     let call = support::gate_call(response);
     let harness = support::harness("http://127.0.0.1:1");
     harness
         .guardrail
         .should_run_agentic_loop(&call.view())
         .await
-        .unwrap()
+}
+
+async fn gate(response: &str) -> AgenticGate {
+    gate_result(response).await.unwrap()
 }
 
 async fn gate_error(response: &str) -> AgenticHookError {
-    let call = support::gate_call(response);
-    let harness = support::harness("http://127.0.0.1:1");
-    harness
-        .guardrail
-        .should_run_agentic_loop(&call.view())
-        .await
-        .unwrap_err()
+    gate_result(response).await.unwrap_err()
 }
 
 fn extracted(gate: &AgenticGate) -> JsonValue {
