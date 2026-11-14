@@ -46,15 +46,15 @@ impl GenAiEventDecoder {
                     limit: self.line_limit,
                 }));
             }
-            if line.is_empty() {
-                if self.event_lines.is_empty() {
-                    continue;
-                }
-                self.open_bytes = 0;
-                return Ok(Some(encode_event(mem::take(&mut self.event_lines))));
+            if line.is_empty() && self.event_lines.is_empty() {
+                continue;
             }
-            self.open_bytes += line.len() + 1;
-            if self.open_bytes + 1 > self.line_limit {
+            if line.is_empty() {
+                self.open_bytes = 0;
+                return Ok(Some(encode_event(&mem::take(&mut self.event_lines))));
+            }
+            self.open_bytes = self.open_bytes.saturating_add(line.len().saturating_add(1));
+            if self.open_bytes.saturating_add(1) > self.line_limit {
                 return self.fail(GenAiStreamError::EventTooLong {
                     limit: self.line_limit,
                 });
@@ -63,7 +63,7 @@ impl GenAiEventDecoder {
         }
         if self.input_done && !self.event_lines.is_empty() {
             self.open_bytes = 0;
-            return Ok(Some(encode_event(mem::take(&mut self.event_lines))));
+            return Ok(Some(encode_event(&mem::take(&mut self.event_lines))));
         }
         Ok(None)
     }
@@ -78,7 +78,7 @@ impl GenAiEventDecoder {
     }
 }
 
-fn encode_event(event_lines: Vec<String>) -> Vec<u8> {
+fn encode_event(event_lines: &[String]) -> Vec<u8> {
     let mut event = event_lines.join("\n");
     event.push_str("\n\n");
     event.into_bytes()

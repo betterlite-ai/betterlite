@@ -33,8 +33,8 @@ pub enum GenAiStreamError {
 }
 
 pub struct GoogleGenAiStream {
-    pub collected_chunks: Vec<Vec<u8>>,
-    pub metadata: GenAiStreamMetadata,
+    pub(crate) collected_chunks: Vec<Vec<u8>>,
+    pub(crate) metadata: GenAiStreamMetadata,
     decoder: GenAiEventDecoder,
     source: Box<dyn Iterator<Item = Result<Vec<u8>, HttpError>> + Send>,
     failure: Option<GenAiStreamError>,
@@ -59,6 +59,12 @@ impl GoogleGenAiStream {
             async_pull_rejected: false,
         }
     }
+
+    // the chunks the stream collected for the pass-through completion log
+    #[must_use]
+    pub fn collected_chunks(&self) -> &[Vec<u8>] {
+        &self.collected_chunks
+    }
 }
 
 impl Iterator for GoogleGenAiStream {
@@ -82,11 +88,7 @@ impl Iterator for GoogleGenAiStream {
                 return None;
             }
             match self.source.next() {
-                Some(Ok(chunk)) => {
-                    if let Err(failure) = self.decoder.push(&chunk) {
-                        self.failure = Some(failure);
-                    }
-                }
+                Some(Ok(chunk)) => self.failure = self.decoder.push(&chunk).err(),
                 Some(Err(source)) => {
                     self.finished = true;
                     return Some(Err(GenAiStreamError::Transport { source }));
@@ -114,8 +116,8 @@ impl Stream for GoogleGenAiStream {
 }
 
 pub struct AsyncGoogleGenAiStream {
-    pub collected_chunks: Vec<Vec<u8>>,
-    pub metadata: GenAiStreamMetadata,
+    pub(crate) collected_chunks: Vec<Vec<u8>>,
+    pub(crate) metadata: GenAiStreamMetadata,
     start_time: DateTime<FixedOffset>,
     decoder: GenAiEventDecoder,
     source: BoxStream<'static, Result<Vec<u8>, HttpError>>,
@@ -150,6 +152,12 @@ impl AsyncGoogleGenAiStream {
         }
     }
 
+    // the chunks the stream collected for the pass-through completion log
+    #[must_use]
+    pub fn collected_chunks(&self) -> &[Vec<u8>] {
+        &self.collected_chunks
+    }
+
     // LiteLLM's __anext__: one event per pull, then the collected bytes reach the pass-through logging handler
     pub async fn next_event(&mut self) -> Result<Option<Vec<u8>>, GenAiStreamError> {
         loop {
@@ -172,11 +180,7 @@ impl AsyncGoogleGenAiStream {
                 return Ok(None);
             }
             match self.source.next().await {
-                Some(Ok(chunk)) => {
-                    if let Err(failure) = self.decoder.push(&chunk) {
-                        self.failure = Some(failure);
-                    }
-                }
+                Some(Ok(chunk)) => self.failure = self.decoder.push(&chunk).err(),
                 Some(Err(source)) => {
                     self.finished = true;
                     self.logging = None;

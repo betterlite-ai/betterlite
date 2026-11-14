@@ -41,27 +41,36 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let metadata = stream_metadata(input);
+        let provider = GenAiProvider::from_spelling(&input.provider);
         let body = line_bytes(&input.lines);
         match input.mode {
-            Mode::Sync => sync_answer(metadata, body),
-            Mode::Async => async_answer(metadata, body),
+            Mode::Sync => sync_answer(input, provider, body),
+            Mode::Async => async_answer(input, provider, body),
         }
     }
 }
 
 // LiteLLM's sync iterator hands out one event per next() call and never logs at the end
-fn sync_answer(metadata: GenAiStreamMetadata, body: Vec<u8>) -> HelperResult {
-    let mut stream = GoogleGenAiStream::new(std::iter::once(Ok(body)), metadata, LINE_LIMIT);
+fn sync_answer(input: &Input, provider: GenAiProvider, body: Vec<u8>) -> HelperResult {
+    let mut stream = GoogleGenAiStream::new(
+        std::iter::once(Ok(body)),
+        stream_metadata(input),
+        LINE_LIMIT,
+    );
     let mut yielded = Vec::new();
     for item in &mut stream {
         yielded.push(item.or_value_error()?);
     }
-    Ok(answer(&stream.metadata, &yielded, &stream.collected_chunks))
+    Ok(answer(
+        provider,
+        &input.model,
+        &yielded,
+        stream.collected_chunks(),
+    ))
 }
 
 // LiteLLM's async iterator hands out one event per __anext__ call and logs at the end
-fn async_answer(metadata: GenAiStreamMetadata, body: Vec<u8>) -> HelperResult {
+fn async_answer(input: &Input, provider: GenAiProvider, body: Vec<u8>) -> HelperResult {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -69,21 +78,36 @@ fn async_answer(metadata: GenAiStreamMetadata, body: Vec<u8>) -> HelperResult {
     runtime.block_on(async {
         let source: BoxStream<'static, Result<Vec<u8>, HttpError>> =
             Box::pin(iter(std::iter::once(Ok::<Vec<u8>, HttpError>(body))));
-        let mut stream =
-            AsyncGoogleGenAiStream::new(source, metadata, None, Arc::new(WallClock), LINE_LIMIT);
+        let mut stream = AsyncGoogleGenAiStream::new(
+            source,
+            stream_metadata(input),
+            None,
+            Arc::new(WallClock),
+            LINE_LIMIT,
+        );
         let mut yielded = Vec::new();
         while let Some(event) = stream.next_event().await.or_value_error()? {
             yielded.push(event);
         }
-        Ok(answer(&stream.metadata, &yielded, &stream.collected_chunks))
+        Ok(answer(
+            provider,
+            &input.model,
+            &yielded,
+            stream.collected_chunks(),
+        ))
     })
 }
 
-fn answer(metadata: &GenAiStreamMetadata, yielded: &[Vec<u8>], collected: &[Vec<u8>]) -> Value {
+fn answer(
+    provider: GenAiProvider,
+    model: &str,
+    yielded: &[Vec<u8>],
+    collected: &[Vec<u8>],
+) -> Value {
     json!({
-        "provider": provider_spelling(metadata.provider),
-        "model": metadata.model,
-        "endpoint": endpoint_name(metadata.provider),
+        "provider": provider_spelling(provider),
+        "model": model,
+        "endpoint": endpoint_name(provider),
         "yielded": yielded.iter().map(|event| BASE64.encode(event)).collect::<Vec<_>>(),
         "collected": collected.iter().map(|event| BASE64.encode(event)).collect::<Vec<_>>(),
         "yielded_matches_collected": yielded == collected,

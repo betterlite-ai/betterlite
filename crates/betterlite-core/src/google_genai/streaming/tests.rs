@@ -137,14 +137,17 @@ impl Gate {
     fn open(&self) {
         let mut opened = self.opened.lock().expect("the gate lock");
         *opened = true;
+        drop(opened);
         self.changed.notify_all();
     }
 
     fn wait(&self) {
-        let mut opened = self.opened.lock().expect("the gate lock");
-        while !*opened {
-            opened = self.changed.wait(opened).expect("the gate lock");
-        }
+        let locked = self.opened.lock().expect("the gate lock");
+        let opened = self
+            .changed
+            .wait_while(locked, |opened| !*opened)
+            .expect("the gate lock");
+        drop(opened);
     }
 }
 
@@ -334,13 +337,14 @@ fn async_stream_from_source(
     source: BoxStream<'static, Result<Vec<u8>, HttpError>>,
     stream_metadata: GenAiStreamMetadata,
     logging: Option<GenAiStreamLogging>,
+    line_limit: usize,
 ) -> AsyncGoogleGenAiStream {
     AsyncGoogleGenAiStream::new(
         source,
         stream_metadata,
         logging,
         Arc::new(FixedClock),
-        LINE_LIMIT,
+        line_limit,
     )
 }
 
@@ -351,7 +355,7 @@ fn async_stream(
 ) -> AsyncGoogleGenAiStream {
     let source: BoxStream<'static, Result<Vec<u8>, HttpError>> =
         Box::pin(iter(chunks.into_iter().map(Ok)));
-    async_stream_from_source(source, stream_metadata, logging)
+    async_stream_from_source(source, stream_metadata, logging, LINE_LIMIT)
 }
 
 fn sync_events(stream: &mut GoogleGenAiStream) -> Vec<Vec<u8>> {
@@ -389,7 +393,7 @@ fn sync_stream_emits_events_verbatim_without_a_done_marker() {
             .windows(6)
             .any(|window| window == b"[DONE]".as_slice())
     }));
-    assert_eq!(stream.collected_chunks, events);
+    assert_eq!(stream.collected_chunks(), events.as_slice());
 }
 
 #[test]
@@ -433,7 +437,7 @@ fn sync_stream_emits_the_event_left_open_at_end_of_input() {
 
 #[test]
 fn sync_stream_keeps_a_large_inline_media_event_whole() {
-    let payload = "QUJD".repeat(128 * 1024);
+    let payload = "QUJD".repeat(131_072);
     let line =
         format!("data: {{\"inlineData\":{{\"mimeType\":\"image/png\",\"data\":\"{payload}\"}}}}");
     let bytes = body(&[line.as_str(), ""]);
@@ -655,7 +659,7 @@ async fn async_stream_yields_the_same_events_and_collects_them() {
             b"data: {\"b\":2}\n\n".to_vec(),
         ]
     );
-    assert_eq!(stream.collected_chunks, events);
+    assert_eq!(stream.collected_chunks(), events.as_slice());
 }
 
 #[tokio::test]
@@ -686,7 +690,7 @@ async fn async_stream_routes_the_collected_events_to_the_gemini_handler_at_eof()
     );
     assert_eq!(call.start_time, FixedClock.now());
     assert_eq!(call.end_time, FixedClock.now());
-    assert_eq!(stream.collected_chunks, events);
+    assert_eq!(stream.collected_chunks(), events.as_slice());
 }
 
 #[tokio::test]
@@ -771,8 +775,12 @@ async fn async_stream_logs_nothing_after_a_transport_failure() {
     let chunks: Vec<Result<Vec<u8>, HttpError>> =
         vec![Ok(b"data: a\n\ndata: b".to_vec()), Err(HttpError::Timeout)];
     let source: BoxStream<'static, Result<Vec<u8>, HttpError>> = Box::pin(iter(chunks));
-    let mut stream =
-        async_stream_from_source(source, metadata(GenAiProvider::Gemini), Some(logging));
+    let mut stream = async_stream_from_source(
+        source,
+        metadata(GenAiProvider::Gemini),
+        Some(logging),
+        LINE_LIMIT,
+    );
     let first = stream.next_event().await.expect("the first event");
     assert_eq!(first, Some(b"data: a\n\n".to_vec()));
     assert!(matches!(
@@ -804,11 +812,10 @@ async fn async_stream_logs_nothing_after_a_line_limit_failure() {
         Ok(b"data: 0123456789\n\n".to_vec()),
     ];
     let source: BoxStream<'static, Result<Vec<u8>, HttpError>> = Box::pin(iter(chunks));
-    let mut stream = AsyncGoogleGenAiStream::new(
+    let mut stream = async_stream_from_source(
         source,
         metadata(GenAiProvider::Gemini),
         Some(logging),
-        Arc::new(FixedClock),
         SMALL_LINE_LIMIT,
     );
     let first = stream.next_event().await.expect("the first event");
@@ -823,13 +830,8 @@ async fn async_stream_logs_nothing_after_a_line_limit_failure() {
             limit: SMALL_LINE_LIMIT
         })
     ));
-    assert!(
-        stream
-            .next_event()
-            .await
-            .expect("the stream is over")
-            .is_none()
-    );
+    let over = stream.next_event().await;
+    assert!(over.expect("the stream is over").is_none());
     assert!(
         timeout(Duration::from_millis(200), logged.notified())
             .await
@@ -875,13 +877,8 @@ async fn async_stream_returns_the_end_before_the_completion_log_finishes() {
         .expect("the completion log finished after the stream was dropped");
     let calls_recorded = recorded_calls(&calls);
     assert_eq!(calls_recorded.len(), 1);
-    assert_eq!(
-        calls_recorded
-            .first()
-            .expect("one call was recorded")
-            .handler,
-        "gemini"
-    );
+    let call = calls_recorded.first().expect("one call was recorded");
+    assert_eq!(call.handler, "gemini");
 }
 
 #[test]
@@ -954,7 +951,7 @@ fn replay(chunks: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
 
 fn check_corpus_expectation(name: &str, bytes: &[u8], events: &[Vec<u8>]) {
     match name {
-        "blank-line-delimiter" => assert_eq!(
+        "blank-line-delimiter" | "unterminated-final-event" => assert_eq!(
             events,
             [
                 b"data: {\"a\":1}\n\n".to_vec(),
@@ -964,15 +961,7 @@ fn check_corpus_expectation(name: &str, bytes: &[u8], events: &[Vec<u8>]) {
         "crlf-lines" => assert_eq!(events, [b"data: {\"a\":1}\n\n".to_vec()]),
         "empty" => assert!(events.is_empty()),
         "invalid-utf8" => check_replacement_decoding(events),
-        "large-inline-media" => assert_eq!(events, [bytes.to_vec()]),
-        "split-utf8" => assert_eq!(events, [bytes.to_vec()]),
-        "unterminated-final-event" => assert_eq!(
-            events,
-            [
-                b"data: {\"a\":1}\n\n".to_vec(),
-                b"data: {\"b\":2}\n\n".to_vec()
-            ]
-        ),
+        "large-inline-media" | "split-utf8" => assert_eq!(events, [bytes.to_vec()]),
         other => panic!("the corpus seed {other} has no expectation"),
     }
 }
