@@ -2,10 +2,10 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::PathBuf;
 
 use betterlite_models::decisions::Json as ModelJson;
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::Object;
 use rstest::rstest;
 use secrecy::SecretString;
 use uuid::Uuid;
@@ -30,7 +30,7 @@ use crate::chat_content::{ChatContentError, Mode, RefuseDownloads};
 use crate::reasoning_models::DropParams;
 
 const MISTRAL: &str = "mistralai/Mistral-7B-Instruct-v0.1";
-const LIMIT: usize = 65_536;
+const LIMIT: usize = 0x0001_0000;
 
 fn object(text: &str) -> Object {
     serde_json::from_str(text).unwrap()
@@ -335,8 +335,8 @@ fn the_parent_conversion_runs_before_the_tool_cleanup() {
     "out/openai/chat",
     "https://api.deepinfra.com/v1/inference/out/openai/chat"
 )]
-#[case::trailing_slashes("https://host/v1///", "m", "https://host/v1/inference/m")]
-#[case::bare_host("https://host", "m", "https://host/inference/m")]
+#[case::trailing_slashes(Some("https://host/v1///"), "m", "https://host/v1/inference/m")]
+#[case::bare_host(Some("https://host"), "m", "https://host/inference/m")]
 fn the_rerank_url_removes_every_openai_substring(
     #[case] api_base: Option<&str>,
     #[case] model: &str,
@@ -559,7 +559,7 @@ fn absent_scores_yield_an_empty_result_and_zero_tokens() {
         meta.billed_units.unwrap().unwrap().total_tokens,
         Some(Some(0))
     );
-    assert_eq!(projected.id.as_deref(), Some(&generated().to_string()));
+    assert_eq!(projected.id, Some(generated().to_string()));
 }
 
 #[test]
@@ -632,6 +632,15 @@ fn the_post_call_hook_sees_the_raw_response_text() {
         logging.calls,
         vec![String::from_utf8_lossy(body).into_owned()]
     );
+}
+
+#[test]
+fn the_post_call_hook_runs_between_the_json_parse_and_the_field_reads() {
+    let mut logging = Recording::new(false);
+    project(b"not json", &mut logging, RerankResponse::default());
+    assert!(logging.calls.is_empty());
+    project(b"[]", &mut logging, RerankResponse::default());
+    assert_eq!(logging.calls, vec![String::from("[]")]);
 }
 
 #[rstest]
@@ -736,23 +745,19 @@ fn error_extraction_swallows_a_message_past_the_byte_limit() {
     );
 }
 
-#[test]
-fn replays_the_deepinfra_payload_corpus() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/deepinfra_payload");
-    let mut replayed = 0;
-    for entry in fs::read_dir(corpus).unwrap() {
-        let bytes = fs::read(entry.unwrap().path()).unwrap();
-        let Some((&tag, payload)) = bytes.split_first() else {
-            continue;
-        };
-        if tag % 2 == 0 {
-            let _decoded = decode_deepinfra_rerank(payload, limits());
-        } else if let Ok(message) = std::str::from_utf8(payload) {
-            let _extracted = decode_deepinfra_error(message, limits());
-        }
-        replayed += 1;
+#[rstest]
+fn replays_the_deepinfra_payload_corpus(#[files("fuzz/corpus/deepinfra_payload/*")] path: PathBuf) {
+    let bytes = fs::read(path).unwrap();
+    let Some((&tag, payload)) = bytes.split_first() else {
+        return;
+    };
+    if tag % 2 == 0 {
+        let _decoded = decode_deepinfra_rerank(payload, limits());
+        return;
     }
-    assert!(replayed >= 2);
+    if let Ok(message) = std::str::from_utf8(payload) {
+        let _extracted = decode_deepinfra_error(message, limits());
+    }
 }
 
 #[test]

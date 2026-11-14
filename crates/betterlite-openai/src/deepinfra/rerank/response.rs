@@ -109,11 +109,12 @@ fn decoded(
 ) -> Result<Body, ResponseFailure> {
     let text = std::str::from_utf8(bytes).map_err(|_source| ResponseFailure)?;
     let parsed = decode_deepinfra_rerank(bytes, limits).map_err(|_error| ResponseFailure)?;
-    let body = serde_json::from_value(parsed).map_err(|_error| ResponseFailure)?;
+    // LiteLLM logs as soon as the body parses as JSON, before it reads any field off the value
     logging
         .post_call(text)
         .map_err(|_failure| ResponseFailure)?;
-    Ok(body)
+    let plain = serde_json::to_value(&parsed).map_err(|_error| ResponseFailure)?;
+    serde_json::from_value(plain).map_err(|_error| ResponseFailure)
 }
 
 fn build(body: Body, generated: Uuid) -> Result<RerankResponse, ResponseFailure> {
@@ -123,7 +124,11 @@ fn build(body: Body, generated: Uuid) -> Result<RerankResponse, ResponseFailure>
             .iter()
             .enumerate()
             .map(|(position, value)| {
-                let relevance = python_float(value).and_then(score).ok_or(ResponseFailure)?;
+                let number = finite_float(value).ok_or(ResponseFailure)?;
+                // the debug text keeps the ".0" Python prints for an integral float, and an exponent stays float-looking for the oracle
+                let relevance = parse_decimal_lexeme(&format!("{number:?}"))
+                    .map(Score)
+                    .map_err(|_error| ResponseFailure)?;
                 let index = i64::try_from(position).map_err(|_source| ResponseFailure)?;
                 Ok(RerankResponseResult {
                     index,
@@ -132,10 +137,10 @@ fn build(body: Body, generated: Uuid) -> Result<RerankResponse, ResponseFailure>
                 })
             })
             .collect::<Result<Vec<_>, ResponseFailure>>()?,
-        Some(Some(
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_),
-        ))
-        | Some(None) => return Err(ResponseFailure),
+        Some(
+            Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_))
+            | None,
+        ) => return Err(ResponseFailure),
     };
     let input_tokens = match body.input_tokens {
         None => Some(0),
@@ -148,17 +153,17 @@ fn build(body: Body, generated: Uuid) -> Result<RerankResponse, ResponseFailure>
     let inference = match body.inference_status {
         None => IndexMap::new(),
         Some(Some(Json::Object(status))) => status,
-        Some(Some(
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_),
-        ))
-        | Some(None) => return Err(ResponseFailure),
+        Some(
+            Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
+            | None,
+        ) => return Err(ResponseFailure),
     };
     let given = match body.request_id {
         Some(Some(Json::Text(text))) => text,
-        Some(Some(
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
-        ))
-        | Some(None)
+        Some(
+            Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
+            | None,
+        )
         | None => String::new(),
     };
     let id = if given.is_empty() {
@@ -186,16 +191,11 @@ fn build(body: Body, generated: Uuid) -> Result<RerankResponse, ResponseFailure>
 }
 
 // Python's float() takes a JSON number and refuses everything the declared float list cannot hold
-fn python_float(value: &Json) -> Option<f64> {
+fn finite_float(value: &Json) -> Option<f64> {
     match value {
         Json::Number(number) => number.as_f64().filter(|parsed| parsed.is_finite()),
         Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
     }
-}
-
-// the debug text keeps the ".0" Python prints for an integral float, and an exponent stays float-looking for the oracle
-fn score(value: f64) -> Option<Score> {
-    parse_decimal_lexeme(&format!("{value:?}")).ok().map(Score)
 }
 
 fn hidden_params(inference: &IndexMap<String, Json>) -> BTreeMap<String, Json> {
