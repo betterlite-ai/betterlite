@@ -1358,6 +1358,7 @@ dependencies = [
  "betterlite-logging",
  "betterlite-models",
  "betterlite-secrets",
+ "chrono",
  "clap",
  "comfy-table",
  "console",
@@ -1403,6 +1404,7 @@ version = "0.0.0"
 dependencies = [
  "betterlite-cli",
  "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]
