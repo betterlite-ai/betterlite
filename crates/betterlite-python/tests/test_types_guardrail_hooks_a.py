@@ -659,6 +659,10 @@ def test_ui_friendly_names() -> None:
     )
 
 
+def test_description_names() -> None:
+    assert aim.AimGuardrailConfigModel.model_fields["api_key"].description is None
+
+
 def test_constant_names() -> None:
     assert agent_365.AGENT_365_PROD_API_BASE == "https://agent365.svc.cloud.microsoft"
     assert agent_365.AGENT_365_PROD_RESOURCE_APP_ID == (
