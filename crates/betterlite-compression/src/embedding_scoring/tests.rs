@@ -99,15 +99,19 @@ fn truncates_text_over_the_limit_to_first_and_last_halves() {
 
 #[test]
 fn truncates_by_characters_not_bytes() {
-    let text = "é".repeat(30_001);
+    let text = "\u{e9}".repeat(30_001);
     let truncated = truncate_text(&text);
     assert_eq!(truncated.chars().count(), 30_005);
-    assert_eq!(truncated.matches('é').count(), 30_000);
+    assert_eq!(truncated.matches('\u{e9}').count(), 30_000);
 }
 
 #[tokio::test]
 async fn passes_query_then_message_contents_to_the_executor() {
-    let executor = RecordingExecutor::new(vec![vec![1.0, 0.0], vec![1.0, 0.0], vec![0.0, 1.0]]);
+    let executor = RecordingExecutor::new(vec![
+        vec![1.0_f64, 0.0_f64],
+        vec![1.0_f64, 0.0_f64],
+        vec![0.0_f64, 1.0_f64],
+    ]);
     let messages = vec![
         json!({"role": "user", "content": "auth code"}),
         json!({"role": "user", "content": "cooking recipe"}),
@@ -126,7 +130,7 @@ async fn passes_query_then_message_contents_to_the_executor() {
 
 #[tokio::test]
 async fn replaces_blank_texts_with_the_empty_placeholder() {
-    let executor = RecordingExecutor::new(vec![vec![0.0], vec![0.0], vec![0.0]]);
+    let executor = RecordingExecutor::new(vec![vec![0.0_f64], vec![0.0_f64], vec![0.0_f64]]);
     let messages = vec![json!({"content": "   "}), json!({"content": "real"})];
     embedding_score_messages(request("", &messages), None::<&()>, &executor)
         .await
@@ -139,7 +143,7 @@ async fn replaces_blank_texts_with_the_empty_placeholder() {
 
 #[tokio::test]
 async fn extracts_text_blocks_and_unrolls_tool_results() {
-    let executor = RecordingExecutor::new(vec![vec![0.0], vec![0.0]]);
+    let executor = RecordingExecutor::new(vec![vec![0.0_f64], vec![0.0_f64]]);
     let messages = vec![json!({
         "content": [
             {"type": "text", "text": "one"},
@@ -161,7 +165,7 @@ async fn extracts_text_blocks_and_unrolls_tool_results() {
 async fn enables_caching_only_when_a_cache_is_present() {
     let messages = vec![json!({"content": "auth"})];
 
-    let plain_executor = RecordingExecutor::new(vec![vec![1.0], vec![1.0]]);
+    let plain_executor = RecordingExecutor::new(vec![vec![1.0_f64], vec![1.0_f64]]);
     embedding_score_messages(request("auth", &messages), None::<&()>, &plain_executor)
         .await
         .expect("scores");
@@ -170,7 +174,7 @@ async fn enables_caching_only_when_a_cache_is_present() {
         Some(&json!(false))
     );
 
-    let cached_executor = RecordingExecutor::new(vec![vec![1.0], vec![1.0]]);
+    let cached_executor = RecordingExecutor::new(vec![vec![1.0_f64], vec![1.0_f64]]);
     let cache = ();
     embedding_score_messages(request("auth", &messages), Some(&cache), &cached_executor)
         .await
@@ -183,7 +187,7 @@ async fn enables_caching_only_when_a_cache_is_present() {
 
 #[tokio::test]
 async fn forwards_embedding_model_params() {
-    let executor = RecordingExecutor::new(vec![vec![1.0], vec![1.0]]);
+    let executor = RecordingExecutor::new(vec![vec![1.0_f64], vec![1.0_f64]]);
     let messages = vec![json!({"content": "auth"})];
     let params: Map<String, Value> = Map::from_iter([
         (
@@ -212,7 +216,7 @@ async fn forwards_embedding_model_params() {
 
 #[tokio::test]
 async fn embedding_model_params_override_the_call_values() {
-    let executor = RecordingExecutor::new(vec![vec![1.0], vec![1.0]]);
+    let executor = RecordingExecutor::new(vec![vec![1.0_f64], vec![1.0_f64]]);
     let messages = vec![json!({"content": "auth"})];
     let params: Map<String, Value> = Map::from_iter([
         ("caching".to_owned(), json!(false)),
@@ -236,10 +240,10 @@ async fn embedding_model_params_override_the_call_values() {
 #[tokio::test]
 async fn computes_cosine_similarity_per_message() {
     let executor = RecordingExecutor::new(vec![
-        vec![1.0, 0.0],
-        vec![1.0, 0.0],
-        vec![0.0, 1.0],
-        vec![1.0, 1.0],
+        vec![1.0_f64, 0.0_f64],
+        vec![1.0_f64, 0.0_f64],
+        vec![0.0_f64, 1.0_f64],
+        vec![1.0_f64, 1.0_f64],
     ]);
     let messages = vec![
         json!({"content": "a"}),
@@ -255,7 +259,11 @@ async fn computes_cosine_similarity_per_message() {
 
 #[tokio::test]
 async fn returns_zero_for_zero_norm_vectors() {
-    let executor = RecordingExecutor::new(vec![vec![0.0, 0.0], vec![1.0, 0.0], vec![0.0, 0.0]]);
+    let executor = RecordingExecutor::new(vec![
+        vec![0.0_f64, 0.0_f64],
+        vec![1.0_f64, 0.0_f64],
+        vec![0.0_f64, 0.0_f64],
+    ]);
     let messages = vec![json!({"content": "a"}), json!({"content": "b"})];
     let scores = run_scorer(request("q", &messages), &executor).await;
     assert!(close(scores[0], 0.0));
@@ -264,7 +272,11 @@ async fn returns_zero_for_zero_norm_vectors() {
 
 #[tokio::test]
 async fn compares_dot_products_up_to_the_shorter_vector() {
-    let executor = RecordingExecutor::new(vec![vec![1.0, 0.0], vec![1.0], vec![1.0, 0.0, 5.0]]);
+    let executor = RecordingExecutor::new(vec![
+        vec![1.0_f64, 0.0_f64],
+        vec![1.0_f64],
+        vec![1.0_f64, 0.0_f64, 5.0_f64],
+    ]);
     let messages = vec![json!({"content": "a"}), json!({"content": "b"})];
     let scores = run_scorer(request("q", &messages), &executor).await;
     assert!(close(scores[0], 1.0));
@@ -273,7 +285,7 @@ async fn compares_dot_products_up_to_the_shorter_vector() {
 
 #[tokio::test]
 async fn truncates_long_contents_before_the_embedding_call() {
-    let executor = RecordingExecutor::new(vec![vec![1.0], vec![1.0]]);
+    let executor = RecordingExecutor::new(vec![vec![1.0_f64], vec![1.0_f64]]);
     let messages = vec![json!({"content": "z".repeat(30_001)})];
     run_scorer(request("q", &messages), &executor).await;
     let calls = executor.recorded();
@@ -289,7 +301,7 @@ async fn truncates_long_contents_before_the_embedding_call() {
 
 #[tokio::test]
 async fn truncates_a_long_query_before_the_embedding_call() {
-    let executor = RecordingExecutor::new(vec![vec![1.0], vec![1.0]]);
+    let executor = RecordingExecutor::new(vec![vec![1.0_f64], vec![1.0_f64]]);
     let messages = vec![json!({"content": "short"})];
     let query = format!("{}m{}", "a".repeat(15_000), "b".repeat(15_000));
     run_scorer(request(&query, &messages), &executor).await;
@@ -302,7 +314,7 @@ async fn truncates_a_long_query_before_the_embedding_call() {
 
 #[tokio::test]
 async fn returns_no_scores_without_messages() {
-    let executor = RecordingExecutor::new(vec![vec![1.0, 0.0]]);
+    let executor = RecordingExecutor::new(vec![vec![1.0_f64, 0.0_f64]]);
     let messages: Vec<Value> = Vec::new();
     let scores = run_scorer(request("q", &messages), &executor).await;
     assert!(scores.is_empty());

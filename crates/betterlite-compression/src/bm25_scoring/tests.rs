@@ -27,7 +27,7 @@ fn tokenizes_on_word_boundaries_into_lowercase_tokens() {
 
 #[test]
 fn lowercases_unicode_before_tokenizing() {
-    assert_eq!(tokenize("İ K"), ["i", "k"]);
+    assert_eq!(tokenize("\u{130} K"), ["i", "k"]);
 }
 
 #[test]
@@ -107,8 +107,8 @@ fn default_parameters_match_litellm() {
 #[test]
 fn returns_zero_scores_when_the_query_has_no_terms() {
     let messages = vec![json!({"content": "hello"}), json!({"content": ""})];
-    assert_eq!(scores("", &messages), vec![0.0, 0.0]);
-    assert_eq!(scores(" ,.! ", &messages), vec![0.0, 0.0]);
+    assert_eq!(scores("", &messages), vec![0.0_f64, 0.0_f64]);
+    assert_eq!(scores(" ,.! ", &messages), vec![0.0_f64, 0.0_f64]);
 }
 
 #[test]
@@ -127,7 +127,7 @@ fn scores_documents_without_tokens_zero() {
 #[test]
 fn returns_zeros_when_every_document_is_empty() {
     let messages = vec![json!({"content": ""}), json!({"content": "  "})];
-    assert_eq!(scores("query", &messages), vec![0.0, 0.0]);
+    assert_eq!(scores("query", &messages), vec![0.0_f64, 0.0_f64]);
 }
 
 #[test]
@@ -137,7 +137,7 @@ fn exact_matches_outrank_prefix_only_matches() {
         json!({"content": "authentication_a authentication_b"}),
     ];
     let result = scores("authentication", &messages);
-    assert!(close(result[0], 0.693_147_180_559_945_3));
+    assert!(close(result[0], std::f64::consts::LN_2));
     assert!(close(result[1], 0.990_210_257_942_779_1));
     assert!(result[1] > result[0]);
 }
@@ -165,7 +165,7 @@ fn prefix_matching_starts_at_four_characters(
 ) {
     let result = scores(query, &[json!({"content": content})]);
     if matches {
-        assert!(result[0] > 0.0);
+        assert!(result[0] > 0.0_f64);
     } else {
         assert!(close(result[0], 0.0));
     }
