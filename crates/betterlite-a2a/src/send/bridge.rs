@@ -6,9 +6,7 @@ use futures_util::stream::{BoxStream, once};
 
 use crate::completion_bridge::EventSource;
 use crate::completion_bridge::completion::CompletionPort;
-use crate::completion_bridge::dispatch::{
-    A2AProviderDispatch, Buffered, CompletionError, Mode, Streamed, dispatch,
-};
+use crate::completion_bridge::dispatch::{A2AProviderDispatch, Buffered, Mode, Streamed, dispatch};
 use crate::completion_bridge::params::{BridgeCall, ParamsError, optional_text};
 use crate::logging_context::json_rpc_id_text;
 use crate::provider_selector::{A2AProviderConfig, get_provider_config};
@@ -101,8 +99,10 @@ where
             Ok(Some(config)) => {
                 <Streamed as Mode<'call, C, P>>::provider(providers, config, call).await
             }
-            Ok(None) => <Streamed as Mode<'call, C, P>>::direct(call, completion, source).await,
-            Err(error) => <Streamed as Mode<'call, C, P>>::failed(CompletionError::Params(error)),
+            // direct's prefixed_model reads the same fields and reports the same ParamsError
+            Ok(None) | Err(_) => {
+                <Streamed as Mode<'call, C, P>>::direct(call, completion, source).await
+            }
         }
     })
     .flatten()
