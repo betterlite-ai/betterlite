@@ -1,0 +1,43 @@
+kind: helper
+name: store_id_error
+call:
+  b7812:
+    calls:
+      - call: request
+        input:
+          vector_store_id: idx
+          query: q
+          vector: [0.25]
+          litellm_params: {aws_region_name: eu-west-1}
+      - call: request
+        input:
+          vector_store_id: idx
+          query: q
+          vector: [0.25]
+          litellm_params: {aws_region_name: eu-west-1, vector_bucket_name: null}
+      - call: request
+        input:
+          vector_store_id: idx
+          query: q
+          vector: [0.25]
+          litellm_params: {aws_region_name: eu-west-1, vector_bucket_name: ""}
+      - call: request
+        input:
+          vector_store_id: ""
+          query: q
+          vector: [0.25]
+          litellm_params: {aws_region_name: eu-west-1, vector_bucket_name: fallback}
+      - call: request
+        input:
+          vector_store_id: ":idx"
+          query: q
+          vector: [0.25]
+          litellm_params: {aws_region_name: eu-west-1, vector_bucket_name: fallback}
+      - call: request
+        input:
+          vector_store_id: "bucket:"
+          query: q
+          vector: [0.25]
+          litellm_params: {aws_region_name: eu-west-1}
+env: {}
+compare: {ignore: []}
