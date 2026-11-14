@@ -92,6 +92,8 @@ pub struct StreamedResponse<L> {
     pub lines: L,
 }
 
+pub(crate) const MAX_RESPONSE_BYTES: usize = 0x80_0000;
+
 // httpx hands a JSON reply back as one body; joining its lines with "\n" is the same text for JSON input
 pub(crate) async fn collect_body<L, E>(lines: L) -> Result<String, super::AgentCoreError<E>>
 where
@@ -102,6 +104,17 @@ where
     let mut body = String::new();
     while let Some(line) = lines.next().await {
         let line = line.map_err(super::AgentCoreError::Runtime)?;
+        let separator = usize::from(!body.is_empty());
+        if body
+            .len()
+            .saturating_add(separator)
+            .saturating_add(line.len())
+            > MAX_RESPONSE_BYTES
+        {
+            return Err(super::AgentCoreError::ResponseTooLarge {
+                max: MAX_RESPONSE_BYTES,
+            });
+        }
         if !body.is_empty() {
             body.push('\n');
         }

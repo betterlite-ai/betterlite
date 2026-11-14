@@ -54,6 +54,8 @@ pub enum AgentCoreError<E: Error + 'static> {
     Transform(#[from] TransformError),
     #[error("the AgentCore runtime answered with HTTP status {status}")]
     Status { status: u16 },
+    #[error("the AgentCore runtime reply is larger than {max} bytes")]
+    ResponseTooLarge { max: usize },
     #[error(transparent)]
     Runtime(E),
 }

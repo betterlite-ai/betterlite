@@ -32,6 +32,7 @@ pub(super) fn failed(error: &AgentCoreError<Failure>) -> Box<HelperError> {
         AgentCoreError::Transform(TransformError::SessionId { .. }) => Some(400),
         AgentCoreError::Transform(_)
         | AgentCoreError::Status { .. }
+        | AgentCoreError::ResponseTooLarge { .. }
         | AgentCoreError::Runtime(_) => None,
     };
     Box::new(HelperError {

@@ -1055,6 +1055,8 @@ version = "0.0.0"
 dependencies = [
  "betterlite-a2a",
  "betterlite-core",
+ "futures-executor",
+ "futures-util",
  "libfuzzer-sys",
  "serde_json",
 ]

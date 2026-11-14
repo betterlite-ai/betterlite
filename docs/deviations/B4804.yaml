@@ -7,3 +7,10 @@ deviations:
       The skip is the behavior both sides share, so the oracle compares it; the log line stays free of response
       content so a malformed agent reply cannot write its body into the proxy log.
     link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/bedrock_agentcore/transformation.py#L244-L248'
+  - what: >-
+      A streamed reply with a JSON content type is read up to 8 MiB (0x80_0000 bytes) and then fails with a typed
+      error. LiteLLM reads the whole body with no limit.
+    why: >-
+      An AgentCore runtime that never ends its reply would otherwise make the proxy allocate without bound; a
+      working setup does not rely on replies this large.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/bedrock_agentcore/handler.py#L127'

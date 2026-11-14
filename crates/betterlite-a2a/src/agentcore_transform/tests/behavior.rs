@@ -10,7 +10,7 @@ use serde_json::json;
 use crate::agentcore_transform::call::{AgentCoreHandler, HandlerCall, SignedRequestCall};
 use crate::agentcore_transform::config::{BedrockAgentCoreConfig, ConfigCall};
 use crate::agentcore_transform::params::LitellmParams;
-use crate::agentcore_transform::runtime::{RpcMethod, collect_body};
+use crate::agentcore_transform::runtime::{MAX_RESPONSE_BYTES, RpcMethod, collect_body};
 use crate::agentcore_transform::tests::support::{
     CONTEXT_ID, FixtureError, FixtureRuntime, GENERATED, SESSION_PREFIX, Source, URL,
     bearer_params, fixture, litellm_params, params,
@@ -676,6 +676,32 @@ async fn collected_lines_are_joined_with_newlines() {
         .expect("the lines are collected");
 
     assert_eq!(body, "first\nsecond");
+}
+
+#[rstest]
+#[case::one_line_at_the_limit(vec![MAX_RESPONSE_BYTES], true)]
+#[case::one_line_over_the_limit(vec![MAX_RESPONSE_BYTES + 1], false)]
+#[case::two_lines_at_the_limit(vec![MAX_RESPONSE_BYTES - 2, 1], true)]
+#[case::the_separator_counts(vec![MAX_RESPONSE_BYTES - 1, 1], false)]
+#[tokio::test]
+async fn the_collected_reply_is_capped(#[case] lengths: Vec<usize>, #[case] accepted: bool) {
+    let lines = futures_util::stream::iter(
+        lengths
+            .into_iter()
+            .map(|length| Ok::<_, FixtureError>("a".repeat(length)))
+            .collect::<Vec<_>>(),
+    );
+
+    let result = collect_body(lines).await;
+
+    if accepted {
+        assert_eq!(result.expect("the reply fits").len(), MAX_RESPONSE_BYTES);
+    } else {
+        assert!(matches!(
+            result,
+            Err(AgentCoreError::ResponseTooLarge { max }) if max == MAX_RESPONSE_BYTES
+        ));
+    }
 }
 
 #[test]

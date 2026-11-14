@@ -29,7 +29,9 @@ class Transformation(Protocol):
         request_id: str,
         params: Mapping[str, JsonValue],
         litellm_params: dict[str, JsonValue],
-        agent_extra_headers: dict[str, str] | None,
+        method: str = "message/send",
+        stream: bool = False,
+        agent_extra_headers: dict[str, str] | None = None,
     ) -> tuple[str, dict[str, str], bytes]: ...
 
     def parse_sse_events(self, response: LineSource) -> AsyncIterator[JsonValue]: ...
@@ -65,14 +67,16 @@ class AgentConfig(Protocol):
         self,
         request_id: str,
         params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue] | None,
+        api_base: str | None = None,
+        **kwargs: object,
     ) -> dict[str, JsonValue]: ...
 
     def handle_streaming(
         self,
         request_id: str,
         params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue] | None,
+        api_base: str | None = None,
+        **kwargs: object,
     ) -> AsyncIterator[dict[str, JsonValue]]: ...
 
 
@@ -192,7 +196,8 @@ def signed_request(input_value: SignedRequestInput) -> JsonValue:
         input_value["request_id"],
         input_value["params"],
         input_value["litellm_params"],
-        input_value["agent_extra_headers"],
+        method="message/send",
+        agent_extra_headers=input_value["agent_extra_headers"],
     )
     output: dict[str, JsonValue] = {
         "url": url,
@@ -238,14 +243,18 @@ async def call_config_non_streaming(
 ) -> dict[str, JsonValue]:
     install_client(json_reply(input_value["answer"]))
     return await config.handle_non_streaming(
-        input_value["request_id"], input_value["params"], input_value["litellm_params"]
+        input_value["request_id"],
+        input_value["params"],
+        litellm_params=input_value["litellm_params"],
     )
 
 
 async def call_config_streaming(config: AgentConfig, input_value: ConfigInput) -> list[JsonValue]:
     install_client(stream_reply(input_value["stream_answer"]))
     events = config.handle_streaming(
-        input_value["request_id"], input_value["params"], input_value["litellm_params"]
+        input_value["request_id"],
+        input_value["params"],
+        litellm_params=input_value["litellm_params"],
     )
     return await collected(events)
 
