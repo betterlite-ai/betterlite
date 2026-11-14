@@ -22,6 +22,7 @@ futures-util = { version = "0.3.34", default-features = false, features = ["asyn
 hex.workspace = true
 http = "1.5.0"
 idna = "1.1.0"
+indexmap = "2.14.2"
 ipnet = "2.12.2"
 libc = "0.2.191"
 opentelemetry-http = { version = "0.33.1", default-features = false }

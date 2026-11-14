@@ -40,6 +40,7 @@ fn object_response(attribute: GeneratedFilesAttribute, model_extra: Option<&str>
     HookResponse::Object(ObjectResponse {
         content: Vec::new(),
         choices: Vec::new(),
+        stop_reason: None,
         generated_files: attribute,
         model_extra: model_extra.map(|body| serde_json::from_str(body).unwrap()),
     })
