@@ -163,10 +163,6 @@ def first_record(value: Json) -> Json:
             return None
 
 
-def record_of(request_data: dict[str, Json]) -> Json:
-    return first_record(request_data.get("metadata"))
-
-
 async def run_stream(request: Input, folder: Path) -> Json:
     streamer: StreamHook = guardrail(request, folder)
     request_data: dict[str, Json] = {}
@@ -185,7 +181,8 @@ async def run_stream(request: Input, folder: Path) -> Json:
         error = error_tag(raised)
     finally:
         await streamed.aclose()
-    return {"chunks": chunks, "record": record_of(request_data), "error": error}
+    record = first_record(request_data.get("metadata"))
+    return {"chunks": chunks, "record": record, "error": error}
 
 
 def run(input_value: dict[str, Json]) -> Json:

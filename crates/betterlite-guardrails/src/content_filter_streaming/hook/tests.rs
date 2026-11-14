@@ -103,9 +103,11 @@ async fn run_stream(case: &StreamCase) -> StreamRun {
             log_target: None,
         };
         let hook = stream_filter_hook(response, output, &case.settings, &source, &mut call);
-        timeout(Duration::from_secs(5), tokio::join!(hook, feed, consume))
-            .await
-            .expect("the stream hook finishes")
+        timeout(Duration::from_secs(5), async move {
+            tokio::join!(hook, feed, consume)
+        })
+        .await
+        .expect("the stream hook finishes")
     };
     StreamRun {
         chunks,
@@ -574,12 +576,11 @@ async fn hook_falls_back_to_unfiltered_text_when_the_scan_fails() {
 #[tokio::test]
 async fn hook_logs_a_record_when_the_consumer_stops_reading() {
     let first = "a".repeat(60);
-    let second = "b".repeat(60);
     let mut case = stream_case(vec![
         chunk(vec![choice(Some(0), Some(first.as_str()), None)]),
-        chunk(vec![choice(Some(0), Some(second.as_str()), None)]),
-        chunk(vec![choice(Some(0), None, Some("stop"))]),
+        chunk(vec![choice(Some(0), Some("blockedword"), Some("stop"))]),
     ]);
+    case.blocked_words = vec![word("blockedword", ContentFilterAction::Block)];
     case.close_after = Some(1);
     let run = run_stream(&case).await;
     assert_eq!(run.chunks.len(), 1);
@@ -589,6 +590,68 @@ async fn hook_logs_a_record_when_the_consumer_stops_reading() {
         text_field(record(&run), &["guardrail_status"]),
         Some("success")
     );
+}
+
+#[tokio::test]
+async fn hook_keeps_detections_that_left_the_buffer_and_ones_from_another_choice() {
+    let first = format!("alpha{}", "x".repeat(1100));
+    let second = format!("beta{}", "y".repeat(1100));
+    let mut case = stream_case(vec![
+        chunk(vec![
+            choice(Some(0), Some(first.as_str()), None),
+            choice(Some(1), Some(second.as_str()), None),
+        ]),
+        chunk(vec![
+            choice(Some(0), None, Some("stop")),
+            choice(Some(1), None, Some("stop")),
+        ]),
+    ]);
+    case.blocked_words = vec![masked_word("alpha"), masked_word("beta")];
+    let run = run_stream(&case).await;
+    let record = record(&run);
+    let detections = response_detections(record);
+    assert_eq!(detections.len(), 2);
+    assert_eq!(text_field(&detections[0], &["keyword"]), Some("alpha"));
+    assert_eq!(text_field(&detections[1], &["keyword"]), Some("beta"));
+    assert_eq!(
+        int_field(record, &["masked_entity_count", "blocked_word"]),
+        Some(2)
+    );
+}
+
+#[tokio::test]
+async fn hook_keeps_the_yielded_count_when_a_mask_collapses_the_buffer() {
+    let first = "1".repeat(60);
+    let second = "2".repeat(60);
+    let letters = "a".repeat(20);
+    let tail = "b".repeat(50);
+    let mut case = stream_case(vec![
+        chunk(vec![choice(Some(0), Some(first.as_str()), None)]),
+        chunk(vec![choice(Some(0), Some(second.as_str()), None)]),
+        chunk(vec![choice(Some(0), Some(letters.as_str()), None)]),
+        chunk(vec![choice(Some(0), Some(tail.as_str()), Some("stop"))]),
+    ]);
+    case.patterns = vec![compiled_pattern("[0-9]{100,}", "run")];
+    let run = run_stream(&case).await;
+    assert_eq!(content_at(&run.chunks[0], 0), "1".repeat(10));
+    assert!(content_at(&run.chunks[1], 0).is_empty());
+    assert!(content_at(&run.chunks[2], 0).is_empty());
+    assert_eq!(
+        content_at(&run.chunks[3], 0),
+        format!("TED]{}{}", "a".repeat(20), "b".repeat(50))
+    );
+}
+
+#[tokio::test]
+async fn hook_slices_multibyte_text_by_characters() {
+    let content = "é".repeat(1100);
+    let case = stream_case(vec![
+        chunk(vec![choice(Some(0), Some(content.as_str()), None)]),
+        chunk(vec![choice(Some(0), None, Some("stop"))]),
+    ]);
+    let run = run_stream(&case).await;
+    assert_eq!(content_at(&run.chunks[0], 0), "é".repeat(1050));
+    assert_eq!(content_at(&run.chunks[1], 0), "é".repeat(50));
 }
 
 #[tokio::test]

@@ -157,14 +157,17 @@ async fn stream_output(
             log_target: None,
         };
         let hook = stream_filter_hook(response, output, settings, source, &mut call);
-        tokio::time::timeout(HOOK_TIMEOUT, tokio::join!(hook, feeder, consumer))
-            .await
-            .map_err(|_| {
-                failure(
-                    "TimeoutError",
-                    "the streaming hook did not finish".to_owned(),
-                )
-            })?
+        tokio::time::timeout(
+            HOOK_TIMEOUT,
+            async move { tokio::join!(hook, feeder, consumer) },
+        )
+        .await
+        .map_err(|_| {
+            failure(
+                "TimeoutError",
+                "the streaming hook did not finish".to_owned(),
+            )
+        })?
     };
     let chunks = projection::chunks(&chunks);
     let record = projection::record(&request_data);

@@ -49,27 +49,15 @@ fn category(exceptions: &[&str]) -> CategoryConfig {
     }
 }
 
-fn keyword_source<'source>(
+fn source<'source>(
     categories: &'source CategoryLoadResult,
+    patterns: &'source [CompiledPattern],
     blocked_words: &'source [BlockedWord],
 ) -> ContentFilterSource<'source> {
     ContentFilterSource {
         categories,
-        patterns: &[],
-        blocked_words,
-        pattern_redaction_format: "[{pattern_name}_REDACTED]",
-        keyword_redaction_tag: "[KEYWORD_REDACTED]",
-    }
-}
-
-fn pattern_source<'source>(
-    categories: &'source CategoryLoadResult,
-    patterns: &'source [CompiledPattern],
-) -> ContentFilterSource<'source> {
-    ContentFilterSource {
-        categories,
         patterns,
-        blocked_words: &[],
+        blocked_words,
         pattern_redaction_format: "[{pattern_name}_REDACTED]",
         keyword_redaction_tag: "[KEYWORD_REDACTED]",
     }
@@ -86,7 +74,7 @@ fn plan() -> StreamedScanPlan {
 #[test]
 fn trim_returns_the_state_unchanged_while_the_buffer_fits_twice_the_context() {
     let categories = CategoryLoadResult::default();
-    let source = keyword_source(&categories, &[]);
+    let source = source(&categories, &[], &[]);
     let buffered = "x".repeat(1024);
     let state = StreamedChoiceState {
         buffered_text: buffered.clone(),
@@ -104,7 +92,7 @@ fn trim_returns_the_state_unchanged_while_the_buffer_fits_twice_the_context() {
 #[test]
 fn trim_cuts_once_the_buffer_passes_twice_the_context() {
     let categories = CategoryLoadResult::default();
-    let source = keyword_source(&categories, &[]);
+    let source = source(&categories, &[], &[]);
     let buffered = "x".repeat(1025);
     let state = StreamedChoiceState {
         buffered_text: buffered.clone(),
@@ -122,7 +110,7 @@ fn trim_cuts_once_the_buffer_passes_twice_the_context() {
 #[test]
 fn trim_trims_when_the_masked_prefix_is_exactly_the_yielded_length() {
     let categories = CategoryLoadResult::default();
-    let source = keyword_source(&categories, &[]);
+    let source = source(&categories, &[], &[]);
     let buffered = "x".repeat(1025);
     let state = StreamedChoiceState {
         buffered_text: buffered.clone(),
@@ -140,7 +128,7 @@ fn trim_trims_when_the_masked_prefix_is_exactly_the_yielded_length() {
 #[test]
 fn trim_defers_while_the_buffer_stays_under_next_trim_len() {
     let categories = CategoryLoadResult::default();
-    let source = keyword_source(&categories, &[]);
+    let source = source(&categories, &[], &[]);
     let buffered = "x".repeat(1100);
     let state = StreamedChoiceState {
         buffered_text: buffered.clone(),
@@ -158,7 +146,7 @@ fn trim_defers_while_the_buffer_stays_under_next_trim_len() {
 fn trim_sets_next_trim_len_to_the_buffer_plus_the_context() {
     let categories = CategoryLoadResult::default();
     let words = [word("secret", ContentFilterAction::Mask)];
-    let source = keyword_source(&categories, &words);
+    let source = source(&categories, &[], &words);
     let buffered = format!("{}secret{}", "x".repeat(585), "x".repeat(509));
     let masked = format!("{}[KEYWORD_REDACTED]{}", "x".repeat(585), "x".repeat(509));
     let state = StreamedChoiceState {
@@ -178,7 +166,7 @@ fn trim_defers_when_an_exception_phrase_leaves_the_buffer() {
     categories
         .loaded_categories
         .insert("stream".to_owned(), category(&["allowed phrase"]));
-    let source = keyword_source(&categories, &[]);
+    let source = source(&categories, &[], &[]);
     let buffered = format!("allowed phrase{}", "x".repeat(1085));
     let state = StreamedChoiceState {
         buffered_text: buffered.clone(),
@@ -203,7 +191,7 @@ fn trim_trims_when_the_exception_phrase_stays_in_the_tail() {
     categories
         .loaded_categories
         .insert("stream".to_owned(), category(&["allowed phrase"]));
-    let source = keyword_source(&categories, &[]);
+    let source = source(&categories, &[], &[]);
     let buffered = format!("{}allowed phrase{}", "x".repeat(600), "x".repeat(486));
     let state = StreamedChoiceState {
         buffered_text: buffered.clone(),
@@ -235,7 +223,7 @@ fn trim_defers_when_a_conditional_sentence_crosses_the_cut() {
             severity: "medium".to_owned(),
         },
     );
-    let source = keyword_source(&categories, &[]);
+    let source = source(&categories, &[], &[]);
     let buffered = format!("{}child{}", "x".repeat(580), "y".repeat(515));
     let state = StreamedChoiceState {
         buffered_text: buffered.clone(),
@@ -258,7 +246,7 @@ fn trim_defers_when_a_conditional_sentence_crosses_the_cut() {
 fn trim_defers_when_a_masked_match_straddles_the_cut() {
     let categories = CategoryLoadResult::default();
     let words = [word("secret", ContentFilterAction::Mask)];
-    let source = keyword_source(&categories, &words);
+    let source = source(&categories, &[], &words);
     let buffered = format!("{}secret{}", "x".repeat(585), "x".repeat(509));
     let masked = format!("{}[KEYWORD_REDACTED]{}", "x".repeat(585), "x".repeat(509));
     let state = StreamedChoiceState {
@@ -284,7 +272,7 @@ fn trim_defers_when_the_masked_prefix_is_not_yet_yielded() {
         action: ContentFilterAction::Mask,
     })
     .unwrap()];
-    let source = pattern_source(&categories, &patterns);
+    let source = source(&categories, &patterns, &[]);
     let buffered = format!("{}{}", "x".repeat(588), "1".repeat(512));
     let masked = format!("{}[BIG_REDACTED]", "x".repeat(588));
     let state = StreamedChoiceState {
@@ -303,7 +291,7 @@ fn trim_defers_when_the_masked_prefix_is_not_yet_yielded() {
 fn trim_defers_when_the_head_scan_fails() {
     let categories = CategoryLoadResult::default();
     let words = [word("blockedword", ContentFilterAction::Block)];
-    let source = keyword_source(&categories, &words);
+    let source = source(&categories, &[], &words);
     let buffered = format!("blockedword{}", "x".repeat(1089));
     let state = StreamedChoiceState {
         buffered_text: buffered.clone(),
@@ -321,7 +309,7 @@ fn trim_defers_when_the_head_scan_fails() {
 fn trim_keeps_the_tail_and_commits_the_head_detections() {
     let categories = CategoryLoadResult::default();
     let words = [word("secret", ContentFilterAction::Mask)];
-    let source = keyword_source(&categories, &words);
+    let source = source(&categories, &[], &words);
     let buffered = format!("{}secret{}", "x".repeat(10), "x".repeat(1084));
     let masked = format!("{}[KEYWORD_REDACTED]{}", "x".repeat(10), "x".repeat(1084));
     let state = StreamedChoiceState {

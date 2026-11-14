@@ -11,31 +11,42 @@ const RECORDS_KEY: &str = "standard_logging_guardrail_information";
 const TIMING_FIELDS: [&str; 3] = ["start_time", "end_time", "duration"];
 
 // The chunk fields LiteLLM's projection reads, with a null for one the chunk leaves out
-pub(super) fn chunks(chunks: &[GuardrailValue]) -> Value {
-    Value::Array(chunks.iter().map(chunk).collect())
+pub(super) fn chunks(items: &[GuardrailValue]) -> Value {
+    let mut projected = Vec::with_capacity(items.len());
+    for item in items {
+        projected.push(chunk(item));
+    }
+    Value::Array(projected)
 }
 
 fn chunk(item: &GuardrailValue) -> Value {
-    let id = entry(item, "id").map_or(Value::Null, to_json);
     let mut choices = Vec::new();
     if let Some(GuardrailValue::Array(entries)) = entry(item, "choices") {
         choices = entries.iter().map(choice).collect();
     }
-    json!({ "id": id, "choices": choices })
+    json!({ "id": optional(item, "id"), "choices": choices })
 }
 
 fn choice(item: &GuardrailValue) -> Value {
-    let index = entry(item, "index").map_or(Value::Null, to_json);
-    let finish_reason = entry(item, "finish_reason").map_or(Value::Null, to_json);
-    let mut content = Value::Null;
-    if let Some(GuardrailValue::Object(delta)) = entry(item, "delta") {
-        content = delta.get("content").map_or(Value::Null, to_json);
-    }
     json!({
-        "index": index,
-        "finish_reason": finish_reason,
-        "content": content,
+        "index": optional(item, "index"),
+        "finish_reason": optional(item, "finish_reason"),
+        "content": delta_content(item),
     })
+}
+
+fn optional(item: &GuardrailValue, key: &str) -> Value {
+    match entry(item, key) {
+        Some(value) => to_json(value),
+        None => Value::Null,
+    }
+}
+
+fn delta_content(item: &GuardrailValue) -> Value {
+    match entry(item, "delta") {
+        Some(GuardrailValue::Object(delta)) => delta.get("content").map_or(Value::Null, to_json),
+        _ => Value::Null,
+    }
 }
 
 fn entry<'item>(item: &'item GuardrailValue, key: &str) -> Option<&'item GuardrailValue> {
@@ -75,25 +86,25 @@ fn visible_record(record: &Map<String, Value>) -> Value {
 
 // Python drops a None wherever it sits, so the fields betterlite writes as null leave both sides
 fn without_nulls(value: &Value) -> Value {
-    match value {
-        Value::Object(fields) => {
-            let mut kept = Map::new();
-            for (name, field) in fields {
-                if !field.is_null() {
-                    kept.insert(name.clone(), without_nulls(field));
-                }
+    if let Value::Object(fields) = value {
+        let mut kept = Map::new();
+        for (name, field) in fields {
+            if !field.is_null() {
+                kept.insert(name.clone(), without_nulls(field));
             }
-            Value::Object(kept)
         }
-        Value::Array(items) => Value::Array(
+        return Value::Object(kept);
+    }
+    if let Value::Array(items) = value {
+        return Value::Array(
             items
                 .iter()
                 .filter(|item| !item.is_null())
                 .map(without_nulls)
                 .collect(),
-        ),
-        scalar => scalar.clone(),
+        );
     }
+    value.clone()
 }
 
 // LiteLLM's hook raises HTTPException with the block detail; the status is the one it carries
