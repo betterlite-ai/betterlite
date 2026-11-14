@@ -1,6 +1,8 @@
 use std::io;
+use std::string::FromUtf8Error;
 
 use serde::Serialize;
+use serde_json::ser::Formatter;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -13,7 +15,7 @@ pub enum JsonError {
     #[error("the serialized estimator value is not UTF-8")]
     Utf8 {
         #[source]
-        source: std::string::FromUtf8Error,
+        source: FromUtf8Error,
     },
 }
 
@@ -31,7 +33,7 @@ where
     }
 }
 
-impl serde_json::ser::Formatter for DumpsFormatter {
+impl Formatter for DumpsFormatter {
     fn begin_array_value<W>(&mut self, writer: &mut W, first: bool) -> io::Result<()>
     where
         W: ?Sized + io::Write,

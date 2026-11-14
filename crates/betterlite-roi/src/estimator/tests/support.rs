@@ -6,10 +6,12 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_capability_predicates::{
     CapabilityPredicates, CapabilityRequest, NamedCapability,
 };
+use indexmap::IndexMap;
+use secrecy::SecretString;
 
 use crate::settings::ROISettings;
 
-pub struct ModelSupport {
+pub(super) struct ModelSupport {
     pub supported: Vec<String>,
     pub seen: Vec<(String, String)>,
 }
@@ -57,9 +59,16 @@ impl CapabilityPredicates for ModelSupport {
     }
 }
 
-pub fn settings(model: &str, prompt: &str) -> ROISettings {
-    let mut settings = ROISettings::default();
-    settings.estimator_model = model.to_owned();
-    settings.estimator_prompt = prompt.to_owned();
-    settings
+pub(super) fn settings(model: &str, prompt: &str) -> ROISettings {
+    ROISettings {
+        github_api_url: "https://api.github.com".to_owned(),
+        github_token: SecretString::default(),
+        estimator_key: SecretString::default(),
+        repos: Vec::new(),
+        estimator_model: model.to_owned(),
+        estimator_prompt: prompt.to_owned(),
+        backfill_days: 7,
+        update_interval_minutes: 1440.0_f64,
+        identity_map: IndexMap::new(),
+    }
 }

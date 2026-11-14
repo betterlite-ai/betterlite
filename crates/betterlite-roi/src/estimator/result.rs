@@ -1,6 +1,6 @@
 use std::fmt;
 
-use serde::de::{Deserializer, MapAccess, Visitor};
+use serde::de::{Deserializer, Error as DeError, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use thiserror::Error;
@@ -53,27 +53,24 @@ impl<'de> Visitor<'de> for RawEstimatorVisitor {
         A: MapAccess<'de>,
     {
         // LiteLLM's pydantic keeps the last value of a repeated key and validates only that one
-        let mut hours: Option<Box<RawValue>> = None;
-        let mut reasoning: Option<Box<RawValue>> = None;
+        let mut hours_value: Option<Box<RawValue>> = None;
+        let mut reasoning_value: Option<Box<RawValue>> = None;
         while let Some(key) = map.next_key::<String>()? {
             match key.as_str() {
-                "hours" => hours = Some(map.next_value()?),
-                "reasoning" => reasoning = Some(map.next_value()?),
+                "hours" => hours_value = Some(map.next_value()?),
+                "reasoning" => reasoning_value = Some(map.next_value()?),
                 unknown => {
-                    return Err(<A::Error as serde::de::Error>::unknown_field(
-                        unknown, FIELDS,
-                    ));
+                    return Err(<A::Error as DeError>::unknown_field(unknown, FIELDS));
                 }
             }
         }
-        let hours = hours.ok_or_else(|| <A::Error as serde::de::Error>::missing_field("hours"))?;
+        let hours = hours_value.ok_or_else(|| <A::Error as DeError>::missing_field("hours"))?;
         let reasoning =
-            reasoning.ok_or_else(|| <A::Error as serde::de::Error>::missing_field("reasoning"))?;
+            reasoning_value.ok_or_else(|| <A::Error as DeError>::missing_field("reasoning"))?;
         Ok(RawEstimatorResult {
-            hours: serde_json::from_str(hours.get())
-                .map_err(<A::Error as serde::de::Error>::custom)?,
+            hours: serde_json::from_str(hours.get()).map_err(<A::Error as DeError>::custom)?,
             reasoning: serde_json::from_str(reasoning.get())
-                .map_err(<A::Error as serde::de::Error>::custom)?,
+                .map_err(<A::Error as DeError>::custom)?,
         })
     }
 }
@@ -90,7 +87,7 @@ impl TryFrom<RawEstimatorResult> for ROIEstimatorResult {
 }
 
 pub fn validate_hours(hours: f64) -> Result<f64, ResultError> {
-    if !hours.is_finite() || hours < 0.0 {
+    if !hours.is_finite() || hours < 0.0_f64 {
         return Err(ResultError::Hours);
     }
     Ok(hours)

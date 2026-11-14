@@ -1,7 +1,8 @@
 #![cfg(test)]
 
-use rstest::rstest;
-use serde_json::json;
+use std::collections::BTreeMap;
+
+use serde::Serialize;
 
 use crate::estimator::cache::cache_context;
 use crate::estimator::json::json_dumps_text;
@@ -10,6 +11,17 @@ use crate::estimator::models::EstimatorModel;
 use super::support::{ModelSupport, settings};
 
 const PROMPT: &str = "Estimate this pull request.";
+
+#[derive(Serialize)]
+struct ObjectFixture {
+    a: bool,
+    b: BTreeMap<String, i32>,
+}
+
+#[derive(Serialize)]
+struct TitleFixture {
+    title: String,
+}
 
 #[tokio::test]
 async fn cache_context_hashes_the_litellm_configuration() {
@@ -81,13 +93,19 @@ async fn cache_context_changes_when_the_configuration_changes() {
     );
 }
 
-#[rstest]
-#[case::array(json!([1, "x", null]), r#"[1, "x", null]"#)]
-#[case::object(json!({"a": true, "b": {}}), r#"{"a": true, "b": {}}"#)]
-#[case::unicode(json!({"title": "café"}), "{\"title\": \"café\"}")]
-fn json_dumps_text_matches_json_dumps_default_separators(
-    #[case] value: serde_json::Value,
-    #[case] expected: &str,
-) {
-    assert_eq!(json_dumps_text(&value).unwrap(), expected);
+#[test]
+fn json_dumps_text_matches_json_dumps_default_separators() {
+    assert_eq!(
+        json_dumps_text(&(1_i32, "x", Option::<i32>::None)).unwrap(),
+        r#"[1, "x", null]"#
+    );
+    let object = ObjectFixture {
+        a: true,
+        b: BTreeMap::new(),
+    };
+    assert_eq!(json_dumps_text(&object).unwrap(), r#"{"a": true, "b": {}}"#);
+    let title = TitleFixture {
+        title: "\u{e9}".to_owned(),
+    };
+    assert_eq!(json_dumps_text(&title).unwrap(), "{\"title\": \"\u{e9}\"}");
 }

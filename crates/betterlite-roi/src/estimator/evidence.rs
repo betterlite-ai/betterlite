@@ -4,6 +4,7 @@ use super::models::{
     ROIEstimatorChanges, ROIEstimatorCommit, ROIEstimatorEvidence, ROIEstimatorFile,
 };
 
+#[must_use]
 pub fn metadata_evidence(pull: &ROIPullEvidence) -> ROIEstimatorEvidence {
     ROIEstimatorEvidence {
         repo: pull.repo.clone(),

@@ -40,12 +40,13 @@ where
     }
 }
 
+#[must_use]
 pub fn configured_models(
     settings: &ROISettings,
     models: Option<&[EstimatorModel]>,
 ) -> Vec<EstimatorModel> {
-    match models {
-        Some(models) => models.to_vec(),
-        None => vec![(settings.estimator_model.clone(), None)],
-    }
+    models.map_or_else(
+        || vec![(settings.estimator_model.clone(), None)],
+        |resolved| resolved.to_vec(),
+    )
 }

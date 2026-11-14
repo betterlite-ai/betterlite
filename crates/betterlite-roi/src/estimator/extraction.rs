@@ -73,6 +73,7 @@ fn mask_constants(content: &str) -> String {
 }
 
 // the typed parse masks only value positions, so a constant written inside reasoning text stays as it is
+#[must_use]
 pub fn mask_value_constants(content: &str) -> String {
     let bytes = content.as_bytes().to_vec();
     let mut masked = content.to_owned();
