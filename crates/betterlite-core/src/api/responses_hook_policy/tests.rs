@@ -277,6 +277,8 @@ async fn deployment_hook_merge() {
         Some(&list(Vec::new()))
     );
     assert_eq!(outcome.generic_params.get("api_key"), Some(&text("new")));
+    assert!(!outcome.generic_params.contains_key("model"));
+    assert_eq!(outcome.generic_params.get("input"), Some(&text("generic")));
     let calls = dispatcher.calls.lock().unwrap();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].1, "responses");
@@ -561,6 +563,8 @@ fn block_matching() {
         ("name", text("lookup")),
     ]);
     assert!(!is_refused_tool_use_block(&other_id, &ids, &names));
+    let no_ids = BTreeSet::new();
+    assert!(is_refused_tool_use_block(&other_id, &no_ids, &names));
     let matching = object(vec![
         ("type", text("tool_use")),
         ("id", text("a")),
@@ -662,6 +666,7 @@ fn followup_inputs() -> (
         ("_agentic_loop_depth", integer(99)),
         ("max_agentic_loops", integer(9)),
         ("top_p", float(0.9)),
+        ("temperature", integer(7)),
     ]);
     let params = BTreeSet::from([
         "model".to_owned(),
