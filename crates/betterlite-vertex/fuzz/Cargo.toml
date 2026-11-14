@@ -71,6 +71,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "image_options"
+path = "fuzz_targets/image_options.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "multimodal_embedding"
 path = "fuzz_targets/multimodal_embedding.rs"
 test = false
@@ -129,6 +136,13 @@ bench = false
 [[bin]]
 name = "vertex_gcs_id"
 path = "fuzz_targets/vertex_gcs_id.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_speech_audio"
+path = "fuzz_targets/vertex_speech_audio.rs"
 test = false
 doc = false
 bench = false

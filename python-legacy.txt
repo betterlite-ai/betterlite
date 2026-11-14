@@ -1,5 +1,4 @@
 crates/betterlite-transcribe/tools/refresh_operations.py
-tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py
 tools/oracle/helpers/a2a_text.py
 tools/oracle/helpers/agent_host_policy.py
 tools/oracle/helpers/aleph_alpha.py
