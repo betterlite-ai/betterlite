@@ -156,6 +156,16 @@ fn assert_exhaustion(
     assert_eq!(fields(delta), expected);
 }
 
+fn assert_results(results: &[(&str, bool)], expected: [i64; 7]) {
+    let tool_results = results
+        .iter()
+        .map(|(content, is_error)| tool_result_of(content, *is_error))
+        .collect();
+    let turn = make_turn(None, None, tool_results, None);
+    let mut state = state();
+    assert_eq!(fields(apply_turn(&detector(), &mut state, &turn)), expected);
+}
+
 fn assert_tokens(text: Option<&str>, expected: &[&str]) {
     let found = tokens(text);
     let words: Vec<&str> = found.iter().map(String::as_str).collect();
@@ -274,7 +284,7 @@ fn assert_threaded() {
         Some("hello there"),
         Some("red green blue"),
         Vec::new(),
-        None,
+        Some(200),
     );
     assert_eq!(fields(apply_turn(&detector(), &mut state, &first)), NONE);
     let second = make_turn(
@@ -287,6 +297,7 @@ fn assert_threaded() {
         fields(apply_turn(&detector(), &mut state, &second)),
         [1, 1, 0, 0, 0, 0, 0]
     );
+    assert_eq!(state.terminal_status, Some(200));
     let third = make_turn(
         Some("unrelated text"),
         Some("purple orange"),
@@ -343,6 +354,7 @@ enum Behavior {
         [i64; 7],
     ),
     Exhaustion(Option<&'static str>, bool, Option<i64>, [i64; 7]),
+    Results(&'static [(&'static str, bool)], [i64; 7]),
     Tokens(Option<&'static str>, &'static [&'static str]),
     Jaccard(&'static [&'static str], &'static [&'static str], f64),
     Counted,
@@ -436,7 +448,7 @@ enum Behavior {
 #[case::jaccard_identical(Behavior::Jaccard(&["a", "b"], &["a", "b"], 1.0))]
 #[case::jaccard_disjoint(Behavior::Jaccard(&["a"], &["b"], 0.0))]
 #[case::jaccard_empty(Behavior::Jaccard(&[], &[], 0.0))]
-#[case::jaccard_half(Behavior::Jaccard(&["a", "b"], &["a", "c"], 0.5))]
+#[case::jaccard_half(Behavior::Jaccard(&["a", "b", "c"], &["a", "b", "d"], 0.5))]
 #[case::counted(Behavior::Counted)]
 #[case::credit_once(Behavior::CreditOnce)]
 #[case::advance_bounds(Behavior::AdvanceBounds)]
@@ -565,6 +577,54 @@ enum Behavior {
     DISENGAGED
 ))]
 #[case::threaded_detectors(Behavior::Threaded)]
+#[case::failure_second_result(Behavior::Results(
+    &[("ok", false), ("boom", true)],
+    FAILED
+))]
+#[case::exhaustion_second_result(Behavior::Results(
+    &[("all fine", false), ("context length exceeded", false)],
+    EXHAUSTED
+))]
+#[case::loop_second_call_matches(Behavior::Loop(
+    &["shell({})", "shell({})"],
+    &[("other", "{}"), ("shell", "{}")],
+    LOOPED
+))]
+#[case::satisfaction_capitalized_that_worked(Behavior::Feedback(
+    None,
+    Some("That worked"),
+    None,
+    true,
+    SATISFIED
+))]
+#[case::satisfaction_capitalized_thanks(Behavior::Feedback(
+    None,
+    Some("Thanks!"),
+    None,
+    true,
+    SATISFIED
+))]
+#[case::satisfaction_capitalized_perfect(Behavior::Feedback(
+    None,
+    Some("Perfect"),
+    None,
+    true,
+    SATISFIED
+))]
+#[case::disengagement_capitalized_cancel(Behavior::Feedback(
+    None,
+    Some("CANCEL this run"),
+    None,
+    false,
+    DISENGAGED
+))]
+#[case::disengagement_is_not(Behavior::Feedback(
+    None,
+    Some("This is not working"),
+    None,
+    false,
+    DISENGAGED
+))]
 fn feedback_signals_behaviors(#[case] behavior: Behavior) {
     match behavior {
         Behavior::Feedback(previous, current, tool, allow, expected) => {
@@ -577,6 +637,7 @@ fn feedback_signals_behaviors(#[case] behavior: Behavior) {
         Behavior::Exhaustion(content, is_error, status, expected) => {
             assert_exhaustion(content, is_error, status, expected);
         }
+        Behavior::Results(results, expected) => assert_results(results, expected),
         Behavior::Tokens(text, expected) => assert_tokens(text, expected),
         Behavior::Jaccard(left, right, expected) => assert_jaccard(left, right, expected),
         Behavior::Counted => assert_counted(),
