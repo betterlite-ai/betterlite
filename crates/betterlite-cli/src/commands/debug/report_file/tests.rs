@@ -3,13 +3,14 @@
 use std::error::Error as _;
 use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
+use std::path::Path;
 
 use rstest::rstest;
 
 use super::write_report;
 use crate::commands::debug::error::DebugError;
 
-fn mode_of(path: &std::path::Path) -> u32 {
+fn mode_of(path: &Path) -> u32 {
     fs::metadata(path).unwrap().permissions().mode() & 0o777
 }
 
@@ -107,7 +108,7 @@ fn write_report_reports_a_directory_it_cannot_create() {
 #[test]
 fn write_report_reports_a_report_path_it_cannot_open() {
     let report_dir = tempfile::tempdir().unwrap();
-    fs::create_dir(report_dir.path().join("claude-s.md")).unwrap();
+    fs::create_dir_all(report_dir.path().join("claude-s.md")).unwrap();
 
     let error = write_report("x", "s", report_dir.path()).unwrap_err();
 

@@ -100,30 +100,36 @@ fn run_claude(
     ports: DebugPorts<'_>,
     home: &Path,
 ) -> Result<(), DebugError> {
+    let DebugPorts {
+        context,
+        client,
+        environment,
+        clock,
+        stdout,
+        stderr,
+    } = ports;
     let session_id = match options.session_id.as_deref() {
         Some(explicit) if !explicit.is_empty() => explicit.to_owned(),
-        Some(_) | None => detect_claude_session_id(ports.environment, &home.join(".claude"))?
+        Some(_) | None => detect_claude_session_id(environment, &home.join(".claude"))?
             .ok_or(DebugError::NoSession)?,
     };
-    let fetcher = SpendLogsFetcher {
-        client: ports.client,
-    };
+    let fetcher = SpendLogsFetcher { client };
     let rows = fetcher.session_rows(&session_id)?;
     let payloads = fetcher.payloads(
         &rows,
         usize::try_from(options.recent_bodies).unwrap_or(usize::MAX),
     )?;
-    let context = ReportContext {
+    let report_context = ReportContext {
         session_id: &session_id,
-        base_url: &ports.context.base_url,
+        base_url: &context.base_url,
         max_body_chars: usize::try_from(options.max_body_chars).unwrap_or(usize::MAX),
-        clock: ports.clock,
+        clock,
     };
-    let report = build_report(&context, &rows, &payloads)?;
-    writeln!(ports.stdout, "{report}")?;
+    let report = build_report(&report_context, &rows, &payloads)?;
+    writeln!(stdout, "{report}")?;
     if !options.no_save {
         let path = write_report(&report, &session_id, &home.join(".litellm").join("debug"))?;
-        writeln!(ports.stderr, "Saved to {}", path.display())?;
+        writeln!(stderr, "Saved to {}", path.display())?;
     }
     Ok(())
 }

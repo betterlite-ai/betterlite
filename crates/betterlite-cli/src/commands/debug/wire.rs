@@ -158,9 +158,7 @@ impl SpendLogRow {
             (None, None) => false,
         }
     }
-}
 
-impl SpendLogRow {
     #[must_use]
     pub fn model_label(&self) -> &str {
         match (&self.model, &self.model_group) {
@@ -186,7 +184,11 @@ impl PassthroughJson {
     pub fn text(&self) -> String {
         match &self.0 {
             Value::String(text) => text.clone(),
-            other => format!("{other:#}"),
+            other @ (Value::Null
+            | Value::Bool(_)
+            | Value::Number(_)
+            | Value::Array(_)
+            | Value::Object(_)) => format!("{other:#}"),
         }
     }
 }

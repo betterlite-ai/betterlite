@@ -431,7 +431,7 @@ fn render_truncates_each_body_to_the_character_limit(#[case] limit: usize, #[cas
 fn render_counts_characters_and_not_bytes_when_truncating() {
     let bodies = payloads(&[(
         "a",
-        Some(r#"{"proxy_server_request":"éééé","response":"x"}"#),
+        Some(r#"{"proxy_server_request":"\u{e9}\u{e9}\u{e9}\u{e9}","response":"x"}"#),
     )]);
 
     let rendered = report_with_bodies(r#"[{"request_id":"a"}]"#, &bodies, 3);

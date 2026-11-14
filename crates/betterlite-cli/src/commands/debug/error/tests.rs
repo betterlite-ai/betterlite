@@ -84,7 +84,7 @@ fn client_error() -> ClientError {
 #[case::report_create(
     DebugError::ReportCreate {
         path: path(),
-        source: BackupError::Create { path: path(), source: io_error() },
+        source: Box::new(BackupError::Create { path: path(), source: io_error() }),
     },
     true,
     "cannot create the report file /tmp/x"

@@ -81,7 +81,10 @@ impl SpendLogsFetcher<'_> {
             })
     }
 
-    fn get<T: DeserializeOwned>(&self, uri: &str, url: Url) -> Result<T, DebugError> {
+    fn get<T>(&self, uri: &str, url: Url) -> Result<T, DebugError>
+    where
+        T: DeserializeOwned,
+    {
         let request = Request {
             method: Method::GET,
             url,

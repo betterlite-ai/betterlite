@@ -61,7 +61,7 @@ pub enum DebugError {
     ReportCreate {
         path: PathBuf,
         #[source]
-        source: BackupError,
+        source: Box<BackupError>,
     },
     #[error("cannot write the report to {path}")]
     ReportWrite {

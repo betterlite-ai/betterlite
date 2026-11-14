@@ -60,7 +60,8 @@ fn summary_lines(
     rows: &[SpendLogRow],
 ) -> Result<Vec<String>, DebugError> {
     let total = total_spend(rows)?;
-    let models = model_list(rows);
+    let model_names: BTreeSet<&str> = rows.iter().map(SpendLogRow::model_label).collect();
+    let models = model_names.into_iter().collect::<Vec<_>>().join(", ");
     Ok(vec![
         format!(
             "# LiteLLM debug report: Claude Code session `{}`",
@@ -101,11 +102,6 @@ fn total_spend(rows: &[SpendLogRow]) -> Result<Decimal, DebugError> {
             .ok_or(DebugError::SpendOverflow)?;
     }
     Ok(total)
-}
-
-fn model_list(rows: &[SpendLogRow]) -> String {
-    let model_names: BTreeSet<&str> = rows.iter().map(SpendLogRow::model_label).collect();
-    model_names.into_iter().collect::<Vec<_>>().join(", ")
 }
 
 fn row_section(

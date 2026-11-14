@@ -22,7 +22,7 @@ pub fn write_report(
     let path = report_dir.join(format!("claude-{session_id}.md"));
     let mut file = secure_create(&path).map_err(|source| DebugError::ReportCreate {
         path: path.clone(),
-        source,
+        source: Box::new(source),
     })?;
     file.write_all(report.as_bytes())
         .map_err(|source| DebugError::ReportWrite {

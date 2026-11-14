@@ -38,17 +38,17 @@ fn spend_row_rejects_a_spend_that_is_not_a_number(#[case] fields: &str) {
     let outcome =
         serde_json::from_str::<SpendLogRow>(&format!(r#"{{"request_id":"req-1"{fields}}}"#));
 
-    assert!(outcome.is_err());
+    outcome.unwrap_err();
 }
 
 #[test]
 fn spend_row_requires_a_request_id() {
-    assert!(serde_json::from_str::<SpendLogRow>(r#"{"spend":1}"#).is_err());
+    serde_json::from_str::<SpendLogRow>(r#"{"spend":1}"#).unwrap_err();
 }
 
 #[test]
 fn spend_row_rejects_a_null_request_id() {
-    assert!(serde_json::from_str::<SpendLogRow>(r#"{"request_id":null}"#).is_err());
+    serde_json::from_str::<SpendLogRow>(r#"{"request_id":null}"#).unwrap_err();
 }
 
 #[rstest]
@@ -77,7 +77,7 @@ fn spend_row_reads_the_token_counts() {
 fn spend_row_rejects_a_negative_token_count() {
     let outcome = serde_json::from_str::<SpendLogRow>(r#"{"request_id":"r","prompt_tokens":-1}"#);
 
-    assert!(outcome.is_err());
+    outcome.unwrap_err();
 }
 
 #[test]
@@ -222,7 +222,7 @@ fn spend_row_rejects_metadata_text_that_is_not_json() {
     let outcome =
         serde_json::from_str::<SpendLogRow>(r#"{"request_id":"r","metadata":"not json"}"#);
 
-    assert!(outcome.is_err());
+    outcome.unwrap_err();
 }
 
 #[rstest]
@@ -266,7 +266,7 @@ fn spend_row_reads_a_session_page() {
 #[case::no_total_pages(r#"{"data":[],"total":1}"#)]
 #[case::bad_row(r#"{"data":[{"spend":1}],"total":1,"total_pages":1}"#)]
 fn spend_row_rejects_an_incomplete_session_page(#[case] body: &str) {
-    assert!(serde_json::from_str::<SessionLogsPage>(body).is_err());
+    serde_json::from_str::<SessionLogsPage>(body).unwrap_err();
 }
 
 #[rstest]

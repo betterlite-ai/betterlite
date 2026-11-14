@@ -79,12 +79,19 @@ fn home_with(directory: &Path, variables: &[(&str, &str)]) -> Home {
 }
 
 fn claude_options(args: &[&str]) -> ClaudeOptions {
-    let mut argv = vec!["lite", "claude"];
-    argv.extend_from_slice(args);
-    match Wrapper::try_parse_from(argv).unwrap().command {
+    match parse_command(&["lite", "claude"], args) {
         DebugCommand::Claude(options) => options,
         DebugCommand::InstallClaudeCommand => panic!("parsed the wrong subcommand"),
     }
+}
+
+fn parse_command(prefix: &[&str], args: &[&str]) -> DebugCommand {
+    let mut command_line: Vec<&str> = prefix.to_vec();
+    command_line.extend_from_slice(args);
+    let Ok(wrapper) = Wrapper::try_parse_from(command_line) else {
+        panic!("the test arguments must be a valid command line: {args:?}");
+    };
+    wrapper.command
 }
 
 fn run_with_writers(
@@ -94,12 +101,12 @@ fn run_with_writers(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> Result<(), DebugError> {
-    let mut argv = vec!["lite"];
-    argv.extend_from_slice(args);
-    let command = Wrapper::try_parse_from(argv).unwrap().command;
+    let command = parse_command(&["lite"], args);
     let context = CliContext {
         base_url: base_url.to_owned(),
-        ..CliContext::default()
+        base_url_explicit: false,
+        api_key: None,
+        api_key_from_token_file: false,
     };
     let client = client(base_url, None);
     run(
@@ -177,10 +184,7 @@ fn debug_claude_reads_every_option() {
 #[case::lowest_body_limit(&["--max-body-chars=100"])]
 #[case::above_the_lowest_body_limit(&["--max-body-chars=101"])]
 fn debug_claude_accepts_values_inside_the_limits(#[case] args: &[&str]) {
-    let mut argv = vec!["lite", "claude"];
-    argv.extend_from_slice(args);
-
-    assert!(Wrapper::try_parse_from(argv).is_ok());
+    parse_command(&["lite", "claude"], args);
 }
 
 #[rstest]
@@ -193,10 +197,10 @@ fn debug_claude_accepts_values_inside_the_limits(#[case] args: &[&str]) {
 #[case::word_for_body_limit(&["--max-body-chars=all"])]
 #[case::unknown_option(&["--verbose"])]
 fn debug_claude_rejects_values_outside_the_limits(#[case] args: &[&str]) {
-    let mut argv = vec!["lite", "claude"];
-    argv.extend_from_slice(args);
+    let mut command_line = vec!["lite", "claude"];
+    command_line.extend_from_slice(args);
 
-    assert!(Wrapper::try_parse_from(argv).is_err());
+    Wrapper::try_parse_from(command_line).unwrap_err();
 }
 
 #[test]

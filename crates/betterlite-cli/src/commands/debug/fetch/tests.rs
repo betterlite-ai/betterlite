@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::error::Error as _;
+use std::iter;
 
 use rstest::rstest;
 
@@ -18,7 +19,9 @@ fn rows_from(json: &str) -> Vec<SpendLogRow> {
 }
 
 fn null_answers(count: usize) -> Vec<Answer> {
-    (0..count).map(|_| Answer::json(200, "null")).collect()
+    iter::repeat_with(|| Answer::json(200, "null"))
+        .take(count)
+        .collect()
 }
 
 #[test]
@@ -100,7 +103,7 @@ fn fetch_reads_every_page_the_first_one_announces(
 
 #[test]
 fn fetch_requests_the_pages_in_order() {
-    let answers = (1..=3)
+    let answers = (1_i32..=3_i32)
         .map(|index| {
             Answer::json(
                 200,
@@ -215,7 +218,8 @@ fn fetch_puts_the_response_body_in_the_status_error(#[case] body: &str, #[case] 
     server.finish();
     assert!(matches!(
         &error,
-        DebugError::Status { uri, status: 502, body } if uri == "/spend/logs/session/ui" && body == expected
+        DebugError::Status { uri, status: 502, body: reported }
+            if uri == "/spend/logs/session/ui" && reported == expected
     ));
 }
 
@@ -236,10 +240,10 @@ fn fetch_cuts_the_status_body_after_500_characters(
         .unwrap_err();
 
     server.finish();
-    let DebugError::Status { body, .. } = error else {
+    let DebugError::Status { body: reported, .. } = error else {
         panic!("expected a status error");
     };
-    assert_eq!(body, "\u{e9}".repeat(expected_length));
+    assert_eq!(reported, "\u{e9}".repeat(expected_length));
 }
 
 #[test]
