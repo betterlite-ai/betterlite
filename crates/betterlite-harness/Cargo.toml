@@ -7,10 +7,17 @@ publish.workspace = true
 
 [dependencies]
 async-stream = "0.3.6"
+base64 = "0.23.1"
+betterlite-core = { path = "../betterlite-core" }
+betterlite-models = { path = "../betterlite-models" }
+chrono.workspace = true
 futures-core = "0.3.34"
 futures-util = { version = "0.3.34", default-features = false, features = ["alloc", "async-await"] }
+getrandom = "0.4.3"
 hex.workspace = true
+http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
+jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 rust_decimal = "1.43.0"
 rustix = { version = "1.1.5", features = ["process"] }
 secrecy.workspace = true
@@ -19,6 +26,7 @@ serde_json = { version = "1.0.154", features = ["arbitrary_precision"] }
 sha2.workspace = true
 similar = "3.2.0"
 soft-canonicalize = "0.5.6"
+subtle.workspace = true
 tempfile = "3.27.0"
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
