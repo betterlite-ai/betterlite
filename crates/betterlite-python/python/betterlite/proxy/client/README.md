@@ -284,7 +284,7 @@ keys = client.keys.list(
 
 ## Contributing
 
-Contributions are welcome! Please check out our [contributing guidelines](../../CONTRIBUTING.md) for details.
+Contributions are welcome! Please open an issue or a pull request on the repository.
 
 ## License
 
