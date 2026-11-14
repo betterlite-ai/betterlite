@@ -5,6 +5,7 @@ use indexmap::IndexMap;
 use serde_json::Number;
 
 use super::error::TranscriptionError;
+use super::mapping::SUPPORTED_OPENAI_PARAMS;
 
 pub const FILE_FIELD: &str = "file";
 pub const MODEL_ID_FIELD: &str = "model_id";
