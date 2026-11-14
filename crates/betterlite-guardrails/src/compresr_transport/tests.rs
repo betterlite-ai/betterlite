@@ -352,6 +352,26 @@ async fn a_passthrough_ratio_bound_survives_when_the_other_bound_is_the_one_set(
     );
 }
 
+#[tokio::test]
+async fn a_passthrough_maximum_ratio_survives_when_the_minimum_is_the_one_set() {
+    let (base, recorded, _server) = serve(200, r#"{"data":{}}"#).await;
+    let mut built = settings(&base);
+    built.dynamic_min_ratio = Some(0.2);
+    built.compression_params =
+        BTreeMap::from([("dynamic_max_ratio".to_owned(), GuardrailValue::Decimal(0.8))]);
+    let transport = configured(built);
+    transport
+        .compress(&[target("the context", "the query")])
+        .await
+        .expect("outcome");
+    let calls = calls(&recorded);
+    let body = calls[0].body.as_ref().expect("request body");
+    assert_eq!(
+        field(body, "dynamic_max_ratio"),
+        GuardrailValue::Decimal(0.8)
+    );
+}
+
 const ONE_MIB: usize = 1024 * 1024;
 
 fn reply_of_length(total: usize) -> String {
