@@ -1,0 +1,15 @@
+kind: helper
+name: plan-undecodable-base64
+call:
+  b3733:
+    function: plan_file_scans
+    messages:
+      - role: user
+        content:
+          - {type: document, source: {data: "not base64!!", media_type: application/pdf}}
+          - {type: document, source: {data: abc, media_type: application/pdf}}
+          - {type: document, source: {data: YSxiLGM, media_type: text/csv}}
+          - {type: file, file: {file_data: "data:application/pdf,abc", format: application/pdf}}
+          - {type: file, file: {file_data: "data:application/pdf;base64,bm90IGJhc2U2NCEh"}}
+env: {}
+compare: {ignore: []}
