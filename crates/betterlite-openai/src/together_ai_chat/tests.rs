@@ -113,14 +113,18 @@ fn map_with(
 fn false_verdict(flag: TogetherFlag) -> Answers {
     Answers {
         registry: BTreeMap::from([(flag, false)]),
-        ..Answers::default()
+        checks: BTreeMap::new(),
+        failed: false,
+        declared: None,
     }
 }
 
 fn checked_true(flag: TogetherFlag) -> Answers {
     Answers {
         checks: BTreeMap::from([(flag, true)]),
-        ..Answers::default()
+        failed: false,
+        registry: BTreeMap::new(),
+        declared: None,
     }
 }
 
@@ -333,7 +337,9 @@ fn a_failed_check_still_consults_the_registry_flag() {
 fn a_stored_true_flag_is_not_a_verdict() {
     let answers = Answers {
         registry: BTreeMap::from([(TogetherFlag::SupportsFunctionCalling, true)]),
-        ..Answers::default()
+        checks: BTreeMap::new(),
+        failed: false,
+        declared: None,
     };
     let mapped = map_with(
         "together/qwen",
@@ -489,7 +495,9 @@ fn a_none_effort_disables_reasoning_on_other_models() {
 fn a_declared_effort_is_kept_unchanged() {
     let answers = Answers {
         declared: Some(vec![String::from("minimal"), String::from("high")]),
-        ..Answers::default()
+        checks: BTreeMap::new(),
+        failed: false,
+        registry: BTreeMap::new(),
     };
     let mapped = map_with(
         "MiniMaxAI/MiniMax-M3",
@@ -505,7 +513,9 @@ fn a_declared_effort_is_kept_unchanged() {
 fn an_undeclared_effort_goes_through_the_translation() {
     let answers = Answers {
         declared: Some(vec![String::from("high")]),
-        ..Answers::default()
+        checks: BTreeMap::new(),
+        failed: false,
+        registry: BTreeMap::new(),
     };
     let mapped = map_with(
         "MiniMaxAI/MiniMax-M3",
@@ -521,7 +531,9 @@ fn an_undeclared_effort_goes_through_the_translation() {
 fn a_declared_deepseek_effort_skips_the_high_max_table() {
     let answers = Answers {
         declared: Some(vec![String::from("medium")]),
-        ..Answers::default()
+        checks: BTreeMap::new(),
+        failed: false,
+        registry: BTreeMap::new(),
     };
     let mapped = map_with(
         "deepseek-ai/DeepSeek-V4-Pro",

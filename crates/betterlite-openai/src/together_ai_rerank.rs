@@ -203,10 +203,10 @@ fn usage_blocks(
             });
         }
     }
-    let usage = Value::Object(usage);
-    let billed_units = serde_json::from_value(usage.clone())
+    let object = Value::Object(usage);
+    let billed_units = serde_json::from_value(object.clone())
         .map_err(|source| TogetherRerankError::UsageDecode { source })?;
-    let tokens = serde_json::from_value(usage)
+    let tokens = serde_json::from_value(object)
         .map_err(|source| TogetherRerankError::UsageDecode { source })?;
     Ok((billed_units, tokens))
 }

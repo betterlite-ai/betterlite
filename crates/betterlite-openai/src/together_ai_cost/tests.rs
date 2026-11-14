@@ -126,8 +126,13 @@ fn the_call_type_picks_the_suffix(#[case] call_type: PricingCallType, #[case] mo
 fn the_tier_limits_come_from_the_injected_tiers() {
     let tiers = TogetherPricingTiers {
         up_to_4b: 2,
+        up_to_8b: 8,
+        up_to_21b: 21,
+        up_to_41b: 41,
+        up_to_80b: 80,
+        up_to_110b: 110,
         embedding_150m: 50,
-        ..TogetherPricingTiers::default()
+        embedding_350m: 350,
     };
     assert_eq!(
         pricing_category("llama-3b", PricingCallType::Other, &tiers),

@@ -95,7 +95,9 @@ pub fn pricing_category(
 fn parameter_count(name: &str, suffix: char) -> Option<f64> {
     name.match_indices(suffix).find_map(|(index, _)| {
         let before = name.get(..index)?;
-        let run_start = before.trim_end_matches(|c: char| c.is_ascii_digit()).len();
+        let run_start = before
+            .trim_end_matches(|digit: char| digit.is_ascii_digit())
+            .len();
         name.get(run_start..index)?.parse::<f64>().ok()
     })
 }

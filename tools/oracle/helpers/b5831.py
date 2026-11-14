@@ -144,7 +144,7 @@ COSTS: CostCalculator = cost_calculator
 
 
 class TextConfig(Protocol):
-    def transform_text_completion_request(  # ast-grep-ignore: no-long-names
+    def transform_text_completion_request(
         self,
         model: str,
         messages: list[UserMessage],
