@@ -58,6 +58,18 @@ def test_cache_description_names() -> None:
     assert ours == reference
 
 
+def test_json_narrowing_names() -> None:
+    payload = {
+        "field_name": "host",
+        "field_type": "String",
+        "field_value": object(),
+        "field_description": "d",
+        "ui_field_name": "Host",
+    }
+    with pytest.raises(pydantic.ValidationError, match="invalid-json-value"):
+        _ = betterlite_cache.CacheSettingsField.model_validate(payload)
+
+
 def test_coordination_model_names() -> None:
     ours = betterlite_coordination.CoordinationRedisSettingsField
     reference = litellm_coordination.CoordinationRedisSettingsField
