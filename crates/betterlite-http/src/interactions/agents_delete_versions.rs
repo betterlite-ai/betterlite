@@ -100,7 +100,6 @@ struct VersionCall {
     prepared: PreparedRequest,
 }
 
-// the shared step order of both operations: client, headers, URL, pre_call, then the request
 fn prepare_delete<C>(
     config: &C,
     logging: &mut Logging,
@@ -227,7 +226,6 @@ fn ensure_success(response: UpstreamResponse) -> Result<UpstreamResponse, Reques
     })
 }
 
-// a reply that is not UTF-8 keeps the text up to its first invalid byte
 fn reply_text(body: &[u8]) -> String {
     match from_utf8(body) {
         Ok(text) => text.to_owned(),

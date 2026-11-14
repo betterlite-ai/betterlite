@@ -157,24 +157,31 @@ fn delete_agent_records_a_reply_that_is_not_text() {
 fn delete_agent_uses_the_caller_timeout_when_given() {
     let serving = server::serve_once(
         server::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(150)),
+        Some(Duration::from_millis(300)),
     );
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
     let mut call = Call::new(serving.address);
-    call.timeout = Some(Duration::from_secs(2));
+    call.timeout = Some(Duration::from_millis(30));
 
-    let output = delete_agent(
+    let error = delete_agent(
         &fixture,
         &mut clients,
         &mut logging,
         None,
         &call.agent_request(),
     )
-    .unwrap();
+    .unwrap_err();
 
-    assert_eq!(output, "delete|agent-1|200|2");
+    assert!(
+        matches!(
+            &error,
+            AgentsDeleteVersionsError::Transport(RequestFailure::Transport(source))
+                if source.is_timeout()
+        ),
+        "{error:?}"
+    );
     serving.request.join().unwrap();
 }
 
@@ -208,31 +215,6 @@ fn delete_agent_lets_the_caller_timeout_win_over_the_request_timeout() {
         ),
         "{error:?}"
     );
-    serving.request.join().unwrap();
-}
-
-#[test]
-fn delete_agent_uses_the_request_timeout_when_the_caller_gives_none() {
-    let serving = server::serve_once(
-        server::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(150)),
-    );
-    let fixture = fixture();
-    let mut clients = clients();
-    let mut logging = Logging::default();
-    let call = Call::new(serving.address);
-    assert_eq!(call.request_timeout.seconds, 6000.0);
-
-    let output = delete_agent(
-        &fixture,
-        &mut clients,
-        &mut logging,
-        None,
-        &call.agent_request(),
-    )
-    .unwrap();
-
-    assert_eq!(output, "delete|agent-1|200|2");
     serving.request.join().unwrap();
 }
 
@@ -492,14 +474,15 @@ async fn async_delete_agent_sends_the_caller_timeout() {
 async fn async_delete_agent_uses_the_request_timeout_when_the_caller_gives_none() {
     let serving = server::serve_once(
         server::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(150)),
+        Some(Duration::from_millis(400)),
     );
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
-    let call = Call::new(serving.address);
+    let mut call = Call::new(serving.address);
+    call.request_timeout = resolved_timeout(&[("REQUEST_TIMEOUT", "0.05")]);
 
-    let output = async_delete_agent(
+    let error = async_delete_agent(
         &fixture,
         &mut clients,
         &mut logging,
@@ -507,9 +490,16 @@ async fn async_delete_agent_uses_the_request_timeout_when_the_caller_gives_none(
         &call.agent_request(),
     )
     .await
-    .unwrap();
+    .unwrap_err();
 
-    assert_eq!(output, "delete|agent-1|200|2");
+    assert!(
+        matches!(
+            &error,
+            AgentsDeleteVersionsError::Transport(RequestFailure::Transport(source))
+                if source.is_timeout()
+        ),
+        "{error:?}"
+    );
     serving.request.join().unwrap();
 }
 
