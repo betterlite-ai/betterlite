@@ -243,7 +243,7 @@ fn result(item: &Json) -> Result<VoyageRerankResult, VoyageRerankError> {
         });
     };
     let relevance_score = parse_decimal_lexeme(&number.to_string())
-        .map(Decimal::normalize)
+        .map(|score| score.normalize())
         .map_err(|_| VoyageRerankError::ResponseField {
             field: "relevance_score",
         })?;
