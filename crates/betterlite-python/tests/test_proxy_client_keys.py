@@ -3,7 +3,7 @@ import time
 from collections.abc import Iterator, Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import TypedDict
+from typing import NamedTuple, TypedDict
 
 import pytest
 import requests
@@ -83,6 +83,8 @@ def key_call(client: LiteKeysClient | KeysManagementClient, operation: str) -> N
             client.generate(models=models)
         case "delete":
             client.delete(keys=keys)
+        case "info":
+            client.info(REDACT_KEY)
         case _:
             client.list(page=2)
 
@@ -308,47 +310,78 @@ def test_keys_request_no_apikey(server: RecordingServer) -> None:
     assert server.requests[-1] == server.requests[0]
 
 
-def test_keys_error_denied(server: RecordingServer) -> None:
-    lite = LiteKeysClient(server.url, api_key="sk-test", timeout=TIMEOUT)
-    ours = KeysManagementClient(server.url, api_key="sk-test", timeout=TIMEOUT)
-    for operation in ["generate", "delete", "list"]:
-        server.reply(DENIED, DENIED_BODY)
-        with pytest.raises(LiteUnauthorizedError) as expected:
-            key_call(lite, operation)
-        server.reply(DENIED, DENIED_BODY)
-        with pytest.raises(UnauthorizedError) as actual:
-            key_call(ours, operation)
-        assert str(actual.value) == str(expected.value)
-        assert actual.value.__cause__ is not None
-        assert expected.value.__cause__ is None
+class FailureCase(NamedTuple):
+    operation: str
+    status: int
+    body: str
+    lite_error: type[Exception]
+    ours_error: type[Exception]
+    keeps_cause: bool
 
 
 @pytest.mark.parametrize(
-    ("status", "body", "lite_error", "ours_error"),
+    "failure",
     [
-        (DENIED, DENIED_BODY, LiteUnauthorizedError, UnauthorizedError),
-        (BROKEN, BOOM_BODY, requests.exceptions.HTTPError, HTTPError),
+        FailureCase(
+            "generate",
+            DENIED,
+            DENIED_BODY,
+            LiteUnauthorizedError,
+            UnauthorizedError,
+            True,
+        ),
+        FailureCase(
+            "delete",
+            DENIED,
+            DENIED_BODY,
+            LiteUnauthorizedError,
+            UnauthorizedError,
+            True,
+        ),
+        FailureCase(
+            "list",
+            DENIED,
+            DENIED_BODY,
+            LiteUnauthorizedError,
+            UnauthorizedError,
+            True,
+        ),
+        FailureCase(
+            "info",
+            DENIED,
+            DENIED_BODY,
+            LiteUnauthorizedError,
+            UnauthorizedError,
+            False,
+        ),
+        FailureCase(
+            "info",
+            BROKEN,
+            BOOM_BODY,
+            requests.exceptions.HTTPError,
+            HTTPError,
+            False,
+        ),
     ],
 )
-def test_keys_error_info(
-    server: RecordingServer,
-    status: int,
-    body: str,
-    lite_error: type[Exception],
-    ours_error: type[Exception],
-) -> None:
+def test_keys_error_mapped(server: RecordingServer, failure: FailureCase) -> None:
     lite = LiteKeysClient(server.url, api_key="sk-test", timeout=TIMEOUT)
     ours = KeysManagementClient(server.url, api_key="sk-test", timeout=TIMEOUT)
-    server.reply(status, body)
-    with pytest.raises(lite_error) as expected:
-        lite.info(REDACT_KEY)
-    server.reply(status, body)
-    with pytest.raises(ours_error) as actual:
-        ours.info(REDACT_KEY)
+    server.reply(failure.status, failure.body)
+    with pytest.raises(failure.lite_error) as expected:
+        key_call(lite, failure.operation)
+    server.reply(failure.status, failure.body)
+    with pytest.raises(failure.ours_error) as actual:
+        key_call(ours, failure.operation)
     assert str(actual.value) == str(expected.value)
-    assert "REDACTED" in str(actual.value)
-    assert REDACT_KEY not in str(actual.value)
-    assert actual.value.__cause__ is None
+    assert expected.value.__cause__ is None
+    if failure.keeps_cause:
+        assert actual.value.__cause__ is not None
+    else:
+        assert actual.value.__cause__ is None
+    if failure.operation == "info":
+        assert "REDACTED" in str(actual.value)
+        assert REDACT_KEY not in str(actual.value)
 
 
 @pytest.mark.parametrize(
