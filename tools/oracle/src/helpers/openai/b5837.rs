@@ -98,14 +98,26 @@ fn chat_supported(models: &[String]) -> Vec<Vec<&'static str>> {
         .collect()
 }
 
-fn chat_map(cases: &[Case]) -> Vec<Params> {
+// the chat and embedding mappers read serde_json's Object while the rerank cases keep Params
+fn params_object(params: &Params) -> Object {
+    serde_json::to_value(params).map(object).unwrap_or_default()
+}
+
+fn chat_map(cases: &[Case]) -> Vec<Object> {
     let mut mapped = Vec::with_capacity(cases.len());
     for case in cases {
-        let requested = case.non_default.clone().unwrap_or_default();
+        let requested = case
+            .non_default
+            .as_ref()
+            .map_or_else(Object::new, params_object);
+        let optional = case
+            .optional
+            .as_ref()
+            .map_or_else(Object::new, params_object);
         mapped.push(NvidiaNimConfig::map_params(
             &case.model,
             &requested,
-            case.optional.clone().unwrap_or_default(),
+            optional,
         ));
     }
     mapped
@@ -115,9 +127,16 @@ fn embedding_map(cases: &[Case]) -> Value {
     let mapped: Vec<Value> = cases
         .iter()
         .map(|case| {
-            let non_default = case.non_default.clone().unwrap_or_default();
-            let optional = case.optional.clone().unwrap_or_default();
-            match map_params(&non_default, optional, case.kwargs.as_ref()) {
+            let non_default = case
+                .non_default
+                .as_ref()
+                .map_or_else(Object::new, params_object);
+            let optional = case
+                .optional
+                .as_ref()
+                .map_or_else(Object::new, params_object);
+            let kwargs = case.kwargs.as_ref().map(params_object);
+            match map_params(&non_default, optional, kwargs.as_ref()) {
                 Ok(params) => json!({"ok": true, "mapped": params}),
                 Err(_) => json!({"ok": false}),
             }
