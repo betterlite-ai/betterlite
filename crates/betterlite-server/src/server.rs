@@ -68,33 +68,19 @@ pub async fn run(
     host: &str,
     port: u16,
 ) -> Result<(), ServerError> {
-    let serving = prepare(&config, chat)?;
-    Box::pin(serve(serving, host, port)).await
+    let shutting_down = Arc::new(AtomicBool::new(false));
+    let outbound = chat.client.clone();
+    let application = application(&config, chat, Arc::clone(&shutting_down))?;
+    Box::pin(serve(application, shutting_down, outbound, host, port)).await
 }
 
-struct Serving {
+async fn serve(
     application: Router,
     shutting_down: Arc<AtomicBool>,
     outbound: ProxiedClient,
-}
-
-fn prepare(config: &Config, chat: ChatExecutor) -> Result<Serving, ServerError> {
-    let shutting_down = Arc::new(AtomicBool::new(false));
-    let outbound = chat.client.clone();
-    let application = application(config, chat, Arc::clone(&shutting_down))?;
-    Ok(Serving {
-        application,
-        shutting_down,
-        outbound,
-    })
-}
-
-async fn serve(serving: Serving, host: &str, port: u16) -> Result<(), ServerError> {
-    let Serving {
-        application,
-        shutting_down,
-        outbound,
-    } = serving;
+    host: &str,
+    port: u16,
+) -> Result<(), ServerError> {
     let shutdown_signal = build_shutdown_signal()?;
     let address = format!("{host}:{port}");
     let listener = TcpListener::bind((host, port))

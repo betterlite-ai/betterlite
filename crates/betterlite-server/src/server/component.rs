@@ -1,6 +1,6 @@
 use super::chat_setup::chat_executor;
 use super::filter::ComponentRoutes;
-use super::{prepare, serve};
+use super::{application, serve};
 use axum::Extension;
 use betterlite_config::loader::startup::{load_config, process_environment};
 use betterlite_config::types::Config;
@@ -10,6 +10,8 @@ use rand::rngs::{StdRng, SysRng};
 use std::io;
 use std::path::Path;
 use std::process::ExitCode;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use tokio::runtime::{Builder, Runtime};
 
 pub struct Startup {
@@ -72,9 +74,11 @@ pub fn serve_component(
         return ExitCode::FAILURE;
     };
     let result = runtime.block_on(async {
-        let mut serving = prepare(&config, chat)?;
-        serving.application = serving.application.layer(Extension(routes));
-        Box::pin(serve(serving, host, port)).await
+        let shutting_down = Arc::new(AtomicBool::new(false));
+        let outbound = chat.client.clone();
+        let router =
+            application(&config, chat, Arc::clone(&shutting_down))?.layer(Extension(routes));
+        Box::pin(serve(router, shutting_down, outbound, host, port)).await
     });
     match result {
         Ok(()) => ExitCode::SUCCESS,
