@@ -106,7 +106,7 @@ fn apply(mut lens: Lens, transform: &Transform) -> Result<Lens, String> {
             Ok(lens)
         }
         Transform::DropJob { job_id } => {
-            lens.jobs.retain(|job| &job.id != job_id);
+            lens.jobs.retain(|job| job.id != *job_id);
             Ok(lens)
         }
     }

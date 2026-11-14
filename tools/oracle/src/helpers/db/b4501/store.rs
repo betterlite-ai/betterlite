@@ -124,7 +124,7 @@ pub(crate) fn snapshot(store: &Store, result: Value, transform_calls: u32) -> Va
     })
 }
 
-fn text_argument<'arguments>(args: &'arguments [SqlBind], index: usize) -> Option<&'arguments str> {
+fn text_argument(args: &[SqlBind], index: usize) -> Option<&str> {
     match args.get(index) {
         Some(SqlBind::Text(Some(value))) => Some(value),
         _ => None,

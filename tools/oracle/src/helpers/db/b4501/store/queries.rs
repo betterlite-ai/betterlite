@@ -75,7 +75,7 @@ impl Store {
             }
         }
         entries.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| right.1.cmp(&left.1)));
-        let skip = usize::try_from(offset).map_or(entries.len(), |value| value);
+        let skip = usize::try_from(offset).unwrap_or(usize::MAX);
         entries
             .into_iter()
             .skip(skip)
