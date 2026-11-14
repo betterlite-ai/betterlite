@@ -1,20 +1,41 @@
 import asyncio
 from hashlib import sha256
-from typing import Final, Literal, NoReturn
+from typing import Final, Literal, NoReturn, Protocol
 
 from litellm.exceptions import RateLimitError
 from litellm.router import Router
 from litellm.router_utils import clientside_credential_handler
 from litellm.router_utils.client_initalization_utils import MaxParallelRequestsLimit
+from litellm.types.llms.openai import AllMessageValues
 from litellm.utils import calculate_max_parallel_requests
 from pydantic import Field, JsonValue, TypeAdapter
 from typing_extensions import override
 
+from probes.deployment_identity import ID_SOURCE
 from probes.protocol import Operation, Strict
 
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
 
-JSON_OBJECT: Final = TypeAdapter(dict[str, JsonValue])
+
+class Completions(Protocol):
+    async def acompletion(self, model: str, messages: list[AllMessageValues], *, mock_response: str) -> object: ...
+
+
+class CacheReader(Protocol):
+    def get_cache(self, key: str, *, local_only: bool = False) -> object | None: ...
+
+
+class CredentialHandler(Protocol):
+    @staticmethod
+    def is_clientside_credential(request_kwargs: dict[str, object]) -> bool: ...
+
+    @staticmethod
+    def get_dynamic_litellm_params(
+        litellm_params: dict[str, JsonValue], request_kwargs: dict[str, object]
+    ) -> dict[str, JsonValue]: ...
+
+
+CREDENTIAL_HANDLER: Final[CredentialHandler] = clientside_credential_handler
 OPTIONAL_TEXT: Final = TypeAdapter(str | None)
 
 
@@ -173,15 +194,17 @@ async def cached_lookups(spec: CachedInput) -> list[CachedObservation]:
         model_list=[model_entry(spec)],
         default_max_parallel_requests=spec.default_max_parallel_requests,
     )
+    completions: Completions = router
+    cache: CacheReader = router.cache
     key = f"{spec.model_id}_max_parallel_requests_client"
     observations: list[CachedObservation] = []
     previous: object | None = None
     for _index in range(spec.lookups):
         installed = previous is None
-        _response = await router.acompletion(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2779-L2785
+        _response = await completions.acompletion(
             model=spec.model_group, messages=[{"role": "user", "content": "probe"}], mock_response="probe"
         )
-        cached: object | None = router.cache.get_cache(key=key, local_only=True)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L185-L191
+        cached = cache.get_cache(key=key, local_only=True)
         observations.append(
             CachedObservation(
                 installed=installed,
@@ -189,7 +212,7 @@ async def cached_lookups(spec: CachedInput) -> list[CachedObservation]:
                 reused=cached is not None and cached is previous,
             )
         )
-        previous = cached  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L185-L191
+        previous = cached
     return observations
 
 
@@ -200,11 +223,10 @@ def request_kwargs(fields: RequestFields) -> dict[str, object]:
 
 def credential_lookup(spec: CredentialInput) -> CredentialObservation:
     kwargs = request_kwargs(spec.request)
-    clientside = clientside_credential_handler.is_clientside_credential(kwargs)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/clientside_credential_handler.py#L69-L73
-    dynamic: object = clientside_credential_handler.get_dynamic_litellm_params(dict(spec.config), kwargs)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/clientside_credential_handler.py#L76-L105
-    params = JSON_OBJECT.validate_python(dynamic)
+    clientside = CREDENTIAL_HANDLER.is_clientside_credential(kwargs)
+    params = CREDENTIAL_HANDLER.get_dynamic_litellm_params(dict(spec.config), kwargs)
     model_id = (
-        Router.generate_model_id(spec.model_group, params)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L8768
+        ID_SOURCE.generate_model_id(spec.model_group, params)
         if clientside and spec.model_group is not None
         else None
     )
