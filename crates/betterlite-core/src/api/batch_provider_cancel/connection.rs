@@ -11,7 +11,7 @@ pub const DEFAULT_TIMEOUT_SECONDS: f64 = 600.0;
 pub const DEFAULT_OPENAI_BASE: &str = "https://api.openai.com/v1";
 
 // the kwargs cancel_batch reads through GenericLiteLLMParams and get_litellm_params
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct CancelParams {
     pub api_base: Option<String>,
@@ -67,6 +67,7 @@ pub enum TimeoutValueError {
 }
 
 // supports_httpx_timeout names openai, azure and bedrock; every other provider reads the timeout's read value
+#[must_use]
 pub const fn supports_httpx_timeout(provider: &CancelProvider) -> bool {
     matches!(
         provider,
@@ -121,7 +122,6 @@ pub fn openai_base(params: &CancelParams, settings: &Settings) -> String {
         .to_owned()
 }
 
-#[must_use]
 // the source's `a or b or c` chains, where an empty value counts as unset
 macro_rules! fallback_accessors {
     ($value:ty, $borrow:ident, $empty:expr; $(

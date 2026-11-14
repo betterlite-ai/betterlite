@@ -1,16 +1,17 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::sections::batch_provider_cancel::Settings;
 use betterlite_openai::api::batch_records::BatchIdRequest;
 use betterlite_openai::batches::records::{BatchObject, BatchObjectKind, BatchStatus};
+use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value, json};
 use thiserror::Error;
+use tokio::runtime::Builder;
 
 use super::async_invoke::{self, AsyncInvokeOutput, AsyncInvokeS3Output, AsyncInvokeStatus};
 use super::connection::{self, CancelParams, CancelTimeout, StructuredTimeout, TimeoutValue};
@@ -97,7 +98,7 @@ fn answer(status: BatchStatus) -> BatchObject {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 #[error("{message}")]
 struct ScriptFailure {
     message: String,
@@ -105,7 +106,7 @@ struct ScriptFailure {
 
 struct Scripted {
     calls: Arc<Mutex<Vec<Value>>>,
-    answer: BatchObject,
+    reply: Result<BatchObject, ScriptFailure>,
 }
 
 impl Scripted {
@@ -121,7 +122,7 @@ fn scripted(status: BatchStatus) -> (Scripted, Arc<Mutex<Vec<Value>>>) {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let dispatch = Scripted {
         calls: Arc::clone(&calls),
-        answer: answer(status),
+        reply: Ok(answer(status)),
     };
     (dispatch, calls)
 }
@@ -129,7 +130,7 @@ fn scripted(status: BatchStatus) -> (Scripted, Arc<Mutex<Vec<Value>>>) {
 // the five provider branches differ only in their recorded fields, so one macro keeps them one shape
 macro_rules! scripted_branches {
     ($(
-        $method:ident($call_type:ident): $branch:literal => {
+        $method:ident($call_type:ident, $call:ident): $branch:literal => {
             $($key:literal: $value:expr),* $(,)?
         };
     )*) => {
@@ -139,13 +140,13 @@ macro_rules! scripted_branches {
             $(
                 fn $method(
                     &self,
-                    call: $call_type<'_>,
+                    $call: $call_type<'_>,
                 ) -> impl Future<Output = Result<BatchObject, ScriptFailure>> + Send {
                     self.record(json!({
                         "branch": $branch,
                         $($key: $value,)*
                     }));
-                    let reply = self.reply();
+                    let reply = self.reply.clone();
                     async move { reply }
                 }
             )*
@@ -154,7 +155,7 @@ macro_rules! scripted_branches {
 }
 
 scripted_branches! {
-    openai(OpenAiCancelCall): "openai" => {
+    openai(OpenAiCancelCall, call): "openai" => {
         "is_async": call.is_async,
         "request": recorded_request(call.request),
         "api_base": call.api_base,
@@ -163,7 +164,7 @@ scripted_branches! {
         "timeout": call.timeout,
         "max_retries": call.max_retries,
     };
-    azure(AzureCancelCall): "azure" => {
+    azure(AzureCancelCall, call): "azure" => {
         "is_async": call.is_async,
         "request": recorded_request(call.request),
         "api_base": call.api_base,
@@ -172,7 +173,7 @@ scripted_branches! {
         "timeout": call.timeout,
         "max_retries": call.max_retries,
     };
-    vertex(VertexCancelCall): "vertex" => {
+    vertex(VertexCancelCall, call): "vertex" => {
         "is_async": call.is_async,
         "batch_id": call.batch_id,
         "api_base": call.api_base,
@@ -182,16 +183,18 @@ scripted_branches! {
         "timeout": call.timeout,
         "max_retries": call.max_retries,
     };
-    xai(XaiCancelCall): "xai" => {
+    xai(XaiCancelCall, call): "xai" => {
         "is_async": call.is_async,
         "batch_id": call.batch_id,
         "api_base": call.api_base,
         "api_key": call.api_key.map(|key| key.expose_secret()),
         "timeout": call.timeout,
     };
-    bedrock(BedrockCancelCall): "bedrock" => {
+    bedrock(BedrockCancelCall, call): "bedrock" => {
         "batch_id": call.batch_id,
-        "params": call.params,
+        "aws_region_name": call.params.aws_region_name.as_deref(),
+        "aws_session_token": call.params.aws_session_token.as_ref().map(|token| token.expose_secret()),
+        "timeout": call.params.timeout.as_ref(),
     };
 }
 
@@ -201,12 +204,6 @@ fn recorded_request(request: &BatchIdRequest) -> Value {
         "extra_headers": request.extra_headers,
         "extra_body": request.extra_body,
     })
-}
-
-impl Scripted {
-    fn reply(&self) -> Result<BatchObject, ScriptFailure> {
-        Ok(self.answer.clone())
-    }
 }
 
 fn service(settings: Settings, dispatch: Scripted) -> BatchProviderCancel<Scripted> {
@@ -222,7 +219,7 @@ fn drive(
     service: &BatchProviderCancel<Scripted>,
     input: &BatchProviderCancelInput,
 ) -> Result<BatchProviderCancelResult, BatchProviderCancelError<ScriptFailure>> {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .build()
         .expect("runtime")
         .block_on(service.run(input))
@@ -277,9 +274,10 @@ fn batch_cancel_forwards_the_raw_parameters_to_bedrock() {
     drive(&service, &request("bedrock", params, CancelCall::Sync)).expect("answered");
     let entries = recorded(&calls);
     assert_eq!(entries[0]["branch"], json!("bedrock"));
-    assert_eq!(entries[0]["params"]["aws_region_name"], json!("us-east-1"));
-    assert_eq!(entries[0]["params"]["aws_session_token"], json!("session"));
-    assert_eq!(entries[0]["params"]["timeout"], Value::Null);
+    assert_eq!(entries[0]["batch_id"], json!("batch_1"));
+    assert_eq!(entries[0]["aws_region_name"], json!("us-east-1"));
+    assert_eq!(entries[0]["aws_session_token"], json!("session"));
+    assert_eq!(entries[0]["timeout"], Value::Null);
 }
 
 #[test]
@@ -560,6 +558,29 @@ fn batch_cancel_preserves_the_provider_status(#[case] status: BatchStatus) {
     assert_eq!(result.batch.status, status);
 }
 
+#[test]
+fn batch_cancel_surfaces_a_provider_error() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let service = BatchProviderCancel {
+        clock: Arc::new(|| SECOND),
+        dispatch: Scripted {
+            calls: Arc::clone(&calls),
+            reply: Err(ScriptFailure {
+                message: "the provider refused".to_owned(),
+            }),
+        },
+        limits: ApiLimits::default(),
+        settings: base_settings(),
+    };
+    let error = drive(
+        &service,
+        &request("openai", base_params(), CancelCall::Sync),
+    )
+    .expect_err("the provider refused");
+    assert!(matches!(&error, BatchProviderCancelError::Dispatch(_)));
+    assert_eq!(error.to_string(), "the provider refused");
+}
+
 #[rstest]
 #[case::at_the_limit(Some(("a", "bc")), None, false)]
 #[case::headers_over_the_limit(Some(("ab", "cd")), None, true)]
@@ -576,7 +597,7 @@ fn batch_cancel_bounds_the_extra_bytes(
         max_event_bytes: defaults.max_event_bytes,
         max_items: defaults.max_items,
     };
-    let entry = |pair: (&str, &str)| BTreeMap::from([(pair.0.to_owned(), pair.1.to_owned())]);
+    let entry = |pair: (&str, &str)| IndexMap::from([(pair.0.to_owned(), pair.1.to_owned())]);
     let input = BatchProviderCancelInput::Cancel(Box::new(CancelBatchCall {
         batch_id: "batch_1".to_owned(),
         model: None,
@@ -604,7 +625,7 @@ fn batch_cancel_bounds_the_extra_bytes(
 #[test]
 fn batch_cancel_bounds_the_extra_entries() {
     let limit = ApiLimits::default().max_items;
-    let extra_headers: BTreeMap<String, String> = (0..=limit)
+    let extra_headers: IndexMap<String, String> = (0..=limit)
         .map(|index| (index.to_string(), String::new()))
         .collect();
     let input = BatchProviderCancelInput::Cancel(Box::new(CancelBatchCall {
@@ -797,12 +818,33 @@ fn cancel_provider_reads_its_wire_name() {
 }
 
 #[test]
-fn batch_provider_cancel_input_round_trips_through_json() {
-    let input = request("openai", base_params(), CancelCall::Sync);
-    let encoded = serde_json::to_value(&input).expect("encode");
-    let decoded: BatchProviderCancelInput =
-        serde_json::from_value(encoded.clone()).expect("decode");
-    assert_eq!(serde_json::to_value(&decoded).expect("re-encode"), encoded);
+fn batch_provider_cancel_input_decodes_the_case_json() {
+    let decoded: BatchProviderCancelInput = serde_json::from_value(json!({
+        "cancel": {
+            "batch_id": "batch_1",
+            "model": null,
+            "provider": "vertex_ai",
+            "extra_headers": {"x-one": "1"},
+            "extra_body": null,
+            "params": {},
+            "call": {"async": {"model_in_kwargs": "gpt-4o-mini"}},
+        }
+    }))
+    .expect("decode");
+    let BatchProviderCancelInput::Cancel(call) = decoded else {
+        panic!("the fixture names a cancel call");
+    };
+    assert_eq!(call.provider, CancelProvider::VertexAi);
+    assert_eq!(
+        call.extra_headers,
+        Some(IndexMap::from([("x-one".to_owned(), "1".to_owned())]))
+    );
+    assert_eq!(
+        call.call,
+        CancelCall::Async {
+            model_in_kwargs: Some("gpt-4o-mini".to_owned()),
+        }
+    );
 }
 
 #[test]

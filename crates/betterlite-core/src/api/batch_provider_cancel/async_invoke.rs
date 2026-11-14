@@ -1,6 +1,7 @@
 use betterlite_openai::batches::records::{
     BatchObject, BatchObjectKind, BatchStatus, RequestCounts,
 };
+use chrono::DateTime;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
@@ -44,39 +45,35 @@ pub fn normalize(
     now: i64,
     limits: &ApiLimits,
 ) -> Result<BatchProviderCancelResult, ApiLimitError> {
-    let s3_uri = status
-        .output_data_config
-        .as_ref()
-        .and_then(|output| output.s3_output_data_config.as_ref())
-        .and_then(|s3| s3.s3_uri.as_deref())
-        .unwrap_or_default();
+    let s3_uri = output_location(status);
     let failure_message = status.failure_message.clone().unwrap_or_default();
-    let observed = s3_uri.len().saturating_add(failure_message.len());
+    check_event_bytes(limits, s3_uri, &failure_message)?;
+    Ok(BatchProviderCancelResult {
+        batch: batch(status, now, s3_uri, failure_message),
+        model: None,
+    })
+}
+
+fn check_event_bytes(
+    limits: &ApiLimits,
+    s3_uri: &str,
+    failure_message: &str,
+) -> Result<(), ApiLimitError> {
     limits.check(ApiBoundariesInput::Event(EventBoundary {
-        known_bytes: observed,
-    }))?;
-    let raw_status = status.status.as_str();
-    let normalized = normalized_status(raw_status);
-    let in_progress_at = match raw_status {
-        "InProgress" | "Validating" | "Scheduled" => {
-            timestamp(status.last_modified_time.as_deref())
-        }
-        _ => None,
-    };
-    let completed_at = match raw_status {
-        "Completed" | "PartiallyCompleted" => timestamp(status.end_time.as_deref()),
-        _ => None,
-    };
-    let failed_at = match raw_status {
-        "Failed" => timestamp(status.end_time.as_deref()),
-        _ => None,
-    };
-    let metadata = IndexMap::from([
-        ("output_file_id".to_owned(), s3_uri.to_owned()),
-        ("failure_message".to_owned(), failure_message),
-        ("model_arn".to_owned(), status.model_arn.clone()),
-    ]);
-    let batch = BatchObject {
+        known_bytes: s3_uri.len().saturating_add(failure_message.len()),
+    }))
+}
+
+// the OpenAI Batch object AWS's async invoke answer is projected onto
+fn batch(
+    status: &AsyncInvokeStatus,
+    now: i64,
+    s3_uri: &str,
+    failure_message: String,
+) -> BatchObject {
+    let (in_progress_at, completed_at, failed_at) = stamps(status);
+    let normalized = normalized_status(&status.status);
+    BatchObject {
         id: status.invocation_arn.clone(),
         completion_window: ASYNC_INVOKE_COMPLETION_WINDOW.to_owned(),
         // a response without a readable submitTime is stamped with the injected clock
@@ -95,7 +92,7 @@ pub fn normalize(
         failed_at,
         finalizing_at: None,
         in_progress_at,
-        metadata: Some(metadata),
+        metadata: Some(metadata(status, s3_uri, failure_message)),
         model: None,
         output_file_id: None,
         request_counts: Some(RequestCounts {
@@ -105,15 +102,53 @@ pub fn normalize(
         }),
         usage: None,
         provider_fields: Map::new(),
-    };
-    Ok(BatchProviderCancelResult { batch, model: None })
+    }
 }
 
-// AWS status values lowercased: unknown values report failed, as the source maps them
+fn output_location(status: &AsyncInvokeStatus) -> &str {
+    status
+        .output_data_config
+        .as_ref()
+        .and_then(|output| output.s3_output_data_config.as_ref())
+        .and_then(|s3| s3.s3_uri.as_deref())
+        .unwrap_or_default()
+}
+
+fn stamps(status: &AsyncInvokeStatus) -> (Option<i64>, Option<i64>, Option<i64>) {
+    let raw = status.status.as_str();
+    let in_progress_at = match raw {
+        "InProgress" | "Validating" | "Scheduled" => {
+            timestamp(status.last_modified_time.as_deref())
+        }
+        _ => None,
+    };
+    let completed_at = match raw {
+        "Completed" | "PartiallyCompleted" => timestamp(status.end_time.as_deref()),
+        _ => None,
+    };
+    let failed_at = match raw {
+        "Failed" => timestamp(status.end_time.as_deref()),
+        _ => None,
+    };
+    (in_progress_at, completed_at, failed_at)
+}
+
+fn metadata(
+    status: &AsyncInvokeStatus,
+    s3_uri: &str,
+    failure_message: String,
+) -> IndexMap<String, String> {
+    IndexMap::from([
+        ("output_file_id".to_owned(), s3_uri.to_owned()),
+        ("failure_message".to_owned(), failure_message),
+        ("model_arn".to_owned(), status.model_arn.clone()),
+    ])
+}
+
+// AWS status values lowercased: failed and unknown values report failed, as the source maps them
 fn normalized_status(raw: &str) -> BatchStatus {
     match raw.to_lowercase().as_str() {
         "completed" => BatchStatus::Completed,
-        "failed" => BatchStatus::Failed,
         "inprogress" | "in_progress" => BatchStatus::InProgress,
         _ => BatchStatus::Failed,
     }
@@ -121,7 +156,7 @@ fn normalized_status(raw: &str) -> BatchStatus {
 
 fn timestamp(value: Option<&str>) -> Option<i64> {
     let text = value?;
-    chrono::DateTime::parse_from_rfc3339(text)
+    DateTime::parse_from_rfc3339(text)
         .ok()
         .map(|parsed| parsed.timestamp())
 }

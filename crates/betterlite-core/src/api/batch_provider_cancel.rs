@@ -1,10 +1,10 @@
-use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::error::Error;
 use std::future::Future;
 
 use betterlite_openai::api::batch_records::BatchIdRequest;
 use betterlite_openai::batches::records::BatchObject;
+use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -73,9 +73,9 @@ pub struct CancelBatchCall {
     pub model: Option<String>,
     pub provider: CancelProvider,
     #[serde(default)]
-    pub extra_headers: Option<BTreeMap<String, String>>,
+    pub extra_headers: Option<IndexMap<String, String>>,
     #[serde(default)]
-    pub extra_body: Option<BTreeMap<String, String>>,
+    pub extra_body: Option<IndexMap<String, String>>,
     #[serde(default)]
     pub params: CancelParams,
     #[serde(default)]
@@ -116,7 +116,7 @@ where
     #[error("LiteLLM doesn't support {provider} for 'cancel_batch'")]
     Unsupported { provider: String },
     #[error(transparent)]
-    Dispatch(#[from] DispatchError),
+    Dispatch(DispatchError),
 }
 
 impl<DispatchError> BatchProviderCancelError<DispatchError>
