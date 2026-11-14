@@ -156,11 +156,8 @@ impl BreakerGate for AllowGate {
     fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn StdError + Send + Sync)) {}
 }
 
-async fn unreachable_cache() -> RedisCache {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
-    let overrides = RedisOverrides {
+fn unreachable_overrides(port: u16) -> RedisOverrides {
+    RedisOverrides {
         host: Some("127.0.0.1".to_owned()),
         port: Some(Scalar::Value(i64::from(port))),
         db: None,
@@ -191,7 +188,14 @@ async fn unreachable_cache() -> RedisCache {
         aws_iam_region: None,
         aws_iam_serverless: None,
         passthrough: BTreeMap::new(),
-    };
+    }
+}
+
+async fn unreachable_cache() -> RedisCache {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let overrides = unreachable_overrides(port);
     let options = RedisCacheOptions {
         overrides,
         family: RedisCacheFamily::Standalone,
