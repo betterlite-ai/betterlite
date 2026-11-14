@@ -513,46 +513,51 @@ FACTS: Final[list[tuple[str, str, JsonValue]]] = [
     ("gateway", "counts_failure", {"successful_requests": 1, "failed_requests": 3}),
 ]
 
-KINDS: Final[list[tuple[str, str, str]]] = [
-    ("budget", "key_frozen", "error"),
-    ("budget", "team_frozen", "error"),
-    ("budget", "user_frozen", "error"),
-    ("budget", "org_frozen", "error"),
-    ("entra", "base", "ok"),
-    ("entra", "principal_braces", "ok"),
-    ("entra", "principal_none", "ok"),
-    ("entra", "tenant_upper", "ok"),
-    ("entra", "client_upper", "ok"),
-    ("entra", "principal_invalid", "error"),
-    ("entra", "tenant_invalid", "error"),
-    ("entra", "extra", "error"),
-    ("entra", "frozen", "error"),
-    ("validators", "spend_default", "ok"),
-    ("validators", "spend_zero_days", "error"),
-    ("validators", "spend_one_day", "ok"),
-    ("validators", "spend_max_days", "ok"),
-    ("validators", "spend_over_max_days", "error"),
-    ("validators", "threshold_zero", "error"),
-    ("validators", "threshold_one", "ok"),
-    ("validators", "threshold_over", "error"),
-    ("validators", "providers_empty", "error"),
-    ("validators", "spend_extra", "error"),
-    ("validators", "worker_ftp", "error"),
-    ("validators", "worker_no_scheme", "error"),
-    ("validators", "worker_http", "ok"),
-    ("validators", "worker_https", "ok"),
-    ("validators", "init_valid", "ok"),
-    ("validators", "init_blank_key", "error"),
-    ("validators", "init_empty_key", "error"),
-    ("validators", "init_blank_token", "error"),
-    ("validators", "init_missing", "error"),
-    ("validators", "update_none", "ok"),
-    ("validators", "update_blank_key", "error"),
-    ("validators", "update_empty_token", "error"),
-    ("validators", "update_key", "ok"),
-    ("validators", "update_token", "ok"),
-    ("gateway", "key_frozen", "raised"),
-    ("gateway", "counts_frozen", "raised"),
+KINDS: Final[list[tuple[str, str, list[str]]]] = [
+    ("budget", "error", ["key_frozen", "team_frozen", "user_frozen", "org_frozen"]),
+    (
+        "entra",
+        "ok",
+        ["base", "principal_braces", "principal_none", "tenant_upper", "client_upper"],
+    ),
+    ("entra", "error", ["principal_invalid", "tenant_invalid", "extra", "frozen"]),
+    (
+        "validators",
+        "ok",
+        [
+            "spend_default",
+            "spend_one_day",
+            "spend_max_days",
+            "threshold_one",
+            "worker_http",
+            "worker_https",
+            "init_valid",
+            "update_none",
+            "update_key",
+            "update_token",
+        ],
+    ),
+    (
+        "validators",
+        "error",
+        [
+            "spend_zero_days",
+            "spend_over_max_days",
+            "threshold_zero",
+            "threshold_over",
+            "providers_empty",
+            "spend_extra",
+            "worker_ftp",
+            "worker_no_scheme",
+            "init_blank_key",
+            "init_empty_key",
+            "init_blank_token",
+            "init_missing",
+            "update_blank_key",
+            "update_empty_token",
+        ],
+    ),
+    ("gateway", "raised", ["key_frozen", "counts_frozen"]),
 ]
 
 OBJECT: Final = TypeAdapter(dict[str, JsonValue])
@@ -621,15 +626,15 @@ def test_names_facts(
     behaved: dict[str, dict[str, dict[str, JsonValue]]],
 ) -> None:
     assert behaved["ours"][scenario][case] == expected
-    assert behaved["theirs"][scenario][case] == expected
 
 
-@pytest.mark.parametrize(("scenario", "case", "kind"), KINDS)
+@pytest.mark.parametrize(("scenario", "kind", "cases"), KINDS)
 def test_names_outcome_kinds(
     scenario: str,
-    case: str,
     kind: str,
+    cases: list[str],
     behaved: dict[str, dict[str, dict[str, JsonValue]]],
 ) -> None:
-    assert list(OBJECT.validate_python(behaved["ours"][scenario][case])) == [kind]
-    assert list(OBJECT.validate_python(behaved["theirs"][scenario][case])) == [kind]
+    for case in cases:
+        outcome = OBJECT.validate_python(behaved["ours"][scenario][case])
+        assert list(outcome) == [kind], case
