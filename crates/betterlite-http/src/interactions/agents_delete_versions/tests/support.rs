@@ -156,7 +156,7 @@ impl Call {
             params,
             extra_headers: RequestHeaders::new(),
             timeout: None,
-            request_timeout: default_timeout(),
+            request_timeout: resolved_timeout(&[]),
         }
     }
 
@@ -177,14 +177,6 @@ pub(crate) const fn failing_environment() -> Fixture {
         headers: RequestHeaders::new(),
         query: Params::new(),
         fail_environment: true,
-    }
-}
-
-// the value litellm.constants.request_timeout holds when REQUEST_TIMEOUT is unset
-pub(crate) const fn default_timeout() -> RequestTimeout {
-    RequestTimeout {
-        seconds: 6000.0,
-        explicitly_set: false,
     }
 }
 
