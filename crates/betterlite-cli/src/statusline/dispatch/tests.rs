@@ -1,10 +1,10 @@
 #![cfg(test)]
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_logging::private_json::files::PrivateFiles;
 use rstest::rstest;
@@ -50,7 +50,7 @@ struct Call {
 }
 
 struct FakeFetch {
-    calls: RefCell<Vec<Call>>,
+    calls: Mutex<Vec<Call>>,
     body: Option<&'static str>,
     fails: bool,
 }
@@ -58,7 +58,7 @@ struct FakeFetch {
 impl FakeFetch {
     fn answering(body: Option<&'static str>) -> Self {
         Self {
-            calls: RefCell::new(Vec::new()),
+            calls: Mutex::new(Vec::new()),
             body,
             fails: false,
         }
@@ -72,17 +72,20 @@ impl FakeFetch {
     }
 
     fn count(&self) -> usize {
-        self.calls.borrow().len()
+        self.calls.lock().unwrap().len()
     }
 }
 
 impl SessionFetch for FakeFetch {
     fn fetch(&self, credentials: &Credentials, session_id: &str) -> Result<Fetched, FetchError> {
-        self.calls.borrow_mut().push(Call {
-            base_url: credentials.base_url.clone(),
-            key: credentials.api_key.expose_secret().to_owned(),
-            session_id: session_id.to_owned(),
-        });
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(Call {
+                base_url: credentials.base_url.clone(),
+                key: credentials.api_key.expose_secret().to_owned(),
+                session_id: session_id.to_owned(),
+            });
         if self.fails {
             return Err(FetchError::InvalidUrl(ParseError::EmptyHost));
         }
@@ -289,7 +292,7 @@ fn a_found_session_is_asked_for_with_the_trimmed_credentials_and_drawn() {
     let line = harness.run(&input, &CLAUDE_ENV, &fetch);
 
     assert_eq!(line, format!("Routed to: gpt-5{NOTICE}"));
-    let calls = fetch.calls.into_inner();
+    let calls = fetch.calls.into_inner().unwrap();
     assert_eq!(calls.len(), 1);
     let call = calls.first().unwrap();
     assert_eq!(call.base_url, "http://gateway.test");
@@ -497,7 +500,7 @@ fn the_codex_stop_hook_prints_a_system_message_without_color() {
         line,
         format!(r#"{{"systemMessage":"\nRouted to: gpt-5{NOTICE}"}}"#)
     );
-    let calls = fetch.calls.into_inner();
+    let calls = fetch.calls.into_inner().unwrap();
     let call = calls.first().unwrap();
     assert_eq!(call.base_url, "http://gateway.test");
     assert_eq!(call.key, "sk-codex");
