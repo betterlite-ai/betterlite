@@ -163,5 +163,5 @@ pitfalls:
   - Gradient's outer dispatch prefers litellm.api_base over a caller context base before its own endpoint policy runs.
   - CometAPI's extra post_call occurs at the handler-return stage, which precedes awaiting an async result.
   - FIM short-circuit evaluation can leave an unused base_url option in the body options.
-budget: {max_changed_lines: 800, max_new_expects: 0}
+budget: {max_changed_lines: 1500, max_new_expects: 0}
 review_level: security

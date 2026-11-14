@@ -1,0 +1,37 @@
+kind: helper
+name: archive-displaced-on-update
+call:
+  b4501:
+    seed:
+      lenses:
+        lens-a:
+          version: 0
+          data:
+            id: lens-a
+            scope: {}
+            settings: {name: lens, model: gpt-4o, context: cite}
+            created_at: "2026-01-01T00:00:00Z"
+            next_run_at: "2026-01-01T00:15:00Z"
+            budget_month: "2026-01"
+            jobs:
+              - id: job-a
+                created_at: "2026-01-01T00:00:00Z"
+                start: "2026-01-01T00:00:00Z"
+                end: "2026-01-01T00:00:00Z"
+                settings: {name: lens, model: gpt-4o, context: cite}
+                revision: 1
+              - id: job-b
+                created_at: "2026-01-02T00:00:00Z"
+                start: "2026-01-02T00:00:00Z"
+                end: "2026-01-02T00:00:00Z"
+                settings: {name: lens, model: gpt-4o, context: cite}
+                revision: 1
+    call:
+      operation: update
+      lens_id: lens-a
+      attempts: 8
+      changed_only: false
+      transform: {kind: drop_job, job_id: job-b}
+      conflicts: 0
+env: {}
+compare: {ignore: []}

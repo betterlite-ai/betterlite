@@ -1,0 +1,16 @@
+kind: helper
+name: responses_hook_policy-deployment-hook-seed
+call:
+  responses_hook_policy:
+    operation: deployment_hook
+    model: gpt-4o
+    input: hello
+    custom_llm_provider: openai
+    optional_params: {temperature: 1}
+    generic_params: {api_key: sk-old}
+    global_callbacks:
+      - kind: override
+        result: {temperature: 0}
+    dynamic_callbacks: []
+env: {}
+compare: {ignore: []}
