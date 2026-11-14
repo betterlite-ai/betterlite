@@ -154,22 +154,16 @@ fn the_word_granularity_enables_verbatim_mode(
     assert_eq!(body, expected);
 }
 
-#[test]
-fn a_subtitle_response_format_enables_diarization() {
-    for subtitle in ["srt", "vtt"] {
-        let optional = format!(r#"{{"response_format":"{subtitle}"}}"#);
-        assert_eq!(
-            request_body("gemini/gemini-3.5-transcribe", &optional),
-            verbatim_mode()
-        );
-    }
-    for plain in ["json", "text", "verbose_json"] {
-        let optional = format!(r#"{{"response_format":"{plain}"}}"#);
-        assert_eq!(
-            request_body("gemini/gemini-3.5-transcribe", &optional),
-            bare_request("gemini-3.5-transcribe")
-        );
-    }
+#[rstest]
+#[case::srt(r#"{"response_format":"srt"}"#, true)]
+#[case::vtt(r#"{"response_format":"vtt"}"#, true)]
+#[case::json(r#"{"response_format":"json"}"#, false)]
+#[case::text(r#"{"response_format":"text"}"#, false)]
+#[case::verbose_json(r#"{"response_format":"verbose_json"}"#, false)]
+fn a_subtitle_response_format_enables_diarization(#[case] optional: &str, #[case] diarized: bool) {
+    let body = request_body("gemini/gemini-3.5-transcribe", optional);
+    assert_eq!(body == verbatim_mode(), diarized);
+    assert_eq!(body == bare_request("gemini-3.5-transcribe"), !diarized);
 }
 
 #[test]
