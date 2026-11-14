@@ -886,6 +886,22 @@ fn a_failing_delete_is_an_internal_server_error_with_the_agent_name() {
 }
 
 #[test]
+fn a_request_that_cannot_be_built_is_an_api_connection_error() {
+    let config = fixture();
+    let mut harness = Harness::new();
+    let call = Call::new("agent-1");
+    let error = get(&config, harness.deps(), &call.request()).expect_err("the url is relative");
+    match error.class {
+        ErrorClass::ApiConnection(context) => {
+            assert_eq!(context.model.as_deref(), Some("agent-1"));
+            assert_eq!(context.provider.as_deref(), Some("gemini"));
+            assert!(context.message.contains("request URL is not valid"));
+        }
+        other => panic!("expected an api connection error, got {other:?}"),
+    }
+}
+
+#[test]
 fn get_records_the_pre_call_and_the_post_call() {
     let serving = serve(reply(200, GET_BODY));
     let config = fixture();
