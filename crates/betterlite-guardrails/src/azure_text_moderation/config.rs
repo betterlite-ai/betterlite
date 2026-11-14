@@ -20,7 +20,7 @@ pub const DEFAULT_CATEGORIES: [TextCategory; 4] = [
 ];
 
 // LiteLLM's AzureTextModerationOptionalParams.
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct OptionalParams {
     pub severity_threshold: Option<i64>,
