@@ -9,8 +9,7 @@ call:
       litellm_params:
         model: litellm_agent/support-bot
         prompt_label: production
-    request:
-      original_function: acompletion
+    request: {}
     compiled:
       model: gpt-4o
       messages:

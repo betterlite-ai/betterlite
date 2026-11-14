@@ -14,6 +14,10 @@ use tokio::sync::Mutex;
 use crate::helpers::{Helper, HelperError, HelperResult};
 
 const LOGGING_HANDLE: &str = "logging-handle";
+const ORIGINAL_FUNCTION: &str = "acompletion";
+const TRACE_ID: &str = "trace-id";
+// Router.acompletion fills these in itself and the Python side drops them from every answer: the trace id is random and the original function is a bound method.
+const ROUTER_ONLY_KEYS: [&str; 2] = ["litellm_trace_id", "original_function"];
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "check", rename_all = "snake_case", deny_unknown_fields)]
@@ -93,11 +97,16 @@ impl PromptPorts for HelperPorts {
         call: CompilePromptCall<'_>,
     ) -> Result<CompiledPrompt, NoDeployment> {
         let mut request_kwargs = call.request.clone();
+        let mut non_default_params = call.non_default_params.clone();
         request_kwargs.shift_remove("litellm_logging_obj");
+        for key in ROUTER_ONLY_KEYS {
+            request_kwargs.shift_remove(key);
+            non_default_params.shift_remove(key);
+        }
         *self.compile_call.lock().await = json!({
             "model": call.model,
             "messages": call.messages,
-            "non_default_params": call.non_default_params,
+            "non_default_params": non_default_params,
             "prompt_id": call.prompt_id,
             "prompt_variables": call.prompt_variables,
             "prompt_label": call.prompt_label,
@@ -157,7 +166,7 @@ impl Helper for Op {
                     },
                     compile_call: Mutex::new(Value::Null),
                 };
-                let mut request = request.clone();
+                let mut request = router_request(model, request);
                 let handle = Json::Text(LOGGING_HANDLE.to_owned());
                 request.insert("litellm_logging_obj".to_owned(), handle.clone());
                 let runtime = tokio::runtime::Builder::new_current_thread()
@@ -169,15 +178,43 @@ impl Helper for Op {
                     .map_err(|error| value_error(error.to_string()))?;
                 let logging_kept =
                     outcome.request.shift_remove("litellm_logging_obj") == Some(handle);
+                let original_function_kept = outcome.request.contains_key("original_function");
+                for key in ROUTER_ONLY_KEYS {
+                    outcome.request.shift_remove(key);
+                }
                 Ok(json!({
                     "compile_call": ports.compile_call.into_inner(),
                     "request": outcome.request,
                     "logging_kept": logging_kept,
+                    "original_function_kept": original_function_kept,
                     "call": outcome.call,
                 }))
             }
         }
     }
+}
+
+// What Router.acompletion puts in the kwargs before it asks whether the model is a prompt management one.
+fn router_request(model: &str, request: &JsonObject) -> JsonObject {
+    let mut kwargs = request.clone();
+    kwargs.insert("model".to_owned(), Json::Text(model.to_owned()));
+    kwargs.insert("messages".to_owned(), Json::List(Vec::new()));
+    kwargs.insert("stream".to_owned(), Json::Bool(false));
+    kwargs.insert(
+        "original_function".to_owned(),
+        Json::Text(ORIGINAL_FUNCTION.to_owned()),
+    );
+    kwargs
+        .entry("litellm_trace_id".to_owned())
+        .or_insert_with(|| Json::Text(TRACE_ID.to_owned()));
+    let metadata = kwargs
+        .entry("metadata".to_owned())
+        .or_insert_with(|| Json::Object(JsonObject::new()));
+    if let Json::Object(fields) = metadata {
+        fields.insert("model_group".to_owned(), Json::Text(model.to_owned()));
+        fields.insert("model_group_alias".to_owned(), Json::Null);
+    }
+    kwargs
 }
 
 fn specs(rows: &[DeploymentRow]) -> Vec<DeploymentSpec> {

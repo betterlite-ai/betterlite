@@ -9,7 +9,6 @@ call:
       litellm_params:
         model: langfuse/my-prompt
     request:
-      original_function: acompletion
       prompt_id: request-id
     compiled:
       model: gpt-4o

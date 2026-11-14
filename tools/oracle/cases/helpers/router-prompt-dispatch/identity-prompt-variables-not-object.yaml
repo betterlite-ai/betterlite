@@ -12,7 +12,6 @@ call:
     request:
       prompt_variables:
       - name
-      original_function: acompletion
     compiled:
       model: gpt-4o
       messages:

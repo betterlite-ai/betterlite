@@ -10,7 +10,6 @@ call:
         model: langfuse/my-prompt
         prompt_id: greeting
     request:
-      original_function: acompletion
       specific_deployment: true
     compiled:
       model: gpt-4o

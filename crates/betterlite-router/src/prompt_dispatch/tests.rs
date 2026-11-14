@@ -30,6 +30,10 @@ fn object(pairs: &[(&str, Json)]) -> JsonObject {
         .collect()
 }
 
+fn json_object(pairs: &[(&str, Json)]) -> Json {
+    Json::Object(object(pairs))
+}
+
 fn deployment_with(model: Json) -> DeploymentSpec {
     let mut litellm_params = JsonObject::new();
     litellm_params.insert("model".to_owned(), model);
@@ -48,7 +52,7 @@ fn deployment(model: &str) -> DeploymentSpec {
 fn compiled() -> CompiledPrompt {
     CompiledPrompt {
         model: "gpt-4o".to_owned(),
-        messages: vec![object(&[
+        messages: vec![json_object(&[
             ("role", text("user")),
             ("content", text("compiled")),
         ])],
@@ -59,7 +63,7 @@ fn compiled() -> CompiledPrompt {
 fn identity() -> PromptIdentity {
     PromptIdentity {
         prompt_id: Some(text("request-id")),
-        prompt_variables: Some(object(&[("name", text("world"))])),
+        prompt_variables: Some(json_object(&[("name", text("world"))])),
         prompt_label: Some(text("production")),
     }
 }
@@ -126,19 +130,25 @@ fn is_prompt_model_reads_the_callback_list_it_is_given() {
 fn resolve_prompt_identity_prefers_set_request_values() {
     let request = object(&[
         ("prompt_id", text("request-id")),
-        ("prompt_variables", object(&[("name", text("request"))])),
+        (
+            "prompt_variables",
+            json_object(&[("name", text("request"))]),
+        ),
         ("prompt_label", text("request-label")),
     ]);
     let data = object(&[
         ("prompt_id", text("deployment-id")),
-        ("prompt_variables", object(&[("name", text("deployment"))])),
+        (
+            "prompt_variables",
+            json_object(&[("name", text("deployment"))]),
+        ),
         ("prompt_label", text("deployment-label")),
     ]);
     let resolved = resolve_prompt_identity(&request, &data).unwrap();
     assert_eq!(resolved.prompt_id, Some(text("request-id")));
     assert_eq!(
         resolved.prompt_variables,
-        Some(object(&[("name", text("request"))]))
+        Some(json_object(&[("name", text("request"))]))
     );
     assert_eq!(resolved.prompt_label, Some(text("request-label")));
 }
@@ -152,28 +162,37 @@ fn resolve_prompt_identity_falls_back_when_the_request_value_is_null() {
     ]);
     let data = object(&[
         ("prompt_id", text("deployment-id")),
-        ("prompt_variables", object(&[("name", text("deployment"))])),
+        (
+            "prompt_variables",
+            json_object(&[("name", text("deployment"))]),
+        ),
         ("prompt_label", text("deployment-label")),
     ]);
     let resolved = resolve_prompt_identity(&request, &data).unwrap();
     assert_eq!(resolved.prompt_id, Some(text("deployment-id")));
     assert_eq!(
         resolved.prompt_variables,
-        Some(object(&[("name", text("deployment"))]))
+        Some(json_object(&[("name", text("deployment"))]))
     );
     assert_eq!(resolved.prompt_label, Some(text("deployment-label")));
 }
 
 #[test]
 fn resolve_prompt_identity_keeps_an_empty_request_value() {
-    let request = object(&[("prompt_id", text("")), ("prompt_variables", object(&[]))]);
+    let request = object(&[
+        ("prompt_id", text("")),
+        ("prompt_variables", json_object(&[])),
+    ]);
     let data = object(&[
         ("prompt_id", text("deployment-id")),
-        ("prompt_variables", object(&[("name", text("deployment"))])),
+        (
+            "prompt_variables",
+            json_object(&[("name", text("deployment"))]),
+        ),
     ]);
     let resolved = resolve_prompt_identity(&request, &data).unwrap();
     assert_eq!(resolved.prompt_id, Some(text("")));
-    assert_eq!(resolved.prompt_variables, Some(object(&[])));
+    assert_eq!(resolved.prompt_variables, Some(json_object(&[])));
 }
 
 #[test]
@@ -220,10 +239,16 @@ fn resolve_prompt_identity_rejects_the_wrong_types(
 #[test]
 fn merge_prompt_request_drops_the_six_prompt_keys_from_the_deployment_params() {
     let data = object(&[
-        ("bitbucket_config", object(&[("repository", text("repo"))])),
-        ("dotprompt_config", object(&[("path", text("p"))])),
+        (
+            "bitbucket_config",
+            json_object(&[("repository", text("repo"))]),
+        ),
+        ("dotprompt_config", json_object(&[("path", text("p"))])),
         ("prompt_id", text("deployment-id")),
-        ("prompt_variables", object(&[("name", text("deployment"))])),
+        (
+            "prompt_variables",
+            json_object(&[("name", text("deployment"))]),
+        ),
         ("prompt_label", text("deployment-label")),
         ("prompt_version", number(2)),
         ("api_base", text("https://api.example")),
@@ -264,12 +289,12 @@ fn merge_prompt_request_stamps_the_compiled_fields_and_the_identity() {
     let request = object(&[
         ("litellm_logging_obj", text("handle")),
         ("prompt_id", text("request-id")),
-        ("prompt_variables", object(&[("name", text("world"))])),
+        ("prompt_variables", json_object(&[("name", text("world"))])),
         ("prompt_label", text("production")),
     ]);
     let compiled = CompiledPrompt {
         model: "gpt-4o".to_owned(),
-        messages: vec![object(&[("role", text("user"))])],
+        messages: vec![json_object(&[("role", text("user"))])],
         optional_params: object(&[("litellm_logging_obj", text("replaced"))]),
     };
     let merged = merge_prompt_request(&JsonObject::new(), &request, &compiled, &identity(), true);
@@ -285,7 +310,7 @@ fn merge_prompt_request_stamps_the_compiled_fields_and_the_identity() {
     assert_eq!(merged.fields.get("prompt_id"), Some(&text("request-id")));
     assert_eq!(
         merged.fields.get("prompt_variables"),
-        Some(&object(&[("name", text("world"))]))
+        Some(&json_object(&[("name", text("world"))]))
     );
     assert_eq!(merged.fields.get("prompt_label"), Some(&text("production")));
 }
@@ -417,7 +442,7 @@ fn prompt_deployment() -> DeploymentSpec {
     litellm_params.insert("prompt_id".to_owned(), text("greeting"));
     litellm_params.insert(
         "prompt_variables".to_owned(),
-        object(&[("name", text("world"))]),
+        json_object(&[("name", text("world"))]),
     );
     litellm_params.insert("prompt_label".to_owned(), text("production"));
     DeploymentSpec {
@@ -443,7 +468,7 @@ async fn prompt_factory_passes_the_reference_arguments_to_every_port() {
         ("temperature", number(1)),
         ("original_function", text("acompletion")),
     ]);
-    let messages = [object(&[("role", text("user"))])];
+    let messages = [json_object(&[("role", text("user"))])];
     let answer = prompt_factory("support-prompt", &messages, request, &ports)
         .await
         .unwrap();
@@ -462,11 +487,11 @@ fn assert_reference_arguments(observed: &Observation) {
     );
     assert_eq!(
         observed.compile_messages,
-        Some(vec![object(&[("role", text("user"))])])
+        Some(vec![json_object(&[("role", text("user"))])])
     );
     assert_eq!(
         observed.compile_variables,
-        Some(Some(object(&[("name", text("world"))])))
+        Some(Some(json_object(&[("name", text("world"))])))
     );
     assert_eq!(observed.compile_label, Some(Some(text("production"))));
     assert_eq!(

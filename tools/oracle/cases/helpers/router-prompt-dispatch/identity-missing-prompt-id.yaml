@@ -8,8 +8,7 @@ call:
     - model_name: langfuse/my-prompt
       litellm_params:
         model: langfuse/my-prompt
-    request:
-      original_function: acompletion
+    request: {}
     compiled:
       model: gpt-4o
       messages:

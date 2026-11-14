@@ -1,5 +1,5 @@
 import asyncio
-from typing import Literal, Required, TypedDict
+from typing import Literal, Required, TypedDict, Unpack
 
 import litellm
 from litellm.router import Router
@@ -12,6 +12,13 @@ ROWS: TypeAdapter[list[dict[str, JsonValue]]] = TypeAdapter(list[dict[str, JsonV
 STRING: TypeAdapter[str] = TypeAdapter(str)
 
 DIRECT_CALLS: list[dict[str, JsonValue]] = []
+PROBE_COMPILED: dict[str, JsonValue] = {
+    "model": "probe-model",
+    "messages": [],
+    "optional_params": {},
+}
+# Router.acompletion fills these in itself and the trace id is random.
+ROUTER_ONLY_KEYS: tuple[str, ...] = ("litellm_trace_id", "original_function")
 
 
 class Input(TypedDict, total=False):
@@ -22,6 +29,17 @@ class Input(TypedDict, total=False):
     compiled: dict[str, JsonValue]
 
 
+class CompileCall(TypedDict):
+    model: str
+    messages: list[JsonValue]
+    non_default_params: dict[str, JsonValue]
+    prompt_id: str | None
+    prompt_variables: dict[str, JsonValue] | None
+    prompt_label: str | None
+    request_kwargs: dict[str, JsonValue]
+    injected_for_every_deployment: bool
+
+
 class _Logging(dict[str, JsonValue]):
     def __init__(self, compiled: dict[str, JsonValue]) -> None:
         super().__init__()
@@ -29,9 +47,26 @@ class _Logging(dict[str, JsonValue]):
         self.compile_call: dict[str, JsonValue] = {}
 
     def get_chat_completion_prompt(
-        self, **kwargs: JsonValue
+        self, **kwargs: Unpack[CompileCall]
     ) -> tuple[str, list[JsonValue], dict[str, JsonValue]]:
-        self.compile_call = kwargs
+        self.compile_call = {
+            "model": kwargs["model"],
+            "messages": kwargs["messages"],
+            "non_default_params": {
+                key: value
+                for key, value in kwargs["non_default_params"].items()
+                if key not in ROUTER_ONLY_KEYS
+            },
+            "prompt_id": kwargs["prompt_id"],
+            "prompt_variables": kwargs["prompt_variables"],
+            "prompt_label": kwargs["prompt_label"],
+            "request_kwargs": {
+                key: value
+                for key, value in kwargs["request_kwargs"].items()
+                if key not in ROUTER_ONLY_KEYS and key != "litellm_logging_obj"
+            },
+            "injected_for_every_deployment": kwargs["injected_for_every_deployment"],
+        }
         return (
             STRING.validate_python(self.compiled.get("model")),
             ARRAY.validate_python(self.compiled.get("messages")),
@@ -42,9 +77,7 @@ class _Logging(dict[str, JsonValue]):
 class _PromptRouter(Router):
     rows: list[dict[str, JsonValue]]
     captured: dict[str, JsonValue]
-
-    def is_prompt_model(self, model: str) -> bool:
-        return self._is_prompt_management_model(model)
+    factory_reached: bool
 
     @override
     async def async_get_available_deployment(
@@ -55,6 +88,7 @@ class _PromptRouter(Router):
         input: str | list[JsonValue] | None = None,
         specific_deployment: bool | None = False,
     ) -> dict[str, JsonValue]:
+        self.factory_reached = True
         return next(row for row in self.rows if row.get("model_name") == model)
 
     @override
@@ -71,51 +105,56 @@ class _PromptRouter(Router):
         self.captured = dict(kwargs)
         return "with_fallbacks"
 
-    async def run_factory(self, model: str, request: dict[str, JsonValue]) -> str:
-        outcome: str = await self._prompt_management_factory(model, [], request)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4530-L4535
-        return outcome
-
 
 async def record_direct_call(**kwargs: JsonValue) -> JsonValue:
     DIRECT_CALLS.append(dict(kwargs))
     return "direct"
 
 
-def _factory_output(input_value: Input) -> dict[str, JsonValue]:
+def _dispatch(input_value: Input, request: dict[str, JsonValue]) -> _PromptRouter:
     DIRECT_CALLS.clear()
     litellm.acompletion = record_direct_call
-    request = OBJECT.validate_python(input_value.get("request"))
-    logging = _Logging(OBJECT.validate_python(input_value.get("compiled")))
-    request["litellm_logging_obj"] = logging
     rows = ROWS.validate_python(input_value.get("model_list"))
     router = _PromptRouter(model_list=rows)
     router.rows = rows
     router.captured = {}
+    router.factory_reached = False
     model = STRING.validate_python(input_value.get("model"))
-    call = asyncio.run(router.run_factory(model, request))
+    asyncio.run(router.acompletion(model, [], **request))  # type: ignore[call-overload, misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2779-L2802
+    return router
+
+
+def _factory_output(input_value: Input) -> dict[str, JsonValue]:
+    request = OBJECT.validate_python(input_value.get("request"))
+    logging = _Logging(OBJECT.validate_python(input_value.get("compiled")))
+    request["litellm_logging_obj"] = logging
+    router = _dispatch(input_value, request)
+    call = "direct" if DIRECT_CALLS else "with_fallbacks"
     captured = DIRECT_CALLS[0] if DIRECT_CALLS else router.captured
     kept = captured.pop("litellm_logging_obj") is logging
-    request_kwargs = OBJECT.validate_python(logging.compile_call.get("request_kwargs"))
-    request_kwargs.pop("litellm_logging_obj")
-    logging.compile_call["request_kwargs"] = request_kwargs
+    original_function_kept = "original_function" in captured
+    for key in ROUTER_ONLY_KEYS:
+        captured.pop(key, None)
     return {
         "compile_call": logging.compile_call,
         "request": captured,
         "logging_kept": kept,
+        "original_function_kept": original_function_kept,
         "call": call,
     }
+
+
+def _is_prompt_model_output(input_value: Input) -> dict[str, JsonValue]:
+    request: dict[str, JsonValue] = {
+        "prompt_id": "probe",
+        "litellm_logging_obj": _Logging(PROBE_COMPILED),
+    }
+    return {"is_prompt_model": _dispatch(input_value, request).factory_reached}
 
 
 def run(input_value: Input) -> dict[str, JsonValue]:
     match input_value["check"]:
         case "is_prompt_model":
-            router = _PromptRouter(
-                model_list=ROWS.validate_python(input_value.get("model_list"))
-            )
-            return {
-                "is_prompt_model": router.is_prompt_model(
-                    STRING.validate_python(input_value.get("model"))
-                )
-            }
+            return _is_prompt_model_output(input_value)
         case "prompt_factory":
             return _factory_output(input_value)

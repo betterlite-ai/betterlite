@@ -10,7 +10,6 @@ call:
         model: langfuse/my-prompt
         prompt_id: greeting
     request:
-      original_function: acompletion
       temperature: 0.5
       metadata:
         tag: one

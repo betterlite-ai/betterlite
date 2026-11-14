@@ -1,5 +1,3 @@
-use std::error::Error;
-
 use betterlite_context::non_default_params::names::OPENAI_CHAT_COMPLETION_PARAMS;
 use betterlite_context::owned_parameter_names::is_litellm_owned_kwarg;
 use betterlite_models::decisions::Json;
@@ -11,7 +9,7 @@ use crate::prompt_dispatch::merge::{FinalPromptRequest, PromptCall, merge_prompt
 use crate::prompt_dispatch::ports::{CompilePromptCall, PromptPorts};
 
 #[derive(Debug, Error)]
-pub enum PromptFactoryError<PortError: Error + 'static> {
+pub enum PromptFactoryError<PortError> {
     #[error(transparent)]
     Identity(#[from] PromptIdentityError),
     #[error("the prompt management deployment has no model in litellm_params")]

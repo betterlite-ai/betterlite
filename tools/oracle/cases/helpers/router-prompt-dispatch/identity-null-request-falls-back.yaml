@@ -16,7 +16,6 @@ call:
       prompt_id: null
       prompt_variables: null
       prompt_label: null
-      original_function: acompletion
     compiled:
       model: gpt-4o
       messages:
