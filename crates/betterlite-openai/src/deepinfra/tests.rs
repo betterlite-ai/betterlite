@@ -665,6 +665,8 @@ fn the_post_call_hook_runs_between_the_json_parse_and_the_field_reads() {
 #[case::null_status(b"{\"inference_status\": null}".as_slice())]
 #[case::scores_not_a_list(b"{\"scores\": 4}".as_slice())]
 #[case::score_not_a_number(b"{\"scores\": [\"x\"]}".as_slice())]
+// rust_decimal cannot hold 1e300 exactly, so the score conversion fails and the supplied response comes back
+#[case::score_past_the_decimal_range(b"{\"scores\": [1e300]}".as_slice())]
 #[case::request_id_not_a_string(b"{\"request_id\": 4}".as_slice())]
 fn a_failed_projection_returns_the_supplied_response(#[case] body: &[u8]) {
     let projected = project(body, &mut Recording::new(false), supplied_response());
