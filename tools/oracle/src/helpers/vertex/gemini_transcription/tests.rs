@@ -44,7 +44,7 @@ fn helper_seeds_select_vertex_gemini_transcription() {
 )]
 #[case::all_candidate_text(
     "all-candidate-text.yaml",
-    r#"[{"task":"transcribe","text":"hello there world"},{"task":"transcribe","text":"    a b"}]"#
+    r#"[{"task":"transcribe","text":"hello there world"},{"task":"transcribe","text":"    a b"},{"raised":200}]"#
 )]
 #[case::audio_modality_case(
     "audio-modality-case.yaml",

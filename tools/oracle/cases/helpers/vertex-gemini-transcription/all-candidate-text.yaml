@@ -11,5 +11,6 @@ call:
         status: 200
         headers: []
         body: '{"candidates":[{"content":{"parts":[{"text":"   "},{"text":"a b"}]}}]}'
+      - {step: reply, status: 200, headers: [], body: '200 OK'}
 env: {}
 compare: {ignore: []}

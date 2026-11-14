@@ -1,5 +1,6 @@
 use betterlite_http::proxy::UpstreamResponse;
 use serde::Serialize;
+use serde::de::IgnoredAny;
 use serde_json::Deserializer;
 
 use crate::gemini_response::decode::MAX_RESPONSE_BYTES;
@@ -49,29 +50,28 @@ pub fn decode_vertex_gemini_transcription(
             size: reply.body.len(),
         });
     }
-    let mut decoder = Deserializer::from_slice(&reply.body);
-    let parsed: ResponseBody = serde_path_to_error::deserialize(&mut decoder)
-        .map_err(|error| decode_error(reply.status, error))?;
-    decoder
-        .end()
-        .map_err(|source| VertexGeminiTranscriptionError::NotJson {
+    // LiteLLM runs json() over the whole body first, so a body that is not one JSON document keeps the reply status
+    serde_json::from_slice::<IgnoredAny>(&reply.body).map_err(|source| {
+        VertexGeminiTranscriptionError::NotJson {
             status: reply.status,
             source,
-        })?;
+        }
+    })?;
+    let mut decoder = Deserializer::from_slice(&reply.body);
+    let parsed: ResponseBody =
+        serde_path_to_error::deserialize(&mut decoder).map_err(shape_error)?;
     project(&parsed)
 }
 
-// a syntax failure is the source's non-JSON reply, while a typed field that fails is pydantic's ValidationError
-fn decode_error(
-    status: u16,
+// the body parsed as one JSON document, so every later failure is a typed field pydantic would reject
+fn shape_error(
     error: serde_path_to_error::Error<serde_json::Error>,
 ) -> VertexGeminiTranscriptionError {
     let path = error.path().to_string();
-    let source = error.into_inner();
-    if source.is_data() {
-        return VertexGeminiTranscriptionError::Shape { path, source };
+    VertexGeminiTranscriptionError::Shape {
+        path,
+        source: error.into_inner(),
     }
-    VertexGeminiTranscriptionError::NotJson { status, source }
 }
 
 fn project(

@@ -566,6 +566,23 @@ fn a_non_json_reply_keeps_the_reply_status() {
     ));
 }
 
+// a proxy's plain-text status line starts with a JSON number, but LiteLLM's json() still refuses the body
+#[test]
+fn a_body_that_is_not_one_json_document_keeps_the_reply_status() {
+    let error = decode_vertex_gemini_transcription(&reply(200, "200 OK")).unwrap_err();
+    assert!(matches!(
+        error,
+        VertexGeminiTranscriptionError::NotJson { status: 200, .. }
+    ));
+    assert_eq!(error.status_code(), Some(200));
+    let trailing =
+        decode_vertex_gemini_transcription(&reply(201, r#"{"candidates":null} tail"#)).unwrap_err();
+    assert!(matches!(
+        trailing,
+        VertexGeminiTranscriptionError::NotJson { status: 201, .. }
+    ));
+}
+
 #[test]
 fn a_reply_over_the_size_limit_is_refused() {
     let at_limit = format!("{{}}{}", " ".repeat(MAX_RESPONSE_BYTES - 2));
