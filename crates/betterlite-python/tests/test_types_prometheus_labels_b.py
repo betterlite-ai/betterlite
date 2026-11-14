@@ -335,6 +335,7 @@ def test_names_label_value_defaults_match_litellm() -> None:
     ours = UserAPIKeyLabelValues()
     theirs = litellm_prometheus.UserAPIKeyLabelValues()
     assert dict(ours.model_dump()) == theirs.model_dump()
+    assert list(ours.model_dump()) == list(theirs.model_dump())
     assert [field.name for field in fields(UserAPIKeyLabelValues)] == [
         field.name for field in fields(litellm_prometheus.UserAPIKeyLabelValues)
     ]
