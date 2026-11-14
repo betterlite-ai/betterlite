@@ -9,4 +9,7 @@ deviations:
   - what: A CometAPI embedding reply is decoded through B010's prepared execution, so it carries the caller's model.
     why: The typed EmbeddingResponse needs a model, and B010's decode gives the caller's model precedence.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cometapi/embed/transformation.py#L111-L130
-kept_bugs: []
+kept_bugs:
+  - what: A CometAPI embedding with no API key anywhere sends Authorization with the literal value Bearer None instead of omitting the header.
+    why: The wire request stays byte-identical to LiteLLM's for a keyless deployment, and a setup that can authenticate never reaches this value; B1437's shared configuration also reads COMETAPI_KEY, as LiteLLM's validate_environment does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cometapi/embed/transformation.py#L59-L66
