@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt;
 use std::time::Duration;
 
 use betterlite_http::proxy::limits::read_bounded;
@@ -31,7 +32,6 @@ pub struct LegacyAzureContentSafetyParams {
     pub thresholds: BTreeMap<String, i64>,
 }
 
-#[derive(Debug)]
 pub struct LegacyAzureContentSafety {
     pub endpoint: String,
     pub api_key: SecretString,
@@ -40,6 +40,20 @@ pub struct LegacyAzureContentSafety {
     pub timeout: Duration,
     pub retry_backoff_factor: Duration,
     pub clock: fn() -> Timestamp,
+}
+
+// the clock is a fn pointer, so the derive would print an address
+impl fmt::Debug for LegacyAzureContentSafety {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LegacyAzureContentSafety")
+            .field("endpoint", &self.endpoint)
+            .field("api_key", &self.api_key)
+            .field("client", &self.client)
+            .field("thresholds", &self.thresholds)
+            .field("timeout", &self.timeout)
+            .field("retry_backoff_factor", &self.retry_backoff_factor)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
