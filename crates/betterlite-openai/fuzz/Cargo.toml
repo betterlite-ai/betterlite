@@ -480,3 +480,10 @@ path = "fuzz_targets/openai_response_resources.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "xai_chat_reply"
+path = "fuzz_targets/xai_chat_reply.rs"
+test = false
+doc = false
+bench = false
