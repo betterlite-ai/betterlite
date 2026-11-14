@@ -54,7 +54,7 @@ async fn operations_without_window_metadata_take_the_direct_increment() {
         .expect("the mixed routing");
     assert_eq!(
         operation_tuples(&usage.increments()),
-        vec![("plain".to_owned(), 4.0, Some(60))]
+        vec![("plain".to_owned(), 4.0_f64, Some(60))]
     );
     assert_eq!(script.calls().len(), 1);
     assert_eq!(
@@ -79,8 +79,8 @@ async fn an_operation_with_only_half_the_window_metadata_takes_the_direct_increm
     assert_eq!(
         operation_tuples(&usage.increments()),
         vec![
-            (COUNTER_KEY.to_owned(), 2.0, Some(60)),
-            (COUNTER_KEY.to_owned(), 2.0, Some(60)),
+            (COUNTER_KEY.to_owned(), 2.0_f64, Some(60)),
+            (COUNTER_KEY.to_owned(), 2.0_f64, Some(60)),
         ]
     );
     assert!(script.calls().is_empty());
@@ -104,7 +104,7 @@ async fn a_local_backend_updates_the_local_cache() {
         .expect("the local routing");
     assert_eq!(
         usage.local_sets(),
-        vec![(COUNTER_KEY.to_owned(), 12.0, Some(60))]
+        vec![(COUNTER_KEY.to_owned(), 12.0_f64, Some(60))]
     );
     assert!(usage.increments().is_empty());
     assert!(script.calls().is_empty());

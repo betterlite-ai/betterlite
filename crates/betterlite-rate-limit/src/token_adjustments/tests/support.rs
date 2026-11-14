@@ -237,8 +237,10 @@ impl CounterScript for FakeScript {
     }
 }
 
+pub(crate) type BatchCall = (String, Vec<String>, Vec<RedisScalar>);
+
 pub(crate) struct FakeBatch {
-    calls: Mutex<Vec<(String, Vec<String>, Vec<RedisScalar>)>>,
+    calls: Mutex<Vec<BatchCall>>,
     hooks: Mutex<Vec<SettledHook<ScriptReply>>>,
 }
 
@@ -250,7 +252,7 @@ impl FakeBatch {
         })
     }
 
-    pub(crate) fn calls(&self) -> Vec<(String, Vec<String>, Vec<RedisScalar>)> {
+    pub(crate) fn calls(&self) -> Vec<BatchCall> {
         self.calls.lock().expect("the batch lock").clone()
     }
 

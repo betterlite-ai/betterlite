@@ -148,8 +148,8 @@ fn the_window_guarded_script_preserves_an_existing_ttl() {
 #[test]
 fn the_token_arguments_pair_each_increment_with_its_ttl() {
     let operations = [
-        operation("{a:1}:tokens", 3.5, Some(60)),
-        operation("{b:1}:tokens", -2.0, None),
+        operation("{alpha}:tokens", 3.5, Some(60)),
+        operation("{beta}:tokens", -2.0, None),
     ];
     assert_eq!(
         token_increment_args(&operations),
@@ -165,7 +165,7 @@ fn the_token_arguments_pair_each_increment_with_its_ttl() {
 #[test]
 fn the_guarded_arguments_are_the_start_the_increment_and_the_ttl() {
     assert_eq!(
-        window_guarded_args("100", &operation("{a:1}:tokens", -5.0, None)),
+        window_guarded_args("100", &operation("{alpha}:tokens", -5.0, None)),
         vec![
             RedisScalar::Text("100".to_owned()),
             RedisScalar::Text("-5".to_owned()),
@@ -173,7 +173,7 @@ fn the_guarded_arguments_are_the_start_the_increment_and_the_ttl() {
         ]
     );
     assert_eq!(
-        window_guarded_args("101", &operation("{a:1}:tokens", 5.0, Some(30))),
+        window_guarded_args("101", &operation("{alpha}:tokens", 5.0, Some(30))),
         vec![
             RedisScalar::Text("101".to_owned()),
             RedisScalar::Text("5".to_owned()),

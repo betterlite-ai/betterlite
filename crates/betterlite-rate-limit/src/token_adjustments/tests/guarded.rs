@@ -61,7 +61,7 @@ async fn the_local_increment_adds_the_delta_to_the_cached_counter() {
         .expect("the matching window");
     assert_eq!(
         usage.local_sets(),
-        vec![(COUNTER_KEY.to_owned(), 12.75, Some(60))]
+        vec![(COUNTER_KEY.to_owned(), 12.75_f64, Some(60))]
     );
     assert_eq!(
         cache.reads(),
@@ -94,7 +94,7 @@ async fn a_local_adjustment_waits_for_the_check_and_increment_lock() {
     pinned.await.expect("the locked local adjustment");
     assert_eq!(
         usage.local_sets(),
-        vec![(COUNTER_KEY.to_owned(), 12.75, Some(60))]
+        vec![(COUNTER_KEY.to_owned(), 12.75_f64, Some(60))]
     );
 }
 
@@ -114,7 +114,7 @@ async fn a_local_increment_without_a_counter_starts_from_zero() {
         .expect("the matching window");
     assert_eq!(
         usage.local_sets(),
-        vec![(COUNTER_KEY.to_owned(), 4.0, Some(60))]
+        vec![(COUNTER_KEY.to_owned(), 4.0_f64, Some(60))]
     );
 }
 
@@ -135,7 +135,7 @@ async fn an_integer_counter_is_added_as_a_float() {
         .expect("the matching window");
     assert_eq!(
         usage.local_sets(),
-        vec![(COUNTER_KEY.to_owned(), 12.5, Some(60))]
+        vec![(COUNTER_KEY.to_owned(), 12.5_f64, Some(60))]
     );
 }
 
@@ -156,7 +156,7 @@ async fn a_counter_text_with_space_around_it_parses() {
         .expect("the matching window");
     assert_eq!(
         usage.local_sets(),
-        vec![(COUNTER_KEY.to_owned(), 8.5, Some(60))]
+        vec![(COUNTER_KEY.to_owned(), 8.5_f64, Some(60))]
     );
 }
 
@@ -333,7 +333,7 @@ async fn a_failed_guarded_script_keeps_a_positive_increment() {
     apply_redis_guarded_tokens(&adjustments, &operations).await;
     assert_eq!(
         operation_tuples(&usage.increments()),
-        vec![(COUNTER_KEY.to_owned(), 5.0, Some(60))]
+        vec![(COUNTER_KEY.to_owned(), 5.0_f64, Some(60))]
     );
     assert!(usage.pipelines().is_empty());
 }
@@ -383,7 +383,7 @@ async fn without_the_guarded_script_a_positive_increment_still_runs() {
     apply_redis_guarded_tokens(&adjustments, &operations).await;
     assert_eq!(
         operation_tuples(&usage.increments()),
-        vec![(COUNTER_KEY.to_owned(), 5.0, Some(60))]
+        vec![(COUNTER_KEY.to_owned(), 5.0_f64, Some(60))]
     );
 }
 

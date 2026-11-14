@@ -37,15 +37,15 @@ async fn without_the_script_every_operation_takes_the_regular_pipeline() {
     let usage = FakeUsage::new();
     let adjustments = without_scripts(&cache, &usage);
     let operations = [
-        operation("{a:1}:tokens", 4.0, Some(60)),
-        operation("{a:1}:requests", 1.0, None),
+        operation("{alpha}:tokens", 4.0, Some(60)),
+        operation("{alpha}:requests", 1.0, None),
     ];
     increment_tokens_keeping_ttl(&adjustments, &operations).await;
     assert_eq!(
         pipeline_tuples(&usage.pipelines()),
         vec![vec![
-            ("{a:1}:tokens".to_owned(), 4.0, Some(60)),
-            ("{a:1}:requests".to_owned(), 1.0, None),
+            ("{alpha}:tokens".to_owned(), 4.0_f64, Some(60)),
+            ("{alpha}:requests".to_owned(), 1.0_f64, None),
         ]]
     );
 }
@@ -63,14 +63,14 @@ async fn a_standalone_cache_runs_one_script_for_every_operation() {
         None,
     );
     let operations = [
-        operation("{a:1}:tokens", 4.0, Some(60)),
-        operation("{a:1}:requests", 1.0, None),
+        operation("{alpha}:tokens", 4.0, Some(60)),
+        operation("{alpha}:requests", 1.0, None),
     ];
     increment_tokens_keeping_ttl(&adjustments, &operations).await;
     assert_eq!(
         script.calls(),
         vec![(
-            vec!["{a:1}:tokens".to_owned(), "{a:1}:requests".to_owned()],
+            vec!["{alpha}:tokens".to_owned(), "{alpha}:requests".to_owned()],
             vec![
                 RedisScalar::Float(4.0),
                 RedisScalar::Text("60".to_owned()),
@@ -128,12 +128,12 @@ async fn a_failed_script_run_falls_back_to_the_regular_pipeline() {
         None,
         None,
     );
-    let operations = [operation("{a:1}:tokens", 4.0, Some(60))];
+    let operations = [operation("{alpha}:tokens", 4.0, Some(60))];
     increment_tokens_keeping_ttl(&adjustments, &operations).await;
     assert_eq!(script.calls().len(), 1);
     assert_eq!(
         pipeline_tuples(&usage.pipelines()),
-        vec![vec![("{a:1}:tokens".to_owned(), 4.0, Some(60))]]
+        vec![vec![("{alpha}:tokens".to_owned(), 4.0_f64, Some(60))]]
     );
 }
 
@@ -159,8 +159,8 @@ async fn a_second_group_failing_falls_back_with_every_operation() {
     assert_eq!(
         pipeline_tuples(&usage.pipelines()),
         vec![vec![
-            ("{foo}:tokens".to_owned(), 4.0, Some(60)),
-            ("{bar}:tokens".to_owned(), 2.0, Some(60)),
+            ("{foo}:tokens".to_owned(), 4.0_f64, Some(60)),
+            ("{bar}:tokens".to_owned(), 2.0_f64, Some(60)),
         ]]
     );
 }
@@ -176,9 +176,9 @@ async fn an_open_post_call_batch_takes_each_group_instead_of_running_it() {
         Arc::clone(&usage),
         Some(script_handle(&script)),
         None,
-        Some(batch.clone()),
+        Some(Arc::clone(&batch)),
     );
-    let operations = [operation("{a:1}:tokens", 4.0, Some(60))];
+    let operations = [operation("{alpha}:tokens", 4.0, Some(60))];
     increment_tokens_keeping_ttl(&adjustments, &operations).await;
     assert!(script.calls().is_empty());
     assert!(usage.pipelines().is_empty());
@@ -186,7 +186,7 @@ async fn an_open_post_call_batch_takes_each_group_instead_of_running_it() {
         batch.calls(),
         vec![(
             TOKEN_INCREMENT_SCRIPT.to_owned(),
-            vec!["{a:1}:tokens".to_owned()],
+            vec!["{alpha}:tokens".to_owned()],
             vec![RedisScalar::Float(4.0), RedisScalar::Text("60".to_owned()),],
         )]
     );
@@ -197,7 +197,7 @@ async fn executing_without_a_registered_script_does_nothing() {
     let cache = FakeCache::new(Some(RedisCacheKind::Standalone));
     let usage = FakeUsage::new();
     let adjustments = without_scripts(&cache, &usage);
-    let operations = [operation("{a:1}:tokens", 4.0, Some(60))];
+    let operations = [operation("{alpha}:tokens", 4.0, Some(60))];
     execute_token_increment_script(&adjustments, &operations)
         .await
         .expect("the absent script path");

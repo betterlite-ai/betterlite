@@ -5,14 +5,16 @@ use crate::token_adjustments::store::{TokenAdjustmentError, token_float};
 
 #[test]
 fn token_float_keeps_zero() {
-    assert_eq!(token_float(0).expect("zero"), 0.0);
+    assert_eq!(token_float(0).expect("zero").to_bits(), 0.0_f64.to_bits());
 }
 
 #[test]
 fn token_float_keeps_the_largest_exact_count() {
     assert_eq!(
-        token_float(MAX_EXACT_COUNT).expect("the largest exact count"),
-        9_007_199_254_740_992.0
+        token_float(MAX_EXACT_COUNT)
+            .expect("the largest exact count")
+            .to_bits(),
+        9_007_199_254_740_992.0_f64.to_bits()
     );
 }
 
@@ -29,7 +31,10 @@ fn token_float_rejects_the_next_count() {
 
 #[test]
 fn token_float_keeps_a_negative_count_in_range() {
-    assert_eq!(token_float(-5).expect("a small refund"), -5.0);
+    assert_eq!(
+        token_float(-5).expect("a small refund").to_bits(),
+        (-5.0_f64).to_bits()
+    );
 }
 
 #[test]

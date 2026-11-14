@@ -50,7 +50,7 @@ fn an_unreserved_target_gets_the_whole_actual_count() {
         build_tpm_reconciliation_ops(&targets, &reconciliation).expect("the unreserved delta");
     assert_eq!(
         super::support::operation_tuples(&operations),
-        vec![("{user:u1}:tokens".to_owned(), 10.0, Some(60))]
+        vec![("{user:u1}:tokens".to_owned(), 10.0_f64, Some(60))]
     );
 }
 
@@ -68,7 +68,7 @@ fn a_reserved_target_gets_the_difference() {
         build_tpm_reconciliation_ops(&targets, &reconciliation).expect("the reserved delta");
     assert_eq!(
         super::support::operation_tuples(&operations),
-        vec![("{user:u1}:tokens".to_owned(), 6.0, Some(60))]
+        vec![("{user:u1}:tokens".to_owned(), 6.0_f64, Some(60))]
     );
 }
 
@@ -119,7 +119,7 @@ fn a_refund_under_a_reserved_scope_stays_negative() {
     let operations = build_tpm_reconciliation_ops(&targets, &reconciliation).expect("the refund");
     assert_eq!(
         super::support::operation_tuples(&operations),
-        vec![("{user:u1}:tokens".to_owned(), -3.0, Some(60))]
+        vec![("{user:u1}:tokens".to_owned(), -3.0_f64, Some(60))]
     );
 }
 
@@ -140,8 +140,8 @@ fn each_target_keeps_its_scope_and_the_window_size() {
     assert_eq!(
         super::support::operation_tuples(&operations),
         vec![
-            ("{user:u1}:tokens".to_owned(), 6.0, Some(90)),
-            ("{team:t1}:tokens".to_owned(), 10.0, Some(90)),
+            ("{user:u1}:tokens".to_owned(), 6.0_f64, Some(90)),
+            ("{team:t1}:tokens".to_owned(), 10.0_f64, Some(90)),
         ]
     );
 }
@@ -184,7 +184,10 @@ fn a_reserved_scope_with_an_identity_gets_the_window_guard() {
         .expect("the reserved project operation")
         .expect("the operation");
     assert_eq!(reservation.operation.key, "{user:u1}:tokens");
-    assert_eq!(reservation.operation.increment_value, 6.0);
+    assert_eq!(
+        reservation.operation.increment_value.to_bits(),
+        6.0_f64.to_bits()
+    );
     assert_eq!(reservation.operation.ttl, Some(60));
     assert_eq!(reservation.window_key.as_deref(), Some("{user:u1}:window"));
     assert_eq!(reservation.expected_window_start.as_deref(), Some("100"));
@@ -209,7 +212,10 @@ fn a_reserved_scope_without_an_identity_is_a_plain_increment() {
         .expect("the reserved project operation")
         .expect("the operation");
     assert_eq!(reservation.operation.key, "{user:u1}:tokens");
-    assert_eq!(reservation.operation.increment_value, 6.0);
+    assert_eq!(
+        reservation.operation.increment_value.to_bits(),
+        6.0_f64.to_bits()
+    );
     assert!(reservation.window_key.is_none());
     assert!(reservation.expected_window_start.is_none());
     assert!(reservation.reservation_backend.is_none());
@@ -233,7 +239,10 @@ fn an_unreserved_scope_ignores_a_window_identity() {
     let reservation = build_project_reservation_op(&target, &reconciliation, &window_identities)
         .expect("the unreserved project operation")
         .expect("the operation");
-    assert_eq!(reservation.operation.increment_value, 10.0);
+    assert_eq!(
+        reservation.operation.increment_value.to_bits(),
+        10.0_f64.to_bits()
+    );
     assert!(reservation.window_key.is_none());
     assert!(reservation.reservation_backend.is_none());
 }
@@ -297,11 +306,20 @@ fn the_plural_builder_keeps_target_order() {
         .expect("the project operations");
     assert_eq!(reservations.len(), 3);
     assert_eq!(reservations[0].operation.key, "{user:u1}:tokens");
-    assert_eq!(reservations[0].operation.increment_value, 6.0);
+    assert_eq!(
+        reservations[0].operation.increment_value.to_bits(),
+        6.0_f64.to_bits()
+    );
     assert_eq!(reservations[1].operation.key, "{team:t1}:tokens");
-    assert_eq!(reservations[1].operation.increment_value, 10.0);
+    assert_eq!(
+        reservations[1].operation.increment_value.to_bits(),
+        10.0_f64.to_bits()
+    );
     assert_eq!(reservations[2].operation.key, "{user:u2}:tokens");
-    assert_eq!(reservations[2].operation.increment_value, 6.0);
+    assert_eq!(
+        reservations[2].operation.increment_value.to_bits(),
+        6.0_f64.to_bits()
+    );
 }
 
 #[test]
@@ -323,7 +341,10 @@ fn the_plural_builder_drops_an_empty_delta() {
         .expect("the project operations");
     assert_eq!(reservations.len(), 1);
     assert_eq!(reservations[0].operation.key, "{team:t1}:tokens");
-    assert_eq!(reservations[0].operation.increment_value, 4.0);
+    assert_eq!(
+        reservations[0].operation.increment_value.to_bits(),
+        4.0_f64.to_bits()
+    );
 }
 
 #[test]
@@ -340,5 +361,8 @@ fn the_plural_builder_keeps_a_negative_refund() {
     let reservations = build_project_reservation_ops(&targets, &reconciliation, &window_identities)
         .expect("the refund");
     assert_eq!(reservations.len(), 1);
-    assert_eq!(reservations[0].operation.increment_value, -3.0);
+    assert_eq!(
+        reservations[0].operation.increment_value.to_bits(),
+        (-3.0_f64).to_bits()
+    );
 }

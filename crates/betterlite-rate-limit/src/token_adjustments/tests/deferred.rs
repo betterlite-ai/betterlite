@@ -36,11 +36,11 @@ async fn a_deferral_without_the_script_is_not_taken() {
         Arc::clone(&usage),
         None,
         None,
-        Some(batch.clone()),
+        Some(Arc::clone(&batch)),
     );
-    let keys = vec!["{a:1}:tokens".to_owned()];
+    let keys = vec!["{alpha}:tokens".to_owned()];
     let args = vec![RedisScalar::Float(4.0), RedisScalar::Text("60".to_owned())];
-    let operations = [operation("{a:1}:tokens", 4.0, Some(60))];
+    let operations = [operation("{alpha}:tokens", 4.0, Some(60))];
     assert!(!defer_token_increment_script(
         &adjustments,
         &keys,
@@ -62,9 +62,9 @@ async fn a_deferral_without_an_open_batch_is_not_taken() {
         None,
         None,
     );
-    let keys = vec!["{a:1}:tokens".to_owned()];
+    let keys = vec!["{alpha}:tokens".to_owned()];
     let args = vec![RedisScalar::Float(4.0), RedisScalar::Text("60".to_owned())];
-    let operations = [operation("{a:1}:tokens", 4.0, Some(60))];
+    let operations = [operation("{alpha}:tokens", 4.0, Some(60))];
     assert!(!defer_token_increment_script(
         &adjustments,
         &keys,
@@ -84,11 +84,11 @@ async fn a_deferral_with_the_script_and_an_open_batch_is_taken() {
         Arc::clone(&usage),
         Some(script_handle(&script)),
         None,
-        Some(batch.clone()),
+        Some(Arc::clone(&batch)),
     );
-    let keys = vec!["{a:1}:tokens".to_owned()];
+    let keys = vec!["{alpha}:tokens".to_owned()];
     let args = vec![RedisScalar::Float(4.0), RedisScalar::Text("60".to_owned())];
-    let operations = [operation("{a:1}:tokens", 4.0, Some(60))];
+    let operations = [operation("{alpha}:tokens", 4.0, Some(60))];
     assert!(defer_token_increment_script(
         &adjustments,
         &keys,
@@ -109,9 +109,9 @@ async fn a_settled_deferral_that_succeeded_leaves_the_pipeline_alone() {
         Arc::clone(&usage),
         Some(script_handle(&script)),
         None,
-        Some(batch.clone()),
+        Some(Arc::clone(&batch)),
     );
-    let operations = [operation("{a:1}:tokens", 4.0, Some(60))];
+    let operations = [operation("{alpha}:tokens", 4.0, Some(60))];
     increment_tokens_keeping_ttl(&adjustments, &operations).await;
     batch.settle(&Ok(ScriptReply::Array(Vec::new()))).await;
     assert!(usage.pipelines().is_empty());
@@ -128,14 +128,14 @@ async fn a_settled_deferral_that_failed_runs_the_regular_pipeline() {
         Arc::clone(&usage),
         Some(script_handle(&script)),
         None,
-        Some(batch.clone()),
+        Some(Arc::clone(&batch)),
     );
-    let operations = [operation("{a:1}:tokens", 4.0, Some(60))];
+    let operations = [operation("{alpha}:tokens", 4.0, Some(60))];
     increment_tokens_keeping_ttl(&adjustments, &operations).await;
     batch.settle(&failed_script()).await;
     assert_eq!(
         pipeline_tuples(&usage.pipelines()),
-        vec![vec![("{a:1}:tokens".to_owned(), 4.0, Some(60))]]
+        vec![vec![("{alpha}:tokens".to_owned(), 4.0_f64, Some(60))]]
     );
 }
 
@@ -150,9 +150,9 @@ async fn a_cancelled_deferral_does_not_run_the_regular_pipeline() {
         Arc::clone(&usage),
         Some(script_handle(&script)),
         None,
-        Some(batch.clone()),
+        Some(Arc::clone(&batch)),
     );
-    let operations = [operation("{a:1}:tokens", 4.0, Some(60))];
+    let operations = [operation("{alpha}:tokens", 4.0, Some(60))];
     increment_tokens_keeping_ttl(&adjustments, &operations).await;
     batch.settle(&cancelled_script()).await;
     assert!(usage.pipelines().is_empty());
@@ -169,7 +169,7 @@ async fn each_deferred_group_carries_its_own_fallback_operations() {
         Arc::clone(&usage),
         Some(script_handle(&script)),
         None,
-        Some(batch.clone()),
+        Some(Arc::clone(&batch)),
     );
     let operations = [
         operation("{foo}:tokens", 4.0, Some(60)),
@@ -181,8 +181,8 @@ async fn each_deferred_group_carries_its_own_fallback_operations() {
     assert_eq!(
         pipeline_tuples(&usage.pipelines()),
         vec![
-            vec![("{foo}:tokens".to_owned(), 4.0, Some(60))],
-            vec![("{bar}:tokens".to_owned(), 2.0, Some(60))],
+            vec![("{foo}:tokens".to_owned(), 4.0_f64, Some(60))],
+            vec![("{bar}:tokens".to_owned(), 2.0_f64, Some(60))],
         ]
     );
 }
