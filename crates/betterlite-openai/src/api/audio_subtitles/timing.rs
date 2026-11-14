@@ -1,6 +1,7 @@
+use std::num::ParseFloatError;
+
 use num_traits::ToPrimitive as _;
-use serde::de::Error as _;
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
 
@@ -14,38 +15,53 @@ pub enum SubtitleTimingError {
     NotANumber,
     #[error("a word timing rounds outside the millisecond range")]
     OutOfRange,
+    #[error("a word timing string is not a number: {0}")]
+    Unparsable(#[from] ParseFloatError),
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TranscriptionWordTiming {
-    #[serde(default)]
     pub word: String,
-    #[serde(default, deserialize_with = "lax_seconds")]
     pub start: Option<f64>,
-    #[serde(default, deserialize_with = "lax_seconds")]
     pub end: Option<f64>,
-    #[serde(default)]
     pub speaker: Option<String>,
 }
 
-fn lax_seconds<'de, Source: Deserializer<'de>>(
-    deserializer: Source,
-) -> Result<Option<f64>, Source::Error> {
-    match Option::<Value>::deserialize(deserializer)? {
+#[derive(Deserialize)]
+struct RawWordTiming {
+    #[serde(default)]
+    word: String,
+    #[serde(default)]
+    start: Option<Value>,
+    #[serde(default)]
+    end: Option<Value>,
+    #[serde(default)]
+    speaker: Option<String>,
+}
+
+impl TryFrom<RawWordTiming> for TranscriptionWordTiming {
+    type Error = SubtitleTimingError;
+
+    fn try_from(raw: RawWordTiming) -> Result<Self, Self::Error> {
+        Ok(Self {
+            word: raw.word,
+            start: lax_seconds(raw.start)?,
+            end: lax_seconds(raw.end)?,
+            speaker: raw.speaker,
+        })
+    }
+}
+
+fn lax_seconds(value: Option<Value>) -> Result<Option<f64>, SubtitleTimingError> {
+    match value {
         None | Some(Value::Null) => Ok(None),
         Some(Value::Number(number)) => number
             .as_f64()
             .map(Some)
-            .ok_or_else(|| Source::Error::custom("a timing is outside the float range")),
-        Some(Value::Bool(flag)) => Ok(Some(if flag { 1.0 } else { 0.0 })),
-        Some(Value::String(text)) => text
-            .trim()
-            .parse::<f64>()
-            .map(Some)
-            .map_err(Source::Error::custom),
-        Some(Value::Array(_) | Value::Object(_)) => Err(Source::Error::custom(
-            "a timing is a number, a bool or a string",
-        )),
+            .ok_or(SubtitleTimingError::OutOfRange),
+        Some(Value::Bool(flag)) => Ok(Some(f64::from(flag))),
+        Some(Value::String(text)) => Ok(Some(text.trim().parse::<f64>()?)),
+        Some(Value::Array(_) | Value::Object(_)) => Err(SubtitleTimingError::NotANumber),
     }
 }
 
@@ -81,7 +97,14 @@ pub fn word_to_subtitle_token(
 
 #[must_use]
 pub fn parse_word_timings(words: &Value) -> Vec<TranscriptionWordTiming> {
-    serde_json::from_value(words.clone()).unwrap_or_default()
+    let Ok(records) = serde_json::from_value::<Vec<RawWordTiming>>(words.clone()) else {
+        return Vec::new();
+    };
+    records
+        .into_iter()
+        .map(TranscriptionWordTiming::try_from)
+        .collect::<Result<_, _>>()
+        .unwrap_or_default()
 }
 
 pub fn synthesize_subtitle_document(
