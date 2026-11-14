@@ -404,7 +404,12 @@ SAMPLES_BY_CLASS = {
     "ErrorEvent": {
         "type": "error",
         "sequence_number": 9,
-        "error": {"type": "invalid_request_error", "code": "bad", "message": "bad input"},
+        "error": {
+            "type": "invalid_request_error",
+            "code": "bad",
+            "message": "bad input",
+            "param": {"field": "input"},
+        },
     },
 }
 
@@ -951,7 +956,7 @@ def test_openai_chat_events(report: Report) -> None:
             "type": "invalid_request_error",
             "code": "bad",
             "message": "bad input",
-            "param": None,
+            "param": {"field": "input"},
         },
     }
     content_parts = [
