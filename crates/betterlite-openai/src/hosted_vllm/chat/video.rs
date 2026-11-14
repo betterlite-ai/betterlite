@@ -40,7 +40,7 @@ fn file_fields(part: &ContentPart) -> Result<FileFields<'_>, HostedVllmChatError
         Some(Value::Object(file)) => Some(file),
         Some(_) => return Err(HostedVllmChatError::FileObject),
     };
-    let Some(file) = file else {
+    let Some(file_object) = file else {
         return Ok(FileFields {
             format: None,
             file_data: None,
@@ -48,9 +48,9 @@ fn file_fields(part: &ContentPart) -> Result<FileFields<'_>, HostedVllmChatError
         });
     };
     Ok(FileFields {
-        format: text_field(file, FORMAT)?,
-        file_data: text_field(file, FILE_DATA)?,
-        file_id: text_field(file, FILE_ID)?,
+        format: text_field(file_object, FORMAT)?,
+        file_data: text_field(file_object, FILE_DATA)?,
+        file_id: text_field(file_object, FILE_ID)?,
     })
 }
 
@@ -66,12 +66,12 @@ pub(crate) fn is_video_file(part: &ContentPart) -> Result<bool, HostedVllmChatEr
         return Ok(true);
     }
     if let Some(file_data) = fields.file_data.filter(|data| !data.is_empty()) {
-        let mime = parse_mime_type(file_data);
-        return Ok(mime.is_some_and(|mime| mime.starts_with(VIDEO_PREFIX)));
+        return Ok(parse_mime_type(file_data).is_some_and(|mime| mime.starts_with(VIDEO_PREFIX)));
     }
     if let Some(file_id) = fields.file_id.filter(|id| !id.is_empty()) {
-        let mime = image_mime_type_from_url(file_id);
-        return Ok(mime.is_some_and(|mime| mime.starts_with(VIDEO_PREFIX)));
+        return Ok(
+            image_mime_type_from_url(file_id).is_some_and(|mime| mime.starts_with(VIDEO_PREFIX))
+        );
     }
     Ok(false)
 }

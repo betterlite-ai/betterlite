@@ -37,10 +37,12 @@ fn assistant_text(item: &ContentPart) -> Result<String, HostedVllmChatError> {
     match given {
         Value::Null => Ok(String::new()),
         Value::String(text) => Ok(text.clone()),
-        _ => Err(HostedVllmChatError::PartString {
-            part: TEXT,
-            field: TEXT,
-        }),
+        Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_) => {
+            Err(HostedVllmChatError::PartString {
+                part: TEXT,
+                field: TEXT,
+            })
+        }
     }
 }
 

@@ -75,11 +75,11 @@ impl ChatConfig {
             }
         }
         if let Some(thinking) = params.remove(THINKING)
-            && let Value::Object(thinking) = &thinking
-            && thinking.get("type").and_then(Value::as_str) == Some("enabled")
+            && let Value::Object(thinking_fields) = &thinking
+            && thinking_fields.get("type").and_then(Value::as_str) == Some("enabled")
             && !params.contains_key(REASONING_EFFORT)
         {
-            let budget = match thinking.get("budget_tokens") {
+            let budget = match thinking_fields.get("budget_tokens") {
                 None | Some(Value::Null) => 0,
                 Some(Value::Number(number)) => {
                     number.as_i64().ok_or(HostedVllmChatError::ThinkingBudget)?

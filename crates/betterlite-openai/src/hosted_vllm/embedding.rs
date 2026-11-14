@@ -124,12 +124,12 @@ struct RawReply {
 
 #[derive(Deserialize)]
 struct RawUsage {
-    #[serde(default)]
-    prompt_tokens: u32,
-    #[serde(default)]
-    completion_tokens: u32,
-    #[serde(default)]
-    total_tokens: u32,
+    #[serde(default, rename = "prompt_tokens")]
+    prompt: u32,
+    #[serde(default, rename = "completion_tokens")]
+    completion: u32,
+    #[serde(default, rename = "total_tokens")]
+    total: u32,
 }
 
 pub fn transform_embedding_response(
@@ -145,7 +145,7 @@ pub fn transform_embedding_response(
     if let Some(error) = reply_error(&reply) {
         return Err(error);
     }
-    let reply: RawReply = serde_json::from_value(reply)
+    let decoded: RawReply = serde_json::from_value(reply)
         .map_err(|source| HostedVllmEmbeddingError::Shape { source })?;
     let mut usage = EmbeddingUsage {
         prompt_tokens: 0,
@@ -154,15 +154,15 @@ pub fn transform_embedding_response(
         prompt_tokens_details: None,
         total_tokens: 0,
     };
-    if let Some(given) = &reply.usage {
-        usage.prompt_tokens = given.prompt_tokens;
-        usage.completion_tokens = given.completion_tokens;
-        usage.total_tokens = given.total_tokens;
+    if let Some(given) = &decoded.usage {
+        usage.prompt_tokens = given.prompt;
+        usage.completion_tokens = given.completion;
+        usage.total_tokens = given.total;
     }
     Ok(EmbeddingResponse {
-        object: reply.object.unwrap_or_else(|| String::from("list")),
-        data: reply.data,
-        model: reply.model,
+        object: decoded.object.unwrap_or_else(|| String::from("list")),
+        data: decoded.data,
+        model: decoded.model,
         usage,
     })
 }
@@ -173,7 +173,9 @@ fn reply_error(reply: &Value) -> Option<HostedVllmEmbeddingError> {
     match error {
         Value::String(text) if text.is_empty() => None,
         Value::Object(fields) => object_error(fields),
-        _ => Some(provider_error(String::from(DEFAULT_ERROR), 422)),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
+            Some(provider_error(String::from(DEFAULT_ERROR), 422))
+        }
     }
 }
 
@@ -185,7 +187,7 @@ fn object_error(fields: &Object) -> Option<HostedVllmEmbeddingError> {
     }
     let status_code = code
         .and_then(Value::as_u64)
-        .and_then(|code| u16::try_from(code).ok())
+        .and_then(|number| u16::try_from(number).ok())
         .unwrap_or(422);
     Some(provider_error(error_text(message), status_code))
 }
@@ -214,10 +216,10 @@ fn is_blank(value: &Value) -> bool {
     if let Some(items) = value.as_array() {
         return items.is_empty();
     }
-    value.as_object().is_some_and(|fields| fields.is_empty())
+    value.as_object().is_some_and(Object::is_empty)
 }
 
-fn provider_error(message: String, status_code: u16) -> HostedVllmEmbeddingError {
+const fn provider_error(message: String, status_code: u16) -> HostedVllmEmbeddingError {
     HostedVllmEmbeddingError::Provider {
         message,
         status_code,

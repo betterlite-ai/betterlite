@@ -2,7 +2,7 @@ use betterlite_context::non_default_params::schema_cleanup::{
     remove_additional_properties, remove_strict_from_schema,
 };
 use betterlite_models::controls::json_value::JsonValue;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::error::HostedVllmChatError;
 use crate::openai_base_config::Object;
@@ -10,9 +10,15 @@ use crate::openai_base_config::Object;
 const CUSTOM: &str = "custom";
 const DESCRIPTION: &str = "description";
 const FUNCTION: &str = "function";
+const INPUT: &str = "input";
+const INPUT_DESCRIPTION: &str = "Raw tool input payload.";
 const INPUT_SCHEMA: &str = "input_schema";
 const NAME: &str = "name";
+const OBJECT: &str = "object";
 const PARAMETERS: &str = "parameters";
+const PROPERTIES: &str = "properties";
+const REQUIRED: &str = "required";
+const STRING: &str = "string";
 const TOOL_TYPE: &str = "type";
 
 #[derive(Clone, Copy)]
@@ -71,7 +77,7 @@ fn tool_field_value<'source>(
             return Err(field.type_error());
         }
         let skipped = field.is_empty(given)
-            && (position + 1 < sources.len() || matches!(field, ToolField::Name));
+            && (position.saturating_add(1) < sources.len() || matches!(field, ToolField::Name));
         if skipped {
             continue;
         }
@@ -92,34 +98,45 @@ fn tool_description_value(sources: &[&Object]) -> Result<Option<String>, HostedV
         .map(str::to_owned))
 }
 
+fn default_input_schema() -> Value {
+    let input = Object::from_iter([
+        (String::from(TOOL_TYPE), Value::String(String::from(STRING))),
+        (
+            String::from(DESCRIPTION),
+            Value::String(String::from(INPUT_DESCRIPTION)),
+        ),
+    ]);
+    let properties = Object::from_iter([(String::from(INPUT), Value::Object(input))]);
+    Value::Object(Object::from_iter([
+        (String::from(TOOL_TYPE), Value::String(String::from(OBJECT))),
+        (String::from(PROPERTIES), Value::Object(properties)),
+        (
+            String::from(REQUIRED),
+            Value::Array(vec![Value::String(String::from(INPUT))]),
+        ),
+    ]))
+}
+
 fn convert_custom_tool(fields: &Object, index: usize) -> Result<Value, HostedVllmChatError> {
-    let custom = match fields.get(CUSTOM) {
+    let custom_field = match fields.get(CUSTOM) {
         None | Some(Value::Null) => None,
         Some(Value::Object(custom)) => Some(custom),
         Some(_) => return Err(HostedVllmChatError::CustomToolObject),
     };
     let mut sources: Vec<&Object> = Vec::with_capacity(2);
-    if let Some(custom) = custom {
+    if let Some(custom) = custom_field {
         sources.push(custom);
     }
     sources.push(fields);
     let name = tool_name_value(&sources, index)?;
     let description = tool_description_value(&sources)?;
-    let parameters = tool_field_value(&sources, ToolField::InputSchema)?.map_or_else(
-        || {
-            json!({
-                "type": "object",
-                "properties": {"input": {"type": "string", "description": "Raw tool input payload."}},
-                "required": ["input"],
-            })
-        },
-        Clone::clone,
-    );
+    let parameters = tool_field_value(&sources, ToolField::InputSchema)?
+        .map_or_else(default_input_schema, Clone::clone);
     let mut function = Object::new();
     function.insert(String::from(NAME), Value::String(name));
     function.insert(String::from(PARAMETERS), parameters);
-    if let Some(description) = description {
-        function.insert(String::from(DESCRIPTION), Value::String(description));
+    if let Some(text) = description {
+        function.insert(String::from(DESCRIPTION), Value::String(text));
     }
     Ok(Value::Object(Object::from_iter([
         (
@@ -154,6 +171,10 @@ pub(crate) fn clean_and_convert(tools: Value) -> Result<Value, HostedVllmChatErr
         serde_json::to_value(schema).map_err(|source| HostedVllmChatError::Json { source })?;
     match cleaned {
         Value::Array(items) => Ok(Value::Array(convert_tools(items)?)),
-        other => Ok(other),
+        other @ (Value::Null
+        | Value::Bool(_)
+        | Value::Number(_)
+        | Value::String(_)
+        | Value::Object(_)) => Ok(other),
     }
 }
