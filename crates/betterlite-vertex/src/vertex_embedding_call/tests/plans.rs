@@ -20,7 +20,7 @@ use super::support::{
 };
 
 #[tokio::test]
-async fn plans_text_psc() {
+async fn text_psc() {
     let optional = json(r#"{"use_psc_endpoint_format": true}"#);
     let input = EmbeddingInput::Text(String::from("hello"));
     let mut call = text_call(&input, &optional);
@@ -43,7 +43,7 @@ async fn plans_text_psc() {
 }
 
 #[tokio::test]
-async fn plans_text_psc_flag_must_be_a_bool() {
+async fn text_psc_flag_must_be_a_bool() {
     let optional = json(r#"{"use_psc_endpoint_format": "yes"}"#);
     let input = EmbeddingInput::Text(String::from("hello"));
     let call = text_call(&input, &optional);
@@ -67,7 +67,7 @@ async fn plans_text_psc_flag_must_be_a_bool() {
 }
 
 #[tokio::test]
-async fn plans_text_zero_timeout() {
+async fn text_zero_timeout() {
     assert_eq!(
         text_client_timeout(Some(Duration::ZERO)),
         ClientTimeout::HandlerDefault
@@ -105,7 +105,7 @@ async fn plans_text_zero_timeout() {
 }
 
 #[tokio::test]
-async fn plans_text_async_client_omitted() {
+async fn text_async_client_omitted() {
     let optional = json("{}");
     let input = EmbeddingInput::Text(String::from("hello"));
     let mut call = text_call(&input, &optional);
@@ -125,7 +125,7 @@ async fn plans_text_async_client_omitted() {
 }
 
 #[tokio::test]
-async fn plans_multimodal_forced_headers() {
+async fn multimodal_forced_headers() {
     let input = json(r#""hello""#);
     let optional = extra("{}");
     let mut headers = BTreeMap::new();
@@ -158,7 +158,7 @@ async fn plans_multimodal_forced_headers() {
 }
 
 #[tokio::test]
-async fn plans_multimodal_none_timeout() {
+async fn multimodal_none_timeout() {
     let six_hundred = Timeout {
         total: Duration::from_secs(600),
         connect: Duration::from_secs(5),
@@ -212,7 +212,7 @@ async fn plans_multimodal_none_timeout() {
 }
 
 #[test]
-fn plans_supported_names() {
+fn supported_names() {
     assert_eq!(
         MULTIMODAL_EMBEDDING_MODELS,
         ["multimodalembedding", "multimodalembedding@001"]
@@ -222,7 +222,7 @@ fn plans_supported_names() {
 }
 
 #[test]
-fn plans_multimodal_default_timeout() {
+fn multimodal_default_timeout() {
     assert_eq!(DEFAULT_TIMEOUT, Duration::from_secs(300));
     let explicit = ClientTimeout::Explicit(Timeout {
         total: Duration::from_secs(300),
