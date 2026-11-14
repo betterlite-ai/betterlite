@@ -45,24 +45,20 @@ impl SearchPricingSource for Records {
     }
 }
 
-fn failure(class: &str, message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
-}
-
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = Builder::new_current_thread()
-            .build()
-            .map_err(|error| failure("RuntimeError", error.to_string()))?;
+        let runtime = Builder::new_current_thread().build().map_err(|error| {
+            Box::new(HelperError {
+                class: "RuntimeError".to_owned(),
+                message: error.to_string(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+            })
+        })?;
         let records = Records(input.model_cost.clone());
         let (input_cost, output_cost) = runtime
             .block_on(search_provider_cost_per_query(
@@ -72,19 +68,31 @@ impl crate::helpers::Helper for Op {
                 input.number_of_queries,
                 &input.optional_params,
             ))
-            .map_err(|error| match error {
-                SearchCostError::ModelInfo { .. } => {
-                    failure("ModelNotMappedError", error.to_string())
-                }
-                SearchCostError::Overflow => failure("OverflowError", error.to_string()),
+            .map_err(|error| {
+                let class = match &error {
+                    SearchCostError::ModelInfo { .. } => "ModelNotMappedError",
+                    SearchCostError::Overflow => "OverflowError",
+                };
+                Box::new(HelperError {
+                    class: class.to_owned(),
+                    message: error.to_string(),
+                    status: None,
+                    error_type: None,
+                    param: None,
+                    code: None,
+                })
             })?;
         let [input_cost, output_cost] =
             [input_cost, output_cost].map(|cost| cost.round_dp(9).to_f64());
         let (Some(input_cost), Some(output_cost)) = (input_cost, output_cost) else {
-            return Err(failure(
-                "OverflowError",
-                "the cost doesn't fit a float".to_owned(),
-            ));
+            return Err(Box::new(HelperError {
+                class: "OverflowError".to_owned(),
+                message: "the cost doesn't fit a float".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+            }));
         };
         Ok(json!({"input_cost": input_cost, "output_cost": output_cost}))
     }
