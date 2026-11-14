@@ -17,7 +17,9 @@ use super::{
     response_to_a2a, to_openai_messages,
 };
 
-pub(super) struct Source {
+pub(crate) mod support;
+
+pub(crate) struct Source {
     ids: VecDeque<Uuid>,
     timestamp: DateTime<Utc>,
 }

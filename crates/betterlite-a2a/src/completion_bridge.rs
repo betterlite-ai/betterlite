@@ -8,11 +8,17 @@ use wire::{
     SendMessageResponse, TextPart,
 };
 
+pub mod completion;
+pub mod dispatch;
 pub mod events;
+pub mod params;
 pub mod provider;
 pub mod streaming;
-mod tests;
+pub(crate) mod tests;
 pub mod wire;
+
+// LiteLLM's A2A_USER_API_KEY_HASH_PARAM, stored in litellm_params
+pub const A2A_USER_API_KEY_HASH_PARAM: &str = "litellm_a2a_user_api_key_hash";
 
 pub trait EventSource {
     fn next_uuid(&mut self) -> Uuid;
@@ -114,6 +120,7 @@ pub fn to_openai_messages(message: &A2AMessage) -> Vec<OpenAIMessage> {
     vec![OpenAIMessage {
         role: message.role.0.clone(),
         content,
+        extra: BTreeMap::new(),
     }]
 }
 

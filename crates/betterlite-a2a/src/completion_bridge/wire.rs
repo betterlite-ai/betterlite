@@ -51,10 +51,12 @@ pub struct CompletionParams {
     pub extra: BTreeMap<String, AgentJson>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OpenAIMessage {
     pub role: String,
     pub content: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, AgentJson>,
 }
 
 #[serde_as]
