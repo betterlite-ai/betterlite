@@ -63,6 +63,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "legacy_prediction"
+path = "fuzz_targets/legacy_prediction.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "multimodal_embedding"
 path = "fuzz_targets/multimodal_embedding.rs"
 test = false

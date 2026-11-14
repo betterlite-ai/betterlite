@@ -20,6 +20,7 @@ betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 data-encoding = "2.11.1"
+futures-util = { version = "0.3.34", default-features = false, features = ["alloc"] }
 google-cloud-auth = { version = "=1.18.0", default-features = false, features = ["default-rustls-provider"] }
 google-cloud-gax = { version = "=1.15.0", default-features = false }
 google-cloud-speech-v2 = "=1.15.0"
