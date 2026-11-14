@@ -1,0 +1,11 @@
+kind: helper
+name: bare-audio-request
+call:
+  studio_transcription:
+    steps:
+      - {step: supported}
+      - {step: subtitle}
+      - {step: request, model: gemini/gemini-3.5-transcribe, content: audio, optional: {}}
+      - {step: params, optional: {response_format: json, unsupported_option: 1}, non_default: {language: en, prompt: ignored}}
+env: {}
+compare: {ignore: []}

@@ -1,7 +1,7 @@
 id: B1366
 milestone: M3 providers
 title: Studio interactions transcription with word timestamps
-status: todo
+status: done
 depends_on: [B1331, B1354, B171]
 file: tasks/B1366-studio-transcription.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/gemini_audio_transcription.py"
 parent: B035
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1843
