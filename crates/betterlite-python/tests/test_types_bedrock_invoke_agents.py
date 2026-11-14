@@ -838,8 +838,8 @@ def test_names() -> None:
 def test_aws_auth_params_names() -> None:
     params = batches.AwsAuthParams
     config = params.model_config
-    assert config["extra"] == "ignore"
-    assert config["frozen"] is True
+    assert config.get("extra") == "ignore"
+    assert config.get("frozen") is True
     fields = "fields: " + MODULE_PATH.sub("", str(params.model_fields))
     expected_fields = (
         "fields: {'aws_access_key_id': FieldInfo(annotation=Union[str, NoneType], ",
