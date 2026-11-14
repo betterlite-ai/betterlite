@@ -129,7 +129,10 @@ impl EnkryptAiGuardrail {
         log_target: Option<&mut GuardrailLogTarget>,
         timing: Timing,
     ) -> Result<Detection, EnkryptAiError> {
-        let Response { raw, parsed: result } = response;
+        let Response {
+            raw,
+            parsed: result,
+        } = response;
         let (outcome, status) = match result {
             Parsed::Response(body) => {
                 let processed = process::process(&body);

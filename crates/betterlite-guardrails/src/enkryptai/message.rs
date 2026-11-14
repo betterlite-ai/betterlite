@@ -72,22 +72,22 @@ where
     T: Serialize,
 {
     match detail {
-        Some(detail) => Ok(format!("details: {}", serde_json::to_string(detail)?)),
+        Some(found) => Ok(format!("details: {}", serde_json::to_string(found)?)),
         None => Ok("details: {}".to_owned()),
     }
 }
 
 fn toxicity_names(detail: Option<&ToxicityDetail>) -> Vec<&'static str> {
-    let Some(detail) = detail else {
+    let Some(found) = detail else {
         return Vec::new();
     };
     let scores = [
-        ("toxic", detail.toxic),
-        ("severe_toxic", detail.severe_toxic),
-        ("obscene", detail.obscene),
-        ("threat", detail.threat),
-        ("insult", detail.insult),
-        ("identity_hate", detail.identity_hate),
+        ("toxic", found.toxic),
+        ("severe_toxic", found.severe_toxic),
+        ("obscene", found.obscene),
+        ("threat", found.threat),
+        ("insult", found.insult),
+        ("identity_hate", found.identity_hate),
     ];
     scores
         .into_iter()

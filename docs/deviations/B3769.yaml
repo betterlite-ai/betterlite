@@ -12,8 +12,8 @@ deviations:
   - what: A response that is not a JSON object, or whose summary or details have the wrong type, is a typed guardrail failure recorded as guardrail_failed_to_respond; LiteLLM records the same status and then raises an unhandled AttributeError from _process_enkryptai_guardrails_response.
     why: LiteLLM's unhandled AttributeError turns a provider failure into a server error with no usable cause; a typed failure keeps the failure category and the record without crashing the request task.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/enkryptai/enkryptai.py#L175-L204
-  - what: A summary key betterlite does not know as a declared detector counts only the integer 1 or 1.0; a JSON boolean true does not count, while Python's bool-equals-int makes LiteLLM treat it as detected.
-    why: Betterlite does not port Python's bool-as-int accident; declared detector fields are integers, and an unknown detector key with true is not the integer 1.
+  - what: A summary value counts as detected only when it is the number 1 or 1.0; a JSON boolean true does not count, while Python's bool-equals-int makes LiteLLM treat it as detected.
+    why: Betterlite does not port Python's bool-as-int accident; true is not the integer 1.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/enkryptai/enkryptai.py#L191-L202
   - what: A detected attack whose details entry is null is reported with default fields (N/A, {}, false, empty list) instead of LiteLLM's unhandled AttributeError.
     why: LiteLLM stores the null detail at https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/enkryptai/enkryptai.py#L198-L202 and then crashes while formatting it at https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/enkryptai/enkryptai.py#L249-L265; a null detail takes the same defaults as an absent one, so the detected attack stays a 400 guardrail intervention.

@@ -737,6 +737,8 @@ async fn enkryptai_guardrail_rejects_an_invalid_policy_header() {
 #[case::unknown_integer(r#"{"summary":{"nsfw":1},"details":{"nsfw":{"score":0.9}}}"#, true)]
 #[case::unknown_zero(r#"{"summary":{"nsfw":0}}"#, false)]
 #[case::unknown_float_one(r#"{"summary":{"nsfw":1.0}}"#, true)]
+#[case::boolean_true(r#"{"summary":{"pii":true}}"#, false)]
+#[case::string_toxicity(r#"{"summary":{"toxicity":"toxic"}}"#, false)]
 #[case::missing_fields(r#"{}"#, false)]
 fn enkryptai_guardrail_processes_the_summary(#[case] body: &str, #[case] detected: bool) {
     let response = parsed_response(body);
@@ -752,9 +754,9 @@ fn enkryptai_guardrail_collects_the_detected_attacks_in_order() {
     assert_eq!(
         processed.attacks,
         vec![
-            "toxicity",
             "policy_violation",
             "pii",
+            "toxicity",
             "keyword_detected",
             "bias",
             "prompt_injection",

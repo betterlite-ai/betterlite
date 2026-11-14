@@ -18,18 +18,8 @@ pub struct DetectionResponse {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
-#[serde(default)]
-pub struct Summary {
-    pub toxicity: Option<Vec<String>>,
-    pub policy_violation: Option<i64>,
-    pub pii: Option<i64>,
-    pub keyword_detected: Option<i64>,
-    pub bias: Option<i64>,
-    pub prompt_injection: Option<i64>,
-    pub jailbreak: Option<i64>,
-    #[serde(flatten)]
-    pub other: IndexMap<String, JsonValue>,
-}
+#[serde(transparent)]
+pub struct Summary(pub IndexMap<String, JsonValue>);
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 #[serde(default)]

@@ -21,30 +21,14 @@ impl Processed {
 
 #[must_use]
 pub fn process(response: &DetectionResponse) -> Processed {
-    let summary = &response.summary;
     let mut attacks = Vec::new();
-    if summary
-        .toxicity
-        .as_ref()
-        .is_some_and(|types| !types.is_empty())
-    {
-        attacks.push("toxicity".to_owned());
-    }
-    let integer_checks = [
-        ("policy_violation", summary.policy_violation),
-        ("pii", summary.pii),
-        ("keyword_detected", summary.keyword_detected),
-        ("bias", summary.bias),
-        ("prompt_injection", summary.prompt_injection),
-        ("jailbreak", summary.jailbreak),
-    ];
-    for (key, value) in integer_checks {
-        if value == Some(1) {
-            attacks.push(key.to_owned());
-        }
-    }
-    for (key, value) in &summary.other {
-        if is_detected(value) {
+    for (key, value) in &response.summary.0 {
+        let detected = if key == "toxicity" {
+            matches!(value, JsonValue::Array(types) if !types.is_empty())
+        } else {
+            is_detected(value)
+        };
+        if detected {
             attacks.push(key.clone());
         }
     }
