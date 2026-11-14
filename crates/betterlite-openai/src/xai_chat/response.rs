@@ -82,25 +82,7 @@ pub fn transform_response(input: &ReplyInput<'_>) -> Result<Reply, XaiChatError>
     }
     let mut response: ChatResponse =
         serde_json::from_value(raw.clone()).map_err(|source| XaiChatError::Decode { source })?;
-    // the parent's Choices maps "" to "stop" before XAIChatConfig tests for "", so that repair never fires
-    for choice in &mut response.choices {
-        let calls = choice
-            .message
-            .tool_calls
-            .as_ref()
-            .is_some_and(|calls| !calls.is_empty());
-        let finish_reason = choice.finish_reason.as_deref();
-        let (mapped, native) = choice_finish_reason(finish_reason);
-        // an absent or null finish_reason defaults to stop before the tool_calls rewrite
-        choice.finish_reason = Some(
-            if calls && finish_reason.is_none_or(|reason| reason == "stop") {
-                String::from("tool_calls")
-            } else {
-                mapped
-            },
-        );
-        choice.provider_specific_fields = native;
-    }
+    repair_finish_reasons(&mut response);
     let mut usage = usage_from_parent(&response.usage)?;
     if let Some(fields) = raw.get("usage").and_then(Value::as_object) {
         match serde_json::from_value::<WireUsage>(Value::Object(fields.clone())) {
@@ -123,6 +105,28 @@ pub fn transform_response(input: &ReplyInput<'_>) -> Result<Reply, XaiChatError>
     Ok(Reply { response, usage })
 }
 
+// the parent's Choices maps "" to "stop" before XAIChatConfig tests for "", so that repair never fires
+fn repair_finish_reasons(response: &mut ChatResponse) {
+    for choice in &mut response.choices {
+        let calls = choice
+            .message
+            .tool_calls
+            .as_ref()
+            .is_some_and(|calls| !calls.is_empty());
+        let finish_reason = choice.finish_reason.as_deref();
+        let (mapped, native) = choice_finish_reason(finish_reason);
+        // an absent or null finish_reason defaults to stop before the tool_calls rewrite
+        choice.finish_reason = Some(
+            if calls && finish_reason.is_none_or(|reason| reason == "stop") {
+                String::from("tool_calls")
+            } else {
+                mapped
+            },
+        );
+        choice.provider_specific_fields = native;
+    }
+}
+
 fn usage_from_parent(usage: &ChatUsage) -> Result<XaiUsage, XaiChatError> {
     let reasoning = usage
         .completion_tokens_details
@@ -132,15 +136,15 @@ fn usage_from_parent(usage: &ChatUsage) -> Result<XaiUsage, XaiChatError> {
         .flatten()
         .map(i64::try_from)
         .transpose()
-        .map_err(|_| XaiChatError::Usage(XaiUsageError::Overflow))?;
+        .map_err(|_overflow| XaiChatError::Usage(XaiUsageError::Overflow))?;
     Ok(XaiUsage {
         tokens: CostUsage {
             prompt_tokens: i64::try_from(usage.prompt_tokens)
-                .map_err(|_| XaiChatError::Usage(XaiUsageError::Overflow))?,
+                .map_err(|_overflow| XaiChatError::Usage(XaiUsageError::Overflow))?,
             completion_tokens: i64::try_from(usage.completion_tokens)
-                .map_err(|_| XaiChatError::Usage(XaiUsageError::Overflow))?,
+                .map_err(|_overflow| XaiChatError::Usage(XaiUsageError::Overflow))?,
             total_tokens: i64::try_from(usage.total_tokens)
-                .map_err(|_| XaiChatError::Usage(XaiUsageError::Overflow))?,
+                .map_err(|_overflow| XaiChatError::Usage(XaiUsageError::Overflow))?,
             prompt_details: None,
             completion_details: reasoning.map(|tokens| CompletionDetails {
                 text_tokens: None,
@@ -160,22 +164,22 @@ fn usage_from_parent(usage: &ChatUsage) -> Result<XaiUsage, XaiChatError> {
 
 fn write_back(usage: &mut ChatUsage, reconciled: &XaiUsage) -> Result<(), XaiChatError> {
     usage.prompt_tokens = u64::try_from(reconciled.tokens.prompt_tokens)
-        .map_err(|_| XaiChatError::Usage(XaiUsageError::Overflow))?;
+        .map_err(|_overflow| XaiChatError::Usage(XaiUsageError::Overflow))?;
     usage.completion_tokens = u64::try_from(reconciled.tokens.completion_tokens)
-        .map_err(|_| XaiChatError::Usage(XaiUsageError::Overflow))?;
+        .map_err(|_overflow| XaiChatError::Usage(XaiUsageError::Overflow))?;
     usage.total_tokens = u64::try_from(reconciled.tokens.total_tokens)
-        .map_err(|_| XaiChatError::Usage(XaiUsageError::Overflow))?;
+        .map_err(|_overflow| XaiChatError::Usage(XaiUsageError::Overflow))?;
     if let Some(requests) = reconciled
         .tokens
         .prompt_details
         .and_then(|details| details.web_search_requests)
     {
-        let requests =
-            u64::try_from(requests).map_err(|_| XaiChatError::Usage(XaiUsageError::Overflow))?;
+        let counted = u64::try_from(requests)
+            .map_err(|_overflow| XaiChatError::Usage(XaiUsageError::Overflow))?;
         usage
             .prompt_tokens_details
             .get_or_insert_default()
-            .insert(String::from("web_search_requests"), Some(requests));
+            .insert(String::from("web_search_requests"), Some(counted));
     }
     Ok(())
 }

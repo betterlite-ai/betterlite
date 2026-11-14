@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
 use std::future::Future;
+use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -12,7 +13,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret, SecretString};
-use serde_json::{Value, json};
+use serde_json::{Map, Value};
 use tracing::field::{Field, Visit};
 use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
@@ -136,20 +137,20 @@ impl OauthTokens for LoginRequired {
         String::from("https://oauth.example/v1")
     }
 
-    fn access_token(&mut self) -> impl Future<Output = Result<SecretString, XaiOauthError>> + Send {
-        async { Err(XaiOauthError::LoginRequired) }
+    async fn access_token(&mut self) -> Result<SecretString, XaiOauthError> {
+        Err(XaiOauthError::LoginRequired)
     }
 }
 
 struct Scripted(Option<bool>);
 
-impl ReasoningLookup<std::io::Error> for Scripted {
+impl ReasoningLookup<io::Error> for Scripted {
     fn supports_reasoning(
         &mut self,
         _model: &str,
-    ) -> impl Future<Output = Result<bool, std::io::Error>> + Send {
+    ) -> impl Future<Output = Result<bool, io::Error>> + Send {
         let outcome = self.0;
-        async move { outcome.ok_or_else(|| std::io::Error::other("the capability lookup failed")) }
+        async move { outcome.ok_or_else(|| io::Error::other("the capability lookup failed")) }
     }
 }
 
@@ -166,22 +167,22 @@ fn stop_and_frequency_penalty_follow_the_model_substrings() {
     assert_eq!(supported_with("grok-4", true), four);
     assert_eq!(supported_with("grok-code-fast-1", true), four);
     let mut without_reasoning = EXPECTED_BASE.to_vec();
-    without_reasoning.push("stop");
+    without_reasoning.extend(["stop", "frequency_penalty"]);
     assert_eq!(supported_with("grok-2-1212", false), without_reasoning);
 }
 
 #[tokio::test]
 async fn reasoning_effort_follows_the_capability_lookup() {
     let mut supported = Scripted(Some(true));
-    let params = supported_openai_params("grok-4", &mut supported).await;
-    assert!(params.ends_with(&["reasoning_effort"]));
+    let with_reasoning = supported_openai_params("grok-4", &mut supported).await;
+    assert!(with_reasoning.ends_with(&["reasoning_effort"]));
     let mut unsupported = Scripted(Some(false));
-    let params = supported_openai_params("grok-4", &mut unsupported).await;
-    assert!(!params.contains(&"reasoning_effort"));
+    let without_reasoning = supported_openai_params("grok-4", &mut unsupported).await;
+    assert!(!without_reasoning.contains(&"reasoning_effort"));
     let mut failing = Scripted(None);
-    let params = supported_openai_params("grok-4", &mut failing).await;
-    assert!(!params.contains(&"reasoning_effort"));
-    assert_eq!(params, supported_with("grok-4", false));
+    let after_failure = supported_openai_params("grok-4", &mut failing).await;
+    assert!(!after_failure.contains(&"reasoning_effort"));
+    assert_eq!(after_failure, supported_with("grok-4", false));
 }
 
 #[test]
@@ -290,7 +291,7 @@ fn names_are_stripped_for_every_role_but_user() {
     let messages = [named(Role::User, "alice"), named(Role::Assistant, "bot")];
     let optional = Object::new();
     let environment = BTreeMap::new();
-    let body = transform_request(content(&messages, &optional, &environment))
+    let body = transform_request(&content(&messages, &optional, &environment))
         .expect("a transformed request");
     let Some(Json::List(rendered)) = body.get("messages") else {
         panic!("the messages are missing");
@@ -319,7 +320,7 @@ fn web_search_options_warns_and_is_removed(#[case] optional: &str) {
     let warnings = Warnings(Arc::default());
     let subscriber = tracing_subscriber::registry().with(warnings.clone());
     let body = with_default(subscriber, || {
-        transform_request(content(&messages, &parsed, &environment))
+        transform_request(&content(&messages, &parsed, &environment))
     })
     .expect("a transformed request");
     assert!(!body.contains_key("web_search_options"));
@@ -432,20 +433,20 @@ fn the_chat_key_order_ignores_the_generic_key() {
     let mut settings = settings();
     settings.generic_api_key = Some(secret("generic"));
     settings.environment_key = Some(secret("environment"));
-    let resolved = provider_info(None, None, &settings).api_key;
+    let from_environment = provider_info(None, None, &settings).api_key;
     assert_eq!(
-        resolved.as_ref().map(ExposeSecret::expose_secret),
+        from_environment.as_ref().map(ExposeSecret::expose_secret),
         Some("environment")
     );
     settings.xai_key = Some(secret("xai"));
-    let resolved = provider_info(None, None, &settings).api_key;
+    let from_xai = provider_info(None, None, &settings).api_key;
     assert_eq!(
-        resolved.as_ref().map(ExposeSecret::expose_secret),
+        from_xai.as_ref().map(ExposeSecret::expose_secret),
         Some("xai")
     );
-    let resolved = provider_info(None, Some(&secret("explicit")), &settings).api_key;
+    let explicit = provider_info(None, Some(&secret("explicit")), &settings).api_key;
     assert_eq!(
-        resolved.as_ref().map(ExposeSecret::expose_secret),
+        explicit.as_ref().map(ExposeSecret::expose_secret),
         Some("explicit")
     );
 }
@@ -454,30 +455,30 @@ fn the_chat_key_order_ignores_the_generic_key() {
 fn oauth_replaces_the_base_only_without_a_key() {
     let settings = settings();
     let oauth = Token("oauth-token");
-    let url = complete_url(UrlInput {
+    let swapped = complete_url(&UrlInput {
         api_base: Some("https://explicit/v1"),
         api_key: None,
         settings: &settings,
         use_xai_oauth: true,
         oauth: &oauth,
     });
-    assert_eq!(url, "https://oauth.example/v1/chat/completions");
-    let url = complete_url(UrlInput {
+    assert_eq!(swapped, "https://oauth.example/v1/chat/completions");
+    let keyed = complete_url(&UrlInput {
         api_base: Some("https://explicit/v1"),
         api_key: Some(&secret("key")),
         settings: &settings,
         use_xai_oauth: true,
         oauth: &oauth,
     });
-    assert_eq!(url, "https://explicit/v1/chat/completions");
-    let url = complete_url(UrlInput {
+    assert_eq!(keyed, "https://explicit/v1/chat/completions");
+    let plain = complete_url(&UrlInput {
         api_base: Some("https://explicit/v1/chat/completions"),
         api_key: None,
         settings: &settings,
         use_xai_oauth: false,
         oauth: &oauth,
     });
-    assert_eq!(url, "https://explicit/v1/chat/completions");
+    assert_eq!(plain, "https://explicit/v1/chat/completions");
 }
 
 fn reply(body: &str) -> Reply {
@@ -591,7 +592,7 @@ fn reply_usage_is_folded_normalized_and_restated() {
             .server_side_tool_usage_details
             .as_ref()
             .and_then(|details| details.get("web_search_calls")),
-        Some(&Value::from(2))
+        Some(&Value::from(2_i64))
     );
     assert_eq!(converted.response.usage.completion_tokens, 7);
     assert_eq!(converted.response.usage.total_tokens, 17);
@@ -645,10 +646,11 @@ fn a_null_usage_chunk_gains_one_empty_choice() {
     assert_eq!(reply.choices[0].index, 0);
     assert_eq!(reply.choices[0].finish_reason, None);
     assert_eq!(reply.usage, None);
-    assert_eq!(
-        parsed["choices"],
-        json!([{"index": 0, "delta": {}, "finish_reason": null}])
-    );
+    assert_eq!(parsed["choices"].as_array().map(Vec::len), Some(1));
+    let choice = &parsed["choices"][0];
+    assert_eq!(choice["index"].as_i64(), Some(0));
+    assert_eq!(choice["delta"].as_object().map(Map::len), Some(0));
+    assert!(choice["finish_reason"].is_null());
 }
 
 #[test]
@@ -661,9 +663,9 @@ fn streamed_usage_is_reconciled_before_the_parent_parser() {
     let Some(Value::Object(usage)) = reply.usage else {
         panic!("the usage is missing");
     };
-    assert_eq!(usage.get("prompt_tokens"), Some(&Value::from(10)));
-    assert_eq!(usage.get("completion_tokens"), Some(&Value::from(7)));
-    assert_eq!(usage.get("total_tokens"), Some(&Value::from(17)));
+    assert_eq!(usage.get("prompt_tokens"), Some(&Value::from(10_i64)));
+    assert_eq!(usage.get("completion_tokens"), Some(&Value::from(7_i64)));
+    assert_eq!(usage.get("total_tokens"), Some(&Value::from(17_i64)));
     assert_eq!(
         usage.get("cost").map(ToString::to_string),
         Some(String::from("0.0000000123"))

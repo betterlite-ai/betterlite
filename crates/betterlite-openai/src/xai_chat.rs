@@ -37,12 +37,12 @@ pub fn provider_info(
     api_key: Option<&SecretString>,
     settings: &IdentitySettings,
 ) -> ProviderInfo {
-    let api_base = api_base
+    let resolved_base = api_base
         .or(settings.api_base.as_deref())
         .unwrap_or(DEFAULT_API_BASE)
         .to_owned();
     ProviderInfo {
-        api_base,
+        api_base: resolved_base,
         api_key: get_api_key(api_key, KeyOrder::Chat, settings),
     }
 }
@@ -100,7 +100,7 @@ pub struct UrlInput<'request, A> {
 
 // XAIChatConfig.get_complete_url: OAuth swaps the base only when no key resolves
 #[must_use]
-pub fn complete_url<A>(input: UrlInput<'_, A>) -> String
+pub fn complete_url<A>(input: &UrlInput<'_, A>) -> String
 where
     A: OauthTokens,
 {

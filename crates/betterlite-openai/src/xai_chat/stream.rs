@@ -1,7 +1,7 @@
 use std::str::FromStr as _;
 
 use betterlite_models::cost_usage::CostUsage;
-use serde_json::{Value, json};
+use serde_json::{Map, Value};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -47,11 +47,13 @@ fn insert_empty_choice(chunk: &mut Value) {
     if !empty || !fields.contains_key("usage") {
         return;
     }
+    let mut choice = Map::new();
+    choice.insert(String::from("index"), Value::from(0_i64));
+    choice.insert(String::from("delta"), Value::Object(Map::new()));
+    choice.insert(String::from("finish_reason"), Value::Null);
     fields.insert(
         String::from("choices"),
-        Value::Array(vec![
-            json!({"index": 0, "delta": {}, "finish_reason": null}),
-        ]),
+        Value::Array(vec![Value::Object(choice)]),
     );
 }
 

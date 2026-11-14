@@ -65,7 +65,7 @@ impl Run<'_> {
         let subscriber = tracing_subscriber::registry().with(warnings.clone());
         let environment = BTreeMap::<String, String>::new();
         let body = with_default(subscriber, || {
-            transform_request(ChatContent {
+            transform_request(&ChatContent {
                 model,
                 messages,
                 optional_params,
@@ -118,7 +118,7 @@ impl Run<'_> {
         let settings = identity(self.settings);
         let authenticator = oauth(self.settings, None);
         let resolved = provider_info(api_base, api_key, &settings);
-        let url = complete_url(UrlInput {
+        let url = complete_url(&UrlInput {
             api_base,
             api_key,
             settings: &settings,
@@ -197,5 +197,8 @@ fn stream_usage(reply: &StreamReply) -> Value {
         "completion_tokens": fields.get("completion_tokens"),
         "total_tokens": fields.get("total_tokens"),
         "cost": decimal_text(fields.get("cost")),
+        "web_search_requests": fields
+            .get("prompt_tokens_details")
+            .and_then(|details| details.get("web_search_requests")),
     })
 }
