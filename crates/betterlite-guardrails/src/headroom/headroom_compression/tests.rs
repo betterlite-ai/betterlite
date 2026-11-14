@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
 use std::io;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::Router;
 use axum::body::Bytes;
@@ -21,9 +21,10 @@ use uuid::Uuid;
 use super::apply::UNAVAILABLE_MESSAGE;
 use super::{Clock, HeadroomGuardrail};
 use crate::generic_guardrail_contracts::GuardrailInputType;
+use crate::guardrail_base::contract::GuardrailContract as _;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
-use crate::headroom_settings::{HeadroomInput, HeadroomSettings};
+use crate::headroom_settings::{HeadroomInput, HeadroomSettings, SUPPORTED_EVENT_HOOKS};
 
 mod compress;
 
@@ -104,7 +105,10 @@ fn default_input(base: &str) -> HeadroomInput {
     HeadroomInput {
         api_base: Some(base.to_owned()),
         api_key: Some(SecretString::from("sk-test")),
-        ..HeadroomInput::default()
+        model: None,
+        unreachable_fallback: None,
+        timeout: None,
+        ccr_retrieval: None,
     }
 }
 
@@ -784,4 +788,59 @@ async fn a_duplicate_applied_name_is_not_repeated() {
     let mut request = data(r#"{"metadata":{"applied_guardrails":["headroom"]}}"#);
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
     assert_eq!(applied_names(&request), ["headroom"]);
+}
+
+#[test]
+fn supported_event_hooks_are_pre_and_post_call() {
+    let guardrail = guardrail("http://127.0.0.1:1");
+    assert_eq!(
+        guardrail.get_supported_event_hooks(),
+        Some(SUPPORTED_EVENT_HOOKS.to_vec())
+    );
+}
+
+#[tokio::test]
+async fn an_empty_request_call_id_is_replaced_with_a_generated_one() {
+    let server = mock(StatusCode::OK, SERVICE_HASHES.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let mut request = data(r#"{"litellm_call_id":""}"#);
+    apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
+    let Some(GuardrailValue::Text(generated)) = request.get("litellm_call_id") else {
+        panic!("a generated call id");
+    };
+    assert!(!generated.is_empty());
+    assert!(Uuid::parse_str(generated).is_ok());
+    assert!(guardrail.has_issued_hashes(generated).is_some());
+}
+
+#[tokio::test]
+async fn records_carry_wall_clock_times_and_their_difference() {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let before = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    let mut request = data("{}");
+    apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
+    let after = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    let record = first_record(&request);
+    let start = record
+        .get("start_time")
+        .and_then(serde_json::Value::as_f64)
+        .expect("a numeric start_time");
+    let end = record
+        .get("end_time")
+        .and_then(serde_json::Value::as_f64)
+        .expect("a numeric end_time");
+    let duration = record
+        .get("duration")
+        .and_then(serde_json::Value::as_f64)
+        .expect("a numeric duration");
+    assert!(start >= before && start <= after);
+    assert!(end >= start && end <= after);
+    assert_eq!(duration, end - start);
 }
