@@ -408,6 +408,27 @@ fn decode_accepts_an_archive_at_the_entry_limit() {
 }
 
 #[test]
+fn names_that_are_utf8_without_the_flag_are_read_as_utf8() {
+    let name = "skill/café.txt";
+    let placeholder = "x".repeat(name.len());
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    writer.start_file(placeholder.as_str(), options).unwrap();
+    writer.write_all(b"data").unwrap();
+    let mut bytes = writer.finish().unwrap().into_inner();
+    let mut patched = 0;
+    for start in 0..=bytes.len() - name.len() {
+        if &bytes[start..start + name.len()] == placeholder.as_bytes() {
+            bytes[start..start + name.len()].copy_from_slice(name.as_bytes());
+            patched += 1;
+        }
+    }
+    assert_eq!(patched, 2);
+    let files = extract_all_files(&archive_row(&bytes, Some("fallback")));
+    assert_eq!(files.get("café.txt"), Some(&b"data".to_vec()));
+}
+
+#[test]
 fn inject_appends_to_the_first_system_message() {
     let mut data = request(vec![
         message("user", text("hi")),
