@@ -251,3 +251,17 @@ path = "fuzz_targets/eleven_transcript.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "nimble_reply"
+path = "fuzz_targets/nimble_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parallel_ai_reply"
+path = "fuzz_targets/parallel_ai_reply.rs"
+test = false
+doc = false
+bench = false
