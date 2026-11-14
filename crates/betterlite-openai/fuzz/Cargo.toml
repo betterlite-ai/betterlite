@@ -480,3 +480,10 @@ path = "fuzz_targets/openai_response_resources.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "volcengine_stream_event"
+path = "fuzz_targets/volcengine_stream_event.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,13 @@
+kind: helper
+name: headroom-messages-retrieve-ids-anthropic-empty-id
+call:
+  b3773:
+    function: retrieve_ids
+    messages:
+      - role: user
+        content:
+          - {type: tool_use, id: "", name: mcp__server__headroom_retrieve, input: {}}
+          - {type: tool_use, id: toolu-3, name: lookup, input: {}}
+          - {type: text, text: hello}
+env: {}
+compare: {ignore: []}
