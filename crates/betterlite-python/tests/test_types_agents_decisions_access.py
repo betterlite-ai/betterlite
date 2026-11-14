@@ -160,7 +160,7 @@ def special_agents(module, spec):
         for status in spec["statuses"]
     ]
     hidden = [
-        plain(item._hidden_params)
+        plain(item._hidden_params) == {}
         for item in (
             module.AgentCreateResponse(id="i"),
             module.AgentDeleteResult(name="n"),
@@ -759,7 +759,7 @@ def test_names_special_agents() -> None:
     assert ours == theirs
     assert ours["headers"] == ["x-litellm-user-id", "x-litellm-team-id"]
     assert ours["succeeded"] == [False, False, True, True, False]
-    assert ours["hidden"] == [{}, {}, {}, {}]
+    assert ours["hidden"] == [True, True, True, True]
 
 
 def test_names_special_decisions() -> None:
