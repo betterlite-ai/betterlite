@@ -93,18 +93,18 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::PegasusMediaSource(call) | Input::TextVideoPrompt(call) => request_case(call),
+            Input::PegasusMediaSource(call) | Input::TextVideoPrompt(call) => Ok(json!({
+                "request": serde_json::to_value(transform_request(
+                    &call.messages,
+                    &call.optional_params,
+                )?)?,
+            })),
             Input::ResponseFormatJson(call) | Input::PegasusOptions(call) => mapping_case(call),
             Input::SegmentsAndResponse(call)
             | Input::UsageAndFinishReason(call)
             | Input::PegasusReplyErrors(call) => reply_case(call),
         }
     }
-}
-
-fn request_case(call: &RequestCall) -> HelperResult {
-    let request = transform_request(&call.messages, &call.optional_params)?;
-    Ok(json!({"request": serde_json::to_value(request)?}))
 }
 
 fn mapping_case(call: &MappingCall) -> HelperResult {
