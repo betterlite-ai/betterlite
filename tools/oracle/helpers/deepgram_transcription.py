@@ -1,12 +1,13 @@
 import os
-from collections.abc import Callable
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, cast
 
 import httpx
 from litellm.llms.deepgram.audio_transcription.transformation import (
     DeepgramAudioTranscriptionConfig,
 )
-from litellm.types.llms.openai import OpenAIAudioTranscriptionOptionalParams
+from litellm.types.llms.openai import (
+    OpenAIAudioTranscriptionOptionalParams as TranscriptionParams,
+)
 from pydantic import JsonValue, TypeAdapter
 
 
@@ -38,17 +39,27 @@ class RaisedError(Protocol):
     def headers(self) -> dict[str, str] | httpx.Headers | None: ...
 
 
-class TranscriptionConfig(Protocol):
-    def get_supported_openai_params(
-        self, model: str
-    ) -> list[OpenAIAudioTranscriptionOptionalParams]: ...
+class Config(Protocol):
+    def get_supported_openai_params(self, model: str) -> list[TranscriptionParams]: ...
 
-    # LiteLLM declares both with a bare dict or a positional bool, which a signature here cannot repeat
-    @property
-    def map_openai_params(self) -> Callable[..., dict[str, JsonValue]]: ...
+    def map_openai_params(
+        self,
+        non_default_params: dict[str, JsonValue],
+        optional_params: dict[str, JsonValue],
+        model: str,
+        *,
+        drop_params: bool,
+    ) -> dict[str, JsonValue]: ...
 
-    @property
-    def validate_environment(self) -> Callable[..., dict[str, JsonValue]]: ...
+    def validate_environment(
+        self,
+        headers: dict[str, JsonValue],
+        model: str,
+        messages: list[JsonValue],
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+        api_key: str | None = None,
+    ) -> dict[str, JsonValue]: ...
 
     def transform_audio_transcription_request(  # ast-grep-ignore: no-long-names
         self,
@@ -76,7 +87,8 @@ class TranscriptionConfig(Protocol):
     ) -> RaisedError: ...
 
 
-CONFIG: Final[TranscriptionConfig] = DeepgramAudioTranscriptionConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepgram/audio_transcription/transformation.py#L26
+# LiteLLM's messages carry Any and its constructor is untyped, so the config is cast
+CONFIG: Final[Config] = cast(Config, DeepgramAudioTranscriptionConfig())  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepgram/audio_transcription/transformation.py#L26
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 BYTES: Final[TypeAdapter[bytes]] = TypeAdapter(bytes)
 
@@ -134,9 +146,8 @@ def request_answer(step: Request) -> JsonValue:
     result = CONFIG.transform_audio_transcription_request(
         model="", audio_file=audio, optional_params={}, litellm_params={}
     )
-    data: list[JsonValue] = [byte for byte in BYTES.validate_python(result.data)]
     return {
-        "data": data,
+        "data": JSON.validate_python(list(BYTES.validate_python(result.data))),
         "files": JSON.validate_python(result.files),
         "content_type": result.content_type,
     }
@@ -153,13 +164,12 @@ def reply_answer(step: Reply) -> JsonValue:
 
 def error_class_answer(step: ErrorClass) -> JsonValue:
     error = CONFIG.get_error_class(step["message"], step["status_code"], step["headers"])
-    return JSON.validate_python(
-        {
-            "status_code": error.status_code,
-            "message": error.message,
-            "headers": JSON.validate_python(error.headers),
-        }
-    )
+    view: dict[str, JsonValue] = {
+        "status_code": error.status_code,
+        "message": error.message,
+        "headers": JSON.validate_python(error.headers),
+    }
+    return view
 
 
 def outcome(step: Step) -> JsonValue:
