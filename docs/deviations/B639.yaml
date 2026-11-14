@@ -1,0 +1,5 @@
+task: B639
+deviations:
+  - what: A rerank response body that is not valid UTF-8 reaches post_call as "<n> bytes that are not UTF-8" instead of the text httpx decodes with replacement characters.
+    why: betterlite refuses to mangle bytes that are not UTF-8, and the body only reaches a log record; no working setup can rely on the text of a non-UTF-8 provider page.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/rerank/handler.py#L124-L137
