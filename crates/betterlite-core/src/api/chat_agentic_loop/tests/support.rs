@@ -218,7 +218,7 @@ impl ChatContinuation for FakeContinuation {
         messages: &[FollowupMessage],
         params: &JsonMap,
         kwargs: &JsonMap,
-    ) -> Result<ChatLoopResult, ChatCallError<Self::Error>> {
+    ) -> Result<ChatLoopResult, Self::Error> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -235,10 +235,10 @@ impl ChatContinuation for FakeContinuation {
             .take();
         match scripted {
             Some(Ok(result)) => Ok(result),
-            Some(Err(error)) => Err(ChatCallError::Completion(error)),
-            None => Err(ChatCallError::Completion(StopError {
+            Some(Err(error)) => Err(error),
+            None => Err(StopError {
                 message: "the continuation was called twice",
-            })),
+            }),
         }
     }
 }
@@ -332,28 +332,10 @@ pub(crate) struct PostRecord {
     pub stop_reason: Option<String>,
 }
 
-impl PostRecord {
-    fn of(plan: &AgenticLoopPlan, kwargs: &JsonMap) -> Self {
-        Self {
-            kwargs: kwargs.clone(),
-            stop_reason: plan.stop_reason.clone(),
-        }
-    }
-}
-
 #[derive(Clone)]
 pub(crate) struct CleanupRecord {
     pub stop_reason: Option<String>,
     pub kwargs: JsonMap,
-}
-
-impl CleanupRecord {
-    fn of(plan: &AgenticLoopPlan, kwargs: &JsonMap) -> Self {
-        Self {
-            stop_reason: plan.stop_reason.clone(),
-            kwargs: kwargs.clone(),
-        }
-    }
 }
 
 #[derive(Clone, Default)]
@@ -534,8 +516,13 @@ impl AgenticCallback for ScriptedCallback {
         plan: &AgenticLoopPlan,
         kwargs: &JsonMap,
     ) -> Result<Box<RawValue>, AgenticHookError> {
-        let hooked =
-            self.scripted_answer(CallRecord::Post(PostRecord::of(plan, kwargs)), &self.post);
+        let hooked = self.scripted_answer(
+            CallRecord::Post(PostRecord {
+                kwargs: kwargs.clone(),
+                stop_reason: plan.stop_reason.clone(),
+            }),
+            &self.post,
+        );
         hooked.unwrap_or(Ok(response))
     }
 
@@ -545,7 +532,10 @@ impl AgenticCallback for ScriptedCallback {
         kwargs: &JsonMap,
     ) -> Result<(), AgenticHookError> {
         match self.scripted_answer(
-            CallRecord::Cleanup(CleanupRecord::of(plan, kwargs)),
+            CallRecord::Cleanup(CleanupRecord {
+                stop_reason: plan.stop_reason.clone(),
+                kwargs: kwargs.clone(),
+            }),
             &self.cleanup,
         ) {
             Some(result) => result,
@@ -557,7 +547,8 @@ impl AgenticCallback for ScriptedCallback {
 pub(crate) fn callbacks(items: &[&Arc<ScriptedCallback>]) -> Vec<Arc<dyn AgenticCallback>> {
     let mut collected: Vec<Arc<dyn AgenticCallback>> = Vec::with_capacity(items.len());
     for item in items {
-        collected.push(Arc::clone(*item));
+        let callback: Arc<ScriptedCallback> = Arc::clone(*item);
+        collected.push(callback);
     }
     collected
 }

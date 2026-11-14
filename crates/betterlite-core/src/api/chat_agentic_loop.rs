@@ -17,8 +17,6 @@ use betterlite_openai::stream::chunk::Chunk;
 use futures_util::stream::BoxStream;
 use serde_json::value::RawValue;
 
-use self::error::ChatCallError;
-
 // LiteLLM's wire names for the loop, shared by the modules and their tests
 pub(crate) const AGENTIC_LOOP_API_SURFACE_KEY: &str = "_agentic_loop_api_surface";
 pub(crate) const AGENTIC_LOOP_DEPTH_KEY: &str = "_agentic_loop_depth";
@@ -51,7 +49,7 @@ pub trait ChatContinuation: Send + Sync {
         messages: &[FollowupMessage],
         params: &JsonMap,
         kwargs: &JsonMap,
-    ) -> Result<ChatLoopResult, ChatCallError<Self::Error>>;
+    ) -> Result<ChatLoopResult, Self::Error>;
 }
 
 // one loop run's inputs, bundled because the call needs six of them plus the ports
