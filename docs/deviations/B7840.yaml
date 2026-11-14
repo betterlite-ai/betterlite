@@ -7,7 +7,7 @@ deviations:
     why: openai is not a wheel dependency, no other package carries this function, and it is about 70 lines.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L203
   - what: "type_to_response_format_param accepts any class with a model_json_schema attribute, where LiteLLM requires a pydantic BaseModel subclass."
-    why: The Python rules forbid isinstance and issubclass, so the class branch checks callable and then reads model_json_schema. An instance, a plain value, a pydantic model instance, a dataclass, int or a plain function is still refused with LiteLLM's TypeError message, and a pydantic model class passes either check.
+    why: The Python rules forbid isinstance and issubclass, so the class branch matches any class and reads its model_json_schema attribute. A class without one (a dataclass, int), an instance, a plain value, a pydantic model instance or a plain function is still refused with LiteLLM's TypeError text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L179-L212
   - what: A ResponsesAPIResponse output item given as a dict dumps as given, where pydantic validates a message item into openai's ResponseOutputMessage and ResponseOutputText, whose dumps add phase null and logprobs null, and exclude_none drops null values inside a plain dict in LiteLLM but not here.
     why: The wheel has no openai models and the declared output union includes dict, which the shared response base keeps; the mock builder passes phase and logprobs as null in its literal so the mock's model_dump matches LiteLLM's value for value.
