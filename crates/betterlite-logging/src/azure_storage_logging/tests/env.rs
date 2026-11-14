@@ -44,11 +44,11 @@ fn the_endpoint_suffix_builds_both_endpoints() {
     ];
     let settings = settings(&variables);
     assert_eq!(
-        settings.dfs_endpoint(),
+        settings.dfs_endpoint,
         "https://acct.dfs.core.chinacloudapi.cn"
     );
     assert_eq!(
-        settings.blob_endpoint(),
+        settings.blob_endpoint,
         "https://acct.blob.core.chinacloudapi.cn"
     );
 }

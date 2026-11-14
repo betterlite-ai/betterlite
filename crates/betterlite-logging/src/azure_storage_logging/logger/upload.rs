@@ -2,6 +2,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
+use http::Method;
 use secrecy::SecretString;
 use tokio::runtime::Handle;
 
@@ -14,7 +15,7 @@ use super::{
 use crate::azure_storage_logging::filename::{adls_safe_file_name, storage_url};
 use crate::azure_storage_logging::http_ops::{
     StorageAuthorization, append_request, create_directory_request, create_file_request,
-    directory_exists_request, flush_data_request,
+    flush_data_request, storage_request,
 };
 use crate::azure_storage_logging::token::{
     ChainTokenProvider, TokenError, client_secret_request, credentials, parse_token_response,
@@ -46,7 +47,7 @@ impl AzureBlobStorageLogger {
             .map_err(AzureStorageError::Serialize)?;
         let file_name = adls_safe_file_name(Some(payload.id.as_str()), self.deps.ids.as_ref());
         let base_url = storage_url(
-            &self.settings.dfs_endpoint(),
+            &self.settings.dfs_endpoint,
             &[self.settings.file_system.as_str(), file_name.as_str()],
         );
         let auth = StorageAuthorization::Bearer(&token);
@@ -66,8 +67,8 @@ impl AzureBlobStorageLogger {
         };
         let directory = dated_directory(now).ok_or(AzureStorageError::Date)?;
         let segments = [self.settings.file_system.as_str(), directory.as_str()];
-        let directory_url = storage_url(&self.settings.dfs_endpoint(), &segments);
-        let exists_url = storage_url(&self.settings.blob_endpoint(), &segments);
+        let directory_url = storage_url(&self.settings.dfs_endpoint, &segments);
+        let exists_url = storage_url(&self.settings.blob_endpoint, &segments);
         self.ensure_directory(&exists_url, &directory_url, &auth)
             .await?;
         let file_name = adls_safe_file_name(Some(payload.id.as_str()), self.deps.ids.as_ref());
@@ -88,7 +89,13 @@ impl AzureBlobStorageLogger {
         let exists = self
             .deps
             .transport
-            .send(directory_exists_request(exists_url, auth, now)?)
+            .send(storage_request(
+                Method::HEAD,
+                exists_url.to_owned(),
+                auth,
+                now,
+                &[],
+            )?)
             .await?;
         if exists.status == NOT_FOUND {
             let _made = self

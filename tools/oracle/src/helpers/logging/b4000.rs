@@ -102,8 +102,8 @@ async fn drive(scenario: &Scenario) -> Value {
         Err(error) => return json!({ "initialized": false, "error": error.to_string() }),
     };
     let endpoints = json!({
-        "dfs": settings.dfs_endpoint(),
-        "blob": settings.blob_endpoint(),
+        "dfs": &settings.dfs_endpoint,
+        "blob": &settings.blob_endpoint,
     });
     let transport = Arc::new(ScriptedTransport {
         replies: Mutex::new(scenario.replies.iter().cloned().collect()),

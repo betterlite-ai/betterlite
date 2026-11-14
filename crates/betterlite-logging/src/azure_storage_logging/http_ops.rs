@@ -98,14 +98,6 @@ pub fn flush_data_request(
     )
 }
 
-pub fn directory_exists_request(
-    directory_url: &str,
-    auth: &StorageAuthorization<'_>,
-    now: Duration,
-) -> Result<StorageRequest, SigningError> {
-    storage_request(Method::HEAD, directory_url.to_owned(), auth, now, &[])
-}
-
 pub fn create_directory_request(
     directory_url: &str,
     auth: &StorageAuthorization<'_>,

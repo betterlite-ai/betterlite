@@ -33,6 +33,8 @@ pub struct AzureStorageSettings {
     pub account_name: String,
     pub file_system: String,
     pub endpoint_suffix: String,
+    pub dfs_endpoint: String,
+    pub blob_endpoint: String,
     pub tenant_id: Option<String>,
     pub client_id: Option<String>,
     pub client_secret: Option<SecretString>,
@@ -64,10 +66,14 @@ impl AzureStorageSettings {
             .lookup(ENDPOINT_SUFFIX_VARIABLE)
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| DEFAULT_ENDPOINT_SUFFIX.to_owned());
+        let dfs_endpoint = format!("https://{account_name}.dfs.{endpoint_suffix}");
+        let blob_endpoint = format!("https://{account_name}.blob.{endpoint_suffix}");
         Ok(Self {
             account_name,
             file_system,
             endpoint_suffix,
+            dfs_endpoint,
+            blob_endpoint,
             tenant_id: environment
                 .lookup(TENANT_ID_VARIABLE)
                 .filter(|value| !value.is_empty()),
@@ -84,18 +90,5 @@ impl AzureStorageSettings {
                 .map(SecretString::from),
             batch: BatchSettings::from_environment(&batch_variables(environment))?,
         })
-    }
-
-    #[must_use]
-    pub fn dfs_endpoint(&self) -> String {
-        format!("https://{}.dfs.{}", self.account_name, self.endpoint_suffix)
-    }
-
-    #[must_use]
-    pub fn blob_endpoint(&self) -> String {
-        format!(
-            "https://{}.blob.{}",
-            self.account_name, self.endpoint_suffix
-        )
     }
 }
