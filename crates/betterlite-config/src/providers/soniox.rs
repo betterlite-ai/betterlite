@@ -2,14 +2,14 @@ use betterlite_secret_managers::secret_lookup::text_to_bool;
 use secrecy::SecretString;
 
 use crate::loader::EnvironmentLookup;
-use crate::types::ModelDeployment;
+use crate::types::GeneralSettings;
 
 const DEFAULT_API_BASE: &str = "https://api.soniox.com";
 const API_KEY_VAR: &str = "SONIOX_API_KEY";
 const API_BASE_VAR: &str = "SONIOX_API_BASE";
 
-// the workspace denies a second inherent impl per type, and elevenlabs holds LiteLlmParams'
-impl ModelDeployment {
+// clippy's multiple_inherent_impl gives each provider's resolver a config type of its own; nimble holds ModelDeployment
+impl GeneralSettings {
     // get_secret_str reads true and false as unset, so both variables need the same filter
     #[must_use]
     pub fn soniox_record_settings(
