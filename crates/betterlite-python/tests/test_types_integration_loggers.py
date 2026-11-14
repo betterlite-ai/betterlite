@@ -1,6 +1,6 @@
 import subprocess
 import sys
-from typing import Final, TypedDict
+from typing import Final, Literal, TypedDict
 
 import pytest
 from pydantic import JsonValue, TypeAdapter
@@ -89,6 +89,10 @@ ALIAS_NAMES_BY_MODULE: Final = {
 }
 FUNCTION_NAMES_BY_MODULE: Final = {
     "custom_logger": frozenset({"converted_stream_requested", "is_interception_internal_key"}),
+}
+MEMBER_NAMES_BY_MODULE: Final = {
+    "functions": FUNCTION_NAMES_BY_MODULE,
+    "aliases": ALIAS_NAMES_BY_MODULE,
 }
 DESCRIBE_SCRIPT = """
 import dataclasses
@@ -460,24 +464,18 @@ def test_constant_names(report: FullReport, module_name: str) -> None:
     assert ours == theirs, module_name
 
 
-@pytest.mark.parametrize("module_name", MODULE_NAMES)
-def test_function_names(report: FullReport, module_name: str) -> None:
-    theirs = report["litellm"]["modules"][module_name]["functions"]
-    ours = report["betterlite"]["modules"][module_name]["functions"]
+@pytest.mark.parametrize(
+    ("module_name", "kind"),
+    [(module, kind) for module in MODULE_NAMES for kind in ("functions", "aliases")],
+)
+def test_member_names(
+    report: FullReport, module_name: str, kind: Literal["functions", "aliases"]
+) -> None:
+    theirs = report["litellm"]["modules"][module_name][kind]
+    ours = report["betterlite"]["modules"][module_name][kind]
     expected: frozenset[str] = frozenset[str]()
-    if module_name in FUNCTION_NAMES_BY_MODULE:
-        expected = FUNCTION_NAMES_BY_MODULE[module_name]
-    assert set(theirs) == set(expected), module_name
-    assert ours == theirs, module_name
-
-
-@pytest.mark.parametrize("module_name", MODULE_NAMES)
-def test_alias_names(report: FullReport, module_name: str) -> None:
-    theirs = report["litellm"]["modules"][module_name]["aliases"]
-    ours = report["betterlite"]["modules"][module_name]["aliases"]
-    expected: frozenset[str] = frozenset[str]()
-    if module_name in ALIAS_NAMES_BY_MODULE:
-        expected = ALIAS_NAMES_BY_MODULE[module_name]
+    if module_name in MEMBER_NAMES_BY_MODULE[kind]:
+        expected = MEMBER_NAMES_BY_MODULE[kind][module_name]
     assert set(theirs) == set(expected), module_name
     assert ours == theirs, module_name
 

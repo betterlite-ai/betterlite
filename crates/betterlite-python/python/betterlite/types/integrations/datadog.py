@@ -1,8 +1,8 @@
 from enum import Enum, StrEnum
-from typing import Final
+from typing import Final, NotRequired
 
 from pydantic import JsonValue
-from typing_extensions import NotRequired, TypedDict
+from typing_extensions import TypedDict
 
 from betterlite.types.integrations.custom_logger import StandardCustomLoggerInitParams
 
