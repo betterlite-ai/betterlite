@@ -4,7 +4,9 @@ use betterlite_http::proxy::limits::{ReadError, read_bounded};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use secrecy::ExposeSecret as _;
 
+use super::decisions::{GuardrailStatus, create_error_message, determine_status, process_response};
 use super::error::DynamoAiError;
+use super::hooks::{PostCallOutcome, RequestData, ResponseChoice, extracted_message};
 use super::wire::{ANALYZE_PATH, DynamoAiRequest, DynamoAiResponse};
 
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
@@ -60,6 +62,54 @@ impl DynamoAiGuardrail {
             .await
             .map_err(read_error)?;
         serde_json::from_slice(&body).map_err(|source| DynamoAiError::ResponseJson { source })
+    }
+
+    pub async fn async_pre_call_hook(
+        &self,
+        data: &RequestData,
+    ) -> Result<GuardrailStatus, DynamoAiError> {
+        if data.messages.is_empty() {
+            return Ok(GuardrailStatus::Success);
+        }
+        self.inspect_messages(&data.messages).await
+    }
+
+    pub async fn async_moderation_hook(
+        &self,
+        messages: &[GuardrailValue],
+    ) -> Result<GuardrailStatus, DynamoAiError> {
+        if messages.is_empty() {
+            Ok(GuardrailStatus::Success)
+        } else {
+            self.inspect_messages(messages).await
+        }
+    }
+
+    pub async fn async_post_call_success_hook(
+        &self,
+        choices: &[ResponseChoice],
+    ) -> Result<PostCallOutcome, DynamoAiError> {
+        let messages: Vec<GuardrailValue> = choices.iter().filter_map(extracted_message).collect();
+        if messages.is_empty() {
+            return Ok(PostCallOutcome::NoText);
+        }
+        let status = self.inspect_messages(&messages).await?;
+        Ok(PostCallOutcome::Inspected(status))
+    }
+
+    async fn inspect_messages(
+        &self,
+        messages: &[GuardrailValue],
+    ) -> Result<GuardrailStatus, DynamoAiError> {
+        let response = self.call_moderation(messages).await?;
+        let status = determine_status(&response);
+        let processed = process_response(&response);
+        if processed.violations_detected.is_empty() {
+            return Ok(status);
+        }
+        Err(DynamoAiError::Blocked {
+            message: create_error_message(&processed),
+        })
     }
 }
 

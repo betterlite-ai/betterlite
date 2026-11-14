@@ -36,7 +36,7 @@ impl FinalAction {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default)]
 pub struct DynamoAiResponse {
     #[serde(rename = "finalAction")]
@@ -46,7 +46,7 @@ pub struct DynamoAiResponse {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default)]
 pub struct AppliedPolicy {
     pub policy: PolicyInfo,
@@ -54,7 +54,7 @@ pub struct AppliedPolicy {
     pub action: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default)]
 pub struct PolicyInfo {
     pub id: Option<String>,
@@ -63,7 +63,7 @@ pub struct PolicyInfo {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default)]
 pub struct PolicyOutputs {
     pub action: Option<FinalAction>,

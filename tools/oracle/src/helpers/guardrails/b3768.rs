@@ -7,7 +7,7 @@ use betterlite_guardrails::dynamoai::decisions::GuardrailStatus;
 use betterlite_guardrails::dynamoai::error::DynamoAiError;
 use betterlite_guardrails::dynamoai::guardrail::DynamoAiGuardrail;
 use betterlite_guardrails::dynamoai::hooks::{
-    EventHook, PostCallOutcome, RequestData, ResponseChoice, SUPPORTED_EVENT_HOOKS,
+    EventHook, PostCallOutcome, RequestData, ResponseChoice, ResponseMessage, SUPPORTED_EVENT_HOOKS,
 };
 use betterlite_http::proxy::base_builder;
 use serde::{Deserialize, Serialize};
@@ -37,9 +37,17 @@ pub(crate) struct Call {
     #[serde(default)]
     messages: Vec<GuardrailValue>,
     #[serde(default)]
-    choices: Vec<ResponseChoice>,
+    choices: Vec<CaseChoice>,
     #[serde(default)]
     answer: Option<UpstreamAnswer>,
+}
+
+#[derive(Deserialize)]
+struct CaseChoice {
+    #[serde(default)]
+    role: Option<String>,
+    #[serde(default)]
+    content: Option<GuardrailValue>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -182,6 +190,16 @@ async fn run_mode(
     call: &Call,
     guardrail: &DynamoAiGuardrail,
 ) -> Result<Option<GuardrailStatus>, DynamoAiError> {
+    let choices: Vec<ResponseChoice> = call
+        .choices
+        .iter()
+        .map(|choice| ResponseChoice {
+            message: ResponseMessage {
+                role: choice.role.clone(),
+                content: choice.content.clone(),
+            },
+        })
+        .collect();
     match call.mode {
         Mode::PreCall => guardrail
             .async_pre_call_hook(&RequestData {
@@ -193,10 +211,7 @@ async fn run_mode(
             .async_moderation_hook(&call.messages)
             .await
             .map(Some),
-        Mode::PostCall => match guardrail
-            .async_post_call_success_hook(&call.choices)
-            .await?
-        {
+        Mode::PostCall => match guardrail.async_post_call_success_hook(&choices).await? {
             PostCallOutcome::NoText => Ok(None),
             PostCallOutcome::Inspected(status) => Ok(Some(status)),
         },

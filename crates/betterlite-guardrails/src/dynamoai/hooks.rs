@@ -3,9 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde::{Deserialize, Serialize};
 
-use super::decisions::{GuardrailStatus, create_error_message, determine_status, process_response};
-use super::error::DynamoAiError;
-use super::guardrail::DynamoAiGuardrail;
+use super::decisions::GuardrailStatus;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -45,57 +43,7 @@ pub enum PostCallOutcome {
     Inspected(GuardrailStatus),
 }
 
-impl DynamoAiGuardrail {
-    pub async fn async_pre_call_hook(
-        &self,
-        data: &RequestData,
-    ) -> Result<GuardrailStatus, DynamoAiError> {
-        if data.messages.is_empty() {
-            return Ok(GuardrailStatus::Success);
-        }
-        self.inspect_messages(&data.messages).await
-    }
-
-    pub async fn async_moderation_hook(
-        &self,
-        messages: &[GuardrailValue],
-    ) -> Result<GuardrailStatus, DynamoAiError> {
-        if messages.is_empty() {
-            Ok(GuardrailStatus::Success)
-        } else {
-            self.inspect_messages(messages).await
-        }
-    }
-
-    pub async fn async_post_call_success_hook(
-        &self,
-        choices: &[ResponseChoice],
-    ) -> Result<PostCallOutcome, DynamoAiError> {
-        let messages: Vec<GuardrailValue> = choices.iter().filter_map(extracted_message).collect();
-        if messages.is_empty() {
-            return Ok(PostCallOutcome::NoText);
-        }
-        let status = self.inspect_messages(&messages).await?;
-        Ok(PostCallOutcome::Inspected(status))
-    }
-
-    async fn inspect_messages(
-        &self,
-        messages: &[GuardrailValue],
-    ) -> Result<GuardrailStatus, DynamoAiError> {
-        let response = self.call_moderation(messages).await?;
-        let status = determine_status(&response);
-        let processed = process_response(&response);
-        if processed.violations_detected.is_empty() {
-            return Ok(status);
-        }
-        Err(DynamoAiError::Blocked {
-            message: create_error_message(&processed),
-        })
-    }
-}
-
-fn extracted_message(choice: &ResponseChoice) -> Option<GuardrailValue> {
+pub(super) fn extracted_message(choice: &ResponseChoice) -> Option<GuardrailValue> {
     let content = match choice.message.content.as_ref()? {
         GuardrailValue::Text(text) if !text.is_empty() => text.clone(),
         GuardrailValue::Null

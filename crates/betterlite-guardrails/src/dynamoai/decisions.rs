@@ -38,7 +38,7 @@ pub struct ViolationDetails {
 }
 
 #[must_use]
-pub fn determine_status(response: &DynamoAiResponse) -> GuardrailStatus {
+pub const fn determine_status(response: &DynamoAiResponse) -> GuardrailStatus {
     if response.error.is_some() {
         return GuardrailStatus::FailedToRespond;
     }
@@ -74,7 +74,7 @@ pub fn process_response(response: &DynamoAiResponse) -> ProcessedResult {
             action,
             method: applied.policy.method.clone(),
             description: applied.policy.description.clone(),
-            message: outputs.and_then(|outputs| outputs.message.clone()),
+            message: outputs.and_then(|found| found.message.clone()),
         };
         processed.violation_details.insert(name, details);
     }
@@ -86,7 +86,7 @@ fn policy_action(outer: Option<&str>, outputs: Option<&PolicyOutputs>) -> String
         return action.to_owned();
     }
     outputs
-        .and_then(|outputs| outputs.action)
+        .and_then(|found| found.action)
         .unwrap_or(FinalAction::None)
         .as_str()
         .to_owned()
@@ -113,7 +113,7 @@ pub fn create_error_message(processed: &ProcessedResult) -> String {
 }
 
 fn push_detail(message: &mut String, label: &str, value: Option<&str>) {
-    if let Some(value) = value.filter(|value| !value.is_empty()) {
-        let _written = writeln!(message, "  {label}: {value}");
+    if let Some(text) = value.filter(|candidate| !candidate.is_empty()) {
+        let _written = writeln!(message, "  {label}: {text}");
     }
 }
