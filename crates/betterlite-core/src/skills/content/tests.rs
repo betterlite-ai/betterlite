@@ -376,20 +376,22 @@ fn markdown_warns_after_a_decode_failure() {
 #[test]
 fn decode_rejects_an_archive_past_the_compressed_limit() {
     let bytes = vec![0_u8; 16 * 1024 * 1024 + 1];
-    let error = decode_skill_zip(bytes).unwrap_err();
+    let error = decode_skill_zip(bytes).err().unwrap();
     assert!(matches!(error, DecodeError::ArchiveTooLarge { .. }));
 }
 
 #[test]
 fn decode_checks_the_compressed_limit_before_parsing() {
     let bytes = vec![0_u8; 16 * 1024 * 1024];
-    let error = decode_skill_zip(bytes).unwrap_err();
+    let error = decode_skill_zip(bytes).err().unwrap();
     assert!(matches!(error, DecodeError::NotAnArchive(_)));
 }
 
 #[test]
 fn decode_rejects_an_archive_past_the_entry_limit() {
-    let error = decode_skill_zip(numbered_entries(MAX_ARCHIVE_ENTRIES + 1)).unwrap_err();
+    let error = decode_skill_zip(numbered_entries(MAX_ARCHIVE_ENTRIES + 1))
+        .err()
+        .unwrap();
     assert!(matches!(error, DecodeError::TooManyEntries { .. }));
 }
 
@@ -526,7 +528,8 @@ fn tool_description_prefers_instructions_description_title(
 
 #[test]
 fn tool_description_falls_back_to_the_skill_id() {
-    let skill = row(None, None);
+    let mut skill = row(None, None);
+    skill.display_title = None;
     assert_eq!(
         convert_skill_to_tool(&skill).function.description,
         "Skill: litellm_skill_demo"
@@ -568,7 +571,7 @@ fn tool_parameters_default_to_the_empty_object_schema() {
             )]))
         )]))
     )])),
-    r#"{"type":"object","properties":{"q":{"type":"string"}}}"#
+    r#"{"properties":{"q":{"type":"string"}},"type":"object"}"#
 )]
 #[case::empty_object_ignored(
     JsonData::Object(std::collections::BTreeMap::new()),
@@ -629,7 +632,7 @@ fn execution_tools_keep_the_litellm_name_and_code_schema() {
 }
 
 #[rstest]
-fn replays_skill_zip_corpus(#[files("fuzz/corpus/skill_zip/*")] path: PathBuf) {
+fn replays_the_skill_zip_corpus(#[files("fuzz/corpus/skill_zip/*")] path: PathBuf) {
     let bytes = std::fs::read(path).unwrap();
     let Ok(mut archive) = decode_skill_zip(bytes) else {
         return;

@@ -35,7 +35,7 @@ pub fn convert_skill_to_tool(skill: &SkillTable) -> FunctionTool {
     FunctionTool {
         kind: "function".to_owned(),
         function: FunctionDefinition {
-            name: skill.skill_id.replace('-', "_").replace(' ', "_"),
+            name: skill.skill_id.replace(['-', ' '], "_"),
             description: tool_description(skill),
             parameters: metadata_parameters(skill),
         },
@@ -46,7 +46,7 @@ pub fn convert_skill_to_tool(skill: &SkillTable) -> FunctionTool {
 // ast-grep-ignore: no-long-names
 pub fn convert_skill_to_anthropic_tool(skill: &SkillTable) -> AnthropicTool {
     AnthropicTool {
-        name: skill.skill_id.replace('-', "_").replace(' ', "_"),
+        name: skill.skill_id.replace(['-', ' '], "_"),
         description: tool_description(skill),
         input_schema: metadata_parameters(skill),
     }
@@ -99,11 +99,11 @@ fn metadata_parameters(skill: &SkillTable) -> Json {
         ("properties".to_owned(), Json::Object(Object::new())),
         ("required".to_owned(), Json::List(Vec::new())),
     ]));
-    let parameters = skill
+    let Some(parameters) = skill
         .metadata
         .as_ref()
-        .and_then(|metadata| metadata.get("parameters"));
-    let Some(parameters) = parameters else {
+        .and_then(|metadata| metadata.get("parameters"))
+    else {
         return empty_schema;
     };
     match schema_value(parameters) {

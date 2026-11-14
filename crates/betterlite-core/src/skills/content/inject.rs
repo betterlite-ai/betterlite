@@ -28,21 +28,16 @@ pub fn inject_skill_content_to_messages(
         skill_contents.join(SKILL_SEPARATOR)
     );
     if use_anthropic_format {
-        return inject_system(data, &section);
+        let absent = section.trim();
+        return append_section(
+            data,
+            "system",
+            &section,
+            absent,
+            SkillContentError::SystemNotText,
+        );
     }
     inject_messages(data, &section)
-}
-
-fn inject_system(data: &mut Object, section: &str) -> Result<(), SkillContentError> {
-    let system = match data.get("system") {
-        None | Some(Json::Null) => Json::Text(section.trim().to_owned()),
-        Some(Json::Text(text)) => Json::Text(format!("{text}{section}")),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            return Err(SkillContentError::SystemNotText);
-        }
-    };
-    data.insert("system".to_owned(), system);
-    Ok(())
 }
 
 fn inject_messages(data: &mut Object, section: &str) -> Result<(), SkillContentError> {
@@ -63,7 +58,13 @@ fn inject_messages(data: &mut Object, section: &str) -> Result<(), SkillContentE
         if fields.get("role").and_then(Json::as_str) != Some("system") {
             continue;
         }
-        return append_section(fields, section);
+        return append_section(
+            fields,
+            "content",
+            section,
+            section,
+            SkillContentError::SystemContentNotText,
+        );
     }
     messages.insert(
         0,
@@ -75,14 +76,20 @@ fn inject_messages(data: &mut Object, section: &str) -> Result<(), SkillContentE
     Ok(())
 }
 
-fn append_section(fields: &mut Object, section: &str) -> Result<(), SkillContentError> {
-    let content = match fields.get("content") {
-        None | Some(Json::Null) => Json::Text(section.to_owned()),
+fn append_section(
+    fields: &mut Object,
+    key: &str,
+    section: &str,
+    absent: &str,
+    missing: SkillContentError,
+) -> Result<(), SkillContentError> {
+    let value = match fields.get(key) {
+        None | Some(Json::Null) => Json::Text(absent.to_owned()),
         Some(Json::Text(text)) => Json::Text(format!("{text}{section}")),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            return Err(SkillContentError::SystemContentNotText);
+            return Err(missing);
         }
     };
-    fields.insert("content".to_owned(), content);
+    fields.insert(key.to_owned(), value);
     Ok(())
 }

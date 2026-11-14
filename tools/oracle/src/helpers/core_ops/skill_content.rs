@@ -67,7 +67,8 @@ fn answer(input: &Input) -> HelperResult {
     match input {
         Input::ExtractContent { skill } => Ok(json!({"content": extract_skill_content(skill)})),
         Input::ExtractFiles { skill } => {
-            let files: BTreeMap<&str, String> = extract_all_files(skill)
+            let extracted = extract_all_files(skill);
+            let files: BTreeMap<&str, String> = extracted
                 .iter()
                 .map(|(name, data)| (name.as_str(), STANDARD.encode(data)))
                 .collect();
