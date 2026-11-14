@@ -226,6 +226,7 @@ async fn the_injected_counters_follow_the_settings_and_the_fingerprint() {
 #[tokio::test]
 async fn the_post_hook_returns_the_hooked_response() {
     let mut parts = followup_parts();
+    parts.kwargs = json_map(&[("user", "\"u-1\"")]);
     parts.plan.stop_reason = Some("done".to_owned());
     parts.callback = Arc::new(ScriptedCallback::new(
         Script::default()
@@ -237,6 +238,10 @@ async fn the_post_hook_returns_the_hooked_response() {
     let records = parts.callback.records();
     assert_eq!(records.post_calls.len(), 1);
     assert_eq!(records.post_calls[0].stop_reason.as_deref(), Some("done"));
+    assert_eq!(
+        raw_text(&records.post_calls[0].kwargs, "user").as_deref(),
+        Some("\"u-1\"")
+    );
 }
 
 #[tokio::test]
