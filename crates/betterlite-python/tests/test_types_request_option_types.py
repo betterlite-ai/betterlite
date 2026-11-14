@@ -203,10 +203,11 @@ def rerank_behavior(module):
         id="r1",
         results=[{"index": 0, "relevance_score": 0.5, "document": {"text": "a"}}],
         meta={"api_version": {"version": 1}, "billed_units": {"search_units": 1}},
+        unexpected="dropped",
     )
     response._hidden_params = {"model_id": "m"}
     truncation = module.HostedVLLMRerankTruncationParams(
-        truncate_prompt_tokens=8, truncation_side="right"
+        truncate_prompt_tokens=8, truncation_side="right", unexpected=1
     )
     return {
         "request": request.model_dump(),
@@ -260,7 +261,7 @@ def fine_tuning_behavior(module):
 
 
 def containers_behavior(module):
-    expires = module.ExpiresAfter(anchor="last_active_at", minutes=30)
+    expires = module.ExpiresAfter(anchor="last_active_at", minutes=30, unexpected=1)
     container = module.ContainerObject(
         id="c1",
         object="container",
@@ -302,8 +303,13 @@ def containers_behavior(module):
         "expires": expires.model_dump(),
         "container": container.model_dump(),
         "container_json": container.json(),
+        "container_json_exclude_none": container.json(exclude_none=True),
+        "container_json_exclude_unset": container.json(exclude_unset=True),
         "container_get": container.get("missing", "fallback"),
         "container_item": container["id"],
+        "container_hidden_item": container["_hidden_params"],
+        "container_hidden_get": container.get("_hidden_params", "fallback"),
+        "container_hidden_contains": "_hidden_params" in container,
         "container_contains": ["id" in container, "unknown" in container, "missing" in container],
         "container_missing_item": outcome(lambda: container["missing"]),
         "container_extra": extra.model_dump(),
@@ -413,8 +419,8 @@ def realtime_behavior(module):
             outcome(lambda: TypeAdapter(module.ALL_DELTA_TYPES).validate_python("audio")),
             outcome(lambda: TypeAdapter(module.ALL_DELTA_TYPES).validate_python("video")),
         ],
-        "expires": module.RealtimeExpiresAfter().model_dump(),
-        "expires_anchor": module.RealtimeExpiresAfter(anchor=None).model_dump(),
+        "expires": module.RealtimeExpiresAfter(unexpected=1).model_dump(),
+        "expires_anchor": module.RealtimeExpiresAfter(anchor=None, unexpected=1).model_dump(),
         "error_event": TypeAdapter(module.RealtimeErrorEvent).validate_python(
             {"type": "error", "error": {"type": "invalid_request", "message": "bad"}}
         ),
@@ -535,8 +541,13 @@ class ContainersBehavior(TypedDict):
     expires: dict[str, JsonValue]
     container: dict[str, JsonValue]
     container_json: dict[str, JsonValue]
+    container_json_exclude_none: dict[str, JsonValue]
+    container_json_exclude_unset: dict[str, JsonValue]
     container_get: str
     container_item: str
+    container_hidden_item: dict[str, JsonValue]
+    container_hidden_get: dict[str, JsonValue]
+    container_hidden_contains: bool
     container_contains: list[bool]
     container_missing_item: Outcome
     container_extra: dict[str, JsonValue]
@@ -686,6 +697,8 @@ def test_rerank_names(report: Report) -> None:
     missing_litellm = TypeAdapter(Outcome).validate_python(litellm["difference"][0])
     assert missing_litellm["error"] == "KeyError"
     assert "_hidden_params" not in betterlite["response"]
+    assert "unexpected" not in betterlite["response"]
+    assert "unexpected" not in betterlite["truncation"]
     assert betterlite["result"]["ok"] is True
     assert "relevance_score" in betterlite["result_missing"]["message"]
     assert betterlite["optional"] == [
@@ -786,9 +799,20 @@ def test_containers_names(report: Report) -> None:
     assert betterlite["container"]["expires_after"] == {
         "anchor": "last_active_at", "minutes": 30,
     }
+    assert "unexpected" not in betterlite["expires"]
+    assert "unexpected" not in betterlite["container"]
+    assert betterlite["container"]["last_active_at"] is None
+    assert "last_active_at" not in betterlite["container_json_exclude_none"]
+    assert betterlite["container_json_exclude_none"]["name"] == "box"
+    assert set(betterlite["container_json_exclude_unset"]) == {
+        "id", "object", "created_at", "status", "expires_after", "name",
+    }
     assert "_hidden_params" not in betterlite["container"]
     assert betterlite["container_get"] == "fallback"
     assert betterlite["container_item"] == "c1"
+    assert betterlite["container_hidden_item"] == {"model_id": "m"}
+    assert betterlite["container_hidden_get"] == {"model_id": "m"}
+    assert betterlite["container_hidden_contains"] is True
     assert betterlite["container_contains"] == [True, False, False]
     assert betterlite["container_missing_item"]["error"] == "AttributeError"
     assert "unexpected" not in betterlite["container_extra"]
@@ -917,7 +941,9 @@ def test_realtime_names(report: Report) -> None:
     assert betterlite["resolved"] == [None, "m1", "m2", None, "m3"]
     assert betterlite["expires"]["anchor"] == "created_at"
     assert betterlite["expires"]["seconds"] is None
+    assert "unexpected" not in betterlite["expires"]
     assert betterlite["expires_anchor"]["anchor"] is None
+    assert "unexpected" not in betterlite["expires_anchor"]
     assert betterlite["missing_value"]["error"] == "ValidationError"
     assert "value" in betterlite["missing_value"]["message"]
     assert betterlite["delta_types"][0]["ok"] is True
