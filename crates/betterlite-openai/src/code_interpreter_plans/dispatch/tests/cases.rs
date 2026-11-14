@@ -7,7 +7,7 @@ use serde_json::{Map, Value, json};
 #[cfg(test)]
 use crate::code_execution_records::SANDBOX_KEY;
 #[cfg(test)]
-use crate::code_interpreter_plans::gate::CHAT_COMPLETION_AGENTIC_SURFACE;
+use crate::code_interpreter_plans::gate::CHAT_COMPLETION_SURFACE;
 
 #[cfg(test)]
 use super::{
@@ -39,10 +39,7 @@ fn run_plan(kwargs: &Map<String, Value>) -> AgenticLoopPlan {
 fn dispatch_builds_the_chat_plan_only_for_the_chat_surface() {
     let chat_kwargs = test_map([
         (SANDBOX_KEY, json!("k")),
-        (
-            "_agentic_loop_api_surface",
-            json!(CHAT_COMPLETION_AGENTIC_SURFACE),
-        ),
+        ("_agentic_loop_api_surface", json!(CHAT_COMPLETION_SURFACE)),
     ]);
     let chat = run_plan(&chat_kwargs);
     assert_eq!(

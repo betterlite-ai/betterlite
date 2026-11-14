@@ -19,7 +19,7 @@ use super::{
 
 #[cfg(test)]
 fn run_plan(
-    logger: &mut CodeInterpreterInterceptionLogger<MockConfig>,
+    logger: &mut InterceptionLogger<MockConfig>,
     optional_params: &Map<String, Value>,
     tool_calls: &[CodeExecutionToolCall],
     kwargs: &Map<String, Value>,

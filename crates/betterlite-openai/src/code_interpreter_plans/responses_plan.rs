@@ -19,32 +19,32 @@ use crate::sandbox_lifecycle::tool_execution::run_tool_call;
 use super::error::PlanError;
 use super::error_handling::delete_after_failure;
 use super::extraction::container_identity;
-use super::initialization::CodeInterpreterInterceptionLogger;
+use super::initialization::InterceptionLogger;
 use super::plan;
 use super::records::CodeInterpreterCall;
 use super::request::PlanRequest;
 
 // A Responses input item that reports the function call the sandbox ran
 #[derive(Serialize)]
-struct FunctionCallItem<'a> {
+struct FunctionCallItem<'call> {
     #[serde(rename = "type")]
     kind: &'static str,
-    call_id: Option<&'a str>,
+    call_id: Option<&'call str>,
     name: &'static str,
-    arguments: &'a str,
+    arguments: &'call str,
 }
 
 // A Responses input item that carries the sandbox output back to the model
 #[derive(Serialize)]
-struct FunctionCallOutputItem<'a> {
+struct FunctionCallOutputItem<'call> {
     #[serde(rename = "type")]
     kind: &'static str,
-    call_id: Option<&'a str>,
-    output: &'a str,
+    call_id: Option<&'call str>,
+    output: &'call str,
 }
 
 pub async fn build_responses_plan<C, R, T, Clk>(
-    logger: &mut CodeInterpreterInterceptionLogger<C>,
+    logger: &mut InterceptionLogger<C>,
     registry: &R,
     tool_registry: &T,
     clock: &Clk,

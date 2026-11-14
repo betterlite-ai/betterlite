@@ -18,7 +18,7 @@ use betterlite_models::catalog::ModelCatalog;
 #[cfg(test)]
 use crate::code_execution_records::{CODE_EXECUTION_TOOL_NAME, CodeExecutionToolCall};
 #[cfg(test)]
-use crate::code_interpreter_plans::initialization::CodeInterpreterInterceptionLogger;
+use crate::code_interpreter_plans::initialization::InterceptionLogger;
 #[cfg(test)]
 use crate::code_interpreter_plans::request::PlanRequest;
 #[cfg(test)]
@@ -208,19 +208,13 @@ impl Clock for FixedClock {
 }
 
 #[cfg(test)]
-fn empty_logger<C>() -> CodeInterpreterInterceptionLogger<C> {
-    CodeInterpreterInterceptionLogger::new(
-        true,
-        None,
-        None,
-        None,
-        Arc::new(ModelCatalog::default()),
-    )
+fn empty_logger<C>() -> InterceptionLogger<C> {
+    InterceptionLogger::new(true, None, None, None, Arc::new(ModelCatalog::default()))
 }
 
 #[cfg(test)]
-fn test_logger(config: MockConfig) -> CodeInterpreterInterceptionLogger<MockConfig> {
-    CodeInterpreterInterceptionLogger::new(
+fn test_logger(config: MockConfig) -> InterceptionLogger<MockConfig> {
+    InterceptionLogger::new(
         true,
         None,
         None,
@@ -230,12 +224,12 @@ fn test_logger(config: MockConfig) -> CodeInterpreterInterceptionLogger<MockConf
 }
 
 #[cfg(test)]
-fn plan_request<'a>(
-    messages: &'a Value,
-    optional_params: &'a Map<String, Value>,
-    tool_calls: &'a [CodeExecutionToolCall],
-    kwargs: &'a Map<String, Value>,
-) -> PlanRequest<'a> {
+fn plan_request<'request>(
+    messages: &'request Value,
+    optional_params: &'request Map<String, Value>,
+    tool_calls: &'request [CodeExecutionToolCall],
+    kwargs: &'request Map<String, Value>,
+) -> PlanRequest<'request> {
     PlanRequest {
         model: "openai/gpt-5",
         messages,

@@ -1,9 +1,4 @@
 #[cfg(test)]
-use std::sync::Arc;
-
-#[cfg(test)]
-use betterlite_models::catalog::ModelCatalog;
-#[cfg(test)]
 use serde_json::json;
 
 #[cfg(test)]
@@ -14,7 +9,7 @@ use super::{MockConfig, test_object};
 fn init_stores_every_setting_and_the_sandbox_config() {
     let config = MockConfig::succeeding(test_object([("id", json!("cnt-1"))]), "");
     let catalog = Arc::new(ModelCatalog::default());
-    let logger = CodeInterpreterInterceptionLogger::new(
+    let logger = InterceptionLogger::new(
         false,
         Some(vec!["openai".to_owned()]),
         Some("my-e2b".to_owned()),
@@ -32,7 +27,7 @@ fn init_stores_every_setting_and_the_sandbox_config() {
 #[cfg(test)]
 #[test]
 fn init_keeps_absent_settings_as_none() {
-    let logger = CodeInterpreterInterceptionLogger::<MockConfig>::new(
+    let logger = InterceptionLogger::<MockConfig>::new(
         true,
         None,
         None,

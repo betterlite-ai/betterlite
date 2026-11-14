@@ -1,5 +1,5 @@
 #[cfg(test)]
-use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
+use betterlite_models::catalog::BundledCatalog;
 #[cfg(test)]
 use serde_json::json;
 

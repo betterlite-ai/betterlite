@@ -1,4 +1,6 @@
 #[cfg(test)]
+use rstest::rstest;
+#[cfg(test)]
 use serde_json::json;
 
 #[cfg(test)]
@@ -14,11 +16,11 @@ fn execution_response() -> Value {
 }
 
 #[cfg(test)]
-fn gate_request<'a>(
-    response: &'a Value,
-    provider: &'a str,
-    kwargs: &'a Map<String, Value>,
-) -> GateRequest<'a> {
+fn gate_request<'request>(
+    response: &'request Value,
+    provider: &'request str,
+    kwargs: &'request Map<String, Value>,
+) -> GateRequest<'request> {
     GateRequest {
         response,
         custom_llm_provider: provider,
@@ -27,8 +29,11 @@ fn gate_request<'a>(
 }
 
 #[cfg(test)]
-#[test]
-fn conditions_deny_a_disabled_logger_or_an_inactive_request() {
+#[rstest]
+#[case::boolean_false(json!(false))]
+#[case::string_true(json!("true"))]
+#[case::null(json!(null))]
+fn conditions_deny_a_disabled_logger_or_an_inactive_request(#[case] marker: Value) {
     let response = execution_response();
     let active = test_map([(INTERCEPTION_ACTIVE_KEY, json!(true))]);
     let mut logger = empty_logger::<()>();
@@ -40,13 +45,10 @@ fn conditions_deny_a_disabled_logger_or_an_inactive_request() {
         should_run_agentic_loop(&logger, &gate_request(&response, "openai", &active)).is_none()
     );
     let enabled = empty_logger::<()>();
-    for marker in [json!(false), json!("true"), json!(null)] {
-        let kwargs = test_map([(INTERCEPTION_ACTIVE_KEY, marker)]);
-        assert!(
-            should_run_agentic_loop(&enabled, &gate_request(&response, "openai", &kwargs))
-                .is_none()
-        );
-    }
+    let kwargs = test_map([(INTERCEPTION_ACTIVE_KEY, marker)]);
+    assert!(
+        should_run_agentic_loop(&enabled, &gate_request(&response, "openai", &kwargs)).is_none()
+    );
     assert!(
         should_run_agentic_loop(&enabled, &gate_request(&response, "openai", &Map::new()))
             .is_none()
@@ -72,19 +74,16 @@ fn conditions_filter_by_the_enabled_provider_list() {
 }
 
 #[cfg(test)]
-#[test]
-fn conditions_deny_a_response_without_code_execution_calls() {
+#[rstest]
+#[case::message_without_calls(json!({"output": [{"type": "message", "content": []}]}))]
+#[case::empty_output(json!({"output": []}))]
+#[case::no_output(json!({}))]
+fn conditions_deny_a_response_without_code_execution_calls(#[case] response: Value) {
     let active = test_map([(INTERCEPTION_ACTIVE_KEY, json!(true))]);
     let logger = empty_logger::<()>();
-    for response in [
-        json!({"output": [{"type": "message", "content": []}]}),
-        json!({"output": []}),
-        json!({}),
-    ] {
-        assert!(
-            should_run_agentic_loop(&logger, &gate_request(&response, "openai", &active)).is_none()
-        );
-    }
+    assert!(
+        should_run_agentic_loop(&logger, &gate_request(&response, "openai", &active)).is_none()
+    );
 }
 
 #[cfg(test)]
@@ -107,10 +106,7 @@ fn detection_collects_only_code_execution_function_calls() {
 fn detection_uses_the_chat_extractor_only_on_the_chat_surface() {
     let kwargs = test_map([
         (INTERCEPTION_ACTIVE_KEY, json!(true)),
-        (
-            "_agentic_loop_api_surface",
-            json!(CHAT_COMPLETION_AGENTIC_SURFACE),
-        ),
+        ("_agentic_loop_api_surface", json!(CHAT_COMPLETION_SURFACE)),
     ]);
     let chat_response = json!({
         "id": "chatcmpl-1",

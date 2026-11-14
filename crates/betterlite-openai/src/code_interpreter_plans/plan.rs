@@ -12,13 +12,13 @@ use super::request::PlanRequest;
 
 // LiteLLM's plan metadata object: the tool type, the sandbox key, the scope flag and each call record
 #[derive(Serialize)]
-struct PlanMetadata<'a> {
+struct PlanMetadata<'plan> {
     tool_type: &'static str,
-    sandbox_key: &'a str,
+    sandbox_key: &'plan str,
     is_session_scoped: bool,
-    code_interpreter_calls: &'a [CodeInterpreterCall],
+    code_interpreter_calls: &'plan [CodeInterpreterCall],
     #[serde(skip_serializing_if = "Option::is_none")]
-    response_format: Option<&'a str>,
+    response_format: Option<&'plan str>,
 }
 
 pub fn metadata(

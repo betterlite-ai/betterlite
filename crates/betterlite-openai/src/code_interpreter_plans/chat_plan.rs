@@ -20,13 +20,13 @@ use crate::sandbox_lifecycle::tool_execution::run_tool_call;
 use super::error::PlanError;
 use super::error_handling::delete_after_failure;
 use super::extraction::container_identity;
-use super::initialization::CodeInterpreterInterceptionLogger;
+use super::initialization::InterceptionLogger;
 use super::plan;
 use super::records::CodeInterpreterCall;
 use super::request::PlanRequest;
 
 pub async fn build_chat_plan<C, R, T, Clk>(
-    logger: &mut CodeInterpreterInterceptionLogger<C>,
+    logger: &mut InterceptionLogger<C>,
     registry: &R,
     tool_registry: &T,
     clock: &Clk,

@@ -7,13 +7,13 @@ use crate::sandbox_lifecycle::resolution::SandboxToolRegistry;
 use super::chat_plan::build_chat_plan;
 use super::error::PlanError;
 use super::gate::is_chat_completion_surface;
-use super::initialization::CodeInterpreterInterceptionLogger;
+use super::initialization::InterceptionLogger;
 use super::request::PlanRequest;
 use super::responses_plan::build_responses_plan;
 
 // LiteLLM's async_build_agentic_loop_plan: the chat surface takes the chat builder, every other surface the Responses one
 pub async fn build_agentic_loop_plan<C, R, T, Clk>(
-    logger: &mut CodeInterpreterInterceptionLogger<C>,
+    logger: &mut InterceptionLogger<C>,
     registry: &R,
     tool_registry: &T,
     clock: &Clk,

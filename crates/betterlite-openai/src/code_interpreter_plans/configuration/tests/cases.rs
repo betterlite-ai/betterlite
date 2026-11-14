@@ -1,13 +1,8 @@
 #[cfg(test)]
-use std::sync::Arc;
-
-#[cfg(test)]
-use betterlite_models::catalog::ModelCatalog;
-#[cfg(test)]
 use serde_json::json;
 
 #[cfg(test)]
-fn config(value: serde_json::Value) -> CodeInterpreterInterceptionConfig {
+fn config(value: serde_json::Value) -> InterceptionConfig {
     serde_json::from_value(value).unwrap()
 }
 
@@ -51,7 +46,7 @@ fn from_proxy_prefers_the_settings_entry_over_callback_parameters() {
     let callback = config(json!({"enabled": true, "enabled_providers": ["openai"]}));
     let logger = initialize_from_proxy_config::<()>(
         &ProxyParameters {
-            code_interpreter_interception_params: Some(settings),
+            interception_params: Some(settings),
             callback_specific_params: Some(callback),
         },
         catalog(),
@@ -66,7 +61,7 @@ fn from_proxy_falls_back_to_callback_parameters() {
     let callback = config(json!({"sandbox_tool_name": "my-e2b"}));
     let logger = initialize_from_proxy_config::<()>(
         &ProxyParameters {
-            code_interpreter_interception_params: None,
+            interception_params: None,
             callback_specific_params: Some(callback),
         },
         catalog(),

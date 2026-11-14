@@ -5,9 +5,9 @@ use std::time::{Duration, Instant};
 use serde_json::{Map, json};
 
 #[cfg(test)]
-use crate::code_execution_records::tool_shapes::function_tool;
+use crate::code_execution_records::SANDBOX_KEY;
 #[cfg(test)]
-use crate::code_execution_records::{SANDBOX_KEY, SESSION_SCOPED_KEY};
+use crate::code_execution_records::tool_shapes::function_tool;
 #[cfg(test)]
 use crate::code_interpreter_plans::records::CodeInterpreterOutput;
 #[cfg(test)]
@@ -21,7 +21,7 @@ use super::{
 
 #[cfg(test)]
 fn run_chat_plan(
-    logger: &mut CodeInterpreterInterceptionLogger<MockConfig>,
+    logger: &mut InterceptionLogger<MockConfig>,
     tool_calls: &[CodeExecutionToolCall],
     kwargs: &Map<String, Value>,
 ) -> AgenticLoopPlan {

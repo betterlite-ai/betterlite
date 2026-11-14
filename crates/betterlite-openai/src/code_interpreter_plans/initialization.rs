@@ -5,7 +5,7 @@ use betterlite_models::catalog::ModelCatalog;
 use crate::sandbox_lifecycle::cache_operations::SandboxCache;
 
 // LiteLLM's CodeInterpreterInterceptionLogger holds the deployment's settings, the model catalog provider resolution reads and the sandbox cache a call shares with its follow-ups
-pub struct CodeInterpreterInterceptionLogger<C> {
+pub struct InterceptionLogger<C> {
     pub enabled: bool,
     pub enabled_providers: Option<Vec<String>>,
     pub sandbox_tool_name: Option<String>,
@@ -14,7 +14,7 @@ pub struct CodeInterpreterInterceptionLogger<C> {
     pub cache: SandboxCache,
 }
 
-impl<C> CodeInterpreterInterceptionLogger<C> {
+impl<C> InterceptionLogger<C> {
     #[must_use]
     pub fn new(
         enabled: bool,

@@ -2,10 +2,10 @@ use serde_json::{Map, Value};
 
 use crate::code_execution_records::{INTERCEPTION_ACTIVE_KEY, chat_dialect, responses_dialect};
 
-use super::initialization::CodeInterpreterInterceptionLogger;
+use super::initialization::InterceptionLogger;
 use super::records::CodeExecutionToolCalls;
 
-pub const CHAT_COMPLETION_AGENTIC_SURFACE: &str = "chat_completions";
+pub const CHAT_COMPLETION_SURFACE: &str = "chat_completions";
 
 // The surface marker LiteLLM branches on; anything but the chat value takes the Responses path
 #[must_use]
@@ -13,19 +13,19 @@ pub fn is_chat_completion_surface(kwargs: &Map<String, Value>) -> bool {
     kwargs
         .get("_agentic_loop_api_surface")
         .and_then(Value::as_str)
-        == Some(CHAT_COMPLETION_AGENTIC_SURFACE)
+        == Some(CHAT_COMPLETION_SURFACE)
 }
 
 // The arguments LiteLLM's async_should_run_agentic_loop reads; the model, messages, tools and stream it ignores
-pub struct GateRequest<'a> {
-    pub response: &'a Value,
-    pub custom_llm_provider: &'a str,
-    pub kwargs: &'a Map<String, Value>,
+pub struct GateRequest<'request> {
+    pub response: &'request Value,
+    pub custom_llm_provider: &'request str,
+    pub kwargs: &'request Map<String, Value>,
 }
 
 #[must_use]
 pub fn should_run_agentic_loop<C>(
-    logger: &CodeInterpreterInterceptionLogger<C>,
+    logger: &InterceptionLogger<C>,
     request: &GateRequest<'_>,
 ) -> Option<CodeExecutionToolCalls> {
     if !logger.enabled {

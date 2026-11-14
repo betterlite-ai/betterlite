@@ -9,7 +9,7 @@ use crate::code_execution_records::{
     followup_filtering, helpers,
 };
 
-use super::initialization::CodeInterpreterInterceptionLogger;
+use super::initialization::InterceptionLogger;
 use super::provider::resolve_provider;
 
 // The call types LiteLLM's pre-call hook accepts
@@ -31,7 +31,7 @@ impl CallType {
 }
 
 pub fn pre_call_deployment_hook<C>(
-    logger: &CodeInterpreterInterceptionLogger<C>,
+    logger: &InterceptionLogger<C>,
     kwargs: &mut Map<String, Value>,
     call_type: Option<CallType>,
 ) -> Result<bool, serde_json::Error> {
@@ -45,11 +45,11 @@ pub fn pre_call_deployment_hook<C>(
 }
 
 fn interception_dialect<C>(
-    logger: &CodeInterpreterInterceptionLogger<C>,
+    logger: &InterceptionLogger<C>,
     kwargs: &Map<String, Value>,
     call_type: Option<CallType>,
 ) -> Option<CallDialect> {
-    let call_type = call_type?;
+    let requested = call_type?;
     if !logger.enabled {
         return None;
     }
@@ -59,7 +59,7 @@ fn interception_dialect<C>(
     if !has_code_interpreter_tool(kwargs) {
         return None;
     }
-    Some(call_type.dialect())
+    Some(requested.dialect())
 }
 
 fn provider_allowed(
@@ -150,10 +150,10 @@ fn rewrite_tools(
     kwargs: &mut Map<String, Value>,
     dialect: CallDialect,
 ) -> Result<(), serde_json::Error> {
-    let replaced = kwargs
+    let rewritten = kwargs
         .get("tools")
         .and_then(|tools| followup_filtering::tools(tools, dialect));
-    if let Some(replaced) = replaced {
+    if let Some(replaced) = rewritten {
         kwargs.insert("tools".to_owned(), Value::Array(replaced));
     }
     let targets_code_interpreter = kwargs.get("tool_choice").is_some_and(tool_choice_detection);

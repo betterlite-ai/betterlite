@@ -1,6 +1,8 @@
 #[cfg(test)]
 use betterlite_models::catalog::BundledCatalog;
 #[cfg(test)]
+use rstest::rstest;
+#[cfg(test)]
 use serde_json::json;
 
 #[cfg(test)]
@@ -11,7 +13,7 @@ use super::{empty_logger, test_map};
 
 #[cfg(test)]
 fn hook<C>(
-    logger: &CodeInterpreterInterceptionLogger<C>,
+    logger: &InterceptionLogger<C>,
     kwargs: &mut Map<String, Value>,
     call_type: Option<CallType>,
 ) -> bool {
@@ -71,18 +73,19 @@ fn root_metadata_keeps_the_markers_during_a_follow_up_iteration() {
 }
 
 #[cfg(test)]
-#[test]
-fn root_metadata_treats_a_missing_zero_or_empty_depth_as_the_root() {
+#[rstest]
+#[case::null(json!(null))]
+#[case::zero(json!(0))]
+#[case::boolean_false(json!(false))]
+fn root_metadata_treats_a_missing_zero_or_empty_depth_as_the_root(#[case] depth: Value) {
     let mut logger = empty_logger::<()>();
     logger.enabled = false;
-    for depth in [json!(null), json!(0), json!(false)] {
-        let mut kwargs = test_map([
-            (INTERCEPTION_ACTIVE_KEY, json!(true)),
-            ("_agentic_loop_depth", depth),
-        ]);
-        assert!(!hook(&logger, &mut kwargs, None));
-        assert!(kwargs.get(INTERCEPTION_ACTIVE_KEY).is_none());
-    }
+    let mut kwargs = test_map([
+        (INTERCEPTION_ACTIVE_KEY, json!(true)),
+        ("_agentic_loop_depth", depth),
+    ]);
+    assert!(!hook(&logger, &mut kwargs, None));
+    assert!(kwargs.get(INTERCEPTION_ACTIVE_KEY).is_none());
 }
 
 #[cfg(test)]
@@ -262,15 +265,17 @@ fn tool_rewriting_replaces_code_interpreter_tools_and_keeps_the_rest_in_order() 
 }
 
 #[cfg(test)]
-#[test]
-fn tool_rewriting_uses_the_chat_completion_shape_for_a_completion_call() {
+#[rstest]
+#[case::completion(CallType::Completion)]
+#[case::acompletion(CallType::Acompletion)]
+fn tool_rewriting_uses_the_chat_completion_shape_for_a_completion_call(
+    #[case] call_type: CallType,
+) {
     let logger = empty_logger::<()>();
+    let mut kwargs = test_map([("tools", code_interpreter_tools())]);
+    assert!(hook(&logger, &mut kwargs, Some(call_type)));
     let replacement = serde_json::to_value(function_tool(CallDialect::ChatCompletion)).unwrap();
-    for call_type in [CallType::Completion, CallType::Acompletion] {
-        let mut kwargs = test_map([("tools", code_interpreter_tools())]);
-        assert!(hook(&logger, &mut kwargs, Some(call_type)));
-        assert_eq!(kwargs.get("tools"), Some(&json!([replacement.clone()])));
-    }
+    assert_eq!(kwargs.get("tools"), Some(&json!([replacement])));
 }
 
 #[cfg(test)]
@@ -289,30 +294,35 @@ fn tool_rewriting_uses_the_responses_shape_for_an_aresponses_call() {
 }
 
 #[cfg(test)]
-#[test]
-fn tool_choice_targeting_code_interpreter_is_rewritten_to_the_function_choice() {
+#[rstest]
+#[case::responses(
+    CallType::Responses,
+    json!({"type": "code_interpreter"}),
+    CallDialect::Responses
+)]
+#[case::completion(
+    CallType::Completion,
+    json!({"type": "function", "name": "litellm_code_execution"}),
+    CallDialect::ChatCompletion
+)]
+#[case::acompletion(
+    CallType::Acompletion,
+    json!({"type": "function", "name": "litellm_code_execution"}),
+    CallDialect::ChatCompletion
+)]
+fn tool_choice_targeting_code_interpreter_is_rewritten_to_the_function_choice(
+    #[case] call_type: CallType,
+    #[case] requested: Value,
+    #[case] dialect: CallDialect,
+) {
     let logger = empty_logger::<()>();
     let mut kwargs = test_map([
         ("tools", code_interpreter_tools()),
-        ("tool_choice", json!({"type": "code_interpreter"})),
+        ("tool_choice", requested),
     ]);
-    assert!(hook(&logger, &mut kwargs, Some(CallType::Responses)));
-    let choice = serde_json::to_value(function_tool_choice(CallDialect::Responses)).unwrap();
+    assert!(hook(&logger, &mut kwargs, Some(call_type)));
+    let choice = serde_json::to_value(function_tool_choice(dialect)).unwrap();
     assert_eq!(kwargs.get("tool_choice"), Some(&choice));
-
-    let chat_choice =
-        serde_json::to_value(function_tool_choice(CallDialect::ChatCompletion)).unwrap();
-    for call_type in [CallType::Completion, CallType::Acompletion] {
-        let mut named = test_map([
-            ("tools", code_interpreter_tools()),
-            (
-                "tool_choice",
-                json!({"type": "function", "name": "litellm_code_execution"}),
-            ),
-        ]);
-        assert!(hook(&logger, &mut named, Some(call_type)));
-        assert_eq!(named.get("tool_choice"), Some(&chat_choice));
-    }
 }
 
 #[cfg(test)]

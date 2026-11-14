@@ -12,7 +12,7 @@ use crate::code_execution_records::SANDBOX_KEY;
 #[cfg(test)]
 use crate::code_execution_records::container_extraction;
 #[cfg(test)]
-use crate::code_interpreter_plans::initialization::CodeInterpreterInterceptionLogger;
+use crate::code_interpreter_plans::initialization::InterceptionLogger;
 #[cfg(test)]
 use crate::code_interpreter_plans::responses_plan::build_responses_plan;
 
@@ -24,7 +24,7 @@ use super::{
 
 #[cfg(test)]
 fn run_responses_plan(
-    logger: &mut CodeInterpreterInterceptionLogger<MockConfig>,
+    logger: &mut InterceptionLogger<MockConfig>,
     kwargs: &Map<String, Value>,
 ) -> AgenticLoopPlan {
     let messages = json!([{"role": "user", "content": "hi"}]);
@@ -43,7 +43,7 @@ fn run_responses_plan(
 }
 
 #[cfg(test)]
-fn sample_logger() -> CodeInterpreterInterceptionLogger<MockConfig> {
+fn sample_logger() -> InterceptionLogger<MockConfig> {
     test_logger(MockConfig::succeeding(
         test_object([("id", json!("cnt-1"))]),
         "4",

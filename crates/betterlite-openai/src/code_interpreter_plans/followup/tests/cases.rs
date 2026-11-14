@@ -2,8 +2,6 @@
 use serde_json::json;
 
 #[cfg(test)]
-use crate::code_execution_records::followup_filtering;
-#[cfg(test)]
 use crate::code_execution_records::tool_shapes::function_tool;
 
 #[cfg(test)]
