@@ -27,10 +27,7 @@ where
     };
     let mapped = capabilities
         .map_effort(request.model, &effort, request.custom_llm_provider)
-        .await
-        .map_err(|error| TransformError::Anthropic {
-            message: error.to_string(),
-        })?;
+        .await?;
     let Some(mapped_thinking) = mapped else {
         request.optional_params.shift_remove("thinking");
         request.optional_params.shift_remove("output_config");

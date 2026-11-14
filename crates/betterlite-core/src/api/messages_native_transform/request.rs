@@ -9,7 +9,7 @@ use serde_json::Number;
 use super::adaptive::{AdaptiveEffort, translate_adaptive_effort};
 use super::capabilities::{LegacyShapes, ThinkingCapabilities};
 use super::error::TransformError;
-use super::json::{from_contract, to_contract};
+use super::json::from_contract;
 use super::reasoning::{ReasoningAlias, translate_reasoning_effort};
 use super::temperature::{TemperatureRule, drop_incompatible_temperature};
 use crate::api::messages_native_prepare::billing::filter_billing_headers;
@@ -76,8 +76,8 @@ where
 {
     let mut contract = OptionalParams {
         reasoning_effort: None,
-        thinking: optional_params.get("thinking").map(to_contract),
-        output_config: optional_params.get("output_config").map(to_contract),
+        thinking: optional_params.get("thinking").map(ContractJson::from),
+        output_config: optional_params.get("output_config").map(ContractJson::from),
     };
     normalize_legacy_shapes(capabilities, model, custom_llm_provider, &mut contract).await?;
     write_contract(optional_params, "thinking", contract.thinking.as_ref())?;
@@ -217,7 +217,7 @@ fn convert_context_management(params: &mut Object) -> Result<(), TransformError>
     if matches!(context_management, Json::Null) {
         return Ok(());
     }
-    let Some(converted) = map_context_management(&to_contract(context_management))? else {
+    let Some(converted) = map_context_management(&ContractJson::from(context_management))? else {
         return Ok(());
     };
     params.insert(

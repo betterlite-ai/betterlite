@@ -87,10 +87,7 @@ where
                 effort.unwrap_or("medium"),
                 request.custom_llm_provider,
             )
-            .await
-            .map_err(|error| TransformError::Anthropic {
-                message: error.to_string(),
-            })?
+            .await?
     } else {
         None
     };
