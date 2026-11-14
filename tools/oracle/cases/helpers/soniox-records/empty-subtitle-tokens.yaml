@@ -1,0 +1,41 @@
+kind: helper
+name: soniox-records-empty-subtitle-tokens
+call:
+  soniox_records:
+    calls:
+    - function: response
+      payload:
+        transcript: {tokens: [], text: fallback}
+      response_format: srt
+    - function: response
+      payload:
+        transcript: {tokens: []}
+      response_format: vtt
+    - function: response
+      payload:
+        transcript: {tokens: [], text: ""}
+      response_format: srt
+    - function: response
+      payload:
+        transcript: {}
+      response_format: srt
+    - function: response
+      payload:
+        transcript: {tokens: null, text: t}
+      response_format: vtt
+    - function: response
+      payload:
+        tokens:
+        - {text: x, start_ms: 0, end_ms: 10}
+        text: ignored
+      response_format: srt
+    - function: response
+      payload:
+        transcript: {tokens: [], text: no subtitles}
+      response_format: text
+    - function: response
+      payload:
+        transcript: {tokens: [], text: envelope}
+      response_format: vtt
+compare: {ignore: []}
+env: {}

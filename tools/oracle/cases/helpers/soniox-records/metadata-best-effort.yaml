@@ -1,0 +1,61 @@
+kind: helper
+name: soniox-records-metadata-best-effort
+call:
+  soniox_records:
+    calls:
+    - function: response
+      payload:
+        transcription: {audio_duration_ms: 1500}
+        transcript: {text: hi, tokens: [{text: hi, language: en}]}
+    - function: response
+      payload:
+        transcription: {audio_duration_ms: true}
+        transcript: {text: hi}
+    - function: response
+      payload:
+        transcription: {audio_duration_ms: false}
+        transcript: {text: hi}
+    - function: response
+      payload:
+        transcription: {audio_duration_ms: fast}
+        transcript: {text: hi}
+    - function: response
+      payload:
+        transcription: {audio_duration_ms: null}
+        transcript: {text: hi}
+    - function: response
+      payload:
+        transcript:
+          tokens:
+          - {text: a, language: en}
+          - {text: b, language: de}
+    - function: response
+      payload:
+        transcript:
+          tokens:
+          - {text: a, language: en}
+          - {text: b, language: null}
+          - {text: c, language: ""}
+    - function: response
+      payload:
+        transcript: null
+        transcription: {audio_duration_ms: 1000}
+    - function: response
+      payload:
+        transcript: {text: x}
+    - function: response
+      payload:
+        text: plain
+        tokens: []
+    - function: response
+      payload:
+        tokens:
+        - {text: a}
+        - {text: b}
+    - function: response
+      payload:
+        text: chosen
+        tokens:
+        - {start_ms: 0}
+compare: {ignore: []}
+env: {}
