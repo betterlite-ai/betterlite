@@ -3,19 +3,17 @@ use std::str::FromStr as _;
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_config::proxy::{ProxyPolicy, ProxyRoute, ProxyServer};
+use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::{TlsPolicy, Verification};
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::identity::provider_id::ProviderId;
-use reqwest::Proxy;
 use reqwest::blocking::{Client as BlockingClient, ClientBuilder as BlockingClientBuilder};
 use reqwest::redirect::Policy;
 use reqwest::retry::never;
 use reqwest::{Client, ClientBuilder};
-use secrecy::ExposeSecret as _;
 
 use super::{ClientError, DEFAULT_PROVIDER, Params};
-use crate::proxy::base_builder;
+use crate::proxy::{base_builder, with_forward_routes};
 use crate::tls::apply_policy;
 
 pub(crate) mod asynchronous;
@@ -141,40 +139,7 @@ fn client_builder(
         .retry(never())
         .connect_timeout(CLIENT_CONNECT_TIMEOUT)
         .timeout(CLIENT_TIMEOUT);
-    Ok(proxied(builder, proxy))
-}
-
-// the policy's forward routes become reqwest proxies, so a configured proxy reaches this path too
-fn proxied(builder: ClientBuilder, policy: &Arc<ProxyPolicy>) -> ClientBuilder {
-    for warning in &policy.warnings {
-        tracing::warn!(?warning, "proxy setting ignored");
-    }
-    let mut configured = builder;
-    for route in policy.primary.values().chain(policy.fallback.values()) {
-        if let ProxyRoute::Forward(server) = route {
-            configured = configured.proxy(forward_proxy(policy, server));
-        }
-    }
-    configured
-}
-
-fn forward_proxy(policy: &Arc<ProxyPolicy>, server: &Arc<ProxyServer>) -> Proxy {
-    let target = format!("http://{}:{}", server.host, server.port);
-    let routing = Arc::clone(policy);
-    let chosen = Arc::clone(server);
-    let proxy = Proxy::custom(move |url| match routing.route(url) {
-        Some(ProxyRoute::Forward(found)) if Arc::ptr_eq(found, &chosen) => Some(target.clone()),
-        Some(
-            ProxyRoute::Forward(_) | ProxyRoute::Unsupported { .. } | ProxyRoute::Invalid { .. },
-        )
-        | None => None,
-    });
-    match &server.credentials {
-        Some(credentials) => {
-            proxy.basic_auth(&credentials.username, credentials.password.expose_secret())
-        }
-        None => proxy,
-    }
+    Ok(with_forward_routes(builder, proxy))
 }
 
 // the ssl_verify litellm_params carries overrides the resolved policy the way a deployment setting does

@@ -54,6 +54,23 @@ pub fn base_builder() -> ClientBuilder {
         .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST)
 }
 
+// the policy's forward routes become reqwest proxies, and its warnings are logged once per client
+pub(crate) fn with_forward_routes(
+    builder: ClientBuilder,
+    policy: &Arc<ProxyPolicy>,
+) -> ClientBuilder {
+    for warning in &policy.warnings {
+        tracing::warn!(?warning, "proxy setting ignored");
+    }
+    let mut configured = builder;
+    for route in policy.primary.values().chain(policy.fallback.values()) {
+        if let ProxyRoute::Forward(server) = route {
+            configured = configured.proxy(forward_proxy(policy, server));
+        }
+    }
+    configured
+}
+
 impl ProxiedClient {
     pub fn outbound_for_deployment(
         proxy: &Arc<ProxyPolicy>,
@@ -95,24 +112,18 @@ impl ProxiedClient {
         policy: &Arc<ProxyPolicy>,
         limits: TransportLimits,
     ) -> Result<Self, HttpError> {
-        for warning in &policy.warnings {
-            tracing::warn!(?warning, "proxy setting ignored");
-        }
         let header_list_cap = u32::try_from(limits.header_bytes).unwrap_or(u32::MAX);
         // reqwest would otherwise read the process environment, retry protocol NACKs and follow redirects with the provider key attached
-        let mut configured = builder
+        let configured = builder
             .no_proxy()
             .retry(never())
             .redirect(Policy::none())
             .connect_timeout(limits.connect_timeout)
             .read_timeout(limits.read_timeout)
             .http2_max_header_list_size(header_list_cap);
-        for route in policy.primary.values().chain(policy.fallback.values()) {
-            if let ProxyRoute::Forward(server) = route {
-                configured = configured.proxy(forward_proxy(policy, server));
-            }
-        }
-        let client = configured.build().map_err(HttpError::Client)?;
+        let client = with_forward_routes(configured, policy)
+            .build()
+            .map_err(HttpError::Client)?;
         Ok(Self {
             client,
             policy: Arc::clone(policy),
