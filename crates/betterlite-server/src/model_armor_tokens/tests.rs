@@ -131,7 +131,7 @@ impl Harness {
         credentials: Option<&str>,
         project: Option<&str>,
     ) -> Result<VertexArmorTokens, ArmorTokenError> {
-        let executor: Arc<dyn CredentialExecutor> = Arc::clone(&self.executor);
+        let executor = Arc::clone(&self.executor);
         VertexArmorTokens::new(
             credentials.map(SecretString::from),
             project.map(str::to_owned),
