@@ -93,6 +93,11 @@ where
         .send(request)
         .await
         .map_err(PartnerCountError::Transport)?;
+    decode_reply(reply)
+}
+
+// LiteLLM reads the count only from a 200 and puts the raw reply body in the error otherwise
+fn decode_reply(reply: UpstreamResponse) -> Result<PartnerCount, PartnerCountError> {
     if reply.status != OK {
         return Err(PartnerCountError::Status {
             status: reply.status,
