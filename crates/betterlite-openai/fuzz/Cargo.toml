@@ -487,3 +487,10 @@ path = "fuzz_targets/volcengine_stream_event.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "xai_chat_reply"
+path = "fuzz_targets/xai_chat_reply.rs"
+test = false
+doc = false
+bench = false
