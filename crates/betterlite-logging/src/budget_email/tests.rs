@@ -466,6 +466,14 @@ async fn database() -> (PostgresFixture, Pool) {
         .unwrap();
     let manager = Manager::new(fixture.options.url.expose_secret().parse().unwrap(), NoTls);
     let pool = Pool::builder(manager).max_size(1).build().unwrap();
+    let client = pool.get().await.unwrap();
+    client
+        .batch_execute(include_str!(
+            "../../../../tools/postgres-fixture/fixtures/baseline.sql"
+        ))
+        .await
+        .unwrap();
+    drop(client);
     (fixture, pool)
 }
 
