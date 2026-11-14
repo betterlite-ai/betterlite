@@ -5,9 +5,9 @@ use std::time::{Duration, Instant};
 use serde_json::{Map, json};
 
 #[cfg(test)]
-use crate::code_execution_records::SANDBOX_KEY;
-#[cfg(test)]
 use crate::code_execution_records::tool_shapes::function_tool;
+#[cfg(test)]
+use crate::code_execution_records::{SANDBOX_KEY, SESSION_SCOPED_KEY};
 #[cfg(test)]
 use crate::code_interpreter_plans::records::CodeInterpreterOutput;
 #[cfg(test)]
@@ -223,4 +223,28 @@ fn assembly_sets_the_response_format_and_the_chat_dialect_tools() {
         followup_values(&patch.tools.unwrap()),
         vec![serde_json::to_value(function_tool(CallDialect::ChatCompletion)).unwrap()]
     );
+}
+
+#[cfg(test)]
+#[test]
+fn session_scope_reaches_the_chat_metadata_and_the_cache_entry() {
+    let config = MockConfig::succeeding(json!({"id": "cnt-1"}), "4");
+    let mut logger = test_logger(config);
+    let tool_calls = [chat_tool_call(Some("call-1"), Some("call-1"), "print(1)")];
+    let kwargs = test_map([
+        ("user_api_key_hash", json!("user-key")),
+        (SESSION_SCOPED_KEY, json!(true)),
+        (SANDBOX_KEY, json!("user-key:sess-1")),
+    ]);
+    let plan = run_chat_plan(&mut logger, &tool_calls, &kwargs);
+    assert_eq!(
+        metadata_value(&plan.metadata, "is_session_scoped"),
+        json!(true)
+    );
+    assert_eq!(
+        metadata_value(&plan.metadata, "sandbox_key"),
+        json!("user-key:sess-1")
+    );
+    let entry = logger.cache.entries.get("user-key:sess-1").unwrap();
+    assert_eq!(entry.identity.as_deref(), Some("user-key"));
 }
