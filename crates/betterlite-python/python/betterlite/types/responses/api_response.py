@@ -1,7 +1,14 @@
 from collections.abc import Mapping, Sequence
 from typing import ClassVar, Final, Literal, Unpack
 
-from pydantic import ConfigDict, JsonValue, NonNegativeInt, PrivateAttr, field_validator
+from pydantic import (
+    ConfigDict,
+    JsonValue,
+    NonNegativeInt,
+    PrivateAttr,
+    SerializeAsAny,
+    field_validator,
+)
 from typing_extensions import override
 
 from betterlite.types.utils.base import Dumpable, DumpOptions, InitValue, ResponseObject
@@ -131,7 +138,7 @@ class ResponsesAPIResponse(ResponseObject):
     metadata: dict[str, JsonValue] | None = None
     model: str | None = None
     object: str | None = None
-    output: list[dict[str, JsonValue] | ResponseObject]
+    output: list[dict[str, JsonValue] | SerializeAsAny[ResponseObject]]
     parallel_tool_calls: bool | None = None
     temperature: float | None = None
     tool_choice: JsonValue = None
@@ -181,7 +188,10 @@ class ResponsesAPIResponse(ResponseObject):
                         match text:
                             case str():
                                 texts.append(text)
-                            case Dumpable() | Mapping() | bool() | int() | float() | Sequence() | None:
+                            case (
+                                Dumpable() | Mapping() | bool() | int() | float()
+                                | Sequence() | None
+                            ):
                                 texts.append("")
                 case Dumpable() | Mapping() | bool() | int() | float() | str() | Sequence() | None:
                     pass
