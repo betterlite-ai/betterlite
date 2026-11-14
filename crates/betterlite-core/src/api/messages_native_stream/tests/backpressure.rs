@@ -98,13 +98,13 @@ async fn a_completed_put_wins_over_detach() {
     assert!(poll!(&mut blocked).is_pending());
     assert!(matches!(
         queue.next().await,
-        Some(QueueItem::Chunk(ref bytes)) if bytes == &frame("first")
+        Some(QueueItem::Chunk(bytes)) if bytes == frame("first")
     ));
     queue.detach();
     assert_eq!(poll!(&mut blocked), Poll::Ready(true));
     assert!(matches!(
         queue.next().await,
-        Some(QueueItem::Chunk(ref bytes)) if bytes == &frame("second")
+        Some(QueueItem::Chunk(bytes)) if bytes == frame("second")
     ));
 }
 
