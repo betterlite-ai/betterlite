@@ -9,9 +9,9 @@ use super::global_exception_present;
 use crate::pattern_matching::masking::keyword_pattern;
 
 pub fn check_category_keywords(
-    categories: &CategoryLoadResult,
     text: &str,
     exceptions: &[String],
+    categories: &CategoryLoadResult,
 ) -> Result<Option<CategoryMatch>, ContentFilterMatchingError> {
     let text_lower = text.to_lowercase();
     if global_exception_present(exceptions, &text_lower) {
