@@ -1,0 +1,12 @@
+kind: helper
+name: elevenlabs-transcription-absent-words
+call:
+  elevenlabs_transcription:
+    calls:
+    - {function: transcript, body: '{}'}
+    - {function: transcript, body: '{"text": "hi"}'}
+    - {function: transcript, body: '{"language_code": "eng"}'}
+    - {function: transcript, body: '{"words": []}'}
+    - {function: transcript, body: '{"words": [{"type": "spacing", "text": " "}, {"type": "audio_event", "text": "(laughs)"}]}'}
+compare: {ignore: []}
+env: {}

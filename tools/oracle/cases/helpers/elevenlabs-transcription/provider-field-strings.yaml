@@ -1,0 +1,11 @@
+kind: helper
+name: elevenlabs-transcription-provider-field-strings
+call:
+  elevenlabs_transcription:
+    calls:
+    - {function: request, model: scribe_v1, filename: null, content: raw, optional_params: {diarize: true, tag_audio_events: false, seed: 7, score: 1.5, bias: 1e-05, note: hi, unset: null}}
+    - {function: request, model: model, filename: sound.flac, content: abc, optional_params: {model: other, OPENAI_TRANSCRIPTION_PARAMS: nested, model_id: override}}
+    - {function: request, model: m, filename: clip.wav, content: "", optional_params: {language_code: ""}}
+    - {function: request, model: m, filename: null, content: raw, optional_params: {temperature: 0.0, language_code: en}}
+compare: {ignore: []}
+env: {}
