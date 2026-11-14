@@ -1,16 +1,86 @@
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import NotRequired, Protocol, get_args
+from importlib import import_module
+from typing import NotRequired, Protocol
 
-import litellm.types.memory_management as litellm_memory  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/memory_management.py#L1
-import litellm.types.model_insights as litellm_insights  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/model_insights.py#L1
-import litellm.types.roi_calculator as litellm_roi  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L1
 import pytest
 from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
-from typing_extensions import TypedDict
+from typing_extensions import TypedDict, TypeForm
 
 from betterlite.types import memory_management, model_insights, roi_calculator
+
+# litellm/types has no __init__.py, so pyright finds no py.typed for a static import from it
+LITELLM_ROI = import_module("litellm.types.roi_calculator")
+LITELLM_MEMORY = import_module("litellm.types.memory_management")
+LITELLM_INSIGHTS = import_module("litellm.types.model_insights")
+
+
+class LiteLLMRoi:
+    DEFAULT_PROMPT: str = LITELLM_ROI.DEFAULT_PROMPT
+    ROISettings: type[BaseModel] = LITELLM_ROI.ROISettings
+    ROISettingsUpdate: type[BaseModel] = LITELLM_ROI.ROISettingsUpdate
+    ROISettingsResponse: type[BaseModel] = LITELLM_ROI.ROISettingsResponse
+    ROIRepository: type[BaseModel] = LITELLM_ROI.ROIRepository
+    ROIRepositoriesResponse: type[BaseModel] = LITELLM_ROI.ROIRepositoriesResponse
+    ROISyncStatus: type[BaseModel] = LITELLM_ROI.ROISyncStatus
+    ROISpendRecord: TypeForm[roi_calculator.ROISpendRecord] = LITELLM_ROI.ROISpendRecord
+    ROIEstimate: TypeForm[roi_calculator.ROIEstimate] = LITELLM_ROI.ROIEstimate
+    ROIPullRecord: TypeForm[roi_calculator.ROIPullRecord] = LITELLM_ROI.ROIPullRecord
+    ROIReport: TypeForm[roi_calculator.ROIReport] = LITELLM_ROI.ROIReport
+    ROIPullFile: TypeForm[roi_calculator.ROIPullFile] = LITELLM_ROI.ROIPullFile
+    ROIPullCommit: TypeForm[roi_calculator.ROIPullCommit] = LITELLM_ROI.ROIPullCommit
+    ROIPullEvidence: TypeForm[roi_calculator.ROIPullEvidence] = LITELLM_ROI.ROIPullEvidence
+    ROIIdentityMatch: TypeForm[roi_calculator.ROIIdentityMatch] = LITELLM_ROI.ROIIdentityMatch
+    ROIPersonSummary: TypeForm[roi_calculator.ROIPersonSummary] = LITELLM_ROI.ROIPersonSummary
+    ROIPullSummary: TypeForm[roi_calculator.ROIPullSummary] = LITELLM_ROI.ROIPullSummary
+    ROISummaryMetrics: TypeForm[roi_calculator.ROISummaryMetrics] = LITELLM_ROI.ROISummaryMetrics
+    ROITrendDay: TypeForm[roi_calculator.ROITrendDay] = LITELLM_ROI.ROITrendDay
+    ROISummary: TypeForm[roi_calculator.ROISummary] = LITELLM_ROI.ROISummary
+    ROIMetricsResponse: type[BaseModel] = LITELLM_ROI.ROIMetricsResponse
+    ROIPersonResponse: type[BaseModel] = LITELLM_ROI.ROIPersonResponse
+    ROIEstimateResponse: type[BaseModel] = LITELLM_ROI.ROIEstimateResponse
+    ROIPullResponse: type[BaseModel] = LITELLM_ROI.ROIPullResponse
+    ROITrendResponse: type[BaseModel] = LITELLM_ROI.ROITrendResponse
+    ROISummaryResponse: type[BaseModel] = LITELLM_ROI.ROISummaryResponse
+    ROIReportResponse: type[BaseModel] = LITELLM_ROI.ROIReportResponse
+    ROIIdentityMapUpdate: type[BaseModel] = LITELLM_ROI.ROIIdentityMapUpdate
+    ROIIdentityMapResponse: type[BaseModel] = LITELLM_ROI.ROIIdentityMapResponse
+    ROIEstimatorChanges: type[BaseModel] = LITELLM_ROI.ROIEstimatorChanges
+    ROIEstimatorFile: type[BaseModel] = LITELLM_ROI.ROIEstimatorFile
+    ROIEstimatorCommit: type[BaseModel] = LITELLM_ROI.ROIEstimatorCommit
+    ROIEstimatorEvidence: type[BaseModel] = LITELLM_ROI.ROIEstimatorEvidence
+    ROICompletionMessage: TypeForm[roi_calculator.ROICompletionMessage] = (
+        LITELLM_ROI.ROICompletionMessage
+    )
+    ROICompletionMetadata: TypeForm[roi_calculator.ROICompletionMetadata] = (
+        LITELLM_ROI.ROICompletionMetadata
+    )
+    ROIResponseFormat: TypeForm[roi_calculator.ROIResponseFormat] = LITELLM_ROI.ROIResponseFormat
+    ROICompletionRequest: type[BaseModel] = LITELLM_ROI.ROICompletionRequest
+    ROICompletionResponse: type[BaseModel] = LITELLM_ROI.ROICompletionResponse
+    ROIEstimatorResult: type[BaseModel] = LITELLM_ROI.ROIEstimatorResult
+
+
+class LiteLLMMemory:
+    LiteLLM_MemoryRow: type[BaseModel] = LITELLM_MEMORY.LiteLLM_MemoryRow
+    MemoryCreateRequest: type[BaseModel] = LITELLM_MEMORY.MemoryCreateRequest
+    MemoryUpdateRequest: type[BaseModel] = LITELLM_MEMORY.MemoryUpdateRequest
+    MemoryListResponse: type[BaseModel] = LITELLM_MEMORY.MemoryListResponse
+    MemoryDeleteResponse: type[BaseModel] = LITELLM_MEMORY.MemoryDeleteResponse
+
+
+class LiteLLMInsights:
+    ModelInsightsMetric: TypeForm[model_insights.ModelInsightsMetric] = (
+        LITELLM_INSIGHTS.ModelInsightsMetric
+    )
+    ModelInsightMetric: type[BaseModel] = LITELLM_INSIGHTS.ModelInsightMetric
+    ModelInsightDailyMetric: type[BaseModel] = LITELLM_INSIGHTS.ModelInsightDailyMetric
+    ModelInsightDailyTotal: type[BaseModel] = LITELLM_INSIGHTS.ModelInsightDailyTotal
+    ModelInsightTask: type[BaseModel] = LITELLM_INSIGHTS.ModelInsightTask
+    ModelInsightTaskSummary: type[BaseModel] = LITELLM_INSIGHTS.ModelInsightTaskSummary
+    ModelInsightsResponse: type[BaseModel] = LITELLM_INSIGHTS.ModelInsightsResponse
+    ModelInsightTasksResponse: type[BaseModel] = LITELLM_INSIGHTS.ModelInsightTasksResponse
 
 
 class SchemaSource(Protocol):
@@ -50,70 +120,74 @@ class Completion:
 
 
 MODEL_PAIRS: tuple[tuple[type[BaseModel], type[BaseModel]], ...] = (
-    (roi_calculator.ROISettings, litellm_roi.ROISettings),
-    (roi_calculator.ROISettingsUpdate, litellm_roi.ROISettingsUpdate),
-    (roi_calculator.ROISettingsResponse, litellm_roi.ROISettingsResponse),
-    (roi_calculator.ROIRepository, litellm_roi.ROIRepository),
-    (roi_calculator.ROIRepositoriesResponse, litellm_roi.ROIRepositoriesResponse),
-    (roi_calculator.ROISyncStatus, litellm_roi.ROISyncStatus),
-    (roi_calculator.ROIMetricsResponse, litellm_roi.ROIMetricsResponse),
-    (roi_calculator.ROIPersonResponse, litellm_roi.ROIPersonResponse),
-    (roi_calculator.ROIEstimateResponse, litellm_roi.ROIEstimateResponse),
-    (roi_calculator.ROIPullResponse, litellm_roi.ROIPullResponse),
-    (roi_calculator.ROITrendResponse, litellm_roi.ROITrendResponse),
-    (roi_calculator.ROISummaryResponse, litellm_roi.ROISummaryResponse),
-    (roi_calculator.ROIReportResponse, litellm_roi.ROIReportResponse),
-    (roi_calculator.ROIIdentityMapUpdate, litellm_roi.ROIIdentityMapUpdate),
-    (roi_calculator.ROIIdentityMapResponse, litellm_roi.ROIIdentityMapResponse),
-    (roi_calculator.ROIEstimatorChanges, litellm_roi.ROIEstimatorChanges),
-    (roi_calculator.ROIEstimatorFile, litellm_roi.ROIEstimatorFile),
-    (roi_calculator.ROIEstimatorCommit, litellm_roi.ROIEstimatorCommit),
-    (roi_calculator.ROIEstimatorEvidence, litellm_roi.ROIEstimatorEvidence),
-    (roi_calculator.ROICompletionRequest, litellm_roi.ROICompletionRequest),
-    (roi_calculator.ROICompletionResponse, litellm_roi.ROICompletionResponse),
-    (roi_calculator.ROIEstimatorResult, litellm_roi.ROIEstimatorResult),
-    (memory_management.MemoryDeleteResponse, litellm_memory.MemoryDeleteResponse),
-    (model_insights.ModelInsightMetric, litellm_insights.ModelInsightMetric),
-    (model_insights.ModelInsightDailyMetric, litellm_insights.ModelInsightDailyMetric),
-    (model_insights.ModelInsightDailyTotal, litellm_insights.ModelInsightDailyTotal),
-    (model_insights.ModelInsightTask, litellm_insights.ModelInsightTask),
-    (model_insights.ModelInsightTaskSummary, litellm_insights.ModelInsightTaskSummary),
-    (model_insights.ModelInsightsResponse, litellm_insights.ModelInsightsResponse),
-    (model_insights.ModelInsightTasksResponse, litellm_insights.ModelInsightTasksResponse),
+    (roi_calculator.ROISettings, LiteLLMRoi.ROISettings),
+    (roi_calculator.ROISettingsUpdate, LiteLLMRoi.ROISettingsUpdate),
+    (roi_calculator.ROISettingsResponse, LiteLLMRoi.ROISettingsResponse),
+    (roi_calculator.ROIRepository, LiteLLMRoi.ROIRepository),
+    (roi_calculator.ROIRepositoriesResponse, LiteLLMRoi.ROIRepositoriesResponse),
+    (roi_calculator.ROISyncStatus, LiteLLMRoi.ROISyncStatus),
+    (roi_calculator.ROIMetricsResponse, LiteLLMRoi.ROIMetricsResponse),
+    (roi_calculator.ROIPersonResponse, LiteLLMRoi.ROIPersonResponse),
+    (roi_calculator.ROIEstimateResponse, LiteLLMRoi.ROIEstimateResponse),
+    (roi_calculator.ROIPullResponse, LiteLLMRoi.ROIPullResponse),
+    (roi_calculator.ROITrendResponse, LiteLLMRoi.ROITrendResponse),
+    (roi_calculator.ROISummaryResponse, LiteLLMRoi.ROISummaryResponse),
+    (roi_calculator.ROIReportResponse, LiteLLMRoi.ROIReportResponse),
+    (roi_calculator.ROIIdentityMapUpdate, LiteLLMRoi.ROIIdentityMapUpdate),
+    (roi_calculator.ROIIdentityMapResponse, LiteLLMRoi.ROIIdentityMapResponse),
+    (roi_calculator.ROIEstimatorChanges, LiteLLMRoi.ROIEstimatorChanges),
+    (roi_calculator.ROIEstimatorFile, LiteLLMRoi.ROIEstimatorFile),
+    (roi_calculator.ROIEstimatorCommit, LiteLLMRoi.ROIEstimatorCommit),
+    (roi_calculator.ROIEstimatorEvidence, LiteLLMRoi.ROIEstimatorEvidence),
+    (roi_calculator.ROICompletionRequest, LiteLLMRoi.ROICompletionRequest),
+    (roi_calculator.ROICompletionResponse, LiteLLMRoi.ROICompletionResponse),
+    (roi_calculator.ROIEstimatorResult, LiteLLMRoi.ROIEstimatorResult),
+    (memory_management.MemoryDeleteResponse, LiteLLMMemory.MemoryDeleteResponse),
+    (model_insights.ModelInsightMetric, LiteLLMInsights.ModelInsightMetric),
+    (model_insights.ModelInsightDailyMetric, LiteLLMInsights.ModelInsightDailyMetric),
+    (model_insights.ModelInsightDailyTotal, LiteLLMInsights.ModelInsightDailyTotal),
+    (model_insights.ModelInsightTask, LiteLLMInsights.ModelInsightTask),
+    (model_insights.ModelInsightTaskSummary, LiteLLMInsights.ModelInsightTaskSummary),
+    (model_insights.ModelInsightsResponse, LiteLLMInsights.ModelInsightsResponse),
+    (model_insights.ModelInsightTasksResponse, LiteLLMInsights.ModelInsightTasksResponse),
 )
 
 # docs/deviations/B7954.yaml: memory metadata is JsonValue and the row class is _MemoryRow
 MEMORY_PAIRS: tuple[tuple[type[BaseModel], type[BaseModel], str], ...] = (
-    (memory_management.LiteLLM_MemoryRow, litellm_memory.LiteLLM_MemoryRow, "metadata"),
-    (memory_management.MemoryCreateRequest, litellm_memory.MemoryCreateRequest, "metadata"),
-    (memory_management.MemoryUpdateRequest, litellm_memory.MemoryUpdateRequest, "metadata"),
-    (memory_management.MemoryListResponse, litellm_memory.MemoryListResponse, "memories"),
+    (memory_management.LiteLLM_MemoryRow, LiteLLMMemory.LiteLLM_MemoryRow, "metadata"),
+    (memory_management.MemoryCreateRequest, LiteLLMMemory.MemoryCreateRequest, "metadata"),
+    (memory_management.MemoryUpdateRequest, LiteLLMMemory.MemoryUpdateRequest, "metadata"),
+    (memory_management.MemoryListResponse, LiteLLMMemory.MemoryListResponse, "memories"),
 )
 CONFIG_PAIRS = (*MODEL_PAIRS, *[(ours, theirs) for ours, theirs, _ in MEMORY_PAIRS])
 
 RECORD_PAIRS: tuple[tuple[SchemaSource, SchemaSource], ...] = (
-    (TypeAdapter(roi_calculator.ROISpendRecord), TypeAdapter(litellm_roi.ROISpendRecord)),
-    (TypeAdapter(roi_calculator.ROIEstimate), TypeAdapter(litellm_roi.ROIEstimate)),
-    (TypeAdapter(roi_calculator.ROIPullRecord), TypeAdapter(litellm_roi.ROIPullRecord)),
-    (TypeAdapter(roi_calculator.ROIReport), TypeAdapter(litellm_roi.ROIReport)),
-    (TypeAdapter(roi_calculator.ROIPullFile), TypeAdapter(litellm_roi.ROIPullFile)),
-    (TypeAdapter(roi_calculator.ROIPullCommit), TypeAdapter(litellm_roi.ROIPullCommit)),
-    (TypeAdapter(roi_calculator.ROIPullEvidence), TypeAdapter(litellm_roi.ROIPullEvidence)),
-    (TypeAdapter(roi_calculator.ROIIdentityMatch), TypeAdapter(litellm_roi.ROIIdentityMatch)),
-    (TypeAdapter(roi_calculator.ROIPersonSummary), TypeAdapter(litellm_roi.ROIPersonSummary)),
-    (TypeAdapter(roi_calculator.ROIPullSummary), TypeAdapter(litellm_roi.ROIPullSummary)),
-    (TypeAdapter(roi_calculator.ROISummaryMetrics), TypeAdapter(litellm_roi.ROISummaryMetrics)),
-    (TypeAdapter(roi_calculator.ROITrendDay), TypeAdapter(litellm_roi.ROITrendDay)),
-    (TypeAdapter(roi_calculator.ROISummary), TypeAdapter(litellm_roi.ROISummary)),
+    (TypeAdapter(roi_calculator.ROISpendRecord), TypeAdapter(LiteLLMRoi.ROISpendRecord)),
+    (TypeAdapter(roi_calculator.ROIEstimate), TypeAdapter(LiteLLMRoi.ROIEstimate)),
+    (TypeAdapter(roi_calculator.ROIPullRecord), TypeAdapter(LiteLLMRoi.ROIPullRecord)),
+    (TypeAdapter(roi_calculator.ROIReport), TypeAdapter(LiteLLMRoi.ROIReport)),
+    (TypeAdapter(roi_calculator.ROIPullFile), TypeAdapter(LiteLLMRoi.ROIPullFile)),
+    (TypeAdapter(roi_calculator.ROIPullCommit), TypeAdapter(LiteLLMRoi.ROIPullCommit)),
+    (TypeAdapter(roi_calculator.ROIPullEvidence), TypeAdapter(LiteLLMRoi.ROIPullEvidence)),
+    (TypeAdapter(roi_calculator.ROIIdentityMatch), TypeAdapter(LiteLLMRoi.ROIIdentityMatch)),
+    (TypeAdapter(roi_calculator.ROIPersonSummary), TypeAdapter(LiteLLMRoi.ROIPersonSummary)),
+    (TypeAdapter(roi_calculator.ROIPullSummary), TypeAdapter(LiteLLMRoi.ROIPullSummary)),
+    (TypeAdapter(roi_calculator.ROISummaryMetrics), TypeAdapter(LiteLLMRoi.ROISummaryMetrics)),
+    (TypeAdapter(roi_calculator.ROITrendDay), TypeAdapter(LiteLLMRoi.ROITrendDay)),
+    (TypeAdapter(roi_calculator.ROISummary), TypeAdapter(LiteLLMRoi.ROISummary)),
     (
         TypeAdapter(roi_calculator.ROICompletionMessage),
-        TypeAdapter(litellm_roi.ROICompletionMessage),
+        TypeAdapter(LiteLLMRoi.ROICompletionMessage),
     ),
     (
         TypeAdapter(roi_calculator.ROICompletionMetadata),
-        TypeAdapter(litellm_roi.ROICompletionMetadata),
+        TypeAdapter(LiteLLMRoi.ROICompletionMetadata),
     ),
-    (TypeAdapter(roi_calculator.ROIResponseFormat), TypeAdapter(litellm_roi.ROIResponseFormat)),
+    (TypeAdapter(roi_calculator.ROIResponseFormat), TypeAdapter(LiteLLMRoi.ROIResponseFormat)),
+    (
+        TypeAdapter(model_insights.ModelInsightsMetric),
+        TypeAdapter(LiteLLMInsights.ModelInsightsMetric),
+    ),
 )
 
 ESTIMATE_PAYLOAD: dict[str, JsonValue] = {"status": "error", "hours": None, "reasoning": "r"}
@@ -203,7 +277,7 @@ MEMORY_ROW_PAYLOAD: dict[str, JsonValue] = {"memory_id": "m", "key": "k", "value
 PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ...] = (
     (
         roi_calculator.ROIIdentityMapUpdate,
-        litellm_roi.ROIIdentityMapUpdate,
+        LiteLLMRoi.ROIIdentityMapUpdate,
         (
             {"github_login": "  MixedCase ", "email": None},
             {"github_login": " User ", "email": "u@example.com"},
@@ -221,7 +295,7 @@ PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ..
     ),
     (
         roi_calculator.ROISettings,
-        litellm_roi.ROISettings,
+        LiteLLMRoi.ROISettings,
         (
             {},
             {"github_api_url": " https://example.com/ "},
@@ -262,7 +336,7 @@ PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ..
     ),
     (
         roi_calculator.ROISettingsUpdate,
-        litellm_roi.ROISettingsUpdate,
+        LiteLLMRoi.ROISettingsUpdate,
         (
             {},
             {"unknown_key": 1},
@@ -282,7 +356,7 @@ PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ..
     ),
     (
         roi_calculator.ROISettingsResponse,
-        litellm_roi.ROISettingsResponse,
+        LiteLLMRoi.ROISettingsResponse,
         (
             {
                 "github_api_url": "https://api.github.com",
@@ -302,7 +376,7 @@ PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ..
     ),
     (
         roi_calculator.ROIRepositoriesResponse,
-        litellm_roi.ROIRepositoriesResponse,
+        LiteLLMRoi.ROIRepositoriesResponse,
         (
             {
                 "repositories": [{"name": "a/b", "visibility": "private", "archived": False}],
@@ -313,13 +387,13 @@ PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ..
     ),
     (
         roi_calculator.ROISyncStatus,
-        litellm_roi.ROISyncStatus,
+        LiteLLMRoi.ROISyncStatus,
         ({**SYNC_PAYLOAD}, {**SYNC_PAYLOAD, "phase": "bogus"}),
     ),
-    (roi_calculator.ROIMetricsResponse, litellm_roi.ROIMetricsResponse, (METRICS_PAYLOAD,)),
+    (roi_calculator.ROIMetricsResponse, LiteLLMRoi.ROIMetricsResponse, (METRICS_PAYLOAD,)),
     (
         roi_calculator.ROIPersonResponse,
-        litellm_roi.ROIPersonResponse,
+        LiteLLMRoi.ROIPersonResponse,
         (
             {
                 "id": "u",
@@ -338,12 +412,12 @@ PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ..
     ),
     (
         roi_calculator.ROIEstimateResponse,
-        litellm_roi.ROIEstimateResponse,
+        LiteLLMRoi.ROIEstimateResponse,
         ({"status": "estimated", "hours": 1.0, "reasoning": "because"},),
     ),
     (
         roi_calculator.ROIPullResponse,
-        litellm_roi.ROIPullResponse,
+        LiteLLMRoi.ROIPullResponse,
         (
             PULL_PAYLOAD,
             {**PULL_PAYLOAD, "estimate": {"status": "bogus", "hours": None, "reasoning": "r"}},
@@ -351,7 +425,7 @@ PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ..
     ),
     (
         roi_calculator.ROISummaryResponse,
-        litellm_roi.ROISummaryResponse,
+        LiteLLMRoi.ROISummaryResponse,
         (
             {
                 "id": None,
@@ -371,30 +445,30 @@ PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ..
             },
         ),
     ),
-    (roi_calculator.ROIReportResponse, litellm_roi.ROIReportResponse, ({"report": None},)),
+    (roi_calculator.ROIReportResponse, LiteLLMRoi.ROIReportResponse, ({"report": None},)),
     (
         roi_calculator.ROIIdentityMapResponse,
-        litellm_roi.ROIIdentityMapResponse,
+        LiteLLMRoi.ROIIdentityMapResponse,
         ({"report": None, "identity_map": {}},),
     ),
     (
         roi_calculator.ROIEstimatorChanges,
-        litellm_roi.ROIEstimatorChanges,
+        LiteLLMRoi.ROIEstimatorChanges,
         ({"additions": 1, "deletions": 2, "files": 3, "commits": 4},),
     ),
     (
         roi_calculator.ROIEstimatorFile,
-        litellm_roi.ROIEstimatorFile,
+        LiteLLMRoi.ROIEstimatorFile,
         ({"filename": None, "status": None, "additions": None, "deletions": None},),
     ),
     (
         roi_calculator.ROIEstimatorCommit,
-        litellm_roi.ROIEstimatorCommit,
+        LiteLLMRoi.ROIEstimatorCommit,
         ({"sha": "s", "message": "m"},),
     ),
     (
         roi_calculator.ROIEstimatorEvidence,
-        litellm_roi.ROIEstimatorEvidence,
+        LiteLLMRoi.ROIEstimatorEvidence,
         (
             {
                 "repo": "a/b",
@@ -409,7 +483,7 @@ PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ..
     ),
     (
         roi_calculator.ROICompletionRequest,
-        litellm_roi.ROICompletionRequest,
+        LiteLLMRoi.ROICompletionRequest,
         (
             COMPLETION_PAYLOAD,
             {**COMPLETION_PAYLOAD, "temperature": 1},
@@ -421,7 +495,7 @@ PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ..
     ),
     (
         roi_calculator.ROICompletionResponse,
-        litellm_roi.ROICompletionResponse,
+        LiteLLMRoi.ROICompletionResponse,
         (
             {"choices": [{"finish_reason": "stop", "message": {"content": "x"}}]},
             {"choices": [{"message": {}}]},
@@ -429,7 +503,7 @@ PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ..
     ),
     (
         roi_calculator.ROIEstimatorResult,
-        litellm_roi.ROIEstimatorResult,
+        LiteLLMRoi.ROIEstimatorResult,
         (
             {"hours": 1, "reasoning": "x"},
             {"hours": 1.5, "reasoning": "x"},
@@ -446,7 +520,7 @@ PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ..
     ),
     (
         memory_management.LiteLLM_MemoryRow,
-        litellm_memory.LiteLLM_MemoryRow,
+        LiteLLMMemory.LiteLLM_MemoryRow,
         (
             {},
             MEMORY_ROW_PAYLOAD,
@@ -468,7 +542,7 @@ PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ..
     ),
     (
         memory_management.MemoryCreateRequest,
-        litellm_memory.MemoryCreateRequest,
+        LiteLLMMemory.MemoryCreateRequest,
         (
             {"key": "k", "value": "v"},
             {"key": "k", "value": "v", "metadata": {"x": 1}, "user_id": "u", "team_id": "t"},
@@ -477,42 +551,42 @@ PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ..
     ),
     (
         memory_management.MemoryUpdateRequest,
-        litellm_memory.MemoryUpdateRequest,
+        LiteLLMMemory.MemoryUpdateRequest,
         ({}, {"value": "v", "metadata": [1, 2], "user_id": "u", "team_id": "t"}),
     ),
     (
         memory_management.MemoryListResponse,
-        litellm_memory.MemoryListResponse,
+        LiteLLMMemory.MemoryListResponse,
         ({"memories": [], "total": 0}, {"memories": [MEMORY_ROW_PAYLOAD], "total": 1}),
     ),
     (
         memory_management.MemoryDeleteResponse,
-        litellm_memory.MemoryDeleteResponse,
+        LiteLLMMemory.MemoryDeleteResponse,
         ({"key": "k", "deleted": True}, {"key": "k"}),
     ),
     (
         model_insights.ModelInsightMetric,
-        litellm_insights.ModelInsightMetric,
+        LiteLLMInsights.ModelInsightMetric,
         (INSIGHT_METRIC_PAYLOAD, {"model_group": "g"}),
     ),
     (
         model_insights.ModelInsightDailyMetric,
-        litellm_insights.ModelInsightDailyMetric,
+        LiteLLMInsights.ModelInsightDailyMetric,
         ({**INSIGHT_METRIC_PAYLOAD, "date": "2026-01-01"}, INSIGHT_METRIC_PAYLOAD),
     ),
     (
         model_insights.ModelInsightDailyTotal,
-        litellm_insights.ModelInsightDailyTotal,
+        LiteLLMInsights.ModelInsightDailyTotal,
         (INSIGHT_TOTAL_PAYLOAD,),
     ),
     (
         model_insights.ModelInsightTask,
-        litellm_insights.ModelInsightTask,
+        LiteLLMInsights.ModelInsightTask,
         ({"task_type": "t", "label": "l", "category": "c"},),
     ),
     (
         model_insights.ModelInsightTaskSummary,
-        litellm_insights.ModelInsightTaskSummary,
+        LiteLLMInsights.ModelInsightTaskSummary,
         (
             TASK_SUMMARY_PAYLOAD,
             {"task_type": "t", "label": "l", "category": "c", "value": 1.5, "share": 0.5},
@@ -520,7 +594,7 @@ PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ..
     ),
     (
         model_insights.ModelInsightsResponse,
-        litellm_insights.ModelInsightsResponse,
+        LiteLLMInsights.ModelInsightsResponse,
         (
             {
                 "start_date": "2026-01-01",
@@ -533,7 +607,7 @@ PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ..
     ),
     (
         model_insights.ModelInsightTasksResponse,
-        litellm_insights.ModelInsightTasksResponse,
+        LiteLLMInsights.ModelInsightTasksResponse,
         ({"start_date": "2026-01-01", "end_date": "2026-01-02", "tasks": [TASK_SUMMARY_PAYLOAD]},),
     ),
 )
@@ -577,10 +651,7 @@ def test_record_names_match(ours: SchemaSource, theirs: SchemaSource) -> None:
 
 
 def test_constant_names_match() -> None:
-    assert roi_calculator.DEFAULT_PROMPT == litellm_roi.DEFAULT_PROMPT
-    our_metrics: tuple[str, ...] = get_args(model_insights.ModelInsightsMetric)
-    their_metrics: tuple[str, ...] = get_args(litellm_insights.ModelInsightsMetric)
-    assert our_metrics == their_metrics
+    assert roi_calculator.DEFAULT_PROMPT == LiteLLMRoi.DEFAULT_PROMPT
 
 
 @pytest.mark.parametrize(("ours", "theirs", "payload"), CASES)
@@ -612,7 +683,7 @@ def test_attribute_names_match() -> None:
     completion = Completion(choices=(CompletionChoice(finish_reason="stop", message=message),))
     response = roi_calculator.ROICompletionResponse.model_validate(completion)
     ours: dict[str, JsonValue] = response.model_dump(mode="json")
-    reference = litellm_roi.ROICompletionResponse.model_validate(completion)
+    reference = LiteLLMRoi.ROICompletionResponse.model_validate(completion)
     theirs: dict[str, JsonValue] = reference.model_dump(mode="json")
     assert ours == theirs
     assert ours == {"choices": [{"finish_reason": "stop", "message": {"content": "x"}}]}
