@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_openai::embedding::EmbeddingInput;
+use betterlite_openai::hosted_vllm::embedding::error::HostedVllmEmbeddingError;
 use betterlite_openai::hosted_vllm::embedding::{
     get_complete_url, transform_embedding_request, transform_embedding_response,
     validate_environment,
@@ -64,7 +65,7 @@ pub(super) fn request_value(call: &RequestCall) -> Value {
 
 pub(super) fn response_value(call: &ResponseCall) -> Result<Value, Box<HelperError>> {
     let response = transform_embedding_response(call.body.as_bytes(), &mut |_text| {})
-        .map_err(|error| invalid(error.to_string()))?;
+        .map_err(response_failure)?;
     let data = serde_json::to_value(response.data).map_err(|error| invalid(error.to_string()))?;
     let usage = response.usage;
     Ok(json!({
@@ -77,4 +78,23 @@ pub(super) fn response_value(call: &ResponseCall) -> Result<Value, Box<HelperErr
             "total_tokens": usage.total_tokens,
         },
     }))
+}
+
+// LiteLLM's error in a 2xx reply carries its own status, so the oracle sees the same one
+fn response_failure(error: HostedVllmEmbeddingError) -> Box<HelperError> {
+    match error {
+        HostedVllmEmbeddingError::Provider {
+            message,
+            status_code,
+            ..
+        } => Box::new(HelperError {
+            class: String::from("ValueError"),
+            status: Some(status_code),
+            error_type: None,
+            param: None,
+            code: None,
+            message,
+        }),
+        other => invalid(other.to_string()),
+    }
 }
