@@ -50,5 +50,6 @@ pub fn accumulated_stream_text(frames: &[Json]) -> String {
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => {}
         }
     }
-    objects + &decode_google_guardrail_sse(&raw).concat()
+    objects.push_str(&decode_google_guardrail_sse(&raw).concat());
+    objects
 }
