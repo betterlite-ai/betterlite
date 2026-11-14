@@ -766,7 +766,8 @@ def test_enum_names() -> None:
         ("BLOCKED_WORD", "blocked_word"),
         ("CATEGORY_KEYWORD", "category_keyword"),
     ]
-    assert litellm_content_filter.DetectionType.PATTERN == "pattern"
+    pattern_value: str = litellm_content_filter.DetectionType.PATTERN
+    assert pattern_value == "pattern"
 
 
 def test_literal_names() -> None:
@@ -850,8 +851,9 @@ def test_extra_field_names() -> None:
 
 
 def test_json_value_names() -> None:
+    payload = {"metadata": {"not": ...}}
     with pytest.raises(ValidationError):
-        javelin.JavelinGuardrailConfigModel.model_validate({"metadata": {"not": ...}})
+        javelin.JavelinGuardrailConfigModel.model_validate(payload)
 
 
 def test_optional_model_names() -> None:
