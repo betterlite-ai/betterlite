@@ -64,6 +64,8 @@ description: >-
   tracing at the same points; cases do not compare them. LiteLLM size: about 270 lines.
 scope:
   paths:
+    - "tools/oracle/**"
+    - "crates/betterlite-openai/src/fireworks_ai_chat_params*"
     - crates/betterlite-openai/src/fireworks_ai_chat_params.rs
     - crates/betterlite-openai/src/fireworks_ai_chat_params/**
     - tools/oracle/cases/helpers/fireworks-ai-chat-params/**
