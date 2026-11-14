@@ -1,0 +1,23 @@
+kind: helper
+name: dynamoai-warn-action-not-blocking
+call:
+  b3768:
+    mode: pre_call
+    env: {}
+    api_key: dynamo-key
+    api_base: null
+    policy_ids: null
+    model_id: null
+    messages:
+      - {role: user, content: warned content}
+    choices: []
+    answer:
+      status: 200
+      headers: {}
+      body:
+        finalAction: WARN
+        appliedPolicies:
+          - policy: {name: Toxicity}
+            outputs: {action: BLOCK}
+env: {}
+compare: {ignore: []}

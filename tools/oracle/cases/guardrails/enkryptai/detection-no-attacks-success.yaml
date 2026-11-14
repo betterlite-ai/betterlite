@@ -1,0 +1,15 @@
+kind: helper
+name: detection-no-attacks-success
+call:
+  b3769:
+    detect:
+      settings: {api_key: key, api_base: "https://api.enkryptai.com"}
+      texts: [hello]
+      answer:
+        status: 200
+        headers: {}
+        body:
+          summary: {toxicity: [], policy_violation: 0, pii: 0, keyword_detected: 0, bias: 0, prompt_injection: 0, jailbreak: 0}
+          details: {}
+env: {}
+compare: {ignore: []}
