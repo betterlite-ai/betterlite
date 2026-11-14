@@ -1,0 +1,25 @@
+kind: helper
+name: prompt-dispatch-factory-drops-specific-deployment
+call:
+  b8466:
+    check: prompt_factory
+    model: langfuse/my-prompt
+    messages:
+    - role: user
+      content: hello
+    model_list:
+    - model_name: langfuse/my-prompt
+      litellm_params:
+        model: langfuse/my-prompt
+        prompt_id: greeting
+    request:
+      specific_deployment: true
+    compiled:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: compiled
+      optional_params: {}
+env: {}
+compare:
+  ignore: []
