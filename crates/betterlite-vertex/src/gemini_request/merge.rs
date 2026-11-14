@@ -45,11 +45,8 @@ pub fn rewrite_maps_response_format(body: &mut Object) {
     let schema = config
         .shift_remove("response_json_schema")
         .filter(|value| !matches!(value, Json::Null))
-        .or_else(|| {
-            config
-                .shift_remove("response_schema")
-                .filter(|value| !matches!(value, Json::Null))
-        });
+        .or_else(|| config.shift_remove("response_schema"))
+        .filter(|value| !matches!(value, Json::Null));
     config.shift_remove("response_mime_type");
     let mut text = Object::new();
     text.insert(

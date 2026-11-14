@@ -164,6 +164,7 @@ fn tool_config(
         return Ok(None);
     }
     let choice = tool_choice.filter(|value| !matches!(value, Json::Null));
+    let supplied = matches!(choice, Some(Json::Object(_)));
     match choice {
         Some(Json::Object(fields)) => config.extend(fields),
         Some(value) if !include => return Ok(Some(value)),
@@ -173,7 +174,7 @@ fn tool_config(
     if include {
         config.insert(INCLUDE_SERVER_SIDE.to_owned(), Json::Bool(true));
     }
-    Ok((!config.is_empty()).then_some(Json::Object(config)))
+    Ok((supplied || include || !config.is_empty()).then_some(Json::Object(config)))
 }
 
 // LiteLLM's fallback for a model without native schema support: the schema becomes a user prompt

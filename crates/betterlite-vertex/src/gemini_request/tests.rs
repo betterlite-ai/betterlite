@@ -447,6 +447,10 @@ fn assert_no_io(harness: &Harness) {
     r#"{"tool_choice":"auto"}"#,
     r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"toolConfig":"auto"}"#
 )]
+#[case::empty_tool_choice_is_sent(
+    r#"{"tool_choice":{}}"#,
+    r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"toolConfig":{}}"#
+)]
 #[case::safety_settings_null(
     r#"{"safety_settings":null}"#,
     r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}"#
@@ -490,6 +494,10 @@ fn assert_no_io(harness: &Harness) {
 #[case::maps_retrieval_merges_into_tool_config(
     r#"{"toolConfig":{"retrievalConfig":{"latLng":{"latitude":48.8,"longitude":2.3}},"functionCallingConfig":{"mode":"NONE"}},"tool_choice":{"functionCallingConfig":{"mode":"AUTO"}}}"#,
     r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"toolConfig":{"retrievalConfig":{"latLng":{"latitude":48.8,"longitude":2.3}},"functionCallingConfig":{"mode":"AUTO"}}}"#
+)]
+#[case::mapped_tool_config_alone(
+    r#"{"toolConfig":{"retrievalConfig":{"latLng":{"latitude":48.8,"longitude":2.3}}}}"#,
+    r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"toolConfig":{"retrievalConfig":{"latLng":{"latitude":48.8,"longitude":2.3}}}}"#
 )]
 fn body_cases(#[case] optional_params: &str, #[case] expected: &str) {
     let (harness, result) = run_vertex(optional_params);
