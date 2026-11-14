@@ -1,6 +1,6 @@
 import subprocess
 import sys
-from typing import Final, TypedDict
+from typing import Final, TypeVar, TypedDict
 
 import pytest
 from pydantic import JsonValue, TypeAdapter
@@ -505,6 +505,31 @@ class Report(TypedDict):
     behavior: dict[str, dict[str, JsonValue]]
 
 
+Behavior = TypeVar("Behavior")
+
+
+def described_shapes(report: Report, module: str) -> ModuleShapes:
+    shapes = report["modules"][module]
+    assert None not in shapes["litellm"].values()
+    assert None not in shapes["betterlite"].values()
+    return shapes
+
+
+def module_shapes(report: Report, module: str) -> ModuleShapes:
+    shapes = described_shapes(report, module)
+    assert shapes["betterlite"] == shapes["litellm"]
+    return shapes
+
+
+def module_behavior(
+    report: Report, module: str, adapter: TypeAdapter[Behavior],
+) -> tuple[Behavior, Behavior]:
+    behavior = report["behavior"][module]
+    betterlite = adapter.validate_python(behavior["betterlite"])
+    litellm = adapter.validate_python(behavior["litellm"])
+    return betterlite, litellm
+
+
 class FilesBehavior(TypedDict):
     members: dict[str, str]
     extensions: dict[str, str]
@@ -630,20 +655,14 @@ EMBEDDING_TIMEOUT: Final = 600
 
 
 def test_files_names(report: Report) -> None:
-    shapes = report["modules"]["files"]
-    assert None not in shapes["litellm"].values()
-    assert None not in shapes["betterlite"].values()
-    assert shapes["betterlite"] == shapes["litellm"]
+    shapes = module_shapes(report, "files")
     file_type = shapes["betterlite"]["FileType"]
     assert file_type is not None
     assert file_type["kind"] == "enum"
     members = dict(file_type["members"])
     assert members["THREE_GPP"] == "3GPP"
     assert len(members) == FILE_TYPE_MEMBERS
-    betterlite = TypeAdapter(FilesBehavior).validate_python(
-        report["behavior"]["files"]["betterlite"]
-    )
-    litellm = TypeAdapter(FilesBehavior).validate_python(report["behavior"]["files"]["litellm"])
+    betterlite, litellm = module_behavior(report, "files", TypeAdapter(FilesBehavior))
     assert betterlite == litellm
     assert betterlite["mime_types"]["PDF"] == "application/pdf"
     assert betterlite["extensions"]["HTML"] == "html"
@@ -666,10 +685,7 @@ def test_files_names(report: Report) -> None:
 
 
 def test_rerank_names(report: Report) -> None:
-    shapes = report["modules"]["rerank"]
-    assert None not in shapes["litellm"].values()
-    assert None not in shapes["betterlite"].values()
-    assert shapes["betterlite"] == shapes["litellm"]
+    shapes = module_shapes(report, "rerank")
     request_shape = shapes["betterlite"]["RerankRequest"]
     truncation_shape = shapes["betterlite"]["HostedVLLMRerankTruncationParams"]
     optional_shape = shapes["betterlite"]["OptionalRerankParams"]
@@ -684,10 +700,7 @@ def test_rerank_names(report: Report) -> None:
     ]
     assert request_shape["required"] == ["documents", "model", "query"]
     assert request_shape["literals"] == {"truncation_side": ['"left"', '"right"']}
-    betterlite = TypeAdapter(RerankBehavior).validate_python(
-        report["behavior"]["rerank"]["betterlite"]
-    )
-    litellm = TypeAdapter(RerankBehavior).validate_python(report["behavior"]["rerank"]["litellm"])
+    betterlite, litellm = module_behavior(report, "rerank", TypeAdapter(RerankBehavior))
     shared_betterlite = {
         field: value for field, value in betterlite.items() if field != "difference"
     }
@@ -720,20 +733,12 @@ def test_rerank_names(report: Report) -> None:
 
 
 def test_embedding_names(report: Report) -> None:
-    shapes = report["modules"]["embedding"]
-    assert None not in shapes["litellm"].values()
-    assert None not in shapes["betterlite"].values()
-    assert shapes["betterlite"] == shapes["litellm"]
+    shapes = module_shapes(report, "embedding")
     request_shape = shapes["betterlite"]["EmbeddingRequest"]
     assert request_shape is not None
     assert request_shape["kind"] == "model"
     assert request_shape["required"] == ["model"]
-    betterlite = TypeAdapter(EmbeddingBehavior).validate_python(
-        report["behavior"]["embedding"]["betterlite"]
-    )
-    litellm = TypeAdapter(EmbeddingBehavior).validate_python(
-        report["behavior"]["embedding"]["litellm"]
-    )
+    betterlite, litellm = module_behavior(report, "embedding", TypeAdapter(EmbeddingBehavior))
     assert betterlite == litellm
     assert betterlite["defaults"]["input"] == []
     assert betterlite["defaults"]["timeout"] == EMBEDDING_TIMEOUT
@@ -748,9 +753,7 @@ def test_embedding_names(report: Report) -> None:
 
 
 def test_fine_tuning_names(report: Report) -> None:
-    shapes = report["modules"]["fine_tuning"]
-    assert None not in shapes["litellm"].values()
-    assert None not in shapes["betterlite"].values()
+    shapes = described_shapes(report, "fine_tuning")
     litellm_shape = shapes["litellm"]["OpenAIFineTuningHyperparameters"]
     betterlite_shape = shapes["betterlite"]["OpenAIFineTuningHyperparameters"]
     assert litellm_shape is not None
@@ -769,12 +772,7 @@ def test_fine_tuning_names(report: Report) -> None:
     }
     # B7921's Hyperparameters allows any str here, so openai's Literal["auto"] is absent
     assert betterlite_shape["literals"] == {}
-    betterlite = TypeAdapter(FineTuningBehavior).validate_python(
-        report["behavior"]["fine_tuning"]["betterlite"]
-    )
-    litellm = TypeAdapter(FineTuningBehavior).validate_python(
-        report["behavior"]["fine_tuning"]["litellm"]
-    )
+    betterlite, litellm = module_behavior(report, "fine_tuning", TypeAdapter(FineTuningBehavior))
     assert betterlite == litellm
     assert betterlite["values"]["batch_size"] == "auto"
     assert "unknown" in betterlite["values"]
@@ -782,10 +780,7 @@ def test_fine_tuning_names(report: Report) -> None:
 
 
 def test_containers_names(report: Report) -> None:
-    shapes = report["modules"]["containers"]
-    assert None not in shapes["litellm"].values()
-    assert None not in shapes["betterlite"].values()
-    assert shapes["betterlite"] == shapes["litellm"]
+    shapes = module_shapes(report, "containers")
     object_shape = shapes["betterlite"]["ContainerObject"]
     params_shape = shapes["betterlite"]["ContainerCreateRequestParams"]
     expires_shape = shapes["betterlite"]["ExpiresAfter"]
@@ -799,25 +794,16 @@ def test_containers_names(report: Report) -> None:
     ]
     assert params_shape["readonly"] == ["expires_after"]
     assert expires_shape["required"] == ["anchor", "minutes"]
-    betterlite = TypeAdapter(ContainersBehavior).validate_python(
-        report["behavior"]["containers"]["betterlite"]
-    )
-    litellm = TypeAdapter(ContainersBehavior).validate_python(
-        report["behavior"]["containers"]["litellm"]
-    )
+    betterlite, litellm = module_behavior(report, "containers", TypeAdapter(ContainersBehavior))
     shared_betterlite = {
         field: value for field, value in betterlite.items() if field != "difference"
     }
     shared_litellm = {field: value for field, value in litellm.items() if field != "difference"}
     assert shared_betterlite == shared_litellm
-    difference = TypeAdapter(Outcome).validate_python(betterlite["difference"][0])
-    assert difference["error"] == "TypeError"
-    their_difference = TypeAdapter(Outcome).validate_python(litellm["difference"][0])
-    assert their_difference["ok"] is True
-    positional = TypeAdapter(Outcome).validate_python(betterlite["difference"][1])
-    assert positional["error"] == "TypeError"
-    their_positional = TypeAdapter(Outcome).validate_python(litellm["difference"][1])
-    assert their_positional["error"] == "TypeError"
+    differences = betterlite["difference"] + litellm["difference"]
+    assert [(entry["error"], entry["ok"]) for entry in differences] == [
+        ("TypeError", False), ("TypeError", False), ("", True), ("TypeError", False),
+    ]
     assert betterlite["container"] == betterlite["container_json"]
     assert betterlite["container"]["object"] == "container"
     assert betterlite["container"]["expires_after"] == {
@@ -834,9 +820,11 @@ def test_containers_names(report: Report) -> None:
     assert "_hidden_params" not in betterlite["container"]
     assert betterlite["container_get"] == "fallback"
     assert betterlite["container_item"] == "c1"
-    assert betterlite["container_hidden_item"] == {"model_id": "m"}
-    assert betterlite["container_hidden_get"] == {"model_id": "m"}
-    assert betterlite["container_hidden_contains"] is True
+    assert (
+        betterlite["container_hidden_item"],
+        betterlite["container_hidden_get"],
+        betterlite["container_hidden_contains"],
+    ) == ({"model_id": "m"}, {"model_id": "m"}, True)
     assert betterlite["container_contains"] == [True, False, False]
     assert betterlite["container_missing_item"]["error"] == "AttributeError"
     assert "unexpected" not in betterlite["container_extra"]
@@ -851,24 +839,14 @@ def test_containers_names(report: Report) -> None:
 
 
 def test_google_genai_names(report: Report) -> None:
-    shapes = report["modules"]["google_genai"]
-    assert None not in shapes["litellm"].values()
-    assert None not in shapes["betterlite"].values()
-    assert shapes["betterlite"] == shapes["litellm"]
+    shapes = module_shapes(report, "google_genai")
     response_shape = shapes["betterlite"]["GenerateContentResponse"]
     assert response_shape is not None
     assert response_shape["kind"] == "model"
-    adapters = report["modules"]["google_genai_adapters"]
-    assert adapters["betterlite"] == adapters["litellm"]
-    package = report["modules"]["google_genai_package"]
-    assert package["betterlite"] == package["litellm"]
+    module_shapes(report, "google_genai_adapters")
+    package = module_shapes(report, "google_genai_package")
     assert package["litellm"] == {}
-    betterlite = TypeAdapter(GoogleBehavior).validate_python(
-        report["behavior"]["google_genai"]["betterlite"]
-    )
-    litellm = TypeAdapter(GoogleBehavior).validate_python(
-        report["behavior"]["google_genai"]["litellm"]
-    )
+    betterlite, litellm = module_behavior(report, "google_genai", TypeAdapter(GoogleBehavior))
     assert betterlite["common"] == litellm["common"]
     assert betterlite["common"]["request_dict"]["contents"] == [{"role": "user"}]
     assert betterlite["common"]["request_config"] == {"temperature": 0.5}
@@ -882,22 +860,16 @@ def test_google_genai_names(report: Report) -> None:
     assert betterlite["common"]["response_hidden"] == {"model_id": "m"}
     assert betterlite["response_dump"] == {"prompt": "hi"}
     assert litellm["response_dump"] == {"prompt": "hi", "_hidden_params": {"model_id": "m"}}
-    adapters_behavior = TypeAdapter(OptionalKeysBehavior).validate_python(
-        report["behavior"]["google_genai_adapters"]["betterlite"]
-    )
-    litellm_adapters = TypeAdapter(OptionalKeysBehavior).validate_python(
-        report["behavior"]["google_genai_adapters"]["litellm"]
+    adapters_behavior, litellm_adapters = module_behavior(
+        report, "google_genai_adapters", TypeAdapter(OptionalKeysBehavior),
     )
     assert adapters_behavior == litellm_adapters
     assert adapters_behavior["optional"] == [
         "extra_headers", "max_tokens", "messages", "metadata", "model",
         "proxy_server_request", "stop", "stream", "temperature", "tool_choice", "tools", "top_p",
     ]
-    package_behavior = TypeAdapter(PackageBehavior).validate_python(
-        report["behavior"]["google_genai_package"]["betterlite"]
-    )
-    litellm_package = TypeAdapter(PackageBehavior).validate_python(
-        report["behavior"]["google_genai_package"]["litellm"]
+    package_behavior, litellm_package = module_behavior(
+        report, "google_genai_package", TypeAdapter(PackageBehavior),
     )
     assert package_behavior == litellm_package
     assert package_behavior["all"] == [
@@ -907,10 +879,7 @@ def test_google_genai_names(report: Report) -> None:
 
 
 def test_images_names(report: Report) -> None:
-    shapes = report["modules"]["images"]
-    assert None not in shapes["litellm"].values()
-    assert None not in shapes["betterlite"].values()
-    assert shapes["betterlite"] == shapes["litellm"]
+    shapes = module_shapes(report, "images")
     optional_shape = shapes["betterlite"]["ImageEditOptionalRequestParams"]
     request_shape = shapes["betterlite"]["ImageEditRequestParams"]
     assert optional_shape is not None
@@ -920,10 +889,7 @@ def test_images_names(report: Report) -> None:
     assert optional_shape["literals"]["background"] == ['"transparent"', '"opaque"', '"auto"']
     assert optional_shape["literals"]["input_fidelity"] == ['"high"', '"low"']
     assert "imageConfig" in request_shape["keys"]
-    betterlite = TypeAdapter(ImagesBehavior).validate_python(
-        report["behavior"]["images"]["betterlite"]
-    )
-    litellm = TypeAdapter(ImagesBehavior).validate_python(report["behavior"]["images"]["litellm"])
+    betterlite, litellm = module_behavior(report, "images", TypeAdapter(ImagesBehavior))
     assert betterlite == litellm
     assert betterlite["request"] == [
         "background", "image", "imageConfig", "input_fidelity", "mask", "model", "n",
@@ -932,10 +898,7 @@ def test_images_names(report: Report) -> None:
 
 
 def test_realtime_names(report: Report) -> None:
-    shapes = report["modules"]["realtime"]
-    assert None not in shapes["litellm"].values()
-    assert None not in shapes["betterlite"].values()
-    assert shapes["betterlite"] == shapes["litellm"]
+    shapes = module_shapes(report, "realtime")
     session_shape = shapes["betterlite"]["RealtimeSessionConfig"]
     secret_shape = shapes["betterlite"]["RealtimeClientSecretResponse"]
     error_shape = shapes["betterlite"]["RealtimeErrorEvent"]
@@ -949,12 +912,7 @@ def test_realtime_names(report: Report) -> None:
     assert error_shape["kind"] == "typeddict"
     assert secret_shape["required"] == ["value"]
     assert usage_shape["literals"] == {"type": ['"tokens"']}
-    betterlite = TypeAdapter(RealtimeBehavior).validate_python(
-        report["behavior"]["realtime"]["betterlite"]
-    )
-    litellm = TypeAdapter(RealtimeBehavior).validate_python(
-        report["behavior"]["realtime"]["litellm"]
-    )
+    betterlite, litellm = module_behavior(report, "realtime", TypeAdapter(RealtimeBehavior))
     assert betterlite == litellm
     assert betterlite["session"]["unknown"] == "kept"
     assert "unknown" not in betterlite["secret"]

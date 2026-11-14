@@ -1,6 +1,6 @@
 from typing import ClassVar
 
-from pydantic import ConfigDict, JsonValue
+from pydantic import ConfigDict, Field, JsonValue
 
 from betterlite.types.utils.base import ResponseObject
 
@@ -9,7 +9,7 @@ class EmbeddingRequest(ResponseObject):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="allow")
 
     model: str
-    input: list[str] = []
+    input: list[str] = Field(default_factory=list)
     timeout: int = 600
     api_base: str | None = None
     api_version: str | None = None
