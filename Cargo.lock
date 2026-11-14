@@ -3127,6 +3127,7 @@ dependencies = [
  "betterlite-roi",
  "betterlite-router",
  "betterlite-semantic",
+ "betterlite-tokenizer",
  "caseless",
  "chrono",
  "clap",
