@@ -1,6 +1,6 @@
-from typing import Annotated, Final, Literal, Self
+from typing import Final, Literal, Self
 
-from pydantic import BaseModel, BeforeValidator, JsonValue, field_validator, model_validator
+from pydantic import BaseModel, JsonValue, field_validator, model_validator
 from typing_extensions import override
 
 from betterlite.types.proxy.guardrails.guardrail_hooks.base import GuardrailConfigModel
@@ -19,7 +19,7 @@ class ToolPermissionRule(ResponseObject):
     id: str
     tool_name: str | None = None
     tool_type: str | None = None
-    decision: Annotated[Literal["allow", "deny"], BeforeValidator(_lowercase_json)]
+    decision: Literal["allow", "deny"]
     allowed_param_patterns: dict[str, str] | None = None
 
     @field_validator("tool_name", "tool_type", mode="after")
@@ -31,6 +31,11 @@ class ToolPermissionRule(ResponseObject):
         if not stripped:
             return None
         return stripped
+
+    @field_validator("decision", mode="before")
+    @classmethod
+    def normalize_decision(cls, value: JsonValue | Dumpable) -> JsonValue | Dumpable:
+        return _lowercase_json(value)
 
     @model_validator(mode="after")
     def _ensure_target_present(self) -> Self:
@@ -56,12 +61,18 @@ class PermissionError(ResponseObject):  # noqa: A001  # https://github.com/Berri
 # ast-grep-ignore: no-long-names
 class ToolPermissionGuardrailConfigModel(GuardrailConfigModel[BaseModel]):
     rules: list[ToolPermissionRule] | None = None
-    default_action: Annotated[
-        Literal["allow", "deny"], BeforeValidator(_lowercase_json)
-    ] = "deny"
-    on_disallowed_action: Annotated[
-        Literal["block", "rewrite"], BeforeValidator(_lowercase_json)
-    ] = "block"
+    default_action: Literal["allow", "deny"] = "deny"
+    on_disallowed_action: Literal["block", "rewrite"] = "block"
+
+    @field_validator("default_action", mode="before")
+    @classmethod
+    def normalize_default_action(cls, value: JsonValue | Dumpable) -> JsonValue | Dumpable:
+        return _lowercase_json(value)
+
+    @field_validator("on_disallowed_action", mode="before")
+    @classmethod
+    def normalize_on_disallowed_action(cls, value: JsonValue | Dumpable) -> JsonValue | Dumpable:
+        return _lowercase_json(value)
 
     @staticmethod
     @override
