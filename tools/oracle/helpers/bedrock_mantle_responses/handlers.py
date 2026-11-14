@@ -30,9 +30,8 @@ def url_value(calls: MantleCalls, case: UrlCase) -> JsonValue:
 
 
 def url_cases(payload: JsonValue) -> JsonValue:
-    urls: list[JsonValue] = []
-    for case in URL_PAYLOAD.validate_python(payload)["cases"]:
-        urls.append(url_value(config_of(case), case))
+    cases = URL_PAYLOAD.validate_python(payload)["cases"]
+    urls: list[JsonValue] = [url_value(config_of(case), case) for case in cases]
     return {"urls": urls}
 
 
