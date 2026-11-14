@@ -2088,6 +2088,7 @@ dependencies = [
  "http 1.5.0",
  "pem",
  "regex",
+ "rmcp",
  "rstest",
  "rust_decimal",
  "rustix",
@@ -2097,6 +2098,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha2 0.11.1",
+ "sse-stream",
  "strum",
  "subtle",
  "thiserror",
@@ -8409,6 +8411,7 @@ dependencies = [
  "sha2 0.11.1",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "tracing",
  "uuid",
@@ -9187,6 +9190,19 @@ dependencies = [
  "js-sys",
  "rsqlite-vfs",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "sse-stream"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c25ac7aff0abd1dbc474536e40416e1102c7dd9bfba0b9861c6d357f835dcfb4"
+dependencies = [
+ "bytes",
+ "futures-util",
+ "http-body 1.1.0",
+ "http-body-util",
+ "pin-project-lite",
 ]
 
 [[package]]

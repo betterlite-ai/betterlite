@@ -22,6 +22,7 @@ hex.workspace = true
 http = "1.5.0"
 pem = "4.0.0"
 regex.workspace = true
+rmcp = { version = "=3.9.0", default-features = false, features = ["client", "transport-async-rw"] }
 rust_decimal = { workspace = true, features = ["serde-with-float"] }
 rustix = { version = "1.1.5", features = ["process"] }
 scrypt = { version = "0.11.0", default-features = false }
@@ -30,6 +31,7 @@ serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value", "arbitrary_precision"] }
 serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
 sha2.workspace = true
+sse-stream = "0.2.6"
 strum = { version = "0.28.0", features = ["derive"] }
 subtle.workspace = true
 thiserror.workspace = true
