@@ -155,7 +155,11 @@ fn integer_of(value: Option<u64>, field: &'static str) -> Result<u32, RecordsErr
         .ok_or(RecordsError::Integer { field })
 }
 
-fn granularities_at(values: &Object, name: &str, field: &'static str) -> Optional<Vec<String>> {
+pub(super) fn granularities_at(
+    values: &Object,
+    name: &str,
+    field: &'static str,
+) -> Optional<Vec<String>> {
     let Some(value) = values.get(name) else {
         return Ok(None);
     };
