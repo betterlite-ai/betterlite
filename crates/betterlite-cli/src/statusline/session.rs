@@ -21,18 +21,23 @@ pub struct Session {
     pub savings_estimated_actual_spend: Option<Decimal>,
 }
 
+// a present key counts even as null and hides the plain baseline, so a null stays apart from an absent key
+#[derive(Default, Deserialize)]
+#[serde(untagged)]
+enum Estimated {
+    #[default]
+    #[serde(skip_deserializing)]
+    Absent,
+    Present(Wire<Number>),
+}
+
 #[derive(Deserialize)]
 struct Payload {
     router_name: Option<Wire<String>>,
     last_model: Option<Wire<String>>,
     spend: Option<Wire<Number>>,
-    // a present key counts even as null and hides the plain baseline, so a null stays apart from an absent key
-    #[serde(
-        rename = "savings_estimated_baseline_spend",
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    estimated_baseline: Option<Option<Wire<Number>>>,
+    #[serde(rename = "savings_estimated_baseline_spend", default)]
+    estimated_baseline: Estimated,
     baseline_spend: Option<Wire<Number>>,
     baseline_model: Option<Wire<String>>,
     turns: Option<Wire<Number>>,
@@ -50,8 +55,8 @@ impl Session {
         }
         let spend = payload.spend.as_ref()?.amount()?;
         let baseline = match &payload.estimated_baseline {
-            Some(present) => present.as_ref(),
-            None => payload.baseline_spend.as_ref(),
+            Estimated::Present(found) => Some(found),
+            Estimated::Absent => payload.baseline_spend.as_ref(),
         };
         let baseline_spend = match baseline {
             None | Some(Wire::Null) => None,
