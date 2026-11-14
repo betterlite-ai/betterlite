@@ -313,7 +313,7 @@ pub(crate) fn without_scripts(cache: &Arc<FakeCache>, usage: &Arc<FakeUsage>) ->
 }
 
 pub(crate) fn batch_handle(batch: &Arc<FakeBatch>) -> Arc<dyn PostCallScriptBatch> {
-    Arc::clone(batch)
+    Arc::<FakeBatch>::clone(batch)
 }
 
 pub(crate) fn script_handle<S>(script: &Arc<S>) -> Arc<dyn CounterScript>
