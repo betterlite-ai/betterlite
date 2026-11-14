@@ -12,3 +12,10 @@ deviations:
   - what: A request body carrying top_logprobs reaches the provider; LiteLLM lists the parameter as supported but its SDK call rejects it, so every such request answers 500 before any provider call.
     why: A working LiteLLM setup cannot rely on a parameter that always fails, and the text config names top_logprobs as supported; betterlite forwards it and the provider decides.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/transformation.py#L121-L144
+kept_bugs:
+  - what: A string-first prompt list holding a later non-string element answers 500 with a null type, because main.py wraps every element as a message and the file-id pass then raises TypeError.
+    why: The task follows main.py's prompt dispatch and the probes pin this shape; a working setup sends well-formed prompts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7626-L7629
+  - what: A token prompt or nested token prompt with a non-integer element answers 500 internal_server_error, because the transform falls back to convert_content_list_to_str and raises AttributeError.
+    why: The oracle case invalid-mixed-prompt pins that shape and a working setup sends token ids.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/utils.py#L28-L45
