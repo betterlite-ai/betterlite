@@ -91,6 +91,7 @@ fn session_id_takes_the_newest_transcript_inside_one_project() {
 #[case::long_last_group("11111111-aaaa-bbbb-cccc-1111111111111.jsonl")]
 #[case::short_last_group("11111111-aaaa-bbbb-cccc-11111111111.jsonl")]
 #[case::four_groups("11111111-aaaa-bbbb-111111111111.jsonl")]
+#[case::four_groups_of_the_right_lengths("11111111-aaaa-bbbb-cccc.jsonl")]
 #[case::six_groups("11111111-aaaa-bbbb-cccc-1111-11111111.jsonl")]
 #[case::no_dashes("11111111aaaabbbbcccc111111111111.jsonl")]
 #[case::agent_transcript("agent-11111111.jsonl")]
