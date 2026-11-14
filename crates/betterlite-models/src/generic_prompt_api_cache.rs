@@ -1,14 +1,29 @@
-use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::sync::{Mutex, PoisonError};
+
+use lru::LruCache;
 
 use crate::generic_prompt_api::variables::{VariablesError, apply_variables};
 use crate::prompt_contracts::{PromptManagementClient, PromptParams};
 
 mod tests;
 
-#[derive(Debug, Default)]
+const CACHE_CAPACITY: NonZeroUsize = match NonZeroUsize::new(1000) {
+    Some(capacity) => capacity,
+    None => NonZeroUsize::MIN,
+};
+
+#[derive(Debug)]
 pub struct PromptCache {
-    pub(crate) entries: Mutex<HashMap<String, PromptManagementClient>>,
+    pub(crate) entries: Mutex<LruCache<String, PromptManagementClient>>,
+}
+
+impl Default for PromptCache {
+    fn default() -> Self {
+        Self {
+            entries: Mutex::new(LruCache::new(CACHE_CAPACITY)),
+        }
+    }
 }
 
 impl PromptCache {
@@ -34,6 +49,7 @@ impl PromptCache {
         prompt_variables: Option<&PromptParams>,
     ) -> Result<Option<PromptManagementClient>, VariablesError> {
         let cache_key = Self::get_cache_key(prompt_id, prompt_label, prompt_version);
+        // LruCache::get moves the entry to the front, so the read takes the lock mutably too
         let cached = self
             .entries
             .lock()
@@ -49,10 +65,12 @@ impl PromptCache {
     }
 
     pub fn insert(&self, cache_key: String, prompt_client: PromptManagementClient) {
-        self.entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(cache_key, prompt_client);
+        drop(
+            self.entries
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .put(cache_key, prompt_client),
+        );
     }
 
     pub fn clear_cache(&self) {

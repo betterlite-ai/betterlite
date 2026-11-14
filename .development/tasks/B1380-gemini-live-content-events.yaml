@@ -88,5 +88,5 @@ pitfalls:
   - conversation.item.added must precede content_part.added; the source does not emit conversation.item.created.
   - An explicit false generationComplete still matches the fallback presence-based event mapping.
   - List-based state updates discard earlier text deltas rather than retaining a whole-turn transcript.
-budget: {max_changed_lines: 750, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: standard

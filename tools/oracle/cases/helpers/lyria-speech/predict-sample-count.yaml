@@ -1,0 +1,18 @@
+kind: helper
+name: lyria-predict-sample-count
+call:
+  vertex_lyria_speech:
+    function: prepared
+    cases:
+      - {model: lyria-002, params: {}, voice: null, drop_params: false, global_drop_params: false, project: null, location: null, api_base: null, input: a calm river, headers: {}}
+      - {model: lyria-002, params: {}, voice: null, drop_params: false, global_drop_params: false, project: team-project, location: europe-west4, api_base: null, input: a calm river, headers: {}}
+      - {model: lyria-002, params: {}, voice: null, drop_params: false, global_drop_params: false, project: null, location: null, api_base: 'https://proxy.example/vertex/', input: a calm river, headers: {}}
+      - {model: lyria-002, params: {}, voice: null, drop_params: false, global_drop_params: false, project: team/project, location: us, api_base: null, input: a calm river, headers: {}}
+      - {model: lyria-002, params: {}, voice: null, drop_params: false, global_drop_params: false, project: null, location: null, api_base: null, input: a calm river, headers: {Authorization: caller-secret, x-goog-user-project: caller-project, Content-Type: text/plain, charset: latin-1}}
+      - {model: lyria-002, params: {}, voice: null, drop_params: false, global_drop_params: false, project: null, location: '', api_base: '', input: a calm river, headers: {}}
+      - {model: lyria-002, params: {}, voice: null, drop_params: false, global_drop_params: false, project: '..', location: null, api_base: null, input: a calm river, headers: {}}
+      - {model: vertex_ai/lyria-002, params: {}, voice: null, drop_params: false, global_drop_params: false, project: null, location: null, api_base: null, input: a calm river, headers: {}}
+      - {model: lyria-002, params: {response_format: wav}, voice: alloy, drop_params: false, global_drop_params: false, project: null, location: null, api_base: null, input: a calm river, headers: {}}
+      - {model: lyria-002, params: {speed: 1.5}, voice: null, drop_params: true, global_drop_params: false, project: null, location: null, api_base: null, input: a calm river, headers: {}}
+env: {}
+compare: {ignore: []}

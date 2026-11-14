@@ -1,0 +1,50 @@
+id: B9958
+title: A model_group_alias item without hidden fails to load
+description: >-
+  router_settings.model_group_alias maps an alias either to a model name or to an item {model, hidden}. In
+  crates/betterlite-config/src/sections/deployment_catalog.rs, RawItem gives hidden a serde default of false, so an
+  item written as {model: gpt-4} loads. LiteLLM declares the item as the TypedDict RouterModelGroupAliasItem with model
+  and hidden both required, builds it with RouterModelGroupAliasItem(**model_value) and then reads
+  _model_value["hidden"], so the same config fails with KeyError 'hidden': `litellm --config <file> --validate_config`
+  prints "LiteLLM: config validation failed: 'hidden'". betterlite accepts a config LiteLLM refuses, and no deviation
+  lists it.
+
+
+  Make hidden required in the item shape, as LiteLLM's type declares it. An item without hidden is a load error that
+  names router_settings.model_group_alias.<alias>.hidden, the way the section already rejects an item without model or
+  with a hidden that isn't a bool. The plain string shape (alias: model) and items that set hidden load as before.
+  betterlite then refuses what LiteLLM refuses, with an error that names the field instead of a KeyError, so the task
+  adds no deviation row.
+scope:
+  paths:
+  - crates/betterlite-config/src/sections/deployment_catalog.rs
+  - crates/betterlite-config/src/sections/deployment_catalog/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L993-L995
+  why: RouterModelGroupAliasItem declares model and hidden, both required.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11870-L11875
+  why: LiteLLM builds the item and reads hidden by key, so a missing hidden raises KeyError.
+dod:
+- text: An item without hidden fails to load, and the error names router_settings.model_group_alias.<alias>.hidden.
+  proof: [catalog-tests]
+- text: The string shape and items with hidden true or false load as before, and an unknown item key is still reported.
+  proof: [catalog-tests]
+checks:
+  optional: []
+  commands:
+  - id: catalog-tests
+    why: An item without hidden loads, its error doesn't name the field, or a valid alias stops loading.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::deployment_catalog::tests::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- How hidden filters aliases out of the model list (B302).
+- The other router_settings keys.
+pitfalls:
+- RawAlias is an untagged enum, and serde's own error for an item that matches no variant doesn't name the missing key. Read hidden as an Option in RawItem and turn None into the field-naming error in convert, next to the unknown-key check there.
+- 'Existing tests write items such as {model: a} without hidden. Give them hidden where they test something else, so each test still checks what its name says.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,24 @@
+kind: helper
+name: gemini-options-max-token-order
+call:
+  gemini_options:
+    safety_settings: null
+    steps:
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params: {max_tokens: 100, max_completion_tokens: 200}
+        optional_params: {}
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params: {max_completion_tokens: 200, max_tokens: 100}
+        optional_params: {}
+      - op: auth
+        model: ""
+        non_default_params: {project: my-project, region_name: us-central1}
+        optional_params: {vertex_project: old-project, vertex_location: old-location}
+      - op: auth
+        model: ""
+        non_default_params: {region_name: europe-west4}
+        optional_params: {vertex_project: kept}
+env: {}
+compare: {ignore: []}
