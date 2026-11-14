@@ -1,0 +1,11 @@
+kind: helper
+name: tiered-pricing-last-tier-top
+call:
+  b3274:
+    model_cost: {"exa_ai/search": {"litellm_provider": "exa_ai", "mode": "search", "input_cost_per_query": 0.9, "tiered_pricing": [{"max_results_range": [1, 9], "input_cost_per_query": 0.001}, {"max_results_range": [10, 10], "input_cost_per_query": 0.002}, {"max_results_range": [11, 25], "input_cost_per_query": 0.003}, {"max_results_range": [26, 100], "input_cost_per_query": 0.025}]}}
+    model: "exa_ai/search"
+    custom_llm_provider: "exa_ai"
+    number_of_queries: 1
+    optional_params: {"max_results": 100}
+env: {}
+compare: {ignore: []}
