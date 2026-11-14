@@ -1,14 +1,14 @@
 id: B1036
 milestone: M5 api families
 title: Batch provider create
-status: todo
+status: done
 depends_on: [B009, B010, B171, B1019, B1035, B1087, B517, B002]
 file: tasks/B1036-batch-provider-create.yaml
 covers:
   - "litellm/batches/main.py"
 parent: B086
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1706
