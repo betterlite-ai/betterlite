@@ -6,6 +6,7 @@ use super::fixtures::{
     ScriptedContinuation, capture, chat_tool_call, final_answer, hook, outcome, request,
     request_with, skill_files, tool_use,
 };
+use crate::api::skills::continuation::ContinuationLoop;
 use crate::api::skills::continuation::error::SkillsLoopError;
 use crate::api::skills::hook::execution::SkillFiles;
 
@@ -109,7 +110,7 @@ async fn detection_gate_skill_files_are_merged_in_request_order_with_later_value
     hook.post_call_success(&request_with(by_skill), response, &continuation)
         .await
         .unwrap();
-    let calls = hook.executor.calls.lock().unwrap();
+    let calls = hook.executor.calls.lock().unwrap().clone();
     let merged: Vec<(&str, &[u8])> = calls[0]
         .1
         .iter()

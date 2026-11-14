@@ -4,6 +4,7 @@ use super::fixtures::{
     ScriptedContinuation, ScriptedFailure, capture, chat_tool_call, generated_names, hook, marker,
     outcome, outcome_with_file, request, run_loop, skill_files, tool_use,
 };
+use crate::api::skills::continuation::ContinuationLoop;
 use crate::api::skills::continuation::error::SkillsLoopError;
 
 #[tokio::test]

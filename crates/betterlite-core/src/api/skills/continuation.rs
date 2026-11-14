@@ -10,47 +10,67 @@ pub mod request;
 pub mod rounds;
 mod tests;
 
+use std::future::Future;
+
 use self::error::SkillsLoopError;
 use self::messages::MessagesContinuation;
 use self::request::SkillsRequestData;
 use super::hook::SkillsInjectionHook;
 use super::hook::execution::{SkillFiles, SkillsSandbox};
 use super::hook::response::HookResponse;
-use super::hook::settings::LITELLM_SKILL_ID_PREFIX;
-use super::hook::tool_calls::extract_tool_calls;
 
 pub const CODE_EXECUTION_TOOL: &str = "litellm_code_execution";
 
-impl<PromptHandler: Sync, Sandbox: SkillsSandbox + Sync>
-    SkillsInjectionHook<PromptHandler, Sandbox>
-{
-    pub async fn post_call_success<C: MessagesContinuation + Sync>(
+// The workspace denies multiple_inherent_impl and hook.rs holds the type's one impl block,
+// so the continuation's two steps are trait methods that delegate to rounds.rs.
+pub trait ContinuationLoop {
+    fn post_call_success<C>(
         &self,
         request_data: &SkillsRequestData,
         response: HookResponse,
         continuation: &C,
-    ) -> Result<Option<HookResponse>, SkillsLoopError> {
-        if !request_data.skills.code_execution_enabled {
-            return Ok(None);
-        }
-        let mut skill_files = SkillFiles::new();
-        for files in request_data.skills.skill_files.values() {
-            skill_files.extend(files.clone());
-        }
-        if skill_files.is_empty() {
-            tracing::warn!("SkillsInjectionHook: No skill files found, cannot execute code");
-            return Ok(None);
-        }
-        let executable = extract_tool_calls(&response)?.iter().any(|call| {
-            let name = call.name.as_deref().unwrap_or_default();
-            name == CODE_EXECUTION_TOOL || name.starts_with(LITELLM_SKILL_ID_PREFIX)
-        });
-        if !executable {
-            return Ok(None);
-        }
-        tracing::debug!("SkillsInjectionHook: Detected tool call, starting execution loop");
-        self.execute_messages_loop(request_data, response, &skill_files, continuation)
-            .await
-            .map(Some)
+    ) -> impl Future<Output = Result<Option<HookResponse>, SkillsLoopError>> + Send
+    where
+        C: MessagesContinuation + Sync;
+
+    fn execute_messages_loop<C>(
+        &self,
+        data: &SkillsRequestData,
+        response: HookResponse,
+        skill_files: &SkillFiles,
+        continuation: &C,
+    ) -> impl Future<Output = Result<HookResponse, SkillsLoopError>> + Send
+    where
+        C: MessagesContinuation + Sync;
+}
+
+impl<PromptHandler, Sandbox> ContinuationLoop for SkillsInjectionHook<PromptHandler, Sandbox>
+where
+    PromptHandler: Sync,
+    Sandbox: SkillsSandbox + Sync,
+{
+    fn post_call_success<C>(
+        &self,
+        request_data: &SkillsRequestData,
+        response: HookResponse,
+        continuation: &C,
+    ) -> impl Future<Output = Result<Option<HookResponse>, SkillsLoopError>> + Send
+    where
+        C: MessagesContinuation + Sync,
+    {
+        rounds::post_call_success(self, request_data, response, continuation)
+    }
+
+    fn execute_messages_loop<C>(
+        &self,
+        data: &SkillsRequestData,
+        response: HookResponse,
+        skill_files: &SkillFiles,
+        continuation: &C,
+    ) -> impl Future<Output = Result<HookResponse, SkillsLoopError>> + Send
+    where
+        C: MessagesContinuation + Sync,
+    {
+        rounds::execute_messages_loop(self, data, response, skill_files, continuation)
     }
 }

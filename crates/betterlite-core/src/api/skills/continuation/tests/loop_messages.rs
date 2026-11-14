@@ -4,6 +4,7 @@ use super::fixtures::{
     ScriptedContinuation, capture, chat_tool_call, dict, final_answer, hook, json, object_response,
     outcome, request, run_loop, skill_files, tool_block, tool_use,
 };
+use crate::api::skills::continuation::ContinuationLoop;
 use crate::api::skills::continuation::content::assistant_message;
 use crate::api::skills::continuation::messages::ContinuationRequest;
 use crate::api::skills::hook::response::ContentBlock;

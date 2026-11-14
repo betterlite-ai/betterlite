@@ -14,6 +14,7 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
+use crate::api::skills::continuation::ContinuationLoop;
 use crate::api::skills::continuation::error::SkillsLoopError;
 use crate::api::skills::continuation::messages::{ContinuationRequest, MessagesContinuation};
 use crate::api::skills::continuation::request::{RequestMetadata, SkillsRequestData};
