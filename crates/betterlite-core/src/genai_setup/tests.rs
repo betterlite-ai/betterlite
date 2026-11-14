@@ -723,14 +723,34 @@ fn request_body_is_the_transformed_request() {
         Some(&Json::Object(config.clone()))
     );
     assert_eq!(body.get("systemInstruction"), Some(&instruction));
-    assert_eq!(
-        gemini
-            .transformed
-            .lock()
-            .expect("the fixture lock is not poisoned")[0]
-            .generation_config,
-        config
-    );
+    let transformed = gemini
+        .transformed
+        .lock()
+        .expect("the fixture lock is not poisoned");
+    let recorded = &transformed[0];
+    assert_eq!(recorded.model, "gemini-2.5-flash");
+    assert_eq!(recorded.generation_config, config);
+    assert_eq!(recorded.system_instruction, Some(instruction));
+}
+
+#[test]
+fn request_body_is_built_while_unread_kwargs_stay_unvalidated() {
+    let fixture = Fixture::new();
+    let resolution = fixture.resolution();
+    let gemini = FixtureConfig::for_fields(&FIELDS);
+    let vertex = FixtureConfig::for_fields(&FIELDS);
+    let configs = provider_configs(&gemini, &vertex);
+    let contents = text("hello");
+    let kwargs = object(&[("tpm", text("many")), ("drop_params", text("maybe"))]);
+    let request = setup_request("gemini/gemini-2.5-flash", &contents, None, &kwargs);
+    let mut state = logging();
+    let result = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
+        .expect("only the fields the setup reads are validated");
+    let body = result
+        .request_body
+        .as_object()
+        .expect("the fixture builds an object");
+    assert_eq!(body.get("fixture"), Some(&Json::Bool(true)));
 }
 
 #[test]
