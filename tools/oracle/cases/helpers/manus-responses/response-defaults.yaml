@@ -1,0 +1,31 @@
+kind: helper
+name: manus-responses-response-defaults
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/replies/1/create/id, why: "the generated unknown- id suffix is random"}
+    - {pointer: /value/replies/1/retrieve/id, why: "the generated unknown- id suffix is random"}
+    - {pointer: /value/replies/2/create/id, why: "the generated unknown- id suffix is random"}
+    - {pointer: /value/replies/2/retrieve/id, why: "the generated unknown- id suffix is random"}
+call:
+  b8104:
+    op: replies
+    environment: {}
+    sdk: {api_base: null, api_key: null}
+    now: 1700000000
+    probes:
+      - body: '{"id":"resp_1","created_at":5}'
+        status: 200
+        headers: {}
+      - body: '{"id":null,"created_at":5,"reasoning":null,"text":null,"output":null,"usage":null}'
+        status: 200
+        headers: {}
+      - body: '{"created_at":5,"output":[]}'
+        status: 200
+        headers: {}
+      - body: '{"id":"resp_4","created_at":5,"output":[],"usage":{"input_tokens":3,"output_tokens":4,"total_tokens":7}}'
+        status: 200
+        headers: {x-request-id: req-1, x-ratelimit-remaining-requests: '9', llm_provider-x-custom: keep}
+      - body: 'not json'
+        status: 503
+        headers: {}
