@@ -368,8 +368,16 @@ CASES: Final[tuple[tuple[str, str, JsonValue], ...]] = (
     ("decisions", "ChoiceQuestion", {"type": "choice", "criteria": {"a": None}, "x": [1]}),
     ("decisions", "ScoreQuestion", {"type": "score", "criteria": ["a", "b"]}),
     ("decisions", "ScoreQuestion", {"type": "score", "criteria": []}),
-    ("decisions", "ScoreQuestion", {"type": "score", "criteria": list(range(10))}),
-    ("decisions", "ScoreQuestion", {"type": "score", "criteria": list(range(11))}),
+    (
+        "decisions",
+        "ScoreQuestion",
+        {"type": "score", "criteria": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]},
+    ),
+    (
+        "decisions",
+        "ScoreQuestion",
+        {"type": "score", "criteria": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]},
+    ),
     (
         "decisions",
         "DecisionsRequestBody",
