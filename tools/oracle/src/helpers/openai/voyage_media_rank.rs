@@ -127,11 +127,7 @@ impl crate::helpers::Helper for Op {
 }
 
 // a reply transform that raises is the whole call's failure, as dispatch.py reports it
-fn top_error<E>(error: E) -> Box<crate::helpers::HelperError>
-where
-    E: Into<Failure>,
-{
-    let failure: Failure = error.into();
+fn top_error(failure: Failure) -> Box<crate::helpers::HelperError> {
     Box::new(crate::helpers::HelperError {
         class: "ValueError".to_owned(),
         status: failure.status,
@@ -160,9 +156,10 @@ fn multimodal_call(call: &MultimodalCall) -> crate::helpers::HelperResult {
         call.reply.status,
         VoyageEmbeddingVariant::Multimodal,
     )
-    .map_err(top_error)?;
+    .map_err(|error| top_error(Failure::from(error)))?;
     Ok(json!({
-        "is_multimodal": voyage_multimodal::is_multimodal_embeddings(&call.model),
+        "is_multimodal":
+            VoyageEmbeddingVariant::for_model(&call.model) == VoyageEmbeddingVariant::Multimodal,
         "supported_params": voyage_multimodal::SUPPORTED_OPENAI_PARAMS,
         "url": endpoint(call.base.as_deref(), VoyageEmbeddingVariant::Multimodal),
         "request": outcome(request)?,
@@ -191,7 +188,7 @@ fn rerank_call(call: &RerankCall) -> crate::helpers::HelperResult {
         uuid,
         &mut recorder,
     )
-    .map_err(top_error)?;
+    .map_err(|error| top_error(Failure::from(error)))?;
     Ok(json!({
         "supported_params": voyage_rerank::SUPPORTED_COHERE_RERANK_PARAMS,
         "headers": outcome(headers)?,

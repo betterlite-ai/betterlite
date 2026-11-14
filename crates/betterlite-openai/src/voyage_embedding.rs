@@ -13,8 +13,11 @@ pub enum VoyageEmbeddingVariant {
 impl VoyageEmbeddingVariant {
     #[must_use]
     pub fn for_model(model: &str) -> Self {
-        if model.to_lowercase().contains("context") {
+        let lowered = model.to_lowercase();
+        if lowered.contains("context") {
             Self::Contextual
+        } else if lowered.contains("multimodal") {
+            Self::Multimodal
         } else {
             Self::Text
         }

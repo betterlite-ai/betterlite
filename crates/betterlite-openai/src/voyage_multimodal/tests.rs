@@ -2,7 +2,7 @@
 
 use serde_json::{Map, Value, json};
 
-use super::{VoyageMultimodalError, credentials, is_multimodal_embeddings, request};
+use super::{VoyageMultimodalError, credentials, request};
 use crate::voyage_embedding::{VoyageEmbeddingVariant, endpoint};
 
 fn options(source: &str) -> Map<String, Value> {
@@ -14,14 +14,20 @@ fn options(source: &str) -> Map<String, Value> {
 #[case::uppercase("Voyage-Multimodal-3")]
 #[case::embedded("voyage_multimodal_3")]
 fn selects_multimodal_by_substring(#[case] model: &str) {
-    assert!(is_multimodal_embeddings(model));
+    assert_eq!(
+        VoyageEmbeddingVariant::for_model(model),
+        VoyageEmbeddingVariant::Multimodal
+    );
 }
 
 #[rstest::rstest]
 #[case::text("voyage-3")]
 #[case::contextual("voyage-context-3")]
 fn leaves_other_models_alone(#[case] model: &str) {
-    assert!(!is_multimodal_embeddings(model));
+    assert_ne!(
+        VoyageEmbeddingVariant::for_model(model),
+        VoyageEmbeddingVariant::Multimodal
+    );
 }
 
 #[test]

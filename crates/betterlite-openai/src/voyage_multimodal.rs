@@ -21,11 +21,6 @@ pub enum VoyageMultimodalError {
     MissingApiKey,
 }
 
-#[must_use]
-pub fn is_multimodal_embeddings(model: &str) -> bool {
-    model.to_lowercase().contains("multimodal")
-}
-
 // LiteLLM rejects a falsey resolved key, unlike the text embedding leaf which sends "Bearer None"
 pub fn credentials<F>(explicit: Option<&str>, lookup: F) -> Result<String, VoyageMultimodalError>
 where
