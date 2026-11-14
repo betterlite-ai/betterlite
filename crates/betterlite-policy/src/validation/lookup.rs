@@ -52,17 +52,19 @@ impl AliasDatabase for NoDatabase {
     }
 }
 
-// the router type of a validator built without one: `None::<NoRouter>`
+// the router type of a validator built without one: `None::<NoRouter>`; no value exists, so a mutant of its bodies never runs
 #[derive(Debug, Clone, Copy)]
 pub enum NoRouter {}
 
 impl ModelRouter for NoRouter {
     type Error = Infallible;
 
+    #[cfg_attr(test, mutants::skip)]
     fn has_model_name(&self, _model: &str) -> Result<bool, Self::Error> {
         match *self {}
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn has_pattern_deployments(&self, _model: &str) -> Result<bool, Self::Error> {
         match *self {}
     }

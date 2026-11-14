@@ -2538,6 +2538,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-auth",
  "fancy-regex 0.19.2",
+ "mutants",
  "rstest",
  "serde",
  "serde_json",
