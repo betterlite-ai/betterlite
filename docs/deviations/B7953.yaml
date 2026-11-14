@@ -1,0 +1,23 @@
+task: B7953
+deviations:
+  - what: videos/main.py declares FileTypes as IO[bytes] | bytes | PathLike[str] instead of importing openai's FileTypes, which also covers the (filename, content[, content type[, headers]]) tuple forms.
+    why: The wheel does not depend on openai.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/main.py#L4
+  - what: "Fields LiteLLM types as object, Any or a bare dict or list are JsonValue, dict[str, JsonValue], list[JsonValue] or dict[str, str | None]: VideoCreateOptionalRequestParams.image and .parameters, VideoObject.error and .usage, VideoObject._hidden_params, VideoResponse.hidden_params, DecodedCharacterId's base, PromptLiteLLMParams.provider_specific_query_params, PromptTemplateBase.metadata, KeyManagementSettings.hosted_keys, PassthroughStandardLoggingPayload.request_body and .response_body, and TinyfishRun.result and .error."
+    why: "The repo bans Any and unparameterized containers in annotations, and these fields carry JSON payloads."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/main.py#L18-L25
+  - what: "The str-mixin enums subclass enum.StrEnum instead of (str, Enum): AzureCredentialType, EndpointType, SupportedPromptIntegrations, DailyActivityTable and ExportType."
+    why: "Ruff UP042 rejects the two-base form. Members and values stay the same; str() of a member returns its value, where (str, Enum) returns the member name."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/secret_managers/get_azure_ad_token_provider.py#L4
+  - what: "managed_id_rewriter's PrismaWhereValue, PrismaWhere, PrismaOrder and ManagedRowData are real TypeAlias objects whose inner references are quoted; LiteLLM assigns each a string literal."
+    why: "betterlite modules cannot use `from __future__ import annotations`, so a string alias cannot be an operand of a union at runtime, and basedpyright has to resolve these aliases as types. The aliases name the same types LiteLLM's strings spell out."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/passthrough_endpoints/managed_id_rewriter.py#L33-L38
+  - what: "The video and prompt models derive from the wheel's LiteLLMPydanticObjectBase instead of pydantic's BaseModel. For the prompt models that changes .json(), which returns a dict here and a JSON string in LiteLLM; the video models already override .json() to return model_dump in LiteLLM, so theirs is unchanged."
+    why: "LiteLLMPydanticObjectBase is the wheel's base for its pydantic models. Validation, extra handling and field defaults are the same: VideoObject, VideoResponse, CharacterObject and the prompt classes keep extra=ignore except PromptInfo and PromptLiteLLMParams, which keep extra=allow."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/prompts/init_prompts.py#L18-L22
+  - what: "UsagePerChunk.completion_tokens_details is typed CompletionTokensDetailsWrapper instead of LiteLLM's CompletionTokensDetails."
+    why: "The wheel ports the wrapper only. It carries every CompletionTokensDetails field plus text_tokens, image_tokens and video_tokens, so a payload of the base shape still validates and the parsed values are the same."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/litellm_core_utils/streaming_chunk_builder_utils.py#L14
+  - what: "managed_id_rewriter's ManagedFileIdReader and ManagedFileIdWriter name the wheel's own types where LiteLLM's TYPE_CHECKING imports name three types the wheel does not carry: get_unified_file_id returns ManagedFileRow | None, not LiteLLM_ManagedFileTable | None, and the writer takes ForeignObject for file_object, litellm_parent_otel_span and user_api_key_dict, not OpenAIFileObject, object and UserAPIKeyAuth. Parameter names, kinds and defaults are LiteLLM's."
+    why: "litellm.models.managed_files, OpenAIFileObject and litellm.proxy._types.UserAPIKeyAuth are outside the wheel, and LiteLLM imports all three under TYPE_CHECKING only, so none of them exists at runtime on either side. ForeignObject is the wheel's placeholder for an external object it does not model."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/passthrough_endpoints/managed_id_rewriter.py#L25-L28
