@@ -13,11 +13,11 @@ const PROTECT_PATH: &str = "/api/v1/protect";
 fn header_map(headers: &BTreeMap<String, String>) -> Result<HeaderMap, PillarError> {
     let mut map = HeaderMap::new();
     for (name, value) in headers {
-        let name = HeaderName::from_bytes(name.as_bytes())
+        let header_name = HeaderName::from_bytes(name.as_bytes())
             .map_err(|source| PillarError::InvalidHeaderName { source })?;
-        let value = HeaderValue::from_str(value)
+        let header_value = HeaderValue::from_str(value)
             .map_err(|source| PillarError::InvalidHeaderValue { source })?;
-        map.insert(name, value);
+        map.insert(header_name, header_value);
     }
     if let Some(secret) = map.get_mut(AUTHORIZATION) {
         secret.set_sensitive(true);
@@ -51,10 +51,6 @@ async fn read_capped_body(mut response: reqwest::Response) -> Result<Vec<u8>, Pi
     Ok(body)
 }
 
-pub fn parse_protect_response(body: &[u8]) -> Result<ProtectResponse, PillarError> {
-    serde_json::from_slice(body).map_err(|source| PillarError::Response { source })
-}
-
 pub async fn call_pillar_api(
     client: &reqwest::Client,
     settings: &PillarSettings,
@@ -77,5 +73,5 @@ pub async fn call_pillar_api(
         });
     }
     let body = read_capped_body(response).await?;
-    parse_protect_response(&body)
+    serde_json::from_slice(&body).map_err(|source| PillarError::Response { source })
 }

@@ -3,12 +3,15 @@
 use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
 use std::io::{self, Read as _, Write as _};
+use std::net::TcpListener as StdTcpListener;
+use std::thread;
 use std::time::Duration;
 
 use axum::Router;
 use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::routing::post;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_http::proxy::base_builder;
 use rstest::rstest;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -25,6 +28,24 @@ struct Captured {
     path: String,
     headers: HeaderMap,
     body: String,
+}
+
+#[derive(serde::Deserialize)]
+struct CapturedPayload {
+    messages: Vec<CapturedMessage>,
+    metadata: CapturedMetadata,
+    model: String,
+    provider: String,
+}
+
+#[derive(serde::Deserialize)]
+struct CapturedMessage {
+    role: String,
+}
+
+#[derive(serde::Deserialize)]
+struct CapturedMetadata {
+    source: String,
 }
 
 async fn serve(
@@ -96,6 +117,10 @@ fn headers() -> BTreeMap<String, String> {
     ])
 }
 
+fn http_client() -> reqwest::Client {
+    base_builder().build().expect("an outbound client")
+}
+
 #[tokio::test]
 async fn the_call_posts_the_payload_to_the_protect_route() {
     let (base, receiver, mut server) = serve(
@@ -103,7 +128,7 @@ async fn the_call_posts_the_payload_to_the_protect_route() {
         r#"{"flagged": false, "session_id": "s1"}"#.to_owned(),
     )
     .await;
-    let client = reqwest::Client::new();
+    let client = http_client();
     let response = call_pillar_api(&client, &pillar_settings(&base), &headers(), &payload())
         .await
         .expect("the call succeeds");
@@ -126,11 +151,14 @@ async fn the_call_posts_the_payload_to_the_protect_route() {
             .and_then(|v| v.to_str().ok()),
         Some("application/json")
     );
-    let body: serde_json::Value = serde_json::from_str(&captured.body).expect("valid JSON body");
-    assert_eq!(body["model"], "gpt-4o");
-    assert_eq!(body["provider"], "openai");
-    assert_eq!(body["metadata"]["source"], "litellm");
-    assert_eq!(body["messages"][0]["role"], "user");
+    let body: CapturedPayload = serde_json::from_str(&captured.body).expect("valid JSON body");
+    assert_eq!(body.model, "gpt-4o");
+    assert_eq!(body.provider, "openai");
+    assert_eq!(body.metadata.source, "litellm");
+    assert_eq!(
+        body.messages.first().map(|message| message.role.as_str()),
+        Some("user")
+    );
     server.shutdown().await;
 }
 
@@ -141,7 +169,7 @@ async fn the_call_posts_the_payload_to_the_protect_route() {
 #[tokio::test]
 async fn a_non_success_status_is_an_error(#[case] status: StatusCode) {
     let (base, _receiver, mut server) = serve(status, String::from("nope")).await;
-    let client = reqwest::Client::new();
+    let client = http_client();
     let error = call_pillar_api(&client, &pillar_settings(&base), &headers(), &payload())
         .await
         .expect_err("a non-success status is an error");
@@ -149,32 +177,50 @@ async fn a_non_success_status_is_an_error(#[case] status: StatusCode) {
     server.shutdown().await;
 }
 
-#[test]
-fn a_body_that_is_not_json_is_an_error() {
-    let body = super::api_call::parse_protect_response(b"not json")
+#[tokio::test]
+async fn a_body_that_is_not_json_is_an_error() {
+    let (base, _receiver, mut server) = serve(StatusCode::OK, String::from("not json")).await;
+    let client = http_client();
+    let error = call_pillar_api(&client, &pillar_settings(&base), &headers(), &payload())
+        .await
         .expect_err("an unparsable body is an error");
-    assert!(matches!(body, PillarError::Response { .. }));
+    assert!(matches!(error, PillarError::Response { .. }));
+    server.shutdown().await;
 }
 
-#[test]
-fn a_body_of_the_wrong_type_is_an_error() {
-    let body = super::api_call::parse_protect_response(br#"["flagged"]"#)
+#[tokio::test]
+async fn a_body_of_the_wrong_type_is_an_error() {
+    let (base, _receiver, mut server) = serve(StatusCode::OK, String::from(r#"["flagged"]"#)).await;
+    let client = http_client();
+    let error = call_pillar_api(&client, &pillar_settings(&base), &headers(), &payload())
+        .await
         .expect_err("a non-object body is an error");
-    assert!(matches!(body, PillarError::Response { .. }));
+    assert!(matches!(error, PillarError::Response { .. }));
+    server.shutdown().await;
 }
 
-#[test]
-fn unknown_response_keys_are_kept_so_the_body_is_not_treated_as_empty() {
-    let parsed =
-        super::api_call::parse_protect_response(br#"{"unknown": 1}"#).expect("the body parses");
+#[tokio::test]
+async fn unknown_response_keys_are_kept_so_the_body_is_not_treated_as_empty() {
+    let (base, _receiver, mut server) =
+        serve(StatusCode::OK, String::from(r#"{"unknown": 1}"#)).await;
+    let client = http_client();
+    let parsed = call_pillar_api(&client, &pillar_settings(&base), &headers(), &payload())
+        .await
+        .expect("the body parses");
     assert_ne!(parsed, ProtectResponse::default());
     assert_eq!(parsed.other.len(), 1);
+    server.shutdown().await;
 }
 
-#[test]
-fn an_empty_object_is_empty() {
-    let parsed = super::api_call::parse_protect_response(b"{}").expect("the body parses");
+#[tokio::test]
+async fn an_empty_object_is_empty() {
+    let (base, _receiver, mut server) = serve(StatusCode::OK, String::from("{}")).await;
+    let client = http_client();
+    let parsed = call_pillar_api(&client, &pillar_settings(&base), &headers(), &payload())
+        .await
+        .expect("the body parses");
     assert_eq!(parsed, ProtectResponse::default());
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -185,7 +231,7 @@ async fn a_body_at_the_cap_is_accepted() {
     let body = format!("{prefix}{}{suffix}", "x".repeat(pad));
     assert_eq!(body.len(), 1024 * 1024);
     let (base, _receiver, mut server) = serve(StatusCode::OK, body).await;
-    let client = reqwest::Client::new();
+    let client = http_client();
     let response = call_pillar_api(&client, &pillar_settings(&base), &headers(), &payload())
         .await
         .expect("a body at the cap is read");
@@ -198,7 +244,7 @@ async fn a_body_over_one_mib_is_rejected_before_it_is_parsed() {
     let padded = "x".repeat(1024 * 1024 + 512);
     let body = format!("{{\"pad\":\"{padded}\"}}");
     let (base, _receiver, mut server) = serve(StatusCode::OK, body).await;
-    let client = reqwest::Client::new();
+    let client = http_client();
     let error = call_pillar_api(&client, &pillar_settings(&base), &headers(), &payload())
         .await
         .expect_err("a body over the cap is an error");
@@ -208,18 +254,20 @@ async fn a_body_over_one_mib_is_rejected_before_it_is_parsed() {
 
 #[tokio::test]
 async fn an_announced_length_over_the_cap_is_rejected_before_the_body_is_read() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener");
+    let listener = StdTcpListener::bind("127.0.0.1:0").expect("listener");
     let base = format!("http://{}", listener.local_addr().expect("address"));
-    let server = std::thread::spawn(move || -> io::Result<()> {
-        let (mut stream, _peer) = listener.accept()?;
-        let mut request = [0_u8; 4096];
-        stream.set_read_timeout(Some(Duration::from_millis(300)))?;
-        let _read = stream.read(&mut request)?;
-        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2000000\r\n\r\n{}")?;
-        let _drained = stream.read(&mut request);
-        Ok(())
-    });
-    let client = reqwest::Client::new();
+    let server = thread::Builder::new()
+        .spawn(move || -> io::Result<()> {
+            let (mut stream, _peer) = listener.accept()?;
+            let mut request = [0_u8; 4096];
+            stream.set_read_timeout(Some(Duration::from_millis(300)))?;
+            let _read = stream.read(&mut request)?;
+            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2000000\r\n\r\n{}")?;
+            let _drained = stream.read(&mut request);
+            Ok(())
+        })
+        .expect("server thread");
+    let client = http_client();
     let error = call_pillar_api(&client, &pillar_settings(&base), &headers(), &payload())
         .await
         .expect_err("an announced length over the cap is an error");
@@ -230,7 +278,7 @@ async fn an_announced_length_over_the_cap_is_rejected_before_the_body_is_read() 
 #[tokio::test]
 async fn a_refused_connection_is_a_request_error() {
     let settings = pillar_settings("http://127.0.0.1:1");
-    let client = reqwest::Client::builder()
+    let client = base_builder()
         .timeout(Duration::from_millis(200))
         .build()
         .expect("client");
@@ -244,7 +292,7 @@ async fn a_refused_connection_is_a_request_error() {
 async fn an_invalid_header_value_is_rejected_before_the_call() {
     let (base, _receiver, mut server) = serve(StatusCode::OK, String::from("{}")).await;
     let bad = BTreeMap::from([("Authorization".to_owned(), "Bearer a\nb".to_owned())]);
-    let client = reqwest::Client::new();
+    let client = http_client();
     let error = call_pillar_api(&client, &pillar_settings(&base), &bad, &payload())
         .await
         .expect_err("a header with a newline is invalid");
