@@ -6,7 +6,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::api::batch_provider_list::call::{
-    AzureBatchListCall, BatchProviderListCall, OpenAiBatchListCall, VertexBatchListCall,
+    AzureBatchListCall, BatchListProviderCall, OpenAiBatchListCall, VertexBatchListCall,
     XaiBatchListCall,
 };
 use crate::api::batch_provider_list::error::BatchProviderListError;
@@ -59,28 +59,28 @@ fn prepared(input: &BatchProviderListInput) -> BatchProviderListResult {
 }
 
 fn openai_call(result: BatchProviderListResult) -> OpenAiBatchListCall {
-    let BatchProviderListCall::OpenAiCompatible(call) = result.call else {
+    let BatchListProviderCall::OpenAiCompatible(call) = result.call.provider else {
         panic!("expected an OpenAI-compatible call");
     };
     *call
 }
 
 fn azure_call(result: BatchProviderListResult) -> AzureBatchListCall {
-    let BatchProviderListCall::Azure(call) = result.call else {
+    let BatchListProviderCall::Azure(call) = result.call.provider else {
         panic!("expected an Azure call");
     };
     *call
 }
 
 fn vertex_call(result: BatchProviderListResult) -> VertexBatchListCall {
-    let BatchProviderListCall::VertexAi(call) = result.call else {
+    let BatchListProviderCall::VertexAi(call) = result.call.provider else {
         panic!("expected a Vertex call");
     };
     *call
 }
 
 fn xai_call(result: BatchProviderListResult) -> XaiBatchListCall {
-    let BatchProviderListCall::Xai(call) = result.call else {
+    let BatchListProviderCall::Xai(call) = result.call.provider else {
         panic!("expected an xAI call");
     };
     *call
@@ -88,48 +88,6 @@ fn xai_call(result: BatchProviderListResult) -> XaiBatchListCall {
 
 fn exposed(value: Option<&SecretString>) -> Option<&str> {
     value.map(SecretString::expose_secret)
-}
-
-fn forwarded_after(result: &BatchProviderListResult) -> Option<&str> {
-    if let BatchProviderListCall::OpenAiCompatible(call) = &result.call {
-        return call.after.as_deref();
-    }
-    if let BatchProviderListCall::VertexAi(call) = &result.call {
-        return call.after.as_deref();
-    }
-    if let BatchProviderListCall::Xai(call) = &result.call {
-        return call.after.as_deref();
-    }
-    None
-}
-
-fn forwarded_limit(result: &BatchProviderListResult) -> Option<i64> {
-    if let BatchProviderListCall::OpenAiCompatible(call) = &result.call {
-        return call.limit;
-    }
-    if let BatchProviderListCall::VertexAi(call) = &result.call {
-        return call.limit;
-    }
-    if let BatchProviderListCall::Xai(call) = &result.call {
-        return call.limit;
-    }
-    None
-}
-
-fn call_timeout(result: &BatchProviderListResult) -> Option<&Timeout> {
-    if let BatchProviderListCall::OpenAiCompatible(call) = &result.call {
-        return Some(&call.timeout);
-    }
-    if let BatchProviderListCall::Azure(call) = &result.call {
-        return Some(&call.timeout);
-    }
-    if let BatchProviderListCall::VertexAi(call) = &result.call {
-        return Some(&call.timeout);
-    }
-    if let BatchProviderListCall::Xai(call) = &result.call {
-        return Some(&call.timeout);
-    }
-    None
 }
 
 #[rstest]
@@ -143,15 +101,15 @@ fn batch_list_after_limit(#[case] provider: BatchListProvider) {
     request.after = Some("cursor-after".to_owned());
     request.limit = Some(25);
     let result = prepared(&request);
-    assert_eq!(forwarded_after(&result), Some("cursor-after"));
-    assert_eq!(forwarded_limit(&result), Some(25));
+    assert_eq!(result.call.window.after.as_deref(), Some("cursor-after"));
+    assert_eq!(result.call.window.limit, Some(25));
 }
 
 #[test]
 fn an_absent_after_and_limit_are_forwarded_as_absent() {
     let result = prepared(&input(BatchListProvider::OpenAi));
-    assert_eq!(forwarded_after(&result), None);
-    assert_eq!(forwarded_limit(&result), None);
+    assert_eq!(result.call.window.after, None);
+    assert_eq!(result.call.window.limit, None);
 }
 
 #[test]
@@ -290,7 +248,7 @@ fn vertex_call_uses_an_empty_base_without_one_configured() {
     assert_eq!(call.api_base, "");
     assert_eq!(call.vertex_project, None);
     assert_eq!(call.vertex_location, None);
-    assert_eq!(call.vertex_credentials, None);
+    assert_eq!(exposed(call.vertex_credentials.as_ref()), None);
 }
 
 #[test]
@@ -315,6 +273,7 @@ fn xai_call_uses_only_the_request_parameters() {
 #[case::timeout_wins(Some(BatchListTimeoutValue::Seconds(12.5)), Some(30.0), 12.5)]
 #[case::explicit_zero(Some(BatchListTimeoutValue::Seconds(0.0)), None, 0.0)]
 #[case::text(Some(BatchListTimeoutValue::Text("7.5".to_owned())), None, 7.5)]
+#[case::text_with_spaces(Some(BatchListTimeoutValue::Text(" 7.5 ".to_owned())), None, 7.5)]
 fn timeout_resolution(
     #[case] timeout: Option<BatchListTimeoutValue>,
     #[case] request_timeout: Option<f64>,
@@ -323,8 +282,8 @@ fn timeout_resolution(
     let mut request = input(BatchListProvider::OpenAi);
     request.timeout = timeout;
     request.request_timeout = request_timeout;
-    let call = openai_call(prepared(&request));
-    assert_eq!(call.timeout, Timeout::Seconds(expected));
+    let result = prepared(&request);
+    assert_eq!(result.call.window.timeout, Timeout::Seconds(expected));
 }
 
 #[test]
@@ -338,13 +297,13 @@ fn a_structured_timeout_passes_through_for_openai_and_azure() {
     let mut request = input(BatchListProvider::OpenAi);
     request.timeout = Some(BatchListTimeoutValue::Phases(phases.clone()));
     assert_eq!(
-        openai_call(prepared(&request)).timeout,
+        prepared(&request).call.window.timeout,
         Timeout::Phases(phases.clone())
     );
     let mut request = input(BatchListProvider::Azure);
     request.timeout = Some(BatchListTimeoutValue::Phases(phases.clone()));
     assert_eq!(
-        azure_call(prepared(&request)).timeout,
+        prepared(&request).call.window.timeout,
         Timeout::Phases(phases)
     );
 }
@@ -363,7 +322,7 @@ fn a_structured_timeout_uses_its_read_value_elsewhere(#[case] provider: BatchLis
         pool: Some(4.0),
     }));
     let result = prepared(&request);
-    assert_eq!(call_timeout(&result), Some(&Timeout::Seconds(9.0)));
+    assert_eq!(result.call.window.timeout, Timeout::Seconds(9.0));
 }
 
 #[test]
@@ -376,7 +335,7 @@ fn a_structured_timeout_without_a_read_value_uses_the_default() {
         pool: Some(4.0),
     }));
     assert_eq!(
-        vertex_call(prepared(&request)).timeout,
+        prepared(&request).call.window.timeout,
         Timeout::Seconds(600.0)
     );
 }

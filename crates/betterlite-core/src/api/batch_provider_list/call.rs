@@ -3,38 +3,37 @@ use secrecy::SecretString;
 
 use super::BatchListTimeoutValue;
 
+// the list window every provider's call carries
+#[derive(Debug, Clone)]
+pub struct BatchListWindow {
+    pub after: Option<String>,
+    pub limit: Option<i64>,
+    pub timeout: Timeout,
+}
+
 // the keyword arguments LiteLLM passes to XAIBatchesHandler.list_batches
 #[derive(Debug, Clone)]
 pub struct XaiBatchListCall {
-    pub after: Option<String>,
-    pub limit: Option<i64>,
     pub api_base: Option<String>,
     pub api_key: Option<SecretString>,
-    pub timeout: Timeout,
 }
 
 // the keyword arguments LiteLLM passes to OpenAIBatchesAPI.list_batches
 #[derive(Debug, Clone)]
 pub struct OpenAiBatchListCall {
-    pub after: Option<String>,
-    pub limit: Option<i64>,
     pub api_base: String,
     pub api_key: Option<SecretString>,
     pub organization: Option<String>,
-    pub timeout: Timeout,
     pub max_retries: Option<i64>,
 }
 
 // the keyword arguments LiteLLM passes to VertexAIBatchPrediction.list_batches
 #[derive(Debug, Clone)]
 pub struct VertexBatchListCall {
-    pub after: Option<String>,
-    pub limit: Option<i64>,
     pub api_base: String,
     pub vertex_project: Option<String>,
     pub vertex_location: Option<String>,
     pub vertex_credentials: Option<SecretString>,
-    pub timeout: Timeout,
     pub max_retries: Option<i64>,
 }
 
@@ -44,7 +43,6 @@ pub struct AzureBatchListCall {
     pub api_base: Option<String>,
     pub api_key: Option<SecretString>,
     pub api_version: Option<String>,
-    pub timeout: Timeout,
     pub max_retries: Option<i64>,
     pub litellm_params: AzureBatchListParams,
 }
@@ -66,10 +64,18 @@ pub struct AzureBatchListParams {
     pub azure_password: Option<SecretString>,
 }
 
+// what LiteLLM passes only to this provider's list call
 #[derive(Debug, Clone)]
-pub enum BatchProviderListCall {
+pub enum BatchListProviderCall {
     Azure(Box<AzureBatchListCall>),
     OpenAiCompatible(Box<OpenAiBatchListCall>),
     VertexAi(Box<VertexBatchListCall>),
     Xai(Box<XaiBatchListCall>),
+}
+
+// the shared list window next to the record of the provider it goes to
+#[derive(Debug, Clone)]
+pub struct BatchProviderListCall {
+    pub window: BatchListWindow,
+    pub provider: BatchListProviderCall,
 }

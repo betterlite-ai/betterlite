@@ -8,18 +8,17 @@ mod tests;
 use betterlite_config::sections::batch_provider_list::Settings as ConfiguredSettings;
 use betterlite_openai::batches::sdk::TimeoutPhases;
 use secrecy::SecretString;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSettings};
 use call::{
-    AzureBatchListCall, AzureBatchListParams, BatchProviderListCall, OpenAiBatchListCall,
-    VertexBatchListCall, XaiBatchListCall,
+    AzureBatchListCall, AzureBatchListParams, BatchListProviderCall, BatchListWindow,
+    BatchProviderListCall, OpenAiBatchListCall, VertexBatchListCall, XaiBatchListCall,
 };
 use error::BatchProviderListError;
 use timeout::resolve_timeout;
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(from = "String")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BatchListProvider {
     Azure,
     HostedVllm,
@@ -30,9 +29,13 @@ pub enum BatchListProvider {
     Other(String),
 }
 
-impl From<String> for BatchListProvider {
-    fn from(name: String) -> Self {
-        match name.as_str() {
+impl<'de> Deserialize<'de> for BatchListProvider {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let name = String::deserialize(deserializer)?;
+        let provider = match name.as_str() {
             "azure" => Self::Azure,
             "hosted_vllm" => Self::HostedVllm,
             "litellm_proxy" => Self::LitellmProxy,
@@ -40,7 +43,8 @@ impl From<String> for BatchListProvider {
             "vertex_ai" => Self::VertexAi,
             "xai" => Self::Xai,
             _ => Self::Other(name),
-        }
+        };
+        Ok(provider)
     }
 }
 
@@ -168,119 +172,108 @@ impl From<ConfiguredSettings> for ResourceSdkSettings {
     }
 }
 
+fn request_options(input: &BatchProviderListInput) -> ResourceSdkRequestOptions {
+    ResourceSdkRequestOptions {
+        api_base: input.api_base.clone(),
+        api_version: input.api_version.clone(),
+        api_key: input.api_key.clone(),
+        organization: input.organization.clone(),
+        vertex_project: input.vertex_project.clone(),
+        vertex_location: input.vertex_location.clone(),
+        vertex_credentials: input.vertex_credentials.clone(),
+    }
+}
+
+fn azure_params(input: &BatchProviderListInput) -> AzureBatchListParams {
+    AzureBatchListParams {
+        api_key: input.api_key.clone(),
+        api_base: input.api_base.clone(),
+        api_version: input.api_version.clone(),
+        max_retries: input.max_retries,
+        timeout: input.timeout.clone(),
+        azure_ad_token: input.azure_ad_token.clone(),
+        tenant_id: input.tenant_id.clone(),
+        client_id: input.client_id.clone(),
+        client_secret: input.client_secret.clone(),
+        azure_scope: input.azure_scope.clone(),
+        azure_username: input.azure_username.clone(),
+        azure_password: input.azure_password.clone(),
+    }
+}
+
 impl BatchProviderList {
     pub fn run(
         &self,
         input: &BatchProviderListInput,
     ) -> Result<BatchProviderListResult, BatchProviderListError> {
-        let request = ResourceSdkRequestOptions {
-            api_base: input.api_base.clone(),
-            api_version: input.api_version.clone(),
-            api_key: input.api_key.clone(),
-            organization: input.organization.clone(),
-            vertex_project: input.vertex_project.clone(),
-            vertex_location: input.vertex_location.clone(),
-            vertex_credentials: input.vertex_credentials.clone(),
+        let request = request_options(input);
+        let window = BatchListWindow {
+            after: input.after.clone(),
+            limit: input.limit,
+            timeout: resolve_timeout(input, input.provider.supports_httpx_timeout())?,
         };
-        let call = match &input.provider {
-            BatchListProvider::Xai => BatchProviderListCall::Xai(Box::new(self.xai_call(input)?)),
+        Ok(BatchProviderListResult {
+            call: BatchProviderListCall {
+                window,
+                provider: self.provider_call(input, &request)?,
+            },
+            is_async: input.alist_batches,
+        })
+    }
+
+    fn provider_call(
+        &self,
+        input: &BatchProviderListInput,
+        request: &ResourceSdkRequestOptions,
+    ) -> Result<BatchListProviderCall, BatchProviderListError> {
+        let provider = match &input.provider {
+            BatchListProvider::Xai => BatchListProviderCall::Xai(Box::new(XaiBatchListCall {
+                api_base: input.api_base.clone(),
+                api_key: input.api_key.clone(),
+            })),
             BatchListProvider::Azure => {
-                BatchProviderListCall::Azure(Box::new(self.azure_call(input, &request)?))
+                BatchListProviderCall::Azure(Box::new(AzureBatchListCall {
+                    api_base: self.settings.azure_base(request).map(str::to_owned),
+                    api_key: self.settings.azure_api_key(request).cloned(),
+                    api_version: self.settings.azure_version(request).map(str::to_owned),
+                    max_retries: input.max_retries,
+                    litellm_params: azure_params(input),
+                }))
             }
             BatchListProvider::VertexAi => {
-                BatchProviderListCall::VertexAi(Box::new(self.vertex_call(input, &request)?))
+                BatchListProviderCall::VertexAi(Box::new(VertexBatchListCall {
+                    api_base: input.api_base.clone().unwrap_or_default(),
+                    vertex_project: self.settings.vertex_project(request).map(str::to_owned),
+                    vertex_location: self.settings.vertex_location(request).map(str::to_owned),
+                    vertex_credentials: self.settings.vertex_credentials(request).cloned(),
+                    max_retries: input.max_retries,
+                }))
             }
             BatchListProvider::OpenAi
             | BatchListProvider::HostedVllm
-            | BatchListProvider::LitellmProxy => BatchProviderListCall::OpenAiCompatible(Box::new(
-                self.openai_call(input, &request)?,
-            )),
+            | BatchListProvider::LitellmProxy => self.openai_call(request, input.max_retries),
             BatchListProvider::Other(provider) => {
                 return Err(BatchProviderListError::UnsupportedProvider {
                     provider: provider.clone(),
                 });
             }
         };
-        Ok(BatchProviderListResult {
-            call,
-            is_async: input.alist_batches,
-        })
-    }
-
-    fn xai_call(
-        &self,
-        input: &BatchProviderListInput,
-    ) -> Result<XaiBatchListCall, BatchProviderListError> {
-        Ok(XaiBatchListCall {
-            after: input.after.clone(),
-            limit: input.limit,
-            api_base: input.api_base.clone(),
-            api_key: input.api_key.clone(),
-            timeout: resolve_timeout(input, false)?,
-        })
+        Ok(provider)
     }
 
     fn openai_call(
         &self,
-        input: &BatchProviderListInput,
         request: &ResourceSdkRequestOptions,
-    ) -> Result<OpenAiBatchListCall, BatchProviderListError> {
-        Ok(OpenAiBatchListCall {
-            after: input.after.clone(),
-            limit: input.limit,
+        max_retries: Option<i64>,
+    ) -> BatchListProviderCall {
+        BatchListProviderCall::OpenAiCompatible(Box::new(OpenAiBatchListCall {
             api_base: self.settings.openai_base(request),
             api_key: self.settings.openai_api_key(request).cloned(),
             organization: self
                 .settings
                 .openai_organization(request)
                 .map(str::to_owned),
-            timeout: resolve_timeout(input, input.provider.supports_httpx_timeout())?,
-            max_retries: input.max_retries,
-        })
-    }
-
-    fn azure_call(
-        &self,
-        input: &BatchProviderListInput,
-        request: &ResourceSdkRequestOptions,
-    ) -> Result<AzureBatchListCall, BatchProviderListError> {
-        Ok(AzureBatchListCall {
-            api_base: self.settings.azure_base(request).map(str::to_owned),
-            api_key: self.settings.azure_api_key(request).cloned(),
-            api_version: self.settings.azure_version(request).map(str::to_owned),
-            timeout: resolve_timeout(input, true)?,
-            max_retries: input.max_retries,
-            litellm_params: AzureBatchListParams {
-                api_key: input.api_key.clone(),
-                api_base: input.api_base.clone(),
-                api_version: input.api_version.clone(),
-                max_retries: input.max_retries,
-                timeout: input.timeout.clone(),
-                azure_ad_token: input.azure_ad_token.clone(),
-                tenant_id: input.tenant_id.clone(),
-                client_id: input.client_id.clone(),
-                client_secret: input.client_secret.clone(),
-                azure_scope: input.azure_scope.clone(),
-                azure_username: input.azure_username.clone(),
-                azure_password: input.azure_password.clone(),
-            },
-        })
-    }
-
-    fn vertex_call(
-        &self,
-        input: &BatchProviderListInput,
-        request: &ResourceSdkRequestOptions,
-    ) -> Result<VertexBatchListCall, BatchProviderListError> {
-        Ok(VertexBatchListCall {
-            after: input.after.clone(),
-            limit: input.limit,
-            api_base: input.api_base.clone().unwrap_or_default(),
-            vertex_project: self.settings.vertex_project(request).map(str::to_owned),
-            vertex_location: self.settings.vertex_location(request).map(str::to_owned),
-            vertex_credentials: self.settings.vertex_credentials(request).cloned(),
-            timeout: resolve_timeout(input, false)?,
-            max_retries: input.max_retries,
-        })
+            max_retries,
+        }))
     }
 }
