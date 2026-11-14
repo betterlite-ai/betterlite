@@ -160,10 +160,7 @@ impl PostCallSuccessHook for TestHook {
         seen.response = Some(response.clone());
         drop(seen);
         let replacement = self.replacement.clone();
-        ready(match replacement {
-            None => Ok(response),
-            Some(text) => Ok(answer_with_text(&text)),
-        })
+        ready(replacement.map_or(Ok(response), |text| Ok(answer_with_text(&text))))
     }
 }
 

@@ -112,8 +112,8 @@ async fn endpoint_output_without_request_data_uses_the_response() {
         calls[0].request_data,
         map_body(r#"{"choices": [], "model": "m"}"#)
     );
-    assert!(calls[0].request_data.get("litellm_metadata").is_none());
-    assert!(calls[0].request_data.get("response").is_none());
+    assert!(!calls[0].request_data.contains_key("litellm_metadata"));
+    assert!(!calls[0].request_data.contains_key("response"));
 }
 
 #[tokio::test]
@@ -146,22 +146,20 @@ async fn endpoint_output_failure_is_returned() {
 async fn endpoint_default_methods_keep_the_base_behavior() {
     let adapter = Adapter::default();
     let fake = FakeGuardrail::unchanged();
-    assert!(!<Adapter as BaseTranslation>::DELIVERS_ENDED_STREAM_REWRITES);
-    assert!(!<Adapter as BaseTranslation>::ASSEMBLES_STREAMED_RESPONSE);
+    const {
+        assert!(!<Adapter as BaseTranslation>::DELIVERS_ENDED_STREAM_REWRITES);
+        assert!(!<Adapter as BaseTranslation>::ASSEMBLES_STREAMED_RESPONSE);
+    }
     let response = json_value(r#"{"ok": true}"#);
+    let mut responses = vec![response.clone()];
     assert_eq!(adapter.post_call_hook_response(response.clone()), response);
-    assert!(
-        adapter
-            .get_streaming_scan_key(&[response.clone()])
-            .is_none()
-    );
+    assert_eq!(adapter.get_streaming_scan_key(&responses), None);
     assert!(adapter.get_structured_messages(&map_body("{}")).is_none());
     assert!(
         adapter
             .extract_request_tool_names(&map_body("{}"))
             .is_empty()
     );
-    let mut responses = vec![response.clone()];
     adapter
         .process_streaming_response(&mut responses, &fake, response_call(None, None, None))
         .await

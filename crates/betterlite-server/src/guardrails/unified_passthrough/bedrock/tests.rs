@@ -29,8 +29,8 @@ fn adapter(skip: SkipFlags) -> BedrockAdapter {
     BedrockPassthroughTranslation::new(TestHook::echoing(), skip, None, None)
 }
 
-fn configured_adapter(config: &str) -> BedrockAdapter {
-    let config: Json = serde_json::from_str(config).expect("valid JSON fixture");
+fn configured_adapter(fixture: &str) -> BedrockAdapter {
+    let config: Json = serde_json::from_str(fixture).expect("valid JSON fixture");
     BedrockAdapter::new(
         TestHook::echoing(),
         SkipFlags::default(),
@@ -192,7 +192,7 @@ async fn bedrock_converse_output_uses_the_caller_key_metadata() {
         calls[0].request_data.get("litellm_metadata"),
         Some(&GuardrailValue::Object(metadata))
     );
-    assert!(calls[0].request_data.get("response").is_none());
+    assert!(!calls[0].request_data.contains_key("response"));
     assert_eq!(request_data, caller_data);
     assert_eq!(
         returned,
@@ -218,7 +218,7 @@ async fn bedrock_converse_output_without_a_key_adds_no_metadata() {
         .expect("the guardrail accepts");
     let calls = fake.calls();
     assert_eq!(calls.len(), 1);
-    assert!(calls[0].request_data.get("litellm_metadata").is_none());
+    assert!(!calls[0].request_data.contains_key("litellm_metadata"));
     assert_eq!(request_data, caller_data);
 }
 
@@ -309,16 +309,14 @@ async fn bedrock_generic_input_failure_is_an_endpoint_error() {
 async fn bedrock_default_methods_keep_the_base_behavior() {
     let subject = adapter(SkipFlags::default());
     let fake = FakeGuardrail::unchanged();
-    assert!(!<BedrockAdapter as BaseTranslation>::DELIVERS_ENDED_STREAM_REWRITES);
-    assert!(!<BedrockAdapter as BaseTranslation>::ASSEMBLES_STREAMED_RESPONSE);
+    const {
+        assert!(!<BedrockAdapter as BaseTranslation>::DELIVERS_ENDED_STREAM_REWRITES);
+        assert!(!<BedrockAdapter as BaseTranslation>::ASSEMBLES_STREAMED_RESPONSE);
+    }
     let response = json_value(r#"{"ok": true}"#);
-    assert_eq!(subject.post_call_hook_response(response.clone()), response);
-    assert!(
-        subject
-            .get_streaming_scan_key(&[response.clone()])
-            .is_none()
-    );
     let mut responses = vec![response.clone()];
+    assert_eq!(subject.post_call_hook_response(response.clone()), response);
+    assert_eq!(subject.get_streaming_scan_key(&responses), None);
     subject
         .process_streaming_response(&mut responses, &fake, response_call(None, None, None))
         .await
