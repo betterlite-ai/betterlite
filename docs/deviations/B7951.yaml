@@ -1,0 +1,49 @@
+task: B7951
+deviations:
+  - what: >-
+      betterlite.types.search does not re-export SearchProvider and SearchProviders,
+      and sets no __all__, where LiteLLM's __all__ names those two.
+    why: >-
+      LiteLLM's search.py imports the SearchProviders Enum from litellm.types.utils
+      (B048) and aliases it as SearchProvider; betterlite.types.utils does not
+      declare that Enum yet, and declaring a second copy here would give the same
+      type two homes. An __all__ that named only the two omitted names would make
+      the module export nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/search.py#L9-L14
+  - what: >-
+      The four string Enums derive from enum.StrEnum, where LiteLLM declares them as
+      class X(str, Enum).
+    why: >-
+      The repository's ruff rules require StrEnum over a str mixin. Members, values
+      and compare-by-value behavior are identical; str() and repr() return the value
+      rather than Class.MEMBER, and Python runtime formatting is outside the
+      compatibility policy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L11
+  - what: >-
+      Open JSON positions are declared as dict[str, JsonValue] or
+      Mapping[str, JsonValue] where LiteLLM writes a bare dict or Dict[str, Any].
+    why: >-
+      The repository's ast-grep rules reject Any and bare dict in type positions.
+      JsonValue names the same open JSON, and pydantic validates the same values
+      into the same objects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/search.py#L50
+  - what: >-
+      The classes LiteLLM names LiteLLM_VectorStoreConfig, LiteLLM_ManagedVectorStore,
+      LiteLLM_ManagedVectorStoreListResponse and LiteLLM_ManagedVectorStoreIndex are
+      declared as VectorStoreConfig, ManagedVectorStore,
+      ManagedVectorStoreListResponse and ManagedVectorStoreIndex, and the module
+      binds each LiteLLM name to its class.
+    why: >-
+      Ruff N801 rejects a class name with underscores, and the aliases keep every
+      LiteLLM name importable and identical to the class it names. The class name
+      a model reports in schema titles and type reprs is the short one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L18
+  - what: >-
+      betterlite.types.search imports Required from typing, where LiteLLM imports
+      Required and TypedDict from typing_extensions.
+    why: >-
+      Ruff UP035 at the repository's py311 target requires Required from typing,
+      and typing.Required is the same object as typing_extensions.Required from
+      Python 3.11 on. TypedDict stays on typing_extensions because pydantic
+      rejects typing.TypedDict below Python 3.12.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/search.py#L7

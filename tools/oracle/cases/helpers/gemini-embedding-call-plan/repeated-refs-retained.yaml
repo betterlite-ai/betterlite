@@ -1,0 +1,14 @@
+kind: helper
+name: gemini-embedding-call-plan-repeated-refs-retained
+call:
+  gemini_embedding_call_plan:
+    inputs:
+    - - files/abc
+      - files/abc
+      - - files/abc
+        - files/xyz
+    - - - files/abc
+        - files/abc
+compare:
+  ignore: []
+env: {}
