@@ -60,9 +60,9 @@ pub fn session_url(base_url: &str, session_id: &str) -> Result<Url, FetchError> 
     .map_err(FetchError::InvalidUrl)
 }
 
-pub struct HttpFetch<'a> {
-    pub runtime: &'a Runtime,
-    pub environment: &'a BTreeMap<String, String>,
+pub struct HttpFetch<'client> {
+    pub runtime: &'client Runtime,
+    pub environment: &'client BTreeMap<String, String>,
 }
 
 impl SessionFetch for HttpFetch<'_> {

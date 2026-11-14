@@ -185,10 +185,10 @@ fn claude_payload(transcript: &Path, session_id: &str) -> String {
     )
 }
 
-fn with_environment<'a>(
-    base: &[(&'a str, &'a str)],
-    extra: &[(&'a str, &'a str)],
-) -> Vec<(&'a str, &'a str)> {
+fn with_environment<'env>(
+    base: &[(&'env str, &'env str)],
+    extra: &[(&'env str, &'env str)],
+) -> Vec<(&'env str, &'env str)> {
     base.iter().chain(extra).copied().collect()
 }
 

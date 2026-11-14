@@ -21,14 +21,14 @@ pub mod session;
 pub mod transcript;
 
 #[derive(Args, Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct StatuslineArgs {}
+pub struct StatuslineArgs;
 
-pub struct StatuslinePorts<'p> {
-    pub stdin: &'p mut dyn Read,
-    pub stdout: &'p mut dyn Write,
-    pub environment: &'p BTreeMap<String, String>,
-    pub home_dir: &'p Path,
-    pub temp_dir: &'p Path,
+pub struct StatuslinePorts<'ports> {
+    pub stdin: &'ports mut dyn Read,
+    pub stdout: &'ports mut dyn Write,
+    pub environment: &'ports BTreeMap<String, String>,
+    pub home_dir: &'ports Path,
+    pub temp_dir: &'ports Path,
 }
 
 // Synchronous and blocking: call it outside a tokio runtime, since it drives its own to reach the gateway and the cache files
@@ -43,6 +43,7 @@ pub fn run(_args: StatuslineArgs, ports: &mut StatuslinePorts<'_>) -> Result<(),
         .build()
         .map_err(StatuslineError::Runtime)?;
     let files = PrivateFiles::default();
+    let clock = SystemClock;
     let fetch = HttpFetch {
         runtime: &runtime,
         environment: ports.environment,
@@ -53,7 +54,7 @@ pub fn run(_args: StatuslineArgs, ports: &mut StatuslinePorts<'_>) -> Result<(),
         temp_dir: ports.temp_dir,
         owner_uid: rustix::process::getuid().as_raw(),
         fetch: &fetch,
-        clock: &SystemClock,
+        clock: &clock,
         files: &files,
         runtime: &runtime,
     };

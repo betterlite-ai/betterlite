@@ -40,18 +40,18 @@ impl Clock for SystemClock {
 
 // The same JSON LiteLLM's script keeps, so both can share one directory
 #[derive(Serialize)]
-struct Stored<'a> {
+struct Stored<'stored> {
     #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     fetched_at: Decimal,
-    session: Option<&'a Session>,
+    session: Option<&'stored Session>,
 }
 
 #[derive(Deserialize)]
-struct Entry<'a> {
+struct Entry<'entry> {
     #[serde(borrow)]
-    fetched_at: &'a RawValue,
+    fetched_at: &'entry RawValue,
     #[serde(borrow)]
-    session: Option<&'a RawValue>,
+    session: Option<&'entry RawValue>,
 }
 
 enum Lookup {
@@ -59,12 +59,12 @@ enum Lookup {
     Stale,
 }
 
-pub struct SessionCache<'c> {
-    pub directory: &'c Path,
+pub struct SessionCache<'cache> {
+    pub directory: &'cache Path,
     pub owner_uid: u32,
-    pub files: &'c PrivateFiles,
-    pub runtime: &'c Runtime,
-    pub clock: &'c dyn Clock,
+    pub files: &'cache PrivateFiles,
+    pub runtime: &'cache Runtime,
+    pub clock: &'cache dyn Clock,
 }
 
 #[must_use]

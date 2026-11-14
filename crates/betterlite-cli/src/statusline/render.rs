@@ -19,17 +19,17 @@ const DIM: &str = "\x1b[90m";
 const ROUTER_COLOR: &str = "\x1b[38;2;79;70;229m";
 const BASELINE_COLOR: &str = "\x1b[38;2;217;119;87m";
 
-struct Comparison<'a> {
+struct Comparison<'model> {
     spend: Decimal,
     baseline: Decimal,
-    baseline_model: &'a str,
+    baseline_model: &'model str,
     coverage: String,
 }
 
-enum Verdict<'a> {
+enum Verdict<'model> {
     Hidden,
     Unavailable,
-    Compared(Comparison<'a>),
+    Compared(Comparison<'model>),
 }
 
 // The model the user typed, or its display name from the gateway's model cache, with a model's bare id prettified

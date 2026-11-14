@@ -141,7 +141,7 @@ impl Harness {
         fs::read_dir(&self.directory)
             .map(|listing| {
                 listing
-                    .map(|item| item.unwrap().file_name().to_string_lossy().into_owned())
+                    .map(|item| item.unwrap().file_name().to_str().unwrap().to_owned())
                     .collect()
             })
             .unwrap_or_default()

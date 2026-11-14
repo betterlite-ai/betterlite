@@ -18,15 +18,15 @@ const FALLBACK_LABEL: &str = "claude";
 const CACHE_DIRECTORY_PREFIX: &str = "litellm-statusline-";
 const CONFIG_DIRECTORY: &str = ".claude";
 
-pub struct Dependencies<'d> {
-    pub environment: &'d BTreeMap<String, String>,
-    pub home_dir: &'d Path,
-    pub temp_dir: &'d Path,
+pub struct Dependencies<'deps> {
+    pub environment: &'deps BTreeMap<String, String>,
+    pub home_dir: &'deps Path,
+    pub temp_dir: &'deps Path,
     pub owner_uid: u32,
-    pub fetch: &'d dyn SessionFetch,
-    pub clock: &'d dyn Clock,
-    pub files: &'d PrivateFiles,
-    pub runtime: &'d Runtime,
+    pub fetch: &'deps dyn SessionFetch,
+    pub clock: &'deps dyn Clock,
+    pub files: &'deps PrivateFiles,
+    pub runtime: &'deps Runtime,
 }
 
 #[derive(Serialize)]

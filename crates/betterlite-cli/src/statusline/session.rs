@@ -59,7 +59,7 @@ impl Session {
                 .map(|raw| raw.get().parse().unwrap_or(0)),
             savings_estimated_actual_spend: fields
                 .get("savings_estimated_actual_spend")
-                .and_then(|raw| decimal(raw))
+                .and_then(|raw| decimal(*raw))
                 .filter(|amount| *amount >= Decimal::ZERO),
         })
     }

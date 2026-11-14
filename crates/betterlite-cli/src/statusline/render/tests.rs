@@ -164,13 +164,13 @@ fn the_percentage_is_rounded_to_even_and_signed_against_the_baseline(
 
 #[rstest]
 #[case::empty("0", 0)]
-#[case::below_half_a_cell("1", 0)]
-#[case::half_a_cell_rounds_to_even_zero("0.5", 0)]
-#[case::one_and_a_half_rounds_to_even_two("1", 2)]
-#[case::four_and_a_half_rounds_to_even_four("3", 4)]
-#[case::seven_and_a_half_rounds_to_even_eight("5", 8)]
-#[case::ten_and_a_half_rounds_to_even_ten("7", 10)]
-#[case::full("16", 24)]
+#[case::below_half_a_cell("0.5", 0)]
+#[case::half_a_cell_rounds_to_even_zero("1", 0)]
+#[case::one_and_a_half_rounds_to_even_two("3", 2)]
+#[case::four_and_a_half_rounds_to_even_four("9", 4)]
+#[case::seven_and_a_half_rounds_to_even_eight("15", 8)]
+#[case::ten_and_a_half_rounds_to_even_ten("21", 10)]
+#[case::full("48", 24)]
 #[case::negative_spend_is_empty("-4", 0)]
 fn a_bar_fills_to_the_nearest_even_cell_of_the_larger_amount(
     #[case] spend: &str,
@@ -178,7 +178,7 @@ fn a_bar_fills_to_the_nearest_even_cell_of_the_larger_amount(
 ) {
     let session = Session {
         spend: dec(spend),
-        baseline_spend: Some(dec("16")),
+        baseline_spend: Some(dec("48")),
         ..base()
     };
 
