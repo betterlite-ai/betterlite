@@ -50,10 +50,10 @@ where
         &mut self,
         mut stream: P,
         queue: &ClientQueue<P::Error>,
-        registry: &StreamRegistry,
+        registry: &Arc<StreamRegistry>,
     ) where
         P: MessagesChunkSource + Send,
-        P::Error: Clone + Send + 'static,
+        P::Error: Clone + Send + Sync + 'static,
         ReportedFailure: From<P::Error>,
     {
         loop {
@@ -83,7 +83,7 @@ where
         &mut self,
         chunk: SseChunk,
         queue: &ClientQueue<E>,
-        registry: &StreamRegistry,
+        registry: &Arc<StreamRegistry>,
     ) -> Step {
         self.logging.record_first_chunk();
         let decoded = match Self::decode(&chunk, &self.boundaries) {
@@ -134,7 +134,7 @@ where
         }
     }
 
-    fn detached_chunk(&mut self, registry: &StreamRegistry) -> Step {
+    fn detached_chunk(&mut self, registry: &Arc<StreamRegistry>) -> Step {
         if self.drain.is_some() {
             return Step::Continue;
         }
@@ -176,7 +176,7 @@ where
 
     async fn failed<E>(&mut self, queue: &ClientQueue<E>, error: E)
     where
-        E: Clone + Send + 'static,
+        E: Clone + Send + Sync + 'static,
         ReportedFailure: From<E>,
     {
         let reported = ReportedFailure::from(error.clone());

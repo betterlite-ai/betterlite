@@ -129,7 +129,7 @@ impl<S: StreamSeams, E> Drop for ClientRelay<S, E> {
 pub fn start_relay<P, S, F>(stream: P, setup: RelaySetup<S, F>) -> ClientRelay<S, P::Error>
 where
     P: MessagesChunkSource + Send + 'static,
-    P::Error: Clone + Send + 'static,
+    P::Error: Clone + Send + Sync + 'static,
     S: StreamSeams + 'static,
     F: StreamFailureLogging + 'static,
     ReportedFailure: From<P::Error>,
@@ -219,7 +219,7 @@ fn spawn_relay<P, S, F>(
 ) -> ClientRelay<S, P::Error>
 where
     P: MessagesChunkSource + Send + 'static,
-    P::Error: Clone + Send + 'static,
+    P::Error: Clone + Send + Sync + 'static,
     S: StreamSeams + 'static,
     F: StreamFailureLogging + 'static,
     ReportedFailure: From<P::Error>,
