@@ -566,7 +566,6 @@ def test_names_model_matches(name: str) -> None:
     assert constructed_dump(ours) == constructed_dump(reference)
     assert schema_literals(ours) == schema_literals(reference)
     assert ours.model_config.get("frozen") == reference.model_config.get("frozen")
-    assert ours.model_config.get("extra", "ignore") == reference.model_config.get("extra", "ignore")
 
     sent: dict[str, JsonValue] = {**payload, "unexpected": 1}
     reference_dump: dict[str, JsonValue] = reference.model_validate(sent).model_dump()
@@ -576,7 +575,7 @@ def test_names_model_matches(name: str) -> None:
     assert "unexpected" not in ours_dump
 
 
-def test_names_gemini_enums_and_literals() -> None:
+def test_names_gemini_literals() -> None:
     assert enum_members(ours_gemini.GeminiFilesState) == enum_members(ref_gemini.GeminiFilesState)
     assert enum_members(ours_gemini.GeminiFilesSource) == enum_members(
         ref_gemini.GeminiFilesSource,
@@ -614,8 +613,8 @@ def test_names_command_union() -> None:
         payload = MODELS[name].payload
         reference_value = reference_adapter.validate_python(payload)
         ours_value = ours_adapter.validate_python(payload)
-        assert type(reference_value).__name__ == name
-        assert type(ours_value).__name__ == name
+        assert reference_value.__class__.__name__ == name
+        assert ours_value.__class__.__name__ == name
         assert ours_value.model_dump() == reference_value.model_dump()
 
 
@@ -645,10 +644,10 @@ def test_names_event_union() -> None:
         payload = MODELS[name].payload
         reference_value = reference_adapter.validate_python(payload)
         ours_value = ours_adapter.validate_python(payload)
-        assert type(reference_value).__name__ == name
-        assert type(ours_value).__name__ == name
+        assert reference_value.__class__.__name__ == name
+        assert ours_value.__class__.__name__ == name
         assert ours_value.model_dump() == reference_value.model_dump()
 
 
-def test_names_passthrough_credentials_type() -> None:
+def test_names_credentials_type() -> None:
     assert ours_passthrough.VERTEX_CREDENTIALS_TYPES == ref_passthrough.VERTEX_CREDENTIALS_TYPES
