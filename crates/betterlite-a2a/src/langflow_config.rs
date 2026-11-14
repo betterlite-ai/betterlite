@@ -18,7 +18,7 @@ use crate::utils::session_scoping::{
 
 mod tests;
 
-#[derive(Debug, Error, Eq, PartialEq)]
+#[derive(Debug, Error)]
 pub enum LangFlowConfigError {
     #[error(
         "litellm_params is required for LangFlowA2AConfig (must contain custom_llm_provider and model)"

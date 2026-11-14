@@ -20,14 +20,22 @@ const AGENT_ONLY_PARAMS: [&str; 6] = [
     A2A_USER_API_KEY_HASH_PARAM,
 ];
 
-#[derive(Debug, Error, Eq, PartialEq)]
+#[derive(Debug, Error)]
 pub enum ParamsError {
     #[error("the A2A litellm_params field '{field}' must be a string")]
     NotText { field: &'static str },
     #[error("the A2A litellm_params field '{field}' must be a list of OpenAI messages")]
-    NotMessages { field: &'static str },
+    NotMessages {
+        field: &'static str,
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("the A2A litellm_params field '{field}' must be a map of string headers")]
-    NotHeaders { field: &'static str },
+    NotHeaders {
+        field: &'static str,
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
 pub struct BridgeCall<'call> {
@@ -92,8 +100,14 @@ fn prefixed_model(call: &BridgeCall<'_>) -> Result<String, ParamsError> {
 fn forwarded_messages(call: &BridgeCall<'_>) -> Result<Vec<OpenAIMessage>, ParamsError> {
     match call.litellm_params.get("messages") {
         None | Some(AgentJson::Null) => Ok(to_openai_messages(&call.params.message)),
-        Some(value) => serde_json::from_value::<Vec<OpenAIMessage>>(value.clone())
-            .map_err(|_error| ParamsError::NotMessages { field: "messages" }),
+        Some(value) => {
+            serde_json::from_value::<Vec<OpenAIMessage>>(value.clone()).map_err(|source| {
+                ParamsError::NotMessages {
+                    field: "messages",
+                    source,
+                }
+            })
+        }
     }
 }
 
@@ -130,8 +144,9 @@ fn merged_headers(
         None | Some(AgentJson::Null) => None,
         Some(value) => Some(
             serde_json::from_value::<BTreeMap<String, String>>(value.clone()).map_err(
-                |_error| ParamsError::NotHeaders {
+                |source| ParamsError::NotHeaders {
                     field: "extra_headers",
+                    source,
                 },
             )?,
         ),

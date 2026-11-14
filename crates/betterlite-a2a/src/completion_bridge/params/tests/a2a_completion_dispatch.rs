@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use betterlite_core::agents::json::AgentJson;
 use rstest::rstest;
 
+use crate::client::records::AGENT_CARD_PATH_PARAM;
+use crate::completion_bridge::A2A_USER_API_KEY_HASH_PARAM;
 use crate::completion_bridge::params::{ParamsError, build_completion_params};
 use crate::completion_bridge::tests::support::{
     bridge_call, litellm_params, parsed, selector_params, send_params, send_params_with_metadata,
@@ -21,8 +23,8 @@ fn strips_agent_only_params_and_copies_the_rest() {
         ("agent_name", parsed(r#""agent""#)),
         ("agent_id", parsed(r#""agent-1""#)),
         ("agent_card_params", parsed(r#"{"model":"x"}"#)),
-        ("agent_card_path", parsed(r#"/v1/agents/agent-1"#)),
-        ("litellm_a2a_user_api_key_hash", parsed(r#""hash""#)),
+        (AGENT_CARD_PATH_PARAM, parsed(r#""/v1/agents/agent-1""#)),
+        (A2A_USER_API_KEY_HASH_PARAM, parsed(r#""hash""#)),
         ("temperature", parsed("0.2")),
         ("api_key", parsed(r#""sk-1""#)),
     ]);
@@ -107,7 +109,10 @@ fn rejects_non_text_selector_fields(
     let call = bridge_call("req-1", &message, &params);
     let failure =
         build_completion_params(&call, false).expect_err("the fixture selector fields are invalid");
-    assert_eq!(failure, ParamsError::NotText { field });
+    assert!(matches!(
+        failure,
+        ParamsError::NotText { field: actual } if actual == field
+    ));
 }
 
 #[rstest]
@@ -226,16 +231,23 @@ fn null_messages_use_the_transformed_message() {
 }
 
 #[rstest]
-#[case::not_a_list(parsed(r#""hello""#))]
-#[case::missing_content(parsed(r#"[{"role":"user"}]"#))]
-#[case::non_string_role(parsed(r#"[{"role":1,"content":"x"}]"#))]
-fn rejects_configured_messages_of_the_wrong_shape(#[case] messages: AgentJson) {
+#[case::not_a_list(parsed(r#""hello""#), "invalid type")]
+#[case::missing_content(parsed(r#"[{"role":"user"}]"#), "missing field `content`")]
+#[case::non_string_role(parsed(r#"[{"role":1,"content":"x"}]"#), "invalid type")]
+fn rejects_configured_messages_of_the_wrong_shape(
+    #[case] messages: AgentJson,
+    #[case] cause: &str,
+) {
     let params = litellm_params(&[("messages", messages)]);
     let message = send_params();
     let call = bridge_call("req-1", &message, &params);
     let failure =
         build_completion_params(&call, false).expect_err("the fixture messages are invalid");
-    assert_eq!(failure, ParamsError::NotMessages { field: "messages" });
+    assert!(matches!(
+        &failure,
+        ParamsError::NotMessages { field: "messages", source }
+            if source.to_string().contains(cause)
+    ));
 }
 
 #[test]
@@ -310,9 +322,12 @@ fn null_configured_headers_leave_the_dynamic_ones() {
 }
 
 #[rstest]
-#[case::not_a_map(parsed(r#""bad""#))]
-#[case::non_string_value(parsed(r#"{"X-Static":1}"#))]
-fn rejects_configured_headers_of_the_wrong_shape(#[case] extra_headers: AgentJson) {
+#[case::not_a_map(parsed(r#""bad""#), "invalid type")]
+#[case::non_string_value(parsed(r#"{"X-Static":1}"#), "invalid type")]
+fn rejects_configured_headers_of_the_wrong_shape(
+    #[case] extra_headers: AgentJson,
+    #[case] cause: &str,
+) {
     let params = litellm_params(&[("extra_headers", extra_headers)]);
     let message = send_params();
     let mut call = bridge_call("req-1", &message, &params);
@@ -320,12 +335,11 @@ fn rejects_configured_headers_of_the_wrong_shape(#[case] extra_headers: AgentJso
     call.agent_extra_headers = Some(&dynamic);
     let failure =
         build_completion_params(&call, false).expect_err("the fixture headers are invalid");
-    assert_eq!(
-        failure,
-        ParamsError::NotHeaders {
-            field: "extra_headers"
-        }
-    );
+    assert!(matches!(
+        &failure,
+        ParamsError::NotHeaders { field: "extra_headers", source }
+            if source.to_string().contains(cause)
+    ));
 }
 
 #[test]
