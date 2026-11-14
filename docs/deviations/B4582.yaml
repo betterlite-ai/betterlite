@@ -24,3 +24,6 @@ deviations:
   - what: A response of the wrong shape reports "Unexpected <path> response" with the serde message.
     why: Python appends the pydantic validation text. The path and the failure are the same, the wording of the cause differs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L164-L174
+  - what: --recent-bodies and --max-body-chars are 32-bit unsigned numbers, so a value above 4294967295 is a parse error.
+    why: Python's click.IntRange takes any Python int. Above that bound both behave the same on any real session (every row counts as recent, no body is truncated), so the bound only refuses a number no session produces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L321-L334
