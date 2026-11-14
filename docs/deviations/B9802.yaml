@@ -1,0 +1,26 @@
+task: B9802
+deviations:
+  - what: A header whose name or value axum cannot carry (a control character in an extra header, say) is left out with a warning.
+    why: axum's HeaderMap cannot hold such a header, and dropping one keeps the response that LiteLLM loses when it writes it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1851-L1854
+  - what: A header value that is a JSON list or object is left out with a warning instead of being sent as Python's repr of it.
+    why: docs/compatibility.md does not port repr, and a header carrying "[1, 2]" or "{'a': 1}" is not a value a client can use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1840
+  - what: A cost breakdown whose input_cost or cache costs carry a truthy value that is not a number leaves x-litellm-response-cost-input out; falsey ones count as zero as they do there, and LiteLLM raises a TypeError out of get_custom_headers for the truthy ones, failing the request.
+    why: custom_headers returns a HeaderMap and has no error path, and one missing header beats a failed response for a breakdown the proxy wrote itself.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1472-L1480
+  - what: A response cost string is read as a float by Rust's float grammar, which rejects PEP 515 underscores and non-ASCII digits that Python's float() accepts.
+    why: response_cost's declared type is float or str; a string like "1_0" reaches the spend header but not the spend sum here, and nowhere in LiteLLM's own call sites.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1767
+  - what: A metadata bucket that is present but not an object is treated as absent when the remaining-limit headers are read, so those headers are left out; LiteLLM calls .get on it and raises AttributeError.
+    why: the request data is open JSON, and an internal writer's malformed bucket must not turn a successful LLM response into a 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L432-L455
+  - what: A litellm_metadata or metadata bucket inside litellm_params that is present but not an object is treated as absent when the deployment model name is read; LiteLLM calls .get on it and raises AttributeError.
+    why: litellm_params is an open JSON map, and a malformed bucket must not turn a successful LLM response into a 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2419-L2425
+  - what: A model_group that is a JSON list or object leaves both remaining-limit headers out; LiteLLM builds the lookup key and the header name from its repr and reads the metadata with that key.
+    why: the group name is the proxy's own string, and porting repr would put "{'a': 1}" in a header name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L443-L460
+  - what: A request data value that no JSON scalar here can hold (an integer past 64 bits, say) leaves the guardrail headers out, because the request data is read back through our typed metadata model first; LiteLLM reads the same map directly.
+    why: our guardrail metadata model keeps whole numbers in signed or unsigned 64-bit fields, and one unrepresentable value must not fail the response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L477-L529
