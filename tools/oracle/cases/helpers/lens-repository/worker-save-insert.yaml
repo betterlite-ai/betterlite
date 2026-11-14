@@ -1,0 +1,14 @@
+kind: helper
+name: worker-save-insert
+call:
+  b4501:
+    call:
+      operation: save_worker
+      worker:
+        id: worker-a
+        name: worker
+        scope: {}
+        last_seen: "2026-01-01T00:00:00Z"
+      token_hash: hash-a
+env: {}
+compare: {ignore: []}
