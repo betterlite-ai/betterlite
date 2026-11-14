@@ -1,0 +1,17 @@
+task: B3679
+deviations:
+  - what: The translation handlers come from an explicit TranslationRegistry built at startup, not from scanning the llms packages for guardrail_translation_mappings.
+    why: The code rules forbid auto-discovery, and a caller lists the handlers it supports.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/__init__.py#L162-L199
+  - what: handle_streaming_block and emit_streaming_http_error return a list of chunks, where LiteLLM yields them from an async generator.
+    why: Both only call synchronous translation methods, so the caller sees the same chunks in the same order and sends them one by one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L382-L405
+  - what: A stream item that is not a JSON object has no choices, and an A2A chunk is a JSON object or string.
+    why: LiteLLM reads attributes of ModelResponseStream objects; Rust has one JSON item type and marks the chat chunks with object equal to chat.completion.chunk.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L103-L120
+  - what: A chunk with no choices key has no choices, so it counts as trailing metadata; LiteLLM's ModelResponseStream gives it one empty default choice, which is not trailing without usage.
+    why: The chunk is raw JSON here, and the item type has no constructor that would add a default choice; the input cannot reach LiteLLM's guardrail code without choices, so no working setup depends on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2118-L2122
+  - what: The error detail is HttpErrorDetail (text or object), and the fallback message of an object detail with neither error nor message is the detail's JSON text.
+    why: LiteLLM prints the Python dict repr there, and docs/compatibility.md leaves repr text out.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L141-L156

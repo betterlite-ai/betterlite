@@ -54,6 +54,7 @@ description: >-
 scope:
   paths:
     - tools/dashboard/source.mjs
+    - tools/dashboard/source/**
     - tools/dashboard/patches.mjs
     - tools/dashboard/source.pin.json
     - tools/dashboard/README.md
