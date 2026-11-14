@@ -443,6 +443,7 @@ def test_names_enum_members(name: str, ours: type[Enum], theirs: type[Enum]) -> 
     our_members = [(member.name, member.value) for member in ours]
     their_members = [(member.name, member.value) for member in theirs]
     assert our_members == their_members, name
+    assert (str in ours.__mro__) == (str in theirs.__mro__), name
 
 
 # ast-grep-ignore: no-long-names
@@ -490,6 +491,12 @@ def test_protocol_gemma_fields() -> None:
     assert [field.is_required() for field in our_fields.values()] == [
         field.is_required() for field in their_fields.values()
     ]
+    for key, their_field in their_fields.items():
+        our_field = our_fields[key]
+        our_annotation: TypeForm[JsonValue] | None = our_field.annotation
+        their_annotation: TypeForm[JsonValue] | None = their_field.annotation
+        assert our_annotation == their_annotation, key
+        assert our_field.metadata == their_field.metadata, key
     assert dict(VertexGemmaContainerError.model_config) == dict(
         THEIR_GEMMA.VertexGemmaContainerError.model_config,
     )
