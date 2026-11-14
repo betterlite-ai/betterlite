@@ -702,6 +702,7 @@ checksum = "3296253d3a91b3f938a3f2bcce4daebadcb4aa4228153fcec90f9d23532b4484"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-http",
+ "aws-smithy-http-client",
  "aws-smithy-observability",
  "aws-smithy-runtime-api",
  "aws-smithy-schema",
@@ -1732,13 +1733,18 @@ dependencies = [
 name = "betterlite-deepagents-harness"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "base64 0.23.1",
  "betterlite-harness",
  "brace-expansion",
+ "futures-core",
  "futures-util",
  "glob",
  "regex",
  "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tokio",
@@ -1964,6 +1970,7 @@ dependencies = [
  "hex",
  "http 1.5.0",
  "idna",
+ "indexmap 2.14.2",
  "ipnet",
  "libc",
  "opentelemetry-http",
