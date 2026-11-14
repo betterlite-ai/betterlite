@@ -12,3 +12,6 @@ deviations:
   - what: Budget and spend amounts in the HTML render with the Decimal's text, so 100 prints as 100 where LiteLLM's f-string prints the float 100.0.
     why: Money is a rust_decimal::Decimal from the moment it is read, and only the trailing .0 of a whole number differs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1401
+  - what: A team roster that cannot be decoded fails the lookup with a typed error; LiteLLM skips entries that are not a dict with a string user_id and returns no email for them.
+    why: The roster is B724's typed team row, which refuses a value that is not a list, a member without a user identity and a role other than admin or user, instead of filtering them. A roster LiteLLM writes decodes to the same member list, and a broken one has no correct recipient list to send to.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/email_alerting.py#L35-L46
