@@ -46,16 +46,10 @@ pub const fn object_mapping(value: &GuardrailValue) -> Option<&BTreeMap<String, 
 // LiteLLM's _object_list: a sequence only when the value really is a list
 #[must_use]
 pub fn object_list(value: &GuardrailValue) -> Option<&[GuardrailValue]> {
-    match value {
-        GuardrailValue::Array(items) => Some(items),
-        GuardrailValue::Null
-        | GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Text(_)
-        | GuardrailValue::Object(_) => None,
-    }
+    let GuardrailValue::Array(items) = value else {
+        return None;
+    };
+    Some(items)
 }
 
 // LiteLLM's _get_mapping_value: a key read off a mapping, absent for a missing key or a non-mapping value
@@ -81,6 +75,6 @@ pub fn mapping_value<'value>(
 pub fn is_tool_use_block(block: &GuardrailValue) -> bool {
     match mapping_value(block, "type") {
         Some(GuardrailValue::Text(kind)) => kind == "tool_use",
-        Some(_other) | None => false,
+        _ => false,
     }
 }

@@ -2,6 +2,10 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
+use config::default_action_text;
+use error::ToolPermissionError;
+use matching::CompiledRules;
+use rule::ToolPermissionRule;
 
 use crate::guardrail_initializers::tool_permission::ToolPermissionArgs;
 
@@ -16,11 +20,6 @@ pub const GUARDRAIL_NAME: &str = "tool_permission";
 pub const SUPPORTED_EVENT_HOOKS: [GuardrailEventHooks; 2] =
     [GuardrailEventHooks::PreCall, GuardrailEventHooks::PostCall];
 pub const DEFAULT_MAX_RECURSE_DEPTH: usize = 100;
-
-use config::default_action_text;
-use error::ToolPermissionError;
-use matching::CompiledRules;
-use rule::ToolPermissionRule;
 
 #[derive(Debug, Clone)]
 pub struct ToolPermissionGuardrail {
