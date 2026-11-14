@@ -33,7 +33,8 @@ deviations:
       binds each LiteLLM name to its class.
     why: >-
       Ruff N801 rejects a class name with underscores, and the aliases keep every
-      LiteLLM name importable and identical to the class it names.
+      LiteLLM name importable and identical to the class it names. The class name
+      a model reports in schema titles and type reprs is the short one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L18
   - what: >-
       betterlite.types.search imports Required from typing, where LiteLLM imports
