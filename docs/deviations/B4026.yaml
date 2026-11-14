@@ -12,9 +12,6 @@ deviations:
   - what: The region detector calls B5365's get_model_region with no default vertex location, so a vertex_ai deployment with no vertex_location has no region unless region_name is set.
     why: LiteLLM's _get_model_region falls back to the process-global litellm.vertex_location and the VERTEXAI_LOCATION and VERTEX_LOCATION secrets, which the outage detector cannot read here. B8656 can pass the configured value once the wiring has it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5245-L5267
-  - what: The Last Check seconds come from one clock reading, so a later update's message always prints 0.0s ago.
-    why: LiteLLM sets last_updated_at with one time.time() call and recomputes time.time() inside the message factory, so its text can show a small positive delay such as 0.0001s. One injected clock read makes the output deterministic.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L784
   - what: This task has no oracle cases.
     why: No route reaches this code yet; B8656 adds the wiring and the HTTP oracle cases, and the message text is covered by exact-string native tests.
     link: ""
