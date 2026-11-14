@@ -1,3 +1,4 @@
+use std::error::Error as _;
 use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -93,6 +94,24 @@ fn an_invalid_update_leaves_the_guardrail_untouched(#[case] update: &str, #[case
         guardrail.price_per_1000_text_records,
         Some(Decimal::try_from(0.25).unwrap())
     );
+}
+
+#[test]
+fn an_invalid_timeout_keeps_the_conversion_error_as_its_source() {
+    let mut guardrail = priced_guardrail();
+    let error = guardrail
+        .update_litellm_params(
+            &litellm_params(
+                r#"{"guardrail": "azure/prompt_shield", "mode": "pre_call", "timeout": -1.0}"#,
+            ),
+            &NoSecrets,
+        )
+        .unwrap_err();
+    assert!(
+        matches!(&error, PromptShieldError::InvalidTimeout { .. }),
+        "{error}"
+    );
+    assert!(error.source().is_some(), "{error}");
 }
 
 #[test]

@@ -1,5 +1,4 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use betterlite_env::number;
 use rust_decimal::Decimal;
 
 use super::error::{PromptShieldError, describe_value};
@@ -81,36 +80,59 @@ pub fn price_from_value(
     match value {
         GuardrailValue::Null => Ok(None),
         GuardrailValue::Text(text) => price_from_text(text),
-        GuardrailValue::SignedInteger(amount) => Ok(Some(Decimal::from(*amount))),
-        GuardrailValue::UnsignedInteger(amount) => Ok(Some(Decimal::from(*amount))),
-        GuardrailValue::Decimal(amount) => finite_price(*amount),
+        GuardrailValue::SignedInteger(amount) => checked_price(Decimal::from(*amount), value),
+        GuardrailValue::UnsignedInteger(amount) => checked_price(Decimal::from(*amount), value),
+        GuardrailValue::Decimal(amount) => float_price(*amount),
         GuardrailValue::Boolean(_) | GuardrailValue::Array(_) | GuardrailValue::Object(_) => {
             Err(PromptShieldError::PriceNotANumber {
                 value: describe_value(value),
+                source: None,
             })
         }
     }
 }
 
+// LiteLLM's _price_from_value for text: float(value), then the same finite, non-negative check.
 fn price_from_text(text: &str) -> Result<Option<Decimal>, PromptShieldError> {
-    match number::<f64>(PRICE_KEY, text) {
-        Ok(Some(amount)) => finite_price(amount),
-        Ok(None) => Ok(None),
-        Err(_source) => Err(PromptShieldError::PriceNotANumber {
-            value: format!("{text:?}"),
-        }),
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
     }
+    let amount =
+        trimmed
+            .parse::<Decimal>()
+            .map_err(|source| PromptShieldError::PriceNotANumber {
+                value: format!("{text:?}"),
+                source: Some(source),
+            })?;
+    checked_price(amount, &GuardrailValue::Text(text.to_owned()))
 }
 
-fn finite_price(amount: f64) -> Result<Option<Decimal>, PromptShieldError> {
+// LiteLLM's math.isfinite and price < 0 checks for a value the config already delivered as a float.
+fn float_price(amount: f64) -> Result<Option<Decimal>, PromptShieldError> {
     if !amount.is_finite() || amount < 0.0 {
         return Err(PromptShieldError::InvalidPrice {
             value: describe_value(&GuardrailValue::Decimal(amount)),
+            source: None,
         });
     }
-    Decimal::try_from(amount)
-        .map(Some)
-        .map_err(|_source| PromptShieldError::InvalidPrice {
-            value: describe_value(&GuardrailValue::Decimal(amount)),
-        })
+    let decimal = Decimal::try_from(amount).map_err(|source| PromptShieldError::InvalidPrice {
+        value: describe_value(&GuardrailValue::Decimal(amount)),
+        source: Some(source),
+    })?;
+    Ok(Some(decimal))
+}
+
+// Negative integers take the same path as negative floats in LiteLLM: one finite, non-negative check.
+fn checked_price(
+    amount: Decimal,
+    value: &GuardrailValue,
+) -> Result<Option<Decimal>, PromptShieldError> {
+    if amount < Decimal::ZERO {
+        return Err(PromptShieldError::InvalidPrice {
+            value: describe_value(value),
+            source: None,
+        });
+    }
+    Ok(Some(amount))
 }

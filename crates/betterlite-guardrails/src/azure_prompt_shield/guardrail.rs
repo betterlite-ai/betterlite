@@ -93,7 +93,13 @@ impl AzurePromptShieldGuardrail {
                 async_handler: params.async_handler,
                 api_key: SecretString::from(api_key),
                 api_base,
-                api_version: resolved_api_version(params.api_version.as_deref()),
+                api_version: resolve_api_version(
+                    params
+                        .api_version
+                        .as_deref()
+                        .filter(|version| !version.is_empty()),
+                )
+                .to_owned(),
                 timeout: params.timeout.unwrap_or(DEFAULT_TIMEOUT),
             },
             cost_tier,
@@ -215,12 +221,6 @@ impl GuardrailContract for AzurePromptShieldGuardrail {
     }
 }
 
-// LiteLLM treats an empty api_version as unset, the same as a missing one.
-fn resolved_api_version(configured: Option<&str>) -> String {
-    let configured = configured.filter(|version| !version.is_empty());
-    resolve_api_version(configured).to_owned()
-}
-
 struct UpdatedParams {
     api_key: Option<String>,
     api_base: Option<String>,
@@ -274,8 +274,12 @@ fn updated_api_version(
 ) -> Result<Option<String>, PromptShieldError> {
     match configured {
         None => Ok(None),
-        Some(GuardrailValue::Null) => Ok(Some(resolved_api_version(None))),
-        Some(GuardrailValue::Text(text)) => Ok(Some(resolved_api_version(Some(text)))),
+        Some(GuardrailValue::Null) => Ok(Some(resolve_api_version(None).to_owned())),
+        // LiteLLM treats an empty api_version as unset, the same as a missing one.
+        Some(GuardrailValue::Text(text)) => Ok(Some(
+            resolve_api_version(Some(text.as_str()).filter(|version| !version.is_empty()))
+                .to_owned(),
+        )),
         Some(other) => Err(PromptShieldError::ApiVersionNotAString {
             value: describe_value(other),
         }),
@@ -284,5 +288,5 @@ fn updated_api_version(
 
 fn seconds_timeout(seconds: f64) -> Result<Duration, PromptShieldError> {
     Duration::try_from_secs_f64(seconds)
-        .map_err(|_source| PromptShieldError::InvalidTimeout { seconds })
+        .map_err(|source| PromptShieldError::InvalidTimeout { seconds, source })
 }

@@ -25,3 +25,17 @@ deviations:
       states the reasons. A single-attempt, redirect-free POST keeps the content-safety subscription key on the
       configured endpoint only.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L618
+  - what: >-
+      The usage counted on the apply_guardrail path reaches a guardrail record only through this guardrail's
+      process_response and process_error; the generic invocation record has no guardrail_usage, guardrail_cost or
+      guardrail_provider "azure".
+    why: >-
+      LiteLLM's log_guardrail_information decorator calls the overridden _process_response and _process_error after
+      every hook, so apply_guardrail runs are recorded with the Azure billing detail. betterlite's B3664 replaces
+      the decorator with GuardrailInvocation's finish_success and finish_failure, whose record carries no tracing
+      detail and never delegates to a guardrail's own process step. The code that finishes those apply_guardrail
+      invocations is B3680's unified hooks and B8392's execute_guardrail_hook, both still todo, so wiring a
+      provider's process step into them changes the invocation record rather than this guardrail; process_response
+      and process_error in crates/betterlite-guardrails/src/azure_prompt_shield/process.rs are what that caller
+      uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/prompt_shield.py#L216-L232

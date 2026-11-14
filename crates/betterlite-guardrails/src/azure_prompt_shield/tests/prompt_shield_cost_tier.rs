@@ -1,3 +1,5 @@
+use std::error::Error as _;
+
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -63,7 +65,6 @@ fn a_tier_read_from_the_environment_is_normalized_too() {
 #[case::missing(None)]
 #[case::null(Some(GuardrailValue::Null))]
 #[case::zero(Some(GuardrailValue::UnsignedInteger(0)))]
-#[case::negative(Some(GuardrailValue::SignedInteger(-1)))]
 #[case::zero_text(Some(text("0")))]
 fn a_paid_tier_requires_a_positive_price(#[case] price: Option<GuardrailValue>) {
     let error = resolve_price(price.as_ref(), Some(CostTier::Paid), &NoSecrets).unwrap_err();
@@ -85,6 +86,18 @@ fn a_paid_tier_accepts_a_positive_price() {
     assert_eq!(
         resolve_price(Some(&price), Some(CostTier::Paid), &NoSecrets).unwrap(),
         Some(Decimal::try_from(0.5).unwrap())
+    );
+}
+
+#[rstest]
+#[case::float(GuardrailValue::Decimal(0.0))]
+#[case::unsigned_integer(GuardrailValue::UnsignedInteger(0))]
+#[case::signed_integer(GuardrailValue::SignedInteger(0))]
+#[case::text(text("0"))]
+fn a_zero_price_without_a_tier_is_allowed(#[case] price: GuardrailValue) {
+    assert_eq!(
+        resolve_price(Some(&price), None, &NoSecrets).unwrap(),
+        Some(Decimal::ZERO)
     );
 }
 
@@ -121,16 +134,57 @@ fn a_word_price_is_not_a_number() {
         "{error}"
     );
     assert!(error.to_string().contains("\"cheap\""), "{error}");
+    assert!(error.source().is_some(), "{error}");
+}
+
+#[rstest]
+#[case::float_without_a_tier(GuardrailValue::Decimal(-1.0), None)]
+#[case::integer_without_a_tier(GuardrailValue::SignedInteger(-1), None)]
+#[case::integer_with_a_free_tier(GuardrailValue::SignedInteger(-1), Some(CostTier::Free))]
+#[case::integer_with_a_paid_tier(GuardrailValue::SignedInteger(-1), Some(CostTier::Paid))]
+fn a_negative_price_is_rejected(#[case] price: GuardrailValue, #[case] tier: Option<CostTier>) {
+    let error = resolve_price(Some(&price), tier, &NoSecrets).unwrap_err();
+    assert!(
+        matches!(&error, PromptShieldError::InvalidPrice { .. }),
+        "{error}"
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("must be a finite, non-negative number"),
+        "{error}"
+    );
 }
 
 #[test]
-fn a_negative_price_is_rejected() {
-    let price = GuardrailValue::Decimal(-1.0);
+fn a_negative_text_price_is_rejected() {
+    let price = text("-1.5");
     let error = resolve_price(Some(&price), None, &NoSecrets).unwrap_err();
     assert!(
         matches!(&error, PromptShieldError::InvalidPrice { .. }),
         "{error}"
     );
+    assert!(error.to_string().contains("\"-1.5\""), "{error}");
+}
+
+#[test]
+fn a_text_price_stays_a_decimal_instead_of_a_float() {
+    let price = text("0.1234567890123456789012345678");
+    assert_eq!(
+        resolve_price(Some(&price), None, &NoSecrets).unwrap(),
+        Some("0.1234567890123456789012345678".parse::<Decimal>().unwrap())
+    );
+}
+
+#[test]
+fn a_price_outside_the_decimal_range_keeps_the_conversion_error() {
+    let price = GuardrailValue::Decimal(1e300);
+    let error = resolve_price(Some(&price), None, &NoSecrets).unwrap_err();
+    assert!(
+        matches!(&error, PromptShieldError::InvalidPrice { .. }),
+        "{error}"
+    );
+    assert!(error.source().is_some(), "{error}");
 }
 
 #[test]

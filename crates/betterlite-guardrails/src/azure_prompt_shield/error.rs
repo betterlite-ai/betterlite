@@ -1,7 +1,10 @@
+use std::time::TryFromFloatSecsError;
+
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_models::guardrail_pricing::GuardrailPricingError;
 use indexmap::IndexMap;
 use reqwest::StatusCode;
+use rust_decimal::Error as DecimalError;
 use thiserror::Error;
 
 use crate::azure_content_safety::error::AzureContentSafetyError;
@@ -24,15 +27,27 @@ pub enum PromptShieldError {
     )]
     PaidTierWithoutPrice,
     #[error("Azure Prompt Shield: price_per_1000_text_records must be a number, got {value}")]
-    PriceNotANumber { value: String },
+    PriceNotANumber {
+        value: String,
+        #[source]
+        source: Option<DecimalError>,
+    },
     #[error(
         "Azure Prompt Shield: price_per_1000_text_records must be a finite, non-negative number, got {value}"
     )]
-    InvalidPrice { value: String },
+    InvalidPrice {
+        value: String,
+        #[source]
+        source: Option<DecimalError>,
+    },
     #[error("Azure Prompt Shield: api_version must be a string, got {value}")]
     ApiVersionNotAString { value: String },
     #[error("Azure Prompt Shield: timeout must be a non-negative number of seconds, got {seconds}")]
-    InvalidTimeout { seconds: f64 },
+    InvalidTimeout {
+        seconds: f64,
+        #[source]
+        source: TryFromFloatSecsError,
+    },
     #[error("{}", ATTACK_MESSAGE)]
     Attack { detection_message: String },
     #[error(transparent)]
