@@ -107,15 +107,21 @@ impl Helper for Op {
                 "rows": restore_content_shapes(&args.originals, &args.returned),
             })),
             Input::RestoreProtected(args) => restore_protected(args),
-            Input::RetrieveIds(args) => retrieve_ids(args),
-            Input::RetrievalResults(args) => retrieval_results(args),
-            Input::ProtectedIndices(args) => protected(args),
+            Input::RetrieveIds(args) => {
+                Ok(json!({ "ids": retrieve_call_ids(args.messages.as_ref()) }))
+            }
+            Input::RetrievalResults(args) => Ok(json!({
+                "indices": retrieval_result_indices(&args.messages, &args.extra_ids),
+            })),
+            Input::ProtectedIndices(args) => Ok(json!({
+                "indices": protected_indices(&args.messages, &args.extra_ids),
+            })),
             Input::CompressFailureDetail(args) => Ok(json!({
                 "detail": build_compress_failure_detail(args.status, &args.body),
             })),
-            Input::HandleFailure(args) => handle_failure(args),
+            Input::HandleFailure(args) => Ok(handle_failure(args)),
             Input::CcrHashes(args) => Ok(json!({ "hashes": read_ccr_hashes(&args.body) })),
-            Input::Timeout(args) => timeout(args),
+            Input::Timeout(args) => Ok(timeout(args)),
         }
     }
 }
@@ -126,32 +132,17 @@ fn restore_protected(args: &RestoreProtectedArgs) -> HelperResult {
     Ok(json!({ "rows": rows }))
 }
 
-fn retrieve_ids(args: &RetrieveIdsArgs) -> HelperResult {
-    let found = retrieve_call_ids(args.messages.as_ref());
-    Ok(json!({ "ids": found }))
-}
-
-fn retrieval_results(args: &MessageIdsArgs) -> HelperResult {
-    let found = retrieval_result_indices(&args.messages, &args.extra_ids);
-    Ok(json!({ "indices": found }))
-}
-
-fn protected(args: &MessageIdsArgs) -> HelperResult {
-    let found = protected_indices(&args.messages, &args.extra_ids);
-    Ok(json!({ "indices": found }))
-}
-
-fn handle_failure(args: &HandleFailureArgs) -> HelperResult {
+fn handle_failure(args: &HandleFailureArgs) -> serde_json::Value {
     match handle_compress_failure(args.fallback, &args.rows, &args.error, &args.detail) {
-        Ok(forwarded) => Ok(json!({ "rows": forwarded })),
-        Err(failure) => Ok(json!({ "status": failure.status, "body": failure.body })),
+        Ok(forwarded) => json!({ "rows": forwarded }),
+        Err(failure) => json!({ "status": failure.status, "body": failure.body }),
     }
 }
 
-fn timeout(args: &TimeoutArgs) -> HelperResult {
+fn timeout(args: &TimeoutArgs) -> serde_json::Value {
     let resolved = resolve_timeout(args.timeout);
-    Ok(json!({
+    json!({
         "total_seconds": resolved.total.as_secs_f64(),
         "connect_seconds": resolved.connect.as_secs_f64(),
-    }))
+    })
 }
