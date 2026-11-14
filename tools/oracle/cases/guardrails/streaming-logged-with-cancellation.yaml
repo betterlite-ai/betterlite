@@ -5,6 +5,7 @@ call:
     patterns: []
     blocked_words:
       - {keyword: secret, action: MASK, description: null}
+      - {keyword: blockedword, action: BLOCK, description: null}
     categories: []
     guardrail_id: null
     policy_template: null
@@ -28,7 +29,7 @@ call:
         choices:
           - index: 0
             delta:
-              content: "more text"
+              content: "blockedword"
             finish_reason: null
       - id: chatcmpl-stream
         created: 1700000000

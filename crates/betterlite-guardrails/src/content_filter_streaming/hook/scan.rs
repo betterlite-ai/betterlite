@@ -7,7 +7,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use super::StreamScan;
 use crate::content_filter_actions::error::ContentFilterActionError;
 use crate::content_filter_actions::filter_single_text;
-use crate::content_filter_streaming::CONTENT_FILTER_STREAMING_HOLDBACK_CHARS;
+use crate::content_filter_streaming::STREAM_HOLDBACK_CHARS;
 use crate::content_filter_streaming::error::StreamFilterError;
 use crate::content_filter_streaming::state::StreamedChoiceState;
 use crate::content_filter_streaming::text::char_slice;
@@ -28,7 +28,7 @@ pub(super) fn process_chunk(
     item: &mut GuardrailValue,
     scan: &mut StreamScan<'_, '_>,
 ) -> Result<(), StreamFilterError> {
-    let Some(choices) = chunk_choices_mut(item) else {
+    let Some(GuardrailValue::Array(choices)) = object_field_mut(item, "choices") else {
         return Ok(());
     };
     for choice in choices.iter_mut() {
@@ -43,7 +43,7 @@ fn process_choice(
 ) -> Result<(), StreamFilterError> {
     let index = choice_index(choice);
     let is_final = choice_is_final(choice);
-    let Some(delta) = choice_delta_mut(choice) else {
+    let Some(GuardrailValue::Object(delta)) = object_field_mut(choice, "delta") else {
         return Ok(());
     };
     let Some(pending) = scan_choice(delta, scan, index, is_final)? else {
@@ -116,11 +116,7 @@ fn scan_choice(
 
 // The holdback keeps the last fifty characters back until the final chunk, and the yield never shrinks
 fn safe_to_yield_len(masked_text: &str, previous: &StreamedChoiceState, is_final: bool) -> usize {
-    let holdback = if is_final {
-        0
-    } else {
-        CONTENT_FILTER_STREAMING_HOLDBACK_CHARS
-    };
+    let holdback = if is_final { 0 } else { STREAM_HOLDBACK_CHARS };
     masked_text
         .chars()
         .count()
@@ -226,22 +222,12 @@ fn choice_is_final(choice: &GuardrailValue) -> bool {
     )
 }
 
-fn choice_delta_mut(choice: &mut GuardrailValue) -> Option<&mut BTreeMap<String, GuardrailValue>> {
-    let GuardrailValue::Object(fields) = choice else {
+fn object_field_mut<'value>(
+    value: &'value mut GuardrailValue,
+    key: &str,
+) -> Option<&'value mut GuardrailValue> {
+    let GuardrailValue::Object(fields) = value else {
         return None;
     };
-    let Some(GuardrailValue::Object(delta)) = fields.get_mut("delta") else {
-        return None;
-    };
-    Some(delta)
-}
-
-fn chunk_choices_mut(item: &mut GuardrailValue) -> Option<&mut Vec<GuardrailValue>> {
-    let GuardrailValue::Object(fields) = item else {
-        return None;
-    };
-    let Some(GuardrailValue::Array(choices)) = fields.get_mut("choices") else {
-        return None;
-    };
-    Some(choices)
+    fields.get_mut(key)
 }

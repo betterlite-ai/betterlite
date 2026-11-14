@@ -80,10 +80,12 @@ async fn drive_stream(
     scan: &mut StreamScan<'_, '_>,
 ) -> Result<(), StreamFilterError> {
     while let Some(mut item) = response.recv().await {
-        scan::process_chunk(&mut item, scan)?;
-        if output.send(item).await.is_err() {
+        // a stopped consumer closed the channel; its suspended yield never scans the next chunk
+        let Ok(permit) = output.reserve().await else {
             break;
-        }
+        };
+        scan::process_chunk(&mut item, scan)?;
+        permit.send(item);
     }
     Ok(())
 }

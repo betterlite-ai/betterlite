@@ -1,5 +1,5 @@
 use crate::content_filter_actions::ContentFilterSource;
-use crate::content_filter_streaming::CONTENT_FILTER_STREAMING_SCAN_CONTEXT_CHARS;
+use crate::content_filter_streaming::STREAM_SCAN_CONTEXT_CHARS;
 
 mod tests;
 
@@ -49,7 +49,7 @@ pub fn streamed_scan_plan(source: &ContentFilterSource<'_>) -> StreamedScanPlan 
         })
         .collect();
     StreamedScanPlan {
-        context_chars: CONTENT_FILTER_STREAMING_SCAN_CONTEXT_CHARS.max(longest_keyword),
+        context_chars: STREAM_SCAN_CONTEXT_CHARS.max(longest_keyword),
         exception_phrases,
         conditional_words,
     }

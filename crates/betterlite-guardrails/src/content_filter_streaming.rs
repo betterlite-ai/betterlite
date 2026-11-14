@@ -8,5 +8,5 @@ pub mod state;
 mod text;
 pub mod trim;
 
-pub const CONTENT_FILTER_STREAMING_HOLDBACK_CHARS: usize = 50;
-pub const CONTENT_FILTER_STREAMING_SCAN_CONTEXT_CHARS: usize = 512;
+pub const STREAM_HOLDBACK_CHARS: usize = 50;
+pub const STREAM_SCAN_CONTEXT_CHARS: usize = 512;

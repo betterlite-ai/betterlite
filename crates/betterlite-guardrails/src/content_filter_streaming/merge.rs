@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use betterlite_config::sections::content_filter_records::overrides::CompetitorIntentEvidenceEntry;
 use betterlite_config::sections::content_filter_records::{
     BlockedWordDetection, CategoryKeywordDetection, CompetitorIntentDetection,
     ContentFilterDetection, PatternDetection,
@@ -24,7 +25,7 @@ fn blocked_word_detections_equal(
         && left.description == right.description
 }
 
-fn category_keyword_detections_equal(
+fn category_keyword_equal(
     left: &CategoryKeywordDetection,
     right: &CategoryKeywordDetection,
 ) -> bool {
@@ -35,30 +36,33 @@ fn category_keyword_detections_equal(
         && left.action == right.action
 }
 
-fn competitor_intent_detections_equal(
-    left: &CompetitorIntentDetection,
-    right: &CompetitorIntentDetection,
+fn intent_detections_equal(
+    candidate: &CompetitorIntentDetection,
+    kept: &CompetitorIntentDetection,
 ) -> bool {
-    left.r#type == right.r#type
-        && left.intent == right.intent
+    candidate.r#type == kept.r#type
+        && candidate.intent == kept.intent
         && matches!(
-            left.confidence.partial_cmp(&right.confidence),
+            candidate.confidence.partial_cmp(&kept.confidence),
             Some(Ordering::Equal)
         )
-        && left.action_hint == right.action_hint
-        && left.entities == right.entities
-        && left.signals == right.signals
-        && left.evidence.len() == right.evidence.len()
-        && left
-            .evidence
-            .iter()
-            .zip(&right.evidence)
-            .all(|(left_entry, right_entry)| {
-                left_entry.r#type == right_entry.r#type
-                    && left_entry.key == right_entry.key
-                    && left_entry.value == right_entry.value
-                    && left_entry.r#match == right_entry.r#match
-            })
+        && candidate.action_hint == kept.action_hint
+        && candidate.entities == kept.entities
+        && candidate.signals == kept.signals
+        && evidence_equal(&candidate.evidence, &kept.evidence)
+}
+
+fn evidence_equal(
+    candidate: &[CompetitorIntentEvidenceEntry],
+    kept: &[CompetitorIntentEvidenceEntry],
+) -> bool {
+    candidate.len() == kept.len()
+        && candidate.iter().zip(kept).all(|(candidate, kept)| {
+            candidate.r#type == kept.r#type
+                && candidate.key == kept.key
+                && candidate.value == kept.value
+                && candidate.r#match == kept.r#match
+        })
 }
 
 fn detections_equal(left: &ContentFilterDetection, right: &ContentFilterDetection) -> bool {
@@ -72,11 +76,11 @@ fn detections_equal(left: &ContentFilterDetection, right: &ContentFilterDetectio
         (
             ContentFilterDetection::CategoryKeyword(left),
             ContentFilterDetection::CategoryKeyword(right),
-        ) => category_keyword_detections_equal(left, right),
+        ) => category_keyword_equal(left, right),
         (
             ContentFilterDetection::CompetitorIntent(left),
             ContentFilterDetection::CompetitorIntent(right),
-        ) => competitor_intent_detections_equal(left, right),
+        ) => intent_detections_equal(left, right),
         // a pattern detection never equals a detection of another kind
         _ => false,
     }
