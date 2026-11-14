@@ -10,7 +10,6 @@ use betterlite_guardrails::dynamoai::hooks::{
     EventHook, PostCallOutcome, RequestData, ResponseChoice, SUPPORTED_EVENT_HOOKS,
 };
 use betterlite_http::proxy::base_builder;
-use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -82,14 +81,14 @@ impl crate::helpers::Helper for Op {
 }
 
 fn run_call(call: &Call) -> HelperResult {
-    let params = Parameters {
-        guardrail: "dynamoai".to_owned(),
-        api_key: call.api_key.clone().map(SecretString::from),
-        api_base: call.api_base.clone(),
-        policy_ids: call.policy_ids.clone(),
-        model_id: call.model_id.clone(),
-        timeout: None,
-    };
+    let params: Parameters = serde_json::from_value(serde_json::json!({
+        "guardrail": "dynamoai",
+        "api_key": call.api_key,
+        "api_base": call.api_base,
+        "policy_ids": call.policy_ids,
+        "model_id": call.model_id,
+    }))
+    .map_err(|error| failure("ValueError", error.to_string()))?;
     let mut settings = match params.resolve("dynamoai", "guardrail", &call.env) {
         Ok(settings) => settings,
         Err(ConfigError::MissingEnvironment { .. }) => {

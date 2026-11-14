@@ -2,7 +2,8 @@ use std::time::{Duration, TryFromFloatSecsError};
 
 use super::Section;
 use crate::loader::{ConfigError, EnvironmentLookup};
-use crate::resolve::resolve_string;
+use crate::raw::RawNumber;
+use crate::resolve::{parse_float, resolve_number, resolve_string};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde::de::Error as DeserializeError;
@@ -36,7 +37,7 @@ pub struct Parameters {
     pub api_base: Option<String>,
     pub policy_ids: Option<Vec<String>>,
     pub model_id: Option<String>,
-    pub timeout: Option<f64>,
+    timeout: Option<RawNumber>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -110,7 +111,12 @@ impl Parameters {
             Some(value) => resolve_string(value, &format!("{prefix}.model_id"), lookup)?,
             None => lookup.lookup(MODEL_ID_VARIABLE).unwrap_or_default(),
         };
-        let timeout = match self.timeout {
+        let timeout = match resolve_number(
+            self.timeout,
+            &format!("{prefix}.timeout"),
+            lookup,
+            parse_float,
+        )? {
             Some(seconds) => Duration::try_from_secs_f64(seconds)
                 .map_err(|source| timeout_error(&format!("{prefix}.timeout"), &source))?,
             None => DEFAULT_GUARDRAIL_TIMEOUT,

@@ -618,6 +618,19 @@ fn dynamoai_config_reads_the_timeout_in_seconds() {
 }
 
 #[test]
+fn dynamoai_config_resolves_an_environment_reference_in_the_timeout() {
+    let settings = convert(
+        &entry(
+            "dynamoai",
+            r#","api_key":"param-key","timeout":"os.environ/DYNAMOAI_TIMEOUT""#,
+        ),
+        &env(&[("DYNAMOAI_TIMEOUT", "7.5")]),
+    )
+    .unwrap();
+    assert_eq!(settings.guardrails[0].timeout, Duration::from_secs_f64(7.5));
+}
+
+#[test]
 fn dynamoai_config_defaults_the_timeout_when_absent() {
     let settings = convert(
         &entry("dynamoai", ""),
