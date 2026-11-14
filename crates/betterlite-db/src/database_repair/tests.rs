@@ -13,7 +13,9 @@ use crate::budget_permission_rows::JsonData;
 
 use super::cells::{RowError, VerificationTokenRow};
 use super::fixtures::RepairCase;
-use super::migration::{ImportEvent, ImportFailure, ImportReport, import_verification_tokens};
+use super::migration::{
+    ImportEvent, ImportFailure, ImportReport, import_verification_tokens, read_verification_csv,
+};
 use super::unassigned::{UnassignedTeamError, apply_db_fixes};
 use super::{DecodeError, MAX_CSV_BYTES, MAX_JSON_DEPTH, decode_verification_csv};
 
@@ -168,6 +170,27 @@ fn csv_invalid_value(#[case] column: &str, #[case] cell: &str, #[case] kind: &st
 }
 
 #[test]
+fn csv_too_deep_cell_fails_only_its_row() {
+    let document = format!(
+        "{}0{}",
+        "[".repeat(MAX_JSON_DEPTH + 1),
+        "]".repeat(MAX_JSON_DEPTH + 1)
+    );
+    let data = csv_data(&[
+        &[("token", "tok-before"), ("spend", "1.5")],
+        &[("token", "tok-deep"), ("config", document.as_str())],
+        &[("token", "tok-after")],
+    ]);
+    let decoded = decode_verification_csv(data.as_bytes()).unwrap();
+    assert_eq!(decoded.rows.len(), 3);
+    assert!(decoded.rows[0].outcome.is_ok());
+    let error = decoded.rows[1].outcome.as_ref().unwrap_err();
+    assert!(matches!(error, RowError::TooDeep { name } if *name == "config"));
+    assert_eq!(decoded.rows[1].token.as_deref(), Some("tok-deep"));
+    assert!(decoded.rows[2].outcome.is_ok());
+}
+
+#[test]
 fn csv_failed_rows_keep_their_error_and_other_rows() {
     let data = csv_data(&[
         &[("token", "tok-1"), ("spend", "1.5")],
@@ -233,6 +256,9 @@ fn csv_integer_overflow_fails_the_row() {
 #[case::minutes("2026-01-02T03:04", Some("2026-01-02 03:04:00"))]
 #[case::date("2026-01-02", Some("2026-01-02 00:00:00"))]
 #[case::compact_date("20260102", Some("2026-01-02 00:00:00"))]
+#[case::hour_only("2026-01-02T03", Some("2026-01-02 03:00:00"))]
+#[case::basic_compact("20260102T030405", Some("2026-01-02 03:04:05"))]
+#[case::week_date("2026-W01-5", Some("2026-01-02 00:00:00"))]
 #[case::fraction("2026-01-02T03:04:05.123456", Some("2026-01-02 03:04:05.123456"))]
 #[case::garbage("not-a-time", None)]
 fn csv_timestamp_cells(#[case] cell: &str, #[case] expected: Option<&str>) {
@@ -352,9 +378,11 @@ fn native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso
         Err(DecodeError::TooLarge { .. })
     ));
     let at_limit = decode_verification_csv(json_depth_csv(MAX_JSON_DEPTH).as_bytes()).unwrap();
-    let over_limit = decode_verification_csv(json_depth_csv(MAX_JSON_DEPTH + 1).as_bytes());
     assert!(at_limit.rows[0].outcome.is_ok());
-    assert!(matches!(over_limit, Err(DecodeError::TooDeep)));
+    let over_limit =
+        decode_verification_csv(json_depth_csv(MAX_JSON_DEPTH + 1).as_bytes()).unwrap();
+    let error = over_limit.rows[0].outcome.as_ref().unwrap_err();
+    assert!(matches!(error, RowError::TooDeep { name } if *name == "config"));
     assert!(matches!(
         decode_verification_csv(&[0xff, 0xfe]),
         Err(DecodeError::InvalidUtf8(_))
@@ -364,6 +392,19 @@ fn native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso
 #[rstest]
 fn replays_the_database_repair_corpus(#[files("fuzz/corpus/database_repair/*")] path: PathBuf) {
     drop(decode_verification_csv(&fs::read(path).unwrap()));
+}
+
+#[tokio::test]
+async fn csv_file_read_stops_at_the_byte_limit() {
+    let directory = tempfile::tempdir().unwrap();
+    let oversized = directory.path().join("oversized.csv");
+    fs::write(&oversized, vec![b'a'; MAX_CSV_BYTES + 1]).unwrap();
+    let bytes = read_verification_csv(&oversized).await.unwrap();
+    assert_eq!(bytes.len(), MAX_CSV_BYTES + 1);
+    let exact = directory.path().join("exact.csv");
+    fs::write(&exact, vec![b'a'; MAX_CSV_BYTES]).unwrap();
+    let bytes = read_verification_csv(&exact).await.unwrap();
+    assert_eq!(bytes.len(), MAX_CSV_BYTES);
 }
 
 #[tokio::test]
@@ -564,6 +605,10 @@ async fn assert_minimal_row(postgres: &RepairCase) {
     assert_eq!(json_column(&row, "model_max_budget"), parsed_json("{}"));
     assert_eq!(
         row.get::<_, Option<Vec<String>>>("allowed_cache_controls"),
+        Some(Vec::new())
+    );
+    assert_eq!(
+        row.get::<_, Option<Vec<String>>>("allowed_routes"),
         Some(Vec::new())
     );
     assert!(row.get::<_, Option<NaiveDateTime>>("created_at").is_some());

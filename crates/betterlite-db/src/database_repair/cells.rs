@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 use std::str::FromStr as _;
 
-use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
+use betterlite_models::savings_evidence::billed_at::decode_billed_at;
+use chrono::NaiveDateTime;
 use csv::StringRecord;
 use rust_decimal::Decimal;
 
@@ -11,22 +12,6 @@ use crate::managed_resource_rows::check_depth;
 use super::{MAX_JSON_DEPTH, TypedRow};
 
 const NULL_CELL: &str = "NULL";
-
-const AWARE_FORMATS: [&str; 4] = [
-    "%Y-%m-%dT%H:%M:%S%.f%#z",
-    "%Y-%m-%d %H:%M:%S%.f%#z",
-    "%Y-%m-%dT%H:%M%#z",
-    "%Y-%m-%d %H:%M%#z",
-];
-
-const NAIVE_FORMATS: [&str; 4] = [
-    "%Y-%m-%dT%H:%M:%S%.f",
-    "%Y-%m-%d %H:%M:%S%.f",
-    "%Y-%m-%dT%H:%M",
-    "%Y-%m-%d %H:%M",
-];
-
-const DATE_FORMATS: [&str; 2] = ["%Y-%m-%d", "%Y%m%d"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerificationTokenRow {
@@ -169,21 +154,10 @@ impl Cells<'_> {
         let Some(text) = self.value(name)? else {
             return Ok(None);
         };
-        let normalized = text.replace('Z', "+00:00");
-        let aware = AWARE_FORMATS.iter().find_map(|format| {
-            DateTime::parse_from_str(&normalized, format)
-                .ok()
-                .map(|value| value.with_timezone(&Utc).naive_utc())
-        });
-        let naive = NAIVE_FORMATS
-            .iter()
-            .find_map(|format| NaiveDateTime::parse_from_str(&normalized, format).ok());
-        let date = DATE_FORMATS
-            .iter()
-            .find_map(|format| NaiveDate::parse_from_str(&normalized, format).ok());
-        Ok(aware
-            .or(naive)
-            .or_else(|| date.and_then(|value| value.and_hms_opt(0, 0, 0))))
+        let Some(decoded) = decode_billed_at(text) else {
+            return Ok(None);
+        };
+        Ok(Some(decoded.naive_utc()))
     }
 
     fn json(&self, name: &'static str) -> Result<Option<JsonData>, RowError> {

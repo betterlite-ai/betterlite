@@ -24,8 +24,6 @@ pub enum DecodeError {
     Headers(#[source] csv::Error),
     #[error("the verification-token CSV records could not be read")]
     Record(#[source] csv::Error),
-    #[error("a verification-token JSON cell exceeds depth {MAX_JSON_DEPTH}")]
-    TooDeep,
 }
 
 #[derive(Debug)]
@@ -53,11 +51,7 @@ pub fn decode_verification_csv(bytes: &[u8]) -> Result<TypedValue, DecodeError> 
     let mut rows = Vec::new();
     for record in reader.records() {
         let record = record.map_err(DecodeError::Record)?;
-        let row = cells::decode_row(&columns, &record);
-        if let Err(RowError::TooDeep { .. }) = &row.outcome {
-            return Err(DecodeError::TooDeep);
-        }
-        rows.push(row);
+        rows.push(cells::decode_row(&columns, &record));
     }
     Ok(TypedValue { rows })
 }

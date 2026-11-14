@@ -1,6 +1,6 @@
 task: B874
 deviations:
-  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting smaller inherited limits.
+  - what: New otherwise unbounded byte decoders reject input over 1048576 bytes, a JSON cell deeper than 64 fails only its row, and smaller inherited limits stay, matching LiteLLM's per-row failure behavior.
     why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial parser behavior.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/update_unassigned_teams.py#L5-L34
   - what: JSON cells are parsed and inserted as JSONB values. LiteLLM hands the raw cell text to Prisma for its Json fields, which the typed client does not accept as a Json value, so with LiteLLM a row with a non-empty JSON cell fails while betterlite stores the document.
