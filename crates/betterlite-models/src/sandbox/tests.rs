@@ -157,6 +157,17 @@ async fn read_capped_lines_accepts_exactly_the_limit() {
 }
 
 #[tokio::test]
+async fn read_capped_lines_counts_utf8_bytes_rather_than_characters() {
+    let mut data = "\u{e9}".repeat(SANDBOX_MAX_OUTPUT_BYTES / 2).into_bytes();
+    data.push(b'\n');
+    let chunks = stream::iter(vec![Ok::<Vec<u8>, io::Error>(data)]);
+    assert!(matches!(
+        read_capped_lines(chunks).await.unwrap_err(),
+        SandboxOutputError::Exceeded { limit } if limit == SANDBOX_MAX_OUTPUT_BYTES
+    ));
+}
+
+#[tokio::test]
 async fn read_capped_lines_stops_at_the_ten_mib_boundary_and_names_it() {
     let mut data = "a".repeat(SANDBOX_MAX_OUTPUT_BYTES).into_bytes();
     data.push(b'\n');
