@@ -10,6 +10,7 @@ use betterlite_core::api::fal::gpt_image::size::map_gpt_image_size;
 use betterlite_core::api::fal::images::decode::{
     FalImage, FalImageProviderSpecificFields, append_generation_images,
 };
+use betterlite_core::api::fal::images::error::FalImageError;
 use betterlite_core::api::fal::images::params::map_openai_params;
 use betterlite_core::api::fal::images::settings::FalImageSettings;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog, UnknownFields};
@@ -148,7 +149,14 @@ fn generic_base_outcome(
     }
     let outcomes: Vec<Value> = cases
         .iter()
-        .map(|case| generic_outcome(case, model))
+        .map(|case| {
+            mapping_outcome(map_openai_params(
+                &case.non_default,
+                case.optional.clone(),
+                model,
+                case.drop_params,
+            ))
+        })
         .collect();
     json!({"urls": urls, "cases": outcomes})
 }
@@ -167,7 +175,15 @@ fn gpt_destination_outcome(model: &str, cases: &[MappingCase]) -> Value {
     let catalog = BundledCatalog::default().get();
     let outcomes: Vec<Value> = cases
         .iter()
-        .map(|case| gpt_outcome(case, model, &catalog))
+        .map(|case| {
+            mapping_outcome(map_gpt_params(
+                &case.non_default,
+                case.optional.clone(),
+                model,
+                case.drop_params,
+                &catalog,
+            ))
+        })
         .collect();
     json!({"cases": outcomes})
 }
@@ -180,27 +196,9 @@ fn size_outcomes(sizes: &[Json]) -> Value {
     json!({"sizes": mapped})
 }
 
-fn generic_outcome(case: &MappingCase, model: &str) -> Value {
-    match map_openai_params(
-        &case.non_default,
-        case.optional.clone(),
-        model,
-        case.drop_params,
-    ) {
-        Ok(mapped) => json!({"params": mapped}),
-        Err(_) => json!({"error": {"status": null}}),
-    }
-}
-
-fn gpt_outcome(case: &MappingCase, model: &str, catalog: &ModelCatalog) -> Value {
-    match map_gpt_params(
-        &case.non_default,
-        case.optional.clone(),
-        model,
-        case.drop_params,
-        catalog,
-    ) {
-        Ok(mapped) => json!({"params": mapped}),
+fn mapping_outcome(mapped: Result<ImageParams, FalImageError>) -> Value {
+    match mapped {
+        Ok(params) => json!({"params": params}),
         Err(_) => json!({"error": {"status": null}}),
     }
 }
