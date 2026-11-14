@@ -111,6 +111,36 @@ async fn posts_the_count_with_the_stripped_model() {
 }
 
 #[tokio::test]
+async fn a_non_claude_model_also_defaults_to_us_east5() {
+    let transport = Script::answering(200, "{}");
+    let body = body(Some("mistral-large-2411"), Some(Vec::new()));
+    let options = options(None);
+    let settings = settings(None);
+    let call = PartnerCountCall {
+        model: "mistral-large-2411",
+        body: &body,
+        api_base: None,
+        params: params(Some("proj"), None, None),
+        options: &options,
+        settings: &settings,
+    };
+
+    handle_count_tokens_request(&transport, &call, &FixedMint)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        transport.sent()[0].url,
+        "https://us-east5-aiplatform.googleapis.com/v1/projects/proj/locations/us-east5/publishers/mistralai/models/count-tokens:rawPredict"
+    );
+}
+
+#[test]
+fn the_tokenizer_name_is_reported_as_vertex_partner_models() {
+    assert_eq!(TOKENIZER_USED, "vertex_ai_partner_models");
+}
+
+#[tokio::test]
 async fn the_model_is_stripped_before_the_publisher_is_chosen() {
     let transport = Script::answering(200, "{}");
     let body = body(Some(CLAUDE), Some(Vec::new()));
