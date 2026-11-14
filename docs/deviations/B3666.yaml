@@ -1,0 +1,11 @@
+task: B3666
+deviations:
+  - what: The request handed to a guardrail at the deployment level has no guardrail_to_apply key. The unified guardrail target is told which guardrail it runs through a HookTarget argument, and the request that comes back is never changed by it.
+    why: The key exists in LiteLLM only to carry the guardrail through a dict, and the post-call hook has to pop it again so it does not reach the provider. A typed argument has no such leak.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L843-L844
+  - what: The on-messages scan returns a typed MessagesHookError, Rejected for a text verdict or a rerouted request and Failed for a guardrail failure, and each carries the guardrail name and event hook. The caller builds the HTTP error from it.
+    why: LiteLLM raises a FastAPI HTTPException and writes the guardrail name and event hook into it with enrich_http_exception_with_guardrail_context. The guardrails crate has no HTTP layer, and the caller owns the status and body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L886-L903
+  - what: The unified guardrail target never fails with an ImportError for a missing proxy extra, so the deployment hooks always pick Unified for a guardrail that uses the apply interface without native lifecycle hooks.
+    why: betterlite ships the unified guardrail in the same binary, so there is no optional package to be missing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L817-L826

@@ -1,0 +1,6 @@
+kind: helper
+name: scan-filter-masking
+call:
+  b3666: {"function": "scan_filter", "guardrail_name": "g", "event_hook": null, "default_on": false, "only_scan_new_messages": true, "mask_request_content": true, "mask_response_content": false, "texts": ["a"], "cached": ["a"], "data": {"litellm_session_id": "s1"}}
+env: {}
+compare: {ignore: []}

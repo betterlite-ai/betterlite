@@ -1,0 +1,6 @@
+kind: helper
+name: stamped-litellm-metadata
+call:
+  b3666: {"function": "stamped_key_fields", "guardrail_name": "g", "event_hook": "pre_call", "default_on": true, "only_scan_new_messages": false, "mask_request_content": false, "mask_response_content": false, "data": {"metadata": {"user_api_key_user_id": "ignored"}, "litellm_metadata": {"user_api_key_user_id": "u1", "user_api_key_team_id": true, "user_api_key_end_user_id": "e1", "user_api_key_hash": "h1", "user_api_key_request_route": "/chat/completions"}}}
+env: {}
+compare: {ignore: []}

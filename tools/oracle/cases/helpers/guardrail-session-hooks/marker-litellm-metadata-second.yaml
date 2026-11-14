@@ -1,0 +1,6 @@
+kind: helper
+name: marker-litellm-metadata-second
+call:
+  b3666: {"function": "mark_pre_call", "guardrail_name": "g", "event_hook": null, "default_on": false, "only_scan_new_messages": true, "mask_request_content": false, "mask_response_content": false, "data": {"metadata": null, "litellm_metadata": {"k": "v"}}}
+env: {}
+compare: {ignore: []}
