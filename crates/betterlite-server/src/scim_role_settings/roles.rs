@@ -30,18 +30,13 @@ pub fn resolve_scim_user_role(
     admin_group: Option<&str>,
     default_role: UserRole,
 ) -> Option<UserRole> {
-    let Some(admin) = admin_group else {
-        return None;
-    };
-    Some(role_from_groups(groups, admin, default_role))
-}
-
-// a group grants admin by its value or by the display name a team alias supplies
-fn role_from_groups(groups: &[UserGroup], admin_group: &str, default_role: UserRole) -> UserRole {
-    for group in groups {
-        if group.value == admin_group || group.display.as_deref() == Some(admin_group) {
-            return UserRole::ProxyAdmin;
-        }
-    }
-    default_role
+    let admin = admin_group?;
+    let matched = groups
+        .iter()
+        .any(|group| group.value == admin || group.display.as_deref() == Some(admin));
+    Some(if matched {
+        UserRole::ProxyAdmin
+    } else {
+        default_role
+    })
 }
