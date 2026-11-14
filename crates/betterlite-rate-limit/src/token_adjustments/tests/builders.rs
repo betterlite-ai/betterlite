@@ -277,7 +277,7 @@ fn a_reserved_scope_that_spent_what_it_reserved_has_no_operation() {
 }
 
 #[test]
-fn the_plural_builder_keeps_order_and_drops_an_empty_delta() {
+fn the_plural_builder_keeps_target_order() {
     let reserved = scopes(&[("user", "u1"), ("user", "u2")]);
     let reconciliation = TokenReconciliation {
         reserved_scopes: &reserved,
@@ -293,10 +293,35 @@ fn the_plural_builder_keeps_order_and_drops_an_empty_delta() {
     ];
     let reservations = build_project_reservation_ops(&targets, &reconciliation, &window_identities)
         .expect("the project operations");
-    assert_eq!(reservations.len(), 2);
+    assert_eq!(reservations.len(), 3);
     assert_eq!(reservations[0].operation.key, "{user:u1}:tokens");
+    assert_eq!(reservations[0].operation.increment_value, 6.0);
     assert_eq!(reservations[1].operation.key, "{team:t1}:tokens");
     assert_eq!(reservations[1].operation.increment_value, 10.0);
+    assert_eq!(reservations[2].operation.key, "{user:u2}:tokens");
+    assert_eq!(reservations[2].operation.increment_value, 6.0);
+}
+
+#[test]
+fn the_plural_builder_drops_an_empty_delta() {
+    let reserved = scopes(&[("user", "u1"), ("user", "u2")]);
+    let reconciliation = TokenReconciliation {
+        reserved_scopes: &reserved,
+        actual_tokens: 4,
+        reserved_tokens: 4,
+        window_size: 60,
+    };
+    let window_identities = BTreeSet::new();
+    let targets = vec![
+        ("user".to_owned(), "u1".to_owned()),
+        ("team".to_owned(), "t1".to_owned()),
+        ("user".to_owned(), "u2".to_owned()),
+    ];
+    let reservations = build_project_reservation_ops(&targets, &reconciliation, &window_identities)
+        .expect("the project operations");
+    assert_eq!(reservations.len(), 1);
+    assert_eq!(reservations[0].operation.key, "{team:t1}:tokens");
+    assert_eq!(reservations[0].operation.increment_value, 4.0);
 }
 
 #[test]
