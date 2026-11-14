@@ -92,7 +92,7 @@ class Hooked(Protocol):
         self, kwargs: Request, call_type: CallTypes | None
     ) -> Request | None: ...
 
-    async def async_post_call_success_deployment_hook(
+    async def async_post_call_success_deployment_hook(  # ast-grep-ignore: no-long-names
         self, request_data: Request, response: ModelResponse, call_type: CallTypes | None
     ) -> Response | None: ...
 
@@ -148,9 +148,10 @@ class StoredCache(DualCache):
 
 
 def build_probe(settings: Settings) -> Hooked:
+    event_hook = TypeAdapter(EventHook).validate_python(settings["event_hook"])
     probe = Probe(
         guardrail_name=settings["guardrail_name"],
-        event_hook=TypeAdapter(EventHook).validate_python(settings["event_hook"]),
+        event_hook=event_hook,
         default_on=settings["default_on"],
         only_scan_new_messages=settings["only_scan_new_messages"],
         mask_request_content=settings["mask_request_content"],
@@ -180,15 +181,9 @@ def suppressing(names: list[str]) -> Generator[None]:
 
 async def seeded(name: str | None, texts: list[str], data: dict[str, Json]) -> StoredCache:
     cache = StoredCache()
-    seeding = Settings(
-        guardrail_name=name,
-        event_hook=None,
-        default_on=False,
-        only_scan_new_messages=True,
-        mask_request_content=False,
-        mask_response_content=False,
+    await Probe(guardrail_name=name, only_scan_new_messages=True).mark_texts_scanned(
+        texts, REQUEST.validate_python(data), cache
     )
-    await build_probe(seeding).mark_texts_scanned(texts, REQUEST.validate_python(data), cache)
     return cache
 
 
@@ -226,7 +221,8 @@ async def already_ran(args: DataInput) -> Json:
 
 async def stamped_key_fields(args: DataInput) -> Json:
     probe = build_probe(args)
-    kwargs = REQUEST.validate_python({"guardrails": [], **args["data"]})
+    guarded = WIRE.dump_json({"guardrails": [], **args["data"]}).decode()
+    kwargs = REQUEST.validate_json(guarded)
     await probe.async_pre_call_deployment_hook(kwargs, CallTypes.completion)
     [key] = probe.keys
     return {
@@ -264,6 +260,7 @@ async def post_hook(args: DeploymentPostInput) -> Json:
 
 
 def run(input_value: Input) -> dict[str, Json]:
+    result: Json = None
     match input_value["function"]:
         case "scan_filter":
             result = asyncio.run(scan_filter(input_value))
