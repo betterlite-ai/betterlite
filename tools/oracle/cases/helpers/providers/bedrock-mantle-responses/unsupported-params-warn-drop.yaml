@@ -1,0 +1,30 @@
+kind: helper
+name: unsupported-params-warn-drop
+call:
+  bedrock_mantle_responses:
+    unsupported_params_warn_drop:
+      cases:
+        - model: openai.gpt-oss-120b
+          params: {service_tier: flex, temperature: 0.5}
+          drop_params: true
+        - model: openai.gpt-oss-120b
+          params: {service_tier: 3}
+          drop_params: true
+        - model: openai.gpt-oss-120b
+          params: {service_tier: true}
+          drop_params: true
+        - model: openai.gpt-oss-120b
+          params: {reasoning: {summary: concise, effort: high}}
+          drop_params: true
+        - model: openai.gpt-oss-120b
+          params: {reasoning: {summary: concise}}
+          drop_params: true
+        - model: openai.gpt-oss-120b
+          params: {reasoning: {summary: 5}, temperature: 0.5}
+          drop_params: true
+        - model: openai.gpt-oss-120b
+          params: {reasoning: {summary: concise}}
+          drop_params: true
+          use_openai_path: false
+env: {}
+compare: {ignore: []}
