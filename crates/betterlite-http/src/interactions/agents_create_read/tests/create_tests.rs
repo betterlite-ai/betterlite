@@ -195,6 +195,34 @@ fn create_agent_converts_a_failing_status_through_the_config() {
 }
 
 #[test]
+fn create_agent_reports_a_redirect_status_as_an_error() {
+    let serving = support::serve_post(
+        base::reply(
+            "302 Found",
+            &[("location", "http://elsewhere.invalid/agents")],
+            "",
+        ),
+        None,
+    );
+    let config = Config::for_address(serving.address);
+    let params = params_at(serving.address);
+    let request = support::create_request("agent-1", &params);
+    let mut clients = clients();
+    let mut logging = Recorder::default();
+
+    let error = create_agent(&config, &mut clients, &mut logging, None, &request).unwrap_err();
+
+    assert!(
+        matches!(
+            &error,
+            AgentRequestError::Provider(FixtureError::Refused(302))
+        ),
+        "{error:?}"
+    );
+    serving.request.join().unwrap();
+}
+
+#[test]
 fn create_agent_builds_the_client_before_a_failing_environment() {
     let mut config = Config::for_address(support::dead_address());
     config.refuse_environment = true;
@@ -239,6 +267,11 @@ fn create_agent_reports_a_non_string_api_base() {
     );
     assert!(config.calls().is_empty());
     assert_eq!(clients.sync_clients.len(), 1);
+}
+
+#[test]
+fn body_text_reads_non_utf8_bytes_as_latin1() {
+    assert_eq!(super::body_text(&[b'a', 0xff]), "a\u{ff}");
 }
 
 #[rstest]
