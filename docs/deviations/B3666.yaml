@@ -9,3 +9,7 @@ deviations:
   - what: The unified guardrail target never fails with an ImportError for a missing proxy extra, so the deployment hooks always pick Unified for a guardrail that uses the apply interface without native lifecycle hooks.
     why: betterlite ships the unified guardrail in the same binary, so there is no optional package to be missing.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L817-L826
+kept_bugs:
+  - what: Two guardrails without a name share one scanned-text list per session, so a text the first one scanned is skipped by the second.
+    why: LiteLLM prints a missing name as None in the cache key, and the task keeps that key so a setup that relies on the shared list sees the same scans; giving each guardrail its own key would change them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L474-L475
