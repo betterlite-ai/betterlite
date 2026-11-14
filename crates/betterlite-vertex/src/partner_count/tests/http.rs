@@ -216,6 +216,29 @@ async fn a_body_without_messages_fails_before_any_request() {
     assert!(transport.sent().is_empty());
 }
 
+#[tokio::test]
+async fn a_missing_messages_list_wins_over_an_unknown_publisher() {
+    let transport = Script::answering(200, "{}");
+    let body = body(Some("gemini-2.5-pro"), None);
+    let options = options(None);
+    let settings = settings(None);
+    let call = PartnerCountCall {
+        model: "gemini-2.5-pro",
+        body: &body,
+        api_base: None,
+        params: params(Some("proj"), None, None),
+        options: &options,
+        settings: &settings,
+    };
+
+    let error = handle_count_tokens_request(&transport, &call, &FixedMint)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(error, PartnerCountError::MissingMessages));
+    assert!(transport.sent().is_empty());
+}
+
 #[rstest]
 #[case::created(201)]
 #[case::no_content(204)]
