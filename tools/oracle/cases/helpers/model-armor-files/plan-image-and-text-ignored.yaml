@@ -1,0 +1,21 @@
+kind: helper
+name: plan-image-and-text-ignored
+call:
+  b3733:
+    function: plan_file_scans
+    messages:
+      - role: user
+        content:
+          - {type: text, text: hello}
+          - {type: image_url, image_url: {url: "https://example.com/cat.png"}}
+          - {type: file, file: {file_data: "data:image/png;base64,cGRmLWJ5dGVz", format: image/png}}
+          - {type: document, source: {data: cGRmLWJ5dGVz, media_type: application/octet-stream}}
+          - {type: file, file: {file_data: "data:application/octet-stream;base64,cGRmLWJ5dGVz"}}
+      - role: system
+        content: plain text content
+      - role: user
+        content: []
+      - {role: user, content: null}
+      - {role: user}
+env: {}
+compare: {ignore: []}
