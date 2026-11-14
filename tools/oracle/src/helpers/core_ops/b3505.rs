@@ -36,27 +36,18 @@ enum Operation {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ReplyInput {
-    status: u16,
-    body: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     operation: Operation,
     name: String,
     api_key: String,
     litellm_call_id: String,
-    #[serde(default)]
+    status: u16,
+    body: String,
     provider: Option<String>,
     #[serde(default)]
     extra_headers: BTreeMap<String, String>,
-    #[serde(default)]
     page_size: Option<i64>,
-    #[serde(default)]
     page_token: Option<String>,
-    reply: ReplyInput,
 }
 
 pub(crate) struct Op;
@@ -65,7 +56,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Input) -> HelperResult {
-        let (address, captured) = server::serve(input.reply.status, &input.reply.body)?;
+        let (address, captured) = server::serve(input.status, &input.body)?;
         let mut harness = Harness::new(&input.litellm_call_id)?;
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -135,15 +126,11 @@ fn operate(
 // LiteLLM hands the provider and the credentials to the handler through litellm_params
 fn kwargs_of(input: &Input, address: &SocketAddr) -> IndexMap<String, Json> {
     let mut kwargs = IndexMap::new();
-    kwargs.insert(
-        "api_base".to_owned(),
-        Json::Text(format!("http://{address}")),
-    );
+    let api_base = format!("http://{address}");
+    kwargs.insert("api_base".to_owned(), Json::Text(api_base));
     kwargs.insert("api_key".to_owned(), Json::Text(input.api_key.clone()));
-    kwargs.insert(
-        "litellm_call_id".to_owned(),
-        Json::Text(input.litellm_call_id.clone()),
-    );
+    let caller = input.litellm_call_id.clone();
+    kwargs.insert("litellm_call_id".to_owned(), Json::Text(caller));
     if let Some(size) = input.page_size {
         kwargs.insert("page_size".to_owned(), Json::Number(Number::from(size)));
     }
@@ -156,23 +143,17 @@ fn kwargs_of(input: &Input, address: &SocketAddr) -> IndexMap<String, Json> {
 // the headers every case compares: the provider's own two plus whatever the caller forwarded
 fn wanted(input: &Input) -> Vec<String> {
     let mut names = vec!["content-type".to_owned(), "x-goog-api-key".to_owned()];
-    for name in input.extra_headers.keys() {
-        let lowered = name.to_lowercase();
-        if !names.contains(&lowered) {
-            names.push(lowered);
-        }
-    }
+    names.extend(input.extra_headers.keys().map(|name| name.to_lowercase()));
     names
 }
 
 pub(super) fn failed(error: &dyn std::fmt::Display) -> Box<HelperError> {
-    let message = error.to_string();
     Box::new(HelperError {
         class: "OSError".to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message,
+        message: error.to_string(),
     })
 }

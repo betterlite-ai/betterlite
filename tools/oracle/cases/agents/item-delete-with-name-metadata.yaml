@@ -9,8 +9,7 @@ call:
     provider: gemini
     extra_headers:
       x-goog-user-project: project-1
-    reply:
-      status: 200
-      body: '{"name": "someone-else"}'
+    status: 200
+    body: '{"name": "someone-else"}'
 env: {}
 compare: {ignore: []}

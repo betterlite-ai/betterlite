@@ -6,8 +6,7 @@ call:
     name: agent-default
     api_key: key-1
     litellm_call_id: call-default
-    reply:
-      status: 200
-      body: '{"id": "agent-default"}'
+    status: 200
+    body: '{"id": "agent-default"}'
 env: {}
 compare: {ignore: []}

@@ -9,27 +9,17 @@ use super::harness::Harness;
 // the request as the fixture saw it: the method and target of the request line, and the headers the cases compare
 pub(super) fn request(head: &str, wanted: &[String]) -> Value {
     if head.is_empty() {
-        return json!({
-            "method": Value::Null,
-            "path": Value::Null,
-            "headers": BTreeMap::<String, String>::new(),
-        });
+        return json!({"method": null, "path": null, "headers": BTreeMap::<String, String>::new()});
     }
     let mut lines = head.lines();
-    let request_line = lines.next().unwrap_or_default();
-    let mut parts = request_line.split(' ');
+    let mut parts = lines.next().unwrap_or_default().split(' ');
     let method = parts.next().unwrap_or_default();
     let path = parts.next().unwrap_or_default();
-    let mut headers: BTreeMap<String, String> = BTreeMap::new();
-    for line in lines {
-        let Some((name, value)) = line.split_once(':') else {
-            continue;
-        };
-        let lowered = name.trim().to_lowercase();
-        if wanted.contains(&lowered) {
-            headers.insert(lowered, value.trim().to_owned());
-        }
-    }
+    let headers: BTreeMap<String, String> = lines
+        .filter_map(|line| line.split_once(':'))
+        .map(|(name, value)| (name.trim().to_lowercase(), value.trim().to_owned()))
+        .filter(|(name, _value)| wanted.contains(name))
+        .collect();
     json!({"method": method, "path": path, "headers": headers})
 }
 

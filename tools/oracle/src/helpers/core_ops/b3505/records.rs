@@ -71,25 +71,19 @@ pub(super) fn gemini_headers(
     headers
 }
 
+// both pagination keys travel as text; a value of any other type is left out of the query
 pub(super) fn page_params(params: &Params) -> Params {
     let mut query = Params::new();
-    if let Some(value) = params.get("page_size") {
-        insert_query(&mut query, "pageSize", value);
-    }
-    if let Some(value) = params.get("page_token") {
-        insert_query(&mut query, "pageToken", value);
+    for (key, name) in [("page_size", "pageSize"), ("page_token", "pageToken")] {
+        let text = match params.get(key) {
+            Some(JsonValue::Text(text)) => text.clone(),
+            Some(JsonValue::Number(number)) => number.to_string(),
+            Some(
+                JsonValue::Null | JsonValue::Bool(_) | JsonValue::Array(_) | JsonValue::Object(_),
+            )
+            | None => continue,
+        };
+        query.insert(name.to_owned(), JsonValue::Text(text));
     }
     query
-}
-
-fn insert_query(query: &mut Params, name: &str, value: &JsonValue) {
-    match value {
-        JsonValue::Text(text) => {
-            query.insert(name.to_owned(), JsonValue::Text(text.clone()));
-        }
-        JsonValue::Number(number) => {
-            query.insert(name.to_owned(), JsonValue::Text(number.to_string()));
-        }
-        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Array(_) | JsonValue::Object(_) => {}
-    }
 }

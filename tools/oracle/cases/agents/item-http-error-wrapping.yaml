@@ -6,8 +6,7 @@ call:
     name: agent-1
     api_key: key-1
     litellm_call_id: call-error
-    reply:
-      status: 500
-      body: '{"error": {"code": 500, "message": "backend failed", "status": "INTERNAL"}}'
+    status: 500
+    body: '{"error": {"code": 500, "message": "backend failed", "status": "INTERNAL"}}'
 env: {}
 compare: {ignore: []}

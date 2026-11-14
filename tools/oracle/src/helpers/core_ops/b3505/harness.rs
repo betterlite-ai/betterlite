@@ -33,6 +33,9 @@ impl Harness {
     pub(super) fn new(litellm_call_id: &str) -> Result<Self, Box<HelperError>> {
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| failed(&error))?;
         let state = logging_state(litellm_call_id, &redactor)?;
+        let environment: BTreeMap<String, String> = BTreeMap::new();
+        let proxy = ProxyPolicy::resolve(&ProxyTrust::default(), &environment)
+            .map_err(|error| failed(&error))?;
         let clients = HttpClients::new(
             TlsPolicy {
                 verification: Verification::Enabled,
@@ -42,7 +45,7 @@ impl Harness {
                 ecdh_curve: None,
                 user_agent: "betterlite-oracle/0".to_owned(),
             },
-            proxy()?,
+            Arc::new(proxy),
         );
         Ok(Self {
             clients,
@@ -89,11 +92,4 @@ fn logging_state(
         Duration::default,
     )
     .map_err(|error| failed(&error))
-}
-
-fn proxy() -> Result<Arc<ProxyPolicy>, Box<HelperError>> {
-    let environment: BTreeMap<String, String> = BTreeMap::new();
-    let resolved = ProxyPolicy::resolve(&ProxyTrust::default(), &environment)
-        .map_err(|error| failed(&error))?;
-    Ok(Arc::new(resolved))
 }

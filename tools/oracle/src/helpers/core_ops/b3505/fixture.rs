@@ -191,8 +191,7 @@ impl AgentsConfig for FixtureConfig {
         Ok(AgentVersionsResponse {
             agent_versions: wire.agent_versions,
             next_page_token: wire.next_page_token,
-            extra: BTreeMap::new(),
-            hidden_params: BTreeMap::new(),
+            ..Default::default()
         })
     }
 }

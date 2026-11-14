@@ -6,8 +6,7 @@ call:
     name: agent-1
     api_key: key-1
     litellm_call_id: call-delete
-    reply:
-      status: 200
-      body: '{}'
+    status: 200
+    body: '{}'
 env: {}
 compare: {ignore: []}

@@ -20,27 +20,17 @@ JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 litellm.suppress_debug_info = True
 
 
-class Reply(TypedDict):
-    status: int
-    body: str
-
-
 class Input(TypedDict):
     operation: Literal["get", "delete", "list_versions", "aget", "adelete", "alist_versions"]
     name: str
     api_key: str
     litellm_call_id: str
-    reply: Reply
+    status: int
+    body: str
     provider: NotRequired[str | None]
     extra_headers: NotRequired[dict[str, str] | None]
     page_size: NotRequired[int | None]
     page_token: NotRequired[str | None]
-
-
-class RequestWire(TypedDict):
-    method: str | None
-    path: str | None
-    headers: dict[str, str]
 
 
 class Extras(TypedDict):
@@ -50,6 +40,12 @@ class Extras(TypedDict):
     litellm_logging_obj: Logging
     page_size: NotRequired[int | None]
     page_token: NotRequired[str | None]
+
+
+class RequestWire(TypedDict):
+    method: str | None
+    path: str | None
+    headers: dict[str, str]
 
 
 # the agents SDK's public entry points: a sync one answers its model, async ones a coroutine
@@ -109,33 +105,12 @@ class AgentsItemSdk(Protocol):
     ) -> Coroutine[None, None, AgentVersionsResponse]: ...
 
 
-LOGGING_KEYS: Final[tuple[str, ...]] = (
-    "model",
-    "name",
-    "optional_params",
-    "custom_llm_provider",
-    "litellm_call_id",
-    "user",
-    "stream",
-    "messages",
-    "original_response",
-    "additional_args",
-)
-
-
-@dataclass
-class Captured:
-    method: str
-    path: str
-    headers: dict[str, str]
-
-
 @dataclass
 class Fixture:
     status: int
     body: bytes
     names: tuple[str, ...]
-    captured: Captured | None = None
+    captured: tuple[str, str, dict[str, str]] | None = None
 
 
 class Answering(BaseHTTPRequestHandler):
@@ -151,18 +126,12 @@ class Answering(BaseHTTPRequestHandler):
         self.fixture = fixture
         super().__init__(request, client_address, server)
 
-    def do_GET(self) -> None:
-        self.answer()
-
-    def do_DELETE(self) -> None:
-        self.answer()
-
     def answer(self) -> None:
         fixture = self.fixture
-        fixture.captured = Captured(
-            method=self.command,
-            path=self.path,
-            headers={
+        fixture.captured = (
+            self.command,
+            self.path,
+            {
                 name.lower(): value
                 for name, value in self.headers.items()
                 if name.lower() in fixture.names
@@ -172,6 +141,12 @@ class Answering(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(fixture.body)))
         self.end_headers()
         _written = self.wfile.write(fixture.body)
+
+    def do_GET(self) -> None:
+        self.answer()
+
+    def do_DELETE(self) -> None:
+        self.answer()
 
 
 def as_created(
@@ -234,20 +209,15 @@ def measure(sdk: AgentsItemSdk, input_value: Input, extras: Extras) -> dict[str,
 
 
 def wanted(input_value: Input) -> tuple[str, ...]:
-    names: list[str] = ["content-type", "x-goog-api-key"]
     extra = input_value.get("extra_headers")
-    if extra is not None:
-        for name in extra:
-            lowered = name.lower()
-            if lowered not in names:
-                names.append(lowered)
-    return tuple(names)
+    names = () if extra is None else tuple(name.lower() for name in extra)
+    return ("content-type", "x-goog-api-key", *names)
 
 
 def run(input_value: Input) -> JsonValue:
     fixture = Fixture(
-        status=input_value["reply"]["status"],
-        body=input_value["reply"]["body"].encode(),
+        status=input_value["status"],
+        body=input_value["body"].encode(),
         names=wanted(input_value),
     )
     caller = input_value["litellm_call_id"]
@@ -284,11 +254,23 @@ def run(input_value: Input) -> JsonValue:
         server.server_close()
     captured = fixture.captured
     if captured is None:
-        outcome["request"] = JSON.validate_python(RequestWire(method=None, path=None, headers={}))
+        outcome["request"] = {"method": None, "path": None, "headers": {}}
     else:
+        method, path, headers = captured
         outcome["request"] = JSON.validate_python(
-            RequestWire(method=captured.method, path=captured.path, headers=captured.headers)
+            RequestWire(method=method, path=path, headers=headers)
         )
     details: dict[str, JsonValue] = log.model_call_details
-    outcome["logging"] = {name: details.get(name) for name in LOGGING_KEYS}
+    outcome["logging"] = {
+        "model": details.get("model"),
+        "name": details.get("name"),
+        "optional_params": details.get("optional_params"),
+        "custom_llm_provider": details.get("custom_llm_provider"),
+        "litellm_call_id": details.get("litellm_call_id"),
+        "user": details.get("user"),
+        "stream": details.get("stream"),
+        "messages": details.get("messages"),
+        "original_response": details.get("original_response"),
+        "additional_args": details.get("additional_args"),
+    }
     return outcome

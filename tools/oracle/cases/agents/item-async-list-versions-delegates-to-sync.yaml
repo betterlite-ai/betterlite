@@ -8,8 +8,7 @@ call:
     litellm_call_id: call-alist-versions
     page_size: 3
     page_token: next
-    reply:
-      status: 200
-      body: '{"agentVersions": [{"agent": "waverunner"}], "nextPageToken": "later"}'
+    status: 200
+    body: '{"agentVersions": [{"agent": "waverunner"}], "nextPageToken": "later"}'
 env: {}
 compare: {ignore: []}
