@@ -16,8 +16,6 @@ scope:
     - tools/oracle/cases/helpers/hosted-vllm-chat-embedding/**
     - tools/oracle/helpers/b8150.py
     - tools/oracle/helpers/b8150/**
-    - tools/oracle/src/helpers/provider/b8150.rs
-    - tools/oracle/src/helpers/provider/b8150/**
     - tools/oracle/src/helpers/openai/b8150.rs
     - tools/oracle/src/helpers/openai/b8150/**
   lint_tables: false
