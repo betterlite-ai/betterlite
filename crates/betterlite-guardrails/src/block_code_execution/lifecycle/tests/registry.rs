@@ -2,7 +2,6 @@ use betterlite_config::sections::guardrail_identity::enums::SupportedGuardrailIn
 use betterlite_guardrails::block_code_execution::initializer::{
     GUARDRAIL_CLASS_REGISTRY, GUARDRAIL_INITIALIZER_REGISTRY, INTEGRATION, INTEGRATION_VALUE,
 };
-use betterlite_guardrails::block_code_execution::lifecycle::BlockCodeExecutionParams;
 
 use crate::block_code_execution::support::{FakeRegistry, guardrail_entry, litellm_params, params};
 
@@ -51,10 +50,8 @@ fn the_class_registry_maps_the_key_to_the_guardrail_constructor() {
 #[test]
 fn the_class_registry_accepts_a_configured_name() {
     let (_key, class) = GUARDRAIL_CLASS_REGISTRY[0];
-    let configured = BlockCodeExecutionParams {
-        guardrail_name: Some("custom".to_owned()),
-        ..BlockCodeExecutionParams::default()
-    };
+    let mut configured = params();
+    configured.guardrail_name = Some("custom".to_owned());
     let instance = class(configured, true).expect("the class builds the guardrail");
     assert_eq!(
         instance.base.settings.guardrail_name.as_deref(),
