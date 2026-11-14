@@ -294,8 +294,10 @@ impl CapturedLog {
 
 impl Write for CapturedLog {
     fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        let mut bytes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        bytes.extend_from_slice(buf);
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
         Ok(buf.len())
     }
 

@@ -34,30 +34,34 @@ async fn a_scan_writes_a_standard_logging_record() {
     let records = records(&request_data);
     assert_eq!(records.len(), 1);
     let record = &records[0];
-    let expected = [
-        (
-            "guardrail_name",
-            GuardrailValue::Text(String::from("noma-test")),
-        ),
-        (
-            "guardrail_provider",
-            GuardrailValue::Text(String::from("noma")),
-        ),
-        (
-            "guardrail_status",
-            GuardrailValue::Text(String::from("success")),
-        ),
-        (
-            "guardrail_mode",
-            GuardrailValue::Text(String::from("pre_call")),
-        ),
-        ("start_time", GuardrailValue::Decimal(1_700_000_000.0)),
-        ("end_time", GuardrailValue::Decimal(1_700_000_001.0)),
-        ("duration", GuardrailValue::Decimal(1.0)),
-    ];
-    for (name, want) in &expected {
-        assert_eq!(field(record, name), Some(want), "{name}");
-    }
+    assert_eq!(
+        field(record, "guardrail_name"),
+        Some(&GuardrailValue::Text(String::from("noma-test")))
+    );
+    assert_eq!(
+        field(record, "guardrail_provider"),
+        Some(&GuardrailValue::Text(String::from("noma")))
+    );
+    assert_eq!(
+        field(record, "guardrail_status"),
+        Some(&GuardrailValue::Text(String::from("success")))
+    );
+    assert_eq!(
+        field(record, "guardrail_mode"),
+        Some(&GuardrailValue::Text(String::from("pre_call")))
+    );
+    assert_eq!(
+        field(record, "start_time"),
+        Some(&GuardrailValue::Decimal(1_700_000_000.0))
+    );
+    assert_eq!(
+        field(record, "end_time"),
+        Some(&GuardrailValue::Decimal(1_700_000_001.0))
+    );
+    assert_eq!(
+        field(record, "duration"),
+        Some(&GuardrailValue::Decimal(1.0))
+    );
     assert_eq!(
         response_of(record),
         &GuardrailValue::Object(data(SAFE_REPLY))

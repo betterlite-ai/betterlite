@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::time::SystemTime;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde_json::value::{RawValue, to_raw_value};
@@ -15,8 +14,8 @@ use super::wire::{InputMessage, TextPart};
 use super::{MessageRole, NomaScanPolicy, ScanCallContext, ScanOutcome};
 
 struct ScanRound<'round> {
-    started: SystemTime,
     role: MessageRole,
+    label: &'static str,
     items: &'round [Box<RawValue>],
     scanned: &'round str,
     llm_request_id: Option<&'round str>,
@@ -29,6 +28,7 @@ async fn scan_and_record(
     call: ScanCallContext<'_>,
     round: &ScanRound<'_>,
 ) -> Result<ScanOutcome, NomaError> {
+    let started = (policy.now)();
     let target = ScanTarget {
         user_auth: call.user_auth,
         extra_data: call.extra_data,
@@ -41,16 +41,16 @@ async fn scan_and_record(
         response: &response,
         status,
         event_type: call.event_type,
-        timing: ScanTiming {
-            started: round.started,
-            ended,
-        },
+        timing: ScanTiming { started, ended },
     };
     record_scan(policy, request_data, &run)?;
     let verdict = decide_verdict(&policy.settings, round.role, round.scanned, &response)?;
     let anonymized = match verdict {
         Verdict::Allowed => None,
-        Verdict::Anonymized(text) => Some(text),
+        Verdict::Anonymized(text) => {
+            tracing::debug!("Noma guardrail anonymized {}: {text}", round.label);
+            Some(text)
+        }
     };
     Ok(ScanOutcome {
         status,
@@ -65,15 +65,14 @@ impl NomaScanPolicy {
         request_data: &mut BTreeMap<String, GuardrailValue>,
         call: ScanCallContext<'_>,
     ) -> Result<Option<ScanOutcome>, NomaError> {
-        let started = (self.now)();
         let Some(items) = scan_items(request_data)? else {
             return Ok(None);
         };
         let scanned =
             serde_json::to_string(&items).map_err(|source| NomaError::PayloadJson { source })?;
         let round = ScanRound {
-            started,
             role: MessageRole::User,
+            label: "user message",
             items: &items,
             scanned: &scanned,
             llm_request_id: None,
@@ -81,7 +80,6 @@ impl NomaScanPolicy {
         let outcome = scan_and_record(self, request_data, call, &round).await?;
         if let Some(text) = &outcome.anonymized {
             replace_last_user_message(request_data, text)?;
-            tracing::debug!("Noma guardrail anonymized user message: {text}");
         }
         Ok(Some(outcome))
     }
@@ -92,7 +90,6 @@ impl NomaScanPolicy {
         response: &mut GuardrailValue,
         call: ScanCallContext<'_>,
     ) -> Result<Option<ScanOutcome>, NomaError> {
-        let started = (self.now)();
         let request_id = response_id(response)?.map(str::to_owned);
         let Some(content) = message_content(response)?.map(str::to_owned) else {
             return Ok(None);
@@ -107,8 +104,8 @@ impl NomaScanPolicy {
         };
         let items = [to_raw_value(&item).map_err(|source| NomaError::PayloadJson { source })?];
         let round = ScanRound {
-            started,
             role: MessageRole::Assistant,
+            label: "LLM response",
             items: &items,
             scanned: &content,
             llm_request_id: request_id.as_deref(),
@@ -116,7 +113,6 @@ impl NomaScanPolicy {
         let outcome = scan_and_record(self, request_data, call, &round).await?;
         if let Some(text) = &outcome.anonymized {
             replace_response_content(response, text);
-            tracing::debug!("Noma guardrail anonymized LLM response: {text}");
         }
         Ok(Some(outcome))
     }
