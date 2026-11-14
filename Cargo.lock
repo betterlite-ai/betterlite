@@ -3566,6 +3566,7 @@ dependencies = [
  "betterlite-prompts",
  "futures-util",
  "indexmap 2.14.2",
+ "num-traits",
  "rstest",
  "serde",
  "serde_json",
