@@ -9,7 +9,7 @@ use super::support::{
     Sources, callable, get_client, initialize, initialize_result, revealed,
 };
 use crate::endpoints::cloudflare::{
-    CloudflareClient, CloudflareOutcome, CloudflareParams, CloudflareRequest, ParamValue,
+    CloudflareClient, CloudflareOutcome, CloudflareParams, CloudflareRequest, ParamEntry,
     init_cloudflare_gateway_client,
 };
 use crate::endpoints::dynamic::{DynamicVersionError, check_dynamic_azure_params};
@@ -210,10 +210,15 @@ fn cloudflare_dict_get() {
         .0
         .insert("AZURE_CLIENT_ID".to_owned(), "env-client".to_owned());
     let params = CloudflareParams {
-        tenant_id: Some(ParamValue::Null),
-        client_id: None,
-        azure_scope: None,
+        tenant_id: ParamEntry::Null,
+        client_id: ParamEntry::Absent,
+        azure_scope: ParamEntry::Absent,
     };
+    let parsed: CloudflareParams =
+        serde_json::from_str(r#"{"tenant_id": null, "azure_scope": null}"#).unwrap();
+    assert_eq!(parsed.tenant_id, ParamEntry::Null);
+    assert_eq!(parsed.client_id, ParamEntry::Absent);
+    assert_eq!(parsed.azure_scope, ParamEntry::Null);
     let sources = Sources::default();
     let oidc = secret("oidc/assertion");
     let mut request = cloudflare(&params, &environment, &sources);
@@ -236,9 +241,9 @@ fn cloudflare_dict_get() {
 
 fn cloudflare_oidc_scope() {
     let null_scope = CloudflareParams {
-        tenant_id: Some(ParamValue::Value("explicit-tenant".to_owned())),
-        client_id: Some(ParamValue::Value("explicit-client".to_owned())),
-        azure_scope: Some(ParamValue::Null),
+        tenant_id: ParamEntry::Value("explicit-tenant".to_owned()),
+        client_id: ParamEntry::Value("explicit-client".to_owned()),
+        azure_scope: ParamEntry::Null,
     };
     let rows = [
         (

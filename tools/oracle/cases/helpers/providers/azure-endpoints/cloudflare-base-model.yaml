@@ -27,8 +27,8 @@ call:
         max_retries: 2
         timeout: 7.5
         azure_ad_token: oidc/assertion
-        params: {tenant_id: null}
-        environment: {AZURE_CLIENT_ID: env-client}
+        params: {tenant_id: null, azure_scope: null}
+        environment: {AZURE_TENANT_ID: env-tenant, AZURE_CLIENT_ID: env-client, AZURE_SCOPE: env-scope}
       - api_base: https://gateway.example/azure
         model: gpt-4o
         api_version: "2024-02-01"

@@ -12,11 +12,14 @@ use crate::oidc_exchange::OidcExchangeInput;
 use super::initialize::EndpointError;
 use super::projection::{ClientKind, SuppliedClient};
 
-// litellm_params distinguishes an absent key (None) from an explicit null, because dict.get keeps null
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+// litellm_params distinguishes an absent key (dict.get falls back to os.getenv) from a present null (it does not)
+#[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
-pub enum ParamValue<T> {
-    Null,
+pub enum ParamEntry<T> {
+    #[default]
+    #[serde(skip_deserializing)]
+    Absent,
+    Null(()),
     Value(T),
 }
 
@@ -24,11 +27,11 @@ pub enum ParamValue<T> {
 #[serde(deny_unknown_fields)]
 pub struct CloudflareParams {
     #[serde(default)]
-    pub tenant_id: Option<ParamValue<String>>,
+    pub tenant_id: ParamEntry<String>,
     #[serde(default)]
-    pub client_id: Option<ParamValue<String>>,
+    pub client_id: ParamEntry<String>,
     #[serde(default)]
-    pub azure_scope: Option<ParamValue<String>>,
+    pub azure_scope: ParamEntry<String>,
 }
 
 pub struct CloudflareRequest<'data> {
@@ -86,12 +89,12 @@ pub fn init_cloudflare_gateway_client<'data>(
     request: &CloudflareRequest<'data>,
 ) -> Result<CloudflareOutcome<'data>, EndpointError> {
     let tenant_id = dict_get(
-        request.params.tenant_id.as_ref(),
+        &request.params.tenant_id,
         request.environment,
         "AZURE_TENANT_ID",
     );
     let client_id = dict_get(
-        request.params.client_id.as_ref(),
+        &request.params.client_id,
         request.environment,
         "AZURE_CLIENT_ID",
     );
@@ -110,14 +113,14 @@ pub fn init_cloudflare_gateway_client<'data>(
 // os.getenv's default is evaluated only for an absent key, so an explicit null scope stays None
 fn resolve_scope(request: &CloudflareRequest<'_>) -> Option<String> {
     match &request.params.azure_scope {
-        None => Some(
+        ParamEntry::Absent => Some(
             request
                 .environment
                 .lookup("AZURE_SCOPE")
                 .unwrap_or_else(|| DEFAULT_SCOPE.to_owned()),
         ),
-        Some(ParamValue::Null) => None,
-        Some(ParamValue::Value(text)) => Some(text.clone()),
+        ParamEntry::Null => None,
+        ParamEntry::Value(text) => Some(text.clone()),
     }
 }
 
@@ -173,13 +176,13 @@ fn exchanged_token(
 
 // dict.get(key, os.getenv(...)) keeps an explicit null, so only an absent key reads the environment
 fn dict_get(
-    value: Option<&ParamValue<String>>,
+    value: &ParamEntry<String>,
     environment: &dyn EnvironmentLookup,
     name: &str,
 ) -> Option<String> {
     match value {
-        None => environment.lookup(name),
-        Some(ParamValue::Null) => None,
-        Some(ParamValue::Value(text)) => Some(text.clone()),
+        ParamEntry::Absent => environment.lookup(name),
+        ParamEntry::Null => None,
+        ParamEntry::Value(text) => Some(text.clone()),
     }
 }
