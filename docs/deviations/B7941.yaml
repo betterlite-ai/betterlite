@@ -1,0 +1,36 @@
+task: B7941
+deviations:
+  - what: >-
+      ComputerUse keeps only the snake_case Python attribute excluded_predefined_functions; the
+      wire name excludedPredefinedFunctions is its pydantic alias, validate_by_name lets either
+      spelling build the model, and serialize_by_alias keeps the default dump on the wire name.
+    why: >-
+      ruff's N815 rejects a mixed-case class attribute, and the task's expect budget is zero, so
+      the attribute cannot carry a noqa for LiteLLM's spelling.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/generated.py#L143
+  - what: >-
+      Fields LiteLLM types as Any or dict[str, Any] are typed JsonValue or dict[str, JsonValue]:
+      Function.parameters, Interaction.response_format, the same field on both Create params,
+      FunctionCallContent.arguments, McpServerToolCallContent.arguments, the result of
+      FunctionResultContent and McpServerToolResultContent, the step, delta and interaction
+      dicts of the SSE events, the response classes' outputs, steps, usage, delta, step,
+      interaction and _hidden_params, InteractionsAPIOptionalRequestParams and
+      InteractionEnvironment.
+    why: >-
+      The Python rules ban Any in type position, and JsonValue is the wheel's type for JSON whose
+      shape is open. A JSON payload validates the same; a non-JSON Python object that Any accepts
+      is rejected here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/generated.py#L124
+  - what: >-
+      The description text and title metadata that LiteLLM's code generator puts on fields, and
+      the class docstrings of the event and response classes, are not ported.
+      model_json_schema() therefore has no field descriptions, the five RootModel options carry
+      pydantic's class-name titles
+      (ModelOption, AgentOption, ImageMimeTypeOption, AudioMimeTypeOption, VideoMimeTypeOption)
+      instead of Model, Agent, ImageMimeType, AudioMimeType and VideoMimeType, and the event and
+      response classes have no class description.
+    why: >-
+      The metadata is Google's OpenAPI prose, not a declared type: validation, defaults and
+      serialization are unchanged. Porting it would add several hundred Field constructor
+      arguments and push the task past its max_changed_lines budget of 1500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/generated.py#L346
