@@ -1,3 +1,4 @@
+use super::adapter::SandboxAdapter;
 use super::error::SandboxLifecycleError;
 
 // LiteLLM's SandboxProviders enum names the closed set the factory accepts
@@ -15,6 +16,21 @@ impl SandboxProvider {
             other => Err(SandboxLifecycleError::UnsupportedProvider {
                 provider: other.to_owned(),
             }),
+        }
+    }
+
+    pub fn select<'adapter, E2b, OpenSandbox>(
+        self,
+        e2b: &'adapter E2b,
+        opensandbox: &'adapter OpenSandbox,
+    ) -> &'adapter dyn SandboxAdapter
+    where
+        E2b: SandboxAdapter,
+        OpenSandbox: SandboxAdapter,
+    {
+        match self {
+            Self::E2b => e2b,
+            Self::OpenSandbox => opensandbox,
         }
     }
 }

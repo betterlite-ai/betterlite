@@ -89,7 +89,7 @@ impl FakeHttp {
 
     fn only_request(&self) -> Recorded {
         let mut requests = self.requests();
-        assert_eq!(recorded.len(), 1_usize);
+        assert_eq!(requests.len(), 1_usize);
         requests.remove(0)
     }
 
@@ -157,9 +157,11 @@ impl OpenHttp for FakeHttp {
             request.body,
         );
         let reply = self.next_reply();
+        let status = reply.status;
+        let body = stream::once(async move { Ok::<Vec<u8>, OpenSandboxError>(reply.body) });
         Ok(OpenStream {
-            status: reply.status,
-            body: stream::iter(vec![Ok::<Vec<u8>, OpenSandboxError>(reply.body)]).boxed(),
+            status,
+            body: body.boxed(),
         })
     }
 }
@@ -200,26 +202,18 @@ fn build_dispatch(http: &FakeHttp, environment: Environment) -> Dispatch {
     }
 }
 
-fn call<'call>(
-    provider: &'call str,
-    api_key: Option<&'call SecretString>,
-    kwargs: &'call IndexMap<String, Json>,
-) -> SandboxCall<'call> {
-    SandboxCall {
-        provider,
-        api_key,
-        kwargs,
-        logging: None,
-    }
-}
-
 fn create_request<'call>(
     provider: &'call str,
     api_key: Option<&'call SecretString>,
     kwargs: &'call IndexMap<String, Json>,
 ) -> CreateSandbox<'call> {
     CreateSandbox {
-        call: call(provider, api_key, kwargs),
+        call: SandboxCall {
+            provider,
+            api_key,
+            kwargs,
+            logging: None,
+        },
         api_base: None,
         template: None,
         timeout: None,
@@ -238,13 +232,12 @@ fn create_request<'call>(
 }
 
 fn run_request<'call>(
-    provider: &'call str,
+    call: SandboxCall<'call>,
     container: SandboxContainerRef<'call>,
     code: &'call str,
-    kwargs: &'call IndexMap<String, Json>,
 ) -> RunCode<'call> {
     RunCode {
-        call: call(provider, None, kwargs),
+        call,
         container,
         code,
         api_base: None,
@@ -253,18 +246,6 @@ fn run_request<'call>(
         use_server_proxy: false,
         ready_timeout: None,
         poll_interval: None,
-    }
-}
-
-fn delete_request<'call>(
-    provider: &'call str,
-    container: SandboxContainerRef<'call>,
-    kwargs: &'call IndexMap<String, Json>,
-) -> DeleteSandbox<'call> {
-    DeleteSandbox {
-        call: call(provider, None, kwargs),
-        container,
-        api_base: None,
     }
 }
 
@@ -441,7 +422,16 @@ async fn run_with_an_unsupported_provider_names_it() {
     let http = FakeHttp::new(&[]);
     let sandbox = build_dispatch(&http, Environment::new());
     let kwargs = empty_kwargs();
-    let mut request = run_request("bedrock", SandboxContainerRef::Id("sbx_1"), "1", &kwargs);
+    let mut request = run_request(
+        SandboxCall {
+            provider: "bedrock",
+            api_key: None,
+            kwargs: &kwargs,
+            logging: None,
+        },
+        SandboxContainerRef::Id("sbx_1"),
+        "1",
+    );
     let error = sandbox.arun_code(&mut request).await.unwrap_err();
     assert!(matches!(
         error,
@@ -454,7 +444,16 @@ async fn delete_with_an_unsupported_provider_names_it() {
     let http = FakeHttp::new(&[]);
     let sandbox = build_dispatch(&http, Environment::new());
     let kwargs = empty_kwargs();
-    let mut request = delete_request("bedrock", SandboxContainerRef::Id("sbx_1"), &kwargs);
+    let mut request = DeleteSandbox {
+        call: SandboxCall {
+            provider: "bedrock",
+            api_key: None,
+            kwargs: &kwargs,
+            logging: None,
+        },
+        container: SandboxContainerRef::Id("sbx_1"),
+        api_base: None,
+    };
     let error = sandbox.adelete_sandbox(&mut request).await.unwrap_err();
     assert!(matches!(
         error,
@@ -525,10 +524,14 @@ async fn run_logs_the_run_code_operation() {
     create_call.call.logging = Some(&mut logging);
     let created = sandbox.acreate_sandbox(&mut create_call).await.unwrap();
     let mut run = run_request(
-        "e2b",
+        SandboxCall {
+            provider: "e2b",
+            api_key: None,
+            kwargs: &kwargs,
+            logging: None,
+        },
         SandboxContainerRef::Container(&created),
         "print(1)",
-        &kwargs,
     );
     sandbox.arun_code(&mut run).await.unwrap();
     assert_eq!(logging.updates.len(), 1_usize);
@@ -574,19 +577,27 @@ async fn internal_kwargs_do_not_reach_the_run_request() {
     let mut first = create_request("e2b", Some(&api_key), &kwargs);
     let created = sandbox.acreate_sandbox(&mut first).await.unwrap();
     let mut plain = run_request(
-        "e2b",
+        SandboxCall {
+            provider: "e2b",
+            api_key: None,
+            kwargs: &kwargs,
+            logging: None,
+        },
         SandboxContainerRef::Container(&created),
         "1",
-        &kwargs,
     );
     sandbox.arun_code(&mut plain).await.unwrap();
     let mut second = create_request("e2b", Some(&api_key), &kwargs);
     let reused = sandbox.acreate_sandbox(&mut second).await.unwrap();
     let mut internal = run_request(
-        "e2b",
+        SandboxCall {
+            provider: "e2b",
+            api_key: None,
+            kwargs: &with_kwargs,
+            logging: None,
+        },
         SandboxContainerRef::Container(&reused),
         "1",
-        &with_kwargs,
     );
     sandbox.arun_code(&mut internal).await.unwrap();
     let recorded = http.requests();
@@ -601,10 +612,28 @@ async fn internal_kwargs_do_not_reach_the_delete_request() {
     let sandbox = build_dispatch(&http, Environment::new());
     let kwargs = empty_kwargs();
     let api_key = secret("e2b-key");
-    let mut plain = delete_request("e2b", SandboxContainerRef::Id("sbx_1"), &kwargs);
+    let mut plain = DeleteSandbox {
+        call: SandboxCall {
+            provider: "e2b",
+            api_key: None,
+            kwargs: &kwargs,
+            logging: None,
+        },
+        container: SandboxContainerRef::Id("sbx_1"),
+        api_base: None,
+    };
     plain.call.api_key = Some(&api_key);
     assert!(sandbox.adelete_sandbox(&mut plain).await.unwrap());
-    let mut internal = delete_request("e2b", SandboxContainerRef::Id("sbx_1"), &with_kwargs);
+    let mut internal = DeleteSandbox {
+        call: SandboxCall {
+            provider: "e2b",
+            api_key: None,
+            kwargs: &with_kwargs,
+            logging: None,
+        },
+        container: SandboxContainerRef::Id("sbx_1"),
+        api_base: None,
+    };
     internal.call.api_key = Some(&api_key);
     assert!(sandbox.adelete_sandbox(&mut internal).await.unwrap());
     let recorded = http.requests();
@@ -637,10 +666,14 @@ async fn run_forwards_env_vars_and_uses_the_access_token() {
     let created = sandbox.acreate_sandbox(&mut create_call).await.unwrap();
     let env_vars = BTreeMap::from([("MODE".to_owned(), "test".to_owned())]);
     let mut run = run_request(
-        "e2b",
+        SandboxCall {
+            provider: "e2b",
+            api_key: None,
+            kwargs: &kwargs,
+            logging: None,
+        },
         SandboxContainerRef::Container(&created),
         "print(1)",
-        &kwargs,
     );
     run.env_vars = Some(&env_vars);
     let result = sandbox.arun_code(&mut run).await.unwrap();
@@ -668,10 +701,14 @@ async fn run_from_an_opensandbox_handle_does_not_fetch_the_endpoint_again() {
     create_call.api_base = Some("https://open.test");
     let created = sandbox.acreate_sandbox(&mut create_call).await.unwrap();
     let mut run = run_request(
-        "opensandbox",
+        SandboxCall {
+            provider: "opensandbox",
+            api_key: None,
+            kwargs: &kwargs,
+            logging: None,
+        },
         SandboxContainerRef::Container(&created),
         "1+1",
-        &kwargs,
     );
     run.language = Some("bash");
     sandbox.arun_code(&mut run).await.unwrap();
@@ -690,7 +727,16 @@ async fn run_code_with_a_bare_id_needs_the_e2b_handle() {
     let http = FakeHttp::new(&[]);
     let sandbox = build_dispatch(&http, Environment::new());
     let kwargs = empty_kwargs();
-    let mut request = run_request("e2b", SandboxContainerRef::Id("sbx_1"), "1", &kwargs);
+    let mut request = run_request(
+        SandboxCall {
+            provider: "e2b",
+            api_key: None,
+            kwargs: &kwargs,
+            logging: None,
+        },
+        SandboxContainerRef::Id("sbx_1"),
+        "1",
+    );
     let error = sandbox.arun_code(&mut request).await.unwrap_err();
     assert!(matches!(
         error,
@@ -705,7 +751,16 @@ async fn delete_returns_false_when_e2b_answers_404() {
     let sandbox = build_dispatch(&http, Environment::new());
     let api_key = secret("e2b-key");
     let kwargs = empty_kwargs();
-    let mut request = delete_request("e2b", SandboxContainerRef::Id("sbx_1"), &kwargs);
+    let mut request = DeleteSandbox {
+        call: SandboxCall {
+            provider: "e2b",
+            api_key: None,
+            kwargs: &kwargs,
+            logging: None,
+        },
+        container: SandboxContainerRef::Id("sbx_1"),
+        api_base: None,
+    };
     request.call.api_key = Some(&api_key);
     request.api_base = Some("https://e2b.test");
     assert!(!sandbox.adelete_sandbox(&mut request).await.unwrap());
@@ -721,7 +776,16 @@ async fn delete_forwards_an_opensandbox_id_and_returns_true() {
     let sandbox = build_dispatch(&http, Environment::new());
     let api_key = secret("open-key");
     let kwargs = empty_kwargs();
-    let mut request = delete_request("opensandbox", SandboxContainerRef::Id("sbx_9"), &kwargs);
+    let mut request = DeleteSandbox {
+        call: SandboxCall {
+            provider: "opensandbox",
+            api_key: None,
+            kwargs: &kwargs,
+            logging: None,
+        },
+        container: SandboxContainerRef::Id("sbx_9"),
+        api_base: None,
+    };
     request.call.api_key = Some(&api_key);
     request.api_base = Some("https://open.test");
     assert!(sandbox.adelete_sandbox(&mut request).await.unwrap());
@@ -737,7 +801,16 @@ async fn delete_returns_false_when_opensandbox_answers_404() {
     let sandbox = build_dispatch(&http, Environment::new());
     let api_key = secret("open-key");
     let kwargs = empty_kwargs();
-    let mut request = delete_request("opensandbox", SandboxContainerRef::Id("sbx_9"), &kwargs);
+    let mut request = DeleteSandbox {
+        call: SandboxCall {
+            provider: "opensandbox",
+            api_key: None,
+            kwargs: &kwargs,
+            logging: None,
+        },
+        container: SandboxContainerRef::Id("sbx_9"),
+        api_base: None,
+    };
     request.call.api_key = Some(&api_key);
     request.api_base = Some("https://open.test");
     assert!(!sandbox.adelete_sandbox(&mut request).await.unwrap());

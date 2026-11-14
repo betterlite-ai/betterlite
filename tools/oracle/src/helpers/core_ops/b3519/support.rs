@@ -112,15 +112,6 @@ impl FakeHttp {
     }
 }
 
-fn reply_stream<Error>(
-    reply: StoredReply,
-) -> futures_util::stream::BoxStream<'static, Result<Vec<u8>, Error>>
-where
-    Error: Send + 'static,
-{
-    stream::iter(vec![Ok::<Vec<u8>, Error>(reply.body)]).boxed()
-}
-
 #[async_trait]
 impl E2bHttp for FakeHttp {
     async fn send(&self, request: E2bRequest) -> Result<E2bStream, E2bError> {
@@ -132,7 +123,7 @@ impl E2bHttp for FakeHttp {
         );
         Ok(E2bStream {
             status: reply.status,
-            body: reply_stream(reply),
+            body: stream::iter([Ok::<Vec<u8>, E2bError>(reply.body)]).boxed(),
         })
     }
 }
@@ -140,15 +131,17 @@ impl E2bHttp for FakeHttp {
 #[async_trait]
 impl OpenHttp for FakeHttp {
     async fn send(&self, request: OpenRequest) -> Result<OpenStream, OpenSandboxError> {
-        let reply = self.exchange(
+        let recorded = self.exchange(
             &request.method,
             &request.url,
             &request.headers,
             request.body,
         );
+        let status = recorded.status;
+        let body = recorded.body;
         Ok(OpenStream {
-            status: reply.status,
-            body: reply_stream(reply),
+            status,
+            body: stream::once(async move { Ok::<Vec<u8>, OpenSandboxError>(body) }).boxed(),
         })
     }
 }

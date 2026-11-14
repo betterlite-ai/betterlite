@@ -1,4 +1,5 @@
 use indexmap::IndexMap;
+use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -18,13 +19,25 @@ pub enum SandboxToolValue {
     Mapping(IndexMap<String, Self>),
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default)]
 pub struct SandboxToolConfig {
     pub name: Option<String>,
     pub provider: Option<String>,
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     pub api_base: Option<String>,
 }
+
+impl PartialEq for SandboxToolConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.provider == other.provider
+            && self.api_key.as_ref().map(ExposeSecret::expose_secret)
+                == other.api_key.as_ref().map(ExposeSecret::expose_secret)
+            && self.api_base == other.api_base
+    }
+}
+
+impl Eq for SandboxToolConfig {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SandboxToolEntry {
@@ -84,7 +97,7 @@ pub fn sandbox_tool_entries(
         entries.push(SandboxToolEntry::Configured(SandboxToolConfig {
             name: text_field(&mut fields, "sandbox_tool_name", &path)?,
             provider: text_field(&mut params, "sandbox_provider", &params_path)?,
-            api_key: text_field(&mut params, "api_key", &params_path)?,
+            api_key: text_field(&mut params, "api_key", &params_path)?.map(SecretString::from),
             api_base: text_field(&mut params, "api_base", &params_path)?,
         }));
     }

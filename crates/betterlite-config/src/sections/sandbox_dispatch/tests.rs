@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::sandbox_dispatch::{SandboxToolConfig, SandboxToolEntry};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::types::Config;
@@ -30,7 +31,7 @@ fn loads_the_configured_sandbox_tools() {
             SandboxToolEntry::Configured(SandboxToolConfig {
                 name: Some("my-e2b".to_owned()),
                 provider: Some("e2b".to_owned()),
-                api_key: Some("os.environ/E2B_API_KEY".to_owned()),
+                api_key: Some(SecretString::from("os.environ/E2B_API_KEY")),
                 api_base: None,
             }),
             SandboxToolEntry::Configured(SandboxToolConfig {
@@ -51,7 +52,10 @@ fn a_secret_reference_stays_as_written_until_the_registry_reads_it() {
     let [SandboxToolEntry::Configured(entry)] = entries(&config) else {
         panic!("one configured entry");
     };
-    assert_eq!(entry.api_key.as_deref(), Some("os.environ/MY_KEY"));
+    assert_eq!(
+        entry.api_key.as_ref().map(ExposeSecret::expose_secret),
+        Some("os.environ/MY_KEY")
+    );
 }
 
 #[test]

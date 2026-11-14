@@ -64,7 +64,9 @@ fn registry_answer(input: &RegistryInput) -> HelperResult {
             SandboxToolEntry::Configured(SandboxToolConfig {
                 name: tool.sandbox_tool_name.clone(),
                 provider: params.and_then(|params| params.sandbox_provider.clone()),
-                api_key: params.and_then(|params| params.api_key.clone()),
+                api_key: params
+                    .and_then(|params| params.api_key.clone())
+                    .map(SecretString::from),
                 api_base: params.and_then(|params| params.api_base.clone()),
             })
         })
@@ -75,7 +77,7 @@ fn registry_answer(input: &RegistryInput) -> HelperResult {
         .map_err(|error| helper_error("SandboxRegistryError", error))?;
     let mut resolved = serde_json::Map::new();
     for name in &input.names {
-        let tool = registry.resolve(name).map(|tool| {
+        let tool = registry.tools.get(name).map(|tool| {
             serde_json::json!({
                 "sandbox_provider": tool.provider,
                 "api_key": tool.api_key.as_ref().map(|key| key.expose_secret()),
@@ -134,10 +136,8 @@ fn create_and_run_answer(input: &RunInput) -> HelperResult {
 }
 
 fn delete_answer(input: &DeleteInput) -> HelperResult {
-    let http = FakeHttp::new(&input.replies);
-    let sandbox = build_dispatch(&http, input.environment.clone());
-    let api_key = input.api_key.as_deref().map(SecretString::from);
     let kwargs = IndexMap::new();
+    let api_key = input.api_key.as_deref().map(SecretString::from);
     let mut request = DeleteSandbox {
         call: SandboxCall {
             provider: &input.provider,
@@ -148,6 +148,8 @@ fn delete_answer(input: &DeleteInput) -> HelperResult {
         container: SandboxContainerRef::Id(&input.container),
         api_base: input.api_base.as_deref(),
     };
+    let http = FakeHttp::new(&input.replies);
+    let sandbox = build_dispatch(&http, input.environment.clone());
     let deleted = block_on(sandbox.adelete_sandbox(&mut request))?;
     Ok(serde_json::json!({"requests": http.requests(), "deleted": deleted}))
 }

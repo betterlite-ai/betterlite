@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_models::sandbox_dispatch::SandboxToolEntry;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use betterlite_secret_managers::secret_lookup::error::SecretLookupError;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use thiserror::Error;
 
 mod tests;
@@ -29,7 +29,7 @@ pub struct SandboxTool {
 
 #[derive(Debug, Clone, Default)]
 pub struct SandboxToolRegistry {
-    tools: BTreeMap<String, SandboxTool>,
+    pub tools: BTreeMap<String, SandboxTool>,
 }
 
 impl SandboxToolRegistry {
@@ -57,7 +57,11 @@ impl SandboxToolRegistry {
                 tracing::warn!("sandbox_tools: skipping entry missing 'sandbox_provider'");
                 continue;
             };
-            let api_key = resolve_value(config.api_key.as_deref(), lookup, environment)?;
+            let api_key = resolve_value(
+                config.api_key.as_ref().map(ExposeSecret::expose_secret),
+                lookup,
+                environment,
+            )?;
             let api_base = resolve_value(config.api_base.as_deref(), lookup, environment)?
                 .map(|secret| secret.expose_secret().to_owned());
             tools.insert(
@@ -71,10 +75,6 @@ impl SandboxToolRegistry {
         }
         self.tools = tools;
         Ok(())
-    }
-
-    pub fn resolve(&self, name: &str) -> Option<&SandboxTool> {
-        self.tools.get(name)
     }
 }
 

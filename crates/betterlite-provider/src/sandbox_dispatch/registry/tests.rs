@@ -66,7 +66,7 @@ fn configured(
     SandboxToolEntry::Configured(SandboxToolConfig {
         name: name.map(str::to_owned),
         provider: provider.map(str::to_owned),
-        api_key: api_key.map(str::to_owned),
+        api_key: api_key.map(SecretString::from),
         api_base: api_base.map(str::to_owned),
     })
 }
@@ -97,7 +97,7 @@ fn resolves_a_configured_tool_by_name() {
         )],
         &BTreeMap::new(),
     );
-    let tool = registry.resolve("tools").expect("the tool registers");
+    let tool = registry.tools.get("tools").expect("the tool registers");
     assert_eq!(tool.provider, "e2b");
     assert_eq!(text(&tool.api_key).as_deref(), Some("plain-key"));
     assert_eq!(tool.api_base.as_deref(), Some("https://e2b.test"));
@@ -106,7 +106,7 @@ fn resolves_a_configured_tool_by_name() {
 #[test]
 fn an_unknown_name_resolves_to_none() {
     let registry = register(&[], &BTreeMap::new());
-    assert!(registry.resolve("missing").is_none());
+    assert!(registry.tools.get("missing").is_none());
 }
 
 #[test]
@@ -123,7 +123,7 @@ fn resolves_os_environ_references_through_the_lookup() {
             ("E2B_API_BASE", "https://e2b.test"),
         ]),
     );
-    let tool = registry.resolve("tools").expect("the tool registers");
+    let tool = registry.tools.get("tools").expect("the tool registers");
     assert_eq!(text(&tool.api_key).as_deref(), Some("resolved-key"));
     assert_eq!(tool.api_base.as_deref(), Some("https://e2b.test"));
 }
@@ -139,7 +139,7 @@ fn a_missing_environment_variable_resolves_to_none() {
         )],
         &BTreeMap::new(),
     );
-    let tool = registry.resolve("tools").expect("the tool registers");
+    let tool = registry.tools.get("tools").expect("the tool registers");
     assert!(tool.api_key.is_none());
 }
 
@@ -154,7 +154,7 @@ fn an_environment_value_that_reads_as_a_flag_resolves_to_none() {
         )],
         &environment(&[("FLAG", "true")]),
     );
-    let tool = registry.resolve("tools").expect("the tool registers");
+    let tool = registry.tools.get("tools").expect("the tool registers");
     assert!(tool.api_key.is_none());
 }
 
@@ -169,7 +169,7 @@ fn an_empty_environment_value_resolves_to_empty_text() {
         )],
         &environment(&[("EMPTY", "")]),
     );
-    let tool = registry.resolve("tools").expect("the tool registers");
+    let tool = registry.tools.get("tools").expect("the tool registers");
     assert_eq!(text(&tool.api_key).as_deref(), Some(""));
 }
 
@@ -184,7 +184,7 @@ fn a_value_without_the_os_environ_prefix_stays_as_written() {
         )],
         &BTreeMap::new(),
     );
-    let tool = registry.resolve("tools").expect("the tool registers");
+    let tool = registry.tools.get("tools").expect("the tool registers");
     assert_eq!(
         text(&tool.api_key).as_deref(),
         Some("aws_secret_manager/key")
@@ -224,8 +224,8 @@ fn skips_an_entry_missing_a_name() {
         ],
         &BTreeMap::new(),
     );
-    assert!(registry.resolve("kept").is_some());
-    assert!(registry.resolve("").is_none());
+    assert!(registry.tools.get("kept").is_some());
+    assert!(registry.tools.get("").is_none());
 }
 
 #[test]
@@ -238,9 +238,9 @@ fn skips_an_entry_missing_a_provider() {
         ],
         &BTreeMap::new(),
     );
-    assert!(registry.resolve("no-provider").is_none());
-    assert!(registry.resolve("empty-provider").is_none());
-    assert!(registry.resolve("kept").is_some());
+    assert!(registry.tools.get("no-provider").is_none());
+    assert!(registry.tools.get("empty-provider").is_none());
+    assert!(registry.tools.get("kept").is_some());
 }
 
 #[test]
@@ -252,7 +252,7 @@ fn skips_an_entry_that_is_not_an_object() {
         ],
         &BTreeMap::new(),
     );
-    assert!(registry.resolve("kept").is_some());
+    assert!(registry.tools.get("kept").is_some());
 }
 
 #[test]
@@ -271,8 +271,8 @@ fn replaces_the_previous_registry_on_every_register_call() {
             &BTreeMap::new(),
         )
         .unwrap();
-    assert!(registry.resolve("first").is_none());
-    let second = registry.resolve("second").expect("the second tool stays");
+    assert!(registry.tools.get("first").is_none());
+    let second = registry.tools.get("second").expect("the second tool stays");
     assert_eq!(second.provider, "opensandbox");
 }
 
@@ -285,7 +285,7 @@ fn keeps_the_last_entry_for_a_duplicate_name() {
         ],
         &BTreeMap::new(),
     );
-    let tool = registry.resolve("tools").expect("the tool registers");
+    let tool = registry.tools.get("tools").expect("the tool registers");
     assert_eq!(tool.provider, "opensandbox");
     assert_eq!(text(&tool.api_key).as_deref(), Some("second-key"));
 }

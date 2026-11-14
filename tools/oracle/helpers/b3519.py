@@ -1,7 +1,6 @@
 import asyncio
 import os
-from collections.abc import AsyncIterator
-from typing import Final, Literal, Required, TypedDict
+from typing import Final, Literal, Protocol, Required, TypedDict
 
 import httpx
 from litellm.constants import OPEN_SANDBOX_DEFAULT_LANGUAGE
@@ -10,12 +9,12 @@ from litellm.llms.base_llm.sandbox.transformation import (
     CodeExecutionResult,
     ContainerHandle,
 )
-from litellm.sandbox.sandbox_tools import register_sandbox_tools, resolve_sandbox_tool
+from litellm.sandbox import sandbox_tools
 from litellm.types.utils import SandboxProviders
 from litellm.utils import ProviderConfigManager
 from pydantic import JsonValue, TypeAdapter
 
-JSON: Final = TypeAdapter(JsonValue)
+JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 DEFAULT_STATUS: Final = 200
 
 
@@ -51,17 +50,35 @@ class Input(TypedDict, total=False):
     replies: list[Reply]
 
 
-class _Response:
+class ToolFields(TypedDict):
+    sandbox_provider: str
+    api_key: str | None
+    api_base: str | None
+
+
+class HandleFields(TypedDict):
+    id: str
+    provider: str
+    domain: str | None
+
+
+class ResultFields(TypedDict):
+    stdout: str
+    stderr: str
+    results: list[dict[str, JsonValue]]
+    error: dict[str, JsonValue] | None
+    execution_count: int | None
+    object: str
+
+
+TOOL: Final[TypeAdapter[ToolFields]] = TypeAdapter(ToolFields)
+HANDLE: Final[TypeAdapter[HandleFields]] = TypeAdapter(HandleFields)
+RESULT: Final[TypeAdapter[ResultFields]] = TypeAdapter(ResultFields)
+
+
+class _Response(httpx.Response):
     def __init__(self, status: int, body: str) -> None:
-        self.status_code = status
-        self._body = body
-
-    def json(self) -> JsonValue:
-        return JSON.validate_json(self._body)
-
-    async def aiter_lines(self) -> AsyncIterator[str]:
-        for line in self._body.splitlines():
-            yield line
+        super().__init__(status, content=body.encode())
 
 
 class _Handler:
@@ -122,7 +139,63 @@ class _Handler:
         return response
 
 
-def config_for(provider: str) -> BaseSandboxConfig:
+class SandboxConfig(Protocol):
+    async def acreate_sandbox(
+        self,
+        *,
+        template: str | None = None,
+        timeout: int | None = None,
+        allow_internet_access: bool | None = None,
+        api_key: str | None = None,
+        api_base: str | None = None,
+        metadata: dict[str, str] | None = None,
+        env_vars: dict[str, str] | None = None,
+        resource_limits: dict[str, str] | None = None,
+        resource_requests: dict[str, str] | None = None,
+        entrypoint: list[str] | None = None,
+        network_policy: dict[str, JsonValue] | None = None,
+        secure_access: bool | None = None,
+        use_server_proxy: bool | None = None,
+        ready_timeout: float | None = None,
+        poll_interval: float | None = None,
+        client: _Handler | None = None,
+    ) -> ContainerHandle: ...
+
+    async def arun_code(
+        self,
+        *,
+        container: ContainerHandle | str,
+        code: str,
+        api_key: str | None = None,
+        api_base: str | None = None,
+        env_vars: dict[str, str] | None = None,
+        language: str | None = None,
+        use_server_proxy: bool | None = None,
+        ready_timeout: float | None = None,
+        poll_interval: float | None = None,
+        client: _Handler | None = None,
+    ) -> CodeExecutionResult: ...
+
+    async def adelete_sandbox(
+        self,
+        *,
+        container: ContainerHandle | str,
+        api_key: str | None = None,
+        api_base: str | None = None,
+        client: _Handler | None = None,
+    ) -> bool: ...
+
+
+class SandboxToolRegistry(Protocol):
+    def register_sandbox_tools(self, tools: list[dict[str, JsonValue]]) -> None: ...
+
+    def resolve_sandbox_tool(self, name: str) -> dict[str, JsonValue] | None: ...
+
+
+TOOLS: Final[SandboxToolRegistry] = sandbox_tools
+
+
+def config_for(provider: str) -> SandboxConfig:
     config = ProviderConfigManager.get_provider_sandbox_config(SandboxProviders(provider))
     if config is None:
         raise ValueError(f"Code execution is not supported for provider: {provider}")
@@ -135,13 +208,14 @@ def handler_for(input_value: Input) -> _Handler:
 
 
 def handle_value(handle: ContainerHandle) -> JsonValue:
+    fields = HANDLE.validate_json(handle.model_dump_json())
     return JSON.validate_python(
-        {"id": handle.id, "provider": handle.provider, "domain": handle.domain}
+        {"id": fields["id"], "provider": fields["provider"], "domain": fields["domain"]}
     )
 
 
 def create_sandbox(
-    config: BaseSandboxConfig, input_value: Input, handler: _Handler
+    config: SandboxConfig, input_value: Input, handler: _Handler
 ) -> ContainerHandle:
     return asyncio.run(
         config.acreate_sandbox(
@@ -170,11 +244,11 @@ def registry_answer(input_value: Input) -> JsonValue:
     names = input_value.get("names")
     if tools is None or names is None:
         raise ValueError("the registry operation needs tools and names")
-    register_sandbox_tools(tools)
+    TOOLS.register_sandbox_tools(tools)
     resolved: dict[str, JsonValue] = {}
     for name in names:
-        tool: dict[str, JsonValue] | None = resolve_sandbox_tool(name)
-        resolved[name] = tool
+        found = TOOLS.resolve_sandbox_tool(name)
+        resolved[name] = None if found is None else TOOL.validate_python(found)
     return JSON.validate_python({"resolved": resolved})
 
 
@@ -198,7 +272,7 @@ def create_and_run_answer(input_value: Input) -> JsonValue:
     config = config_for(provider)
     handle = create_sandbox(config, input_value, handler)
     language = input_value.get("language")
-    result: CodeExecutionResult = asyncio.run(
+    result = asyncio.run(
         config.arun_code(
             container=handle,
             code=code,
@@ -212,11 +286,12 @@ def create_and_run_answer(input_value: Input) -> JsonValue:
             client=handler,
         )
     )
+    fields = RESULT.validate_json(result.model_dump_json())
     return JSON.validate_python(
         {
             "requests": handler.requests,
             "handle": handle_value(handle),
-            "result": JSON.validate_json(result.model_dump_json()),
+            "result": fields,
         }
     )
 
@@ -227,7 +302,7 @@ def delete_answer(input_value: Input) -> JsonValue:
     if provider is None or container is None:
         raise ValueError("the delete operation needs a provider and a container id")
     handler = handler_for(input_value)
-    deleted: bool = asyncio.run(
+    deleted = asyncio.run(
         config_for(provider).adelete_sandbox(
             container=container,
             api_key=input_value.get("api_key"),

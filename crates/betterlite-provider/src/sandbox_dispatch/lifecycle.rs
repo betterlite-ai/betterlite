@@ -4,7 +4,7 @@ use super::adapter::SandboxAdapter;
 use super::error::SandboxLifecycleError;
 use super::factory::SandboxProvider;
 use super::logging::update_logging;
-use super::request::{CreateSandbox, DeleteSandbox, RunCode, SandboxContainer};
+use super::request::{CreateSandbox, DeleteSandbox, RunCode, SandboxCall, SandboxContainer};
 
 mod tests;
 
@@ -22,32 +22,33 @@ where
         &self,
         request: &mut CreateSandbox<'_>,
     ) -> Result<SandboxContainer, SandboxLifecycleError> {
-        update_logging(&mut request.call, "create_sandbox")?;
-        match SandboxProvider::from_name(request.call.provider)? {
-            SandboxProvider::E2b => self.e2b.create(request).await,
-            SandboxProvider::OpenSandbox => self.opensandbox.create(request).await,
-        }
+        let adapter = self.adapter(&mut request.call, "create_sandbox")?;
+        adapter.create(request).await
     }
 
     pub async fn arun_code(
         &self,
         request: &mut RunCode<'_>,
     ) -> Result<CodeExecutionResult, SandboxLifecycleError> {
-        update_logging(&mut request.call, "run_code")?;
-        match SandboxProvider::from_name(request.call.provider)? {
-            SandboxProvider::E2b => self.e2b.run(request).await,
-            SandboxProvider::OpenSandbox => self.opensandbox.run(request).await,
-        }
+        let adapter = self.adapter(&mut request.call, "run_code")?;
+        adapter.run(request).await
     }
 
     pub async fn adelete_sandbox(
         &self,
         request: &mut DeleteSandbox<'_>,
     ) -> Result<bool, SandboxLifecycleError> {
-        update_logging(&mut request.call, "delete_sandbox")?;
-        match SandboxProvider::from_name(request.call.provider)? {
-            SandboxProvider::E2b => self.e2b.delete(request).await,
-            SandboxProvider::OpenSandbox => self.opensandbox.delete(request).await,
-        }
+        let adapter = self.adapter(&mut request.call, "delete_sandbox")?;
+        adapter.delete(request).await
+    }
+
+    fn adapter<'adapter>(
+        &'adapter self,
+        call: &mut SandboxCall<'_>,
+        operation: &str,
+    ) -> Result<&'adapter dyn SandboxAdapter, SandboxLifecycleError> {
+        update_logging(call, operation)?;
+        let provider = SandboxProvider::from_name(call.provider)?;
+        Ok(provider.select(&self.e2b, &self.opensandbox))
     }
 }

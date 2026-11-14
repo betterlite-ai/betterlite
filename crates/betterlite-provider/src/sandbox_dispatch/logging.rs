@@ -15,7 +15,7 @@ pub struct SandboxLogUpdate<'call> {
     pub custom_llm_provider: String,
 }
 
-pub trait SandboxLogging: Send {
+pub trait SandboxLogging: Send + Sync {
     fn update(&mut self, update: SandboxLogUpdate<'_>) -> Result<(), LoggingStateError>;
 }
 
