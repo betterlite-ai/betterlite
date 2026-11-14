@@ -57,7 +57,7 @@ impl MessagesProviderStream for GateSource {
             if state.permits > 0 {
                 self.gate
                     .state
-                    .send_modify(|state| state.permits = state.permits.saturating_sub(1));
+                    .send_modify(|released| released.permits = released.permits.saturating_sub(1));
                 let frame = self.frames.get(self.index).cloned();
                 self.index = self.index.saturating_add(1);
                 return Ok(frame);
