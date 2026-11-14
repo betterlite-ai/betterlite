@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use percent_encoding::utf8_percent_encode;
 
-use super::json_header::encode_json_for_header;
+use super::json_header::{QUOTE_SAFE_NONE, json_text};
 
 const TRUNCATED_VALUE: &str = "[truncated]";
 const TRUNCATION_SUFFIX: &str = "...[truncated]";
@@ -14,8 +15,13 @@ pub struct TruncatedEvidence {
     pub was_truncated: bool,
 }
 
+// the encoded form of the whole kept list, which is what LiteLLM measures against max_bytes
 fn encoded_array(entries: &[GuardrailValue]) -> String {
-    encode_json_for_header(&GuardrailValue::Array(entries.to_vec()))
+    utf8_percent_encode(
+        &json_text(&GuardrailValue::Array(entries.to_vec())),
+        &QUOTE_SAFE_NONE,
+    )
+    .to_string()
 }
 
 // The text LiteLLM shortens: the string in the entry's evidence field, or none when it holds no string
@@ -34,16 +40,14 @@ fn evidence_text(fields: &BTreeMap<String, GuardrailValue>) -> Option<String> {
     }
 }
 
-fn shorten_entry(entry: &mut GuardrailValue, encoded: &mut String, max_bytes: usize) {
-    let GuardrailValue::Object(fields) = entry else {
+// LiteLLM halves the evidence text of the last entry and re-encodes the whole list after every step
+fn shorten_entry(kept: &mut [GuardrailValue], encoded: &mut String, max_bytes: usize) {
+    let Some(GuardrailValue::Object(fields)) = kept.last() else {
         return;
     };
     let Some(mut text) = evidence_text(fields) else {
         return;
     };
-    if text.is_empty() {
-        return;
-    }
     let mut step = text.chars().count().checked_div(2).unwrap_or(0).max(1);
     while encoded.len() > max_bytes && !text.is_empty() {
         let characters = text.chars().count();
@@ -58,32 +62,41 @@ fn shorten_entry(entry: &mut GuardrailValue, encoded: &mut String, max_bytes: us
         } else {
             format!("{text}{TRUNCATION_SUFFIX}")
         };
-        fields.insert("evidence".to_owned(), GuardrailValue::Text(replaced));
-        fields.insert(
+        let Some(GuardrailValue::Object(entry_fields)) = kept.last_mut() else {
+            return;
+        };
+        entry_fields.insert("evidence".to_owned(), GuardrailValue::Text(replaced));
+        entry_fields.insert(
             "evidence_truncated".to_owned(),
             GuardrailValue::Boolean(true),
         );
-        *encoded = encode_json_for_header(entry);
+        *encoded = encoded_array(kept);
+    }
+}
+
+// A single evidence value is kept whole or replaced by the marker, with no shrink step
+fn truncate_value(evidence: &GuardrailValue, max_bytes: usize) -> TruncatedEvidence {
+    let fits = utf8_percent_encode(&json_text(evidence), &QUOTE_SAFE_NONE).to_string();
+    if fits.len() <= max_bytes {
+        return TruncatedEvidence {
+            evidence: evidence.clone(),
+            encoded: fits,
+            was_truncated: false,
+        };
+    }
+    let truncated = GuardrailValue::Text(TRUNCATED_VALUE.to_owned());
+    let marker = utf8_percent_encode(&json_text(&truncated), &QUOTE_SAFE_NONE).to_string();
+    TruncatedEvidence {
+        evidence: truncated,
+        encoded: marker,
+        was_truncated: true,
     }
 }
 
 #[must_use]
 pub fn truncate_evidence_payload(evidence: &GuardrailValue, max_bytes: usize) -> TruncatedEvidence {
     let GuardrailValue::Array(entries) = evidence else {
-        let encoded = encode_json_for_header(evidence);
-        if encoded.len() <= max_bytes {
-            return TruncatedEvidence {
-                evidence: evidence.clone(),
-                encoded,
-                was_truncated: false,
-            };
-        }
-        let truncated = GuardrailValue::Text(TRUNCATED_VALUE.to_owned());
-        return TruncatedEvidence {
-            encoded: encode_json_for_header(&truncated),
-            evidence: truncated,
-            was_truncated: true,
-        };
+        return truncate_value(evidence, max_bytes);
     };
     let mut kept: Vec<GuardrailValue> = Vec::new();
     let mut encoded = encoded_array(&kept);
@@ -96,9 +109,7 @@ pub fn truncate_evidence_payload(evidence: &GuardrailValue, max_bytes: usize) ->
             continue;
         }
         was_truncated = true;
-        if let Some(last) = kept.last_mut() {
-            shorten_entry(last, &mut current, max_bytes);
-        }
+        shorten_entry(&mut kept, &mut current, max_bytes);
         if current.len() <= max_bytes {
             encoded = current;
             continue;

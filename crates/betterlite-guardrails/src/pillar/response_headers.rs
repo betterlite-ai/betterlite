@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use percent_encoding::utf8_percent_encode;
 
-use super::json_header::{encode_json_for_header, json_text, percent_encode_value};
+use super::json_header::{QUOTE_SAFE_NONE, json_text};
 use super::truncate::truncate_evidence_payload;
-use super::{MAX_PILLAR_HEADER_VALUE_BYTES, TRUSTED_PILLAR_RESPONSE_HEADERS_METADATA_KEY};
+use super::{MAX_PILLAR_HEADER_VALUE_BYTES, TRUSTED_PILLAR_HEADERS_KEY};
 
 fn value_text(value: &GuardrailValue) -> String {
     match value {
@@ -18,8 +19,23 @@ fn value_text(value: &GuardrailValue) -> String {
     }
 }
 
-// LiteLLM's build_pillar_response_headers: x-pillar-* values, and the store keeps both the truncated
-// evidence and the header map the response writer trusts
+// LiteLLM replaces the stored evidence with the shortened form and marks that it shortened it
+fn evidence_header(metadata: &mut BTreeMap<String, GuardrailValue>) -> Option<String> {
+    let evidence = metadata.get("pillar_evidence")?;
+    let truncated = truncate_evidence_payload(evidence, MAX_PILLAR_HEADER_VALUE_BYTES);
+    let was_truncated = truncated.was_truncated;
+    let encoded = truncated.encoded;
+    metadata.insert("pillar_evidence".to_owned(), truncated.evidence);
+    if was_truncated {
+        metadata.insert(
+            "pillar_evidence_truncated".to_owned(),
+            GuardrailValue::Boolean(true),
+        );
+    }
+    Some(encoded)
+}
+
+// LiteLLM's build_pillar_response_headers, plus the truncated evidence and header map its store keeps
 #[must_use]
 pub fn build_pillar_response_headers(
     metadata: &mut BTreeMap<String, GuardrailValue>,
@@ -32,29 +48,15 @@ pub fn build_pillar_response_headers(
         );
     }
     if let Some(scanners) = metadata.get("pillar_scanners") {
-        headers.insert(
-            "x-pillar-scanners".to_owned(),
-            encode_json_for_header(scanners),
-        );
+        let encoded = utf8_percent_encode(&json_text(scanners), &QUOTE_SAFE_NONE).to_string();
+        headers.insert("x-pillar-scanners".to_owned(), encoded);
     }
-    if let Some(evidence) = metadata.get("pillar_evidence") {
-        let truncated = truncate_evidence_payload(evidence, MAX_PILLAR_HEADER_VALUE_BYTES);
-        let was_truncated = truncated.was_truncated;
-        let encoded = truncated.encoded;
-        metadata.insert("pillar_evidence".to_owned(), truncated.evidence);
-        if was_truncated {
-            metadata.insert(
-                "pillar_evidence_truncated".to_owned(),
-                GuardrailValue::Boolean(true),
-            );
-        }
+    if let Some(encoded) = evidence_header(metadata) {
         headers.insert("x-pillar-evidence".to_owned(), encoded);
     }
     if let Some(session) = metadata.get("pillar_session_id_response") {
-        headers.insert(
-            "x-pillar-session-id".to_owned(),
-            percent_encode_value(&value_text(session)),
-        );
+        let encoded = utf8_percent_encode(&value_text(session), &QUOTE_SAFE_NONE).to_string();
+        headers.insert("x-pillar-session-id".to_owned(), encoded);
     }
     if !headers.is_empty() {
         let stored = headers
@@ -66,7 +68,7 @@ pub fn build_pillar_response_headers(
             GuardrailValue::Object(stored),
         );
         metadata.insert(
-            TRUSTED_PILLAR_RESPONSE_HEADERS_METADATA_KEY.to_owned(),
+            TRUSTED_PILLAR_HEADERS_KEY.to_owned(),
             GuardrailValue::Boolean(true),
         );
     }

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::response_headers::build_pillar_response_headers;
-use super::{MAX_PILLAR_HEADER_VALUE_BYTES, TRUSTED_PILLAR_RESPONSE_HEADERS_METADATA_KEY};
+use super::{MAX_PILLAR_HEADER_VALUE_BYTES, TRUSTED_PILLAR_HEADERS_KEY};
 
 fn text(value: &str) -> GuardrailValue {
     GuardrailValue::Text(value.to_owned())
@@ -112,7 +112,7 @@ fn the_store_keeps_the_header_map_and_the_trust_marker() {
     assert_eq!(stored.get("x-pillar-flagged"), Some(&text("false")));
     assert_eq!(headers.get("x-pillar-flagged"), Some(&"false".to_owned()));
     assert_eq!(
-        metadata.get(TRUSTED_PILLAR_RESPONSE_HEADERS_METADATA_KEY),
+        metadata.get(TRUSTED_PILLAR_HEADERS_KEY),
         Some(&GuardrailValue::Boolean(true))
     );
 }

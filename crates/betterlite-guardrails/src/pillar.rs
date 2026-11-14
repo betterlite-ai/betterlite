@@ -14,7 +14,7 @@ pub mod truncate;
 // LiteLLM reports the version it was installed as; betterlite reports the release whose behavior it copies
 pub const LITELLM_VERSION: &str = "1.105.1";
 pub const MAX_PILLAR_HEADER_VALUE_BYTES: usize = 8 * 1024;
-pub const TRUSTED_PILLAR_RESPONSE_HEADERS_METADATA_KEY: &str = "_pillar_response_headers_trusted";
+pub const TRUSTED_PILLAR_HEADERS_KEY: &str = "_pillar_response_headers_trusted";
 
 #[path = "pillar/api_call/tests.rs"]
 mod api_call_tests;
@@ -35,4 +35,5 @@ mod response_headers_tests;
 #[path = "pillar/response_processing/tests.rs"]
 mod response_processing_tests;
 #[path = "pillar/truncate_evidence_payload/tests.rs"]
+// ast-grep-ignore: no-long-names
 mod truncate_evidence_payload_tests;
