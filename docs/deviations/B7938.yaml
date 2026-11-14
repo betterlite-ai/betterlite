@@ -31,3 +31,11 @@ deviations:
       dropping are untyped-input behavior that a typed constructor cannot express without an
       **kwargs Any parameter.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L1026-L1098
+  - what: >-
+      UserAPIKeyLabelValues.model_dump is declared to return the UserAPIKeyLabelValuesDump
+      TypedDict of the 33 keys rather than dict[str, object]; the value is still a plain dict with
+      the same keys and normalizations.
+    why: >-
+      A TypedDict names the exact keys the dump carries, which dict[str, object] leaves open, and
+      the runtime value is unchanged for callers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L1122-L1127
