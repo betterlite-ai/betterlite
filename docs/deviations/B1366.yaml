@@ -1,0 +1,8 @@
+task: B1366
+deviations:
+  - what: A word start_offset or end_offset is read as an exact decimal, so a value Python's float() accepts but a plain decimal number is not (nan, inf, infinity, underscore digits) leaves that offset out of the word record.
+    why: The task asks for B1354's exact seconds-string parsing instead of floating point, and no working setup relies on a nan or infinite word offset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/audio_transcription/transformation.py#L250-L256
+  - what: An Interactions reply over 16 MiB is refused with a typed TooLarge error before it is decoded, where LiteLLM parses any size.
+    why: Rule bounded-inputs caps every input from outside, and the 16 MiB ceiling is the pooled transport's reply cap that the shared generate-content decoder already uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/audio_transcription/transformation.py#L130
