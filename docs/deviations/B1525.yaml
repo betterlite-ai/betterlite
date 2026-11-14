@@ -13,5 +13,5 @@ deviations:
     why: betterlite's decoded dimensions are u64 in the shared image contract; a dimension past about 1.8e19 is not an image any working setup returns, and omitting it follows the same rule as a float or a negative value.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/transformation.py#L49-L50
   - what: A GPT Image size part written in non-ASCII decimal digits, such as Arabic-Indic, keeps its original string, where Python's int() reads those digits as a number.
-    why: Rust's std reads ASCII digits only; a working request spells its size in ASCII, and a size part the mapper cannot read stays the string it was.
+    why: betterlite's size reader accepts ASCII digits only; a working request spells its size in ASCII, and a size part the mapper cannot read stays the string it was.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/gpt_image_2_transformation.py#L32-L36
