@@ -9,10 +9,6 @@ where
 {
     type Output = Config::ListOutput;
 
-    fn input(&self) -> &str {
-        "list_agents"
-    }
-
     fn transform_request(
         &self,
         config: &Config,

@@ -19,8 +19,6 @@ where
 {
     type Output;
 
-    fn input(&self) -> &str;
-
     fn transform_request(
         &self,
         config: &Config,
@@ -45,6 +43,7 @@ pub(crate) struct ReadCall<'call, Config, Operation> {
     pub(crate) logging: &'call mut dyn AgentLogging,
     pub(crate) litellm_params: &'call Params,
     pub(crate) extra_headers: &'call BTreeMap<String, String>,
+    pub(crate) input: &'call str,
     pub(crate) operation: Operation,
 }
 
@@ -77,7 +76,7 @@ where
         // LiteLLM logs an empty api key here, since the provider key travels in the headers
         let api_key = SecretString::from("");
         self.logging.pre_call(AgentPreCall {
-            input: self.operation.input(),
+            input: self.input,
             api_key: &api_key,
             api_base: &request.url,
             headers: &headers,

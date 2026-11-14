@@ -24,6 +24,7 @@ where
         logging,
         litellm_params: request.litellm_params,
         extra_headers: &request.extra_headers,
+        input: request.name,
         operation: GetOperation { name: request.name },
     }
     .blocking(&client, proxy)

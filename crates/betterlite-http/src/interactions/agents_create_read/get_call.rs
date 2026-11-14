@@ -11,10 +11,6 @@ where
 {
     type Output = Config::GetOutput;
 
-    fn input(&self) -> &str {
-        self.name
-    }
-
     fn transform_request(
         &self,
         config: &Config,

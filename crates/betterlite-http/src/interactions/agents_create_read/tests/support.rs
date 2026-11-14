@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write as _};
+use std::io::{Error as IoError, ErrorKind, Read as _, Result as IoResult, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::Mutex;
 use std::thread;
@@ -221,10 +221,10 @@ fn sorted_headers(headers: &RequestHeaders) -> String {
 }
 
 fn dict_text(dict: Option<&Params>) -> String {
-    match dict {
-        None => "-".to_owned(),
-        Some(fields) => serde_json::to_string(fields).unwrap_or_default(),
-    }
+    dict.map_or_else(
+        || "-".to_owned(),
+        |fields| serde_json::to_string(fields).unwrap_or_default(),
+    )
 }
 
 pub(crate) struct Serving {

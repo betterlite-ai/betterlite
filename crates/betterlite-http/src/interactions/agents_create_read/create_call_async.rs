@@ -11,21 +11,19 @@ use crate::interactions::base::{
 };
 use crate::proxy::limits::read_bounded;
 
-impl<Config> CreateCall<'_, Config>
+pub(crate) async fn asynchronous<Config>(
+    mut call: CreateCall<'_, Config>,
+    client: &Client,
+    proxy: Option<&ProxyPolicy>,
+) -> Result<Config::CreateOutput, AgentRequestError<Config::Error>>
 where
     Config: AgentsApiConfig,
 {
-    pub(crate) async fn asynchronous(
-        mut self,
-        client: &Client,
-        proxy: Option<&ProxyPolicy>,
-    ) -> Result<Config::CreateOutput, AgentRequestError<Config::Error>> {
-        let prepared = self.prepared()?;
-        let response = send_async(client, proxy, &prepared)
-            .await
-            .map_err(|failure| handle_error(self.config, failure))?;
-        self.finish(&prepared, &response)
-    }
+    let prepared = call.prepared()?;
+    let response = send_async(client, proxy, &prepared)
+        .await
+        .map_err(|failure| handle_error(call.config, failure))?;
+    call.finish(&prepared, &response)
 }
 
 async fn send_async(
