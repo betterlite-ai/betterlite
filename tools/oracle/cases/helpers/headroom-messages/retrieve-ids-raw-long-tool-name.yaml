@@ -1,0 +1,16 @@
+kind: helper
+name: headroom-messages-retrieve-ids-raw-long-tool-name
+call:
+  b3773:
+    function: retrieve_ids
+    messages:
+      - role: assistant
+        content: null
+        tool_calls:
+          - id: call-long
+            type: function
+            function:
+              name: mcp__a_very_long_server_prefix_name_that_would_be_truncated__headroom_retrieve
+              arguments: "{}"
+env: {}
+compare: {ignore: []}

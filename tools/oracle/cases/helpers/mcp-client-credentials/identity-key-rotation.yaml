@@ -1,0 +1,39 @@
+kind: helper
+name: mcp-client-credentials-identity-key-rotation
+call:
+  b4661:
+    function: grant
+    configs:
+      - client_id: gateway-client
+        client_secret: gateway-secret
+        token_url: https://idp.example.com/token
+        scopes: [read, write]
+      - client_id: gateway-client
+        client_secret: rotated-secret
+        token_url: https://idp.example.com/token
+        scopes: [read, write]
+      - client_id: gateway-client
+        client_secret: gateway-secret
+        token_url: https://idp.example.com/token
+        scopes: [read, write, admin]
+      - client_id: gateway-client
+        client_secret: gateway-secret
+        token_url: https://idp.example.com/token
+        scopes: [read, write]
+        audience: api://mcp
+      - client_id: gateway-client
+        client_secret: gateway-secret
+        token_url: https://idp.example.com/other
+        scopes: [read, write]
+      - client_id: gateway-client
+        client_secret: gateway-secret
+        token_url: https://idp.example.com/token
+        scopes: [read, write]
+        upstream_resource: https://api.example.com/mcp
+      - client_id: gateway-client
+        client_secret: gateway-secret
+        token_url: https://idp.example.com/token
+        scopes: [read, write]
+        token_endpoint_auth_method: client_secret_basic
+env: {}
+compare: {ignore: []}
