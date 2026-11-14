@@ -1,10 +1,7 @@
 from datetime import UTC, datetime
 from typing import TypedDict
 
-from litellm.google_genai.main import (
-    GenerateContentHelper,
-    _merge_native_request_fields,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L218-L231
-)
+from litellm.google_genai import main as g
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.google_genai.transformation import (
     BaseGoogleGenAIGenerateContentConfig,
@@ -65,6 +62,9 @@ MODELED_PARAMS: frozenset[str] = frozenset(
 )
 
 
+MERGE, SETUP = g._merge_native_request_fields, g.GenerateContentHelper.setup_generate_content_call  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L91-L98
+
+
 def make_logging() -> Logging:
     return Logging(
         model="fixture-model",
@@ -117,7 +117,7 @@ def logging_view(logging_obj: Logging) -> JsonValue:
 
 def setup_answer(call: SetupCall) -> JsonValue:
     logging_obj = make_logging() if call["with_logging"] else None
-    result = GenerateContentHelper.setup_generate_content_call(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L91-L98
+    result = SETUP(
         model=call["model"],
         contents=call["contents"],
         config=call["config"],
@@ -144,7 +144,7 @@ def setup_answer(call: SetupCall) -> JsonValue:
         "request_body": OBJECT.validate_python(result.request_body),
         "litellm_params": params_view(result.litellm_params),
         "merged_extra_body": MERGED.validate_python(
-            _merge_native_request_fields(
+            MERGE(
                 result.native_request_fields,
                 None if call["extra_body"] is None else {**call["extra_body"]},
             )
