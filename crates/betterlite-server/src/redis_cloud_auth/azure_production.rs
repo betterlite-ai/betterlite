@@ -117,8 +117,8 @@ impl<H: AzureIo> SdkAzureGrants<H> {
             .unwrap_or_else(PoisonError::into_inner);
         let cache = kept.take().unwrap_or_else(|| {
             ProviderCache::new(
-                Arc::clone(&self.http),
-                Arc::clone(&self.clock),
+                Arc::<H>::clone(&self.http),
+                Arc::<ProductionClock>::clone(&self.clock),
                 self.client_secret_settings.clone(),
             )
         });
@@ -127,11 +127,11 @@ impl<H: AzureIo> SdkAzureGrants<H> {
         let arc: &dyn ArcTransport = &*self.http;
         let password: &dyn PasswordTransport = &*self.http;
         let native = NativeGrants {
-            transport: Arc::clone(&self.http),
-            clock: Arc::clone(&self.clock),
+            transport: Arc::<H>::clone(&self.http),
+            clock: Arc::<ProductionClock>::clone(&self.clock),
             client_secrets: Mutex::new(cache),
             files: &self.files,
-            ids: Arc::clone(&self.ids),
+            ids: Arc::<RandomIds>::clone(&self.ids),
             token_files: &self.token_files,
             exchange: &self.exchange,
             managed_environment: &self.environment,
@@ -162,10 +162,13 @@ impl<H: AzureIo> SdkAzureGrants<H> {
     }
 }
 
-fn grant_token<G: Grant>(
+fn grant_token<G>(
     grant: Result<G, GrantError>,
     kind: &'static str,
-) -> Result<ChainToken, AzureGrantError> {
+) -> Result<ChainToken, AzureGrantError>
+where
+    G: Grant,
+{
     let grant = grant.map_err(|error| AzureGrantError::Grant {
         kind,
         message: error.message,

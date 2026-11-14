@@ -101,7 +101,7 @@ async fn source_gcp_maps_a_fetch_failure_to_the_credential_error() {
         static_aws_provider(),
     );
     let source = cloud_redis_auth(&settings, &dependencies).unwrap();
-    let error = source.fetch().unwrap_err();
+    let error = source.fetch().err().unwrap();
     match error {
         RedisCredentialError::Fetch(source) => assert!(
             source
@@ -126,7 +126,8 @@ async fn source_aws_maps_a_fetch_failure_to_the_credential_error() {
     let error = tokio::task::spawn_blocking(move || source.fetch())
         .await
         .unwrap()
-        .unwrap_err();
+        .err()
+        .unwrap();
     match error {
         RedisCredentialError::Fetch(source) => {
             assert!(source.to_string().contains("no credentials in the test"));

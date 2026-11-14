@@ -79,8 +79,9 @@ fn production_grants(
 ) -> SdkAzureGrants<FakeIo> {
     let clock = Arc::new(ProductionClock);
     let oidc_transport: Arc<dyn betterlite_azure::oidc_exchange::transport::Transport> =
-        Arc::clone(io);
-    let oidc_clock: Arc<dyn betterlite_azure::oidc_exchange::transport::Clock> = Arc::clone(&clock);
+        Arc::<FakeIo>::clone(io);
+    let oidc_clock: Arc<dyn betterlite_azure::oidc_exchange::transport::Clock> =
+        Arc::<ProductionClock>::clone(&clock);
     let exchange = AzureOidcExchange::new(
         OidcSettings::default(),
         BTreeMap::new(),
@@ -117,7 +118,7 @@ fn azure_client_secret_kind_uses_the_client_secret_grant() {
     let grants = Arc::new(RecordingGrants::new("azure-token"));
     let fetcher = azure_fetcher(
         azure_settings(AzureCredential::ClientSecret),
-        Arc::clone(&grants) as Arc<dyn AzureGrants>,
+        Arc::<RecordingGrants>::clone(&grants),
     );
     let token = fetcher
         .fetch_token(AzureCredential::ClientSecret, AZURE_REDIS_SCOPE)
@@ -138,7 +139,7 @@ fn azure_managed_identity_kind_uses_the_managed_identity_grant() {
     let grants = Arc::new(RecordingGrants::new("azure-token"));
     let fetcher = azure_fetcher(
         azure_settings(AzureCredential::ManagedIdentity),
-        Arc::clone(&grants) as Arc<dyn AzureGrants>,
+        Arc::<RecordingGrants>::clone(&grants),
     );
     let token = fetcher
         .fetch_token(AzureCredential::ManagedIdentity, AZURE_REDIS_SCOPE)
@@ -158,7 +159,7 @@ fn azure_default_kind_uses_the_default_credential_grant() {
     let grants = Arc::new(RecordingGrants::new("azure-token"));
     let fetcher = azure_fetcher(
         azure_settings(AzureCredential::Default),
-        Arc::clone(&grants) as Arc<dyn AzureGrants>,
+        Arc::<RecordingGrants>::clone(&grants),
     );
     let token = fetcher
         .fetch_token(AzureCredential::Default, AZURE_REDIS_SCOPE)
@@ -212,7 +213,7 @@ fn azure_the_fetcher_keeps_the_same_grant_across_calls() {
     let grants = Arc::new(RecordingGrants::new("azure-token"));
     let fetcher = azure_fetcher(
         azure_settings(AzureCredential::Default),
-        Arc::clone(&grants) as Arc<dyn AzureGrants>,
+        Arc::<RecordingGrants>::clone(&grants),
     );
     fetcher
         .fetch_token(AzureCredential::Default, AZURE_REDIS_SCOPE)

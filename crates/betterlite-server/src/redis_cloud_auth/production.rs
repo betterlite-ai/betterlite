@@ -118,8 +118,8 @@ fn exchange_and_redactor(
     http: &Arc<AzureHttp>,
     clock: &Arc<ProductionClock>,
 ) -> Result<(AzureOidcExchange, Redactor), CloudRedisAuthSetupError> {
-    let transport: Arc<dyn OidcTransport> = Arc::clone(http);
-    let oidc_clock: Arc<dyn OidcClock> = Arc::clone(clock);
+    let transport: Arc<dyn OidcTransport> = Arc::<AzureHttp>::clone(http);
+    let oidc_clock: Arc<dyn OidcClock> = Arc::<ProductionClock>::clone(clock);
     let exchange = AzureOidcExchange::new(
         config.sections.azure_oidc_exchange.clone(),
         environment.clone(),

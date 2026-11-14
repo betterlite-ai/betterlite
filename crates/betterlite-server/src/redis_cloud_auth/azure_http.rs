@@ -105,7 +105,7 @@ fn header_map(headers: Vec<(String, String)>) -> io::Result<HeaderMap> {
 }
 
 fn form_body(form: &[(String, String)]) -> RequestBody {
-    let encoded = url::form_urlencoded::Serializer::new(String::new())
+    let encoded = form_urlencoded::Serializer::new(String::new())
         .extend_pairs(
             form.iter()
                 .map(|(name, value)| (name.as_str(), value.as_str())),
