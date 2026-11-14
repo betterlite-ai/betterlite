@@ -19,10 +19,10 @@ pub fn combine_scores(bm25_scores: &[f64], embedding_scores: &[f64], bm25_weight
 }
 
 fn normalize_scores(scores: &[f64]) -> Vec<f64> {
-    let lowest = scores.iter().copied().reduce(f64::min).unwrap_or(0.0);
-    let highest = scores.iter().copied().reduce(f64::max).unwrap_or(0.0);
+    let lowest = scores.iter().copied().reduce(f64::min).unwrap_or(0.0_f64);
+    let highest = scores.iter().copied().reduce(f64::max).unwrap_or(0.0_f64);
     let range = Sub::sub(highest, lowest);
-    if range <= 0.0 {
+    if range <= 0.0_f64 {
         return vec![0.0; scores.len()];
     }
     scores
