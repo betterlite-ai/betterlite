@@ -1,0 +1,13 @@
+kind: helper
+name: host-rerank-record-missing-results-and-empty-document
+call:
+  host_rerank_record:
+    provider: infinity
+    model: bge-reranker
+    api_base: "https://i.test/"
+    options: {query: q, documents: [a, b]}
+    reply:
+      status: 200
+      body: '{"id":"r1","usage":{"prompt_tokens":3,"total_tokens":5},"results":[{"index":0,"relevance_score":0.5,"document":""},{"index":1,"relevance_score":0.25,"document":"b"}]}'
+env: {}
+compare: {ignore: []}

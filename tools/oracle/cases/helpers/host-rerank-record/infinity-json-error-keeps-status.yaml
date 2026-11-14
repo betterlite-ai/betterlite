@@ -1,0 +1,11 @@
+kind: helper
+name: host-rerank-record-infinity-json-error-keeps-status
+call:
+  host_rerank_record:
+    provider: infinity
+    model: bge-reranker
+    api_base: "https://i.test"
+    options: {query: q, documents: [a]}
+    reply: {status: 502, body: "<html>bad gateway</html>"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+task: B1423
+deviations:
+  - what: A Jina api_base that is not an absolute URL with a host, such as `localhost:8000` or `nope`, is an error. An empty api_base still gives `/v1/rerank`.
+    why: httpx builds a relative or broken URL from such a base and the request then fails later with no hint of the cause. No working setup can rely on that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/jina_ai/rerank/transformation.py#L68-L76
+  - what: Usage counters that LiteLLM drops are kept in the response's hidden parameters under `usage`.
+    why: The extension record is bounded by the decoder limits and nothing reads it unless a caller asks, so no behavior changes for the caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/jina_ai/rerank/transformation.py#L105-L107

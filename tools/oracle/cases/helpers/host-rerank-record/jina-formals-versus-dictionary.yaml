@@ -1,0 +1,12 @@
+kind: helper
+name: host-rerank-record-jina-formals-versus-dictionary
+call:
+  host_rerank_record:
+    provider: jina
+    model: jina-reranker-v2
+    api_key: jk
+    headers: {X-Caller: dropped}
+    options: {query: q, documents: [a, b], top_n: 3}
+    non_default: {top_n: 1, return_documents: true, rank_fields: [x], max_chunks_per_doc: 2}
+env: {}
+compare: {ignore: []}
