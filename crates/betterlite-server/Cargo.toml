@@ -35,6 +35,7 @@ betterlite-redis = { path = "../betterlite-redis" }
 betterlite-roi = { path = "../betterlite-roi" }
 betterlite-router = { path = "../betterlite-router" }
 betterlite-semantic = { path = "../betterlite-semantic" }
+betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 caseless = "0.2.2"
 chrono = { workspace = true }
 crc32fast = "1.5.3"

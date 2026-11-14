@@ -1358,7 +1358,9 @@ dependencies = [
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
+ "betterlite-redact",
  "betterlite-secrets",
+ "chrono",
  "clap",
  "comfy-table",
  "console",
@@ -1429,6 +1431,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-secret-managers",
  "betterlite-secrets",
+ "betterlite-vertex",
  "chrono",
  "fancy-regex 0.19.2",
  "indexmap 2.14.2",
@@ -2766,8 +2769,16 @@ dependencies = [
 name = "betterlite-python"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-guardrails",
  "betterlite-models",
+ "betterlite-redact",
  "pyo3",
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
@@ -3119,6 +3130,7 @@ dependencies = [
  "betterlite-roi",
  "betterlite-router",
  "betterlite-semantic",
+ "betterlite-tokenizer",
  "caseless",
  "chrono",
  "clap",
@@ -3405,11 +3417,15 @@ dependencies = [
 name = "betterlite-websearch"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-anthropic",
+ "betterlite-context",
  "betterlite-error",
  "betterlite-openai",
  "betterlite-prompts",
+ "futures-util",
  "indexmap 2.14.2",
+ "rstest",
  "serde",
  "serde_json",
  "thiserror",
