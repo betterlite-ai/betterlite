@@ -3,6 +3,7 @@
 use betterlite_error::facts::presence::Field;
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
+use serde::de::DeserializeOwned;
 use serde_json::Number;
 use thiserror::Error;
 
@@ -86,7 +87,7 @@ fn headers(pairs: &[(&str, &str)]) -> ResponseHeaders {
 
 fn decode<T>(text: &str) -> T
 where
-    T: serde::de::DeserializeOwned,
+    T: DeserializeOwned,
 {
     serde_json::from_str(text).expect("the record decodes")
 }
@@ -198,7 +199,7 @@ fn the_request_dict_keeps_the_declared_fields_and_the_unknown_ones() {
             .generation_config
             .as_ref()
             .and_then(|config| config.get("temperature")),
-        Some(&Json::Number(Number::from(0)))
+        Some(&Json::Number(Number::from(0_i32)))
     );
     assert!(request.extra.contains_key("systemInstruction"));
     assert_eq!(encode(&request), fixture(body));
