@@ -6,9 +6,10 @@ use rstest::rstest;
 
 use super::support::{guardrail, metadata, serve, settings};
 use crate::panw_prisma_airs::audit::{Direction, GuardrailAudit};
-use crate::panw_prisma_airs::error_detail::{ErrorCode, GuardrailHttpError};
+use crate::panw_prisma_airs::error_detail::{ErrorCode, ErrorType, GuardrailHttpError};
 use crate::panw_prisma_airs::tool_scan::scan_tool_calls_for_guardrail;
 use crate::panw_prisma_airs::tool_scan::{ToolCall, ToolScan};
+use crate::panw_prisma_airs::verdict::Action;
 
 const WEATHER: &str = r#"[{"function":{"name":"get_weather","arguments":"{\"city\":\"Paris\"}"}}]"#;
 const ALLOW: &str = r#"{"action":"allow","category":"benign","scan_id":"scan-1"}"#;
@@ -88,6 +89,16 @@ fn arguments(outcome: &Outcome, index: usize) -> Option<&str> {
 fn prompt_json(text: &str) -> String {
     let encoded = serde_json::to_string(text).expect("text encodes");
     format!(r#""contents":[{{"prompt":{encoded}}}]"#)
+}
+
+fn calls_body(scanned: usize, unscannable: &[&str]) -> String {
+    let mut calls: Vec<String> = (0..scanned)
+        .map(|index| format!(r#"{{"function":{{"name":"tool_{index}"}}}}"#))
+        .collect();
+    for entry in unscannable {
+        calls.push(String::from(*entry));
+    }
+    format!("[{}]", calls.join(","))
 }
 
 #[tokio::test]
@@ -302,5 +313,83 @@ async fn a_missing_call_id_is_a_500_and_nothing_is_sent() {
     let error = outcome.result.as_ref().expect_err("blocked");
     assert_eq!(error.status, 500);
     assert_eq!(error.detail.error.category, "missing_call_id");
+    assert!(outcome.bodies.is_empty());
+}
+
+#[tokio::test]
+async fn a_hundred_and_twenty_eight_tool_calls_are_each_scanned_once() {
+    let calls = calls_body(128, &[]);
+    let outcome = run(Setup::new(ALLOW), &calls).await;
+    outcome.result.as_ref().expect("at the cap");
+    assert_eq!(outcome.bodies.len(), 128);
+    assert!((0..128_usize).all(|index| {
+        outcome
+            .bodies
+            .iter()
+            .any(|body| body.contains(&prompt_json(&format!("tool_{index}"))))
+    }));
+}
+
+#[tokio::test]
+async fn a_hundred_and_twenty_nine_tool_calls_are_blocked_before_any_scan() {
+    let calls = calls_body(129, &[]);
+    let outcome = run(Setup::new(ALLOW), &calls).await;
+    let error = outcome.result.as_ref().expect_err("over the cap");
+    assert_eq!(error.status, 400);
+    assert_eq!(error.detail.error.action, Some(Action::Block));
+    assert_eq!(error.detail.error.kind, ErrorType::GuardrailViolation);
+    assert_eq!(error.detail.error.code, ErrorCode::PanwPrismaAirsBlocked);
+    assert_eq!(error.detail.error.category, "tool_call_limit");
+    assert!(
+        error.detail.error.message.contains("128"),
+        "{}",
+        error.detail.error.message
+    );
+    assert!(outcome.bodies.is_empty());
+    assert!(outcome.audit.scan_ids.is_empty());
+}
+
+#[tokio::test]
+async fn an_over_cap_response_is_blocked_with_the_response_code() {
+    let setup = Setup {
+        direction: Direction::Response,
+        ..Setup::new(ALLOW)
+    };
+    let calls = calls_body(129, &[]);
+    let outcome = run(setup, &calls).await;
+    let error = outcome.result.as_ref().expect_err("over the cap");
+    assert_eq!(error.status, 400);
+    assert_eq!(error.detail.error.kind, ErrorType::GuardrailViolation);
+    assert_eq!(
+        error.detail.error.code,
+        ErrorCode::PanwPrismaAirsResponseBlocked
+    );
+    assert!(outcome.bodies.is_empty());
+}
+
+#[rstest]
+#[case::no_function(r#"{"id":"call_1"}"#)]
+#[case::null_function(r#"{"function":null}"#)]
+#[case::empty_function(r#"{"function":{}}"#)]
+#[case::blank_arguments_without_a_name(r#"{"function":{"arguments":" \n "}}"#)]
+#[case::a_whitespace_name(r#"{"function":{"name":" "}}"#)]
+#[case::an_empty_name_without_arguments(r#"{"function":{"name":""}}"#)]
+#[tokio::test]
+async fn a_call_with_nothing_to_scan_does_not_count_toward_the_cap(#[case] unscannable: &str) {
+    let calls = calls_body(128, &[unscannable]);
+    let outcome = run(Setup::new(ALLOW), &calls).await;
+    outcome
+        .result
+        .as_ref()
+        .expect("one scan per scannable call");
+    assert_eq!(outcome.bodies.len(), 128);
+}
+
+#[tokio::test]
+async fn padding_does_not_hide_a_list_past_the_cap() {
+    let calls = calls_body(129, &[r#"{"function":{}}"#, r#"{"id":"call_1"}"#]);
+    let outcome = run(Setup::new(ALLOW), &calls).await;
+    let error = outcome.result.as_ref().expect_err("over the cap");
+    assert_eq!(error.detail.error.category, "tool_call_limit");
     assert!(outcome.bodies.is_empty());
 }
