@@ -28,8 +28,8 @@ pub fn response_from_dict(
     response: &AgentJson,
     request_id: &str,
 ) -> Result<LiteLLMSendMessageResponse, SendCallError> {
-    let request_id = AgentJson::String(request_id.to_owned());
-    let normalized = normalize_a2a_jsonrpc_response(response, Some(&request_id))
+    let request_id_json = AgentJson::String(request_id.to_owned());
+    let normalized = normalize_a2a_jsonrpc_response(response, Some(&request_id_json))
         .map_err(SendCallError::Response)?;
     serde_json::from_value(normalized).map_err(|source| SendCallError::Json {
         value: "bridge response",

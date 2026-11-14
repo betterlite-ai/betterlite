@@ -126,7 +126,7 @@ where
 {
     let client = native_client(&mut call, logging.as_ref(), &deps.native).await?;
     let agent_name = get_a2a_model_info(Some(&client.agent_card), logging.as_mut());
-    let mut logging = match logging {
+    let mut logging_state = match logging {
         Some(state) => state,
         None => build_logging(&call, &agent_name, &mut deps)?,
     };
@@ -137,13 +137,13 @@ where
         "A2A send_message_streaming request"
     );
     let source = execute_stream_with_retry(client, call.request.clone(), target);
-    set_agent_id_on_logging_obj(Some(&mut logging), call.agent_id.as_deref());
+    set_agent_id_on_logging_obj(Some(&mut logging_state), call.agent_id.as_deref());
     let setup = StreamSetup {
         counter: deps.native.counter,
         max_retained_bytes: deps.max_retained_bytes,
         dispatch: deps.dispatch,
         clock: deps.clock,
     };
-    let iterator = A2AStreamingIterator::new(source, call.request, logging, setup);
+    let iterator = A2AStreamingIterator::new(source, call.request, logging_state, setup);
     Ok(wire_chunks(iterator))
 }

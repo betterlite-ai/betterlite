@@ -21,21 +21,22 @@ pub async fn usage_from(
         value: "response",
         source,
     })?;
-    let request = serde_json::from_value::<A2aRequest>(request_json).map_err(|source| {
+    let a2a_request = serde_json::from_value::<A2aRequest>(request_json).map_err(|source| {
         SendCallError::Json {
             value: "request",
             source,
         }
     })?;
-    let response = serde_json::from_value::<A2aResponse>(response_json).map_err(|source| {
+    let a2a_response = serde_json::from_value::<A2aResponse>(response_json).map_err(|source| {
         SendCallError::Json {
             value: "response",
             source,
         }
     })?;
     let (prompt_tokens, completion_tokens, _) =
-        usage_from_request_response(counter, &request, &response).await?;
-    let prompt_tokens = u64::try_from(prompt_tokens).map_err(SendCallError::TokenCount)?;
-    let completion_tokens = u64::try_from(completion_tokens).map_err(SendCallError::TokenCount)?;
-    Ok((prompt_tokens, completion_tokens))
+        usage_from_request_response(counter, &a2a_request, &a2a_response).await?;
+    let prompt_tokens_u64 = u64::try_from(prompt_tokens).map_err(SendCallError::TokenCount)?;
+    let completion_tokens_u64 =
+        u64::try_from(completion_tokens).map_err(SendCallError::TokenCount)?;
+    Ok((prompt_tokens_u64, completion_tokens_u64))
 }
