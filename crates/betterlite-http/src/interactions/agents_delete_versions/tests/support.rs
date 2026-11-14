@@ -56,7 +56,8 @@ impl ErrorClasses for Fixture {
         status_code: u16,
         headers: &ResponseHeaders,
     ) -> FixtureError {
-        self.record(format!("error|{status_code}|{message}|{}", headers.len()));
+        let retry_after = headers.get("retry-after").map_or("-", String::as_str);
+        self.record(format!("error|{status_code}|{message}|{retry_after}"));
         FixtureError::Refused(status_code)
     }
 }

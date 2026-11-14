@@ -280,7 +280,10 @@ fn delete_agent_reports_an_unusable_request_timeout() {
 
 #[test]
 fn delete_agent_returns_the_provider_error_for_a_failing_status() {
-    let serving = server::serve_once(server::reply("404 Not Found", &[], "missing"), None);
+    let serving = server::serve_once(
+        server::reply("404 Not Found", &[("retry-after", "7")], "missing"),
+        None,
+    );
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -303,10 +306,12 @@ fn delete_agent_returns_the_provider_error_for_a_failing_status() {
         "{error:?}"
     );
     let calls = fixture.calls();
-    assert!(
+    assert_eq!(
         calls
             .iter()
-            .any(|call| call.starts_with("error|404|missing|")),
+            .find(|call| call.starts_with("error|"))
+            .map(String::as_str),
+        Some("error|404|missing|7"),
         "{calls:?}"
     );
     assert!(

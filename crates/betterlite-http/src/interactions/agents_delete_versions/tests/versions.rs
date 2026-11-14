@@ -8,7 +8,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use super::AgentsDeleteVersionsError;
 use super::asynchronous::async_list_agent_versions;
 use super::support::{
-    Call, Fixture, FixtureError, caller_headers, clients, dead_address, exposed, resolved_timeout,
+    Call, Fixture, FixtureError, caller_headers, clients, dead_address, exposed,
+    failing_environment, resolved_timeout,
 };
 use super::synchronous::list_agent_versions;
 use crate::interactions::base::tests::support as server;
@@ -152,7 +153,10 @@ fn versions_sends_no_timeout() {
 
 #[test]
 fn versions_returns_the_provider_error_for_a_failing_status() {
-    let serving = server::serve_once(server::reply("404 Not Found", &[], "missing"), None);
+    let serving = server::serve_once(
+        server::reply("404 Not Found", &[("retry-after", "7")], "missing"),
+        None,
+    );
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -175,10 +179,12 @@ fn versions_returns_the_provider_error_for_a_failing_status() {
         "{error:?}"
     );
     let calls = fixture.calls();
-    assert!(
+    assert_eq!(
         calls
             .iter()
-            .any(|call| call.starts_with("error|404|missing|")),
+            .find(|call| call.starts_with("error|"))
+            .map(String::as_str),
+        Some("error|404|missing|7"),
         "{calls:?}"
     );
     assert!(
@@ -375,4 +381,33 @@ async fn async_versions_returns_the_provider_error_for_a_failing_status() {
     );
     assert!(logging.model_call_details.is_empty());
     serving.request.join().unwrap();
+}
+
+#[tokio::test]
+async fn async_versions_reports_a_failing_environment_without_logging() {
+    let fixture = failing_environment();
+    let mut clients = clients();
+    let mut logging = Logging::default();
+    let call = Call::new(dead_address());
+
+    let error = async_list_agent_versions(
+        &fixture,
+        &mut clients,
+        &mut logging,
+        None,
+        &call.agent_request(),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        matches!(
+            error,
+            AgentsDeleteVersionsError::Provider(FixtureError::Field("headers"))
+        ),
+        "{error:?}"
+    );
+    assert_eq!(clients.async_clients.len(), 1);
+    assert!(logging.pre_call.is_none());
+    assert!(logging.model_call_details.is_empty());
 }
