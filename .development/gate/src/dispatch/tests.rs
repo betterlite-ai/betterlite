@@ -14,7 +14,7 @@ use crate::dispatch::review::{Bench, PARITY_RULES, review, reviewer_rungs};
 use crate::dispatch::vendor::mark;
 use crate::dispatch::{
     Attempt, BLOCKED_NOTE, EarlierReview, Failure, Places, Round, Step, apply_step, find_runner,
-    note_blocked, run_ladder,
+    ladder_available, note_blocked, run_ladder,
 };
 use crate::error::GateError;
 use crate::git::git;
@@ -219,6 +219,7 @@ fn a_restarted_dispatch_goes_on_from_the_saved_rung() {
         git_common_dir: folder.path(),
         home: folder.path(),
         writable: &[],
+        net: folder.path(),
     };
     let mut saved = progress();
     saved.feedback = vec!["the saved findings".to_owned()];
@@ -358,6 +359,7 @@ fn a_rung_pauses_without_a_run_while_every_vendor_it_can_use_is_at_its_limit() {
         git_common_dir: folder.path(),
         home: folder.path(),
         writable: &[],
+        net: folder.path(),
     };
     let mut progress = progress();
     let error = run_ladder(&agents, &brief, &places, &mut progress, 0).unwrap_err();
@@ -375,7 +377,7 @@ fn a_limited_vendor_sends_the_start_to_the_other_vendor_at_the_same_level() {
     progress.fit(&agents.roles.worker.ladder);
     let pick = |own: usize| {
         chain
-            .pick(&places(folder.path()), &progress, &chain.links[own])
+            .pick(folder.path(), &progress, &chain.links[own])
             .unwrap()
             .map(|link| link.rung.model.clone())
     };
@@ -403,7 +405,7 @@ fn a_limited_claude_rung_runs_on_the_open_codex_rung_at_its_level() {
     progress.starts = vec![1, 0, 0, 0];
     let pick = |own: usize| {
         chain
-            .pick(&places(folder.path()), &progress, &chain.links[own])
+            .pick(folder.path(), &progress, &chain.links[own])
             .unwrap()
             .map(|link| link.rung.model.clone())
     };
@@ -489,6 +491,7 @@ fn a_dispatch_stopped_by_a_usage_limit_keeps_its_place() {
         git_common_dir: folder.path(),
         home: folder.path(),
         writable: &[],
+        net: folder.path(),
     };
     let mut saved = progress();
     saved.feedback = vec!["the saved findings".to_owned()];
@@ -508,6 +511,35 @@ fn a_dispatch_stopped_by_a_usage_limit_keeps_its_place() {
 }
 
 #[test]
+fn a_task_with_only_limited_vendors_left_waits_while_another_vendor_is_up() {
+    let development = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let mut agents: Agents = read_yaml(&development.join("agents.yaml")).unwrap();
+    agents.roles.worker.keep_rungs_for("B000");
+    let folder = tempfile::tempdir().unwrap();
+    mark(
+        folder.path(),
+        "openai",
+        "ERROR: You've hit your usage limit.",
+    )
+    .unwrap();
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
+    ladder_available(folder.path(), &agents, folder.path(), "B000").unwrap();
+    let mut saved = progress();
+    saved.used = 3;
+    saved.rung = 2;
+    saved.starts = vec![2, 1, 0, 0, 0, 0];
+    saved.save(folder.path()).unwrap();
+    let error = ladder_available(folder.path(), &agents, folder.path(), "B000").unwrap_err();
+    assert!(matches!(error, GateError::Unavailable { .. }));
+    assert!(error.to_string().contains(
+        "cannot dispatch B000: every runner left on its worker ladder is unavailable (openai is at its usage limit"
+    ));
+    saved.granted = 1;
+    saved.save(folder.path()).unwrap();
+    ladder_available(folder.path(), &agents, folder.path(), "B000").unwrap();
+}
+
+#[test]
 fn no_rung_runs_once_the_worker_attempts_are_used_up() {
     let (agents, task) = fixtures();
     let brief = Brief {
@@ -523,6 +555,7 @@ fn no_rung_runs_once_the_worker_attempts_are_used_up() {
         git_common_dir: folder.path(),
         home: folder.path(),
         writable: &[],
+        net: folder.path(),
     };
     let mut progress = progress();
     progress.used = agents.policy.max_worker_attempts;
@@ -619,7 +652,7 @@ fn a_start_whose_vendor_has_no_free_seat_goes_to_the_other_vendor_at_its_level()
     progress.fit(&agents.roles.worker.ladder);
     let pick = |own: usize| {
         chain
-            .pick(&places(folder.path()), &progress, &chain.links[own])
+            .pick(folder.path(), &progress, &chain.links[own])
             .unwrap()
             .map(|link| link.rung.model.clone())
     };
@@ -639,7 +672,7 @@ fn no_start_moves_while_the_other_vendor_is_full_or_at_its_limit() {
     progress.fit(&agents.roles.worker.ladder);
     let pick = || {
         chain
-            .pick(&places(folder.path()), &progress, &chain.links[0])
+            .pick(folder.path(), &progress, &chain.links[0])
             .unwrap()
             .map(|link| link.rung.model.clone())
     };
@@ -669,6 +702,7 @@ fn places(folder: &Path) -> Places<'_> {
         git_common_dir: folder,
         home: folder,
         writable: &[],
+        net: folder,
     }
 }
 
@@ -1013,7 +1047,9 @@ fn a_granted_start_runs_on_a_stand_in_while_the_last_rung_vendor_is_limited() {
     progress.rung = last;
     progress.starts = ladder.iter().map(|rung| rung.attempts).collect();
     let places = places(folder.path());
-    let stand_in = chain.pick(&places, &progress, &chain.links[last]).unwrap();
+    let stand_in = chain
+        .pick(places.git_common_dir, &progress, &chain.links[last])
+        .unwrap();
     assert!(stand_in.is_none());
     run_ladder(&agents, &brief(&task), &places, &mut progress, 2).unwrap_err();
     assert_eq!(ladder[last - 1].model, "claude-opus-5-5");
@@ -1058,7 +1094,9 @@ fn a_granted_start_runs_on_a_stand_in_while_a_limited_vendor_holds_every_open_ru
     progress.starts[last] = 0;
     let before = progress.starts.clone();
     let places = places(folder.path());
-    let ungranted = chain.pick(&places, &progress, &chain.links[luna]).unwrap();
+    let ungranted = chain
+        .pick(places.git_common_dir, &progress, &chain.links[luna])
+        .unwrap();
     assert!(ungranted.is_none());
     run_ladder(&agents, &brief(&task), &places, &mut progress, 2).unwrap_err();
     let grown: Vec<usize> = (0..ladder.len())

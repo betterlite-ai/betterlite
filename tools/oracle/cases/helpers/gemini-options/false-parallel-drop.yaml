@@ -1,0 +1,32 @@
+kind: helper
+name: gemini-options-false-parallel-drop
+call:
+  gemini_options:
+    safety_settings: null
+    steps:
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params:
+          tools: [{function: {name: first}}, {function: {name: second}}]
+          parallel_tool_calls: false
+        optional_params: {}
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params:
+          tools: [{function: {name: first}}]
+          parallel_tool_calls: false
+        optional_params: {}
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params:
+          tools: [{function: {name: first}}, {function: {name: second}}]
+          parallel_tool_calls: true
+        optional_params: {}
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params:
+          functions: [{name: first}, {name: second}]
+          parallel_tool_calls: false
+        optional_params: {}
+env: {}
+compare: {ignore: []}

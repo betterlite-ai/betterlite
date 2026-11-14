@@ -103,6 +103,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "bedrock_transcription_reply"
+path = "fuzz_targets/bedrock_transcription_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bedrock_pegasus"
 path = "fuzz_targets/bedrock_pegasus.rs"
 test = false
