@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
@@ -59,14 +57,13 @@ where
     let Some(text) = lookup.lookup(name).filter(|value| !value.trim().is_empty()) else {
         return Ok(None);
     };
-    match parsed_integer(&text) {
-        Some(value) => Ok(Some(value)),
-        None => Err(ConfigError::Environment {
+    parsed_integer(&text)
+        .map(Some)
+        .ok_or_else(|| ConfigError::Environment {
             source: betterlite_env::EnvError::Number {
                 name: name.to_owned(),
             },
-        }),
-    }
+        })
 }
 
 // Python rejects a leading, trailing or doubled underscore, and i64::from_str rejects the rest
@@ -76,5 +73,5 @@ fn parsed_integer(text: &str) -> Option<i64> {
     if digits.starts_with('_') || digits.ends_with('_') || digits.contains("__") {
         return None;
     }
-    i64::from_str(&trimmed.replace('_', "")).ok()
+    trimmed.replace('_', "").parse::<i64>().ok()
 }
