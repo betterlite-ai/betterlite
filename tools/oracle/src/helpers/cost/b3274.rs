@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::Future;
 
 use betterlite_cost::search::error::SearchCostError;
 use betterlite_cost::search::model_info::SearchModelInfo;
@@ -33,15 +34,17 @@ struct Unmapped(String);
 impl SearchPricingSource for Records {
     type Error = Unmapped;
 
-    async fn model_info(
+    fn model_info(
         &self,
         model: &str,
         _custom_llm_provider: Option<&str>,
-    ) -> Result<SearchModelInfo, Unmapped> {
-        self.0
-            .get(model)
-            .cloned()
-            .ok_or_else(|| Unmapped(model.to_owned()))
+    ) -> impl Future<Output = Result<SearchModelInfo, Unmapped>> + Send {
+        std::future::ready(
+            self.0
+                .get(model)
+                .cloned()
+                .ok_or_else(|| Unmapped(model.to_owned())),
+        )
     }
 }
 

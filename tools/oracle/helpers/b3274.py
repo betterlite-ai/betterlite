@@ -4,6 +4,9 @@ import litellm
 from litellm.search import search_provider_cost_per_query
 from pydantic import JsonValue
 
+# an unknown model makes get_llm_provider print to stdout, which corrupts the helper JSON.
+litellm.suppress_debug_info = True
+
 
 class Input(TypedDict):
     model_cost: dict[str, dict[str, JsonValue]]

@@ -117,7 +117,7 @@ async fn parallel_ai_charges_each_result_past_ten_without_usage(
     r#"[{"name": "sku_search_additional_results", "count": 0}]"#,
     "0.005"
 )]
-#[case::empty_usage_is_still_usage(r#"[]"#, "0.005")]
+#[case::empty_usage_is_still_usage("[]", "0.005")]
 #[case::other_sku_counts_for_nothing(r#"[{"name": "other", "count": 9}]"#, "0.005")]
 #[case::string_count_is_skipped(r#"[{"name": "sku_search", "count": "2"}]"#, "0.005")]
 #[case::negative_count_is_skipped(r#"[{"name": "sku_search", "count": -1}]"#, "0.005")]
@@ -231,8 +231,8 @@ async fn parallel_ai_lookup_failure_names_the_pricing_model() {
     .await
     .unwrap_err();
     assert!(matches!(
-        error,
-        SearchCostError::ModelInfo { ref model, source: MissingPricing(_) } if model == "parallel_ai/search-turbo"
+        &error,
+        SearchCostError::ModelInfo { model, source: MissingPricing(_) } if model == "parallel_ai/search-turbo"
     ));
 }
 

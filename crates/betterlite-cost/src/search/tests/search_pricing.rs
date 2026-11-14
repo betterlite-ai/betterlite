@@ -141,8 +141,8 @@ async fn a_failed_lookup_names_the_model() {
         .await
         .unwrap_err();
     assert!(matches!(
-        error,
-        SearchCostError::ModelInfo { ref model, source: MissingPricing(_) } if model == "tavily/search"
+        &error,
+        SearchCostError::ModelInfo { model, source: MissingPricing(_) } if model == "tavily/search"
     ));
 }
 

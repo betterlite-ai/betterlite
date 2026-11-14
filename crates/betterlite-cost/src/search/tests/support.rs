@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::sync::Mutex;
 
 use rust_decimal::Decimal;
@@ -52,21 +53,23 @@ impl FakeSource {
 impl SearchPricingSource for FakeSource {
     type Error = MissingPricing;
 
-    async fn model_info(
+    fn model_info(
         &self,
         model: &str,
         custom_llm_provider: Option<&str>,
-    ) -> Result<SearchModelInfo, MissingPricing> {
+    ) -> impl Future<Output = Result<SearchModelInfo, MissingPricing>> + Send {
         self.calls
             .lock()
             .expect("the calls lock is not poisoned")
             .push((model.to_owned(), custom_llm_provider.map(str::to_owned)));
-        self.records
-            .lock()
-            .expect("the records lock is not poisoned")
-            .get(model)
-            .cloned()
-            .ok_or_else(|| MissingPricing(model.to_owned()))
+        std::future::ready(
+            self.records
+                .lock()
+                .expect("the records lock is not poisoned")
+                .get(model)
+                .cloned()
+                .ok_or_else(|| MissingPricing(model.to_owned())),
+        )
     }
 }
 
