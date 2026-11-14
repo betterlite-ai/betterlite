@@ -130,12 +130,15 @@ def test_router_create_names() -> None:
 
 
 def test_router_response_names() -> None:
+    our_response: type[pydantic.BaseModel] = betterlite_router.FallbackResponse
     response: type[pydantic.BaseModel] = litellm_router.FallbackResponse
+    our_get: type[pydantic.BaseModel] = betterlite_router.FallbackGetResponse
     get_response: type[pydantic.BaseModel] = litellm_router.FallbackGetResponse
+    our_delete: type[pydantic.BaseModel] = betterlite_router.FallbackDeleteResponse
     delete_response: type[pydantic.BaseModel] = litellm_router.FallbackDeleteResponse
-    assert model_names(betterlite_router.FallbackResponse) == model_names(response)
-    assert model_names(betterlite_router.FallbackGetResponse) == model_names(get_response)
-    assert model_names(betterlite_router.FallbackDeleteResponse) == model_names(delete_response)
+    assert model_names(our_response) == model_names(response)
+    assert model_names(our_get) == model_names(get_response)
+    assert model_names(our_delete) == model_names(delete_response)
 
 
 def test_router_field_names() -> None:
