@@ -15,7 +15,7 @@ use crate::agentic_loop_plan::{
 struct PlainCallback;
 
 impl AgenticCallback for PlainCallback {
-    fn callback_name(&self) -> &str {
+    fn callback_name(&self) -> &'static str {
         "plain"
     }
 
@@ -28,7 +28,7 @@ struct ForcedCallback;
 
 #[async_trait::async_trait]
 impl AgenticCallback for ForcedCallback {
-    fn callback_name(&self) -> &str {
+    fn callback_name(&self) -> &'static str {
         "forced"
     }
 
@@ -74,10 +74,10 @@ impl AgenticCallback for ForcedCallback {
         &self,
         call: &AgenticLoopCall<'_>,
     ) -> Result<AgenticLoopPlan, AgenticHookError> {
-        let logging = call.logging;
         let mut metadata = call.tools.clone();
         metadata.insert("stream".to_owned(), to_raw_value(&call.stream).unwrap());
-        let loop_params = logging
+        let loop_params = call
+            .logging
             .and_then(|logging| logging.agentic_loop_params.as_ref())
             .unwrap();
         metadata.insert(
@@ -96,7 +96,7 @@ impl AgenticCallback for ForcedCallback {
             }),
             response_override: Some(RawValue::from_string(call.response.get().to_owned()).unwrap()),
             terminate: false,
-            stop_reason: logging.and_then(|logging| logging.call_id.clone()),
+            stop_reason: call.logging.and_then(|logging| logging.call_id.clone()),
             metadata,
         })
     }
@@ -232,7 +232,7 @@ fn overrides_report_exactly_the_two_hooks() {
 }
 
 #[tokio::test]
-async fn overrides_results_reach_the_trait_object() {
+async fn overrides_gate_reaches_the_trait_object() {
     let fixture = call_fixture();
     let callback: Arc<dyn AgenticCallback> = Arc::new(ForcedCallback);
 
@@ -267,9 +267,15 @@ async fn overrides_results_reach_the_trait_object() {
         gate.tools.get("kwargs").map(|raw| raw.get()),
         Some("{\"max_tokens\":512}")
     );
+}
+
+#[tokio::test]
+async fn overrides_plan_reaches_the_trait_object() {
+    let fixture = call_fixture();
+    let callback: Arc<dyn AgenticCallback> = Arc::new(ForcedCallback);
 
     let plan = callback
-        .build_agentic_loop_plan(&fixture.loop_call(&gate.tools))
+        .build_agentic_loop_plan(&fixture.loop_call(&fixture.gate_tools))
         .await
         .unwrap();
     assert!(plan.run_agentic_loop);
@@ -310,7 +316,7 @@ async fn overrides_results_reach_the_trait_object() {
 fn object_keeps_registration_order() {
     let plain: Arc<dyn AgenticCallback> = Arc::new(PlainCallback);
     let forced: Arc<dyn AgenticCallback> = Arc::new(ForcedCallback);
-    let callbacks = vec![plain, forced];
+    let callbacks = [plain, forced];
     let names: Vec<&str> = callbacks
         .iter()
         .map(|callback| callback.callback_name())
