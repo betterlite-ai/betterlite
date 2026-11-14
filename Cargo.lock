@@ -1912,6 +1912,7 @@ version = "0.0.0"
 dependencies = [
  "betterlite-config",
  "betterlite-guardrails",
+ "betterlite-prompts",
  "libfuzzer-sys",
  "serde_json",
 ]
@@ -2524,6 +2525,7 @@ dependencies = [
  "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-transcribe",
+ "betterlite-vertex",
  "chrono",
  "hex",
  "indexmap 2.14.2",
