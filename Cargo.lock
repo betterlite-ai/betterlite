@@ -1216,6 +1216,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-backend"
+version = "0.1.0"
+dependencies = [
+ "betterlite-routes",
+ "betterlite-server",
+ "clap",
+ "nix",
+ "rstest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "betterlite-bedrock"
 version = "0.1.0"
 dependencies = [
@@ -1359,7 +1374,9 @@ dependencies = [
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
+ "betterlite-redact",
  "betterlite-secrets",
+ "chrono",
  "clap",
  "comfy-table",
  "console",
@@ -1411,10 +1428,14 @@ dependencies = [
 name = "betterlite-compression"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "betterlite-semantic",
  "regex",
+ "rstest",
  "serde_json",
  "strum",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -1430,6 +1451,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-secret-managers",
  "betterlite-secrets",
+ "betterlite-vertex",
  "chrono",
  "fancy-regex 0.19.2",
  "indexmap 2.14.2",
@@ -1471,6 +1493,7 @@ dependencies = [
 name = "betterlite-context"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-config",
  "betterlite-models",
  "betterlite-redact",
@@ -1485,6 +1508,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "thiserror",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -1577,8 +1601,11 @@ dependencies = [
  "betterlite-config",
  "rstest",
  "rust_decimal",
+ "serde",
+ "serde_json",
  "strum",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -1751,6 +1778,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-gateway"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "betterlite-routes",
+ "betterlite-server",
+ "clap",
+ "nix",
+ "phf",
+ "rstest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower",
+]
+
+[[package]]
 name = "betterlite-guardrails"
 version = "0.1.0"
 dependencies = [
@@ -1765,6 +1810,7 @@ dependencies = [
  "betterlite-env",
  "betterlite-http",
  "betterlite-models",
+ "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
  "chrono",
@@ -1773,6 +1819,7 @@ dependencies = [
  "hex",
  "hyper",
  "indexmap 2.14.2",
+ "jiff",
  "jsonwebtoken",
  "lru",
  "mime_guess",
@@ -1823,10 +1870,17 @@ name = "betterlite-harness"
 version = "0.1.0"
 dependencies = [
  "async-stream",
+ "base64 0.23.1",
+ "betterlite-core",
+ "betterlite-models",
+ "chrono",
  "futures-core",
  "futures-util",
+ "getrandom 0.4.3",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
+ "jiff",
  "rstest",
  "rust_decimal",
  "rustix",
@@ -1836,6 +1890,7 @@ dependencies = [
  "sha2 0.11.1",
  "similar 3.2.1",
  "soft-canonicalize",
+ "subtle",
  "tempfile",
  "thiserror",
  "tokio",
@@ -1870,6 +1925,7 @@ dependencies = [
  "aws-types",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-models",
  "bytes",
  "crc32fast",
  "futures-util",
@@ -2223,6 +2279,7 @@ dependencies = [
  "http 1.5.0",
  "httparse",
  "indexmap 2.14.2",
+ "jiff",
  "lru",
  "mime_guess",
  "nix",
@@ -2476,10 +2533,12 @@ dependencies = [
  "base64 0.23.1",
  "betterlite",
  "betterlite-auth",
+ "betterlite-backend",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
  "betterlite-db",
+ "betterlite-gateway",
  "betterlite-guardrails",
  "betterlite-http",
  "betterlite-mcp",
@@ -2540,10 +2599,13 @@ version = "0.1.0"
 dependencies = [
  "betterlite-auth",
  "fancy-regex 0.19.2",
+ "indexmap 2.14.2",
+ "mutants",
  "rstest",
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "tracing",
  "tracing-subscriber",
 ]
@@ -2764,8 +2826,16 @@ dependencies = [
 name = "betterlite-python"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-guardrails",
  "betterlite-models",
+ "betterlite-redact",
  "pyo3",
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
@@ -2808,6 +2878,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-core",
  "betterlite-redis",
+ "crc16",
  "rstest",
  "serde",
  "serde_json",
@@ -3093,6 +3164,7 @@ dependencies = [
  "aws-smithy-types",
  "axum",
  "base64 0.23.1",
+ "betterlite-a2a",
  "betterlite-auth",
  "betterlite-billing",
  "betterlite-cache",
@@ -3117,6 +3189,7 @@ dependencies = [
  "betterlite-roi",
  "betterlite-router",
  "betterlite-semantic",
+ "betterlite-tokenizer",
  "caseless",
  "chrono",
  "clap",
@@ -3142,6 +3215,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry_sdk",
  "percent-encoding",
+ "phf",
  "rand 0.10.3",
  "rcgen",
  "regex",
@@ -3358,6 +3432,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "data-encoding",
  "google-cloud-auth",
@@ -3392,6 +3467,7 @@ version = "0.0.0"
 dependencies = [
  "betterlite-bedrock",
  "betterlite-models",
+ "betterlite-tokenizer",
  "betterlite-vertex",
  "indexmap 2.14.2",
  "jiff",
@@ -3403,11 +3479,15 @@ dependencies = [
 name = "betterlite-websearch"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-anthropic",
+ "betterlite-context",
  "betterlite-error",
  "betterlite-openai",
  "betterlite-prompts",
+ "futures-util",
  "indexmap 2.14.2",
+ "rstest",
  "serde",
  "serde_json",
  "thiserror",
