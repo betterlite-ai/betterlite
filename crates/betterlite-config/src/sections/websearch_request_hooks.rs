@@ -4,6 +4,7 @@ use crate::agentic_loop_ceiling::{
     AgenticLoopCeilingError, AgenticLoopValue, validated_max_agentic_loops,
 };
 use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::raw::RawNumber;
 use crate::resolve::resolve_string;
 use crate::sections::Section;
 
@@ -43,15 +44,6 @@ struct RawParams {
     max_agentic_loops: Option<RawNumber>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum RawNumber {
-    Integer(i64),
-    Float(f64),
-    Boolean(bool),
-    Text(String),
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Settings {
     pub enabled_providers: Vec<String>,
@@ -77,13 +69,13 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         // LiteLLM prefers litellm_settings.websearch_interception_params and falls back to the callback's own entry
-        match self.litellm_settings.websearch_interception_params {
-            Some(params) => convert_params(params, PARAMS_PATH, lookup),
-            None => match self.callback_settings.websearch_interception {
-                Some(params) => convert_params(params, CALLBACK_PATH, lookup),
-                None => Ok(Settings::default()),
-            },
+        if let Some(params) = self.litellm_settings.websearch_interception_params {
+            return convert_params(params, PARAMS_PATH, lookup);
         }
+        self.callback_settings.websearch_interception.map_or_else(
+            || Ok(Settings::default()),
+            |params| convert_params(params, CALLBACK_PATH, lookup),
+        )
     }
 }
 
@@ -136,9 +128,9 @@ where
     let field = format!("{path}.max_agentic_loops");
     match validated_max_agentic_loops(&loop_value, &field) {
         Ok(ceiling) => Ok(ceiling),
-        Err(AgenticLoopCeilingError::BelowMinimum { value, .. }) => {
+        Err(AgenticLoopCeilingError::BelowMinimum { value: minimum, .. }) => {
             Err(ConfigError::InvalidScalar {
-                path: format!("{path}.max_agentic_loops={value}, below the minimum of 1"),
+                path: format!("{path}.max_agentic_loops={minimum}, below the minimum of 1"),
                 value: false,
             })
         }
