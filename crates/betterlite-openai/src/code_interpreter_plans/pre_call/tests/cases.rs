@@ -122,6 +122,35 @@ fn root_metadata_returns_false_when_the_hook_does_not_apply() {
 
 #[cfg(test)]
 #[test]
+fn root_metadata_returns_false_when_the_provider_is_not_enabled() {
+    let mut logger = empty_logger::<()>();
+    logger.enabled_providers = Some(vec!["azure".to_owned()]);
+    let mut blocked = test_map([
+        ("model", json!("openai/gpt-5")),
+        ("tools", code_interpreter_tools()),
+    ]);
+    assert!(!pre_call_deployment_hook(
+        &logger,
+        &mut blocked,
+        Some(CallType::Responses)
+    ));
+    assert!(blocked.get(INTERCEPTION_ACTIVE_KEY).is_none());
+
+    let mut allowed = test_map([
+        ("model", json!("openai/gpt-5")),
+        ("custom_llm_provider", json!("azure")),
+        ("tools", code_interpreter_tools()),
+    ]);
+    assert!(pre_call_deployment_hook(
+        &logger,
+        &mut allowed,
+        Some(CallType::Responses)
+    ));
+    assert_eq!(allowed.get(INTERCEPTION_ACTIVE_KEY), Some(&json!(true)));
+}
+
+#[cfg(test)]
+#[test]
 fn sandbox_key_combines_identity_and_session_id() {
     let logger = empty_logger::<()>();
     let mut kwargs = test_map([
