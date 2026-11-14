@@ -13,7 +13,7 @@ use betterlite_guardrails::generic_guardrail_contracts::{GuardrailMessage, Unrea
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 
 mod compress;
 mod logs;
@@ -36,8 +36,8 @@ pub(crate) struct Settings {
 }
 
 impl Settings {
-    fn transport(&self) -> TransportSettings {
-        TransportSettings {
+    fn transport(&self) -> Result<TransportSettings, Box<HelperError>> {
+        Ok(TransportSettings {
             api_base: self.api_base.clone(),
             model: self.model.clone(),
             target_compression_ratio: self.target_compression_ratio,
@@ -48,10 +48,19 @@ impl Settings {
             compression_params: self.compression_params.clone(),
             timeout: self
                 .timeout
-                .map_or(DEFAULT_COMPRESS_TIMEOUT, Duration::from_secs_f64),
+                .map_or(Ok(DEFAULT_COMPRESS_TIMEOUT), Duration::try_from_secs_f64)
+                .or_value_error()?,
             fallback: self.fallback,
-        }
+        })
     }
+}
+
+fn validated(settings: &Settings) -> HelperResult {
+    let trimmed = settings.api_base.trim_end_matches('/');
+    Ok(match validate_api_base(trimmed) {
+        Ok(api_base) => json!({"accepted": true, "api_base": api_base}),
+        Err(_rejected) => json!({"accepted": false}),
+    })
 }
 
 #[derive(Deserialize)]
@@ -95,13 +104,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::ValidateApiBase { settings } => {
-                let trimmed = settings.api_base.trim_end_matches('/');
-                Ok(match validate_api_base(trimmed) {
-                    Ok(api_base) => json!({"accepted": true, "api_base": api_base}),
-                    Err(_rejected) => json!({"accepted": false}),
-                })
-            }
+            Input::ValidateApiBase { settings } => validated(settings),
             Input::QueryForTarget {
                 messages,
                 target_idx,

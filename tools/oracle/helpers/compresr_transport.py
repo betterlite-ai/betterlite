@@ -5,14 +5,7 @@ from typing import Literal, NotRequired, TypedDict, override
 
 import httpx
 from fastapi import HTTPException
-from litellm.proxy.guardrails.guardrail_hooks.compresr.compresr import (  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L109-L246
-    CompresrGuardrail,
-    _query_for_target,
-    _render_tool_intent,
-    _replace_text_in_content,
-    _safe_int,
-    _safe_response_text,
-)
+from litellm.proxy.guardrails.guardrail_hooks.compresr.compresr import CompresrGuardrail, _query_for_target, _render_tool_intent, _replace_text_in_content, _safe_int, _safe_response_text  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L109-L246
 from pydantic import JsonValue, TypeAdapter
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)

@@ -11,7 +11,7 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 use tokio::task::JoinSet;
 use tracing::subscriber::with_default;
 use tracing_subscriber::layer::SubscriberExt as _;
@@ -81,43 +81,60 @@ fn result_json(result: &CompressionResult) -> Value {
     })
 }
 
+fn serve_mock(
+    runtime: &Runtime,
+    reply: &Reply,
+    seen: &Arc<Mutex<Seen>>,
+) -> HelperResult<(String, JoinSet<()>)> {
+    let mock = Mock {
+        status: StatusCode::from_u16(reply.status).or_value_error()?,
+        body: reply.body.clone(),
+        seen: Arc::clone(seen),
+    };
+    let listener = runtime
+        .block_on(TcpListener::bind("127.0.0.1:0"))
+        .or_value_error()?;
+    let address = listener.local_addr().or_value_error()?;
+    let router = Router::new().fallback(record).with_state(mock);
+    let mut server = JoinSet::new();
+    let _guard = runtime.enter();
+    server.spawn(async move {
+        // The server stops when the helper returns and the set aborts it.
+        let _served = axum::serve(listener, router).await;
+    });
+    Ok((format!("http://{address}"), server))
+}
+
+fn transport_for(settings: &Settings, api_base: &str) -> HelperResult<CompresrTransport> {
+    let mut transport_settings = settings.transport()?;
+    transport_settings.api_base = api_base.to_owned();
+    CompresrTransport::new(
+        transport_settings,
+        SecretString::from(API_KEY),
+        reqwest::Client::default(),
+    )
+    .or_value_error()
+}
+
+fn targets_for(goals: &[Goal]) -> Vec<CompressTarget> {
+    goals
+        .iter()
+        .map(|goal| CompressTarget {
+            context: goal.context.clone(),
+            query: goal.query.clone(),
+        })
+        .collect()
+}
+
 pub(super) fn run(settings: &Settings, goals: &[Goal], reply: &Reply) -> HelperResult {
     let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .or_value_error()?;
     let seen = Arc::new(Mutex::new(Seen::default()));
-    let mock = Mock {
-        status: StatusCode::from_u16(reply.status).or_value_error()?,
-        body: reply.body.clone(),
-        seen: Arc::clone(&seen),
-    };
-    let listener = runtime
-        .block_on(TcpListener::bind("127.0.0.1:0"))
-        .or_value_error()?;
-    let address = listener.local_addr().or_value_error()?;
-    let mut server = JoinSet::new();
-    let router = Router::new().fallback(record).with_state(mock);
-    let _guard = runtime.enter();
-    server.spawn(async move {
-        // The server stops when the helper returns and the set aborts it.
-        let _served = axum::serve(listener, router).await;
-    });
-    let mut transport_settings = settings.transport();
-    transport_settings.api_base = format!("http://{address}");
-    let transport = CompresrTransport::new(
-        transport_settings,
-        SecretString::from(API_KEY),
-        reqwest::Client::default(),
-    )
-    .or_value_error()?;
-    let targets: Vec<CompressTarget> = goals
-        .iter()
-        .map(|goal| CompressTarget {
-            context: goal.context.clone(),
-            query: goal.query.clone(),
-        })
-        .collect();
+    let (api_base, _server) = serve_mock(&runtime, reply, &seen)?;
+    let transport = transport_for(settings, &api_base)?;
+    let targets = targets_for(goals);
     let logs = Logs::default();
     let subscriber = tracing_subscriber::registry().with(logs.clone());
     let outcome = with_default(subscriber, || {
