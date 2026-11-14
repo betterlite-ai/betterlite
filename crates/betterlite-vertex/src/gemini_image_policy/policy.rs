@@ -60,12 +60,7 @@ pub fn map_image_params(mapping: &ImageParamMapping<'_>) -> Result<Object, Gemin
     let filtered: Vec<(&String, &Json)> = mapping
         .params
         .iter()
-        .filter(|(key, _)| {
-            mapping
-                .supported_params
-                .iter()
-                .any(|name| *name == key.as_str())
-        })
+        .filter(|(key, _)| mapping.supported_params.contains(&key.as_str()))
         .collect();
     let mut mapped = Object::new();
     if let Some((_, value)) = filtered.iter().find(|(key, _)| key.as_str() == "n")
@@ -128,7 +123,12 @@ fn map_explicit_image_config(
         Json::Text(text) if parse_string => {
             serde_json::from_str::<Json>(text).map_err(GeminiImagePolicyError::ImageConfigJson)?
         }
-        value => value.clone(),
+        Json::Null
+        | Json::Bool(_)
+        | Json::Number(_)
+        | Json::Text(_)
+        | Json::List(_)
+        | Json::Object(_) => (*raw).clone(),
     };
     if let Json::Object(config) = parsed {
         mapped.insert("imageConfig".to_owned(), Json::Object(config));

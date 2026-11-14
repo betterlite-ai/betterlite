@@ -88,11 +88,11 @@ fn the_exact_size_table_keeps_lite_llm_ratios(#[case] size: &str, #[case] expect
 
 #[test]
 fn portrait_dimensions_override_the_nearest_ratio() {
-    let (width, height) = parse_dimensions("1280x896").expect("known size");
-    assert_eq!(aspect_ratio(width, height), "4:3");
+    let (landscape_width, landscape_height) = parse_dimensions("1280x896").expect("known size");
+    assert_eq!(aspect_ratio(landscape_width, landscape_height), "4:3");
     assert_eq!(aspect_ratio(1280, 1024), "5:4");
-    let (width, height) = parse_dimensions("896x1280").expect("known size");
-    assert_eq!(aspect_ratio(width, height), "3:4");
+    let (portrait_width, portrait_height) = parse_dimensions("896x1280").expect("known size");
+    assert_eq!(aspect_ratio(portrait_width, portrait_height), "3:4");
 }
 
 #[test]
@@ -439,32 +439,40 @@ fn search_tools_deduplicate_by_their_key() {
 
 #[test]
 fn url_context_tools_are_search_tools() {
-    let mapped = object(r#"{"tools":[{"url_context":{}},{"url_context":{}},{"urlContext":{}}]}"#);
-    let tools = map_gemini_image_tools_params(&object("{}"), &mapped, &settings()).expect("tools");
+    let repeated = object(r#"{"tools":[{"url_context":{}},{"url_context":{}},{"urlContext":{}}]}"#);
+    let tools =
+        map_gemini_image_tools_params(&object("{}"), &repeated, &settings()).expect("tools");
     assert_eq!(
         wrapped(&tools),
         json(r#"{"tools":[{"url_context":{}},{"urlContext":{}}]}"#)
     );
     let params = object(r#"{"tools":[{"type":"function","function":{"name":"f"}}]}"#);
-    let mapped = object(r#"{"tools":[{"url_context":{}}]}"#);
-    let tools = map_gemini_image_tools_params(&params, &mapped, &settings()).expect("tools");
+    let search_only = object(r#"{"tools":[{"url_context":{}}]}"#);
+    let function_tools =
+        map_gemini_image_tools_params(&params, &search_only, &settings()).expect("tools");
     assert_eq!(
-        wrapped(&tools),
+        wrapped(&function_tools),
         json(r#"{"tools":[{"function_declarations":[{"name":"f"}]}]}"#)
     );
 }
 
 #[test]
 fn a_multi_key_tool_is_matched_by_its_first_search_key() {
-    let mapped = object(r#"{"tools":[{"urlContext":{}},{"googleSearch":{},"urlContext":{}}]}"#);
-    let tools = map_gemini_image_tools_params(&object("{}"), &mapped, &settings()).expect("tools");
+    let url_first = object(r#"{"tools":[{"urlContext":{}},{"googleSearch":{},"urlContext":{}}]}"#);
+    let url_tools =
+        map_gemini_image_tools_params(&object("{}"), &url_first, &settings()).expect("tools");
     assert_eq!(
-        wrapped(&tools),
+        wrapped(&url_tools),
         json(r#"{"tools":[{"urlContext":{}},{"googleSearch":{},"urlContext":{}}]}"#)
     );
-    let mapped = object(r#"{"tools":[{"googleSearch":{}},{"googleSearch":{},"urlContext":{}}]}"#);
-    let tools = map_gemini_image_tools_params(&object("{}"), &mapped, &settings()).expect("tools");
-    assert_eq!(wrapped(&tools), json(r#"{"tools":[{"googleSearch":{}}]}"#));
+    let search_first =
+        object(r#"{"tools":[{"googleSearch":{}},{"googleSearch":{},"urlContext":{}}]}"#);
+    let search_tools =
+        map_gemini_image_tools_params(&object("{}"), &search_first, &settings()).expect("tools");
+    assert_eq!(
+        wrapped(&search_tools),
+        json(r#"{"tools":[{"googleSearch":{}}]}"#)
+    );
 }
 
 #[test]

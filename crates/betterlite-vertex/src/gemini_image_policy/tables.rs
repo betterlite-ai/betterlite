@@ -51,8 +51,8 @@ pub fn aspect_ratio(width: u64, height: u64) -> &'static str {
     let mut nearest: Option<(&'static str, (u128, u128))> = None;
     for (ratio, numerator, denominator, _, _) in RATIOS {
         let distance = (
-            scaled(numerator, requested.1),
-            scaled(denominator, requested.0),
+            u128::from(numerator).saturating_mul(requested.1),
+            u128::from(denominator).saturating_mul(requested.0),
         );
         // an exact tie keeps the larger ratio, as LiteLLM's rounded float logs do at 3:8
         let closer = nearest.is_none_or(|(_, best)| {
@@ -79,17 +79,12 @@ fn exact_ratio(width: u64, height: u64) -> Option<&'static str> {
             SIZE_SCALES
                 .iter()
                 .any(|scale| {
-                    scaled(*scale, u128::from(*base_width)) == u128::from(width)
-                        && scaled(*scale, u128::from(*base_height)) == u128::from(height)
+                    u128::from(*scale).saturating_mul(u128::from(*base_width)) == u128::from(width)
+                        && u128::from(*scale).saturating_mul(u128::from(*base_height))
+                            == u128::from(height)
                 })
                 .then_some(*ratio)
         })
-}
-
-fn scaled(factor: u64, dimension: u128) -> u128 {
-    u128::from(factor)
-        .checked_mul(dimension)
-        .unwrap_or(u128::MAX)
 }
 
 // compares |ln(left)| with |ln(right)| as exact rationals
@@ -112,7 +107,7 @@ fn fraction_less(left: (u128, u128), right: (u128, u128)) -> bool {
 
 #[must_use]
 pub fn gemini_image_size(width: u64, height: u64) -> &'static str {
-    let area = scaled(width, u128::from(height));
+    let area = u128::from(width).saturating_mul(u128::from(height));
     if area < AREA_512_LIMIT {
         "512"
     } else if area < AREA_1K_LIMIT {

@@ -53,7 +53,7 @@ pub fn image_web_search_requests(response: &IndexMap<String, ResponseJson>) -> O
                     grounding_metadata.extend(entries.iter().cloned());
                 }
                 Some(metadata @ ResponseJson::Object(_)) => {
-                    grounding_metadata.push(metadata.clone())
+                    grounding_metadata.push(metadata.clone());
                 }
                 _ => {}
             }

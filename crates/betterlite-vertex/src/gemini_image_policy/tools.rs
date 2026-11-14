@@ -51,19 +51,21 @@ fn map_tools_param(
         .iter()
         .map(|tool| match tool {
             Json::Object(object) => Ok(object.clone()),
-            _ => Err(GeminiImagePolicyError::ToolsShape),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+                Err(GeminiImagePolicyError::ToolsShape)
+            }
         })
         .collect::<Result<Vec<_>, _>>()?;
     let mapped = map_tools(&objects, include_server_side, None, settings)?;
-    let encoded = serde_json::to_value(&mapped.tools)
+    let encoded_tools = serde_json::to_value(&mapped.tools)
         .and_then(serde_json::from_value::<Vec<Json>>)
         .map_err(GeminiImagePolicyError::Encode)?;
-    add_tools(result, encoded)?;
+    add_tools(result, encoded_tools)?;
     if let Some(tool_config) = &mapped.tool_config {
-        let encoded = serde_json::to_value(tool_config)
+        let encoded_config = serde_json::to_value(tool_config)
             .and_then(serde_json::from_value::<Json>)
             .map_err(GeminiImagePolicyError::Encode)?;
-        result.insert("toolConfig".to_owned(), encoded);
+        result.insert("toolConfig".to_owned(), encoded_config);
     }
     Ok(())
 }
