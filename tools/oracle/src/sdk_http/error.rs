@@ -91,6 +91,8 @@ pub enum SdkHttpError {
     StreamTooLarge { limit: usize },
     #[error("the stream frame is not UTF-8: {0}")]
     FrameUtf8(#[source] FromUtf8Error),
+    #[error("the captured warnings are not UTF-8: {0}")]
+    WarningsUtf8(#[source] FromUtf8Error),
     #[error("cannot start the stream logging worker: {0}")]
     Worker(#[source] WorkerError),
     #[error("cannot convert the stream chunk: {0}")]

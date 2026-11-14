@@ -1,7 +1,10 @@
+use std::iter::repeat_with;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use betterlite_core::api::messages_stream_logging::seams::{LoggingFuture, LoggingJob};
+use betterlite_core::api::messages_stream_logging::seams::{
+    LoggingFuture, LoggingJob, RouteStreamingLogging,
+};
 use betterlite_core::api::messages_stream_logging::slots::{Fields, StreamSlots};
 use betterlite_core::api::messages_stream_logging::{
     MessagesStreamLogging, SseChunk, StreamDeps, abort_upstream, convert_chunk_to_sse_format,
@@ -11,13 +14,13 @@ use betterlite_logging::passthrough_stream_logging::object::StreamLoggingObject;
 use betterlite_logging::passthrough_stream_logging::types::EndpointType;
 use betterlite_logging::worker::{LoggingWorker, WorkerSettings};
 use betterlite_models::decisions::Json;
-use chrono::DateTime;
+use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 
 use super::Http;
 use super::call::{ChunkSpec, Hook, LoggingStep};
 use super::doubles::{RecordingHook, Upstream};
-use super::outcome::{Processed, Routed, StepOutcome};
+use super::outcome::{Flag, Processed, Routed, StepOutcome};
 use super::recording::{
     Recorder, StepClock, Warnings, counted_future, drain, logging_object, value_error,
 };
@@ -43,9 +46,9 @@ impl Session {
         warnings: Warnings,
     ) -> Result<Self, SdkHttpError> {
         let recorder = Arc::new(Recorder::default());
-        let worker =
+        let logging_worker =
             LoggingWorker::start(WorkerSettings::default()).map_err(SdkHttpError::Worker)?;
-        let worker = Arc::new(worker);
+        let worker = Arc::new(logging_worker);
         let slots = Arc::new(StreamSlots::default());
         let handler = Arc::new(PassThroughEndpointLogging {
             injected_log_dispatch: None,
@@ -82,7 +85,7 @@ impl Session {
         let mut outcome = StepOutcome::default();
         self.apply(step, http, &mut outcome).await?;
         self.worker.flush().await;
-        self.observe(&mut outcome);
+        self.observe(&mut outcome)?;
         Ok(outcome)
     }
 
@@ -93,62 +96,57 @@ impl Session {
         outcome: &mut StepOutcome,
     ) -> Result<(), SdkHttpError> {
         match step {
-            LoggingStep::Collect { first_chunk } => {
-                self.frames = http.frames(&self.body).await?;
-                if *first_chunk {
-                    self.stream.record_first_chunk();
-                }
-            }
+            LoggingStep::Collect { first_chunk } => self.collect(http, *first_chunk).await?,
             LoggingStep::Bill {
                 teardown,
                 route_failure,
-            } => {
-                *self
-                    .recorder
-                    .route_failure
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner) =
-                    route_failure.as_deref().map(value_error);
-                self.stream
-                    .bill_collected_chunks(self.frames.clone(), *teardown);
-            }
+            } => self.bill(*teardown, route_failure.as_deref()),
             LoggingStep::ArmDeferred => self.arm_deferred(),
-            LoggingStep::ParkArgs { count } => {
-                let parked: Vec<LoggingFuture> = (0..*count)
-                    .map(|_| counted_future(&self.recorder.ran))
-                    .collect();
-                self.fields().deferred_args = Some(parked);
-            }
+            LoggingStep::ParkArgs { count } => self.park_args(*count),
             LoggingStep::Dispatch => {
-                self.stream.dispatch_pending_logging();
+                let _dispatched = self.stream.dispatch_pending_logging();
             }
             LoggingStep::AbortUpstream { close } => {
                 abort_upstream(&mut Upstream { close: *close }).await;
             }
-            LoggingStep::DetachedFailure { hook } => {
-                let recording = RecordingHook {
-                    calls: Arc::clone(&self.hook_calls),
-                    raises: *hook == Hook::Raises,
-                };
-                self.fields().detached_failure_hook = if *hook == Hook::Missing {
-                    None
-                } else {
-                    Some(Arc::new(recording))
-                };
-                let original = value_error("original");
-                self.stream.fire_detached_failure_hook(&original).await;
-            }
-            LoggingStep::Convert { chunk } => {
-                let chunk = match chunk {
-                    ChunkSpec::Mapping(mapping) => SseChunk::Mapping(mapping.clone()),
-                    ChunkSpec::Bytes(bytes) => SseChunk::Bytes(bytes.clone().into_bytes()),
-                };
-                let frame = convert_chunk_to_sse_format(chunk).map_err(SdkHttpError::Chunk)?;
-                outcome.text = Some(String::from_utf8_lossy(&frame).into_owned());
-            }
+            LoggingStep::DetachedFailure { hook } => self.detached_failure(*hook).await,
+            LoggingStep::Convert { chunk } => outcome.text = Some(convert(chunk)?),
             LoggingStep::Delegate => self.delegate(http, outcome).await?,
         }
         Ok(())
+    }
+
+    async fn collect(&mut self, http: &Http<'_>, first_chunk: bool) -> Result<(), SdkHttpError> {
+        self.frames = http.frames(&self.body).await?;
+        if first_chunk {
+            self.stream.record_first_chunk();
+        }
+        Ok(())
+    }
+
+    fn bill(&self, teardown: bool, failure: Option<&str>) {
+        *self
+            .recorder
+            .route_failure
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = failure.map(value_error);
+        let _logged = self
+            .stream
+            .bill_collected_chunks(self.frames.clone(), teardown);
+    }
+
+    async fn detached_failure(&self, hook: Hook) {
+        let recording = RecordingHook {
+            calls: Arc::clone(&self.hook_calls),
+            raises: hook == Hook::Raises,
+        };
+        self.fields().detached_failure_hook = if hook == Hook::Missing {
+            None
+        } else {
+            Some(Arc::new(recording))
+        };
+        let original = value_error("original");
+        self.stream.fire_detached_failure_hook(&original).await;
     }
 
     fn fields(&self) -> MutexGuard<'_, Fields> {
@@ -173,6 +171,13 @@ impl Session {
         }));
     }
 
+    fn park_args(&self, count: usize) {
+        let parked: Vec<LoggingFuture> = repeat_with(|| counted_future(&self.recorder.ran))
+            .take(count)
+            .collect();
+        self.fields().deferred_args = Some(parked);
+    }
+
     // The processor gets a logging object and body of its own, so the caller's own are told apart
     async fn delegate(
         &self,
@@ -187,25 +192,47 @@ impl Session {
             self.stream
                 .streaming_response_iterator(response, supplied_body, Arc::clone(&supplied));
         let relayed_bytes = Http::read(relayed).await?;
-        outcome.text = Some(String::from_utf8_lossy(&relayed_bytes).into_owned());
+        outcome.text = Some(String::from_utf8(relayed_bytes).map_err(SdkHttpError::FrameUtf8)?);
         outcome.processed = drain(&self.recorder.processed)
             .into_iter()
             .map(|call| Processed {
                 response_status: call.response,
                 request_body: call.request_body,
-                endpoint_anthropic: call.endpoint_type == EndpointType::Anthropic,
+                endpoint_anthropic: Flag(call.endpoint_type == EndpointType::Anthropic),
                 url_route: call.url_route.to_owned(),
-                supplied_logging_obj: Arc::ptr_eq(&call.logging_obj, &supplied),
-                shared_success_handler: Arc::ptr_eq(&call.success_handler, &self.handler),
-                start_is_construction: call.start_time == DateTime::UNIX_EPOCH.fixed_offset(),
+                supplied_logging_obj: Flag(Arc::ptr_eq(&call.logging_obj, &supplied)),
+                shared_success_handler: Flag(Arc::ptr_eq(&call.success_handler, &self.handler)),
+                start_is_construction: Flag(call.start_time == DateTime::UNIX_EPOCH.fixed_offset()),
             })
             .collect();
         Ok(())
     }
 
-    fn observe(&self, outcome: &mut StepOutcome) {
+    fn routed_entry(
+        &self,
+        call: RouteStreamingLogging,
+        first: Option<DateTime<FixedOffset>>,
+    ) -> Result<Routed, SdkHttpError> {
+        let raw_frames = call
+            .raw_bytes
+            .iter()
+            .map(|frame| String::from_utf8(frame.clone()).map_err(SdkHttpError::FrameUtf8))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Routed {
+            raw_frames,
+            request_body: call.request_body,
+            endpoint_anthropic: Flag(call.endpoint_type == EndpointType::Anthropic),
+            url_route: call.url_route.to_owned(),
+            iterator_logging_obj: Flag(Arc::ptr_eq(&call.logging_obj, &self.logging_obj)),
+            shared_success_handler: Flag(Arc::ptr_eq(&call.success_handler, &self.handler)),
+            start_is_construction: Flag(call.start_time == DateTime::UNIX_EPOCH.fixed_offset()),
+            first_within_run: first.map(|start| call.start_time <= start && start <= call.end_time),
+        })
+    }
+
+    fn observe(&self, outcome: &mut StepOutcome) -> Result<(), SdkHttpError> {
         outcome.ran = self.recorder.ran.swap(0, Ordering::SeqCst);
-        outcome.warnings = self.warnings.take();
+        outcome.warnings = self.warnings.take()?;
         outcome.callback_args = drain(&self.callback_args);
         outcome.hook_calls = drain(&self.hook_calls);
         let (first, recorded) = self
@@ -220,28 +247,24 @@ impl Session {
                 )
             })
             .unwrap_or_default();
-        outcome.completion_start_recorded = recorded;
+        outcome.completion_start_recorded = Flag(recorded);
         let fields = self.fields();
-        outcome.callback_armed = fields.deferred_callback.is_some();
-        outcome.args_present = fields.deferred_args.is_some();
+        outcome.callback_armed = Flag(fields.deferred_callback.is_some());
+        outcome.args_present = Flag(fields.deferred_args.is_some());
         drop(fields);
         outcome.routed = drain(&self.recorder.routed)
             .into_iter()
-            .map(|call| Routed {
-                raw_frames: call
-                    .raw_bytes
-                    .iter()
-                    .map(|frame| String::from_utf8_lossy(frame).into_owned())
-                    .collect(),
-                request_body: call.request_body,
-                endpoint_anthropic: call.endpoint_type == EndpointType::Anthropic,
-                url_route: call.url_route.to_owned(),
-                iterator_logging_obj: Arc::ptr_eq(&call.logging_obj, &self.logging_obj),
-                shared_success_handler: Arc::ptr_eq(&call.success_handler, &self.handler),
-                start_is_construction: call.start_time == DateTime::UNIX_EPOCH.fixed_offset(),
-                first_within_run: first
-                    .map(|first| call.start_time <= first && first <= call.end_time),
-            })
-            .collect();
+            .map(|call| self.routed_entry(call, first))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(())
     }
+}
+
+fn convert(chunk: &ChunkSpec) -> Result<String, SdkHttpError> {
+    let sse = match chunk {
+        ChunkSpec::Mapping(mapping) => SseChunk::Mapping(mapping.clone()),
+        ChunkSpec::Bytes(bytes) => SseChunk::Bytes(bytes.as_bytes().to_vec()),
+    };
+    let frame = convert_chunk_to_sse_format(sse).map_err(SdkHttpError::Chunk)?;
+    String::from_utf8(frame).map_err(SdkHttpError::FrameUtf8)
 }

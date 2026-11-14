@@ -50,13 +50,14 @@ pub(super) fn drain<T>(recorded: &Mutex<Vec<T>>) -> Vec<T> {
 pub(super) struct Warnings(Arc<Mutex<Vec<u8>>>);
 
 impl Warnings {
-    pub(super) fn take(&self) -> Vec<String> {
-        let text = String::from_utf8_lossy(&drain(&self.0)).into_owned();
-        text.lines()
+    pub(super) fn take(&self) -> Result<Vec<String>, SdkHttpError> {
+        let text = String::from_utf8(drain(&self.0)).map_err(SdkHttpError::WarningsUtf8)?;
+        Ok(text
+            .lines()
             .map(str::trim)
             .filter(|line| !line.is_empty())
             .map(str::to_owned)
-            .collect()
+            .collect())
     }
 }
 
@@ -130,9 +131,9 @@ pub(super) fn value_error(message: &str) -> ReportedFailure {
 }
 
 pub(super) fn counted_future(ran: &Arc<AtomicUsize>) -> LoggingFuture {
-    let ran = Arc::clone(ran);
+    let counter = Arc::clone(ran);
     Box::pin(async move {
-        ran.fetch_add(1, Ordering::SeqCst);
+        counter.fetch_add(1, Ordering::SeqCst);
         Ok(())
     })
 }
