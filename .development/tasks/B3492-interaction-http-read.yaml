@@ -7,6 +7,9 @@ description: >-
   This task is the foundation for interaction polling (B3496) and public retrieval (B3495), and shared by agent operations (B3502, B3503) that reuse _BaseHTTPHandler's client resolution without building the full HTTP methods. Provider selection and optional-field extraction are owned by B3490; request/response transformation are owned by the provider contracts (B1369 for Vertex, B1370 for Studio).
 scope:
   paths:
+    - "crates/betterlite-http/src/proxy.rs"
+    - "crates/betterlite-http/src/proxy/routing.rs"
+    - "crates/betterlite-http/src/interactions"
     - crates/betterlite-http/src/interactions/base.rs
     - crates/betterlite-http/src/interactions/get.rs
     - crates/betterlite-http/src/interactions/base/**

@@ -1,0 +1,15 @@
+kind: helper
+name: headroom-messages-failure-fail-open-returns-rows
+call:
+  b3773:
+    function: handle_failure
+    fallback: fail_open
+    rows:
+      - {role: user, content: first row}
+      - {role: tool, tool_call_id: call-1, content: tool result}
+    error: Headroom compression service returned an error
+    detail:
+      status_code: 500
+      body: "internal error"
+env: {}
+compare: {ignore: []}
