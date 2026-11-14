@@ -55,25 +55,24 @@ async fn serve(replies: Vec<(StatusCode, String)>) -> (String, Arc<Mutex<usize>>
     let queue = Arc::new(Mutex::new(VecDeque::from(replies)));
     let handler_requests = Arc::clone(&requests);
     let handler_queue = Arc::clone(&queue);
-    let handler = move |_headers: HeaderMap, _uri: Uri, _body: Bytes| {
-        let request_count = Arc::clone(&handler_requests);
-        let replies = Arc::clone(&handler_queue);
-        async move {
-            let mut total = request_count.lock().expect("requests");
-            *total = (*total).saturating_add(1);
-            drop(total);
-            let reply = replies.lock().expect("replies").pop_front();
-            let (status, body) = reply.unwrap_or_else(|| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "no reply queued".to_owned(),
-                )
-            });
-            (status, Body::from(body))
-        }
-    };
     let router = Router::new()
-        .fallback(handler)
+        .fallback(move |_headers: HeaderMap, _uri: Uri, _body: Bytes| {
+            let request_count = Arc::clone(&handler_requests);
+            let replies = Arc::clone(&handler_queue);
+            async move {
+                let mut total = request_count.lock().expect("requests");
+                *total = (*total).saturating_add(1);
+                drop(total);
+                let reply = replies.lock().expect("replies").pop_front();
+                let (status, body) = reply.unwrap_or_else(|| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "no reply queued".to_owned(),
+                    )
+                });
+                (status, Body::from(body))
+            }
+        })
         .layer(DefaultBodyLimit::disable());
     let mut server = JoinSet::new();
     server.spawn(axum::serve(listener, router).into_future());

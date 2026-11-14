@@ -86,7 +86,7 @@ async fn serve(reply: Reply) -> (String, Arc<Mutex<Captured>>, Server) {
     let endpoint = format!("http://{}", listener.local_addr().expect("address"));
     let captured = Arc::new(Mutex::new(Captured::default()));
     let handler_captured = Arc::clone(&captured);
-    let handler = move |headers: HeaderMap, uri: Uri, body: Bytes| {
+    let router = Router::new().fallback(move |headers: HeaderMap, uri: Uri, body: Bytes| {
         let request_capture = Arc::clone(&handler_captured);
         let reply = reply.clone();
         async move {
@@ -99,8 +99,7 @@ async fn serve(reply: Reply) -> (String, Arc<Mutex<Captured>>, Server) {
             drop(request);
             (reply.status, Body::from(reply.body))
         }
-    };
-    let router = Router::new().fallback(handler);
+    });
     let mut server = JoinSet::new();
     server.spawn(axum::serve(listener, router).into_future());
     (endpoint, captured, server)
@@ -109,11 +108,10 @@ async fn serve(reply: Reply) -> (String, Arc<Mutex<Captured>>, Server) {
 async fn hang() -> (String, Server) {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let endpoint = format!("http://{}", listener.local_addr().expect("address"));
-    let answer = || async {
+    let router = Router::new().fallback(|| async {
         sleep(Duration::from_secs(30)).await;
         StatusCode::OK
-    };
-    let router = Router::new().fallback(answer);
+    });
     let mut server = JoinSet::new();
     server.spawn(axum::serve(listener, router).into_future());
     (endpoint, server)
