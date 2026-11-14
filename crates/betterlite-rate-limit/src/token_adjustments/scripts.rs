@@ -67,9 +67,10 @@ pub fn window_guarded_args(
     expected_window_start: &str,
     operation: &IncrementOperation,
 ) -> Vec<RedisScalar> {
+    // the guarded script calls INCRBY, which rejects a float text like "5.0"; Display writes a whole count as "5"
     vec![
         RedisScalar::Text(expected_window_start.to_owned()),
-        RedisScalar::Float(operation.increment_value),
+        RedisScalar::Text(operation.increment_value.to_string()),
         RedisScalar::Text(operation.ttl.unwrap_or(0).to_string()),
     ]
 }

@@ -168,7 +168,7 @@ fn the_guarded_arguments_are_the_start_the_increment_and_the_ttl() {
         window_guarded_args("100", &operation("{a:1}:tokens", -5.0, None)),
         vec![
             RedisScalar::Text("100".to_owned()),
-            RedisScalar::Float(-5.0),
+            RedisScalar::Text("-5".to_owned()),
             RedisScalar::Text("0".to_owned()),
         ]
     );
@@ -176,7 +176,7 @@ fn the_guarded_arguments_are_the_start_the_increment_and_the_ttl() {
         window_guarded_args("101", &operation("{a:1}:tokens", 5.0, Some(30))),
         vec![
             RedisScalar::Text("101".to_owned()),
-            RedisScalar::Float(5.0),
+            RedisScalar::Text("5".to_owned()),
             RedisScalar::Text("30".to_owned()),
         ]
     );

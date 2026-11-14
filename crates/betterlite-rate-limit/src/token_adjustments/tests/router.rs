@@ -146,7 +146,7 @@ async fn a_guarded_operation_without_a_backend_runs_the_guarded_script() {
             vec![WINDOW_KEY.to_owned(), COUNTER_KEY.to_owned()],
             vec![
                 RedisScalar::Text(WINDOW_START.to_owned()),
-                RedisScalar::Float(2.0),
+                RedisScalar::Text("2".to_owned()),
                 RedisScalar::Text("60".to_owned()),
             ],
         )]

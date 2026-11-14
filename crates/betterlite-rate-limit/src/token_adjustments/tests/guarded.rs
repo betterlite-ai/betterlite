@@ -1,6 +1,9 @@
 #![cfg(test)]
 
+use std::future::Future as _;
+use std::pin::pin;
 use std::sync::Arc;
+use std::task::{Context, Waker};
 
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
 
@@ -66,6 +69,32 @@ async fn the_local_increment_adds_the_delta_to_the_cached_counter() {
             (WINDOW_KEY.to_owned(), true),
             (COUNTER_KEY.to_owned(), true)
         ]
+    );
+}
+
+#[tokio::test]
+async fn a_local_adjustment_waits_for_the_check_and_increment_lock() {
+    let cache = FakeCache::new(Some(RedisCacheKind::Standalone));
+    let usage = FakeUsage::new();
+    cache.seed(WINDOW_KEY, CacheCounterValue::Int(100));
+    cache.seed(COUNTER_KEY, CacheCounterValue::Float(12.5));
+    let adjustments = local_adjustments(&cache, &usage);
+    let guard = adjustments.windows.check_and_increment_lock.lock().await;
+    let operations = [guarded_operation(
+        COUNTER_KEY,
+        0.25,
+        ReservationBackend::Local,
+    )];
+    let adjustment = apply_local_guarded_tokens(&adjustments, &operations);
+    let mut pinned = pin!(adjustment);
+    let mut context = Context::from_waker(Waker::noop());
+    assert!(pinned.as_mut().poll(&mut context).is_pending());
+    assert!(usage.local_sets().is_empty());
+    drop(guard);
+    pinned.await.expect("the locked local adjustment");
+    assert_eq!(
+        usage.local_sets(),
+        vec![(COUNTER_KEY.to_owned(), 12.75, Some(60))]
     );
 }
 
@@ -281,7 +310,7 @@ async fn the_redis_increment_runs_the_script_with_key_pairs() {
             vec![WINDOW_KEY.to_owned(), COUNTER_KEY.to_owned()],
             vec![
                 RedisScalar::Text(WINDOW_START.to_owned()),
-                RedisScalar::Float(5.0),
+                RedisScalar::Text("5".to_owned()),
                 RedisScalar::Text("60".to_owned()),
             ],
         )]
@@ -383,7 +412,7 @@ async fn the_guarded_script_gets_a_zero_ttl_when_the_operation_has_none() {
         script.calls()[0].1,
         vec![
             RedisScalar::Text(WINDOW_START.to_owned()),
-            RedisScalar::Float(5.0),
+            RedisScalar::Text("5".to_owned()),
             RedisScalar::Text("0".to_owned()),
         ]
     );
