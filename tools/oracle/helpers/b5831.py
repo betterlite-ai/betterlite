@@ -132,9 +132,7 @@ INPUT = TypeAdapter(Input)
 
 
 class CostCalculator(Protocol):
-    def get_model_params_and_category(
-        self, model_name: str, call_type: CallTypes
-    ) -> str: ...
+    def get_model_params_and_category(self, model_name: str, call_type: CallTypes) -> str: ...
 
     def has_together_registry_pricing(
         self, model: str, cost_map: Mapping[str, JsonValue]
@@ -258,34 +256,21 @@ def rerank_response(step: RerankResponseStep) -> JsonValue:
     return {"ok": True, "value": dumped}
 
 
-def cost_category(step: CategoryStep) -> JsonValue:
-    return COSTS.get_model_params_and_category(
-        step["model"], CALL_TYPES[step["call_type"]]
-    )
-
-
 def run(input_value: dict[str, JsonValue]) -> JsonValue:
     parsed = INPUT.validate_python(input_value)
     registered = {key: dict(entry) for key, entry in parsed["model_cost"].items()}
     with contextlib.redirect_stdout(io.StringIO()):
         litellm.register_model(registered, persist_across_reloads=False)
     collected: dict[str, JsonValue] = {}
-    collected["chat_supported"] = [
-        chat_supported(step) for step in parsed["chat_supported"]
-    ]
+    collected["chat_supported"] = [chat_supported(step) for step in parsed["chat_supported"]]
     collected["chat_map"] = [chat_map(step) for step in parsed["chat_map"]]
-    collected["chat_messages"] = [
-        chat_messages(step) for step in parsed["chat_messages"]
-    ]
+    collected["chat_messages"] = [chat_messages(step) for step in parsed["chat_messages"]]
     collected["completion"] = [completion(step) for step in parsed["completion"]]
-    collected["rerank_requests"] = [
-        rerank_request(step) for step in parsed["rerank_requests"]
-    ]
-    collected["rerank_responses"] = [
-        rerank_response(step) for step in parsed["rerank_responses"]
-    ]
+    collected["rerank_requests"] = [rerank_request(step) for step in parsed["rerank_requests"]]
+    collected["rerank_responses"] = [rerank_response(step) for step in parsed["rerank_responses"]]
     collected["cost_categories"] = [
-        cost_category(step) for step in parsed["cost_categories"]
+        COSTS.get_model_params_and_category(step["model"], CALL_TYPES[step["call_type"]])
+        for step in parsed["cost_categories"]
     ]
     collected["cost_registry"] = [
         COSTS.has_together_registry_pricing(step["model"], parsed["model_cost"])
