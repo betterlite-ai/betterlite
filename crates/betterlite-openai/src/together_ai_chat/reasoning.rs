@@ -58,7 +58,7 @@ pub(super) fn rewrite_reasoning_effort(
         return;
     };
     let effort = effort.clone();
-    optional_params.shift_remove(REASONING_EFFORT);
+    optional_params.remove(REASONING_EFFORT);
     for (key, value) in reasoning_payload(&effort, model, capabilities) {
         optional_params.entry(key).or_insert(value);
     }
@@ -98,9 +98,9 @@ fn reasoning_payload(effort: &str, model: &str, capabilities: &dyn TogetherCapab
         )]);
     }
     let table = if model.starts_with(HIGH_MAX_EFFORT_MODEL_PREFIX) {
-        &HIGH_MAX_EFFORT_TRANSLATION
+        &HIGH_MAX_EFFORT_TRANSLATION[..]
     } else {
-        &EFFORT_TRANSLATION
+        &EFFORT_TRANSLATION[..]
     };
     Object::from_iter([(
         String::from(REASONING_EFFORT),

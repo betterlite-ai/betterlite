@@ -1,5 +1,4 @@
 use betterlite_error::error::{ErrorClass, ErrorContext};
-use serde_json::Value;
 use thiserror::Error;
 
 use crate::chat::{ChatMessage, Role};
@@ -160,7 +159,7 @@ impl TogetherAiChatConfig {
         if optional_params.contains_key(RESPONSE_FORMAT)
             && drop_response_format(model, drop_params, capabilities)?
         {
-            optional_params.shift_remove(RESPONSE_FORMAT);
+            optional_params.remove(RESPONSE_FORMAT);
         }
         rewrite_reasoning_effort(optional_params, model, capabilities);
         Ok(())
@@ -210,7 +209,7 @@ fn drop_tool_params(
                 "together_ai model does not support function calling per the model registry; dropping the parameters"
             );
             for param in passed {
-                optional_params.shift_remove(*param);
+                optional_params.remove(*param);
             }
             Ok(())
         }

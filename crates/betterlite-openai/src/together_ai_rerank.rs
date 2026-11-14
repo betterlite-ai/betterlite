@@ -9,8 +9,9 @@ use uuid::Uuid;
 
 use crate::api::rerank_contracts::records::{
     RerankBilledUnits, RerankDocument, RerankResponse, RerankResponseDocument, RerankResponseMeta,
-    RerankResponseResult, RerankTokens, Score,
+    RerankResponseResult, RerankTokens,
 };
+use crate::api::vector_store_records::records::score::Score;
 use crate::openai_base_config::Headers;
 
 mod tests;
