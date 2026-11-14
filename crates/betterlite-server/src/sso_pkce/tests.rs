@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use betterlite_auth::auth_cache::{AuthCache, WriteOptions, gateway_cache};
-use betterlite_cache::backend::memory::LocalMemoryOps;
+use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::{DualCache, DualCacheSettings};
 use betterlite_config::sso_pkce::PkceSettings;
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
@@ -255,7 +255,7 @@ fn a_supplied_cli_state_wins_over_the_configured_state() {
     };
     let redirect = generic_sso_redirect_params(Some("cli"), &configured, &SequenceEntropy).unwrap();
     assert_eq!(redirect.params.state, "cli");
-    assert_eq!(redirect.code_verifier, None);
+    assert!(redirect.code_verifier.is_none());
 }
 
 #[test]
@@ -301,7 +301,7 @@ fn pkce_parameters_are_absent_when_pkce_is_disabled() {
         generic_sso_redirect_params(Some("state"), &settings(false, false), &SequenceEntropy)
             .unwrap();
     assert_eq!(redirect.params.pkce, None);
-    assert_eq!(redirect.code_verifier, None);
+    assert!(redirect.code_verifier.is_none());
     assert_eq!(
         serde_json::to_value(&redirect.params).unwrap(),
         serde_json::json!({"state": "state"})
@@ -313,7 +313,7 @@ fn pkce_parameters_carry_the_s256_challenge_and_the_verifier() {
     let redirect =
         generic_sso_redirect_params(Some("state"), &settings(true, false), &SequenceEntropy)
             .unwrap();
-    let pkce = redirect.params.pkce.unwrap();
+    let pkce = redirect.params.pkce.as_ref().unwrap();
     assert_eq!(pkce.code_challenge, CHALLENGE_FOR_SEQUENCE);
     assert_eq!(pkce.code_challenge_method, CODE_CHALLENGE_METHOD);
     assert_eq!(
@@ -401,7 +401,7 @@ fn verifier_of(parameters: &TokenExchangeParameters) -> Option<String> {
     parameters
         .verifier
         .as_ref()
-        .map(|verifier| verifier.code_verifier.expose_secret().clone())
+        .map(|verifier| verifier.code_verifier.expose_secret().to_owned())
 }
 
 #[tokio::test]

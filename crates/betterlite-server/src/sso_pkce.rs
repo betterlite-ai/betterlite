@@ -137,19 +137,17 @@ pub fn generic_sso_redirect_params<E>(
 where
     E: VerifierEntropy,
 {
-    let state = match cli_state.filter(|value| !value.is_empty()) {
-        Some(cli) => cli.to_owned(),
-        None => match &settings.generic_client_state {
-            Some(configured) => configured.clone(),
-            None => {
-                let mut bytes = [0_u8; STATE_RANDOM_BYTES];
-                entropy.fill(&mut bytes).map_err(PkceError::Entropy)?;
-                Builder::from_random_bytes(bytes)
-                    .into_uuid()
-                    .simple()
-                    .to_string()
-            }
-        },
+    let state = if let Some(cli) = cli_state.filter(|value| !value.is_empty()) {
+        cli.to_owned()
+    } else if let Some(configured) = &settings.generic_client_state {
+        configured.clone()
+    } else {
+        let mut bytes = [0_u8; STATE_RANDOM_BYTES];
+        entropy.fill(&mut bytes).map_err(PkceError::Entropy)?;
+        Builder::from_random_bytes(bytes)
+            .into_uuid()
+            .simple()
+            .to_string()
     };
     if !settings.use_pkce {
         return Ok(GenericSsoRedirect {

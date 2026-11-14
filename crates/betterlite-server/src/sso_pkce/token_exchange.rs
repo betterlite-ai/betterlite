@@ -170,7 +170,7 @@ async fn permissive_miss<Redis, User>(
     );
 }
 
-fn missing_cause(kind: PkceCacheKind) -> &'static str {
+const fn missing_cause(kind: PkceCacheKind) -> &'static str {
     match kind {
         PkceCacheKind::RedisUsage => {
             "The authorization and callback were likely handled by different instances, so the verifier was stored on one pod but not found on another."

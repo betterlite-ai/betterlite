@@ -82,7 +82,10 @@ impl VerifierCache for RedisCache {
     }
 }
 
-fn warn_when_delete_fails<T, E: Display>(outcome: Result<T, E>) {
+fn warn_when_delete_fails<T, E>(outcome: Result<T, E>)
+where
+    E: Display,
+{
     if let Err(error) = outcome {
         tracing::warn!(
             %error,
@@ -92,7 +95,7 @@ fn warn_when_delete_fails<T, E: Display>(outcome: Result<T, E>) {
 }
 
 // betterlite-cache's own CachedValue conversion is crate-private, so this reader maps the typed value itself
-fn json_from_cached(value: CachedValue) -> Json {
+pub(super) fn json_from_cached(value: CachedValue) -> Json {
     match value {
         CachedValue::Null => Json::Null,
         CachedValue::Boolean(flag) => Json::Bool(flag),
@@ -109,13 +112,13 @@ fn json_from_cached(value: CachedValue) -> Json {
 }
 
 // Both cache tiers read a stored null as a miss, so only a present non-null value reaches this match
-fn stored_entry(value: &Json) -> Option<PkceCacheEntry> {
+pub(super) fn stored_entry(value: &Json) -> Option<PkceCacheEntry> {
     match value {
         Json::Object(fields) => match fields.get("code_verifier") {
             Some(Json::Text(text)) if !text.is_empty() => {
                 Some(PkceCacheEntry::Verifier(SecretString::from(text.clone())))
             }
-            Some(Json::Text(_)) | Some(Json::Null) => Some(PkceCacheEntry::EmptyVerifier),
+            Some(Json::Text(_) | Json::Null) => Some(PkceCacheEntry::EmptyVerifier),
             Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) | None => {
                 Some(PkceCacheEntry::UnexpectedShape(PkceCacheShape::Object))
             }
@@ -131,9 +134,9 @@ fn stored_entry(value: &Json) -> Option<PkceCacheEntry> {
     }
 }
 
-pub struct PkceCaches<'a, Redis, User> {
-    pub redis: Option<&'a Redis>,
-    pub user: &'a User,
+pub struct PkceCaches<'caches, Redis, User> {
+    pub redis: Option<&'caches Redis>,
+    pub user: &'caches User,
 }
 
 impl<Redis, User> PkceCaches<'_, Redis, User>
@@ -157,9 +160,6 @@ where
     }
 
     pub(crate) fn kind(&self) -> PkceCacheKind {
-        match self.redis {
-            Some(redis) => redis.kind(),
-            None => self.user.kind(),
-        }
+        self.redis.map_or_else(|| self.user.kind(), Redis::kind)
     }
 }
