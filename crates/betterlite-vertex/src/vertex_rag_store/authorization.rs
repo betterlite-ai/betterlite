@@ -18,7 +18,6 @@ use crate::token_cache::error::CredentialCacheError;
 use crate::token_cache::probe::AccessToken;
 use crate::token_refresh::ensure_access_token;
 
-#[cfg(test)]
 mod tests;
 
 // LiteLLM's get_vector_store_endpoints_by_type: read searches contexts and write creates a corpus

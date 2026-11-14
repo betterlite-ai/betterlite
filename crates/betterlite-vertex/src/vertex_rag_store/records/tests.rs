@@ -5,6 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
+use betterlite_config::sections::vertex_credential_sources::vertex_settings::AdcEnvironment;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::{
     VectorStoreCreateResponse, VectorStoreSearchResponse,
@@ -13,11 +14,10 @@ use jiff::tz::TimeZone;
 use rstest::rstest;
 use serde_json::{Number, json};
 
-use super::create::transform_create_request;
-use super::payload::{
-    PayloadError, Reply, decode_vertex_rag_corpus, decode_vertex_rag_payload,
-    transform_create_response, transform_search_response,
+use super::create::{
+    decode_vertex_rag_corpus, transform_create_request, transform_create_response,
 };
+use super::payload::{PayloadError, Reply, decode_vertex_rag_payload, transform_search_response};
 use super::search::{SearchQuery, SearchRequest, transform_search_request};
 use crate::credential_sources::getters::VertexParams;
 use crate::model_urls::error::VertexUrlError;
@@ -104,7 +104,8 @@ fn a_bare_corpus_id_expands_under_the_configured_project_and_location(
     let settings = VertexSettings {
         project: setting_project.map(str::to_owned),
         location: setting_location.map(str::to_owned),
-        ..VertexSettings::default()
+        credentials: None,
+        adc: AdcEnvironment::default(),
     };
     let mut logging = BTreeMap::new();
     let optional_params = optional("{}");
@@ -522,9 +523,9 @@ fn a_corpus_reply_becomes_a_completed_vector_store() {
     assert_eq!(value["status"], json!("completed"));
     assert_eq!(value["metadata"], json!({"team": "a"}));
     let fields = value.as_object().unwrap();
-    for field in ["expires_after", "expires_at", "last_active_at"] {
-        assert_eq!(fields.get(field), Some(&json!(null)), "{field}");
-    }
+    assert_eq!(fields.get("expires_after"), Some(&json!(null)));
+    assert_eq!(fields.get("expires_at"), Some(&json!(null)));
+    assert_eq!(fields.get("last_active_at"), Some(&json!(null)));
 }
 
 #[rstest]

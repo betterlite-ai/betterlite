@@ -5,6 +5,7 @@ use std::future::ready;
 
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
+use betterlite_config::sections::vertex_credential_sources::vertex_settings::AdcEnvironment;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::BaseVectorStoreAuthCredentials;
 use secrecy::SecretString;
@@ -32,7 +33,8 @@ fn settings(project: Option<&str>, location: Option<&str>) -> VertexSettings {
     VertexSettings {
         project: project.map(str::to_owned),
         location: location.map(str::to_owned),
-        ..VertexSettings::default()
+        credentials: None,
+        adc: AdcEnvironment::default(),
     }
 }
 

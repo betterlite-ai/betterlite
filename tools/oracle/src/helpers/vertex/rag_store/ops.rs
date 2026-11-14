@@ -4,10 +4,10 @@ use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_models::decisions::Json;
 use betterlite_vertex::credential_sources::getters::VertexParams;
 use betterlite_vertex::provider_metadata::timestamp::LocalTimeContext;
-use betterlite_vertex::vertex_rag_store::records::create::transform_create_request;
-use betterlite_vertex::vertex_rag_store::records::payload::{
-    Reply, transform_create_response, transform_search_response,
+use betterlite_vertex::vertex_rag_store::records::create::{
+    transform_create_request, transform_create_response,
 };
+use betterlite_vertex::vertex_rag_store::records::payload::{Reply, transform_search_response};
 use betterlite_vertex::vertex_rag_store::records::search::{
     SearchQuery, SearchRequest, transform_search_request,
 };
@@ -79,6 +79,14 @@ fn outcome(call: &Call) -> Result<Value, Box<HelperError>> {
     }
 }
 
+fn reply_of(call: &ReplyCall) -> Reply<'_> {
+    Reply {
+        status: call.status,
+        headers: &call.headers,
+        body: call.body.as_bytes(),
+    }
+}
+
 fn search_outcome(call: &SearchCall) -> Result<Value, Box<HelperError>> {
     let mut logging = BTreeMap::new();
     let request = transform_search_request(SearchRequest {
@@ -95,12 +103,7 @@ fn search_outcome(call: &SearchCall) -> Result<Value, Box<HelperError>> {
     let Some(response) = &call.response else {
         return Ok(json!({"url": request.url, "body": body}));
     };
-    let reply = Reply {
-        status: response.status,
-        headers: &response.headers,
-        body: response.body.as_bytes(),
-    };
-    let decoded = transform_search_response(&reply, &logging).or_value_error()?;
+    let decoded = transform_search_response(&reply_of(response), &logging).or_value_error()?;
     let results = serde_json::to_value(&decoded).or_value_error()?;
     Ok(json!({"url": request.url, "body": body, "results": results}))
 }
@@ -115,15 +118,10 @@ fn create_request_outcome(call: &CreateRequestCall) -> Result<Value, Box<HelperE
 }
 
 fn create_response_outcome(call: &ReplyCall) -> Result<Value, Box<HelperError>> {
-    let reply = Reply {
-        status: call.status,
-        headers: &call.headers,
-        body: call.body.as_bytes(),
-    };
     let local = LocalTimeContext {
         zone: TimeZone::UTC,
     };
-    let created = transform_create_response(&reply, &local).or_value_error()?;
+    let created = transform_create_response(&reply_of(call), &local).or_value_error()?;
     Ok(json!({"created": serde_json::to_value(&created).or_value_error()?}))
 }
 
