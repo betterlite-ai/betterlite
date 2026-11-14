@@ -4,10 +4,6 @@ from typing import Final, Literal, TypedDict
 import httpx
 import litellm
 import litellm.batches.main as batches
-from litellm.llms.azure.batches.handler import AzureBatchesAPI
-from litellm.llms.openai.openai import OpenAIBatchesAPI
-from litellm.llms.vertex_ai.batches.handler import VertexAIBatchPrediction
-from litellm.llms.xai.batches.handler import XAIBatchesHandler
 from litellm.types.utils import LiteLLMBatch
 from pydantic import BaseModel, JsonValue, TypeAdapter
 
@@ -83,26 +79,13 @@ class Input(TypedDict):
     environment: dict[str, str]
 
 
-def record_openai(_self: OpenAIBatchesAPI, **kwargs: JsonValue | httpx.Timeout) -> LiteLLMBatch:
-    CAPTURED.append({"provider": "openai", **kwargs})
-    raise RecordedError
+class Recorder:
+    def __init__(self, provider: str) -> None:
+        self.provider = provider
 
-
-def record_azure(_self: AzureBatchesAPI, **kwargs: JsonValue | httpx.Timeout) -> LiteLLMBatch:
-    CAPTURED.append({"provider": "azure", **kwargs})
-    raise RecordedError
-
-
-def record_vertex(
-    _self: VertexAIBatchPrediction, **kwargs: JsonValue | httpx.Timeout
-) -> LiteLLMBatch:
-    CAPTURED.append({"provider": "vertex_ai", **kwargs})
-    raise RecordedError
-
-
-def record_xai(_self: XAIBatchesHandler, **kwargs: JsonValue | httpx.Timeout) -> LiteLLMBatch:
-    CAPTURED.append({"provider": "xai", **kwargs})
-    raise RecordedError
+    def list_batches(self, **kwargs: JsonValue | httpx.Timeout) -> LiteLLMBatch:
+        CAPTURED.append({"provider": self.provider, **kwargs})
+        raise RecordedError
 
 
 def json_value(value: JsonValue | httpx.Timeout) -> JsonValue:
@@ -166,18 +149,15 @@ def run(input_value: Input) -> JsonValue:
     litellm.api_key = settings.api_key
     litellm.openai_key = settings.openai_key
     litellm.api_base = settings.api_base
-    litellm.organization = settings.organization
+    object.__setattr__(litellm, "organization", settings.organization)
     litellm.api_version = settings.api_version
     litellm.azure_key = settings.azure_key
     litellm.vertex_project = settings.vertex_project
     litellm.vertex_location = settings.vertex_location
-    for target, record in (
-        (OpenAIBatchesAPI, record_openai),
-        (AzureBatchesAPI, record_azure),
-        (VertexAIBatchPrediction, record_vertex),
-        (XAIBatchesHandler, record_xai),
-    ):
-        type.__setattr__(target, "list_batches", record)
+    object.__setattr__(batches, "openai_batches_instance", Recorder("openai"))
+    object.__setattr__(batches, "azure_batches_instance", Recorder("azure"))
+    object.__setattr__(batches, "vertex_ai_batches_instance", Recorder("vertex_ai"))
+    object.__setattr__(batches, "xai_batches_instance", Recorder("xai"))
     try:
         batches.list_batches(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1674
             after=request.after,
