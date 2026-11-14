@@ -1,5 +1,6 @@
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::user_url::error::UserUrlError;
+use http::header::InvalidHeaderValue;
 use thiserror::Error;
 
 use crate::endpoint_target::error::EndpointTargetError;
@@ -20,7 +21,7 @@ pub enum VertexBatchCreateError {
     #[error("the Authorization header cannot carry the access token")]
     Header {
         #[source]
-        source: http::header::InvalidHeaderValue,
+        source: InvalidHeaderValue,
     },
     #[error("the batch job cannot be built: {source}")]
     Records {

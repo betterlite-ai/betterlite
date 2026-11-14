@@ -21,7 +21,10 @@ fn endpoint(bytes: &[u8]) -> Result<VertexEndpointResponse, VertexBatchCreateErr
 
 // a job whose name pads the document to exactly this many bytes
 fn padded_job(total: usize) -> Vec<u8> {
-    format!(r#"{{"name":"{}"}}"#, "a".repeat(total - FRAME.len())).into_bytes()
+    let fill = total
+        .checked_sub(FRAME.len())
+        .expect("a padded job at least as long as its frame");
+    format!(r#"{{"name":"{}"}}"#, "a".repeat(fill)).into_bytes()
 }
 
 #[rstest]
@@ -82,7 +85,7 @@ fn a_wrong_typed_field_names_its_path() {
 }
 
 #[rstest]
-#[case::absent(r"{}", None)]
+#[case::absent("{}", None)]
 #[case::null(r#"{"deployedModels":null}"#, None)]
 #[case::empty(r#"{"deployedModels":[]}"#, Some(0))]
 #[case::two(r#"{"deployedModels":[{"model":"a"},{"model":"b"}]}"#, Some(2))]

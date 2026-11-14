@@ -83,7 +83,7 @@ where
     Transport: CacheTransport,
     Fetch: ProtectedGet,
 {
-    let prepared = prepare_batch_create(request, ready(access("tokproj"))).await?;
+    let prepared = prepare_batch_create(request, ready(Ok(access("tokproj")))).await?;
     let local = LocalTimeContext {
         zone: TimeZone::get("UTC").unwrap(),
     };
@@ -117,7 +117,7 @@ async fn custom_endpoint_before_auth() {
     };
     let error = prepare_batch_create(&request, async move {
         seen.store(true, Ordering::SeqCst);
-        access("proj")
+        Ok(access("proj"))
     })
     .await
     .unwrap_err();
@@ -216,7 +216,7 @@ async fn deployed_model_replacement() {
 )]
 #[case::empty_list(r#"{"deployedModels":[]}"#)]
 #[case::null_list(r#"{"deployedModels":null}"#)]
-#[case::missing_list(r"{}")]
+#[case::missing_list("{}")]
 #[tokio::test]
 async fn first_deployed_model_only(#[case] endpoint: &str) {
     let transport = Scripted::new(vec![reply(200, endpoint)]);
@@ -282,9 +282,9 @@ async fn async_no_blocking() {
 async fn timeout_not_forwarded() {
     let transport = Scripted::new(vec![reply(200, DEPLOYED), reply(200, JOB)]);
     let mut input = create(TUNED);
-    input.timeout = Some(1.5);
+    input.timeout = Some(1.5_f64);
     let request = BatchCreateRequest {
-        timeout: Some(2.5),
+        timeout: Some(2.5_f64),
         max_retries: Some(9),
         ..base(&input)
     };
@@ -405,7 +405,11 @@ async fn custom_base_urls(#[case] base_url: &str, #[case] lookup: &str, #[case] 
         ..base(&input)
     };
     run(&transport, &transport, &request).await.unwrap();
-    let urls: Vec<String> = transport.requests().into_iter().map(|c| c.url).collect();
+    let urls: Vec<String> = transport
+        .requests()
+        .into_iter()
+        .map(|call| call.url)
+        .collect();
     assert_eq!(urls, vec![lookup.to_owned(), post.to_owned()]);
 }
 

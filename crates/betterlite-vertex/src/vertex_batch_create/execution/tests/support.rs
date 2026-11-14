@@ -10,11 +10,11 @@ use betterlite_http::proxy::transport_error::TransportError;
 use http::Method;
 use http::header::HeaderMap;
 use secrecy::SecretString;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 
 use crate::cache_lookup::transport::CacheTransport;
-use crate::token_cache::error::CredentialCacheError;
 use crate::token_cache::probe::AccessToken;
 use crate::vertex_batch_create::error::VertexBatchCreateError;
 use crate::vertex_batch_create::fetch::ProtectedGet;
@@ -47,18 +47,18 @@ pub(super) struct Recorded {
     pub deadline: Duration,
 }
 
-pub(super) fn access(project: &str) -> Result<AccessToken, CredentialCacheError> {
-    Ok(AccessToken {
+pub(super) fn access(project: &str) -> AccessToken {
+    AccessToken {
         token: SecretString::from("tok-123"),
         project: project.to_owned(),
-    })
+    }
 }
 
 pub(super) struct Scripted {
-    replies: Mutex<VecDeque<Reply>>,
-    requests: Mutex<Vec<Recorded>>,
-    gate: Mutex<Option<oneshot::Receiver<()>>>,
-    pub entered: Arc<AtomicBool>,
+    pub(super) replies: Mutex<VecDeque<Reply>>,
+    pub(super) requests: Mutex<Vec<Recorded>>,
+    pub(super) gate: Mutex<Option<oneshot::Receiver<()>>>,
+    pub(super) entered: Arc<AtomicBool>,
 }
 
 impl Reply {
@@ -106,7 +106,7 @@ impl CacheTransport for Scripted {
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.entered.store(true, Ordering::SeqCst);
-        let gate = self.gate.lock().unwrap().take();
+        let release = self.gate.lock().unwrap().take();
         let body = if let RequestBody::Json(bytes) = request.body {
             bytes
         } else {
@@ -120,8 +120,8 @@ impl CacheTransport for Scripted {
             deadline: request.deadline,
         });
         async move {
-            if let Some(gate) = gate {
-                gate.await.ok();
+            if let Some(release) = release {
+                assert!(release.await.is_ok(), "the test opened the gate");
             }
             reply.answer()
         }
@@ -151,16 +151,16 @@ impl ProtectedGet for Scripted {
 }
 
 pub(super) struct Stalling {
-    pub base: String,
-    _held: Arc<Mutex<Vec<tokio::net::TcpStream>>>,
-    _tasks: JoinSet<()>,
+    pub(super) base: String,
+    pub(super) _held: Arc<Mutex<Vec<TcpStream>>>,
+    pub(super) _tasks: JoinSet<()>,
 }
 
 // accepts connections and never answers, so a client with a read timeout fails first
 pub(super) async fn stalling_server() -> Stalling {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
-    let held: Arc<Mutex<Vec<tokio::net::TcpStream>>> = Arc::default();
+    let held: Arc<Mutex<Vec<TcpStream>>> = Arc::default();
     let keeper = Arc::clone(&held);
     let mut tasks = JoinSet::new();
     tasks.spawn(async move {
