@@ -3,7 +3,7 @@ use betterlite_models::savings_evidence::numeric::{RoutingDecision, numeric_savi
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use rust_decimal::Decimal;
 
-use super::input::{LoggingHeaderView, float_text, header_text, non_empty};
+use super::input::{LoggingHeaderView, header_text, non_empty};
 
 // LiteLLM's NON_INFERENCE_CALL_TYPES: a read or management route replays usage, so its zero price is reported as a component split
 const NON_INFERENCE_CALL_TYPES: [&str; 30] = [
@@ -158,22 +158,18 @@ fn uncached_input_cost(breakdown: &JsonMap) -> Option<String> {
     if input_cost.is_null() {
         return None;
     }
-    let input = numeric_total(input_cost, "input_cost")?;
+    let input = decimal_total(input_cost, "input_cost")?;
     let cache_read = cache_part(breakdown.get("cache_read_cost"), "cache_read_cost")?;
     let cache_creation = cache_part(breakdown.get("cache_creation_cost"), "cache_creation_cost")?;
-    // float_arithmetic is denied; a fused multiply-add computes the difference exactly like the subtraction
-    let after_cache_read = cache_read.mul_add(-1.0_f64, input);
-    Some(float_text(
-        cache_creation.mul_add(-1.0_f64, after_cache_read),
-    ))
+    let difference = input.checked_sub(cache_read)?.checked_sub(cache_creation)?;
+    Some(difference.to_string())
 }
 
-// LiteLLM's input_cost must be a number: only None means absent there, and a bool counts as 1 or 0
-fn numeric_total(value: &JsonValue, field: &str) -> Option<f64> {
+// LiteLLM's input_cost must be a number: only None means absent there, and a bool counts as 1.0 or 0.0
+fn decimal_total(value: &JsonValue, field: &str) -> Option<Decimal> {
     let total = match value {
-        JsonValue::Bool(flag) => Some(if *flag { 1.0 } else { 0.0 }),
-        JsonValue::Number(number) => number.as_f64(),
         JsonValue::Null | JsonValue::String(_) | JsonValue::Array(_) | JsonValue::Object(_) => None,
+        JsonValue::Bool(_) | JsonValue::Number(_) => decimal_scalar(value),
     };
     if total.is_none() {
         tracing::warn!(field, "a cost breakdown part must be a finite number");
@@ -181,26 +177,40 @@ fn numeric_total(value: &JsonValue, field: &str) -> Option<f64> {
     total
 }
 
-// LiteLLM's `cache_read_cost or 0.0`: a missing, null or falsey cache cost counts as zero
-fn cache_part(value: Option<&JsonValue>, field: &str) -> Option<f64> {
+// Python reads a bool as float(True) = 1.0, so a bool joins the money at the scale Python prints
+fn decimal_scalar(value: &JsonValue) -> Option<Decimal> {
     match value {
-        Some(cost) if non_empty(cost) => numeric_total(cost, field),
-        Some(_) | None => Some(0.0),
+        JsonValue::Bool(flag) => Some(if *flag {
+            Decimal::new(10, 1)
+        } else {
+            Decimal::new(0, 1)
+        }),
+        JsonValue::Number(number) => number.to_string().parse().ok(),
+        JsonValue::Null | JsonValue::String(_) | JsonValue::Array(_) | JsonValue::Object(_) => None,
+    }
+}
+
+// LiteLLM's `cache_read_cost or 0.0`: a missing, null or falsey cache cost counts as zero
+fn cache_part(value: Option<&JsonValue>, field: &str) -> Option<Decimal> {
+    match value {
+        Some(cost) if non_empty(cost) => decimal_total(cost, field),
+        Some(_) | None => Some(Decimal::new(0, 1)),
     }
 }
 
 // LiteLLM adds only a positive response cost to the key spend
-pub(crate) fn updated_spend(spend: Option<Decimal>, response_cost: Option<&JsonValue>) -> f64 {
-    let current_spend = spend.map_or(0.0_f64, |value| value.as_f64());
-    match response_cost.and_then(float_value) {
-        // float_arithmetic is denied; a fused multiply-add with one is the same sum
-        Some(cost) if cost > 0.0_f64 => cost.mul_add(1.0_f64, current_spend),
+pub(crate) fn updated_spend(spend: Option<Decimal>, response_cost: Option<&JsonValue>) -> Decimal {
+    let current_spend = spend.unwrap_or(Decimal::new(0, 1));
+    match decimal_value(response_cost) {
+        Some(cost) if cost > Decimal::ZERO => {
+            current_spend.checked_add(cost).unwrap_or(current_spend)
+        }
         Some(_) | None => current_spend,
     }
 }
 
 // LiteLLM's classifier_cost_from_decision, read from litellm_metadata first and then metadata
-pub(crate) fn classifier_cost(request_data: &JsonMap) -> Option<f64> {
+pub(crate) fn classifier_cost(request_data: &JsonMap) -> Option<Decimal> {
     for bucket in ["litellm_metadata", "metadata"] {
         let Some(JsonValue::Object(metadata)) = request_data.get(bucket) else {
             continue;
@@ -215,7 +225,7 @@ pub(crate) fn classifier_cost(request_data: &JsonMap) -> Option<f64> {
             continue;
         };
         if let Some(cost) = numeric_savings(parsed.classifier_cost.as_ref()) {
-            return Some(cost.as_f64());
+            return Some(cost);
         }
     }
     None
@@ -226,22 +236,20 @@ fn totals_to_zero(response_cost: Option<&JsonValue>) -> bool {
     match response_cost {
         None | Some(JsonValue::Null) => true,
         Some(JsonValue::String(text)) if text.is_empty() => true,
-        Some(value) => float_value(value).is_some_and(|cost| cost == 0.0_f64),
+        Some(value) => decimal_value(value).is_some_and(|cost| cost.is_zero()),
     }
 }
 
-// Python's float(): a bool, a JSON number, or text its grammar reads
-fn float_value(value: &JsonValue) -> Option<f64> {
-    match value {
-        JsonValue::Null | JsonValue::Array(_) | JsonValue::Object(_) => None,
-        JsonValue::String(text) => float_from_text(text),
-        JsonValue::Bool(flag) => Some(if *flag { 1.0 } else { 0.0 }),
-        JsonValue::Number(number) => number.as_f64(),
-    }
+// Python's float() input: a bool, a JSON number's own lexeme, or text its grammar reads
+fn decimal_value(value: &JsonValue) -> Option<Decimal> {
+    let JsonValue::String(text) = value else {
+        return decimal_scalar(value);
+    };
+    decimal_from_text(text)
 }
 
 // float() trims spaces and reads a decimal whose digits may carry PEP 515 underscores
-fn float_from_text(text: &str) -> Option<f64> {
+fn decimal_from_text(text: &str) -> Option<Decimal> {
     let body = text.trim();
     let mut cleaned = String::with_capacity(body.len());
     let mut previous = None;

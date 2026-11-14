@@ -3,6 +3,7 @@ use betterlite_config::sections::detailed_timing::DetailedTiming;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_guardrails::guardrail_metadata::{RequestData, logging_caching_headers};
 use betterlite_openai::openai_base_config::Object as JsonMap;
+use rust_decimal::Decimal;
 
 pub mod input;
 
@@ -117,11 +118,11 @@ fn insert_costs(headers: &mut HeaderSet, input: &CustomHeadersInput, breakdown: 
     }
     headers.set(
         "x-litellm-classifier-cost",
-        cost::classifier_cost(&input.request_data).map(float_text),
+        cost::classifier_cost(&input.request_data).map(|cost| cost.to_string()),
     );
 }
 
-fn insert_key_limits(headers: &mut HeaderSet, key: &KeyHeaderView, spend: f64) {
+fn insert_key_limits(headers: &mut HeaderSet, key: &KeyHeaderView, spend: Decimal) {
     headers.set(
         "x-litellm-key-tpm-limit",
         key.tpm_limit.map(|limit| limit.to_string()),
@@ -132,9 +133,9 @@ fn insert_key_limits(headers: &mut HeaderSet, key: &KeyHeaderView, spend: f64) {
     );
     headers.set(
         "x-litellm-key-max-budget",
-        key.max_budget.map(|budget| float_text(budget.as_f64())),
+        key.max_budget.map(|budget| budget.to_string()),
     );
-    headers.set("x-litellm-key-spend", Some(float_text(spend)));
+    headers.set("x-litellm-key-spend", Some(spend.to_string()));
 }
 
 fn insert_timings(headers: &mut HeaderSet, input: &CustomHeadersInput) {

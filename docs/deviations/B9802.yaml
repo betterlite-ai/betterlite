@@ -8,8 +8,16 @@ deviations:
       docs/compatibility.md does not port repr, and a header carrying "[1, 2]" or
       "{'a': 1}" is not a value a client can use.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1840
-  - what: A cost breakdown whose input_cost or cache costs carry a truthy value that is not a number leaves x-litellm-response-cost-input out; falsey ones count as zero as they do there, and LiteLLM raises a TypeError out of get_custom_headers for the truthy ones, failing the request.
-    why: custom_headers returns a HeaderMap and has no error path, and one missing header beats a failed response for a breakdown the proxy wrote itself.
+  - what: >-
+      A cost breakdown whose input_cost or cache costs carry a truthy value that is not a number,
+      or whose input cost minus the cache costs leaves Decimal's range, leaves
+      x-litellm-response-cost-input out. Falsey ones count as zero as they do there. LiteLLM
+      raises a TypeError out of get_custom_headers for the truthy non-numbers, failing the
+      request, and writes a float past Decimal's range into the header.
+    why: >-
+      custom_headers returns a HeaderMap and has no error path, one missing header beats a failed
+      response for a breakdown the proxy wrote itself, and no working setup stores a breakdown
+      whose parts differ by more than 7.9e28.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1472-L1480
   - what: >-
       A response cost string is read with Python float()'s grammar, underscores between digits
@@ -20,6 +28,28 @@ deviations:
       spelled with non-ASCII digits, and the alternative is porting Python's Unicode digit
       transliteration.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1767
+  - what: >-
+      A response cost of positive infinity, one with a magnitude outside Decimal's range (1e30,
+      or the text 1e400 that Python float() reads as infinity), or a positive cost whose sum with
+      the stored spend leaves that range, leaves the key spend unchanged, where LiteLLM adds it
+      and writes inf, the huge float or the large sum into the spend header. A nan, a negative
+      infinity and any other non-positive cost leave the spend unchanged in both.
+    why: >-
+      the spend stays Decimal end to end, no working LiteLLM setup records an infinite or 1e30
+      dollar cost or a spend past 7.9e28, and keeping the stored spend beats failing the response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1761-L1772
+  - what: >-
+      The money headers betterlite computes (the key spend, the key max budget, the classifier
+      cost and the uncached input cost) carry the Decimal's own text. A spend sum of 0.1 and 0.2
+      reads 0.3 where Python's float reads 0.30000000000000004; an uncached input cost or
+      classifier cost read from an integer JSON number stays 2 where LiteLLM's float holds and
+      prints 2.0; and a value outside Python's fixed-notation range reads plain digits where
+      LiteLLM writes scientific notation, so 1e16 prints as 1e+16 there and 10000000000000000
+      here.
+    why: >-
+      money stays Decimal end to end, and formatting it through an f64 would put the value back
+      through binary floating point; the header carries the same money.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1761-L1772
   - what: A metadata bucket that is present but not an object is treated as absent when the remaining-limit headers are read, so those headers are left out; LiteLLM calls .get on it and raises AttributeError.
     why: the request data is open JSON, and an internal writer's malformed bucket must not turn a successful LLM response into a 500.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L446-L460

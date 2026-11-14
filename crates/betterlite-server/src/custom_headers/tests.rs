@@ -11,6 +11,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::json;
 
+use super::cost::updated_spend;
 use super::custom_headers;
 use super::input::{CustomHeadersInput, KeyHeaderView, float_text};
 
@@ -398,6 +399,11 @@ fn float_text_matches_python_str(#[case] value: f64, #[case] expected: &str) {
 #[case::underscore_after_point(json!("1._5"), Some("2.0"))]
 #[case::negative(json!(-1.0), Some("2.0"))]
 #[case::zero(json!(0), Some("2.0"))]
+#[case::true_value(json!(true), Some("3.0"))]
+#[case::false_value(json!(false), Some("2.0"))]
+#[case::infinite(json!("inf"), Some("2.0"))]
+#[case::not_a_number(json!("nan"), Some("2.0"))]
+#[case::out_of_range(json!("1e30"), Some("2.0"))]
 #[case::absent(json!(null), Some("2.0"))]
 fn spend_adds_only_a_positive_response_cost(
     #[case] response_cost: JsonValue,
@@ -405,6 +411,35 @@ fn spend_adds_only_a_positive_response_cost(
 ) {
     let headers = build(json!({"key": {"spend": 2.0}, "response_cost": response_cost}));
     assert_eq!(header(&headers, "x-litellm-key-spend").as_deref(), expected);
+}
+
+#[test]
+fn money_headers_carry_the_decimal_text() {
+    let headers = build(json!({"key": {"max_budget": 1e16, "spend": 0.1}, "response_cost": 0.2}));
+    assert_eq!(
+        header(&headers, "x-litellm-key-max-budget").as_deref(),
+        Some("10000000000000000")
+    );
+    assert_eq!(
+        header(&headers, "x-litellm-key-spend").as_deref(),
+        Some("0.3")
+    );
+}
+
+#[test]
+fn a_spend_sum_outside_the_decimal_range_keeps_the_spend() {
+    let spent = updated_spend(Some(Decimal::MAX), Some(&json!(1)));
+    assert_eq!(spent, Decimal::MAX);
+}
+
+#[test]
+fn an_input_cost_difference_outside_the_decimal_range_leaves_the_header_out() {
+    let headers = build(json!({
+        "logging": {"call_type": "completion", "cost_breakdown": {
+            "input_cost": 7.0e28, "cache_read_cost": -7.0e28
+        }}
+    }));
+    assert_eq!(header(&headers, "x-litellm-response-cost-input"), None);
 }
 
 #[test]
@@ -477,7 +512,7 @@ fn deployment_name_reads_both_buckets(#[case] input: JsonValue, #[case] expected
         "litellm_metadata": {"routing_decision": {}},
         "metadata": {"routing_decision": {"classifier_cost": 2}}
     }),
-    Some("2.0")
+    Some("2")
 )]
 #[case::non_numeric_costs_are_skipped(
     json!({
