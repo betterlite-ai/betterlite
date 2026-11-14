@@ -24,7 +24,7 @@ impl DbAdminService for SpendBackfillsService {
     }
 }
 
-const fn plan(command: &DbAdminCommand) -> Result<BackfillPlan, DbAdminError> {
+fn plan(command: &DbAdminCommand) -> Result<BackfillPlan, DbAdminError> {
     match command {
         DbAdminCommand::DailyToolSpend(options) => Ok(BackfillPlan::DailyToolSpend {
             cutover: options.cutover,
@@ -36,7 +36,7 @@ const fn plan(command: &DbAdminCommand) -> Result<BackfillPlan, DbAdminError> {
         | DbAdminCommand::SpendPartition(_)
         | DbAdminCommand::UpdateUnassignedTeams
         | DbAdminCommand::MigrateVerificationTokens(_)) => Err(DbAdminError::Unregistered {
-            operation: other.operation().name(),
+            operation: <&'static str>::from(other.operation()),
         }),
     }
 }

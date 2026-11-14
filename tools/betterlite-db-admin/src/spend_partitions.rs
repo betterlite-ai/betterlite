@@ -24,9 +24,7 @@ impl DbAdminService for SpendPartitionsService {
     }
 }
 
-const fn partition_operation(
-    command: &DbAdminCommand,
-) -> Result<SpendPartitionOperation, DbAdminError> {
+fn partition_operation(command: &DbAdminCommand) -> Result<SpendPartitionOperation, DbAdminError> {
     match command {
         DbAdminCommand::SpendPartition(operation) => Ok(*operation),
         other @ (DbAdminCommand::Migrate(_)
@@ -36,7 +34,7 @@ const fn partition_operation(
         | DbAdminCommand::KeyTotalSpendFromLogs
         | DbAdminCommand::UpdateUnassignedTeams
         | DbAdminCommand::MigrateVerificationTokens(_)) => Err(DbAdminError::Unregistered {
-            operation: other.operation().name(),
+            operation: <&'static str>::from(other.operation()),
         }),
     }
 }

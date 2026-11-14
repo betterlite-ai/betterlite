@@ -39,7 +39,7 @@ impl DbAdminService for DatabaseRepairService {
                 | DbAdminCommand::KeyTotalSpend
                 | DbAdminCommand::KeyTotalSpendFromLogs
                 | DbAdminCommand::SpendPartition(_)) => Err(DbAdminError::Unregistered {
-                    operation: other.operation().name(),
+                    operation: <&'static str>::from(other.operation()),
                 }),
             }
         })

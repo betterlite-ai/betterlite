@@ -1725,6 +1725,7 @@ dependencies = [
  "rstest",
  "rust_decimal",
  "secrecy",
+ "strum",
  "tempfile",
  "thiserror",
  "tokio",

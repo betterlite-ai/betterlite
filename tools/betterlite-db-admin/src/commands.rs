@@ -27,7 +27,8 @@ pub struct Cli {
     pub operation: Operation,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Subcommand)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Subcommand, strum::IntoStaticStr)]
+#[strum(serialize_all = "kebab-case")]
 pub enum Operation {
     #[command(about = "Run the database migration job")]
     Migrate,
@@ -76,21 +77,6 @@ pub enum Operation {
 }
 
 impl Operation {
-    #[must_use]
-    pub const fn name(&self) -> &'static str {
-        match self {
-            Self::Migrate => "migrate",
-            Self::DatabaseViews => "database-views",
-            Self::DailyToolSpend { .. } => "daily-tool-spend",
-            Self::KeyTotalSpend => "key-total-spend",
-            Self::KeyTotalSpendFromLogs => "key-total-spend-from-logs",
-            Self::PartitionSpendLogs => "partition-spend-logs",
-            Self::UnpartitionSpendLogs => "unpartition-spend-logs",
-            Self::UpdateUnassignedTeams => "update-unassigned-teams",
-            Self::MigrateVerificationTokens { .. } => "migrate-verification-tokens",
-        }
-    }
-
     const fn of_spend_partition(operation: SpendPartitionOperation) -> Self {
         match operation {
             SpendPartitionOperation::Partition => Self::PartitionSpendLogs,
