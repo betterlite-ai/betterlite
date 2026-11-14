@@ -25,10 +25,10 @@ pub struct CallLog<'call> {
 
 // _mark_async_entrypoint: LiteLLM aliases litellm_params and the model_call_details slot, so both copies the marker
 pub fn mark_async_entrypoint(logging: Option<&mut LoggingState>, marker: &str, is_async: bool) {
-    let Some(logging) = logging else {
+    let Some(state) = logging else {
         return;
     };
-    let existing = logging.model_call_details.get("litellm_params");
+    let existing = state.model_call_details.get("litellm_params");
     let mut params = match existing {
         Some(Json::Object(params)) => params.clone(),
         None
@@ -37,10 +37,10 @@ pub fn mark_async_entrypoint(logging: Option<&mut LoggingState>, marker: &str, i
         }
     };
     params.insert(marker.to_owned(), Json::Bool(is_async));
-    logging
+    state
         .litellm_params
         .insert(marker.to_owned(), Json::Bool(is_async));
-    logging
+    state
         .model_call_details
         .insert("litellm_params".to_owned(), Json::Object(params));
 }

@@ -12,6 +12,20 @@ call:
           vertex_project: p2
           vertex_location: us-central1
           tpm: 7
+          api_base: https://example.test
+          api_key: key-1
+          api_version: v1beta
+          organization: org-1
+          vertex_credentials: creds.json
+        extra_body: null
+        with_logging: true
+      - model: vertex_ai/gemini-2.5-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        config: null
+        custom_llm_provider: null
+        tools: null
+        kwargs:
+          vertex_credentials: {type: service_account, project_id: p2}
         extra_body: null
         with_logging: true
 env: {}

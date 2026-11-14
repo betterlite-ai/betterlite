@@ -7,7 +7,7 @@ use betterlite_core::genai_setup::config::{
     GenerateContentProviderConfig, GenerateContentProviderConfigs, GenerateContentRequest,
 };
 use betterlite_core::genai_setup::merge::merge_native_request_fields;
-use betterlite_core::genai_setup::params::GenerateContentLiteLLMParams;
+use betterlite_core::genai_setup::params::{GenerateContentLiteLLMParams, VertexCredentials};
 use betterlite_core::genai_setup::setup::{
     GenerateContentSetupResult, SetupRequest, setup_generate_content_call,
 };
@@ -197,6 +197,11 @@ fn answer(
 }
 
 fn params_view(params: &GenerateContentLiteLLMParams) -> Result<Value, serde_json::Error> {
+    let credentials = match &params.vertex_credentials {
+        None => Value::Null,
+        Some(VertexCredentials::Path(path)) => Value::String(path.clone()),
+        Some(VertexCredentials::ServiceAccount(account)) => serde_json::to_value(account)?,
+    };
     Ok(json!({
         "api_base": params.api_base,
         "api_version": params.api_version,
@@ -206,6 +211,7 @@ fn params_view(params: &GenerateContentLiteLLMParams) -> Result<Value, serde_jso
         "api_key_set": params.api_key.is_some(),
         "vertex_project": params.vertex_project,
         "vertex_location": params.vertex_location,
+        "vertex_credentials": credentials,
         "extra": serde_json::to_value(&params.extra)?,
     }))
 }

@@ -22,7 +22,7 @@ class SetupCall(TypedDict):
     custom_llm_provider: str | None
     tools: JsonValue | None
     kwargs: dict[str, JsonValue]
-    extra_body: dict[str, object] | None
+    extra_body: dict[str, JsonValue] | None
     with_logging: bool
 
 
@@ -77,17 +77,15 @@ def make_logging() -> Logging:
     )
 
 
-def extra_params(params: GenericLiteLLMParams) -> dict[str, JsonValue]:
-    # extra="allow" keeps every kwarg the setup does not model; the logging object is not JSON and the setup passes it separately
-    dumped = OBJECT.validate_json(
+def dumped_params(params: GenericLiteLLMParams) -> dict[str, JsonValue]:
+    # extra="allow" keeps every kwarg the setup does not model
+    return OBJECT.validate_json(
         params.model_dump_json(exclude_unset=True, exclude={"litellm_logging_obj"})
     )
-    return {
-        name: value for name, value in dumped.items() if name not in MODELED_PARAMS
-    }
 
 
 def params_view(params: GenericLiteLLMParams) -> dict[str, JsonValue]:
+    dumped = dumped_params(params)
     return {
         "api_base": params.api_base,
         "api_version": params.api_version,
@@ -97,19 +95,13 @@ def params_view(params: GenericLiteLLMParams) -> dict[str, JsonValue]:
         "api_key_set": params.api_key is not None,
         "vertex_project": params.vertex_project,
         "vertex_location": params.vertex_location,
-        "extra": extra_params(params),
+        "vertex_credentials": dumped.get("vertex_credentials"),
+        "extra": {
+            name: value
+            for name, value in dumped.items()
+            if name not in MODELED_PARAMS
+        },
     }
-
-
-def config_kind(config: BaseGoogleGenAIGenerateContentConfig | None) -> str | None:
-    if config is None:
-        return None
-    match config:
-        case VertexAIGoogleGenAIConfig():
-            return config.custom_llm_provider
-        case GoogleGenAIConfig():
-            return config.custom_llm_provider
-    return None
 
 
 def logging_view(logging_obj: Logging) -> JsonValue:
@@ -125,7 +117,7 @@ def logging_view(logging_obj: Logging) -> JsonValue:
 
 def setup_answer(call: SetupCall) -> JsonValue:
     logging_obj = make_logging() if call["with_logging"] else None
-    result = GenerateContentHelper.setup_generate_content_call(
+    result = GenerateContentHelper.setup_generate_content_call(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L91-L98
         model=call["model"],
         contents=call["contents"],
         config=call["config"],
@@ -135,17 +127,26 @@ def setup_answer(call: SetupCall) -> JsonValue:
         **call["kwargs"],
     )
     native = OBJECT.validate_python(result.native_request_fields)
+    provider_kind: str | None = None
+    match result.generate_content_provider_config:
+        case None:
+            provider_kind = None
+        case VertexAIGoogleGenAIConfig() | GoogleGenAIConfig() as known:
+            provider_kind = known.custom_llm_provider
+        case BaseGoogleGenAIGenerateContentConfig():
+            provider_kind = None
     return {
         "model": result.model,
         "provider": result.custom_llm_provider,
-        "provider_config": config_kind(result.generate_content_provider_config),
+        "provider_config": provider_kind,
         "config_dict": OBJECT.validate_python(result.generate_content_config_dict),
         "native_request_fields": native,
         "request_body": OBJECT.validate_python(result.request_body),
         "litellm_params": params_view(result.litellm_params),
         "merged_extra_body": MERGED.validate_python(
             _merge_native_request_fields(
-                result.native_request_fields, call["extra_body"]
+                result.native_request_fields,
+                None if call["extra_body"] is None else {**call["extra_body"]},
             )
         ),
         "logging": logging_view(result.litellm_logging_obj),

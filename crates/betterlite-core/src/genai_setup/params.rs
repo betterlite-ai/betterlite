@@ -75,13 +75,13 @@ pub fn optional_string(
 ) -> Result<Option<String>, RequestFieldError> {
     match kwargs.get(field) {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text.clone())),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(RequestFieldError {
+        Some(value) => value
+            .as_str()
+            .map(|text| Some(text.to_owned()))
+            .ok_or(RequestFieldError {
                 field,
                 expected: "a string",
-            })
-        }
+            }),
     }
 }
 
@@ -89,22 +89,18 @@ fn optional_integer(
     kwargs: &Object,
     field: &'static str,
 ) -> Result<Option<i64>, RequestFieldError> {
-    match kwargs.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => match number.as_i64() {
-            Some(value) => Ok(Some(value)),
-            None => Err(RequestFieldError {
-                field,
-                expected: "an integer",
-            }),
-        },
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(RequestFieldError {
-                field,
-                expected: "an integer",
-            })
-        }
+    let Some(value) = optional_value(kwargs, field) else {
+        return Ok(None);
+    };
+    if let Json::Number(number) = &value
+        && let Some(integer) = number.as_i64()
+    {
+        return Ok(Some(integer));
     }
+    Err(RequestFieldError {
+        field,
+        expected: "an integer",
+    })
 }
 
 // absent and null both take the default, and any other value is kept as written
@@ -116,15 +112,15 @@ fn optional_value(kwargs: &Object, field: &'static str) -> Option<Json> {
 }
 
 fn vertex_credentials(kwargs: &Object) -> Result<Option<VertexCredentials>, RequestFieldError> {
-    match kwargs.get("vertex_credentials") {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(path)) => Ok(Some(VertexCredentials::Path(path.clone()))),
-        Some(Json::Object(account)) => Ok(Some(VertexCredentials::ServiceAccount(account.clone()))),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_)) => Err(RequestFieldError {
-            field: "vertex_credentials",
-            expected: "a string or an object",
-        }),
-    }
+    let invalid = RequestFieldError {
+        field: "vertex_credentials",
+        expected: "a string or an object",
+    };
+    optional_value(kwargs, "vertex_credentials").map_or(Ok(None), |value| match value {
+        Json::Text(path) => Ok(Some(VertexCredentials::Path(path))),
+        Json::Object(account) => Ok(Some(VertexCredentials::ServiceAccount(account))),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => Err(invalid),
+    })
 }
 
 // extra="allow": every kwarg the struct does not model stays on the record for the call handlers

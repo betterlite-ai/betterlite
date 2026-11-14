@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_logging::logging_state::correlation::{
@@ -22,6 +22,8 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
+use secrecy::ExposeSecret as _;
+use serde_json::Number;
 use thiserror::Error;
 
 use super::config::GenerateContentProviderConfig;
@@ -92,7 +94,7 @@ impl GenerateContentProviderConfig for FixtureConfig {
     fn transform_request(&self, request: &GenerateContentRequest<'_>) -> Result<Json, Self::Error> {
         self.transformed
             .lock()
-            .expect("the fixture lock is not poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .push(TransformedRequest {
                 model: request.model.to_owned(),
                 tools: request.tools.cloned(),
@@ -457,12 +459,12 @@ fn provider_dispatch_keeps_the_params_the_handlers_read() {
     let configs = provider_configs(&gemini, &vertex);
     let contents = text("hello");
     let kwargs = object(&[
-        ("max_retries", Json::Number(3.into())),
+        ("max_retries", Json::Number(Number::from(3_i64))),
         ("vertex_project", text("project-1")),
         ("vertex_location", text("us-central1")),
         ("vertex_credentials", text("creds.json")),
         ("ssl_verify", Json::Bool(false)),
-        ("tpm", Json::Number(7.into())),
+        ("tpm", Json::Number(Number::from(7_i64))),
     ]);
     let request = setup_request("vertex_ai/gemini-2.5-flash", &contents, None, None, &kwargs);
     let mut state = logging();
@@ -477,9 +479,48 @@ fn provider_dispatch_keeps_the_params_the_handlers_read() {
         Some(VertexCredentials::Path("creds.json".to_owned()))
     );
     assert_eq!(params.ssl_verify, Some(Json::Bool(false)));
-    assert_eq!(params.extra.get("tpm"), Some(&Json::Number(7.into())));
+    assert_eq!(
+        params.extra.get("tpm"),
+        Some(&Json::Number(Number::from(7_i64)))
+    );
     assert!(!params.extra.contains_key("vertex_project"));
     assert!(!params.extra.contains_key("max_retries"));
+}
+
+#[test]
+fn provider_dispatch_keeps_the_endpoint_and_account_params() {
+    let fixture = Fixture::new();
+    let resolution = fixture.resolution();
+    let gemini = FixtureConfig::for_fields(&FIELDS);
+    let vertex = FixtureConfig::for_fields(&FIELDS);
+    let configs = provider_configs(&gemini, &vertex);
+    let contents = text("hello");
+    let account = object(&[
+        ("type", text("service_account")),
+        ("project_id", text("p1")),
+    ]);
+    let kwargs = object(&[
+        ("api_base", text("https://example.test")),
+        ("api_key", text("key-1")),
+        ("api_version", text("v1beta")),
+        ("organization", text("org-1")),
+        ("vertex_credentials", Json::Object(account.clone())),
+    ]);
+    let request = setup_request("vertex_ai/gemini-2.5-flash", &contents, None, None, &kwargs);
+    let mut state = logging();
+    let result = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
+        .expect("the vertex setup succeeds");
+    let params = &result.litellm_params;
+    assert_eq!(params.api_base.as_deref(), Some("https://example.test"));
+    let key = params.api_key.as_ref().expect("the api key is kept");
+    assert_eq!(key.expose_secret(), "key-1");
+    assert_eq!(params.api_version.as_deref(), Some("v1beta"));
+    assert_eq!(params.organization.as_deref(), Some("org-1"));
+    assert_eq!(
+        params.vertex_credentials,
+        Some(VertexCredentials::ServiceAccount(account))
+    );
+    assert!(params.extra.is_empty());
 }
 
 #[test]
@@ -508,6 +549,15 @@ fn merge_keeps_native_fields_when_extra_body_is_empty() {
     let merged =
         merge_native_request_fields(&native, Some(&extra)).expect("the merge keeps the fields");
     assert_eq!(merged, native);
+}
+
+#[test]
+fn merge_returns_the_extra_body_when_there_are_no_native_fields() {
+    let native = Object::new();
+    let extra = object(&[("extra", text("kept"))]);
+    let merged = merge_native_request_fields(&native, Some(&extra))
+        .expect("a caller body survives without native fields");
+    assert_eq!(merged, extra);
 }
 
 #[test]
@@ -701,7 +751,7 @@ fn logging_update_carries_kwargs_metadata() {
     let configs = provider_configs(&gemini, &vertex);
     let contents = text("hello");
     let metadata = object(&[("user_id", text("u-1"))]);
-    let kwargs = object(&[("metadata", Json::Object(metadata.clone()))]);
+    let kwargs = object(&[("metadata", Json::Object(metadata))]);
     let request = setup_request("gemini/gemini-2.5-flash", &contents, None, None, &kwargs);
     let mut state = logging();
     let result = setup_generate_content_call(&request, &configs, Some(&mut state), &resolution)
@@ -790,12 +840,19 @@ fn request_body_is_the_transformed_request() {
     assert_eq!(body.get("generationConfig"), Some(&generation_config));
     assert_eq!(body.get("tools"), Some(&tools));
     assert_eq!(body.get("systemInstruction"), Some(&instruction));
-    let transformed = gemini.transformed.lock().expect("the fixture lock");
-    let recorded = &transformed[0];
-    assert_eq!(recorded.model, "gemini-2.5-flash");
-    assert_eq!(recorded.tools, Some(tools));
-    assert_eq!(recorded.generation_config, config);
-    assert_eq!(recorded.system_instruction, Some(instruction));
+    let expected = TransformedRequest {
+        model: "gemini-2.5-flash".to_owned(),
+        tools: Some(tools),
+        generation_config: config,
+        system_instruction: Some(instruction),
+    };
+    assert_eq!(
+        *gemini
+            .transformed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner),
+        [expected]
+    );
 }
 
 #[test]
