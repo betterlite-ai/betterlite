@@ -2,7 +2,7 @@ from typing import ClassVar, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-SPEND_CAPTURE_RATE_MAX_RANGE_DAYS: Final = 180
+SPEND_CAPTURE_RATE_MAX_RANGE_DAYS: Final = 180  # ast-grep-ignore: no-long-names
 
 SpendCaptureProvider = Literal["openai"]
 
@@ -12,7 +12,9 @@ class SpendCaptureRateCheckSettings(BaseModel):
 
     providers: tuple[SpendCaptureProvider, ...] = Field(("openai",), min_length=1)
     threshold: float = Field(0.9, gt=0, le=1)
-    lookback_days: int = Field(7, ge=1, le=SPEND_CAPTURE_RATE_MAX_RANGE_DAYS)
+    lookback_days: int = Field(
+        7, ge=1, le=SPEND_CAPTURE_RATE_MAX_RANGE_DAYS  # ast-grep-ignore: no-long-names
+    )
     openai_project_ids: tuple[str, ...] = Field(
         (),
         description=(

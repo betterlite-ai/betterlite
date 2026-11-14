@@ -5,7 +5,9 @@ from pydantic import BaseModel, Field
 
 DEFAULT_DEPRECATION_WARN_DAYS: Final = 30
 
-DEFAULT_DEPRECATION_CHECK_INTERVAL_SECONDS: Final = 24 * 60 * 60
+DEFAULT_DEPRECATION_CHECK_INTERVAL_SECONDS: Final = (  # ast-grep-ignore: no-long-names
+    24 * 60 * 60
+)
 
 DEPRECATION_IDLE_POLL_SECONDS: Final = 30
 

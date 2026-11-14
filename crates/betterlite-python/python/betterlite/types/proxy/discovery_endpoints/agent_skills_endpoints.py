@@ -2,7 +2,7 @@ from typing import Final, Literal
 
 from pydantic import BaseModel, Field
 
-AGENT_SKILLS_DISCOVERY_SCHEMA_URL: Final = (
+AGENT_SKILLS_DISCOVERY_SCHEMA_URL: Final = (  # ast-grep-ignore: no-long-names
     "https://schemas.agentskills.io/discovery/0.2.0/schema.json"
 )
 MAX_SKILL_NAME_LENGTH: Final = 64
@@ -18,5 +18,8 @@ class AgentSkillsIndexEntry(BaseModel):
 
 
 class AgentSkillsIndex(BaseModel):
-    discovery_schema: str = Field(default=AGENT_SKILLS_DISCOVERY_SCHEMA_URL, alias="$schema")
+    discovery_schema: str = Field(
+        default=AGENT_SKILLS_DISCOVERY_SCHEMA_URL,  # ast-grep-ignore: no-long-names
+        alias="$schema",
+    )
     skills: tuple[AgentSkillsIndexEntry, ...]
