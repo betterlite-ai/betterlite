@@ -11,6 +11,7 @@ use crate::sections::Section;
 mod tests;
 
 const FIELD: &str = "litellm_params.max_agentic_loops";
+const ENVIRONMENT_PREFIX: &str = "os.environ/";
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
@@ -60,21 +61,28 @@ fn resolve_ceiling<L>(value: Option<RawNumber>, path: &str, lookup: &L) -> Resul
 where
     L: EnvironmentLookup,
 {
-    let number = match value {
-        None => return Ok(DEFAULT_MAX_AGENTIC_LOOPS),
-        Some(RawNumber::Text(text)) => RawNumber::Text(resolve_string(text, path, lookup)?),
-        Some(other) => other,
+    let Some(value) = value else {
+        return Ok(DEFAULT_MAX_AGENTIC_LOOPS);
     };
-    let parsed = match number {
+    let parsed = match value {
+        RawNumber::Text(text) => {
+            let from_environment = text.starts_with(ENVIRONMENT_PREFIX);
+            let resolved = resolve_string(text, path, lookup)?;
+            // the shared parser counts an empty env var as unset, unlike an explicit empty scalar
+            if from_environment && resolved.trim().is_empty() {
+                return Ok(DEFAULT_MAX_AGENTIC_LOOPS);
+            }
+            AgenticLoopValue::Text(resolved)
+        }
         RawNumber::Integer(integer) => AgenticLoopValue::Integer(integer),
         RawNumber::Float(float) => AgenticLoopValue::Float(float),
         RawNumber::Boolean(flag) => AgenticLoopValue::Boolean(flag),
-        RawNumber::Text(text) => AgenticLoopValue::Text(text),
     };
-    let ceiling = validated_max_agentic_loops(&parsed, FIELD).map_err(|source| {
-        ConfigError::AgenticLoopCeiling {
+    let rejected_boolean = matches!(&parsed, AgenticLoopValue::Boolean(true));
+    let ceiling = validated_max_agentic_loops(&parsed, FIELD).map_err(|_source| {
+        ConfigError::InvalidScalar {
             path: path.to_owned(),
-            source,
+            value: rejected_boolean,
         }
     })?;
     Ok(ceiling.unwrap_or(DEFAULT_MAX_AGENTIC_LOOPS))

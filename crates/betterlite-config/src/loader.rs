@@ -6,7 +6,6 @@ use std::num::{ParseFloatError, ParseIntError};
 use std::path::PathBuf;
 use thiserror::Error;
 
-use crate::agentic_loop_ceiling::AgenticLoopCeilingError;
 use crate::providers::bedrock::request_policy::metadata_fields;
 use crate::raw::{RawConfig, RawGeneral, RawLiteLlm, RawNumber, RawRouter};
 use crate::resolve::{parse_float, parse_integer, resolve_number as number, resolve_secret};
@@ -57,12 +56,6 @@ pub enum ConfigError {
     },
     #[error("invalid scalar at {path}")]
     InvalidScalar { path: String, value: bool },
-    #[error("invalid agentic loop ceiling at {path}: {source}")]
-    AgenticLoopCeiling {
-        path: String,
-        #[source]
-        source: AgenticLoopCeilingError,
-    },
 }
 
 impl ConfigError {
@@ -75,7 +68,6 @@ impl ConfigError {
             Self::InvalidFloat { .. } => "invalid_float",
             Self::InvalidInteger { .. } => "invalid_integer",
             Self::InvalidScalar { .. } => "invalid_scalar",
-            Self::AgenticLoopCeiling { .. } => "invalid_agentic_loop_ceiling",
             Self::Environment { .. } => "environment",
         }
     }
