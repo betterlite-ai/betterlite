@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::slice;
 
 use rstest::rstest;
 
@@ -65,7 +66,7 @@ fn matches_regex_requires_the_whole_value(
 #[test]
 fn rule_matches_tool_requires_the_name_pattern() {
     let rule = permission_rule("read", Some("^read$"), None, None);
-    let compiled = compiled(std::slice::from_ref(&rule));
+    let compiled = compiled(slice::from_ref(&rule));
     assert_eq!(
         rule_matches_tool(&compiled, &rule, Some("read"), None),
         (true, true)
@@ -79,7 +80,7 @@ fn rule_matches_tool_requires_the_name_pattern() {
 #[test]
 fn rule_matches_tool_requires_the_type_pattern_too() {
     let rule = permission_rule("read", Some("^read$"), Some("function"), None);
-    let compiled = compiled(std::slice::from_ref(&rule));
+    let compiled = compiled(slice::from_ref(&rule));
     assert_eq!(
         rule_matches_tool(&compiled, &rule, Some("read"), Some("function")),
         (true, true)
@@ -99,7 +100,7 @@ fn rule_matches_tool_without_a_name_pattern_skips_parameter_checks(
     #[case] expected_match: bool,
 ) {
     let typed = permission_rule("typed", None, Some("^function$"), None);
-    let compiled = compiled(std::slice::from_ref(&typed));
+    let compiled = compiled(slice::from_ref(&typed));
     assert_eq!(
         rule_matches_tool(&compiled, &typed, Some("anything"), Some(tool_type)),
         (expected_match, false)
@@ -109,7 +110,7 @@ fn rule_matches_tool_without_a_name_pattern_skips_parameter_checks(
 #[test]
 fn rule_matches_tool_fails_when_the_name_is_absent() {
     let rule = permission_rule("read", Some("^read$"), None, None);
-    let compiled = compiled(std::slice::from_ref(&rule));
+    let compiled = compiled(slice::from_ref(&rule));
     assert_eq!(
         rule_matches_tool(&compiled, &rule, None, None),
         (false, false)
@@ -121,7 +122,7 @@ fn duplicate_rule_ids_use_the_last_compiled_target() {
     let first = permission_rule("dup", Some("^first$"), None, None);
     let second = permission_rule("dup", Some("^second$"), None, None);
     let compiled = compiled(&[first.clone(), second]);
-    let targets = compiled.targets.get("dup").unwrap();
+    let targets = &compiled.targets["dup"];
     assert_eq!(targets.tool_name.as_ref().unwrap().source, "^second$");
     assert_eq!(
         rule_matches_tool(&compiled, &first, Some("first"), None),
@@ -139,17 +140,10 @@ fn a_duplicate_rule_without_parameter_patterns_keeps_the_earlier_patterns() {
     );
     let second = permission_rule("dup", Some("^second$"), None, None);
     let compiled = compiled(&[first, second]);
-    let patterns = compiled.patterns.get("dup").unwrap();
-    assert_eq!(patterns.get("path").unwrap().source, "^/safe$");
+    let patterns = &compiled.patterns["dup"];
+    assert_eq!(patterns["path"].source, "^/safe$");
     assert_eq!(
-        compiled
-            .targets
-            .get("dup")
-            .unwrap()
-            .tool_name
-            .as_ref()
-            .unwrap()
-            .source,
+        compiled.targets["dup"].tool_name.as_ref().unwrap().source,
         "^second$"
     );
 }

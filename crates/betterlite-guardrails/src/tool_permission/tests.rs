@@ -48,11 +48,11 @@ fn rule_fields(
         ("id".to_owned(), text(id)),
         ("decision".to_owned(), text(decision)),
     ]);
-    if let Some(tool_name) = tool_name {
-        fields.insert("tool_name".to_owned(), text(tool_name));
+    if let Some(name) = tool_name {
+        fields.insert("tool_name".to_owned(), text(name));
     }
-    if let Some(tool_type) = tool_type {
-        fields.insert("tool_type".to_owned(), text(tool_type));
+    if let Some(kind) = tool_type {
+        fields.insert("tool_type".to_owned(), text(kind));
     }
     fields
 }

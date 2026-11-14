@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity;
+use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity as _;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use rstest::rstest;
 

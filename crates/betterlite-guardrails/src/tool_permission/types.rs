@@ -24,7 +24,7 @@ fn default_type() -> String {
     "tool_result".to_owned()
 }
 
-fn default_is_error() -> bool {
+const fn default_is_error() -> bool {
     true
 }
 

@@ -93,8 +93,8 @@ pub fn rule_matches_tool(
     tool_type: Option<&str>,
 ) -> (bool, bool) {
     let targets = compiled.targets.get(&rule.id);
-    let name_pattern = targets.and_then(|targets| targets.tool_name.as_ref());
-    let type_pattern = targets.and_then(|targets| targets.tool_type.as_ref());
+    let name_pattern = targets.and_then(|target| target.tool_name.as_ref());
+    let type_pattern = targets.and_then(|target| target.tool_type.as_ref());
     let name_required = rule.tool_name.is_some();
     let type_required = rule.tool_type.is_some();
     let name_matched = !name_required || matches_regex(name_pattern, tool_name);

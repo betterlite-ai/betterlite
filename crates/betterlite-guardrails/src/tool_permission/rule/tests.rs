@@ -31,11 +31,11 @@ fn rule_fields(
     tool_type: Option<&str>,
 ) -> BTreeMap<String, GuardrailValue> {
     let mut fields = fields(vec![("id", text(id)), ("decision", text(decision))]);
-    if let Some(tool_name) = tool_name {
-        fields.insert("tool_name".to_owned(), text(tool_name));
+    if let Some(name) = tool_name {
+        fields.insert("tool_name".to_owned(), text(name));
     }
-    if let Some(tool_type) = tool_type {
-        fields.insert("tool_type".to_owned(), text(tool_type));
+    if let Some(kind) = tool_type {
+        fields.insert("tool_type".to_owned(), text(kind));
     }
     fields
 }
@@ -257,19 +257,18 @@ fn invalid_tool_name_regex_names_the_rule_and_pattern() {
     let error =
         ToolPermissionGuardrail::new(args(vec![rule_fields("broken", "allow", Some("("), None)]))
             .unwrap_err();
-    match error {
-        ToolPermissionError::InvalidRegex {
-            rule_id,
-            field,
-            pattern,
-            ..
-        } => {
-            assert_eq!(rule_id, "broken");
-            assert_eq!(field, "tool_name");
-            assert_eq!(pattern, "(");
-        }
-        other => panic!("unexpected error {other:?}"),
-    }
+    let ToolPermissionError::InvalidRegex {
+        rule_id,
+        field,
+        pattern,
+        ..
+    } = &error
+    else {
+        panic!("unexpected error {error:?}");
+    };
+    assert_eq!(rule_id, "broken");
+    assert_eq!(field, "tool_name");
+    assert_eq!(pattern, "(");
 }
 
 #[test]

@@ -87,11 +87,14 @@ pub const fn disallowed_action_text(action: ToolDisallowedAction) -> &'static st
 }
 
 // LiteLLM lowercases both action fields before its allow/deny and block/rewrite checks
-fn parse_action<Action: Copy>(
+fn parse_action<Action>(
     value: &str,
     choices: [(&str, Action); 2],
     invalid: fn(String) -> ToolPermissionError,
-) -> Result<Action, ToolPermissionError> {
+) -> Result<Action, ToolPermissionError>
+where
+    Action: Copy,
+{
     for (name, action) in choices {
         if value.eq_ignore_ascii_case(name) {
             return Ok(action);
