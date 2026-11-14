@@ -108,6 +108,7 @@ enum Scenario {
     ExpiredDeadline,
     MissingDeployment,
     FailureBecomesRejected,
+    NullTypeBecomesRejected,
 }
 
 #[rstest]
@@ -117,6 +118,7 @@ enum Scenario {
 #[case::expired_deadline(Scenario::ExpiredDeadline)]
 #[case::missing_deployment(Scenario::MissingDeployment)]
 #[case::failure_becomes_rejected(Scenario::FailureBecomesRejected)]
+#[case::null_type_becomes_rejected(Scenario::NullTypeBecomesRejected)]
 #[tokio::test]
 async fn call_dispatch_tests_behavior(#[case] scenario: Scenario) {
     match scenario {
@@ -136,6 +138,7 @@ async fn call_dispatch_tests_behavior(#[case] scenario: Scenario) {
             .await;
         }
         Scenario::FailureBecomesRejected => failure_becomes_rejected().await,
+        Scenario::NullTypeBecomesRejected => null_type_becomes_rejected().await,
     }
 }
 
@@ -178,11 +181,11 @@ async fn rules_reject() {
     ));
     let dispatch = Arc::new(Dispatch::new(
         vec![deployment(MODEL_ID, Duration::from_mins(100))],
-        rules,
+        Arc::clone(&rules),
         log,
     ));
     let context = context(None, SystemTime::UNIX_EPOCH);
-    let error = dispatch
+    let Err(error) = dispatch
         .execute(
             crate::operation::Operation::TextCompletion(request(
                 "completion-2",
@@ -193,9 +196,12 @@ async fn rules_reject() {
             &context,
         )
         .await
-        .expect_err("the rule must reject");
+    else {
+        panic!("a rejected rule must fail the call");
+    };
     assert!(matches!(error, DispatchError::Rules { .. }));
     assert_eq!(trace.steps(), ["rules", "failure"]);
+    assert_eq!(rules.inputs(), [String::from("hello")]);
     assert!(calls.seen().is_empty());
 }
 
@@ -241,7 +247,7 @@ async fn refused_before_transport(
         log,
     ));
     let context = context(deadline, SystemTime::UNIX_EPOCH);
-    let error = dispatch
+    let Err(error) = dispatch
         .execute(
             crate::operation::Operation::TextCompletion(request(
                 "completion-4",
@@ -252,7 +258,9 @@ async fn refused_before_transport(
             &context,
         )
         .await
-        .expect_err("the call must fail before transport");
+    else {
+        panic!("the call must fail before transport");
+    };
     assert!(expected(&error), "unexpected error: {error}");
     assert!(calls.seen().is_empty());
 }
@@ -263,7 +271,7 @@ async fn failure_becomes_rejected() {
         trace.clone(),
         TextCompletionFailure {
             status: 429,
-            error_type: String::from("rate_limit_error"),
+            error_type: Some(String::from("throttling_error")),
             param: Some(String::from("prompt")),
             message: String::from("slow down"),
         },
@@ -275,7 +283,7 @@ async fn failure_becomes_rejected() {
         log,
     ));
     let context = context(None, SystemTime::UNIX_EPOCH);
-    let error = dispatch
+    let Err(error) = dispatch
         .execute(
             crate::operation::Operation::TextCompletion(request(
                 "completion-6",
@@ -286,14 +294,59 @@ async fn failure_becomes_rejected() {
             &context,
         )
         .await
-        .expect_err("the provider failed");
+    else {
+        panic!("the provider failure must fail the call");
+    };
     assert!(matches!(
         error,
         DispatchError::Rejected {
             status: 429,
             ref error_type,
             ..
-        } if error_type == "rate_limit_error"
+        } if error_type == "throttling_error"
+    ));
+    assert_eq!(trace.steps(), ["complete", "failure"]);
+}
+
+async fn null_type_becomes_rejected() {
+    let trace = Trace::default();
+    let calls = Arc::new(FakeCompletion::failing(
+        trace.clone(),
+        TextCompletionFailure {
+            status: 500,
+            error_type: None,
+            param: None,
+            message: String::from("unmapped prompt"),
+        },
+    ));
+    let log = Arc::new(RecordingLog::new(trace.clone()));
+    let dispatch = Arc::new(Dispatch::new(
+        vec![deployment(MODEL_ID, Duration::from_mins(100))],
+        Arc::new(crate::dispatch::NoRules),
+        log,
+    ));
+    let context = context(None, SystemTime::UNIX_EPOCH);
+    let Err(error) = dispatch
+        .execute(
+            crate::operation::Operation::TextCompletion(request(
+                "completion-7",
+                MODEL_ID,
+                Arc::clone(&dispatch),
+                calls,
+            )),
+            &context,
+        )
+        .await
+    else {
+        panic!("a provider failure without a type must fail the call");
+    };
+    assert!(matches!(
+        error,
+        DispatchError::Rejected {
+            status: 500,
+            ref error_type,
+            ..
+        } if error_type.is_empty()
     ));
     assert_eq!(trace.steps(), ["complete", "failure"]);
 }

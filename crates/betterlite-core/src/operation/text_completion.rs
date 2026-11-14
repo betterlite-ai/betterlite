@@ -38,11 +38,11 @@ pub struct TextCompletionResult {
     pub upstream_time: Duration,
 }
 
-// the status, type, param and message the route answers with; the dispatch hands them on as its Rejected answer
+// the status, type, param and message the route answers with; a null type is an empty string here
 #[derive(Debug)]
 pub struct TextCompletionFailure {
     pub status: u16,
-    pub error_type: String,
+    pub error_type: Option<String>,
     pub param: Option<String>,
     pub message: String,
 }

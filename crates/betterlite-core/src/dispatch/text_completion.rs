@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use betterlite_context::call_context::CallContext;
 use betterlite_openai::text_completion_request::CompletionRequest;
-use serde_json::Value;
 
 use super::Dispatch;
 use super::error::DispatchError;
@@ -63,17 +62,18 @@ fn rules_input(request: &CompletionRequest) -> Option<String> {
     let messages = request.prompt.messages()?;
     let mut buffer = String::new();
     for message in &messages {
-        if let Some(content) = message.get("content").and_then(Value::as_str) {
+        if let Some(content) = message.get("content").and_then(|content| content.as_str()) {
             buffer.push_str(content);
         }
     }
     Some(buffer)
 }
 
+// the shared Rejected variant types error_type as text, so a null type travels to the route as an empty string
 fn rejected(failure: TextCompletionFailure) -> DispatchError {
     DispatchError::Rejected {
         status: failure.status,
-        error_type: failure.error_type,
+        error_type: failure.error_type.unwrap_or_default(),
         param: failure.param,
         code: failure.status.to_string(),
         message: failure.message,
