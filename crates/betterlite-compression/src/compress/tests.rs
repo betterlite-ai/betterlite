@@ -626,6 +626,30 @@ mod budget_selection {
             assert!(selection.kept_indices.is_empty());
             assert!(selection.truncated_overrides.is_empty());
         }
+
+        #[tokio::test]
+        async fn never_truncates_a_single_index_span() {
+            let normalized = vec![json!({"content": words(150)})];
+            let scores = vec![0.9_f64];
+            let spans = vec![vec![0_usize]];
+            let counter = fixture_counter(Vec::new());
+            let selection = select_kept_indices_for_budget(
+                &BudgetSelectionRequest {
+                    normalized_messages: &normalized,
+                    original_messages: &normalized,
+                    combined_scores: &scores,
+                    compression_target: 100,
+                    model: MODEL,
+                    initial_kept_indices: &[],
+                    tool_exchange_spans: &spans,
+                },
+                &counter,
+            )
+            .await
+            .expect("selected");
+            assert!(selection.kept_indices.is_empty());
+            assert!(selection.truncated_overrides.is_empty());
+        }
     }
 
     #[tokio::test]
