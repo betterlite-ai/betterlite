@@ -11,6 +11,9 @@ id=$1
 flow=$2
 journal=${main}/.git/betterlite/${id}
 worktree=${worktrees}/${id}
+runs=${worktrees}/logs/ci-runs.tsv
+# \$endCursor is the variable gh --paginate fills from pageInfo
+query="query(\$endCursor:String){repository(owner:\"betterlite-ai\",name:\"betterlite\"){pullRequests(states:OPEN,first:100,after:\$endCursor){pageInfo{hasNextPage endCursor} nodes{headRef{target{... on Commit{oid checkSuites(last:5){nodes{status conclusion workflowRun{databaseId workflow{resourcePath}}}}}}}}}}}"
 started=$(date +%s)
 reviewed=
 pushed=
@@ -54,8 +57,18 @@ while kill -0 "${flow}" 2> /dev/null; do
     printf '%(%H:%M)T %s\n' -1 "${id} draft PR #${pr} has the reviewed head ${head:0:8}: https://github.com/${GH_REPO}/pull/${pr}" >> "${worktrees}/logs/flow-events.log"
   fi
   if [[ -n "${pushed}" ]]; then
-    # one REST call per poll, as in pr-watch.sh
-    run=$(gh api "repos/${GH_REPO}/actions/workflows/gate.yml/runs?branch=${branch}&per_page=10" -q ".workflow_runs[] | select(.head_sha == \"${pushed}\") | \"\(.id) \(.status) \(.conclusion)\"" 2> /dev/null)
+    # one flow at a time asks for the gate run on every open PR's head, at most every 20 seconds; the file's time moves before the call, so a refused call waits its 20 seconds too
+    {
+      if flock -n 9; then
+        printf -v now '%(%s)T' -1
+        polled=$(stat -c %Y "${runs}" 2> /dev/null) || polled=0
+        if [[ $((now - polled)) -ge 20 ]]; then
+          touch "${runs}"
+          gh api graphql --paginate -f query="${query}" -q '.data.repository.pullRequests.nodes[].headRef.target // empty | .oid + " " + (.checkSuites.nodes[] | select(.workflowRun.workflow.resourcePath // "" | endswith("/gate.yml")) | "\(.workflowRun.databaseId) \(.status | ascii_downcase) \(.conclusion // "" | ascii_downcase)")' > "${runs}.new" 2> /dev/null && mv -f "${runs}.new" "${runs}"
+        fi
+      fi
+    } 9> "${worktrees}/logs/locks/ci-runs.lock"
+    run=$(awk -v head="${pushed}" '$1 == head {run = $2 " " $3 " " $4} END {print run}' "${runs}" 2> /dev/null)
     read -r run_id status conclusion <<< "${run}"
     if [[ "${status}" = completed ]]; then
       if [[ "${conclusion}" = failure ]]; then
@@ -65,5 +78,5 @@ while kill -0 "${flow}" 2> /dev/null; do
       pushed=
     fi
   fi
-  sleep 120
+  sleep 20
 done
