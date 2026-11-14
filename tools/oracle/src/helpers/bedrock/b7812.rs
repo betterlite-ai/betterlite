@@ -48,13 +48,13 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let outcomes = input.calls.iter().map(|call| {
-            let value = match call {
+            let outcome = match call {
                 Call::Request(request) => request_value(request),
                 Call::Response(response) => response_value(response),
             };
-            value.map_or_else(
+            outcome.map_or_else(
                 || json!({"ok": false}),
-                |value| json!({"ok": true, "value": value}),
+                |answer| json!({"ok": true, "value": answer}),
             )
         });
         Ok(Value::Array(outcomes.collect()))
