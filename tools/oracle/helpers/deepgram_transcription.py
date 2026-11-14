@@ -6,7 +6,7 @@ import httpx
 from litellm.llms.deepgram.audio_transcription.transformation import (
     DeepgramAudioTranscriptionConfig,
 )
-from litellm.types.llms.openai import AllMessageValues, OpenAIAudioTranscriptionOptionalParams
+from litellm.types.llms.openai import OpenAIAudioTranscriptionOptionalParams
 from pydantic import JsonValue, TypeAdapter
 
 
@@ -76,7 +76,7 @@ class TranscriptionConfig(Protocol):
     ) -> RaisedError: ...
 
 
-CONFIG: Final[TranscriptionConfig] = DeepgramAudioTranscriptionConfig()
+CONFIG: Final[TranscriptionConfig] = DeepgramAudioTranscriptionConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepgram/audio_transcription/transformation.py#L26
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 BYTES: Final[TypeAdapter[bytes]] = TypeAdapter(bytes)
 
