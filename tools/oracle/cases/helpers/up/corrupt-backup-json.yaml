@@ -1,0 +1,8 @@
+kind: helper
+name: corrupt-backup-json
+call:
+  b4577:
+    operation: read_backup
+    backup: "{\"existed\": true, \"content\": "
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,23 @@
+[package]
+name = "betterlite-bedrock-guardrails-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-bedrock-guardrails = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "guardrail_error_response"
+path = "fuzz_targets/guardrail_error_response.rs"
+test = false
+doc = false
+bench = false
