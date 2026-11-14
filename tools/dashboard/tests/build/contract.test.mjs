@@ -190,9 +190,21 @@ test("the build patch is recorded with the hashes of the files it changes", asyn
   }
 });
 
+test("the build patch adds no trailing whitespace", async () => {
+  const patch = await fs.readFile(path.join(REPO_ROOT, "ui/dashboard/patches/10-build.patch"), "utf8");
+  const trailing = patch.split("\n").filter((line) => line !== line.trimEnd());
+  assert.deepEqual(trailing, []);
+});
+
 test("the build never commits or stages anything", async () => {
   for (const file of ["packaging/ui/Dockerfile", "tools/dashboard/build.sh", "tools/dashboard/bundle.mjs", "tools/dashboard/install.mjs"]) {
     const text = await fs.readFile(path.join(REPO_ROOT, file), "utf8");
     assert.equal(/git (add|commit|push)/.test(text), false, file);
   }
+});
+
+test("the check installs a docker client when the task container has none", async () => {
+  const text = await fs.readFile(path.join(REPO_ROOT, "tools/dashboard/check-build.sh"), "utf8");
+  assert.match(text, /if ! command -v docker > \/dev\/null; then/);
+  assert.match(text, /apt-get install --yes --no-install-recommends docker-cli docker-buildx/);
 });

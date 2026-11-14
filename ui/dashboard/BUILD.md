@@ -12,6 +12,8 @@
 
 `key` prints the cache key and needs neither Docker nor the network. `build` writes `target/dashboard/dist` (`ui/` and `manifest.json`) and skips the work when the manifest in `dist` already carries the current key. `--rebuild` ignores the manifest. `--source-repo <checkout>` and `--out <directory>` go to the source intake and the work directory.
 
+`check-build.sh` runs two clean builds with `--rebuild`, compares their path, mode and content digests and a deterministic tar, checks the notices and every output kind, installs the bundle beside a temporary executable and proves stale chunks disappear. It needs Docker with buildx; when the CLI is missing, as in the gate's task container, which carries the host's socket but no client, it installs `docker-cli` and `docker-buildx` from the distribution first.
+
 `--api-base` builds the dashboard against another API origin. Without it the export is same-origin: `NEXT_PUBLIC_BASE_URL` and `NEXT_PUBLIC_USE_REWRITES` are removed from the build environment, whatever the caller has set. The value must be an `http` or `https` URL without credentials, and it is part of the cache key and the build id. `UI_BASE_PATH` and `--ui-base-path` are accepted and ignored, as LiteLLM's `next.config.mjs` never reads them.
 
 ## What the build does
