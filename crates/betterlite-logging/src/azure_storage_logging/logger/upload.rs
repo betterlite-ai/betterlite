@@ -2,7 +2,6 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use http::Method;
 use secrecy::SecretString;
 use tokio::runtime::Handle;
 use tokio::time::timeout;
@@ -18,13 +17,13 @@ use super::{
     dated_directory,
 };
 use crate::azure_storage_logging::filename::{adls_safe_file_name, storage_url};
-use crate::azure_storage_logging::http_ops::{StorageAuthorization, storage_request};
+use crate::azure_storage_logging::http_ops::StorageAuthorization;
 use crate::azure_storage_logging::settings::AzureStorageSettings;
 use crate::azure_storage_logging::token::{
     ChainTokenProvider, TokenError, authority_host, client_secret_request, credentials,
     parse_token_response,
 };
-use crate::azure_storage_logging::transport::StorageResponse;
+use crate::azure_storage_logging::transport::{StorageRequest, StorageResponse};
 
 impl AzureBlobStorageLogger {
     #[must_use]
@@ -186,14 +185,9 @@ impl AzureBlobStorageLogger {
 
     pub(super) async fn execute(
         &self,
-        method: Method,
-        url: String,
-        auth: &StorageAuthorization<'_>,
-        body: &[u8],
+        request: StorageRequest,
         operation: &'static str,
     ) -> Result<StorageResponse, AzureStorageError> {
-        let now = self.deps.clock.now_unix();
-        let request = storage_request(method, url, auth, now, body)?;
         let response = self.deps.transport.send(request).await?;
         if response.status >= FIRST_ERROR_STATUS {
             return Err(AzureStorageError::Status {

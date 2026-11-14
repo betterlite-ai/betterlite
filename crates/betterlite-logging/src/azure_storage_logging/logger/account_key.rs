@@ -32,15 +32,14 @@ pub(super) async fn ensure_directory(
         )?)
         .await?;
     if exists.status == NOT_FOUND {
-        let _made = logger
-            .execute(
-                Method::PUT,
-                format!("{directory_url}?resource=directory"),
-                auth,
-                &[],
-                "create_directory",
-            )
-            .await?;
+        let create = storage_request(
+            Method::PUT,
+            format!("{directory_url}?resource=directory"),
+            auth,
+            now,
+            &[],
+        )?;
+        let _made = logger.execute(create, "create_directory").await?;
         return Ok(());
     }
     if exists.status >= FIRST_ERROR_STATUS {
@@ -59,38 +58,36 @@ pub(super) async fn write_file(
     auth: &StorageAuthorization<'_>,
     content: &[u8],
 ) -> Result<(), AzureStorageError> {
+    let now = logger.deps.clock.now_unix();
     let flush_query = match auth {
         StorageAuthorization::Bearer(_) => "",
         StorageAuthorization::SharedKey { .. } => SDK_FLUSH_QUERY,
     };
-    let _created = logger
-        .execute(
-            Method::PUT,
-            format!("{base_url}?resource=file"),
-            auth,
-            &[],
-            "create",
-        )
-        .await?;
-    let _appended = logger
-        .execute(
-            Method::PATCH,
-            format!("{base_url}?action=append&position=0"),
-            auth,
-            content,
-            "append",
-        )
-        .await?;
+    let create = storage_request(
+        Method::PUT,
+        format!("{base_url}?resource=file"),
+        auth,
+        now,
+        &[],
+    )?;
+    let _created = logger.execute(create, "create").await?;
+    let append = storage_request(
+        Method::PATCH,
+        format!("{base_url}?action=append&position=0"),
+        auth,
+        now,
+        content,
+    )?;
+    let _appended = logger.execute(append, "append").await?;
     let position = content.len();
-    let _flushed = logger
-        .execute(
-            Method::PATCH,
-            format!("{base_url}?action=flush&position={position}{flush_query}"),
-            auth,
-            &[],
-            "flush",
-        )
-        .await?;
+    let flush = storage_request(
+        Method::PATCH,
+        format!("{base_url}?action=flush&position={position}{flush_query}"),
+        auth,
+        now,
+        &[],
+    )?;
+    let _flushed = logger.execute(flush, "flush").await?;
     Ok(())
 }
 
