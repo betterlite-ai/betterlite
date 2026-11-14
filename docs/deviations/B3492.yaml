@@ -1,0 +1,26 @@
+task: B3492
+deviations:
+  - what: get_interaction and async_get_interaction accept a timeout and never send it; the client's own 600 second deadline with a 5 second connect timeout decides.
+    why: LiteLLM's GET omits the timeout argument at lines 390 and 443, so the handler's _DEFAULT_TIMEOUT applies; betterlite keeps the parameter so callers ported from LiteLLM pass it unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L388-L394
+  - what: _async_client reads custom_llm_provider from litellm_params, falls back to "gemini" when the field is absent, null or empty, and returns a typed ClientError for a name betterlite has no provider for; a supplied client is returned before the provider is read.
+    why: litellm_params.get returns None for an unset field and Python's or treats the empty string the same way, while litellm.LlmProviders raises ValueError for an unknown name; betterlite's closed ProviderId enum carries the same failure as a typed error, and the short circuit keeps LiteLLM's order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L61-L73
+  - what: The native clients never follow a redirect, disable reqwest's protocol retries and cap the buffered response at the shared transport's 16 MiB.
+    why: The shared transport refuses redirects so a provider key is not replayed to another host (B173 records the same for its path); LiteLLM's httpx handlers follow redirects and read an unbounded body. The forward routes of the resolved proxy policy and its NO_PROXY list do apply to both clients.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1404-L1424
+  - what: A response header that repeats joins its values with ", " instead of keeping the last one.
+    why: LiteLLM's dict(e.response.headers) keeps one value per name and drops the rest, while the contract passes headers as a map; joining keeps every value the upstream sent, and no-silent-drops forbids losing one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L44-L52
+  - what: litellm_params.ssl_verify is read as a boolean; any other JSON type is a ClientError naming the field, and a CA bundle path comes from litellm_settings.ssl_verify, SSL_VERIFY or SSL_CERT_FILE through the resolved TLS policy.
+    why: GenericLiteLLMParams declares no ssl_verify field, so LiteLLM accepts whatever extra was passed, including a path; betterlite's deployment params declare it as a boolean, and the other paths keep reaching the CA bundle through the policy the config resolves.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L331-L367
+  - what: pre_call records the input, the empty api key, the api base and the validated headers as a typed PreCall on the logging object instead of writing input, api_key and additional_args into model_call_details.
+    why: betterlite's logging pipeline owns the model_call_details keys and masks secret headers there; the transport keeps the header values in SecretString so they never enter a serialized params bag.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1327-L1348
+  - what: litellm_params.api_base must be a string when it is set; any other JSON type is a ClientError naming the field.
+    why: LiteLLM reads api_base with `or ""` from a field GenericLiteLLMParams declares as a string, so a typed wrong value never reaches the transform there; betterlite carries the params as open JSON and refuses the wrong type before the provider contract sees it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L371-L376
+  - what: A client built here refuses a request whose proxy setting betterlite cannot use (an https or other non-http proxy scheme, or an unparsable proxy URL) with a typed error naming the scheme or the setting.
+    why: LiteLLM's httpx clients send such a request through the configured proxy, but betterlite's proxy policy carries only http:// forwarders, and connecting directly would bypass the proxy a deployment demands; a client the caller supplies keeps its own proxy settings and is not checked.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1404-L1424

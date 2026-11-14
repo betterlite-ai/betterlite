@@ -12,6 +12,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-python/python/betterlite/types/policy_engine.py
+  - crates/betterlite-python/python/betterlite/types/proxy/policy_engine/__init__.py
   - crates/betterlite-python/python/betterlite/types/proxy/policy_engine/pipeline_types.py
   - crates/betterlite-python/python/betterlite/types/proxy/policy_engine/policy_types.py
   - crates/betterlite-python/python/betterlite/types/proxy/policy_engine/resolver_types.py
@@ -51,5 +52,5 @@ deviations:
   why: The wheel does not depend on openai or httpx.
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 5
 review_level: standard

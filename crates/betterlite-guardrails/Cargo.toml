@@ -19,6 +19,7 @@ betterlite-core = { path = "../betterlite-core" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
+betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redact = { path = "../betterlite-redact" }
 chrono.workspace = true
@@ -65,6 +66,10 @@ tempfile = "3.27.0"
 tokio = { workspace = true, features = ["rt", "macros"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
 tracing-subscriber.workspace = true
+
+[[test]]
+name = "block_code_execution"
+path = "src/block_code_execution/lifecycle/tests.rs"
 
 [[test]]
 name = "onyx"
