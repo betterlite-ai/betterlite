@@ -2853,6 +2853,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-core",
  "betterlite-redis",
+ "crc16",
  "rstest",
  "serde",
  "serde_json",
