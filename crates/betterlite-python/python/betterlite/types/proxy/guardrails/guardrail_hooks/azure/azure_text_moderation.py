@@ -64,7 +64,7 @@ class AzureContentSafetyTextModerationConfigModel(
     GuardrailConfigModel[AzureTextModerationOptionalParams],
 ):
     # ast-grep-ignore: no-long-names
-    optional_params: AzureTextModerationOptionalParams | None
+    optional_params: AzureTextModerationOptionalParams | None = Field()
 
     @staticmethod
     @override
