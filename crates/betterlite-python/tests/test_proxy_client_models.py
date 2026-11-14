@@ -140,7 +140,7 @@ def teams_clients(server: RecordingServer) -> tuple[LiteTeams, TeamsManagementCl
     return lite, ours
 
 
-def test_client_default_timeouts(probe: TimeoutProbe) -> None:
+def test_client_timeouts(probe: TimeoutProbe) -> None:
     models_client = ModelsManagementClient("http://proxy:4000", api_key=KEY)
     teams_client = TeamsManagementClient("http://proxy:4000")
     chat_client = ChatClient("http://proxy:4000")
@@ -153,6 +153,17 @@ def test_client_default_timeouts(probe: TimeoutProbe) -> None:
         ("http://proxy:4000/team/available", 30),
         ("http://proxy:4000/chat/completions", 600),
         ("http://proxy:4000/chat/completions", 600),
+    ]
+    custom = "http://other:4000"
+    assert ModelsManagementClient(custom, timeout=7).info() == []
+    assert TeamsManagementClient(custom, timeout=7).list() == {"data": []}
+    assert ChatClient(custom, timeout=7).completions(MODEL, MESSAGES) == {"data": []}
+    assert builtins.list(ChatClient(custom, timeout=7).completions_stream(MODEL, MESSAGES)) == []
+    assert probe.calls[4:] == [
+        (f"{custom}/v1/model/info", 7),
+        (f"{custom}/team/list", 7),
+        (f"{custom}/chat/completions", 7),
+        (f"{custom}/chat/completions", 7),
     ]
 
 
