@@ -10,7 +10,7 @@ use crate::budget_increment::window::{WindowCache, WindowRedis};
 use super::budget::ProviderBudget;
 use super::keys;
 
-// _get_or_set_budget_start_time: a miss or a failed read starts the window at current_time
+// _get_or_set_budget_start_time: a miss or a failed read starts the window at current_time; unlike BudgetIncrement::window_start, a cache error only warns, as DualCache swallows it
 pub async fn get_or_set_budget_start_time<Cache>(
     cache: &Cache,
     start_time_key: &str,
