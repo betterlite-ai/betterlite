@@ -1,4 +1,5 @@
 use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_auth::user_roles::UserRole;
 use betterlite_config::scim_role_settings::{ScimUserRole, Settings};
 use betterlite_server::scim_projections::directory::Metadata;
 use betterlite_server::scim_records::user::User;
@@ -31,7 +32,7 @@ struct Output {
     teams: Vec<String>,
     active: bool,
     metadata: Metadata,
-    user_role: Option<String>,
+    user_role: Option<UserRole>,
 }
 
 fn failure<E>(error: E) -> Box<HelperError>
@@ -69,7 +70,7 @@ impl Helper for Op {
             teams: data.teams,
             active: data.active,
             metadata,
-            user_role: role.map(ToString::to_string),
+            user_role: role,
         })
         .map_err(failure)
     }
