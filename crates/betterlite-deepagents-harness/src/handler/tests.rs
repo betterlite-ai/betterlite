@@ -711,6 +711,13 @@ async fn history_returns_the_runtime_openai_messages() {
     assert!(config.usage_callback.is_none());
 }
 
+#[test]
+fn history_missing_runtime_answers_nothing() {
+    assert!(MissingRuntime.openai_messages(&[]).is_empty());
+    assert!(MissingRuntime.general_subagent().is_empty());
+    assert!(MissingRuntime.usage_callback(None).is_none());
+}
+
 #[tokio::test]
 async fn history_returns_an_empty_list_when_the_state_has_none() {
     let (runtime, _plan) = FakeRuntime::new();
