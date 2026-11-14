@@ -1,10 +1,10 @@
-from typing import Final, Literal, TypeAlias, TypedDict
+from typing import Literal, TypeAlias, TypedDict
 
 from litellm.proxy.management_endpoints.scim.scim_v2 import _AmbiguousMember, _ClassifiedGroupMember, _PartitionedMembers, _ResolvedUserMember, _SkippedGroupMember, _UnknownMember, _admitted_member_ids, _json_object_fields, _member_value, _normalized_member_type, _partition_classified_members, _roster_entries_named_by, _team_metadata_has_scim_provenance  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L487-L851
 from litellm.types.proxy.management_endpoints.scim_v2 import SCIMMember
 from pydantic import JsonValue, TypeAdapter
 
-_JSON: Final = TypeAdapter(JsonValue)
+_JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
 SkipReason: TypeAlias = Literal["nested_group", "non_user_type", "existing_team"]
 

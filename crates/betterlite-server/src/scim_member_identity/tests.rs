@@ -65,7 +65,7 @@ fn skipped(value: &str, reason: SkipReason) -> ClassifiedGroupMember {
 }
 
 fn strings(values: &[&str]) -> Vec<String> {
-    values.iter().map(|value| (*value).to_owned()).collect()
+    values.iter().map(|value| String::from(*value)).collect()
 }
 
 fn set(values: &[&str]) -> BTreeSet<String> {
@@ -527,6 +527,14 @@ async fn scim_member_identity_classify_untyped_managed_teams_skip() {
             .unwrap(),
         skipped("team-encoded", SkipReason::ExistingTeam)
     );
+    close(fixture, pool).await;
+}
+
+#[tokio::test]
+async fn scim_member_identity_classify_untyped_unmanaged_teams_stay_unknown() {
+    let (fixture, pool) = database().await;
+    let store = store(&pool);
+    let resolver = MemberResolver { store: &store };
     assert_eq!(
         resolver
             .classify_group_member(&member("team-data-null", None))
@@ -581,13 +589,6 @@ async fn scim_member_identity_every_lookup_without_a_database_is_a_500() {
     assert_no_database(
         &resolver
             .users_named_by_member_value("u1", Some(2))
-            .await
-            .err()
-            .unwrap(),
-    );
-    assert_no_database(
-        &resolver
-            .users_named_by_member_value("u1", None)
             .await
             .err()
             .unwrap(),

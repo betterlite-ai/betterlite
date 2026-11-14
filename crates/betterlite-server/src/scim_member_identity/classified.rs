@@ -68,8 +68,9 @@ pub fn admitted_member_ids(
         let member_id = match entry {
             ClassifiedGroupMember::Resolved { user_id } => Some(user_id),
             ClassifiedGroupMember::Unknown { value } if created_ids.contains(value) => Some(value),
-            ClassifiedGroupMember::Skipped { .. } | ClassifiedGroupMember::Ambiguous { .. } => None,
-            ClassifiedGroupMember::Unknown { .. } => None,
+            ClassifiedGroupMember::Skipped { .. }
+            | ClassifiedGroupMember::Ambiguous { .. }
+            | ClassifiedGroupMember::Unknown { .. } => None,
         };
         if let Some(member_id) = member_id
             && !admitted.contains(member_id)
