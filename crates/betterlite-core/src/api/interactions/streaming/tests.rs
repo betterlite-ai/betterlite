@@ -42,7 +42,7 @@ use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, Duration as Seconds, FixedOffset};
 use http::{HeaderMap, Method};
 use indexmap::IndexMap;
 use thiserror::Error;
@@ -261,13 +261,17 @@ impl InteractionsSyncResponse for FakeSyncResponse {
     }
 }
 
-struct FixedClock {
-    now: DateTime<FixedOffset>,
+// every reading is one second after the one before, so construction and each dispatch get distinct instants
+struct StepClock {
+    reads: Mutex<i64>,
 }
 
-impl SuccessClock for FixedClock {
+impl SuccessClock for StepClock {
     fn now(&self) -> DateTime<FixedOffset> {
-        self.now
+        let mut reads = self.reads.lock().unwrap_or_else(PoisonError::into_inner);
+        let now = ticked(*reads);
+        *reads = reads.saturating_add(1);
+        now
     }
 }
 
@@ -283,7 +287,7 @@ struct DispatchRecord {
 
 struct RecordingLogging {
     logging: InteractionsLogging,
-    clock: FixedClock,
+    clock: StepClock,
     records: Mutex<Vec<DispatchRecord>>,
 }
 
@@ -293,7 +297,9 @@ impl RecordingLogging {
             logging: InteractionsLogging {
                 model_call_details: litellm_params,
             },
-            clock: FixedClock { now: moment() },
+            clock: StepClock {
+                reads: Mutex::new(0),
+            },
             records: Mutex::new(Vec::new()),
         }
     }
@@ -373,6 +379,13 @@ impl ApiBaseHooks for NoHooks {
 
 fn moment() -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339("2026-05-20T00:00:00+00:00").expect("the fixture time parses")
+}
+
+fn ticked(seconds: i64) -> DateTime<FixedOffset> {
+    let step = Seconds::try_seconds(seconds).expect("the fixture step is small");
+    moment()
+        .checked_add_signed(step)
+        .expect("the fixture time stays in range")
 }
 
 fn litellm_params(api_base: &str) -> Params {
@@ -515,6 +528,45 @@ async fn async_iterator_construction_builds_hidden_params_from_the_setup() {
     assert_eq!(iterator.base.completed_response, None);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert_eq!(drain_async(&mut iterator).await.len(), 1);
+}
+
+#[tokio::test]
+async fn async_iterator_construction_resolves_the_api_base_from_the_model() {
+    let catalog = ModelCatalog::default();
+    let known = BTreeSet::new();
+    let custom = BTreeSet::new();
+    let environment = BTreeMap::new();
+    let resolution = resolution_context(&catalog, &known, &custom, &environment);
+    let aliases = BTreeMap::new();
+    let hooks = NoHooks;
+    let shared = SharedApiBase {
+        context: ApiBaseContext {
+            model_alias_map: &aliases,
+            hooks: &hooks,
+            resolution: &resolution,
+        },
+    };
+    let config = FixtureConfig;
+    let mut logging = RecordingLogging::new(Params::new());
+    let mut iterator = InteractionsStreamIterator::new(
+        FakeAsyncResponse::new(&[]),
+        InteractionsStreamSetup {
+            model: Some("gemini/gemini-2.5-flash"),
+            config: &config,
+            logging: &mut logging,
+            litellm_metadata: None,
+            custom_llm_provider: None,
+            api_base: &shared,
+        },
+    )
+    .expect("the fixture iterator builds");
+    assert_eq!(
+        iterator.base.hidden_params.api_base.as_deref(),
+        Some(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+        )
+    );
+    assert!(iterator.next_chunk().await.is_none());
 }
 
 #[tokio::test]
@@ -733,7 +785,7 @@ async fn async_iteration_dispatches_completion_with_prefer_async() {
     assert_eq!(records[0].handler, "dispatch_success_handlers");
     assert_eq!(records[0].response.id.as_deref(), Some("int_1"));
     assert_eq!(records[0].start_time, moment());
-    assert_eq!(records[0].end_time, moment());
+    assert_eq!(records[0].end_time, ticked(1));
     assert_eq!(records[0].cache_hit, None);
     assert_eq!(records[0].prefer_async_handlers, Some(true));
 }
@@ -784,8 +836,8 @@ fn sync_iteration_dispatches_the_async_handler_then_the_sync_handler() {
     assert_eq!(records[0].response.id.as_deref(), Some("int_2"));
     assert_eq!(records[0].start_time, moment());
     assert_eq!(records[1].start_time, moment());
-    assert_eq!(records[0].end_time, moment());
-    assert_eq!(records[1].end_time, moment());
+    assert_eq!(records[0].end_time, ticked(1));
+    assert_eq!(records[1].end_time, ticked(2));
     assert_eq!(records[0].cache_hit, None);
     assert_eq!(records[1].cache_hit, None);
     assert_eq!(records[0].prefer_async_handlers, None);
