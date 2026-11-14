@@ -10,7 +10,7 @@ use serde_json::json;
 use super::AnthropicFollowupError;
 use super::followup_kwargs::prepare_followup_kwargs;
 use super::max_tokens::resolve_max_tokens;
-use super::patch::{AnthropicPatchRequest, FollowupLogging, build_request_patch};
+use super::patch::{AnthropicPatchRequest, FollowupLogging, build_request_patch, patch_log_line};
 use super::plan::{AnthropicFollowup, AnthropicPlanRequest};
 use crate::call_transformation::WebSearchTransformation;
 use crate::call_transformation::outcome::SearchResult;
@@ -233,8 +233,8 @@ fn resolve_max_tokens_keeps_a_max_tokens_above_the_budget() {
 
 #[test]
 fn resolve_max_tokens_ignores_a_zero_or_negative_budget() {
-    let zero = map(r#"{"max_tokens": 1000, "thinking": {"budget_tokens": 0}}"#);
-    assert_eq!(resolve_max_tokens(&zero, &map("{}")).unwrap(), 1000);
+    let zero = map(r#"{"max_tokens": 0, "thinking": {"budget_tokens": 0}}"#);
+    assert_eq!(resolve_max_tokens(&zero, &map("{}")).unwrap(), 0);
     let negative = map(r#"{"max_tokens": 1000, "thinking": {"budget_tokens": -5}}"#);
     assert_eq!(resolve_max_tokens(&negative, &map("{}")).unwrap(), 1000);
 }
@@ -471,6 +471,74 @@ async fn request_patch_drops_the_interception_kwargs() {
     assert!(patch.kwargs.contains_key("litellm_call_id"));
 }
 
+#[test]
+fn request_patch_logs_the_logging_call_id_over_the_kwargs_one() {
+    let messages = message_list(ONE_MESSAGE);
+    let tool_calls = call_list(ONE_CALL);
+    let optional_params = map("{}");
+    let kwargs = map(r#"{"litellm_call_id": "call-9"}"#);
+    let details = map("{}");
+    let logging = FollowupLogging {
+        call_id: Some("call-abc"),
+        model_call_details: &details,
+    };
+    let request = AnthropicPatchRequest {
+        model: MODEL,
+        messages: &messages,
+        tool_calls: &tool_calls,
+        thinking_blocks: &[],
+        optional_params: &optional_params,
+        logging: Some(&logging),
+        kwargs: &kwargs,
+    };
+    assert_eq!(
+        patch_log_line(&request, MODEL, 3, 2),
+        "WebSearchInterception: Built anthropic request patch [call_id=call-abc model=claude-sonnet-4-5 messages=3 searches=2]"
+    );
+}
+
+#[test]
+fn request_patch_logs_the_kwargs_call_id_without_a_logging_object() {
+    let messages = message_list(ONE_MESSAGE);
+    let tool_calls = call_list(ONE_CALL);
+    let optional_params = map("{}");
+    let kwargs = map(r#"{"litellm_call_id": "call-9"}"#);
+    let request = AnthropicPatchRequest {
+        model: MODEL,
+        messages: &messages,
+        tool_calls: &tool_calls,
+        thinking_blocks: &[],
+        optional_params: &optional_params,
+        logging: None,
+        kwargs: &kwargs,
+    };
+    assert_eq!(
+        patch_log_line(&request, MODEL, 4, 1),
+        "WebSearchInterception: Built anthropic request patch [call_id=call-9 model=claude-sonnet-4-5 messages=4 searches=1]"
+    );
+}
+
+#[test]
+fn request_patch_logs_an_unknown_call_id_without_any_source() {
+    let messages = message_list(ONE_MESSAGE);
+    let tool_calls = call_list(ONE_CALL);
+    let optional_params = map("{}");
+    let kwargs = map("{}");
+    let request = AnthropicPatchRequest {
+        model: MODEL,
+        messages: &messages,
+        tool_calls: &tool_calls,
+        thinking_blocks: &[],
+        optional_params: &optional_params,
+        logging: None,
+        kwargs: &kwargs,
+    };
+    assert_eq!(
+        patch_log_line(&request, MODEL, 2, 0),
+        "WebSearchInterception: Built anthropic request patch [call_id=unknown model=claude-sonnet-4-5 messages=2 searches=0]"
+    );
+}
+
 #[tokio::test]
 async fn request_patch_appends_the_assistant_and_user_messages() {
     let tool_calls = call_list(ONE_CALL);
@@ -533,6 +601,20 @@ async fn anthropic_plan_returns_the_patch_and_metadata() {
     assert_eq!(
         value.pointer("/request_patch/messages/2/role"),
         Some(&json!("user"))
+    );
+}
+
+#[tokio::test]
+async fn anthropic_plan_prepends_thinking_blocks_from_the_tools() {
+    let searcher = ScriptedSearches::with_texts(&["one"]);
+    let blocks: Vec<ResponseJson> =
+        serde_json::from_str(r#"[{"type":"thinking","thinking":"hmm","signature":"sig"}]"#)
+            .unwrap();
+    let tools = tools_dict(call_list(ONE_CALL), "anthropic", Some(blocks));
+    let value = plan_value(&searcher, &tools, &map("{}")).await;
+    assert_eq!(
+        value.pointer("/request_patch/messages/1/content/0/type"),
+        Some(&json!("thinking"))
     );
 }
 

@@ -54,7 +54,10 @@ pub async fn build_request_patch(
     let max_tokens = resolve_max_tokens(request.optional_params, request.kwargs)?;
     tracing::debug!("WebSearchInterception: Using max_tokens={max_tokens} for follow-up request");
     let model = patch_model(request.logging, request.model)?;
-    trace_patch(request, &model, &messages, outcomes.len());
+    tracing::debug!(
+        "{}",
+        patch_log_line(request, &model, messages.len(), outcomes.len())
+    );
     let patch = AgenticLoopRequestPatch {
         model: Some(model),
         messages: Some(messages),
@@ -119,17 +122,14 @@ fn call_id(logging: Option<&FollowupLogging<'_>>, kwargs: &JsonMap) -> String {
     )
 }
 
-fn trace_patch(
+pub(super) fn patch_log_line(
     request: &AnthropicPatchRequest<'_>,
     model: &str,
-    messages: &[FollowupMessage],
+    messages: usize,
     searches: usize,
-) {
-    tracing::debug!(
-        "WebSearchInterception: Built anthropic request patch [call_id={} model={} messages={} searches={}]",
-        call_id(request.logging, request.kwargs),
-        model,
-        messages.len(),
-        searches
-    );
+) -> String {
+    let call = call_id(request.logging, request.kwargs);
+    format!(
+        "WebSearchInterception: Built anthropic request patch [call_id={call} model={model} messages={messages} searches={searches}]"
+    )
 }
