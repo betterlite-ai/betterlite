@@ -1,6 +1,9 @@
 #![cfg(test)]
 
 use std::collections::BTreeSet;
+use std::io;
+use std::str;
+use std::sync::{Arc, Mutex};
 
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::postgres_store::session::PostgresStore;
@@ -11,6 +14,7 @@ use http::StatusCode;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
+use tracing_subscriber::fmt::MakeWriter;
 
 use super::classified::{
     ClassifiedGroupMember, SkipReason, SkippedGroupMember, admitted_member_ids,
@@ -73,6 +77,33 @@ fn strings(values: &[&str]) -> Vec<String> {
 
 fn set(values: &[&str]) -> BTreeSet<String> {
     strings(values).into_iter().collect()
+}
+
+#[derive(Clone)]
+struct CaptureWriter(Arc<Mutex<String>>);
+
+impl io::Write for CaptureWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let text = str::from_utf8(buf)
+            .map_err(|source| io::Error::new(io::ErrorKind::InvalidData, source))?;
+        self.0
+            .lock()
+            .map_err(|source| io::Error::other(source.to_string()))?
+            .push_str(text);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'writer> MakeWriter<'writer> for CaptureWriter {
+    type Writer = Self;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
+    }
 }
 
 #[rstest]
@@ -554,6 +585,39 @@ async fn scim_member_identity_classify_untyped_unmanaged_teams_stay_unknown() {
         unknown("team-managed")
     );
     close(fixture, pool).await;
+}
+
+#[tokio::test]
+async fn scim_member_identity_classification_events_name_the_value_and_account() {
+    let (fixture, pool) = database().await;
+    let records = Arc::new(Mutex::new(String::new()));
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(CaptureWriter(Arc::clone(&records)))
+        .finish();
+    let store = store(&pool);
+    let resolver = MemberResolver { store: &store };
+    let guard = tracing::subscriber::set_default(subscriber);
+    let matched = resolver.classify_group_member(&member("sub-2", None)).await;
+    let collided = resolver
+        .classify_group_member(&member("shared", None))
+        .await;
+    let shared_by_two = resolver
+        .classify_group_member(&member("ann@example.com", None))
+        .await;
+    drop(guard);
+    close(fixture, pool).await;
+    assert_eq!(matched.unwrap(), resolved("u2"));
+    assert_eq!(collided.unwrap(), ambiguous("shared"));
+    assert_eq!(shared_by_two.unwrap(), ambiguous("ann@example.com"));
+    let captured = records.lock().unwrap().clone();
+    assert!(captured.contains("SCIM: member matched a user by SSO or email"));
+    assert!(captured.contains("value=sub-2"));
+    assert!(captured.contains("user_id=u2"));
+    assert!(captured.contains("SCIM: member is also another account's identity or email"));
+    assert!(captured.contains("value=shared"));
+    assert!(captured.contains("SCIM: member names several accounts and is ambiguous"));
+    assert!(captured.contains("value=ann@example.com"));
 }
 
 #[tokio::test]
