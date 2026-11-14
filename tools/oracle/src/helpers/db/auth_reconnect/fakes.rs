@@ -21,6 +21,13 @@ pub(super) fn effects() -> Effects {
     Arc::new(Mutex::new(Vec::new()))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Database {
+    WriterOnly,
+    Reader,
+    UnavailableReader,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "effect", rename_all = "snake_case")]
 pub(super) enum Effect {
@@ -50,8 +57,7 @@ pub(super) fn record(effects: &Effects, effect: Effect) {
 pub(super) struct EngineScript {
     pub(super) writer_generation: u64,
     pub(super) reader_generation: u64,
-    pub(super) routing: bool,
-    pub(super) reader_unavailable: bool,
+    pub(super) database: Database,
     pub(super) engine_state: EngineState,
     pub(super) probe: Outcome,
     pub(super) recreate: Outcome,
@@ -84,13 +90,13 @@ impl FakeEngine {
     }
 
     pub(super) fn observation(&self, target: TargetName, generation: u64) -> Observation<Handle> {
-        let routing = self
+        let database = self
             .shared
             .script
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .routing;
-        let handle = if target == TargetName::Writer || !routing {
+            .database;
+        let handle = if target == TargetName::Writer || database == Database::WriterOnly {
             Arc::clone(&self.shared.writer)
         } else {
             Arc::clone(&self.shared.reader)
@@ -146,7 +152,7 @@ impl ReconnectEngine for FakeEngine {
                 .script
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
-            if script.routing && !script.reader_unavailable {
+            if script.database == Database::Reader {
                 TargetName::Reader
             } else {
                 TargetName::Writer
@@ -232,13 +238,13 @@ impl ReconnectEngine for FakeEngine {
     }
 
     fn mark_writer_recovered(&self) {
-        let routing = self
+        let database = self
             .shared
             .script
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .routing;
-        if routing {
+            .database;
+        if database != Database::WriterOnly {
             record(&self.shared.effects, Effect::MarkWriterRecovered);
         }
     }

@@ -48,7 +48,7 @@ impl ScriptedClock {
     }
 
     pub(super) fn at(&self, offset: Duration) -> Instant {
-        self.base + offset
+        self.base.checked_add(offset).unwrap_or(self.base)
     }
 }
 
@@ -56,7 +56,8 @@ impl ReconnectClock for ScriptedClock {
     fn now(&self) -> Instant {
         let mut script = self.script.lock().unwrap_or_else(PoisonError::into_inner);
         let fallback = script.fallback;
-        self.base + script.offsets.pop_front().unwrap_or(fallback)
+        let offset = script.offsets.pop_front().unwrap_or(fallback);
+        self.base.checked_add(offset).unwrap_or(self.base)
     }
 }
 
@@ -118,7 +119,7 @@ pub(super) struct Capture {
 }
 
 impl Capture {
-    pub(super) fn new(effects: Effects) -> Self {
+    pub(super) const fn new(effects: Effects) -> Self {
         Self { effects }
     }
 }

@@ -1,22 +1,18 @@
-use std::sync::{Arc, PoisonError};
-use std::time::Duration;
-
 use betterlite_db::auth_reconnect::engine::EngineState;
-use betterlite_db::auth_reconnect::policy::AuthReconnect;
-use betterlite_db::auth_reconnect::request::{ReconnectHistory, ReconnectRequest};
-use betterlite_db::auth_reconnect::settings::ReconnectSettings;
-use betterlite_db::auth_reconnect::stale::StaleReadEngine;
-use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
-use tracing_subscriber::layer::SubscriberExt as _;
 
 mod fakes;
+mod scenario;
 mod scripted;
 
-use fakes::{Effect, FakeEngine};
-use scripted::{Capture, ScriptedClock, ScriptedLock};
+use fakes::Effect;
+use scenario::run_scenario;
 
 pub(crate) struct Op;
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[serde(transparent)]
+struct Flag(bool);
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -32,14 +28,14 @@ struct Scenario {
     clock: Vec<f64>,
     last_attempt: f64,
     failures: u32,
-    dead: bool,
+    dead: Flag,
     failed: Vec<FailedInput>,
     database_url: Option<String>,
     generations: Generations,
     reader_unavailable: bool,
     routing: bool,
     engine_state: EngineStateInput,
-    bump_writer_generation_on_probe: bool,
+    bump_writer_generation_on_probe: Flag,
     request: RequestInput,
     stale: Option<StaleInput>,
     lock: LockScript,
@@ -144,12 +140,12 @@ pub(super) struct LockScript {
 #[derive(Debug, Serialize)]
 struct Report {
     name: String,
-    result: bool,
+    result: Flag,
     effects: Vec<Effect>,
     failures: u32,
-    dead: bool,
-    failed_writer: bool,
-    failed_reader: bool,
+    dead: Flag,
+    failed_writer: Flag,
+    failed_reader: Flag,
 }
 
 fn failure<Error>(error: Error) -> Box<crate::helpers::HelperError>
@@ -181,89 +177,4 @@ impl crate::helpers::Helper for Op {
             .collect::<Result<Vec<_>, _>>()?;
         serde_json::to_value(reports).map_err(failure)
     }
-}
-
-fn run_scenario(
-    scenario: &Scenario,
-    runtime: &tokio::runtime::Runtime,
-) -> Result<Report, Box<crate::helpers::HelperError>> {
-    let effects = fakes::effects();
-    let engine = FakeEngine::new(
-        fakes::EngineScript {
-            writer_generation: scenario.generations.writer,
-            reader_generation: scenario.generations.reader,
-            routing: scenario.routing,
-            reader_unavailable: scenario.reader_unavailable,
-            engine_state: scenario.engine_state.state(),
-            probe: scenario.writer_read_only.clone(),
-            recreate: scenario.recreate.clone(),
-            select: scenario.select_one.clone(),
-            bump_on_probe: scenario.bump_writer_generation_on_probe,
-        },
-        Arc::clone(&effects),
-    );
-    let clock = ScriptedClock::from_values(&scenario.clock)?;
-    let lock = ScriptedLock::new(&scenario.lock, Arc::clone(&effects));
-    let last_attempt = Duration::try_from_secs_f64(scenario.last_attempt)
-        .map_err(|_error| failure("last_attempt is nonnegative seconds"))?;
-    let failed_repairs = scenario
-        .failed
-        .iter()
-        .map(|repair| (engine.report_handle(repair.target), repair.generation))
-        .collect();
-    let history = ReconnectHistory {
-        last_attempt: Some(clock.at(last_attempt)),
-        consecutive_failures: scenario.failures,
-        engine_dead: scenario.dead,
-        failed_repairs,
-    };
-    let settings = ReconnectSettings {
-        cooldown: Duration::from_secs(scenario.settings.cooldown_seconds),
-        escalation_threshold: scenario.settings.escalation_threshold,
-        watchdog_timeout: Duration::from_millis(scenario.settings.watchdog_timeout_ms),
-        auth_timeout: Duration::from_millis(scenario.settings.auth_timeout_ms),
-        auth_lock_timeout: Duration::from_millis(scenario.settings.auth_lock_timeout_ms),
-    };
-    let database_url = scenario.database_url.clone().map(SecretString::from);
-    let policy = AuthReconnect::new(engine.clone(), settings, clock, lock, history);
-    let stale = scenario.stale.as_ref().and_then(|stale| {
-        StaleReadEngine::observe(&engine.observation(stale.target, stale.generation))
-    });
-    let request = ReconnectRequest {
-        reason: &scenario.request.reason,
-        force: scenario.request.force,
-        force_recreate: scenario.request.force_recreate,
-        timeout: scenario.request.timeout_ms.map(Duration::from_millis),
-        lock_timeout: scenario.request.lock_timeout_ms.map(Duration::from_millis),
-        database_url: database_url.as_ref(),
-    };
-    let subscriber = tracing_subscriber::registry().with(Capture::new(Arc::clone(&effects)));
-    let result = tracing::subscriber::with_default(subscriber, || {
-        runtime.block_on(policy.attempt_db_reconnect(&request, stale.as_ref()))
-    });
-    let snapshot = policy.snapshot();
-    let reader_target = if scenario.routing {
-        TargetName::Reader
-    } else {
-        TargetName::Writer
-    };
-    let effects = effects
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
-    Ok(Report {
-        name: scenario.name.clone(),
-        result,
-        effects,
-        failures: snapshot.consecutive_failures,
-        dead: snapshot.engine_dead,
-        failed_writer: policy.has_failed_repair_for(
-            &engine.report_handle(TargetName::Writer),
-            engine.current_generation(TargetName::Writer),
-        ),
-        failed_reader: policy.has_failed_repair_for(
-            &engine.report_handle(reader_target),
-            engine.current_generation(reader_target),
-        ),
-    })
 }
