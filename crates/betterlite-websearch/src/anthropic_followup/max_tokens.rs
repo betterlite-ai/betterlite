@@ -25,7 +25,7 @@ pub fn resolve_max_tokens(
     let Some(budget_tokens) = budget_tokens(optional_params)? else {
         return Ok(max_tokens);
     };
-    if !needs_bump(max_tokens, budget_tokens) {
+    if !num_traits::cast::<u64, f64>(max_tokens).is_some_and(|max| max <= budget_tokens) {
         return Ok(max_tokens);
     }
     let adjusted = adjusted_max_tokens(budget_tokens)?;
@@ -63,10 +63,6 @@ fn budget_tokens(optional_params: &JsonMap) -> Result<Option<f64>, AnthropicFoll
         return Ok(None);
     }
     Ok(Some(budget))
-}
-
-fn needs_bump(max_tokens: u64, budget_tokens: f64) -> bool {
-    num_traits::cast::<u64, f64>(max_tokens).is_some_and(|max| max <= budget_tokens)
 }
 
 fn adjusted_max_tokens(budget_tokens: f64) -> Result<u64, AnthropicFollowupError> {

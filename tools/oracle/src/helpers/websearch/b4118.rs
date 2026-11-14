@@ -198,7 +198,7 @@ fn run_case(case: &Case) -> Result<Value, Box<crate::helpers::HelperError>> {
 
 fn tools_dict(case: &Case) -> ToolsDict {
     ToolsDict {
-        tool_calls: calls(case),
+        tool_calls: case.tool_calls.iter().map(ToolCall::to_call).collect(),
         tool_type: "websearch",
         provider: "anthropic".to_owned(),
         response_format: "anthropic",
@@ -236,10 +236,6 @@ where
         .build()
         .map_err(failure)?
         .block_on(future)
-}
-
-fn calls(case: &Case) -> Vec<Call> {
-    case.tool_calls.iter().map(ToolCall::to_call).collect()
 }
 
 fn rate_limit(message: &str) -> SearchFailure {
