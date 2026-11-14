@@ -40,7 +40,7 @@ pub(crate) async fn accounts_named_by_member_value(
     let subject = value.trim_matches(is_strip_whitespace);
     let client = store.session().await?;
     let rows = client
-        .query(ACCOUNTS_NAMED_SQL, &[&value, &subject, &subject])
+        .query(ACCOUNTS_NAMED_SQL, &[&value, &subject])
         .await
         .map_err(|driver| ScimMemberIdentityError::Database {
             source: backend(driver),
