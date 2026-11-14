@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use axum::Router;
 use axum::body::{Body, Bytes};
 use axum::http::{HeaderMap, StatusCode, Uri};
+use betterlite_http::proxy::limits::ReadError;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use secrecy::SecretString;
 use tokio::net::TcpListener;
@@ -20,7 +21,7 @@ use super::project::ResolvedProject;
 use super::tokens::ArmorTokens;
 use super::wire::Source;
 use super::wire::{SanitizeBody, TextPrompt};
-use super::{ModelArmorTransport, file_body, text_body};
+use super::{MAX_RESPONSE_BYTES, ModelArmorTransport, file_body, text_body};
 use crate::model_armor::decisions::should_block_content;
 use crate::model_armor::file_scanning::ByteDataType;
 
@@ -555,6 +556,22 @@ async fn error_non_utf8_body_is_a_response_text_error() {
     assert!(matches!(
         result,
         Err(ArmorCallError::Transport(TransportError::ResponseText(_)))
+    ));
+}
+
+#[tokio::test]
+async fn error_response_above_one_mib_is_a_body_error() {
+    let body = "a".repeat(MAX_RESPONSE_BYTES + 1);
+    let (endpoint, _captured, _server) = serve(Reply::ok(&body)).await;
+    let transport = transport(Some(&endpoint), StubTokens::new(None));
+    let result = transport
+        .make_model_armor_request(Some("hello"), Source::UserPrompt, None)
+        .await;
+    assert!(matches!(
+        result,
+        Err(ArmorCallError::Transport(TransportError::Body(
+            ReadError::TooLarge { limit }
+        ))) if limit == MAX_RESPONSE_BYTES
     ));
 }
 
