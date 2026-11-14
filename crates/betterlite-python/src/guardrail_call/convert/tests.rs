@@ -542,8 +542,7 @@ fn inputs_read_texts_and_accept_null() {
     let inputs = present.unwrap();
     assert_eq!(inputs.texts, Some(vec!["a".to_owned()]));
     assert_eq!(inputs.model.as_deref(), Some("gpt"));
-    let error: CallError =
-        read::<Option<GuardrailApiInputs>>("guardrail inputs", "[]").unwrap_err();
+    let error: CallError = read::<Option<GuardrailApiInputs>>("guardrail inputs", "1").unwrap_err();
     assert_eq!(error.kind(), "InvalidJson");
 }
 
