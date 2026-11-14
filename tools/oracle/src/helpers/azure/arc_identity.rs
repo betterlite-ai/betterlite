@@ -5,8 +5,8 @@ use std::sync::Mutex;
 
 use betterlite_azure::azure_arc_identity::error::ArcIdentityError;
 use betterlite_azure::azure_arc_identity::{
-    ArcHost, ArcIdentity, ArcPlatform, ArcRequest, ArcResponse, ArcTransport, acquire_arc_token,
-    select_arc_endpoint,
+    ArcHost, ArcIdentity, ArcPlatform, ArcTransport, MetadataRequest, MetadataResponse,
+    acquire_arc_token, select_arc_endpoint,
 };
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::azure_arc_identity::Settings;
@@ -113,12 +113,12 @@ struct Recording {
 }
 
 impl ArcTransport for Recording {
-    fn get(&self, request: &ArcRequest) -> io::Result<ArcResponse> {
+    fn get(&self, request: &MetadataRequest) -> io::Result<MetadataResponse> {
         let params: BTreeMap<_, _> = request.query.iter().cloned().collect();
         let headers: BTreeMap<_, _> = request
             .headers
             .iter()
-            .map(|(name, value)| (*name, value.expose_secret()))
+            .map(|(name, value)| (name.as_str(), value.expose_secret()))
             .collect();
         self.requests
             .lock()
@@ -130,7 +130,7 @@ impl ArcTransport for Recording {
             .map_err(|error| io::Error::other(error.to_string()))?
             .pop_front()
             .ok_or_else(|| io::Error::other("no reply queued"))?;
-        Ok(ArcResponse {
+        Ok(MetadataResponse {
             status: reply.status,
             headers: reply.headers.into_iter().collect(),
             body: SecretString::from(reply.body),

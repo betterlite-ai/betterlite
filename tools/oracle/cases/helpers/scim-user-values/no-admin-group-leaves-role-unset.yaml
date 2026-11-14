@@ -1,0 +1,17 @@
+kind: helper
+name: no-admin-group-leaves-role-unset
+call:
+  scim_user_values:
+    user:
+      schemas:
+        - urn:ietf:params:scim:schemas:core:2.0:User
+      userName: carol
+      groups:
+        - value: team-7
+          display: SCIM Admins
+    admin_group: null
+    default_role: internal_user
+    active: null
+env: {}
+compare:
+  ignore: []

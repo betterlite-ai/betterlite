@@ -1,0 +1,22 @@
+kind: helper
+name: passthrough-guardrail-extract-with-field-expressions
+call:
+  b3573:
+    scenarios:
+      - function: extract
+        data:
+          query: hello
+          documents:
+            - text: first
+            - text: second
+        field_expressions: [query, "documents[*].text"]
+      - function: extract
+        data:
+          a: x
+        field_expressions: [absent, a]
+      - function: extract
+        data:
+          a: ""
+        field_expressions: [a]
+env: {}
+compare: {ignore: []}

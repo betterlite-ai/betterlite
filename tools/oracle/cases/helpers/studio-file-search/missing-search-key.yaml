@@ -1,0 +1,11 @@
+kind: helper
+name: missing-search-key
+call:
+  studio_file_search:
+    calls:
+      - function: search
+        vector_store_id: fileSearchStores/store-1
+        query: hello
+        environment: {}
+env: {}
+compare: {ignore: []}
