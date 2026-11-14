@@ -63,13 +63,15 @@ fn a_paid_tier_multiplies_the_text_records_exactly() {
 #[rstest]
 #[case::unpriced(None, None)]
 #[case::free_tier(Some(CostTier::Free), None)]
+#[case::paid_without_a_count(Some(CostTier::Paid), Some(Decimal::new(5, 1)))]
+#[case::unpriced_with_a_price(None, Some(Decimal::new(5, 1)))]
 fn a_missing_text_record_count_bills_zero(
     #[case] cost_tier: Option<CostTier>,
     #[case] price: Option<Decimal>,
 ) {
     let units = BTreeMap::from([("requests".to_owned(), 3_i64)]);
     let cost = azure_prompt_shield_cost(&units, cost_tier.map(CostTier::wire_name), price).unwrap();
-    let expected = if cost_tier == Some(CostTier::Free) {
+    let expected = if cost_tier == Some(CostTier::Free) || price.is_some() {
         Some(Decimal::ZERO)
     } else {
         None
