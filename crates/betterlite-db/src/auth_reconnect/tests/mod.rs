@@ -98,6 +98,7 @@ fn decline_script() -> EngineScript {
     script.probes.push_back(ProbeOutcome::Value(true));
     script.probes.push_back(ProbeOutcome::Value(true));
     script.probes.push_back(ProbeOutcome::Value(true));
+    script.probes.push_back(ProbeOutcome::Value(true));
     script
         .recreates
         .push_back(RecreateOutcome::Failure("first".to_owned()));
