@@ -23,7 +23,7 @@ fn record() -> Value {
         "scopes": [scope()],
         "backend": "redis",
         "owner": "",
-        "reserved_at_monotonic": 12.5,
+        "reserved_at_monotonic": 12.5_f64,
     })
 }
 
@@ -37,7 +37,7 @@ fn terminal_post_call_refunds_the_stored_record() {
             "pending": {
                 "tokens": 500_i64,
                 "scopes": [scope()],
-                "reserved_at_monotonic": 12.5,
+                "reserved_at_monotonic": 12.5_f64,
             },
         },
         "redis": {
@@ -46,7 +46,7 @@ fn terminal_post_call_refunds_the_stored_record() {
             "refund": [{"kind": "done"}],
         },
         "memory": {},
-        "now": 20.0,
+        "now": 20.0_f64,
     }));
     assert_eq!(
         answer["outcome"],
