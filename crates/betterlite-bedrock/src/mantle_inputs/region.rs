@@ -44,6 +44,14 @@ pub fn resolve_region(
     Ok(fallback_region(globals))
 }
 
+#[must_use]
+pub fn is_mantle_host(base: &str) -> bool {
+    Regex::new(MANTLE_HOST_PATTERN)
+        .ok()
+        .and_then(|pattern| pattern.is_match(base).ok())
+        .unwrap_or(false)
+}
+
 fn region_from_host(base: &str) -> Option<String> {
     let pattern = Regex::new(MANTLE_HOST_PATTERN).ok()?;
     let captures = pattern.captures(base.trim_end_matches('/')).ok()??;

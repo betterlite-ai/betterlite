@@ -74,7 +74,6 @@ fn restore_original_model(error: ResponseParamsError, model: &str) -> ResponsePa
                 model: model.to_owned(),
             }
         }
-        other => other,
     }
 }
 

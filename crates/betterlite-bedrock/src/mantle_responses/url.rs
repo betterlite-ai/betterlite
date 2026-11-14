@@ -1,7 +1,5 @@
-use fancy_regex::Regex;
-
 use crate::mantle_inputs::records::MantleGlobals;
-use crate::mantle_inputs::region::resolve_region;
+use crate::mantle_inputs::region::{is_mantle_host, resolve_region};
 use crate::mantle_responses::config::MantleResponsesConfig;
 use crate::mantle_responses::error::MantleResponsesError;
 
@@ -16,8 +14,6 @@ pub const BASE_SUFFIXES_TO_STRIP: [&str; 5] = [
 
 const OPENAI_RESPONSES_PATH: &str = "/openai/v1/responses";
 const RESPONSES_PATH: &str = "/v1/responses";
-// Python's `$` also matches before one trailing newline, so the lookahead spells both ends out.
-const MANTLE_HOST_PATTERN: &str = r"(?i)^https?://bedrock-mantle\.([^/.]+)\.api\.aws(?=/|\n?\z)";
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CompleteUrlParams<'text> {
@@ -60,11 +56,4 @@ fn strip_base_suffix(base: &str) -> &str {
         }
     }
     base
-}
-
-fn is_mantle_host(base: &str) -> bool {
-    Regex::new(MANTLE_HOST_PATTERN)
-        .ok()
-        .and_then(|pattern| pattern.is_match(base).ok())
-        .unwrap_or(false)
 }

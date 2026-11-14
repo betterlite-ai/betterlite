@@ -1234,6 +1234,7 @@ dependencies = [
  "betterlite-anthropic",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-core",
  "betterlite-env",
  "betterlite-http",
  "betterlite-logging",
