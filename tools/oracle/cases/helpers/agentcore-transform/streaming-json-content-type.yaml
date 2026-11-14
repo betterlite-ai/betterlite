@@ -1,0 +1,36 @@
+kind: helper
+name: agentcore-transform-streaming-json-content-type
+call:
+  b4804:
+    {
+      "function": "streaming",
+      "request_id": "req-1",
+      "params": {
+        "message": {
+          "kind": "message",
+          "role": "user",
+          "parts": [
+            {
+              "kind": "text",
+              "text": "hello"
+            }
+          ],
+          "messageId": "msg-1"
+        }
+      },
+      "litellm_params": {
+        "model": "bedrock/agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime",
+        "api_key": "jwt-token",
+        "runtimeSessionId": "ssssssssssssssssssssssssssssssssssssssss"
+      },
+      "agent_extra_headers": null,
+      "answer": {
+        "status": 200,
+        "content_type": "application/json; charset=utf-8",
+        "lines": [
+          "{\"jsonrpc\": \"2.0\", \"id\": \"1\", \"result\": {\"kind\": \"message\"}}"
+        ]
+      }
+    }
+env: {}
+compare: {ignore: []}
