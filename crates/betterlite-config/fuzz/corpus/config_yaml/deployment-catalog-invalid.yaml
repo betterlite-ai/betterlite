@@ -1,0 +1,5 @@
+router_settings:
+  model_group_alias:
+    gpt: 4
+    fast:
+      hidden: maybe

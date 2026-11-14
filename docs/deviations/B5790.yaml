@@ -1,0 +1,17 @@
+task: B5790
+deviations:
+  - what: The TypedDicts use typing.TypedDict with the optional keys in a total=False base class, and no key is marked read-only.
+    why: The wheel supports Python 3.10, where Required, NotRequired and ReadOnly are not in typing; the task keeps typing_extensions out of this package, and ReadOnly is a type-checker hint with no runtime effect.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/exceptions/exceptions.py#L22-L45
+  - what: AnthropicErrorDetail.message is typed as JsonValue rather than str.
+    why: The Bedrock branch returns detail.message exactly as parsed, which LiteLLM types as str but can be any JSON value; coercing it would change the body the caller reads, so the annotation says what the code returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/exceptions/exception_mapping_utils.py#L85-L86
+  - what: JSON parsing catches ValueError and RecursionError, where LiteLLM's safe_json_loads catches every Exception.
+    why: These are the failures json.loads raises for a str, including JSONDecodeError, the integer-conversion ValueError and the deep-nesting RecursionError, so a body it cannot parse falls back to the raw message as in LiteLLM; catching MemoryError as well would hide a process that is out of memory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_loads.py#L9-L16
+  - what: AnthropicErrorSseFrame declares __slots__ for status_code and error_response, so a caller cannot set another attribute on a frame.
+    why: The wheel's ruff rules require __slots__ on a str subclass, and the frame's two attributes are the ones LiteLLM sets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/exceptions/exception_mapping_utils.py#L172-L195
+  - what: This task has no helper oracle cases.
+    why: The pytest module imports LiteLLM and betterlite and compares them directly, and a helper adapter speaks to Rust functions rather than to an installed wheel.
+    link: ""

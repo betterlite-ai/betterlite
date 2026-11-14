@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-resources-seed-compact-query
+call:
+  openai_response_resources:
+    compact_keeps_query:
+      probes:
+        - {endpoint: compact, model: gpt-4o, input: hi, api_base: 'https://api.openai.com/v1?api-version=2025-01-01'}
+env: {}
+compare: {ignore: []}

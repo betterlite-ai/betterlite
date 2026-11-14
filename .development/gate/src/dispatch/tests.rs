@@ -219,6 +219,7 @@ fn a_restarted_dispatch_goes_on_from_the_saved_rung() {
         git_common_dir: folder.path(),
         home: folder.path(),
         writable: &[],
+        net: folder.path(),
     };
     let mut saved = progress();
     saved.feedback = vec!["the saved findings".to_owned()];
@@ -358,6 +359,7 @@ fn a_rung_pauses_without_a_run_while_every_vendor_it_can_use_is_at_its_limit() {
         git_common_dir: folder.path(),
         home: folder.path(),
         writable: &[],
+        net: folder.path(),
     };
     let mut progress = progress();
     let error = run_ladder(&agents, &brief, &places, &mut progress, 0).unwrap_err();
@@ -489,6 +491,7 @@ fn a_dispatch_stopped_by_a_usage_limit_keeps_its_place() {
         git_common_dir: folder.path(),
         home: folder.path(),
         writable: &[],
+        net: folder.path(),
     };
     let mut saved = progress();
     saved.feedback = vec!["the saved findings".to_owned()];
@@ -523,6 +526,7 @@ fn no_rung_runs_once_the_worker_attempts_are_used_up() {
         git_common_dir: folder.path(),
         home: folder.path(),
         writable: &[],
+        net: folder.path(),
     };
     let mut progress = progress();
     progress.used = agents.policy.max_worker_attempts;
@@ -669,6 +673,7 @@ fn places(folder: &Path) -> Places<'_> {
         git_common_dir: folder,
         home: folder,
         writable: &[],
+        net: folder,
     }
 }
 
@@ -1029,6 +1034,45 @@ fn a_granted_start_runs_on_a_stand_in_while_the_last_rung_vendor_is_limited() {
             ladder[last].attempts
         )
     );
+}
+
+#[test]
+fn a_granted_start_runs_on_a_stand_in_while_a_limited_vendor_holds_every_open_rung() {
+    let (mut agents, task) = fixtures();
+    answer_with(&mut agents, "not a report");
+    let folder = tempfile::tempdir().unwrap();
+    worktree(folder.path());
+    mark(
+        folder.path(),
+        "openai",
+        "ERROR: You've hit your usage limit.",
+    )
+    .unwrap();
+    let chain = Chain::new(&agents).unwrap();
+    let ladder = &agents.roles.worker.ladder;
+    let last = ladder.len() - 1;
+    let luna = ladder
+        .iter()
+        .position(|rung| rung.model == "gpt-6-luna")
+        .unwrap();
+    let mut progress = progress();
+    progress.used = agents.policy.max_worker_attempts;
+    progress.rung = luna;
+    progress.starts = ladder.iter().map(|rung| rung.attempts).collect();
+    progress.starts[luna] = 0;
+    progress.starts[last] = 0;
+    let before = progress.starts.clone();
+    let places = places(folder.path());
+    let ungranted = chain.pick(&places, &progress, &chain.links[luna]).unwrap();
+    assert!(ungranted.is_none());
+    run_ladder(&agents, &brief(&task), &places, &mut progress, 2).unwrap_err();
+    let grown: Vec<usize> = (0..ladder.len())
+        .filter(|&index| progress.starts[index] > before[index])
+        .collect();
+    assert_eq!(progress.used, agents.policy.max_worker_attempts + 2);
+    assert_eq!(grown.len(), 1);
+    assert_ne!(ladder[grown[0]].runner, ladder[luna].runner);
+    assert_eq!(progress.starts[grown[0]], before[grown[0]] + 2);
 }
 
 fn claude_answers(agents: &mut Agents, report: &str) {

@@ -466,3 +466,17 @@ path = "fuzz_targets/voxtral_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "xai_uploads"
+path = "fuzz_targets/xai_uploads.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_response_resources"
+path = "fuzz_targets/openai_response_resources.rs"
+test = false
+doc = false
+bench = false

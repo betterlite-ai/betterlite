@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-resources-seed-include
+call:
+  openai_response_resources:
+    include_comma_query:
+      probes:
+        - {endpoint: list, response_id: r, api_base: 'https://h/v1', include: [input_text, output_text]}
+env: {}
+compare: {ignore: []}

@@ -1,14 +1,14 @@
 id: B3678
 milestone: M6 guardrails
 title: Bedrock passthrough guardrail translation and event streams
-status: todo
+status: done
 depends_on: [B5471]
 file: tasks/B3678-bedrock-passthrough-guardrail.yaml
 covers:
   - "litellm/llms/bedrock/passthrough/guardrail_translation/handler.py"
 parent: B104
 split_from: B104
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1537

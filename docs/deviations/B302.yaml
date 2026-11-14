@@ -1,0 +1,5 @@
+task: B302
+deviations:
+  - what: A deployment id whose single deployment is emptied by the reservation filter answers 400 with the no-healthy-deployments message for the deployment's model.
+    why: LiteLLM indexes [0] of the filtered list and fails with an IndexError that surfaces as a 500, and no working setup can rely on that crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12767-L12782

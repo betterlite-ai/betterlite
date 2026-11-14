@@ -1,0 +1,32 @@
+kind: helper
+name: bedrock-passthrough-output-texts
+call:
+  b3678:
+    function: output_texts
+    endpoint: ""
+    response:
+      output:
+        message:
+          role: assistant
+          content:
+            - text: answer
+              reasoningContent:
+                reasoningText: {text: thought, signature: signature}
+            - skip
+            - toolUse:
+                input: {q: tool input, r: second}
+            - citationsContent:
+                content:
+                  - text: cited
+                    source: source
+                  - skip
+                citations:
+                  - source: never scanned
+            - reasoningContent:
+                redactedContent: {text: never scanned}
+      stopReason: end_turn
+    request_data:
+      model: anthropic.claude-v2
+    returned_texts: [R0, R1, R2, R3, R4]
+env: {}
+compare: {ignore: []}

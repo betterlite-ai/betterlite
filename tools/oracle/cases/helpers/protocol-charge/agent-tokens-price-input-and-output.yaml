@@ -1,0 +1,15 @@
+kind: helper
+name: agent-tokens-price-input-and-output
+call:
+  protocol_charge:
+    function: a2a
+    a2a:
+      response_cost: null
+      cost_per_query: null
+      input_cost_per_token: 0.5
+      output_cost_per_token: 0.25
+      usage: tokens
+      prompt_tokens: 100
+      completion_tokens: 50
+env: {}
+compare: {ignore: []}

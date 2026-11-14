@@ -1,0 +1,18 @@
+kind: helper
+name: bedrock-passthrough-stream-rounding
+call:
+  b3678:
+    function: stream
+    frames:
+      - event_type: contentBlockDelta
+        payload: {delta: {text: a}}
+      - event_type: contentBlockDelta
+        payload: {delta: {text: b}}
+      - event_type: contentBlockDelta
+        payload: {delta: {toolUse: {input: c}}}
+      - event_type: contentBlockDelta
+        payload: {delta: {toolUse: {input: d}}}
+    replace: {ab: "12345", cd: "1234567"}
+    trailing_hex: ""
+env: {}
+compare: {ignore: []}

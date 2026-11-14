@@ -1,0 +1,19 @@
+kind: helper
+name: forced-purpose-and-clock
+call:
+  xai_files:
+    env: {XAI_API_BASE: "https://env.example/v1"}
+    xai_key: module-key
+    steps:
+      - {step: auth, api_key: null}
+      - {step: auth, api_key: explicit-key}
+      - {step: url, api_base: null, target: collection, file_id: null}
+      - step: reply
+        parse: file
+        api_base: null
+        now: 1700000500
+        status: 200
+        body: '{"id": "file-a", "purpose": "assistants", "status": "processed", "created_at": 11}'
+      - {step: reply, parse: file, api_base: null, now: 1700000900, status: 200, body: '{"id": "file-b"}'}
+env: {}
+compare: {ignore: []}

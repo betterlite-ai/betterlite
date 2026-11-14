@@ -1,0 +1,21 @@
+kind: helper
+name: list-stop-and-delete-default
+call:
+  xai_files:
+    env: {}
+    xai_key: null
+    steps:
+      - {step: reply, parse: next, api_base: null, now: 1700000000, status: 200, body: '{"data": [{"id": "f1"}], "pagination_token": "tok"}'}
+      - {step: reply, parse: list, api_base: null, now: 1700000000, status: 200, body: '{"data": [{"id": "f1"}], "pagination_token": "tok"}'}
+      - {step: reply, parse: next, api_base: "https://p.example/v1", now: 1700000100, status: 200, body: '{"data": [], "pagination_token": "tok"}'}
+      - {step: reply, parse: next, api_base: null, now: 1700000200, status: 200, body: '{"data": [{"id": "f2"}], "pagination_token": ""}'}
+      - {step: reply, parse: next, api_base: null, now: 1700000300, status: 200, body: "nope"}
+      - {step: reply, parse: next, api_base: null, now: 1700000300, status: 500, body: '{"data": [{"id": "f3"}], "pagination_token": "t"}'}
+      - {step: reply, parse: list, api_base: null, now: 1700000300, status: 500, body: '{"data": []}'}
+      - {step: reply, parse: list, api_base: null, now: 1700000400, status: 200, body: "{}"}
+      - {step: reply, parse: deleted, api_base: null, now: 0, status: 200, body: '{"id": "file-1"}'}
+      - {step: reply, parse: deleted, api_base: null, now: 0, status: 200, body: '{"id": "file-2", "deleted": false}'}
+      - {step: reply, parse: deleted, api_base: null, now: 0, status: 200, body: "not json"}
+      - {step: reply, parse: deleted, api_base: null, now: 0, status: 401, body: "no"}
+env: {}
+compare: {ignore: []}

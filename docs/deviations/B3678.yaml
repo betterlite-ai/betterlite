@@ -1,0 +1,20 @@
+task: B3678
+deviations:
+  - what: Texts that sit in one JSON object with several string keys (inside toolUse.input, toolResult json or additionalModelRequestFields) reach the guardrail in sorted key order, and a rewritten frame's payload keys are written in sorted order.
+    why: Request bodies are BTreeMap values in betterlite and keep no insertion order. The write back stays consistent with the order sent, so the result is the same except for the order of texts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/guardrail_translation/handler.py#L49-L73
+  - what: Non-Converse endpoints return Routed::Generic instead of calling the generic passthrough handler inside this module.
+    why: The generic handler is B3573's, and B3574 owns the dispatcher that already depends on it. The caller makes the same call LiteLLM makes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/guardrail_translation/handler.py#L432-L437
+  - what: The event-stream rewrite takes its frame reader from the aws-smithy-eventstream crate, not botocore.
+    why: Same CRC checks and header parsing, from a maintained crate that betterlite-bedrock already uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/guardrail_translation/handler.py#L290-L303
+  - what: A guardrail that replaces data["data"] while it runs has its returned texts written into the new body when a recorded path still ends at a text there, where LiteLLM writes into the dict objects it recorded before the call and the returned body stays unwritten.
+    why: Betterlite records a path instead of a Python reference that outlives the call. The task defines the write back over the current data["data"], and a guardrail that swaps the body is outside what a working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/guardrail_translation/handler.py#L179-L193
+  - what: The debug line for a post call hook answer that is not an object names the answer's JSON kind (null, boolean, number, string, list, dict) instead of the Python class name.
+    why: Rust has no Python class to name, and docs/compatibility.md keeps Python's repr and type text out of the port.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/guardrail_translation/handler.py#L356-L362
+  - what: A hook answer whose content block text is not a string leaves the event stream unmodified, where LiteLLM collects the value and then raises TypeError when it slices it.
+    why: The type is outside the declared response shape, and a working setup cannot rely on the hook raising through the handler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/guardrail_translation/handler.py#L364-L383
