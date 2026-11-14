@@ -1,0 +1,11 @@
+kind: helper
+name: oci-chat-supported-params-by-vendor
+call:
+  b5843:
+    function: supported
+    models:
+      - meta.llama-3.3-70b-instruct
+      - cohere.command-r
+      - OCI/Cohere.command-r-plus
+env: {}
+compare: {ignore: []}

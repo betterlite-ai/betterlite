@@ -122,3 +122,10 @@ path = "fuzz_targets/snowflake_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "oci_chat_bytes"
+path = "fuzz_targets/oci_chat_bytes.rs"
+test = false
+doc = false
+bench = false

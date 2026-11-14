@@ -1,0 +1,13 @@
+kind: helper
+name: oci-chat-vendor-from-model
+call:
+  b5843:
+    function: vendor
+    models:
+      - oci/Cohere.command-r
+      - OCI/Cohere.command-r
+      - meta.llama-3.3-70b-instruct
+      - oci/openai.gpt-5
+      - ""
+env: {}
+compare: {ignore: []}

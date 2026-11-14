@@ -1,0 +1,4 @@
+data: {"apiFormat":"COHERE","index":0,"text":"hi"}
+data: {"apiFormat":"COHERE","index":0,"text":"hi","chatHistory":[]}
+data: {"apiFormat":"COHERE","index":0,"text":"","finishReason":"COMPLETE"}
+data: [DONE]
