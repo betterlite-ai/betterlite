@@ -84,7 +84,10 @@ where
         chunk: SseChunk,
         queue: &ClientQueue<E>,
         registry: &Arc<StreamRegistry>,
-    ) -> Step {
+    ) -> Step
+    where
+        E: Send + Sync,
+    {
         self.logging.record_first_chunk();
         let decoded = match Self::decode(&chunk, &self.boundaries) {
             Ok(decoded) => decoded,
@@ -138,24 +141,24 @@ where
         if self.drain.is_some() {
             return Step::Continue;
         }
-        match registry.claim_drain(self.max_detached_stream_drains) {
-            Some(drain) => {
-                self.drain = Some(drain);
-                Step::Continue
-            }
-            None => {
-                tracing::warn!(
-                    "async_sse_wrapper: detached-drain cap ({}) reached; billing {} partial chunks and aborting the upstream stream to stop provider billing",
-                    self.max_detached_stream_drains,
-                    self.collected.len()
-                );
-                self.bill(true);
-                Step::Abort
-            }
+        if let Some(drain) = registry.claim_drain(self.max_detached_stream_drains) {
+            self.drain = Some(drain);
+            Step::Continue
+        } else {
+            tracing::warn!(
+                "async_sse_wrapper: detached-drain cap ({}) reached; billing {} partial chunks and aborting the upstream stream to stop provider billing",
+                self.max_detached_stream_drains,
+                self.collected.len()
+            );
+            self.bill(true);
+            Step::Abort
         }
     }
 
-    async fn complete<E>(&mut self, queue: &ClientQueue<E>) {
+    async fn complete<E>(&mut self, queue: &ClientQueue<E>)
+    where
+        E: Send + Sync,
+    {
         if queue.client_detached.load(Ordering::SeqCst) {
             self.bill(true);
             return;
@@ -174,7 +177,7 @@ where
         }
     }
 
-    async fn failed<E>(&mut self, queue: &ClientQueue<E>, error: E)
+    async fn failed<E>(&self, queue: &ClientQueue<E>, error: E)
     where
         E: Clone + Send + Sync + 'static,
         ReportedFailure: From<E>,
@@ -193,12 +196,15 @@ where
         self.logging.fire_detached_failure_hook(&reported).await;
     }
 
-    async fn limit_reached<E>(&mut self, queue: &ClientQueue<E>, failure: ReportedFailure) -> Step {
-        let event = error_sse_event(&failure.message, &self.boundaries);
+    async fn limit_reached<E>(&self, queue: &ClientQueue<E>, failure: ReportedFailure) -> Step
+    where
+        E: Send + Sync,
+    {
+        let encoded = error_sse_event(&failure.message, &self.boundaries);
         self.schedule_failure(failure).await;
-        match event {
-            Ok(event) => {
-                let _queued = queue.enqueue(QueueItem::Chunk(event)).await;
+        match encoded {
+            Ok(frame) => {
+                let _queued = queue.enqueue(QueueItem::Chunk(frame)).await;
             }
             Err(error) => {
                 tracing::warn!(

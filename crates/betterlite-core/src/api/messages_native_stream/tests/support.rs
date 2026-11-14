@@ -24,7 +24,7 @@ use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, Duration as Seconds, FixedOffset};
 use indexmap::IndexMap;
-use tokio::sync::{Notify, mpsc};
+use tokio::sync::{Notify, Semaphore, mpsc};
 use tokio_util::task::TaskTracker;
 use tracing::subscriber::{DefaultGuard, set_default};
 
@@ -41,7 +41,7 @@ use crate::api::messages_stream_logging::seams::{
     StreamSeams,
 };
 use crate::api::messages_stream_logging::slots::{
-    DeferredCallback, Fields, HookFailure, PostCallFailureHook, StreamSlots,
+    DeferredCallback, DetachedFailureHook, Fields, StreamSlots,
 };
 use crate::api::messages_stream_logging::{SseChunk, StreamDeps};
 
@@ -69,12 +69,12 @@ pub(super) enum Command {
 
 pub(super) struct Script {
     commands: mpsc::Receiver<Command>,
-    delivered: mpsc::Sender<()>,
+    delivered: Arc<Semaphore>,
 }
 
 pub(super) struct ScriptHandle {
     commands: mpsc::Sender<Command>,
-    delivered: mpsc::Receiver<()>,
+    delivered: Arc<Semaphore>,
     pulls: Arc<AtomicUsize>,
 }
 
@@ -97,8 +97,8 @@ impl ScriptHandle {
         }
     }
 
-    pub(super) async fn await_delivery(&mut self) {
-        self.delivered.recv().await.expect("the pump reports");
+    pub(super) async fn await_delivery(&self) {
+        let _permit = self.delivered.acquire().await.expect("the pump reports");
     }
 
     pub(super) fn pulls(&self) -> usize {
@@ -107,7 +107,7 @@ impl ScriptHandle {
 
     async fn send(&self, command: Command) {
         self.commands.send(command).await.expect("the pump reads");
-        self.delivered.recv().await.expect("the pump reports");
+        self.await_delivery().await;
     }
 }
 
@@ -136,7 +136,7 @@ impl MessagesChunkSource for ScriptedSource {
     async fn next_sse_chunk(&mut self) -> Result<Option<SseChunk>, ProviderError> {
         let next = self.script.commands.recv().await;
         self.pulls.fetch_add(1, Ordering::SeqCst);
-        let _delivered = self.script.delivered.send(()).await;
+        self.script.delivered.add_permits(1);
         match next {
             Some(Command::Chunk(chunk)) => Ok(Some(chunk)),
             Some(Command::Fail(error)) => Err(error),
@@ -375,20 +375,20 @@ impl Harness {
 
 fn scripted_source() -> (ScriptedSource, ScriptHandle, Arc<AtomicBool>) {
     let (commands, receiver) = mpsc::channel(16);
-    let (delivered, reported) = mpsc::channel(16);
+    let delivered = Arc::new(Semaphore::new(0));
     let pulls = Arc::new(AtomicUsize::new(0));
     let closed = Arc::new(AtomicBool::new(false));
     let source = ScriptedSource {
         script: Script {
             commands: receiver,
-            delivered,
+            delivered: Arc::clone(&delivered),
         },
         pulls: Arc::clone(&pulls),
         closed: Arc::clone(&closed),
     };
     let script = ScriptHandle {
         commands,
-        delivered: reported,
+        delivered,
         pulls,
     };
     (source, script, closed)
@@ -489,8 +489,11 @@ pub(super) struct RecordingHook {
 }
 
 #[async_trait]
-impl PostCallFailureHook for RecordingHook {
-    async fn post_call_failure(&self, exception: &ReportedFailure) -> Result<(), HookFailure> {
+impl DetachedFailureHook for RecordingHook {
+    async fn on_detached_failure(
+        &self,
+        exception: &ReportedFailure,
+    ) -> Result<(), ReportedFailure> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

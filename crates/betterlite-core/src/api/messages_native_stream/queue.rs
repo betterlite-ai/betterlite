@@ -29,6 +29,7 @@ impl<E> ClientQueue<E> {
     pub(super) fn detach(&self) {
         self.client_detached.store(true, Ordering::SeqCst);
         self.detach.notify_one();
+        self.space.notify_one();
     }
 
     pub(super) fn close(&self) {
@@ -39,17 +40,19 @@ impl<E> ClientQueue<E> {
         self.data.notify_one();
     }
 
-    pub(super) async fn next(&self) -> Option<QueueItem<E>> {
+    pub(super) async fn next(&self) -> Option<QueueItem<E>>
+    where
+        E: Send + Sync,
+    {
         loop {
-            let closed = {
-                let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-                if let Some(item) = state.items.pop_front() {
-                    drop(state);
-                    self.space.notify_one();
-                    return Some(item);
-                }
-                state.closed
-            };
+            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            let item = state.items.pop_front();
+            let closed = state.closed;
+            drop(state);
+            if let Some(item) = item {
+                self.space.notify_one();
+                return Some(item);
+            }
             if closed {
                 return None;
             }
@@ -58,32 +61,34 @@ impl<E> ClientQueue<E> {
     }
 
     // Python's _enqueue_for_client: a full queue waits on space or detach, and a completed put wins
-    pub(super) async fn enqueue(&self, mut item: QueueItem<E>) -> bool {
+    pub(super) async fn enqueue(&self, item: QueueItem<E>) -> bool
+    where
+        E: Send + Sync,
+    {
         if self.client_detached.load(Ordering::SeqCst) {
             return false;
         }
         loop {
-            {
-                let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-                if state.items.len() < self.capacity {
-                    state.items.push_back(item);
-                    drop(state);
-                    self.data.notify_one();
-                    return true;
-                }
+            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            if state.items.len() < self.capacity {
+                state.items.push_back(item);
+                drop(state);
+                self.data.notify_one();
+                return true;
             }
+            drop(state);
             if self.client_detached.load(Ordering::SeqCst) {
                 return false;
             }
-            tokio::select! {
-                biased;
-                () = self.space.notified() => {}
-                () = self.detach.notified() => {}
-            }
+            // a detach notifies the same wait, so the next turn takes the false branch above
+            self.space.notified().await;
         }
     }
 
-    pub(super) async fn wait_detached(&self) {
+    pub(super) async fn wait_detached(&self)
+    where
+        E: Send + Sync,
+    {
         let notified = self.detach.notified();
         if self.client_detached.load(Ordering::SeqCst) {
             return;

@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::sync::Arc;
-use std::task::Poll;
 
 use betterlite_logging::passthrough_stream_logging::types::EndpointType;
 use betterlite_models::decisions::Json;
@@ -129,7 +128,7 @@ async fn a_missing_hook_is_harmless() {
 
 // the queue stays full while the client is connected, so this enqueue only loses to the detach
 async fn a_refused_failure_enqueue_fires_the_hook() {
-    let (harness, mut relay) = Harness::start(limits(1), Arc::new(StreamRegistry::default()));
+    let (harness, relay) = Harness::start(limits(1), Arc::new(StreamRegistry::default()));
     let hook = arm_hook(&harness);
     harness.script.release(SseChunk::Bytes(frame("one"))).await;
     let pump = pump_of(&relay);

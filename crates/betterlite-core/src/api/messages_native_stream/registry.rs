@@ -64,7 +64,7 @@ impl StreamRegistry {
         })
     }
 
-    fn set(&self, kind: SlotKind) -> &Mutex<BTreeSet<usize>> {
+    const fn set(&self, kind: SlotKind) -> &Mutex<BTreeSet<usize>> {
         match kind {
             SlotKind::Pump => &self.pumps,
             SlotKind::Drain => &self.drains,

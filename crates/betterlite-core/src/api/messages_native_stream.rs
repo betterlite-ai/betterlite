@@ -98,11 +98,14 @@ pub struct ClientRelay<S: StreamSeams, E> {
     teardown: MessagesStreamLogging<S>,
     reached_end: bool,
     // dropping the tracker never aborts the pump; a caller that waits holds this tracker
-    pump: Arc<TaskTracker>,
+    pub pump: Arc<TaskTracker>,
 }
 
 impl<S: StreamSeams, E> ClientRelay<S, E> {
-    pub async fn next_client_chunk(&mut self) -> Result<Option<Vec<u8>>, Arc<E>> {
+    pub async fn next_client_chunk(&mut self) -> Result<Option<Vec<u8>>, Arc<E>>
+    where
+        E: Send + Sync,
+    {
         match self.queue.next().await {
             Some(QueueItem::Chunk(bytes)) => Ok(Some(bytes)),
             Some(QueueItem::End) => {
@@ -166,11 +169,14 @@ where
 }
 
 // The teardown copy shares the pump's logger and slots, so a lost sentinel can still dispatch
-fn teardown_logging<S: StreamSeams>(
+fn teardown_logging<S>(
     logging: &StreamDeps<S>,
     logging_obj: Arc<StreamLoggingObject>,
     request_body: &IndexMap<String, Json>,
-) -> MessagesStreamLogging<S> {
+) -> MessagesStreamLogging<S>
+where
+    S: StreamSeams,
+{
     MessagesStreamLogging::new(
         StreamDeps {
             seams: Arc::clone(&logging.seams),
@@ -184,13 +190,17 @@ fn teardown_logging<S: StreamSeams>(
     )
 }
 
-fn relay_pump<S: StreamSeams, F: StreamFailureLogging>(
+const fn relay_pump<S, F>(
     logging: MessagesStreamLogging<S>,
     failure_logging: Arc<F>,
     request_body: IndexMap<String, Json>,
     boundaries: ApiLimits,
     limits: RelayLimits,
-) -> Pump<S, F> {
+) -> Pump<S, F>
+where
+    S: StreamSeams,
+    F: StreamFailureLogging,
+{
     let budget = RetentionBudget {
         max_bytes: boundaries.max_json_bytes,
         max_chunks: boundaries.max_items,
