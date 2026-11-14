@@ -11,7 +11,7 @@ call:
         body: '{"name":"projects/p/locations/l/ragCorpora/b","labels":[1,2]}'
       - function: create_response
         status: 200
-        body: '{"name":"projects/p/locations/l/ragCorpora/c","labels":null,"display_name":null}'
+        body: '{"name":"projects/p/locations/l/ragCorpora/c","labels":null}'
       - function: create_response
         status: 200
         body: '{"name":"projects/p/locations/l/ragCorpora/d","labels":{"team":"rag"}}'

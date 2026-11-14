@@ -1,42 +1,26 @@
 from datetime import UTC, datetime
-from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
+from typing import Final, Literal, NotRequired, TypedDict
 
 import httpx
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.vertex_ai.vector_stores.rag_api.transformation import VertexVectorStoreConfig
+from litellm.types.vector_stores import (
+    VectorStoreCreateOptionalRequestParams,
+    VectorStoreSearchOptionalRequestParams,
+)
 from pydantic import JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
-
-Object: TypeAlias = dict[str, JsonValue]
-Headers: TypeAlias = dict[str, str]
 
 CONFIG: Final = VertexVectorStoreConfig()
 JSON: Final = TypeAdapter(JsonValue)
 
 
-# the optional params the RAG transform reads, typed so no case input reaches it unvalidated
-class SearchParams(TypedDict, total=False):
-    filters: dict[str, JsonValue] | None
-    max_num_results: int | None
-    ranking_options: dict[str, JsonValue] | None
-    rewrite_query: bool | None
-
-
-class CreateParams(TypedDict, total=False):
-    name: str | None
-    metadata: dict[str, str] | None
-
-
-SEARCH_PARAMS: Final = TypeAdapter(SearchParams)
-CREATE_PARAMS: Final = TypeAdapter(CreateParams)
-
-
-class ResponseCall(TypedDict):
+class Reply(TypedDict):
     status: int
     body: str
-    headers: NotRequired[Headers]
+    headers: NotRequired[dict[str, str]]
 
 
 class SearchCall(TypedDict):
@@ -44,32 +28,30 @@ class SearchCall(TypedDict):
     vector_store_id: str
     query: str | list[str]
     api_base: str
-    litellm_params: NotRequired[Object]
-    optional_params: NotRequired[Object]
-    response: NotRequired[ResponseCall]
+    litellm_params: NotRequired[dict[str, JsonValue]]
+    optional_params: NotRequired[VectorStoreSearchOptionalRequestParams]
+    response: NotRequired[Reply]
 
 
 class CreateRequestCall(TypedDict):
     function: Literal["create_request"]
     api_base: str
-    optional_params: NotRequired[Object]
+    optional_params: NotRequired[VectorStoreCreateOptionalRequestParams]
 
 
 class CreateResponseCall(TypedDict):
     function: Literal["create_response"]
     status: int
     body: str
-    headers: NotRequired[Headers]
-
-
-Call: TypeAlias = SearchCall | CreateRequestCall | CreateResponseCall
+    headers: NotRequired[dict[str, str]]
 
 
 class Input(TypedDict):
-    calls: list[Call]
+    calls: list[SearchCall | CreateRequestCall | CreateResponseCall]
 
 
-INPUT: Final = TypeAdapter(Input)
+def reply_of(status: int, body: str, headers: dict[str, str] | None) -> httpx.Response:
+    return httpx.Response(status, headers=headers, content=body.encode())
 
 
 def logging_object() -> Logging:
@@ -84,63 +66,44 @@ def logging_object() -> Logging:
     )
 
 
-def search_results(logging: Logging, response: ResponseCall) -> JsonValue:
-    reply = httpx.Response(
-        response["status"],
-        headers=response.get("headers"),
-        content=response["body"].encode(),
-    )
-    return JSON.validate_python(CONFIG.transform_search_vector_store_response(reply, logging))  # type: ignore[misc]  # pyright: ignore[reportAny]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vector_stores/rag_api/transformation.py#L218
-
-
 def search_outcome(call: SearchCall) -> JsonValue:
-    raw_params = call.get("optional_params")
-    search_params = SEARCH_PARAMS.validate_python(SearchParams() if raw_params is None else raw_params)
-    raw_litellm_params = call.get("litellm_params")
-    litellm_params = Object() if raw_litellm_params is None else dict(raw_litellm_params)
     logging = logging_object()
+    optional = call.get("optional_params")
+    litellm_params = call.get("litellm_params")
     url, body = CONFIG.transform_search_vector_store_request(
         vector_store_id=call["vector_store_id"],
         query=call["query"],
-        vector_store_search_optional_params=search_params,
+        vector_store_search_optional_params=VectorStoreSearchOptionalRequestParams()
+        if optional is None
+        else optional,
         api_base=call["api_base"],
         litellm_logging_obj=logging,
-        litellm_params=litellm_params,
+        litellm_params={} if litellm_params is None else litellm_params,
     )
     outcome: dict[str, JsonValue] = {"url": url, "body": JSON.validate_python(body)}
     response = call.get("response")
     if response is not None:
-        outcome["results"] = search_results(logging, response)
+        reply = reply_of(response["status"], response["body"], response.get("headers"))
+        outcome["results"] = JSON.validate_python(
+            CONFIG.transform_search_vector_store_response(reply, logging)
+        )
     return outcome
 
 
-def create_request_outcome(call: CreateRequestCall) -> JsonValue:
-    raw_params = call.get("optional_params")
-    create_params = CREATE_PARAMS.validate_python(CreateParams() if raw_params is None else raw_params)
-    url, body = CONFIG.transform_create_vector_store_request(
-        vector_store_create_optional_params=create_params,
-        api_base=call["api_base"],
-    )
-    return {"url": url, "body": JSON.validate_python(body)}
-
-
-def create_response_outcome(call: CreateResponseCall) -> JsonValue:
-    reply = httpx.Response(
-        call["status"],
-        headers=call.get("headers"),
-        content=call["body"].encode(),
-    )
-    return {"created": JSON.validate_python(CONFIG.transform_create_vector_store_response(reply))}
-
-
-def resolve(call: Call) -> JsonValue:
+def resolve(call: SearchCall | CreateRequestCall | CreateResponseCall) -> JsonValue:
     if call["function"] == "search":
         return search_outcome(call)
     if call["function"] == "create_request":
-        return create_request_outcome(call)
-    return create_response_outcome(call)
+        optional = call.get("optional_params")
+        params = VectorStoreCreateOptionalRequestParams() if optional is None else optional
+        url, body = CONFIG.transform_create_vector_store_request(
+            vector_store_create_optional_params=params,
+            api_base=call["api_base"],
+        )
+        return {"url": url, "body": JSON.validate_python(body)}
+    reply = reply_of(call["status"], call["body"], call.get("headers"))
+    return {"created": JSON.validate_python(CONFIG.transform_create_vector_store_response(reply))}
 
 
-def run(input_value: JsonValue) -> JsonValue:
-    parsed = INPUT.validate_python(input_value)
-    return {"calls": [resolve(call) for call in parsed["calls"]]}
+def run(input_value: Input) -> JsonValue:
+    return {"calls": [resolve(call) for call in input_value["calls"]]}
