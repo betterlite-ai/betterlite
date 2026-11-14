@@ -295,7 +295,7 @@ async fn deployment_hook_merge() {
         assert_eq!(calls[0].0.get("model"), Some(&text("gpt-4o")));
         assert_eq!(calls[0].0.get("input"), Some(&text("hello")));
         assert_eq!(calls[0].0.get("custom_llm_provider"), Some(&text("openai")));
-    }
+    };
     deployment_hook_failure().await;
     deployment_hook_merge_preserves_missing_and_skips_without_override().await;
 }
