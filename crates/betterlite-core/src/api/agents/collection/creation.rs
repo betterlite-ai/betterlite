@@ -75,15 +75,9 @@ where
     let mut kwargs = call.kwargs.clone();
     kwargs.insert(CREATE_ASYNC_FLAG.to_owned(), Json::Bool(true));
     let delegation = AgentCreation {
-        name: call.name,
-        base_agent: call.base_agent,
-        instructions: call.instructions,
-        base_environment: call.base_environment,
         custom_llm_provider: Some(call.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER)),
-        extra_headers: call.extra_headers,
-        extra_body: call.extra_body,
-        timeout: call.timeout,
         kwargs: &kwargs,
+        ..call
     };
     match create(collection, delegation)? {
         AgentCollectionHandled::Done(output) => Ok(output),

@@ -145,11 +145,9 @@ pub(super) fn provider_of<'values>(
 
 // LiteLLM's kwargs.pop(name, False): the operation's own flag never reaches the params a provider sees
 fn without_flag(kwargs: &IndexMap<String, Json>, name: &str) -> IndexMap<String, Json> {
-    kwargs
-        .iter()
-        .filter(|(field, _value)| field.as_str() != name)
-        .map(|(field, value)| (field.clone(), value.clone()))
-        .collect()
+    let mut kept = kwargs.clone();
+    kept.shift_remove(name);
+    kept
 }
 
 fn params_of(kwargs: &IndexMap<String, Json>) -> Params {

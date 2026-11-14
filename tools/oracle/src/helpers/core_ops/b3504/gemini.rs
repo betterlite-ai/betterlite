@@ -12,7 +12,7 @@ use betterlite_vertex::studio_agents::error::StudioAgentError;
 use betterlite_vertex::studio_agents::headers::AgentHeaders;
 use betterlite_vertex::studio_agents::headers::validate_environment;
 use betterlite_vertex::studio_agents::request::{AgentParams, BaseEnvironment, create_agent_body};
-use betterlite_vertex::studio_agents::urls::{AgentTarget, collection_target, item_target};
+use betterlite_vertex::studio_agents::urls::{collection_target, item_target};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde_json::Value;
@@ -41,33 +41,23 @@ impl AgentFailure for AgentError {
             Self::Studio(_) | Self::Params | Self::Shape | Self::Json(_) => None,
         }
     }
-
     fn message(&self) -> String {
         match self {
             Self::Studio(StudioAgentError::Gemini { body, .. }) => body.clone(),
             Self::Refused { message, .. } => message.clone(),
-            Self::Studio(source) => source.to_string(),
-            Self::Params | Self::Shape | Self::Json(_) => self.to_string(),
+            other => other.to_string(),
         }
     }
 }
 
 // Gemini's native agents API as B1392 implements it, wired to the call pipeline the way LiteLLM's config is
+#[derive(Default)]
 pub(crate) struct GeminiConfig {
     settings: Settings,
 }
 
-impl GeminiConfig {
-    pub(crate) fn new() -> Self {
-        Self {
-            settings: Settings::default(),
-        }
-    }
-}
-
 impl ErrorClasses for GeminiConfig {
     type Error = AgentError;
-
     fn get_error_class(
         &self,
         message: &str,
@@ -80,12 +70,10 @@ impl ErrorClasses for GeminiConfig {
         }
     }
 }
-
 impl AgentsApiConfig for GeminiConfig {
     type CreateOutput = Value;
     type ListOutput = Value;
     type GetOutput = Value;
-
     fn validate_environment(
         &self,
         headers: &std::collections::BTreeMap<String, String>,
@@ -95,7 +83,6 @@ impl AgentsApiConfig for GeminiConfig {
             validate_environment(headers, &agent_params(litellm_params)?, &self.settings)?;
         Ok(validated.into_iter().collect())
     }
-
     fn get_complete_url(
         &self,
         _api_base: &str,
@@ -103,7 +90,6 @@ impl AgentsApiConfig for GeminiConfig {
     ) -> Result<String, AgentError> {
         Ok(collection_target(&agent_params(litellm_params)?, &self.settings).url)
     }
-
     fn transform_create_request(
         &self,
         name: &str,
@@ -112,7 +98,6 @@ impl AgentsApiConfig for GeminiConfig {
         let body = create_agent_body(name, &agent_params(litellm_params)?);
         Ok(serde_json::from_value(serde_json::to_value(body)?)?)
     }
-
     fn transform_create_response(
         &self,
         response: &UpstreamResponse,
@@ -120,7 +105,6 @@ impl AgentsApiConfig for GeminiConfig {
     ) -> Result<Value, AgentError> {
         agent_value(response, AgentOperation::Create, name)
     }
-
     fn transform_list_request(
         &self,
         _api_base: &str,
@@ -128,14 +112,12 @@ impl AgentsApiConfig for GeminiConfig {
     ) -> Result<PreparedRequest, AgentError> {
         request_of(None, litellm_params, &self.settings)
     }
-
     fn transform_list_response(&self, response: &UpstreamResponse) -> Result<Value, AgentError> {
         match decoded(response, AgentOperation::List, "")? {
             AgentPayload::Agents(page) => Ok(serde_json::to_value(page)?),
             AgentPayload::Agent(_) | AgentPayload::Versions(_) => Err(AgentError::Shape),
         }
     }
-
     fn transform_get_request(
         &self,
         name: &str,
@@ -144,7 +126,6 @@ impl AgentsApiConfig for GeminiConfig {
     ) -> Result<PreparedRequest, AgentError> {
         request_of(Some(name), litellm_params, &self.settings)
     }
-
     fn transform_get_response(
         &self,
         response: &UpstreamResponse,
@@ -165,7 +146,6 @@ fn agent_value(
         AgentPayload::Agents(_) | AgentPayload::Versions(_) => Err(AgentError::Shape),
     }
 }
-
 // a get names one agent, a list names none, and both carry the page query their target builds
 fn request_of(
     name: Option<&str>,
@@ -177,31 +157,21 @@ fn request_of(
         Some(agent) => item_target(agent, &params, settings),
         None => collection_target(&params, settings),
     };
-    Ok(target_request(target))
-}
-
-// the request a target builds: the URL's page query becomes the prepared params, and a get target has none
-fn target_request(target: AgentTarget) -> PreparedRequest {
-    PreparedRequest {
+    Ok(PreparedRequest {
         url: target.url,
         params: target
             .query
             .into_iter()
-            .map(|(name, value)| (name, JsonValue::Text(value)))
+            .map(|(field, value)| (field, JsonValue::Text(value)))
             .collect(),
-    }
+    })
 }
-
 fn decoded(
     response: &UpstreamResponse,
     operation: AgentOperation,
     name: &str,
 ) -> Result<AgentPayload, AgentError> {
-    let headers: IndexMap<String, String> = response
-        .headers
-        .iter()
-        .map(|(field, value)| (field.clone(), value.clone()))
-        .collect();
+    let headers: IndexMap<String, String> = response.headers.clone().into_iter().collect();
     let raw = RawResponse {
         status: response.status_code,
         headers: &headers,
@@ -209,7 +179,6 @@ fn decoded(
     };
     Ok(decode_studio_agent_payload(&raw, operation, name)?.payload)
 }
-
 fn agent_params(litellm_params: &Params) -> Result<AgentParams, AgentError> {
     Ok(AgentParams {
         api_key: text(litellm_params, "api_key")?.map(SecretString::from),
@@ -221,7 +190,6 @@ fn agent_params(litellm_params: &Params) -> Result<AgentParams, AgentError> {
         page_token: text(litellm_params, "page_token")?,
     })
 }
-
 fn text(params: &Params, name: &str) -> Result<Option<String>, AgentError> {
     match params.get(name) {
         None | Some(JsonValue::Null) => Ok(None),
@@ -229,7 +197,6 @@ fn text(params: &Params, name: &str) -> Result<Option<String>, AgentError> {
         Some(_other) => Err(AgentError::Params),
     }
 }
-
 fn base_environment(value: Option<&JsonValue>) -> Result<Option<BaseEnvironment>, AgentError> {
     match value {
         None | Some(JsonValue::Null) => Ok(None),
@@ -238,7 +205,6 @@ fn base_environment(value: Option<&JsonValue>) -> Result<Option<BaseEnvironment>
         )?)?)),
     }
 }
-
 fn page_size(value: Option<&JsonValue>) -> Result<Option<i64>, AgentError> {
     match value {
         None | Some(JsonValue::Null) => Ok(None),

@@ -7,6 +7,7 @@ use std::thread;
 use std::time::Duration;
 
 use serde_json::{Value, json};
+use url::form_urlencoded;
 
 use super::Reply;
 use super::helper_failure;
@@ -44,12 +45,9 @@ impl Server {
     }
 
     pub(crate) fn records(&self, extra: &BTreeSet<String>) -> Vec<Value> {
-        let received = self
-            .requests
+        self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        received
             .iter()
             .map(|sent| request_record(sent, extra))
             .collect()
@@ -75,7 +73,6 @@ fn serve(listener: &TcpListener, answer: &[u8], requests: &Mutex<Vec<String>>, s
         }
     }
 }
-
 fn answer_once(mut stream: TcpStream, answer: &[u8], requests: &Mutex<Vec<String>>) {
     let _blocking = stream.set_nonblocking(false);
     let _deadline = stream.set_read_timeout(Some(READ_TIMEOUT));
@@ -96,7 +93,6 @@ fn response(status: u16, body: &Value) -> Vec<u8> {
     )
     .into_bytes()
 }
-
 fn read_request(stream: &mut TcpStream) -> IoResult<String> {
     let mut received = Vec::new();
     let mut chunk = [0_u8; 1024];
@@ -116,7 +112,6 @@ fn read_request(stream: &mut TcpStream) -> IoResult<String> {
         }
     }
 }
-
 fn content_length(head: &[u8]) -> usize {
     let Ok(text) = str::from_utf8(head) else {
         return 0;
@@ -147,8 +142,7 @@ fn request_record(sent: &str, extra: &BTreeSet<String>) -> Value {
             name == "content-type" || name == "x-goog-api-key" || extra.contains(name)
         })
         .collect();
-    let parsed = serde_json::from_str::<Value>(body).unwrap_or(Value::Null);
-    let body = if body.is_empty() { Value::Null } else { parsed };
+    let body = serde_json::from_str::<Value>(body).unwrap_or_default();
     json!({
         "method": method,
         "path": path,
@@ -159,9 +153,7 @@ fn request_record(sent: &str, extra: &BTreeSet<String>) -> Value {
 }
 
 fn query_map(query: &str) -> BTreeMap<String, String> {
-    query
-        .split('&')
-        .filter_map(|pair| pair.split_once('='))
-        .map(|(name, value)| (name.to_owned(), value.to_owned()))
+    form_urlencoded::parse(query.as_bytes())
+        .into_owned()
         .collect()
 }

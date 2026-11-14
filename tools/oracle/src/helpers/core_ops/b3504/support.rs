@@ -47,7 +47,7 @@ pub(crate) struct Fixture {
 impl Fixture {
     pub(crate) fn new() -> Result<Self, Box<HelperError>> {
         Ok(Self {
-            config: GeminiConfig::new(),
+            config: GeminiConfig::default(),
             clients: HttpClients::new(policy(), proxy_policy()?),
             logging: logging_state()?,
             records: Recorder,
@@ -72,10 +72,8 @@ pub(crate) struct Recorder;
 
 impl AgentLogging for Recorder {
     fn pre_call(&mut self, _call: AgentPreCall<'_>) {}
-
     fn post_call(&mut self, _call: AgentPostCall<'_>) {}
 }
-
 pub(crate) fn logging_state() -> Result<LoggingState, Box<HelperError>> {
     let mut context = CorrelationContext::default();
     LoggingState::new(
@@ -122,8 +120,7 @@ fn policy() -> TlsPolicy {
 }
 
 fn proxy_policy() -> Result<Arc<ProxyPolicy>, Box<HelperError>> {
-    let environment = BTreeMap::new();
-    ProxyPolicy::resolve(&ProxyTrust::default(), &environment)
+    ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
         .map(Arc::new)
         .map_err(helper_failure)
 }
