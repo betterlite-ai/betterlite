@@ -243,7 +243,7 @@ fn an_unknown_config_key_is_unsupported() {
     let source = "model_list:\n  - model_name: router\n    litellm_params:\n      adaptive_router_config:\n        available_models: [fast]\n        fallback_model: slow\n";
     let error = settings(source, &[]).unwrap_err();
     assert!(
-        error.contains("adaptive_router_config.fallback_model"),
+        error.contains("adaptive_router_config.?.fallback_model"),
         "{error}"
     );
 }
@@ -253,7 +253,7 @@ fn an_unknown_preference_key_is_unsupported() {
     let source = "model_list:\n  - model_name: fast\n    model_info:\n      adaptive_router_preferences:\n        quality_tier: 2\n        confidence: 0.9\n";
     let error = settings(source, &[]).unwrap_err();
     assert!(
-        error.contains("adaptive_router_preferences.confidence"),
+        error.contains("adaptive_router_preferences.?.confidence"),
         "{error}"
     );
 }
