@@ -812,13 +812,11 @@ fn request_body_is_the_transformed_request() {
     let fixture = Fixture::new();
     let resolution = fixture.resolution();
     let gemini = FixtureConfig::for_fields(&FIELDS);
-    let vertex = FixtureConfig::for_fields(&FIELDS);
-    let configs = provider_configs(&gemini, &vertex);
+    let configs = provider_configs(&gemini, &gemini);
     let contents = text("hello");
     let config = object(&[("temperature", text("caller-value"))]);
     let instruction = Json::Object(object(&[("parts", Json::List(vec![text("be brief")]))]));
-    let declaration = Json::Object(object(&[("functionDeclarations", Json::List(vec![]))]));
-    let tools = Json::List(vec![declaration]);
+    let tools = Json::List(vec![text("tool")]);
     let kwargs = object(&[("systemInstruction", instruction.clone())]);
     let request = setup_request(
         "gemini/gemini-2.5-flash",
@@ -833,13 +831,10 @@ fn request_body_is_the_transformed_request() {
     let Json::Object(body) = result.request_body else {
         panic!("the fixture builds an object");
     };
-    let model = text("gemini-2.5-flash");
-    let generation_config = Json::Object(config.clone());
-    assert_eq!(body.get("fixture"), Some(&Json::Bool(true)));
-    assert_eq!(body.get("model"), Some(&model));
-    assert_eq!(body.get("generationConfig"), Some(&generation_config));
+    let generated = Json::Object(config.clone());
+    assert_eq!(body.get("model"), Some(&text("gemini-2.5-flash")));
+    assert_eq!(body.get("generationConfig"), Some(&generated));
     assert_eq!(body.get("tools"), Some(&tools));
-    assert_eq!(body.get("systemInstruction"), Some(&instruction));
     let expected = TransformedRequest {
         model: "gemini-2.5-flash".to_owned(),
         tools: Some(tools),

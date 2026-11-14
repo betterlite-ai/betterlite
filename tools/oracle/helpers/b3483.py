@@ -4,7 +4,7 @@ from typing import TypedDict
 from litellm.google_genai import main as g
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.google_genai.transformation import (
-    BaseGoogleGenAIGenerateContentConfig,
+    BaseGoogleGenAIGenerateContentConfig as BaseConfig,
 )
 from litellm.llms.gemini.google_genai.transformation import GoogleGenAIConfig
 from litellm.llms.vertex_ai.google_genai.transformation import VertexAIGoogleGenAIConfig
@@ -127,14 +127,14 @@ def setup_answer(call: SetupCall) -> JsonValue:
         **call["kwargs"],
     )
     native = OBJECT.validate_python(result.native_request_fields)
+    provider_config = result.generate_content_provider_config
     provider_kind: str | None = None
-    match result.generate_content_provider_config:
-        case None:
-            provider_kind = None
-        case VertexAIGoogleGenAIConfig() | GoogleGenAIConfig() as known:
-            provider_kind = known.custom_llm_provider
-        case BaseGoogleGenAIGenerateContentConfig():
-            provider_kind = None
+    if provider_config is not None:
+        match provider_config:
+            case VertexAIGoogleGenAIConfig() | GoogleGenAIConfig() as known:
+                provider_kind = known.custom_llm_provider
+            case BaseConfig():
+                provider_kind = None
     return {
         "model": result.model,
         "provider": result.custom_llm_provider,
