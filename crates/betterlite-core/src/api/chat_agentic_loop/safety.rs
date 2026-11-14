@@ -52,7 +52,7 @@ pub(crate) fn json_text(value: &Json) -> String {
             parts.sort_unstable_by_key(|(key, _)| *key);
             let fields: Vec<String> = parts
                 .iter()
-                .map(|(key, value)| format!("{}:{}", quote(key), value))
+                .map(|(key, value)| format!("{}:{value}", quote(key)))
                 .collect();
             format!("{{{}}}", fields.join(","))
         }

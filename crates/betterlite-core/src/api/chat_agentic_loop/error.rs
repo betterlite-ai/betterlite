@@ -37,5 +37,5 @@ where
     #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error(transparent)]
-    Completion(#[source] Source),
+    Completion(Source),
 }

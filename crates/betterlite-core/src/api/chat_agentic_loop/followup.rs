@@ -83,11 +83,10 @@ where
         .agentic_loop_cleanup(call.plan, call.kwargs)
         .await
     {
+        let call_id = call.logging.call_id();
+        let log_model = call.model;
         tracing::error!(
-            "LiteLLM.AgenticHookError: Exception in async_agentic_loop_cleanup_hook [call_id={} model={}]: {}",
-            call.logging.call_id(),
-            call.model,
-            error
+            "LiteLLM.AgenticHookError: Exception in async_agentic_loop_cleanup_hook [call_id={call_id} model={log_model}]: {error}"
         );
     }
     outcome
@@ -132,11 +131,10 @@ where
     {
         Ok(hooked) => hooked,
         Err(error) => {
+            let call_id = call.logging.call_id();
+            let log_model = call.model;
             tracing::error!(
-                "LiteLLM.AgenticHookError: Exception in async_post_agentic_loop_response_hook [call_id={} model={}]: {}",
-                call.logging.call_id(),
-                call.model,
-                error
+                "LiteLLM.AgenticHookError: Exception in async_post_agentic_loop_response_hook [call_id={call_id} model={log_model}]: {error}"
             );
             original
         }
@@ -183,7 +181,7 @@ where
     let request_params = request_param_names(params);
     let request_kwargs = filtered_kwargs(call.kwargs);
     let patch = call.plan.request_patch.as_ref();
-    let patch_kwargs = patch.map_or_else(JsonMap::new, |patch| filtered_kwargs(&patch.kwargs));
+    let patch_kwargs = patch.map_or_else(JsonMap::new, |patched| filtered_kwargs(&patched.kwargs));
     let request_values = key_values(&request_kwargs);
     let patch_values = key_values(&patch_kwargs);
     let projection = build_agentic_followup_kwargs(&AgenticFollowupInput {
@@ -206,7 +204,7 @@ where
             kwargs.insert(key.clone(), to_raw_value(&kwarg_json(value))?);
         }
     }
-    with_metadata(kwargs)
+    Ok(with_metadata(kwargs)?)
 }
 
 fn request_param_names(params: &JsonMap) -> BTreeSet<String> {

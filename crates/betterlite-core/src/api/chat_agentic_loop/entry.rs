@@ -95,8 +95,7 @@ where
         Ok(step) => Ok(step),
         Err(error) => {
             tracing::error!(
-                "LiteLLM.AgenticHookError: Exception in chat completion agentic hooks: {}",
-                error
+                "LiteLLM.AgenticHookError: Exception in chat completion agentic hooks: {error}"
             );
             Ok(CallbackStep::Next)
         }
@@ -113,8 +112,7 @@ async fn gate_or_skip(
         Ok(gate) => Some(gate),
         Err(error) => {
             tracing::error!(
-                "LiteLLM.AgenticHookError: Exception in chat completion agentic gate: {}",
-                error
+                "LiteLLM.AgenticHookError: Exception in chat completion agentic gate: {error}"
             );
             None
         }

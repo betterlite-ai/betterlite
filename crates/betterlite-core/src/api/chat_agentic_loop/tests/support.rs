@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_context::agentic_callback::{
-    AgenticCall, AgenticCallback, AgenticGate, AgenticHookError, AgenticLogging, AgenticLoopCall,
-    AgenticOverrides,
+    AgenticCall, AgenticCallback, AgenticFlag, AgenticGate, AgenticHookError, AgenticLogging,
+    AgenticLoopCall, AgenticOverrides,
 };
 use betterlite_context::agentic_loop_plan::{
     AgenticLoopPlan, AgenticLoopRequestPatch, FollowupMessage, JsonMap,
@@ -63,9 +63,9 @@ pub(crate) fn hook_failure(message: &str) -> AgenticHookError {
 }
 
 pub(crate) fn overrides(
-    should_run: bool,
-    build_plan: bool,
-    post_response: bool,
+    should_run: AgenticFlag,
+    build_plan: AgenticFlag,
+    post_response: AgenticFlag,
 ) -> AgenticOverrides {
     AgenticOverrides {
         should_run,
@@ -94,8 +94,8 @@ pub(crate) fn patch(messages: Option<Vec<FollowupMessage>>) -> AgenticLoopReques
 pub(crate) fn plan(
     request_patch: Option<AgenticLoopRequestPatch>,
     response_override: Option<Box<RawValue>>,
-    terminate: bool,
-    run_agentic_loop: bool,
+    terminate: AgenticFlag,
+    run_agentic_loop: AgenticFlag,
 ) -> AgenticLoopPlan {
     AgenticLoopPlan {
         run_agentic_loop,
