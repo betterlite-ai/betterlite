@@ -73,7 +73,8 @@ ResponsesAPIStreamingResponse: TypeAlias = Annotated[
     | OutputTextDoneEvent
     | RefusalDeltaEvent
     | RefusalDoneEvent
-    | FunctionCallArgumentsDeltaEvent  # ast-grep-ignore: no-long-names
+    # ast-grep-ignore: no-long-names
+    | FunctionCallArgumentsDeltaEvent
     | FunctionCallArgumentsDoneEvent
     | FileSearchCallInProgressEvent
     | FileSearchCallSearchingEvent
@@ -89,7 +90,8 @@ ResponsesAPIStreamingResponse: TypeAlias = Annotated[
     | MCPCallArgumentsDoneEvent
     | MCPCallCompletedEvent
     | MCPCallFailedEvent
-    | ImageGenerationPartialImageEvent  # ast-grep-ignore: no-long-names
+    # ast-grep-ignore: no-long-names
+    | ImageGenerationPartialImageEvent
     | ErrorEvent
     | GenericEvent
     | BaseLiteLLMOpenAIResponseObject,  # ast-grep-ignore: no-long-names

@@ -1,7 +1,8 @@
 from collections.abc import Mapping
+from typing import Required
 
 from pydantic import JsonValue
-from typing_extensions import Required, TypedDict
+from typing_extensions import TypedDict
 
 from betterlite.types.llms.openai.chat.tool_choice import (
     ChatCompletionToolChoiceValues,

@@ -1,7 +1,7 @@
-from typing import Literal, TypeAlias
+from typing import Literal, Required, TypeAlias
 
 from pydantic import JsonValue
-from typing_extensions import Required, TypedDict, override
+from typing_extensions import TypedDict, override
 
 from betterlite.types.llms.base import BaseLiteLLMOpenAIResponseObject
 from betterlite.types.llms.openai.core.chat_blocks import (
@@ -34,7 +34,8 @@ class ChatCompletionResponseMessage(TypedDict, total=False):
     thinking_blocks: (
         list[
             ChatCompletionThinkingBlock
-            | ChatCompletionRedactedThinkingBlock  # ast-grep-ignore: no-long-names
+            # ast-grep-ignore: no-long-names
+            | ChatCompletionRedactedThinkingBlock
         ]
         | None
     )

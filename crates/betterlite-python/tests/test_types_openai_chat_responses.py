@@ -163,7 +163,13 @@ import betterlite.types.llms.openai.chat as ours
 import litellm.types.llms.openai as theirs
 
 MAPPED_NAMES = {"ToolParam", "ResponseInputParam", "ResponseIncludable"}
-MAPPED_FIELDS = {"OpenAIChatCompletionChunk": ("service_tier",)}
+MAPPED_FIELDS = {
+    "OpenAIChatCompletionChunk": ("service_tier",),
+    "ComputerToolParam": ("environment", "type"),
+    "ShellToolParam": ("type",),
+    "OpenAIChatCompletionToolParam": ("type",),
+    "ChatCompletionToolParam": ("type",),
+}
 BARE_ALIASES = ["AllEmbeddingInputValues"]
 
 TAGGED = [
@@ -474,7 +480,7 @@ def typeddict_shape(value):
         value.__required_keys__ | value.__optional_keys__,
         value.__required_keys__,
         {},
-        (),
+        MAPPED_FIELDS.get(value.__name__, ()),
     )
     described["kind"] = "typeddict"
     return described

@@ -16,8 +16,8 @@ from betterlite.types.llms.openai.chat.lifecycle_events import (
     ResponseCompletedEvent,
     ResponseCreatedEvent,
     ResponseFailedEvent,
-    ResponseInProgressEvent,
     ResponseIncompleteEvent,
+    ResponseInProgressEvent,
     ResponsesTerminalEvent,
 )
 from betterlite.types.llms.openai.chat.logprobs import (

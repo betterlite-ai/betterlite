@@ -1,7 +1,7 @@
-from typing import Literal
+from typing import Required
 
 from pydantic import JsonValue
-from typing_extensions import ReadOnly, Required, TypedDict
+from typing_extensions import ReadOnly, TypedDict
 
 from betterlite.types.llms.openai.core.chat_blocks import ChatCompletionCachedContent
 
@@ -18,7 +18,7 @@ class ChatCompletionToolParamFunctionChunk(  # ast-grep-ignore: no-long-names
 
 
 class OpenAIChatCompletionToolParam(TypedDict):
-    type: Literal["function"] | str
+    type: str
     function: ChatCompletionToolParamFunctionChunk  # ast-grep-ignore: no-long-names
 
 

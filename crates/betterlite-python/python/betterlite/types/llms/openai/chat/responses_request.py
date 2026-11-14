@@ -1,7 +1,7 @@
-from typing import Literal, TypeAlias
+from typing import Literal, Required, TypeAlias
 
 from pydantic import JsonValue
-from typing_extensions import ReadOnly, Required, TypedDict
+from typing_extensions import ReadOnly, TypedDict
 
 from betterlite.types.llms.openai.core.chat_blocks import PromptCacheOptions
 
@@ -21,12 +21,12 @@ ResponseIncludableValue: TypeAlias = Literal[
 class ComputerToolParam(TypedDict, total=False):
     display_height: Required[float]
     display_width: Required[float]
-    environment: Required[Literal["mac", "windows", "ubuntu", "browser"] | str]
-    type: Required[Literal["computer_use_preview"] | str]
+    environment: Required[str]
+    type: Required[str]
 
 
 class ShellToolParam(TypedDict, total=False):
-    type: Required[Literal["shell"] | str]
+    type: Required[str]
     environment: Required[dict[str, JsonValue]]
 
 

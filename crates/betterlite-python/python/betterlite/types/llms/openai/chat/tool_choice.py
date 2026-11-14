@@ -1,6 +1,6 @@
-from typing import Literal, TypeAlias
+from typing import Literal, Required, TypeAlias
 
-from typing_extensions import Required, TypedDict
+from typing_extensions import TypedDict
 
 
 class ChatCompletionToolChoiceFunctionParam(TypedDict):  # ast-grep-ignore: no-long-names
@@ -16,8 +16,10 @@ ChatCompletionToolChoiceStringValues: TypeAlias = (  # ast-grep-ignore: no-long-
     Literal["none", "auto", "required"]
 )
 ChatCompletionToolChoiceValues: TypeAlias = (
-    ChatCompletionToolChoiceStringValues  # ast-grep-ignore: no-long-names
-    | ChatCompletionToolChoiceObjectParam  # ast-grep-ignore: no-long-names
+    # ast-grep-ignore: no-long-names
+    ChatCompletionToolChoiceStringValues
+    # ast-grep-ignore: no-long-names
+    | ChatCompletionToolChoiceObjectParam
 )
 
 

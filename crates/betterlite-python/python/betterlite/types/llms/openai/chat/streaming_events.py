@@ -95,7 +95,8 @@ class ContentPartDonePartReasoningText(BaseLiteLLMOpenAIResponseObject):
 PART_UNION_TYPES: TypeAlias = (
     ContentPartDonePartOutputText
     | ContentPartDonePartRefusal
-    | ContentPartDonePartReasoningText  # ast-grep-ignore: no-long-names
+    # ast-grep-ignore: no-long-names
+    | ContentPartDonePartReasoningText
 )
 
 
