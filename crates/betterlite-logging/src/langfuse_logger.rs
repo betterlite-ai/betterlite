@@ -9,6 +9,7 @@ use std::time::{Duration, TryFromFloatSecsError};
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::langfuse_settings::Settings;
 use betterlite_http::proxy::ProxiedClient;
+use opentelemetry_sdk::trace::IdGenerator;
 use tokio::runtime::Handle;
 use tokio_util::task::TaskTracker;
 
@@ -40,6 +41,7 @@ pub struct LangfuseServices {
     pub tasks: TaskTracker,
     pub runtime: Handle,
     pub assembly: AssemblyDefaults,
+    pub id_generator: Arc<dyn IdGenerator>,
     pub clients: Arc<dyn LangfuseClientBuilder>,
 }
 

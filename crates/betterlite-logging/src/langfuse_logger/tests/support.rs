@@ -14,9 +14,10 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
+use opentelemetry::trace::{SpanId, TraceId};
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::error::{OTelSdkError, OTelSdkResult};
-use opentelemetry_sdk::trace::{SpanData, SpanExporter};
+use opentelemetry_sdk::trace::{IdGenerator, SpanData, SpanExporter};
 use secrecy::SecretString;
 use tokio::runtime::Handle;
 use tokio_util::task::TaskTracker;
@@ -33,6 +34,7 @@ use crate::langfuse_logger::{
     LangfuseServices, channel_request,
 };
 use crate::langfuse_observations::identity::Timestamp;
+use crate::langfuse_observations::requested_ids::RequestedIdGenerator;
 use crate::langfuse_projections::content::ResponseObj;
 use crate::langfuse_rest::cache::SystemClock;
 use crate::langfuse_rest::client::{LangfuseApiClient, LangfuseClientConfig, LangfuseClientError};
@@ -42,6 +44,9 @@ use crate::langfuse_settings::{
 
 pub(crate) const HOST: &str = "http://127.0.0.1:1";
 pub(crate) const TRACE_ID: &str = "0123456789abcdef0123456789abcdef";
+// the ids FixedIds hands out, and the generation id the response and start time resolve to
+pub(crate) const FIXED_TRACE_ID: &str = "11111111111111111111111111111111";
+pub(crate) const GENERATION_ID: &str = "0b2c3384769faad7";
 
 const PAYLOAD: &str = r#"{
     "id": "chatcmpl-1",
@@ -110,6 +115,20 @@ pub(crate) fn services_with(
     budget: LangfuseClientBudget,
     clients: Arc<dyn LangfuseClientBuilder>,
 ) -> LangfuseServices {
+    services_with_generator(
+        variables,
+        budget,
+        clients,
+        Arc::new(RequestedIdGenerator::default()),
+    )
+}
+
+pub(crate) fn services_with_generator(
+    variables: &[(&str, &str)],
+    budget: LangfuseClientBudget,
+    clients: Arc<dyn LangfuseClientBuilder>,
+    id_generator: Arc<dyn IdGenerator>,
+) -> LangfuseServices {
     let lookup = lookup(variables);
     LangfuseServices {
         settings: settings(variables),
@@ -119,6 +138,7 @@ pub(crate) fn services_with(
         tasks: TaskTracker::new(),
         runtime: Handle::current(),
         assembly: AssemblyDefaults::default(),
+        id_generator,
         clients,
     }
 }
@@ -392,6 +412,19 @@ impl SpanExporter for Recording {
 
     fn set_resource(&mut self, _resource: &Resource) {
         self.state.installed.fetch_add(1, Ordering::AcqRel);
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FixedIds;
+
+impl IdGenerator for FixedIds {
+    fn new_trace_id(&self) -> TraceId {
+        TraceId::from_bytes([0x11; 16])
+    }
+
+    fn new_span_id(&self) -> SpanId {
+        SpanId::from_bytes([0x22; 8])
     }
 }
 

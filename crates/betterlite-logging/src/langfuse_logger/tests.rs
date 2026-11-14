@@ -402,8 +402,11 @@ mod lifecycle_tests {
 }
 
 mod event_dispatch_tests {
+    use std::sync::Arc;
+
     use betterlite_models::decisions::Json;
 
+    use crate::langfuse_logger::budget::LangfuseClientBudget;
     use crate::langfuse_logger::langfuse::{LangFuseLogger, LangfuseLoggedEvent};
 
     use super::support;
@@ -430,7 +433,37 @@ mod event_dispatch_tests {
         );
         let event = logger.log_event_on_langfuse(&call).await;
         assert_eq!(event.trace_id.as_deref(), Some(support::TRACE_ID));
-        assert!(event.generation_id.is_some());
+        assert_eq!(event.generation_id.as_deref(), Some(support::GENERATION_ID));
+    }
+
+    #[tokio::test]
+    async fn an_empty_trace_id_is_drawn_from_the_injected_generator() {
+        let services = support::services_with_generator(
+            &[],
+            LangfuseClientBudget::new(10),
+            support::real_builder(),
+            Arc::new(support::FixedIds),
+        );
+        let request = support::request("pk-fixed", "sk-fixed");
+        let (exporter, _recording) = support::recording();
+        let _probe = support::seed(&services, &request, exporter);
+        let logger = LangFuseLogger::new(&services, &request)
+            .await
+            .expect("the logger builds");
+        let payload = support::payload("");
+        let response = support::response();
+        let params = support::optional_params();
+        let litellm_params = support::litellm_params();
+        let call = support::call(
+            &payload,
+            &response,
+            &params,
+            &litellm_params,
+            support::start(),
+        );
+        let event = logger.log_event_on_langfuse(&call).await;
+        assert_eq!(event.trace_id.as_deref(), Some(support::FIXED_TRACE_ID));
+        assert_eq!(event.generation_id.as_deref(), Some(support::GENERATION_ID));
     }
 
     #[tokio::test]

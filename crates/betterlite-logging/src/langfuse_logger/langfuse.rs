@@ -5,6 +5,7 @@ use std::time::Duration;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use opentelemetry_sdk::trace::IdGenerator;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
@@ -21,7 +22,6 @@ use crate::langfuse_channels::{
 use crate::langfuse_exporter::exporter::build_span_exporter;
 use crate::langfuse_exporter::http_transport::HttpTransport;
 use crate::langfuse_observations::identity::Timestamp;
-use crate::langfuse_observations::requested_ids::RequestedIdGenerator;
 use crate::langfuse_projections::content::ResponseObj;
 use crate::langfuse_projections::input_output::{ContentRequest, get_input_output_content};
 use crate::langfuse_rest::client::LangfuseApiClient;
@@ -86,6 +86,7 @@ pub struct LangFuseLogger {
     runtime: Handle,
     environment: Arc<dyn EnvironmentLookup + Send + Sync>,
     assembly: AssemblyDefaults,
+    id_generator: Arc<dyn IdGenerator>,
     stopped: AtomicBool,
 }
 
@@ -120,6 +121,7 @@ impl LangFuseLogger {
             runtime: services.runtime.clone(),
             environment: Arc::clone(&services.environment),
             assembly: services.assembly.clone(),
+            id_generator: Arc::clone(&services.id_generator),
             stopped: AtomicBool::new(false),
         })
     }
@@ -174,10 +176,9 @@ impl LangFuseLogger {
     }
 
     async fn assemble_event(&self, trace: &GenerationTrace<'_>) -> LangfuseLoggedEvent {
-        let generator = RequestedIdGenerator::default();
         let runtime = AssemblyRuntime {
             tracer: &self.tracing.tracer,
-            id_generator: &generator,
+            id_generator: self.id_generator.as_ref(),
             prompt_client: &self.api_client,
             environment: self.environment.as_ref(),
         };
