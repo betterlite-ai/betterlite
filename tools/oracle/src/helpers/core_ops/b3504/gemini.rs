@@ -109,7 +109,8 @@ impl AgentsApiConfig for GeminiConfig {
         name: &str,
         litellm_params: &Params,
     ) -> Result<Params, AgentError> {
-        create_request(name, litellm_params)
+        let body = create_agent_body(name, &agent_params(litellm_params)?);
+        Ok(serde_json::from_value(serde_json::to_value(body)?)?)
     }
 
     fn transform_create_response(
@@ -125,7 +126,7 @@ impl AgentsApiConfig for GeminiConfig {
         _api_base: &str,
         litellm_params: &Params,
     ) -> Result<PreparedRequest, AgentError> {
-        collection_request(litellm_params, &self.settings)
+        request_of(None, litellm_params, &self.settings)
     }
 
     fn transform_list_response(&self, response: &UpstreamResponse) -> Result<Value, AgentError> {
@@ -141,7 +142,7 @@ impl AgentsApiConfig for GeminiConfig {
         _api_base: &str,
         litellm_params: &Params,
     ) -> Result<PreparedRequest, AgentError> {
-        item_request(name, litellm_params, &self.settings)
+        request_of(Some(name), litellm_params, &self.settings)
     }
 
     fn transform_get_response(
@@ -165,25 +166,17 @@ fn agent_value(
     }
 }
 
-fn create_request(name: &str, litellm_params: &Params) -> Result<Params, AgentError> {
-    let body = create_agent_body(name, &agent_params(litellm_params)?);
-    Ok(serde_json::from_value(serde_json::to_value(body)?)?)
-}
-
-fn collection_request(
+// a get names one agent, a list names none, and both carry the page query their target builds
+fn request_of(
+    name: Option<&str>,
     litellm_params: &Params,
     settings: &Settings,
 ) -> Result<PreparedRequest, AgentError> {
-    let target = collection_target(&agent_params(litellm_params)?, settings);
-    Ok(target_request(target))
-}
-
-fn item_request(
-    name: &str,
-    litellm_params: &Params,
-    settings: &Settings,
-) -> Result<PreparedRequest, AgentError> {
-    let target = item_target(name, &agent_params(litellm_params)?, settings);
+    let params = agent_params(litellm_params)?;
+    let target = match name {
+        Some(agent) => item_target(agent, &params, settings),
+        None => collection_target(&params, settings),
+    };
     Ok(target_request(target))
 }
 

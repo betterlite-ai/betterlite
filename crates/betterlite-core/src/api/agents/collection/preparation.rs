@@ -60,7 +60,7 @@ pub(super) fn prepare_creation(
     provider: &str,
 ) -> Result<PreparedCreation, AgentPreparationError> {
     // LiteLLM pops the flag before it builds the params and the logging metadata
-    let is_async = flag(call.kwargs, CREATE_ASYNC_FLAG);
+    let is_async = matches!(call.kwargs.get(CREATE_ASYNC_FLAG), Some(Json::Bool(true)));
     let kwargs = without_flag(call.kwargs, CREATE_ASYNC_FLAG);
     let mut params = params_of(&kwargs);
     insert_text(&mut params, "base_agent", call.base_agent);
@@ -98,7 +98,7 @@ pub(super) fn prepare_listing(
     call: &AgentListing<'_>,
     provider: &str,
 ) -> Result<PreparedListing, AgentPreparationError> {
-    let is_async = flag(call.kwargs, LIST_ASYNC_FLAG);
+    let is_async = matches!(call.kwargs.get(LIST_ASYNC_FLAG), Some(Json::Bool(true)));
     let kwargs = without_flag(call.kwargs, LIST_ASYNC_FLAG);
     let mut params = params_of(&kwargs);
     params
@@ -124,8 +124,7 @@ pub(super) fn prepare_listing(
     })
 }
 
-// LiteLLM's `or` chain takes the default when the argument is absent, and docs/compatibility keeps an explicit
-// empty string as the caller sent it instead of falling through
+// LiteLLM's `or` chain defaults an absent argument, and docs/compatibility keeps an explicit empty string as sent
 pub(super) fn provider_of<'values>(
     argument: Option<&'values str>,
     kwargs: &'values IndexMap<String, Json>,
@@ -142,11 +141,6 @@ pub(super) fn provider_of<'values>(
             })
         }
     }
-}
-
-// LiteLLM's kwargs.pop(name, False) is True: only an exact true starts the coroutine, and the flag never travels on
-fn flag(kwargs: &IndexMap<String, Json>, name: &str) -> bool {
-    matches!(kwargs.get(name), Some(Json::Bool(true)))
 }
 
 // LiteLLM's kwargs.pop(name, False): the operation's own flag never reaches the params a provider sees

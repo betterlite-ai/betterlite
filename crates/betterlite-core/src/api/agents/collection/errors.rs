@@ -27,8 +27,10 @@ pub(super) fn failure<ProviderError>(
 where
     ProviderError: AgentFailure,
 {
-    let class = class_of(&error, &identity, redactor);
-    AgentCollectionFailure { error, class }
+    AgentCollectionFailure {
+        class: class_of(&error, &identity, redactor),
+        error,
+    }
 }
 
 fn class_of<ProviderError>(

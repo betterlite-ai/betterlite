@@ -27,8 +27,7 @@ enum Function {
     Alist,
 }
 
-// the arguments LiteLLM's create_agent, acreate_agent, list_agents and alist_agents take, plus the reply the
-// mock provider answers with; the helpers inject api_base and the credentials both sides share
+// the arguments LiteLLM's four entry points take plus the mock provider's reply; the helpers inject api_base
 #[derive(Debug, Deserialize)]
 pub(crate) struct Input {
     function: Function,
@@ -79,7 +78,7 @@ fn injected(input: &Input, server: &Server) -> IndexMap<String, Json> {
     let mut kwargs = input.kwargs.clone();
     kwargs
         .entry("api_base".to_owned())
-        .or_insert_with(|| Json::Text(server.base()));
+        .or_insert_with(|| Json::Text(server.base.clone()));
     kwargs
         .entry("api_key".to_owned())
         .or_insert_with(|| Json::Text("key-1".to_owned()));

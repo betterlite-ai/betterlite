@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Error as IoError, ErrorKind, Read as _, Result as IoResult, Write as _};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
@@ -17,7 +17,7 @@ const RETRY: Duration = Duration::from_millis(10);
 
 // a one-request-at-a-time HTTP server both helpers answer from, so the wire bytes are the compared part
 pub(crate) struct Server {
-    address: SocketAddr,
+    pub(crate) base: String,
     requests: Arc<Mutex<Vec<String>>>,
     stop: Arc<AtomicBool>,
     worker: Option<thread::JoinHandle<()>>,
@@ -36,15 +36,11 @@ impl Server {
             .spawn(move || serve(&listener, &answer, &recorded, &halted))
             .map_err(helper_failure)?;
         Ok(Self {
-            address,
+            base: format!("http://{address}"),
             requests,
             stop,
             worker: Some(worker),
         })
-    }
-
-    pub(crate) fn base(&self) -> String {
-        format!("http://{}", self.address)
     }
 
     pub(crate) fn records(&self, extra: &BTreeSet<String>) -> Vec<Value> {
@@ -147,7 +143,9 @@ fn request_record(sent: &str, extra: &BTreeSet<String>) -> Value {
     let headers: BTreeMap<String, String> = lines
         .filter_map(|line| line.split_once(':'))
         .map(|(name, value)| (name.trim().to_lowercase(), value.trim().to_owned()))
-        .filter(|(name, _value)| kept(name, extra))
+        .filter(|(name, _value)| {
+            name == "content-type" || name == "x-goog-api-key" || extra.contains(name)
+        })
         .collect();
     let parsed = serde_json::from_str::<Value>(body).unwrap_or(Value::Null);
     let body = if body.is_empty() { Value::Null } else { parsed };
@@ -158,10 +156,6 @@ fn request_record(sent: &str, extra: &BTreeSet<String>) -> Value {
         "headers": headers,
         "body": body,
     })
-}
-
-fn kept(name: &str, extra: &BTreeSet<String>) -> bool {
-    name == "content-type" || name == "x-goog-api-key" || extra.contains(name)
 }
 
 fn query_map(query: &str) -> BTreeMap<String, String> {

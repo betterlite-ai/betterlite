@@ -28,17 +28,14 @@ const LIST_CALL_TYPE: &str = "list_agents";
 const PROVIDER_FIELD: &str = "custom_llm_provider";
 const DEFAULT_PROVIDER: &str = "gemini";
 
-// LiteLLM's exception_type reads original_exception.message and original_exception.status_code off a provider
-// error before it picks a class, so the caller's config error type reports the same two values.
+// LiteLLM's exception_type reads the message and status off a provider error before it picks a class
 pub trait AgentFailure: StdError + Send + Sync + 'static {
     fn status_code(&self) -> Option<u16>;
 
     fn message(&self) -> String;
 }
 
-// what the collection calls need besides the call itself: the caller's provider config, the shared HTTP clients,
-// the logging state make_logging_obj updates, the logging sink the transport writes pre_call and post_call into,
-// the redactor exception wrapping uses, and B198's request_timeout
+// what a collection call needs besides the call: the config, clients, logging state and sink, redactor, and timeout
 pub struct AgentCollection<'deps, Config> {
     pub config: &'deps Config,
     pub clients: &'deps mut HttpClients,

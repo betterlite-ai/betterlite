@@ -20,7 +20,7 @@ use betterlite_logging::logging_state::types::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use chrono::{DateTime, FixedOffset};
+use chrono::DateTime;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -51,7 +51,7 @@ impl Fixture {
             clients: HttpClients::new(policy(), proxy_policy()?),
             logging: logging_state()?,
             records: Recorder,
-            redactor: redactor()?,
+            redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(helper_failure)?,
         })
     }
 
@@ -82,7 +82,8 @@ pub(crate) fn logging_state() -> Result<LoggingState, Box<HelperError>> {
         LoggingInit {
             model: "fixture".to_owned(),
             call_type: "fixture".to_owned(),
-            start_time: moment()?,
+            start_time: DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00")
+                .map_err(helper_failure)?,
             litellm_call_id: "call-1".to_owned(),
             function_id: "fn-1".to_owned(),
             messages: None,
@@ -102,19 +103,11 @@ pub(crate) fn logging_state() -> Result<LoggingState, Box<HelperError>> {
             context: &mut context,
             settings: CorrelationSettings::default(),
         },
-        &redactor()?,
+        &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(helper_failure)?,
         || "generated-trace".to_owned(),
         Duration::default,
     )
     .map_err(helper_failure)
-}
-
-fn moment() -> Result<DateTime<FixedOffset>, Box<HelperError>> {
-    DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00").map_err(helper_failure)
-}
-
-pub(crate) fn redactor() -> Result<Redactor, Box<HelperError>> {
-    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(helper_failure)
 }
 
 fn policy() -> TlsPolicy {
