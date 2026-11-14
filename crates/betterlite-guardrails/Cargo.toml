@@ -72,6 +72,10 @@ name = "block_code_execution"
 path = "src/block_code_execution/lifecycle/tests.rs"
 
 [[test]]
+name = "noma_v2"
+path = "src/noma_v2/tests.rs"
+
+[[test]]
 name = "onyx"
 path = "src/onyx/tests.rs"
 
