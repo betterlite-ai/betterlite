@@ -1,5 +1,6 @@
 pub const DEFAULT_QUALITY_WEIGHT: f64 = 0.7;
 pub const DEFAULT_COST_WEIGHT: f64 = 0.3;
+pub const BASE_TIER_WEIGHT: [(u8, f64); 3] = [(1, 0.3), (2, 0.5), (3, 0.7)];
 pub const STRENGTH_BONUS: f64 = 0.3;
 pub const COLD_START_MASS: f64 = 10.0;
 pub const SAMPLE_CAP: usize = 200;
