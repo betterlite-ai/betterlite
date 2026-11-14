@@ -1,3 +1,4 @@
+use std::io::Error as IoError;
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -187,7 +188,7 @@ pub enum ModelsError {
     Read {
         path: PathBuf,
         #[source]
-        source: std::io::Error,
+        source: IoError,
     },
     #[error("cannot parse the YAML file")]
     Yaml {

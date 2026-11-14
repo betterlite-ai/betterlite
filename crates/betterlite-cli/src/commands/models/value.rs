@@ -21,7 +21,10 @@ pub(super) fn cell_text(value: &JsonValue) -> String {
     }
 }
 
-pub(super) fn object_value(value: Option<&JsonValue>, field: &'static str) -> ObjectResult<'_> {
+pub(super) const fn object_value<'value>(
+    value: Option<&'value JsonValue>,
+    field: &'static str,
+) -> ObjectResult<'value> {
     match value {
         None | Some(JsonValue::Null) => Ok(None),
         Some(JsonValue::Object(fields)) => Ok(Some(fields)),
@@ -29,7 +32,10 @@ pub(super) fn object_value(value: Option<&JsonValue>, field: &'static str) -> Ob
     }
 }
 
-pub(super) fn text_value(value: Option<&JsonValue>, field: &'static str) -> TextResult<'_> {
+pub(super) const fn text_value<'value>(
+    value: Option<&'value JsonValue>,
+    field: &'static str,
+) -> TextResult<'value> {
     match value {
         None | Some(JsonValue::Null) => Ok(None),
         Some(JsonValue::Text(text)) => Ok(Some(text)),
