@@ -1,0 +1,21 @@
+kind: helper
+name: search-empty-query-list-and-adjustments-seed
+call:
+  response_charge:
+    function: completion_cost
+    model: openai/search
+    custom_llm_provider: openai
+    region_name: null
+    catalog:
+      openai/search: {litellm_provider: openai, mode: search, input_cost_per_token: 0, output_cost_per_token: 0, input_cost_per_query: 2.0}
+    usage: {prompt_tokens: 0, completion_tokens: 0, cached_tokens: null}
+    custom_price: null
+    cache_hit: null
+    header_cost: null
+    discount: {}
+    margin: {openai: {percentage: 0.0, fixed_amount: 0.25}}
+    call_type: search
+    response_kind: none
+    optional_params: {query: []}
+compare: {ignore: []}
+env: {}

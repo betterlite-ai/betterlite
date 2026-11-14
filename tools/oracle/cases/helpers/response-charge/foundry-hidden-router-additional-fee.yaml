@@ -1,0 +1,20 @@
+kind: helper
+name: foundry-hidden-router-additional-fee
+call:
+  response_charge:
+    function: completion_cost
+    model: gpt-4o
+    custom_llm_provider: azure_ai
+    region_name: null
+    catalog:
+      gpt-4o: {litellm_provider: azure_ai, mode: chat, input_cost_per_token: 0.25, output_cost_per_token: 0.5}
+      azure_ai/model_router: {litellm_provider: azure_ai, mode: chat, input_cost_per_token: 0.0000019073486328125, output_cost_per_token: 0}
+    usage: {prompt_tokens: 8, completion_tokens: 4, cached_tokens: null}
+    custom_price: null
+    cache_hit: null
+    header_cost: null
+    discount: {}
+    margin: {}
+    logging_model: azure_ai/model-router-x
+compare: {ignore: []}
+env: {}

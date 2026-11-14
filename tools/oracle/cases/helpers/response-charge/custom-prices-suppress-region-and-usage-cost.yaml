@@ -1,0 +1,18 @@
+kind: helper
+name: custom-prices-suppress-region-and-usage-cost
+call:
+  response_charge:
+    function: completion_cost
+    model: oracle-chat-custom
+    custom_llm_provider: openai
+    region_name: us-east-1
+    catalog:
+      oracle-chat-custom: {litellm_provider: openai, mode: chat, input_cost_per_token: 2, output_cost_per_token: 4}
+    usage: {prompt_tokens: 10, completion_tokens: 5, cached_tokens: null}
+    custom_price: {input_cost_per_token: 1, output_cost_per_token: 0.5}
+    cache_hit: null
+    header_cost: null
+    discount: {}
+    margin: {}
+compare: {ignore: []}
+env: {}

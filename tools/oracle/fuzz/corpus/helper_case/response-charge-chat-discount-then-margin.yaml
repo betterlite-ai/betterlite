@@ -1,0 +1,18 @@
+kind: helper
+name: chat-discount-then-margin-seed
+call:
+  response_charge:
+    function: response_cost_calculator
+    model: oracle-chat-adjusted
+    custom_llm_provider: openai
+    region_name: null
+    catalog:
+      oracle-chat-adjusted: {litellm_provider: openai, mode: chat, input_cost_per_token: 2, output_cost_per_token: 4}
+    usage: {prompt_tokens: 10, completion_tokens: 5, cached_tokens: null}
+    custom_price: null
+    cache_hit: null
+    header_cost: null
+    discount: {openai: 0.5}
+    margin: {openai: {percentage: 0.5, fixed_amount: 1}}
+compare: {ignore: []}
+env: {}

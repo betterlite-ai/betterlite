@@ -13,6 +13,7 @@ async-trait = "0.1.92"
 base64 = "0.23.1"
 betterlite-anthropic = { path = "../../../../../crates/betterlite-anthropic" }
 betterlite-auth = { path = "../../../../../crates/betterlite-auth" }
+betterlite-bedrock = { path = "../../../../../crates/betterlite-bedrock" }
 betterlite-config = { path = "../../../../../crates/betterlite-config" }
 betterlite-context = { path = "../../../../../crates/betterlite-context" }
 betterlite-core = { path = "../../../../../crates/betterlite-core" }
