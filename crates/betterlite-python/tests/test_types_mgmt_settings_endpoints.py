@@ -1,16 +1,24 @@
+import importlib
 from collections.abc import Sequence
 from typing import get_args
 
 import pydantic
 import pytest
-from litellm.types.management_endpoints import cache_settings_endpoints as litellm_cache
-from litellm.types.management_endpoints import coordination_redis_endpoints as litellm_coordination
-from litellm.types.management_endpoints import router_settings_endpoints as litellm_router
 
 import betterlite.types.management_endpoints.cache_settings_endpoints as betterlite_cache
 import betterlite.types.management_endpoints.coordination_redis_endpoints as betterlite_coordination
 import betterlite.types.management_endpoints.router_settings_endpoints as betterlite_router
 from betterlite.types.utils import JsonValue
+
+litellm_cache = importlib.import_module(
+    "litellm.types.management_endpoints.cache_settings_endpoints"
+)
+litellm_coordination = importlib.import_module(
+    "litellm.types.management_endpoints.coordination_redis_endpoints"
+)
+litellm_router = importlib.import_module(
+    "litellm.types.management_endpoints.router_settings_endpoints"
+)
 
 CACHE_MODEL: type[pydantic.BaseModel] = betterlite_cache.CacheSettingsField
 CACHE_REFERENCE: type[pydantic.BaseModel] = litellm_cache.CacheSettingsField
@@ -62,13 +70,13 @@ def test_cache_model_names() -> None:
 
 def test_cache_field_names() -> None:
     ours = betterlite_cache.CACHE_SETTINGS_FIELDS
-    reference = litellm_cache.CACHE_SETTINGS_FIELDS
+    reference: Sequence[pydantic.BaseModel] = litellm_cache.CACHE_SETTINGS_FIELDS
     assert_entries_match(ours, reference)
 
 
 def test_cache_description_names() -> None:
     ours = betterlite_cache.REDIS_TYPE_DESCRIPTIONS
-    reference = litellm_cache.REDIS_TYPE_DESCRIPTIONS
+    reference: dict[str, str] = litellm_cache.REDIS_TYPE_DESCRIPTIONS
     assert ours == reference
 
 
@@ -94,21 +102,21 @@ def test_coordination_model_names() -> None:
 
 
 def test_literal_alias_names() -> None:
-    section = betterlite_coordination.CoordinationRedisSection
-    reference_section = litellm_coordination.CoordinationRedisSection
-    section_values: tuple[JsonValue, ...] = get_args(section)
-    reference_values: tuple[JsonValue, ...] = get_args(reference_section)
-    assert section_values == reference_values
-    source = betterlite_coordination.CoordinationRedisSource
-    reference_source = litellm_coordination.CoordinationRedisSource
-    source_values: tuple[JsonValue, ...] = get_args(source)
-    reference_source_values: tuple[JsonValue, ...] = get_args(reference_source)
-    assert source_values == reference_source_values
+    section: type[JsonValue] = litellm_coordination.CoordinationRedisSection
+    reference_section: tuple[JsonValue, ...] = get_args(section)
+    our_section: tuple[JsonValue, ...] = get_args(betterlite_coordination.CoordinationRedisSection)
+    assert our_section == reference_section
+    source: type[JsonValue] = litellm_coordination.CoordinationRedisSource
+    reference_source: tuple[JsonValue, ...] = get_args(source)
+    our_source: tuple[JsonValue, ...] = get_args(betterlite_coordination.CoordinationRedisSource)
+    assert our_source == reference_source
 
 
 def test_coordination_field_names() -> None:
     ours = betterlite_coordination.COORDINATION_REDIS_SETTINGS_FIELDS
-    reference = litellm_coordination.COORDINATION_REDIS_SETTINGS_FIELDS
+    reference: Sequence[pydantic.BaseModel] = (
+        litellm_coordination.COORDINATION_REDIS_SETTINGS_FIELDS
+    )
     assert_entries_match(ours, reference)
 
 
@@ -122,33 +130,32 @@ def test_router_create_names() -> None:
 
 
 def test_router_response_names() -> None:
-    pairs: tuple[tuple[type[pydantic.BaseModel], type[pydantic.BaseModel]], ...] = (
-        (betterlite_router.FallbackResponse, litellm_router.FallbackResponse),
-        (betterlite_router.FallbackGetResponse, litellm_router.FallbackGetResponse),
-        (betterlite_router.FallbackDeleteResponse, litellm_router.FallbackDeleteResponse),
-    )
-    for ours, reference in pairs:
-        assert model_names(ours) == model_names(reference)
+    response: type[pydantic.BaseModel] = litellm_router.FallbackResponse
+    get_response: type[pydantic.BaseModel] = litellm_router.FallbackGetResponse
+    delete_response: type[pydantic.BaseModel] = litellm_router.FallbackDeleteResponse
+    assert model_names(betterlite_router.FallbackResponse) == model_names(response)
+    assert model_names(betterlite_router.FallbackGetResponse) == model_names(get_response)
+    assert model_names(betterlite_router.FallbackDeleteResponse) == model_names(delete_response)
 
 
 def test_router_field_names() -> None:
     ours = model_names(FIELD_MODEL)
     reference = model_names(FIELD_REFERENCE)
     assert ours == reference
-    assert_entries_match(
-        betterlite_router.ROUTER_SETTINGS_FIELDS, litellm_router.ROUTER_SETTINGS_FIELDS
-    )
+    our_fields = betterlite_router.ROUTER_SETTINGS_FIELDS
+    their_fields: Sequence[pydantic.BaseModel] = litellm_router.ROUTER_SETTINGS_FIELDS
+    assert_entries_match(our_fields, their_fields)
 
 
 def test_router_description_names() -> None:
     ours = betterlite_router.ROUTING_STRATEGY_DESCRIPTIONS
-    reference = litellm_router.ROUTING_STRATEGY_DESCRIPTIONS
+    reference: dict[str, str] = litellm_router.ROUTING_STRATEGY_DESCRIPTIONS
     assert ours == reference
 
 
 def test_fallback_validation_names() -> None:
     ours = betterlite_router.FallbackCreateRequest(model="gpt-4o", fallback_models=["gpt-4o-mini"])
-    reference = litellm_router.FallbackCreateRequest(
+    reference: pydantic.BaseModel = litellm_router.FallbackCreateRequest(
         model="gpt-4o", fallback_models=["gpt-4o-mini"]
     )
     assert ours.fallback_type == "general"
