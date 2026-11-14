@@ -80,6 +80,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "lyria_audio"
+path = "fuzz_targets/lyria_audio.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "multimodal_embedding"
 path = "fuzz_targets/multimodal_embedding.rs"
 test = false
