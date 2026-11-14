@@ -149,7 +149,7 @@ fn a_failed_transform_logs_a_warning_in_audit_mode() {
 
     convert(r#"{"input":true}"#, false).unwrap();
 
-    let log = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
+    let log = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
     assert!(log.contains("WARN"), "{log}");
     assert!(
         log.contains("Purview DLP: failed to transform responses API input"),

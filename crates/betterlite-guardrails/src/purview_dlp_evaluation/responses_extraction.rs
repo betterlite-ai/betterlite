@@ -9,43 +9,45 @@ fn push_argument(arguments: Option<&str>, args: &mut Vec<String>) {
     }
 }
 
+fn push_sdk_arguments(output: &SdkOutput, args: &mut Vec<String>) {
+    match output {
+        SdkOutput::FunctionCall(call) => push_argument(Some(call.arguments.as_str()), args),
+        SdkOutput::OutputMessage(_)
+        | SdkOutput::FileSearch(_)
+        | SdkOutput::FunctionCallOutput(_)
+        | SdkOutput::WebSearch(_)
+        | SdkOutput::Computer(_)
+        | SdkOutput::ComputerOutput(_)
+        | SdkOutput::Reasoning(_)
+        | SdkOutput::Program(_)
+        | SdkOutput::ProgramOutput(_)
+        | SdkOutput::SearchCall(_)
+        | SdkOutput::SearchOutput(_)
+        | SdkOutput::AdditionalTools(_)
+        | SdkOutput::Compaction(_)
+        | SdkOutput::ImageCall(_)
+        | SdkOutput::CodeInterpreterCall(_)
+        | SdkOutput::LocalShellCall(_)
+        | SdkOutput::LocalShellCallOutput(_)
+        | SdkOutput::OutputShell(_)
+        | SdkOutput::ShellOutput(_)
+        | SdkOutput::OutputApplyPatch(_)
+        | SdkOutput::ApplyPatchOutput(_)
+        | SdkOutput::McpCall(_)
+        | SdkOutput::McpListTools(_)
+        | SdkOutput::McpApprovalRequest(_)
+        | SdkOutput::McpApprovalResponse(_)
+        | SdkOutput::CustomCall(_)
+        | SdkOutput::CustomCallOutput(_) => {}
+    }
+}
+
 #[must_use]
 pub fn responses_function_call_args(response: &ResponsesApiResponse) -> Vec<String> {
     let mut args = Vec::new();
     for item in &response.output {
         match item {
-            ResponseOutputItem::Sdk(output) => match output.as_ref() {
-                SdkOutput::FunctionCall(call) => {
-                    push_argument(Some(call.arguments.as_str()), &mut args);
-                }
-                SdkOutput::OutputMessage(_)
-                | SdkOutput::FileSearch(_)
-                | SdkOutput::FunctionCallOutput(_)
-                | SdkOutput::WebSearch(_)
-                | SdkOutput::Computer(_)
-                | SdkOutput::ComputerOutput(_)
-                | SdkOutput::Reasoning(_)
-                | SdkOutput::Program(_)
-                | SdkOutput::ProgramOutput(_)
-                | SdkOutput::SearchCall(_)
-                | SdkOutput::SearchOutput(_)
-                | SdkOutput::AdditionalTools(_)
-                | SdkOutput::Compaction(_)
-                | SdkOutput::ImageCall(_)
-                | SdkOutput::CodeInterpreterCall(_)
-                | SdkOutput::LocalShellCall(_)
-                | SdkOutput::LocalShellCallOutput(_)
-                | SdkOutput::OutputShell(_)
-                | SdkOutput::ShellOutput(_)
-                | SdkOutput::OutputApplyPatch(_)
-                | SdkOutput::ApplyPatchOutput(_)
-                | SdkOutput::McpCall(_)
-                | SdkOutput::McpListTools(_)
-                | SdkOutput::McpApprovalRequest(_)
-                | SdkOutput::McpApprovalResponse(_)
-                | SdkOutput::CustomCall(_)
-                | SdkOutput::CustomCallOutput(_) => {}
-            },
+            ResponseOutputItem::Sdk(output) => push_sdk_arguments(output, &mut args),
             ResponseOutputItem::FunctionCall(call) => {
                 if call.r#type.as_deref() == Some("function_call") {
                     push_argument(call.arguments.as_deref(), &mut args);

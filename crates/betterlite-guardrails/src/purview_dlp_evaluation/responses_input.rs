@@ -21,7 +21,7 @@ fn convert_json(value: &Json) -> DecisionsJson {
         Json::Object(fields) => DecisionsJson::Object(
             fields
                 .iter()
-                .map(|(key, value)| (key.clone(), convert_json(value)))
+                .map(|(key, nested)| (key.clone(), convert_json(nested)))
                 .collect(),
         ),
     }
