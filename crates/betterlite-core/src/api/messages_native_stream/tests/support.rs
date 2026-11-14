@@ -93,10 +93,9 @@ impl ScriptHandle {
     }
 
     pub(super) fn try_release(&self, chunk: SseChunk) {
-        assert!(
-            self.commands.try_send(Command::Chunk(chunk)).is_ok(),
-            "the script channel has room"
-        );
+        self.commands
+            .try_send(Command::Chunk(chunk))
+            .expect("the script channel has room");
     }
 
     pub(super) async fn await_delivery(&self) {

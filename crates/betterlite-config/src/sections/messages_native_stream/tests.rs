@@ -95,9 +95,8 @@ fn assert_loader_reaches_the_section() {
         fallback.sections.messages_native_stream,
         Settings::default()
     );
-    assert!(
-        loader(&[(MAX_DETACHED_STREAM_DRAINS_ENV, "soon")])
-            .load("{}")
-            .is_err()
-    );
+    let error = loader(&[(MAX_DETACHED_STREAM_DRAINS_ENV, "soon")])
+        .load("{}")
+        .unwrap_err();
+    assert!(matches!(error, ConfigError::Environment { .. }), "{error}");
 }
