@@ -113,3 +113,10 @@ path = "fuzz_targets/manus_files_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "oci_chat_bytes"
+path = "fuzz_targets/oci_chat_bytes.rs"
+test = false
+doc = false
+bench = false
