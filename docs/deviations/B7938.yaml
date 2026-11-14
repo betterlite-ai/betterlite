@@ -5,8 +5,8 @@ deviations:
       PrometheusLabelSettings argument instead of reading the process-wide litellm module globals
       on every call.
     why: >-
-      betterlite has no litellm module globals; B7937 defines PrometheusLabelSettings so callers
-      pass the six settings explicitly, which keeps get_labels pure and testable.
+      betterlite has no litellm module globals; PrometheusLabelSettings in settings.py lets
+      callers pass the six settings explicitly, which keeps get_labels pure and testable.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L956-L1023
   - what: >-
       An unknown metric name raises UnknownMetricError (a ValueError) instead of the AttributeError
