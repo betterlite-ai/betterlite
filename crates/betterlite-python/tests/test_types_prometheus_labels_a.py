@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Final, get_args
 
 import litellm
@@ -12,6 +13,7 @@ from betterlite.types.integrations.prometheus.core import (
 )
 from betterlite.types.integrations.prometheus.labels import UserAPIKeyLabelNames
 from betterlite.types.integrations.prometheus.validation import (
+    CallerIdentitySettings,
     LabelValidationError,
     MetricValidationError,
     ValidationResults,
@@ -25,7 +27,8 @@ METRIC_NAME_COUNT: Final = 83
 MODE_NAMES: Final[tuple[str, ...]] = ("api_key_alias", "user_email", "both")
 IDENTITY_METRIC: Final = "litellm_deployment_total_requests"
 OTHER_METRIC: Final = "litellm_spend_metric"
-BUCKET_INPUT_NAMES: Final[tuple[JsonValue, ...]] = (
+LATENCY_METRIC: Final = "litellm_llm_api_latency_metric"
+BUCKET_INPUT_NAMES: Final[tuple[JsonValue | Decimal, ...]] = (
     0,
     1,
     999,
@@ -41,6 +44,7 @@ BUCKET_INPUT_NAMES: Final[tuple[JsonValue, ...]] = (
     64_000,
     64_001,
     1_000_000_000,
+    Decimal(5),
     -1,
     True,
     False,
@@ -95,6 +99,84 @@ RESOLVED_LABEL_NAMES: Final[tuple[tuple[str, list[str]], ...]] = (
     ("both", ["team", "api_key_alias", "user_email", "model"]),
 )
 CALLER_IDENTITY_LABELS: Final[list[str]] = ["team", "api_key_alias", "model"]
+REJECTED_LABEL_SETS: Final[list[tuple[str, list[JsonValue | UserAPIKeyLabelNames]]]] = [
+    (IDENTITY_METRIC, ["team", 7]),
+    (IDENTITY_METRIC, [UserAPIKeyLabelNames.TEAM, "api_key_alias"]),
+    (OTHER_METRIC, [UserAPIKeyLabelNames.TEAM, "api_key_alias"]),
+]
+CONFLICTING_NAMES_MESSAGE: Final = (
+    "prometheus_metrics_config include_labels contains 'api_key_alias' for "
+    "litellm_deployment_total_requests, litellm_llm_api_latency_metric, but "
+    "prometheus_deployment_and_latency_caller_identity='user_email' replaces that "
+    "label on these metrics. Use 'user_email' in include_labels or change the mode."
+)
+CONFLICTING_SETTINGS_NAMES: Final[list[tuple[CallerIdentitySettings, str | None]]] = [
+    (
+        {
+            "prometheus_deployment_and_latency_caller_identity": "both",
+            "prometheus_metrics_config": [
+                {"metrics": [IDENTITY_METRIC], "include_labels": ["api_key_alias"]},
+            ],
+        },
+        None,
+    ),
+    (
+        {
+            "prometheus_deployment_and_latency_caller_identity": "user_email",
+            "prometheus_metrics_config": [
+                {"metrics": [OTHER_METRIC], "include_labels": ["api_key_alias"]},
+            ],
+        },
+        None,
+    ),
+    (
+        {
+            "prometheus_deployment_and_latency_caller_identity": "user_email",
+            "prometheus_metrics_config": [
+                {
+                    "metrics": [IDENTITY_METRIC, OTHER_METRIC, LATENCY_METRIC],
+                    "include_labels": ["api_key_alias"],
+                },
+            ],
+        },
+        CONFLICTING_NAMES_MESSAGE,
+    ),
+    (
+        {
+            "prometheus_deployment_and_latency_caller_identity": "user_email",
+            "prometheus_metrics_config": {
+                "metrics": [IDENTITY_METRIC],
+                "include_labels": ["api_key_alias"],
+            },
+        },
+        None,
+    ),
+    (
+        {
+            "prometheus_deployment_and_latency_caller_identity": "user_email",
+            "prometheus_metrics_config": [OTHER_METRIC],
+        },
+        None,
+    ),
+    (
+        {
+            "prometheus_deployment_and_latency_caller_identity": "user_email",
+            "prometheus_metrics_config": [
+                {"metrics": [IDENTITY_METRIC], "include_labels": 0},
+            ],
+        },
+        None,
+    ),
+    (
+        {
+            "prometheus_deployment_and_latency_caller_identity": "user_email",
+            "prometheus_metrics_config": [
+                {"metrics": 0, "include_labels": ["api_key_alias"]},
+            ],
+        },
+        None,
+    ),
+]
 
 
 @pytest.fixture(autouse=True)
@@ -166,7 +248,9 @@ def test_names_caller_identity_metric_set_matches_litellm() -> None:
 
 @pytest.mark.parametrize("prompt_tokens", BUCKET_INPUT_NAMES)
 # ast-grep-ignore: no-long-names
-def test_names_input_sequence_length_bucket_matches_litellm(prompt_tokens: JsonValue) -> None:
+def test_names_input_sequence_length_bucket_matches_litellm(
+    prompt_tokens: JsonValue | Decimal,
+) -> None:
     theirs = litellm_prometheus.get_input_sequence_length_bucket(prompt_tokens)
     ours = our_core.get_input_sequence_length_bucket(prompt_tokens)
     assert ours == theirs
@@ -348,13 +432,14 @@ def test_names_caller_identity_resolution_matches_litellm(mode: str, expected: l
     assert other == CALLER_IDENTITY_LABELS
 
 
+@pytest.mark.parametrize(("metric_name", "labels"), REJECTED_LABEL_SETS)
 # ast-grep-ignore: no-long-names
-def test_names_caller_identity_resolution_rejects_non_string_labels() -> None:
-    with pytest.raises(
-        TypeError,
-        match="Prometheus labels for litellm_deployment_total_requests must be strings",
-    ):
-        _resolve_deployment_and_latency_caller_identity_labels(IDENTITY_METRIC, ["team", 7])
+def test_names_caller_identity_resolution_rejects_non_string_labels(
+    metric_name: str,
+    labels: list[JsonValue | UserAPIKeyLabelNames],
+) -> None:
+    with pytest.raises(TypeError, match="must be strings"):
+        _resolve_deployment_and_latency_caller_identity_labels(metric_name, labels)
 
 
 # ast-grep-ignore: no-long-names
@@ -382,30 +467,18 @@ def test_names_invalid_caller_identity_settings_match_litellm() -> None:
     assert str(our_error.value) == str(their_error.value)
 
 
+@pytest.mark.parametrize(("settings", "expected_message"), CONFLICTING_SETTINGS_NAMES)
 # ast-grep-ignore: no-long-names
-def test_names_conflicting_caller_identity_settings_match_litellm() -> None:
-    with pytest.raises(
-        ValueError,
-        match="prometheus_metrics_config include_labels contains 'api_key_alias'",
-    ) as their_error:
-        litellm_prometheus.validate_caller_identity_settings(
-            {
-                "prometheus_deployment_and_latency_caller_identity": "user_email",
-                "prometheus_metrics_config": [
-                    {"metrics": [IDENTITY_METRIC], "include_labels": ["api_key_alias"]},
-                ],
-            },
-        )
-    with pytest.raises(
-        ValueError,
-        match="prometheus_metrics_config include_labels contains 'api_key_alias'",
-    ) as our_error:
-        validate_caller_identity_settings(
-            {
-                "prometheus_deployment_and_latency_caller_identity": "user_email",
-                "prometheus_metrics_config": [
-                    {"metrics": [IDENTITY_METRIC], "include_labels": ["api_key_alias"]},
-                ],
-            },
-        )
+def test_names_conflicting_caller_identity_settings_match_litellm(
+    settings: CallerIdentitySettings,
+    expected_message: str | None,
+) -> None:
+    if expected_message is None:
+        validate_caller_identity_settings(settings)
+        litellm_prometheus.validate_caller_identity_settings(settings)
+        return
+    with pytest.raises(ValueError, match=expected_message) as our_error:
+        validate_caller_identity_settings(settings)
+    with pytest.raises(ValueError, match=expected_message) as their_error:
+        litellm_prometheus.validate_caller_identity_settings(settings)
     assert str(our_error.value) == str(their_error.value)

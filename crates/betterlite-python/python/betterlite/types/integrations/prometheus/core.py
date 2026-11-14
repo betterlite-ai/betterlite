@@ -1,5 +1,4 @@
 import re
-from collections.abc import Mapping, Sequence
 from typing import Final, Literal
 
 from pydantic import JsonValue
@@ -86,9 +85,12 @@ def _sanitize_prometheus_label_value(value: JsonValue) -> str | None:
 
 
 # ast-grep-ignore: no-long-names
-def get_input_sequence_length_bucket(prompt_tokens: JsonValue) -> str:
+def get_input_sequence_length_bucket(
+    # ast-grep-ignore: no-loose-types
+    prompt_tokens: object,
+) -> str:
     match prompt_tokens:
-        case bool() | Mapping() | Sequence() | float() | None:
+        case bool():
             return UNKNOWN_INPUT_SEQUENCE_LENGTH
         case int() as token_count:
             if token_count < 0:
@@ -96,6 +98,8 @@ def get_input_sequence_length_bucket(prompt_tokens: JsonValue) -> str:
             return next(
                 label for upper, label in INPUT_SEQUENCE_LENGTH_BUCKETS if token_count < upper
             )
+        case object():
+            return UNKNOWN_INPUT_SEQUENCE_LENGTH
 
 
 DEFINED_PROMETHEUS_METRICS = Literal[

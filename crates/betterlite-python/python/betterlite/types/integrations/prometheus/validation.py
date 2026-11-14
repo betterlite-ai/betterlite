@@ -1,4 +1,4 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import ClassVar, TypedDict
 
@@ -63,15 +63,10 @@ class ValidationResults:
         return messages
 
 
-class PrometheusMetricsConfigEntry(TypedDict, total=False):
-    metrics: Sequence[str]
-    include_labels: Sequence[str]
-
-
 class CallerIdentitySettings(TypedDict, total=False):
     # ast-grep-ignore: no-long-names
     prometheus_deployment_and_latency_caller_identity: JsonValue
-    prometheus_metrics_config: Sequence[PrometheusMetricsConfigEntry]
+    prometheus_metrics_config: JsonValue
 
 
 # ast-grep-ignore: no-long-names
@@ -89,6 +84,48 @@ def validate_prometheus_deployment_and_latency_caller_identity() -> str:
             )
 
 
+def _asks_for_alias(include_labels: JsonValue) -> bool:
+    if not include_labels:
+        return False
+    match include_labels:
+        case dict() | list() | str():
+            return UserAPIKeyLabelNames.API_KEY_ALIAS.value in include_labels
+        case object():
+            raise TypeError("include_labels must be a string or a collection of label names")
+
+
+def _caller_identity_metric_names(metrics: JsonValue) -> list[str]:
+    if not metrics:
+        return []
+    match metrics:
+        case dict() | list() | str():
+            pass
+        case object():
+            raise TypeError("metrics must be a string or a collection of metric names")
+    conflicting_metrics: list[str] = []
+    for metric_name in metrics:
+        match metric_name:
+            case str() as name:
+                # ast-grep-ignore: no-long-names
+                if name not in PROMETHEUS_DEPLOYMENT_AND_LATENCY_CALLER_IDENTITY_METRICS:
+                    continue
+                conflicting_metrics.append(name)
+            case object():
+                pass
+    return conflicting_metrics
+
+
+def _conflicting_metric_names(metric_config: JsonValue) -> list[str]:
+    match metric_config:
+        case dict():
+            pass
+        case object():
+            return []
+    if not _asks_for_alias(metric_config.get("include_labels")):
+        return []
+    return _caller_identity_metric_names(metric_config.get("metrics"))
+
+
 # ast-grep-ignore: no-long-names
 def validate_caller_identity_settings(litellm_settings: CallerIdentitySettings) -> None:
     if "prometheus_deployment_and_latency_caller_identity" not in litellm_settings:
@@ -100,24 +137,14 @@ def validate_caller_identity_settings(litellm_settings: CallerIdentitySettings) 
     if caller_identity_mode != "user_email":
         return
     metrics_config = litellm_settings.get("prometheus_metrics_config")
-    if metrics_config is None:
-        return
+    match metrics_config:
+        case list():
+            pass
+        case object():
+            return
     conflicting_metrics: list[str] = []
     for metric_config in metrics_config:
-        include_labels = metric_config.get("include_labels")
-        if include_labels is None:
-            continue
-        if UserAPIKeyLabelNames.API_KEY_ALIAS.value not in include_labels:
-            continue
-        metrics = metric_config.get("metrics")
-        if metrics is None:
-            continue
-        conflicting_metrics.extend(
-            metric_name
-            for metric_name in metrics
-            # ast-grep-ignore: no-long-names
-            if metric_name in PROMETHEUS_DEPLOYMENT_AND_LATENCY_CALLER_IDENTITY_METRICS
-        )
+        conflicting_metrics.extend(_conflicting_metric_names(metric_config))
     if conflicting_metrics:
         conflicting_names = ", ".join(conflicting_metrics)
         raise ValueError(
@@ -131,14 +158,15 @@ def validate_caller_identity_settings(litellm_settings: CallerIdentitySettings) 
 # ast-grep-ignore: no-long-names
 def _resolve_deployment_and_latency_caller_identity_labels(
     metric_name: str,
-    labels: Sequence[JsonValue],
+    # ast-grep-ignore: no-loose-types
+    labels: Sequence[object],
 ) -> list[str]:
     resolved_labels: list[str] = []
     for label in labels:
         match label:
             case str():
                 resolved_labels.append(label)
-            case None | bool() | int() | float() | Mapping() | Sequence():
+            case object():
                 raise TypeError(f"Prometheus labels for {metric_name} must be strings")
     # ast-grep-ignore: no-long-names
     if metric_name not in PROMETHEUS_DEPLOYMENT_AND_LATENCY_CALLER_IDENTITY_METRICS:
@@ -156,7 +184,6 @@ __all__ = [
     "CallerIdentitySettings",
     "LabelValidationError",
     "MetricValidationError",
-    "PrometheusMetricsConfigEntry",
     "ValidationResults",
     "_resolve_deployment_and_latency_caller_identity_labels",
     "validate_caller_identity_settings",
