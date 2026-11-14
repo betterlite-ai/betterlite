@@ -1,0 +1,15 @@
+kind: helper
+name: agents-item-async-list-versions-delegates-to-sync
+call:
+  b3505:
+    operation: alist_versions
+    name: agent-1
+    api_key: key-1
+    litellm_call_id: call-alist-versions
+    page_size: 3
+    page_token: next
+    reply:
+      status: 200
+      body: '{"agentVersions": [{"agent": "waverunner"}], "nextPageToken": "later"}'
+env: {}
+compare: {ignore: []}

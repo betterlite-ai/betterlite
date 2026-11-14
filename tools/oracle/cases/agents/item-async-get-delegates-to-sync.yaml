@@ -1,0 +1,13 @@
+kind: helper
+name: agents-item-async-get-delegates-to-sync
+call:
+  b3505:
+    operation: aget
+    name: agent-1
+    api_key: key-1
+    litellm_call_id: call-aget
+    reply:
+      status: 200
+      body: '{"id": "agent-1", "name": "agent-1"}'
+env: {}
+compare: {ignore: []}

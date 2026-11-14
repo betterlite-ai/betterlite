@@ -1,0 +1,15 @@
+kind: helper
+name: agents-item-list-versions-with-pagination
+call:
+  b3505:
+    operation: list_versions
+    name: agent-1
+    api_key: key-1
+    litellm_call_id: call-versions-page
+    page_size: 2
+    page_token: tok
+    reply:
+      status: 200
+      body: '{"agentVersions": [{"agent": "waverunner", "name": "agents/agent-1/versions/7"}], "nextPageToken": "n"}'
+env: {}
+compare: {ignore: []}

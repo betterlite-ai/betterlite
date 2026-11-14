@@ -1,0 +1,13 @@
+kind: helper
+name: agents-item-http-error-wrapping
+call:
+  b3505:
+    operation: get
+    name: agent-1
+    api_key: key-1
+    litellm_call_id: call-error
+    reply:
+      status: 500
+      body: '{"error": {"code": 500, "message": "backend failed", "status": "INTERNAL"}}'
+env: {}
+compare: {ignore: []}

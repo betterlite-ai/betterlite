@@ -1,0 +1,14 @@
+kind: helper
+name: agents-item-unsupported-provider-error
+call:
+  b3505:
+    operation: get
+    name: agent-1
+    api_key: key-1
+    litellm_call_id: call-unsupported
+    provider: cohere
+    reply:
+      status: 200
+      body: '{}'
+env: {}
+compare: {ignore: []}
