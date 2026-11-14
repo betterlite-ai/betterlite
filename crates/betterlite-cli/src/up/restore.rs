@@ -1,4 +1,4 @@
-use std::io::Write as _;
+use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
