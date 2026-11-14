@@ -315,8 +315,10 @@ fn get_interaction_sends_no_deadline_of_its_own() {
 fn get_interaction_sends_the_transformed_query_params() {
     let serving = support::serve_once(support::reply("200 OK", &[], "{}"), None);
     let fixture = Fixture {
+        calls: Mutex::new(Vec::new()),
         params: support::params(r#"{"alt": "sse"}"#),
-        ..Fixture::default()
+        headers: RequestHeaders::default(),
+        refuse_status: None,
     };
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -362,8 +364,10 @@ fn get_interaction_sends_the_caller_headers_to_validate_environment(
 fn get_interaction_passes_a_failing_status_to_the_response_transform() {
     let serving = support::serve_once(support::reply("404 Not Found", &[], "missing"), None);
     let fixture = Fixture {
+        calls: Mutex::new(Vec::new()),
+        params: Params::default(),
+        headers: RequestHeaders::default(),
         refuse_status: Some(404),
-        ..Fixture::default()
     };
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -595,8 +599,10 @@ async fn async_get_interaction_passes_a_failing_status_to_the_response_transform
         None,
     );
     let fixture = Fixture {
+        calls: Mutex::new(Vec::new()),
+        params: Params::default(),
+        headers: RequestHeaders::default(),
         refuse_status: Some(500),
-        ..Fixture::default()
     };
     let mut clients = clients();
     let mut logging = Logging::default();
