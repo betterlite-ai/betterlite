@@ -16,7 +16,7 @@ const CANONICAL_COUNT_SQL: &str = r#"SELECT count(*) AS rows FROM "LiteLLM_Spend
 const LEGACY_COUNT_SQL: &str = r#"SELECT count(*) AS rows FROM "LiteLLM_SpendLogs_legacy""#;
 const DEFAULT_COUNT_SQL: &str = r#"SELECT count(*) AS rows FROM "LiteLLM_SpendLogs_pdefault""#;
 const INSERT_LOG_SQL: &str = r#"INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, "startTime", "endTime") VALUES ($1, 'completion', 'sk-fixture', $2, $2)"#;
-const COLUMNS_SQL: &str = r#"SELECT a.attname AS name,
+const COLUMNS_SQL: &str = "SELECT a.attname AS name,
        format_type(a.atttypid, a.atttypmod) AS column_type,
        a.attnotnull AS not_null,
        a.attgenerated::text AS generated,
@@ -24,8 +24,8 @@ const COLUMNS_SQL: &str = r#"SELECT a.attname AS name,
 FROM pg_attribute a
 LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
 WHERE a.attrelid = to_regclass($1) AND a.attnum > 0 AND NOT a.attisdropped
-ORDER BY a.attnum"#;
-const INDEXES_SQL: &str = r#"SELECT i.relname AS index_name,
+ORDER BY a.attnum";
+const INDEXES_SQL: &str = "SELECT i.relname AS index_name,
        c.relname AS owner,
        ix.indisprimary AS is_primary,
        ix.indisunique AS is_unique,
@@ -35,28 +35,31 @@ FROM pg_index ix
 JOIN pg_class i ON i.oid = ix.indexrelid
 JOIN pg_class c ON c.oid = ix.indrelid
 JOIN pg_am am ON am.oid = i.relam
-WHERE c.relname = $1 AND c.relnamespace = current_schema()::regnamespace
-ORDER BY i.relname"#;
-const PRIMARY_KEY_SQL: &str = r#"SELECT i.relname AS index_name, pg_get_indexdef(ix.indexrelid) AS definition
+WHERE c.oid = to_regclass($1) AND c.relnamespace = current_schema()::regnamespace
+ORDER BY i.relname";
+const PRIMARY_KEY_SQL: &str = "SELECT i.relname AS index_name, pg_get_indexdef(ix.indexrelid) AS definition
 FROM pg_index ix
 JOIN pg_class i ON i.oid = ix.indexrelid
 JOIN pg_class c ON c.oid = ix.indrelid
-WHERE c.relname = $1 AND c.relnamespace = current_schema()::regnamespace AND ix.indisprimary"#;
-const PARTITIONS_SQL: &str = r#"SELECT c.relname AS partition_name, pg_get_expr(c.relpartbound, c.oid) AS bound
+WHERE c.oid = to_regclass($1) AND c.relnamespace = current_schema()::regnamespace AND ix.indisprimary";
+const PARTITIONS_SQL: &str =
+    "SELECT c.relname AS partition_name, pg_get_expr(c.relpartbound, c.oid) AS bound
 FROM pg_inherits inherits
 JOIN pg_class c ON c.oid = inherits.inhrelid
 WHERE inherits.inhparent = to_regclass($1)
-ORDER BY c.relname"#;
-const CHILD_INDEXES_SQL: &str = r#"SELECT parent.relname AS parent_index, child.relname AS child_index
+ORDER BY c.relname";
+const CHILD_INDEXES_SQL: &str =
+    "SELECT parent.relname AS parent_index, child.relname AS child_index
 FROM pg_inherits inherits
 JOIN pg_class child ON child.oid = inherits.inhrelid
 JOIN pg_class parent ON parent.oid = inherits.inhparent
 JOIN pg_index ix ON ix.indexrelid = child.oid
 WHERE ix.indrelid = to_regclass($1)
-ORDER BY parent.relname"#;
-const PARTITION_DEFINITION_SQL: &str = r#"SELECT partstrat::text AS strategy, pg_get_partkeydef(partrelid) AS key
+ORDER BY parent.relname";
+const PARTITION_DEFINITION_SQL: &str =
+    "SELECT partstrat::text AS strategy, pg_get_partkeydef(partrelid) AS key
 FROM pg_partitioned_table
-WHERE partrelid = to_regclass($1)"#;
+WHERE partrelid = to_regclass($1)";
 
 #[derive(Debug, PartialEq, Eq)]
 struct Column {
@@ -89,8 +92,10 @@ fn at(month: u32, day: u32) -> NaiveDateTime {
 }
 
 async fn catalog_rows(case: &SpendPartitionCase, sql: &str, table: &str) -> Vec<Row> {
+    // to_regclass parses its argument as SQL, so the CamelCase relation names must arrive quoted
+    let name = format!("\"{table}\"");
     case.client
-        .query(sql, &[&table])
+        .query(sql, &[&name])
         .await
         .expect("a catalog query")
 }
@@ -140,8 +145,10 @@ async fn relkind(case: &SpendPartitionCase, table: &str) -> String {
 }
 
 async fn table_name(case: &SpendPartitionCase, table: &str) -> Option<String> {
-    let row = catalog_rows(case, TABLE_NAME_SQL, table).await;
-    row.pop().and_then(|row| row.try_get("name").ok())
+    let rows = catalog_rows(case, TABLE_NAME_SQL, table).await;
+    rows.into_iter()
+        .next()
+        .and_then(|row| row.try_get("name").ok())
 }
 
 async fn row_count(case: &SpendPartitionCase, sql: &str) -> i64 {
@@ -434,7 +441,7 @@ pub(super) async fn default_partition_accepts_rows() {
     let rows = case
         .client
         .query(
-            r#"SELECT tableoid::regclass::text AS partition FROM "LiteLLM_SpendLogs" ORDER BY request_id"#,
+            r#"SELECT c.relname AS partition FROM "LiteLLM_SpendLogs" logs JOIN pg_class c ON c.oid = logs.tableoid ORDER BY logs.request_id"#,
             &[],
         )
         .await
