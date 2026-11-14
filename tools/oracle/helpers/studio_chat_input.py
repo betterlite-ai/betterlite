@@ -14,7 +14,24 @@ JsonObject: TypeAlias = dict[str, Json]
 
 
 class Transform(Protocol):
-    def __call__(self, **kwargs: object) -> Mapping[str, Json]: ...
+    def __call__(
+        self,
+        *,
+        gemini_api_key: None,
+        messages: list[JsonObject],
+        api_base: None,
+        model: str,
+        client: None,
+        timeout: None,
+        extra_headers: None,
+        optional_params: JsonObject,
+        logging_obj: Logging,
+        custom_llm_provider: str,
+        litellm_params: JsonObject,
+        vertex_project: None,
+        vertex_location: None,
+        vertex_auth_header: None,
+    ) -> Mapping[str, Json]: ...
 
 
 # LiteLLM's request body takes bare dicts and its RequestBody TypedDicts carry Any
