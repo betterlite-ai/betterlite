@@ -3,7 +3,7 @@ import sys
 from typing import TypedDict
 
 import pytest
-from pydantic import TypeAdapter, ValidationError
+from pydantic import JsonValue, TypeAdapter, ValidationError
 
 import betterlite.types.llms.oci as oci
 
@@ -45,6 +45,25 @@ def collect_literals(node, found):
             collect_literals(item, found)
 
 
+def type_shape(node):
+    if not isinstance(node, dict) or not node:
+        return "json"
+    if "$ref" in node:
+        return "json" if node["$ref"].endswith("/JsonValue") else {"$ref": node["$ref"]}
+    if "anyOf" in node:
+        return {"anyOf": [type_shape(item) for item in node["anyOf"]]}
+    kind = node.get("type")
+    if kind == "object":
+        extra = node.get("additionalProperties")
+        if extra is None or extra is True:
+            return "json"
+        inner = type_shape(extra)
+        return "json" if inner == "json" else {"object": inner}
+    if kind == "array":
+        return {"array": type_shape(node.get("items", {}))}
+    return kind if kind is not None else "json"
+
+
 def shape(schema):
     properties = schema.get("properties", {})
     literals = set()
@@ -58,6 +77,7 @@ def shape(schema):
             if "default" in field
         },
         "literals": sorted(literals),
+        "types": {name: type_shape(field) for name, field in properties.items()},
     }
 
 
@@ -93,6 +113,83 @@ def describe(module, aliases):
     return found
 
 
+def sample_dumps(module):
+    completion = module.OCICompletionPayload(
+        compartmentId="ocid1.compartment.oc1..example",
+        servingMode=module.OCIServingMode(
+            servingType="ON_DEMAND", modelId="cohere.command-r-plus"
+        ),
+        chatRequest=module.OCIChatRequestPayload(
+            apiFormat="COHERE",
+            messages=[
+                module.OCIMessage(
+                    role="USER",
+                    content=[
+                        module.OCITextContentPart(text="what is in this image?"),
+                        module.OCIImageContentPart(
+                            imageUrl=module.OCIImageUrl(url="https://example.com/cat.png")
+                        ),
+                    ],
+                    toolCalls=[
+                        module.OCIToolCall(
+                            id="call_1",
+                            type="FUNCTION",
+                            name="lookup",
+                            arguments='{"query": "cat"}',
+                        )
+                    ],
+                )
+            ],
+            isStream=False,
+            maxTokens=64,
+            temperature=0.2,
+            topP=0.5,
+            stop=["END"],
+            seed=7,
+            frequencyPenalty=0.1,
+            presencePenalty=0.1,
+            reasoningEffort="LOW",
+            responseFormat={"type": "JSON_OBJECT"},
+            toolChoice={"type": "FUNCTION", "name": "lookup"},
+            logitBias={"50256": -100},
+            logProbs=2,
+        ),
+    )
+    cohere = module.CohereChatRequest(
+        message="hello",
+        chatHistory=[
+            module.CohereUserMessage(message="hi"),
+            module.CohereToolMessage(
+                toolResults=[
+                    module.CohereToolResult(
+                        call=module.CohereToolCall(
+                            name="lookup", parameters={"query": "cat"}
+                        ),
+                        outputs=[{"text": "a cat"}],
+                    )
+                ]
+            ),
+        ],
+        maxTokens=32,
+        temperature=0.2,
+        topP=0.7,
+        topK=5,
+        frequencyPenalty=0.1,
+        presencePenalty=0.1,
+        stopSequences=["STOP"],
+        seed=3,
+        preambleOverride="be brief",
+        documents=[{"id": "d1"}],
+        searchQueriesOnly=False,
+        isStream=False,
+        citationQuality="ACCURATE",
+    )
+    return {
+        "completion": json.dumps(completion.model_dump(exclude_none=True), sort_keys=True),
+        "cohere": json.dumps(cohere.model_dump(exclude_none=True), sort_keys=True),
+    }
+
+
 print(json.dumps({
     "litellm": {
         "oci": describe(litellm_oci, ALIASES["oci"]),
@@ -103,6 +200,10 @@ print(json.dumps({
         "oci": describe(betterlite_oci, ALIASES["oci"]),
         "openai_evals": describe(betterlite_evals, ALIASES["openai_evals"]),
         "watsonx": describe(betterlite_watsonx, ALIASES["watsonx"]),
+    },
+    "dumps": {
+        "litellm": sample_dumps(litellm_oci),
+        "betterlite": sample_dumps(betterlite_oci),
     },
 }))
 """
@@ -194,6 +295,7 @@ class Shape(TypedDict):
     required: list[str]
     defaults: dict[str, str]
     literals: list[str]
+    types: dict[str, JsonValue]
 
 
 class ModelShape(Shape):
@@ -215,6 +317,7 @@ class ModuleNames(TypedDict):
 class NamesReport(TypedDict):
     litellm: dict[str, ModuleNames]
     betterlite: dict[str, ModuleNames]
+    dumps: dict[str, dict[str, str]]
 
 
 @pytest.fixture(scope="module")
@@ -256,13 +359,24 @@ def test_watsonx_names(report: NamesReport) -> None:
     assert report["betterlite"]["watsonx"] == expected
 
 
+def test_oci_wire_dumps(report: NamesReport) -> None:
+    dumps = report["dumps"]
+    assert dumps["betterlite"]["completion"] == dumps["litellm"]["completion"]
+    assert dumps["betterlite"]["cohere"] == dumps["litellm"]["cohere"]
+
+
 def test_role_names_are_enforced() -> None:
     assert oci.CohereUserMessage(role="USER").role == "USER"
-    with pytest.raises(ValidationError):
+    assert oci.CohereToolMessage(toolResults=[]).role == "TOOL"
+    with pytest.raises(ValidationError) as user:
         oci.CohereUserMessage(role="SYSTEM")
-    with pytest.raises(ValidationError):
+    assert user.value.errors()[0]["loc"] == ("role",)
+    with pytest.raises(ValidationError) as chatbot:
         oci.CohereChatBotMessage(role="USER")
-    with pytest.raises(ValidationError):
+    assert chatbot.value.errors()[0]["loc"] == ("role",)
+    with pytest.raises(ValidationError) as system:
         oci.CohereSystemMessage(role="USER")
-    with pytest.raises(ValidationError):
-        oci.CohereToolMessage(role="USER", tool_results=[])
+    assert system.value.errors()[0]["loc"] == ("role",)
+    with pytest.raises(ValidationError) as tool:
+        oci.CohereToolMessage(role="USER", toolResults=[])
+    assert tool.value.errors()[0]["loc"] == ("role",)
