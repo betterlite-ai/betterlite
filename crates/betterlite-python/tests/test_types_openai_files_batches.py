@@ -27,7 +27,6 @@ from betterlite.types.llms.openai.core.chat_blocks import (
 from betterlite.types.llms.openai.core.messages import AllMessageValues, ToolMessageContentPart
 from betterlite.types.llms.openai.core.threads import AttachmentTool
 
-
 HintMap: TypeAlias = dict[str, TypeForm[JsonValue] | None]
 
 
