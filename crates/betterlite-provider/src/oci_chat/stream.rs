@@ -61,10 +61,10 @@ impl SseDecoder {
     }
 
     fn decode_line(&mut self, line: &str, items: &mut Vec<StreamItem>) -> Result<(), OciError> {
-        let Some(data) = line.trim().strip_prefix(DATA_PREFIX) else {
+        let Some(payload) = line.trim().strip_prefix(DATA_PREFIX) else {
             return Ok(());
         };
-        let data = data.trim();
+        let data = payload.trim();
         if data == DONE_PAYLOAD {
             items.push(StreamItem::Done);
             return Ok(());
@@ -100,18 +100,12 @@ impl SseDecoder {
     }
 
     fn record(&mut self, choice: &Choice) {
-        if !self.emitted.tool_calls && choice.delta.tool_calls.is_some() {
-            self.emitted.tool_calls = true;
-        }
-        if !self.emitted.text
-            && choice
-                .delta
-                .content
-                .as_deref()
-                .is_some_and(|text| !text.is_empty())
-        {
-            self.emitted.text = true;
-        }
+        self.emitted.tool_calls |= choice.delta.tool_calls.is_some();
+        self.emitted.text |= choice
+            .delta
+            .content
+            .as_deref()
+            .is_some_and(|text| !text.is_empty());
     }
 }
 

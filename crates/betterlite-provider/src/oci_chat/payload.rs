@@ -40,16 +40,13 @@ pub enum OciChatRequest {
     Generic(OciChatRequestPayload),
 }
 
-pub async fn transform_request<Predicates>(
+pub async fn transform_request<Predicates: CapabilityPredicates + Send>(
     model: &str,
     messages: &[ChatMessage],
     optional_params: &Object,
     credentials: &OciCredentials,
     predicates: &mut Predicates,
-) -> Result<OciCompletionPayload, OciError>
-where
-    Predicates: CapabilityPredicates + Send,
-{
+) -> Result<OciCompletionPayload, OciError> {
     let Some(compartment_id) = credentials
         .oci_compartment_id
         .as_deref()
@@ -63,7 +60,10 @@ where
     let vendor = get_vendor_from_model(model);
     let serving_mode = serving_mode(model, optional_params)?;
     let selected = get_optional_params(vendor, optional_params, model, predicates).await?;
-    let chat_request = chat_request(vendor, messages, &selected)?;
+    let chat_request = match vendor {
+        OciVendor::Cohere => OciChatRequest::Cohere(cohere_request(messages, &selected)?),
+        OciVendor::Generic => OciChatRequest::Generic(generic_request(messages, &selected)?),
+    };
     Ok(OciCompletionPayload {
         compartment_id: compartment_id.to_owned(),
         serving_mode,
@@ -109,19 +109,6 @@ fn text_param(
     }
 }
 
-fn chat_request(
-    vendor: OciVendor,
-    messages: &[ChatMessage],
-    selected: &Object,
-) -> Result<OciChatRequest, OciError> {
-    match vendor {
-        OciVendor::Cohere => Ok(OciChatRequest::Cohere(cohere_request(messages, selected)?)),
-        OciVendor::Generic => Ok(OciChatRequest::Generic(generic_request(
-            messages, selected,
-        )?)),
-    }
-}
-
 fn cohere_request(
     messages: &[ChatMessage],
     selected: &Object,
@@ -136,8 +123,17 @@ fn cohere_request(
             message: NO_USER_MESSAGE.to_owned(),
         });
     };
-    let preamble = cohere_preamble(messages);
-    let history = cohere_history(messages);
+    let preamble = messages
+        .iter()
+        .filter(|message| message.role == Role::System)
+        .map(|message| extract_text_content(message.content.as_ref()))
+        .collect::<Vec<String>>()
+        .join("\n");
+    let history: Vec<ChatMessage> = messages
+        .iter()
+        .filter(|message| message.role != Role::System)
+        .cloned()
+        .collect();
     let mut fields = selected.clone();
     fields.insert(
         String::from("apiFormat"),
@@ -157,23 +153,6 @@ fn cohere_request(
     typed_request(fields, "CohereChatRequest")
 }
 
-fn cohere_preamble(messages: &[ChatMessage]) -> String {
-    messages
-        .iter()
-        .filter(|message| message.role == Role::System)
-        .map(|message| extract_text_content(message.content.as_ref()))
-        .collect::<Vec<String>>()
-        .join("\n")
-}
-
-fn cohere_history(messages: &[ChatMessage]) -> Vec<ChatMessage> {
-    messages
-        .iter()
-        .filter(|message| message.role != Role::System)
-        .cloned()
-        .collect()
-}
-
 fn generic_request(
     messages: &[ChatMessage],
     selected: &Object,
@@ -190,30 +169,21 @@ fn generic_request(
     typed_request(fields, "OCIChatRequestPayload")
 }
 
-fn typed_request<T>(fields: Object, type_name: &str) -> Result<T, OciError>
-where
-    T: DeserializeOwned,
-{
-    match serde_json::to_vec(&Json::Object(fields)) {
-        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|source| OciError {
-            status: 400,
-            message: format!("the OCI chat request does not fit {type_name}: {source}"),
-        }),
-        Err(source) => Err(encode_error(&source)),
-    }
+fn typed_request<T: DeserializeOwned>(fields: Object, type_name: &str) -> Result<T, OciError> {
+    let bytes =
+        serde_json::to_vec(&Json::Object(fields)).map_err(|source| encode_error(&source))?;
+    serde_json::from_slice(&bytes).map_err(|source| OciError {
+        status: 400,
+        message: format!("the OCI chat request does not fit {type_name}: {source}"),
+    })
 }
 
-fn json_of<T>(value: &T) -> Result<Json, OciError>
-where
-    T: Serialize,
-{
-    match serde_json::to_vec(value) {
-        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|source| encode_error(&source)),
-        Err(source) => Err(encode_error(&source)),
-    }
+fn json_of<T: Serialize>(value: &T) -> Result<Json, OciError> {
+    let bytes = serde_json::to_vec(value).map_err(|source| encode_error(&source))?;
+    serde_json::from_slice(&bytes).map_err(|source| encode_error(&source))
 }
 
-fn encode_error(source: &serde_json::Error) -> OciError {
+pub(crate) fn encode_error(source: &serde_json::Error) -> OciError {
     OciError {
         status: 500,
         message: format!("the OCI chat request cannot be encoded as JSON: {source}"),

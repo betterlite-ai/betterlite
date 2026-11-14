@@ -41,18 +41,23 @@ pub fn decode_chat_body(status: u16, body: &[u8]) -> Result<Json, OciError> {
     })
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ResponseInput<'response> {
+    pub model: &'response str,
+    pub status: u16,
+    pub body: &'response [u8],
+    pub headers: &'response IndexMap<String, String>,
+}
+
 pub fn transform_response(
-    model: &str,
-    status: u16,
-    body: &[u8],
-    headers: &IndexMap<String, String>,
+    input: ResponseInput<'_>,
     clock: &dyn Clock,
     ids: &dyn IdSource,
 ) -> Result<OciChatReply, OciError> {
-    let document = decode_chat_body(status, body)?;
+    let document = decode_chat_body(input.status, input.body)?;
     let Json::Object(fields) = &document else {
         return Err(OciError {
-            status,
+            status: input.status,
             message: INVALID_RESPONSE_FORMAT.to_owned(),
         });
     };
@@ -61,21 +66,21 @@ pub fn transform_response(
         .filter(|value| !matches!(value, Json::Null))
     {
         return Err(OciError {
-            status,
+            status: input.status,
             message: error_text(error),
         });
     }
     let mut response = empty_response(ids);
-    match get_vendor_from_model(model) {
+    match get_vendor_from_model(input.model) {
         OciVendor::Cohere => {
             let created = u64::try_from(clock.now().timestamp()).unwrap_or_default();
-            handle_cohere_response(&document, model, created, status, &mut response)?;
+            handle_cohere_response(&document, input.model, created, input.status, &mut response)?;
         }
-        OciVendor::Generic => handle_generic_response(&document, status, &mut response)?,
+        OciVendor::Generic => handle_generic_response(&document, input.status, &mut response)?,
     }
     Ok(OciChatReply {
         response,
-        additional_headers: process_response_headers(HeaderSource::Upstream(headers)),
+        additional_headers: process_response_headers(HeaderSource::Upstream(input.headers)),
     })
 }
 

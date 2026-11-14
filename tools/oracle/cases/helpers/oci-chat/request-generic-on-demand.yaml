@@ -66,5 +66,14 @@ call:
         reply: generic
         status: 200
         drop_params: false
+      - model: meta.llama-3.3-70b-instruct
+        messages:
+          - role: user
+            content: "hi"
+        params:
+          stream: true
+        reply: generic
+        status: 200
+        drop_params: false
 env: {}
 compare: {ignore: []}

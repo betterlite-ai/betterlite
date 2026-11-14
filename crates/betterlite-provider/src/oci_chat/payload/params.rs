@@ -13,15 +13,12 @@ use crate::oci_common::OciError;
 
 const DEFAULT_MAX_TOKENS: i64 = 4096;
 
-pub(super) async fn get_optional_params<Predicates>(
+pub(super) async fn get_optional_params<Predicates: CapabilityPredicates + Send>(
     vendor: OciVendor,
     optional_params: &Object,
     model: &str,
     predicates: &mut Predicates,
-) -> Result<Object, OciError>
-where
-    Predicates: CapabilityPredicates + Send,
-{
+) -> Result<Object, OciError> {
     let token_key = choose_token_key(vendor, model, predicates).await;
     let mut selected = select_params(vendor, optional_params, token_key);
     normalize_reasoning_effort(&mut selected);
@@ -37,14 +34,11 @@ where
     Ok(selected)
 }
 
-async fn choose_token_key<Predicates>(
+async fn choose_token_key<Predicates: CapabilityPredicates + Send>(
     vendor: OciVendor,
     model: &str,
     predicates: &mut Predicates,
-) -> &'static str
-where
-    Predicates: CapabilityPredicates + Send,
-{
+) -> &'static str {
     if vendor == OciVendor::Cohere
         || model.is_empty()
         || !uses_max_completion_tokens(model, predicates).await

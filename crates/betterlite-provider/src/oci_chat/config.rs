@@ -70,31 +70,25 @@ pub(crate) fn param_map(vendor: OciVendor) -> Vec<(&'static str, OciParam)> {
 }
 
 fn cohere_params() -> Vec<(&'static str, OciParam)> {
-    let mut params: Vec<(&'static str, OciParam)> = GENERIC_PARAMS
+    let mut params: Vec<_> = GENERIC_PARAMS
         .iter()
-        .map(|(key, alias)| match *key {
-            "stop" => (*key, OciParam::Oci("stopSequences")),
-            _ => (*key, *alias),
+        .map(|&(key, alias)| match key {
+            "stop" => (key, OciParam::Oci("stopSequences")),
+            _ if COHERE_UNSUPPORTED.contains(&key) => (key, OciParam::Unsupported),
+            _ => (key, alias),
         })
         .collect();
-    for (key, alias) in &mut params {
-        if COHERE_UNSUPPORTED.contains(key) {
-            *alias = OciParam::Unsupported;
-        }
-    }
     params.push(("top_k", OciParam::Oci("topK")));
     params
 }
 
 #[must_use]
 pub fn get_supported_openai_params(model: &str) -> Vec<&'static str> {
-    let mut supported = Vec::new();
-    for (key, alias) in param_map(get_vendor_from_model(model)) {
-        if matches!(alias, OciParam::Oci(_)) {
-            supported.push(key);
-        }
-    }
-    supported
+    param_map(get_vendor_from_model(model))
+        .into_iter()
+        .filter(|(_, alias)| matches!(alias, OciParam::Oci(_)))
+        .map(|(key, _)| key)
+        .collect()
 }
 
 #[must_use]
@@ -213,13 +207,10 @@ pub fn get_error_class(message: &str, status_code: u16) -> OciError {
 }
 
 #[must_use]
-pub async fn uses_max_completion_tokens<Predicates>(
+pub async fn uses_max_completion_tokens<Predicates: CapabilityPredicates + Send>(
     model: &str,
     predicates: &mut Predicates,
-) -> bool
-where
-    Predicates: CapabilityPredicates + Send,
-{
+) -> bool {
     if model.is_empty() {
         return false;
     }

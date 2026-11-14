@@ -4,28 +4,24 @@ from typing import Literal, NotRequired, TypeAlias, TypedDict
 import httpx
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.llms.base_llm.chat.transformation import BaseLLMException
+from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
-from litellm.llms.oci.chat.cohere import handle_cohere_response
-from litellm.llms.oci.chat.generic import handle_generic_response
 from litellm.llms.oci.chat.transformation import (
     OCIChatConfig,
     OCIStreamWrapper,
     get_vendor_from_model,
 )
-from litellm.llms.oci.common_utils import OCIError
-from litellm.types.llms.oci import OCIVendors
-from litellm.types.utils import ModelResponse, ModelResponseStream
+from litellm.types.utils import ModelResponse
 from openai import APIStatusError
-from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic import JsonValue, TypeAdapter
+
+litellm.suppress_debug_info = True
 
 API_BASE = "https://example.test"
 DATA_PREFIX = "data:"
-INVALID_RESPONSE_FORMAT = "Invalid response format from OCI"
 STREAM_MODEL = "meta.llama"
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
-OBJECT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 
 
 class ExchangeCall(TypedDict):
@@ -57,14 +53,8 @@ class StreamDump(TypedDict):
     choices: list[StreamChoice]
 
 
-class ToolCallDump(TypedDict, total=False):
-    id: str | None
-    function: dict[str, JsonValue] | None
-
-
 class MessageDump(TypedDict, total=False):
     content: str | None
-    tool_calls: list[ToolCallDump] | None
 
 
 class ResponseChoiceDump(TypedDict):
@@ -72,29 +62,17 @@ class ResponseChoiceDump(TypedDict):
     finish_reason: NotRequired[str | None]
 
 
-class UsageDump(TypedDict):
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-
-
 class ResponseDump(TypedDict):
     model: str
     choices: list[ResponseChoiceDump]
-    usage: UsageDump
 
 
 STREAM_DUMP: TypeAdapter[StreamDump] = TypeAdapter(StreamDump)
 RESPONSE_DUMP: TypeAdapter[ResponseDump] = TypeAdapter(ResponseDump)
 
 
-class SupportedCall(TypedDict):
-    function: Literal["supported"]
-    models: list[str]
-
-
-class VendorCall(TypedDict):
-    function: Literal["vendor"]
+class ModelsCall(TypedDict):
+    function: Literal["supported", "vendor"]
     models: list[str]
 
 
@@ -107,6 +85,7 @@ class ExchangeInput(TypedDict):
 
 class ResponseInput(TypedDict):
     function: Literal["response"]
+    credentials: dict[str, JsonValue]
     responses: list[ResponseCall]
 
 
@@ -115,7 +94,7 @@ class StreamInput(TypedDict):
     reads: list[str]
 
 
-Call: TypeAlias = SupportedCall | VendorCall | ExchangeInput | ResponseInput | StreamInput
+Call: TypeAlias = ModelsCall | ExchangeInput | ResponseInput | StreamInput
 
 
 class Recorder:
@@ -131,19 +110,19 @@ class Recorder:
 
 def supported_params(models: list[str]) -> JsonValue:
     config = OCIChatConfig()
-    found: list[JsonValue] = []
-    for model in models:
-        params = config.get_supported_openai_params(model=model)
-        found.append({"model": model, "params": JSON.validate_python(params)})
-    return {"models": found}
+    return {
+        "models": [
+            {
+                "model": model,
+                "params": JSON.validate_python(config.get_supported_openai_params(model=model)),
+            }
+            for model in models
+        ]
+    }
 
 
 def vendor_of(models: list[str]) -> JsonValue:
-    found: list[JsonValue] = []
-    for model in models:
-        vendor = get_vendor_from_model(model).name
-        found.append({"model": model, "vendor": vendor})
-    return {"models": found}
+    return {"models": [{"model": m, "vendor": get_vendor_from_model(m).name} for m in models]}
 
 
 def exchange_call(
@@ -169,109 +148,66 @@ def exchange_call(
     return {"body": recorder.bodies[-1]}
 
 
-def project_tool_call(call: ToolCallDump) -> JsonValue:
-    function = call.get("function")
-    name: JsonValue = None if function is None else function.get("name")
-    return {"id": call.get("id"), "name": name}
-
-
-def project_response(response: ModelResponse) -> JsonValue:
-    dumped = RESPONSE_DUMP.validate_json(response.model_dump_json())
-    choice = dumped["choices"][0]
-    message = choice["message"]
-    calls = message.get("tool_calls")
-    tool_calls: JsonValue = None
-    if calls is not None:
-        tool_calls = [project_tool_call(call) for call in calls]
-    usage = dumped["usage"]
-    return {
-        "model": dumped["model"],
-        "content": message.get("content"),
-        "finish_reason": choice.get("finish_reason"),
-        "tool_calls": tool_calls,
-        "usage": {
-            "prompt_tokens": usage["prompt_tokens"],
-            "completion_tokens": usage["completion_tokens"],
-            "total_tokens": usage["total_tokens"],
-        },
-    }
-
-
-def response_projection(call: ResponseCall) -> JsonValue:
-    raw = httpx.Response(call["status"], json=call["body"])
+def response_result(credentials: dict[str, JsonValue], call: ResponseCall) -> JsonValue:
+    recorder = Recorder(call["status"], call["body"])
+    client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(recorder)))
     try:
-        document = OBJECT.validate_python(call["body"])
-    except ValidationError as error:
-        raise OCIError(call["status"], INVALID_RESPONSE_FORMAT) from error
-    problem = document.get("error")
-    if problem is not None:
-        raise OCIError(call["status"], str(problem))
-    response = ModelResponse()
-    if get_vendor_from_model(call["model"]) == OCIVendors.COHERE:
-        return project_response(handle_cohere_response(document, call["model"], response, raw))
-    return project_response(handle_generic_response(document, call["model"], response, raw))
-
-
-def response_result(call: ResponseCall) -> JsonValue:
-    try:
-        return response_projection(call)
-    except BaseLLMException as error:
+        response = litellm.completion(
+            model=call["model"],
+            messages=[{"role": "user", "content": "hi"}],
+            api_base=API_BASE,
+            custom_llm_provider="oci",
+            client=client,
+            **credentials,
+        )
+    except APIStatusError as error:
         return {"status": error.status_code}
-
-
-def sse_data_lines(reads: list[str]) -> list[str]:
-    lines: list[str] = []
-    buffer = ""
-    for read in reads:
-        buffer += read
-        while "\n" in buffer:
-            line, buffer = buffer.split("\n", 1)
-            stripped = line.strip()
-            if stripped.startswith(DATA_PREFIX):
-                lines.append(stripped)
-    tail = buffer.strip()
-    if tail.startswith(DATA_PREFIX):
-        lines.append(tail)
-    return lines
-
-
-def stream_logger() -> Logging:
-    return Logging(
-        model=STREAM_MODEL,
-        messages=[],
-        stream=True,
-        call_type="completion",
-        start_time=dt.datetime.now(tz=dt.UTC),
-        litellm_call_id="oci-chat-stream",
-        function_id="oci-chat-stream",
-    )
-
-
-def project_chunk(chunk: ModelResponseStream) -> JsonValue:
-    dumped = STREAM_DUMP.validate_json(chunk.model_dump_json())
-    choice = dumped["choices"][0]
-    delta = choice["delta"]
-    return {
-        "content": delta.get("content"),
-        "tool_calls": delta.get("tool_calls") is not None,
-        "finish_reason": choice.get("finish_reason"),
-    }
+    match response:
+        case ModelResponse():
+            dumped = RESPONSE_DUMP.validate_json(response.model_dump_json())
+            choice = dumped["choices"][0]
+            return {
+                "model": dumped["model"],
+                "content": choice["message"].get("content"),
+                "finish_reason": choice.get("finish_reason"),
+            }
+        case CustomStreamWrapper():
+            raise ValueError("the OCI chat reply streamed")
 
 
 def stream_items(reads: list[str]) -> list[JsonValue]:
     wrapper = OCIStreamWrapper(
         completion_stream=iter(()),
         model=STREAM_MODEL,
-        logging_obj=stream_logger(),
+        logging_obj=Logging(
+            model=STREAM_MODEL,
+            messages=[],
+            stream=True,
+            call_type="completion",
+            start_time=dt.datetime.now(tz=dt.UTC),
+            litellm_call_id="oci-chat-stream",
+            function_id="oci-chat-stream",
+        ),
         custom_llm_provider="oci",
     )
     items: list[JsonValue] = []
-    for line in sse_data_lines(reads):
-        chunk = wrapper.chunk_creator(line)
+    for line in "".join(reads).split("\n"):
+        stripped = line.strip()
+        if not stripped.startswith(DATA_PREFIX):
+            continue
+        chunk = wrapper.chunk_creator(stripped)
         if chunk is None:
             items.append({"done": True})
-        else:
-            items.append(project_chunk(chunk))
+            continue
+        dumped = STREAM_DUMP.validate_json(chunk.model_dump_json())
+        choice = dumped["choices"][0]
+        items.append(
+            {
+                "content": choice["delta"].get("content"),
+                "tool_calls": choice["delta"].get("tool_calls") is not None,
+                "finish_reason": choice.get("finish_reason"),
+            }
+        )
     return items
 
 
@@ -289,6 +225,11 @@ def run(input_value: Call) -> JsonValue:
                 ]
             }
         case "response":
-            return {"calls": [response_result(call) for call in input_value["responses"]]}
+            return {
+                "calls": [
+                    response_result(input_value["credentials"], call)
+                    for call in input_value["responses"]
+                ]
+            }
         case "stream":
             return {"items": stream_items(input_value["reads"])}

@@ -1,7 +1,9 @@
 use indexmap::IndexMap;
 use rstest::rstest;
 
-use crate::oci_chat::response::{MAX_CHAT_BODY_BYTES, decode_chat_body, transform_response};
+use crate::oci_chat::response::{
+    MAX_CHAT_BODY_BYTES, ResponseInput, decode_chat_body, transform_response,
+};
 use crate::oci_chat::tests::support::{FixedClock, FixedIds, body, pick, to_json};
 
 const LLAMA: &str = "meta.llama-3.3-70b-instruct";
@@ -39,10 +41,12 @@ const COHERE_BODY: &str = r#"{
 #[test]
 fn response_decodes_a_generic_body() {
     let reply = transform_response(
-        LLAMA,
-        200,
-        GENERIC_BODY.as_bytes(),
-        &IndexMap::new(),
+        ResponseInput {
+            model: LLAMA,
+            status: 200,
+            body: GENERIC_BODY.as_bytes(),
+            headers: &IndexMap::new(),
+        },
         &FixedClock(0),
         &FixedIds,
     )
@@ -61,10 +65,12 @@ fn response_decodes_a_generic_body() {
 #[test]
 fn response_decodes_a_cohere_body() {
     let reply = transform_response(
-        "cohere.command-r",
-        200,
-        COHERE_BODY.as_bytes(),
-        &IndexMap::new(),
+        ResponseInput {
+            model: "cohere.command-r",
+            status: 200,
+            body: COHERE_BODY.as_bytes(),
+            headers: &IndexMap::new(),
+        },
         &FixedClock(1_700_000_000),
         &FixedIds,
     )
@@ -81,10 +87,12 @@ fn response_decodes_a_cohere_body() {
 fn response_ignores_a_null_error_key() {
     let with_null_error = GENERIC_BODY.replacen('{', r#"{"error": null,"#, 1);
     let reply = transform_response(
-        LLAMA,
-        200,
-        with_null_error.as_bytes(),
-        &IndexMap::new(),
+        ResponseInput {
+            model: LLAMA,
+            status: 200,
+            body: with_null_error.as_bytes(),
+            headers: &IndexMap::new(),
+        },
         &FixedClock(0),
         &FixedIds,
     )
@@ -100,16 +108,14 @@ fn response_ignores_a_null_error_key() {
 #[case::text(502, r#"{"error": "boom"}"#, "boom")]
 #[case::object(500, r#"{"error": {"message": "x"}}"#, r#"{"message":"x"}"#)]
 #[case::number(400, r#"{"error": 7}"#, "7")]
-fn response_maps_the_error_key(
-    #[case] status: u16,
-    #[case] given: &str,
-    #[case] message: &str,
-) {
+fn response_maps_the_error_key(#[case] status: u16, #[case] given: &str, #[case] message: &str) {
     let refusal = transform_response(
-        LLAMA,
-        status,
-        given.as_bytes(),
-        &IndexMap::new(),
+        ResponseInput {
+            model: LLAMA,
+            status,
+            body: given.as_bytes(),
+            headers: &IndexMap::new(),
+        },
         &FixedClock(0),
         &FixedIds,
     )
@@ -121,10 +127,12 @@ fn response_maps_the_error_key(
 #[test]
 fn response_rejects_a_body_that_is_not_an_object() {
     let refusal = transform_response(
-        LLAMA,
-        201,
-        b"[]",
-        &IndexMap::new(),
+        ResponseInput {
+            model: LLAMA,
+            status: 201,
+            body: b"[]",
+            headers: &IndexMap::new(),
+        },
         &FixedClock(0),
         &FixedIds,
     )
@@ -163,10 +171,12 @@ fn response_keeps_the_response_headers() {
     let mut headers = IndexMap::new();
     headers.insert(String::from("x-request-id"), String::from("abc"));
     let reply = transform_response(
-        LLAMA,
-        200,
-        GENERIC_BODY.as_bytes(),
-        &headers,
+        ResponseInput {
+            model: LLAMA,
+            status: 200,
+            body: GENERIC_BODY.as_bytes(),
+            headers: &headers,
+        },
         &FixedClock(0),
         &FixedIds,
     )

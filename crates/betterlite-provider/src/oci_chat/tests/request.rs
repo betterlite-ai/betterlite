@@ -2,7 +2,7 @@ use betterlite_openai::chat::Role;
 use betterlite_prompts::arguments::json::Json;
 use rstest::rstest;
 
-use crate::oci_chat::payload::{OciChatRequest, transform_request};
+use crate::oci_chat::payload::{OciChatRequest, encode_error, transform_request};
 use crate::oci_chat::tests::support::{
     FakePredicates, assert_json, body, build, chat_field, credentials, message, params, pick,
     rejected, to_json,
@@ -262,10 +262,13 @@ async fn reasoning_effort_is_upper_cased_and_disable_becomes_none(
 }
 
 #[tokio::test]
-async fn reasoning_effort_that_is_not_text_passes_through() {
-    assert_eq!(
-        chat_field(LLAMA, r#"{"reasoning_effort": 5}"#, "reasoningEffort").await,
-        body("5")
+async fn reasoning_effort_that_is_not_text_is_rejected_by_the_typed_payload() {
+    let refusal = rejected(LLAMA, r#"{"reasoning_effort": 5}"#).await;
+    assert_eq!(refusal.status, 400);
+    assert!(
+        refusal
+            .message
+            .starts_with("the OCI chat request does not fit OCIChatRequestPayload")
     );
 }
 
@@ -303,5 +306,17 @@ async fn tools_that_are_not_tool_definitions_are_rejected(#[case] optional: &str
         refusal
             .message
             .starts_with("`tools` is not a list of OpenAI tool definitions")
+    );
+}
+
+#[test]
+fn encode_failures_are_internal_errors() {
+    let source = serde_json::from_str::<u8>("x").unwrap_err();
+    let refusal = encode_error(&source);
+    assert_eq!(refusal.status, 500);
+    assert!(
+        refusal
+            .message
+            .starts_with("the OCI chat request cannot be encoded as JSON: ")
     );
 }
