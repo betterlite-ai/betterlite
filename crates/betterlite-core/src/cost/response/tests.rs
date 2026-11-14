@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_models::price_fields::decimal_lexeme::DecimalLexemeError;
 use rstest::rstest;
 
 use crate::cost::completion::error::{ChargeInputError, CompletionCostError};
@@ -103,7 +104,6 @@ async fn a_dictionary_response_has_no_hidden_attributes() {
 #[rstest]
 #[case::list("[1]")]
 #[case::object("{}")]
-#[case::words("\"free\"")]
 #[tokio::test]
 async fn a_header_that_is_not_a_number_is_a_typed_error(#[case] value: &str) {
     let usage = chat_usage(10, 5);
@@ -117,6 +117,25 @@ async fn a_header_that_is_not_a_number_is_a_typed_error(#[case] value: &str) {
         error,
         CompletionCostError::Input(ChargeInputError::CostHeader(_))
     ));
+}
+
+#[tokio::test]
+async fn a_header_text_that_is_not_a_decimal_keeps_the_parse_cause() {
+    let usage = chat_usage(10, 5);
+    let hidden = map(&header("\" free \""));
+    let view = chat_view(&usage, Some("gpt-4o"), Some(&hidden));
+    let error = rig(&[("gpt-4o", GPT)])
+        .respond(&args(Some(&view)), None, None::<&mut Stored>)
+        .await
+        .unwrap_err();
+    let (header, source) = match error {
+        CompletionCostError::Input(ChargeInputError::CostHeaderValue { header, source }) => {
+            (header, source)
+        }
+        other => panic!("expected the typed header parse error, got {other:?}"),
+    };
+    assert_eq!(header, "free");
+    assert!(matches!(source, DecimalLexemeError::Decimal(_)));
 }
 
 #[tokio::test]

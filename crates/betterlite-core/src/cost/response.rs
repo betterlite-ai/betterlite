@@ -41,7 +41,10 @@ fn header_cost(response: Option<&ResponseView<'_>>) -> Result<Option<Decimal>, C
     };
     parse_decimal_lexeme(&text)
         .map(Some)
-        .map_err(|source| ChargeInputError::CostHeader(source.to_string()))
+        .map_err(|source| ChargeInputError::CostHeaderValue {
+            header: text,
+            source,
+        })
 }
 
 // Ports response_cost_calculator: a cache hit is free, a provider-stated cost wins, and anything else is completion_cost.

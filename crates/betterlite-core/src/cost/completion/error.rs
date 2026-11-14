@@ -3,6 +3,7 @@ use std::error::Error;
 use std::num::TryFromIntError;
 
 use betterlite_cost::adjustments::AdjustmentError;
+use betterlite_models::price_fields::decimal_lexeme::DecimalLexemeError;
 use betterlite_models::tool_fees::error::ToolFeeError;
 use thiserror::Error;
 
@@ -26,8 +27,14 @@ pub enum ChargeInputError {
     OcrRate(#[source] serde_json::Error),
     #[error("the hidden parameter {field} must be a string or null")]
     Hidden { field: &'static str },
-    #[error("the response cost header is not a decimal number: {0}")]
+    #[error("the response cost header is not a number or a numeric string: {0}")]
     CostHeader(String),
+    #[error("the response cost header {header:?} is not a decimal number: {source}")]
+    CostHeaderValue {
+        header: String,
+        #[source]
+        source: DecimalLexemeError,
+    },
     #[error("the charge is too large to represent")]
     Overflow,
     #[error("the clock reads a time before the Unix epoch or past the supported range")]
