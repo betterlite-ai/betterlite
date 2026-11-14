@@ -7,8 +7,8 @@ use betterlite_secrets::gateway_key::get_litellm_gateway_api_key;
 use pyo3::prelude::*;
 use tempfile::TempDir;
 
-use super::{ProxyClientNative, register};
 use super::token::TokenFileStore;
+use super::{ProxyClientNative, register};
 
 fn store_in(home: &Path) -> TokenFileStore {
     TokenFileStore {
