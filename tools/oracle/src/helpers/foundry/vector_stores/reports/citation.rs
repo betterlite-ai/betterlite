@@ -8,7 +8,7 @@ use betterlite_openai::api::vector_store_records::records::score::Score;
 use betterlite_openai::api::vector_store_records::records::vector::{
     VectorStoreResultContent, VectorStoreSearchResponse, VectorStoreSearchResult,
 };
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::prelude::ToPrimitive as _;
 use serde_json::{Number, Value, json};
 
 use super::super::fixtures::FixtureExecutor;
@@ -53,13 +53,23 @@ fn error_status(error: &AzureSearchError) -> Value {
     match error {
         AzureSearchError::ReplyJson { status_code, .. }
         | AzureSearchError::ReplyShape { status_code, .. } => Value::from(*status_code),
-        _ => Value::Null,
+        AzureSearchError::MissingApiKey
+        | AzureSearchError::MissingServiceName
+        | AzureSearchError::MissingEmbeddingModel
+        | AzureSearchError::InvalidField { .. }
+        | AzureSearchError::Embedding { .. }
+        | AzureSearchError::NoFirstRecord
+        | AzureSearchError::NotAVector
+        | AzureSearchError::Score { .. }
+        | AzureSearchError::Attributes { .. }
+        | AzureSearchError::Token { .. }
+        | AzureSearchError::CreateNotImplemented => Value::Null,
     }
 }
 
 fn page_report(page: &VectorStoreSearchResponse) -> Value {
-    let data = page.data.as_ref().map_or(Value::Null, |data| {
-        Value::Array(data.iter().map(result_report).collect())
+    let data = page.data.as_ref().map_or(Value::Null, |rows| {
+        Value::Array(rows.iter().map(result_report).collect())
     });
     json!({
         "ok": true,

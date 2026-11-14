@@ -4,9 +4,7 @@ use betterlite_foundry::vector_stores::environment::Params;
 use betterlite_foundry::vector_stores::search::SearchQuery;
 use serde::Deserialize;
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct StoreTypeEndpointsInput {}
+pub(crate) type StoreTypeEndpointsInput = Params;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -99,9 +97,7 @@ pub(crate) struct BeforeSearch {
     pub(crate) litellm_params: Params,
 }
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct UnsupportedStoreCreateInput {}
+pub(crate) type UnsupportedStoreCreateInput = Params;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]

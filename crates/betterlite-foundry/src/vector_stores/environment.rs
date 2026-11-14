@@ -6,7 +6,7 @@ use betterlite_azure::credentials::source::{CallableTokenProvider, CredentialSou
 use betterlite_config::sections::azure_credentials::DeploymentSettings;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::VectorStoreIndexEndpoints;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::error::AzureSearchError;
 

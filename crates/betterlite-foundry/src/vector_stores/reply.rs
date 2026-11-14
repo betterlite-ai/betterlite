@@ -122,7 +122,10 @@ fn score_field(
 fn search_query(logging: &SearchLogging) -> String {
     match logging.model_call_details.get("input") {
         Some(Json::Text(text)) => text.clone(),
-        _ => String::new(),
+        None
+        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            String::new()
+        }
     }
 }
 

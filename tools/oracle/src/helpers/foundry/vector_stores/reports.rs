@@ -52,7 +52,7 @@ fn search_outcome(scenario: &SearchScenario) -> Value {
         .unwrap_or_else(|| vec![0.25, 0.5]);
     let executor = FixtureExecutor::new(vec![embedding]);
     let mut logging = SearchLogging::default();
-    let call = search_request(AzureSearchStoreRequest {
+    let outcome = search_request(AzureSearchStoreRequest {
         vector_store_id: &scenario.vector_store_id,
         query: &scenario.query,
         optional_params: &scenario.optional_params,
@@ -62,16 +62,16 @@ fn search_outcome(scenario: &SearchScenario) -> Value {
         embedding_executor: &executor,
     });
     let calls = calls_report(&executor.calls());
-    let logging = logging_report(&logging);
+    let logged = logging_report(&logging);
     let extra_body = scenario.extra_body.as_ref().map_or(Value::Null, |body| {
         serde_json::to_value(body).unwrap_or(Value::Null)
     });
-    match call {
+    match outcome {
         Ok(call) => json!({
             "ok": true,
             "url": call.url,
             "body": call.body,
-            "logging": logging,
+            "logging": logged,
             "calls": calls,
             "extra_body": extra_body,
         }),
@@ -128,7 +128,7 @@ fn embedded_report(input: &VectorQueryWithEmbeddingInput) -> HelperResult {
 fn embedded_outcome(scenario: &EmbeddedSearchScenario) -> Result<Value, Box<HelperError>> {
     let executor = FixtureExecutor::new(vec![scenario.embedding.clone()]);
     let mut logging = SearchLogging::default();
-    let call = if scenario.asynchronous {
+    let outcome = if scenario.asynchronous {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .map_err(|error| runtime_error(error.to_string()))?;
@@ -153,7 +153,7 @@ fn embedded_outcome(scenario: &EmbeddedSearchScenario) -> Result<Value, Box<Help
         })
     };
     let calls = calls_report(&executor.calls());
-    match call {
+    match outcome {
         Ok(call) => Ok(json!({"ok": true, "url": call.url, "body": call.body, "calls": calls})),
         Err(_error) => Ok(json!({
             "ok": false,

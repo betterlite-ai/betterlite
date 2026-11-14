@@ -1,4 +1,4 @@
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::vector_stores::environment::{
     AuthCredentials, Headers, Params, auth_credentials, complete_url,

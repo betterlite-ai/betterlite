@@ -12,7 +12,7 @@ pub(super) fn create_report(_input: &UnsupportedStoreCreateInput) -> Value {
 
 fn create_outcome(step: CreateStep) -> Value {
     match create_vector_store(step) {
-        Ok(_never) => json!({"ok": true}),
+        Ok(never) => match never {},
         Err(_error) => json!({"ok": false, "status": Value::Null}),
     }
 }

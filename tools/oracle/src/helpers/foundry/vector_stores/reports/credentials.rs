@@ -1,7 +1,7 @@
 use betterlite_foundry::vector_stores::environment::{
     EnvironmentRequest, Headers, Params, auth_credentials, validate_environment,
 };
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
 use super::super::fixtures::{NoSources, empty_credentials};
@@ -41,7 +41,7 @@ fn header_report(scenario: &HeaderScenario) -> Value {
         sources: &sources,
     };
     match validate_environment(request) {
-        Ok(headers) => json!({"ok": true, "headers": exposed(&headers)}),
+        Ok(validated) => json!({"ok": true, "headers": exposed(&validated)}),
         Err(_error) => json!({"ok": false}),
     }
 }

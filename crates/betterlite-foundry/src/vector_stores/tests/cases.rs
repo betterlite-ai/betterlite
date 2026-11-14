@@ -4,7 +4,7 @@ use betterlite_openai::api::vector_store_records::records::vector::{
 };
 use rstest::rstest;
 use rust_decimal::Decimal;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::vector_stores::create::{CreateStep, create_vector_store};
 use crate::vector_stores::embedding::{query_embedding_configuration, query_embedding_model};
@@ -21,7 +21,7 @@ use crate::vector_stores::search::{
     search_request,
 };
 
-use super::support::{Call, FailingExecutor, FixtureExecutor, NoSources, empty_credentials};
+use super::support::{FailingExecutor, FixtureExecutor, NoSources, empty_credentials};
 
 const API_BASE: &str = "https://foundry-search.example";
 const EMBEDDING_MODEL: &str = "openai/text-embedding-3-small";
@@ -255,7 +255,7 @@ fn validate_environment_overwrites_content_type() {
     .expect("headers");
     assert_eq!(secret(&validated, "Content-Type"), "application/json");
     let cased = Headers::from([("content-type".to_owned(), SecretString::from("text/plain"))]);
-    let validated = validate_environment(EnvironmentRequest {
+    let lowercase = validate_environment(EnvironmentRequest {
         headers: cased,
         api_key: Some(&key),
         credentials: &credentials,
@@ -264,8 +264,8 @@ fn validate_environment_overwrites_content_type() {
         sources: &sources,
     })
     .expect("headers");
-    assert_eq!(secret(&validated, "content-type"), "text/plain");
-    assert_eq!(secret(&validated, "Content-Type"), "application/json");
+    assert_eq!(secret(&lowercase, "content-type"), "text/plain");
+    assert_eq!(secret(&lowercase, "Content-Type"), "application/json");
 }
 
 fn search_call(
@@ -291,8 +291,8 @@ fn search_query_fields() {
     let executor = FixtureExecutor::new(vec![0.25, 0.5]);
     let litellm_params = embedding_params();
     let query = SearchQuery::Text("hello".to_owned());
-    let (call, logging) = search_call(&query, &Params::new(), &litellm_params, &executor);
-    let call = call.expect("search");
+    let (outcome, logging) = search_call(&query, &Params::new(), &litellm_params, &executor);
+    let call = outcome.expect("search");
     assert_eq!(
         call.url,
         "https://foundry-search.example/indexes/store-1/docs/search?api-version=2024-07-01"
@@ -314,7 +314,7 @@ fn search_query_fields() {
         Some(&Json::Text(EMBEDDING_MODEL.to_owned()))
     );
     assert_eq!(logging.model_call_details.get("top_k"), Some(&number(10)));
-    let calls: Vec<Call> = executor.calls();
+    let calls = executor.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].model, EMBEDDING_MODEL);
     assert_eq!(calls[0].query, "hello");
@@ -363,8 +363,8 @@ fn search_query_fields_defaults_only_when_absent() {
     ));
     let optional = params(r#"{"top_k":null}"#);
     let query = SearchQuery::Text("q".to_owned());
-    let (call, logging) = search_call(&query, &optional, &litellm_params, &executor);
-    let call = call.expect("search");
+    let (outcome, logging) = search_call(&query, &optional, &litellm_params, &executor);
+    let call = outcome.expect("search");
     assert_eq!(call.body.vector_queries[0].fields, "");
     assert_eq!(call.body.top, 10);
     assert_eq!(logging.model_call_details.get("top_k"), Some(&number(10)));
@@ -376,14 +376,17 @@ fn search_query_fields_rejects_bad_types() {
     let litellm_params = embedding_params();
     let query = SearchQuery::Text("q".to_owned());
     let optional = params(r#"{"top_k":"three"}"#);
-    let (call, _logging) = search_call(&query, &optional, &litellm_params, &executor);
+    let (bad_top_k, _) = search_call(&query, &optional, &litellm_params, &executor);
     assert!(matches!(
-        call,
+        bad_top_k,
         Err(AzureSearchError::InvalidField { field: "top_k", .. })
     ));
     assert_eq!(executor.calls().len(), 1);
-    let (call, _logging) = search_call(&query, &Params::new(), &params("{}"), &executor);
-    assert!(matches!(call, Err(AzureSearchError::MissingEmbeddingModel)));
+    let (missing_model, _) = search_call(&query, &Params::new(), &params("{}"), &executor);
+    assert!(matches!(
+        missing_model,
+        Err(AzureSearchError::MissingEmbeddingModel)
+    ));
     assert_eq!(executor.calls().len(), 1);
 }
 
@@ -557,9 +560,9 @@ fn document_score_citation_defaults() {
         data[0].score.as_ref().map(|score| score.0),
         Some(Decimal::ZERO)
     );
-    let page =
+    let nulls =
         decode(r#"{"value":[{"id":null,"content":null,"@search.score":null}]}"#).expect("page");
-    assert_eq!(page.data.expect("data")[0].file_id.as_deref(), Some(""));
+    assert_eq!(nulls.data.expect("data")[0].file_id.as_deref(), Some(""));
 }
 
 fn document_score_citation_omits_missing_value() {

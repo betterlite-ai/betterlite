@@ -36,7 +36,15 @@ pub fn query_text(query: &SearchQuery) -> String {
 pub fn query_embedding_model(litellm_params: &Params) -> Result<&str, AzureSearchError> {
     match litellm_params.get("litellm_embedding_model") {
         Some(Json::Text(model)) if !model.is_empty() => Ok(model),
-        _ => Err(AzureSearchError::MissingEmbeddingModel),
+        None
+        | Some(
+            Json::Null
+            | Json::Bool(_)
+            | Json::Number(_)
+            | Json::Text(_)
+            | Json::List(_)
+            | Json::Object(_),
+        ) => Err(AzureSearchError::MissingEmbeddingModel),
     }
 }
 
@@ -47,7 +55,10 @@ pub fn query_embedding_configuration(litellm_params: &Params) -> Params {
             .iter()
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect(),
-        _ => Params::new(),
+        None
+        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            Params::new()
+        }
     }
 }
 
