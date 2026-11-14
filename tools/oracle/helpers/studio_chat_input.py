@@ -29,9 +29,11 @@ class Input(TypedDict):
 
 def answer(step: Step) -> Json:
     if step["op"] == "params":
-        return JSON.validate_python(
-            GoogleAIStudioGeminiConfig().get_supported_openai_params(step["model"])
-        )
+        return {
+            "params": JSON.validate_python(
+                GoogleAIStudioGeminiConfig().get_supported_openai_params(step["model"])
+            )
+        }
     logging_object = Logging(
         model=step["model"],
         messages=None,
