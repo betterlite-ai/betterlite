@@ -6,7 +6,7 @@ use super::logging::InteractionsStreamLogging;
 use super::records::{
     HiddenParamsInput, InteractionsStreamSetup, InteractionsSuccessCall, hidden_params,
 };
-use super::response::InteractionsAsyncResponse;
+use super::response::{InteractionsAsyncResponse, InteractionsLineStream};
 use crate::api::interactions::contract::config::BaseInteractionsAPIConfig;
 
 pub struct InteractionsStreamIterator<'base, Response, Config, Logging>

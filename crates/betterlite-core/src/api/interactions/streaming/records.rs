@@ -60,9 +60,12 @@ impl InteractionsApiBase for SharedApiBase<'_> {
     }
 }
 
-pub fn hidden_params<Logging: InteractionsStreamLogging>(
+pub fn hidden_params<Logging>(
     input: HiddenParamsInput<'_, Logging>,
-) -> Result<InteractionsStreamHiddenParams, FieldTypeError> {
+) -> Result<InteractionsStreamHiddenParams, FieldTypeError>
+where
+    Logging: InteractionsStreamLogging,
+{
     let HiddenParamsInput {
         headers,
         model,
