@@ -1,0 +1,13 @@
+kind: helper
+name: usage_already_normalized
+call:
+  copilot_chat:
+    action: repair_reply
+    response:
+      id: msg_u
+      content: ok
+      stop_reason: end_turn
+      usage: {prompt_tokens: 2, completion_tokens: 3, total_tokens: 9}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,14 @@
+kind: helper
+name: system_role_switch
+call:
+  copilot_chat:
+    action: transform_messages
+    disable_system_to_assistant: false
+    model: gpt-4o
+    messages:
+      - {role: system, content: rules, name: setup}
+      - {role: user, content: hi}
+      - {role: developer, content: dev}
+env: {}
+compare:
+  ignore: []
