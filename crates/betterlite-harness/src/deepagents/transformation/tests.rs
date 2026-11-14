@@ -22,8 +22,8 @@ use super::tools::{
     AllowedDecision, blocked_tools, interrupt_config, native_tool_name, normalized_tool_name,
 };
 use super::update::{
-    ActionRequest, HitlDecision, Interrupt, InterruptValue, TurnState, Update, UpdateEntry,
-    decision, interrupts_in, structured_json, update_events,
+    ActionRequest, HitlDecision, INTERRUPT_KEY, Interrupt, InterruptValue, TurnState, Update,
+    UpdateEntry, decision, interrupts_in, structured_json, update_events,
 };
 use super::{
     BASE_RECURSION_LIMIT, DEEPAGENTS_STEPS_PER_TURN, DEFAULT_RECURSION_LIMIT, EVENT_NODES,
@@ -574,8 +574,8 @@ fn chat_model_kwargs_use_the_gateway_when_one_is_configured() {
     assert_eq!(kwargs.model, "litellm_proxy/openai/gpt-4o");
     assert_eq!(kwargs.api_base.as_deref(), Some("http://proxy:4000"));
     assert_eq!(
-        kwargs.api_key.as_ref().map(ExposeSecret::expose_secret),
-        Some("proxy-key")
+        kwargs.api_key.as_ref().unwrap().expose_secret(),
+        "proxy-key"
     );
     let headers = kwargs.extra_headers.unwrap();
     assert_eq!(
@@ -592,10 +592,7 @@ fn chat_model_kwargs_use_the_sdk_without_a_gateway() {
     let kwargs = chat_model_kwargs(&context).unwrap();
     assert_eq!(kwargs.model, "openai/gpt-4o");
     assert_eq!(kwargs.api_base.as_deref(), Some("http://sdk"));
-    assert_eq!(
-        kwargs.api_key.as_ref().map(ExposeSecret::expose_secret),
-        Some("sdk-key")
-    );
+    assert_eq!(kwargs.api_key.as_ref().unwrap().expose_secret(), "sdk-key");
     assert!(kwargs.extra_headers.is_none());
 }
 
@@ -693,7 +690,7 @@ fn config_declares_every_deepagents_capability() {
 #[test]
 fn config_is_an_in_process_harness() {
     assert_eq!(DeepAgentsHarnessConfig::HARNESS, Harness::DeepAgents);
-    assert!(!DeepAgentsHarnessConfig::USES_MODEL_ENDPOINT);
+    const { assert!(!DeepAgentsHarnessConfig::USES_MODEL_ENDPOINT) };
 }
 
 #[test]
@@ -712,7 +709,7 @@ fn constants_match_litellm() {
 
 #[test]
 fn interrupt_key_is_the_langgraph_interrupt_key() {
-    assert_eq!(super::update::INTERRUPT_KEY, "__interrupt__");
+    assert_eq!(INTERRUPT_KEY, "__interrupt__");
 }
 
 #[test]

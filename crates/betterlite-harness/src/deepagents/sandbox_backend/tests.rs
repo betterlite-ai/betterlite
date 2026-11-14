@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use tokio::task::yield_now;
+
 use crate::deepagents::transformation::message::{ToolCall, ToolResult};
 use crate::types::JsonObject;
 
@@ -81,5 +83,6 @@ async fn the_same_filter_serves_an_async_handler() {
     let middleware = filter(&["execute"]);
     let kept = middleware.filter_tools(vec![tool("read_file"), tool("execute")]);
     assert_eq!(kept.len(), 1);
+    yield_now().await;
     assert!(middleware.refusal(&call("execute")).is_some());
 }
