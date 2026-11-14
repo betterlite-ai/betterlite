@@ -96,7 +96,10 @@ def call_result(call: Call) -> dict[str, JsonValue]:
     )
     watch = Watch()
     logger = logging.getLogger("LiteLLM")
-    logger.addHandler(watch)
+    previous_handlers = logger.handlers
+    previous_level = logger.level
+    logger.handlers = [watch]
+    logger.setLevel(logging.DEBUG)
     try:
         transformed = config.transform_anthropic_messages_request(
             call["model"],
@@ -106,7 +109,8 @@ def call_result(call: Call) -> dict[str, JsonValue]:
             NO_PARAMS,
         )
     finally:
-        logger.removeHandler(watch)
+        logger.handlers = previous_handlers
+        logger.setLevel(previous_level)
     return outcome(RESULT.validate_python(transformed), watch)
 
 
