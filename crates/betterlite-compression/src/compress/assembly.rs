@@ -1,6 +1,7 @@
 use indexmap::IndexMap;
 use serde_json::Value;
 use std::collections::BTreeSet;
+use std::ops::{Div, Sub};
 
 use crate::extract_key::extract_key;
 use crate::message_normalization::content_to_text;
@@ -67,8 +68,9 @@ fn compression_ratio(
     let compressed =
         u32::try_from(compressed_tokens).map_or_else(|_| f64::from(u32::MAX), f64::from);
     let original = u32::try_from(original_tokens).map_or_else(|_| f64::from(u32::MAX), f64::from);
+    let reduced = Sub::sub(1.0_f64, Div::div(compressed, original));
     // Python rounds the double's exact value, ties to even: 0.03125 stays 0.0312
-    format!("{:.4}", 1.0 - compressed / original)
+    format!("{:.4}", reduced)
         .parse()
         .map_err(CompressError::Ratio)
 }

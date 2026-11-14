@@ -2,6 +2,8 @@ use betterlite_tokenizer::count::error::CountError;
 use indexmap::IndexMap;
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
+use std::error::Error;
+use std::num::ParseFloatError;
 
 use crate::anthropic_tool_exchange::extract_exchange_spans;
 use crate::bm25_scoring::{
@@ -76,7 +78,7 @@ pub enum CompressError {
     #[error("the token count could not be computed")]
     Counting(#[source] CountError),
     #[error("the compression ratio could not be read back from its decimal form")]
-    Ratio(#[source] std::num::ParseFloatError),
+    Ratio(#[source] ParseFloatError),
     #[error(transparent)]
     RetrievalTools(#[from] RetrievalToolError),
 }
@@ -84,7 +86,7 @@ pub enum CompressError {
 #[derive(Debug, thiserror::Error)]
 pub enum EmbeddingCompressError<ExecutorFailure>
 where
-    ExecutorFailure: std::error::Error + 'static,
+    ExecutorFailure: Error + 'static,
 {
     #[error(transparent)]
     Compression(#[from] CompressError),
@@ -224,7 +226,11 @@ where
         ));
     }
     let kept_indices = protected_kept_indices(&prepared.original_messages, &tool_exchange_spans);
-    let default_target = prepared.compression_trigger.saturating_mul(7) / 10;
+    let default_target = prepared
+        .compression_trigger
+        .saturating_mul(7)
+        .checked_div(10)
+        .unwrap_or_default();
     let compression_target = request.compression_target.unwrap_or(default_target);
     let selection = select_kept_indices_for_budget(
         &BudgetSelectionRequest {
