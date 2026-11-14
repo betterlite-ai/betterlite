@@ -111,6 +111,32 @@ async fn posts_the_count_with_the_stripped_model() {
 }
 
 #[tokio::test]
+async fn the_model_is_stripped_before_the_publisher_is_chosen() {
+    let transport = Script::answering(200, "{}");
+    let body = body(Some(CLAUDE), Some(Vec::new()));
+    let options = options(None);
+    let settings = settings(None);
+    let call = PartnerCountCall {
+        model: "gemini-2.5-pro@claude",
+        body: &body,
+        api_base: None,
+        params: params(Some("proj"), None, None),
+        options: &options,
+        settings: &settings,
+    };
+
+    let error = handle_count_tokens_request(&transport, &call, &FixedMint)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        &error,
+        PartnerCountError::UnknownPublisher { model } if model == "gemini-2.5-pro"
+    ));
+    assert!(transport.sent().is_empty());
+}
+
+#[tokio::test]
 async fn an_empty_messages_list_is_accepted() {
     let transport = Script::answering(200, "{}");
     let body = body(Some(CLAUDE), Some(Vec::new()));
