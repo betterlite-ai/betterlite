@@ -1,3 +1,4 @@
+import json
 import os
 from collections.abc import Callable
 from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict
@@ -15,7 +16,7 @@ Headers: TypeAlias = dict[str, str]
 Environment: TypeAlias = dict[str, str]
 Provider: TypeAlias = Literal["nimble", "parallel_ai"]
 Url: TypeAlias = Callable[[str | None, Params], str]
-TransformRequest: TypeAlias = Callable[[str | list[str], Params], JsonValue]
+TransformRequest: TypeAlias = Callable[[str | list[str], Params], object]  # ast-grep-ignore: no-loose-types
 TransformReply: TypeAlias = Callable[[httpx.Response, Logging], BaseModel]
 ErrorClass: TypeAlias = Callable[[str, int, Headers], Exception]
 
@@ -27,6 +28,8 @@ ENVIRONMENT: Final = (
     "PARALLEL_API_KEY",
     "PARALLEL_AI_API_BASE",
 )
+# LiteLLM's own class carries Any through its constructor, so the catch names the base class through a typed alias
+PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
 
 class UrlCall(TypedDict):
@@ -130,7 +133,7 @@ def request_answer(search: SearchConfig, call: RequestCall) -> JsonValue:
     except (TypeError, ValueError):
         return failure(None)
     # LiteLLM spreads tuples for the domain lists, which json.dumps writes as arrays
-    answer: dict[str, JsonValue] = {"ok": True, "value": body}
+    answer: dict[str, JsonValue] = {"ok": True, "value": JSON.validate_json(json.dumps(body))}
     return answer
 
 
@@ -148,10 +151,11 @@ def reply_answer(search: SearchConfig, provider: Provider, call: ReplyCall) -> J
     logging_object = LoggingRecord({} if params is None else params)
     try:
         parsed = search.transform_search_response(response, logging_object)
-    except BaseLLMException as error:
-        return failure(error.status_code)
     except (TypeError, ValueError):
         return failure(None)
+    except PROVIDER_ERROR as error:
+        record = ErrorRecord.model_validate(error, from_attributes=True)
+        return failure(record.status_code)
     reply = JSON.validate_json(parsed.model_dump_json())
     if provider == "nimble":
         single: dict[str, JsonValue] = {"ok": True, "value": reply}
@@ -169,8 +173,8 @@ def error_answer(search: SearchConfig, call: ErrorCall) -> JsonValue:
     )
     record = ErrorRecord.model_validate(raised, from_attributes=True)
     answer: dict[str, JsonValue] = {
-        "status_code": record.status_code,
-        "message": record.message,
+        "ok": True,
+        "value": {"status_code": record.status_code, "message": record.message},
     }
     return answer
 
