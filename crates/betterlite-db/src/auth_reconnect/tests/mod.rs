@@ -682,6 +682,33 @@ async fn failures_record_original_target() {
     assert!(!policy.has_failed_repair_for(&engine.reader_handle(), 0));
 }
 
+#[tokio::test]
+async fn failed_repairs_keep_two() {
+    let effects = fakes::effects();
+    let engine = FakeEngine::new(EngineScript::default(), Arc::clone(&effects));
+    let policy = policy_with_engine(engine.clone(), Arc::clone(&effects));
+    let other = FakeEngine::new(EngineScript::default(), fakes::effects());
+    let first =
+        StaleReadEngine::observe(&engine.writer_observation()).expect("the writer is named");
+    let second =
+        StaleReadEngine::observe(&engine.reader_observation()).expect("the reader is named");
+    let third = StaleReadEngine::observe(&other.writer_observation()).expect("the writer is named");
+    let missing = ReconnectRequest {
+        reason: "missing_url",
+        force: true,
+        force_recreate: false,
+        timeout: None,
+        lock_timeout: None,
+        database_url: None,
+    };
+    assert!(!policy.attempt_db_reconnect(&missing, Some(&first)).await);
+    assert!(!policy.attempt_db_reconnect(&missing, Some(&second)).await);
+    assert!(!policy.attempt_db_reconnect(&missing, Some(&third)).await);
+    assert!(!policy.has_failed_repair_for(&engine.writer_handle(), 0));
+    assert!(policy.has_failed_repair_for(&engine.reader_handle(), 0));
+    assert!(policy.has_failed_repair_for(&other.writer_handle(), 0));
+}
+
 #[tokio::test(start_paused = true)]
 async fn overall_timeout() {
     let logs = CapturedLogs::default();
