@@ -1,7 +1,7 @@
-from typing import Literal
+from typing import Literal, Required
 
 from pydantic import JsonValue
-from typing_extensions import Required, TypedDict
+from typing_extensions import TypedDict
 
 
 # ast-grep-ignore: no-long-names

@@ -1,10 +1,10 @@
-from typing import Literal, TypeAlias
+from typing import Literal, Required, TypeAlias
 
-from typing_extensions import Required, TypedDict
+from typing_extensions import TypedDict
 
 from betterlite.types.llms.bedrock.invoke.embeddings import (
     AmazonTitanG1EmbeddingRequest,
-    AmazonTitanMultimodalEmbeddingRequest,  # ast-grep-ignore: no-long-names
+    AmazonTitanMultimodalEmbeddingRequest,
     AmazonTitanV2EmbeddingRequest,
 )
 
@@ -97,7 +97,6 @@ class NovaSingleEmbeddingParams(TypedDict, total=False):
 class NovaSegmentedEmbeddingParams(TypedDict, total=False):
     embeddingPurpose: Required[NOVA_EMBEDDING_PURPOSES]
     embeddingDimension: NOVA_EMBEDDING_DIMENSIONS
-    # ast-grep-ignore: no-long-names
     text: NovaTextParamsWithSegmentation
     image: NovaImageParams
     # ast-grep-ignore: no-long-names

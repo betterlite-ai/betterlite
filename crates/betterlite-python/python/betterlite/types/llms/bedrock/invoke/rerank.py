@@ -1,7 +1,7 @@
-from typing import Literal
+from typing import Literal, Required
 
 from pydantic import JsonValue
-from typing_extensions import Required, TypedDict
+from typing_extensions import TypedDict
 
 
 class BedrockRerankTextQuery(TypedDict):
@@ -18,7 +18,8 @@ class BedrockRerankModelConfiguration(TypedDict, total=False):  # ast-grep-ignor
     modelConfiguration: dict[str, JsonValue]
 
 
-class BedrockRerankBedrockRerankingConfiguration(TypedDict):  # ast-grep-ignore: no-long-names
+# ast-grep-ignore: no-long-names
+class BedrockRerankBedrockRerankingConfiguration(TypedDict):
     # ast-grep-ignore: no-long-names
     modelConfiguration: BedrockRerankModelConfiguration
     numberOfResults: int

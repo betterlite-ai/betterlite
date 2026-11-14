@@ -1,7 +1,7 @@
 from collections.abc import Sequence
-from typing import Literal, TypeAlias
+from typing import Literal, Required, TypeAlias
 
-from typing_extensions import ReadOnly, Required, TypedDict
+from typing_extensions import ReadOnly, TypedDict
 
 # ast-grep-ignore: no-long-names
 TWELVELABS_EMBEDDING_INPUT_TYPES = Literal["text", "image", "video", "audio"]
@@ -76,8 +76,8 @@ class TwelveLabsMarengo3DynamicSegmentation(TypedDict):  # ast-grep-ignore: no-l
 
 
 TwelveLabsMarengo3Segmentation: TypeAlias = (
-    TwelveLabsMarengo3FixedSegmentation  # ast-grep-ignore: no-long-names
-    | TwelveLabsMarengo3DynamicSegmentation  # ast-grep-ignore: no-long-names
+    # ast-grep-ignore: no-long-names
+    TwelveLabsMarengo3FixedSegmentation | TwelveLabsMarengo3DynamicSegmentation
 )
 
 
@@ -112,8 +112,8 @@ class TwelveLabsMarengo3TextImageInput(TypedDict):  # ast-grep-ignore: no-long-n
     mediaSource: ReadOnly[TwelveLabsMediaSource]
 
 
-class TwelveLabsMarengo3NamedMediaSource(TwelveLabsMediaSource):  # ast-grep-ignore: no-long-names
-    # ast-grep-ignore: no-long-names
+# ast-grep-ignore: no-long-names
+class TwelveLabsMarengo3NamedMediaSource(TwelveLabsMediaSource):
     name: Required[ReadOnly[str]]
     mediaType: Required[ReadOnly[Literal["image"]]]
 
