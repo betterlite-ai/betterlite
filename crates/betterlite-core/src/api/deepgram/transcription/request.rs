@@ -1,3 +1,4 @@
+use betterlite_config::loader::EnvironmentLookup;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::{
     AudioFile, AuthorizedAudioFiles, process_audio_file,
@@ -16,6 +17,11 @@ pub const SUPPORTED_OPENAI_PARAMS: [&str; 1] = ["language"];
 
 // LiteLLM keeps these two out of the query: the model has its own pair and the other is internal
 const RESERVED_PARAMS: [&str; 2] = ["model", "OPENAI_TRANSCRIPTION_PARAMS"];
+
+// LiteLLM's defaults, read from the environment in get_complete_url and validate_environment
+const DEFAULT_API_BASE: &str = "https://api.deepgram.com/v1";
+const API_KEY_VARIABLE: &str = "DEEPGRAM_API_KEY";
+const API_BASE_VARIABLE: &str = "DEEPGRAM_API_BASE";
 
 #[derive(Clone, Debug)]
 pub struct DeepgramTranscriptionConfig {
@@ -47,6 +53,16 @@ pub fn raw_audio_request(
 }
 
 impl DeepgramTranscriptionConfig {
+    // the environment LiteLLM reads when the caller passes no key and no base
+    #[must_use]
+    pub fn from_environment(lookup: &dyn EnvironmentLookup) -> Self {
+        let present = |name: &str| lookup.lookup(name).filter(|value| !value.is_empty());
+        Self {
+            api_key: present(API_KEY_VARIABLE).map(SecretString::from),
+            api_base: present(API_BASE_VARIABLE).unwrap_or_else(|| DEFAULT_API_BASE.to_owned()),
+        }
+    }
+
     // an explicit base, even an empty one, replaces the configured base
     #[must_use]
     pub fn complete_url(
