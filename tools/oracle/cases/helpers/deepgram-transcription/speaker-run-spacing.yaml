@@ -1,0 +1,18 @@
+kind: helper
+name: deepgram-transcription-speaker-run-spacing
+call:
+  deepgram_transcription:
+    env: {}
+    steps:
+      - step: reply
+        body: '{"metadata": {"duration": 5}, "results": {"channels": [{"alternatives": [{"transcript": "flat", "words": [{"word": "hi", "start": 0, "end": 1, "speaker": 0, "punctuated_word": "Hi,"}, {"word": "there", "start": 1, "end": 2, "speaker": 0}, {"word": "yes", "start": 2, "end": 3, "speaker": 1, "punctuated_word": "Yes."}, {"word": "ok", "start": 3, "end": 4, "speaker": 0, "punctuated_word": "OK!"}]}]}]}}'
+      - step: reply
+        body: '{"metadata": {"duration": 5}, "results": {"channels": [{"alternatives": [{"transcript": "flat", "words": [{"word": "solo", "start": 0, "end": 1, "speaker": 2}]}]}]}}'
+      - step: reply
+        body: '{"metadata": {"duration": 5}, "results": {"channels": [{"alternatives": [{"transcript": "flat", "words": [{"word": "a", "start": 0, "end": 1, "speaker": 0}, {"word": "b", "start": 1, "end": 2, "speaker": 1}, {"word": "c", "start": 2, "end": 3, "speaker": 2}]}]}]}}'
+      - step: reply
+        body: '{"metadata": {"duration": 5}, "results": {"channels": [{"alternatives": [{"transcript": "flat", "words": [{"word": "lost", "start": 0, "end": 1, "speaker": null}, {"word": "again", "start": 1, "end": 2, "speaker": null}, {"word": "found", "start": 2, "end": 3, "speaker": 1}]}]}]}}'
+      - step: reply
+        body: '{"metadata": {"duration": 5}, "results": {"channels": [{"alternatives": [{"transcript": "flat", "words": [{"word": "x", "start": 0, "end": 1, "speaker": 0, "punctuated_word": null}]}]}]}}'
+env: {}
+compare: {ignore: []}
