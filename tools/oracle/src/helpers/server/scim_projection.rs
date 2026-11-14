@@ -29,7 +29,10 @@ struct UserOutput {
     warnings: Vec<String>,
 }
 
-fn failure(error: impl Display) -> Box<HelperError> {
+fn failure<E>(error: E) -> Box<HelperError>
+where
+    E: Display,
+{
     Box::new(HelperError {
         class: "ValidationError".to_owned(),
         status: None,
