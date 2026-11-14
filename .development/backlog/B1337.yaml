@@ -1,14 +1,14 @@
 id: B1337
 milestone: M3 providers
 title: Execute Vertex Gemma predictions and synthetic streams
-status: todo
+status: done
 depends_on: [B1302, B1304, B1305, B1336, B504]
 file: tasks/B1337-vertex-gemma-calls.yaml
 covers:
   - "litellm/llms/vertex_ai/vertex_gemma_models/{main,transformation}.py"
 parent: B032
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1755
