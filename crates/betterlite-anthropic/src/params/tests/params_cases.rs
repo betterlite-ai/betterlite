@@ -485,7 +485,7 @@ async fn speed_drop_policy() {
     .await;
 }
 
-const ADAPTIVE_CASES: [MapCase; 8] = [
+const ADAPTIVE_CASES: [MapCase; 11] = [
     (
         "plain-model",
         r#"{"thinking":{"type":"adaptive"},"max_tokens":100000}"#,
@@ -523,6 +523,24 @@ const ADAPTIVE_CASES: [MapCase; 8] = [
         r#"{"thinking":{"type":"enabled","budget_tokens":2048},"max_tokens":6144}"#,
     ),
     (
+        "plain-model",
+        r#"{"thinking":{"type":"adaptive"},"max_completion_tokens":0}"#,
+        "{}",
+        r#"{"thinking":{"type":"enabled","budget_tokens":2048},"max_tokens":0}"#,
+    ),
+    (
+        "plain-model",
+        r#"{"thinking":{"type":"adaptive"},"max_completion_tokens":0,"max_tokens":0}"#,
+        "{}",
+        r#"{"max_tokens":0}"#,
+    ),
+    (
+        "plain-model",
+        r#"{"thinking":{"type":"adaptive"},"max_tokens":false}"#,
+        "{}",
+        r#"{"max_tokens":false}"#,
+    ),
+    (
         "adaptive-model",
         r#"{"thinking":{"type":"adaptive"},"max_tokens":1000}"#,
         "{}",
@@ -538,7 +556,7 @@ const ADAPTIVE_CASES: [MapCase; 8] = [
 
 async fn adaptive_to_legacy_cap() {
     check_maps(&ADAPTIVE_CASES).await;
-    for limit in [1000, 1024] {
+    for limit in [0, 1000, 1024] {
         let (guard, warnings) = capture_warnings();
         let request = format!(r#"{{"thinking":{{"type":"adaptive"}},"max_tokens":{limit}}}"#);
         let mapped = map_with("plain-model", &request, NONE).await;
@@ -619,11 +637,12 @@ async fn structured_format_selection() {
     assert_eq!(unforced.get("json_mode"), Some(&Json::Bool(true)));
     let plain_text = map_with("plain-model", text, NONE).await;
     assert!(plain_text.is_empty(), "{plain_text:?}");
+    // the loop keeps input order, so a response_format after tool_choice replaces the choice
     let later = format_request(r#""tool_choice":"auto","#);
     let replaced = map_with("plain-model", &later, NONE).await;
     assert_eq!(
         replaced.get("tool_choice"),
-        Some(&json(r#"{"type":"auto"}"#))
+        Some(&json(r#"{"name":"json_tool_call","type":"tool"}"#))
     );
 }
 
