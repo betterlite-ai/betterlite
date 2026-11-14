@@ -49,7 +49,7 @@ fn metadata_fields_must_be_text(#[case] reply: &str, #[case] field: &str) {
     assert!(matches!(
         &error,
         GeminiEmbeddingCallError::MetadataField { file: name, field: named }
-            if name == "files/a" && named == field
+            if name == "files/a" && *named == field
     ));
 }
 
