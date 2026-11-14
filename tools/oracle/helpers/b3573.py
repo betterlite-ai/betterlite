@@ -191,10 +191,9 @@ async def input_answer(call: InputCall) -> JsonValue:
     return {"returned": JSON.validate_python(returned), "calls": calls}
 
 
-async def output_answer(call: OutputCall) -> JsonValue:
+async def output_answer(call: OutputCall, handler: OutputView) -> JsonValue:
     request_data = call["request_data"]
     calls: list[JsonValue] = []
-    handler: OutputView = PassThroughEndpointHandler()
     returned = await handler.process_output_response(
         response=call["response"],
         guardrail_to_apply=recording_guardrail(call["guardrail_name"], calls),
@@ -215,7 +214,7 @@ async def answer(call: Call) -> JsonValue:
         return normalised_text(HandlerReader().text(call["data"], call["field_expressions"]))
     if call["function"] == "input":
         return await input_answer(call)
-    return await output_answer(call)
+    return await output_answer(call, PassThroughEndpointHandler())
 
 
 def run(input_value: Input) -> JsonValue:

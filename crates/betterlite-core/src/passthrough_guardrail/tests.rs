@@ -2,7 +2,6 @@
 
 mod request_data;
 
-use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::Mutex;
 
