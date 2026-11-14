@@ -47,7 +47,7 @@ struct Network {
 
 #[derive(Serialize)]
 struct Permissions {
-    deny: [String; 6],
+    deny: [String; 10],
 }
 
 pub(crate) fn write_settings(
@@ -68,7 +68,7 @@ pub(crate) fn write_settings(
                 allow_unix_sockets: env::var("GATE_POSTGRES_SOCKET").ok().into_iter().collect(),
             },
         },
-        // bin/cargo refuses builds only while GATE_DISPATCHED is 1, and on 11-13 workers unset it or ran the real cargo by path to build anyway
+        // on 11-13 workers got past bin/cargo by unsetting GATE_DISPATCHED or calling cargo by path, and a local gate run or cargo fmt took minutes while CI runs them anyway
         permissions: Permissions {
             deny: [
                 "Bash(env -u GATE_DISPATCHED:*)".to_owned(),
@@ -77,6 +77,10 @@ pub(crate) fn write_settings(
                 "Bash(~/.cargo/bin/cargo:*)".to_owned(),
                 "Bash($HOME/.cargo/bin/cargo:*)".to_owned(),
                 format!("Bash({home}/.cargo/bin/cargo:*)"),
+                "Bash(cargo gate run:*)".to_owned(),
+                "Bash(cargo gate preflight:*)".to_owned(),
+                "Bash(cargo gate hook:*)".to_owned(),
+                "Bash(cargo fmt:*)".to_owned(),
             ],
         },
         attribution: Attribution { commit: "", pr: "" },
