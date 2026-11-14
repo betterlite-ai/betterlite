@@ -94,12 +94,13 @@ pub async fn text_embedding(
         return async_text_embedding(call, catalog, auth.refresh, clients.pooled, None).await;
     }
     // A supplied client keeps its own timeouts; the call's timeout only reaches a client LiteLLM builds
-    let (post, client_timeout) = match clients.caller {
-        Some(caller) => (caller, ClientTimeout::HandlerDefault),
-        None => (clients.pooled, text_client_timeout(call.timeout)),
-    };
+    let (post, client_timeout) = clients.caller.map_or_else(
+        || (clients.pooled, text_client_timeout(call.timeout)),
+        |supplied| (supplied, ClientTimeout::HandlerDefault),
+    );
     let lookup = auth.cache.get_access_token(call.credentials, call.project);
-    run(call, catalog, lookup, post, client_timeout).await
+    let prepared = prepare(call, catalog, lookup).await?;
+    send(&prepared, call.model, client_timeout, post).await
 }
 
 pub async fn async_text_embedding(
@@ -109,30 +110,11 @@ pub async fn async_text_embedding(
     pooled: &dyn EmbeddingPost,
     caller: Option<&dyn EmbeddingPost>,
 ) -> Result<EmbeddingResponse, VertexEmbeddingCallError> {
-    let (post, client_timeout) = match caller {
-        Some(caller) => (caller, ClientTimeout::HandlerDefault),
-        None => (pooled, text_client_timeout(call.timeout)),
-    };
-    run(
-        call,
-        catalog,
-        refresh.get_access_token_async(call.credentials, call.project),
-        post,
-        client_timeout,
-    )
-    .await
-}
-
-async fn run<Lookup>(
-    call: &TextCall<'_>,
-    catalog: &ModelCatalog,
-    lookup: Lookup,
-    post: &dyn EmbeddingPost,
-    client_timeout: ClientTimeout,
-) -> Result<EmbeddingResponse, VertexEmbeddingCallError>
-where
-    Lookup: Future<Output = Result<AccessToken, CredentialCacheError>> + Send,
-{
+    let (post, client_timeout) = caller.map_or_else(
+        || (pooled, text_client_timeout(call.timeout)),
+        |supplied| (supplied, ClientTimeout::HandlerDefault),
+    );
+    let lookup = refresh.get_access_token_async(call.credentials, call.project);
     let prepared = prepare(call, catalog, lookup).await?;
     send(&prepared, call.model, client_timeout, post).await
 }

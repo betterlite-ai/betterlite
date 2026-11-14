@@ -7,7 +7,10 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use http::Method;
-use http::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue, PROXY_AUTHORIZATION};
+use http::header::{
+    AUTHORIZATION, HeaderMap, HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue,
+    PROXY_AUTHORIZATION,
+};
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 use url::Url;
@@ -69,13 +72,13 @@ pub enum PostError {
     HeaderName {
         name: String,
         #[source]
-        source: http::header::InvalidHeaderName,
+        source: InvalidHeaderName,
     },
     #[error("the {name} header value is not valid: {source}")]
     HeaderValue {
         name: String,
         #[source]
-        source: http::header::InvalidHeaderValue,
+        source: InvalidHeaderValue,
     },
     #[error("the request timed out")]
     Timeout,

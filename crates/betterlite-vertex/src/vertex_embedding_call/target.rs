@@ -26,7 +26,6 @@ pub(super) struct TargetRequest<'call> {
 }
 
 // LiteLLM's _get_token_and_url for an embedding: mode="embedding", version v1, and no alt=sse query
-#[must_use]
 pub(super) fn embedding_target(
     catalog: &ModelCatalog,
     request: &TargetRequest<'_>,

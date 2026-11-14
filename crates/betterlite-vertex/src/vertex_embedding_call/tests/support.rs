@@ -57,8 +57,11 @@ pub(super) fn extra(text: &str) -> Extra {
 }
 
 pub(super) fn reply(status: u16, body: &str) -> Reply {
-    let body = body.as_bytes().to_vec();
-    Reply::Status { status, body }
+    let bytes = body.as_bytes().to_vec();
+    Reply::Status {
+        status,
+        body: bytes,
+    }
 }
 
 #[derive(Clone, Debug)]

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_openai::embedding::EmbeddingInput;
+use rstest::rstest;
 
 use crate::vertex_embedding_call::error::VertexEmbeddingCallError;
 use crate::vertex_embedding_call::multimodal::{
@@ -185,13 +186,19 @@ async fn multimodal_none_timeout() {
         multimodal_timeout(Some(Duration::from_secs(20)), ClientTimeout::HandlerDefault),
         twenty
     );
+}
 
+#[rstest]
+#[case::sync(false, ClientTimeout::Explicit(HANDLER_DEFAULT_TIMEOUT))]
+#[case::async_handoff(true, ClientTimeout::HandlerDefault)]
+#[tokio::test]
+async fn multimodal_none_timeout_reaches_the_post(
+    #[case] aembedding: bool,
+    #[case] expected: ClientTimeout,
+) {
     let input = json(r#""hello""#);
     let optional = extra("{}");
-    let recorder = Arc::new(PostRecorder::scripted(vec![
-        reply(200, MULTIMODAL_ANSWER),
-        reply(200, MULTIMODAL_ANSWER),
-    ]));
+    let recorder = Arc::new(PostRecorder::scripted(vec![reply(200, MULTIMODAL_ANSWER)]));
     let fixture = auth();
     let clients = MultimodalClients {
         pooled: recorder.as_ref(),
@@ -199,16 +206,12 @@ async fn multimodal_none_timeout() {
     };
     let mut call = multimodal_call(MULTIMODAL_MODEL, &input, &optional, &NO_HEADERS);
     call.timeout = None;
-    multimodal_embedding(&call, &catalog(), &fixture.cache, &clients)
-        .await
-        .unwrap();
-    call.aembedding = true;
+    call.aembedding = aembedding;
     multimodal_embedding(&call, &catalog(), &fixture.cache, &clients)
         .await
         .unwrap();
     let calls = recorder.recorded();
-    assert_eq!(calls[0].timeout, sync_none);
-    assert_eq!(calls[1].timeout, ClientTimeout::HandlerDefault);
+    assert_eq!(calls[0].timeout, expected);
 }
 
 #[test]
