@@ -55,8 +55,8 @@ fn settings_use_the_explicit_values_and_default_the_rest() {
         resolved
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("explicit-key")
+            .map(|key| key.expose_secret().to_owned()),
+        Some("explicit-key".to_owned())
     );
     assert_eq!(resolved.model.as_deref(), Some("compress-model"));
     assert_eq!(resolved.unreachable_fallback, UnreachableFallback::FailOpen);
@@ -69,7 +69,11 @@ fn settings_use_the_explicit_values_and_default_the_rest() {
 fn settings_default_to_fail_closed_and_ccr_retrieval_on() {
     let input = HeadroomInput {
         api_base: Some("https://headroom.test".to_owned()),
-        ..HeadroomInput::default()
+        api_key: None,
+        model: None,
+        unreachable_fallback: None,
+        timeout: None,
+        ccr_retrieval: None,
     };
     let resolved = settings(&input, &BTreeMap::new());
     assert_eq!(
@@ -94,8 +98,8 @@ fn settings_fall_back_to_the_environment_secrets() {
         resolved
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("env-key")
+            .map(|key| key.expose_secret().to_owned()),
+        Some("env-key".to_owned())
     );
 }
 
@@ -108,7 +112,10 @@ fn settings_treat_an_empty_value_as_unset() {
     let input = HeadroomInput {
         api_base: Some(String::new()),
         api_key: Some(SecretString::from(String::new())),
-        ..HeadroomInput::default()
+        model: None,
+        unreachable_fallback: None,
+        timeout: None,
+        ccr_retrieval: None,
     };
     let resolved = settings(&input, &env);
     assert_eq!(resolved.api_base, "https://env.test");
@@ -116,8 +123,8 @@ fn settings_treat_an_empty_value_as_unset() {
         resolved
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("env-key")
+            .map(|key| key.expose_secret().to_owned()),
+        Some("env-key".to_owned())
     );
 }
 
@@ -126,7 +133,11 @@ fn settings_treat_an_empty_environment_key_as_unset() {
     let env = environment(&[("HEADROOM_API_KEY", "")]);
     let input = HeadroomInput {
         api_base: Some("https://headroom.test".to_owned()),
-        ..HeadroomInput::default()
+        api_key: None,
+        model: None,
+        unreachable_fallback: None,
+        timeout: None,
+        ccr_retrieval: None,
     };
     assert!(settings(&input, &env).api_key.is_none());
 }
@@ -135,7 +146,11 @@ fn settings_treat_an_empty_environment_key_as_unset() {
 fn settings_strip_every_trailing_slash() {
     let input = HeadroomInput {
         api_base: Some("https://headroom.test/base/".to_owned()),
-        ..HeadroomInput::default()
+        api_key: None,
+        model: None,
+        unreachable_fallback: None,
+        timeout: None,
+        ccr_retrieval: None,
     };
     assert_eq!(
         settings(&input, &BTreeMap::new()).api_base,
@@ -153,7 +168,11 @@ fn settings_require_an_api_base(
 ) {
     let input = HeadroomInput {
         api_base: api_base.map(str::to_owned),
-        ..HeadroomInput::default()
+        api_key: None,
+        model: None,
+        unreachable_fallback: None,
+        timeout: None,
+        ccr_retrieval: None,
     };
     let error = HeadroomSettings::new(&input, &env).unwrap_err();
     assert!(matches!(error, HeadroomSettingsError::MissingApiBase));
@@ -175,8 +194,11 @@ fn settings_accept_fail_open_only_as_the_exact_text(
 ) {
     let input = HeadroomInput {
         api_base: Some("https://headroom.test".to_owned()),
+        api_key: None,
+        model: None,
         unreachable_fallback: Some(fallback.to_owned()),
-        ..HeadroomInput::default()
+        timeout: None,
+        ccr_retrieval: None,
     };
     assert_eq!(
         settings(&input, &BTreeMap::new()).unreachable_fallback,
@@ -225,7 +247,11 @@ fn timeout_caps_the_connect_budget_at_five_seconds() {
 fn request_headers_carry_the_bearer_key_only_when_a_key_is_set() {
     let input = HeadroomInput {
         api_base: Some("https://headroom.test".to_owned()),
-        ..HeadroomInput::default()
+        api_key: None,
+        model: None,
+        unreachable_fallback: None,
+        timeout: None,
+        ccr_retrieval: None,
     };
     let headers = settings(&input, &BTreeMap::new())
         .request_headers()
@@ -234,8 +260,12 @@ fn request_headers_carry_the_bearer_key_only_when_a_key_is_set() {
     assert!(headers.get(AUTHORIZATION).is_none());
 
     let with_key = HeadroomInput {
+        api_base: Some("https://headroom.test".to_owned()),
         api_key: Some(SecretString::from("secret-key")),
-        ..input
+        model: None,
+        unreachable_fallback: None,
+        timeout: None,
+        ccr_retrieval: None,
     };
     let headers = settings(&with_key, &BTreeMap::new())
         .request_headers()
@@ -266,8 +296,8 @@ fn config_keeps_the_explicit_values() {
         config
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("k")
+            .map(|key| key.expose_secret().to_owned()),
+        Some("k".to_owned())
     );
     assert_eq!(config.model.as_deref(), Some("m"));
     assert_eq!(config.unreachable_fallback, UnreachableFallback::FailOpen);

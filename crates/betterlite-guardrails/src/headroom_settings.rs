@@ -129,13 +129,12 @@ impl GuardrailConfigModelIdentity for HeadroomConfig {
 
 #[must_use]
 pub fn resolve_timeout(timeout: Option<f64>) -> CompressTimeout {
-    let total = match timeout {
-        None => DEFAULT_COMPRESS_TIMEOUT,
-        Some(seconds) => usable_timeout(seconds).unwrap_or_else(|| {
+    let total = timeout.map_or(DEFAULT_COMPRESS_TIMEOUT, |seconds| {
+        usable_timeout(seconds).unwrap_or_else(|| {
             tracing::warn!("Headroom: ignoring unusable timeout {seconds}, using 60 seconds");
             DEFAULT_COMPRESS_TIMEOUT
-        }),
-    };
+        })
+    });
     CompressTimeout {
         total,
         connect: total.min(CONNECT_TIMEOUT_CAP),
@@ -143,21 +142,21 @@ pub fn resolve_timeout(timeout: Option<f64>) -> CompressTimeout {
 }
 
 fn usable_timeout(seconds: f64) -> Option<Duration> {
-    if !(seconds.is_finite() && seconds > 0.0) {
+    if !seconds.is_finite() || seconds <= 0.0_f64 {
         return None;
     }
     Duration::try_from_secs_f64(seconds).ok()
 }
 
 impl HeadroomSettings {
-    pub fn new<L: EnvironmentLookup>(
-        input: &HeadroomInput,
-        secrets: &L,
-    ) -> Result<Self, HeadroomSettingsError> {
+    pub fn new<L>(input: &HeadroomInput, secrets: &L) -> Result<Self, HeadroomSettingsError>
+    where
+        L: EnvironmentLookup,
+    {
         let configured_base = input.api_base.as_deref().filter(|base| !base.is_empty());
         let secret_base = secrets.lookup(API_BASE_ENV);
         let api_base = configured_base
-            .or(secret_base.as_deref().filter(|base| !base.is_empty()))
+            .or_else(|| secret_base.as_deref().filter(|base| !base.is_empty()))
             .unwrap_or_default()
             .trim_end_matches('/')
             .to_owned();

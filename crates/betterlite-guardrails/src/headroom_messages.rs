@@ -20,7 +20,11 @@ pub enum HeadroomMessagesError {
 
 #[must_use]
 pub fn flatten_for_compression(rows: &[JsonValue]) -> Vec<JsonValue> {
-    rows.iter().map(flatten_row).collect()
+    let mut flattened = Vec::with_capacity(rows.len());
+    for row in rows {
+        flattened.push(flatten_row(row));
+    }
+    flattened
 }
 
 fn flatten_row(row: &JsonValue) -> JsonValue {
@@ -138,8 +142,8 @@ pub fn retrieve_call_ids(messages: Option<&JsonValue>) -> BTreeSet<String> {
     };
     let mut ids = BTreeSet::new();
     for row in rows {
-        ids.extend(openai_retrieve_ids(row));
-        ids.extend(anthropic_retrieve_ids(row));
+        ids.extend(retrieve_ids_in_row(row, RetrieveSource::OpenAi));
+        ids.extend(retrieve_ids_in_row(row, RetrieveSource::Anthropic));
     }
     ids
 }
@@ -151,7 +155,7 @@ pub fn retrieval_result_indices(
 ) -> BTreeSet<usize> {
     let mut retrieve_ids = extra_ids.clone();
     for row in messages {
-        retrieve_ids.extend(openai_retrieve_ids(row));
+        retrieve_ids.extend(retrieve_ids_in_row(row, RetrieveSource::OpenAi));
     }
     if retrieve_ids.is_empty() {
         return BTreeSet::new();
@@ -203,44 +207,51 @@ pub fn protected_indices(messages: &[JsonValue], extra_ids: &BTreeSet<String>) -
     protected
 }
 
-fn openai_retrieve_ids(row: &JsonValue) -> Vec<String> {
-    if field(row, "role").and_then(json_str) != Some("assistant") {
-        return Vec::new();
-    }
-    let Some(JsonValue::Array(tool_calls)) = field(row, "tool_calls") else {
-        return Vec::new();
-    };
-    let mut ids = Vec::new();
-    for tool_call in tool_calls {
-        let name = field(tool_call, "function")
-            .and_then(|function| field(function, "name"))
-            .and_then(json_str);
-        let id = field(tool_call, "id")
-            .and_then(json_str)
-            .filter(|text| !text.is_empty());
-        if let (Some(id), true) = (id, name.is_some_and(is_retrieve_tool_name)) {
-            ids.push(id.to_owned());
-        }
-    }
-    ids
+#[derive(Clone, Copy)]
+enum RetrieveSource {
+    OpenAi,
+    Anthropic,
 }
 
-fn anthropic_retrieve_ids(row: &JsonValue) -> Vec<String> {
-    let Some(JsonValue::Array(blocks)) = field(row, "content") else {
-        return Vec::new();
-    };
-    let mut ids = Vec::new();
-    for block in blocks {
-        let is_tool_use = field(block, "type").and_then(json_str) == Some("tool_use");
-        let name = field(block, "name").and_then(json_str);
-        if !is_tool_use || !name.is_some_and(is_retrieve_tool_name) {
-            continue;
+fn retrieve_ids_in_row(row: &JsonValue, source: RetrieveSource) -> Vec<String> {
+    match source {
+        RetrieveSource::OpenAi => {
+            if field(row, "role").and_then(json_str) != Some("assistant") {
+                return Vec::new();
+            }
+            let Some(JsonValue::Array(tool_calls)) = field(row, "tool_calls") else {
+                return Vec::new();
+            };
+            tool_calls
+                .iter()
+                .filter_map(|tool_call| {
+                    let function = field(tool_call, "function")
+                        .and_then(|function| field(function, "name"))
+                        .and_then(json_str)?;
+                    let id = field(tool_call, "id").and_then(json_str)?;
+                    if id.is_empty() || !is_retrieve_tool_name(function) {
+                        return None;
+                    }
+                    Some(id.to_owned())
+                })
+                .collect()
         }
-        if let Some(id) = field(block, "id").and_then(json_str) {
-            ids.push(id.to_owned());
+        RetrieveSource::Anthropic => {
+            let Some(JsonValue::Array(blocks)) = field(row, "content") else {
+                return Vec::new();
+            };
+            blocks
+                .iter()
+                .filter(|block| field(block, "type").and_then(json_str) == Some("tool_use"))
+                .filter(|block| {
+                    field(block, "name")
+                        .and_then(json_str)
+                        .is_some_and(is_retrieve_tool_name)
+                })
+                .filter_map(|block| field(block, "id").and_then(json_str).map(str::to_owned))
+                .collect()
         }
     }
-    ids
 }
 
 fn is_retrieve_tool_name(name: &str) -> bool {

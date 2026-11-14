@@ -30,7 +30,7 @@ fn failure_detail_adds_the_hint_for_a_404_only() {
     let detail = build_compress_failure_detail(404, "not found");
     assert_eq!(
         detail.get("status_code"),
-        Some(&JsonValue::Number(404.into()))
+        Some(&JsonValue::Number(serde_json::Number::from(404_u16)))
     );
     assert_eq!(detail.get("body").map(text), Some("not found"));
     assert_eq!(detail.get("hint").map(text), Some(NOT_FOUND_HINT));
@@ -44,7 +44,7 @@ fn failure_detail_keeps_only_status_and_body_for_other_statuses(#[case] status: 
     let detail = build_compress_failure_detail(status, "broken");
     assert_eq!(
         detail.get("status_code"),
-        Some(&JsonValue::Number(status.into()))
+        Some(&JsonValue::Number(serde_json::Number::from(status)))
     );
     assert_eq!(detail.get("body").map(text), Some("broken"));
     assert!(!detail.contains_key("hint"));

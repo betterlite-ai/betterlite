@@ -30,7 +30,10 @@ pub struct CompressResult {
 #[must_use]
 pub fn build_compress_failure_detail(status: u16, body: &str) -> IndexMap<String, JsonValue> {
     let mut detail = IndexMap::new();
-    detail.insert("status_code".to_owned(), JsonValue::Number(status.into()));
+    detail.insert(
+        "status_code".to_owned(),
+        JsonValue::Number(serde_json::Number::from(status)),
+    );
     detail.insert("body".to_owned(), JsonValue::String(body.to_owned()));
     if status == 404 {
         detail.insert(
