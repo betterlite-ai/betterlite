@@ -6,9 +6,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_cli::credential_lifecycle::files::CredentialFiles;
 use betterlite_cli::keyring::{KeyringUnusable, SecretErase, SecretRead, SecretVault, SecretWrite};
-use betterlite_cli::pkce_login::{
-    Clock, Entropy, Http, HttpBody, HttpResponse, PkceFailure, WallClock,
-};
+use betterlite_cli::pkce_login::models::PkceFailure;
+use betterlite_cli::pkce_login::{Clock, Entropy, Http, HttpBody, HttpResponse, WallClock};
 use betterlite_cli::sso_polling::polling::Sleeper;
 use betterlite_cli::sso_polling::transport::PollTransport;
 use betterlite_cli::token_records::error::TokenRecordError;

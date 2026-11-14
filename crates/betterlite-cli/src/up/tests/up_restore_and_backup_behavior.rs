@@ -119,7 +119,8 @@ fn down_reports_a_corrupted_backup_with_its_path() {
     let mut stdout = Vec::new();
     let error = restore_and_report(world.home_path(), &world.private_files, &mut stdout)
         .expect_err("the backup cannot be read");
-    let path = world.backup_path().display();
+    let backup_path = world.backup_path();
+    let path = backup_path.display();
     assert_eq!(
         error.to_string(),
         format!("{path} contains invalid or unexpected JSON; cannot restore from it safely.")

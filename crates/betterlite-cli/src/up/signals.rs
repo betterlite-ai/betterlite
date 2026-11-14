@@ -16,16 +16,16 @@ impl StopSource for SignalStop {
     fn install(&self) -> Result<(), UpError> {
         let signals =
             Signals::new([SIGINT, SIGTERM]).map_err(|source| UpError::Signals { source })?;
-        let mut slot = self.signals.lock().unwrap_or_else(PoisonError::into_inner);
-        *slot = Some(signals);
+        *self.signals.lock().unwrap_or_else(PoisonError::into_inner) = Some(signals);
         Ok(())
     }
 
     fn wait(&self) {
-        let mut slot = self.signals.lock().unwrap_or_else(PoisonError::into_inner);
-        let Some(signals) = slot.as_mut() else {
-            return;
-        };
-        let _unused = signals.wait();
+        let _unused = self
+            .signals
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_mut()
+            .map(|signals| signals.wait().count());
     }
 }

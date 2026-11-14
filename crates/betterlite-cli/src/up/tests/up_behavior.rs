@@ -242,7 +242,8 @@ fn up_refuses_while_a_backup_exists() {
     let mut ports = world.ports();
     let error = run_up(&mut ports).expect_err("a backup holds the settings");
     drop(ports);
-    let backup = world.backup_path().display();
+    let backup_path = world.backup_path();
+    let backup = backup_path.display();
     assert_eq!(
         error.to_string(),
         format!(

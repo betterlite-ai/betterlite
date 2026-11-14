@@ -1,5 +1,4 @@
 use std::fs;
-use std::io::Write as _;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
@@ -13,6 +12,7 @@ use crate::claude_settings::io::{load_json_or_empty, write_claude_settings};
 use crate::claude_settings::merge::{MergeOptions, merge_claude_settings};
 use crate::claude_settings::paths::claude_settings_paths;
 use crate::claude_settings::statusline_install::install_statusline_script;
+use crate::login::ports::TerminalWriter;
 use crate::pkce_login::{Clock, Entropy, Http, WallClock};
 use crate::settings_backup::record::BackupRecord;
 use crate::settings_backup::write::write_backup;
@@ -36,45 +36,14 @@ where
     verify_key(ports, &base_url, &api_key)?;
 
     let home = ports.home.ok_or(UpError::NoHome)?;
-    let paths = claude_settings_paths(home);
-    if paths.backup.exists() {
-        return Err(UpError::BackupExists { path: paths.backup });
-    }
-    let status_line = install_statusline_script(ports.binary_path)?;
-    let existed = paths.settings.exists();
-    let original = load_json_or_empty(&paths.settings)?;
-    let content = existed.then(|| original.clone());
-    write_backup(
-        &BackupRecord { existed, content },
-        &paths.backup,
+    patch_settings(
+        ports.binary_path,
         ports.private_files,
+        home,
+        &base_url,
+        api_key,
     )?;
-
-    create_settings_directory(&paths.settings)?;
-    let merged = merge_claude_settings(
-        &original,
-        &MergeOptions {
-            base_url: &base_url,
-            credential: &StaticToken { token: api_key },
-            model: &ModelChoice::KeepModel,
-            tier_model: None,
-            status_line: Some(&status_line),
-        },
-    );
-    write_settings(ports.private_files, &paths.settings, &merged)?;
-
-    let stdout = &mut *ports.stdout;
-    writeln!(
-        stdout,
-        "litellm: routing Claude Code through proxy at {}",
-        base_url.trim_end_matches('/')
-    )
-    .map_err(|source| UpError::Write { source })?;
-    writeln!(
-        stdout,
-        "Press Ctrl-C to stop and restore your original settings."
-    )
-    .map_err(|source| UpError::Write { source })?;
+    announce(&mut *ports.stdout, &base_url)?;
 
     ports.signals.install()?;
     ports.signals.wait();
@@ -87,6 +56,51 @@ where
     };
     cleanup.restore();
     Ok(())
+}
+
+fn patch_settings(
+    binary_path: Option<&Path>,
+    files: &PrivateFiles,
+    home: &Path,
+    base_url: &str,
+    api_key: SecretString,
+) -> Result<(), UpError> {
+    let paths = claude_settings_paths(home);
+    if paths.backup.exists() {
+        return Err(UpError::BackupExists { path: paths.backup });
+    }
+    let status_line = install_statusline_script(binary_path)?;
+    let existed = paths.settings.exists();
+    let original = load_json_or_empty(&paths.settings)?;
+    let content = existed.then(|| original.clone());
+    write_backup(&BackupRecord { existed, content }, &paths.backup, files)?;
+
+    create_settings_directory(&paths.settings)?;
+    let merged = merge_claude_settings(
+        &original,
+        &MergeOptions {
+            base_url,
+            credential: &StaticToken { token: api_key },
+            model: &ModelChoice::KeepModel,
+            tier_model: None,
+            status_line: Some(&status_line),
+        },
+    );
+    write_settings(files, &paths.settings, &merged)
+}
+
+fn announce(stdout: &mut TerminalWriter, base_url: &str) -> Result<(), UpError> {
+    writeln!(
+        stdout,
+        "litellm: routing Claude Code through proxy at {}",
+        base_url.trim_end_matches('/')
+    )
+    .map_err(|source| UpError::Write { source })?;
+    writeln!(
+        stdout,
+        "Press Ctrl-C to stop and restore your original settings."
+    )
+    .map_err(|source| UpError::Write { source })
 }
 
 fn verify_key<H, E, W>(
