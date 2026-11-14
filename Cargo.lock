@@ -1691,13 +1691,16 @@ dependencies = [
 name = "betterlite-deepagents-harness"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "base64 0.23.1",
  "betterlite-harness",
  "brace-expansion",
+ "futures-core",
  "futures-util",
  "glob",
  "regex",
  "rstest",
+ "rust_decimal",
  "tempfile",
  "thiserror",
  "tokio",
