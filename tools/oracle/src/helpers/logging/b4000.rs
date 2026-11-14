@@ -1,17 +1,23 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use async_trait::async_trait;
+use betterlite_logging::azure_storage_logging::filename::IdSource;
 use betterlite_logging::azure_storage_logging::logger::{AzureBlobStorageLogger, AzureStorageDeps};
 use betterlite_logging::azure_storage_logging::settings::AzureStorageSettings;
-use betterlite_logging::azure_storage_logging::transport::StorageTransport;
+use betterlite_logging::azure_storage_logging::token::{
+    ChainError, ChainProviderFactory, ChainTokenProvider,
+};
+use betterlite_logging::azure_storage_logging::transport::{
+    StorageRequest, StorageResponse, StorageTransport, StorageTransportError,
+};
 use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::callback_logger::event::LoggerEvent;
 use betterlite_logging::datadog_logging::clock::Clock;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_models::decisions::Json;
-use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
@@ -19,13 +25,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 
-use self::support::{FixedChain, FixedFactory, FixedIds, ManualClock, ScriptedTransport};
-
-mod support;
-
-pub(super) const START_SECONDS: u64 = 1_700_000_000;
-pub(super) const TOKEN_SUFFIX: &str = "/oauth2/v2.0/token";
-pub(super) const CHAIN_TOKEN: &str = "chain-token";
+const START_SECONDS: u64 = 1_700_000_000;
+const TOKEN_SUFFIX: &str = "/oauth2/v2.0/token";
 
 pub(crate) struct Op;
 
@@ -44,20 +45,11 @@ struct Scenario {
     actions: Vec<Action>,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct Reply {
     status: u16,
     body: String,
-}
-
-impl Default for Reply {
-    fn default() -> Self {
-        Self {
-            status: 200,
-            body: String::new(),
-        }
-    }
 }
 
 #[derive(Deserialize)]
@@ -71,9 +63,7 @@ enum Action {
     Upload {
         id: String,
     },
-    Token,
     Flush,
-    SendBatch,
     Advance {
         seconds: u64,
     },
@@ -86,7 +76,16 @@ impl Helper for Op {
         let runtime = Builder::new_current_thread()
             .enable_time()
             .build()
-            .map_err(|error| Box::new(runtime_error(error.to_string())))?;
+            .map_err(|error| {
+                Box::new(HelperError {
+                    class: "RuntimeError".to_owned(),
+                    status: None,
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message: error.to_string(),
+                })
+            })?;
         let results: Vec<Value> = input
             .scenarios
             .iter()
@@ -96,31 +95,17 @@ impl Helper for Op {
     }
 }
 
-fn runtime_error(message: String) -> HelperError {
-    HelperError {
-        class: "RuntimeError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    }
-}
-
 async fn drive(scenario: &Scenario) -> Value {
     let environment = scenario.environment.clone();
     let settings = match AzureStorageSettings::from_environment(&environment) {
         Ok(settings) => settings,
         Err(error) => return json!({ "initialized": false, "error": error.to_string() }),
     };
-    let described = describe_settings(&settings);
-    let transport = Arc::new(ScriptedTransport::new(&scenario.replies));
-    let clock = Arc::new(ManualClock(Mutex::new(Duration::from_secs(START_SECONDS))));
-    let chain = Arc::new(FixedChain::default());
-    let factory = Arc::new(FixedFactory {
-        provider: Arc::clone(&chain),
-        built: Mutex::new(0),
+    let transport = Arc::new(ScriptedTransport {
+        replies: Mutex::new(scenario.replies.iter().cloned().collect()),
+        calls: Mutex::new(Vec::new()),
     });
+    let clock = Arc::new(ManualClock(Mutex::new(Duration::from_secs(START_SECONDS))));
     let logger = AzureBlobStorageLogger::new(
         settings,
         AzureStorageDeps {
@@ -128,7 +113,7 @@ async fn drive(scenario: &Scenario) -> Value {
             clock: Arc::clone(&clock) as Arc<dyn Clock>,
             environment: Arc::new(environment),
             ids: Arc::new(FixedIds),
-            chain_factory: factory.clone(),
+            chain_factory: Arc::new(FixedFactory),
             shutdown: CancellationToken::new(),
             tasks: None,
         },
@@ -146,36 +131,19 @@ async fn drive(scenario: &Scenario) -> Value {
         .collect();
     json!({
         "initialized": true,
-        "settings": described,
         "actions": results,
         "queue": queue,
-        "calls": transport.described(),
+        "calls": transport
+            .calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .map(describe)
+            .collect::<Vec<Value>>(),
         "clients": {
             "created": logger.created_clients.load(Ordering::SeqCst),
             "closed": logger.closed_clients.load(Ordering::SeqCst),
         },
-        "tokens": {
-            "factory": *factory.built.lock().unwrap_or_else(PoisonError::into_inner),
-            "provider": *chain.calls.lock().unwrap_or_else(PoisonError::into_inner),
-        },
-    })
-}
-
-fn describe_settings(settings: &AzureStorageSettings) -> Value {
-    json!({
-        "dfs_endpoint": format!(
-                "https://{}.dfs.{}",
-                settings.account_name, settings.endpoint_suffix
-            ),
-        "account_name": settings.account_name.clone(),
-        "file_system": settings.file_system.clone(),
-        "endpoint_suffix": settings.endpoint_suffix.clone(),
-        "tenant_id": settings.tenant_id.clone(),
-        "client_id": settings.client_id.clone(),
-        "has_client_secret": settings.client_secret.is_some(),
-        "has_account_key": settings.account_key.is_some(),
-        "batch_size": settings.batch.batch_size,
-        "max_queue_size": settings.batch.max_queue_size,
     })
 }
 
@@ -189,15 +157,6 @@ fn payload_for(base: &Value, id: &str) -> Result<StandardLoggingPayload, String>
     }
 }
 
-fn event(base: &Value, id: &str) -> Result<Arc<LoggerEvent>, String> {
-    Ok(Arc::new(LoggerEvent {
-        payload: Arc::new(payload_for(base, id)?),
-        dynamic_params: Arc::new(Json::Null),
-        stream: false,
-        guardrail_snapshot: None,
-    }))
-}
-
 async fn perform(
     action: &Action,
     logger: &AzureBlobStorageLogger,
@@ -206,9 +165,15 @@ async fn perform(
 ) -> Value {
     match action {
         Action::Event { id, failure } => {
-            let Ok(queued) = event(base, id) else {
+            let Ok(payload) = payload_for(base, id) else {
                 return json!({ "raised": "payload" });
             };
+            let queued = Arc::new(LoggerEvent {
+                payload: Arc::new(payload),
+                dynamic_params: Arc::new(Json::Null),
+                stream: false,
+                guardrail_snapshot: None,
+            });
             let outcome = if *failure {
                 logger.async_log_failure_event(queued).await
             } else {
@@ -222,21 +187,14 @@ async fn perform(
             let Ok(payload) = payload_for(base, id) else {
                 return json!({ "raised": "payload" });
             };
-            let outcome = logger.upload_payload(&payload).await;
-            outcome
+            logger
+                .upload_payload(&payload)
+                .await
                 .err()
                 .map_or(Value::Null, |error| json!({ "raised": error.to_string() }))
         }
-        Action::Token => match logger.set_valid_azure_ad_token().await {
-            Ok(token) => json!({ "token": token.expose_secret() }),
-            Err(error) => json!({ "raised": error.to_string() }),
-        },
         Action::Flush => {
             let _report = logger.flush_queue().await;
-            Value::Null
-        }
-        Action::SendBatch => {
-            let _uploaded = logger.async_send_batch().await;
             Value::Null
         }
         Action::Advance { seconds } => {
@@ -247,6 +205,96 @@ async fn perform(
     }
 }
 
-fn raised(message: Option<String>) -> Value {
-    message.map_or(Value::Null, |text| json!({ "raised": text }))
+struct FixedIds;
+impl IdSource for FixedIds {
+    fn next_id(&self) -> String {
+        "generated-id".to_owned()
+    }
+}
+
+struct FixedFactory;
+impl ChainProviderFactory for FixedFactory {
+    fn provider(&self) -> Result<Arc<dyn ChainTokenProvider>, ChainError> {
+        Err(ChainError::Unavailable)
+    }
+}
+
+struct ManualClock(Mutex<Duration>);
+impl Clock for ManualClock {
+    fn now_unix(&self) -> Duration {
+        *self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+struct ScriptedTransport {
+    replies: Mutex<VecDeque<Reply>>,
+    calls: Mutex<Vec<StorageRequest>>,
+}
+fn operation(call: &StorageRequest) -> &'static str {
+    let url = call.url.as_str();
+    if url.ends_with(TOKEN_SUFFIX) {
+        return "entra_token";
+    }
+    if call.method == http::Method::HEAD {
+        return "exists";
+    }
+    if url.contains("resource=directory") {
+        return "create_directory";
+    }
+    if url.contains("resource=file") {
+        return "create_file";
+    }
+    if url.contains("action=append") {
+        return "append";
+    }
+    if url.contains("action=flush") {
+        return "flush";
+    }
+    "other"
+}
+
+fn describe(call: &StorageRequest) -> Value {
+    let op = operation(call);
+    if op == "entra_token" {
+        return json!({ "op": op });
+    }
+    let mut described = json!({ "op": op, "url": call.url });
+    if op == "append" {
+        let text = std::str::from_utf8(&call.body).unwrap_or_default();
+        let body: Option<Value> = serde_json::from_str(text.trim_end_matches('\n')).ok();
+        if let Some(fields) = described.as_object_mut() {
+            fields.insert("body".to_owned(), json!(body));
+            fields.insert("trailing_newline".to_owned(), json!(text.ends_with('\n')));
+        }
+    }
+    described
+}
+#[async_trait]
+impl StorageTransport for ScriptedTransport {
+    async fn send(
+        &self,
+        request: StorageRequest,
+    ) -> Result<StorageResponse, StorageTransportError> {
+        let token_request = request.url.ends_with(TOKEN_SUFFIX);
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(request);
+        if token_request {
+            return Ok(StorageResponse {
+                status: 200,
+                body: br#"{"access_token": "tok-1"}"#.to_vec(),
+            });
+        }
+        let reply = self
+            .replies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front()
+            .unwrap_or_default();
+        Ok(StorageResponse {
+            status: reply.status,
+            body: reply.body.into_bytes(),
+        })
+    }
 }

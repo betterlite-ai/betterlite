@@ -51,18 +51,6 @@ pub struct PooledTransport {
     pub client: ProxiedClient,
 }
 
-fn header_map(headers: &[(String, String)]) -> Result<HeaderMap, StorageTransportError> {
-    let mut map = HeaderMap::new();
-    for (name, value) in headers {
-        let header_name =
-            HeaderName::from_bytes(name.as_bytes()).map_err(StorageTransportError::HeaderName)?;
-        let header_value =
-            HeaderValue::from_str(value).map_err(StorageTransportError::HeaderValue)?;
-        map.insert(header_name, header_value);
-    }
-    Ok(map)
-}
-
 #[async_trait]
 impl StorageTransport for PooledTransport {
     async fn send(
@@ -70,7 +58,14 @@ impl StorageTransport for PooledTransport {
         request: StorageRequest,
     ) -> Result<StorageResponse, StorageTransportError> {
         let url = Url::parse(&request.url).map_err(StorageTransportError::Url)?;
-        let headers = header_map(&request.headers)?;
+        let mut headers = HeaderMap::new();
+        for (name, value) in &request.headers {
+            let header_name = HeaderName::from_bytes(name.as_bytes())
+                .map_err(StorageTransportError::HeaderName)?;
+            let header_value =
+                HeaderValue::from_str(value).map_err(StorageTransportError::HeaderValue)?;
+            headers.insert(header_name, header_value);
+        }
         let body = if request.body.is_empty() {
             RequestBody::Empty
         } else {

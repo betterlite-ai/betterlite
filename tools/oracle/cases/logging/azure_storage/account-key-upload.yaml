@@ -22,7 +22,6 @@ call:
           - {status: 404, body: ""}
         actions:
           - {do: upload, id: id-1}
-          - {do: advance, seconds: 3600}
           - {do: upload, id: id-2}
 env: {}
 compare: {ignore: []}

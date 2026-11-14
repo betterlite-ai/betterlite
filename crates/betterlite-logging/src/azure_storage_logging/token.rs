@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_config::loader::EnvironmentLookup;
 use http::Method;
 use http::header::CONTENT_TYPE;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -9,14 +8,13 @@ use serde::Deserialize;
 use url::form_urlencoded;
 
 use super::settings::AzureStorageSettings;
-use super::transport::{STORAGE_TIMEOUT, StorageRequest, StorageTransport};
+use super::transport::{STORAGE_TIMEOUT, StorageRequest};
 
 pub const STORAGE_SCOPE: &str = "https://storage.azure.com/.default";
 pub const REFRESH_MARGIN: Duration = Duration::from_secs(300);
 // LiteLLM fixes the lifetime at one hour instead of reading expires_in from the token response
 pub const TOKEN_LIFETIME: Duration = Duration::from_secs(3600);
 pub const DEFAULT_AUTHORITY_HOST: &str = "https://login.microsoftonline.com";
-const OS_ENVIRON_PREFIX: &str = "os.environ/";
 pub const TOKEN_PATH: &str = "/oauth2/v2.0/token";
 
 #[derive(Debug, thiserror::Error)]
@@ -27,8 +25,6 @@ pub enum TokenError {
     MissingClientId,
     #[error("Missing required environment variable: AZURE_STORAGE_CLIENT_SECRET")]
     MissingClientSecret,
-    #[error("tenant_id, client_id, and client_secret must be provided")]
-    MissingCredentials,
     #[error("the Azure AD token request could not be completed")]
     Transport(#[from] super::transport::StorageTransportError),
     #[error("the Azure AD token endpoint answered with status {status}")]
@@ -80,81 +76,43 @@ impl TokenState {
             .is_some_and(|(_token, expires_at)| now.saturating_add(REFRESH_MARGIN) >= expires_at)
     }
 
-    #[must_use]
-    pub fn cached(&self, now: Duration) -> Option<SecretString> {
-        if self.is_expired(now) {
-            return None;
-        }
-        self.token.clone()
-    }
-
-    pub fn store(&mut self, token: SecretString, ttl: Duration, now: Duration) {
+    pub fn store(&mut self, token: SecretString, now: Duration) {
         self.token = Some(token);
-        self.expires_at = Some(now.saturating_add(ttl));
+        self.expires_at = Some(now.saturating_add(TOKEN_LIFETIME));
     }
 }
 
-fn resolve_text(raw: &str, environment: &dyn EnvironmentLookup) -> Option<String> {
-    raw.strip_prefix(OS_ENVIRON_PREFIX)
-        .map_or_else(|| Some(raw.to_owned()), |name| environment.lookup(name))
-}
-
-pub struct EntraCredentials {
-    pub tenant_id: String,
-    pub client_id: String,
-    pub client_secret: SecretString,
-}
-
-// the same three missing-variable messages get_azure_ad_token_from_azure_storage raises before B673 resolves them
-pub fn resolve_entra_credentials(
+// get_azure_ad_token_from_azure_storage raises these three before it calls B673
+pub fn credentials(
     settings: &AzureStorageSettings,
-    environment: &dyn EnvironmentLookup,
-) -> Result<EntraCredentials, TokenError> {
+) -> Result<(String, String, SecretString), TokenError> {
     let tenant_id = settings
         .tenant_id
-        .as_deref()
+        .clone()
         .ok_or(TokenError::MissingTenantId)?;
     let client_id = settings
         .client_id
-        .as_deref()
+        .clone()
         .ok_or(TokenError::MissingClientId)?;
     let client_secret = settings
         .client_secret
-        .as_ref()
+        .clone()
         .ok_or(TokenError::MissingClientSecret)?;
-    let resolved_tenant =
-        resolve_text(tenant_id, environment).ok_or(TokenError::MissingCredentials)?;
-    let resolved_client =
-        resolve_text(client_id, environment).ok_or(TokenError::MissingCredentials)?;
-    let resolved_secret = client_secret
-        .expose_secret()
-        .strip_prefix(OS_ENVIRON_PREFIX)
-        .map_or_else(
-            || Some(SecretString::from(client_secret.expose_secret())),
-            |name| environment.lookup(name).map(SecretString::from),
-        )
-        .ok_or(TokenError::MissingCredentials)?;
-    Ok(EntraCredentials {
-        tenant_id: resolved_tenant,
-        client_id: resolved_client,
-        client_secret: resolved_secret,
-    })
+    Ok((tenant_id, client_id, client_secret))
 }
 
 #[must_use]
-pub fn client_secret_request(credentials: &EntraCredentials) -> StorageRequest {
+pub fn client_secret_request(credentials: &(String, String, SecretString)) -> StorageRequest {
+    let (tenant_id, client_id, client_secret) = credentials;
     let form = form_urlencoded::Serializer::new(String::new())
         .append_pair("grant_type", "client_credentials")
-        .append_pair("client_id", &credentials.client_id)
-        .append_pair("client_secret", credentials.client_secret.expose_secret())
+        .append_pair("client_id", client_id)
+        .append_pair("client_secret", client_secret.expose_secret())
         .append_pair("scope", STORAGE_SCOPE)
         .finish();
     StorageRequest {
         method: Method::POST,
-        url: format!(
-            "{DEFAULT_AUTHORITY_HOST}/{}{TOKEN_PATH}",
-            credentials.tenant_id
-        ),
+        url: format!("{DEFAULT_AUTHORITY_HOST}/{tenant_id}{TOKEN_PATH}"),
         query: Vec::new(),
         headers: vec![(
             CONTENT_TYPE.as_str().to_owned(),
@@ -177,13 +135,4 @@ pub fn parse_token_response(
     }
     let parsed: TokenResponse = serde_json::from_slice(&response.body).map_err(TokenError::Body)?;
     parsed.access_token.ok_or(TokenError::MissingAccessToken)
-}
-
-pub async fn fetch_client_secret_token(
-    transport: &dyn StorageTransport,
-    credentials: &EntraCredentials,
-) -> Result<SecretString, TokenError> {
-    let request = client_secret_request(credentials);
-    let response = transport.send(request).await?;
-    parse_token_response(&response)
 }

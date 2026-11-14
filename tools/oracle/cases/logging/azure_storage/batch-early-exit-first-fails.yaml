@@ -28,6 +28,6 @@ call:
           - {status: 503, body: ""}
         actions:
           - {do: event, id: id-1}
-          - {do: send_batch}
+          - {do: flush}
 env: {}
 compare: {ignore: []}

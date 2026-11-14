@@ -12,12 +12,11 @@ use super::{
 };
 use crate::azure_storage_logging::filename::{adls_safe_file_name, storage_url};
 use crate::azure_storage_logging::http_ops::{
-    StorageAuthorization, append_bytes_request, append_data_request, create_directory_request,
-    create_file_request, directory_exists_request, flush_data_request,
+    StorageAuthorization, append_request, create_directory_request, create_file_request,
+    directory_exists_request, flush_data_request,
 };
 use crate::azure_storage_logging::token::{
-    ChainTokenProvider, TOKEN_LIFETIME, TokenError, fetch_client_secret_token,
-    resolve_entra_credentials,
+    ChainTokenProvider, TokenError, client_secret_request, credentials, parse_token_response,
 };
 use crate::azure_storage_logging::transport::{StorageRequest, StorageResponse};
 
@@ -60,7 +59,7 @@ impl AzureBlobStorageLogger {
             .await?;
         let _appended = self
             .execute(
-                append_data_request(&base_url, &auth, now, &json_payload)?,
+                append_request(&base_url, &auth, now, json_payload.as_bytes())?,
                 "append",
             )
             .await?;
@@ -116,10 +115,7 @@ impl AzureBlobStorageLogger {
             .execute(create_file_request(&base_url, &auth, now)?, "create")
             .await?;
         let _appended = self
-            .execute(
-                append_bytes_request(&base_url, &auth, now, &content)?,
-                "append",
-            )
+            .execute(append_request(&base_url, &auth, now, &content)?, "append")
             .await?;
         let _flushed = self
             .execute(
@@ -173,16 +169,24 @@ impl AzureBlobStorageLogger {
         let now = self.deps.clock.now_unix();
         let cached = {
             let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            state.token.cached(now)
+            if state.token.is_expired(now) {
+                None
+            } else {
+                state.token.token.clone()
+            }
         };
         if let Some(token) = cached {
             return Ok(token);
         }
-        let credentials =
-            resolve_entra_credentials(&self.settings, self.deps.environment.as_ref())?;
-        let token = fetch_client_secret_token(self.deps.transport.as_ref(), &credentials).await?;
+        let credentials = credentials(&self.settings)?;
+        let response = self
+            .deps
+            .transport
+            .send(client_secret_request(&credentials))
+            .await?;
+        let token = parse_token_response(&response)?;
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.token.store(token.clone(), TOKEN_LIFETIME, now);
+        state.token.store(token.clone(), now);
         Ok(token)
     }
 

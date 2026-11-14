@@ -41,14 +41,13 @@ pub struct AzureStorageSettings {
 }
 
 fn batch_variables(environment: &dyn EnvironmentLookup) -> BTreeMap<String, String> {
-    BATCH_VARIABLES
-        .into_iter()
-        .filter_map(|name| {
-            environment
-                .lookup(name)
-                .map(|value| (name.to_owned(), value))
-        })
-        .collect()
+    let mut variables = BTreeMap::new();
+    for name in BATCH_VARIABLES {
+        if let Some(value) = environment.lookup(name) {
+            let _previous = variables.insert(name.to_owned(), value);
+        }
+    }
+    variables
 }
 
 impl AzureStorageSettings {

@@ -72,23 +72,7 @@ pub fn create_file_request(
     )
 }
 
-pub fn append_data_request(
-    base_url: &str,
-    auth: &StorageAuthorization<'_>,
-    now: Duration,
-    json_payload: &str,
-) -> Result<StorageRequest, SigningError> {
-    storage_request(
-        Method::PATCH,
-        format!("{base_url}?action=append&position=0"),
-        auth,
-        now,
-        vec![("Content-Type".to_owned(), "application/json".to_owned())],
-        json_payload.as_bytes().to_vec(),
-    )
-}
-
-pub fn append_bytes_request(
+pub fn append_request(
     base_url: &str,
     auth: &StorageAuthorization<'_>,
     now: Duration,
