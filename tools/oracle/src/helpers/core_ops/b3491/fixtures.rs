@@ -94,13 +94,6 @@ impl InteractionsSyncResponse for FakeSyncResponse {
     }
 }
 
-fn fixture_moment() -> DateTime<FixedOffset> {
-    match DateTime::parse_from_rfc3339("2026-05-20T00:00:00+00:00") {
-        Ok(moment) => moment,
-        Err(_) => DateTime::<chrono::Utc>::UNIX_EPOCH.fixed_offset(),
-    }
-}
-
 pub(crate) struct FixedClock {
     now: DateTime<FixedOffset>,
 }
@@ -132,7 +125,7 @@ impl RecordingLogging {
                 model_call_details: litellm_params,
             },
             clock: FixedClock {
-                now: fixture_moment(),
+                now: DateTime::<chrono::Utc>::UNIX_EPOCH.fixed_offset(),
             },
             records: Mutex::new(Vec::new()),
         }
@@ -173,11 +166,8 @@ impl InteractionsStreamLogging for RecordingLogging {
     }
 
     fn dispatch_success_handlers(&self, call: InteractionsSuccessCall) {
-        self.record(
-            "dispatch_success_handlers",
-            call,
-            Some(call.prefer_async_handlers),
-        );
+        let prefer_async_handlers = Some(call.prefer_async_handlers);
+        self.record("dispatch_success_handlers", call, prefer_async_handlers);
     }
 
     fn run_async_success_handler(&self, call: InteractionsSuccessCall) {
