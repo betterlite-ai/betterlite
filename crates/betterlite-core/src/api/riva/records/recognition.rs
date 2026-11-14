@@ -8,7 +8,7 @@ use super::endpointing::{EndpointingConfig, endpointing_config};
 use super::error::RecordsError;
 use super::options::{
     DEFAULT_AUDIO_CHANNEL_COUNT, DEFAULT_ENCODING, DEFAULT_LANGUAGE_CODE, DEFAULT_MAX_ALTERNATIVES,
-    DEFAULT_RESPONSE_FORMAT, DEFAULT_SAMPLE_RATE_HERTZ, bool_option, granularity_option,
+    DEFAULT_RESPONSE_FORMAT, DEFAULT_SAMPLE_RATE_HERTZ, bool_option, granularities_at,
     integer_option, text_option,
 };
 
@@ -80,7 +80,11 @@ pub fn transform_request(optional_params: &Object) -> Result<RivaRequest, Record
         response_format: text_option(optional_params, "response_format")?
             .filter(|format| !format.is_empty())
             .unwrap_or_else(|| DEFAULT_RESPONSE_FORMAT.to_owned()),
-        timestamp_granularities: granularity_option(optional_params, "timestamp_granularities")?,
+        timestamp_granularities: granularities_at(
+            optional_params,
+            "timestamp_granularities",
+            "timestamp_granularities",
+        )?,
     })
 }
 

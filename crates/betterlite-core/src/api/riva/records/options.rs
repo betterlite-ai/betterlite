@@ -49,7 +49,15 @@ pub fn map_openai_params(non_default_params: &Object) -> Result<Object, RecordsE
     let mut optional_params = Object::new();
     for (name, value) in non_default_params {
         match name.as_str() {
-            "language" => apply_language(non_default_params, &mut optional_params)?,
+            "language" if !value.is_null() => {
+                let language = to_value(normalize_language(value.as_str())).map_err(|source| {
+                    RecordsError::Value {
+                        field: "language_code",
+                        source,
+                    }
+                })?;
+                optional_params.insert("language_code".to_owned(), language);
+            }
             "timestamp_granularities" => {
                 apply_granularities(non_default_params, &mut optional_params)?;
             }
@@ -60,22 +68,6 @@ pub fn map_openai_params(non_default_params: &Object) -> Result<Object, RecordsE
         }
     }
     Ok(optional_params)
-}
-
-fn apply_language(params: &Object, mapped: &mut Object) -> Result<(), RecordsError> {
-    let Some(value) = params.get("language") else {
-        return Ok(());
-    };
-    if value.is_null() {
-        return Ok(());
-    }
-    let language =
-        to_value(normalize_language(value.as_str())).map_err(|source| RecordsError::Value {
-            field: "language_code",
-            source,
-        })?;
-    mapped.insert("language_code".to_owned(), language);
-    Ok(())
 }
 
 fn apply_granularities(params: &Object, mapped: &mut Object) -> Result<(), RecordsError> {
@@ -128,13 +120,12 @@ pub(super) fn bool_option(params: &Object, field: &'static str) -> Optional<bool
 }
 
 pub(super) fn integer_option(params: &Object, field: &'static str) -> Optional<u32> {
-    let Some(value) = params.get(field) else {
-        return Ok(None);
-    };
-    if value.is_null() {
-        return Ok(None);
-    }
-    integer_of(value.as_u64(), field).map(Some)
+    params
+        .get(field)
+        .filter(|value| !value.is_null())
+        .map_or(Ok(None), |value| {
+            integer_of(value.as_u64(), field).map(Some)
+        })
 }
 
 pub(super) fn integer_at(values: &Object, name: &str, field: &'static str) -> Optional<u32> {
@@ -142,10 +133,6 @@ pub(super) fn integer_at(values: &Object, name: &str, field: &'static str) -> Op
         return Ok(None);
     };
     integer_of(value.as_u64(), field).map(Some)
-}
-
-pub(super) fn granularity_option(params: &Object, field: &'static str) -> Optional<Vec<String>> {
-    granularities_at(params, field, field)
 }
 
 pub(super) fn decimal_at(values: &Object, name: &str, field: &'static str) -> Optional<Decimal> {
@@ -159,11 +146,13 @@ pub(super) fn decimal_at(values: &Object, name: &str, field: &'static str) -> Op
     Ok(Some(number))
 }
 
-fn integer_of(number: Option<u64>, field: &'static str) -> Result<u32, RecordsError> {
-    let Some(number) = number else {
+fn integer_of(value: Option<u64>, field: &'static str) -> Result<u32, RecordsError> {
+    let Some(number) = value else {
         return Err(RecordsError::Integer { field });
     };
-    u32::try_from(number).map_err(|_| RecordsError::Integer { field })
+    u32::try_from(number)
+        .ok()
+        .ok_or(RecordsError::Integer { field })
 }
 
 fn granularities_at(values: &Object, name: &str, field: &'static str) -> Optional<Vec<String>> {

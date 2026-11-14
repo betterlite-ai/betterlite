@@ -467,7 +467,7 @@ fn every_response_carries_the_transcribe_task(#[case] response_format: &str) {
     let built = response(
         r#"[{"transcript": "hi"}]"#,
         response_format,
-        Some(1.0),
+        Some(1.0_f64),
         None,
     );
     assert_eq!(built["task"], "transcribe");
@@ -484,7 +484,7 @@ fn verbose_json_lists_requested_word_timings() {
             ]}
         ]"#,
         "verbose_json",
-        Some(4.0),
+        Some(4.0_f64),
         Some(&["word"][..]),
     );
     assert_eq!(
@@ -511,7 +511,7 @@ fn verbose_json_without_a_word_request_has_no_words(#[case] granularities: Optio
     let built = response(
         r#"[{"transcript": "hi", "words": [{"word": "hi", "start_time_ms": 0, "end_time_ms": 100}]}]"#,
         "verbose_json",
-        Some(1.5),
+        Some(1.5_f64),
         granularities,
     );
     assert_eq!(
@@ -525,7 +525,7 @@ fn verbose_json_with_an_empty_word_list_has_no_words() {
     let built = response(
         r#"[{"transcript": "hi", "words": []}]"#,
         "verbose_json",
-        Some(1.5),
+        Some(1.5_f64),
         Some(&["word"][..]),
     );
     assert_eq!(
@@ -535,7 +535,10 @@ fn verbose_json_with_an_empty_word_list_has_no_words() {
 }
 
 #[rstest]
-#[case::present(Some(0.0), r#"{"text": "hi", "task": "transcribe", "duration": 0.0}"#)]
+#[case::present(
+    Some(0.0_f64),
+    r#"{"text": "hi", "task": "transcribe", "duration": 0.0}"#
+)]
 #[case::absent(None, r#"{"text": "hi", "task": "transcribe"}"#)]
 fn verbose_json_includes_only_a_non_null_duration(
     #[case] duration: Option<f64>,
@@ -550,7 +553,7 @@ fn plain_formats_drop_words_and_duration() {
     let built = response(
         r#"[{"transcript": "hi", "words": [{"word": "hi", "start_time_ms": 0, "end_time_ms": 100}]}]"#,
         "json",
-        Some(1.5),
+        Some(1.5_f64),
         Some(&["word"][..]),
     );
     assert_eq!(built, params(r#"{"text": "hi", "task": "transcribe"}"#));
