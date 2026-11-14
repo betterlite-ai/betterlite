@@ -1,0 +1,18 @@
+task: B3573
+deviations:
+  - what: >-
+      A passthrough guardrail settings object whose request_fields or response_fields holds the
+      wrong type resolves to no settings, so the handler scans the full payload. LiteLLM's
+      get_settings raises a pydantic ValidationError and the guardrail call fails.
+    why: >-
+      The settings lookup is B3601's passthrough policy, which returns Option and documents this
+      fallback; this task cannot change that type without touching that crate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/passthrough_guardrails.py#L110-L111
+  - what: >-
+      A passthrough request body holding an integer outside the i64 and u64 range (a 30-digit id,
+      for example) is refused with PassthroughPayloadError::IntegerOutOfRange. LiteLLM's
+      safe_dumps sends the exact integer digits to the guardrail.
+    why: >-
+      GuardrailValue has no variant that carries an exact wide integer, and rounding it to a float
+      would change the digits the guardrail scans. B6031's bridge refuses such an integer the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L82-L86
