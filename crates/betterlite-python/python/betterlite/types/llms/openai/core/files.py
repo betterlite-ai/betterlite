@@ -7,7 +7,6 @@ from pydantic import Field, JsonValue, PrivateAttr
 from betterlite.types.llms.openai.core.aliases import FileTypes
 from betterlite.types.utils.base import DictJsonObject, ResponseObject
 
-
 # ast-grep-ignore: no-long-names
 OpenAICreateFileRequestOptionalParams: TypeAlias = Literal["purpose"]
 
