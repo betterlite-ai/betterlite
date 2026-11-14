@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::mem::take;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -33,10 +34,10 @@ pub(crate) fn object(pairs: &[(&str, Json)]) -> IndexMap<String, Json> {
 }
 
 pub(crate) fn metadata(text: &str) -> IndexMap<String, Json> {
-    match json(text) {
-        Json::Object(map) => map,
-        _ => panic!("the test metadata is a JSON object"),
-    }
+    let Json::Object(map) = json(text) else {
+        panic!("the test metadata is a JSON object");
+    };
+    map
 }
 
 pub(crate) fn alert_settings(threshold_seconds: f64) -> RequestAlertSettings {
@@ -69,7 +70,7 @@ pub(crate) struct RecordingSink {
 impl RecordingSink {
     pub(crate) fn take(&self) -> Vec<RecordedAlert> {
         let mut alerts = self.alerts.lock().unwrap();
-        std::mem::take(&mut *alerts)
+        take(&mut *alerts)
     }
 }
 
