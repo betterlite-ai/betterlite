@@ -1,0 +1,50 @@
+task: B7936
+deviations:
+  - what: >-
+      The ported models derive from the wheel's ResponseObject instead of pydantic's BaseModel.
+      ResponseObject sets extra="allow", so an unknown key survives validation and appears in
+      model_dump(), and model_json_schema() carries additionalProperties: true where LiteLLM's
+      schema has none. This covers ToolPermissionRule, ToolResult, PermissionError,
+      TypeSafeGuardrailOptionalParams and every config model built on GuardrailConfigModel,
+      including the nested optional_params model.
+    why: >-
+      Every ported pydantic model under betterlite.types goes on ResponseObject, as B7930 set for
+      the guardrail types. The declared fields, required keys, defaults, Literal values, validation
+      errors and dumps of the declared fields match LiteLLM; only keys LiteLLM never declares
+      differ.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/tool_permission.py#L9
+  - what: >-
+      The config models LiteLLM leaves on the unparametrized GuardrailConfigModel,
+      ToolPermissionGuardrailConfigModel, VigilGuardGuardrailConfigModel, XecGuardConfigModel and
+      ZscalerAIGuardConfigModel, are spelled GuardrailConfigModel[BaseModel] here. Pydantic
+      resolves an unbound TypeVar to its BaseModel bound, so optional_params has the same
+      BaseModel | None type, schema, default and validation on both sides. A config that puts a
+      value in optional_params dumps here; with LiteLLM's unparametrized base, pydantic 2.14.1
+      gives that field a mock serializer and model_dump() raises TypeError because the mock is not
+      an instance of SchemaSerializer.
+    why: >-
+      basedpyright strict reports a generic base class used without type arguments, and BaseModel is
+      the bound the unparametrized generic resolves to at runtime. The parametrized spelling also
+      keeps serialization working where LiteLLM's unparametrized generic crashes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/tool_permission.py#L77
+  - what: >-
+      The ported models carry no pydantic Field descriptions and no class docstrings, and
+      guardrail_base_init.py drops LiteLLM's module docstring, so model_json_schema() has no
+      description keys where LiteLLM's does. The JSON schema extras that
+      drive the UI are kept: the api_base examples, the policy_id and send_user_api_key_alias
+      ui_hint and condition, the bool ui_type on the three send_user_api_key flags, and the
+      multiselect policy_names options on XecGuardConfigModel.
+    why: >-
+      The repository keeps no docstrings and caps a module at 300 lines; the description prose is
+      most of the LiteLLM files. Keys, required keys, types, Literal values, defaults and
+      constraints are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/tool_permission.py#L14
+  - what: >-
+      ZscalerAIGuardConfigModel's endpoint warnings go through logging.getLogger("LiteLLM"), where
+      LiteLLM logs them on verbose_proxy_logger, which is logging.getLogger("LiteLLM Proxy"). The
+      message texts, their order and the conditions that emit them are identical.
+    why: >-
+      The wheel has no proxy logging module to take verbose_proxy_logger from; "LiteLLM" is the
+      logger name the wheel's Python code already uses. A caller who only configures the
+      "LiteLLM Proxy" logger sees no Zscaler warning; the warning still reaches the root logger.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/zscaler_ai_guard.py#L113
