@@ -1,0 +1,5 @@
+task: B1540
+deviations:
+  - what: A speed of "inf" or "nan" (or any value that float() turns into a non-finite number) is dropped instead of being written into voice_settings.
+    why: JSON has no Infinity or NaN, so the ElevenLabs request body would not be valid JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/elevenlabs/text_to_speech/transformation.py#L143-L152
