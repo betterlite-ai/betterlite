@@ -50,9 +50,7 @@ pub fn slow_response_parameters(
     if let Some(value) = source {
         messages = rendered_message(value);
     }
-    if messages.chars().count() > MESSAGE_PREVIEW_CHARS {
-        messages = messages.chars().take(MESSAGE_PREVIEW_CHARS).collect();
-    }
+    messages = messages.chars().take(MESSAGE_PREVIEW_CHARS).collect();
     if request.privacy.turn_off_message_logging || request.privacy.redact_messages_in_exceptions {
         messages = String::from(MESSAGE_NOT_LOGGED);
     }
