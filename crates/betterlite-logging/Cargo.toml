@@ -13,6 +13,7 @@ aws-smithy-runtime-api = { version = "=1.19.2", features = ["client"] }
 base64 = "0.23.1"
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
+betterlite-db = { path = "../betterlite-db" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
@@ -71,7 +72,10 @@ uuid.workspace = true
 
 [dev-dependencies]
 betterlite-openai = { path = "../betterlite-openai" }
+betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
 betterlite-privacy-openai = { path = "src/logging_privacy/openai" }
+clap = { version = "4.6.7", features = ["derive", "env"] }
+deadpool-postgres.workspace = true
 h2 = "0.4.20"
 insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
 rstest = "=0.27.0"
@@ -79,6 +83,7 @@ serde-saphyr.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
 temp-env = "0.3.6"
 tokio = { workspace = true, features = ["test-util", "time"] }
+tokio-postgres.workspace = true
 tracing-subscriber.workspace = true
 
 [[test]]
