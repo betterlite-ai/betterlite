@@ -1,0 +1,14 @@
+task: B1123
+deviations:
+  - what: A session update larger than the caller's event byte limit is refused with the ApiLimitError text, where LiteLLM hands any string to its JSON adapter.
+    why: Rule bounded-inputs gives every inbound frame a cap; LiteLLM has no size bound on this module's payloads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transcription_protocol.py#L65-L72
+  - what: The non-standard NaN, Infinity and -Infinity literals are rejected as invalid JSON, where pydantic's JsonValue adapter parses them into floats.
+    why: betterlite writes standard JSON, and a non-finite float cannot be written back as a JSON number; no working setup sends them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transcription_protocol.py#L67
+  - what: A session update nested 128 or more levels deep is refused as invalid JSON, where pydantic's JsonValue adapter accepts a couple hundred levels.
+    why: Rule bounded-inputs gives the JSON decoder a depth cap, so an adversarial frame cannot exhaust the stack; real session updates nest a handful of levels.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transcription_protocol.py#L67
+  - what: Event IDs come from an injected EventIdSource, and UuidEventIds is the production source, where LiteLLM calls the fastuuid module directly.
+    why: Rule inject-dependencies keeps the random source out of the module, so native tests and the oracle can pin the IDs while the production source still returns uuid4 hex.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transcription_protocol.py#L105-L106

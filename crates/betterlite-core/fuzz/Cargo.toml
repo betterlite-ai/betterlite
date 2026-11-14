@@ -230,3 +230,10 @@ path = "fuzz_targets/messages_sse_events.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "transcription_protocol"
+path = "fuzz_targets/transcription_protocol.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,39 @@
+kind: helper
+name: transcription-protocol-errors
+call:
+  realtime_transcription_protocol:
+    function: parse
+    payloads:
+      - '{"'
+      - '{} {}'
+      - ''
+      - '[]'
+      - '7'
+      - '{}'
+      - '{"type":"other"}'
+      - '{"type":7}'
+      - '{"type":"session.update"}'
+      - '{"type":"session.update","session":{}}'
+      - '{"type":"session.update","session":null}'
+      - '{"type":"session.update","session":5}'
+      - '{"type":"session.update","session":{"audio":"x"}}'
+      - '{"type":"session.update","session":{"audio":{"input":true}}}'
+      - '{"type":"session.update","session":{"input_audio_transcription":"x"}}'
+      - '{"type":"session.update","session":{"turn_detection":[]}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":7}}}}'
+      - '{"type":"session.update","session":{"type":5}}'
+      - '{"type":"session.update","session":{"input_audio_transcription":{"model":1}}}'
+      - '{"type":"session.update","session":{"input_audio_transcription":{"language":true}}}'
+      - '{"type":"session.update","session":{"input_audio_format":5}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":5}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"rate":true}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"rate":1.5}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"rate":"1"}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"channels":false}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"channels":2.0}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"channels":"2"}}}}}'
+      - '{"type":"session.update","session":{"input_audio_transcription":{},"audio":{"input":{"transcription":{}}}}}'
+      - '{"type":"session.update","session":{"input_audio_format":"pcm16","audio":{"input":{"format":"audio/pcm"}}}}'
+      - '{"type":"session.update","session":{"type":"transcription"}}'
+env: {}
+compare: {ignore: []}
