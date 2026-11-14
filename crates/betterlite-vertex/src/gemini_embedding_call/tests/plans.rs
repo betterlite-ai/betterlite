@@ -19,7 +19,7 @@ use crate::gemini_embedding_call::transport::embedding_request;
 #[case::nested(r#"["a",["files/b","c"]]"#, &["a", "files/b", "c"], true)]
 #[case::repeated(r#"["files/a","files/a"]"#, &["files/a", "files/a"], true)]
 #[case::prefix_must_lead(r#"["my files/a","Files/a","file/a"]"#, &["my files/a", "Files/a", "file/a"], false)]
-#[case::empty(r"[]", &[], false)]
+#[case::empty("[]", &[], false)]
 fn detects_file_references_after_flattening(
     #[case] source: &str,
     #[case] flat: &[&str],

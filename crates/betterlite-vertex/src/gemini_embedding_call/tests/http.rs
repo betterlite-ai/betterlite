@@ -34,8 +34,8 @@ fn reads_file_metadata(#[case] reply: &str, #[case] mime_type: &str, #[case] uri
 fn metadata_must_be_an_object(#[case] reply: &str) {
     let error = file_metadata("files/a", &json(reply)).unwrap_err();
     assert!(matches!(
-        error,
-        GeminiEmbeddingCallError::MetadataShape { ref file } if file == "files/a"
+        &error,
+        GeminiEmbeddingCallError::MetadataShape { file } if file == "files/a"
     ));
 }
 
@@ -47,8 +47,8 @@ fn metadata_must_be_an_object(#[case] reply: &str) {
 fn metadata_fields_must_be_text(#[case] reply: &str, #[case] field: &str) {
     let error = file_metadata("files/a", &json(reply)).unwrap_err();
     assert!(matches!(
-        error,
-        GeminiEmbeddingCallError::MetadataField { file: ref name, field: named }
+        &error,
+        GeminiEmbeddingCallError::MetadataField { file: name, field: named }
             if name == "files/a" && named == field
     ));
 }

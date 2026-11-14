@@ -26,7 +26,8 @@ use crate::gemini_embedding_records::usage::TextTokenCounter;
 use crate::token_cache::probe::AccessToken;
 use crate::vertex_interactions::mint::{MintAccessToken, MintFuture};
 
-pub(super) const MODEL: &str = "gemini-embedding-001";
+// the catalog marks this model uses_embed_content, so Vertex posts to :embedContent
+pub(super) const MODEL: &str = "gemini-embedding-2";
 
 #[derive(Clone, Debug)]
 pub(super) struct Sent {
@@ -37,10 +38,12 @@ pub(super) struct Sent {
     pub deadline: Duration,
 }
 
+type Replies = Arc<Mutex<VecDeque<(u16, Vec<u8>)>>>;
+
 // Answers in order, so a test lists the replies the call is expected to ask for
 #[derive(Clone, Default)]
 pub(super) struct Script {
-    replies: Arc<Mutex<VecDeque<(u16, Vec<u8>)>>>,
+    replies: Replies,
     sent: Arc<Mutex<Vec<Sent>>>,
 }
 
@@ -74,7 +77,7 @@ impl EmbeddingTransport for Script {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        let body = match request.body {
+        let payload = match request.body {
             RequestBody::Json(bytes) => bytes,
             RequestBody::Empty | RequestBody::Bytes { .. } | RequestBody::Multipart { .. } => {
                 Vec::new()
@@ -84,7 +87,7 @@ impl EmbeddingTransport for Script {
             method: request.method,
             url: request.url.to_string(),
             headers: request.headers,
-            body,
+            body: payload,
             deadline: request.deadline,
         });
         let next = self.replies.lock().unwrap().pop_front();

@@ -1,3 +1,5 @@
+use std::iter::once;
+use std::str::from_utf8;
 use std::time::Duration;
 
 use http::Method;
@@ -12,8 +14,11 @@ use crate::gemini_embedding_call::execute::Clients;
 
 const VERTEX_REPLY: &str = r#"{"embedding":{"values":[0.5]}}"#;
 const STUDIO_REPLY: &str = r#"{"embeddings":[{"values":[0.5]}]}"#;
-const STUDIO_POST: &str = "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:batchEmbedContents";
+const STUDIO_POST: &str =
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:batchEmbedContents";
 const PDF: &str = r#"{"mimeType":"application/pdf","uri":"https://generativelanguage.googleapis.com/v1beta/files/a"}"#;
+const FILE_A: &str = "https://generativelanguage.googleapis.com/v1beta/files/a";
+const FILE_B: &str = "https://generativelanguage.googleapis.com/v1beta/files/b";
 
 fn pooled_only(pooled: &Script) -> Clients<'_, Script> {
     Clients {
@@ -43,7 +48,7 @@ async fn vertex_posts_embed_content_with_the_minted_token() {
     assert_eq!(sent[0].method, Method::POST);
     assert_eq!(
         sent[0].url,
-        "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-embedding-001:embedContent"
+        "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-embedding-2:embedContent"
     );
     assert_eq!(header(&sent[0], "authorization"), Some("Bearer minted"));
     assert_eq!(
@@ -51,7 +56,7 @@ async fn vertex_posts_embed_content_with_the_minted_token() {
         Some("application/json; charset=utf-8")
     );
     assert_eq!(
-        json(std::str::from_utf8(&sent[0].body).unwrap()),
+        json(from_utf8(&sent[0].body).unwrap()),
         json(r#"{"content":{"parts":[{"text":"hello"}]}}"#)
     );
 }
@@ -78,11 +83,11 @@ async fn studio_posts_batch_embed_contents_with_the_key_header() {
     assert_eq!(header(&sent[0], "authorization"), None);
     assert!(sent[0].headers["x-goog-api-key"].is_sensitive());
     assert_eq!(
-        json(std::str::from_utf8(&sent[0].body).unwrap()),
+        json(from_utf8(&sent[0].body).unwrap()),
         json(
             r#"{"requests":[
-                {"model":"models/gemini-embedding-001","content":{"parts":[{"text":"a"}]}},
-                {"model":"models/gemini-embedding-001","content":{"parts":[{"text":"b"}]}}
+                {"model":"models/gemini-embedding-2","content":{"parts":[{"text":"a"}]}},
+                {"model":"models/gemini-embedding-2","content":{"parts":[{"text":"b"}]}}
             ]}"#
         )
     );
@@ -107,22 +112,14 @@ async fn studio_fetches_every_file_occurrence_then_posts_the_metadata() {
     .await
     .unwrap();
     let sent = pooled.sent();
-    let urls: Vec<&str> = sent.iter().map(|each| each.url.as_str()).collect();
-    assert_eq!(
-        urls,
-        [
-            "https://generativelanguage.googleapis.com/v1beta/files/a",
-            "https://generativelanguage.googleapis.com/v1beta/files/b",
-            "https://generativelanguage.googleapis.com/v1beta/files/a",
-            STUDIO_POST,
-        ]
-    );
+    let urls: Vec<_> = sent.iter().map(|each| each.url.as_str()).collect();
+    assert_eq!(urls, [FILE_A, FILE_B, FILE_A, STUDIO_POST]);
     assert!(sent[..3].iter().all(|each| each.method == Method::GET));
     assert!(sent[..3].iter().all(|each| each.body.is_empty()));
     assert_eq!(header(&sent[0], "x-goog-api-key"), Some("gk"));
     assert_eq!(header(&sent[0], "authorization"), None);
     assert_eq!(header(&sent[0], "content-type"), None);
-    let body = std::str::from_utf8(&sent[3].body).unwrap();
+    let body = from_utf8(&sent[3].body).unwrap();
     assert!(
         body.contains(r#""file_uri":"https://generativelanguage.googleapis.com/v1beta/files/a2""#)
     );
@@ -152,7 +149,7 @@ async fn a_custom_base_moves_the_post_but_not_the_file_lookups() {
     );
     assert_eq!(
         sent[1].url,
-        "https://custom.example.com/models/gemini-embedding-001:batchEmbedContents"
+        "https://custom.example.com/models/gemini-embedding-2:batchEmbedContents"
     );
 }
 
@@ -175,23 +172,23 @@ async fn vertex_with_a_key_resolves_top_level_references_only() {
         "https://generativelanguage.googleapis.com/v1beta/files/a"
     );
     assert_eq!(sent[1].method, Method::POST);
-    let body = std::str::from_utf8(&sent[1].body).unwrap();
+    let body = from_utf8(&sent[1].body).unwrap();
     assert!(body.contains(r#""file_uri":"gs://bucket/b.pdf""#));
 }
 
+// LiteLLM resolves nothing on Vertex without a key, so its transform rejects the reference
 #[tokio::test]
 async fn vertex_without_a_key_downloads_nothing() {
     let fixture = Fixture::new(r#""files/a""#);
-    let pooled = Script::answering(&[(200, VERTEX_REPLY)]);
-    run(
+    let pooled = Script::default();
+    let error = run(
         &fixture.call(TargetProvider::Vertex, Execution::Sync),
         pooled_only(&pooled),
     )
     .await
-    .unwrap();
-    let sent = pooled.sent();
-    assert_eq!(sent.len(), 1);
-    assert_eq!(sent[0].method, Method::POST);
+    .unwrap_err();
+    assert!(matches!(error, GeminiEmbeddingCallError::Records(_)));
+    assert!(pooled.sent().is_empty());
 }
 
 #[tokio::test]
@@ -420,7 +417,7 @@ async fn a_file_reply_that_is_not_an_object_fails_the_call() {
 #[tokio::test]
 async fn optional_params_reach_the_request_transform() {
     let mut fixture = Fixture::new(r#""hello""#);
-    fixture.optional_params = [(String::from("title"), json("1"))].into_iter().collect();
+    fixture.optional_params = once((String::from("title"), json("1"))).collect();
     let pooled = Script::default();
     let error = run(
         &fixture.call(TargetProvider::Vertex, Execution::Sync),
