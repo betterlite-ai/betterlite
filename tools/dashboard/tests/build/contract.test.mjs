@@ -152,3 +152,47 @@ test("a bundle that is stale, unfinished or forced is not reused", async (t) => 
     assert.equal(result.stdout.includes("is current"), false, name);
   }
 });
+
+async function addedLines(name) {
+  const patch = await fs.readFile(path.join(REPO_ROOT, "ui/dashboard/patches", name), "utf8");
+  return patch.split("\n").filter((line) => line.startsWith("+") && !line.startsWith("+++"));
+}
+
+test("the build patch adds a deterministic build id and leaves the export settings alone", async () => {
+  const patch = await fs.readFile(path.join(REPO_ROOT, "ui/dashboard/patches/10-build.patch"), "utf8");
+  const added = (await addedLines("10-build.patch")).join("\n");
+  assert.match(added, /generateBuildId: async \(\) => process\.env\.BETTERLITE_BUILD_ID \?\? null,/);
+  for (const setting of ["assetPrefix", "basePath", "trailingSlash", "output", "removeConsole"]) {
+    assert.equal(added.includes(setting), false, `${setting} keeps its upstream value`);
+    assert.equal(new RegExp(`^-.*${setting}`, "m").test(patch), false, `${setting} is not removed`);
+  }
+});
+
+test("the build patch swaps the Inter font for the system stack", async () => {
+  const patch = await fs.readFile(path.join(REPO_ROOT, "ui/dashboard/patches/10-build.patch"), "utf8");
+  assert.match(patch, /^-import \{ Inter \} from "next\/font\/google";$/m);
+  assert.match(patch, /^-const inter = Inter\(\{ subsets: \["latin"\] \}\);$/m);
+  assert.match(patch, /^-      <body className=\{inter\.className\}>$/m);
+  assert.match(patch, /^\+      <body>$/m);
+  assert.equal((await addedLines("10-build.patch")).join("\n").includes("next/font"), false);
+});
+
+test("the build patch is recorded with the hashes of the files it changes", async () => {
+  const record = JSON.parse(await fs.readFile(path.join(REPO_ROOT, "ui/dashboard/patches/10-build.json"), "utf8"));
+  assert.deepEqual(
+    record.targets.map((target) => target.path),
+    ["ui/litellm-dashboard/next.config.mjs", "ui/litellm-dashboard/src/app/layout.tsx"],
+  );
+  for (const target of record.targets) {
+    assert.match(target.preimage, /^[0-9a-f]{64}$/);
+    assert.match(target.postimage, /^[0-9a-f]{64}$/);
+    assert.notEqual(target.preimage, target.postimage);
+  }
+});
+
+test("the build never commits or stages anything", async () => {
+  for (const file of ["packaging/ui/Dockerfile", "tools/dashboard/build.sh", "tools/dashboard/bundle.mjs", "tools/dashboard/install.mjs"]) {
+    const text = await fs.readFile(path.join(REPO_ROOT, file), "utf8");
+    assert.equal(/git (add|commit|push)/.test(text), false, file);
+  }
+});
