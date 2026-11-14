@@ -13,6 +13,7 @@ use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use reqwest::StatusCode;
 use secrecy::ExposeSecret as _;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
@@ -390,4 +391,75 @@ async fn _call_crowdstrike_aidr_guard_sends_the_bearer_header() {
         .await
         .expect("the call succeeds");
     assert_eq!(*authorization.lock().unwrap(), "Bearer test-key");
+}
+
+const LIMIT: usize = 1024 * 1024;
+
+// Answers the first request with the given raw bytes, then closes the connection
+async fn serve_raw(reply: Vec<u8>) -> (String, JoinSet<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let mut server = JoinSet::new();
+    server.spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        socket.read(&mut [0_u8; 8192]).await.unwrap();
+        socket.write_all(&reply).await.unwrap();
+        socket.shutdown().await.unwrap();
+        let mut rest = Vec::new();
+        socket.read_to_end(&mut rest).await.ok();
+    });
+    (base, server)
+}
+
+fn padded_reply(total: usize) -> Vec<u8> {
+    let json = br#"{"result": {"transformed": false}}"#;
+    let mut body = json.to_vec();
+    body.resize(total, b' ');
+    let mut reply = format!("HTTP/1.1 200 OK\r\nContent-Length: {total}\r\n\r\n").into_bytes();
+    reply.extend_from_slice(&body);
+    reply
+}
+
+#[tokio::test]
+async fn _call_crowdstrike_aidr_guard_reads_a_body_of_exactly_the_limit() {
+    let (base, _server) = serve_raw(padded_reply(LIMIT)).await;
+    let guardrail = handler_for(&base, None);
+    let result = call_guard(&guardrail, &payload(), "test")
+        .await
+        .expect("a body of exactly one MiB is read whole");
+    assert_eq!(result.transformed, Some(false));
+}
+
+#[tokio::test]
+async fn _call_crowdstrike_aidr_guard_rejects_a_declared_length_over_the_limit() {
+    let reply = b"HTTP/1.1 200 OK\r\nContent-Length: 1048577\r\n\r\n{}".to_vec();
+    let (base, _server) = serve_raw(reply).await;
+    let guardrail = handler_for(&base, None);
+    let error = call_guard(&guardrail, &payload(), "test")
+        .await
+        .expect_err("the declared length is over the limit");
+    assert!(matches!(
+        error,
+        CrowdStrikeError::ResponseTooLarge { limit: LIMIT }
+    ));
+}
+
+#[tokio::test]
+async fn _call_crowdstrike_aidr_guard_rejects_a_streamed_body_over_the_limit() {
+    let mut reply = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n".to_vec();
+    for _ in 0..3 {
+        reply.extend_from_slice(b"61A80\r\n");
+        reply.resize(reply.len() + 400_000, b' ');
+        reply.extend_from_slice(b"\r\n");
+    }
+    reply.extend_from_slice(b"0\r\n\r\n");
+    let (base, _server) = serve_raw(reply).await;
+    let guardrail = handler_for(&base, None);
+    let error = call_guard(&guardrail, &payload(), "test")
+        .await
+        .expect_err("the streamed body is over the limit");
+    assert!(matches!(
+        error,
+        CrowdStrikeError::ResponseTooLarge { limit: LIMIT }
+    ));
 }
