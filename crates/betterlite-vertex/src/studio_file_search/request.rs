@@ -1,5 +1,6 @@
 use betterlite_bedrock::vector_stores::metadata::non_empty;
 use betterlite_config::sections::studio_identity::Settings;
+use betterlite_logging::python_json;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Serialize;
@@ -27,15 +28,15 @@ impl SearchQuery {
     }
 }
 
-pub struct SearchInput<'a> {
-    pub vector_store_id: &'a str,
-    pub query: &'a SearchQuery,
-    pub filters: Option<&'a Json>,
+pub struct SearchInput<'input> {
+    pub vector_store_id: &'input str,
+    pub query: &'input SearchQuery,
+    pub filters: Option<&'input Json>,
     pub max_num_results: Option<i64>,
-    pub extra_body: Option<&'a Json>,
-    pub params: &'a RequestParams,
-    pub api_base: Option<&'a str>,
-    pub settings: &'a Settings,
+    pub extra_body: Option<&'input Json>,
+    pub params: &'input RequestParams,
+    pub api_base: Option<&'input str>,
+    pub settings: &'input Settings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,31 +48,31 @@ pub struct SearchPlan {
 }
 
 #[derive(Debug, Serialize)]
-struct SearchBody<'a> {
-    contents: [Content<'a>; 1],
-    tools: [Tool<'a>; 1],
+struct SearchBody<'input> {
+    contents: [Content<'input>; 1],
+    tools: [Tool<'input>; 1],
     #[serde(rename = "generationConfig", skip_serializing_if = "Option::is_none")]
     generation_config: Option<GenerationConfig>,
 }
 
 #[derive(Debug, Serialize)]
-struct Content<'a> {
-    parts: [Part<'a>; 1],
+struct Content<'input> {
+    parts: [Part<'input>; 1],
 }
 
 #[derive(Debug, Serialize)]
-struct Part<'a> {
-    text: &'a str,
+struct Part<'input> {
+    text: &'input str,
 }
 
 #[derive(Debug, Serialize)]
-struct Tool<'a> {
-    file_search: FileSearch<'a>,
+struct Tool<'input> {
+    file_search: FileSearch<'input>,
 }
 
 #[derive(Debug, Serialize)]
-struct FileSearch<'a> {
-    file_search_store_names: [&'a str; 1],
+struct FileSearch<'input> {
+    file_search_store_names: [&'input str; 1],
     #[serde(skip_serializing_if = "Option::is_none")]
     metadata_filter: Option<Json>,
 }
@@ -94,8 +95,7 @@ pub fn search_request(input: &SearchInput<'_>) -> Result<SearchPlan, StudioFileS
     let query = input.query.joined();
     let filter = match input.filters.filter(|value| non_empty(value)) {
         Some(Json::Object(fields)) => Some(Json::Text(metadata_filter(fields)?)),
-        Some(other) => Some(other.clone()),
-        None => None,
+        other => other.cloned(),
     };
     let search_body = SearchBody {
         contents: [Content {
@@ -127,27 +127,25 @@ fn resolved_model(configured: Option<&str>) -> String {
         .filter(|model| !model.is_empty())
         .unwrap_or(DEFAULT_MODEL);
     if model.starts_with("gemini/") {
-        model.replace("gemini/", "")
-    } else {
-        model.to_owned()
+        return model.replace("gemini/", "");
     }
+    model.to_owned()
 }
 
 // LiteLLM quotes string filters without escaping and interpolates any other value with str().
 fn metadata_filter(fields: &IndexMap<String, Json>) -> Result<String, serde_json::Error> {
-    let mut parts = Vec::with_capacity(fields.len());
-    for (key, value) in fields {
-        let spelled = match value {
-            Json::Text(text) => format!("{key} = \"{text}\""),
-            Json::Null => format!("{key} = None"),
-            Json::Bool(true) => format!("{key} = True"),
-            Json::Bool(false) => format!("{key} = False"),
-            Json::Number(_) => format!("{key} = {}", betterlite_logging::python_json::dumps(value)),
+    let parts = fields
+        .iter()
+        .map(|(key, value)| match value {
+            Json::Text(text) => Ok(format!("{key} = \"{text}\"")),
+            Json::Null => Ok(format!("{key} = None")),
+            Json::Bool(true) => Ok(format!("{key} = True")),
+            Json::Bool(false) => Ok(format!("{key} = False")),
+            Json::Number(_) => Ok(format!("{key} = {}", python_json::dumps(value))),
             Json::List(_) | Json::Object(_) => {
-                format!("{key} = {}", serde_json::to_string(value)?)
+                Ok(format!("{key} = {}", serde_json::to_string(value)?))
             }
-        };
-        parts.push(spelled);
-    }
+        })
+        .collect::<Result<Vec<_>, serde_json::Error>>()?;
     Ok(parts.join(" AND "))
 }

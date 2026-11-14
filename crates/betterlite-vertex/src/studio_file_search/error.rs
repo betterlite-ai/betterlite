@@ -20,7 +20,7 @@ pub enum StudioFileSearchError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the search body cannot be represented as JSON")]
+    #[error("the File Search body cannot be represented as JSON")]
     Json {
         #[from]
         source: serde_json::Error,

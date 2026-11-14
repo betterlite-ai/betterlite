@@ -27,7 +27,10 @@ fn parsed(text: &str) -> Json {
     serde_json::from_str(text).unwrap()
 }
 
-fn as_json<T: Serialize>(value: &T) -> Json {
+fn as_json<T>(value: &T) -> Json
+where
+    T: Serialize,
+{
     parsed(&serde_json::to_string(value).unwrap())
 }
 
@@ -54,7 +57,7 @@ fn exposed(headers: &Headers) -> BTreeMap<String, String> {
 }
 
 fn search(
-    query: SearchQuery,
+    query: &SearchQuery,
     filters: Option<&Json>,
     max_num_results: Option<i64>,
     model: Option<&str>,
@@ -64,7 +67,7 @@ fn search(
     let params = params(api_key, model);
     search_request(&SearchInput {
         vector_store_id: STORE,
-        query: &query,
+        query,
         filters,
         max_num_results,
         extra_body: None,
@@ -230,73 +233,55 @@ fn url_appends_the_version_without_trimming() {
     );
 }
 
-#[test]
-fn url_uses_the_configured_base_only_when_none() {
-    let settings = settings(None, "https://configured.example");
+fn base_url_search(api_base: Option<&str>, settings: &Settings) -> String {
     let params = params(Some("key"), None);
     let query = text_query("q");
-    let plan = search_request(&SearchInput {
+    search_request(&SearchInput {
         vector_store_id: STORE,
         query: &query,
         filters: None,
         max_num_results: None,
         extra_body: None,
         params: &params,
-        api_base: None,
-        settings: &settings,
+        api_base,
+        settings,
     })
-    .unwrap();
+    .unwrap()
+    .url
+}
+
+#[test]
+fn url_uses_the_configured_base_only_when_none() {
+    let configured = settings(None, "https://configured.example");
     assert_eq!(
-        plan.url,
+        base_url_search(None, &configured),
         format!("https://configured.example/v1beta/models/{DEFAULT_MODEL}:generateContent")
     );
-    let empty = search_request(&SearchInput {
-        vector_store_id: STORE,
-        query: &query,
-        filters: None,
-        max_num_results: None,
-        extra_body: None,
-        params: &params,
-        api_base: Some(""),
-        settings: &settings,
-    })
-    .unwrap();
     assert_eq!(
-        empty.url,
+        base_url_search(Some(""), &configured),
         format!("/v1beta/models/{DEFAULT_MODEL}:generateContent")
     );
-    let fallback = search_request(&SearchInput {
-        vector_store_id: STORE,
-        query: &query,
-        filters: None,
-        max_num_results: None,
-        extra_body: None,
-        params: &params,
-        api_base: None,
-        settings: &Settings::default(),
-    })
-    .unwrap();
     assert_eq!(
-        fallback.url,
+        base_url_search(None, &Settings::default()),
         format!("{DEFAULT_API_BASE}/v1beta/models/{DEFAULT_MODEL}:generateContent")
     );
 }
 
 #[test]
 fn search_defaults_the_model_to_flash() {
-    let plan = search(text_query("q"), None, None, None, Some("key")).unwrap();
+    let plan = search(&text_query("q"), None, None, None, Some("key")).unwrap();
     assert_eq!(
         plan.url,
         format!("{DEFAULT_API_BASE}/v1beta/models/{DEFAULT_MODEL}:generateContent")
     );
-    let empty = search(text_query("q"), None, None, Some(""), Some("key")).unwrap();
+    let empty = search(&text_query("q"), None, None, Some(""), Some("key")).unwrap();
     assert_eq!(empty.url, plan.url);
 }
 
 #[test]
 fn search_strips_every_gemini_prefix_occurrence() {
     let plan = search(
-        text_query("q"),
+        &text_query("q"),
         None,
         None,
         Some("gemini/gemini/gemini-x"),
@@ -313,7 +298,7 @@ fn search_strips_every_gemini_prefix_occurrence() {
 #[test]
 fn search_keeps_a_foreign_model_name_untouched() {
     let plan = search(
-        text_query("q"),
+        &text_query("q"),
         None,
         None,
         Some("openai/gemini-pro"),
@@ -330,7 +315,7 @@ fn search_keeps_a_foreign_model_name_untouched() {
 
 #[test]
 fn search_builds_contents_and_the_native_tool_spelling() {
-    let plan = search(text_query("alpha beta"), None, None, None, Some("key")).unwrap();
+    let plan = search(&text_query("alpha beta"), None, None, None, Some("key")).unwrap();
     assert_eq!(
         plan.body,
         parsed(
@@ -367,7 +352,7 @@ fn search_ignores_extra_body() {
 #[test]
 fn search_joins_query_lists_with_spaces() {
     let query = SearchQuery::Sequence(vec!["alpha".to_owned(), "beta".to_owned()]);
-    let plan = search(query, None, None, None, Some("key")).unwrap();
+    let plan = search(&query, None, None, None, Some("key")).unwrap();
     assert_eq!(plan.query, "alpha beta");
     assert_eq!(
         plan.body,
@@ -379,16 +364,16 @@ fn search_joins_query_lists_with_spaces() {
 
 #[test]
 fn search_records_the_query_and_store() {
-    let plan = search(text_query("seed query"), None, None, None, Some("key")).unwrap();
+    let plan = search(&text_query("seed query"), None, None, None, Some("key")).unwrap();
     assert_eq!(plan.query, "seed query");
     assert_eq!(plan.vector_store_id, STORE);
 }
 
 #[test]
 fn search_requires_a_key_without_placing_it_in_the_url() {
-    let error = search(text_query("q"), None, None, None, None).unwrap_err();
+    let error = search(&text_query("q"), None, None, None, None).unwrap_err();
     assert!(matches!(error, StudioFileSearchError::MissingKey));
-    let plan = search(text_query("q"), None, None, None, Some("secret-key")).unwrap();
+    let plan = search(&text_query("q"), None, None, None, Some("secret-key")).unwrap();
     assert!(!plan.url.contains("secret-key"));
     let body = serde_json::to_string(&plan.body).unwrap();
     assert!(!body.contains("secret-key"));
@@ -416,53 +401,39 @@ fn search_reads_the_environment_key() {
     );
 }
 
-#[test]
-fn search_keys_stay_isolated_between_contexts() {
-    let first = settings(Some("first-key"), DEFAULT_API_BASE);
-    let second = settings(None, DEFAULT_API_BASE);
-    let explicit = params(Some("first-explicit"), None);
+fn search_with(
+    settings: &Settings,
+    params: &RequestParams,
+) -> Result<SearchPlan, StudioFileSearchError> {
     let query = text_query("q");
-    let first_plan = search_request(&SearchInput {
+    search_request(&SearchInput {
         vector_store_id: STORE,
         query: &query,
         filters: None,
         max_num_results: None,
         extra_body: None,
-        params: &explicit,
+        params,
         api_base: None,
-        settings: &first,
+        settings,
     })
-    .unwrap();
+}
+
+#[test]
+fn search_keys_stay_isolated_between_contexts() {
+    let first = settings(Some("first-key"), DEFAULT_API_BASE);
+    let second = settings(None, DEFAULT_API_BASE);
+    let explicit = params(Some("first-explicit"), None);
+    let first_plan = search_with(&first, &explicit).unwrap();
     assert!(
         first_plan
             .url
             .ends_with(&format!("/models/{DEFAULT_MODEL}:generateContent"))
     );
     let anonymous = params(None, None);
-    let error = search_request(&SearchInput {
-        vector_store_id: STORE,
-        query: &query,
-        filters: None,
-        max_num_results: None,
-        extra_body: None,
-        params: &anonymous,
-        api_base: None,
-        settings: &second,
-    })
-    .unwrap_err();
+    let error = search_with(&second, &anonymous).unwrap_err();
     assert!(matches!(error, StudioFileSearchError::MissingKey));
     let other = params(Some("second-explicit"), None);
-    let second_plan = search_request(&SearchInput {
-        vector_store_id: STORE,
-        query: &query,
-        filters: None,
-        max_num_results: None,
-        extra_body: None,
-        params: &other,
-        api_base: None,
-        settings: &second,
-    })
-    .unwrap();
+    let second_plan = search_with(&second, &other).unwrap();
     assert!(
         second_plan
             .url
@@ -497,7 +468,7 @@ fn metadata_filter_of(plan: &SearchPlan) -> Json {
 #[case::false_flag(Some(Json::Bool(false)))]
 #[case::empty_text(Some(Json::Text(String::new())))]
 fn search_omits_metadata_filter_for_falsy_filters(#[case] filters: Option<Json>) {
-    let plan = search(text_query("q"), filters.as_ref(), None, None, Some("key")).unwrap();
+    let plan = search(&text_query("q"), filters.as_ref(), None, None, Some("key")).unwrap();
     assert_eq!(metadata_filter_of(&plan), Json::Null);
 }
 
@@ -505,7 +476,7 @@ fn search_omits_metadata_filter_for_falsy_filters(#[case] filters: Option<Json>)
 fn search_quotes_string_filter_values_without_escaping() {
     let filters =
         parsed(r#"{"genre":"sci\"fi","year":2024,"score":1.5,"verified":true,"missing":null}"#);
-    let plan = search(text_query("q"), Some(&filters), None, None, Some("key")).unwrap();
+    let plan = search(&text_query("q"), Some(&filters), None, None, Some("key")).unwrap();
     assert_eq!(
         metadata_filter_of(&plan),
         Json::Text(
@@ -518,7 +489,7 @@ fn search_quotes_string_filter_values_without_escaping() {
 #[test]
 fn search_spells_container_filter_values_as_standard_json() {
     let filters = parsed(r#"{"tags":["a","b"],"nested":{"one":1}}"#);
-    let plan = search(text_query("q"), Some(&filters), None, None, Some("key")).unwrap();
+    let plan = search(&text_query("q"), Some(&filters), None, None, Some("key")).unwrap();
     assert_eq!(
         metadata_filter_of(&plan),
         Json::Text("tags = [\"a\",\"b\"] AND nested = {\"one\":1}".to_owned())
@@ -528,15 +499,15 @@ fn search_spells_container_filter_values_as_standard_json() {
 #[test]
 fn search_passes_a_non_dict_filter_through() {
     let list = parsed(r#"["a","b"]"#);
-    let plan = search(text_query("q"), Some(&list), None, None, Some("key")).unwrap();
+    let plan = search(&text_query("q"), Some(&list), None, None, Some("key")).unwrap();
     assert_eq!(
         metadata_filter_of(&plan),
         Json::List(vec![Json::Text("a".to_owned()), Json::Text("b".to_owned())])
     );
     let text = Json::Text("genre = drama".to_owned());
-    let plan = search(text_query("q"), Some(&text), None, None, Some("key")).unwrap();
+    let text_plan = search(&text_query("q"), Some(&text), None, None, Some("key")).unwrap();
     assert_eq!(
-        metadata_filter_of(&plan),
+        metadata_filter_of(&text_plan),
         Json::Text("genre = drama".to_owned())
     );
 }
@@ -552,7 +523,7 @@ fn generation_config_of(plan: &SearchPlan) -> Option<&Json> {
 #[case::absent(None)]
 #[case::zero(Some(0))]
 fn search_omits_generation_config_for_a_falsy_limit(#[case] limit: Option<i64>) {
-    let plan = search(text_query("q"), None, limit, None, Some("key")).unwrap();
+    let plan = search(&text_query("q"), None, limit, None, Some("key")).unwrap();
     assert_eq!(generation_config_of(&plan), None);
 }
 
@@ -561,7 +532,7 @@ fn search_omits_generation_config_for_a_falsy_limit(#[case] limit: Option<i64>) 
 #[case::hundred(100)]
 #[case::negative(-2)]
 fn search_sets_candidate_count_one_for_a_truthy_limit(#[case] limit: i64) {
-    let plan = search(text_query("q"), None, Some(limit), None, Some("key")).unwrap();
+    let plan = search(&text_query("q"), None, Some(limit), None, Some("key")).unwrap();
     assert_eq!(
         generation_config_of(&plan),
         Some(&parsed(r#"{"candidateCount":1}"#))
@@ -671,7 +642,9 @@ fn decode_create_wraps_invalid_json() {
             assert_eq!(status, 422);
             assert_eq!(source.line(), 1);
         }
-        other => panic!("unexpected error: {other}"),
+        other @ StudioFileSearchError::MissingKey
+        | other @ StudioFileSearchError::SearchReply { .. }
+        | other @ StudioFileSearchError::Json { .. } => panic!("unexpected error: {other}"),
     }
 }
 
@@ -875,7 +848,9 @@ fn decode_search_wraps_invalid_json() {
             assert_eq!(status, 500);
             assert_eq!(source.line(), 1);
         }
-        other => panic!("unexpected error: {other}"),
+        other @ StudioFileSearchError::MissingKey
+        | other @ StudioFileSearchError::CreateReply { .. }
+        | other @ StudioFileSearchError::Json { .. } => panic!("unexpected error: {other}"),
     }
 }
 
@@ -897,7 +872,9 @@ fn decode_reports_the_reply_status_and_headers() {
             assert_eq!(status, 429);
             assert_eq!(carried, headers);
         }
-        other => panic!("unexpected error: {other}"),
+        other @ StudioFileSearchError::MissingKey
+        | other @ StudioFileSearchError::CreateReply { .. }
+        | other @ StudioFileSearchError::Json { .. } => panic!("unexpected error: {other}"),
     }
 }
 

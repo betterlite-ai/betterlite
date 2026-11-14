@@ -50,8 +50,8 @@ pub fn validate_environment(
     headers
         .entry("Content-Type".to_owned())
         .or_insert_with(|| SecretString::from("application/json"));
-    if let Some(params) = params
-        && let Some(key) = resolve_key(&[params.api_key.as_ref()], settings)
+    if let Some(given) = params
+        && let Some(key) = resolve_key(&[given.api_key.as_ref()], settings)
     {
         headers.insert("x-goog-api-key".to_owned(), key);
     }

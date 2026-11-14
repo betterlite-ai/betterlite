@@ -1,23 +1,23 @@
 use std::collections::BTreeMap;
 
+use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::basic::VectorStoreStatus;
 use betterlite_openai::api::vector_store_records::records::score::Score;
 use betterlite_openai::api::vector_store_records::records::vector::{
     VectorStoreCreateResponse, VectorStoreFileCounts, VectorStoreResultContent,
     VectorStoreSearchResponse, VectorStoreSearchResult,
 };
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize, de::Error as _};
 
 use super::ResponseHeaders;
 use super::error::StudioFileSearchError;
 use crate::provider_metadata::timestamp::LocalTimeContext;
 use crate::vertex_fine_tuning::records::timestamp::created_at;
 
-pub struct RawResponse<'a> {
+pub struct RawResponse<'response> {
     pub status: u16,
-    pub headers: &'a ResponseHeaders,
-    pub body: &'a [u8],
+    pub headers: &'response ResponseHeaders,
+    pub body: &'response [u8],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,23 +36,21 @@ pub enum Decoded {
 macro_rules! map_only {
     ($name:ident { $($field:ident: $wire:literal => $kind:ty),* $(,)? }) => {
         #[derive(Debug, Deserialize)]
-        #[serde(try_from = "Value")]
+        #[serde(try_from = "Json")]
         struct $name {
             $($field: $kind,)*
         }
 
-        impl TryFrom<Value> for $name {
+        impl TryFrom<Json> for $name {
             type Error = serde_json::Error;
 
-            fn try_from(value: Value) -> Result<Self, Self::Error> {
-                let Value::Object(mut fields) = value else {
-                    return Err(<serde_json::Error as serde::de::Error>::custom(
-                        "the reply is not a JSON object",
-                    ));
+            fn try_from(value: Json) -> Result<Self, Self::Error> {
+                let Json::Object(mut fields) = value else {
+                    return Err(serde_json::Error::custom("the reply is not a JSON object"));
                 };
                 Ok(Self {
-                    $($field: match fields.remove($wire) {
-                        Some(given) => serde_json::from_value(given)?,
+                    $($field: match fields.shift_remove($wire) {
+                        Some(given) => serde_json::from_value(serde_json::to_value(given)?)?,
                         None => None,
                     },)*
                 })
@@ -100,17 +98,27 @@ map_only!(Store {
     create_time: "createTime" => Option<String>,
 });
 
+#[derive(Debug, Serialize)]
+struct ContextAttributes {
+    uri: String,
+    title: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SupportAttributes {
+    grounding_chunk_indices: Vec<i64>,
+}
+
 pub fn decode_studio_file_search(
     shape: Shape,
     response: &RawResponse<'_>,
     query: &str,
     local: &LocalTimeContext,
 ) -> Result<Decoded, StudioFileSearchError> {
-    let decoded = match shape {
-        Shape::Create => Decoded::Create(Box::new(create_response(response, local)?)),
-        Shape::Search => Decoded::Search(Box::new(search_response(response, query)?)),
-    };
-    Ok(decoded)
+    match shape {
+        Shape::Create => Ok(Decoded::Create(Box::new(create_response(response, local)?))),
+        Shape::Search => Ok(Decoded::Search(Box::new(search_response(response, query)?))),
+    }
 }
 
 fn search_response(
@@ -131,10 +139,10 @@ fn search_response(
             if context.text.is_none() && context.uri.is_none() && context.title.is_none() {
                 continue;
             }
-            results.push(context_result(context));
+            results.push(context_result(context)?);
         }
         for support in grounding.grounding_supports.unwrap_or_default() {
-            if let Some(result) = support_result(support, &results) {
+            if let Some(result) = support_result(support, &results)? {
                 results.push(result);
             }
         }
@@ -147,31 +155,27 @@ fn search_response(
     })
 }
 
-fn context_result(context: Retrieved) -> VectorStoreSearchResult {
+fn context_result(context: Retrieved) -> Result<VectorStoreSearchResult, StudioFileSearchError> {
     let text = context.text.unwrap_or_default();
     let uri = context.uri.unwrap_or_default();
     let title = context.title.unwrap_or_default();
-    let mut extra = BTreeMap::from([("score".to_owned(), Value::Null)]);
-    let file_id = if uri.is_empty() {
-        extra.insert("file_id".to_owned(), Value::Null);
-        None
-    } else {
-        Some(uri.clone())
-    };
-    let filename = if title.is_empty() {
-        extra.insert("filename".to_owned(), Value::Null);
-        None
-    } else {
-        Some(title.clone())
-    };
-    VectorStoreSearchResult {
+    let mut extra = BTreeMap::from([("score".to_owned(), serde_json::to_value(Json::Null)?)]);
+    let file_id = (!uri.is_empty()).then_some(uri.clone());
+    let filename = (!title.is_empty()).then_some(title.clone());
+    if file_id.is_none() {
+        extra.insert("file_id".to_owned(), serde_json::to_value(Json::Null)?);
+    }
+    if filename.is_none() {
+        extra.insert("filename".to_owned(), serde_json::to_value(Json::Null)?);
+    }
+    Ok(VectorStoreSearchResult {
         score: None,
         content: Some(vec![part(&text)]),
         file_id,
         filename,
-        attributes: Some(json!({ "uri": uri, "title": title })),
+        attributes: Some(serde_json::to_value(ContextAttributes { uri, title })?),
         extra,
-    }
+    })
 }
 
 fn part(text: &str) -> VectorStoreResultContent {
@@ -185,7 +189,7 @@ fn part(text: &str) -> VectorStoreResultContent {
 fn support_result(
     support: Support,
     results: &[VectorStoreSearchResult],
-) -> Option<VectorStoreSearchResult> {
+) -> Result<Option<VectorStoreSearchResult>, StudioFileSearchError> {
     let text = support
         .segment
         .and_then(|segment| segment.text)
@@ -199,28 +203,25 @@ fn support_result(
             == Some(text.as_str())
     });
     if text.is_empty() || seen {
-        return None;
+        return Ok(None);
     }
     let mut extra = BTreeMap::new();
-    let score = support
-        .confidence_scores
-        .unwrap_or_default()
-        .first()
-        .cloned();
+    let scores = support.confidence_scores.unwrap_or_default();
+    let score = scores.into_iter().next();
     if score.is_none() {
-        extra.insert("score".to_owned(), Value::Null);
+        extra.insert("score".to_owned(), serde_json::to_value(Json::Null)?);
     }
-    let attributes = json!({
-        "grounding_chunk_indices": support.grounding_chunk_indices.unwrap_or_default(),
-    });
-    Some(VectorStoreSearchResult {
+    let attributes = SupportAttributes {
+        grounding_chunk_indices: support.grounding_chunk_indices.unwrap_or_default(),
+    };
+    Ok(Some(VectorStoreSearchResult {
         score,
         content: Some(vec![part(&text)]),
         file_id: None,
         filename: None,
-        attributes: Some(attributes),
+        attributes: Some(serde_json::to_value(attributes)?),
         extra,
-    })
+    }))
 }
 
 fn create_response(
@@ -231,7 +232,7 @@ fn create_response(
         .map_err(|source| response.failure(Shape::Create, source))?;
     let mut extra = BTreeMap::new();
     for key in ["expires_after", "expires_at", "last_active_at", "metadata"] {
-        extra.insert(key.to_owned(), Value::Null);
+        extra.insert(key.to_owned(), serde_json::to_value(Json::Null)?);
     }
     Ok(VectorStoreCreateResponse {
         id: Some(store.name.unwrap_or_default()),
@@ -258,17 +259,15 @@ fn create_response(
 
 impl RawResponse<'_> {
     pub(super) fn failure(&self, shape: Shape, source: serde_json::Error) -> StudioFileSearchError {
-        let status = self.status;
-        let headers = self.headers.clone();
         match shape {
             Shape::Search => StudioFileSearchError::SearchReply {
-                status,
-                headers,
+                status: self.status,
+                headers: self.headers.clone(),
                 source,
             },
             Shape::Create => StudioFileSearchError::CreateReply {
-                status,
-                headers,
+                status: self.status,
+                headers: self.headers.clone(),
                 source,
             },
         }

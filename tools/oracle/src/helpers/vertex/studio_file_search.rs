@@ -94,9 +94,19 @@ fn resolve(call: &Call) -> HelperResult {
             Ok(json!({ "url": format!("{base}/{API_VERSION}") }))
         }
         Function::Search => search_view(call),
-        Function::SearchReply => search_reply_view(call),
+        Function::SearchReply => {
+            let query = match call.query.as_ref() {
+                Some(QueryInput::Text(text)) => text.as_str(),
+                Some(QueryInput::Sequence(_)) | None => "",
+            };
+            decode_reply(call, Shape::Search, query, TimeZone::UTC)
+        }
         Function::Create => create_view(call),
-        Function::CreateReply => create_reply_view(call),
+        Function::CreateReply => {
+            let zone =
+                TimeZone::get(call.timezone.as_deref().unwrap_or_default()).or_value_error()?;
+            decode_reply(call, Shape::Create, "", zone)
+        }
     }
 }
 
@@ -154,39 +164,14 @@ fn create_view(call: &Call) -> HelperResult {
     Ok(json!({ "url": plan.url, "body": plan.body }))
 }
 
-fn raw_response(call: &Call) -> RawResponse<'_> {
-    RawResponse {
+fn decode_reply(call: &Call, shape: Shape, query: &str, zone: TimeZone) -> HelperResult {
+    let response = RawResponse {
         status: call.status.unwrap_or_default(),
         headers: &call.headers,
         body: call.body.as_deref().unwrap_or_default().as_bytes(),
-    }
-}
-
-fn search_reply_view(call: &Call) -> HelperResult {
-    let response = raw_response(call);
-    let query = match call.query.as_ref() {
-        Some(QueryInput::Text(text)) => text.as_str(),
-        Some(QueryInput::Sequence(_)) | None => "",
     };
-    let local = LocalTimeContext {
-        zone: TimeZone::UTC,
-    };
-    let decoded =
-        decode_studio_file_search(Shape::Search, &response, query, &local).map_err(failure)?;
-    record_value(decoded)
-}
-
-fn create_reply_view(call: &Call) -> HelperResult {
-    let response = raw_response(call);
-    let zone = TimeZone::get(call.timezone.as_deref().unwrap_or_default()).or_value_error()?;
     let local = LocalTimeContext { zone };
-    let decoded =
-        decode_studio_file_search(Shape::Create, &response, "", &local).map_err(failure)?;
-    record_value(decoded)
-}
-
-fn record_value(decoded: Decoded) -> HelperResult {
-    match decoded {
+    match decode_studio_file_search(shape, &response, query, &local).map_err(failure)? {
         Decoded::Search(record) => Ok(serde_json::to_value(&*record)?),
         Decoded::Create(record) => Ok(serde_json::to_value(&*record)?),
     }
@@ -212,12 +197,16 @@ fn failure(error: StudioFileSearchError) -> Box<HelperError> {
 
 fn settings(environment: &BTreeMap<String, String>) -> Settings {
     Settings {
-        environment_key: non_empty(environment, "GOOGLE_API_KEY")
-            .or_else(|| non_empty(environment, "GEMINI_API_KEY"))
-            .map(SecretString::from),
+        environment_key: ["GOOGLE_API_KEY", "GEMINI_API_KEY"]
+            .into_iter()
+            .find_map(|name| environment.get(name).filter(|value| !value.is_empty()))
+            .map(|value| SecretString::from(value.as_str())),
         generic_api_key: None,
-        api_base: non_empty(environment, "GEMINI_API_BASE")
-            .map_or_else(|| DEFAULT_API_BASE.to_owned(), str::to_owned),
+        api_base: environment
+            .get("GEMINI_API_BASE")
+            .filter(|value| !value.is_empty())
+            .cloned()
+            .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()),
     }
 }
 
@@ -226,11 +215,4 @@ fn exposed(headers: &Headers) -> BTreeMap<String, String> {
         .iter()
         .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
         .collect()
-}
-
-fn non_empty<'env>(environment: &'env BTreeMap<String, String>, name: &str) -> Option<&'env str> {
-    environment
-        .get(name)
-        .map(String::as_str)
-        .filter(|value| !value.is_empty())
 }

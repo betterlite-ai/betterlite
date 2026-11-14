@@ -1,7 +1,7 @@
 import os
 import time
-from datetime import datetime
-from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
+from collections.abc import Mapping
+from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict
 
 import httpx
 import litellm
@@ -10,7 +10,8 @@ from litellm.llms.gemini.vector_stores.transformation import GeminiVectorStoreCo
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.vector_stores import (
     VectorStoreCreateOptionalRequestParams,
-    VectorStoreSearchOptionalRequestParams as SearchParams,
+    VectorStoreCreateResponse,
+    VectorStoreIndexEndpoints,
 )
 from pydantic import JsonValue, TypeAdapter
 
@@ -19,12 +20,6 @@ litellm.suppress_debug_info = True
 Headers: TypeAlias = dict[str, str]
 JSON: Final = TypeAdapter(JsonValue)
 ANY: Final = TypeAdapter(object)
-START_TIME: Final = datetime.fromisoformat("2026-01-01T00:00:00+00:00")
-LOGGING: Final = Logging(
-    model="", messages=[], stream=False, call_type="vector_store_search",
-    start_time=START_TIME, litellm_call_id="", function_id="",
-)
-CONFIG: Final = GeminiVectorStoreConfig()
 
 
 class Call(TypedDict):
@@ -48,7 +43,99 @@ class Call(TypedDict):
     timezone: NotRequired[str]
 
 
-INPUT: Final = TypeAdapter(dict[str, list[Call]])
+class Input(TypedDict):
+    calls: list[Call]
+
+
+class Credentials(TypedDict, total=False):
+    headers: dict[str, str] | None
+    query_params: dict[str, str] | None
+
+
+class SearchOptions(TypedDict, total=False):
+    filters: dict[str, JsonValue] | None
+    max_num_results: int | None
+    ranking_options: dict[str, JsonValue] | None
+    rewrite_query: bool | None
+
+
+class Content(TypedDict, total=False):
+    text: str | None
+    type: str | None
+
+
+class Result(TypedDict, total=False):
+    score: float | None
+    content: list[Content] | None
+    file_id: str | None
+    filename: str | None
+    attributes: dict[str, JsonValue] | None
+
+
+class Reply(TypedDict, total=False):
+    object: Literal["vector_store.search_results.page"]
+    search_query: str | None
+    data: list[Result] | None
+
+
+class LoggingRecord(Logging):
+    model_call_details: dict[str, JsonValue]
+
+    def __init__(self) -> None:
+        self.model_call_details = {}
+
+
+LOGGING: Final = LoggingRecord()
+
+
+class VectorStoreConfig(Protocol):
+    def get_vector_store_endpoints_by_type(self) -> VectorStoreIndexEndpoints: ...
+
+    def get_auth_credentials(self, litellm_params: dict[str, JsonValue]) -> Credentials: ...
+
+    def get_supported_openai_params(self, model: str) -> list[str]: ...
+
+    def validate_environment(
+        self, headers: Headers, litellm_params: GenericLiteLLMParams | None
+    ) -> dict[str, str]: ...
+
+    def get_complete_url(
+        self, api_base: str | None, litellm_params: dict[str, JsonValue]
+    ) -> str: ...
+
+    # ast-grep-ignore: no-long-names
+    def transform_search_vector_store_request(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/vector_stores/transformation.py#L162-L171
+        self,
+        vector_store_id: str,
+        query: str | list[str],
+        # ast-grep-ignore: no-long-names
+        vector_store_search_optional_params: SearchOptions,
+        api_base: str,
+        litellm_logging_obj: Logging,
+        litellm_params: dict[str, JsonValue],
+        extra_body: Mapping[str, JsonValue] | None = None,
+    ) -> tuple[str, dict[str, JsonValue]]: ...
+
+    # ast-grep-ignore: no-long-names
+    def transform_search_vector_store_response(
+        self, response: httpx.Response, litellm_logging_obj: Logging
+    ) -> Reply: ...
+
+    # ast-grep-ignore: no-long-names
+    def transform_create_vector_store_request(
+        self,
+        # ast-grep-ignore: no-long-names
+        vector_store_create_optional_params: VectorStoreCreateOptionalRequestParams,
+        api_base: str,
+    ) -> tuple[str, dict[str, JsonValue]]: ...
+
+    # ast-grep-ignore: no-long-names
+    def transform_create_vector_store_response(
+        self, response: httpx.Response
+    ) -> VectorStoreCreateResponse: ...
+
+
+CONFIG: VectorStoreConfig = GeminiVectorStoreConfig()
 
 
 def environment(given: Headers | None) -> None:
@@ -81,7 +168,8 @@ def environment_outcome(call: Call) -> JsonValue:
     api_key = None if params is None else params.get("api_key")
     litellm_params = None if params is None else GenericLiteLLMParams(api_key=api_key)
     headers = {} if given is None else given
-    return {"headers": JSON.validate_python(CONFIG.validate_environment(headers, litellm_params))}
+    validated = CONFIG.validate_environment(headers, litellm_params)
+    return {"headers": JSON.validate_python(validated)}
 
 
 def url_outcome(call: Call) -> JsonValue:
@@ -89,10 +177,8 @@ def url_outcome(call: Call) -> JsonValue:
     return {"url": CONFIG.get_complete_url(call.get("api_base"), {})}
 
 
-def search_params(call: Call) -> SearchParams:
-    filters = call.get("filters")
-    limit = call.get("max_num_results")
-    return {"filters": filters, "max_num_results": limit}
+def search_params(call: Call) -> SearchOptions:
+    return {"filters": call.get("filters"), "max_num_results": call.get("max_num_results")}
 
 
 def search_outcome(call: Call) -> JsonValue:
@@ -119,8 +205,7 @@ def search_outcome(call: Call) -> JsonValue:
 def search_reply(call: Call) -> JsonValue:
     query = call.get("query")
     LOGGING.model_call_details["query"] = "" if query is None else query
-    response = raw_response(call)
-    record = CONFIG.transform_search_vector_store_response(response, LOGGING)
+    record = CONFIG.transform_search_vector_store_response(raw_response(call), LOGGING)
     return JSON.validate_python(record)
 
 
@@ -150,11 +235,10 @@ def resolve(call: Call) -> JsonValue:
         return search_outcome(call)
     if function == "search_reply":
         return search_reply(call)
-    if function == "create" or function == "create_reply":
+    if function in {"create", "create_reply"}:
         return create_outcome(call) if function == "create" else create_reply(call)
     return capabilities()
 
 
-def run(input_value: JsonValue) -> JsonValue:
-    parsed = INPUT.validate_python(input_value)
-    return {"calls": [resolve(call) for call in parsed["calls"]]}
+def run(input_value: Input) -> JsonValue:
+    return {"calls": [resolve(call) for call in input_value["calls"]]}
