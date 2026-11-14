@@ -98,15 +98,41 @@ async function checkTarget(root, target, expected, patch, side) {
   throw new PatchError("patch-hash", `${patch}: ${target.path} ${side} is ${seen}, the record says ${want}`);
 }
 
-async function readRecordFile(recordPath, patch) {
+export async function listPatches(patchesDir) {
+  let entries;
   try {
-    return readRecord(await fs.readFile(recordPath, "utf8"), patch);
+    entries = await fs.readdir(patchesDir, { withFileTypes: true });
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".patch"))
+    .map((entry) => entry.name)
+    .sort();
+}
+
+async function readPatchFile(patchesDir, name) {
+  const recordName = `${name.slice(0, -".patch".length)}.json`;
+  const patch = await fs.readFile(path.join(patchesDir, name));
+  let record;
+  try {
+    record = await fs.readFile(path.join(patchesDir, recordName));
   } catch (error) {
     if (error.code === "ENOENT") {
-      throw new PatchError("patch-record", `${patch} has no adjacent ${path.basename(recordPath)} record`);
+      throw new PatchError("patch-record", `${name} has no adjacent ${recordName} record`);
     }
     throw error;
   }
+  return { name, patch, record, targets: readRecord(record.toString("utf8"), name) };
+}
+
+export async function readPatchFiles(patchesDir) {
+  const files = [];
+  for (const name of await listPatches(patchesDir)) {
+    files.push(await readPatchFile(patchesDir, name));
+  }
+  return files;
 }
 
 async function runApply({ root, runGit, args, timeoutMs, code, patch }) {
@@ -138,9 +164,7 @@ async function checkTargets({ root, patch, targets, declared, isAllowedPath, isP
   }
 }
 
-async function applyOnePatch({ root, name, patchesDir, isAllowedPath, isProtectedPath, runGit, timeoutMs }) {
-  const patchPath = path.join(patchesDir, name);
-  const targets = await readRecordFile(patchPath.slice(0, -".patch".length) + ".json", name);
+async function applyOnePatch({ root, name, patchPath, targets, isAllowedPath, isProtectedPath, runGit, timeoutMs }) {
   const check = await runApply({
     root, runGit, timeoutMs, patch: name, code: "patch-check",
     args: ["apply", "--check", "--binary", "--numstat", "--summary", "-z", patchPath],
@@ -155,19 +179,10 @@ async function applyOnePatch({ root, name, patchesDir, isAllowedPath, isProtecte
 }
 
 export async function applyPatches({ root, patchesDir, isAllowedPath, isProtectedPath, runGit, timeoutMs }) {
-  let entries;
-  try {
-    entries = await fs.readdir(patchesDir, { withFileTypes: true });
-  } catch (error) {
-    if (error.code === "ENOENT") return [];
-    throw error;
-  }
-  const names = entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".patch"))
-    .map((entry) => entry.name)
-    .sort();
+  const names = await listPatches(patchesDir);
   for (const name of names) {
-    await applyOnePatch({ root, name, patchesDir, isAllowedPath, isProtectedPath, runGit, timeoutMs });
+    const { targets } = await readPatchFile(patchesDir, name);
+    await applyOnePatch({ root, name, patchPath: path.join(patchesDir, name), targets, isAllowedPath, isProtectedPath, runGit, timeoutMs });
   }
   return names;
 }
