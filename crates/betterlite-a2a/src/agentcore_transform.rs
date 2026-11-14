@@ -52,7 +52,7 @@ pub enum TransformError {
 }
 
 #[derive(Debug, Error)]
-pub enum AgentCoreError<E: Error + 'static> {
+pub enum AgentCoreError<E> {
     #[error(transparent)]
     Transform(#[from] TransformError),
     #[error("the AgentCore runtime answered with HTTP status {status}")]
@@ -168,7 +168,6 @@ where
         .map_err(AgentCoreError::Runtime)
 }
 
-#[must_use]
 pub fn parse_sse_events<L, E>(lines: L) -> impl Stream<Item = Result<AgentJson, AgentCoreError<E>>>
 where
     L: Stream<Item = Result<String, E>>,

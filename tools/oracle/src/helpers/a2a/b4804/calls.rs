@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::pin::pin;
 
 use betterlite_a2a::agentcore_transform::call::{HandlerCall, SignedRequestCall};
 use betterlite_a2a::agentcore_transform::config::{BedrockAgentCoreConfig, ConfigCall};
@@ -54,7 +55,7 @@ fn new_runtime() -> Result<Runtime, Box<HelperError>> {
 }
 
 fn signed_output(request: &SignedRequest) -> HelperResult {
-    let body = serde_json::from_slice(&request.body)
+    let body: AgentJson = serde_json::from_slice(&request.body)
         .map_err(|error| helper_failure("SerializationError", error.to_string()))?;
     Ok(serde_json::json!({"url": request.url, "headers": request.headers, "body": body}))
 }
@@ -63,7 +64,7 @@ async fn drain<S>(events: S) -> Result<Vec<AgentJson>, AgentCoreError<Failure>>
 where
     S: Stream<Item = Result<AgentJson, AgentCoreError<Failure>>> + Send,
 {
-    let mut pinned = std::pin::pin!(events);
+    let mut pinned = pin!(events);
     let mut values = Vec::new();
     while let Some(item) = pinned.next().await {
         values.push(item?);

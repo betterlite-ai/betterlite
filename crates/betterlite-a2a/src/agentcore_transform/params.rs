@@ -38,7 +38,7 @@ impl LitellmParams {
     }
 }
 
-fn text<'value>(
+const fn text<'value>(
     value: Option<&'value AgentJson>,
     field: &'static str,
 ) -> Result<Option<&'value str>, TransformError> {

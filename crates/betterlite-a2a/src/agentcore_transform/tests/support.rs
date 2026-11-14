@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::ready;
 use std::sync::Mutex;
 
 use betterlite_core::agents::json::AgentJson;
@@ -111,10 +112,10 @@ impl AgentCoreRuntime for FixtureRuntime {
     type Lines = stream::Iter<std::vec::IntoIter<Result<String, FixtureError>>>;
 
     fn complete_url(&self, model: &str, _optional_params: &Params) -> Result<String, Self::Error> {
-        match self.url_error {
-            Some(message) => Err(FixtureError(message)),
-            None => Ok(format!("{}{model}", self.url)),
-        }
+        self.url_error.map_or_else(
+            || Ok(format!("{}{model}", self.url)),
+            |message| Err(FixtureError(message)),
+        )
     }
 
     fn session_id(
@@ -122,10 +123,10 @@ impl AgentCoreRuntime for FixtureRuntime {
         _optional_params: &Params,
         generated: Uuid,
     ) -> Result<String, Self::Error> {
-        match self.session_error {
-            Some(message) => Err(FixtureError(message)),
-            None => Ok(format!("{SESSION_PREFIX}-{generated}")),
-        }
+        self.session_error.map_or_else(
+            || Ok(format!("{SESSION_PREFIX}-{generated}")),
+            |message| Err(FixtureError(message)),
+        )
     }
 
     fn user_id(&self, _optional_params: &Params) -> Result<Option<String>, Self::Error> {
@@ -135,7 +136,10 @@ impl AgentCoreRuntime for FixtureRuntime {
         Ok(self.user.clone())
     }
 
-    async fn sign(&self, request: &SigningRequest<'_>) -> Result<SignedRequest, Self::Error> {
+    fn sign(
+        &self,
+        request: &SigningRequest<'_>,
+    ) -> impl Future<Output = Result<SignedRequest, Self::Error>> + Send {
         let body = serde_json::to_vec(request.request_data).expect("the envelope encodes");
         self.signing
             .lock()
@@ -145,36 +149,42 @@ impl AgentCoreRuntime for FixtureRuntime {
                 api_key: request.api_key.cloned(),
                 headers: request.headers.clone(),
             });
-        match self.signing_error {
-            Some(message) => Err(FixtureError(message)),
-            None => Ok(SignedRequest {
-                url: request.api_base.to_owned(),
-                headers: request.headers.clone(),
-                body,
-            }),
+        if let Some(message) = self.signing_error {
+            return ready(Err(FixtureError(message)));
         }
+        ready(Ok(SignedRequest {
+            url: request.api_base.to_owned(),
+            headers: request.headers.clone(),
+            body,
+        }))
     }
 
-    async fn post(&self, request: &HttpRequest<'_>) -> Result<HttpResponse, Self::Error> {
-        self.record(request);
-        self.post_error
-            .map_or_else(|| Ok(self.response()), |message| Err(FixtureError(message)))
-    }
-
-    async fn post_stream(
+    fn post(
         &self,
         request: &HttpRequest<'_>,
-    ) -> Result<StreamedResponse<Self::Lines>, Self::Error> {
+    ) -> impl Future<Output = Result<HttpResponse, Self::Error>> + Send {
         self.record(request);
         if let Some(message) = self.post_error {
-            return Err(FixtureError(message));
+            return ready(Err(FixtureError(message)));
         }
+        ready(Ok(self.response()))
+    }
+
+    fn post_stream(
+        &self,
+        request: &HttpRequest<'_>,
+    ) -> impl Future<Output = Result<StreamedResponse<Self::Lines>, Self::Error>> + Send {
+        self.record(request);
         let lines: Vec<Result<String, FixtureError>> = self.lines.iter().cloned().map(Ok).collect();
-        Ok(StreamedResponse {
+        let streamed = StreamedResponse {
             status: self.status,
             content_type: self.content_type.clone(),
             lines: stream::iter(lines),
-        })
+        };
+        ready(
+            self.post_error
+                .map_or(Ok(streamed), |message| Err(FixtureError(message))),
+        )
     }
 }
 
@@ -186,7 +196,7 @@ pub(crate) fn params(context_id: Option<AgentJson>) -> MessageSendParams {
     MessageSendParams {
         message: A2AMessage {
             role: Role("user".to_owned()),
-            parts: vec![serde_json::json!({"kind": "text", "text": "hello"})],
+            parts: vec![parsed(r#"{"kind":"text","text":"hello"}"#)],
             message_id: Some("msg-1".to_owned()),
             metadata: None,
             extra,
@@ -194,6 +204,10 @@ pub(crate) fn params(context_id: Option<AgentJson>) -> MessageSendParams {
         metadata: None,
         extra: BTreeMap::new(),
     }
+}
+
+pub(crate) fn parsed(text: &str) -> AgentJson {
+    serde_json::from_str(text).expect("the fixture text is JSON")
 }
 
 pub(crate) fn litellm_params(entries: &[(&str, AgentJson)]) -> LitellmParams {

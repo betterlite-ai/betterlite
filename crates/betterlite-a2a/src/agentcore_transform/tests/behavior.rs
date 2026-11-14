@@ -2,21 +2,23 @@ use std::collections::BTreeMap;
 
 use betterlite_core::agents::json::AgentJson;
 use futures_core::Stream;
-use futures_util::StreamExt as _;
+use futures_util::{StreamExt as _, stream};
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use serde_json::json;
 
 use crate::agentcore_transform::call::{AgentCoreHandler, HandlerCall, SignedRequestCall};
 use crate::agentcore_transform::config::{BedrockAgentCoreConfig, ConfigCall};
+use crate::agentcore_transform::headers::filter_reserved_headers;
 use crate::agentcore_transform::params::LitellmParams;
 use crate::agentcore_transform::runtime::{MAX_RESPONSE_BYTES, RpcMethod, collect_body};
 use crate::agentcore_transform::tests::support::{
     CONTEXT_ID, FixtureError, FixtureRuntime, GENERATED, SESSION_PREFIX, Source, URL,
-    bearer_params, fixture, litellm_params, params,
+    bearer_params, fixture, litellm_params, params, parsed,
 };
 use crate::agentcore_transform::{
     AgentCoreError, SignedRequest, TransformError, get_url_and_signed_request, parse_sse_events,
+    scoped_session_id, validate_runtime_session_id,
 };
 use crate::completion_bridge::wire::MessageSendParams;
 
@@ -95,12 +97,7 @@ fn values(items: Vec<Result<AgentJson, AgentCoreError<FixtureError>>>) -> Vec<Ag
 }
 
 fn valid_lines(items: &[&str]) -> impl Stream<Item = Result<String, FixtureError>> {
-    futures_util::stream::iter(
-        items
-            .iter()
-            .map(|line| Ok((*line).to_owned()))
-            .collect::<Vec<_>>(),
-    )
+    stream::iter(items.iter().map(|line| Ok((*line).to_owned())))
 }
 
 #[rstest]
@@ -113,7 +110,7 @@ fn valid_lines(items: &[&str]) -> impl Stream<Item = Result<String, FixtureError
 fn reserved_headers_are_dropped_in_any_case(#[case] name: &str) {
     let headers = BTreeMap::from([(name.to_owned(), "value".to_owned())]);
 
-    let filtered = crate::agentcore_transform::headers::filter_reserved_headers(&headers);
+    let filtered = filter_reserved_headers(&headers);
 
     assert!(filtered.is_empty());
 }
@@ -125,7 +122,7 @@ fn safe_headers_survive_the_filter() {
         ("Authorization".to_owned(), "Bearer fake".to_owned()),
     ]);
 
-    let filtered = crate::agentcore_transform::headers::filter_reserved_headers(&headers);
+    let filtered = filter_reserved_headers(&headers);
 
     assert_eq!(
         filtered,
@@ -135,16 +132,14 @@ fn safe_headers_survive_the_filter() {
 
 #[test]
 fn an_empty_header_map_filters_to_nothing() {
-    assert!(
-        crate::agentcore_transform::headers::filter_reserved_headers(&BTreeMap::new()).is_empty()
-    );
+    assert!(filter_reserved_headers(&BTreeMap::new()).is_empty());
 }
 
 #[test]
 fn the_context_id_becomes_a_principal_scoped_session() {
     let request = params(Some(json!(CONTEXT_ID)));
 
-    let derived = crate::agentcore_transform::scoped_session_id(&request, Some("key-2"));
+    let derived = scoped_session_id(&request, Some("key-2"));
 
     assert_eq!(derived, Some(format!("{SCOPED_PREFIX}-{CONTEXT_ID}")));
 }
@@ -153,7 +148,7 @@ fn the_context_id_becomes_a_principal_scoped_session() {
 fn a_context_id_without_a_principal_keeps_its_value() {
     let request = params(Some(json!(CONTEXT_ID)));
 
-    let derived = crate::agentcore_transform::scoped_session_id(&request, None);
+    let derived = scoped_session_id(&request, None);
 
     assert_eq!(derived, Some(CONTEXT_ID.to_owned()));
 }
@@ -162,16 +157,16 @@ fn a_context_id_without_a_principal_keeps_its_value() {
 fn a_missing_context_id_has_no_session() {
     let request = params(None);
 
-    let derived = crate::agentcore_transform::scoped_session_id(&request, None);
+    let derived = scoped_session_id(&request, None);
 
     assert_eq!(derived, None);
 }
 
 #[test]
 fn a_non_text_context_id_has_no_session() {
-    let request = params(Some(json!(5)));
+    let request = params(Some(parsed("5")));
 
-    let derived = crate::agentcore_transform::scoped_session_id(&request, None);
+    let derived = scoped_session_id(&request, None);
 
     assert_eq!(derived, None);
 }
@@ -180,7 +175,7 @@ fn a_non_text_context_id_has_no_session() {
 fn an_empty_context_id_has_no_session() {
     let request = params(Some(json!("")));
 
-    let derived = crate::agentcore_transform::scoped_session_id(&request, None);
+    let derived = scoped_session_id(&request, None);
 
     assert_eq!(derived, None);
 }
@@ -193,7 +188,7 @@ fn an_empty_context_id_has_no_session() {
 fn the_session_bounds_are_33_to_256(#[case] length: usize, #[case] accepted: bool) {
     let session_id = "s".repeat(length);
 
-    let validated = crate::agentcore_transform::validate_runtime_session_id(&session_id);
+    let validated = validate_runtime_session_id(&session_id);
 
     assert_eq!(validated.is_ok(), accepted);
 }
@@ -310,7 +305,7 @@ async fn the_signature_sees_the_api_key_and_the_model() {
 
     let result = signed_request(&runtime, &request, &litellm, RpcMethod::Send).await;
 
-    assert!(result.is_ok());
+    result.as_ref().expect("the request is signed");
     let signing = runtime.signing.lock().expect("the fixture lock");
     let api_key = signing[0].api_key.as_ref().expect("the api key is signed");
     assert_eq!(api_key.expose_secret(), "jwt-token");
@@ -404,7 +399,10 @@ async fn valid_data_lines_become_json_events() {
     ])))
     .await;
 
-    assert_eq!(values(events), vec![json!({"a": 1}), json!({"b": 2})]);
+    assert_eq!(
+        values(events),
+        vec![parsed(r#"{"a":1}"#), parsed(r#"{"b":2}"#)]
+    );
 }
 
 #[tokio::test]
@@ -415,7 +413,7 @@ async fn a_non_json_data_line_is_skipped() {
     ])))
     .await;
 
-    assert_eq!(values(events), vec![json!({"ok": true})]);
+    assert_eq!(values(events), vec![parsed(r#"{"ok":true}"#)]);
 }
 
 #[tokio::test]
@@ -425,7 +423,7 @@ async fn an_empty_data_payload_is_skipped() {
     ])))
     .await;
 
-    assert_eq!(values(events), vec![json!(5)]);
+    assert_eq!(values(events), vec![parsed("5")]);
 }
 
 #[tokio::test]
@@ -442,7 +440,7 @@ async fn lines_without_the_data_prefix_are_ignored() {
 
 #[tokio::test]
 async fn a_broken_line_stream_is_reported() {
-    let lines = futures_util::stream::iter([
+    let lines = stream::iter([
         Ok("data: {\"a\": 1}".to_owned()),
         Err(FixtureError("the stream breaks")),
     ]);
@@ -450,7 +448,7 @@ async fn a_broken_line_stream_is_reported() {
     let events = collected(parse_sse_events(lines)).await;
 
     assert_eq!(events.len(), 2);
-    assert!(events[0].is_ok());
+    events[0].as_ref().expect("the first event is read");
     assert!(matches!(events[1], Err(AgentCoreError::Runtime(_))));
 }
 
@@ -472,7 +470,7 @@ async fn non_streaming_returns_the_agent_json() {
 
     assert_eq!(
         value,
-        json!({"jsonrpc": "2.0", "id": "req-1", "result": {"kind": "message"}})
+        parsed(r#"{"jsonrpc":"2.0","id":"req-1","result":{"kind":"message"}}"#)
     );
 }
 
@@ -492,7 +490,7 @@ async fn an_agent_error_body_is_returned() {
         .await
         .expect("the agent answers");
 
-    assert_eq!(value["error"]["code"], json!(-32000));
+    assert_eq!(value["error"]["code"], parsed("-32000"));
 }
 
 #[tokio::test]
@@ -579,7 +577,7 @@ async fn streaming_yields_every_sse_event() {
 
     assert_eq!(
         values(events),
-        vec![json!({"kind": "task"}), json!({"kind": "status"})]
+        vec![parsed(r#"{"kind":"task"}"#), parsed(r#"{"kind":"status"}"#)]
     );
 }
 
@@ -601,7 +599,7 @@ async fn a_json_content_type_yields_one_event() {
         .expect("the agent answers with JSON");
     let events = collected(stream).await;
 
-    assert_eq!(values(events), vec![json!({"a": 1, "b": 2})]);
+    assert_eq!(values(events), vec![parsed(r#"{"a":1,"b":2}"#)]);
 }
 
 #[tokio::test]
@@ -682,11 +680,10 @@ async fn collected_lines_are_joined_with_newlines() {
 #[case::the_separator_counts(vec![MAX_RESPONSE_BYTES - 1, 1], false)]
 #[tokio::test]
 async fn the_collected_reply_is_capped(#[case] lengths: Vec<usize>, #[case] accepted: bool) {
-    let lines = futures_util::stream::iter(
+    let lines = stream::iter(
         lengths
             .into_iter()
-            .map(|length| Ok::<_, FixtureError>("a".repeat(length)))
-            .collect::<Vec<_>>(),
+            .map(|length| Ok::<_, FixtureError>("a".repeat(length))),
     );
 
     let result = collect_body(lines).await;
@@ -783,7 +780,7 @@ async fn the_config_delegates_with_present_params() {
 
 #[test]
 fn a_non_text_model_is_an_error_naming_the_field() {
-    let raw = BTreeMap::from([("model".to_owned(), json!(5))]);
+    let raw = BTreeMap::from([("model".to_owned(), parsed("5"))]);
 
     let error = LitellmParams::parse(&raw)
         .err()
@@ -867,5 +864,5 @@ async fn the_config_streams_with_present_params() {
         .expect("the agent streams");
     let events = collected(stream).await;
 
-    assert_eq!(values(events), vec![json!({"kind": "task"})]);
+    assert_eq!(values(events), vec![parsed(r#"{"kind":"task"}"#)]);
 }
