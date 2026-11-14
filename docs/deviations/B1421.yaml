@@ -17,4 +17,15 @@ deviations:
     why: >-
       The declared content type is a list of objects, so a differently shaped value is a
       caller error and gets a 4xx that names the field.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/voyage/embedding/transformation_multimodal.py#L118-L127
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/voyage/embedding/transformation_multimodal.py#L101-L127
+  - what: >-
+      A rerank document comes back exactly as the provider sent it: an object keeps every
+      key, and a value that is neither a string nor an object (null, a number, a list) is
+      passed through. LiteLLM assigns the value to RerankResponse, whose pydantic model
+      keeps only the declared text key and raises a ValidationError for a non-object,
+      which the proxy answers as a 500.
+    why: >-
+      The caller supplied those fields in the request documents, so dropping them would
+      lose data, and a non-object document is not a shape a working setup relies on a 500
+      for.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/voyage/rerank/transformation.py#L116-L133
