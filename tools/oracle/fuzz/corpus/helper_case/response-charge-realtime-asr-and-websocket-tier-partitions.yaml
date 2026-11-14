@@ -1,0 +1,23 @@
+kind: helper
+name: realtime-asr-and-websocket-tier-partitions-seed
+call:
+  response_charge:
+    function: completion_cost
+    model: oracle-ws
+    custom_llm_provider: openai
+    region_name: null
+    catalog:
+      oracle-ws: {litellm_provider: openai, mode: chat, input_cost_per_token: 2.0, output_cost_per_token: 4.0, input_cost_per_token_priority: 4.0, output_cost_per_token_priority: 8.0, input_cost_per_token_flex: 1.0, output_cost_per_token_flex: 2.0}
+    usage: {prompt_tokens: 14, completion_tokens: 3, cached_tokens: null}
+    custom_price: null
+    cache_hit: null
+    header_cost: null
+    discount: {}
+    margin: {}
+    call_type: _aresponses_websocket
+    response_kind: realtime_stream
+    events:
+      - {type: response.completed, response: {usage: {prompt_tokens: 10, completion_tokens: 2}, service_tier: priority}}
+      - {type: response.completed, response: {usage: {prompt_tokens: 4, completion_tokens: 1}, service_tier: flex}}
+compare: {ignore: []}
+env: {}
