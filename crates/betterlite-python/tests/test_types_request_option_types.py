@@ -326,7 +326,10 @@ def containers_behavior(module):
         ),
         "bad_anchor": outcome(lambda: module.ExpiresAfter(anchor="created_at", minutes=1)),
         "hidden": container._hidden_params,
-        "difference": [outcome(lambda: container.json(encoder=str))],
+        "difference": [
+            outcome(lambda: container.json(encoder=str)),
+            outcome(lambda: container.json("x")),
+        ],
     }
 
 
@@ -811,6 +814,10 @@ def test_containers_names(report: Report) -> None:
     assert difference["error"] == "TypeError"
     their_difference = TypeAdapter(Outcome).validate_python(litellm["difference"][0])
     assert their_difference["ok"] is True
+    positional = TypeAdapter(Outcome).validate_python(betterlite["difference"][1])
+    assert positional["error"] == "TypeError"
+    their_positional = TypeAdapter(Outcome).validate_python(litellm["difference"][1])
+    assert their_positional["error"] == "TypeError"
     assert betterlite["container"] == betterlite["container_json"]
     assert betterlite["container"]["object"] == "container"
     assert betterlite["container"]["expires_after"] == {
