@@ -12,7 +12,6 @@ use betterlite_core::cost::completion::{completion_cost, reading};
 use betterlite_core::cost::image_dispatch::error::ImageDispatchError;
 use betterlite_core::cost::image_dispatch::options::SizePattern;
 use betterlite_core::cost::prepare::BillingTokenCounter;
-use betterlite_core::cost::response::response_cost_calculator;
 use betterlite_core::cost::special::policy::SpecialPricePolicy;
 use betterlite_core::cost::special::request::SpecialServices;
 use betterlite_logging::cost_breakdown::CostBreakdownTarget;
@@ -30,6 +29,7 @@ use betterlite_provider::pricing::image::error::ImagePolicyError;
 use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
 
+pub mod response;
 mod tests;
 
 // DEFAULT_REPLICATE_GPU_PRICE_PER_SECOND: every Replicate call is priced as an A100 80GB second.
@@ -187,22 +187,5 @@ where
         let bound = self.bound(call.args.billing.model, clock)?;
         let calculator = self.calculator(&bound, call.counter);
         completion_cost(&calculator, call.args, clock, target).await
-    }
-
-    // response_cost_calculator with every collaborator this resource owns.
-    pub async fn response_cost<Target, Clock>(
-        &self,
-        call: &Call<'_, '_>,
-        cache_hit: Option<bool>,
-        clock: &mut Clock,
-        target: Option<&mut Target>,
-    ) -> Result<Decimal, CompletionCostError<ImagePolicyError>>
-    where
-        Target: CostBreakdownTarget,
-        Clock: FnMut() -> SystemTime,
-    {
-        let bound = self.bound(call.args.billing.model, clock)?;
-        let calculator = self.calculator(&bound, call.counter);
-        response_cost_calculator(&calculator, call.args, cache_hit, clock, target).await
     }
 }

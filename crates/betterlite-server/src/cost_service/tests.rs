@@ -32,6 +32,7 @@ use indexmap::IndexMap;
 use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
 
+use super::response::response_cost;
 use super::{Call, CostService, Policies, name_normalizers};
 
 const CATALOG: &str = r#"{
@@ -240,8 +241,7 @@ async fn a_cache_hit_costs_nothing() {
         args: &args,
         counter: &Counter,
     };
-    let charge = service
-        .response_cost::<Stored, _>(&call, Some(true), &mut clock, None)
+    let charge = response_cost::<_, Stored, _>(&service, &call, Some(true), &mut clock, None)
         .await
         .unwrap();
     assert_eq!(charge, dec("0"));
@@ -258,8 +258,7 @@ async fn the_provider_header_wins_over_the_token_prices() {
         args: &args,
         counter: &Counter,
     };
-    let charge = service
-        .response_cost::<Stored, _>(&call, Some(false), &mut clock, None)
+    let charge = response_cost::<_, Stored, _>(&service, &call, Some(false), &mut clock, None)
         .await
         .unwrap();
     assert_eq!(charge, dec("0.5"));
