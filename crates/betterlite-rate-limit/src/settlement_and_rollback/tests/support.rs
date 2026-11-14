@@ -415,8 +415,8 @@ pub(crate) fn expected_refund_calls(
         .collect()
 }
 
-pub(crate) enum RunMode<'a> {
-    Batched(&'a Arc<FakeBatch>),
+pub(crate) enum RunMode<'batch> {
+    Batched(&'batch Arc<FakeBatch>),
     Scripted(Arc<FakeScript>),
 }
 
