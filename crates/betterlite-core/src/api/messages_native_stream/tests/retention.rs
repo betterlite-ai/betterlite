@@ -66,7 +66,7 @@ async fn a_detached_overflow_records_one_partial_failure() {
     let (harness, mut relay) = Harness::start(limits(), Arc::clone(&registry));
     harness.script.release(SseChunk::Bytes(bytes(LIMIT))).await;
     assert!(matches!(read(&mut relay).await, Frame::Chunk(_)));
-    let pump = pump_of(&relay);
+    let pump = pump_of(&harness);
     drop(relay);
     for _ in 0..15_u8 {
         harness.script.release(SseChunk::Bytes(bytes(LIMIT))).await;
@@ -96,7 +96,7 @@ async fn a_started_stream_ends_with_the_api_error_event() {
     }
     harness.script.release(SseChunk::Bytes(bytes(LIMIT))).await;
     assert_eq!(read(&mut relay).await, Frame::Chunk(LIMIT_EVENT.to_owned()));
-    let pump = pump_of(&relay);
+    let pump = pump_of(&harness);
     pump.wait().await;
     assert_eq!(read(&mut relay).await, Frame::End);
     assert!(harness.closed.load(Ordering::SeqCst));
@@ -120,7 +120,7 @@ async fn a_started_stream_stops_at_the_chunk_limit() {
     // the fourth chunk is the first excess: it never reaches the client and never bills
     harness.script.release(SseChunk::Bytes(bytes(1))).await;
     assert_eq!(read(&mut relay).await, Frame::Chunk(LIMIT_EVENT.to_owned()));
-    let pump = pump_of(&relay);
+    let pump = pump_of(&harness);
     pump.wait().await;
     assert_eq!(read(&mut relay).await, Frame::End);
     harness.worker.flush().await;

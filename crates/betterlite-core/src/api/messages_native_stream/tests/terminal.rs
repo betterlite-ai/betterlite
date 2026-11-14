@@ -71,7 +71,7 @@ async fn forwards_raw_bytes_and_encodes_dicts() {
     let incomplete = String::from_utf8(incomplete_error_sse_event()).expect("the event is UTF-8");
     assert_eq!(read(&mut relay).await, Frame::Chunk(incomplete));
     assert_eq!(read(&mut relay).await, Frame::End);
-    settle(relay).await;
+    settle(&harness, relay).await;
 }
 
 async fn a_raw_message_stop_suppresses_the_incomplete_event() {
@@ -84,7 +84,7 @@ async fn a_raw_message_stop_suppresses_the_incomplete_event() {
     assert!(relay.reached_end);
     harness.worker.flush().await;
     assert_eq!(harness.ran(), 1);
-    settle(relay).await;
+    settle(&harness, relay).await;
 }
 
 // A terminal-looking mapping finishes the stream without an incomplete event
@@ -97,7 +97,7 @@ async fn a_forwarded_mapping_that_ends_the_stream(chunk: SseChunk) -> String {
     };
     harness.script.finish().await;
     assert_eq!(read(&mut relay).await, Frame::End);
-    settle(relay).await;
+    settle(&harness, relay).await;
     encoded
 }
 
@@ -140,7 +140,7 @@ async fn eof_emits_the_incomplete_event_without_billing_it() {
     assert!(relay.reached_end);
     harness.worker.flush().await;
     assert_eq!(harness.routed_frames(), vec![frame(chunk)]);
-    settle(relay).await;
+    settle(&harness, relay).await;
 }
 
 async fn the_first_chunk_stamps_the_completion_time_once() {
@@ -151,7 +151,7 @@ async fn the_first_chunk_stamps_the_completion_time_once() {
     harness.script.release(SseChunk::Bytes(frame(ping))).await;
     assert_eq!(read(&mut relay).await, Frame::Chunk(ping.to_owned()));
     harness.script.finish().await;
-    settle(relay).await;
+    settle(&harness, relay).await;
     harness.worker.flush().await;
     // the teardown and pump copies read the clock first, so the first chunk stamps at(2)
     assert_eq!(harness.completion_start_time(), Some(at(2)));
@@ -171,5 +171,5 @@ async fn a_chunk_that_cannot_be_encoded_is_logged_and_not_billed() {
     assert_eq!(failures.len(), 1);
     assert_eq!(failures[0].failure.kind, "ChunkError");
     assert_eq!(failures[0].raw_bytes.len(), 0);
-    settle(relay).await;
+    settle(&harness, relay).await;
 }

@@ -40,15 +40,16 @@ impl<E> ClientQueue<E> {
         self.data.notify_one();
     }
 
+    // The guard lives in the block, so its storage ends before the wait and the future stays Send
     pub(super) async fn next(&self) -> Option<QueueItem<E>>
     where
         E: Send + Sync,
     {
         loop {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            let item = state.items.pop_front();
-            let closed = state.closed;
-            drop(state);
+            let (item, closed) = {
+                let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+                (state.items.pop_front(), state.closed)
+            };
             if let Some(item) = item {
                 self.space.notify_one();
                 return Some(item);
@@ -61,28 +62,33 @@ impl<E> ClientQueue<E> {
     }
 
     // Python's _enqueue_for_client: a full queue waits on space or detach, and a completed put wins
-    pub(super) async fn enqueue(&self, item: QueueItem<E>) -> bool
+    pub(super) async fn enqueue(&self, mut item: QueueItem<E>) -> bool
     where
         E: Send + Sync,
     {
         if self.client_detached.load(Ordering::SeqCst) {
             return false;
         }
-        loop {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            if state.items.len() < self.capacity {
-                state.items.push_back(item);
-                drop(state);
-                self.data.notify_one();
-                return true;
-            }
-            drop(state);
+        while let Err(returned) = self.push_if_room(item) {
+            item = returned;
             if self.client_detached.load(Ordering::SeqCst) {
                 return false;
             }
             // a detach notifies the same wait, so the next turn takes the false branch above
             self.space.notified().await;
         }
+        self.data.notify_one();
+        true
+    }
+
+    // One put attempt under the lock; the item comes back while the queue is full
+    fn push_if_room(&self, item: QueueItem<E>) -> Result<(), QueueItem<E>> {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        if state.items.len() >= self.capacity {
+            return Err(item);
+        }
+        state.items.push_back(item);
+        Ok(())
     }
 
     pub(super) async fn wait_detached(&self)

@@ -161,10 +161,9 @@ class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
         self.logging = RecordedLogging()
         self.litellm_logging_obj = self.logging
         self.request_body: dict[str, Json] = call.body
-        self.start_time, self.completion_start_time = datetime.now(UTC).astimezone().replace(tzinfo=None), None
-        self.body = call.body
-        self.api_base = api_base
-        self.client = client
+        self.start_time = datetime.now(UTC).astimezone().replace(tzinfo=None)
+        self.completion_start_time: datetime | None = None
+        self.api_base, self.client = api_base, client
         self.dispatcher = dispatcher
         self.gate = Gate()
         self.source = GatedSource(self.gate)
@@ -175,7 +174,7 @@ class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
         self.logging.set_failure_hook(self.hook)
 
     async def start(self) -> None:
-        response = await self.client.post(f"{self.api_base}/messages", json=self.body)
+        response = await self.client.post(f"{self.api_base}/messages", json=self.request_body)
         parts = response.content.split(b"\n\n")
         self.source.frames = [part + b"\n\n" for part in parts[:-1]]
         if parts[-1]:
@@ -249,10 +248,11 @@ class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
 
 
 class Run:
-    def __init__(self, call: MessagesNativeStreamCall, api_base: str, client: httpx.AsyncClient) -> None:
+    def __init__(
+        self, call: MessagesNativeStreamCall, api_base: str, client: httpx.AsyncClient
+    ) -> None:
         self.call = call
-        self.api_base = api_base
-        self.client = client
+        self.api_base, self.client = api_base, client
         self.dispatcher = Dispatcher()
         self.warnings = Recorder()
         self.sessions: dict[str, Session] = {}

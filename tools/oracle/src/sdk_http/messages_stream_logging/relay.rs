@@ -98,7 +98,7 @@ impl Session {
             worker,
             slots,
             gate,
-            relay: Some(start_relay(source, setup)),
+            relay: Some(start_relay(source, setup).relay),
             callback_args: Arc::new(Mutex::new(Vec::new())),
         })
     }

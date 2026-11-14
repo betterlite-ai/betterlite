@@ -46,7 +46,7 @@ async fn a_held_slot_caps_the_second_drain(
     let (holder, mut relay_holder) = Harness::start(limits(1), Arc::clone(registry));
     holder.script.release(SseChunk::Bytes(frame("a1"))).await;
     assert_eq!(read(&mut relay_holder).await, Frame::Chunk("a1".to_owned()));
-    let pump_holder = pump_of(&relay_holder);
+    let pump_holder = pump_of(&holder);
     drop(relay_holder);
     holder.script.release(SseChunk::Bytes(frame("a2"))).await;
     assert_eq!(registry.sizes().detached_drains, 1);
@@ -56,7 +56,7 @@ async fn a_held_slot_caps_the_second_drain(
         read(&mut relay_drainer).await,
         Frame::Chunk("d1".to_owned())
     );
-    let pump_drainer = pump_of(&relay_drainer);
+    let pump_drainer = pump_of(&drainer);
     drop(relay_drainer);
     drainer.script.finish().await;
     pump_drainer.wait().await;
@@ -72,7 +72,7 @@ async fn a_disconnect_beyond_the_cap(registry: &Arc<StreamRegistry>, cap: usize)
     let (harness, mut relay) = Harness::start(limits(cap), Arc::clone(registry));
     harness.script.release(SseChunk::Bytes(frame("one"))).await;
     assert_eq!(read(&mut relay).await, Frame::Chunk("one".to_owned()));
-    let pump = pump_of(&relay);
+    let pump = pump_of(&harness);
     drop(relay);
     harness.script.release(SseChunk::Bytes(frame("two"))).await;
     pump.wait().await;
@@ -117,7 +117,7 @@ async fn a_later_stream_claims_the_released_slot(registry: &Arc<StreamRegistry>)
         read(&mut relay_claimer).await,
         Frame::Chunk("c1".to_owned())
     );
-    let pump = pump_of(&relay_claimer);
+    let pump = pump_of(&claimer);
     drop(relay_claimer);
     claimer.script.release(SseChunk::Bytes(frame("c2"))).await;
     assert_eq!(registry.sizes().detached_drains, 1);

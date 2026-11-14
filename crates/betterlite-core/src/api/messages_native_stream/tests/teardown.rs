@@ -34,7 +34,7 @@ async fn a_disconnect_dispatches_the_parked_callback_once() {
     assert_eq!(read(&mut relay).await, Frame::Chunk("one".to_owned()));
     harness.script.release(SseChunk::Bytes(frame(STOP))).await;
     assert_eq!(read(&mut relay).await, Frame::Chunk(STOP.to_owned()));
-    let pump = pump_of(&relay);
+    let pump = pump_of(&harness);
     harness.script.finish().await;
     pump.wait().await;
     assert_eq!(harness.ran(), 0);
@@ -53,7 +53,7 @@ async fn a_sentinel_that_loses_to_detach_dispatches_in_the_pump() {
     harness.script.release(SseChunk::Bytes(frame("one"))).await;
     assert_eq!(read(&mut relay).await, Frame::Chunk("one".to_owned()));
     harness.script.release(SseChunk::Bytes(frame("two"))).await;
-    let pump = pump_of(&relay);
+    let pump = pump_of(&harness);
     harness.script.finish().await;
     while !harness.parked() {
         tokio::task::yield_now().await;
@@ -76,7 +76,7 @@ async fn an_incomplete_frame_that_loses_to_detach_bills_teardown() {
     // the chunk stays unread, so the queue is full when the pump tries the incomplete frame
     harness.script.finish().await;
     relay.queue.detach();
-    let pump = pump_of(&relay);
+    let pump = pump_of(&harness);
     pump.wait().await;
     harness.worker.flush().await;
     assert_eq!(harness.ran(), 1);
@@ -90,7 +90,7 @@ async fn a_detached_completion_bills_with_teardown() {
     let deferred = arm_deferred(&harness);
     harness.script.release(SseChunk::Bytes(frame("one"))).await;
     assert_eq!(read(&mut relay).await, Frame::Chunk("one".to_owned()));
-    let pump = pump_of(&relay);
+    let pump = pump_of(&harness);
     drop(relay);
     harness.script.finish().await;
     pump.wait().await;
@@ -111,7 +111,7 @@ async fn a_consumed_sentinel_leaves_the_parked_callback_to_the_proxy() {
     assert_eq!(read(&mut relay).await, Frame::Chunk(STOP.to_owned()));
     assert_eq!(read(&mut relay).await, Frame::End);
     assert!(relay.reached_end);
-    settle(relay).await;
+    settle(&harness, relay).await;
     harness.worker.flush().await;
     assert_eq!(harness.ran(), 0);
     assert_eq!(deferred.calls(), Vec::<usize>::new());

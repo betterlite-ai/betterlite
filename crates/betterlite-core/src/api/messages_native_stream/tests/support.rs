@@ -275,6 +275,7 @@ pub(super) struct Harness {
     pub(super) registry: Arc<StreamRegistry>,
     pub(super) script: ScriptHandle,
     pub(super) closed: Arc<AtomicBool>,
+    pub(super) pump: Arc<TaskTracker>,
 }
 
 impl Harness {
@@ -311,7 +312,7 @@ impl Harness {
             deps,
             Arc::clone(&logging_obj),
         );
-        let relay = start_relay(source, setup);
+        let handle = start_relay(source, setup);
         let harness = Self {
             seams,
             slots,
@@ -320,8 +321,9 @@ impl Harness {
             registry,
             script,
             closed,
+            pump: handle.pump,
         };
-        (harness, relay)
+        (harness, handle.relay)
     }
 
     pub(super) fn routed_frames(&self) -> Vec<Vec<u8>> {
@@ -506,14 +508,13 @@ pub(super) fn arm_hook(harness: &Harness) -> Hook {
     Hook::armed(harness)
 }
 
-pub(super) async fn settle(relay: ClientRelay<Recorder, ProviderError>) {
-    let pump = Arc::clone(&relay.pump);
+pub(super) async fn settle(harness: &Harness, relay: ClientRelay<Recorder, ProviderError>) {
     drop(relay);
-    pump.wait().await;
+    harness.pump.wait().await;
 }
 
-pub(super) fn pump_of(relay: &ClientRelay<Recorder, ProviderError>) -> Arc<TaskTracker> {
-    Arc::clone(&relay.pump)
+pub(super) fn pump_of(harness: &Harness) -> Arc<TaskTracker> {
+    Arc::clone(&harness.pump)
 }
 
 pub(super) fn frame(text: &str) -> Vec<u8> {

@@ -97,7 +97,11 @@ pub struct ClientRelay<S: StreamSeams, E> {
     queue: Arc<ClientQueue<E>>,
     teardown: MessagesStreamLogging<S>,
     reached_end: bool,
-    // dropping the tracker never aborts the pump; a caller that waits holds this tracker
+}
+
+// The client relay plus the tracker a teardown waits on after dropping it; dropping never aborts
+pub struct RelayHandle<S: StreamSeams, E> {
+    pub relay: ClientRelay<S, E>,
     pub pump: Arc<TaskTracker>,
 }
 
@@ -129,7 +133,7 @@ impl<S: StreamSeams, E> Drop for ClientRelay<S, E> {
 }
 
 #[must_use]
-pub fn start_relay<P, S, F>(stream: P, setup: RelaySetup<S, F>) -> ClientRelay<S, P::Error>
+pub fn start_relay<P, S, F>(stream: P, setup: RelaySetup<S, F>) -> RelayHandle<S, P::Error>
 where
     P: MessagesChunkSource + Send + 'static,
     P::Error: Clone + Send + Sync + 'static,
@@ -226,7 +230,7 @@ fn spawn_relay<P, S, F>(
     queue: Arc<ClientQueue<P::Error>>,
     registry: Arc<StreamRegistry>,
     teardown: MessagesStreamLogging<S>,
-) -> ClientRelay<S, P::Error>
+) -> RelayHandle<S, P::Error>
 where
     P: MessagesChunkSource + Send + 'static,
     P::Error: Clone + Send + Sync + 'static,
@@ -243,10 +247,12 @@ where
         worker_queue.close();
     });
     tracker.close();
-    ClientRelay {
-        queue,
-        teardown,
-        reached_end: false,
+    RelayHandle {
+        relay: ClientRelay {
+            queue,
+            teardown,
+            reached_end: false,
+        },
         pump: tracker,
     }
 }

@@ -57,7 +57,7 @@ async fn two_queued_chunks_hold_the_third_pull() {
         harness.routed_frames(),
         ["one", "two", "three", "four"].map(frame).to_vec()
     );
-    settle(relay).await;
+    settle(&harness, relay).await;
     assert_eq!(registry.sizes().live_pumps, 0);
 }
 
@@ -71,7 +71,7 @@ async fn disconnect_resolves_a_blocked_enqueue() {
         .script
         .release(SseChunk::Bytes(frame("three")))
         .await;
-    let pump = pump_of(&relay);
+    let pump = pump_of(&harness);
     drop(relay);
     harness.script.finish().await;
     pump.wait().await;

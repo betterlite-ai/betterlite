@@ -44,7 +44,7 @@ async fn a_connected_client_gets_the_original_exception() {
     assert_eq!(read(&mut relay).await, Frame::Chunk("one".to_owned()));
     harness.script.release(SseChunk::Bytes(frame("two"))).await;
     assert_eq!(read(&mut relay).await, Frame::Chunk("two".to_owned()));
-    let pump = pump_of(&relay);
+    let pump = pump_of(&harness);
     harness.script.fail(busy()).await;
     assert_eq!(
         read(&mut relay).await,
@@ -74,7 +74,7 @@ async fn a_failure_after_one_chunk(detach_first: bool) {
     let hook = arm_hook(&harness);
     harness.script.release(SseChunk::Bytes(frame("one"))).await;
     assert_eq!(read(&mut relay).await, Frame::Chunk("one".to_owned()));
-    let pump = pump_of(&relay);
+    let pump = pump_of(&harness);
     if detach_first {
         drop(relay);
         harness.script.fail(busy()).await;
@@ -118,7 +118,7 @@ async fn a_missing_hook_is_harmless() {
     let (harness, mut relay) = Harness::start(limits(8), Arc::new(StreamRegistry::default()));
     harness.script.release(SseChunk::Bytes(frame("one"))).await;
     assert_eq!(read(&mut relay).await, Frame::Chunk("one".to_owned()));
-    let pump = pump_of(&relay);
+    let pump = pump_of(&harness);
     drop(relay);
     harness.script.fail(busy()).await;
     pump.wait().await;
@@ -131,7 +131,7 @@ async fn a_refused_failure_enqueue_fires_the_hook() {
     let (harness, relay) = Harness::start(limits(1), Arc::new(StreamRegistry::default()));
     let hook = arm_hook(&harness);
     harness.script.release(SseChunk::Bytes(frame("one"))).await;
-    let pump = pump_of(&relay);
+    let pump = pump_of(&harness);
     harness.script.fail(busy()).await;
     drop(relay);
     pump.wait().await;
