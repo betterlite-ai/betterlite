@@ -38,6 +38,14 @@ pub struct GithubCopilotConfig<A, P> {
     pub catalog: CatalogCapabilities,
 }
 
+// the four collaborators the config takes from outside, kept together so the constructor stays readable
+pub struct CopilotParts<A, P> {
+    pub credentials: A,
+    pub predicates: P,
+    pub settings: Settings,
+    pub catalog: CatalogCapabilities,
+}
+
 impl<A, P> GithubCopilotConfig<A, P>
 where
     A: CopilotCredentials + Send,
@@ -45,14 +53,13 @@ where
 {
     // the subclass skips the unknown-model reasoning_effort branch of OpenAIConfig, which ConfigFamily::Other stands for
     #[must_use]
-    pub fn new(
-        api_key: Option<SecretString>,
-        headers: Headers,
-        credentials: A,
-        predicates: P,
-        settings: Settings,
-        catalog: CatalogCapabilities,
-    ) -> Self {
+    pub fn new(api_key: Option<SecretString>, headers: Headers, parts: CopilotParts<A, P>) -> Self {
+        let CopilotParts {
+            credentials,
+            predicates,
+            settings,
+            catalog,
+        } = parts;
         Self {
             base: OpenAiConfig {
                 family: ConfigFamily::Other,

@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::sections::copilot_chat::Settings;
-use betterlite_core::api::copilot_chat::GithubCopilotConfig;
 use betterlite_core::api::copilot_chat::messages::{CopilotMessage, transform_messages};
 use betterlite_core::api::copilot_chat::native_reply::{NativeReply, transform_parsed_response};
+use betterlite_core::api::copilot_chat::{CopilotParts, GithubCopilotConfig};
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use fake::{ListedReasoningModels, StoredKey};
 use secrecy::SecretString;
@@ -66,15 +66,17 @@ fn config(
     GithubCopilotConfig::new(
         api_key.map(|key| SecretString::from(key.to_owned())),
         headers.clone(),
-        StoredKey::new(copilot_key),
-        ListedReasoningModels::new(reasoning_models),
-        Settings {
-            disable_system_to_assistant: false,
-            api_base: None,
-        },
-        CatalogCapabilities {
-            chat_models: BTreeSet::new(),
-            text_models: BTreeSet::new(),
+        CopilotParts {
+            credentials: StoredKey::new(copilot_key),
+            predicates: ListedReasoningModels::new(reasoning_models),
+            settings: Settings {
+                disable_system_to_assistant: false,
+                api_base: None,
+            },
+            catalog: CatalogCapabilities {
+                chat_models: BTreeSet::new(),
+                text_models: BTreeSet::new(),
+            },
         },
     )
 }

@@ -9,8 +9,8 @@ use betterlite_openai::copilot::device_auth::error::DeviceAuthError;
 use betterlite_openai::openai_base_config::{CatalogCapabilities, Headers};
 use secrecy::SecretString;
 
-use crate::api::copilot_chat::GithubCopilotConfig;
 use crate::api::copilot_chat::credentials::CopilotCredentials;
+use crate::api::copilot_chat::{CopilotParts, GithubCopilotConfig};
 
 #[derive(Default)]
 pub(super) enum KeyOutcome {
@@ -109,12 +109,14 @@ pub(super) fn config(
     GithubCopilotConfig::new(
         None,
         Headers::new(),
-        credentials,
-        predicates,
-        settings,
-        CatalogCapabilities {
-            chat_models: BTreeSet::new(),
-            text_models: BTreeSet::new(),
+        CopilotParts {
+            credentials,
+            predicates,
+            settings,
+            catalog: CatalogCapabilities {
+                chat_models: BTreeSet::new(),
+                text_models: BTreeSet::new(),
+            },
         },
     )
 }
