@@ -32,11 +32,11 @@ struct Entry {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Parameters {
-    pub guardrail: String,
-    pub api_key: Option<SecretString>,
-    pub api_base: Option<String>,
-    pub policy_ids: Option<Vec<String>>,
-    pub model_id: Option<String>,
+    guardrail: String,
+    api_key: Option<SecretString>,
+    api_base: Option<String>,
+    policy_ids: Option<Vec<String>>,
+    model_id: Option<String>,
     timeout: Option<RawNumber>,
 }
 
@@ -103,10 +103,7 @@ impl Parameters {
                 .filter(|value| !value.is_empty())
                 .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()),
         };
-        let policy_ids = match self.policy_ids {
-            Some(ids) => ids,
-            None => env_policy_ids(lookup),
-        };
+        let policy_ids = self.policy_ids.unwrap_or_else(|| env_policy_ids(lookup));
         let model_id = match self.model_id.filter(|value| !value.is_empty()) {
             Some(value) => resolve_string(value, &format!("{prefix}.model_id"), lookup)?,
             None => lookup.lookup(MODEL_ID_VARIABLE).unwrap_or_default(),

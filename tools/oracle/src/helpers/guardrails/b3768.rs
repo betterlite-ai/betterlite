@@ -130,7 +130,7 @@ fn run_call(call: &Call) -> HelperResult {
     settings.api_base.clone_from(&mock.base_url);
     let guardrail = DynamoAiGuardrail { settings, client };
     let result = build_runtime()?.block_on(run_mode(call, &guardrail));
-    let requests = mock
+    let requests: Vec<RequestRecord> = mock
         .finish()
         .map_err(|error| failure("MockError", error.to_string()))?
         .into_iter()

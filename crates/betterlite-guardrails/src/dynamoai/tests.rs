@@ -29,7 +29,7 @@ use super::decisions::{
 use super::error::DynamoAiError;
 use super::guardrail::DynamoAiGuardrail;
 use super::hooks::{PostCallOutcome, RequestData, ResponseChoice, ResponseMessage};
-use super::wire::{DynamoAiResponse, FinalAction};
+use super::wire::DynamoAiResponse;
 
 type Server = JoinSet<Result<(), io::Error>>;
 
@@ -259,7 +259,7 @@ fn dynamoai_guardrail_error_message_skips_empty_details() {
         r#"{"finalAction":"BLOCK","appliedPolicies":[{"policy":{"name":"toxicity","description":""},"outputs":{"action":"BLOCK"}}]}"#,
     );
     let message = create_error_message(&process_response(&response));
-    assert!(message.contains("  Action: BLOCK\n"));
+    assert!(message.ends_with("  Action: BLOCK"));
     assert!(!message.contains("Description"));
 }
 
@@ -275,7 +275,7 @@ fn dynamoai_guardrail_error_message_lists_the_violation_details() {
     assert!(message.contains("  Method: TOXICITY\n"));
     assert!(message.contains("  Description: no insults\n"));
     assert!(message.contains("  Message: blocked text\n"));
-    assert!(message.contains("  Policy ID: p-1\n"));
+    assert!(message.ends_with("  Policy ID: p-1"));
 }
 
 #[tokio::test]
@@ -515,7 +515,7 @@ fn entry(guardrail: &str, params: &str) -> String {
 }
 
 fn convert(document: &str, env: &BTreeMap<String, String>) -> Result<Settings, ConfigError> {
-    let raw: Raw = serde_json::from_str(document).expect("the test document is valid");
+    let raw: Raw = serde_saphyr::from_str(document).expect("the test document is valid");
     raw.convert(env)
 }
 
