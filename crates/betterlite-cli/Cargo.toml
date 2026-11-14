@@ -18,7 +18,9 @@ betterlite-env = { path = "../betterlite-env" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
+betterlite-redact = { path = "../betterlite-redact" }
 betterlite-secrets = { path = "../betterlite-secrets" }
+chrono = { workspace = true, features = ["alloc"] }
 clap = { version = "4.6.7", features = ["derive"] }
 comfy-table = { version = "8.0.1", default-features = false }
 console = "0.16.6"
@@ -35,9 +37,9 @@ rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde-saphyr.workspace = true
-serde_json = { version = "1.0.154", features = ["float_roundtrip", "raw_value"] }
+serde_json = { version = "1.0.154", features = ["arbitrary_precision", "float_roundtrip", "raw_value"] }
 serde_path_to_error = "0.1.20"
-serde_with = { version = "3.24.0", default-features = false, features = ["alloc"] }
+serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "macros"] }
 sha2.workspace = true
 shlex = "2.0.1"
 socket2 = "0.6.5"

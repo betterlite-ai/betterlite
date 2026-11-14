@@ -68,6 +68,7 @@ pub(crate) struct Places<'run> {
     pub(crate) git_common_dir: &'run Path,
     pub(crate) home: &'run Path,
     pub(crate) writable: &'run [String],
+    pub(crate) net: &'run Path,
 }
 
 pub(crate) struct Attempt<'run> {
@@ -440,6 +441,7 @@ pub(crate) fn dispatch(
         git_common_dir: &git_common_dir,
         home: &home,
         writable: &writable,
+        net: Path::new("/proc/net"),
     };
     let outcome = run_ladder(&agents, &brief, &places, &mut progress, grant);
     progress.save(&journal).and(outcome)
