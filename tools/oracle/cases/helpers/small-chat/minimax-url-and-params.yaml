@@ -1,0 +1,48 @@
+kind: helper
+name: minimax-url-and-params
+call:
+  b8173:
+    steps:
+      - kind: minimax_params
+        model: "b8173-minimax-reasons"
+        supports_reasoning: true
+      - kind: minimax_params
+        model: "b8173-minimax-plain"
+        supports_reasoning: false
+      - kind: minimax_url
+        env_base: "https://env.test/v1"
+      - kind: minimax_url
+        api_base: "https://host.test/v1"
+        env_base: "https://env.test/v1"
+      - kind: minimax_url
+        api_base: "https://host.test/"
+        env_base: "https://env.test/v1"
+      - kind: minimax_url
+        api_base: "https://host.test"
+        env_base: "https://env.test/v1"
+      - kind: minimax_url
+        api_base: "https://host.test/v1/chat/completions"
+        env_base: "https://env.test/v1"
+      - kind: minimax_url
+        api_base: "https://host.test/custom/chat/completions"
+        env_base: "https://env.test/v1"
+      - kind: minimax_url
+        api_base: ""
+        env_base: "https://env.test/"
+      - kind: minimax_url
+        env_base: "https://env.test/"
+      - kind: minimax_info
+        api_base: "https://explicit.test/v1"
+        env_base: "https://env.test/v1"
+      - kind: minimax_info
+        api_key: "explicit-key"
+        env_base: "https://env.test/v1"
+      - kind: minimax_info
+        api_key: ""
+        env_base: "https://env.test/v1"
+        global_key: "global-key"
+      - kind: minimax_info
+        env_base: "https://env.test/v1"
+env:
+  MINIMAX_API_BASE: "https://env.test/v1"
+compare: {ignore: []}

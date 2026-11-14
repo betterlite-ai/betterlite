@@ -1,0 +1,11 @@
+kind: helper
+name: tencent-cost
+call:
+  b8173:
+    steps:
+      - kind: tencent_cost
+        model: "b8173-unmapped-tencent-model"
+        prompt_tokens: 3
+        completion_tokens: 4
+env: {}
+compare: {ignore: []}
