@@ -14,8 +14,13 @@ use super::wire::{InputMessage, TextPart};
 use super::{MessageRole, NomaScanPolicy, ScanCallContext, ScanOutcome};
 
 enum Subject<'request> {
-    UserMessage,
-    LlmResponse { request_id: Option<&'request str> },
+    UserMessage {
+        scanned: &'request str,
+    },
+    LlmResponse {
+        request_id: Option<&'request str>,
+        content: &'request str,
+    },
 }
 
 // One scan: call Noma, write the standard logging record, then decide what the answer means
@@ -24,13 +29,15 @@ async fn scan_and_record(
     request_data: &mut BTreeMap<String, GuardrailValue>,
     call: ScanCallContext<'_>,
     items: &[Box<RawValue>],
-    scanned: &str,
     subject: Subject<'_>,
 ) -> Result<ScanOutcome, NomaError> {
     let started = (policy.now)();
-    let (role, llm_request_id) = match subject {
-        Subject::UserMessage => (MessageRole::User, None),
-        Subject::LlmResponse { request_id } => (MessageRole::Assistant, request_id),
+    let (role, llm_request_id, scanned) = match subject {
+        Subject::UserMessage { scanned } => (MessageRole::User, None, scanned),
+        Subject::LlmResponse {
+            request_id,
+            content,
+        } => (MessageRole::Assistant, request_id, content),
     };
     let target = ScanTarget {
         user_auth: call.user_auth,
@@ -75,8 +82,7 @@ impl NomaScanPolicy {
             request_data,
             call,
             &items,
-            &scanned,
-            Subject::UserMessage,
+            Subject::UserMessage { scanned: &scanned },
         )
         .await?;
         if let Some(text) = &outcome.anonymized {
@@ -107,8 +113,9 @@ impl NomaScanPolicy {
         let items = [to_raw_value(&item).map_err(|source| NomaError::PayloadJson { source })?];
         let subject = Subject::LlmResponse {
             request_id: request_id.as_deref(),
+            content: &content,
         };
-        let outcome = scan_and_record(self, request_data, call, &items, &content, subject).await?;
+        let outcome = scan_and_record(self, request_data, call, &items, subject).await?;
         if let Some(text) = &outcome.anonymized {
             replace_response_content(response, text);
             tracing::debug!("Noma guardrail anonymized LLM response: {text}");
