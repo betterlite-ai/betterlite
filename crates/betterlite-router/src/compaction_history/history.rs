@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::ChatMessage;
 
-use super::blocks::{field_text, json_truthy};
+use super::blocks::{counts_as_present, field_text};
 use super::contracts::{Conversation, History};
 use super::error::{CompactionError, ErrorKind};
 use super::items::{json_item, tool_ids_of};
@@ -125,7 +125,7 @@ fn reasoning_present(item: &Json) -> bool {
     let Json::Object(fields) = item else {
         return false;
     };
-    if fields.get("thinking_blocks").is_some_and(json_truthy) {
+    if fields.get("thinking_blocks").is_some_and(counts_as_present) {
         return true;
     }
     let Some(Json::List(blocks)) = fields.get("content") else {

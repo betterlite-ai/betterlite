@@ -10,7 +10,7 @@ pub fn field_text<'a>(fields: &'a IndexMap<String, Json>, key: &str) -> Option<&
 }
 
 // LiteLLM only tests thinking_blocks for truthiness, so an empty list or a zero counts as absent
-pub(crate) fn json_truthy(value: &Json) -> bool {
+pub(crate) fn counts_as_present(value: &Json) -> bool {
     match value {
         Json::Null => false,
         Json::Bool(flag) => *flag,

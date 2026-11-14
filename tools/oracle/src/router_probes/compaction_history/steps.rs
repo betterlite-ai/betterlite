@@ -18,7 +18,6 @@ use betterlite_router::compaction_history::contracts::{
 };
 use betterlite_router::compaction_history::error::{CompactionError, ErrorKind};
 use betterlite_router::compaction_history::history::portable_history;
-use tokio::runtime::Builder;
 
 use super::wire::{DeploymentInput, FailureKind, Function, Input, Outcome, Output};
 use crate::router_probes::error::OperationError;
@@ -62,18 +61,10 @@ impl ModelInfoLookup for CatalogLookup {
     }
 }
 
-pub(super) fn output(input: &Input) -> Result<Output, OperationError> {
+pub(super) async fn output(input: &Input) -> Result<Output, OperationError> {
     match input.function {
         Function::History => history_output(input),
-        Function::Compactor => {
-            let runtime = Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|source| OperationError::InvalidRequest {
-                    message: format!("the probe runtime could not start: {source}"),
-                })?;
-            Ok(runtime.block_on(compactor_output(input)))
-        }
+        Function::Compactor => Ok(compactor_output(input).await),
     }
 }
 

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use tokio::runtime::Builder;
 
 use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
@@ -20,6 +21,13 @@ pub(crate) fn run(
     input: &Input,
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
-    let output = steps::output(&input.0)?;
-    Ok(ProbeOutput::CompactionHistory(Output(Box::new(output))))
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|source| OperationError::InvalidRequest {
+            message: format!("the probe runtime could not start: {source}"),
+        })?;
+    runtime
+        .block_on(steps::output(&input.0))
+        .map(|output| ProbeOutput::CompactionHistory(Output(Box::new(output))))
 }
