@@ -19,8 +19,8 @@ class UserAPIKeyLabelNames(Enum):
     TEAM = "team"
     TEAM_ALIAS = "team_alias"
     REQUESTED_MODEL = REQUESTED_MODEL
-    v1_LITELLM_MODEL_NAME = "model"
-    v2_LITELLM_MODEL_NAME = "litellm_model_name"
+    v1_LITELLM_MODEL_NAME = "model"  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L202
+    v2_LITELLM_MODEL_NAME = "litellm_model_name"  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L203
     TAG = "tag"
     MODEL_ID = "model_id"
     API_BASE = "api_base"
