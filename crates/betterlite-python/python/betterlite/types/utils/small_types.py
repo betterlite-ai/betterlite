@@ -2,77 +2,76 @@ from collections.abc import Mapping
 from enum import Enum
 from typing import ClassVar, Literal, TypeAlias
 
+from pydantic import ConfigDict, JsonValue, PrivateAttr
 from typing_extensions import override
 
-from betterlite.types.utils.base import ResponseObject
-from betterlite.types.utils.grader_content import GraderContent, content_item
-from betterlite.types.utils.usage import Usage
-from betterlite.types.utils.values import (
-    JsonValue,
-    StoredValue,
-    ValidationError,
-    field_validator,
+from betterlite.types.utils.base import (
+    DictJsonObject,
+    InitValue,
+    ModelValue,
+    ResponseObject,
+    dump_value,
 )
+from betterlite.types.utils.grader_content import GraderContent, GraderRole
+from betterlite.types.utils.usage import Usage
 
 
 class BudgetConfig(ResponseObject):
-    max_budget: float | None
-    budget_duration: str | None
-    tpm_limit: int | None
-    rpm_limit: int | None
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
+    max_budget: float | None = None
+    budget_duration: str | None = None
+    tpm_limit: int | None = None
+    rpm_limit: int | None = None
 
     @override
-    def __init__(self, **data: StoredValue) -> None:
+    def __init__(self, **data: InitValue) -> None:
         if "time_period" in data:
             data["budget_duration"] = data.pop("time_period")
         if "budget_limit" in data:
             data["max_budget"] = data.pop("budget_limit")
-        declared = {
-            name: value for name, value in data.items() if name in type(self).__fields__
-        }
-        super().__init__(**declared)
+        super().__init__(**data)
 
 
 class FineTuningJobError(ResponseObject):
     code: str
     message: str
-    param: str | None
+    param: str | None = None
 
 
 class FineTuningJobHyperparameters(ResponseObject):
-    batch_size: Literal["auto"] | int | None
-    learning_rate_multiplier: Literal["auto"] | float | None
-    n_epochs: Literal["auto"] | int | None
+    batch_size: Literal["auto"] | int | None = None
+    learning_rate_multiplier: Literal["auto"] | float | None = None
+    n_epochs: Literal["auto"] | int | None = None
 
 
 class SupervisedMethod(ResponseObject):
-    hyperparameters: FineTuningJobHyperparameters | None
+    hyperparameters: FineTuningJobHyperparameters | None = None
 
 
 class DpoHyperparameters(FineTuningJobHyperparameters):
-    beta: Literal["auto"] | float | None
+    beta: Literal["auto"] | float | None = None
 
 
 class DpoMethod(ResponseObject):
-    hyperparameters: DpoHyperparameters | None
+    hyperparameters: DpoHyperparameters | None = None
 
 
 class GraderInput(ResponseObject):
     content: GraderContent
-    role: Literal["user", "assistant", "system", "developer"]
-    type: Literal["message"] | None
+    role: GraderRole
+    type: Literal["message"] | None = None
 
-    @field_validator("content", mode="before")
-    def pick_content(self, value: StoredValue) -> StoredValue:
-        return content_item(value)
+
+ReasoningEffort: TypeAlias = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 
 
 class SamplingParams(ResponseObject):
-    max_completions_tokens: int | None
-    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] | None
-    seed: int | None
-    temperature: float | None
-    top_p: float | None
+    max_completions_tokens: int | None = None
+    reasoning_effort: ReasoningEffort | None = None
+    seed: int | None = None
+    temperature: float | None = None
+    top_p: float | None = None
 
 
 class StringCheckGrader(ResponseObject):
@@ -98,7 +97,7 @@ class PythonGrader(ResponseObject):
     name: str
     source: str
     type: Literal["python"]
-    image_tag: str | None
+    image_tag: str | None = None
 
 
 class ScoreModelGrader(ResponseObject):
@@ -106,8 +105,8 @@ class ScoreModelGrader(ResponseObject):
     model: str
     name: str
     type: Literal["score_model"]
-    range: list[float] | None
-    sampling_params: SamplingParams | None
+    range: list[float] | None = None
+    sampling_params: SamplingParams | None = None
 
 
 class LabelModelGrader(ResponseObject):
@@ -130,68 +129,34 @@ class MultiGrader(ResponseObject):
     name: str
     type: Literal["multi"]
 
-    @field_validator("graders", mode="before")
-    def pick_nested_grader(self, value: StoredValue) -> StoredValue:
-        return grader_model(value, allow_label=True)
-
 
 GraderKind: TypeAlias = MultiGraderKind | MultiGrader
 
 
-def grader_model(value: StoredValue, *, allow_label: bool) -> StoredValue:
-    match value:
-        case Mapping() if "type" not in value:
-            raise ValidationError("grader", ("type",), "value is required")
-        case Mapping():
-            selected: ResponseObject
-            match value["type"]:
-                case "string_check":
-                    selected = StringCheckGrader(**value)
-                case "text_similarity":
-                    selected = TextSimilarityGrader(**value)
-                case "python":
-                    selected = PythonGrader(**value)
-                case "score_model":
-                    selected = ScoreModelGrader(**value)
-                case "multi":
-                    selected = MultiGrader(**value)
-                case "label_model" if allow_label:
-                    selected = LabelModelGrader(**value)
-                case _other:
-                    raise ValidationError("grader", ("type",), "unknown grader type")
-            return selected
-        case _other:
-            return value
-
-
 class ReinforcementHyperparameters(FineTuningJobHyperparameters):
-    compute_multiplier: Literal["auto"] | float | None
-    eval_interval: Literal["auto"] | int | None
-    eval_samples: Literal["auto"] | int | None
-    reasoning_effort: Literal["default", "low", "medium", "high"] | None
+    compute_multiplier: Literal["auto"] | float | None = None
+    eval_interval: Literal["auto"] | int | None = None
+    eval_samples: Literal["auto"] | int | None = None
+    reasoning_effort: Literal["default", "low", "medium", "high"] | None = None
 
 
 class ReinforcementMethod(ResponseObject):
     grader: GraderKind
-    hyperparameters: ReinforcementHyperparameters | None
-
-    @field_validator("grader", mode="before")
-    def pick_grader(self, value: StoredValue) -> StoredValue:
-        return grader_model(value, allow_label=False)
+    hyperparameters: ReinforcementHyperparameters | None = None
 
 
 class FineTuningJobMethod(ResponseObject):
     type: Literal["supervised", "dpo", "reinforcement"]
-    dpo: DpoMethod | None
-    reinforcement: ReinforcementMethod | None
-    supervised: SupervisedMethod | None
+    dpo: DpoMethod | None = None
+    reinforcement: ReinforcementMethod | None = None
+    supervised: SupervisedMethod | None = None
 
 
 class WandbIntegration(ResponseObject):
     project: str
-    entity: str | None
-    name: str | None
-    tags: list[str] | None
+    entity: str | None = None
+    name: str | None = None
+    tags: list[str] | None = None
 
 
 class WandbIntegrationObject(ResponseObject):
@@ -202,57 +167,71 @@ class WandbIntegrationObject(ResponseObject):
 class LiteLLMFineTuningJob(ResponseObject):
     id: str
     created_at: int
-    error: FineTuningJobError | None
-    fine_tuned_model: str | None
-    finished_at: int | None
+    error: FineTuningJobError | None = None
+    fine_tuned_model: str | None = None
+    finished_at: int | None = None
     hyperparameters: FineTuningJobHyperparameters
     model: str
     object: Literal["fine_tuning.job"]
     organization_id: str
     result_files: list[str]
-    seed: int | None
+    seed: int | None = None
     status: Literal[
         "validating_files", "queued", "running", "succeeded", "failed", "cancelled",
     ]
-    trained_tokens: int | None
+    trained_tokens: int | None = None
     training_file: str
-    validation_file: str | None
-    estimated_finish: int | None
-    integrations: list[WandbIntegrationObject] | None
-    metadata: dict[str, str] | None
-    method: FineTuningJobMethod | None
-    _hidden_params: dict[str, StoredValue]
-    defaults: ClassVar[dict[str, StoredValue]] = {"_hidden_params": {}}
+    validation_file: str | None = None
+    estimated_finish: int | None = None
+    integrations: list[WandbIntegrationObject] | None = None
+    metadata: dict[str, str] | None = None
+    method: FineTuningJobMethod | None = None
+    _hidden_params: dict[str, JsonValue] = PrivateAttr(default_factory=dict)
 
     @override
-    def __init__(self, **kwargs: StoredValue) -> None:
+    def __init__(self, **kwargs: JsonValue) -> None:
         if "error" in kwargs:
-            error = kwargs["error"]
-            match error:
-                case Mapping() if all(value is None for value in error.values()):
-                    kwargs["error"] = None
-                case _other:
-                    pass
+            kwargs["error"] = error_value(kwargs["error"])
+        raw_hidden = kwargs.pop("_hidden_params", None)
+        hidden: dict[str, JsonValue] = {}
+        if raw_hidden is not None:
+            match raw_hidden:
+                case Mapping():
+                    hidden = dict(raw_hidden)
+                case bool() | int() | float() | str() | list():
+                    hidden = {}
         super().__init__(**kwargs)
+        self._hidden_params = hidden
+
+
+def error_value(value: JsonValue) -> JsonValue:
+    if value is None:
+        return None
+    match value:
+        case Mapping() if all(item is None for item in value.values()):
+            return None
+        case Mapping() | bool() | int() | float() | str() | list():
+            return value
 
 
 # ast-grep-ignore: no-long-names
-class LiteLLMRealtimeStreamLoggingObject(ResponseObject):
-    results: list[dict[str, JsonValue]]
+class LiteLLMRealtimeStreamLoggingObject(DictJsonObject):
+    results: list[JsonValue]
     usage: Usage
-    service_tier: str | None
-    _hidden_params: dict[str, StoredValue]
-    defaults: ClassVar[dict[str, StoredValue]] = {"_hidden_params": {}}
+    service_tier: str | None = None
+    _hidden_params: dict[str, JsonValue] = PrivateAttr(default_factory=dict)
 
     @override
     def __init__(
-        self, results: StoredValue = None, usage: StoredValue = None,
-        service_tier: StoredValue = None, **_params: StoredValue,
+        self, results: JsonValue = None, usage: ModelValue = None,
+        service_tier: JsonValue = None, **_params: InitValue,
     ) -> None:
-        data: dict[str, StoredValue] = {"results": results, "usage": usage}
-        if service_tier is not None:
-            data["service_tier"] = service_tier
-        super().__init__(**data)
+        if service_tier is None:
+            super().__init__(results=results, usage=dump_value(usage))
+        else:
+            super().__init__(
+                results=results, usage=dump_value(usage), service_tier=service_tier,
+            )
 
 
 class LiteLLMLoggingBaseClass:
