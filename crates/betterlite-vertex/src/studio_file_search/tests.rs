@@ -16,9 +16,7 @@ use super::config::{capabilities, validate_environment};
 use super::create::create_request;
 use super::decode::{Decoded, RawResponse, Shape, decode_studio_file_search};
 use super::error::StudioFileSearchError;
-use super::request::{
-    DEFAULT_MODEL, SearchInput, SearchPlan, SearchQuery, complete_url, search_request,
-};
+use super::request::{DEFAULT_MODEL, SearchInput, SearchPlan, SearchQuery, search_request};
 use super::{RequestParams, ResponseHeaders};
 use crate::provider_metadata::timestamp::LocalTimeContext;
 use crate::studio_identity::Headers;
@@ -212,21 +210,75 @@ fn environment_overwrites_the_caller_key_header() {
 
 #[test]
 fn url_appends_the_version_without_trimming() {
-    let base = complete_url(Some("https://studio.example//"), &Settings::default());
-    assert_eq!(base, "https://studio.example///v1beta");
+    let settings = Settings::default();
+    let params = params(Some("key"), None);
+    let query = text_query("q");
+    let plan = search_request(&SearchInput {
+        vector_store_id: STORE,
+        query: &query,
+        filters: None,
+        max_num_results: None,
+        extra_body: None,
+        params: &params,
+        api_base: Some("https://studio.example//"),
+        settings: &settings,
+    })
+    .unwrap();
+    assert_eq!(
+        plan.url,
+        format!("https://studio.example///v1beta/models/{DEFAULT_MODEL}:generateContent")
+    );
 }
 
 #[test]
 fn url_uses_the_configured_base_only_when_none() {
     let settings = settings(None, "https://configured.example");
+    let params = params(Some("key"), None);
+    let query = text_query("q");
+    let plan = search_request(&SearchInput {
+        vector_store_id: STORE,
+        query: &query,
+        filters: None,
+        max_num_results: None,
+        extra_body: None,
+        params: &params,
+        api_base: None,
+        settings: &settings,
+    })
+    .unwrap();
     assert_eq!(
-        complete_url(None, &settings),
-        "https://configured.example/v1beta"
+        plan.url,
+        format!("https://configured.example/v1beta/models/{DEFAULT_MODEL}:generateContent")
     );
-    assert_eq!(complete_url(Some(""), &settings), "/v1beta");
+    let empty = search_request(&SearchInput {
+        vector_store_id: STORE,
+        query: &query,
+        filters: None,
+        max_num_results: None,
+        extra_body: None,
+        params: &params,
+        api_base: Some(""),
+        settings: &settings,
+    })
+    .unwrap();
     assert_eq!(
-        complete_url(None, &Settings::default()),
-        format!("{DEFAULT_API_BASE}/v1beta")
+        empty.url,
+        format!("/v1beta/models/{DEFAULT_MODEL}:generateContent")
+    );
+    let fallback = search_request(&SearchInput {
+        vector_store_id: STORE,
+        query: &query,
+        filters: None,
+        max_num_results: None,
+        extra_body: None,
+        params: &params,
+        api_base: None,
+        settings: &Settings::default(),
+    })
+    .unwrap();
+    assert_eq!(
+        fallback.url,
+        format!("{DEFAULT_API_BASE}/v1beta/models/{DEFAULT_MODEL}:generateContent")
     );
 }
 
@@ -392,6 +444,7 @@ fn search_keys_stay_isolated_between_contexts() {
         query: &query,
         filters: None,
         max_num_results: None,
+        extra_body: None,
         params: &anonymous,
         api_base: None,
         settings: &second,
@@ -591,7 +644,7 @@ fn decode_create_writes_explicit_nulls_for_expiry_and_metadata() {
 }
 
 #[rstest]
-#[case::array("[]")]
+#[case::array(r#"["fileSearchStores/abc","Docs","2024-01-02T03:04:05Z"]"#)]
 #[case::text("\"store\"")]
 fn decode_create_rejects_a_non_object_reply(#[case] body: &str) {
     let error = decode(Shape::Create, 400, body, "").unwrap_err();
@@ -614,9 +667,9 @@ fn decode_create_rejects_a_wrong_typed_field() {
 fn decode_create_wraps_invalid_json() {
     let error = decode(Shape::Create, 422, "{", "").unwrap_err();
     match error {
-        StudioFileSearchError::CreateReply { status, reason, .. } => {
+        StudioFileSearchError::CreateReply { status, source, .. } => {
             assert_eq!(status, 422);
-            assert!(reason.contains("line 1"), "{reason}");
+            assert_eq!(source.line(), 1);
         }
         other => panic!("unexpected error: {other}"),
     }
@@ -766,13 +819,25 @@ fn decode_search_skips_a_null_grounding_metadata() {
 #[rstest]
 #[case::candidates_object(r#"{"candidates":{}}"#)]
 #[case::candidate_text(r#"{"candidates":["x"]}"#)]
+#[case::candidate_array(r#"{"candidates":[[null]]}"#)]
+#[case::grounding_array(r#"{"candidates":[{"groundingMetadata":[null,null]}]}"#)]
 #[case::chunks_object(r#"{"candidates":[{"groundingMetadata":{"groundingChunks":{}}}]}"#)]
+#[case::chunk_array(r#"{"candidates":[{"groundingMetadata":{"groundingChunks":[[null]]}}]}"#)]
 #[case::context_text(
     r#"{"candidates":[{"groundingMetadata":{"groundingChunks":[{"retrievedContext":"x"}]}}]}"#
 )]
+#[case::context_array(
+    r#"{"candidates":[{"groundingMetadata":{"groundingChunks":[{"retrievedContext":["t","u","x"]}]}}]}"#
+)]
 #[case::supports_text(r#"{"candidates":[{"groundingMetadata":{"groundingSupports":["x"]}}]}"#)]
+#[case::support_array(
+    r#"{"candidates":[{"groundingMetadata":{"groundingSupports":[[null,null,null]]}}]}"#
+)]
 #[case::segment_text(
     r#"{"candidates":[{"groundingMetadata":{"groundingSupports":[{"segment":"x"}]}}]}"#
+)]
+#[case::segment_array(
+    r#"{"candidates":[{"groundingMetadata":{"groundingSupports":[{"segment":["x"]}]}}]}"#
 )]
 fn decode_search_rejects_a_malformed_shape(#[case] body: &str) {
     let error = decode(Shape::Search, 200, body, "").unwrap_err();
@@ -806,9 +871,9 @@ fn decode_search_rejects_a_non_number_confidence_score() {
 fn decode_search_wraps_invalid_json() {
     let error = decode(Shape::Search, 500, "not json", "").unwrap_err();
     match error {
-        StudioFileSearchError::SearchReply { status, reason, .. } => {
+        StudioFileSearchError::SearchReply { status, source, .. } => {
             assert_eq!(status, 500);
-            assert!(reason.contains("line 1"), "{reason}");
+            assert_eq!(source.line(), 1);
         }
         other => panic!("unexpected error: {other}"),
     }

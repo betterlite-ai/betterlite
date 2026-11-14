@@ -2,7 +2,7 @@ use betterlite_bedrock::vector_stores::metadata::non_empty;
 use betterlite_config::sections::studio_identity::Settings;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde_json::{Map, Value, json};
+use serde::Serialize;
 
 use super::RequestParams;
 use super::error::StudioFileSearchError;
@@ -46,44 +46,77 @@ pub struct SearchPlan {
     pub vector_store_id: String,
 }
 
-// get_complete_url appends the version to a configured base exactly as given, so a trailing slash stays.
-#[must_use]
-pub fn complete_url(api_base: Option<&str>, settings: &Settings) -> String {
-    let base = api_base.map_or_else(|| resolve_base(None, settings), str::to_owned);
-    format!("{base}/{API_VERSION}")
+#[derive(Debug, Serialize)]
+struct SearchBody<'a> {
+    contents: [Content<'a>; 1],
+    tools: [Tool<'a>; 1],
+    #[serde(rename = "generationConfig", skip_serializing_if = "Option::is_none")]
+    generation_config: Option<GenerationConfig>,
+}
+
+#[derive(Debug, Serialize)]
+struct Content<'a> {
+    parts: [Part<'a>; 1],
+}
+
+#[derive(Debug, Serialize)]
+struct Part<'a> {
+    text: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct Tool<'a> {
+    file_search: FileSearch<'a>,
+}
+
+#[derive(Debug, Serialize)]
+struct FileSearch<'a> {
+    file_search_store_names: [&'a str; 1],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    metadata_filter: Option<Json>,
+}
+
+#[derive(Debug, Serialize)]
+struct GenerationConfig {
+    #[serde(rename = "candidateCount")]
+    candidate_count: u8,
 }
 
 pub fn search_request(input: &SearchInput<'_>) -> Result<SearchPlan, StudioFileSearchError> {
     if resolve_key(&[input.params.api_key.as_ref()], input.settings).is_none() {
         return Err(StudioFileSearchError::MissingKey);
     }
-    let api_base = complete_url(input.api_base, input.settings);
+    // get_complete_url appends the version to a configured base exactly as given, so a trailing slash stays.
+    let base = input
+        .api_base
+        .map_or_else(|| resolve_base(None, input.settings), str::to_owned);
+    let api_base = format!("{base}/{API_VERSION}");
     let query = input.query.joined();
-    let mut file_search = Map::new();
-    file_search.insert(
-        "file_search_store_names".to_owned(),
-        json!([input.vector_store_id]),
-    );
-    if let Some(filters) = input.filters.filter(|value| non_empty(value)) {
-        let value = match filters {
-            Json::Object(fields) => Value::String(metadata_filter(fields)?),
-            other => serde_json::to_value(other)?,
-        };
-        file_search.insert("metadata_filter".to_owned(), value);
-    }
-    let mut body = json!({
-        "contents": [{"parts": [{"text": query}]}],
-        "tools": [{"file_search": file_search}],
-    });
-    if input.max_num_results.is_some_and(|count| count != 0)
-        && let Value::Object(fields) = &mut body
-    {
-        fields.insert("generationConfig".to_owned(), json!({"candidateCount": 1}));
-    }
+    let filter = match input.filters.filter(|value| non_empty(value)) {
+        Some(Json::Object(fields)) => Some(Json::Text(metadata_filter(fields)?)),
+        Some(other) => Some(other.clone()),
+        None => None,
+    };
+    let search_body = SearchBody {
+        contents: [Content {
+            parts: [Part { text: &query }],
+        }],
+        tools: [Tool {
+            file_search: FileSearch {
+                file_search_store_names: [input.vector_store_id],
+                metadata_filter: filter,
+            },
+        }],
+        generation_config: input
+            .max_num_results
+            .is_some_and(|count| count != 0)
+            .then_some(GenerationConfig { candidate_count: 1 }),
+    };
+    let body = serde_json::to_value(search_body).and_then(serde_json::from_value::<Json>)?;
     let model = resolved_model(input.params.model.as_deref());
     Ok(SearchPlan {
         url: format!("{api_base}/models/{model}:generateContent"),
-        body: serde_json::from_value(body)?,
+        body,
         query,
         vector_store_id: input.vector_store_id.to_owned(),
     })

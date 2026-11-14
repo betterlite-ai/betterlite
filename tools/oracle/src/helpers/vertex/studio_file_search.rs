@@ -10,10 +10,8 @@ use betterlite_vertex::studio_file_search::decode::{
     Decoded, RawResponse, Shape, decode_studio_file_search,
 };
 use betterlite_vertex::studio_file_search::error::StudioFileSearchError;
-use betterlite_vertex::studio_file_search::request::{
-    SearchInput, SearchQuery, complete_url, search_request,
-};
-use betterlite_vertex::studio_identity::Headers;
+use betterlite_vertex::studio_file_search::request::{SearchInput, SearchQuery, search_request};
+use betterlite_vertex::studio_identity::{API_VERSION, Headers};
 use jiff::tz::TimeZone;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
@@ -90,9 +88,11 @@ fn resolve(call: &Call) -> HelperResult {
     match call.function {
         Function::Capabilities => capabilities_view(),
         Function::Environment => environment_view(call),
-        Function::Url => Ok(json!({
-            "url": complete_url(call.api_base.as_deref(), &settings(&call.environment))
-        })),
+        Function::Url => {
+            let settings = settings(&call.environment);
+            let base = call.api_base.as_deref().unwrap_or(&settings.api_base);
+            Ok(json!({ "url": format!("{base}/{API_VERSION}") }))
+        }
         Function::Search => search_view(call),
         Function::SearchReply => search_reply_view(call),
         Function::Create => create_view(call),
@@ -149,8 +149,8 @@ fn search_view(call: &Call) -> HelperResult {
 
 fn create_view(call: &Call) -> HelperResult {
     let settings = settings(&call.environment);
-    let base = complete_url(call.api_base.as_deref(), &settings);
-    let plan = create_request(call.name.as_deref(), &base);
+    let base = call.api_base.as_deref().unwrap_or(&settings.api_base);
+    let plan = create_request(call.name.as_deref(), &format!("{base}/{API_VERSION}"));
     Ok(json!({ "url": plan.url, "body": plan.body }))
 }
 

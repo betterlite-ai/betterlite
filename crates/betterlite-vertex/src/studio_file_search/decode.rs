@@ -32,58 +32,73 @@ pub enum Decoded {
     Search(Box<VectorStoreSearchResponse>),
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Reply {
-    candidates: Option<Vec<Candidate>>,
+// LiteLLM calls .get() on every one of these levels, so an array there is an error rather than a struct.
+macro_rules! map_only {
+    ($name:ident { $($field:ident: $wire:literal => $kind:ty),* $(,)? }) => {
+        #[derive(Debug, Deserialize)]
+        #[serde(try_from = "Value")]
+        struct $name {
+            $($field: $kind,)*
+        }
+
+        impl TryFrom<Value> for $name {
+            type Error = serde_json::Error;
+
+            fn try_from(value: Value) -> Result<Self, Self::Error> {
+                let Value::Object(mut fields) = value else {
+                    return Err(<serde_json::Error as serde::de::Error>::custom(
+                        "the reply is not a JSON object",
+                    ));
+                };
+                Ok(Self {
+                    $($field: match fields.remove($wire) {
+                        Some(given) => serde_json::from_value(given)?,
+                        None => None,
+                    },)*
+                })
+            }
+        }
+    };
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Candidate {
-    grounding_metadata: Option<Grounding>,
-}
+map_only!(Reply {
+    candidates: "candidates" => Option<Vec<Candidate>>,
+});
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Grounding {
-    grounding_chunks: Option<Vec<Chunk>>,
-    grounding_supports: Option<Vec<Support>>,
-}
+map_only!(Candidate {
+    grounding_metadata: "groundingMetadata" => Option<Grounding>,
+});
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Chunk {
-    retrieved_context: Option<Retrieved>,
-}
+map_only!(Grounding {
+    grounding_chunks: "groundingChunks" => Option<Vec<Chunk>>,
+    grounding_supports: "groundingSupports" => Option<Vec<Support>>,
+});
 
-#[derive(Deserialize)]
-struct Retrieved {
-    text: Option<String>,
-    uri: Option<String>,
-    title: Option<String>,
-}
+map_only!(Chunk {
+    retrieved_context: "retrievedContext" => Option<Retrieved>,
+});
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Support {
-    segment: Option<Segment>,
-    grounding_chunk_indices: Option<Vec<Value>>,
-    confidence_scores: Option<Vec<Value>>,
-}
+map_only!(Retrieved {
+    text: "text" => Option<String>,
+    uri: "uri" => Option<String>,
+    title: "title" => Option<String>,
+});
 
-#[derive(Deserialize)]
-struct Segment {
-    text: Option<String>,
-}
+map_only!(Support {
+    segment: "segment" => Option<Segment>,
+    grounding_chunk_indices: "groundingChunkIndices" => Option<Vec<i64>>,
+    confidence_scores: "confidenceScores" => Option<Vec<Score>>,
+});
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Store {
-    name: Option<String>,
-    display_name: Option<String>,
-    create_time: Option<String>,
-}
+map_only!(Segment {
+    text: "text" => Option<String>,
+});
+
+map_only!(Store {
+    name: "name" => Option<String>,
+    display_name: "displayName" => Option<String>,
+    create_time: "createTime" => Option<String>,
+});
 
 pub fn decode_studio_file_search(
     shape: Shape,
@@ -103,7 +118,7 @@ fn search_response(
     query: &str,
 ) -> Result<VectorStoreSearchResponse, StudioFileSearchError> {
     let reply: Reply = serde_json::from_slice(response.body)
-        .map_err(|error| response.failure(Shape::Search, error.to_string()))?;
+        .map_err(|source| response.failure(Shape::Search, source))?;
     let mut results = Vec::new();
     for candidate in reply.candidates.unwrap_or_default() {
         let Some(grounding) = candidate.grounding_metadata else {
@@ -119,7 +134,7 @@ fn search_response(
             results.push(context_result(context));
         }
         for support in grounding.grounding_supports.unwrap_or_default() {
-            if let Some(result) = support_result(response, support, &results)? {
+            if let Some(result) = support_result(support, &results) {
                 results.push(result);
             }
         }
@@ -168,10 +183,9 @@ fn part(text: &str) -> VectorStoreResultContent {
 }
 
 fn support_result(
-    response: &RawResponse<'_>,
     support: Support,
     results: &[VectorStoreSearchResult],
-) -> Result<Option<VectorStoreSearchResult>, StudioFileSearchError> {
+) -> Option<VectorStoreSearchResult> {
     let text = support
         .segment
         .and_then(|segment| segment.text)
@@ -185,36 +199,28 @@ fn support_result(
             == Some(text.as_str())
     });
     if text.is_empty() || seen {
-        return Ok(None);
+        return None;
     }
     let mut extra = BTreeMap::new();
-    let score = match support.confidence_scores.unwrap_or_default().first() {
-        Some(Value::Number(number)) => Some(
-            Score::try_from(number.clone())
-                .map_err(|error| response.failure(Shape::Search, error.to_string()))?,
-        ),
-        Some(Value::Null) | None => {
-            extra.insert("score".to_owned(), Value::Null);
-            None
-        }
-        Some(_) => {
-            return Err(response.failure(
-                Shape::Search,
-                "confidenceScores[0] is not a number".to_owned(),
-            ));
-        }
-    };
+    let score = support
+        .confidence_scores
+        .unwrap_or_default()
+        .first()
+        .cloned();
+    if score.is_none() {
+        extra.insert("score".to_owned(), Value::Null);
+    }
     let attributes = json!({
         "grounding_chunk_indices": support.grounding_chunk_indices.unwrap_or_default(),
     });
-    Ok(Some(VectorStoreSearchResult {
+    Some(VectorStoreSearchResult {
         score,
         content: Some(vec![part(&text)]),
         file_id: None,
         filename: None,
         attributes: Some(attributes),
         extra,
-    }))
+    })
 }
 
 fn create_response(
@@ -222,7 +228,7 @@ fn create_response(
     local: &LocalTimeContext,
 ) -> Result<VectorStoreCreateResponse, StudioFileSearchError> {
     let store: Store = serde_json::from_slice(response.body)
-        .map_err(|error| response.failure(Shape::Create, error.to_string()))?;
+        .map_err(|source| response.failure(Shape::Create, source))?;
     let mut extra = BTreeMap::new();
     for key in ["expires_after", "expires_at", "last_active_at", "metadata"] {
         extra.insert(key.to_owned(), Value::Null);
@@ -251,21 +257,20 @@ fn create_response(
 }
 
 impl RawResponse<'_> {
-    pub(super) fn failure(&self, shape: Shape, reason: String) -> StudioFileSearchError {
+    pub(super) fn failure(&self, shape: Shape, source: serde_json::Error) -> StudioFileSearchError {
         let status = self.status;
         let headers = self.headers.clone();
-        if shape == Shape::Search {
-            StudioFileSearchError::SearchReply {
+        match shape {
+            Shape::Search => StudioFileSearchError::SearchReply {
                 status,
                 headers,
-                reason,
-            }
-        } else {
-            StudioFileSearchError::CreateReply {
+                source,
+            },
+            Shape::Create => StudioFileSearchError::CreateReply {
                 status,
                 headers,
-                reason,
-            }
+                source,
+            },
         }
     }
 }
