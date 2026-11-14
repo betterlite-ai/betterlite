@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use std::io;
 use std::sync::{Arc, Mutex};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -12,23 +11,7 @@ use tracing::subscriber::set_default;
 
 use crate::purview_dlp_evaluation::MicrosoftPurviewDLPGuardrail;
 use crate::purview_dlp_evaluation::error_handling::{POLICY_BLOCK_STATUS, PurviewDlpHttpError};
-
-#[derive(Clone)]
-struct Captured(Arc<Mutex<Vec<u8>>>);
-
-impl io::Write for Captured {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0
-            .lock()
-            .map_err(|_poisoned| io::Error::other("poisoned"))?
-            .extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
+use crate::purview_dlp_evaluation::test_support::Captured;
 
 const TRANSFORM_ERROR: &str = "Microsoft Purview DLP: Responses API input could not be transformed for DLP scanning in blocking mode";
 

@@ -1,11 +1,13 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
+use tracing::subscriber::set_default;
 use uuid::Uuid;
 
 use crate::guardrail_base::GuardrailBase;
@@ -18,7 +20,7 @@ use crate::guardrail_records::record::{
 use crate::purview_dlp_evaluation::content_check::{ContentCheck, ContentCheckError};
 use crate::purview_dlp_evaluation::error_handling::POLICY_BLOCK_STATUS;
 use crate::purview_dlp_evaluation::test_support::{
-    GraphMock, Reply, guardrail_at, standard_replies, start,
+    Captured, GraphMock, Reply, guardrail_at, standard_replies, start,
 };
 use crate::purview_graph_client::wire::Activity;
 
@@ -86,21 +88,68 @@ async fn content_check_returns_the_process_content_answer() {
     assert_eq!(mock.count(PROCESS_PATH), 1);
 }
 
+#[rstest]
+#[case::upload(Activity::UploadText, "uploadText")]
+#[case::download(Activity::DownloadText, "downloadText")]
 #[tokio::test]
-async fn content_check_sends_the_text_and_activity_to_graph() {
+async fn content_check_sends_the_text_and_activity_to_graph(
+    #[case] activity: Activity,
+    #[case] wire_name: &str,
+) {
     let mock = start(standard_replies()).await;
     let guardrail = guardrail_at(&mock.base);
     let data = request_data(Some("call-1"));
 
     let _response = guardrail
-        .check_content(&scan("secret text", &data, Activity::UploadText, true))
+        .check_content(&scan("secret text", &data, activity, true))
         .await
         .result
         .unwrap();
 
     let body = last_body(&mock, PROCESS_PATH);
     assert!(body.contains(r#""data":"secret text""#), "{body}");
-    assert!(body.contains(r#""activity":"uploadText""#), "{body}");
+    assert!(
+        body.contains(&format!(r#""activity":"{wire_name}""#)),
+        "{body}"
+    );
+}
+
+#[tokio::test]
+async fn content_check_computes_scopes_then_scans_the_given_user_with_the_scope_etag() {
+    let mock = start(standard_replies()).await;
+    let guardrail = guardrail_at(&mock.base);
+    let data = request_data(None);
+    let check = ContentCheck {
+        user_id: "entra-user-7",
+        ..scan("hello", &data, Activity::UploadText, true)
+    };
+
+    let _response = guardrail.check_content(&check).await.result.unwrap();
+
+    let seen = mock.seen.lock().unwrap();
+    let graph_calls: Vec<&str> = seen
+        .iter()
+        .map(|request| request.path.as_str())
+        .filter(|path| path.starts_with("/users/"))
+        .collect();
+    assert_eq!(
+        graph_calls,
+        vec![
+            "/users/entra-user-7/dataSecurityAndGovernance/protectionScopes/compute",
+            "/users/entra-user-7/dataSecurityAndGovernance/processContent",
+        ]
+    );
+    let process = seen
+        .iter()
+        .find(|request| request.path.ends_with(PROCESS_PATH))
+        .unwrap();
+    assert_eq!(
+        process
+            .headers
+            .get("if-none-match")
+            .map(|value| value.to_str().unwrap()),
+        Some(r#""etag-1""#)
+    );
 }
 
 #[tokio::test]
@@ -228,6 +277,16 @@ async fn content_check_swallows_an_upstream_failure_in_logging_only_mode() {
     let guardrail = guardrail_at(&mock.base);
     let data = request_data(None);
 
+    let captured = Captured(Arc::new(Mutex::new(Vec::new())));
+    let writer = captured.clone();
+    let _guard = set_default(
+        tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::WARN)
+            .with_writer(move || writer.clone())
+            .finish(),
+    );
+
     let response = guardrail
         .check_content(&scan("secret", &data, Activity::DownloadText, false))
         .await
@@ -236,6 +295,12 @@ async fn content_check_swallows_an_upstream_failure_in_logging_only_mode() {
 
     assert!(response.policy_actions.is_empty());
     assert!(response.protection_scope_state.is_none());
+    let log = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+    assert!(log.contains("WARN"), "{log}");
+    assert!(
+        log.contains("Purview DLP: API/network error in logging-only mode (not re-raised)"),
+        "{log}"
+    );
 }
 
 struct DiscardSink;

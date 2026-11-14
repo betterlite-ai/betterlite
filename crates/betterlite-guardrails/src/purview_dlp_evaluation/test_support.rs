@@ -30,7 +30,25 @@ pub(super) struct Reply {
 #[derive(Clone)]
 pub(super) struct SeenRequest {
     pub(super) path: String,
+    pub(super) headers: HeaderMap,
     pub(super) body: String,
+}
+
+#[derive(Clone)]
+pub(super) struct Captured(pub(super) Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|_poisoned| io::Error::other("poisoned"))?
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 struct MockState {
@@ -77,6 +95,7 @@ async fn serve(State(state): State<Arc<MockState>>, request: Request) -> Respons
     let path = parts.uri.path().to_owned();
     let recorded = SeenRequest {
         path: path.clone(),
+        headers: parts.headers.clone(),
         body: String::from_utf8(bytes.to_vec()).unwrap(),
     };
     state.seen.lock().unwrap().push(recorded);
