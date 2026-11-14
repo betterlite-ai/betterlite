@@ -1,8 +1,0 @@
-kind: helper
-name: aim-construct-defaults
-call:
-  b3750:
-    function: construct
-    settings: {api_key: aim-oracle-key, api_base: null, inspect_embeddings: true}
-env: {}
-compare: {ignore: []}
