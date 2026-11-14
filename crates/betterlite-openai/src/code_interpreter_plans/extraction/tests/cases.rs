@@ -82,19 +82,30 @@ fn sandbox_key_is_read_only_from_a_string_marker() {
 #[cfg(test)]
 #[test]
 fn session_scope_is_true_only_for_the_boolean_marker() {
-    assert!(session_scoped(&test_map([(
-        SESSION_SCOPED_KEY,
-        json!(true)
-    )])));
-    assert!(!session_scoped(&test_map([(
-        SESSION_SCOPED_KEY,
-        json!(false)
-    )])));
-    assert!(!session_scoped(&test_map([(
-        SESSION_SCOPED_KEY,
-        json!("true")
-    )])));
-    assert!(!session_scoped(&Map::new()));
+    let user_key = json!("user-key");
+    assert_eq!(
+        container_identity(&test_map([
+            (SESSION_SCOPED_KEY, json!(true)),
+            ("user_api_key_hash", user_key.clone()),
+        ]))
+        .as_deref(),
+        Some("user-key")
+    );
+    assert!(
+        container_identity(&test_map([
+            (SESSION_SCOPED_KEY, json!(false)),
+            ("user_api_key_hash", user_key.clone()),
+        ]))
+        .is_none()
+    );
+    assert!(
+        container_identity(&test_map([
+            (SESSION_SCOPED_KEY, json!("true")),
+            ("user_api_key_hash", user_key),
+        ]))
+        .is_none()
+    );
+    assert!(container_identity(&Map::new()).is_none());
 }
 
 #[cfg(test)]

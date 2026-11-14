@@ -1,5 +1,6 @@
 pub mod chat_plan;
 pub mod configuration;
+pub mod dispatch;
 pub mod error;
 pub mod error_handling;
 pub mod extraction;

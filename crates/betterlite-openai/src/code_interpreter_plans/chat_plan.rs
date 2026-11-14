@@ -9,7 +9,7 @@ use crate::code_execution_records::chat_dialect;
 use crate::code_execution_records::code_parsing;
 use crate::code_execution_records::container_extraction;
 use crate::code_execution_records::responses_dialect;
-use crate::code_execution_records::{CallDialect, CodeExecutionToolCall};
+use crate::code_execution_records::{CallDialect, CodeExecutionToolCall, SESSION_SCOPED_KEY};
 use crate::sandbox_lifecycle::cache_operations::{
     Clock, SandboxCache, get_or_create_container, prune_expired_cache,
 };
@@ -19,7 +19,7 @@ use crate::sandbox_lifecycle::tool_execution::run_tool_call;
 
 use super::error::PlanError;
 use super::error_handling::delete_after_failure;
-use super::extraction::{container_identity, session_scoped};
+use super::extraction::container_identity;
 use super::initialization::CodeInterpreterInterceptionLogger;
 use super::plan;
 use super::records::CodeInterpreterCall;
@@ -66,7 +66,10 @@ where
     let messages = chat_followup_messages(request, &tool_messages)?;
     let metadata = plan::metadata(
         sandbox_key.as_deref(),
-        session_scoped(request.kwargs),
+        matches!(
+            request.kwargs.get(SESSION_SCOPED_KEY),
+            Some(Value::Bool(true))
+        ),
         &code_interpreter_calls,
         Some("openai"),
     )?;

@@ -7,6 +7,15 @@ use super::records::CodeExecutionToolCalls;
 
 pub const CHAT_COMPLETION_AGENTIC_SURFACE: &str = "chat_completions";
 
+// The surface marker LiteLLM branches on; anything but the chat value takes the Responses path
+#[must_use]
+pub fn is_chat_completion_surface(kwargs: &Map<String, Value>) -> bool {
+    kwargs
+        .get("_agentic_loop_api_surface")
+        .and_then(Value::as_str)
+        == Some(CHAT_COMPLETION_AGENTIC_SURFACE)
+}
+
 // The arguments LiteLLM's async_should_run_agentic_loop reads; the model, messages, tools and stream it ignores
 pub struct GateRequest<'a> {
     pub response: &'a Value,
@@ -35,11 +44,7 @@ pub fn should_run_agentic_loop<C>(
     {
         return None;
     }
-    let api_surface = request
-        .kwargs
-        .get("_agentic_loop_api_surface")
-        .and_then(Value::as_str);
-    let tool_calls = if api_surface == Some(CHAT_COMPLETION_AGENTIC_SURFACE) {
+    let tool_calls = if is_chat_completion_surface(request.kwargs) {
         chat_dialect::extract_tool_calls(request.response)
     } else {
         responses_dialect::extract_tool_calls(request.response)
