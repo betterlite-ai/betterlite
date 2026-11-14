@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use betterlite_openai::chat::ToolCall;
 use regex::RegexSet;
 
@@ -42,7 +44,6 @@ impl DetectorThresholds {
         stagnation: STAGNATION_JACCARD_NEAR_DUP,
     };
 
-    #[must_use]
     pub const fn checked(misalignment: f64, stagnation: f64) -> Result<Self, SignalError> {
         if !misalignment.is_finite() {
             return Err(SignalError::NonFinite {
@@ -86,17 +87,26 @@ pub fn detect_user_feedback(
     turn: &Turn,
     allow_satisfaction: bool,
 ) -> SignalDelta {
+    let current_user = turn.user_content.as_deref();
+    let satisfaction = allow_satisfaction
+        && detect_phrase(
+            detector,
+            current_user,
+            DISENGAGEMENT_PATTERN_COUNT..DETECTOR_PATTERNS.len(),
+        );
     SignalDelta {
         misalignment: i64::from(detect_misalignment(
             detector,
             previous_user_content,
-            turn.user_content.as_deref(),
+            current_user,
         )),
         stagnation: 0,
-        disengagement: i64::from(detect_disengagement(detector, turn.user_content.as_deref())),
-        satisfaction: i64::from(
-            allow_satisfaction && detect_satisfaction(detector, turn.user_content.as_deref()),
-        ),
+        disengagement: i64::from(detect_phrase(
+            detector,
+            current_user,
+            0..DISENGAGEMENT_PATTERN_COUNT,
+        )),
+        satisfaction: i64::from(satisfaction),
         failure: i64::from(detect_failure(&turn.tool_results)),
         r#loop: 0,
         exhaustion: 0,
@@ -139,7 +149,7 @@ fn detect_stagnation(detector: &Detector, previous: Option<&str>, current: Optio
     similarity >= detector.thresholds.stagnation
 }
 
-fn detect_disengagement(detector: &Detector, text: Option<&str>) -> bool {
+fn detect_phrase(detector: &Detector, text: Option<&str>, allowed: Range<usize>) -> bool {
     let Some(content) = text else {
         return false;
     };
@@ -147,18 +157,7 @@ fn detect_disengagement(detector: &Detector, text: Option<&str>) -> bool {
         .patterns
         .matches(content)
         .iter()
-        .any(|index| index < DISENGAGEMENT_PATTERN_COUNT)
-}
-
-fn detect_satisfaction(detector: &Detector, text: Option<&str>) -> bool {
-    let Some(content) = text else {
-        return false;
-    };
-    detector
-        .patterns
-        .matches(content)
-        .iter()
-        .any(|index| index >= DISENGAGEMENT_PATTERN_COUNT)
+        .any(|index| allowed.contains(&index))
 }
 
 fn detect_failure(tool_results: &[ToolResult]) -> bool {
