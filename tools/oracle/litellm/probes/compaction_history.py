@@ -1,4 +1,5 @@
-from collections.abc import Callable, Mapping
+import asyncio
+from collections.abc import Callable, Coroutine, Mapping
 from typing import Literal
 
 from litellm.exceptions import BadRequestError, ContextWindowExceededError
@@ -41,9 +42,11 @@ _COMPACTOR_INPUT: Callable[..., Mapping[str, JsonValue]] = TypeAdapter(
     Callable[..., Mapping[str, JsonValue]]
 ).validate_python(context_compaction.__dict__["_compactor_input"])
 
-_COMPACTOR_MODEL: Callable[..., tuple[str, object]] = TypeAdapter(
-    Callable[..., tuple[str, object]]
-).validate_python(context_compaction.__dict__["_compactor_model"])
+_COMPACTOR_MODEL: Callable[
+    ..., Coroutine[object, object, tuple[str, object]]
+] = TypeAdapter(Callable[..., Coroutine[object, object, tuple[str, object]]]).validate_python(
+    context_compaction.__dict__["_compactor_model"]
+)
 
 
 class DeploymentInput(Strict):
@@ -192,8 +195,10 @@ class CompactionHistory(Operation):
             request = dict(
                 _COMPACTOR_INPUT(payload, surface, instructions, prefix, config.max_tokens)
             )
-            selected, _provider = _COMPACTOR_MODEL(
-                ProbeRouter(self.groups, 0 if self.count is None else self.count), state, request
+            selected, _provider = asyncio.run(
+                _COMPACTOR_MODEL(
+                    ProbeRouter(self.groups, 0 if self.count is None else self.count), state, request
+                )
             )
         except ContextWindowExceededError as error:
             return CompactorOutput(
