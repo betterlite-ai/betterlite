@@ -127,8 +127,8 @@ impl WebSearchInterceptionLogger {
             .map(|value| tool_rewrite::sync_forced_tool_choice(&value, &converted))
             .transpose()?;
         request.insert(TOOLS.to_owned(), Json::List(converted));
-        if let Some(choice) = choice {
-            request.insert(TOOL_CHOICE.to_owned(), choice);
+        if let Some(forced) = choice {
+            request.insert(TOOL_CHOICE.to_owned(), forced);
         }
         Ok(Some(stream_buffered(request)?))
     }
@@ -164,7 +164,7 @@ fn request_tools(kwargs: &Object) -> Result<&[Json], WebSearchError> {
 fn stream_buffered(mut kwargs: Object) -> Result<Object, WebSearchError> {
     let stream = kwargs.get(STREAM).cloned();
     match stream {
-        None | Some(Json::Null) | Some(Json::Bool(false)) => Ok(kwargs),
+        None | Some(Json::Null | Json::Bool(false)) => Ok(kwargs),
         Some(Json::Bool(true)) => {
             kwargs.insert(STREAM.to_owned(), Json::Bool(false));
             kwargs.insert(CONVERTED_STREAM_KEY.to_owned(), Json::Bool(true));

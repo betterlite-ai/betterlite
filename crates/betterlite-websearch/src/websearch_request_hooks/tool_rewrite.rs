@@ -45,7 +45,7 @@ fn text_field<'tool>(
     }
 }
 
-fn absent_if_null(value: Option<&Json>) -> Option<&Json> {
+const fn absent_if_null(value: Option<&Json>) -> Option<&Json> {
     match value {
         None | Some(Json::Null) => None,
         Some(other) => Some(other),
@@ -60,13 +60,13 @@ fn effective_name(tool: &Json, index: usize) -> Result<Option<&Json>, RewriteErr
     if text_field(fields, "type", index)? == Some(FUNCTION)
         && let Some(function) = fields.get(FUNCTION)
     {
-        let Some(function) = function.as_object() else {
+        let Some(object) = function.as_object() else {
             return Err(RewriteError::Field {
                 index,
                 field: FUNCTION,
             });
         };
-        return Ok(absent_if_null(function.get("name")));
+        return Ok(absent_if_null(object.get("name")));
     }
     Ok(absent_if_null(fields.get("name")))
 }
@@ -81,13 +81,13 @@ pub fn is_web_search_tool(tool: &Json, index: usize) -> Result<bool, RewriteErro
     if tool_type == Some(FUNCTION)
         && let Some(function) = fields.get(FUNCTION)
     {
-        let Some(function) = function.as_object() else {
+        let Some(object) = function.as_object() else {
             return Err(RewriteError::Field {
                 index,
                 field: FUNCTION,
             });
         };
-        if text_field(function, "name", index)? == Some(LITELLM_WEB_SEARCH_TOOL_NAME) {
+        if text_field(object, "name", index)? == Some(LITELLM_WEB_SEARCH_TOOL_NAME) {
             return Ok(true);
         }
     }

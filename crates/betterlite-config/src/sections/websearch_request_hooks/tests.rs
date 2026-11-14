@@ -41,10 +41,10 @@ fn the_provider_default_is_bedrock_when_the_key_is_absent() {
 }
 
 #[rstest]
-#[case::null("    enabled_providers: null\n")]
-#[case::empty_mapping("")]
-fn the_provider_default_applies_without_a_list(#[case] body: &str) {
-    let loaded = settings(&params(body), &[]);
+#[case::null("litellm_settings:\n  websearch_interception_params:\n    enabled_providers: null\n")]
+#[case::empty_mapping("litellm_settings:\n  websearch_interception_params: {}\n")]
+fn the_provider_default_applies_without_a_list(#[case] source: &str) {
+    let loaded = settings(source, &[]);
     assert_eq!(loaded.enabled_providers, ["bedrock"]);
 }
 
@@ -95,6 +95,16 @@ fn initialize_from_proxy_config_falls_back_to_the_callback_entry() {
 }
 
 #[test]
+fn an_empty_litellm_params_mapping_ignores_the_callback_entry() {
+    let loaded = settings(
+        "litellm_settings:\n  websearch_interception_params: {}\ncallback_settings:\n  websearch_interception:\n    search_tool_name: callback-search\n",
+        &[],
+    );
+    assert_eq!(loaded.search_tool_name, None);
+    assert_eq!(loaded.enabled_providers, ["bedrock"]);
+}
+
+#[test]
 fn initialize_from_proxy_config_defaults_when_neither_entry_is_set() {
     let loaded = settings("litellm_settings: {}\ncallback_settings: {}\n", &[]);
     assert_eq!(loaded.enabled_providers, ["bedrock"]);
@@ -117,6 +127,7 @@ fn ceiling_validation_rejects_a_bool(#[case] value: &str) {
 #[case::negative("-2", "below the minimum")]
 #[case::fraction("1.5", "max_agentic_loops")]
 #[case::text("five", "max_agentic_loops")]
+#[case::empty_text("\"\"", "max_agentic_loops")]
 fn ceiling_validation_rejects_a_value(#[case] value: &str, #[case] expected: &str) {
     let error = load_error(&params(&format!("    max_agentic_loops: {value}\n")), &[]);
     assert!(error.contains(expected), "{error}");
@@ -149,11 +160,13 @@ fn an_environment_reference_supplies_the_ceiling() {
     assert_eq!(loaded.max_agentic_loops, Some(7));
 }
 
-#[test]
-fn an_empty_environment_reference_counts_as_unset() {
+#[rstest]
+#[case::empty("")]
+#[case::blank("  ")]
+fn an_empty_environment_reference_counts_as_unset(#[case] value: &str) {
     let loaded = settings(
         &params("    max_agentic_loops: os.environ/MAX_LOOPS\n"),
-        &[("MAX_LOOPS", "")],
+        &[("MAX_LOOPS", value)],
     );
     assert_eq!(loaded.max_agentic_loops, None);
 }

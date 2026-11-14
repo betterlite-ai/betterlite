@@ -13,6 +13,7 @@ mod tests;
 const PARAMS_PATH: &str = "litellm_settings.websearch_interception_params";
 const CALLBACK_PATH: &str = "callback_settings.websearch_interception";
 const DEFAULT_PROVIDER: &str = "bedrock";
+const ENVIRONMENT_PREFIX: &str = "os.environ/";
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
@@ -109,10 +110,11 @@ where
         RawNumber::Integer(integer) => AgenticLoopValue::Integer(integer),
         RawNumber::Float(float) => AgenticLoopValue::Float(float),
         RawNumber::Boolean(flag) => AgenticLoopValue::Boolean(flag),
-        // an os.environ/ reference resolves to the variable's text, and an empty variable counts as unset
+        // an empty os.environ/ variable counts as unset, while an explicit empty scalar is a load error
         RawNumber::Text(text) => {
+            let from_environment = text.starts_with(ENVIRONMENT_PREFIX);
             let resolved = resolve_string(text, &format!("{path}.max_agentic_loops"), lookup)?;
-            if resolved.is_empty() {
+            if from_environment && resolved.trim().is_empty() {
                 return Ok(None);
             }
             AgenticLoopValue::Text(resolved)

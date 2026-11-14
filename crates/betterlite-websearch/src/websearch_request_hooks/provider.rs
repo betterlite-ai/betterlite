@@ -44,7 +44,7 @@ fn nested_provider(kwargs: &Object) -> Result<Option<&str>, ProviderError> {
     }
 }
 
-fn provider_field(value: Option<&Json>) -> Result<Option<&str>, ProviderError> {
+const fn provider_field(value: Option<&Json>) -> Result<Option<&str>, ProviderError> {
     match value {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(text)) if text.is_empty() => Ok(None),
