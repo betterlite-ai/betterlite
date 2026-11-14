@@ -272,6 +272,7 @@ struct Harness {
     hooks: Hooks,
     fetcher: CountingFetch,
     transport: NoTransport,
+    now: Timestamp,
 }
 
 impl Harness {
@@ -285,6 +286,7 @@ impl Harness {
             hooks: hooks(),
             fetcher: CountingFetch::default(),
             transport: NoTransport::default(),
+            now: Timestamp::from_second(NOW_SECOND).expect("fixture clock"),
         }
     }
 
@@ -316,7 +318,7 @@ impl Harness {
                 deadline: Duration::from_secs(5),
                 cached_content: None,
                 disable_transform: false,
-                now: Timestamp::from_second(NOW_SECOND).expect("fixture clock"),
+                now: self.now,
                 minimum_token_override: None,
                 counter: &self.counter,
                 catalog: self.catalog.as_ref(),
@@ -698,8 +700,19 @@ fn remote_media_error(harness: &Harness, input: &RequestInput) -> HistoryError {
         .expect_err("the media would need a download");
     match error {
         RequestError::Body(BodyError::History(history)) => history,
-        other => panic!("the refusal is a history media error, got {other}"),
+        other @ (RequestError::Cache(_) | RequestError::Body(_) | RequestError::Inline(_)) => {
+            panic!("the refusal is a history media error, got {other}")
+        }
     }
+}
+
+fn assert_reference(input: &RequestInput, expected: &str) {
+    let harness = Harness::new();
+    let transformed = harness
+        .run_async(input)
+        .expect("the media stays a reference");
+    assert_eq!(Json::Object(transformed.body), parse_json(expected));
+    assert_no_io(&harness);
 }
 
 #[test]
@@ -732,50 +745,32 @@ fn inline_policy_no_io() {
         remote_media_error(&harness, &vertex_image).param(),
         Some("image_url")
     );
-    assert_eq!(harness.fetcher.calls(), 0);
-    assert_eq!(harness.transport.calls(), 0);
+    assert_no_io(&harness);
+}
 
-    let inferred = media_input(
-        VertexCapabilityProvider::VertexAi,
-        r#"[{"role":"user","content":[{"type":"text","text":"what"},{"type":"image_url","image_url":{"url":"https://example.com/cat.png"}}]}]"#,
+#[test]
+fn inline_policy_keeps_references() {
+    assert_reference(
+        &media_input(
+            VertexCapabilityProvider::VertexAi,
+            r#"[{"role":"user","content":[{"type":"text","text":"what"},{"type":"image_url","image_url":{"url":"https://example.com/cat.png"}}]}]"#,
+        ),
+        r#"{"contents":[{"role":"user","parts":[{"text":"what"},{"file_data":{"mime_type":"image/png","file_uri":"https://example.com/cat.png"}}]}]}"#,
     );
-    let referenced = harness
-        .run_async(&inferred)
-        .expect("a URL with an inferable MIME stays a reference");
-    assert_eq!(
-        Json::Object(referenced.body),
-        parse_json(
-            r#"{"contents":[{"role":"user","parts":[{"text":"what"},{"file_data":{"mime_type":"image/png","file_uri":"https://example.com/cat.png"}}]}]}"#
-        )
+    assert_reference(
+        &media_input(
+            VertexCapabilityProvider::Gemini,
+            r#"[{"role":"user","content":[{"type":"file","file":{"file_id":"https://generativelanguage.googleapis.com/v1beta/files/abc123","format":"image/png"}}]}]"#,
+        ),
+        r#"{"contents":[{"role":"user","parts":[{"file_data":{"mime_type":"image/png","file_uri":"https://generativelanguage.googleapis.com/v1beta/files/abc123"}},{"text":" "}]}]}"#,
     );
-    let files_api = media_input(
-        VertexCapabilityProvider::Gemini,
-        r#"[{"role":"user","content":[{"type":"file","file":{"file_id":"https://generativelanguage.googleapis.com/v1beta/files/abc123","format":"image/png"}}]}]"#,
+    assert_reference(
+        &media_input(
+            VertexCapabilityProvider::VertexAi,
+            r#"[{"role":"user","content":[{"type":"image_url","image_url":{"url":"gs://bucket/cat.png"}}]}]"#,
+        ),
+        r#"{"contents":[{"role":"user","parts":[{"file_data":{"mime_type":"image/png","file_uri":"gs://bucket/cat.png"}},{"text":" "}]}]}"#,
     );
-    let files_uri = harness
-        .run_async(&files_api)
-        .expect("a Files API URI is a reference");
-    assert_eq!(
-        Json::Object(files_uri.body),
-        parse_json(
-            r#"{"contents":[{"role":"user","parts":[{"file_data":{"mime_type":"image/png","file_uri":"https://generativelanguage.googleapis.com/v1beta/files/abc123"}},{"text":" "}]}]}"#
-        )
-    );
-    let bucket = media_input(
-        VertexCapabilityProvider::VertexAi,
-        r#"[{"role":"user","content":[{"type":"image_url","image_url":{"url":"gs://bucket/cat.png"}}]}]"#,
-    );
-    let bucket_body = harness
-        .run_async(&bucket)
-        .expect("a GCS URI with an inferable MIME needs no metadata read");
-    assert_eq!(
-        Json::Object(bucket_body.body),
-        parse_json(
-            r#"{"contents":[{"role":"user","parts":[{"file_data":{"mime_type":"image/png","file_uri":"gs://bucket/cat.png"}},{"text":" "}]}]}"#
-        )
-    );
-    assert_eq!(harness.fetcher.calls(), 0);
-    assert_eq!(harness.transport.calls(), 0);
 }
 
 #[test]
