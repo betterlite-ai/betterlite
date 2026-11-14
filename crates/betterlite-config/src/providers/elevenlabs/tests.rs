@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 use secrecy::ExposeSecret;
 
-use crate::types::Config;
+use crate::types::LiteLlmParams;
 
 const DEFAULT_API_BASE: &str = "https://api.elevenlabs.io";
 
@@ -18,7 +18,7 @@ fn lookup(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
 
 #[test]
 fn elevenlabs_speech_settings_default_to_an_unset_key() {
-    let (api_key, api_base) = Config::elevenlabs_speech_settings(&lookup(&[]));
+    let (api_key, api_base) = LiteLlmParams::elevenlabs_speech_settings(&lookup(&[]));
 
     assert!(api_key.is_none());
     assert_eq!(api_base, DEFAULT_API_BASE);
@@ -26,7 +26,7 @@ fn elevenlabs_speech_settings_default_to_an_unset_key() {
 
 #[test]
 fn elevenlabs_speech_settings_read_the_environment() {
-    let (api_key, api_base) = Config::elevenlabs_speech_settings(&lookup(&[
+    let (api_key, api_base) = LiteLlmParams::elevenlabs_speech_settings(&lookup(&[
         ("ELEVENLABS_API_KEY", "server-key"),
         ("ELEVENLABS_API_BASE", "https://proxy.test"),
     ]));
@@ -51,7 +51,7 @@ fn elevenlabs_speech_settings_treat_empty_values(
     #[case] expected_key: Option<&str>,
     #[case] expected_base: &str,
 ) {
-    let (api_key, api_base) = Config::elevenlabs_speech_settings(&lookup(&[(name, value)]));
+    let (api_key, api_base) = LiteLlmParams::elevenlabs_speech_settings(&lookup(&[(name, value)]));
 
     assert_eq!(
         api_key.as_ref().map(ExposeSecret::expose_secret),

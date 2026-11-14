@@ -2,9 +2,8 @@ import os
 from typing import Literal, Protocol, TypeAlias, TypedDict
 
 import litellm
-from litellm.llms.elevenlabs.text_to_speech.transformation import (
-    ElevenLabsTextToSpeechConfig,
-)
+from litellm.types.utils import LlmProviders
+from litellm.utils import ProviderConfigManager
 from pydantic import JsonValue, TypeAdapter
 
 MODEL = "eleven_multilingual_v2"
@@ -15,6 +14,11 @@ ENVIRONMENT_NAMES = ("ELEVENLABS_API_KEY", "ELEVENLABS_API_BASE")
 Kwargs: TypeAlias = dict[str, object]
 
 
+class SpeechRequestData(TypedDict, total=False):
+    dict_body: dict[str, JsonValue]
+    headers: dict[str, str]
+
+
 class Config(Protocol):
     def map_openai_params(
         self,
@@ -23,8 +27,19 @@ class Config(Protocol):
         voice: str | dict[str, JsonValue] | None,
         *,
         drop_params: bool,
-        kwargs: Kwargs | None,
+        kwargs: Kwargs,
     ) -> tuple[str | None, dict[str, JsonValue]]: ...
+
+    def transform_text_to_speech_request(
+        self,
+        model: str,
+        text: str,
+        voice: str | None,
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+        headers: dict[str, str],
+        /,
+    ) -> SpeechRequestData: ...
 
     def validate_environment(
         self,
@@ -43,7 +58,12 @@ class Config(Protocol):
 
 
 # LiteLLM leaves the options and kwargs bare, so this typed view is the public entry to the config
-CONFIG: Config = ElevenLabsTextToSpeechConfig()
+PROVIDER_CONFIG = ProviderConfigManager.get_provider_text_to_speech_config(
+    model=MODEL, provider=LlmProviders.ELEVENLABS
+)
+if PROVIDER_CONFIG is None:
+    raise RuntimeError("LiteLLM has no ElevenLabs text-to-speech config")
+CONFIG: Config = PROVIDER_CONFIG
 
 
 class MapCall(TypedDict):
@@ -148,14 +168,7 @@ def map_answer(call: MapCall) -> Mapped:
 
 
 def request_answer(call: RequestCall) -> Requested:
-    data = ElevenLabsTextToSpeechConfig().transform_text_to_speech_request(  # pyright: ignore[reportUnknownMemberType]  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/elevenlabs/text_to_speech/transformation.py#L193-L201
-        model=MODEL,
-        input=call["text"],
-        voice=None,
-        optional_params=call["optional_params"],
-        litellm_params={},
-        headers={},
-    )
+    data = CONFIG.transform_text_to_speech_request(MODEL, call["text"], None, call["optional_params"], {}, {})
     body = TypeAdapter(RequestBody).validate_python(data)
     return {"ok": True, "dict_body": body["dict_body"], "headers": body["headers"]}
 

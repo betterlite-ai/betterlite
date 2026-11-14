@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::types::Config;
+use betterlite_config::types::LiteLlmParams;
 use betterlite_core::api::elevenlabs::speech::auth::{SpeechKeys, validate_environment};
 use betterlite_core::api::elevenlabs::speech::endpoint::complete_url;
 use betterlite_core::api::elevenlabs::speech::mapping::map_openai_params;
@@ -76,7 +76,7 @@ fn answer(call: &Call) -> Value {
             environment,
             litellm_params,
         } => {
-            let (_, environment_base) = Config::elevenlabs_speech_settings(environment);
+            let (_, environment_base) = LiteLlmParams::elevenlabs_speech_settings(environment);
             complete_url(api_base.as_deref(), &environment_base, litellm_params).map_or_else(
                 |_| json!({ "ok": false }),
                 |url| json!({ "ok": true, "url": url }),
@@ -122,7 +122,7 @@ fn headers_answer(
     keys: [Option<&String>; 3],
     environment: &BTreeMap<String, String>,
 ) -> Value {
-    let (environment_key, _) = Config::elevenlabs_speech_settings(environment);
+    let (environment_key, _) = LiteLlmParams::elevenlabs_speech_settings(environment);
     let [explicit, global_api_key, global_openai_key] =
         keys.map(|key| key.cloned().map(SecretString::from));
     let speech_keys = SpeechKeys {
