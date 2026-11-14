@@ -691,12 +691,8 @@ LIST: Final = TypeAdapter(list[JsonValue])
 
 
 def run_probe(prefix: str, mode: str, spec: str) -> dict[str, JsonValue]:
-    done = subprocess.run(
-        [sys.executable, "-c", PROBE, prefix, mode, spec],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    command: Final = [sys.executable, "-c", PROBE, prefix, mode, spec]
+    done = subprocess.run(command, capture_output=True, text=True, check=False)
     assert done.returncode == 0, done.stderr
     return OBJECT.validate_json(done.stdout)
 
