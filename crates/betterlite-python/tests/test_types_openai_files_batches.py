@@ -5,7 +5,7 @@ from typing import ClassVar, Literal, Protocol, get_args, get_origin, get_type_h
 import litellm.types.llms.openai as litellm_openai
 import pytest
 from pydantic import BaseModel, JsonValue, ValidationError
-from typing_extensions import TypeForm
+from typing_extensions import ReadOnly, TypeForm
 
 import betterlite.types.llms.openai.core.batches as core_batches
 import betterlite.types.llms.openai.core.binary as core_binary
@@ -272,6 +272,9 @@ def test_names_typed_dicts() -> None:
         )
         assert ours_hints.keys() == theirs_hints.keys()
         for key in ours_hints.keys() & theirs_hints.keys():
+            assert operator.is_(get_origin(ours_hints[key]), ReadOnly) == operator.is_(
+                get_origin(theirs_hints[key]), ReadOnly
+            )
             assert literal_values(ours_hints[key]) == literal_values(theirs_hints[key])
 
 
