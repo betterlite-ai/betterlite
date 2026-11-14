@@ -1,0 +1,254 @@
+import subprocess
+import sys
+from typing import TypedDict
+
+import pytest
+from pydantic import TypeAdapter
+
+DESCRIBE_SCRIPT = """
+import json
+import os
+from enum import Enum
+
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+
+import typing_extensions
+from pydantic import BaseModel, TypeAdapter
+
+import betterlite.types.llms.oci as betterlite_oci
+import betterlite.types.llms.openai_evals as betterlite_evals
+import betterlite.types.llms.watsonx as betterlite_watsonx
+import litellm.types.llms.oci as litellm_oci
+import litellm.types.llms.openai_evals as litellm_evals
+import litellm.types.llms.watsonx as litellm_watsonx
+
+ALIASES = {
+    "oci": ("OCIRoles", "OCIContentPartUnion"),
+    "openai_evals": ("DataSourceConfig", "GraderConfig", "RunDataSourceConfig"),
+    "watsonx": (),
+}
+
+
+def collect_literals(node, found):
+    if isinstance(node, dict):
+        enum_values = node.get("enum")
+        if isinstance(enum_values, list):
+            found.update(json.dumps(item, sort_keys=True) for item in enum_values)
+        if "const" in node:
+            found.add(json.dumps(node["const"], sort_keys=True))
+        for value in node.values():
+            collect_literals(value, found)
+    elif isinstance(node, list):
+        for item in node:
+            collect_literals(item, found)
+
+
+def shape(schema):
+    properties = schema.get("properties", {})
+    literals = set()
+    collect_literals(schema, literals)
+    return {
+        "keys": sorted(properties),
+        "required": sorted(schema.get("required", [])),
+        "defaults": {
+            name: json.dumps(field["default"], sort_keys=True)
+            for name, field in properties.items()
+            if "default" in field
+        },
+        "literals": sorted(literals),
+    }
+
+
+def model_shape(model):
+    described = shape(model.model_json_schema())
+    described["bases"] = sorted(
+        base.__name__
+        for base in model.__bases__
+        if base.__module__ == model.__module__ and not base.__name__.startswith("_")
+    )
+    return described
+
+
+def describe(module, aliases):
+    found = {"models": {}, "typeddicts": {}, "enums": {}, "aliases": {}}
+    for name, value in vars(module).items():
+        if name.startswith("_"):
+            continue
+        if isinstance(value, type) and value.__module__ == module.__name__:
+            if issubclass(value, BaseModel):
+                found["models"][name] = model_shape(value)
+            elif issubclass(value, Enum):
+                found["enums"][name] = {
+                    "names": [member.name for member in value],
+                    "schema": shape(TypeAdapter(value).json_schema()),
+                }
+            elif typing_extensions.is_typeddict(value):
+                found["typeddicts"][name] = shape(TypeAdapter(value).json_schema())
+    for name in aliases:
+        found["aliases"][name] = (
+            shape(TypeAdapter(vars(module)[name]).json_schema()) if name in vars(module) else None
+        )
+    return found
+
+
+print(json.dumps({
+    "litellm": {
+        "oci": describe(litellm_oci, ALIASES["oci"]),
+        "openai_evals": describe(litellm_evals, ALIASES["openai_evals"]),
+        "watsonx": describe(litellm_watsonx, ALIASES["watsonx"]),
+    },
+    "betterlite": {
+        "oci": describe(betterlite_oci, ALIASES["oci"]),
+        "openai_evals": describe(betterlite_evals, ALIASES["openai_evals"]),
+        "watsonx": describe(betterlite_watsonx, ALIASES["watsonx"]),
+    },
+}))
+"""
+
+OCI_MODELS = frozenset({
+    "CohereChatBotMessage",
+    "CohereChatDetails",
+    "CohereChatRequest",
+    "CohereChatResponse",
+    "CohereChatResult",
+    "CohereCitation",
+    "CohereMessage",
+    "CohereParameterDefinition",
+    "CohereSearchQuery",
+    "CohereStreamChunk",
+    "CohereSystemMessage",
+    "CohereTool",
+    "CohereToolCall",
+    "CohereToolMessage",
+    "CohereToolResult",
+    "CohereUsage",
+    "CohereUserMessage",
+    "OCIChatRequestPayload",
+    "OCIChatResponse",
+    "OCICompletionPayload",
+    "OCICompletionResponse",
+    "OCICompletionTokenDetails",
+    "OCIContentPart",
+    "OCIEmbedRequest",
+    "OCIEmbedResponse",
+    "OCIEmbedUsage",
+    "OCIImageContentPart",
+    "OCIImageUrl",
+    "OCIMessage",
+    "OCIPromptTokensDetails",
+    "OCIResponseChoice",
+    "OCIResponseUsage",
+    "OCIServingMode",
+    "OCIStreamChunk",
+    "OCIStreamDelta",
+    "OCITextContentPart",
+    "OCIToolCall",
+    "OCIToolDefinition",
+})
+OCI_ENUMS = frozenset({"OCIVendors"})
+OCI_ALIASES = frozenset({"OCIRoles", "OCIContentPartUnion"})
+
+EVALS_MODELS = frozenset({
+    "CancelEvalResponse",
+    "CancelRunResponse",
+    "DeleteEvalResponse",
+    "Eval",
+    "ListEvalsResponse",
+    "ListRunsResponse",
+    "PerTestingCriteriaResult",
+    "ResultCounts",
+    "Run",
+    "RunDeleteResponse",
+})
+EVALS_TYPEDDICTS = frozenset({
+    "CompletionConfig",
+    "CreateEvalRequest",
+    "CreateRunRequest",
+    "CustomGraderConfig",
+    "DataSourceConfigCustom",
+    "DataSourceConfigLogs",
+    "DataSourceConfigStoredCompletions",
+    "DataSourceDatasetConfig",
+    "DataSourceInlineConfig",
+    "DataSourceSampleSetConfig",
+    "GroundTruthGraderConfig",
+    "LLMAsJudgeGraderConfig",
+    "ListEvalsParams",
+    "ListRunsParams",
+    "UpdateEvalRequest",
+})
+EVALS_ALIASES = frozenset({"DataSourceConfig", "GraderConfig", "RunDataSourceConfig"})
+
+WATSONX_TYPEDDICTS = frozenset({
+    "WatsonXAPIParams",
+    "WatsonXAudioTranscriptionRequestBody",
+    "WatsonXCredentials",
+})
+WATSONX_ENUMS = frozenset({"WatsonXAIEndpoint", "WatsonXModelPattern"})
+
+
+class Shape(TypedDict):
+    keys: list[str]
+    required: list[str]
+    defaults: dict[str, str]
+    literals: list[str]
+
+
+class ModelShape(Shape):
+    bases: list[str]
+
+
+class EnumShape(TypedDict):
+    names: list[str]
+    schema: Shape
+
+
+class ModuleNames(TypedDict):
+    models: dict[str, ModelShape]
+    typeddicts: dict[str, Shape]
+    enums: dict[str, EnumShape]
+    aliases: dict[str, Shape | None]
+
+
+class NamesReport(TypedDict):
+    litellm: dict[str, ModuleNames]
+    betterlite: dict[str, ModuleNames]
+
+
+@pytest.fixture(scope="module")
+def report() -> NamesReport:
+    completed = subprocess.run(
+        [sys.executable, "-c", DESCRIBE_SCRIPT],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    parsed: NamesReport = TypeAdapter(NamesReport).validate_json(completed.stdout)
+    return parsed
+
+
+def test_oci_names(report: NamesReport) -> None:
+    expected = report["litellm"]["oci"]
+    assert set(expected["models"]) == OCI_MODELS
+    assert set(expected["enums"]) == OCI_ENUMS
+    assert set(expected["aliases"]) == OCI_ALIASES
+    assert not expected["typeddicts"]
+    assert report["betterlite"]["oci"] == expected
+
+
+def test_evals_names(report: NamesReport) -> None:
+    expected = report["litellm"]["openai_evals"]
+    assert set(expected["models"]) == EVALS_MODELS
+    assert set(expected["typeddicts"]) == EVALS_TYPEDDICTS
+    assert set(expected["aliases"]) == EVALS_ALIASES
+    assert not expected["enums"]
+    assert report["betterlite"]["openai_evals"] == expected
+
+
+def test_watsonx_names(report: NamesReport) -> None:
+    expected = report["litellm"]["watsonx"]
+    assert set(expected["typeddicts"]) == WATSONX_TYPEDDICTS
+    assert set(expected["enums"]) == WATSONX_ENUMS
+    assert not expected["models"]
+    assert not expected["aliases"]
+    assert report["betterlite"]["watsonx"] == expected
