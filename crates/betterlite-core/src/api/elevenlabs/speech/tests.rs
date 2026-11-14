@@ -33,14 +33,14 @@ struct Mapped {
 }
 
 fn map(voice: &str, optional_params: &str, kwargs: &str) -> Mapped {
-    let mut optional_params = object(optional_params);
-    let mut kwargs = object(kwargs);
-    let mapping = map_openai_params(&mut optional_params, voice_of(voice).as_ref(), &mut kwargs)
+    let mut options = object(optional_params);
+    let mut forwarded = object(kwargs);
+    let mapping = map_openai_params(&mut options, voice_of(voice).as_ref(), &mut forwarded)
         .expect("mapped speech params");
     Mapped {
         mapping,
-        optional_params,
-        kwargs,
+        optional_params: options,
+        kwargs: forwarded,
     }
 }
 
@@ -489,7 +489,7 @@ fn the_environment_base_loses_its_trailing_slash() {
 #[case::space("my voice", "my%20voice")]
 #[case::slash("a/b", "a%2Fb")]
 #[case::question_mark("a?b", "a%3Fb")]
-#[case::unicode("vöice", "v%C3%B6ice")]
+#[case::unicode("v\u{f6}ice", "v%C3%B6ice")]
 fn the_voice_id_is_one_encoded_path_segment(#[case] voice_id: &str, #[case] encoded: &str) {
     let url = complete_url(
         None,
@@ -597,8 +597,8 @@ fn a_query_value_that_is_not_text_or_a_number_names_its_key(
     );
 
     assert!(matches!(
-        result,
-        Err(SpeechError::QueryValue { name: ref found }) if found == name
+        &result,
+        Err(SpeechError::QueryValue { name: found }) if found.as_str() == name
     ));
 }
 
