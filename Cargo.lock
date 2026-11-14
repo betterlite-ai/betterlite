@@ -2757,7 +2757,14 @@ name = "betterlite-python"
 version = "0.1.0"
 dependencies = [
  "betterlite-models",
+ "betterlite-redact",
+ "betterlite-secrets",
  "pyo3",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "temp-env",
+ "tempfile",
  "thiserror",
 ]
 

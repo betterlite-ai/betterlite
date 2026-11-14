@@ -6,7 +6,7 @@ use std::path::Path;
 use betterlite_secrets::gateway_key::get_litellm_gateway_api_key;
 use tempfile::TempDir;
 
-use super::redact::TextRedactor;
+use super::ProxyClientNative;
 use super::token::TokenFileStore;
 
 fn store_in(home: &Path) -> TokenFileStore {
@@ -25,18 +25,38 @@ fn stored_home(contents: &str) -> TempDir {
 
 #[test]
 fn redacts_a_bearer_token_with_the_shared_patterns() {
-    let redactor = TextRedactor::from_defaults().unwrap();
-    let redacted = redactor.redact("header Authorization: Bearer abcdefghijklmnop");
-    assert_eq!(redacted, "header Authorization: REDACTED");
+    let native = ProxyClientNative::new().unwrap();
+    assert_eq!(
+        native.redact_text("header Authorization: Bearer abcdefghijklmnop"),
+        "header Authorization: REDACTED"
+    );
 }
 
 #[test]
 fn leaves_a_plain_sentence_alone() {
-    let redactor = TextRedactor::from_defaults().unwrap();
+    let native = ProxyClientNative::new().unwrap();
     assert_eq!(
-        redactor.redact("the server is ready"),
+        native.redact_text("the server is ready"),
         "the server is ready"
     );
+}
+
+#[test]
+fn native_gateway_key_reads_the_token_file_under_home() {
+    let home = stored_home(r#"{"base_url": "http://proxy:4000", "key": "sk-stored"}"#);
+    let native = ProxyClientNative::new().unwrap();
+    let key = temp_env::with_var("HOME", Some(home.path()), || {
+        native.gateway_api_key(Some("http://proxy:4000".to_owned()))
+    });
+    assert_eq!(key.as_deref(), Some("sk-stored"));
+}
+
+#[test]
+fn native_gateway_key_is_none_when_home_has_no_token_file() {
+    let home = TempDir::new().unwrap();
+    let native = ProxyClientNative::new().unwrap();
+    let key = temp_env::with_var("HOME", Some(home.path()), || native.gateway_api_key(None));
+    assert_eq!(key, None);
 }
 
 #[test]

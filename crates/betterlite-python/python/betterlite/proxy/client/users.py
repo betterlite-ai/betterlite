@@ -3,7 +3,13 @@ from datetime import datetime
 
 from betterlite.types.utils.values import JsonValue
 
-from ._transport import NOT_FOUND_STATUS, UNAUTHORIZED_STATUS, Request, send
+from ._transport import (
+    NOT_FOUND_STATUS,
+    UNAUTHORIZED_STATUS,
+    Request,
+    Response,
+    send,
+)
 from .exceptions import NotFoundError, UnauthorizedError
 
 
@@ -19,6 +25,23 @@ class UsersManagementClient:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
+    def _send(self, request: Request) -> Response:
+        response = send(request, self.timeout)
+        if response.status_code == UNAUTHORIZED_STATUS:
+            raise UnauthorizedError(response.text)
+        return response
+
+    def _post(self, path: str, body: JsonValue) -> JsonValue:
+        request = Request(
+            method="POST",
+            url=f"{self.base_url}{path}",
+            headers=self._get_headers(),
+            json=body,
+        )
+        response = self._send(request)
+        response.raise_for_status()
+        return response.json()
+
     def list_users(self, params: dict[str, str] | None = None) -> JsonValue:
         request = Request(
             method="GET",
@@ -26,9 +49,7 @@ class UsersManagementClient:
             headers=self._get_headers(),
             params={} if params is None else params,
         )
-        response = send(request, self.timeout)
-        if response.status_code == UNAUTHORIZED_STATUS:
-            raise UnauthorizedError(response.text)
+        response = self._send(request)
         response.raise_for_status()
         reply = response.json()
         match reply:
@@ -50,38 +71,17 @@ class UsersManagementClient:
         if user_id:
             params["user_id"] = user_id
         request = Request(method="GET", url=url, headers=self._get_headers(), params=params)
-        response = send(request, self.timeout)
-        if response.status_code == UNAUTHORIZED_STATUS:
-            raise UnauthorizedError(response.text)
+        response = self._send(request)
         if response.status_code == NOT_FOUND_STATUS:
             raise NotFoundError(response.text)
         response.raise_for_status()
         return response.json()
 
     def create_user(self, user_data: Mapping[str, JsonValue]) -> JsonValue:
-        request = Request(
-            method="POST",
-            url=f"{self.base_url}/user/new",
-            headers=self._get_headers(),
-            json=dict(user_data),
-        )
-        response = send(request, self.timeout)
-        if response.status_code == UNAUTHORIZED_STATUS:
-            raise UnauthorizedError(response.text)
-        response.raise_for_status()
-        return response.json()
+        body: JsonValue = dict(user_data)
+        return self._post("/user/new", body)
 
     def delete_user(self, user_ids: list[str]) -> JsonValue:
         identifiers: list[JsonValue] = []
         identifiers.extend(user_ids)
-        request = Request(
-            method="POST",
-            url=f"{self.base_url}/user/delete",
-            headers=self._get_headers(),
-            json={"user_ids": identifiers},
-        )
-        response = send(request, self.timeout)
-        if response.status_code == UNAUTHORIZED_STATUS:
-            raise UnauthorizedError(response.text)
-        response.raise_for_status()
-        return response.json()
+        return self._post("/user/delete", {"user_ids": identifiers})
