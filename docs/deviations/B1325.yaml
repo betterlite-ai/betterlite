@@ -9,3 +9,6 @@ deviations:
   - what: "A file content part whose file key holds something other than an object returns HTTP 400 naming the field; LiteLLM dereferences it and answers HTTP 500."
     why: "docs/compatibility.md makes a value of the wrong type an error naming the field, and a 500 is the wrong answer for caller error."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/chat/transformation.py#L146-L157
+  - what: "A non-finite temperature or top_p fails with an error naming the field; LiteLLM keeps the class attribute and serializes Infinity into the request body."
+    why: "JSON has no non-finite numbers, and docs/compatibility.md makes the output standard JSON."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/chat/transformation.py#L51-L58

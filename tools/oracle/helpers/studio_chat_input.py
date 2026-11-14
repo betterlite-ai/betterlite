@@ -13,7 +13,7 @@ from pydantic import TypeAdapter
 JsonObject: TypeAlias = dict[str, Json]
 Transform: TypeAlias = Callable[..., Mapping[str, Json]]
 # LiteLLM leaves the request body's dict arguments bare and its RequestBody nested TypedDicts carry Any
-TRANSFORM: Transform = transformation.sync_transform_request_body  # type: ignore[misc, assignment]  # pyright: ignore[reportUnknownMemberType, reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1262-L1277
+TRANSFORM: Transform = transformation.sync_transform_request_body  # type: ignore[misc, assignment]  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType, reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1262-L1277
 START_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 JSON = TypeAdapter(Json)
 
