@@ -23,6 +23,8 @@ use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
 
+const MAX_LOOKUPS: u32 = 64;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
@@ -121,8 +123,15 @@ pub struct LimitError {
 #[serde(deny_unknown_fields)]
 pub struct CachedObservation {
     pub installed: bool,
-    pub present: bool,
-    pub reused: bool,
+    pub limit: CachedLimit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CachedLimit {
+    Absent,
+    New,
+    Reused,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -151,7 +160,11 @@ pub(crate) fn run(
         })
         .collect();
     let limits = input.limits.iter().map(limit_outcome).collect();
-    let cached = input.cached.iter().map(cached_outcome).collect();
+    let cached = input
+        .cached
+        .iter()
+        .map(cached_outcome)
+        .collect::<Result<_, _>>()?;
     let credentials = input.credentials.iter().map(credential_outcome).collect();
     Ok(ProbeOutput::DeploymentClients(Output {
         calculate,
@@ -181,7 +194,7 @@ fn limit_outcome(input: &LimitInput) -> Vec<LimitObservation> {
                     drop(slot);
                     ("enter_exit", None, *fail)
                 }
-                Err(exceeded) => ("enter_exit", Some(limit_error(exceeded)), false),
+                Err(exceeded) => ("enter_exit", Some(limit_error(&exceeded)), false),
             },
         };
         observations.push(LimitObservation {
@@ -204,11 +217,11 @@ fn acquire_once(
             held.push(slot);
             None
         }
-        Err(error) => Some(limit_error(error)),
+        Err(error) => Some(limit_error(&error)),
     }
 }
 
-fn limit_error(error: MaxParallelRequestsExceeded) -> LimitError {
+fn limit_error(error: &MaxParallelRequestsExceeded) -> LimitError {
     LimitError {
         status_code: MaxParallelRequestsExceeded::STATUS_CODE,
         code: MaxParallelRequestsExceeded::CODE.to_owned(),
@@ -219,7 +232,12 @@ fn limit_error(error: MaxParallelRequestsExceeded) -> LimitError {
     }
 }
 
-fn cached_outcome(input: &CachedInput) -> Vec<CachedObservation> {
+fn cached_outcome(input: &CachedInput) -> Result<Vec<CachedObservation>, OperationError> {
+    if input.lookups > MAX_LOOKUPS {
+        return Err(OperationError::InvalidRequest {
+            message: format!("lookups must be at most {MAX_LOOKUPS}"),
+        });
+    }
     let clients = CachedClients::new(
         Duration::from_secs(Settings::default().client_ttl_seconds),
         Arc::new(|| UNIX_EPOCH),
@@ -234,18 +252,18 @@ fn cached_outcome(input: &CachedInput) -> Vec<CachedObservation> {
     let mut observations = Vec::new();
     for _ in 0..input.lookups {
         let lookup = clients.max_parallel_requests(&input.model_id, &input.model_group, source);
-        let reused = previous
-            .as_ref()
-            .zip(lookup.limit.as_ref())
-            .is_some_and(|(before, now)| Arc::ptr_eq(before, now));
+        let limit = match (previous.as_ref(), lookup.limit.as_ref()) {
+            (_, None) => CachedLimit::Absent,
+            (Some(before), Some(now)) if Arc::ptr_eq(before, now) => CachedLimit::Reused,
+            _ => CachedLimit::New,
+        };
         previous = lookup.limit;
         observations.push(CachedObservation {
             installed: lookup.initialized,
-            present: previous.is_some(),
-            reused,
+            limit,
         });
     }
-    observations
+    Ok(observations)
 }
 
 fn credential_outcome(input: &CredentialInput) -> CredentialObservation {

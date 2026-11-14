@@ -99,8 +99,7 @@ class LimitObservation(Strict):
 
 class CachedObservation(Strict):
     installed: bool
-    present: bool
-    reused: bool
+    limit: Literal["absent", "new", "reused"]
 
 
 class CredentialObservation(Strict):
@@ -193,13 +192,10 @@ async def observe_lookups(spec: CachedInput, completions: Completions, cache: Ca
             model=spec.model_group, messages=[{"role": "user", "content": "probe"}], mock_response="probe"
         )
         cached = cache.get_cache(key=key, local_only=True)
-        observations.append(
-            CachedObservation(
-                installed=installed,
-                present=cached is not None,
-                reused=cached is not None and cached is previous,
-            )
-        )
+        limit: Literal["absent", "new", "reused"] = "absent" if cached is None else "new"
+        if cached is not None and cached is previous:
+            limit = "reused"
+        observations.append(CachedObservation(installed=installed, limit=limit))
         previous = cached
     return observations
 

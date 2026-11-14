@@ -17,18 +17,19 @@ use crate::deployment_clients::request::{DeploymentView, RequestContext};
 
 // Bounds, error fields and exact selection: the values just inside and just outside each limit.
 #[rstest]
-#[case::at_the_limit(1, 1, true)]
-#[case::under_the_limit(2, 1, true)]
-#[case::over_the_limit(1, 0, false)]
+#[case::first_slot_of_one(1, 0, true)]
+#[case::last_slot_of_two(2, 1, true)]
+#[case::at_the_limit(1, 1, false)]
+#[case::at_the_limit_of_two(2, 2, false)]
 #[case::zero_admits_nothing(0, 0, false)]
 #[case::negative_admits_nothing(-1, 0, false)]
 fn acquire_compares_against_the_cap(
     #[case] max_parallel_requests: i64,
-    #[case] in_flight: i64,
+    #[case] held_slots: i64,
     #[case] granted: bool,
 ) {
     let limit = limit(max_parallel_requests);
-    let held: Vec<_> = (0..in_flight)
+    let held: Vec<_> = (0..held_slots)
         .map(|_| limit.acquire().expect("within the cap"))
         .collect();
     let acquired = limit.acquire();
@@ -36,7 +37,7 @@ fn acquire_compares_against_the_cap(
     assert_eq!(granted_now, granted);
     assert_eq!(
         limit.in_flight.load(Ordering::SeqCst),
-        in_flight + i64::from(granted_now)
+        held_slots + i64::from(granted_now)
     );
     drop(acquired);
     drop(held);
