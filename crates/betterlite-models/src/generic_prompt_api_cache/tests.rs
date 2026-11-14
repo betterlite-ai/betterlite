@@ -117,12 +117,15 @@ fn label_and_version_each_get_their_own_cache_entry() {
     manager.compile_prompt_helper(&versioned).unwrap();
     manager.compile_prompt_helper(&labeled).unwrap();
     assert_eq!(requests.lock().unwrap().len(), 2);
-    let keys: Vec<String> = {
-        let entries = manager.prompt_cache.entries.lock().unwrap();
-        let mut keys: Vec<String> = entries.iter().map(|(key, _)| key.clone()).collect();
-        keys.sort();
-        keys
-    };
+    let mut keys: Vec<String> = manager
+        .prompt_cache
+        .entries
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(key, _)| key.clone())
+        .collect();
+    keys.sort();
     assert_eq!(keys, vec!["welcome:prod:2", "welcome:prod:None"]);
 }
 
@@ -161,6 +164,7 @@ fn the_thousand_and_first_insert_drops_the_first_key_and_keeps_one_thousand_entr
     assert_eq!(entries.len(), 1000);
     assert!(!entries.contains(&PromptCache::get_cache_key(Some("prompt-0"), None, None)));
     assert!(entries.contains(&PromptCache::get_cache_key(Some("prompt-1000"), None, None)));
+    drop(entries);
 }
 
 #[test]
@@ -186,4 +190,5 @@ fn a_read_just_before_the_cache_fills_keeps_that_key_and_drops_the_least_recentl
     assert_eq!(entries.len(), 1000);
     assert!(entries.contains(&PromptCache::get_cache_key(Some("prompt-0"), None, None)));
     assert!(!entries.contains(&PromptCache::get_cache_key(Some("prompt-1"), None, None)));
+    drop(entries);
 }
