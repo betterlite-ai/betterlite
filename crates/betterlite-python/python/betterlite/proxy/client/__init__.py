@@ -1,6 +1,6 @@
-# Absolute import: the relative form binds _transport, which basedpyright then marks private.
 from betterlite.proxy.client._transport import HTTPError, RequestError
 
+# Imported absolutely: a relative import binds _transport, which basedpyright then marks private.
 from .chat import ChatClient
 from .client import Client
 from .exceptions import UnauthorizedError
