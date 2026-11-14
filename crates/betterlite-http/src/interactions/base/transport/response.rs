@@ -1,5 +1,5 @@
 use std::collections::btree_map::Entry;
-use std::io::Read as _;
+use std::io::Read;
 
 use reqwest::header::{HeaderMap, HeaderValue};
 

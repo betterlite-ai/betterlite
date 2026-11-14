@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::io::{Error as IoError, ErrorKind, Read as _, Write as _};
+use std::io::{Error as IoError, ErrorKind, Read, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::thread;

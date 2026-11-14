@@ -26,11 +26,11 @@ pub mod multipart;
 pub mod outbound;
 pub mod pool;
 mod redirect;
-mod routing;
+pub(crate) mod routing;
 pub mod stream;
 pub mod transport_error;
 
-use routing::{Follow, forward_proxy};
+use routing::{Follow, with_forward_routes};
 
 const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 const POOL_MAX_IDLE_PER_HOST: usize = 32;
@@ -52,23 +52,6 @@ pub fn base_builder() -> ClientBuilder {
         .tls_backend_rustls()
         .pool_idle_timeout(POOL_IDLE_TIMEOUT)
         .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST)
-}
-
-// the policy's forward routes become reqwest proxies, and its warnings are logged once per client
-pub(crate) fn with_forward_routes(
-    builder: ClientBuilder,
-    policy: &Arc<ProxyPolicy>,
-) -> ClientBuilder {
-    for warning in &policy.warnings {
-        tracing::warn!(?warning, "proxy setting ignored");
-    }
-    let mut configured = builder;
-    for route in policy.primary.values().chain(policy.fallback.values()) {
-        if let ProxyRoute::Forward(server) = route {
-            configured = configured.proxy(forward_proxy(policy, server));
-        }
-    }
-    configured
 }
 
 impl ProxiedClient {

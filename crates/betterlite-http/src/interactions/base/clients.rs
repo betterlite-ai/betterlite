@@ -13,7 +13,8 @@ use reqwest::retry::never;
 use reqwest::{Client, ClientBuilder};
 
 use super::{ClientError, DEFAULT_PROVIDER, Params};
-use crate::proxy::{base_builder, with_forward_routes};
+use crate::proxy::base_builder;
+use crate::proxy::routing::with_forward_routes;
 use crate::tls::apply_policy;
 
 pub(crate) mod asynchronous;

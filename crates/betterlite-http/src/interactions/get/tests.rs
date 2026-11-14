@@ -615,6 +615,12 @@ async fn async_get_interaction_passes_a_failing_status_to_the_response_transform
         error,
         GetInteractionError::Provider(FixtureError::Refused(500))
     ));
+    assert!(
+        fixture
+            .calls()
+            .iter()
+            .all(|call| !call.starts_with("error|"))
+    );
     serving.request.join().unwrap();
 }
 

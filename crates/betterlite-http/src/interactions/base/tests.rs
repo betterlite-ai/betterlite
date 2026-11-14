@@ -114,9 +114,7 @@ fn handle_error_passes_a_transport_failure_through_unchanged() {
 fn a_read_failure_keeps_its_limit() {
     let failure = RequestFailure::from(ReadError::TooLarge { limit: 4 });
 
-    assert!(
-        matches!(failure, RequestFailure::BodyTooLarge { limit }) if limit == 4
-    );
+    assert!(matches!(failure, RequestFailure::BodyTooLarge { limit } if limit == 4));
 }
 
 #[test]
@@ -250,6 +248,60 @@ fn async_client_falls_back_to_gemini_for_an_empty_provider() {
         ssl_verify: None,
     };
     assert_eq!(keys, vec![&expected]);
+}
+
+#[test]
+fn sync_client_builds_one_client_per_ssl_verify_setting() {
+    let mut clients = clients();
+    let unverified = support::params(r#"{"ssl_verify": false}"#);
+    let inherited = support::params("{}");
+
+    clients.sync_client(&unverified, None).unwrap();
+    clients.sync_client(&inherited, None).unwrap();
+    clients.sync_client(&unverified, None).unwrap();
+
+    let keys: Vec<Option<bool>> = clients.sync_clients.keys().copied().collect();
+    assert_eq!(keys, vec![None, Some(false)]);
+}
+
+#[test]
+fn async_client_builds_one_client_per_ssl_verify_setting_under_one_provider() {
+    let mut clients = clients();
+    let unverified = support::params(r#"{"ssl_verify": false}"#);
+    let inherited = support::params("{}");
+
+    async_client(&mut clients, &unverified, None).unwrap();
+    async_client(&mut clients, &inherited, None).unwrap();
+    async_client(&mut clients, &unverified, None).unwrap();
+
+    let keys: Vec<(ProviderId, Option<bool>)> = clients
+        .async_clients
+        .keys()
+        .map(|key| (key.provider, key.ssl_verify))
+        .collect();
+    assert_eq!(
+        keys,
+        vec![(DEFAULT_PROVIDER, None), (DEFAULT_PROVIDER, Some(false))]
+    );
+}
+
+#[rstest]
+#[case::provider(r#"{"custom_llm_provider": null}"#)]
+#[case::ssl_verify(r#"{"ssl_verify": null}"#)]
+fn an_explicit_null_setting_counts_as_absent(#[case] text: &str) {
+    let mut clients = clients();
+
+    async_client(&mut clients, &support::params(text), None).unwrap();
+    clients.sync_client(&support::params(text), None).unwrap();
+
+    let keys: Vec<(ProviderId, Option<bool>)> = clients
+        .async_clients
+        .keys()
+        .map(|key| (key.provider, key.ssl_verify))
+        .collect();
+    let sync_keys: Vec<Option<bool>> = clients.sync_clients.keys().copied().collect();
+    assert_eq!(keys, vec![(DEFAULT_PROVIDER, None)]);
+    assert_eq!(sync_keys, vec![None]);
 }
 
 #[test]
