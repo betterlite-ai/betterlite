@@ -3,7 +3,7 @@ self=$(readlink -f "$0") || exit 1
 P=${self%/*}
 main=${BETTERLITE_ROOT:-$(git -C "${P}" rev-parse --show-toplevel)}
 worktrees=${BETTERLITE_WORKTREES:-$(dirname "${main}")/betterlite-worktrees}
-# Merges origin/main into a task worktree and resolves the known list conflicts: .development files (main wins, workers never edit them; the task's own task file keeps the higher of the two line budgets, since the architect raises a budget in the branch), manifest dependency lines (one line per name, main's wins), Cargo.lock, config structs. A helper registry conflict stops it, since the registry is pre-seeded and a task never edits it.
+# Merges origin/main into a task worktree and resolves the known list conflicts: .development files (main wins, workers never edit them; the task's own task file keeps the higher of each budget when nothing else in it differs (higher-budget.pl), since the architect raises a budget in the branch and main can raise it too), manifest dependency lines (one line per name, main's wins), Cargo.lock, config structs. A helper registry conflict stops it, since the registry is pre-seeded and a task never edits it.
 # Usage: bash merge-main.sh <worktree>. Leaves the merge uncommitted when a conflict is outside those files, and stops when the merged manifests do not load.
 cd "$1" || exit 1
 id=$(basename "$1")
@@ -37,8 +37,10 @@ for file in ${conflicts}; do
   case "${file}" in
     Cargo.lock) git checkout -q --theirs Cargo.lock ;;
     .development/tasks/"${id}"-*)
-      echo "task amendment conflicts with main: ${file}; architect resolution required"
-      exit 1
+      perl "${P}/higher-budget.pl" "${file}" || {
+        echo "task amendment conflicts with main: ${file}; architect resolution required"
+        exit 1
+      }
       ;;
     .development/*) git checkout -q --theirs "${file}" ;;
     crates/betterlite-config/src/raw.rs | crates/betterlite-config/src/types.rs | crates/betterlite-config/src/loader.rs | crates/betterlite-config/tests/config_tests/snapshots/*.snap) perl -0pi -e 's/^<<<<<<< HEAD\n(.*?)^=======\n(.*?)^>>>>>>> origin\/main\n/$1$2/msg' "${file}" ;;

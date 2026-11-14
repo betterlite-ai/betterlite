@@ -1,0 +1,11 @@
+kind: helper
+name: corpus
+call:
+  scim_projection:
+    kind: user
+    value:
+      user_id: corpus
+      user_email: corpus@example.com
+env: {}
+compare:
+  ignore: []
