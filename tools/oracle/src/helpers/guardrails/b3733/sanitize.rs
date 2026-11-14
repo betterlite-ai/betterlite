@@ -83,10 +83,11 @@ fn body(run: &RequestRun) -> Result<SanitizeBody, Box<HelperError>> {
         let bytes = STANDARD.decode(&file.bytes_b64).or_value_error()?;
         return Ok(file_body(&bytes, file.byte_data_type, run.source));
     }
-    match run.content.as_deref() {
-        Some(content) => Ok(text_body(content, run.source)),
-        None => Err(value_error("each request carries content or a file")),
-    }
+    let content = run
+        .content
+        .as_deref()
+        .ok_or_else(|| value_error("each request carries content or a file"))?;
+    Ok(text_body(content, run.source))
 }
 
 fn transport(request: &SanitizeRequest) -> ModelArmorTransport<UnusedTokens> {
