@@ -7,8 +7,8 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use crate::guardrails::unified_stream::error::StreamLoopError;
 use crate::guardrails::unified_stream::tests::support::{
     FakeGuardrail, FakeTranslation, Plan, SinkUse, SourceFailure, block_texts, collect_outputs,
-    collect_results, item, mixed_tool_chunk, modify_response, params, synthetic, terminator,
-    text_chunk, text_chunk_finishing, tool_chunk,
+    collect_results, finishing_tool_chunk, item, mixed_tool_chunk, modify_response, params,
+    role_chunk, synthetic, terminator, text_chunk, text_chunk_finishing, tool_chunk,
 };
 
 #[tokio::test]
@@ -194,6 +194,24 @@ async fn tool_call_flushes_text_before_the_passthrough() {
 }
 
 #[tokio::test]
+async fn tool_call_after_a_role_only_chunk_skips_the_flush() {
+    let translation = FakeTranslation::planned(Vec::new());
+    let guardrail = FakeGuardrail;
+    let mut data = BTreeMap::new();
+    let keys = BTreeMap::new();
+    let outputs = collect_outputs(
+        params(&translation, &guardrail, &mut data, &keys),
+        vec![role_chunk(), tool_chunk()],
+    )
+    .await;
+    assert_eq!(outputs, vec![Ok(item(tool_chunk()))]);
+    let calls = translation.calls();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0].sink, SinkUse::Absent);
+    assert_eq!(calls[1].sink, SinkUse::Empty);
+}
+
+#[tokio::test]
 async fn tool_call_flush_block_ends_the_stream_before_the_passthrough() {
     let translation = FakeTranslation::planned(vec![Plan::Fail(modify_response(None))]);
     let guardrail = FakeGuardrail;
@@ -341,6 +359,52 @@ async fn tool_call_passthrough_defers_a_finish_reason_to_the_terminator() {
         outputs,
         vec![Ok(item(tool_chunk())), Ok(item(terminator("stop")))]
     );
+}
+
+#[tokio::test]
+async fn tool_call_passthrough_defers_the_finish_reason_while_text_is_held() {
+    let translation = FakeTranslation::planned(vec![
+        Plan::Rewrite {
+            index: 0,
+            text: "abcdef",
+            holdback: 3,
+        },
+        Plan::Rewrite {
+            index: 0,
+            text: "abcdef",
+            holdback: 3,
+        },
+        Plan::Pass,
+        Plan::Rewrite {
+            index: 0,
+            text: "abcdef",
+            holdback: 3,
+        },
+    ]);
+    let guardrail = FakeGuardrail;
+    let mut data = BTreeMap::new();
+    let keys = BTreeMap::new();
+    let mut loop_params = params(&translation, &guardrail, &mut data, &keys);
+    loop_params.sampling_rate = 1;
+    let outputs = collect_outputs(
+        loop_params,
+        vec![text_chunk("a"), finishing_tool_chunk("tool_calls")],
+    )
+    .await;
+    assert_eq!(
+        outputs,
+        vec![
+            Ok(item(synthetic("abc", Some("assistant"), None))),
+            Ok(item(tool_chunk())),
+            Ok(item(synthetic("def", None, Some("tool_calls")))),
+        ]
+    );
+    let calls = translation.calls();
+    assert_eq!(calls.len(), 4);
+    assert_eq!(calls[0].sink, SinkUse::Empty);
+    assert_eq!(calls[1].sink, SinkUse::Empty);
+    assert_eq!(calls[2].sink, SinkUse::Absent);
+    assert_eq!(calls[3].sink, SinkUse::Empty);
 }
 
 #[tokio::test]

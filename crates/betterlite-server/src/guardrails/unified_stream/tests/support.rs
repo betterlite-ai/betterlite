@@ -345,6 +345,17 @@ pub(crate) fn text_chunk(text: &str) -> GuardrailValue {
     )
 }
 
+// The opening chunk of an OpenAI tool stream: a role with an empty content
+pub(crate) fn role_chunk() -> GuardrailValue {
+    chunk_with(vec![choice(
+        0,
+        GuardrailValue::Text(String::new()),
+        GuardrailValue::Text("assistant".to_owned()),
+        GuardrailValue::Null,
+        None,
+    )])
+}
+
 pub(crate) fn text_chunk_finishing(text: &str, reason: &str) -> GuardrailValue {
     let content = GuardrailValue::Text(text.to_owned());
     delta_chunk(content, GuardrailValue::Null, Some(reason))
@@ -352,6 +363,10 @@ pub(crate) fn text_chunk_finishing(text: &str, reason: &str) -> GuardrailValue {
 
 pub(crate) fn tool_chunk() -> GuardrailValue {
     delta_chunk(GuardrailValue::Null, tool_calls(), None)
+}
+
+pub(crate) fn finishing_tool_chunk(reason: &str) -> GuardrailValue {
+    delta_chunk(GuardrailValue::Null, tool_calls(), Some(reason))
 }
 
 pub(crate) fn mixed_tool_chunk(text: &str, reason: Option<&str>) -> GuardrailValue {
