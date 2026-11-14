@@ -12,6 +12,7 @@ use crate::classifier_message_text::asks::{
 };
 use crate::classifier_message_text::encrypted::encrypted_classifier_task;
 use crate::classifier_message_text::error::ClassifierTextError;
+use crate::classifier_message_text::image::inline_image_part;
 use crate::classifier_message_text::markers::{MarkerPair, is_codex_user_agent};
 use crate::classifier_message_text::plan::{PLAN_MODE_TOOL_NAME, matched_plan_mode_sentinel};
 use crate::classifier_message_text::text::{
@@ -26,6 +27,7 @@ enum Boundary {
     MarkerAtBothEnds,
     OverlappingMarkerPairs,
     TextPartNotStringNamesIndex,
+    ImageUrlNotStringNamesField,
     JsonTextPartNullNamesIndex,
     LastAskIndexWithSystemTail,
     LastAskIndexNotZero,
@@ -61,6 +63,7 @@ enum Boundary {
 #[case::marker_at_both_ends(Boundary::MarkerAtBothEnds)]
 #[case::overlapping_marker_pairs(Boundary::OverlappingMarkerPairs)]
 #[case::text_part_not_string_names_index(Boundary::TextPartNotStringNamesIndex)]
+#[case::image_url_not_string_names_field(Boundary::ImageUrlNotStringNamesField)]
 #[case::json_text_part_null_names_index(Boundary::JsonTextPartNullNamesIndex)]
 #[case::last_ask_index_with_system_tail(Boundary::LastAskIndexWithSystemTail)]
 #[case::last_ask_index_not_zero(Boundary::LastAskIndexNotZero)]
@@ -99,6 +102,7 @@ fn classifier_message_text_boundaries(#[case] boundary: Boundary) {
         Boundary::MarkerAtBothEnds => assert_marker_at_both_ends(),
         Boundary::OverlappingMarkerPairs => assert_overlapping_marker_pairs(),
         Boundary::TextPartNotStringNamesIndex => assert_text_part_not_string_names_index(),
+        Boundary::ImageUrlNotStringNamesField => assert_image_url_not_string_names_field(),
         Boundary::JsonTextPartNullNamesIndex => assert_json_text_part_null_names_index(),
         Boundary::LastAskIndexWithSystemTail => assert_last_ask_index_with_system_tail(),
         Boundary::LastAskIndexNotZero => assert_last_ask_index_not_zero(),
@@ -201,6 +205,12 @@ fn assert_text_part_not_string_names_index() {
     let error =
         message_text(Some(&MessageContent::Parts(vec![text_part("ok"), part]))).unwrap_err();
     assert_eq!(error, ClassifierTextError::PartTextNotString { part: 1 });
+}
+
+fn assert_image_url_not_string_names_field() {
+    let part = kind_part("image_url", "image_url", serde_json::json!({"url": 7}));
+    let error = inline_image_part(&part).unwrap_err();
+    assert_eq!(error, ClassifierTextError::ImageUrlNotString);
 }
 
 fn assert_json_text_part_null_names_index() {
