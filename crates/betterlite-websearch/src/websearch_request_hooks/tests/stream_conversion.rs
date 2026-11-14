@@ -1,11 +1,11 @@
 use betterlite_core::routes::CallType;
-use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 
 use crate::websearch_request_hooks::tests::{logger, object};
 use crate::websearch_request_hooks::{CONVERTED_STREAM_KEY, WebSearchError};
 
-fn chat_request() -> betterlite_prompts::arguments::json::Object {
+fn chat_request() -> Object {
     object(
         r#"{"custom_llm_provider":"bedrock","stream":true,"tools":[{"type":"web_search_20250305","name":"web_search"}]}"#,
     )

@@ -121,7 +121,7 @@ fn the_pre_request_hook_inserts_the_instance_ceiling() {
     let converted = logger.async_pre_request_hook(&request).unwrap().unwrap();
     assert_eq!(
         converted.get("max_agentic_loops"),
-        Some(&Json::Number(Number::from(5)))
+        Some(&Json::Number(Number::from(5_u32)))
     );
 }
 
@@ -135,7 +135,7 @@ fn the_pre_request_hook_fills_a_null_ceiling() {
     let converted = logger.async_pre_request_hook(&request).unwrap().unwrap();
     assert_eq!(
         converted.get("max_agentic_loops"),
-        Some(&Json::Number(Number::from(5)))
+        Some(&Json::Number(Number::from(5_u32)))
     );
 }
 
@@ -149,7 +149,7 @@ fn the_pre_request_hook_keeps_the_callers_ceiling() {
     let converted = logger.async_pre_request_hook(&request).unwrap().unwrap();
     assert_eq!(
         converted.get("max_agentic_loops"),
-        Some(&Json::Number(Number::from(2)))
+        Some(&Json::Number(Number::from(2_u32)))
     );
 }
 

@@ -1,14 +1,16 @@
+use betterlite_prompts::arguments::json::Object;
+
 use crate::websearch_request_hooks::WebSearchError;
 use crate::websearch_request_hooks::tests::{logger, object};
 use crate::websearch_request_hooks::tool_rewrite::RewriteError;
 
-fn native_request(provider: &str) -> betterlite_prompts::arguments::json::Object {
+fn native_request(provider: &str) -> Object {
     object(&format!(
         r#"{{"custom_llm_provider":"{provider}","tools":[{{"type":"web_search_20250305","name":"web_search"}}]}}"#
     ))
 }
 
-fn litellm_request(provider: &str) -> betterlite_prompts::arguments::json::Object {
+fn litellm_request(provider: &str) -> Object {
     object(&format!(
         r#"{{"litellm_params":{{"custom_llm_provider":"{provider}"}},"tools":[{{"type":"web_search_20250305","name":"web_search"}}]}}"#
     ))

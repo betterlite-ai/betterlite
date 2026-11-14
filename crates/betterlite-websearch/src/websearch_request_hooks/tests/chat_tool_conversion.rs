@@ -1,3 +1,5 @@
+use betterlite_core::routes::CallType;
+
 use crate::tools::openai_web_search_tool;
 use crate::websearch_request_hooks::tests::{list, logger, object, tool_name};
 use crate::websearch_request_hooks::tool_rewrite::encode;
@@ -174,10 +176,7 @@ fn converts_the_same_tool_on_an_async_chat_call() {
         r#"{"custom_llm_provider":"bedrock","tools":[{"type":"web_search_20250305","name":"web_search"}]}"#,
     );
     let converted = logger(&["bedrock"])
-        .async_pre_call_deployment_hook(
-            &request,
-            Some(betterlite_core::routes::CallType::Acompletion),
-        )
+        .async_pre_call_deployment_hook(&request, Some(CallType::Acompletion))
         .unwrap()
         .unwrap();
     assert_eq!(
