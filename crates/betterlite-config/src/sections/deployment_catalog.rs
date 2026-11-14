@@ -57,20 +57,12 @@ impl Section for Raw {
         let mut model_group_alias = IndexMap::new();
         let mut paths = Vec::new();
         for (name, raw) in self.router_settings.model_group_alias.unwrap_or_default() {
-            let (written, hidden) = match raw {
-                RawAlias::Target(model) => (model, false),
-                RawAlias::Item(item) => {
-                    paths.extend(
-                        item.unknown
-                            .keys()
-                            .map(|key| format!("router_settings.model_group_alias.{name}.{key}")),
-                    );
-                    let Some(hidden) = item.hidden else {
-                        paths.push(format!("router_settings.model_group_alias.{name}.hidden"));
-                        continue;
-                    };
-                    (item.model, hidden)
-                }
+            let parts = match raw {
+                RawAlias::Target(model) => Some((model, false)),
+                RawAlias::Item(item) => item_target(&name, item, &mut paths),
+            };
+            let Some((written, hidden)) = parts else {
+                continue;
             };
             let model = written
                 .strip_prefix("os.environ/")
@@ -83,4 +75,17 @@ impl Section for Raw {
         }
         Ok(Settings { model_group_alias })
     }
+}
+
+fn item_target(name: &str, item: RawItem, paths: &mut Vec<String>) -> Option<(String, bool)> {
+    paths.extend(
+        item.unknown
+            .keys()
+            .map(|key| format!("router_settings.model_group_alias.{name}.{key}")),
+    );
+    let Some(hidden) = item.hidden else {
+        paths.push(format!("router_settings.model_group_alias.{name}.hidden"));
+        return None;
+    };
+    Some((item.model, hidden))
 }

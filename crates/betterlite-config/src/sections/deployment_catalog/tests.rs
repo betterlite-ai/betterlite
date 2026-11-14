@@ -64,7 +64,7 @@ fn model_group_alias_keeps_the_declared_order() {
 
 #[test]
 fn model_group_alias_names_an_unknown_item_key() {
-    let source = "router_settings:\n  model_group_alias:\n    fast: {model: gpt-4, visible: true}\n    ok: {model: a, hidden: false}";
+    let source = "router_settings:\n  model_group_alias:\n    fast: {model: gpt-4, visible: true, hidden: false}\n    ok: {model: a, hidden: false}";
     let error = settings(source, &[]).unwrap_err();
     assert_eq!(
         error,
