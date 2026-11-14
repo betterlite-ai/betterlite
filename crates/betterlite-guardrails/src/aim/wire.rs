@@ -13,7 +13,7 @@ pub struct AnalyzeRequest<'messages> {
 #[serde(default)]
 pub struct AnalyzeResponse {
     pub required_action: Option<RequiredAction>,
-    pub redacted_chat: Option<RedactedChat>,
+    pub redacted_chat: Option<GuardrailValue>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -21,12 +21,6 @@ pub struct AnalyzeResponse {
 pub struct RequiredAction {
     pub action_type: Option<String>,
     pub detection_message: Option<String>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(default)]
-pub struct RedactedChat {
-    pub all_redacted_messages: Option<GuardrailValue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -69,8 +63,13 @@ pub fn malformed_redaction(message: &str) -> AimError {
     }
 }
 
-pub fn redacted_messages(chat: &RedactedChat) -> Result<Vec<RedactedMessage>, AimError> {
-    let Some(value) = chat.all_redacted_messages.as_ref() else {
+pub fn redacted_messages(chat: &GuardrailValue) -> Result<Vec<RedactedMessage>, AimError> {
+    let GuardrailValue::Object(fields) = chat else {
+        return Err(malformed_redaction(
+            "Aim returned redacted messages that are not a chat object",
+        ));
+    };
+    let Some(value) = fields.get("all_redacted_messages") else {
         return Err(malformed_redaction(
             "Aim returned no redacted messages, so the content can not be rewritten",
         ));

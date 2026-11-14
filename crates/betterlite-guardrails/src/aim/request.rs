@@ -85,13 +85,13 @@ fn anonymize(
     response: &AnalyzeResponse,
     data: &mut BTreeMap<String, GuardrailValue>,
 ) -> Result<(), AimError> {
-    let Some(chat) = response
-        .redacted_chat
-        .as_ref()
-        .filter(|chat| chat.all_redacted_messages.is_some())
-    else {
+    let Some(chat) = response.redacted_chat.as_ref() else {
         return Ok(());
     };
+    // LiteLLM returns the request untouched only for a missing, null or empty redacted_chat
+    if matches!(chat, GuardrailValue::Object(fields) if fields.is_empty()) {
+        return Ok(());
+    }
     // the redacted batch is text only, so rewriting a multimodal request would drop its image and audio parts
     if has_non_string_content(data) && !is_string_batch_input(data) {
         return Err(AimError::bad_request(

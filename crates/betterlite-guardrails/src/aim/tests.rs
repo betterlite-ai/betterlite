@@ -393,6 +393,25 @@ async fn aim_guardrail_anonymize_rejects_malformed_redacted_messages() {
     assert_eq!(rejection(error), "400");
 }
 
+#[rstest]
+#[case::null_batch(
+    r#"{"required_action": {"action_type": "anonymize_action"}, "redacted_chat": {"all_redacted_messages": null}}"#
+)]
+#[case::unknown_key(
+    r#"{"required_action": {"action_type": "anonymize_action"}, "redacted_chat": {"unexpected": []}}"#
+)]
+#[tokio::test]
+async fn aim_guardrail_anonymize_rejects_a_malformed_redacted_chat(#[case] response: &str) {
+    let mut data: BTreeMap<String, GuardrailValue> =
+        serde_json::from_value(json!({"messages": [{"role": "user", "content": "hi"}]})).unwrap();
+    let error = fixture(StatusCode::OK, response, &[])
+        .guardrail
+        .call_aim_guardrail(&mut data, AimHook::PreCall, None)
+        .await
+        .unwrap_err();
+    assert_eq!(rejection(error), "400");
+}
+
 #[tokio::test]
 async fn aim_guardrail_output_anonymize_returns_the_redacted_message() {
     let fixture = fixture(
@@ -718,6 +737,17 @@ async fn aim_guardrail_stream_blocking_message_is_an_error() {
     );
 }
 
+#[tokio::test]
+async fn aim_guardrail_stream_done_frame_wins_over_a_blocking_message() {
+    let fixture = fixture(
+        StatusCode::OK,
+        "{}",
+        &[Some(r#"{"done": true, "blocking_message": "ignored"}"#)],
+    );
+    let items = drain(&fixture, stream::empty()).await;
+    assert!(items.is_empty());
+}
+
 #[rstest]
 #[case::closed_early(&[], "the Aim stream closed before it finished")]
 #[case::malformed_frame(&[Some("not json")], "an Aim stream frame is not valid JSON")]
@@ -857,9 +887,9 @@ async fn aim_guardrail_http_poster_sends_the_request_and_returns_the_status_and_
 
 #[rstest]
 #[case::small(4, true)]
-#[case::just_inside(MAX_RESPONSE_BYTES.saturating_sub(1), true)]
-#[case::at_the_limit(MAX_RESPONSE_BYTES, true)]
-#[case::just_outside(MAX_RESPONSE_BYTES.saturating_add(1), false)]
+#[case::just_inside(1_048_575, true)]
+#[case::at_the_limit(1_048_576, true)]
+#[case::just_outside(1_048_577, false)]
 #[tokio::test]
 async fn aim_guardrail_http_poster_limits_the_response_size(
     #[case] size: usize,
