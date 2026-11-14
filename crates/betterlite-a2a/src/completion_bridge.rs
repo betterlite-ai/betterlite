@@ -4,7 +4,7 @@ use betterlite_core::agents::json::AgentJson;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 use wire::{
-    A2AMessage, CompletionParams, MessageSendParams, ModelResponse, OpenAIMessage, ResponseMessage,
+    A2AMessage, CompletionParams, MessageSendParams, ModelResponse, ResponseMessage,
     SendMessageResponse, TextPart,
 };
 
@@ -23,6 +23,19 @@ pub const A2A_USER_API_KEY_HASH_PARAM: &str = "litellm_a2a_user_api_key_hash";
 pub trait EventSource {
     fn next_uuid(&mut self) -> Uuid;
     fn now(&mut self) -> DateTime<Utc>;
+}
+
+impl<T> EventSource for &mut T
+where
+    T: EventSource + ?Sized,
+{
+    fn next_uuid(&mut self) -> Uuid {
+        (**self).next_uuid()
+    }
+
+    fn now(&mut self) -> DateTime<Utc> {
+        (**self).now()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -115,13 +128,12 @@ pub fn apply_forward_metadata(
 }
 
 #[must_use]
-pub fn to_openai_messages(message: &A2AMessage) -> Vec<OpenAIMessage> {
+pub fn to_openai_messages(message: &A2AMessage) -> Vec<AgentJson> {
     let content = extract_text(&message.parts);
-    vec![OpenAIMessage {
-        role: message.role.0.clone(),
-        content,
-        extra: BTreeMap::new(),
-    }]
+    let mut fields = BTreeMap::new();
+    fields.insert("role".to_owned(), AgentJson::String(message.role.0.clone()));
+    fields.insert("content".to_owned(), AgentJson::String(content));
+    vec![AgentJson::Object(fields.into_iter().collect())]
 }
 
 pub fn response_to_a2a<S>(

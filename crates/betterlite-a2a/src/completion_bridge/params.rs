@@ -5,7 +5,7 @@ use betterlite_core::api::agents::merge_agent_headers;
 use thiserror::Error;
 
 use super::completion::CompletionCall;
-use super::wire::{CompletionParams, MessageSendParams, OpenAIMessage};
+use super::wire::{CompletionParams, MessageSendParams};
 use super::{A2A_USER_API_KEY_HASH_PARAM, apply_forward_metadata, to_openai_messages};
 use crate::client::records::AGENT_CARD_PATH_PARAM;
 
@@ -25,11 +25,7 @@ pub enum ParamsError {
     #[error("the A2A litellm_params field '{field}' must be a string")]
     NotText { field: &'static str },
     #[error("the A2A litellm_params field '{field}' must be a list of OpenAI messages")]
-    NotMessages {
-        field: &'static str,
-        #[source]
-        source: serde_json::Error,
-    },
+    NotMessages { field: &'static str },
     #[error("the A2A litellm_params field '{field}' must be a map of string headers")]
     NotHeaders {
         field: &'static str,
@@ -97,17 +93,11 @@ fn prefixed_model(call: &BridgeCall<'_>) -> Result<String, ParamsError> {
     }
 }
 
-fn forwarded_messages(call: &BridgeCall<'_>) -> Result<Vec<OpenAIMessage>, ParamsError> {
+fn forwarded_messages(call: &BridgeCall<'_>) -> Result<Vec<AgentJson>, ParamsError> {
     match call.litellm_params.get("messages") {
         None | Some(AgentJson::Null) => Ok(to_openai_messages(&call.params.message)),
-        Some(value) => {
-            serde_json::from_value::<Vec<OpenAIMessage>>(value.clone()).map_err(|source| {
-                ParamsError::NotMessages {
-                    field: "messages",
-                    source,
-                }
-            })
-        }
+        Some(AgentJson::Array(messages)) => Ok(messages.clone()),
+        Some(_) => Err(ParamsError::NotMessages { field: "messages" }),
     }
 }
 

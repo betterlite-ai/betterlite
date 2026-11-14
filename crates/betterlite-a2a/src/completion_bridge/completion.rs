@@ -6,12 +6,12 @@ use betterlite_core::agents::json::AgentJson;
 use futures_util::stream::BoxStream;
 use serde::{Deserialize, Serialize};
 
-use super::wire::{ModelResponse, OpenAIMessage};
+use super::wire::ModelResponse;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CompletionCall {
     pub model: String,
-    pub messages: Vec<OpenAIMessage>,
+    pub messages: Vec<AgentJson>,
     pub stream: bool,
     #[serde(flatten)]
     pub extra: BTreeMap<String, AgentJson>,
@@ -39,10 +39,9 @@ impl CompletionChunk {
     // LiteLLM reads chunk.choices[0].delta.content and skips every other choice
     #[must_use]
     pub fn first_content(&self) -> Option<&str> {
-        self.choices
-            .first()
-            .and_then(|choice| choice.delta.as_ref())
-            .and_then(|delta| delta.content.as_deref())
+        let choice = self.choices.first()?;
+        let delta = choice.delta.as_ref()?;
+        delta.content.as_deref()
     }
 }
 

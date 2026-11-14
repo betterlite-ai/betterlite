@@ -231,23 +231,37 @@ fn null_messages_use_the_transformed_message() {
 }
 
 #[rstest]
-#[case::not_a_list(parsed(r#""hello""#), "invalid type")]
-#[case::missing_content(parsed(r#"[{"role":"user"}]"#), "missing field `content`")]
-#[case::non_string_role(parsed(r#"[{"role":1,"content":"x"}]"#), "invalid type")]
-fn rejects_configured_messages_of_the_wrong_shape(
-    #[case] messages: AgentJson,
-    #[case] cause: &str,
-) {
+#[case::a_string(parsed(r#""hello""#))]
+#[case::an_object(parsed(r#"{"role":"user","content":"x"}"#))]
+#[case::a_number(parsed("7"))]
+fn rejects_configured_messages_that_are_not_a_list(#[case] messages: AgentJson) {
     let params = litellm_params(&[("messages", messages)]);
     let message = send_params();
     let call = bridge_call("req-1", &message, &params);
     let failure =
-        build_completion_params(&call, false).expect_err("the fixture messages are invalid");
+        build_completion_params(&call, false).expect_err("the fixture messages are not a list");
     assert!(matches!(
-        &failure,
-        ParamsError::NotMessages { field: "messages", source }
-            if source.to_string().contains(cause)
+        failure,
+        ParamsError::NotMessages { field: "messages" }
     ));
+}
+
+#[rstest]
+#[case::null_content(parsed(
+    r#"[{"role":"assistant","content":null,"tool_calls":[{"id":"call-1","type":"function","function":{"name":"lookup","arguments":"{}"}}]}]"#
+))]
+#[case::content_parts(parsed(
+    r#"[{"role":"user","content":[{"type":"text","text":"hello"},{"type":"image_url","image_url":{"url":"https://example.test/image.png"}}]}]"#
+))]
+fn forwards_configured_messages_unchanged(#[case] messages: AgentJson) {
+    let params = litellm_params(&[("messages", messages.clone())]);
+    let message = send_params();
+    let call = bridge_call("req-1", &message, &params);
+    let built = build_completion_params(&call, false).expect("the fixture params build");
+    assert_eq!(
+        serde_json::to_value(&built.messages).expect("the messages encode"),
+        messages
+    );
 }
 
 #[test]
