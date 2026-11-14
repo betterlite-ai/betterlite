@@ -230,3 +230,10 @@ path = "fuzz_targets/messages_sse_events.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "eleven_transcript"
+path = "fuzz_targets/eleven_transcript.rs"
+test = false
+doc = false
+bench = false
