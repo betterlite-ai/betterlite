@@ -84,7 +84,7 @@ describe("software update banner", () => {
   it("dismisses the banner for that release only", async () => {
     const user = userEvent.setup();
 
-    render(<UpgradeBanner currentVersion="1.0.0" latestRelease={release()} />);
+    render(<UpgradeBanner accessToken="test-token" />);
 
     await user.click(screen.getByRole("button", { name: "Close" }));
 
