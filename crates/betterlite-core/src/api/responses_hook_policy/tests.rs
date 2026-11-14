@@ -224,11 +224,11 @@ fn detection_counts_inherited_and_resolved() {
     let resolver = FixedResolver {
         named: BTreeMap::from([("resolved".to_owned(), inherited)]),
     };
-    let callbacks = CallbackLists {
+    let lists = CallbackLists {
         global: &global,
         dynamic: &dynamic,
     };
-    let callbacks = custom_logger_callbacks(&callbacks, &resolver);
+    let callbacks = custom_logger_callbacks(&lists, &resolver);
     let names: Vec<&str> = callbacks
         .iter()
         .map(|callback| callback.name.as_str())
@@ -239,11 +239,7 @@ fn detection_counts_inherited_and_resolved() {
         global: &plain_global,
         dynamic: &[],
     };
-    let all = CallbackLists {
-        global: &global,
-        dynamic: &dynamic,
-    };
-    assert!(has_pre_call_deployment_hook(&all, &resolver));
+    assert!(has_pre_call_deployment_hook(&lists, &resolver));
     assert!(!has_pre_call_deployment_hook(&plain_lists, &resolver));
 }
 
