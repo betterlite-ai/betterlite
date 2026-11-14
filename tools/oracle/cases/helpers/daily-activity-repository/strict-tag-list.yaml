@@ -1,0 +1,16 @@
+kind: helper
+name: strict-tag-list
+call:
+  daily_activity_repository:
+    cases:
+      tags_nonlist_empty:
+        function: "metadata_tags"
+        value: {"tags": ["a"]}
+      tags_mixed_list_drops_all:
+        function: "metadata_tags"
+        value: ["kept", 7, "also kept"]
+      tags_order_duplicates_empty:
+        function: "metadata_tags"
+        value: ["second", "", "first", "second", ""]
+env: {}
+compare: {ignore: []}

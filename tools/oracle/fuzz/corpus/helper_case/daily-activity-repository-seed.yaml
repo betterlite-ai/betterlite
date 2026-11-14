@@ -1,0 +1,25 @@
+kind: helper
+name: daily-activity-repository-seed
+call:
+  daily_activity_repository:
+    cases:
+      tags_nonlist_empty:
+        function: "metadata_tags"
+        value: null
+      tags_recursive_list_drops_all:
+        function: "metadata_tags"
+        value: [["nested"]]
+      metadata_row_present:
+        function: "metadata_row"
+        token: "key"
+        key_alias: "alias"
+        team_id: "team"
+        user_id: "user"
+        metadata: {"tags": ["b", "a", "b"]}
+        key_exists: true
+      cursor_daily:
+        function: "next_cursor"
+        export_type: "daily"
+        last: {"date": "2026-08-03", "entity_id": "e", "entity_alias": "alias", "api_key": "k", "key_alias": null, "user_id": "u", "user_email": null, "model": "m", "spend": 0.0, "flat_cost": 0.0, "prompt_tokens": 0, "completion_tokens": 0, "api_requests": 0, "successful_requests": 0, "failed_requests": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+env: {}
+compare: {ignore: []}
