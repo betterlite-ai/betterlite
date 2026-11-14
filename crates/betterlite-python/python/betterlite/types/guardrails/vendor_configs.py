@@ -1,5 +1,4 @@
 from collections.abc import Mapping
-from types import MappingProxyType
 from typing import ClassVar, Final, Literal, Self, TypeAlias
 
 from pydantic import ConfigDict, Field, JsonValue, model_validator
@@ -137,12 +136,12 @@ class BedrockGuardrailStreamingParams(ResponseObject):
     def from_extras(cls, extras: Mapping[str, JsonValue] | None) -> Self:
         if not extras:
             return cls()
-        known = {
+        known: dict[str, JsonValue] = {
             name: extras[name]
             for name in cls.model_fields
             if extras.get(name) is not None
         }
-        return cls.model_validate(MappingProxyType(known))
+        return cls.model_validate(known)
 
 
 class LakeraV2GuardrailConfigModel(ResponseObject):

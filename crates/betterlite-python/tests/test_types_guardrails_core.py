@@ -483,10 +483,11 @@ def test_presidio_ui_names() -> None:
 
 
 def test_bedrock_alias_names() -> None:
-    config = vendor_configs.BedrockGuardrailConfigModel(
-        guardrailIdentifier="gr-1",
-        checks={"contentFilter": {"categories": [{"category": "HATE"}]}},
-    )
+    payload: dict[str, JsonValue] = {
+        "guardrailIdentifier": "gr-1",
+        "checks": {"contentFilter": {"categories": [{"category": "HATE"}]}},
+    }
+    config = vendor_configs.BedrockGuardrailConfigModel.model_validate(payload)
     assert config.guardrail_identifier == "gr-1"
     assert config.guardrail_version is None
     checks = config.checks
@@ -504,10 +505,8 @@ def test_bedrock_alias_names() -> None:
 
 
 def test_extra_field_names() -> None:
-    config = vendor_configs.BedrockGuardrailConfigModel(
-        guardrailIdentifier="gr-1",
-        unknown_knob=True,
-    )
+    payload: dict[str, JsonValue] = {"guardrailIdentifier": "gr-1", "unknown_knob": True}
+    config = vendor_configs.BedrockGuardrailConfigModel.model_validate(payload)
     assert "unknown_knob" in config.model_dump()
 
 
@@ -528,6 +527,9 @@ def test_streaming_extra_names() -> None:
 
 
 def test_str_enum_names() -> None:
-    assert core.Role.SYSTEM.value == core.Role.SYSTEM
-    assert pii.PiiEntityCategory.GENERAL.value == pii.PiiEntityCategory.GENERAL
-    assert json.dumps({"action": pii.PiiAction.BLOCK}) == '{"action": "BLOCK"}'
+    role: str = core.Role.SYSTEM
+    category: str = pii.PiiEntityCategory.GENERAL
+    assert role == "system"
+    assert category == "General"
+    action: dict[str, JsonValue] = {"action": pii.PiiAction.BLOCK}
+    assert json.dumps(action) == '{"action": "BLOCK"}'
