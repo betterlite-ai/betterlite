@@ -1,0 +1,24 @@
+kind: helper
+name: genai-setup-native-field-empty-extra-body-wins
+call:
+  b3483:
+    setups:
+      - model: gemini/gemini-2.5-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        config: null
+        custom_llm_provider: null
+        tools: null
+        kwargs:
+          labels: {team: x}
+        extra_body: {}
+        with_logging: true
+      - model: gemini/gemini-2.5-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        config: null
+        custom_llm_provider: null
+        tools: null
+        kwargs: {}
+        extra_body: {}
+        with_logging: true
+env: {}
+compare: {ignore: []}
