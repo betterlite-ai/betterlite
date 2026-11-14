@@ -127,6 +127,14 @@ impl FakeSink {
     fn calls(&self) -> Vec<SinkCall> {
         self.calls.lock().unwrap().clone()
     }
+
+    fn record(&self, call: SinkCall, fail: bool) -> Result<(), FakeSinkError> {
+        self.calls.lock().unwrap().push(call);
+        if fail {
+            return Err(FakeSinkError);
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -134,14 +142,10 @@ impl BudgetAlertSink for FakeSink {
     type Error = FakeSinkError;
 
     async fn send_budget_webhook(&self, event: &WebhookEvent) -> Result<(), FakeSinkError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push(SinkCall::Webhook(event.event_message.clone()));
-        if self.fail_webhook {
-            return Err(FakeSinkError);
-        }
-        Ok(())
+        self.record(
+            SinkCall::Webhook(event.event_message.clone()),
+            self.fail_webhook,
+        )
     }
 
     async fn send_budget_email(
@@ -149,14 +153,10 @@ impl BudgetAlertSink for FakeSink {
         event: &WebhookEvent,
         alert_type: AlertType,
     ) -> Result<(), FakeSinkError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push(SinkCall::Email(event.event_message.clone(), alert_type));
-        if self.fail_email {
-            return Err(FakeSinkError);
-        }
-        Ok(())
+        self.record(
+            SinkCall::Email(event.event_message.clone(), alert_type),
+            self.fail_email,
+        )
     }
 }
 
@@ -216,7 +216,7 @@ fn build_delivery(
     config: BTreeMap<AlertType, AlertTypeConfig>,
     batch_size: usize,
 ) -> Arc<AlertDelivery<FakeDelivery>> {
-    let clock_trait: Arc<dyn Clock> = Arc::clone(clock);
+    let clock_trait: Arc<dyn Clock> = Arc::<FakeClock>::clone(clock);
     let lookup: BTreeMap<String, String> = environment
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
