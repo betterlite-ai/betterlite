@@ -24,13 +24,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# the gate's task container carries Node and the host's docker socket but no docker client
-if ! command -v docker > /dev/null; then
-  command -v apt-get > /dev/null || fail 'docker is not installed and this host has no apt-get'
-  apt-get update
-  DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends docker-cli docker-buildx
-fi
-
 # the real export is what a user receives, so every check runs against it
 bash "${tools}/build.sh" build "${source_args[@]}"
 
