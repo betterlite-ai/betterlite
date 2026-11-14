@@ -334,7 +334,7 @@ fn a_context_text_defaults_to_the_empty_string(#[case] context: &str, #[case] te
 fn a_context_text_of_another_type_names_the_field() {
     let error = decode_vertex_rag_payload(br#"{"contexts":{"contexts":[{"text":5}]}}"#, "query")
         .unwrap_err();
-    assert!(matches!(error, PayloadError::Json(error) if error.to_string().contains("text")));
+    assert!(matches!(error, PayloadError::Json(decode) if decode.to_string().contains("text")));
 }
 
 #[rstest]
@@ -352,7 +352,7 @@ fn a_context_score_of_another_type_names_the_field() {
     let error =
         decode_vertex_rag_payload(br#"{"contexts":{"contexts":[{"score":"high"}]}}"#, "query")
             .unwrap_err();
-    assert!(matches!(error, PayloadError::Json(error) if error.to_string().contains("score")));
+    assert!(matches!(error, PayloadError::Json(decode) if decode.to_string().contains("score")));
 }
 
 #[test]
@@ -381,7 +381,7 @@ fn a_reply_without_contexts_is_an_empty_page(#[case] body: &str) {
 #[case(br#"{"contexts":{"contexts":[5]}}"#, "contexts.contexts[0]")]
 fn a_malformed_search_reply_names_the_field(#[case] body: &[u8], #[case] field: &str) {
     let error = decode_vertex_rag_payload(body, "query").unwrap_err();
-    assert!(matches!(error, PayloadError::Json(error) if error.to_string().contains(field)));
+    assert!(matches!(error, PayloadError::Json(decode) if decode.to_string().contains(field)));
 }
 
 #[test]
@@ -598,7 +598,7 @@ fn the_corpus_id_is_the_last_resource_name_segment(#[case] body: &str, #[case] e
 #[case(br#"{"display_name":5}"#, "display_name")]
 fn a_malformed_corpus_reply_names_the_field(#[case] body: &[u8], #[case] field: &str) {
     let error = decode_vertex_rag_corpus(body, &utc()).unwrap_err();
-    assert!(matches!(error, PayloadError::Json(error) if error.to_string().contains(field)));
+    assert!(matches!(error, PayloadError::Json(decode) if decode.to_string().contains(field)));
 }
 
 #[rstest]
