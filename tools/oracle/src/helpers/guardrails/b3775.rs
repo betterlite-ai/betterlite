@@ -9,7 +9,7 @@ use crate::helpers::{Helper, HelperResult};
 // boxed so the variants keep one size; variant_size_differences and large_enum_variant deny the spread
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-enum Input {
+pub(crate) enum Input {
     ShouldRun(Box<headroom::ShouldRun>),
     Plan(Box<headroom::Plan>),
     Hiddenlayer(Box<hiddenlayer::Input>),

@@ -45,13 +45,11 @@ fn the_client_credentials_are_sent_as_basic_auth() {
 fn a_non_ok_status_is_an_error() {
     let server = support::start(vec![support::reply(401, r#"{"error":"denied"}"#)]);
     let error = ask(&server).unwrap_err();
-    match error {
-        JwtError::Status { status, body } => {
-            assert_eq!(status, 401);
-            assert_eq!(body, r#"{"error":"denied"}"#);
-        }
-        other => panic!("a status error was expected, got {other}"),
-    }
+    let JwtError::Status { status, body } = error else {
+        panic!("a status error was expected, got {error}");
+    };
+    assert_eq!(status, 401);
+    assert_eq!(body, r#"{"error":"denied"}"#);
 }
 
 #[test]

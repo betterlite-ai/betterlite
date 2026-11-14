@@ -5,7 +5,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::Router;
-use axum::body::Bytes;
 use axum::http::{HeaderMap, Method, StatusCode, Uri};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_context::agentic_callback::error::AgenticHookError;
@@ -43,7 +42,6 @@ pub(crate) struct Seen {
     pub(crate) path: String,
     pub(crate) authorization: Option<String>,
     pub(crate) content_type: Option<String>,
-    pub(crate) body: String,
 }
 
 #[derive(Clone)]
@@ -88,7 +86,7 @@ pub(crate) fn retrieve_reply(content: &str) -> Reply {
 pub(crate) struct Server {
     pub(crate) base: String,
     seen: Arc<Mutex<Vec<Seen>>>,
-    _server: JoinSet<io::Result<()>>,
+    _tasks: JoinSet<io::Result<()>>,
 }
 
 impl Server {
@@ -103,11 +101,11 @@ pub(crate) async fn start(replies: Vec<Reply>) -> Server {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let answers = Arc::new(Mutex::new(VecDeque::from(replies)));
     let recorder = Arc::clone(&seen);
-    let answer = move |method: Method, uri: Uri, headers: HeaderMap, bytes: Bytes| {
+    let answer = move |method: Method, uri: Uri, headers: HeaderMap| {
         let capture = Arc::clone(&recorder);
         let queue = Arc::clone(&answers);
         async move {
-            record(&capture, &method, &uri, &headers, &bytes);
+            record(&capture, &method, &uri, &headers);
             let next = queue
                 .lock()
                 .unwrap()
@@ -124,17 +122,11 @@ pub(crate) async fn start(replies: Vec<Reply>) -> Server {
     Server {
         base,
         seen,
-        _server: server,
+        _tasks: server,
     }
 }
 
-fn record(
-    recorder: &Mutex<Vec<Seen>>,
-    method: &Method,
-    uri: &Uri,
-    headers: &HeaderMap,
-    bytes: &Bytes,
-) {
+fn record(recorder: &Mutex<Vec<Seen>>, method: &Method, uri: &Uri, headers: &HeaderMap) {
     let header = |name: &str| {
         headers
             .get(name)
@@ -146,7 +138,6 @@ fn record(
         path: uri.to_string(),
         authorization: header("authorization"),
         content_type: header("content-type"),
-        body: String::from_utf8(bytes.to_vec()).unwrap(),
     });
 }
 

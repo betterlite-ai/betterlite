@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::io;
 use std::net::TcpListener;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{Builder as ThreadBuilder, JoinHandle};
 use std::time::Duration;
 
@@ -111,23 +111,40 @@ pub(crate) fn start(replies: Vec<Reply>) -> Server {
             if let Some(delay) = next.delay {
                 sleep(delay).await;
             }
-            let mut response_headers = HeaderMap::new();
-            for (header_name, header_value) in &next.headers {
-                let name = HeaderName::from_bytes(header_name.as_bytes()).unwrap();
-                response_headers.insert(name, HeaderValue::from_str(header_value).unwrap());
-            }
-            response_headers.insert(
-                HeaderName::from_static("content-type"),
-                HeaderValue::from_static("application/json"),
-            );
             (
                 StatusCode::from_u16(next.status).unwrap(),
-                response_headers,
+                response_headers(&next.headers),
                 next.body,
             )
         }
     };
-    let router = Router::new().fallback(answer);
+    let (stop, thread) = serve(listener, Router::new().fallback(answer));
+    Server {
+        base: format!("http://{address}"),
+        port: address.port(),
+        seen,
+        stop: Some(stop),
+        thread: Some(thread),
+    }
+}
+
+fn response_headers(headers: &[(String, String)]) -> HeaderMap {
+    let mut response_headers = HeaderMap::new();
+    for (header_name, header_value) in headers {
+        let name = HeaderName::from_bytes(header_name.as_bytes()).unwrap();
+        response_headers.insert(name, HeaderValue::from_str(header_value).unwrap());
+    }
+    response_headers.insert(
+        HeaderName::from_static("content-type"),
+        HeaderValue::from_static("application/json"),
+    );
+    response_headers
+}
+
+fn serve(
+    listener: TcpListener,
+    router: Router,
+) -> (oneshot::Sender<()>, JoinHandle<io::Result<()>>) {
     let (stop, stopped) = oneshot::channel();
     let thread = ThreadBuilder::new()
         .spawn(move || {
@@ -145,13 +162,7 @@ pub(crate) fn start(replies: Vec<Reply>) -> Server {
             })
         })
         .unwrap();
-    Server {
-        base: format!("http://{address}"),
-        port: address.port(),
-        seen,
-        stop: Some(stop),
-        thread: Some(thread),
-    }
+    (stop, thread)
 }
 
 fn record(
@@ -198,16 +209,25 @@ impl TokenScript {
 
 impl JwtTransport for TokenScript {
     fn fetch_token(&self, request: &TokenRequest) -> Result<String, JwtError> {
-        self.calls.lock().unwrap().push(SeenTokenRequest {
-            url: request.url.clone(),
-            api_id: request.api_id.clone(),
-            api_key: request.api_key.expose_secret().to_owned(),
-            timeout: request.timeout,
-        });
-        match self.answers.lock().unwrap().pop_front() {
-            Some(answer) => answer,
-            None => panic!("the token script has no answer left"),
-        }
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(SeenTokenRequest {
+                url: request.url.clone(),
+                api_id: request.api_id.clone(),
+                api_key: request.api_key.expose_secret().to_owned(),
+                timeout: request.timeout,
+            });
+        let next = self
+            .answers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front();
+        next.unwrap_or_else(|| {
+            Err(JwtError::Body {
+                source: io::Error::other("the token script has no answer left"),
+            })
+        })
     }
 }
 

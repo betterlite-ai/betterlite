@@ -213,7 +213,7 @@ fn scripted(reply: &Reply) -> ScriptedReply {
     }
 }
 
-fn answer(status: u16, body: Value) -> UpstreamAnswer {
+const fn answer(status: u16, body: Value) -> UpstreamAnswer {
     UpstreamAnswer {
         status,
         headers: BTreeMap::new(),

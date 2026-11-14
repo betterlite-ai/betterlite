@@ -33,7 +33,9 @@ fn build(
     env: &BTreeMap<String, String>,
     script: &Arc<TokenScript>,
 ) -> Result<HiddenlayerAuth, HiddenlayerError> {
-    let client = base_builder().build().unwrap();
+    let client = base_builder()
+        .build()
+        .map_err(|source| HiddenlayerError::Transport { source })?;
     let transport: Arc<dyn JwtTransport> = Arc::<TokenScript>::clone(script);
     HiddenlayerAuth::new(input, env, client, transport)
 }

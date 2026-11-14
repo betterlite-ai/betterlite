@@ -31,7 +31,7 @@ INVALID_RESPONSE_PREFIX: Final = (
 TIMEOUT_SECONDS: Final = 0.3
 VERSION_TWO: Final = 2
 
-# LiteLLM takes timeout only through **kwargs: Unpack[_CustomGuardrailOptions], which a typed Callable cannot name
+# LiteLLM takes timeout only through **kwargs, which a typed Callable cannot name
 Construct: TypeAlias = Callable[..., HiddenlayerGuardrail | HiddenlayerGuardrailV2]  # type: ignore[explicit-any]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L229
 
 
