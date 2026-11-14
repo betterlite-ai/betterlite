@@ -1,6 +1,6 @@
 #![no_main]
 
-use betterlite_core::google_genai::streaming::{GenAiStreamError, GoogleGenAiStream};
+use betterlite_core::google_genai::streaming::GoogleGenAiStream;
 use libfuzzer_sys::fuzz_target;
 
 const LINE_LIMIT: usize = 0x0010_0000;
@@ -27,9 +27,6 @@ fuzz_target!(|data: &[u8]| {
 fn events(chunks: Vec<Vec<u8>>) -> Vec<Step> {
     let stream = GoogleGenAiStream::new(chunks.into_iter().map(Ok), LINE_LIMIT);
     stream
-        .map(|item| match item {
-            Ok(event) => Step::Event(event),
-            Err(_) => Step::Failed,
-        })
+        .map(|item| item.map_or(Step::Failed, Step::Event))
         .collect()
 }
