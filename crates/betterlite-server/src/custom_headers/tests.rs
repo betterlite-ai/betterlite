@@ -18,8 +18,8 @@ fn build(input: JsonValue) -> HeaderMap {
 }
 
 fn build_with_timing(input: JsonValue, enabled: bool) -> HeaderMap {
-    let input: CustomHeadersInput = serde_json::from_value(input).expect("the input parses");
-    custom_headers(&input, DetailedTiming { enabled })
+    let parsed: CustomHeadersInput = serde_json::from_value(input).expect("the input parses");
+    custom_headers(&parsed, DetailedTiming { enabled })
 }
 
 fn header(headers: &HeaderMap, name: &str) -> Option<String> {
@@ -409,11 +409,12 @@ fn spend_starts_at_zero_when_the_key_has_none() {
 
 #[test]
 fn key_limits_come_from_the_serialized_key() {
-    let key: BTreeMap<String, JsonData> = serde_json::from_str(
+    let key_fields: BTreeMap<String, JsonData> = serde_json::from_str(
         r#"{"tpm_limit": 100, "rpm_limit": 10, "max_budget": 25.5, "spend": 1.5, "allowed_model_region": "eu"}"#,
     )
     .expect("the key fixture parses");
-    let key = UserAPIKeyAuth::construct(AuthInput::Dict(key)).expect("the key fixture constructs");
+    let key =
+        UserAPIKeyAuth::construct(AuthInput::Dict(key_fields)).expect("the key fixture constructs");
     let view = KeyHeaderView::from_key(&key).expect("the key's header fields are read");
     assert_eq!(view.tpm_limit, Some(100));
     assert_eq!(view.rpm_limit, Some(10));
@@ -659,6 +660,18 @@ fn guardrail_headers_come_from_the_request_data() {
     assert_eq!(
         header(&headers, "x-litellm-applied-guardrails").as_deref(),
         Some("gr-1,gr-2")
+    );
+}
+
+#[test]
+fn a_bad_guardrail_field_drops_the_headers() {
+    let headers = build(json!({
+        "request_data": {"metadata": {"applied_guardrails": [1]}}
+    }));
+    assert_eq!(header(&headers, "x-litellm-applied-guardrails"), None);
+    assert_eq!(
+        header(&headers, "x-litellm-key-spend").as_deref(),
+        Some("0.0")
     );
 }
 

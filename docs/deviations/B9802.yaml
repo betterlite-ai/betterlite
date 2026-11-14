@@ -25,3 +25,14 @@ deviations:
       the group name is the proxy's own string, and porting repr would put
       "{'a': 1}" in a header name.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L447-L453
+  - what: >-
+      When the request data cannot be read as the guardrail metadata the caching headers are
+      built from (metadata.applied_guardrails as a list of numbers, say), every guardrail and
+      caching header is left out with a warning and the response is still sent. LiteLLM calls
+      get_logging_caching_headers before its try block at
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1846-L1848,
+      so its join raises a TypeError and the request fails.
+    why: >-
+      the request data is open JSON, and one badly typed guardrail field must not turn a
+      successful LLM response into a 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L488-L505
