@@ -623,6 +623,16 @@ fn empty_api_key_allows_client_secret() {
     assert_eq!(inputs.sources.calls().len(), 1);
 }
 
+fn empty_client_id_blocks_client_secret() {
+    let inputs = Inputs::default()
+        .with_tenant("tenant")
+        .with_client_id("")
+        .with_client_secret(&secret("client-secret"));
+    let value = initialize(&inputs, &Run::default());
+    assert!(value.token_provider.is_none());
+    assert!(inputs.sources.calls().is_empty());
+}
+
 fn username_password_with_key() {
     let password = secret("password");
     let inputs = Inputs::default()
@@ -821,6 +831,7 @@ pub(crate) fn azure_initializer_credentials() {
     client_secret_provider();
     environment_credentials();
     explicit_empty_tenant_blocks();
+    empty_client_id_blocks_client_secret();
     api_key_blocks_client_secret();
     empty_api_key_allows_client_secret();
     username_password_with_key();
