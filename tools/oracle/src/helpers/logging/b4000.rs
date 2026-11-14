@@ -255,13 +255,25 @@ fn describe(call: &StorageRequest) -> Value {
     if op == "entra_token" {
         return json!({ "op": op });
     }
-    let url = call.url.replace(START_DATE, "{date}");
+    let url = masked_position(&call.url).replace(START_DATE, "{date}");
     if op != "append" {
         return json!({ "op": op, "url": url });
     }
     let text = from_utf8(&call.body).unwrap_or_default();
     let body: Option<Value> = serde_json::from_str(text.trim_end_matches('\n')).ok();
     json!({ "op": op, "url": url, "body": body, "trailing_newline": text.ends_with('\n') })
+}
+
+// the flush position counts JSON bytes, and json.dumps spacing is outside the parity contract
+fn masked_position(url: &str) -> String {
+    let marker = "?action=flush&position=";
+    let Some((head, rest)) = url.split_once(marker) else {
+        return url.to_owned();
+    };
+    match rest.split_once('&') {
+        Some((_position, query)) => format!("{head}{marker}{{bytes}}&{query}"),
+        None => format!("{head}{marker}{{bytes}}"),
+    }
 }
 
 #[async_trait]

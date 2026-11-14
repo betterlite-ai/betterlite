@@ -3,7 +3,7 @@ import io
 import os
 import re
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import timedelta
 from types import ModuleType
 from typing import ClassVar, Literal, NotRequired, Protocol, TypedDict
@@ -26,7 +26,6 @@ AIO_MODULE = "azure.storage.filedatalake.aio"
 IDENTITY_MODULE = azure.identity.__name__
 START_SECONDS = 1_700_000_000.0
 BEARER = "tok-1"
-BODY = TypeAdapter(bytes | str | None)
 JSON_VALUE = TypeAdapter(JsonValue)
 SUCCESS_STATUS = {"create_directory": 201, "create_file": 201, "append": 202}
 # LiteLLM's event methods need premium_user; a licensed setup has it, and betterlite never checks
@@ -126,7 +125,12 @@ def operation(method: str, url: str) -> str:
 
 def answer(method: str, url: str, body: bytes) -> tuple[int, str]:
     op = operation(method, url)
-    entry: dict[str, JsonValue] = {"op": op, "url": re.sub(r"\d{4}-\d{2}-\d{2}", "{date}", url)}
+    # the flush position counts JSON bytes, and json.dumps spacing is outside the parity contract
+    position = re.sub(r"(\?action=flush&position=)\d+", r"\1{bytes}", url)
+    entry: dict[str, JsonValue] = {
+        "op": op,
+        "url": re.sub(r"\d{4}-\d{2}-\d{2}", "{date}", position),
+    }
     if op == "append":
         text = body.decode("utf-8")
         entry["body"] = JSON_VALUE.validate_json(text.rstrip("\n"))
@@ -135,7 +139,7 @@ def answer(method: str, url: str, body: bytes) -> tuple[int, str]:
     if Wire.replies:
         reply = Wire.replies.pop(0)
         return reply["status"], reply["body"]
-    return SUCCESS_STATUS[op] if op in SUCCESS_STATUS else 200, ""
+    return SUCCESS_STATUS.get(op, 200), ""
 
 
 def serve(request: httpx.Request) -> httpx.Response:
@@ -149,19 +153,19 @@ class ScriptedAdapter(HTTPAdapter):
         self,
         request: requests.PreparedRequest,
         stream: bool = False,
-        timeout: float | tuple[float | None, float | None] | None = None,
+        timeout: None | float | tuple[float, float] | tuple[float, None] = None,
         verify: bool | str = True,
-        cert: str | tuple[str, str] | None = None,
-        proxies: dict[str, str] | None = None,
+        cert: None | bytes | str | tuple[bytes | str, bytes | str] = None,
+        proxies: Mapping[str, str] | None = None,
     ) -> requests.Response:
         del stream, timeout, verify, cert, proxies
-        match BODY.validate_python(request.body):
-            case bytes() as content:
-                raw = content
-            case str() as text:
-                raw = text.encode("utf-8")
-            case None:
-                raw = b""
+        raw = b""
+        if request.body is not None:
+            match request.body:
+                case bytes() as content:
+                    raw = content
+                case str() as text:
+                    raw = text.encode("utf-8")
         status, text = answer(f"{request.method}", f"{request.url}", raw)
         payload = text.encode("utf-8")
         reply = HTTPResponse(
@@ -219,12 +223,12 @@ class NoCredentialChain:
 async def perform(
     action: Action,
     logger: AzureBlobStorageLogger,
+    sink: EventSink,
     clock: ManualClock,
     base: dict[str, JsonValue],
 ) -> JsonValue:
     try:
         if action["do"] == "event":
-            sink: EventSink = logger
             kwargs: dict[str, JsonValue] = {"standard_logging_object": {**base, "id": action["id"]}}
             if action.get("failure"):
                 await sink.async_log_failure_event(kwargs, None, 0.0, 0.0)
@@ -232,9 +236,8 @@ async def perform(
                 await sink.async_log_success_event(kwargs, None, 0.0, 0.0)
         # the per-payload upload's payload type carries Any, so queue one event and flush
         if action["do"] == "upload":
-            target: EventSink = logger
             event: dict[str, JsonValue] = {"standard_logging_object": {**base, "id": action["id"]}}
-            await target.async_log_success_event(event, None, 0.0, 0.0)
+            await sink.async_log_success_event(event, None, 0.0, 0.0)
         if action["do"] in {"upload", "flush"}:
             flusher: Flusher = logger
             await flusher.flush_queue()
@@ -255,7 +258,7 @@ def apply_environment(environment: dict[str, str]) -> None:
         os.environ[name] = value
 
 
-async def drive(scenario: Scenario) -> JsonValue:
+async def drive(scenario: Scenario, cache: ClientCache) -> JsonValue:
     apply_environment(scenario["environment"])
     replies = scenario.get("replies")
     Wire.calls = []
@@ -269,7 +272,6 @@ async def drive(scenario: Scenario) -> JsonValue:
         )
     except ValueError as error:
         return {"initialized": False, "error": str(error)}
-    cache: ClientCache = litellm.in_memory_llm_clients_cache
     cache.set_cache(
         key="async_httpx_client" + httpxSpecialProvider.LoggingCallback,
         value=AsyncHTTPHandler(transport=httpx.MockTransport(serve)),
@@ -278,7 +280,10 @@ async def drive(scenario: Scenario) -> JsonValue:
     base_payload = {} if base is None else base
     sys.modules[AIO_MODULE] = ScriptedAio(AIO_MODULE)
     sys.modules[IDENTITY_MODULE] = ScriptedIdentity(IDENTITY_MODULE)
-    results = [await perform(action, logger, clock, base_payload) for action in scenario["actions"]]
+    results = [
+        await perform(action, logger, logger, clock, base_payload)
+        for action in scenario["actions"]
+    ]
     queue: Queue = logger
     return {
         "initialized": True,
@@ -294,5 +299,8 @@ async def drive(scenario: Scenario) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    results = [asyncio.run(drive(scenario)) for scenario in input_value["scenarios"]]
+    results = [
+        asyncio.run(drive(scenario, litellm.in_memory_llm_clients_cache))
+        for scenario in input_value["scenarios"]
+    ]
     return {"results": results}
