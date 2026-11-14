@@ -26,14 +26,16 @@ pub fn map_openai_params(
         if mapped.contains_key(name) {
             continue;
         }
-        if GENERIC_OPENAI_PARAMS.contains(&name.as_str()) {
-            mapped.insert(name.clone(), value.clone());
-        } else if !drop_params {
+        if !GENERIC_OPENAI_PARAMS.contains(&name.as_str()) {
+            if drop_params {
+                continue;
+            }
             return Err(FalImageError::UnsupportedParameters {
                 parameters: vec![name.clone()],
                 model: model.to_owned(),
             });
         }
+        mapped.insert(name.clone(), value.clone());
     }
     Ok(mapped)
 }

@@ -47,21 +47,23 @@ fn image_object(entry: &Json) -> Option<FalImage> {
             b64_json: text_field(fields, "b64_json"),
             provider_specific_fields: provider_fields(fields),
         }),
-        _ => None,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => None,
     }
 }
 
 fn text_field(fields: &IndexMap<String, Json>, name: &str) -> Option<String> {
     match fields.get(name) {
         Some(Json::Text(text)) => Some(text.clone()),
-        _ => None,
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
+        | None => None,
     }
 }
 
 fn dimension(fields: &IndexMap<String, Json>, name: &str) -> Option<u64> {
     match fields.get(name) {
         Some(Json::Number(number)) => number.as_u64().filter(|value| *value > 0),
-        _ => None,
+        Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_))
+        | None => None,
     }
 }
 
