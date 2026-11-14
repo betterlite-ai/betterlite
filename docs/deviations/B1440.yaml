@@ -9,3 +9,4 @@ deviations:
   - what: A CometAPI embedding reply is decoded through B010's prepared execution, so it carries the caller's model.
     why: The typed EmbeddingResponse needs a model, and B010's decode gives the caller's model precedence.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cometapi/embed/transformation.py#L111-L130
+kept_bugs: []

@@ -2,13 +2,14 @@ kind: helper
 name: compatible-api-selection-native-collision
 call:
   compatible_api_selection:
-    - family: responses
-      provider: openai
-      model: gpt-4o
-      identity: name
-      native: openai
-      providers:
-        - provider: openai
-          supported_endpoints: ["/v1/responses"]
+    calls:
+      - family: responses
+        provider: sail
+        model: sail-chat
+        identity: name
+        native: sail
+        providers:
+          - provider: sail
+            supported_endpoints: ["/v1/chat/completions", "/v1/responses", "/v1/messages"]
 env: {}
 compare: {ignore: []}

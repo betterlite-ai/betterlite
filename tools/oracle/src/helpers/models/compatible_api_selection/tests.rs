@@ -5,12 +5,12 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use super::{Call, Op};
+use super::{Input, Op};
 use crate::case::{HelperCase, helper::validate_helper};
 use crate::helpers::Helper as _;
 
 fn answer(calls: Value) -> Value {
-    let input: Vec<Call> = serde_json::from_value(calls).unwrap();
+    let input: Input = serde_json::from_value(json!({ "calls": calls })).unwrap();
     Op::run(&input).unwrap()
 }
 
@@ -48,14 +48,35 @@ fn helper_seeds_select_compatible_api_selection() {
 
 #[test]
 fn a_native_answer_beats_a_registry_descriptor_that_lists_responses() {
+    let report = answer(json!([
+        {
+            "family": "responses",
+            "provider": "sail",
+            "identity": "name",
+            "native": "sail",
+            "providers": [{"provider": "sail", "supported_endpoints": ["/v1/responses"]}]
+        },
+        {
+            "family": "responses",
+            "provider": "sail",
+            "identity": "enum",
+            "native": "sail",
+            "providers": [{"provider": "sail", "supported_endpoints": ["/v1/responses"]}]
+        }
+    ]));
+    assert_eq!(report, json!(["native", "native"]));
+}
+
+#[test]
+fn a_responses_descriptor_without_a_native_answer_reports_the_json_slug() {
     let report = answer(json!([{
         "family": "responses",
-        "provider": "openai",
+        "provider": "sail",
         "identity": "name",
-        "native": "openai",
-        "providers": [{"provider": "openai", "supported_endpoints": ["/v1/responses"]}]
+        "native": null,
+        "providers": [{"provider": "sail", "supported_endpoints": ["/v1/responses"]}]
     }]));
-    assert_eq!(report, json!(["native"]));
+    assert_eq!(report, json!(["json:sail"]));
 }
 
 #[test]
@@ -68,6 +89,17 @@ fn an_unsupported_response_endpoint_selects_nothing() {
         "providers": [{"provider": "groq", "supported_endpoints": ["/v1/responses/v2"]}]
     }]));
     assert_eq!(report, json!([null]));
+}
+
+#[test]
+fn an_unknown_enum_identity_is_invalid_input() {
+    let input = json!({ "calls": [{
+        "family": "responses",
+        "provider": "not-a-provider",
+        "identity": "enum"
+    }] });
+    let error = Op::decode_and_run(&input).unwrap_err();
+    assert_eq!(error.class, "InvalidInput");
 }
 
 #[test]
@@ -84,13 +116,20 @@ fn deepseek_and_the_json_messages_tail_report_their_config_classes() {
             "provider": "groq",
             "model": "groq-llama",
             "providers": [{"provider": "groq", "supported_endpoints": ["/v1/messages"]}]
+        },
+        {
+            "family": "messages",
+            "provider": "meta",
+            "model": "meta-llama",
+            "providers": [{"provider": "meta", "supported_endpoints": ["/v1/chat/completions"]}]
         }
     ]));
     assert_eq!(
         report,
         json!([
             "DeepSeekAnthropicMessagesConfig",
-            "JSONProviderAnthropicMessagesConfig"
+            "JSONProviderAnthropicMessagesConfig",
+            null
         ])
     );
 }
@@ -99,17 +138,23 @@ fn deepseek_and_the_json_messages_tail_report_their_config_classes() {
 fn the_embedding_rerank_and_image_arms_report_their_config_classes() {
     let report = answer(json!([
         {"family": "embedding", "provider": "cometapi", "model": "m"},
+        {"family": "embedding", "provider": "openai", "model": "m"},
         {"family": "rerank", "provider": "deepinfra", "model": "m"},
+        {"family": "rerank", "provider": "cohere", "model": "m"},
         {"family": "image_generation", "provider": "aiml", "model": "m"},
-        {"family": "image_generation", "provider": "cometapi", "model": "m"}
+        {"family": "image_generation", "provider": "cometapi", "model": "m"},
+        {"family": "image_generation", "provider": "groq", "model": "m"}
     ]));
     assert_eq!(
         report,
         json!([
             "CometAPIEmbeddingConfig",
+            null,
             "DeepinfraRerankConfig",
+            null,
             "AimlImageGenerationConfig",
-            "CometAPIImageGenerationConfig"
+            "CometAPIImageGenerationConfig",
+            null
         ])
     );
 }
