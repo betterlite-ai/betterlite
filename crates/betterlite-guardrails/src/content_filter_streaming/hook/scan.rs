@@ -7,7 +7,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::StreamScan;
 use crate::content_filter_actions::error::ContentFilterActionError;
-use crate::content_filter_actions::{ContentFilterSource, filter_single_text_with_open_sentence};
+use crate::content_filter_actions::{ContentFilterSource, filter_single_text};
 use crate::content_filter_streaming::STREAM_HOLDBACK_CHARS;
 use crate::content_filter_streaming::error::StreamFilterError;
 use crate::content_filter_streaming::state::StreamedChoiceState;
@@ -157,8 +157,7 @@ fn scan_text(
 ) -> Result<(String, Vec<ContentFilterDetection>), StreamFilterError> {
     let mut choice_detections = Vec::new();
     let started = Instant::now();
-    // Python's buffer still holds the phrases and the open sentence a trim dropped, so its scan
-    // suppresses every category match and joins them to this text
+    // Python's buffer still holds the phrase a trim dropped, so its scan suppresses every category match
     let empty_categories = CategoryLoadResult::default();
     let categories = if previous.seen_exception_phrases.is_empty() {
         scan.source.categories
@@ -173,16 +172,11 @@ fn scan_text(
         keyword_redaction_tag: scan.source.keyword_redaction_tag,
     };
     let open_sentence = previous.open_sentence_words.join(" ");
-    let carried = if open_sentence.is_empty() {
-        None
-    } else {
-        Some(open_sentence.as_str())
-    };
-    let outcome = filter_single_text_with_open_sentence(
+    let outcome = scan_with_open_sentence(
         &filter_source,
         text_to_scan,
-        carried,
-        Some(&mut choice_detections),
+        &open_sentence,
+        &mut choice_detections,
     );
     scan.scan_time = scan.scan_time.saturating_add(started.elapsed());
     match outcome {
@@ -213,6 +207,33 @@ fn scan_text(
                 "content filter streaming scan failed; yielding the unfiltered text"
             );
             Ok((text_to_scan.to_owned(), previous.latest_detections.clone()))
+        }
+    }
+}
+
+// The open sentence a trim cut joins this text's first sentence, as Python's buffer still holds it
+fn scan_with_open_sentence(
+    source: &ContentFilterSource<'_>,
+    text: &str,
+    open_sentence: &str,
+    detections: &mut Vec<ContentFilterDetection>,
+) -> Result<String, ContentFilterActionError> {
+    if open_sentence.is_empty() {
+        return filter_single_text(source, text, Some(detections));
+    }
+    // a newline ends no sentence and no keyword crosses it, so the first one separates the words again
+    let combined = format!("{open_sentence}\n{text}");
+    let mut combined_detections = Vec::new();
+    let masked = filter_single_text(source, &combined, Some(&mut combined_detections))?;
+    match masked.split_once('\n') {
+        Some((_, masked_text)) => {
+            detections.extend(combined_detections);
+            Ok(masked_text.to_owned())
+        }
+        None => {
+            // a phrase pattern matched across the join and its mask replaced the newline
+            detections.clear();
+            filter_single_text(source, text, Some(detections))
         }
     }
 }

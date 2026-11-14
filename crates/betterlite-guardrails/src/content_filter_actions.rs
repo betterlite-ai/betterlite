@@ -2,8 +2,6 @@ pub mod error;
 pub mod handlers;
 mod tests;
 
-use std::borrow::Cow;
-
 use betterlite_config::sections::content_category::loading::CategoryLoadResult;
 use betterlite_config::sections::content_filter_records::{BlockedWord, ContentFilterDetection};
 use regex::Regex;
@@ -32,26 +30,11 @@ pub struct ContentFilterSource<'source> {
 pub fn filter_single_text(
     source: &ContentFilterSource<'_>,
     text: &str,
-    detections: Option<&mut Vec<ContentFilterDetection>>,
-) -> Result<String, ContentFilterActionError> {
-    filter_single_text_with_open_sentence(source, text, None, detections)
-}
-
-// The sentence a trimmed prefix left open joins the text's first sentence, as Python's buffer holds it
-pub fn filter_single_text_with_open_sentence(
-    source: &ContentFilterSource<'_>,
-    text: &str,
-    open_sentence: Option<&str>,
     mut detections: Option<&mut Vec<ContentFilterDetection>>,
 ) -> Result<String, ContentFilterActionError> {
     let exceptions = matching_exceptions(source.categories);
-    let conditional_text: Cow<'_, str> = match open_sentence {
-        Some(sentence) => Cow::Owned(format!("{sentence} {text}")),
-        None => Cow::Borrowed(text),
-    };
     let mut filtered = text.to_owned();
-    let conditional =
-        check_conditional_categories(&conditional_text, &exceptions, source.categories)?;
+    let conditional = check_conditional_categories(text, &exceptions, source.categories)?;
     if let Some(found) = conditional {
         filtered = handle_conditional_match(&found, text, detections.as_deref_mut())?;
     }
