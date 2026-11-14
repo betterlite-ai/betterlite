@@ -21,6 +21,6 @@ deviations:
   - what: The response body is read with a 1 MiB cap and must be UTF-8; a larger or non-UTF-8 answer is a typed TransportError::Body or TransportError::ResponseText, where LiteLLM reads the whole body and decodes it leniently through response.text.
     why: A sanitize answer carries findings, not a document, so a megabyte is already far beyond a real answer, and a typed failure keeps a hostile upstream from exhausting memory or smuggling mangled text into an error detail.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L351-L362
-  - what: A non-list applied_guardrails value is replaced by a one-name list; LiteLLM calls .append on it and raises AttributeError for a value that is not a list.
-    why: The bucket is shared request metadata that another guardrail may have written; replacing a wrong-typed value keeps the scan running instead of failing the request on metadata betterlite itself never wrote.
+  - what: A non-list applied_guardrails value is replaced by a one-name list after a warning that names the key and the old value's type; LiteLLM calls .append on it and raises AttributeError for a value that is not a list.
+    why: The bucket is shared request metadata that another guardrail may have written; replacing a wrong-typed value keeps the scan running instead of failing the request on metadata betterlite never wrote, and the warning keeps the lost value visible in the log.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L591-L599

@@ -53,6 +53,8 @@ struct UnusedTokens;
 
 #[async_trait]
 impl ArmorTokens for UnusedTokens {
+    type Error = ArmorTokenError;
+
     async fn access_token(&self) -> Result<(SecretString, Option<String>), ArmorTokenError> {
         Err(ArmorTokenError {
             detail: "the b3733 helper builds URLs and bodies without a token".to_owned(),
@@ -87,7 +89,7 @@ fn body(run: &RequestRun) -> Result<SanitizeBody, Box<HelperError>> {
     }
 }
 
-fn transport(request: &SanitizeRequest) -> ModelArmorTransport {
+fn transport(request: &SanitizeRequest) -> ModelArmorTransport<UnusedTokens> {
     ModelArmorTransport {
         template_id: request.template_id.clone(),
         project_id: request.project_id.clone(),

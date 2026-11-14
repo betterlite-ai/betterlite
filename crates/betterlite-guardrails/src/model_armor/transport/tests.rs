@@ -73,6 +73,8 @@ impl StubTokens {
 
 #[async_trait]
 impl ArmorTokens for StubTokens {
+    type Error = ArmorTokenError;
+
     async fn access_token(&self) -> Result<(SecretString, Option<String>), ArmorTokenError> {
         let mut calls = self.calls.lock().expect("token calls");
         *calls = calls.saturating_add(1);
@@ -116,7 +118,7 @@ fn header(headers: &HeaderMap, name: &str) -> String {
         .to_owned()
 }
 
-fn transport(endpoint: Option<&str>, tokens: StubTokens) -> ModelArmorTransport {
+fn transport(endpoint: Option<&str>, tokens: StubTokens) -> ModelArmorTransport<StubTokens> {
     ModelArmorTransport {
         template_id: Some("tmpl".to_owned()),
         project_id: Some("proj".to_owned()),
@@ -130,7 +132,7 @@ fn transport(endpoint: Option<&str>, tokens: StubTokens) -> ModelArmorTransport 
     }
 }
 
-fn offline(tokens: StubTokens) -> ModelArmorTransport {
+fn offline(tokens: StubTokens) -> ModelArmorTransport<StubTokens> {
     transport(Some("http://127.0.0.1:1"), tokens)
 }
 
@@ -158,6 +160,7 @@ where
     let sink = LogSink::default();
     let writer = sink.clone();
     let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
         .with_max_level(tracing::Level::DEBUG)
         .with_writer(move || writer.clone())
         .finish();
@@ -462,7 +465,7 @@ async fn request_timeout_is_a_typed_timeout() {
         .await;
     assert!(matches!(
         result,
-        Err(ArmorCallError::Transport(TransportError::Timeout { .. }))
+        Err(ArmorCallError::Transport(TransportError::Timeout(_)))
     ));
 }
 
@@ -533,9 +536,7 @@ async fn error_invalid_json_is_a_response_json_error() {
         .await;
     assert!(matches!(
         result,
-        Err(ArmorCallError::Transport(
-            TransportError::ResponseJson { .. }
-        ))
+        Err(ArmorCallError::Transport(TransportError::ResponseJson(_)))
     ));
 }
 
@@ -553,9 +554,7 @@ async fn error_non_utf8_body_is_a_response_text_error() {
         .await;
     assert!(matches!(
         result,
-        Err(ArmorCallError::Transport(
-            TransportError::ResponseText { .. }
-        ))
+        Err(ArmorCallError::Transport(TransportError::ResponseText(_)))
     ));
 }
 
@@ -567,7 +566,7 @@ async fn error_connection_failure_is_a_request_error() {
         .await;
     assert!(matches!(
         result,
-        Err(ArmorCallError::Transport(TransportError::Request { .. }))
+        Err(ArmorCallError::Transport(TransportError::Request(_)))
     ));
 }
 

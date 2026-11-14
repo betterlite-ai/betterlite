@@ -40,6 +40,8 @@ struct StubTokens;
 
 #[async_trait]
 impl ArmorTokens for StubTokens {
+    type Error = ArmorTokenError;
+
     async fn access_token(&self) -> Result<(SecretString, Option<String>), ArmorTokenError> {
         Ok((SecretString::from("token"), None))
     }
@@ -77,7 +79,7 @@ async fn serve(replies: Vec<(StatusCode, String)>) -> (String, Arc<Mutex<usize>>
     (endpoint, requests, server)
 }
 
-fn transport(endpoint: &str, sanitize_error_detail: bool) -> ModelArmorTransport {
+fn transport(endpoint: &str, sanitize_error_detail: bool) -> ModelArmorTransport<StubTokens> {
     ModelArmorTransport {
         template_id: Some("tmpl".to_owned()),
         project_id: Some("proj".to_owned()),
@@ -120,7 +122,7 @@ fn settings(name: Option<&str>, fail_on_error: bool, skip: bool) -> FileScanSett
     }
 }
 
-fn blocked(error: ScanError) -> (u16, IndexMap<String, GuardrailValue>) {
+fn blocked(error: ScanError<ArmorTokenError>) -> (u16, IndexMap<String, GuardrailValue>) {
     match error {
         ScanError::Blocked { status, detail } => (status, detail),
         other => panic!("expected a block, got {other:?}"),
@@ -155,6 +157,7 @@ where
     let sink = LogSink::default();
     let writer = sink.clone();
     let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
         .with_max_level(tracing::Level::DEBUG)
         .with_writer(move || writer.clone())
         .finish();
@@ -223,18 +226,24 @@ async fn request_files_replaces_a_non_list_applied_guardrails_value() {
         "applied_guardrails".to_owned(),
         Json::Text("not-a-list".to_owned()),
     )]));
-    let result = scan_request_files(
-        &messages(&pdf_attachment()),
-        &mut request_data,
-        &transport,
-        &settings(Some("armor"), true, false),
-    )
+    let log = logged(async {
+        let result = scan_request_files(
+            &messages(&pdf_attachment()),
+            &mut request_data,
+            &transport,
+            &settings(Some("armor"), true, false),
+        )
+        .await;
+        assert!(result.is_ok());
+    })
     .await;
-    assert!(result.is_ok());
     assert_eq!(
         metadata(&request_data).get("applied_guardrails"),
         Some(&Json::List(vec![Json::Text("armor".to_owned())]))
     );
+    assert!(log.contains("replacing an applied_guardrails value that is not a list"));
+    assert!(log.contains("key=\"applied_guardrails\""));
+    assert!(log.contains("found=\"string\""));
 }
 
 #[tokio::test]
@@ -470,7 +479,7 @@ async fn request_files_transport_errors_follow_fail_on_error() {
     .await;
     assert!(matches!(
         result,
-        Err(ScanError::Transport(TransportError::Request { .. }))
+        Err(ScanError::Transport(TransportError::Request(_)))
     ));
     let mut open = slots();
     let result = scan_request_files(
