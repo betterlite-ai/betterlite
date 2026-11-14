@@ -82,9 +82,9 @@ fn translate_truncate_tokens(extra_body: &Object, optional_params: &Object) -> O
     Some(value.clone())
 }
 
-fn log_dropped<'a, I>(keys: I, model: &str, what: &str)
+fn log_dropped<'key, I>(keys: I, model: &str, what: &str)
 where
-    I: Iterator<Item = &'a str>,
+    I: Iterator<Item = &'key str>,
 {
     let dropped: Vec<&str> = keys.collect();
     if !dropped.is_empty() {
@@ -96,7 +96,7 @@ where
     }
 }
 
-fn template_kwargs<'a>(extra_body: &'a Object, model: &str) -> Option<&'a Object> {
+fn template_kwargs<'body>(extra_body: &'body Object, model: &str) -> Option<&'body Object> {
     let raw = extra_body
         .get("chat_template_kwargs")
         .filter(|value| !value.is_null())?;
