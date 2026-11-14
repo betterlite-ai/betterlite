@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 
 use rstest::rstest;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::context::{GatewayTarget, SessionContext, SessionSettings, TurnOutcome};
 use crate::errors::HarnessError;
@@ -266,10 +266,10 @@ fn stream_events_yields_reasoning_before_text(#[case] kind: MessageKind) {
         panic!("expected a reasoning event");
     };
     assert_eq!(delta, "think");
-    let Event::Text { delta } = &events[1] else {
+    let Event::Text { delta: text } = &events[1] else {
         panic!("expected a text event");
     };
-    assert_eq!(delta, "hello");
+    assert_eq!(text, "hello");
 }
 
 #[test]
@@ -638,11 +638,9 @@ fn validate_environment_rejects_an_empty_model() {
 
 #[test]
 fn validate_environment_accepts_a_model() {
-    assert!(
-        DeepAgentsHarnessConfig
-            .validate_environment(&session_context())
-            .is_ok()
-    );
+    DeepAgentsHarnessConfig
+        .validate_environment(&session_context())
+        .unwrap();
 }
 
 #[test]
