@@ -24,12 +24,16 @@ pub(crate) struct FakeAuth {
     pub(crate) token_calls: Arc<Mutex<Vec<GetTokenAndUrl>>>,
 }
 
+fn push<Request>(calls: &Mutex<Vec<Request>>, request: Request) {
+    calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(request);
+}
+
 impl FakeAuth {
     fn record(&self, request: EnsureAccessToken) -> Result<AccessToken, AuthFailure> {
-        self.ensure_calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(request);
+        push(&self.ensure_calls, request);
         Ok(AccessToken {
             token: SecretString::from("mock-gcs-token"),
             project_id: "mock-project-id".to_owned(),
@@ -53,10 +57,7 @@ impl VertexAuth for FakeAuth {
     }
 
     fn get_token_and_url(&self, request: GetTokenAndUrl) -> Result<TokenAndUrl, AuthFailure> {
-        self.token_calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(request);
+        push(&self.token_calls, request);
         Ok(TokenAndUrl {
             token: SecretString::from("mock-gcs-token"),
             url: "https://original.example.com".to_owned(),

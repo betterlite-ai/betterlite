@@ -15,7 +15,7 @@ mod recording;
 mod tests;
 
 use self::cases::{
-    async_headers_case, initialize_case, logging_config_case, sync_headers_case, upload_case,
+    HeaderMode, headers_case, initialize_case, logging_config_case, upload_case,
     vertex_instance_case,
 };
 use self::input::{Action, Input};
@@ -38,8 +38,8 @@ impl Helper for Op {
 async fn execute(input: &Input) -> HelperResult {
     match input.action {
         Action::Initialize => initialize_case(input).await,
-        Action::AsyncHeaders => async_headers_case(input).await,
-        Action::SyncHeaders => sync_headers_case(input),
+        Action::AsyncHeaders => headers_case(input, HeaderMode::Async).await,
+        Action::SyncHeaders => headers_case(input, HeaderMode::Sync).await,
         Action::Upload => upload_case(input).await,
         Action::LoggingConfig => logging_config_case(input).await,
         Action::VertexInstance => vertex_instance_case(input).await,
@@ -61,17 +61,6 @@ pub(super) fn open(input: &Input) -> Result<Session, Box<HelperError>> {
     let base = initialize(environment, input.bucket.clone(), auth.clone(), client)
         .map_err(|error| failure("ValueError", error))?;
     Ok(Session { base, auth, sent })
-}
-
-pub(super) fn bucket_name(input: &Input) -> &str {
-    input.bucket.as_deref().unwrap_or("bucket")
-}
-
-pub(super) fn required_text<'text>(
-    value: Option<&'text str>,
-    name: &str,
-) -> Result<&'text str, Box<HelperError>> {
-    value.ok_or_else(|| failure("ValueError", name))
 }
 
 pub(super) fn failure<Message>(class: &str, message: Message) -> Box<HelperError>
