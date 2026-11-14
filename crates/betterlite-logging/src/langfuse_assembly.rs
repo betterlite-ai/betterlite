@@ -13,12 +13,16 @@ use opentelemetry_sdk::trace::IdGenerator;
 use rust_decimal::Decimal;
 
 use crate::fields::payload::StandardLoggingPayload;
+use crate::fields::usage::UsageError;
 use crate::langfuse_observations::identity::{Timestamp, resolve_trace_id};
 use crate::langfuse_rest::client::LangfuseApiClient;
 
 use self::observation::ObservationRequest;
 use self::trace_ids::CallTrace;
 use self::trace_params::TracePlanRequest;
+
+// the injected langfuse_masking_function; Sync so the assembly future can cross threads
+pub type Masker<'masker> = &'masker (dyn Fn(&Json) -> Json + Sync);
 
 pub const REDACTED_BY_LITELLM: &str = "redacted-by-litellm";
 
@@ -45,7 +49,7 @@ pub struct GenerationTrace<'trace> {
     pub aws_region_name: Option<&'trace str>,
     pub cache_hit: Option<bool>,
     pub preset_cache_key: Option<&'trace str>,
-    pub masker: Option<&'trace dyn Fn(&Json) -> Json>,
+    pub masker: Option<Masker<'trace>>,
 }
 
 // the litellm_settings values _log_langfuse_v2 reads while it assembles
@@ -63,7 +67,7 @@ where
     pub tracer: &'runtime T,
     pub id_generator: &'runtime dyn IdGenerator,
     pub prompt_client: &'runtime LangfuseApiClient,
-    pub environment: &'runtime dyn EnvironmentLookup,
+    pub environment: &'runtime (dyn EnvironmentLookup + Sync),
 }
 
 #[derive(Clone, Copy)]
@@ -77,7 +81,7 @@ pub enum AssemblyError {
     #[error("the standard logging payload could not be written as JSON")]
     Payload(#[source] serde_json::Error),
     #[error("the response usage could not be read")]
-    Usage(#[source] crate::fields::usage::UsageError),
+    Usage(#[source] UsageError),
     #[error("the prompt management metadata could not be read")]
     PromptMetadata(#[source] serde_json::Error),
 }
@@ -90,7 +94,7 @@ pub async fn assemble_generation_trace<T>(
     settings: &AssemblySettings<'_>,
 ) -> (Option<TraceId>, Option<String>)
 where
-    T: Tracer,
+    T: Tracer + Sync,
 {
     match assemble(trace, runtime, settings).await {
         Ok(logged) => logged,
@@ -107,7 +111,7 @@ async fn assemble<T>(
     settings: &AssemblySettings<'_>,
 ) -> Result<(Option<TraceId>, Option<String>), AssemblyError>
 where
-    T: Tracer,
+    T: Tracer + Sync,
 {
     let input = AssemblyInput { trace, settings };
     let mut cleaned = metadata::clean(&input);

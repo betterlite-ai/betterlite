@@ -22,7 +22,7 @@ use tracing_subscriber::fmt::MakeWriter;
 
 use crate::fields::payload::StandardLoggingPayload;
 use crate::langfuse_assembly::{
-    AssemblyRuntime, AssemblySettings, GenerationTrace, assemble_generation_trace,
+    AssemblyRuntime, AssemblySettings, GenerationTrace, Masker, assemble_generation_trace,
 };
 use crate::langfuse_observations::identity::{Timestamp, resolve_trace_id};
 use crate::langfuse_observations::requested_ids::RequestedIdGenerator;
@@ -160,7 +160,7 @@ pub fn upper(value: &Json) -> Json {
     }
 }
 
-fn dyn_mask(mask: &fn(&Json) -> Json) -> &dyn Fn(&Json) -> Json {
+fn dyn_mask(mask: &fn(&Json) -> Json) -> Masker<'_> {
     mask
 }
 
@@ -343,10 +343,10 @@ pub fn attribute(data: &SpanData, key: &str) -> Option<Value> {
 }
 
 pub fn text(data: &SpanData, key: &str) -> Option<String> {
-    match attribute(data, key)? {
-        Value::String(text) => Some(String::from(text)),
-        Value::Bool(_) | Value::I64(_) | Value::F64(_) | Value::Array(_) => None,
-    }
+    let Value::String(text) = attribute(data, key)? else {
+        return None;
+    };
+    Some(String::from(text))
 }
 
 pub fn json(data: &SpanData, key: &str) -> Option<Json> {

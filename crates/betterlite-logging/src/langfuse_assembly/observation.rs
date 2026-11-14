@@ -94,29 +94,36 @@ where
         completion_start_time: request.trace.completion_start_time,
         prompt: prompt.as_ref(),
     });
+    merge(observation, trace_level_attributes(request, trace_root))
+}
+
+fn trace_level_attributes<T>(request: &ObservationRequest<'_, T>, trace_root: bool) -> Vec<KeyValue>
+where
+    T: Tracer,
+{
+    let planned = &request.plan.params;
     let trace_input = trace_io(
-        request.plan.params.get("input"),
-        params.input.as_ref(),
+        planned.get("input"),
+        request.params.input.as_ref(),
         trace_root,
     );
     let trace_output = trace_io(
-        request.plan.params.get("output"),
-        params.output.as_ref(),
+        planned.get("output"),
+        request.params.output.as_ref(),
         trace_root,
     );
-    let trace = trace_attributes(&TraceAttributes {
-        name: request.plan.params.get("name"),
-        user_id: request.plan.params.get("user_id"),
-        session_id: request.plan.params.get("session_id"),
-        version: request.plan.params.get("version"),
-        release: request.plan.params.get("release"),
-        tags: request.plan.params.get("tags"),
-        metadata: request.plan.params.get("metadata"),
-        public: trace_public_flag(request.plan.params.get("public")),
+    trace_attributes(&TraceAttributes {
+        name: planned.get("name"),
+        user_id: planned.get("user_id"),
+        session_id: planned.get("session_id"),
+        version: planned.get("version"),
+        release: planned.get("release"),
+        tags: planned.get("tags"),
+        metadata: planned.get("metadata"),
+        public: trace_public_flag(planned.get("public")),
         input: trace_input.as_ref(),
         output: trace_output.as_ref(),
-    });
-    merge(observation, trace)
+    })
 }
 
 // on the root observation the server takes the generation's own input and output for the trace's

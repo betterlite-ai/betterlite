@@ -9,7 +9,7 @@ use crate::langfuse_projections::tags::{add_default_langfuse_tags, get_langfuse_
 use crate::langfuse_projections::text::optional_str;
 use crate::logging_privacy::snapshot::redact_user_api_key_info;
 
-use super::AssemblyInput;
+use super::{AssemblyInput, Masker};
 
 pub(super) const DENIED_STEERING_KEYS: [&str; 4] =
     ["headers", "endpoint", "caching_groups", "previous_models"];
@@ -22,8 +22,14 @@ pub struct Steering {
     pub existing_trace_id: Option<Json>,
     pub update_trace_keys: Vec<String>,
     pub debug: bool,
-    pub mask_input: bool,
-    pub mask_output: bool,
+    pub mask: MaskFlags,
+}
+
+// the mask_input and mask_output metadata flags
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MaskFlags {
+    pub input: bool,
+    pub output: bool,
 }
 
 pub struct Cleaned {
@@ -46,7 +52,7 @@ pub fn clean(input: &AssemblyInput<'_>) -> Cleaned {
         .trace
         .payload
         .and_then(|payload| payload.metadata.prompt_management_metadata.as_ref());
-    let mut fields = clean_fields(
+    let mut cleaned_fields = clean_fields(
         input.trace.metadata,
         prompt_management,
         input.settings.default_tags,
@@ -60,10 +66,9 @@ pub fn clean(input: &AssemblyInput<'_>) -> Cleaned {
         hidden_cache_key.as_deref(),
         input.trace.preset_cache_key,
     );
-    let steering = pop_steering(&mut fields, input.settings.update_trace_keys);
-    let fields = redacted(fields, input.settings.redact_user_api_key_info);
+    let steering = pop_steering(&mut cleaned_fields, input.settings.update_trace_keys);
     Cleaned {
-        fields,
+        fields: redacted(cleaned_fields, input.settings.redact_user_api_key_info),
         tags,
         steering,
     }
@@ -113,11 +118,7 @@ fn hidden_cache_key(metadata: &IndexMap<String, Json>) -> Option<String> {
 
 // a Rust masking function cannot fail, so the projection's warning path never fires
 #[must_use]
-pub fn mask(
-    masker: Option<&dyn Fn(&Json) -> Json>,
-    input: Option<&Json>,
-    output: Option<&Json>,
-) -> Masked {
+pub fn mask(masker: Option<Masker<'_>>, input: Option<&Json>, output: Option<&Json>) -> Masked {
     Masked {
         input: masked_value(masker, input),
         output: masked_value(masker, output),
@@ -125,13 +126,13 @@ pub fn mask(
 }
 
 // without a configured function the value travels unmasked, as the source's `else input` branch does
-fn masked_value(masker: Option<&dyn Fn(&Json) -> Json>, value: Option<&Json>) -> Option<Json> {
-    let Some(masker) = masker else {
+fn masked_value(masker: Option<Masker<'_>>, value: Option<&Json>) -> Option<Json> {
+    let Some(mask_function) = masker else {
         return value.cloned();
     };
-    let value = value?;
-    let adapter = |node: &Json| -> Result<Json, Infallible> { Ok(masker(node)) };
-    Some(apply_masking_function(value, &adapter))
+    let unmasked = value?;
+    let adapter = |node: &Json| -> Result<Json, Infallible> { Ok(mask_function(node)) };
+    Some(apply_masking_function(unmasked, &adapter))
 }
 
 fn pop_steering(fields: &mut IndexMap<String, Json>, update_keys_enabled: bool) -> Steering {
@@ -149,12 +150,14 @@ fn pop_steering(fields: &mut IndexMap<String, Json>, update_keys_enabled: bool) 
             Vec::new()
         },
         debug: pop_present(fields, "debug_langfuse").is_some_and(|value| debug_requested(&value)),
-        mask_input: pop_present(fields, "mask_input")
-            .as_ref()
-            .is_some_and(as_steering_flag),
-        mask_output: pop_present(fields, "mask_output")
-            .as_ref()
-            .is_some_and(as_steering_flag),
+        mask: MaskFlags {
+            input: pop_present(fields, "mask_input")
+                .as_ref()
+                .is_some_and(as_steering_flag),
+            output: pop_present(fields, "mask_output")
+                .as_ref()
+                .is_some_and(as_steering_flag),
+        },
     }
 }
 
@@ -174,7 +177,7 @@ fn debug_requested(value: &Json) -> bool {
 
 fn redacted(fields: IndexMap<String, Json>, enabled: bool) -> IndexMap<String, Json> {
     match redact_user_api_key_info(&Json::Object(fields), enabled) {
-        Json::Object(fields) => fields,
+        Json::Object(kept) => kept,
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
             IndexMap::new()
         }

@@ -49,8 +49,8 @@ pub async fn build(
     Ok(GenerationParams {
         name: generation_name(input.trace, fields),
         id: generation_id(input.trace, fields),
-        input: masked_value(masked.input.as_ref(), steering.mask_input),
-        output: masked_value(masked.output.as_ref(), steering.mask_output),
+        input: masked_value(masked.input.as_ref(), steering.mask.input),
+        output: masked_value(masked.output.as_ref(), steering.mask.output),
         cost_details: usage::cost_details(response_usage.as_ref(), input.trace.response_cost),
         metadata: Json::Object(metadata),
         version: optional_str(fields.shift_remove("version").as_ref()),
@@ -67,10 +67,10 @@ fn generation_id(
     trace: &GenerationTrace<'_>,
     fields: &mut IndexMap<String, Json>,
 ) -> Option<String> {
-    match fields.shift_remove("generation_id") {
-        Some(value) => optional_str(Some(&value)),
-        None => computed_id(trace),
-    }
+    fields.shift_remove("generation_id").map_or_else(
+        || computed_id(trace),
+        |requested| optional_str(Some(&requested)),
+    )
 }
 
 fn computed_id(trace: &GenerationTrace<'_>) -> Option<String> {
@@ -99,15 +99,15 @@ fn generation_name(trace: &GenerationTrace<'_>, fields: &mut IndexMap<String, Js
     if let Some(name) = requested {
         return name;
     }
-    match optional_str(fields.get("user_api_key_alias")) {
-        Some(alias) => format!("litellm:{alias}"),
-        None => format!("litellm-{}", trace.call_type),
-    }
+    optional_str(fields.get("user_api_key_alias")).map_or_else(
+        || format!("litellm-{}", trace.call_type),
+        |alias| format!("litellm:{alias}"),
+    )
 }
 
 fn model_name(trace: &GenerationTrace<'_>) -> String {
-    let deployment = optional_str(trace.metadata.get("deployment"));
-    if let Some(deployment) = deployment
+    let configured = optional_str(trace.metadata.get("deployment"));
+    if let Some(deployment) = configured
         && deployment.contains('/')
     {
         return deployment;
@@ -165,8 +165,8 @@ fn enrichments(trace: &GenerationTrace<'_>) -> Result<IndexMap<String, Json>, As
     Ok(enrichments)
 }
 
-fn insert_text(enrichments: &mut IndexMap<String, Json>, name: &str, value: Option<&str>) {
-    if let Some(value) = value {
+fn insert_text(enrichments: &mut IndexMap<String, Json>, name: &str, candidate: Option<&str>) {
+    if let Some(value) = candidate {
         enrichments.insert(name.to_owned(), Json::Text(value.to_owned()));
     }
 }
@@ -198,10 +198,10 @@ fn generation_metadata(
 fn payload_metadata(
     payload: Option<&StandardLoggingPayload>,
 ) -> Result<IndexMap<String, Json>, AssemblyError> {
-    let Some(payload) = payload else {
+    let Some(logged) = payload else {
         return Ok(IndexMap::new());
     };
-    let decoded = serde_json::to_value(&payload.metadata)
+    let decoded = serde_json::to_value(&logged.metadata)
         .and_then(serde_json::from_value::<Json>)
         .map_err(AssemblyError::Payload)?;
     match decoded {
@@ -215,8 +215,8 @@ fn payload_metadata(
 fn prompt_metadata(
     payload: Option<&StandardLoggingPayload>,
 ) -> Result<Option<PromptManagementMetadata>, AssemblyError> {
-    let stored = payload.and_then(|payload| payload.metadata.prompt_management_metadata.as_ref());
-    let Some(stored) = stored else {
+    let logged = payload.and_then(|found| found.metadata.prompt_management_metadata.as_ref());
+    let Some(stored) = logged else {
         return Ok(None);
     };
     if matches!(stored, Json::Null) {

@@ -261,12 +261,10 @@ fn proxy_request_headers_never_reach_an_attribute() {
         generation,
         "langfuse.trace.metadata.proxy_server_request"
     ));
-    for pair in &generation.attributes {
-        let rendered = format!("{:?}", pair.value);
-        assert!(!rendered.contains("Bearer secret"), "{}", pair.key);
-        assert!(!rendered.contains("sk-leak"), "{}", pair.key);
-        assert!(!rendered.contains("a=b"), "{}", pair.key);
-    }
+    let rendered = format!("{:?}", generation.attributes);
+    assert!(!rendered.contains("Bearer secret"));
+    assert!(!rendered.contains("sk-leak"));
+    assert!(!rendered.contains("a=b"));
 }
 
 #[test]

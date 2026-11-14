@@ -71,7 +71,7 @@ fn new_params(
     );
     params.insert(
         "input".to_owned(),
-        masked_io(request.masked.input.as_ref(), request.steering.mask_input),
+        masked_io(request.masked.input.as_ref(), request.steering.mask.input),
     );
     insert_optional(&mut params, "version", trace_version(fields));
     insert_optional(
@@ -85,7 +85,7 @@ fn new_params(
     }
     params.insert(
         "output".to_owned(),
-        masked_io(request.masked.output.as_ref(), request.steering.mask_output),
+        masked_io(request.masked.output.as_ref(), request.steering.mask.output),
     );
     params
 }
@@ -115,7 +115,7 @@ fn existing_params(
     {
         params.insert(
             "input".to_owned(),
-            masked_io(request.masked.input.as_ref(), request.steering.mask_input),
+            masked_io(request.masked.input.as_ref(), request.steering.mask.input),
         );
     }
     if request
@@ -126,7 +126,7 @@ fn existing_params(
     {
         params.insert(
             "output".to_owned(),
-            masked_io(request.masked.output.as_ref(), request.steering.mask_output),
+            masked_io(request.masked.output.as_ref(), request.steering.mask.output),
         );
     }
     params
@@ -141,15 +141,14 @@ fn trace_keys(fields: &IndexMap<String, Json>) -> Vec<String> {
 }
 
 fn trace_version(fields: &mut IndexMap<String, Json>) -> Option<Json> {
-    match fields.shift_remove("trace_version") {
-        Some(value) => Some(value),
-        None => fields.get("version").cloned(),
-    }
+    fields
+        .shift_remove("trace_version")
+        .map_or_else(|| fields.get("version").cloned(), Some)
 }
 
 fn end_user_id(payload: Option<&StandardLoggingPayload>) -> Option<Json> {
     payload
-        .and_then(|payload| payload.metadata.user_api_key_end_user_id.clone())
+        .and_then(|logged| logged.metadata.user_api_key_end_user_id.clone())
         .map(Json::Text)
 }
 
@@ -160,8 +159,8 @@ fn masked_io(value: Option<&Json>, redacted: bool) -> Json {
     value.cloned().unwrap_or(Json::Null)
 }
 
-fn insert_optional(params: &mut IndexMap<String, Json>, name: &str, value: Option<Json>) {
-    if let Some(value) = value {
+fn insert_optional(params: &mut IndexMap<String, Json>, name: &str, candidate: Option<Json>) {
+    if let Some(value) = candidate {
         params.insert(name.to_owned(), value);
     }
 }
@@ -208,11 +207,11 @@ fn add_proxy_base_tag(request: &TracePlanRequest<'_>, tags: &mut Vec<String>) {
     {
         return;
     }
-    let base = request
+    let configured = request
         .environment
         .lookup("PROXY_BASE_URL")
         .filter(|value| !value.is_empty());
-    if let Some(base) = base {
+    if let Some(base) = configured {
         tags.push(format!("proxy_base_url:{base}"));
     }
 }

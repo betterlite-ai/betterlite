@@ -73,9 +73,9 @@ fn cache_creation_tokens(usage: &Usage) -> i64 {
 #[must_use]
 pub fn cost_details(usage: Option<&Usage>, cost: Option<Decimal>) -> Option<Json> {
     match (usage, cost) {
-        (Some(_usage), Some(cost)) => {
+        (Some(_usage), Some(total)) => {
             let mut record = IndexMap::new();
-            record.insert("total".to_owned(), cost_value(cost));
+            record.insert("total".to_owned(), cost_value(total));
             Some(Json::Object(record))
         }
         (None, _) | (Some(_), None) => None,
