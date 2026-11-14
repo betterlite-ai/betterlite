@@ -381,6 +381,29 @@ fn budget_missing() {
         false,
     ));
     assert_eq!(early.to_string(), missing.to_string());
+
+    let text = failure(transform(
+        &world,
+        "claude-sonnet-4-5",
+        USER,
+        r#"{"max_tokens":"2048"}"#,
+        false,
+    ));
+    assert_eq!(text.status_code(), 400);
+    assert_eq!(text.to_string(), "the field max_tokens must be an integer");
+
+    let fraction = failure(transform(
+        &world,
+        "claude-sonnet-4-5",
+        USER,
+        r#"{"max_tokens":1024.5}"#,
+        false,
+    ));
+    assert_eq!(fraction.status_code(), 400);
+    assert_eq!(
+        fraction.to_string(),
+        "the field max_tokens must be an integer"
+    );
 }
 
 #[test]
@@ -389,6 +412,7 @@ fn nonadaptive_effort_translation() {
     native_effort_kept();
     legacy_effort_fallbacks();
     invalid_legacy_effort();
+    no_reasoning_support_drops_adaptive_effort();
 }
 
 #[test]
@@ -511,6 +535,48 @@ fn invalid_legacy_effort() {
     ));
     assert_eq!(invalid.status_code(), 400);
     assert!(invalid.to_string().contains("Unmapped reasoning effort"));
+}
+
+// The record is an explicit seam: a pinned name whose provider record has no reasoning support.
+#[test]
+fn no_reasoning_support_drops_adaptive_effort() {
+    let world = World::load(
+        r#"{"claude-haiku-4-5": {"litellm_provider": "anthropic", "supports_reasoning": false, "supports_adaptive_thinking": false, "supports_output_config": false, "supports_legacy_thinking": false, "supports_xhigh_reasoning_effort": false, "supports_max_reasoning_effort": false, "thinking_always_on": false}}"#,
+    );
+    let (_guard, logs) = capture();
+    let dropped = body_of(transform(
+        &world,
+        "claude-haiku-4-5",
+        USER,
+        r#"{"max_tokens":32768,"thinking":{"type":"adaptive"},"output_config":{"effort":"medium","format":{"type":"json_schema"}}}"#,
+        false,
+    ));
+    assert_eq!(field(&dropped, "thinking"), None);
+    assert_eq!(
+        field(&dropped, "output_config"),
+        Some(&json(r#"{"format":{"type":"json_schema"}}"#))
+    );
+
+    let invalid = body_of(transform(
+        &world,
+        "claude-haiku-4-5",
+        USER,
+        r#"{"max_tokens":32768,"thinking":{"type":"adaptive"},"output_config":{"effort":"extreme"}}"#,
+        false,
+    ));
+    assert_eq!(field(&invalid, "thinking"), None);
+    assert_eq!(field(&invalid, "output_config"), None);
+
+    let warnings = logs.warnings();
+    assert_eq!(warnings.len(), 2, "{warnings:?}");
+    for warning in &warnings {
+        assert!(
+            warning.contains(
+                "Dropping adaptive `thinking`/`output_config.effort` for model=claude-haiku-4-5"
+            ),
+            "{warnings:?}"
+        );
+    }
 }
 
 #[test]
