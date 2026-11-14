@@ -4,7 +4,6 @@ from typing import Literal, NotRequired, TypeAlias, TypedDict
 import httpx
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.llms.oci.chat.transformation import (
     OCIChatConfig,
@@ -22,6 +21,15 @@ DATA_PREFIX = "data:"
 STREAM_MODEL = "meta.llama"
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+LOGGING = Logging(
+    model=STREAM_MODEL,
+    messages=[],
+    stream=True,
+    call_type="completion",
+    start_time=dt.datetime.now(tz=dt.UTC),
+    litellm_call_id="oci-chat-stream",
+    function_id="oci-chat-stream",
+)
 
 
 class ExchangeCall(TypedDict):
@@ -144,46 +152,35 @@ def exchange_call(
     return {"body": recorder.bodies[-1]}
 
 
-def response_result(credentials: dict[str, JsonValue], call: ResponseCall) -> JsonValue:
-    recorder = Recorder(call["status"], call["body"])
-    client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(recorder)))
-    try:
-        response = litellm.completion(
-            model=call["model"],
-            messages=[{"role": "user", "content": "hi"}],
-            api_base=API_BASE,
-            custom_llm_provider="oci",
-            client=client,
-            **credentials,
-        )
-    except APIStatusError as error:
-        return {"status": error.status_code}
-    match response:
-        case ModelResponse():
-            dumped = RESPONSE_DUMP.validate_json(response.model_dump_json())
-            choice = dumped["choices"][0]
-            return {
-                "model": dumped["model"],
-                "content": choice["message"].get("content"),
-                "finish_reason": choice.get("finish_reason"),
-            }
-        case CustomStreamWrapper():
-            raise ValueError("the OCI chat reply was not a plain response")
+def response_result(call: ResponseCall) -> JsonValue:
+    raw_response = httpx.Response(call["status"], json=call["body"])
+    if raw_response.is_error:
+        return {"status": raw_response.status_code}
+    response = OCIChatConfig().transform_response(
+        model=call["model"],
+        raw_response=raw_response,
+        model_response=ModelResponse(),
+        logging_obj=LOGGING,
+        request_data={},
+        messages=[],
+        optional_params={},
+        litellm_params={},
+        encoding=None,
+    )
+    dumped = RESPONSE_DUMP.validate_json(response.model_dump_json())
+    choice = dumped["choices"][0]
+    return {
+        "model": dumped["model"],
+        "content": choice["message"].get("content"),
+        "finish_reason": choice.get("finish_reason"),
+    }
 
 
 def stream_items(reads: list[str]) -> list[JsonValue]:
     wrapper = OCIStreamWrapper(
         completion_stream=iter(()),
         model=STREAM_MODEL,
-        logging_obj=Logging(
-            model=STREAM_MODEL,
-            messages=[],
-            stream=True,
-            call_type="completion",
-            start_time=dt.datetime.now(tz=dt.UTC),
-            litellm_call_id="oci-chat-stream",
-            function_id="oci-chat-stream",
-        ),
+        logging_obj=LOGGING,
         custom_llm_provider="oci",
     )
     items: list[JsonValue] = []
@@ -226,11 +223,6 @@ def run(input_value: Call) -> JsonValue:
                 ]
             }
         case "response":
-            return {
-                "calls": [
-                    response_result(input_value["credentials"], call)
-                    for call in input_value["responses"]
-                ]
-            }
+            return {"calls": [response_result(call) for call in input_value["responses"]]}
         case "stream":
             return {"items": stream_items(input_value["reads"])}
