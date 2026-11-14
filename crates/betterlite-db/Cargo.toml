@@ -25,6 +25,7 @@ betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 bytes = "1.12.1"
 chrono.workspace = true
+csv = "1.4.0"
 deadpool-postgres.workspace = true
 futures-util = { version = "0.3.34", default-features = false }
 hex.workspace = true
