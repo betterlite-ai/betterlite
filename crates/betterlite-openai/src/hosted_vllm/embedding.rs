@@ -51,13 +51,15 @@ pub fn get_complete_url(
     api_base: Option<&str>,
     environment: &dyn EnvironmentLookup,
 ) -> Result<String, HostedVllmEmbeddingError> {
-    let base = match api_base {
-        Some(base) => String::from(base),
-        None => environment
-            .lookup(API_BASE_ENV)
-            .filter(|base| !base.is_empty())
-            .ok_or(HostedVllmEmbeddingError::MissingApiBase)?,
-    };
+    let base = api_base.map_or_else(
+        || {
+            environment
+                .lookup(API_BASE_ENV)
+                .filter(|base| !base.is_empty())
+                .ok_or(HostedVllmEmbeddingError::MissingApiBase)
+        },
+        |base| Ok(String::from(base)),
+    )?;
     let trimmed = base.trim_end_matches('/');
     if trimmed.ends_with("/embeddings") {
         Ok(String::from(trimmed))
@@ -139,22 +141,18 @@ pub fn transform_embedding_response(
     }
     let reply: RawReply =
         serde_json::from_slice(raw).map_err(|source| HostedVllmEmbeddingError::Shape { source })?;
-    let usage = match reply.usage {
-        Some(usage) => EmbeddingUsage {
-            prompt_tokens: usage.prompt_tokens,
-            completion_tokens: usage.completion_tokens,
-            completion_tokens_details: None,
-            prompt_tokens_details: None,
-            total_tokens: usage.total_tokens,
-        },
-        None => EmbeddingUsage {
-            prompt_tokens: 0,
-            completion_tokens: 0,
-            completion_tokens_details: None,
-            prompt_tokens_details: None,
-            total_tokens: 0,
-        },
+    let mut usage = EmbeddingUsage {
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        completion_tokens_details: None,
+        prompt_tokens_details: None,
+        total_tokens: 0,
     };
+    if let Some(given) = &reply.usage {
+        usage.prompt_tokens = given.prompt_tokens;
+        usage.completion_tokens = given.completion_tokens;
+        usage.total_tokens = given.total_tokens;
+    }
     Ok(EmbeddingResponse {
         object: reply.object.unwrap_or_else(|| String::from("list")),
         data: reply.data,
