@@ -60,7 +60,7 @@ def echo(scope: QueryScope, secret: str) -> str:
         "scope": OBJECT.validate_python(scope),
         "secret": secret,
     }
-    return json.dumps(payload)
+    return json.dumps(payload, separators=(",", ":"), sort_keys=True)
 
 
 class CannedStorage(ClickHouseStorage):

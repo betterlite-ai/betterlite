@@ -75,7 +75,7 @@ pub(crate) struct Script {
     pub(crate) get_span_error: Value,
 }
 
-fn default_tracing() -> bool {
+const fn default_tracing() -> bool {
     true
 }
 
@@ -88,7 +88,7 @@ impl Helper for Op {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|error| failure(error))?;
+            .map_err(failure)?;
         runtime.block_on(answer(input))
     }
 }
@@ -110,13 +110,14 @@ async fn answer(input: &Input) -> HelperResult {
     let response = router::router(state)
         .oneshot(request)
         .await
-        .map_err(|error| failure(error))?;
+        .map_err(failure)?;
     let status = response.status();
     let headers = response.headers().clone();
     let body = to_bytes(response.into_body(), usize::MAX)
         .await
-        .map_err(|error| failure(error))?;
-    if is_ingest(input) || status.is_success() {
+        .map_err(failure)?;
+    if (input.request.method == "POST" && input.request.path == INGEST_PATH) || status.is_success()
+    {
         return Ok(route_value(status, &headers, &body));
     }
     Err(Box::new(HelperError {
@@ -127,10 +128,6 @@ async fn answer(input: &Input) -> HelperResult {
         code: None,
         message: detail(&body),
     }))
-}
-
-fn is_ingest(input: &Input) -> bool {
-    input.request.method == "POST" && input.request.path == INGEST_PATH
 }
 
 fn detail(body: &[u8]) -> String {
@@ -164,16 +161,14 @@ fn header_text(headers: &HeaderMap, name: &str) -> Option<String> {
 
 fn build_request(input: &Input) -> Result<Request<Body>, Box<HelperError>> {
     let mut builder = Request::builder()
-        .method(
-            Method::from_bytes(input.request.method.as_bytes()).map_err(|error| failure(error))?,
-        )
+        .method(Method::from_bytes(input.request.method.as_bytes()).map_err(failure)?)
         .uri(uri_text(input));
     for (name, value) in &input.request.headers {
         builder = builder.header(name.as_str(), value.as_str());
     }
     builder
         .body(Body::from(body_bytes(input)?))
-        .map_err(|error| failure(error))
+        .map_err(failure)
 }
 
 fn body_bytes(input: &Input) -> Result<Bytes, Box<HelperError>> {
@@ -181,7 +176,7 @@ fn body_bytes(input: &Input) -> Result<Bytes, Box<HelperError>> {
         return STANDARD
             .decode(&input.request.body)
             .map(Bytes::from)
-            .map_err(|error| failure(error));
+            .map_err(failure);
     }
     Ok(Bytes::copy_from_slice(input.request.body.as_bytes()))
 }
@@ -219,7 +214,7 @@ fn principal(auth: &AuthInput) -> Result<Principal, Box<HelperError>> {
         "project": auth.project_id.as_ref().map(|id| json!({"id": id})),
         "credential_ref": {"token_id": auth.token},
     }))
-    .map_err(|error| failure(error))
+    .map_err(failure)
 }
 
 fn failure<Message>(message: Message) -> Box<HelperError>

@@ -85,8 +85,7 @@ impl TraceRuntime for ScriptedRuntime {
     }
 
     fn query_store(&self) -> Arc<dyn TraceQueryStore> {
-        let store: Arc<dyn TraceQueryStore> = Arc::new(CannedQueries);
-        store
+        Arc::new(CannedQueries)
     }
 }
 
