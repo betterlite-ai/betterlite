@@ -5,4 +5,4 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/elevenlabs/audio_transcription/transformation.py#L117
   - what: A reply whose bytes are not UTF-8 reports its byte count in the decode error, where LiteLLM echoes httpx's replacement-character decoding of the same bytes.
     why: The raw reply text in the error is a UTF-8 decode, so bytes that are not UTF-8 have no text to echo and the message states how many arrived instead.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/elevenlabs/audio_transcription/transformation.py#L117
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/elevenlabs/audio_transcription/transformation.py#L149
