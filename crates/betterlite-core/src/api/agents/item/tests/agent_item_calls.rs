@@ -732,6 +732,19 @@ fn delete_sends_a_delete_and_forwards_the_extra_headers() {
 }
 
 #[test]
+fn delete_forwards_the_caller_timeout() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let config = fixture();
+    let mut harness = Harness::new();
+    let call = Call::new("agent-1").kwarg("api_base", text(&base(listener.local_addr().unwrap())));
+    let mut request = call.request();
+    request.timeout = Some(Duration::from_millis(20));
+    let started = Instant::now();
+    delete(&config, harness.deps(), &request).expect_err("the listener never answers");
+    assert!(started.elapsed() < TIMEOUT);
+}
+
+#[test]
 fn list_versions_forwards_the_pagination_parameters() {
     let body = r#"{"agentVersions": [{"name": "v1"}], "nextPageToken": "n"}"#;
     let serving = serve(reply(200, body));
