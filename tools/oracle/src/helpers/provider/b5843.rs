@@ -28,10 +28,7 @@ mod input;
 const FIXED_SECONDS: i64 = 1_730_882_977;
 
 fn per_model(models: &[String], answer: fn(&str) -> serde_json::Value) -> serde_json::Value {
-    let mut found = Vec::with_capacity(models.len());
-    for model in models {
-        found.push(answer(model));
-    }
+    let found: Vec<serde_json::Value> = models.iter().map(|model| answer(model)).collect();
     json!({"models": found})
 }
 

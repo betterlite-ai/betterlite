@@ -168,7 +168,7 @@ async fn request_rejects_a_cohere_call_without_a_user_message() {
     assert_eq!(refusal.status, 400);
     assert_eq!(
         refusal.message,
-        "No user message found \u{2014} Cohere models require at least one user message"
+        "No user message found: Cohere models need at least one user message"
     );
 }
 

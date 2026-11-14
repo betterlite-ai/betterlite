@@ -21,9 +21,6 @@ deviations:
   - what: A non-string response_format type is a 400 that names the field, where LiteLLM runs str() on it and forwards the upper-cased text as an OCI type.
     why: A value of the wrong type is an error in betterlite, so Python's str() coercion is not ported.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L190
-  - what: A response body larger than 16 MiB is an error with the upstream status before JSON decoding; LiteLLM has no body size limit.
-    why: betterlite bounds the bytes it buffers instead of decoding an unbounded upstream body.
-    link: ""
-  - what: An unfinished stream line longer than 1 MiB (1048576 bytes) is a 500 error, where LiteLLM keeps the unfinished line without a limit.
-    why: betterlite bounds the bytes it buffers while it waits for the end of a line, and one line of an OCI event is far below the cap.
+  - what: A response body larger than 16 MiB is an error with the upstream status before JSON decoding, and an unfinished stream line longer than 1 MiB (1048576 bytes) is a 500 error; LiteLLM has no body size limit and keeps an unfinished line without a limit.
+    why: betterlite bounds the bytes it buffers instead of decoding an unbounded upstream body, and one line of an OCI event is far below the cap.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L98-L135

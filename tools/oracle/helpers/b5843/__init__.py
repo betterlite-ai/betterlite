@@ -19,8 +19,6 @@ from pydantic import JsonValue, TypeAdapter
 litellm.suppress_debug_info = True
 
 API_BASE = "https://example.test"
-DATA_PREFIX = "data:"
-STREAM_MODEL = "meta.llama"
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 MODEL_RESPONSE: TypeAdapter[ModelResponse] = TypeAdapter(ModelResponse)
@@ -177,9 +175,9 @@ def stream_items(reads: list[str]) -> list[JsonValue]:
     no_messages: list[dict[str, str]] = []
     wrapper = OCIStreamWrapper(
         completion_stream=iter(()),
-        model=STREAM_MODEL,
+        model="meta.llama",
         logging_obj=Logging(
-            model=STREAM_MODEL,
+            model="meta.llama",
             messages=no_messages,
             stream=True,
             call_type="completion",
@@ -192,14 +190,13 @@ def stream_items(reads: list[str]) -> list[JsonValue]:
     items: list[JsonValue] = []
     for line in "".join(reads).split("\n"):
         stripped = line.strip()
-        if not stripped.startswith(DATA_PREFIX):
+        if not stripped.startswith("data:"):
             continue
         chunk = wrapper.chunk_creator(stripped)
         if chunk is None:
             items.append({"done": True})
             continue
-        dumped = STREAM_DUMP.validate_json(chunk.model_dump_json())
-        choice = dumped["choices"][0]
+        choice = STREAM_DUMP.validate_json(chunk.model_dump_json())["choices"][0]
         items.append(
             {
                 "content": choice["delta"].get("content"),

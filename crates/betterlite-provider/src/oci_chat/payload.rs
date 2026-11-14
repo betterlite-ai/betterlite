@@ -22,8 +22,7 @@ const BAD_SERVING_MODE: &str = "kwarg `oci_serving_mode` must be either 'ON_DEMA
 
 const BAD_ENDPOINT_ID: &str = "kwarg `oci_endpoint_id` must be a string";
 
-const NO_USER_MESSAGE: &str =
-    "No user message found \u{2014} Cohere models require at least one user message";
+const NO_USER_MESSAGE: &str = "No user message found: Cohere models need at least one user message";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
