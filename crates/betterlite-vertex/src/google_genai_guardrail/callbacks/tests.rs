@@ -5,8 +5,8 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 
 use crate::google_genai_guardrail::callbacks::{
-    ApplyFuture, GenaiGuardrail, GuardrailCall, GuardrailInputs, InputType, process_request,
-    process_response, process_stream,
+    ApplyFuture, GenaiGuardrail, GuardedOutput, GuardrailCall, GuardrailInputs, InputType,
+    process_output, process_request,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -76,14 +76,24 @@ async fn empty_skip() {
     assert_eq!(Json::Object(data), original);
 
     let mut response = object(r#"{"candidates":[]}"#);
-    process_response(&mut response, None, &Object::new(), &mut recorder)
-        .await
-        .unwrap();
+    process_output(
+        GuardedOutput::Response(&mut response),
+        None,
+        &Object::new(),
+        &mut recorder,
+    )
+    .await
+    .unwrap();
 
     let frames = vec![json(r#"{"candidates":[]}"#)];
-    process_stream(&frames, None, &Object::new(), &mut recorder)
-        .await
-        .unwrap();
+    process_output(
+        GuardedOutput::Frames(frames.as_slice()),
+        None,
+        &Object::new(),
+        &mut recorder,
+    )
+    .await
+    .unwrap();
     assert!(recorder.calls.is_empty());
 }
 
@@ -110,8 +120,8 @@ async fn model_string_only(#[case] source: &str, #[case] expected: Option<&str>)
     assert_eq!(recorder.calls[0].input_type, InputType::Request);
 
     let mut response = object(r#"{"candidates":[{"content":{"parts":[{"text":"x"}]}}]}"#);
-    process_response(
-        &mut response,
+    process_output(
+        GuardedOutput::Response(&mut response),
         Some(&object(source)),
         &Object::new(),
         &mut recorder,
@@ -148,9 +158,14 @@ async fn a_supplied_response_key_is_kept_and_metadata_is_added() {
     let mut response = object(r#"{"candidates":[{"content":{"parts":[{"text":"raw"}]}}]}"#);
     let request_data = object(r#"{"model":"gemini-2.5-flash","response":null}"#);
     let metadata = object(r#"{"user_api_key_user_id":"u1"}"#);
-    process_response(&mut response, Some(&request_data), &metadata, &mut recorder)
-        .await
-        .unwrap();
+    process_output(
+        GuardedOutput::Response(&mut response),
+        Some(&request_data),
+        &metadata,
+        &mut recorder,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         Json::Object(recorder.calls[0].request_data.clone()),
         json(
@@ -168,8 +183,8 @@ async fn an_absent_response_key_gets_the_pre_write_response() {
     };
     let mut response = object(r#"{"candidates":[{"content":{"parts":[{"text":"raw"}]}}]}"#);
     let original = Json::Object(response.clone());
-    process_response(
-        &mut response,
+    process_output(
+        GuardedOutput::Response(&mut response),
         Some(&object(r#"{"model":"gemini"}"#)),
         &Object::new(),
         &mut recorder,
@@ -197,9 +212,14 @@ async fn request_and_response_replacements_are_written_back() {
     );
 
     let mut response = object(r#"{"candidates":[{"content":{"parts":[{"text":"raw"}]}}]}"#);
-    process_response(&mut response, None, &Object::new(), &mut recorder)
-        .await
-        .unwrap();
+    process_output(
+        GuardedOutput::Response(&mut response),
+        None,
+        &Object::new(),
+        &mut recorder,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         Json::Object(response),
         json(r#"{"candidates":[{"content":{"parts":[{"text":"masked"}]}}]}"#)
@@ -218,17 +238,27 @@ async fn block_propagates() {
     assert!(process_request(&mut data, &mut recorder).await.is_err());
     let mut response = object(r#"{"candidates":[{"content":{"parts":[{"text":"x"}]}}]}"#);
     assert!(
-        process_response(&mut response, None, &Object::new(), &mut recorder)
-            .await
-            .is_err()
+        process_output(
+            GuardedOutput::Response(&mut response),
+            None,
+            &Object::new(),
+            &mut recorder,
+        )
+        .await
+        .is_err()
     );
     let frames = vec![json(
         r#"{"candidates":[{"content":{"parts":[{"text":"x"}]}}]}"#,
     )];
     assert!(
-        process_stream(&frames, None, &Object::new(), &mut recorder)
-            .await
-            .is_err()
+        process_output(
+            GuardedOutput::Frames(frames.as_slice()),
+            None,
+            &Object::new(),
+            &mut recorder,
+        )
+        .await
+        .is_err()
     );
     assert_eq!(recorder.calls.len(), 3);
 }
@@ -250,9 +280,14 @@ async fn stream_replacement_ignored() {
     let original = frames.clone();
     let request_data = object(r#"{"model":"gemini"}"#);
     let metadata = object(r#"{"user_api_key_user_id":"u1"}"#);
-    process_stream(&frames, Some(&request_data), &metadata, &mut recorder)
-        .await
-        .unwrap();
+    process_output(
+        GuardedOutput::Frames(frames.as_slice()),
+        Some(&request_data),
+        &metadata,
+        &mut recorder,
+    )
+    .await
+    .unwrap();
     assert_eq!(frames, original);
     assert_eq!(recorder.calls.len(), 1);
     let call = &recorder.calls[0];
