@@ -13,9 +13,9 @@ use betterlite_openai::deepinfra::rerank::{
     complete_url, map_cohere_rerank_params, transform_rerank_request, validate_environment,
 };
 use betterlite_openai::reasoning_models::DropParams;
+use betterlite_prompts::arguments::json::Object;
 use secrecy::SecretString;
 use serde::Deserialize;
-use serde::de::DeserializeOwned;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -99,19 +99,13 @@ fn number(case: &Value, name: &str) -> Result<f64, String> {
         .ok_or_else(|| format!("{name} must be a number"))
 }
 
-fn object(value: &Value) -> Result<betterlite_prompts::arguments::json::Object, String> {
-    from_value(value)
-}
-
-fn from_value<Decoded: DeserializeOwned>(value: &Value) -> Result<Decoded, String> {
-    serde_json::from_value(value.clone()).map_err(|error| error.to_string())
-}
-
 fn chat_map(params: &Value) -> Result<Value, String> {
     let mut results = Vec::new();
     for case in list(params)? {
-        let non_default = object(&case["params"])?;
-        let mut optional = object(&case["optional_params"])?;
+        let non_default: Object =
+            serde_json::from_value(case["params"].clone()).map_err(|error| error.to_string())?;
+        let mut optional: Object = serde_json::from_value(case["optional_params"].clone())
+            .map_err(|error| error.to_string())?;
         let outcome = chat::map_openai_params(MapRequest {
             model: text(case, "model")?,
             non_default_params: &non_default,
@@ -134,8 +128,10 @@ fn chat_map(params: &Value) -> Result<Value, String> {
 fn tool_content(params: &Value) -> Result<Value, String> {
     let mut results = Vec::new();
     for case in list(params)? {
-        let messages: Vec<ChatMessage> = from_value(&case["messages"])?;
-        let optional = object(&case["optional_params"])?;
+        let messages: Vec<ChatMessage> =
+            serde_json::from_value(case["messages"].clone()).map_err(|error| error.to_string())?;
+        let optional: Object = serde_json::from_value(case["optional_params"].clone())
+            .map_err(|error| error.to_string())?;
         let environment: BTreeMap<String, String> = BTreeMap::new();
         let body = chat::transform_request(
             &ChatTransform {
@@ -159,7 +155,8 @@ fn rerank_request(params: &Value) -> Result<Value, String> {
     for case in list(params)? {
         let explicit = case["api_key"].as_str().map(SecretString::from);
         let fallback = case["environment_key"].as_str().map(SecretString::from);
-        let headers: Headers = from_value(&case["headers"])?;
+        let headers: Headers =
+            serde_json::from_value(case["headers"].clone()).map_err(|error| error.to_string())?;
         let merged = validate_environment(&EnvironmentRequest {
             headers: &headers,
             api_key: explicit.as_ref(),
@@ -168,8 +165,10 @@ fn rerank_request(params: &Value) -> Result<Value, String> {
         .map_err(|error| error.to_string())?;
         let url = complete_url(case["api_base"].as_str(), text(case, "model")?)
             .map_err(|error| error.to_string())?;
-        let non_default: Params = from_value(&case["non_default"])?;
-        let documents: Vec<RerankDocument> = from_value(&case["documents"])?;
+        let non_default: Params = serde_json::from_value(case["non_default"].clone())
+            .map_err(|error| error.to_string())?;
+        let documents: Vec<RerankDocument> =
+            serde_json::from_value(case["documents"].clone()).map_err(|error| error.to_string())?;
         let mapped = map_cohere_rerank_params(&RerankMapRequest {
             non_default_params: &non_default,
             query: text(case, "query")?,
@@ -216,7 +215,8 @@ fn rerank_response(params: &Value) -> Result<Value, String> {
 fn error_extraction(params: &Value) -> Result<Value, String> {
     let mut results = Vec::new();
     for case in list(params)? {
-        let headers: BTreeMap<String, Json> = from_value(&case["headers"])?;
+        let headers: BTreeMap<String, Json> =
+            serde_json::from_value(case["headers"].clone()).map_err(|error| error.to_string())?;
         let raw = case["status_code"]
             .as_u64()
             .ok_or_else(|| String::from("status_code must be an integer"))?;

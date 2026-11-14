@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Literal, Protocol, TypedDict, runtime_checkable
+from typing import Final, Literal, Protocol, TypedDict, runtime_checkable
 
 import httpx
 from litellm.exceptions import UnsupportedParamsError
@@ -9,9 +9,10 @@ from litellm.llms.deepinfra.rerank.transformation import DeepinfraRerankConfig
 from litellm.types.rerank import RerankResponse
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
-UNSUPPORTED = 400
+UNSUPPORTED_STATUS = 400
+UNSUPPORTED: Final[type[Exception]] = UnsupportedParamsError
+PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
-MESSAGES: TypeAdapter[list[dict[str, JsonValue]]] = TypeAdapter(list[dict[str, JsonValue]])
 
 
 class FallbackError(Exception):
@@ -85,8 +86,16 @@ class RerankBoundary(BaseModel):
     config: RerankConfig
 
 
-CHAT: ChatConfig = ChatBoundary.model_validate({"config": DeepInfraConfig()}).config
-RERANK: RerankConfig = RerankBoundary.model_validate({"config": DeepinfraRerankConfig()}).config
+class ErrorRecord(BaseModel):
+    status_code: int
+    message: str
+    headers: dict[str, JsonValue] | None
+
+
+CHAT_VALUES: Final = {"config": DeepInfraConfig()}
+RERANK_VALUES: Final = {"config": DeepinfraRerankConfig()}
+CHAT: ChatConfig = ChatBoundary.model_validate(CHAT_VALUES).config
+RERANK: RerankConfig = RerankBoundary.model_validate(RERANK_VALUES).config
 
 
 class ChatCase(TypedDict):
@@ -145,8 +154,8 @@ def chat_map(params: JsonValue) -> JsonValue:
                 case["model"],
                 drop_params=case["drop_params"],
             )
-        except UnsupportedParamsError:
-            results.append({"ok": False, "status": UNSUPPORTED})
+        except UNSUPPORTED:
+            results.append({"ok": False, "status": UNSUPPORTED_STATUS})
             continue
         results.append({"ok": True, "mapped": mapped})
     return {"results": results}
@@ -157,7 +166,7 @@ def tool_content(params: JsonValue) -> JsonValue:
     for case in TypeAdapter(list[ToolCase]).validate_python(params):
         body = CHAT.transform_request(
             model=case["model"],
-            messages=MESSAGES.validate_python(case["messages"]),
+            messages=VALUE.validate_python(case["messages"]),
             optional_params=dict(case["optional_params"]),
             litellm_params={},
             headers={},
@@ -166,59 +175,70 @@ def tool_content(params: JsonValue) -> JsonValue:
     return {"results": results}
 
 
+def request_record(case: RequestCase) -> JsonValue:
+    headers = RERANK.validate_environment(case["headers"], case["model"], case["api_key"])
+    url = RERANK.get_complete_url(case["api_base"], case["model"])
+    mapped = RERANK.map_cohere_rerank_params(
+        non_default_params=dict(case["non_default"]),
+        model=case["model"],
+        drop_params=False,
+        query=case["query"],
+        documents=case["documents"],
+    )
+    request = RERANK.transform_rerank_request(case["model"], mapped, headers)
+    return {
+        "url": url,
+        "headers": VALUE.validate_python(headers),
+        "mapped": mapped,
+        "request": request,
+    }
+
+
+def response_record(case: ResponseCase) -> JsonValue:
+    recording = Recording(fail=case["fail_logging"])
+    raw = httpx.Response(
+        status_code=200,
+        request=httpx.Request("POST", "https://api.deepinfra.com/v1/inference/rerank"),
+        content=case["body"].encode(),
+    )
+    transformed = RERANK.transform_rerank_response(
+        model=case["model"],
+        raw_response=raw,
+        model_response=RerankResponse(),
+        logging_obj=recording,
+    )
+    return {
+        "response": VALUE.validate_json(transformed.model_dump_json()),
+        "calls": VALUE.validate_python(recording.calls),
+    }
+
+
+def error_record(case: ErrorCase) -> JsonValue:
+    try:
+        RERANK.get_error_class(case["message"], case["status_code"], case["headers"])
+    except PROVIDER_ERROR as raised:
+        record = ErrorRecord.model_validate(raised, from_attributes=True)
+        return {
+            "status_code": record.status_code,
+            "message": record.message,
+            "headers": VALUE.validate_python(record.headers),
+        }
+    raise ValueError(f"get_error_class returned for {case['message']}")
+
+
 def rerank_request(params: JsonValue) -> JsonValue:
-    results: list[JsonValue] = []
-    for case in TypeAdapter(list[RequestCase]).validate_python(params):
-        headers = RERANK.validate_environment(case["headers"], case["model"], case["api_key"])
-        url = RERANK.get_complete_url(case["api_base"], case["model"])
-        mapped = RERANK.map_cohere_rerank_params(
-            non_default_params=dict(case["non_default"]),
-            model=case["model"],
-            drop_params=False,
-            query=case["query"],
-            documents=case["documents"],
-        )
-        request = RERANK.transform_rerank_request(case["model"], mapped, headers)
-        results.append({"url": url, "headers": headers, "mapped": mapped, "request": request})
-    return {"results": results}
+    cases = TypeAdapter(list[RequestCase]).validate_python(params)
+    return {"results": [request_record(case) for case in cases]}
 
 
 def rerank_response(params: JsonValue) -> JsonValue:
-    results: list[JsonValue] = []
-    for case in TypeAdapter(list[ResponseCase]).validate_python(params):
-        recording = Recording(fail=case["fail_logging"])
-        raw = httpx.Response(
-            status_code=200,
-            request=httpx.Request("POST", "https://api.deepinfra.com/v1/inference/rerank"),
-            content=case["body"].encode(),
-        )
-        transformed = RERANK.transform_rerank_response(
-            model=case["model"],
-            raw_response=raw,
-            model_response=RerankResponse(),
-            logging_obj=recording,
-        )
-        dumped = VALUE.validate_json(transformed.model_dump_json())
-        results.append({"response": dumped, "calls": recording.calls})
-    return {"results": results}
+    cases = TypeAdapter(list[ResponseCase]).validate_python(params)
+    return {"results": [response_record(case) for case in cases]}
 
 
 def error_extraction(params: JsonValue) -> JsonValue:
-    results: list[JsonValue] = []
-    for case in TypeAdapter(list[ErrorCase]).validate_python(params):
-        try:
-            RERANK.get_error_class(case["message"], case["status_code"], case["headers"])
-        except BaseLLMException as raised:
-            results.append(
-                {
-                    "status_code": raised.status_code,
-                    "message": raised.message,
-                    "headers": VALUE.validate_python(raised.headers),
-                }
-            )
-        else:
-            raise ValueError(f"get_error_class returned for {case['message']}")
-    return {"results": results}
+    cases = TypeAdapter(list[ErrorCase]).validate_python(params)
+    return {"results": [error_record(case) for case in cases]}
 
 
 HANDLERS: dict[str, Callable[[JsonValue], JsonValue]] = {
