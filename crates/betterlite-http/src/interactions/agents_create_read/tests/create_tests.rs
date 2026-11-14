@@ -287,13 +287,10 @@ fn create_agent_passes_an_empty_api_base_to_the_url_transform(#[case] params_tex
 
     create_agent(&config, &mut clients, &mut logging, None, &request).unwrap();
 
+    let calls = config.calls();
     assert!(
-        config
-            .calls()
-            .iter()
-            .any(|call| call.as_str() == "create_url|"),
-        "{:?}",
-        config.calls()
+        calls.iter().any(|call| call.as_str() == "create_url|"),
+        "{calls:?}"
     );
     serving.request.join().unwrap();
 }
