@@ -1,33 +1,140 @@
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, PoisonError};
+use std::sync::atomic::AtomicUsize;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use http::Method;
 use secrecy::SecretString;
 use tokio::runtime::Handle;
+use tokio::time::timeout;
+use tokio_util::sync::CancellationToken;
 
+use crate::batch::logger::{BatchQueue, FlushReport};
 use crate::fields::payload::StandardLoggingPayload;
 use crate::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps};
 
+use super::account_key::{ensure_directory, service_client, write_file};
 use super::{
-    AzureBlobStorageLogger, AzureStorageError, CachedClient, SERVICE_CLIENT_TTL, dated_directory,
+    AzureBlobStorageLogger, AzureStorageDeps, AzureStorageError, FIRST_ERROR_STATUS, UploadState,
+    dated_directory,
 };
 use crate::azure_storage_logging::filename::{adls_safe_file_name, storage_url};
-use crate::azure_storage_logging::http_ops::{
-    StorageAuthorization, append_request, create_directory_request, create_file_request,
-    flush_data_request, storage_request,
-};
+use crate::azure_storage_logging::http_ops::{StorageAuthorization, storage_request};
+use crate::azure_storage_logging::settings::AzureStorageSettings;
 use crate::azure_storage_logging::token::{
     ChainTokenProvider, TokenError, authority_host, client_secret_request, credentials,
     parse_token_response,
 };
-use crate::azure_storage_logging::transport::{StorageRequest, StorageResponse};
-
-const FIRST_ERROR_STATUS: u16 = 400;
-const NOT_FOUND: u16 = 404;
-const SDK_FLUSH_QUERY: &str = "&retainUncommittedData=false&close=false";
+use crate::azure_storage_logging::transport::StorageResponse;
 
 impl AzureBlobStorageLogger {
+    #[must_use]
+    pub fn new(settings: AzureStorageSettings, deps: AzureStorageDeps) -> Arc<Self> {
+        let last_flush_time = deps.clock.now_unix();
+        let logger = Arc::new(Self {
+            queue: BatchQueue::new(settings.batch),
+            settings,
+            deps,
+            state: Mutex::new(UploadState::default()),
+            last_flush_time: Mutex::new(last_flush_time),
+            created_clients: AtomicUsize::new(0),
+            closed_clients: AtomicUsize::new(0),
+        });
+        if let Some(tasks) = logger.deps.tasks.clone() {
+            let periodic = Arc::clone(&logger);
+            let shutdown = logger.deps.shutdown.clone();
+            let interval = logger.settings.batch.flush_interval;
+            tasks.spawn(async move { periodic.run_flush_loop(interval, shutdown).await });
+        }
+        logger
+    }
+
+    #[must_use]
+    pub fn last_flush_time(&self) -> Duration {
+        *self
+            .last_flush_time
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    // CustomBatchLogger.periodic_flush: sleep the interval, then flush unless the server is shutting down
+    async fn run_flush_loop(&self, interval: Duration, shutdown: CancellationToken) {
+        loop {
+            let _woken = timeout(interval, shutdown.cancelled()).await;
+            if shutdown.is_cancelled() {
+                break;
+            }
+            let report = self.flush_queue().await;
+            if report.cancelled {
+                tracing::warn!(
+                    batch = report.batch,
+                    "the Azure storage flush was cancelled; its records stay queued"
+                );
+            }
+        }
+    }
+
+    // LiteLLM sends one file per queued event and stops at the first failure
+    pub async fn async_send_batch(&self) -> usize {
+        let batch = self.queue.pending();
+        if batch.is_empty() {
+            tracing::error!("Azure storage: log_queue does not exist");
+            return 0;
+        }
+        self.send_batch(&batch).await
+    }
+
+    async fn send_batch(&self, batch: &[StandardLoggingPayload]) -> usize {
+        let mut uploaded = 0_usize;
+        for payload in batch {
+            if let Err(error) = self.upload_payload(payload).await {
+                tracing::error!(%error, "AzureBlobStorageLogger Error sending batch API");
+                break;
+            }
+            uploaded = uploaded.saturating_add(1);
+        }
+        uploaded
+    }
+
+    // a failed flush keeps the failed event and everything after it queued for the next cycle
+    pub async fn flush_queue(&self) -> FlushReport {
+        let _flush = self.queue.flush_lock.lock().await;
+        let batch = self.queue.pending();
+        if batch.is_empty() {
+            return FlushReport {
+                batch: 0,
+                delivered: 0,
+                requeued: 0,
+                dropped_oldest: 0,
+                cancelled: false,
+            };
+        }
+        let uploaded = self.send_batch(&batch).await;
+        let requeued = batch.len().saturating_sub(uploaded);
+        {
+            let mut queue = self
+                .queue
+                .queue
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            for _removed in 0..uploaded {
+                let _sent = queue.pop_front();
+            }
+        }
+        if requeued == 0 {
+            *self
+                .last_flush_time
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner) = self.deps.clock.now_unix();
+        }
+        FlushReport {
+            batch: batch.len(),
+            delivered: uploaded,
+            requeued,
+            dropped_oldest: 0,
+            cancelled: false,
+        }
+    }
+
     pub async fn upload_payload(
         &self,
         payload: &StandardLoggingPayload,
@@ -52,8 +159,7 @@ impl AzureBlobStorageLogger {
             &[self.settings.file_system.as_str(), file_name.as_str()],
         );
         let auth = StorageAuthorization::Bearer(&token);
-        self.write_file(&base_url, &auth, format!("{dumped}\n").as_bytes())
-            .await
+        write_file(self, &base_url, &auth, format!("{dumped}\n").as_bytes()).await
     }
 
     async fn upload_with_account_key(
@@ -61,7 +167,7 @@ impl AzureBlobStorageLogger {
         payload: &StandardLoggingPayload,
     ) -> Result<(), AzureStorageError> {
         let now = self.deps.clock.now_unix();
-        let client = self.service_client(now)?;
+        let client = service_client(self, now)?;
         let auth = StorageAuthorization::SharedKey {
             account: &client.account,
             key: &client.key,
@@ -70,84 +176,24 @@ impl AzureBlobStorageLogger {
         let segments = [self.settings.file_system.as_str(), directory.as_str()];
         let directory_url = storage_url(&self.settings.dfs_endpoint, &segments);
         let exists_url = storage_url(&self.settings.blob_endpoint, &segments);
-        self.ensure_directory(&exists_url, &directory_url, &auth)
-            .await?;
+        ensure_directory(self, &exists_url, &directory_url, &auth).await?;
         let file_name = adls_safe_file_name(Some(payload.id.as_str()), self.deps.ids.as_ref());
         let content = safe_dumps(payload, DEFAULT_MAX_RECURSE_DEPTH, None)
             .map_err(AzureStorageError::Serialize)?;
         let base_url = storage_url(&directory_url, &[file_name.as_str()]);
-        self.write_file(&base_url, &auth, content.as_bytes()).await
+        write_file(self, &base_url, &auth, content.as_bytes()).await
     }
 
-    // the SDK's directory exists() is a HEAD on the blob endpoint, and a 404 there means create it
-    async fn ensure_directory(
+    pub(super) async fn execute(
         &self,
-        exists_url: &str,
-        directory_url: &str,
+        method: Method,
+        url: String,
         auth: &StorageAuthorization<'_>,
-    ) -> Result<(), AzureStorageError> {
-        let now = self.deps.clock.now_unix();
-        let exists = self
-            .deps
-            .transport
-            .send(storage_request(
-                Method::HEAD,
-                exists_url.to_owned(),
-                auth,
-                now,
-                &[],
-            )?)
-            .await?;
-        if exists.status == NOT_FOUND {
-            let _made = self
-                .execute(
-                    create_directory_request(directory_url, auth, now)?,
-                    "create_directory",
-                )
-                .await?;
-            return Ok(());
-        }
-        if exists.status >= FIRST_ERROR_STATUS {
-            return Err(AzureStorageError::Status {
-                operation: "exists",
-                status: exists.status,
-            });
-        }
-        Ok(())
-    }
-
-    // create, append, flush; the SDK's flush adds retainUncommittedData and close to LiteLLM's REST flush
-    async fn write_file(
-        &self,
-        base_url: &str,
-        auth: &StorageAuthorization<'_>,
-        content: &[u8],
-    ) -> Result<(), AzureStorageError> {
-        let now = self.deps.clock.now_unix();
-        let flush_query = match auth {
-            StorageAuthorization::Bearer(_) => "",
-            StorageAuthorization::SharedKey { .. } => SDK_FLUSH_QUERY,
-        };
-        let _created = self
-            .execute(create_file_request(base_url, auth, now)?, "create")
-            .await?;
-        let _appended = self
-            .execute(append_request(base_url, auth, now, content)?, "append")
-            .await?;
-        let _flushed = self
-            .execute(
-                flush_data_request(base_url, auth, now, content.len(), flush_query)?,
-                "flush",
-            )
-            .await?;
-        Ok(())
-    }
-
-    async fn execute(
-        &self,
-        request: StorageRequest,
+        body: &[u8],
         operation: &'static str,
     ) -> Result<StorageResponse, AzureStorageError> {
+        let now = self.deps.clock.now_unix();
+        let request = storage_request(method, url, auth, now, body)?;
         let response = self.deps.transport.send(request).await?;
         if response.status >= FIRST_ERROR_STATUS {
             return Err(AzureStorageError::Status {
@@ -175,18 +221,7 @@ impl AzureBlobStorageLogger {
             && self.settings.client_id.is_none()
             && self.settings.client_secret.is_none()
         {
-            let provider = self.chain_provider()?;
-            // the chain walk probes IMDS and may run a CLI, so it runs off the async worker
-            let token = Handle::current()
-                .spawn_blocking(move || provider.token())
-                .await
-                .map_err(TokenError::Worker)??;
-            self.state
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .token
-                .token = Some(token.clone());
-            return Ok(token);
+            return self.chain_token().await;
         }
         let now = self.deps.clock.now_unix();
         let cached = {
@@ -213,35 +248,18 @@ impl AzureBlobStorageLogger {
         Ok(token)
     }
 
-    // the SDK client is rebuilt once its TTL passes, which is LiteLLM's connection-pool reset
-    fn service_client(&self, now: Duration) -> Result<CachedClient, AzureStorageError> {
-        let cached = self
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .client
-            .clone();
-        if let Some(client) = cached {
-            if client.expires_at > now {
-                return Ok(client);
-            }
-            let _closed = self.closed_clients.fetch_add(1, Ordering::SeqCst);
-        }
-        let key = self
-            .settings
-            .account_key
-            .clone()
-            .ok_or(AzureStorageError::MissingAccountKey)?;
-        let created = CachedClient {
-            account: self.settings.account_name.clone(),
-            key,
-            expires_at: now.saturating_add(SERVICE_CLIENT_TTL),
-        };
-        let _created = self.created_clients.fetch_add(1, Ordering::SeqCst);
+    // the chain walk probes IMDS and may run a CLI, so it runs off the async worker
+    async fn chain_token(&self) -> Result<SecretString, TokenError> {
+        let provider = self.chain_provider()?;
+        let token = Handle::current()
+            .spawn_blocking(move || provider.token())
+            .await
+            .map_err(TokenError::Worker)??;
         self.state
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .client = Some(created.clone());
-        Ok(created)
+            .token
+            .token = Some(token.clone());
+        Ok(token)
     }
 }

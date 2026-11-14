@@ -3,10 +3,11 @@
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use http::Method;
 use secrecy::SecretString;
 
 use super::support::{ACCOUNT, Reply, START_SECONDS, fixture, payload};
-use crate::azure_storage_logging::http_ops::{StorageAuthorization, append_request};
+use crate::azure_storage_logging::http_ops::{StorageAuthorization, storage_request};
 use crate::azure_storage_logging::logger::SERVICE_CLIENT_TTL;
 
 const DIRECTORY_URL: &str = "https://acct.dfs.core.windows.net/logs/2023-11-14";
@@ -111,8 +112,9 @@ fn the_shared_key_signature_matches_an_independent_hmac() {
         account: "acct",
         key: &key,
     };
-    let request = append_request(
-        &format!("{DIRECTORY_URL}/id-1.json"),
+    let request = storage_request(
+        Method::PATCH,
+        format!("{DIRECTORY_URL}/id-1.json?action=append&position=0"),
         &auth,
         Duration::from_secs(START_SECONDS),
         b"{}",
@@ -138,8 +140,14 @@ fn a_key_that_is_not_base64_does_not_sign() {
         account: "acct",
         key: &key,
     };
-    let error = append_request(DIRECTORY_URL, &auth, Duration::ZERO, b"{}")
-        .expect_err("the key must decode");
+    let error = storage_request(
+        Method::PATCH,
+        format!("{DIRECTORY_URL}?action=append&position=0"),
+        &auth,
+        Duration::ZERO,
+        b"{}",
+    )
+    .expect_err("the key must decode");
     assert!(error.to_string().contains("base64"));
 }
 

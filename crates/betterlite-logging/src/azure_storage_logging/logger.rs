@@ -1,14 +1,13 @@
 use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_config::loader::EnvironmentLookup;
-use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use crate::batch::logger::{BatchQueue, FlushReport};
+use crate::batch::logger::BatchQueue;
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
@@ -22,11 +21,14 @@ use super::signing::SigningError;
 use super::token::{ChainProviderFactory, ChainTokenProvider, TokenError, TokenState};
 use super::transport::{StorageTransport, StorageTransportError};
 
+mod account_key;
 mod upload;
 
 pub const CALLBACK_NAME: &str = "azure_storage";
 // LiteLLM's _DEFAULT_TTL_FOR_HTTPX_CLIENTS, the lifetime of a cached DataLakeServiceClient
 pub const SERVICE_CLIENT_TTL: Duration = Duration::from_secs(3600);
+// raise_for_status turns any of these into an upload error
+pub const FIRST_ERROR_STATUS: u16 = 400;
 const DATE_FORMAT: &str = "%Y-%m-%d";
 
 #[derive(Debug, thiserror::Error)]
@@ -91,116 +93,6 @@ pub struct AzureBlobStorageLogger {
     // the account-key client lifecycle, so a flush and a test both see how often the SDK client was rebuilt
     pub created_clients: AtomicUsize,
     pub closed_clients: AtomicUsize,
-}
-
-impl AzureBlobStorageLogger {
-    #[must_use]
-    pub fn new(settings: AzureStorageSettings, deps: AzureStorageDeps) -> Arc<Self> {
-        let last_flush_time = deps.clock.now_unix();
-        let logger = Arc::new(Self {
-            queue: BatchQueue::new(settings.batch),
-            settings,
-            deps,
-            state: Mutex::new(UploadState::default()),
-            last_flush_time: Mutex::new(last_flush_time),
-            created_clients: AtomicUsize::new(0),
-            closed_clients: AtomicUsize::new(0),
-        });
-        if let Some(tasks) = logger.deps.tasks.clone() {
-            let periodic = Arc::clone(&logger);
-            let shutdown = logger.deps.shutdown.clone();
-            let interval = logger.settings.batch.flush_interval;
-            tasks.spawn(async move { periodic.run_flush_loop(interval, shutdown).await });
-        }
-        logger
-    }
-
-    #[must_use]
-    pub fn last_flush_time(&self) -> Duration {
-        *self
-            .last_flush_time
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-    }
-
-    // CustomBatchLogger.periodic_flush: sleep the interval, then flush unless the server is shutting down
-    async fn run_flush_loop(&self, interval: Duration, shutdown: CancellationToken) {
-        loop {
-            let _woken = timeout(interval, shutdown.cancelled()).await;
-            if shutdown.is_cancelled() {
-                break;
-            }
-            let report = self.flush_queue().await;
-            if report.cancelled {
-                tracing::warn!(
-                    batch = report.batch,
-                    "the Azure storage flush was cancelled; its records stay queued"
-                );
-            }
-        }
-    }
-
-    // LiteLLM sends one file per queued event and stops at the first failure
-    pub async fn async_send_batch(&self) -> usize {
-        let batch = self.queue.pending();
-        if batch.is_empty() {
-            tracing::error!("Azure storage: log_queue does not exist");
-            return 0;
-        }
-        self.send_batch(&batch).await
-    }
-
-    async fn send_batch(&self, batch: &[StandardLoggingPayload]) -> usize {
-        let mut uploaded = 0_usize;
-        for payload in batch {
-            if let Err(error) = self.upload_payload(payload).await {
-                tracing::error!(%error, "AzureBlobStorageLogger Error sending batch API");
-                break;
-            }
-            uploaded = uploaded.saturating_add(1);
-        }
-        uploaded
-    }
-
-    // a failed flush keeps the failed event and everything after it queued for the next cycle
-    pub async fn flush_queue(&self) -> FlushReport {
-        let _flush = self.queue.flush_lock.lock().await;
-        let batch = self.queue.pending();
-        if batch.is_empty() {
-            return FlushReport {
-                batch: 0,
-                delivered: 0,
-                requeued: 0,
-                dropped_oldest: 0,
-                cancelled: false,
-            };
-        }
-        let uploaded = self.send_batch(&batch).await;
-        let requeued = batch.len().saturating_sub(uploaded);
-        {
-            let mut queue = self
-                .queue
-                .queue
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            for _removed in 0..uploaded {
-                let _sent = queue.pop_front();
-            }
-        }
-        if requeued == 0 {
-            *self
-                .last_flush_time
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner) = self.deps.clock.now_unix();
-        }
-        FlushReport {
-            batch: batch.len(),
-            delivered: uploaded,
-            requeued,
-            dropped_oldest: 0,
-            cancelled: false,
-        }
-    }
 }
 
 #[async_trait]
