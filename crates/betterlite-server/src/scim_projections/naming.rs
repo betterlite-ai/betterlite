@@ -15,20 +15,16 @@ pub struct ScimNames {
     pub family_name: String,
 }
 
-pub fn scim_names(
-    user_email: Option<&str>,
-    user_alias: Option<&str>,
-    metadata: &Metadata,
-) -> Result<ScimNames, ProjectionError> {
-    let stored = match metadata.get(SCIM_METADATA_KEY) {
-        None => UserScimMetadata {
-            given_name: None,
-            family_name: None,
-        },
+// key presence alone decides whether scim_metadata is read, so a stored non-object fails instead of falling back
+fn stored_names(metadata: &Metadata) -> Result<Option<UserScimMetadata>, ProjectionError> {
+    match metadata.get(SCIM_METADATA_KEY) {
+        None => Ok(None),
         Some(object @ JsonData::Object(_)) => {
             let text = serde_json::to_string(object)
                 .map_err(|source| ProjectionError::Encode { source })?;
-            serde_json::from_str(&text).map_err(|source| ProjectionError::ScimMetadata { source })?
+            let stored = serde_json::from_str(&text)
+                .map_err(|source| ProjectionError::ScimMetadata { source })?;
+            Ok(Some(stored))
         }
         Some(
             JsonData::Null
@@ -36,10 +32,21 @@ pub fn scim_names(
             | JsonData::Number(_)
             | JsonData::String(_)
             | JsonData::Array(_),
-        ) => return Err(ProjectionError::ScimMetadataShape),
-    };
+        ) => Err(ProjectionError::ScimMetadataShape),
+    }
+}
+
+pub fn scim_names(
+    user_email: Option<&str>,
+    user_alias: Option<&str>,
+    metadata: &Metadata,
+) -> Result<ScimNames, ProjectionError> {
     let non_empty = |text: &&str| !text.is_empty();
     let alias = user_alias.filter(non_empty);
+    let stored = stored_names(metadata)?.unwrap_or(UserScimMetadata {
+        given_name: None,
+        family_name: None,
+    });
     Ok(ScimNames {
         user_name: user_email
             .filter(non_empty)

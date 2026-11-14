@@ -53,7 +53,7 @@ async fn user_groups(
 }
 
 impl<'database> ScimLookups<'database> {
-    pub fn connected(&self) -> Result<&'database PostgresStore, ProjectionError> {
+    pub const fn connected(&self) -> Result<&'database PostgresStore, ProjectionError> {
         if self.store.pool.is_none() {
             return Err(ProjectionError::NoDatabase);
         }
@@ -111,7 +111,7 @@ impl<'database> ScimLookups<'database> {
         Ok(team)
     }
 
-    pub async fn transform_litellm_user_to_scim_user(
+    pub async fn project_stored_user(
         &self,
         user: &ScimUserSource<'_>,
     ) -> Result<UserProjection, ProjectionError> {
@@ -120,10 +120,7 @@ impl<'database> ScimLookups<'database> {
         project_user(user, groups)
     }
 
-    pub fn transform_litellm_team_to_scim_group(
-        &self,
-        team: &LiteLLMTeamTable,
-    ) -> Result<Group, ProjectionError> {
+    pub fn project_stored_group(&self, team: &LiteLLMTeamTable) -> Result<Group, ProjectionError> {
         self.connected()?;
         project_group(team)
     }

@@ -415,7 +415,7 @@ fn scim_projections_active_follows_scim_active(#[case] stored: &str, #[case] exp
     false,
     true
 )]
-#[case::enterprise_array(ENTERPRISE_METADATA_KEY, ENTERPRISE_FIELD, r#"[1]"#, true, false)]
+#[case::enterprise_array(ENTERPRISE_METADATA_KEY, ENTERPRISE_FIELD, "[1]", true, false)]
 #[case::enterprise_text(ENTERPRISE_METADATA_KEY, ENTERPRISE_FIELD, r#""x""#, true, false)]
 #[case::enterprise_number(ENTERPRISE_METADATA_KEY, ENTERPRISE_FIELD, "3", true, false)]
 #[case::enterprise_field_type(
@@ -454,7 +454,7 @@ fn scim_projections_active_follows_scim_active(#[case] stored: &str, #[case] exp
 #[case::entitlements_empty(ENTITLEMENTS_METADATA_KEY, "entitlements", "[]", false, false)]
 #[case::roles_text(ROLES_METADATA_KEY, "roles", r#"["admin"]"#, false, true)]
 #[case::roles_number(ROLES_METADATA_KEY, "roles", "7", true, false)]
-#[case::roles_nested(ROLES_METADATA_KEY, "roles", r#"[[1]]"#, true, false)]
+#[case::roles_nested(ROLES_METADATA_KEY, "roles", "[[1]]", true, false)]
 #[case::roles_empty(ROLES_METADATA_KEY, "roles", "[]", false, false)]
 fn scim_projections_directory_blocks_are_kept_or_dropped(
     #[case] key: &'static str,
@@ -718,17 +718,12 @@ async fn scim_projections_every_lookup_without_a_database_is_a_500() {
     assert_no_database(lookups.check_team_exists("t1").await.err().unwrap());
     assert_no_database(
         lookups
-            .transform_litellm_user_to_scim_user(&ScimUserSource::from(&user))
+            .project_stored_user(&ScimUserSource::from(&user))
             .await
             .err()
             .unwrap(),
     );
-    assert_no_database(
-        lookups
-            .transform_litellm_team_to_scim_group(&team)
-            .err()
-            .unwrap(),
-    );
+    assert_no_database(lookups.project_stored_group(&team).err().unwrap());
     assert_no_database(lookups.get_team_members_display(&[]).await.err().unwrap());
     assert_no_database(
         lookups
@@ -820,7 +815,7 @@ async fn scim_projections_user_groups_come_from_their_teams_and_skip_deleted_one
     let lookups = ScimLookups { store: &store };
     let user = lookups.check_user_exists("u1").await.unwrap();
     let projection = lookups
-        .transform_litellm_user_to_scim_user(&ScimUserSource::from(&user))
+        .project_stored_user(&ScimUserSource::from(&user))
         .await
         .unwrap();
     let user_json = serde_json::to_value(projection.user).unwrap();
@@ -850,7 +845,7 @@ async fn scim_projections_user_without_teams_has_no_groups() {
     let lookups = ScimLookups { store: &store };
     let user = lookups.check_user_exists("u2").await.unwrap();
     let projection = lookups
-        .transform_litellm_user_to_scim_user(&ScimUserSource::from(&user))
+        .project_stored_user(&ScimUserSource::from(&user))
         .await
         .unwrap();
     assert_eq!(
@@ -867,7 +862,7 @@ async fn scim_projections_user_groups_read_the_team_row_without_validating_it() 
     let lookups = ScimLookups { store: &store };
     let user = lookups.check_user_exists("u3").await.unwrap();
     let projection = lookups
-        .transform_litellm_user_to_scim_user(&ScimUserSource::from(&user))
+        .project_stored_user(&ScimUserSource::from(&user))
         .await
         .unwrap();
     assert_eq!(
@@ -883,7 +878,7 @@ async fn scim_projections_group_keeps_a_member_whose_user_row_is_gone() {
     let store = store(&pool);
     let lookups = ScimLookups { store: &store };
     let team = lookups.check_team_exists("t1").await.unwrap();
-    let group = lookups.transform_litellm_team_to_scim_group(&team).unwrap();
+    let group = lookups.project_stored_group(&team).unwrap();
     let group = serde_json::to_value(group).unwrap();
     assert_eq!(group["displayName"], "alpha");
     assert_eq!(group["meta"]["created"], "2026-02-03T04:05:06.500000+00:00");

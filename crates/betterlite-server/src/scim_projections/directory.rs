@@ -12,7 +12,8 @@ pub enum Directory<T> {
 }
 
 // serde reads a JSON array into a struct field by field, so the shape is checked before the decode
-pub fn is_object(value: &JsonData) -> bool {
+#[must_use]
+pub const fn is_object(value: &JsonData) -> bool {
     match value {
         JsonData::Object(_) => true,
         JsonData::Null
@@ -23,6 +24,7 @@ pub fn is_object(value: &JsonData) -> bool {
     }
 }
 
+#[must_use]
 pub fn is_attribute_list(value: &JsonData) -> bool {
     match value {
         JsonData::Array(items) => items

@@ -13,6 +13,7 @@ struct Meta<'kind> {
 }
 
 // Python's datetime.isoformat: the fraction appears only when microseconds are not zero, and a naive value has no offset
+#[must_use]
 pub fn isoformat(time: Timestamp) -> String {
     let (local, offset) = match time {
         Timestamp::Aware(aware) => (aware.naive_local(), aware.offset().to_string()),
