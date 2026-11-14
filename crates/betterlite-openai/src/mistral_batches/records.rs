@@ -1,9 +1,9 @@
-use crate::api::batch_records::BatchEndpoint;
+use crate::batches::records::BatchEndpoint;
 use crate::openai_base_config::Headers;
 use http::Method;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-fn default_count() -> i64 {
+const fn default_count() -> i64 {
     1
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

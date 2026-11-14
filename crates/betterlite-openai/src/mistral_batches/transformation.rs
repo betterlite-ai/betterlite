@@ -3,8 +3,10 @@ use super::records::{
     MistralBatchError, MistralBatchJob, MistralBatchStatus, MistralCreateBatchJobRequest,
     MistralGetRequest,
 };
-use crate::api::batch_records::{BatchFailure, BatchFailures, CreateBatchRequest, RequestCounts};
-use crate::batches::records::{BatchObject, BatchObjectKind, BatchStatus};
+use crate::api::batch_records::CreateBatchRequest;
+use crate::batches::records::{
+    BatchFailure, BatchFailures, BatchObject, BatchObjectKind, BatchStatus, RequestCounts,
+};
 use crate::mistral_identity::{auth_headers, base_url};
 use crate::openai_base_config::Headers;
 use betterlite_config::sections::mistral_resources::Settings;

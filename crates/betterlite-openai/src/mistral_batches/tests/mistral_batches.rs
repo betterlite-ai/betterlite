@@ -1,7 +1,7 @@
 #![cfg(test)]
 
-use crate::api::batch_records::BatchEndpoint;
-use crate::batches::records::{BatchObject, BatchStatus};
+use crate::api::batch_records::CreateBatchRequest;
+use crate::batches::records::{BatchEndpoint, BatchObject, BatchStatus};
 use crate::mistral_batches::error::MistralBatchesError;
 use crate::mistral_batches::records::{
     MistralBatchError, MistralBatchJob, MistralBatchStatus, MistralGetRequest,
@@ -27,7 +27,7 @@ fn job(text: &str) -> MistralBatchJob {
     serde_json::from_str(text).expect("a native job")
 }
 
-fn data(text: &str) -> crate::api::batch_records::CreateBatchRequest {
+fn data(text: &str) -> CreateBatchRequest {
     serde_json::from_str(text).expect("a create batch request")
 }
 

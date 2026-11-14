@@ -173,9 +173,9 @@ fn content_appends_the_content_suffix() {
 }
 
 #[rstest]
-#[case(None, None)]
-#[case(Some(""), None)]
-fn list_sends_no_purpose_for_a_falsey_value(#[case] purpose: Option<&str>, _expected: Option<u8>) {
+#[case(None)]
+#[case(Some(""))]
+fn list_sends_no_purpose_for_a_falsey_value(#[case] purpose: Option<&str>) {
     let (url, query) = list_request(purpose, None, &settings(None, None)).expect("a request");
     assert_eq!(url, "https://api.mistral.ai/v1/files");
     assert!(query.is_empty());

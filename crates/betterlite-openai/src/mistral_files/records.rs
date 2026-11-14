@@ -2,7 +2,7 @@ use serde::Deserialize;
 fn default_purpose() -> String {
     String::from("batch")
 }
-fn default_deleted() -> bool {
+const fn default_deleted() -> bool {
     true
 }
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
