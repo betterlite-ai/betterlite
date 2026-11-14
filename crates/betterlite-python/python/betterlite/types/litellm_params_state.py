@@ -1,8 +1,6 @@
 from collections.abc import Mapping, Sequence
-from dataclasses import Field as DataclassField
-from dataclasses import dataclass, field, fields
-from itertools import chain
-from typing import ClassVar, Final, Literal, Protocol, get_type_hints
+from dataclasses import dataclass, field
+from typing import Final, Literal, Protocol
 
 from pydantic import JsonValue
 
@@ -19,10 +17,6 @@ JsonMap = Mapping[str, JsonValue]
 
 
 class ForeignObject(Protocol): ...
-
-
-class DataclassType(Protocol):
-    __dataclass_fields__: ClassVar[dict[str, DataclassField[JsonValue]]]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -55,10 +49,10 @@ class AgenticLoopState:
     code_interpreter_sandbox_key: str | None = field(
         default=None, metadata={WIRE_NAME: "_code_interpreter_interception_sandbox_key"}
     )
-    code_interpreter_session_scoped: bool | None = field(
+    code_interpreter_session_scoped: bool | None = field(  # ast-grep-ignore: no-long-names
         default=None, metadata={WIRE_NAME: "_code_interpreter_interception_session_scoped"}
     )
-    code_interpreter_converted_stream: bool | None = field(
+    code_interpreter_converted_stream: bool | None = field(  # ast-grep-ignore: no-long-names
         default=None, metadata={WIRE_NAME: "_code_interpreter_interception_converted_stream"}
     )
     websearch_emit_native_blocks: bool | None = field(
@@ -115,16 +109,3 @@ class InternalState:
     router: RouterState
     proxy: ProxyRequestState
     entrypoint: EntrypointState
-
-
-def wire_names(owner: type[DataclassType]) -> tuple[str, ...]:
-    names: list[str] = []
-    for owned in fields(owner):
-        metadata: Mapping[str, str] = owned.metadata
-        names.append(metadata[WIRE_NAME] if WIRE_NAME in metadata else owned.name)
-    return tuple(names)
-
-
-def owned_wire_names(root: type[DataclassType]) -> tuple[str, ...]:
-    leaves: dict[str, type[DataclassType]] = get_type_hints(root)
-    return tuple(chain.from_iterable(wire_names(leaf) for leaf in leaves.values()))

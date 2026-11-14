@@ -40,6 +40,7 @@ CachingSupportedCallTypes = Literal[
     "aanthropic_messages",
 ]
 
+# ast-grep-ignore: no-long-names
 DEFAULT_CACHING_SUPPORTED_CALL_TYPES: tuple[CachingSupportedCallTypes, ...] = (
     "completion",
     "acompletion",
@@ -58,7 +59,7 @@ DEFAULT_CACHING_SUPPORTED_CALL_TYPES: tuple[CachingSupportedCallTypes, ...] = (
 )
 
 
-class RedisPipelineIncrementOperation(TypedDict):
+class RedisPipelineIncrementOperation(TypedDict):  # ast-grep-ignore: no-long-names
     key: str
     increment_value: float
     ttl: int | None

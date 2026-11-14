@@ -170,6 +170,19 @@ elif mode == "control":
         ],
         "convert": [outcome(module._int_from_decimal_string, case) for case in cases],
     }
+elif mode == "payload":
+    module = load("services")
+    payload = module.ServiceLoggerPayload(
+        is_error=False,
+        service=module.ServiceTypes.REDIS,
+        duration=1.5,
+        call_type="completion",
+        event_metadata={"k": 1},
+    )
+    result = {
+        "plain": repr(payload.to_json()),
+        "no_none": repr(payload.to_json(exclude_none=True)),
+    }
 print(json.dumps(result))
 """
 
@@ -294,12 +307,8 @@ def run_probe(prefix: str, mode: str, spec: str) -> dict[str, JsonValue]:
     return OBJECT.validate_json(done.stdout)
 
 
-def described(prefix: str, module: str) -> dict[str, JsonValue]:
-    return OBJECT.validate_python(run_probe(prefix, "describe", json.dumps(MODULES))[module])
-
-
 @pytest.mark.parametrize("module", MODULES)
-def test_names_defined_in_litellm_are_listed(module: str) -> None:
+def test_names_defined(module: str) -> None:
     probed = run_probe(LITELLM, "defined", json.dumps(list(MODULES)))
     defined = STRINGS.validate_python(probed[module])
     assert set(defined) <= set(MODULES[module]) | NOT_PORTED
@@ -307,12 +316,14 @@ def test_names_defined_in_litellm_are_listed(module: str) -> None:
 
 @pytest.mark.parametrize("module", MODULES)
 def test_names_match_litellm(module: str) -> None:
-    theirs = described(LITELLM, module)
+    spec = json.dumps(MODULES)
+    theirs = OBJECT.validate_python(run_probe(LITELLM, "describe", spec)[module])
+    ours = OBJECT.validate_python(run_probe(BETTERLITE, "describe", spec)[module])
     assert all(item != {"kind": "missing"} for item in theirs.values())
-    assert described(BETTERLITE, module) == theirs
+    assert ours == theirs
 
 
-def test_names_router_weights_validators_match_litellm() -> None:
+def test_names_weights_match() -> None:
     theirs = run_probe(LITELLM, "weights", "{}")
     assert run_probe(BETTERLITE, "weights", "{}") == theirs
     outcomes = STRINGS.validate_python(theirs["weights"])
@@ -320,8 +331,14 @@ def test_names_router_weights_validators_match_litellm() -> None:
     assert len(set(outcomes)) > 3
 
 
-def test_names_stream_chunk_size_conversion_matches_litellm() -> None:
+def test_names_chunk_size_match() -> None:
     theirs = run_probe(LITELLM, "control", "{}")
     assert run_probe(BETTERLITE, "control", "{}") == theirs
     outcomes = STRINGS.validate_python(theirs["control"])
     assert len(set(outcomes)) > 5
+
+
+def test_names_payload_to_json() -> None:
+    theirs = run_probe(LITELLM, "payload", "{}")
+    assert run_probe(BETTERLITE, "payload", "{}") == theirs
+    assert theirs["plain"] != theirs["no_none"]

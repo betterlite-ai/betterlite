@@ -4,7 +4,7 @@ from typing import Annotated, Final
 from pydantic import AfterValidator, Field, JsonValue, SkipValidation, TypeAdapter
 
 
-def _validate_positive_router_weights(
+def _validate_positive_router_weights(  # ast-grep-ignore: no-long-names
     weights: Mapping[str, Mapping[str, float]],
 ) -> Mapping[str, Mapping[str, float]]:
     if any(
@@ -18,7 +18,7 @@ RouterWeightIdentifier = Annotated[str, Field(strict=True, min_length=1, pattern
 RouterWeight = Annotated[float, Field(strict=True, ge=0, allow_inf_nan=False)]
 RouterWeights = Annotated[
     dict[RouterWeightIdentifier, dict[RouterWeightIdentifier, RouterWeight]],
-    AfterValidator(_validate_positive_router_weights),
+    AfterValidator(_validate_positive_router_weights),  # ast-grep-ignore: no-long-names
 ]
 _ROUTER_WEIGHTS_ADAPTER: Final[TypeAdapter[RouterWeights | None]] = TypeAdapter(
     RouterWeights | None
