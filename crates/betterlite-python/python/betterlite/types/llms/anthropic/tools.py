@@ -174,5 +174,6 @@ class AnthropicMcpServerTool(TypedDict, total=False):
     type: Required[Literal["url"]]
     url: Required[str]
     name: Required[str]
+    # ast-grep-ignore: no-long-names
     tool_configuration: AnthropicMcpServerToolConfiguration
     authorization_token: str

@@ -46,6 +46,7 @@ class ContentBlockDelta(TypedDict):
         | ContentJsonBlockDelta
         | ContentCitationsBlockDelta
         | ContentThinkingBlockDelta
+        # ast-grep-ignore: no-long-names
         | ContentThinkingSignatureBlockDelta
     )
 

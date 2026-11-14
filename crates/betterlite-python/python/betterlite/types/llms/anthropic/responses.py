@@ -61,9 +61,13 @@ class AnthropicResponse(ResponseObject):
     type: Literal["message"]
     role: Literal["assistant"]
     content: list[
+        # ast-grep-ignore: no-long-names
         AnthropicResponseContentBlockText
+        # ast-grep-ignore: no-long-names
         | AnthropicResponseContentBlockToolUse
+        # ast-grep-ignore: no-long-names
         | AnthropicResponseContentBlockThinking
+        # ast-grep-ignore: no-long-names
         | AnthropicResponseContentBlockRedactedThinking
     ]
     model: str

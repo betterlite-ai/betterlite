@@ -46,6 +46,7 @@ AnthropicResponseContentBlock: TypeAlias = (
     AnthropicResponseTextBlock
     | AnthropicResponseToolUseBlock
     | AnthropicResponseThinkingBlock
+    # ast-grep-ignore: no-long-names
     | AnthropicResponseRedactedThinkingBlock
     | CompactionBlock
 )
@@ -64,7 +65,9 @@ class AnthropicMessagesResponse(TypedDict, total=False):
     content: (
         list[
             AnthropicResponseContentBlock
+            # ast-grep-ignore: no-long-names
             | AnthropicResponseContentBlockText
+            # ast-grep-ignore: no-long-names
             | AnthropicResponseContentBlockToolUse
         ]
         | None

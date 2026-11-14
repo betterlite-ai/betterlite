@@ -40,6 +40,7 @@ AnthropicMessagesAssistantMessageValues: TypeAlias = (
     AnthropicMessagesTextParam
     | AnthropicMessagesToolUseParam
     | ChatCompletionThinkingBlock
+    # ast-grep-ignore: no-long-names
     | ChatCompletionRedactedThinkingBlock
     | CompactionBlock
 )
@@ -47,6 +48,7 @@ AnthropicMessagesAssistantMessageValues: TypeAlias = (
 
 # ast-grep-ignore: no-long-names
 class AnthopicMessagesAssistantMessageParam(TypedDict, total=False):
+    # ast-grep-ignore: no-long-names
     content: Required[str | Iterable[AnthropicMessagesAssistantMessageValues]]
     role: Required[Literal["assistant"]]
     name: str
@@ -93,6 +95,7 @@ class AnthropicMessagesImageParam(TypedDict, total=False):
     type: Required[Literal["image"]]
     source: Required[
         AnthropicContentParamSource
+        # ast-grep-ignore: no-long-names
         | AnthropicContentParamSourceFileId
         | AnthropicContentParamSourceUrl
     ]
@@ -129,9 +132,12 @@ class AnthropicMessagesDocumentParam(TypedDict, total=False):
     type: Required[Literal["document"]]
     source: Required[
         AnthropicContentParamSource
+        # ast-grep-ignore: no-long-names
         | AnthropicContentParamSourceFileId
         | AnthropicContentParamSourceUrl
+        # ast-grep-ignore: no-long-names
         | AnthropicContentParamSourceText
+        # ast-grep-ignore: no-long-names
         | AnthropicContentParamSourceContent
     ]
     cache_control: dict[str, JsonValue] | ChatCompletionCachedContent | None
@@ -155,6 +161,7 @@ class AnthropicMessagesToolResultParam(TypedDict, total=False):
     content: (
         str
         | Iterable[
+            # ast-grep-ignore: no-long-names
             AnthropicMessagesToolResultContent
             | AnthropicMessagesImageParam
             | AnthropicMessagesDocumentParam
@@ -168,8 +175,10 @@ class AnthropicMessagesToolResultParam(TypedDict, total=False):
 AnthropicMessagesUserMessageValues: TypeAlias = (
     AnthropicMessagesTextParam
     | AnthropicMessagesImageParam
+    # ast-grep-ignore: no-long-names
     | AnthropicMessagesToolResultParam
     | AnthropicMessagesDocumentParam
+    # ast-grep-ignore: no-long-names
     | AnthropicMessagesContainerUploadParam
 )
 
@@ -177,6 +186,7 @@ AnthropicMessagesUserMessageValues: TypeAlias = (
 # ast-grep-ignore: no-long-names
 class AnthropicMessagesUserMessageParam(TypedDict, total=False):
     role: Required[Literal["user"]]
+    # ast-grep-ignore: no-long-names
     content: Required[str | Iterable[AnthropicMessagesUserMessageValues]]
 
 
@@ -198,13 +208,17 @@ class AnthropicMessagesSystemMessageParam(TypedDict, total=False):
 
 
 AllAnthropicMessageValues: TypeAlias = (
+    # ast-grep-ignore: no-long-names
     AnthropicMessagesUserMessageParam | AnthopicMessagesAssistantMessageParam
 )
 
 # ast-grep-ignore: no-long-names
 AllAnthropicPassThroughMessageValues: TypeAlias = (
+    # ast-grep-ignore: no-long-names
     AnthropicMessagesUserMessageParam
+    # ast-grep-ignore: no-long-names
     | AnthopicMessagesAssistantMessageParam
+    # ast-grep-ignore: no-long-names
     | AnthropicMessagesSystemMessageParam
 )
 

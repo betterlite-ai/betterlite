@@ -43,6 +43,7 @@ class AnthropicMessagesRequestOptionalParams(TypedDict, total=False):
     safeguards: ReadOnly[list[dict[str, JsonValue]] | None]
 
 
+# ast-grep-ignore: no-long-names
 class AnthropicMessagesRequest(AnthropicMessagesRequestOptionalParams, total=False):
     model: Required[str]
     messages: Required[list[AllAnthropicMessageValues] | list[dict[str, JsonValue]]]
