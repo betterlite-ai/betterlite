@@ -1,0 +1,8 @@
+general_settings:
+  max_file_size_mb: 10
+  max_batch_file_size_mb: "20"
+  allowed_file_extensions:
+    - .pdf
+    - .jsonl
+  blocked_file_extensions:
+    - .exe

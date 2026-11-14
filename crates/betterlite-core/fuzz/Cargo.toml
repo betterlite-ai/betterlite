@@ -211,6 +211,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "file_upload_validation"
+path = "fuzz_targets/file_upload_validation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "listen_query"
 path = "fuzz_targets/listen_query.rs"
 test = false

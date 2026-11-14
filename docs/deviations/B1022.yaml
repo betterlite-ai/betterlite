@@ -1,0 +1,17 @@
+task: B1022
+deviations:
+  - what: "A batch upload is capped at max_json_bytes (16 MiB), each line at max_event_bytes (1 MiB) and content lines at max_items (65536), while LiteLLM reads the spooled file to the end with no cap"
+    why: "bounded-inputs requires finite memory for untrusted input"
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_file_validation.py#L104-L118"
+  - what: "A line nested deeper than 128 JSON containers is reported as not valid JSON (400), where LiteLLM's json.loads raises RecursionError and answers 500"
+    why: "a 500 on input LiteLLM already fails belongs at 400 with a bounded stack"
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_file_validation.py#L89-L98"
+  - what: "A general_settings upload value of the wrong type fails the config load with ConfigError::InvalidScalar naming the key, where LiteLLM keeps it and raises TypeError at the first upload (500)"
+    why: "a bad value no working setup relies on should stop startup with the field named"
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/general_upload_validation.py#L18-L31"
+  - what: "A seekable batch file is split into lines like a bytes body (on newline, carriage return and CRLF), where LiteLLM iterates the file object and splits only on newline so a bare carriage return stays inside its line"
+    why: "one bounded reader serves both body kinds and a bare carriage return is not a line break any caller of the upload endpoint relies on"
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_file_validation.py#L82-L86"
+  - what: "A max_batch_file_size_mb string with digit-group underscores such as '1_0' is rejected at config load, where LiteLLM's pydantic int adapter reads it as 10, and an integer above the i64 range is rejected where Python keeps it"
+    why: "no working setup writes a quoted cap that way and the cap is stored as i64"
+    link: ""

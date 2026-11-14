@@ -1,0 +1,19 @@
+kind: helper
+name: file-upload-validation-setting-coercion
+call:
+  file_upload_validation:
+    calls:
+      - {function: settings, max_file_size_mb: 10, max_batch_file_size_mb: 10, allowed_file_extensions: [".pdf", ".txt"], blocked_file_extensions: [".exe"]}
+      - {function: settings, max_file_size_mb: null, max_batch_file_size_mb: null, allowed_file_extensions: null, blocked_file_extensions: null}
+      - {function: settings, max_file_size_mb: null, max_batch_file_size_mb: null, allowed_file_extensions: [], blocked_file_extensions: []}
+      - {function: settings, max_file_size_mb: true, max_batch_file_size_mb: null, allowed_file_extensions: null, blocked_file_extensions: null}
+      - {function: settings, max_file_size_mb: 1.5, max_batch_file_size_mb: null, allowed_file_extensions: null, blocked_file_extensions: null}
+      - {function: settings, max_file_size_mb: "1", max_batch_file_size_mb: null, allowed_file_extensions: null, blocked_file_extensions: null}
+      - {function: settings, max_file_size_mb: null, max_batch_file_size_mb: "1", allowed_file_extensions: null, blocked_file_extensions: null}
+      - {function: settings, max_file_size_mb: null, max_batch_file_size_mb: true, allowed_file_extensions: null, blocked_file_extensions: null}
+      - {function: settings, max_file_size_mb: null, max_batch_file_size_mb: 1.0, allowed_file_extensions: null, blocked_file_extensions: null}
+      - {function: settings, max_file_size_mb: null, max_batch_file_size_mb: 1.5, allowed_file_extensions: null, blocked_file_extensions: null}
+      - {function: settings, max_file_size_mb: null, max_batch_file_size_mb: null, allowed_file_extensions: ".pdf", blocked_file_extensions: null}
+      - {function: settings, max_file_size_mb: null, max_batch_file_size_mb: null, allowed_file_extensions: [".pdf", 1], blocked_file_extensions: null}
+env: {}
+compare: {ignore: []}
