@@ -6,8 +6,14 @@ worktrees=${BETTERLITE_WORKTREES:-$(dirname "${main}")/betterlite-worktrees}
 L=${worktrees}/logs
 export BETTERLITE_LOGS=${L}
 events=${L}/flow-events.log
+GH_TOKEN=$(gh auth token --user HardMax71)
+export GH_TOKEN
+export GH_REPO=betterlite-ai/betterlite
 # since stage 3 a dispatch builds nothing, so RAM, disk and the vendor seats hold one back in next-slot.sh, and this cap only bounds the open checkouts (about 0.5 GB each)
 cap=${BETTERLITE_MAX_FLOWS:-200}
+# Max wants open PRs landed before new tasks start (11-14): no fresh pick while this many task PRs are open
+max_prs=${BETTERLITE_MAX_OPEN_PRS:-50}
+holding=
 mkdir -p "${L}/flows"
 while [[ ! -f "${L}/feeder.STOP" ]]; do
   while [[ -e "${main}/.git/betterlite/maintenance" ]] || [[ -e "${L}/maintenance.STOP" ]]; do sleep 60; done
@@ -73,6 +79,16 @@ while [[ ! -f "${L}/feeder.STOP" ]]; do
     chain_room=$((chain_room - 1))
     sleep 5
   done
+  # a count that fails picks nothing this round
+  prs=$(gh pr list --state open --limit 500 --json headRefName --jq '[.[] | select(.headRefName | startswith("task/"))] | length')
+  if [[ "${prs:-${max_prs}}" -ge "${max_prs}" ]]; then
+    chain_room=0
+    [[ -n "${holding}" ]] || printf '%(%H:%M)T %s\n' -1 "(feeder) no fresh picks while ${prs:-an unknown number of} task PRs are open, the limit is ${max_prs}; queued and running tasks go on" >> "${events}"
+    holding=1
+  elif [[ -n "${holding}" ]]; then
+    printf '%(%H:%M)T %s\n' -1 "(feeder) fresh picks start again with ${prs} task PRs open" >> "${events}"
+    holding=
+  fi
   if [[ "${chain_room}" -gt 0 ]]; then
     # free.pl marks each held id in progress, so the ids go in as separate arguments
     read -r -d '' -a held_ids <<< "${held}"
