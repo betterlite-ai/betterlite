@@ -38,6 +38,12 @@ pub struct TokenPayload<'payload> {
     pub tools: &'payload [Json],
 }
 
+#[derive(serde::Serialize)]
+struct SystemMessage<'content> {
+    role: &'static str,
+    content: &'content Json,
+}
+
 // anthropic_system_to_openai_message: a non-empty system string or block list counts as one system message.
 fn system_message(system: Option<&Json>) -> Result<Option<Message>, TokenCountError> {
     let content = match system {
@@ -56,13 +62,11 @@ fn system_message(system: Option<&Json>) -> Result<Option<Message>, TokenCountEr
     let Some(content) = content else {
         return Ok(None);
     };
-    let mut object = serde_json::Map::new();
-    object.insert(
-        "role".to_owned(),
-        serde_json::Value::String("system".to_owned()),
-    );
-    object.insert("content".to_owned(), serde_json::to_value(content)?);
-    let message = serde_json::from_value(serde_json::Value::Object(object))?;
+    let value = serde_json::to_value(SystemMessage {
+        role: "system",
+        content,
+    })?;
+    let message = serde_json::from_value(value)?;
     Ok(Some(message))
 }
 

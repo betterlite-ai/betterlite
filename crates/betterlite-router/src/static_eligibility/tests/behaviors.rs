@@ -50,6 +50,7 @@ fn run(
             facts,
             environment: PRODUCTION,
             enable_pre_call_checks: enable,
+            drop_params: false,
         },
         &EligibilityServices {
             limits: &limits,
@@ -398,14 +399,23 @@ fn params_skips_without_response_format() {
 fn params_skips_with_drop_params() {
     let facts = RequestFacts {
         response_format: true,
-        drop_params: true,
         ..message_facts("hi")
     };
-    let result = run(
-        pool(vec![spec("gpt", "legacy", "openai/gpt-4", "")]),
-        &facts,
-        true,
-        &unsupporting(),
+    let limits = InfoLimits;
+    let support = unsupporting();
+    let result = eligible(
+        EligibilityInput {
+            model: MODEL,
+            candidates: pool(vec![spec("gpt", "legacy", "openai/gpt-4", "")]),
+            facts: &facts,
+            environment: PRODUCTION,
+            enable_pre_call_checks: true,
+            drop_params: true,
+        },
+        &EligibilityServices {
+            limits: &limits,
+            params: &support,
+        },
     )
     .unwrap();
     assert_eq!(ids(&result.deployments), ["legacy"]);

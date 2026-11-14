@@ -10,5 +10,4 @@ pub struct RequestFacts {
     pub target_order: Option<i64>,
     pub input_token_count: Option<usize>,
     pub compaction_pending: bool,
-    pub drop_params: bool,
 }

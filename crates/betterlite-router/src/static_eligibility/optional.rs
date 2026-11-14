@@ -91,8 +91,7 @@ pub fn routing_strategy_checks(
     deployment: &DeploymentSpec,
     checks: &[&dyn DeploymentPreCallCheck],
 ) -> Result<(), PreCallError> {
-    let mut remaining = checks.iter();
-    while let Some(check) = remaining.next() {
+    for check in checks {
         check.check(deployment)?;
     }
     Ok(())

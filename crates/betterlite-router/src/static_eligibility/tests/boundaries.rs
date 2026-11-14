@@ -30,6 +30,7 @@ fn run(
             facts,
             environment: Some("production"),
             enable_pre_call_checks: enable,
+            drop_params: false,
         },
         &EligibilityServices {
             limits: &limits,
@@ -409,6 +410,7 @@ fn params_base_model(deployment: DeploymentSpec) {
             facts: &response_format_facts(),
             environment: Some("production"),
             enable_pre_call_checks: true,
+            drop_params: false,
         },
         &EligibilityServices {
             limits: &InfoLimits,

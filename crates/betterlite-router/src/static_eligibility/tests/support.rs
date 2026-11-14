@@ -19,7 +19,6 @@ pub(crate) fn facts() -> RequestFacts {
         target_order: None,
         input_token_count: None,
         compaction_pending: false,
-        drop_params: false,
     }
 }
 

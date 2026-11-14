@@ -3,6 +3,7 @@ use betterlite_models::decisions::Json;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::router_predicates::params::ParamSupport;
 use crate::static_eligibility::filter::Cause;
+use crate::static_eligibility::request::RequestFacts;
 
 const RESPONSE_FORMAT: &str = "response_format";
 
@@ -33,7 +34,7 @@ pub(crate) fn declared_model(spec: &DeploymentSpec) -> Option<&str> {
 // The response_format half of _pre_call_checks: a deployment whose provider does not support the param is not a candidate.
 pub fn filter_supported_params<S>(
     deployments: Vec<DeploymentSpec>,
-    response_format: bool,
+    facts: &RequestFacts,
     drop_params: bool,
     support: &S,
     causes: &mut Vec<Cause>,
@@ -41,7 +42,7 @@ pub fn filter_supported_params<S>(
 where
     S: ParamSupport + ?Sized,
 {
-    if drop_params || !response_format {
+    if drop_params || !facts.response_format {
         return deployments;
     }
     let mut kept = Vec::new();

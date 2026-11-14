@@ -1,4 +1,5 @@
 use betterlite_models::decisions::Json;
+use betterlite_router::deployment_catalog::types::Candidates;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::static_eligibility::error::EligibilityError;
 use betterlite_router::static_eligibility::filter::{
@@ -98,6 +99,71 @@ fn ids(deployments: &[DeploymentSpec]) -> Vec<String> {
     selected
 }
 
+fn request_facts(lookup: &Lookup) -> RequestFacts {
+    RequestFacts {
+        messages: lookup.messages.clone(),
+        system: None,
+        tools: lookup.tools.clone(),
+        response_format: lookup.response_format,
+        target_order: lookup.target_order,
+        input_token_count: None,
+        compaction_pending: false,
+    }
+}
+
+async fn counted_facts(
+    input: &Input,
+    lookup: &Lookup,
+    candidates: &Candidates,
+    counter: &ProbeCounter,
+) -> RequestFacts {
+    let mut facts = request_facts(lookup);
+    if !input.enable_pre_call_checks || facts.messages.is_none() {
+        return facts;
+    }
+    let payload = TokenPayload {
+        messages: facts.messages.as_deref(),
+        system: None,
+        tools: &facts.tools,
+    };
+    facts.input_token_count = count_for_pre_call_checks(
+        &lookup.model,
+        candidates.deployments(),
+        &payload,
+        &ProbeLimits,
+        counter,
+    )
+    .await;
+    facts
+}
+
+fn found(result: Result<EligibilityResult, EligibilityError>) -> Result<Found, OperationError> {
+    match result {
+        Ok(EligibilityResult { deployments, .. }) if deployments.is_empty() => Ok(Found {
+            outcome: Outcome::RateLimited,
+            selected: Vec::new(),
+        }),
+        Ok(EligibilityResult { deployments, .. }) => Ok(Found {
+            outcome: Outcome::Selected,
+            selected: ids(&deployments),
+        }),
+        Err(EligibilityError::Blocked { .. }) => Ok(Found {
+            outcome: Outcome::ServiceUnavailable,
+            selected: Vec::new(),
+        }),
+        Err(EligibilityError::ContextWindow(_error)) => Ok(Found {
+            outcome: Outcome::ContextExceeded,
+            selected: Vec::new(),
+        }),
+        Err(EligibilityError::Environment(error)) => Err(OperationError::InvalidRequest {
+            message: error.to_string(),
+        }),
+        Err(EligibilityError::WebSearch(error)) => Err(OperationError::InvalidRequest {
+            message: error.to_string(),
+        }),
+    }
+}
+
 async fn answer(
     input: &Input,
     lookup: &Lookup,
@@ -109,73 +175,22 @@ async fn answer(
             selected: Vec::new(),
         });
     };
-    let mut facts = RequestFacts {
-        messages: lookup.messages.clone(),
-        system: None,
-        tools: lookup.tools.clone(),
-        response_format: lookup.response_format,
-        target_order: lookup.target_order,
-        input_token_count: None,
-        compaction_pending: false,
-        drop_params: input.drop_params,
-    };
-    if input.enable_pre_call_checks && facts.messages.is_some() {
-        let payload = TokenPayload {
-            messages: facts.messages.as_deref(),
-            system: None,
-            tools: &facts.tools,
-        };
-        facts.input_token_count = count_for_pre_call_checks(
-            &lookup.model,
-            candidates.deployments(),
-            &payload,
-            &ProbeLimits,
-            counter,
-        )
-        .await;
-    }
+    let facts = counted_facts(input, lookup, &candidates, counter).await;
     let services = EligibilityServices {
         limits: &ProbeLimits,
         params: &ProbeSupport,
     };
-    let outcome = match eligible(
+    found(eligible(
         EligibilityInput {
             model: &lookup.model,
             candidates,
             facts: &facts,
             environment: Some(&input.environment),
             enable_pre_call_checks: input.enable_pre_call_checks,
+            drop_params: input.drop_params,
         },
         &services,
-    ) {
-        Ok(EligibilityResult { deployments, .. }) if deployments.is_empty() => Found {
-            outcome: Outcome::RateLimited,
-            selected: Vec::new(),
-        },
-        Ok(EligibilityResult { deployments, .. }) => Found {
-            outcome: Outcome::Selected,
-            selected: ids(&deployments),
-        },
-        Err(EligibilityError::Blocked { .. }) => Found {
-            outcome: Outcome::ServiceUnavailable,
-            selected: Vec::new(),
-        },
-        Err(EligibilityError::ContextWindow(_error)) => Found {
-            outcome: Outcome::ContextExceeded,
-            selected: Vec::new(),
-        },
-        Err(EligibilityError::Environment(error)) => {
-            return Err(OperationError::InvalidRequest {
-                message: error.to_string(),
-            });
-        }
-        Err(EligibilityError::WebSearch(error)) => {
-            return Err(OperationError::InvalidRequest {
-                message: error.to_string(),
-            });
-        }
-    };
-    Ok(outcome)
+    ))
 }
 
 async fn execute(input: &Input) -> Result<Output, OperationError> {

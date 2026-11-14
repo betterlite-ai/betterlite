@@ -37,6 +37,7 @@ pub struct EligibilityInput<'input> {
     pub facts: &'input RequestFacts,
     pub environment: Option<&'input str>,
     pub enable_pre_call_checks: bool,
+    pub drop_params: bool,
 }
 
 pub struct EligibilityServices<'services> {
@@ -91,6 +92,24 @@ fn single_eligibility(
     })
 }
 
+fn active_candidates(
+    deployments: Vec<DeploymentSpec>,
+    environment: Option<&str>,
+    causes: &mut Vec<Cause>,
+) -> Result<Vec<DeploymentSpec>, EligibilityError> {
+    let mut active = Vec::new();
+    for deployment in deployments {
+        if active_in_environment(&deployment.model_info, environment)? {
+            active.push(deployment);
+        } else {
+            causes.push(Cause::Environment {
+                model_name: deployment.model_name.clone(),
+            });
+        }
+    }
+    Ok(active)
+}
+
 // The static half of async_get_healthy_deployments: the environment gate at construction, then the filters a request applies.
 pub fn eligible(
     input: EligibilityInput<'_>,
@@ -102,16 +121,7 @@ pub fn eligible(
         Candidates::Single(deployment) => vec![*deployment],
         Candidates::Pool(pool) => pool,
     };
-    let mut active = Vec::new();
-    for deployment in deployments {
-        if active_in_environment(&deployment.model_info, input.environment)? {
-            active.push(deployment);
-        } else {
-            causes.push(Cause::Environment {
-                model_name: deployment.model_name.clone(),
-            });
-        }
-    }
+    let active = active_candidates(deployments, input.environment, &mut causes)?;
     if single {
         return single_eligibility(input.model, active, causes);
     }
@@ -128,8 +138,8 @@ pub fn eligible(
         }
         deployments = filter_supported_params(
             deployments,
-            input.facts.response_format,
-            input.facts.drop_params,
+            input.facts,
+            input.drop_params,
             services.params,
             &mut causes,
         );

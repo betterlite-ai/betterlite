@@ -23,10 +23,10 @@ pub enum EnvironmentError {
 }
 
 fn listing(value: &Json) -> String {
-    match serde_json::to_string(value) {
-        Ok(text) => text,
-        Err(_error) => String::new(),
-    }
+    let Ok(text) = serde_json::to_string(value) else {
+        return String::new();
+    };
+    text
 }
 
 // active_in_environment: a deployment with supported_environments loads only where LITELLM_ENVIRONMENT is listed.
