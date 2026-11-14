@@ -335,9 +335,9 @@ pub(crate) fn fixture() -> Fixture {
     )
 }
 
-pub(crate) fn fixture_with(settings: RequestAlertSettings, resolver: FixedResolver) -> Fixture {
+pub(crate) fn fixture_with(settings: RequestAlertSettings, api_base: FixedResolver) -> Fixture {
     let sink = Arc::new(RecordingSink::default());
-    let resolver = Arc::new(resolver);
+    let resolver = Arc::new(api_base);
     let fixed_settings = Arc::new(FixedSettings::new(settings));
     let status = Arc::new(FakeStatus::default());
     let cache = Arc::new(FakeHangingCache::default());
