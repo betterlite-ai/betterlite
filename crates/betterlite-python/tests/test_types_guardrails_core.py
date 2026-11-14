@@ -98,7 +98,7 @@ def describe(module, names, aliases):
                 found["models"][name] = model_shape(value)
             elif issubclass(value, Enum):
                 found["enums"][name] = {
-                    "names": [member.name for member in value],
+                    "members": [[member.name, member.value] for member in value],
                     "schema": shape(TypeAdapter(value).json_schema()),
                 }
             elif typing_extensions.is_typeddict(value):
@@ -342,7 +342,7 @@ class ModelShape(Shape):
 
 
 class EnumShape(TypedDict):
-    names: list[str]
+    members: list[list[str]]
     schema: Shape
 
 
