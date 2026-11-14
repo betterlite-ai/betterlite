@@ -21,3 +21,11 @@ deviations:
       before the artifact event; the cap turns an unbounded stream into an error item after the working
       status, the same place a completion failure ends the stream.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/litellm_completion_bridge/handler.py#L267-L277
+  - what: >-
+      The LangFlow bridge forwards the per-request agent headers (the x-a2a-* headers and the admin
+      extra_headers a client sent) to the completion call, merged with the static extra_headers the way
+      the generic bridge merges them.
+    why: >-
+      LiteLLM's LangFlowA2AConfig drops agent_extra_headers when it calls the bridge back, so they are
+      lost for LangFlow agents only; Bedrock AgentCore forwards them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/langflow/config.py#L16-L61

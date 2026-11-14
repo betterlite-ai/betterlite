@@ -81,7 +81,6 @@ const fn scoped_call<'call>(
 ) -> BridgeCall<'call> {
     BridgeCall {
         litellm_params: merged,
-        agent_extra_headers: None,
         ..*call
     }
 }

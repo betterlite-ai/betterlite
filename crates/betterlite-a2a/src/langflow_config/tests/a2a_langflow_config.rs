@@ -211,11 +211,18 @@ async fn streaming_scopes_the_session_before_dispatch() {
 }
 
 #[tokio::test]
-async fn agent_headers_are_not_forwarded() {
-    let params = langflow_params(None);
+async fn agent_headers_reach_the_completion_call() {
+    let mut params = langflow_params(None);
+    params.insert(
+        "extra_headers".to_owned(),
+        parsed(r#"{"authorization":"static","X-Static":"static"}"#),
+    );
     let message = send_params();
     let mut call = bridge_call("req-1", &message, &params);
-    let dynamic = BTreeMap::from([("X-Trace".to_owned(), "dynamic".to_owned())]);
+    let dynamic = BTreeMap::from([
+        ("X-Trace".to_owned(), "dynamic".to_owned()),
+        ("Authorization".to_owned(), "dynamic".to_owned()),
+    ]);
     call.agent_extra_headers = Some(&dynamic);
     let completion = recorder();
     let mut source = Source::default();
@@ -223,15 +230,27 @@ async fn agent_headers_are_not_forwarded() {
         .await
         .expect("the fixture completion succeeds");
     let calls = recorded_calls(&completion);
-    assert!(!calls[0].extra.contains_key("extra_headers"));
+    assert_eq!(
+        calls[0].extra.get("extra_headers"),
+        Some(&parsed(
+            r#"{"X-Static":"static","X-Trace":"dynamic","authorization":"static"}"#
+        ))
+    );
 }
 
 #[tokio::test]
-async fn streaming_agent_headers_are_not_forwarded() {
-    let params = langflow_params(None);
+async fn streaming_agent_headers_reach_the_completion_call() {
+    let mut params = langflow_params(None);
+    params.insert(
+        "extra_headers".to_owned(),
+        parsed(r#"{"authorization":"static","X-Static":"static"}"#),
+    );
     let message = send_params();
     let mut call = bridge_call("req-1", &message, &params);
-    let dynamic = BTreeMap::from([("X-Trace".to_owned(), "dynamic".to_owned())]);
+    let dynamic = BTreeMap::from([
+        ("X-Trace".to_owned(), "dynamic".to_owned()),
+        ("Authorization".to_owned(), "dynamic".to_owned()),
+    ]);
     call.agent_extra_headers = Some(&dynamic);
     let completion = recorder();
     let events = collect_events(handle_streaming(&call, &completion, Source::default())).await;
@@ -240,7 +259,12 @@ async fn streaming_agent_headers_are_not_forwarded() {
         "task:submitted|status:working:false|status:completed:true"
     );
     let calls = recorded_calls(&completion);
-    assert!(!calls[0].extra.contains_key("extra_headers"));
+    assert_eq!(
+        calls[0].extra.get("extra_headers"),
+        Some(&parsed(
+            r#"{"X-Static":"static","X-Trace":"dynamic","authorization":"static"}"#
+        ))
+    );
 }
 
 #[tokio::test]
