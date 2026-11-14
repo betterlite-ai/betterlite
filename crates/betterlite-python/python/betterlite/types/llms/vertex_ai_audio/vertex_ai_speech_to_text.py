@@ -35,13 +35,13 @@ class VertexSpeechToTextResult(ResponseObject):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
 
     alternatives: list[VertexSpeechToTextAlternative] = Field(default_factory=list)
-    languageCode: str | None = None
+    languageCode: str | None = None  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_speech_to_text.py#L33
 
 
 class VertexSpeechToTextResponseMetadata(ResponseObject):  # ast-grep-ignore: no-long-names
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
 
-    totalBilledDuration: str | None = None
+    totalBilledDuration: str | None = None  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_speech_to_text.py#L37
 
 
 class VertexSpeechToTextRecognizeResponse(ResponseObject):  # ast-grep-ignore: no-long-names

@@ -62,17 +62,17 @@ class VertexGeminiTranscriptionModalityTokens(ResponseObject):  # ast-grep-ignor
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
 
     modality: str | None = None
-    tokenCount: int = 0
+    tokenCount: int = 0  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_gemini_transcription.py#L56
 
 
 class VertexGeminiTranscriptionUsageMetadata(ResponseObject):  # ast-grep-ignore: no-long-names
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
 
-    promptTokenCount: int = 0
-    candidatesTokenCount: int = 0
-    totalTokenCount: int = 0
+    promptTokenCount: int = 0  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_gemini_transcription.py#L62
+    candidatesTokenCount: int = 0  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_gemini_transcription.py#L63
+    totalTokenCount: int = 0  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_gemini_transcription.py#L64
     # ast-grep-ignore: no-long-names
-    promptTokensDetails: tuple[VertexGeminiTranscriptionModalityTokens, ...] = ()
+    promptTokensDetails: tuple[VertexGeminiTranscriptionModalityTokens, ...] = ()  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_gemini_transcription.py#L65
 
 
 class VertexGeminiTranscriptionResponse(ResponseObject):  # ast-grep-ignore: no-long-names
@@ -81,4 +81,4 @@ class VertexGeminiTranscriptionResponse(ResponseObject):  # ast-grep-ignore: no-
     # ast-grep-ignore: no-long-names
     candidates: tuple[VertexGeminiTranscriptionCandidate, ...] = ()
     # ast-grep-ignore: no-long-names
-    usageMetadata: VertexGeminiTranscriptionUsageMetadata | None = None
+    usageMetadata: VertexGeminiTranscriptionUsageMetadata | None = None  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_gemini_transcription.py#L72

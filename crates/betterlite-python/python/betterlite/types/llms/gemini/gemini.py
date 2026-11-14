@@ -112,10 +112,10 @@ class GeminiImageGenerationInstance(TypedDict):
 class GeminiImageGenerationParameters(ResponseObject):  # ast-grep-ignore: no-long-names
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
 
-    sampleCount: int | None = None
-    aspectRatio: str | None = None
-    imageSize: str | None = None
-    personGeneration: str | None = None
+    sampleCount: int | None = None  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L166
+    aspectRatio: str | None = None  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L169
+    imageSize: str | None = None  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L172
+    personGeneration: str | None = None  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L175
     background: str | None = None
     input_fidelity: str | None = None
     moderation: str | None = None
@@ -154,14 +154,14 @@ class GeminiVideoGenerationInstance(TypedDict, total=False):
 class GeminiVideoGenerationParameters(ResponseObject):  # ast-grep-ignore: no-long-names
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
 
-    aspectRatio: str | None = None
-    durationSeconds: int | None = None
+    aspectRatio: str | None = None  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L248
+    durationSeconds: int | None = None  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L251
     resolution: str | None = None
-    negativePrompt: str | None = None
-    lastFrame: JsonValue = None
-    referenceImages: list[JsonValue] | None = None
+    negativePrompt: str | None = None  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L263
+    lastFrame: JsonValue = None  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L266
+    referenceImages: list[JsonValue] | None = None  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L272
     video: JsonValue = None
-    personGeneration: str | None = None
+    personGeneration: str | None = None  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L284
 
 
 class GeminiVideoGenerationRequest(ResponseObject):
@@ -186,19 +186,19 @@ class GeminiGeneratedVideoSample(ResponseObject):
 class GeminiGenerateVideoResponse(ResponseObject):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
 
-    generatedSamples: list[GeminiGeneratedVideoSample]
+    generatedSamples: list[GeminiGeneratedVideoSample]  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L318
 
 
 class GeminiOperationResponse(ResponseObject):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
 
-    generateVideoResponse: GeminiGenerateVideoResponse
+    generateVideoResponse: GeminiGenerateVideoResponse  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L325
 
 
 class GeminiOperationMetadata(ResponseObject):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
 
-    createTime: str | None = None
+    createTime: str | None = None  # noqa: N815  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L332
     model: str | None = None
 
 
