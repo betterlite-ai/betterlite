@@ -854,7 +854,7 @@ fn config_parse_reports_syntax_errors_in_the_caller_order() {
     assert_eq!(response.errors.len(), 2);
     let first = response.errors.first().unwrap();
     assert_eq!(first.policy_name, "zeta");
-    let second = response.errors.get(1).unwrap();
+    let second = &response.errors[1];
     assert_eq!(second.policy_name, "alpha");
 }
 
