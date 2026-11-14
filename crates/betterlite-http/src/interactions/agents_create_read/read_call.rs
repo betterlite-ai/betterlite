@@ -118,6 +118,7 @@ fn send_blocking(
     let status_code = sent.status().as_u16();
     let headers = response_headers(sent.headers());
     let body = read_body(sent, MAX_RESPONSE_BYTES)?;
+    // httpx's get raises no status error, so a failing status reaches post_call and the transform
     Ok(UpstreamResponse {
         status_code,
         headers,
