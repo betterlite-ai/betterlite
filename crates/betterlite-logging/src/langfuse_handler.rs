@@ -61,16 +61,18 @@ impl LangFuseHandler {
         cache: &DynamicLoggerCache<Arc<LangFuseLogger>>,
         global: Option<Arc<LangFuseLogger>>,
     ) -> Result<Arc<LangFuseLogger>, LangfuseSelectionError> {
-        if let Some(existing) = global {
-            return Ok(existing);
+        match global {
+            Some(existing) => Ok(existing),
+            None => {
+                Self::cached_or_created(
+                    services,
+                    cache,
+                    BTreeMap::new(),
+                    LangfuseLoggingConfig::default(),
+                )
+                .await
+            }
         }
-        Self::cached_or_created(
-            services,
-            cache,
-            BTreeMap::new(),
-            LangfuseLoggingConfig::default(),
-        )
-        .await
     }
 
     // the cache lookup both selection paths end in
@@ -80,10 +82,10 @@ impl LangFuseHandler {
         credentials: BTreeMap<String, SecretString>,
         config: LangfuseLoggingConfig,
     ) -> Result<Arc<LangFuseLogger>, LangfuseSelectionError> {
-        if let Some(cached) = cache.get_cache(&credentials, SERVICE_NAME)? {
-            return Ok(cached);
-        }
-        Self::logger_from_credentials(services, cache, credentials, config).await
+        let Some(cached) = cache.get_cache(&credentials, SERVICE_NAME)? else {
+            return Self::logger_from_credentials(services, cache, credentials, config).await;
+        };
+        Ok(cached)
     }
 
     // LangFuseHandler._create_langfuse_logger_from_credentials: build the logger, then cache it
