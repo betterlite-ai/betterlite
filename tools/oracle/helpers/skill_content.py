@@ -101,17 +101,15 @@ class Capture(logging.Handler):
         self.messages.append(record.getMessage())
 
 
-def decoded_file_content(content: str | None) -> bytes | None:
-    return None if content is None else base64.b64decode(content)
-
-
 def build_skill(row: SkillRow) -> LiteLLM_SkillsTable:
     return LiteLLM_SkillsTable(
         skill_id=row["skill_id"],
         display_title=row["display_title"],
         description=row["description"],
         instructions=row["instructions"],
-        file_content=decoded_file_content(row["file_content"]),
+        file_content=(
+            None if row["file_content"] is None else base64.b64decode(row["file_content"])
+        ),
         metadata=row["metadata"],
     )
 
