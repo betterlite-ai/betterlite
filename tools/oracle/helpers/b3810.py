@@ -1,9 +1,6 @@
 from typing import Final, Literal, TypedDict
 
 from litellm.proxy.guardrails.guardrail_hooks.tool_permission import ToolPermissionGuardrail
-from litellm.types.proxy.guardrails.guardrail_hooks.tool_permission import (
-    ToolPermissionGuardrailConfigModel,
-)
 from pydantic import JsonValue, TypeAdapter
 
 
@@ -25,7 +22,6 @@ class Output(TypedDict):
     rules: list[RuleOutput]
     default_action: str
     on_disallowed_action: str
-    ui_friendly_name: str
 
 
 RULE_OUTPUT: Final = TypeAdapter(RuleOutput)
@@ -41,5 +37,4 @@ def run(input_value: Input) -> Output:
         "rules": [RULE_OUTPUT.validate_json(rule.model_dump_json()) for rule in guardrail.rules],
         "default_action": guardrail.default_action,
         "on_disallowed_action": guardrail.on_disallowed_action,
-        "ui_friendly_name": ToolPermissionGuardrailConfigModel.ui_friendly_name(),
     }
