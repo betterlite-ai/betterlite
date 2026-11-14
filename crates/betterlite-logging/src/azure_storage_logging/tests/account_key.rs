@@ -45,7 +45,7 @@ async fn the_account_key_path_creates_the_dated_directory_and_the_file() {
     assert_eq!(
         flush.url,
         format!(
-            "{file_url}?action=flush&position={FLUSH_QUERY}",
+            "{file_url}?action=flush&position={}{FLUSH_QUERY}",
             append.body.len()
         )
     );
