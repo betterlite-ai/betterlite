@@ -141,6 +141,19 @@ async fn response_format_maps_per_vendor(
     );
 }
 
+#[tokio::test]
+async fn response_format_without_a_type_is_left_alone() {
+    assert_eq!(
+        chat_field(
+            LLAMA,
+            r#"{"response_format": {"schema": 1}}"#,
+            "responseFormat"
+        )
+        .await,
+        body(r#"{"schema": 1}"#)
+    );
+}
+
 #[rstest]
 #[case::missing_schema(r#"{"type": "json_schema"}"#)]
 #[case::schema_not_an_object(r#"{"type": "json_schema", "json_schema": "n"}"#)]

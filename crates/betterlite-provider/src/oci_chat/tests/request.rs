@@ -295,9 +295,32 @@ async fn tools_are_adapted_for_the_cohere_vendor() {
     assert_eq!(pick(&pick(&definitions, "q"), "type"), body(r#""str""#));
 }
 
+#[tokio::test]
+async fn null_optional_params_are_dropped_like_absent_ones() {
+    let payload = build(
+        LLAMA,
+        r#"{"tools": null, "stream": null, "max_tokens": null, "response_format": null}"#,
+        false,
+    )
+    .await
+    .unwrap();
+    assert_json(
+        &payload,
+        r#"{
+            "compartmentId": "compartment",
+            "servingMode": {"servingType": "ON_DEMAND", "modelId": "meta.llama-3.3-70b-instruct"},
+            "chatRequest": {
+                "apiFormat": "GENERIC",
+                "messages": [{"role": "USER", "content": [{"type": "TEXT", "text": "hi"}]}],
+                "isStream": false,
+                "maxTokens": 4096
+            }
+        }"#,
+    );
+}
+
 #[rstest]
 #[case::text(r#"{"tools": "lookup"}"#)]
-#[case::null(r#"{"tools": null}"#)]
 #[tokio::test]
 async fn tools_that_are_not_tool_definitions_are_rejected(#[case] optional: &str) {
     let refusal = rejected(LLAMA, optional).await;

@@ -72,6 +72,7 @@ fn select_params(vendor: OciVendor, optional_params: &Object, token_key: &str) -
         if let Some(value) = optional_params
             .get(openai_key)
             .or_else(|| optional_params.get(oci_alias))
+            .filter(|value| !matches!(value, Json::Null))
         {
             selected.insert(target.to_owned(), value.clone());
         }
