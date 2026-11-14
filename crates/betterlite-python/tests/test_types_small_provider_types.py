@@ -84,12 +84,7 @@ def module_forms(module_name: str) -> dict[str, TypeForm[JsonValue]]:
 def defined_classes(module_name: str) -> dict[str, type]:
     module: ModuleType = module_of(module_name)
     members: list[tuple[str, type]] = inspect.getmembers(module, inspect.isclass)
-    found: dict[str, type] = {
-        name: member
-        for name, member in members
-        if member.__module__ == module.__name__
-    }
-    return found
+    return {name: member for name, member in members if member.__module__ == module.__name__}
 
 
 def text_list(values: list[str]) -> list[JsonValue]:
@@ -150,44 +145,26 @@ def schema_literals(value: JsonValue) -> list[str]:
 
 
 def definition_names(schema: JsonValue) -> list[str]:
-    match schema:
-        case dict():
-            definitions: JsonValue = schema.get("$defs")
-            match definitions:
-                case dict():
-                    return sorted(name for name in definitions if name != "JsonValue")
-                case list() | str() | bool() | int() | float() | None:
-                    return []
-        case list() | str() | bool() | int() | float() | None:
-            return []
+    definitions: JsonValue = mapping(schema).get("$defs")
+    if definitions is None:
+        return []
+    names: dict[str, JsonValue] = mapping(definitions)
+    return sorted(name for name in names if name != "JsonValue")
 
 
-def typed_dict_view(cls: type) -> dict[str, JsonValue]:
+def schema_view(cls: type) -> dict[str, JsonValue]:
     schema: dict[str, JsonValue] = schema_of(cls)
-    required: list[str] = strings(schema.get("required"))
     properties: dict[str, JsonValue] = mapping(schema.get("properties"))
-    literals: dict[str, JsonValue] = {}
+    fields: dict[str, JsonValue] = {}
     for name, property_schema in properties.items():
-        literals[name] = text_list(schema_literals(property_schema))
+        fields[name] = {
+            "literals": text_list(schema_literals(property_schema)),
+            "default": mapping(property_schema).get("default"),
+        }
     view: dict[str, JsonValue] = {
-        "required": text_list(required),
+        "required": text_list(strings(schema.get("required"))),
         "keys": text_list(sorted(properties)),
-        "literals": literals,
-    }
-    return view
-
-
-def model_view(cls: type) -> dict[str, JsonValue]:
-    schema: dict[str, JsonValue] = schema_of(cls)
-    required: list[str] = strings(schema.get("required"))
-    properties: dict[str, JsonValue] = mapping(schema.get("properties"))
-    defaults: dict[str, JsonValue] = {}
-    for name, property_schema in properties.items():
-        defaults[name] = mapping(property_schema).get("default")
-    view: dict[str, JsonValue] = {
-        "required": text_list(required),
-        "keys": text_list(sorted(properties)),
-        "defaults": defaults,
+        "fields": fields,
     }
     return view
 
@@ -213,10 +190,10 @@ def alias_view(alias: TypeForm[JsonValue]) -> dict[str, JsonValue]:
 
 def class_view(cls: type) -> dict[str, JsonValue]:
     if is_typeddict(cls):
-        return typed_dict_view(cls)
+        return schema_view(cls)
     if Enum in cls.__mro__:
         return enum_view(cls)
-    return model_view(cls)
+    return schema_view(cls)
 
 
 def dumped_of(cls: TypeForm[FormT], data: dict[str, JsonValue]) -> JsonValue:
@@ -264,7 +241,7 @@ def test_names_verify_types() -> None:
 def test_names_usage_block() -> None:
     ours: type = defined_classes("betterlite.types.llms.databricks")["ChatCompletionUsageBlock"]
     theirs: type = defined_classes("litellm.types.llms.openai")["ChatCompletionUsageBlock"]
-    assert typed_dict_view(ours) == typed_dict_view(theirs)
+    assert schema_view(ours) == schema_view(theirs)
 
 
 def test_names_triton_empty() -> None:
