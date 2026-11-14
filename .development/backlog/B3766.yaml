@@ -1,7 +1,7 @@
 id: B3766
 milestone: M6 guardrails
 title: CrowdStrike message projections and streaming settings
-status: todo
+status: done
 depends_on: [B3663, B3664]
 file: tasks/B3766-crowdstrike-projections.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/proxy/guardrails/guardrail_hooks/crowdstrike_aidr.py"
 parent: B107
 split_from: B107
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1740
