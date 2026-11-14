@@ -1216,6 +1216,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-backend"
+version = "0.1.0"
+dependencies = [
+ "betterlite-routes",
+ "betterlite-server",
+ "clap",
+ "nix",
+ "rstest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "betterlite-bedrock"
 version = "0.1.0"
 dependencies = [
@@ -1358,7 +1373,9 @@ dependencies = [
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
+ "betterlite-redact",
  "betterlite-secrets",
+ "chrono",
  "clap",
  "comfy-table",
  "console",
@@ -1429,6 +1446,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-secret-managers",
  "betterlite-secrets",
+ "betterlite-vertex",
  "chrono",
  "fancy-regex 0.19.2",
  "indexmap 2.14.2",
@@ -1747,6 +1765,24 @@ dependencies = [
  "betterlite",
  "chrono",
  "libfuzzer-sys",
+]
+
+[[package]]
+name = "betterlite-gateway"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "betterlite-routes",
+ "betterlite-server",
+ "clap",
+ "nix",
+ "phf",
+ "rstest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower",
 ]
 
 [[package]]
@@ -2475,10 +2511,12 @@ dependencies = [
  "base64 0.23.1",
  "betterlite",
  "betterlite-auth",
+ "betterlite-backend",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
  "betterlite-db",
+ "betterlite-gateway",
  "betterlite-guardrails",
  "betterlite-http",
  "betterlite-mcp",
@@ -2763,8 +2801,16 @@ dependencies = [
 name = "betterlite-python"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-guardrails",
  "betterlite-models",
+ "betterlite-redact",
  "pyo3",
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
@@ -3116,6 +3162,7 @@ dependencies = [
  "betterlite-roi",
  "betterlite-router",
  "betterlite-semantic",
+ "betterlite-tokenizer",
  "caseless",
  "chrono",
  "clap",
@@ -3141,6 +3188,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry_sdk",
  "percent-encoding",
+ "phf",
  "rand 0.10.3",
  "rcgen",
  "regex",
@@ -3402,11 +3450,15 @@ dependencies = [
 name = "betterlite-websearch"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-anthropic",
+ "betterlite-context",
  "betterlite-error",
  "betterlite-openai",
  "betterlite-prompts",
+ "futures-util",
  "indexmap 2.14.2",
+ "rstest",
  "serde",
  "serde_json",
  "thiserror",
