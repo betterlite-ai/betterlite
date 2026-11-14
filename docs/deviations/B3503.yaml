@@ -3,6 +3,9 @@ deviations:
   - what: All four functions take the agent name, the litellm params, the caller headers and the timeout inside one AgentRequest value, next to the config, the clients, the logging object and the optional supplied client.
     why: the workspace lint table caps a function at five arguments; B3492's GetInteractionRequest carries the same fields the same way.
     link: ""
+  - what: The config trait names the versions transforms transform_versions_request and transform_versions_response, where LiteLLM calls them transform_list_versions_request and transform_list_versions_response.
+    why: the no-long-names rule caps a Rust name at 30 characters and LiteLLM's two names are 31 and 32; the shorter names take and return the same values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L396-L412
   - what: Each operation is a blocking function plus an async function, with no _is_async flag and no function that returns either a value or a coroutine.
     why: Rust has no dynamic return type of that kind; B3504 and B3505 pick the form from the caller's adelete_agent or alist_agent_versions flag.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L303-L311
