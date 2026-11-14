@@ -14,5 +14,6 @@ call:
       - {model: lyria-3-pro-preview, params: {response_format: wav}, voice: null, drop_params: false, global_drop_params: false, project: team/project, location: europe-west4, api_base: null, input: a calm river, headers: {x-api-key: caller-secret}}
       - {model: lyria-3-pro-preview, params: {instructions: whisper}, voice: null, drop_params: true, global_drop_params: false, project: null, location: null, api_base: null, input: a calm river, headers: {}}
       - {model: lyria-3-pro-preview, params: {response_format: wav}, voice: null, drop_params: false, global_drop_params: false, project: null, location: null, api_base: '', input: a calm river, headers: {}}
+      - {model: lyria-3-pro-preview, params: {response_format: null}, voice: null, drop_params: false, global_drop_params: false, project: null, location: null, api_base: null, input: a calm river, headers: {}}
 env: {}
 compare: {ignore: []}

@@ -230,6 +230,7 @@ fn names_the_prefix_stripped_model_in_the_format_error() {
 #[rstest]
 #[case::call(DropParams { call: true, global: false })]
 #[case::global(DropParams { call: false, global: true })]
+#[case::both(DropParams { call: true, global: true })]
 fn drops_an_undeclared_format(#[case] drop: DropParams) {
     let optional = params(&[
         ("response_format", text("mp3")),
@@ -283,6 +284,7 @@ fn reports_only_the_unsupported_parameter_that_is_set() {
 #[rstest]
 #[case::call(DropParams { call: true, global: false })]
 #[case::global(DropParams { call: false, global: true })]
+#[case::both(DropParams { call: true, global: true })]
 fn drops_the_unsupported_parameters(#[case] drop: DropParams) {
     let optional = params(&[
         ("speed", text("1.5")),
