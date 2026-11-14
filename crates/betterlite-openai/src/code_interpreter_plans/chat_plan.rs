@@ -63,12 +63,7 @@ where
         request,
     )
     .await?;
-    let mut messages = responses_dialect::normalize_messages(request.messages);
-    let assistant = chat_dialect::build_assistant_message(request.tool_calls);
-    messages.push(serde_json::to_value(assistant)?);
-    for message in &tool_messages {
-        messages.push(serde_json::to_value(message)?);
-    }
+    let messages = chat_followup_messages(request, &tool_messages)?;
     let metadata = plan::metadata(
         sandbox_key.as_deref(),
         session_scoped(request.kwargs),
@@ -77,6 +72,20 @@ where
     )?;
     let assembled = plan::assemble(request, &messages, CallDialect::ChatCompletion, metadata)?;
     Ok(assembled)
+}
+
+fn chat_followup_messages(
+    request: &PlanRequest<'_>,
+    tool_messages: &[ChatMessage],
+) -> Result<Vec<Value>, serde_json::Error> {
+    let mut messages = responses_dialect::normalize_messages(request.messages);
+    messages.push(serde_json::to_value(
+        chat_dialect::build_assistant_message(request.tool_calls),
+    )?);
+    for message in tool_messages {
+        messages.push(serde_json::to_value(message)?);
+    }
+    Ok(messages)
 }
 
 async fn run_chat_calls<C, R, T>(
