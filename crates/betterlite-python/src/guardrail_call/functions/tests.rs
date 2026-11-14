@@ -35,7 +35,7 @@ fn records_land_in_the_metadata_bucket() {
 fn syncing_fills_the_logging_target() {
     let data =
         r#"{"metadata": {"standard_logging_guardrail_information": [{"guardrail_name": "pii"}]}}"#;
-    let target = r#"{"litellm_params": {"metadata": {}}, "model_call_params": null}"#;
+    let target = r#"{"litellm_params":{"metadata":{}},"model_call_params":null}"#;
     let synced = sync_log_target(data, target).unwrap();
     assert!(
         synced.contains("\"standard_logging_guardrail_information\""),

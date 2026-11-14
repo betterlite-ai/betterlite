@@ -56,6 +56,9 @@ pub(crate) struct Input {
     tool_inputs: Vec<Box<RawValue>>,
     #[serde(default)]
     search_providers: Vec<Option<String>>,
+    // the Python helper patches the search-tool auth check when caller is set; the Rust cases carry that as kwargs and deny_search_tool
+    #[serde(default, rename = "caller")]
+    _caller: bool,
 }
 
 #[derive(Deserialize)]

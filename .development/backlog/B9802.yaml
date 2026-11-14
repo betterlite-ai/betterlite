@@ -1,14 +1,14 @@
 id: B9802
 milestone: M5 api families
 title: Proxy custom response headers
-status: todo
+status: done
 depends_on: [B8994, B002]
 file: tasks/B9802-proxy-custom-headers.yaml
 covers:
   - "litellm/proxy/common_request_processing.py"
 parent: B081
 split_from: B081
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1797
