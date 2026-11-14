@@ -217,7 +217,10 @@ async fn dispatches_native_operation() {
 async fn table_present(postgres: &Postgres, table: &str) -> bool {
     let row = postgres
         .client
-        .query_one("SELECT to_regclass($1) IS NOT NULL AS present", &[&table])
+        .query_one(
+            "SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname::text = $1 AND relnamespace = current_schema()::regnamespace) AS present",
+            &[&table],
+        )
         .await
         .expect("the table lookup");
     row.get("present")
@@ -236,30 +239,30 @@ async fn row_count(postgres: &Postgres, table: &str) -> i64 {
 async fn assert_converted(postgres: &Postgres) {
     assert!(table_present(postgres, "LiteLLM_SpendLogs_legacy").await);
     assert!(table_present(postgres, "LiteLLM_SpendLogs_pdefault").await);
-    let row = postgres
+    let relation = postgres
         .client
         .query_one(
-            "SELECT relkind::text AS relkind FROM pg_class WHERE oid = to_regclass('LiteLLM_SpendLogs')",
+            "SELECT relkind::text AS relkind FROM pg_class WHERE relname = 'LiteLLM_SpendLogs' AND relnamespace = current_schema()::regnamespace",
             &[],
         )
         .await
         .expect("the canonical table");
-    assert_eq!(row.get::<_, String>("relkind"), "p");
+    assert_eq!(relation.get::<_, String>("relkind"), "p");
     assert_eq!(row_count(postgres, "LiteLLM_SpendLogs").await, 0);
     assert_eq!(row_count(postgres, "LiteLLM_SpendLogs_legacy").await, 1);
 }
 
 async fn assert_restored(postgres: &Postgres) {
     assert!(!table_present(postgres, "LiteLLM_SpendLogs_partitioned").await);
-    let row = postgres
+    let relation = postgres
         .client
         .query_one(
-            "SELECT relkind::text AS relkind FROM pg_class WHERE oid = to_regclass('LiteLLM_SpendLogs')",
+            "SELECT relkind::text AS relkind FROM pg_class WHERE relname = 'LiteLLM_SpendLogs' AND relnamespace = current_schema()::regnamespace",
             &[],
         )
         .await
         .expect("the canonical table");
-    assert_eq!(row.get::<_, String>("relkind"), "r");
+    assert_eq!(relation.get::<_, String>("relkind"), "r");
     let rows = postgres
         .client
         .query(
@@ -278,11 +281,11 @@ async fn assert_restored_primary_key(postgres: &Postgres) {
     let primary = postgres
         .client
         .query_one(
-            r#"SELECT i.relname AS index_name, pg_get_indexdef(ix.indexrelid) AS definition
+            "SELECT i.relname AS index_name, pg_get_indexdef(ix.indexrelid) AS definition
 FROM pg_index ix
 JOIN pg_class i ON i.oid = ix.indexrelid
 JOIN pg_class c ON c.oid = ix.indrelid
-WHERE c.relname = 'LiteLLM_SpendLogs' AND c.relnamespace = current_schema()::regnamespace AND ix.indisprimary"#,
+WHERE c.relname = 'LiteLLM_SpendLogs' AND c.relnamespace = current_schema()::regnamespace AND ix.indisprimary",
             &[],
         )
         .await
