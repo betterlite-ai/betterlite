@@ -33,8 +33,8 @@ CLASS_COUNTS: Final = {
     "guardrail_base_init": 1,
 }
 DUMP_COUNT: Final = 20
-NORMALIZATION_COUNT: Final = 4
-REJECTION_COUNT: Final = 14
+NORMALIZATION_COUNT: Final = 5
+REJECTION_COUNT: Final = 15
 WARNING_COUNT: Final = 10
 UI_COUNT: Final = 5
 ABSTRACT_COUNT: Final = 9
@@ -216,6 +216,12 @@ NORMALIZATIONS = [
         {"id": "r", "decision": "allow", "tool_name": "  read_file  "},
     ),
     (
+        "tool_permission.rule.blank_type",
+        TOOL_PERMISSION,
+        "ToolPermissionRule",
+        {"id": "r", "decision": "allow", "tool_name": "read", "tool_type": "   "},
+    ),
+    (
         "tool_permission.config.upper_actions",
         TOOL_PERMISSION,
         "ToolPermissionGuardrailConfigModel",
@@ -228,6 +234,12 @@ REJECTIONS = [
         TOOL_PERMISSION,
         "ToolPermissionRule",
         {"id": "r", "decision": "allow"},
+    ),
+    (
+        "tool_permission.rule.blank_type_only",
+        TOOL_PERMISSION,
+        "ToolPermissionRule",
+        {"id": "r", "decision": "allow", "tool_type": "   "},
     ),
     (
         "tool_permission.rule.decision",
