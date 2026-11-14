@@ -1,7 +1,10 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
-use betterlite_openai::api::vector_store_records::records::vector::VectorStoreCreateResponse;
+use betterlite_openai::api::vector_store_records::records::basic::VectorStoreStatus;
+use betterlite_openai::api::vector_store_records::records::vector::{
+    VectorStoreCreateResponse, VectorStoreFileCounts,
+};
 use serde::{Deserialize, Serialize};
 
 use super::super::error::VertexRagStoreError;
@@ -46,7 +49,11 @@ pub fn transform_create_request(
                 .iter()
                 .map(|(name, value)| match value {
                     Json::Text(text) => Ok((name.clone(), text.clone())),
-                    _ => Err(VertexRagStoreError::ParamType(
+                    Json::Null
+                    | Json::Bool(_)
+                    | Json::Number(_)
+                    | Json::List(_)
+                    | Json::Object(_) => Err(VertexRagStoreError::ParamType(
                         "metadata",
                         "an object of strings",
                     )),
@@ -74,7 +81,7 @@ pub fn transform_create_response(
 ) -> Result<VectorStoreCreateResponse, VertexRagStoreError> {
     match decode_vertex_rag_corpus(reply.body, local) {
         Ok(created) => Ok(created),
-        Err(source) => Err(provider_error(reply, source)),
+        Err(source) => Err(provider_error(reply, &source)),
     }
 }
 
@@ -95,19 +102,42 @@ pub fn decode_vertex_rag_corpus(
     let corpus: Corpus = parse(body)?;
     let name = corpus.name.unwrap_or_default();
     let id = name.rsplit('/').next().unwrap_or_default();
-    Ok(serde_json::from_value(serde_json::json!({
-        "id": id,
-        "object": "vector_store",
-        "created_at": corpus.create_time.as_ref().map_or(0, |value| create_time(value, local)),
-        "name": corpus.display_name.unwrap_or_default(),
-        "bytes": 0,
-        "file_counts": {"in_progress": 0, "completed": 0, "failed": 0, "cancelled": 0, "total": 0},
-        "status": "completed",
-        "expires_after": null,
-        "expires_at": null,
-        "last_active_at": null,
-        "metadata": labels(corpus.labels.as_ref())?,
-    }))?)
+    Ok(VectorStoreCreateResponse {
+        id: Some(id.to_owned()),
+        object: Some("vector_store".to_owned()),
+        created_at: Some(
+            corpus
+                .create_time
+                .as_ref()
+                .map_or(0, |value| create_time(value, local)),
+        ),
+        name: Some(corpus.display_name.unwrap_or_default()),
+        bytes: Some(0),
+        file_counts: Some(VectorStoreFileCounts {
+            in_progress: Some(0),
+            completed: Some(0),
+            failed: Some(0),
+            cancelled: Some(0),
+            total: Some(0),
+            extra: BTreeMap::new(),
+        }),
+        status: Some(VectorStoreStatus::Completed),
+        expires_after: None,
+        expires_at: None,
+        last_active_at: None,
+        metadata: Some(labels(corpus.labels.as_ref())?),
+        extra: BTreeMap::from([
+            (
+                "expires_after".to_owned(),
+                serde_json::to_value(Json::Null)?,
+            ),
+            ("expires_at".to_owned(), serde_json::to_value(Json::Null)?),
+            (
+                "last_active_at".to_owned(),
+                serde_json::to_value(Json::Null)?,
+            ),
+        ]),
+    })
 }
 
 // Python keeps a bool as an int, a float and any other type fall to zero, and an ISO string goes through B1384
@@ -126,9 +156,11 @@ fn labels(value: Option<&Json>) -> Result<BTreeMap<String, String>, PayloadError
     };
     fields
         .iter()
-        .map(|(name, value)| match value {
+        .map(|(name, label)| match label {
             Json::Text(text) => Ok((name.clone(), text.clone())),
-            _ => Err(PayloadError::Field("labels", "an object of strings")),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                Err(PayloadError::Field("labels", "an object of strings"))
+            }
         })
         .collect()
 }

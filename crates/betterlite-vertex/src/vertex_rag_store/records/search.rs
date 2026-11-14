@@ -41,20 +41,18 @@ pub struct SearchRequest<'request> {
     pub query: &'request SearchQuery,
     pub optional_params: &'request BTreeMap<String, Json>,
     pub api_base: &'request str,
-    pub logging: &'request mut BTreeMap<String, Json>,
     pub params: VertexParams<'request>,
     pub settings: &'request VertexSettings,
 }
 
 // LiteLLM's transform_search_vector_store_request: the joined query is logged for the response transform
 pub fn transform_search_request(
-    request: SearchRequest<'_>,
+    request: &SearchRequest<'_>,
+    logging: &mut BTreeMap<String, Json>,
 ) -> Result<SearchCall, VertexRagStoreError> {
     let text = request.query.joined();
     let corpus = corpus_path(request.vector_store_id, request.params, request.settings)?;
-    request
-        .logging
-        .insert("query".to_owned(), Json::Text(text.clone()));
+    logging.insert("query".to_owned(), Json::Text(text.clone()));
     let body = search_body(text, corpus, request.optional_params)?;
     let mut url = request.api_base.to_owned();
     url.push_str(RETRIEVE_CONTEXTS_SUFFIX);

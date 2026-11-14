@@ -45,7 +45,7 @@ fn a_search_call_maps_the_options() {
             "query": ["one", "two"],
             "api_base": "https://host/v1",
             "litellm_params": {},
-            "optional_params": {"max_num_results": 0},
+            "optional_params": {"max_num_results": 0_i64},
         }],
     }));
     let call = &value["calls"][0];
@@ -53,7 +53,7 @@ fn a_search_call_maps_the_options() {
     assert_eq!(call["body"]["query"]["text"], json!("one two"));
     assert_eq!(
         call["body"]["query"]["rag_retrieval_config"],
-        json!({"top_k": 0})
+        json!({"top_k": 0_i64})
     );
     assert_eq!(
         call["body"]["vertex_rag_store"]["rag_resources"][0]["rag_corpus"],
@@ -94,7 +94,7 @@ fn a_search_response_returns_the_decoded_page() {
             "litellm_params": {},
             "optional_params": {},
             "response": {
-                "status": 200,
+                "status": 200_u16,
                 "body": r#"{"contexts":{"contexts":[{"text":"chunk","sourceDisplayName":"doc"}]}}"#,
             },
         }],
@@ -103,7 +103,7 @@ fn a_search_response_returns_the_decoded_page() {
     assert_eq!(results["search_query"], json!("hello"));
     assert_eq!(results["data"][0]["file_id"], json!("doc"));
     assert_eq!(results["data"][0]["filename"], json!("doc"));
-    assert_eq!(results["data"][0]["score"], json!(0.0));
+    assert_eq!(results["data"][0]["score"], json!(0.0_f64));
     assert_eq!(
         results["data"][0]["content"],
         json!([{"text": "chunk", "type": "text"}])
@@ -138,14 +138,14 @@ fn a_create_response_maps_the_corpus() {
     let value = run(json!({
         "calls": [{
             "function": "create_response",
-            "status": 200,
+            "status": 200_u16,
             "body": r#"{"name":"projects/p/locations/l/ragCorpora/corpus","display_name":"store","createTime":"2024-01-01T00:00:00Z"}"#,
         }],
     }));
     let created = &value["calls"][0]["created"];
     assert_eq!(created["id"], json!("corpus"));
     assert_eq!(created["name"], json!("store"));
-    assert_eq!(created["created_at"], json!(1_704_067_200));
+    assert_eq!(created["created_at"], json!(1_704_067_200_i64));
     assert_eq!(created["status"], json!("completed"));
     assert_eq!(created["metadata"], json!({}));
 }
@@ -153,7 +153,11 @@ fn a_create_response_maps_the_corpus() {
 #[test]
 fn an_unknown_input_field_is_rejected() {
     let unknown = serde_json::from_value::<super::ops::Input>(json!({
-        "calls": [{"function": "search", "other": 1}],
+        "calls": [{"function": "search", "other": 1_i32}],
     }));
-    assert!(unknown.unwrap_err().to_string().contains("other"));
+    assert!(
+        unknown
+            .err()
+            .is_some_and(|error| error.to_string().contains("other"))
+    );
 }

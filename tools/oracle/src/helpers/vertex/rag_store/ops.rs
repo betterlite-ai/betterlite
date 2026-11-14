@@ -89,15 +89,17 @@ fn reply_of(call: &ReplyCall) -> Reply<'_> {
 
 fn search_outcome(call: &SearchCall) -> Result<Value, Box<HelperError>> {
     let mut logging = BTreeMap::new();
-    let request = transform_search_request(SearchRequest {
-        vector_store_id: &call.vector_store_id,
-        query: &call.query,
-        optional_params: &call.optional_params,
-        api_base: &call.api_base,
-        logging: &mut logging,
-        params: vertex_params(&call.litellm_params),
-        settings: &VertexSettings::default(),
-    })
+    let request = transform_search_request(
+        &SearchRequest {
+            vector_store_id: &call.vector_store_id,
+            query: &call.query,
+            optional_params: &call.optional_params,
+            api_base: &call.api_base,
+            params: vertex_params(&call.litellm_params),
+            settings: &VertexSettings::default(),
+        },
+        &mut logging,
+    )
     .or_value_error()?;
     let body = serde_json::to_value(&request.body).or_value_error()?;
     let Some(response) = &call.response else {
@@ -137,8 +139,8 @@ fn vertex_params(fields: &BTreeMap<String, Json>) -> VertexParams<'_> {
 }
 
 fn text<'fields>(fields: &'fields BTreeMap<String, Json>, name: &str) -> Option<&'fields str> {
-    match fields.get(name) {
-        Some(Json::Text(value)) => Some(value.as_str()),
-        _ => None,
-    }
+    let Some(Json::Text(value)) = fields.get(name) else {
+        return None;
+    };
+    Some(value.as_str())
 }

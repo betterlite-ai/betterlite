@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::score::Score;
 use betterlite_openai::api::vector_store_records::records::vector::{
-    VectorStoreSearchResponse, VectorStoreSearchResult,
+    VectorStoreResultContent, VectorStoreSearchResponse, VectorStoreSearchResult,
 };
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
@@ -60,7 +60,7 @@ pub fn transform_search_response(
         Some(Json::Text(text)) => text.as_str(),
         Some(_) => return Err(VertexRagStoreError::ParamType("query", "a string")),
     };
-    decode_vertex_rag_payload(reply.body, query).map_err(|source| provider_error(reply, source))
+    decode_vertex_rag_payload(reply.body, query).map_err(|source| provider_error(reply, &source))
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -135,18 +135,22 @@ fn search_result(context: Context) -> Result<VectorStoreSearchResult, PayloadErr
         display
     };
     let text = context.text.unwrap_or_default();
-    let result = serde_json::json!({
-        "score": score,
-        "content": [{"text": text, "type": "text"}],
-        "file_id": file_id,
-        "filename": filename,
-        "attributes": attributes,
-    });
-    Ok(serde_json::from_value(result)?)
+    Ok(VectorStoreSearchResult {
+        score: Some(score),
+        content: Some(vec![VectorStoreResultContent {
+            text: Some(text),
+            type_name: Some("text".to_owned()),
+            extra: BTreeMap::new(),
+        }]),
+        file_id: Some(file_id),
+        filename: Some(filename),
+        attributes: Some(serde_json::to_value(Json::Object(attributes))?),
+        extra: BTreeMap::new(),
+    })
 }
 
 // B1058's BaseLlmException shape: the reply's status and headers survive a decode failure
-pub(super) fn provider_error(reply: &Reply<'_>, error: PayloadError) -> VertexRagStoreError {
+pub(super) fn provider_error(reply: &Reply<'_>, error: &PayloadError) -> VertexRagStoreError {
     let headers = reply
         .headers
         .iter()

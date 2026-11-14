@@ -48,8 +48,14 @@ fn utc() -> LocalTimeContext {
 fn optional(text: &str) -> BTreeMap<String, Json> {
     match serde_json::from_str::<Json>(text).unwrap() {
         Json::Object(fields) => fields.into_iter().collect(),
-        _ => panic!("optional parameters are an object"),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            panic!("optional parameters are an object")
+        }
     }
+}
+
+fn expected_json(text: &str) -> Json {
+    serde_json::from_str(text).unwrap()
 }
 
 fn search_response(body: &str) -> VectorStoreSearchResponse {
@@ -66,15 +72,17 @@ fn a_full_corpus_query_joins_the_text_and_logs_it() {
     let mut logging = BTreeMap::new();
     let optional_params = optional("{}");
     let query = SearchQuery::Texts(vec!["what".to_owned(), "is".to_owned(), "it".to_owned()]);
-    let call = transform_search_request(SearchRequest {
-        vector_store_id: "projects/p/locations/eu/ragCorpora/corpus",
-        query: &query,
-        optional_params: &optional_params,
-        api_base: "https://host/v1/projects/p/locations/eu",
-        logging: &mut logging,
-        params: params(None, None),
-        settings: &settings,
-    })
+    let call = transform_search_request(
+        &SearchRequest {
+            vector_store_id: "projects/p/locations/eu/ragCorpora/corpus",
+            query: &query,
+            optional_params: &optional_params,
+            api_base: "https://host/v1/projects/p/locations/eu",
+            params: params(None, None),
+            settings: &settings,
+        },
+        &mut logging,
+    )
     .unwrap();
     assert_eq!(
         call.url,
@@ -85,7 +93,10 @@ fn a_full_corpus_query_joins_the_text_and_logs_it() {
         body["vertex_rag_store"]["rag_resources"][0]["rag_corpus"],
         json!("projects/p/locations/eu/ragCorpora/corpus")
     );
-    assert_eq!(body["query"], json!({"text": "what is it"}));
+    assert_eq!(
+        body["query"],
+        serde_json::to_value(expected_json(r#"{"text": "what is it"}"#)).unwrap()
+    );
     assert_eq!(
         logging.get("query"),
         Some(&Json::Text("what is it".to_owned()))
@@ -110,15 +121,17 @@ fn a_bare_corpus_id_expands_under_the_configured_project_and_location(
     let mut logging = BTreeMap::new();
     let optional_params = optional("{}");
     let query = SearchQuery::Text("hello".to_owned());
-    let call = transform_search_request(SearchRequest {
-        vector_store_id: "corpus",
-        query: &query,
-        optional_params: &optional_params,
-        api_base: "https://host",
-        logging: &mut logging,
-        params: params(project, location),
-        settings: &settings,
-    })
+    let call = transform_search_request(
+        &SearchRequest {
+            vector_store_id: "corpus",
+            query: &query,
+            optional_params: &optional_params,
+            api_base: "https://host",
+            params: params(project, location),
+            settings: &settings,
+        },
+        &mut logging,
+    )
     .unwrap();
     let body = serde_json::to_value(&call.body).unwrap();
     assert_eq!(
@@ -140,19 +153,24 @@ fn a_corpus_path_names_the_missing_setting(
     let mut logging = BTreeMap::new();
     let optional_params = optional("{}");
     let query = SearchQuery::Text("hello".to_owned());
-    let error = transform_search_request(SearchRequest {
-        vector_store_id: store,
-        query: &query,
-        optional_params: &optional_params,
-        api_base: "https://host",
-        logging: &mut logging,
-        params: params(project, location),
-        settings: &settings,
-    })
+    let error = transform_search_request(
+        &SearchRequest {
+            vector_store_id: store,
+            query: &query,
+            optional_params: &optional_params,
+            api_base: "https://host",
+            params: params(project, location),
+            settings: &settings,
+        },
+        &mut logging,
+    )
     .unwrap_err();
     match error {
         VertexRagStoreError::Url(url) => assert_eq!(url.to_string(), expected.to_string()),
-        other => panic!("expected a vertex URL error, got {other:?}"),
+        other @ (VertexRagStoreError::ParamType(..)
+        | VertexRagStoreError::HeaderText(_)
+        | VertexRagStoreError::Credentials(_)
+        | VertexRagStoreError::Provider(_)) => panic!("expected a vertex URL error, got {other:?}"),
     }
 }
 
@@ -163,20 +181,25 @@ fn retrieval_options_map_onto_the_vertex_names() {
     let optional_params =
         optional(r#"{"max_num_results":0,"filters":{"kind":"x"},"ranking_options":{"rank":"y"}}"#);
     let query = SearchQuery::Text("hello".to_owned());
-    let call = transform_search_request(SearchRequest {
-        vector_store_id: "projects/p/locations/l/ragCorpora/c",
-        query: &query,
-        optional_params: &optional_params,
-        api_base: "https://host",
-        logging: &mut logging,
-        params: params(None, None),
-        settings: &settings,
-    })
+    let call = transform_search_request(
+        &SearchRequest {
+            vector_store_id: "projects/p/locations/l/ragCorpora/c",
+            query: &query,
+            optional_params: &optional_params,
+            api_base: "https://host",
+            params: params(None, None),
+            settings: &settings,
+        },
+        &mut logging,
+    )
     .unwrap();
     let body = serde_json::to_value(&call.body).unwrap();
     assert_eq!(
         body["query"]["rag_retrieval_config"],
-        json!({"top_k": 0, "filter": {"kind": "x"}, "ranking": {"rank": "y"}})
+        serde_json::to_value(expected_json(
+            r#"{"top_k": 0, "filter": {"kind": "x"}, "ranking": {"rank": "y"}}"#
+        ))
+        .unwrap()
     );
 }
 
@@ -197,15 +220,17 @@ fn only_a_retrieval_option_takes_the_config_into_the_body(
     let mut logging = BTreeMap::new();
     let optional_params = optional(text);
     let query = SearchQuery::Text("hello".to_owned());
-    let call = transform_search_request(SearchRequest {
-        vector_store_id: "projects/p/locations/l/ragCorpora/c",
-        query: &query,
-        optional_params: &optional_params,
-        api_base: "https://host",
-        logging: &mut logging,
-        params: params(None, None),
-        settings: &settings,
-    })
+    let call = transform_search_request(
+        &SearchRequest {
+            vector_store_id: "projects/p/locations/l/ragCorpora/c",
+            query: &query,
+            optional_params: &optional_params,
+            api_base: "https://host",
+            params: params(None, None),
+            settings: &settings,
+        },
+        &mut logging,
+    )
     .unwrap();
     let body = serde_json::to_value(&call.body).unwrap();
     let expected_query: Json = serde_json::from_str(expected).unwrap();
@@ -222,15 +247,17 @@ fn a_mistyped_retrieval_option_names_its_field(#[case] text: &str, #[case] field
     let mut logging = BTreeMap::new();
     let optional_params = optional(text);
     let query = SearchQuery::Text("hello".to_owned());
-    let error = transform_search_request(SearchRequest {
-        vector_store_id: "projects/p/locations/l/ragCorpora/c",
-        query: &query,
-        optional_params: &optional_params,
-        api_base: "https://host",
-        logging: &mut logging,
-        params: params(None, None),
-        settings: &settings,
-    })
+    let error = transform_search_request(
+        &SearchRequest {
+            vector_store_id: "projects/p/locations/l/ragCorpora/c",
+            query: &query,
+            optional_params: &optional_params,
+            api_base: "https://host",
+            params: params(None, None),
+            settings: &settings,
+        },
+        &mut logging,
+    )
     .unwrap_err();
     assert!(matches!(error, VertexRagStoreError::ParamType(actual, _) if actual == field));
 }
@@ -244,20 +271,19 @@ fn nested_contexts_decode_into_one_result_each() {
     assert_eq!(value["object"], json!("vector_store.search_results.page"));
     assert_eq!(value["search_query"], json!("query"));
     let result = &value["data"][0];
-    assert_eq!(result["score"], json!(0.5));
+    assert_eq!(result["score"], json!(0.5_f64));
     assert_eq!(
         result["content"],
-        json!([{"text": "chunk", "type": "text"}])
+        serde_json::to_value(expected_json(r#"[{"text": "chunk", "type": "text"}]"#)).unwrap()
     );
     assert_eq!(result["file_id"], json!("gs://b/f.pdf"));
     assert_eq!(result["filename"], json!("f.pdf"));
     assert_eq!(
         result["attributes"],
-        json!({
-            "sourceUri": "gs://b/f.pdf",
-            "sourceDisplayName": "f.pdf",
-            "pageSpan": {"firstPage": 3, "lastPage": 4},
-        })
+        serde_json::to_value(expected_json(
+            r#"{"sourceUri": "gs://b/f.pdf", "sourceDisplayName": "f.pdf", "pageSpan": {"firstPage": 3, "lastPage": 4}}"#
+        ))
+        .unwrap()
     );
 }
 
@@ -269,7 +295,10 @@ fn provider_order_and_exact_scores_survive_decoding() {
     let value = serde_json::to_value(&response).unwrap();
     assert_eq!(value["data"][0]["content"][0]["text"], json!("first"));
     assert_eq!(value["data"][1]["content"][0]["text"], json!("second"));
-    assert_eq!(value["data"][0]["score"], json!(0.30000000000000004));
+    assert_eq!(
+        value["data"][0]["score"],
+        json!(0.300_000_000_000_000_04_f64)
+    );
     let text = serde_json::to_string(&response).unwrap();
     assert!(
         text.contains(r#""score":0.1234567890123456789012"#),
@@ -305,7 +334,10 @@ fn a_null_source_and_display_name_take_the_default() {
     .unwrap();
     assert_eq!(value["data"][0]["file_id"], json!(""));
     assert_eq!(value["data"][0]["filename"], json!("Unknown Document"));
-    assert_eq!(value["data"][0]["attributes"], json!({}));
+    assert_eq!(
+        value["data"][0]["attributes"],
+        serde_json::to_value(expected_json("{}")).unwrap()
+    );
 }
 
 #[rstest]
@@ -339,9 +371,9 @@ fn a_context_text_of_another_type_names_the_field() {
 }
 
 #[rstest]
-#[case("{}", 0.0)]
-#[case(r#"{"score":null}"#, 0.0)]
-#[case(r#"{"score":0.5}"#, 0.5)]
+#[case("{}", 0.0_f64)]
+#[case(r#"{"score":null}"#, 0.0_f64)]
+#[case(r#"{"score":0.5}"#, 0.5_f64)]
 fn a_context_score_defaults_to_zero(#[case] context: &str, #[case] score: f64) {
     let body = format!(r#"{{"contexts":{{"contexts":[{context}]}}}}"#);
     let value = serde_json::to_value(search_response(&body)).unwrap();
@@ -412,7 +444,7 @@ fn a_search_response_reads_the_logged_query(
 
 #[test]
 fn a_mistyped_logged_query_names_the_field() {
-    let logging = BTreeMap::from([("query".to_owned(), Json::Number(Number::from(5)))]);
+    let logging = BTreeMap::from([("query".to_owned(), Json::Number(Number::from(5_i64)))]);
     let headers = BTreeMap::new();
     let reply = Reply {
         status: 200,
@@ -453,10 +485,10 @@ fn a_create_request_carries_the_default_corpus_name() {
     );
     assert_eq!(
         serde_json::to_value(&call.body).unwrap(),
-        json!({
-            "display_name": "litellm-vector-store",
-            "description": "Vector store created via LiteLLM",
-        })
+        serde_json::to_value(expected_json(
+            r#"{"display_name": "litellm-vector-store", "description": "Vector store created via LiteLLM"}"#
+        ))
+        .unwrap()
     );
 }
 
@@ -469,11 +501,10 @@ fn a_create_request_takes_the_name_and_labels_from_the_params() {
     .unwrap();
     assert_eq!(
         serde_json::to_value(&call.body).unwrap(),
-        json!({
-            "display_name": "corpus",
-            "description": "Vector store created via LiteLLM",
-            "labels": {"team": "a"},
-        })
+        serde_json::to_value(expected_json(
+            r#"{"display_name": "corpus", "description": "Vector store created via LiteLLM", "labels": {"team": "a"}}"#
+        ))
+        .unwrap()
     );
 }
 
@@ -486,7 +517,10 @@ fn a_null_create_name_and_metadata_are_left_out() {
     .unwrap();
     assert_eq!(
         serde_json::to_value(&call.body).unwrap(),
-        json!({"description": "Vector store created via LiteLLM"})
+        serde_json::to_value(expected_json(
+            r#"{"description": "Vector store created via LiteLLM"}"#
+        ))
+        .unwrap()
     );
 }
 
@@ -513,15 +547,21 @@ fn a_corpus_reply_becomes_a_completed_vector_store() {
     .unwrap();
     assert_eq!(value["id"], json!("corpus"));
     assert_eq!(value["object"], json!("vector_store"));
-    assert_eq!(value["created_at"], json!(1_704_067_200));
+    assert_eq!(value["created_at"], json!(1_704_067_200_i64));
     assert_eq!(value["name"], json!("store"));
-    assert_eq!(value["bytes"], json!(0));
+    assert_eq!(value["bytes"], json!(0_i64));
     assert_eq!(
         value["file_counts"],
-        json!({"in_progress": 0, "completed": 0, "failed": 0, "cancelled": 0, "total": 0})
+        serde_json::to_value(expected_json(
+            r#"{"in_progress": 0, "completed": 0, "failed": 0, "cancelled": 0, "total": 0}"#
+        ))
+        .unwrap()
     );
     assert_eq!(value["status"], json!("completed"));
-    assert_eq!(value["metadata"], json!({"team": "a"}));
+    assert_eq!(
+        value["metadata"],
+        serde_json::to_value(expected_json(r#"{"team": "a"}"#)).unwrap()
+    );
     let fields = value.as_object().unwrap();
     assert_eq!(fields.get("expires_after"), Some(&json!(null)));
     assert_eq!(fields.get("expires_at"), Some(&json!(null)));
