@@ -1,0 +1,19 @@
+kind: helper
+name: mantle-response-auth
+call:
+  bedrock_mantle_responses:
+    mantle_response_auth:
+      cases:
+        - api_key: explicit-fixture-key
+          environment: {BEDROCK_MANTLE_API_KEY: mantle-fixture-key, AWS_BEARER_TOKEN_BEDROCK: token-fixture-key}
+        - environment: {BEDROCK_MANTLE_API_KEY: mantle-fixture-key}
+        - environment: {AWS_BEARER_TOKEN_BEDROCK: token-fixture-key}
+        - {}
+        - api_key: ''
+          environment: {BEDROCK_MANTLE_API_KEY: mantle-fixture-key}
+        - headers: {Authorization: "Bearer caller-fixture-key"}
+        - api_key: explicit-fixture-key
+          headers: {authorization: "Bearer caller-fixture-key"}
+        - error: {status: 429, message: fixture quota exhausted, headers: {retry-after: '7'}}
+env: {}
+compare: {ignore: []}
