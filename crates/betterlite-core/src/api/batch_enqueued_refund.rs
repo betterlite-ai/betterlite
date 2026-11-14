@@ -141,20 +141,23 @@ where
         pending: Option<&ReservationRecord>,
     ) -> Result<PostCallOutcome, BatchEnqueuedRefundError> {
         let canonical_id = canonical_provider_batch_id(batch_id);
-        if let Some(pending) = pending {
-            save::save_reservation(self, &canonical_id, pending).await?;
+        let saved = pending.is_some();
+        if let Some(record) = pending {
+            save::save_reservation(self, &canonical_id, record).await?;
         }
         let lowered = status.to_lowercase();
-        let mut refunded = false;
-        if BATCH_ENQUEUED_REFUND_STATUSES.contains(&lowered.as_str())
-            && let Some(reservation) = pop::pop_reservation(self, &canonical_id).await?
-        {
+        let popped = if BATCH_ENQUEUED_REFUND_STATUSES.contains(&lowered.as_str()) {
+            pop::pop_reservation(self, &canonical_id).await?
+        } else {
+            None
+        };
+        let refunded = popped.is_some();
+        if let Some(reservation) = popped {
             refund::refund(self, &reservation).await?;
-            refunded = true;
         }
         Ok(PostCallOutcome {
             batch_id: canonical_id,
-            saved: pending.is_some(),
+            saved,
             refunded,
         })
     }

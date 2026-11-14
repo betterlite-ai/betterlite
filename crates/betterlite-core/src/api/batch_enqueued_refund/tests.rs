@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::VecDeque;
+use std::error::Error as _;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -8,13 +9,14 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use betterlite_context::local_ttl_cache::{CacheValue, LocalTtlCache};
 use rstest::rstest;
+use tokio::task::yield_now;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
 use super::record::{ReservationRecord, record_ttl};
-use super::store::ReservationRecordScripts;
+use super::store::{EnqueuedLocalStore as _, ReservationRecordScripts};
 use super::{
     BATCH_ENQUEUED_REFUND_STATUSES, BatchEnqueuedRefundError, BatchEnqueuedRefundInput,
     BatchEnqueuedRefundResult, EnqueuedTokenRefund, PostCallOutcome,
@@ -124,7 +126,7 @@ impl ScriptedScripts {
             .push(call);
     }
 
-    fn take_reply_from(&self, queue: &Mutex<VecDeque<Step>>) -> Result<(), ScriptFailure> {
+    fn take_reply_from(queue: &Mutex<VecDeque<Step>>) -> Result<(), ScriptFailure> {
         let step = queue
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -164,7 +166,7 @@ impl ReservationScripts for ScriptedScripts {
             key: counter_key.to_owned(),
             tokens,
         });
-        ready(self.take_reply_from(&self.refunds))
+        ready(Self::take_reply_from(&self.refunds))
     }
 }
 
@@ -176,7 +178,7 @@ impl ReservationRecordScripts for ScriptedScripts {
         ttl_seconds: i64,
     ) -> impl Future<Output = Result<(), ScriptFailure>> + Send {
         self.record_call(script_save(record_key, record, ttl_seconds));
-        let reply = self.take_reply_from(&self.saves);
+        let reply = Self::take_reply_from(&self.saves);
         ready(reply)
     }
 
@@ -206,7 +208,7 @@ impl ReservationRecordScripts for ScriptedScripts {
         let yields = self.yielding_pops;
         async move {
             if yields {
-                tokio::task::yield_now().await;
+                yield_now().await;
             }
             outcome
         }
@@ -347,22 +349,16 @@ fn stored(
 
 fn seed_record(counters: &Arc<Mutex<LocalTokenCounters>>, text: &str) {
     let mut held = counters.lock().unwrap_or_else(PoisonError::into_inner);
-    held.cache
-        .set(
-            RECORD_KEY,
-            CacheValue::Text(text.to_owned()),
-            Some(TTL_FLOAT),
-        )
+    held.set_record(RECORD_KEY, text, TTL)
         .expect("the record seeds");
 }
 
 fn stored_tokens(counters: &Arc<Mutex<LocalTokenCounters>>) -> Option<i64> {
     let mut held = counters.lock().unwrap_or_else(PoisonError::into_inner);
     match held.cache.get(RECORD_KEY).expect("the record reads") {
-        Some(CacheValue::Object(fields)) => match fields.get("tokens") {
-            Some(CacheValue::Integer(tokens)) => Some(*tokens),
-            _ => None,
-        },
+        Some(CacheValue::Text(text)) => serde_json::from_str::<ReservationRecord>(&text)
+            .ok()
+            .map(|stored| stored.tokens),
         _ => None,
     }
 }
@@ -419,9 +415,7 @@ fn post_call(
 }
 
 fn managed_batch_id() -> String {
-    let encoded = URL_SAFE_NO_PAD
-        .encode("litellm_proxy;model_id:m;llm_batch_id:batch-1;llm_output_file_id:f");
-    format!("batch_{encoded}")
+    URL_SAFE_NO_PAD.encode("litellm_proxy;model_id:m;llm_batch_id:batch-1;llm_output_file_id:f")
 }
 
 #[tokio::test]
@@ -541,8 +535,8 @@ async fn local_backend_refund(#[case] current: Option<i64>, #[case] remaining: O
     let time = Arc::new(Mutex::new(0.0_f64));
     let counters = counters_at(&time);
     let counter = key_scope();
-    if let Some(current) = current {
-        seed_counter(&counters, &counter, current);
+    if let Some(tokens) = current {
+        seed_counter(&counters, &counter, tokens);
     }
     let scripts = ScriptedScripts::new(Vec::new(), Vec::new(), Vec::new());
     let service = refund_service(Some(scripts.clone()), Arc::clone(&counters));
@@ -585,7 +579,7 @@ async fn local_refund_with_a_negative_ttl_fails_in_the_store() {
         .await;
     let error = outcome.expect_err("the negative ttl is rejected");
     assert!(matches!(error, BatchEnqueuedRefundError::Store(_)));
-    assert!(std::error::Error::source(&error).is_some());
+    assert!(error.source().is_some());
 }
 
 #[tokio::test]
@@ -599,7 +593,7 @@ async fn local_pop_with_a_broken_clock_fails_in_the_cache() {
         .await;
     let error = outcome.expect_err("the broken clock is rejected");
     assert!(matches!(error, BatchEnqueuedRefundError::Cache(_)));
-    assert!(std::error::Error::source(&error).is_some());
+    assert!(error.source().is_some());
 }
 
 #[tokio::test]
@@ -746,11 +740,11 @@ async fn save_falls_back_to_local_when_the_script_fails() {
 }
 
 #[rstest]
-#[case::just_reserved(20.0, TTL)]
-#[case::behind_the_clock(20.5, TTL)]
-#[case::one_second(19.0, 691_199)]
-#[case::default_stamp(12.5, SAVED_TTL)]
-#[case::nearly_expired(-690_800.0, 380)]
+#[case::just_reserved(20.0_f64, TTL)]
+#[case::behind_the_clock(20.5_f64, TTL)]
+#[case::one_second(19.0_f64, 691_199)]
+#[case::default_stamp(12.5_f64, SAVED_TTL)]
+#[case::nearly_expired(-690_800.0_f64, 380)]
 #[tokio::test]
 async fn save_shortens_the_record_ttl(#[case] reserved_at: f64, #[case] ttl_seconds: i64) {
     let scripts = ScriptedScripts::new(Vec::new(), vec![Step::Done], Vec::new());
@@ -770,13 +764,13 @@ async fn save_shortens_the_record_ttl(#[case] reserved_at: f64, #[case] ttl_seco
 }
 
 #[rstest]
-#[case::at_the_ttl(691_200.0, 1)]
-#[case::past_the_ttl(700_000.0, 1)]
-#[case::half_a_second(0.5, 691_199)]
-#[case::negative_elapsed(-1.5, 691_201)]
+#[case::at_the_ttl(691_200.0_f64, 1)]
+#[case::past_the_ttl(700_000.0_f64, 1)]
+#[case::half_a_second(0.5_f64, 691_199)]
+#[case::negative_elapsed(-1.5_f64, 691_201)]
 #[case::not_a_number(f64::NAN, 1)]
 #[case::infinite(f64::INFINITY, 1)]
-#[case::zero_elapsed(0.0, TTL)]
+#[case::zero_elapsed(0.0_f64, TTL)]
 fn record_ttl_clamps(#[case] elapsed_seconds: f64, #[case] expected: i64) {
     assert_eq!(record_ttl(TTL, elapsed_seconds), expected);
 }
