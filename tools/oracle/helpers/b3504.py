@@ -19,10 +19,8 @@ litellm.suppress_debug_info = True
 JSON: Final = TypeAdapter(JsonValue)
 COMPARED_HEADERS: Final[frozenset[str]] = frozenset({"content-type", "x-goog-api-key"})
 CALL_TYPES: Final[dict[str, str]] = {
-    "create": "create_agent",
-    "acreate": "create_agent",
-    "list": "list_agents",
-    "alist": "list_agents",
+    "create": "create_agent", "acreate": "create_agent",
+    "list": "list_agents", "alist": "list_agents",
 }
 
 
