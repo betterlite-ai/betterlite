@@ -60,6 +60,40 @@ pub(crate) async fn mock_body(status: u16, payload: &str) -> Mock {
     mock_with(vec![reply(status, payload)], None).await
 }
 
+fn record(entries: &Mutex<Vec<Seen>>, uri: &Uri, headers: &HeaderMap, bytes: &Bytes) -> usize {
+    let header = |name: &str| {
+        headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned)
+    };
+    let mut log = entries.lock().unwrap();
+    log.push(Seen {
+        path: uri.path().to_owned(),
+        query: uri.query().map(str::to_owned),
+        subscription_key: header("ocp-apim-subscription-key"),
+        content_type: header("content-type"),
+        body: String::from_utf8(bytes.to_vec()).unwrap(),
+    });
+    log.len().saturating_sub(1)
+}
+
+fn answer_with(chosen: &Reply) -> (StatusCode, HeaderMap, String) {
+    let mut reply_headers = HeaderMap::new();
+    reply_headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    for &(name, value) in &chosen.headers {
+        reply_headers.insert(
+            HeaderName::from_static(name),
+            HeaderValue::from_static(value),
+        );
+    }
+    (
+        StatusCode::from_u16(chosen.status).unwrap(),
+        reply_headers,
+        chosen.payload.clone(),
+    )
+}
+
 // The mock answers the n-th request with the n-th reply and every later one with the last.
 pub(crate) async fn mock_with(replies: Vec<Reply>, delay: Option<Duration>) -> Mock {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -74,37 +108,8 @@ pub(crate) async fn mock_with(replies: Vec<Reply>, delay: Option<Duration>) -> M
             if let Some(pause) = delay {
                 sleep(pause).await;
             }
-            let header = |name: &str| {
-                headers
-                    .get(name)
-                    .and_then(|value| value.to_str().ok())
-                    .map(str::to_owned)
-            };
-            let index = {
-                let mut log = request_log.lock().unwrap();
-                log.push(Seen {
-                    path: uri.path().to_owned(),
-                    query: uri.query().map(str::to_owned),
-                    subscription_key: header("ocp-apim-subscription-key"),
-                    content_type: header("content-type"),
-                    body: String::from_utf8(bytes.to_vec()).unwrap(),
-                });
-                log.len().saturating_sub(1)
-            };
-            let chosen = answers.get(index).or_else(|| answers.last()).unwrap();
-            let mut reply_headers = HeaderMap::new();
-            reply_headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-            for &(name, value) in &chosen.headers {
-                reply_headers.insert(
-                    HeaderName::from_static(name),
-                    HeaderValue::from_static(value),
-                );
-            }
-            (
-                StatusCode::from_u16(chosen.status).unwrap(),
-                reply_headers,
-                chosen.payload.clone(),
-            )
+            let index = record(&request_log, &uri, &headers, &bytes);
+            answer_with(answers.get(index).or_else(|| answers.last()).unwrap())
         }
     };
     let mut server = JoinSet::new();

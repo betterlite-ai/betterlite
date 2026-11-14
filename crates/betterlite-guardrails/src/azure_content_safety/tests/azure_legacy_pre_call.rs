@@ -96,7 +96,7 @@ async fn suppresses_a_transport_failure_and_stops_scanning() {
     assert_eq!(seen.len(), 4);
     assert!(
         seen.iter()
-            .all(|request| request.body.contains(r#""text":"one""#))
+            .all(|sent| sent.body.contains(r#""text":"one""#))
     );
 }
 
