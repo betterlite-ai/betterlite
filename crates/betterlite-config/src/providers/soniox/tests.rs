@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 use secrecy::ExposeSecret;
 
-use crate::types::LiteLlmParams;
+use crate::types::ModelDeployment;
 
 const DEFAULT_API_BASE: &str = "https://api.soniox.com";
 
@@ -18,7 +18,7 @@ fn lookup(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
 
 #[test]
 fn soniox_record_settings_default_to_an_unset_key() {
-    let (api_key, api_base) = LiteLlmParams::soniox_record_settings(&lookup(&[]));
+    let (api_key, api_base) = ModelDeployment::soniox_record_settings(&lookup(&[]));
 
     assert!(api_key.is_none());
     assert_eq!(api_base, DEFAULT_API_BASE);
@@ -26,7 +26,7 @@ fn soniox_record_settings_default_to_an_unset_key() {
 
 #[test]
 fn soniox_record_settings_read_the_environment() {
-    let (api_key, api_base) = LiteLlmParams::soniox_record_settings(&lookup(&[
+    let (api_key, api_base) = ModelDeployment::soniox_record_settings(&lookup(&[
         ("SONIOX_API_KEY", "server-key"),
         ("SONIOX_API_BASE", "https://proxy.test"),
     ]));
@@ -51,7 +51,7 @@ fn soniox_record_settings_treat_empty_values(
     #[case] expected_key: Option<&str>,
     #[case] expected_base: &str,
 ) {
-    let (api_key, api_base) = LiteLlmParams::soniox_record_settings(&lookup(&[(name, value)]));
+    let (api_key, api_base) = ModelDeployment::soniox_record_settings(&lookup(&[(name, value)]));
 
     assert_eq!(
         api_key.as_ref().map(ExposeSecret::expose_secret),
@@ -67,7 +67,7 @@ fn soniox_record_settings_treat_empty_values(
 #[case::only_slashes("///", "")]
 fn soniox_record_settings_strip_trailing_slashes(#[case] value: &str, #[case] expected: &str) {
     let (_, api_base) =
-        LiteLlmParams::soniox_record_settings(&lookup(&[("SONIOX_API_BASE", value)]));
+        ModelDeployment::soniox_record_settings(&lookup(&[("SONIOX_API_BASE", value)]));
 
     assert_eq!(api_base, expected);
 }

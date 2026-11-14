@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::types::LiteLlmParams;
+use betterlite_config::types::ModelDeployment;
 use betterlite_core::api::soniox::records::SUPPORTED_OPENAI_PARAMS;
 use betterlite_core::api::soniox::records::auth::{resolve_api_base, validate_environment};
 use betterlite_core::api::soniox::records::error::SonioxException;
@@ -55,7 +55,7 @@ fn validate_answer(
     api_key: Option<&str>,
     environment: &BTreeMap<String, String>,
 ) -> Value {
-    let (environment_key, _) = LiteLlmParams::soniox_record_settings(environment);
+    let (environment_key, _) = ModelDeployment::soniox_record_settings(environment);
     match validate_environment(headers.clone(), api_key, environment_key.as_ref()) {
         Ok(merged) => json!({ "ok": true, "headers": merged }),
         Err(error) => json!({
@@ -66,7 +66,7 @@ fn validate_answer(
 }
 
 fn url_answer(api_base: Option<&str>, environment: &BTreeMap<String, String>) -> Value {
-    let (_, environment_base) = LiteLlmParams::soniox_record_settings(environment);
+    let (_, environment_base) = ModelDeployment::soniox_record_settings(environment);
     let url = resolve_api_base(api_base, &environment_base);
     json!({ "ok": true, "url": url })
 }
