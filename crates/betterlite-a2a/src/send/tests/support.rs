@@ -242,9 +242,9 @@ fn json_rpc_result(result: &str) -> AgentJson {
 }
 
 pub(crate) fn buffered_message(text: &str) -> String {
-    let text = serde_json::to_string(text).expect("the message text serializes as JSON");
+    let escaped = serde_json::to_string(text).expect("the message text serializes as JSON");
     json_rpc_result(&format!(
-        r#"{{"message":{{"messageId":"m-1","role":"ROLE_AGENT","parts":[{{"text":{text}}}]}}}}"#
+        r#"{{"message":{{"messageId":"m-1","role":"ROLE_AGENT","parts":[{{"text":{escaped}}}]}}}}"#
     ))
     .to_string()
 }
@@ -266,17 +266,17 @@ pub(crate) fn request(text: &str) -> SendMessageRequest {
 }
 
 pub(crate) fn request_with_id(id: &str, text: &str) -> SendMessageRequest {
-    let id = serde_json::to_string(id).expect("the request id serializes as JSON");
-    let text = serde_json::to_string(text).expect("the message text serializes as JSON");
+    let escaped_id = serde_json::to_string(id).expect("the request id serializes as JSON");
+    let escaped_text = serde_json::to_string(text).expect("the message text serializes as JSON");
     serde_json::from_str(&format!(
-        r#"{{"id":{id},"params":{{"message":{{"kind":"message","messageId":"m-1","role":"user","parts":[{{"kind":"text","text":{text}}}]}}}}}}"#
+        r#"{{"id":{escaped_id},"params":{{"message":{{"kind":"message","messageId":"m-1","role":"user","parts":[{{"kind":"text","text":{escaped_text}}}]}}}}}}"#
     ))
     .expect("the fixture request deserializes")
 }
 
 pub(crate) fn messages(text: &str) -> Vec<AgentJson> {
-    let text = serde_json::to_string(text).expect("the message text serializes as JSON");
-    serde_json::from_str(&format!(r#"[{{"role":"user","content":{text}}}]"#))
+    let escaped = serde_json::to_string(text).expect("the message text serializes as JSON");
+    serde_json::from_str(&format!(r#"[{{"role":"user","content":{escaped}}}]"#))
         .expect("the fixture messages are JSON")
 }
 
