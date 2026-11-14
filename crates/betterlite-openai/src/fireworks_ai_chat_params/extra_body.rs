@@ -93,25 +93,7 @@ fn translate_truncate_tokens(extra_body: &Object, optional_params: &Object) -> O
     Some(value.clone())
 }
 
-async fn translate_template_kwargs<P>(
-    capabilities: &mut P,
-    extra_body: &Object,
-    optional_params: &Object,
-    model: &str,
-) -> Option<Value>
-where
-    P: FireworksCapabilities,
-{
-    let kwargs = extra_body
-        .get("chat_template_kwargs")
-        .filter(|value| !value.is_null())?;
-    let Value::Object(kwargs) = kwargs else {
-        tracing::debug!(
-            model,
-            "fireworks_ai dropping chat_template_kwargs; expected an object"
-        );
-        return None;
-    };
+fn log_unknown_kwargs(kwargs: &Object, model: &str) {
     let other_keys: Vec<&str> = kwargs
         .keys()
         .filter(|key| !EFFORT_KWARG_KEYS.contains(&key.as_str()))
@@ -124,6 +106,28 @@ where
             "fireworks_ai does not support chat_template_kwargs keys; dropping them"
         );
     }
+}
+
+async fn translate_template_kwargs<P>(
+    capabilities: &mut P,
+    extra_body: &Object,
+    optional_params: &Object,
+    model: &str,
+) -> Option<Value>
+where
+    P: FireworksCapabilities,
+{
+    let raw = extra_body
+        .get("chat_template_kwargs")
+        .filter(|value| !value.is_null())?;
+    let Value::Object(kwargs) = raw else {
+        tracing::debug!(
+            model,
+            "fireworks_ai dropping chat_template_kwargs; expected an object"
+        );
+        return None;
+    };
+    log_unknown_kwargs(kwargs, model);
     let explicit = ["reasoning_effort", "thinking"]
         .iter()
         .any(|key| optional_params.contains_key(*key) || extra_body.contains_key(*key));

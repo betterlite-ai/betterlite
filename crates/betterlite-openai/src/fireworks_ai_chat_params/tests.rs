@@ -7,6 +7,7 @@ use betterlite_models::entry::ModelFields;
 use betterlite_models::fireworks_catalog_metadata::Catalog;
 use rstest::rstest;
 use serde_json::Value;
+use serde_json::value::to_raw_value;
 
 use super::extra_body::map_extra_body_params;
 use super::mapping::map_openai_params;
@@ -18,34 +19,39 @@ use super::{
 };
 use crate::openai_base_config::Object;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Gate {
+    FunctionCalling,
+    ToolChoice,
+    Reasoning,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct TestCapabilities {
-    function_calling: bool,
-    tool_choice: bool,
-    reasoning: bool,
+    on: &'static [Gate],
 }
 
 impl TestCapabilities {
     const fn none() -> Self {
-        Self {
-            function_calling: false,
-            tool_choice: false,
-            reasoning: false,
-        }
+        Self { on: &[] }
+    }
+
+    const fn with(on: &'static [Gate]) -> Self {
+        Self { on }
     }
 }
 
 impl FireworksCapabilities for TestCapabilities {
     fn supports_function_calling(&mut self, _model: &str) -> impl Future<Output = bool> + Send {
-        ready(self.function_calling)
+        ready(self.on.contains(&Gate::FunctionCalling))
     }
 
     fn supports_tool_choice(&mut self, _model: &str) -> impl Future<Output = bool> + Send {
-        ready(self.tool_choice)
+        ready(self.on.contains(&Gate::ToolChoice))
     }
 
     fn supports_reasoning(&mut self, _model: &str) -> impl Future<Output = bool> + Send {
-        ready(self.reasoning)
+        ready(self.on.contains(&Gate::Reasoning))
     }
 }
 
@@ -58,7 +64,7 @@ fn object(text: &str) -> Object {
 }
 
 fn fields(info: &str) -> ModelFields {
-    let raw = serde_json::value::to_raw_value(&value(info)).expect("raw JSON");
+    let raw = to_raw_value(&value(info)).expect("raw JSON");
     ModelFields::parse(&raw).expect("model fields").0
 }
 
@@ -157,11 +163,7 @@ async fn supported_list_starts_with_the_pinned_order() {
 
 #[tokio::test]
 async fn function_calling_gate_adds_tools_and_parallel_calls() {
-    let mut on = TestCapabilities {
-        function_calling: true,
-        tool_choice: false,
-        reasoning: false,
-    };
+    let mut on = TestCapabilities::with(&[Gate::FunctionCalling]);
     let mut expected = BASE_PARAMS.to_vec();
     expected.push("tools");
     expected.push("parallel_tool_calls");
@@ -182,11 +184,7 @@ async fn exact_tool_choice_capability_adds_tool_choice() {
         "fireworks_ai/accounts/fireworks/models/choice-model",
         r#"{"supports_function_calling":false,"supports_tool_choice":true}"#,
     )]);
-    let mut capabilities = TestCapabilities {
-        function_calling: false,
-        tool_choice: false,
-        reasoning: false,
-    };
+    let mut capabilities = TestCapabilities::with(&[]);
     let mut found = supported(&mut capabilities, &catalog, "choice-model").await;
     assert_eq!(found.pop(), Some("tool_choice"));
 }
@@ -197,11 +195,7 @@ async fn exact_tool_choice_false_falls_through_to_the_predicate() {
         "fireworks_ai/accounts/fireworks/models/choice-model",
         r#"{"supports_function_calling":false,"supports_tool_choice":false}"#,
     )]);
-    let mut predicate_on = TestCapabilities {
-        function_calling: false,
-        tool_choice: true,
-        reasoning: false,
-    };
+    let mut predicate_on = TestCapabilities::with(&[Gate::ToolChoice]);
     let mut found = supported(&mut predicate_on, &catalog, "choice-model").await;
     assert_eq!(found.pop(), Some("tool_choice"));
     let mut predicate_off = TestCapabilities::none();
@@ -215,11 +209,7 @@ async fn reasoning_capability_adds_the_three_params() {
         "fireworks_ai/accounts/fireworks/models/reasoner",
         r#"{"supports_function_calling":false,"supports_reasoning":true}"#,
     )]);
-    let mut capabilities = TestCapabilities {
-        function_calling: false,
-        tool_choice: false,
-        reasoning: false,
-    };
+    let mut capabilities = TestCapabilities::with(&[]);
     let found = supported(&mut capabilities, &catalog, "reasoner").await;
     assert_eq!(
         found.get(found.len().saturating_sub(3)..),
@@ -233,11 +223,7 @@ async fn exact_reasoning_false_falls_through_to_the_predicate() {
         "fireworks_ai/accounts/fireworks/models/reasoner",
         r#"{"supports_function_calling":false,"supports_reasoning":false}"#,
     )]);
-    let mut capabilities = TestCapabilities {
-        function_calling: false,
-        tool_choice: false,
-        reasoning: true,
-    };
+    let mut capabilities = TestCapabilities::with(&[Gate::Reasoning]);
     let found = supported(&mut capabilities, &catalog, "reasoner").await;
     assert_eq!(
         found.get(found.len().saturating_sub(3)..),
@@ -247,11 +233,7 @@ async fn exact_reasoning_false_falls_through_to_the_predicate() {
 
 #[tokio::test]
 async fn reasoning_predicate_alone_adds_the_three_params() {
-    let mut capabilities = TestCapabilities {
-        function_calling: false,
-        tool_choice: false,
-        reasoning: true,
-    };
+    let mut capabilities = TestCapabilities::with(&[Gate::Reasoning]);
     let found = supported(&mut capabilities, &Catalog::new(), "unknown-model").await;
     assert_eq!(
         found.get(found.len().saturating_sub(3)..),
@@ -284,11 +266,7 @@ async fn map_rewrites_tool_choice_required_to_any(#[case] given: &str, #[case] e
 
 #[tokio::test]
 async fn response_format_with_tools_becomes_a_json_tool_call() {
-    let mut capabilities = TestCapabilities {
-        function_calling: true,
-        tool_choice: false,
-        reasoning: false,
-    };
+    let mut capabilities = TestCapabilities::with(&[Gate::FunctionCalling]);
     let format = value(
         r#"{"type":"json_schema","json_schema":{"name":"answer","schema":{"type":"object"}}}"#,
     );
@@ -311,7 +289,7 @@ async fn response_format_with_tools_becomes_a_json_tool_call() {
 
 #[tokio::test]
 async fn response_format_prefers_the_response_schema_key() {
-    let mut capabilities = TestCapabilities::none();
+    let mut capabilities = TestCapabilities::with(&[Gate::FunctionCalling]);
     let format = value(
         r#"{"response_schema":{"type":"string"},"json_schema":{"schema":{"type":"number"}}}"#,
     );
@@ -354,11 +332,7 @@ async fn response_format_without_tools_is_copied_as_given() {
 
 #[tokio::test]
 async fn empty_response_format_with_tools_changes_nothing() {
-    let mut capabilities = TestCapabilities {
-        function_calling: true,
-        tool_choice: false,
-        reasoning: false,
-    };
+    let mut capabilities = TestCapabilities::with(&[Gate::FunctionCalling]);
     let tools = value(r#"[{"type":"function","function":{"name":"only"}}]"#);
     let mapped = map_request(
         &mut capabilities,
@@ -376,10 +350,10 @@ async fn max_completion_tokens_writes_max_tokens() {
     let mapped = map_request(
         &mut capabilities,
         "unknown-model",
-        &[("max_completion_tokens", Value::from(128))],
+        &[("max_completion_tokens", Value::from(128_i64))],
     )
     .await;
-    assert_eq!(mapped.get("max_tokens"), Some(&Value::from(128)));
+    assert_eq!(mapped.get("max_tokens"), Some(&Value::from(128_i64)));
 }
 
 #[tokio::test]
@@ -389,22 +363,22 @@ async fn the_later_token_limit_key_wins() {
         &mut capabilities,
         "unknown-model",
         &[
-            ("max_tokens", Value::from(10)),
-            ("max_completion_tokens", Value::from(20)),
+            ("max_tokens", Value::from(10_i64)),
+            ("max_completion_tokens", Value::from(20_i64)),
         ],
     )
     .await;
-    assert_eq!(later.get("max_tokens"), Some(&Value::from(20)));
+    assert_eq!(later.get("max_tokens"), Some(&Value::from(20_i64)));
     let earlier = map_request(
         &mut capabilities,
         "unknown-model",
         &[
-            ("max_completion_tokens", Value::from(20)),
-            ("max_tokens", Value::from(10)),
+            ("max_completion_tokens", Value::from(20_i64)),
+            ("max_tokens", Value::from(10_i64)),
         ],
     )
     .await;
-    assert_eq!(earlier.get("max_tokens"), Some(&Value::from(10)));
+    assert_eq!(earlier.get("max_tokens"), Some(&Value::from(10_i64)));
 }
 
 #[rstest]
@@ -503,13 +477,13 @@ async fn special_branches_apply_to_models_that_do_not_list_them() {
         "unknown-model",
         &[
             ("tool_choice", value(r#""required""#)),
-            ("max_completion_tokens", Value::from(4)),
+            ("max_completion_tokens", Value::from(4_i64)),
             ("reasoning_effort", value(r#""high""#)),
         ],
     )
     .await;
     assert_eq!(mapped.get("tool_choice"), Some(&value(r#""any""#)));
-    assert_eq!(mapped.get("max_tokens"), Some(&Value::from(4)));
+    assert_eq!(mapped.get("max_tokens"), Some(&Value::from(4_i64)));
     assert_eq!(mapped.get("reasoning_effort"), Some(&value(r#""high""#)));
 }
 
@@ -530,7 +504,7 @@ async fn config_holds_only_the_values_the_constructor_was_given() {
     .expect("a settings object")
     .get_config();
     assert_eq!(config.len(), 16);
-    assert_eq!(config.get("n"), Some(&Value::from(2)));
+    assert_eq!(config.get("n"), Some(&Value::from(2_i64)));
     assert_eq!(
         config.get("context_length_exceeded_behavior"),
         Some(&value(r#""truncate""#))
@@ -696,11 +670,7 @@ async fn an_existing_prompt_truncate_len_consumes_truncate_prompt_tokens() {
 #[case::unknown_keys_ignored(r#"{"enable_thinking":false,"foo":1}"#, Some(r#""none""#))]
 #[tokio::test]
 async fn chat_template_kwargs_forms_map(#[case] kwargs: &str, #[case] expected: Option<&str>) {
-    let mut capabilities = TestCapabilities {
-        function_calling: false,
-        tool_choice: false,
-        reasoning: true,
-    };
+    let mut capabilities = TestCapabilities::with(&[Gate::Reasoning]);
     let optional = Object::from_iter([(
         String::from("extra_body"),
         value(&format!(r#"{{"chat_template_kwargs":{kwargs}}}"#)),
@@ -711,11 +681,7 @@ async fn chat_template_kwargs_forms_map(#[case] kwargs: &str, #[case] expected: 
 
 #[tokio::test]
 async fn explicit_reasoning_wins_over_chat_template_kwargs() {
-    let mut capabilities = TestCapabilities {
-        function_calling: false,
-        tool_choice: false,
-        reasoning: true,
-    };
+    let mut capabilities = TestCapabilities::with(&[Gate::Reasoning]);
     let in_optional = object(
         r#"{"reasoning_effort":"high","extra_body":{"chat_template_kwargs":{"enable_thinking":false}}}"#,
     );
@@ -745,11 +711,7 @@ async fn chat_template_kwargs_effort_needs_reasoning_support() {
 
 #[tokio::test]
 async fn a_non_map_chat_template_kwargs_is_dropped() {
-    let mut capabilities = TestCapabilities {
-        function_calling: false,
-        tool_choice: false,
-        reasoning: true,
-    };
+    let mut capabilities = TestCapabilities::with(&[Gate::Reasoning]);
     let optional = object(r#"{"extra_body":{"chat_template_kwargs":"not-a-map","custom":1}}"#);
     assert_eq!(
         extra_body(&mut capabilities, "m", &optional).await,

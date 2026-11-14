@@ -83,16 +83,21 @@ fn last_value_set(non_default_params: &[(String, Value)], name: &str) -> bool {
 
 // LiteLLM's _map_reasoning_effort: a mapping contributes its effort entry, and none, false and auto each map away.
 fn map_reasoning_effort(value: &Value) -> Option<Value> {
-    let effort = match value {
+    let chosen = match value {
         Value::Object(fields) => fields.get("effort"),
-        _ => Some(value),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
+            Some(value)
+        }
     };
-    match effort? {
+    let effort = chosen?;
+    match effort {
         Value::Null => None,
         Value::Bool(true) => Some(Value::String(String::from("medium"))),
         Value::Bool(false) => Some(Value::String(String::from("none"))),
         Value::String(text) if text == "auto" => None,
-        other => Some(other.clone()),
+        Value::String(_) | Value::Number(_) | Value::Array(_) | Value::Object(_) => {
+            Some(effort.clone())
+        }
     }
 }
 
@@ -180,6 +185,10 @@ fn schema_record(value: &Value) -> Schema<Value> {
         {
             Schema::Falsy
         }
-        _ => Schema::Truthy(value.clone()),
+        Value::Bool(_)
+        | Value::Number(_)
+        | Value::String(_)
+        | Value::Array(_)
+        | Value::Object(_) => Schema::Truthy(value.clone()),
     }
 }

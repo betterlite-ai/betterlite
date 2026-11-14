@@ -23,7 +23,7 @@ impl ContextLengthBehavior {
 }
 
 // LiteLLM's FireworksAIConfig class attributes: every setting starts absent and only a given value is stored.
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct FireworksChatSettings {
     pub tools: Option<Value>,

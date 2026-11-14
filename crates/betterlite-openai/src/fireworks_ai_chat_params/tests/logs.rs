@@ -1,4 +1,10 @@
-use super::{TestCapabilities, extra_body, object, value};
+use std::fs::read_to_string;
+use std::sync::Arc;
+
+use tokio::runtime::{Builder, Runtime};
+use tracing::subscriber::with_default;
+
+use super::{Gate, TestCapabilities, extra_body, object, value};
 
 fn capture_logs<Run>(run: Run) -> String
 where
@@ -9,14 +15,14 @@ where
         .without_time()
         .with_ansi(false)
         .with_max_level(tracing::Level::DEBUG)
-        .with_writer(std::sync::Arc::new(log.reopen().expect("a log writer")))
+        .with_writer(Arc::new(log.reopen().expect("a log writer")))
         .finish();
-    tracing::subscriber::with_default(subscriber, run);
-    std::fs::read_to_string(log.path()).expect("the log text")
+    with_default(subscriber, run);
+    read_to_string(log.path()).expect("the log text")
 }
 
-fn test_runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_current_thread()
+fn test_runtime() -> Runtime {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("a runtime")
@@ -80,11 +86,7 @@ fn debug_logs_report_unknown_chat_template_kwargs_keys_only_when_some_are_unknow
     assert!(unknown.contains("does not support chat_template_kwargs keys"));
     let known = capture_logs(|| {
         runtime.block_on(async {
-            let mut capabilities = TestCapabilities {
-                function_calling: false,
-                tool_choice: false,
-                reasoning: true,
-            };
+            let mut capabilities = TestCapabilities::with(&[Gate::Reasoning]);
             let optional = object(r#"{"extra_body":{"chat_template_kwargs":{"low_effort":true}}}"#);
             let mapped = extra_body(&mut capabilities, "m", &optional).await;
             assert_eq!(mapped.get("reasoning_effort"), Some(&value(r#""low""#)));
