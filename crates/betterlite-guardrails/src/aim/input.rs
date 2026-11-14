@@ -27,7 +27,8 @@ pub fn projected_inspection_messages(
         .collect()
 }
 
-fn text_field<'data>(
+#[must_use]
+pub fn text_field<'data>(
     data: &'data BTreeMap<String, GuardrailValue>,
     name: &str,
 ) -> Option<&'data str> {
@@ -46,11 +47,6 @@ pub fn user_email(data: &BTreeMap<String, GuardrailValue>) -> Option<&str> {
         return None;
     };
     text_field(headers, "x-aim-user-email")
-}
-
-#[must_use]
-pub fn call_id(data: &BTreeMap<String, GuardrailValue>) -> Option<&str> {
-    text_field(data, "litellm_call_id")
 }
 
 #[must_use]

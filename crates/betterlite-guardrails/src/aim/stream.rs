@@ -47,7 +47,7 @@ pub trait AimSocketConnector: Send + Sync {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AimStreamChunk(pub String);
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct VerifiedChunk {
     pub choices: Vec<VerifiedChoice>,
@@ -55,7 +55,7 @@ pub struct VerifiedChunk {
     pub extra: BTreeMap<String, GuardrailValue>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct VerifiedChoice {
     pub index: Option<i64>,
@@ -65,7 +65,7 @@ pub struct VerifiedChoice {
     pub extra: BTreeMap<String, GuardrailValue>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct VerifiedDelta {
     pub content: Option<String>,
@@ -75,10 +75,10 @@ pub struct VerifiedDelta {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
-struct StreamFrame {
-    verified_chunk: Option<VerifiedChunk>,
-    done: Option<bool>,
-    blocking_message: Option<String>,
+pub struct StreamFrame {
+    pub verified_chunk: Option<VerifiedChunk>,
+    pub done: Option<bool>,
+    pub blocking_message: Option<String>,
 }
 
 impl AimGuardrail {
@@ -95,7 +95,7 @@ impl AimGuardrail {
             AimHook::Output,
             key_alias,
             input::user_email(request_data),
-            input::call_id(request_data),
+            input::text_field(request_data, "litellm_call_id"),
         )?;
         let url = format!("{}/fw/v1/analyze/stream", self.ws_api_base);
         let socket = self
@@ -135,7 +135,7 @@ async fn forward_chunks<S>(writer: &mut dyn AimFrameWriter, chunks: S)
 where
     S: Stream<Item = AimStreamChunk>,
 {
-    let mut chunks = chunks;
+    let mut chunks = Box::pin(chunks);
     while let Some(chunk) = chunks.next().await {
         if writer.send_text(chunk.0).await.is_err() {
             return;

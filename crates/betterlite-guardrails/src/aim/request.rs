@@ -26,7 +26,7 @@ impl AimGuardrail {
     ) -> Result<(), AimError> {
         let messages = input::projected_inspection_messages(data);
         let user_email = input::user_email(data).map(str::to_owned);
-        let call_id = input::call_id(data).map(str::to_owned);
+        let call_id = input::text_field(data, "litellm_call_id").map(str::to_owned);
         let call = AimCall {
             hook,
             key_alias,

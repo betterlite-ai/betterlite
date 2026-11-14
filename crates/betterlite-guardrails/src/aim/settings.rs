@@ -58,10 +58,6 @@ pub struct AimGuardrail {
     pub connector: Arc<dyn AimSocketConnector>,
 }
 
-fn header_value(value: &str) -> Result<HeaderValue, AimError> {
-    HeaderValue::from_str(value).map_err(AimError::InvalidHeader)
-}
-
 impl AimGuardrail {
     pub fn new<L>(
         params: AimParams,
@@ -116,24 +112,29 @@ impl AimGuardrail {
         call_id: Option<&str>,
     ) -> Result<HeaderMap, AimError> {
         let mut headers = HeaderMap::new();
-        let mut authorization = header_value(&format!("Bearer {}", self.api_key.expose_secret()))?;
+        let mut authorization =
+            HeaderValue::from_str(&format!("Bearer {}", self.api_key.expose_secret()))
+                .map_err(AimError::InvalidHeader)?;
         authorization.set_sensitive(true);
         headers.insert(HeaderName::from_static("authorization"), authorization);
         headers.insert(
             HeaderName::from_static("x-aim-litellm-hook"),
-            header_value(hook.header_value())?,
+            HeaderValue::from_str(hook.header_value()).map_err(AimError::InvalidHeader)?,
         );
         headers.insert(
             HeaderName::from_static("x-aim-litellm-version"),
-            header_value(&self.litellm_version)?,
+            HeaderValue::from_str(&self.litellm_version).map_err(AimError::InvalidHeader)?,
         );
         for (name, value) in [
             ("x-aim-call-id", call_id),
             ("x-aim-user-email", user_email),
             ("x-aim-gateway-key-alias", key_alias),
         ] {
-            if let Some(value) = value.filter(|value| !value.is_empty()) {
-                headers.insert(HeaderName::from_static(name), header_value(value)?);
+            if let Some(present) = value.filter(|text| !text.is_empty()) {
+                headers.insert(
+                    HeaderName::from_static(name),
+                    HeaderValue::from_str(present).map_err(AimError::InvalidHeader)?,
+                );
             }
         }
         Ok(headers)

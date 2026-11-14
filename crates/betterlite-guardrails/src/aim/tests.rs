@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+mod settings;
+mod transport;
+
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -12,7 +15,6 @@ use futures_util::stream::{self, Stream};
 use reqwest::header::HeaderMap;
 use reqwest::{ClientBuilder, StatusCode};
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::json;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
@@ -20,12 +22,11 @@ use tokio::sync::mpsc;
 use tokio::task::{JoinSet, yield_now};
 
 use super::error::{AimError, CONTENT_POLICY_VIOLATION};
-use super::input;
 use super::output::AimOutput;
-use super::settings::{AimGuardrail, AimHook, AimParams, DEFAULT_TIMEOUT, SUPPORTED_EVENT_HOOKS};
+use super::settings::{AimGuardrail, AimHook, AimParams};
 use super::stream::{
     AimFrameReader, AimFrameWriter, AimSocket, AimSocketConnector, AimStreamChunk, CONNECT_TIMEOUT,
-    MAX_STREAM_FRAME_BYTES, VerifiedChunk,
+    VerifiedChunk,
 };
 use super::transport::{AimHttpResponse, AimPoster, HttpPoster, MAX_RESPONSE_BYTES};
 use super::wire::{AimAction, AnalyzeResponse, action_of};
@@ -160,8 +161,10 @@ fn fixture(status: StatusCode, response: &str, frames: &[Option<&str>]) -> Fixtu
     let environment = BTreeMap::from([("AIM_API_KEY".to_owned(), KEY.to_owned())]);
     let params = AimParams {
         guardrail_name: Some("aim-safety".to_owned()),
+        api_key: None,
         api_base: Some("http://aim.test".to_owned()),
-        ..AimParams::default()
+        inspect_embeddings: None,
+        litellm_version: None,
     };
     let guardrail = guardrail_with(params, &environment, &state, (status, response)).unwrap();
     Fixture { guardrail, state }
@@ -575,92 +578,6 @@ fn aim_guardrail_maps_the_action_type(#[case] response: &str, #[case] expected: 
     assert_eq!(action_of(&parsed), expected);
 }
 
-#[rstest]
-#[case::pre_call(AimHook::PreCall, "pre_call")]
-#[case::moderation(AimHook::Moderation, "moderation")]
-#[case::output(AimHook::Output, "output")]
-fn aim_guardrail_names_the_hook_in_its_header(#[case] hook: AimHook, #[case] expected: &str) {
-    let guardrail = fixture(StatusCode::OK, "{}", &[]).guardrail;
-    let headers = guardrail.build_headers(hook, None, None, None).unwrap();
-    assert_eq!(headers.get("x-aim-litellm-hook").unwrap(), expected);
-}
-
-#[test]
-fn aim_guardrail_omits_empty_and_absent_optional_headers() {
-    let guardrail = fixture(StatusCode::OK, "{}", &[]).guardrail;
-    let optional = [
-        "x-aim-call-id",
-        "x-aim-user-email",
-        "x-aim-gateway-key-alias",
-    ];
-    for (alias, email, call) in [(None, None, None), (Some(""), Some(""), Some(""))] {
-        let headers = guardrail
-            .build_headers(AimHook::PreCall, alias, email, call)
-            .unwrap();
-        assert_eq!(headers.len(), 3);
-        assert!(optional.iter().all(|name| !headers.contains_key(*name)));
-    }
-    let full = guardrail
-        .build_headers(AimHook::PreCall, Some("a"), Some("e"), Some("c"))
-        .unwrap();
-    assert!(optional.iter().all(|name| full.contains_key(*name)));
-    let invalid = guardrail.build_headers(AimHook::PreCall, Some("bad\nalias"), None, None);
-    assert!(matches!(invalid, Err(AimError::InvalidHeader(_))));
-    let empty =
-        data(r#"{"litellm_call_id": "", "metadata": {"headers": {"x-aim-user-email": ""}}}"#);
-    assert_eq!(input::call_id(&empty), None);
-    assert_eq!(input::user_email(&empty), None);
-    let absent = data(r#"{"metadata": {"headers": "none"}}"#);
-    assert_eq!(input::user_email(&absent), None);
-}
-
-#[rstest]
-#[case::default_base(&[("AIM_API_KEY", "k")], None, "https://api.aim.security", "wss://api.aim.security")]
-#[case::env_base(&[("AIM_API_KEY", "k"), ("AIM_API_BASE", "http://env.aim")], None, "http://env.aim", "ws://env.aim")]
-#[case::empty_env_base(&[("AIM_API_KEY", "k"), ("AIM_API_BASE", "")], None, "https://api.aim.security", "wss://api.aim.security")]
-#[case::param_base(&[("AIM_API_KEY", "k"), ("AIM_API_BASE", "http://env.aim")], Some("https://param.aim"), "https://param.aim", "wss://param.aim")]
-#[case::empty_param_base(&[("AIM_API_KEY", "k"), ("AIM_API_BASE", "http://env.aim")], Some(""), "http://env.aim", "ws://env.aim")]
-fn aim_guardrail_resolves_the_base_and_the_websocket_base(
-    #[case] variables: &[(&str, &str)],
-    #[case] param: Option<&str>,
-    #[case] base: &str,
-    #[case] websocket_base: &str,
-) {
-    let environment: BTreeMap<String, String> = variables
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect();
-    let params = AimParams {
-        api_base: param.map(str::to_owned),
-        ..AimParams::default()
-    };
-    let state = Arc::new(State::default());
-    let guardrail = guardrail_with(params, &environment, &state, (StatusCode::OK, "{}")).unwrap();
-    assert_eq!(guardrail.api_base, base);
-    assert_eq!(guardrail.ws_api_base, websocket_base);
-    assert_eq!(guardrail.litellm_version, "1.105.1");
-    assert!(!guardrail.inspect_embeddings);
-}
-
-#[test]
-fn aim_guardrail_prefers_the_configured_api_key_over_the_environment() {
-    let environment = BTreeMap::from([("AIM_API_KEY".to_owned(), "env-key".to_owned())]);
-    let state = Arc::new(State::default());
-    for (param, expected) in [
-        (Some("param-key"), "param-key"),
-        (Some(""), "env-key"),
-        (None, "env-key"),
-    ] {
-        let params = AimParams {
-            api_key: param.map(|key| SecretString::from(key.to_owned())),
-            ..AimParams::default()
-        };
-        let guardrail =
-            guardrail_with(params, &environment, &state, (StatusCode::OK, "{}")).unwrap();
-        assert_eq!(guardrail.api_key.expose_secret(), expected);
-    }
-}
-
 async fn drain<S>(fixture: &Fixture, chunks: S) -> Vec<Result<VerifiedChunk, AimError>>
 where
     S: Stream<Item = AimStreamChunk> + Send + 'static,
@@ -800,51 +717,6 @@ async fn aim_guardrail_stream_cancels_the_sender_when_aim_stops_sending_chunks()
     assert!(closed.is_ok());
 }
 
-#[test]
-fn aim_guardrail_stream_frame_limit_is_one_mebibyte() {
-    assert_eq!(MAX_STREAM_FRAME_BYTES, 1_048_576);
-}
-
-#[tokio::test]
-async fn aim_guardrail_stream_defaults_the_frame_wait_to_the_guardrail_timeout() {
-    let state = Arc::new(State::default());
-    let environment = BTreeMap::from([("AIM_API_KEY".to_owned(), KEY.to_owned())]);
-    let fake = Arc::new(Fake {
-        state: Arc::clone(&state),
-        status: StatusCode::OK,
-        body: Vec::new(),
-    });
-    let poster: Arc<dyn AimPoster> = Arc::clone(&fake);
-    let connector: Arc<dyn AimSocketConnector> = fake;
-    let guardrail =
-        AimGuardrail::new(AimParams::default(), &environment, poster, connector, None).unwrap();
-    let request = data(r#"{"messages": [{"role": "user", "content": "hi"}]}"#);
-    let _stream = guardrail
-        .inspect_output_stream(stream::empty(), &request, None)
-        .await
-        .unwrap();
-    let timings = state.timings.lock().unwrap_or_else(PoisonError::into_inner);
-    assert_eq!(*timings, vec![(CONNECT_TIMEOUT, DEFAULT_TIMEOUT)]);
-}
-
-#[test]
-fn aim_guardrail_supports_the_conversational_hooks() {
-    let hooks = serde_json::to_value(SUPPORTED_EVENT_HOOKS).unwrap();
-    assert_eq!(hooks, json!(["pre_call", "during_call", "post_call"]));
-}
-
-#[test]
-fn aim_guardrail_missing_api_key_is_an_error() {
-    let state = Arc::new(State::default());
-    let result = guardrail_with(
-        AimParams::default(),
-        &BTreeMap::new(),
-        &state,
-        (StatusCode::OK, "{}"),
-    );
-    assert!(matches!(result, Err(AimError::MissingSecrets)));
-}
-
 struct Server {
     base: String,
     tasks: JoinSet<Vec<u8>>,
@@ -922,6 +794,7 @@ async fn aim_guardrail_http_poster_sends_the_request_and_returns_the_status_and_
     let received = server.tasks.join_next().await.unwrap().unwrap();
     let request = String::from_utf8(received).unwrap();
     assert!(request.starts_with("POST /fw/v1/analyze HTTP/1.1\r\n"));
+    assert!(request.contains("content-type: application/json\r\n"));
     assert!(request.contains("authorization: Bearer aim-key\r\n"));
     assert!(request.contains("x-aim-call-id: call-1\r\n"));
     assert!(request.contains("x-aim-gateway-key-alias: alias\r\n"));

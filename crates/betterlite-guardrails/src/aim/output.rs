@@ -30,7 +30,7 @@ impl AimGuardrail {
             content: output.to_owned(),
         });
         let user_email = input::user_email(request_data).map(str::to_owned);
-        let call_id = input::call_id(request_data).map(str::to_owned);
+        let call_id = input::text_field(request_data, "litellm_call_id").map(str::to_owned);
         let call = AimCall {
             hook: AimHook::Output,
             key_alias,

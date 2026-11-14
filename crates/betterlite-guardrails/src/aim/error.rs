@@ -1,6 +1,9 @@
+use std::string::FromUtf8Error;
+
 use reqwest::StatusCode;
 use reqwest::header::InvalidHeaderValue;
 use thiserror::Error;
+use tokio_tungstenite::tungstenite;
 
 pub const CONTENT_POLICY_VIOLATION: &str = "content_policy_violation";
 pub const BAD_REQUEST_CODE: &str = "400";
@@ -25,6 +28,14 @@ pub enum AimError {
     RequestJson(#[source] serde_json::Error),
     #[error("{message}")]
     Rejected { message: String, code: &'static str },
+    #[error("the Aim websocket failed")]
+    WebSocket(#[source] tungstenite::Error),
+    #[error("the Aim websocket did not open in time")]
+    ConnectTimeout,
+    #[error("an Aim stream frame is not UTF-8")]
+    FrameUtf8(#[source] FromUtf8Error),
+    #[error("the Aim stream waited longer than its timeout for a frame")]
+    StreamTimeout,
     #[error("an Aim stream frame is not valid JSON")]
     StreamJson(#[source] serde_json::Error),
     #[error("the Aim stream closed before it finished")]
