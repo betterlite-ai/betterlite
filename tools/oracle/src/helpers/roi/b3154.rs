@@ -218,11 +218,9 @@ async fn estimate(input: &Input) -> HelperResult {
         .estimate(&pull, &mut support_of(input))
         .await
         .map_err(|error| helper_error("SourceError", error.to_string()))?;
-    let recorded = if let Ok(requests) = requests.lock() {
-        requests.clone()
-    } else {
-        Vec::new()
-    };
+    let recorded = requests
+        .lock()
+        .map_or_else(|_| Vec::new(), |guard| guard.clone());
     Ok(json!({"estimate": estimate, "requests": recorded}))
 }
 

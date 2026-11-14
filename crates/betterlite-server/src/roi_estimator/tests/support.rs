@@ -157,45 +157,53 @@ pub(super) fn pull() -> ROIPullEvidence {
         additions: 10,
         deletions: 2,
         changed_files: 3,
-        files: vec![
-            ROIPullFile {
-                filename: Some("a.py".to_owned()),
-                status: Some("added".to_owned()),
-                additions: Some(10),
-                deletions: Some(0),
-            },
-            ROIPullFile {
-                filename: None,
-                status: None,
-                additions: None,
-                deletions: None,
-            },
-        ],
-        commits: vec![
-            ROIPullCommit {
-                sha: "abc".to_owned(),
-                message: "first".to_owned(),
-                additions: Some(5),
-                deletions: None,
-                changed_files: None,
-            },
-            ROIPullCommit {
-                sha: "def".to_owned(),
-                message: "second".to_owned(),
-                additions: None,
-                deletions: None,
-                changed_files: Some(None),
-            },
-        ],
+        files: pull_files(),
+        commits: pull_commits(),
         commit_count: 2,
         incomplete_metadata: false,
     }
 }
 
+fn pull_files() -> Vec<ROIPullFile> {
+    vec![
+        ROIPullFile {
+            filename: Some("a.py".to_owned()),
+            status: Some("added".to_owned()),
+            additions: Some(10),
+            deletions: Some(0),
+        },
+        ROIPullFile {
+            filename: None,
+            status: None,
+            additions: None,
+            deletions: None,
+        },
+    ]
+}
+
+fn pull_commits() -> Vec<ROIPullCommit> {
+    vec![
+        ROIPullCommit {
+            sha: "abc".to_owned(),
+            message: "first".to_owned(),
+            additions: Some(5),
+            deletions: None,
+            changed_files: None,
+        },
+        ROIPullCommit {
+            sha: "def".to_owned(),
+            message: "second".to_owned(),
+            additions: None,
+            deletions: None,
+            changed_files: Some(None),
+        },
+    ]
+}
+
 pub(super) fn caller(
-    response: Result<CompletionObject, SourceError>,
+    scripted: Result<CompletionObject, SourceError>,
 ) -> (CompletionCaller, Arc<Mutex<Vec<ROICompletionRequest>>>) {
-    let response = Arc::new(Mutex::new(Some(response)));
+    let response = Arc::new(Mutex::new(Some(scripted)));
     let requests = Arc::new(Mutex::new(Vec::new()));
     let seen = Arc::clone(&requests);
     let complete: CompletionCaller = Arc::new(move |request: ROICompletionRequest| {
