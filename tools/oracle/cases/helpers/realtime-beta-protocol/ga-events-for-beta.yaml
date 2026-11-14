@@ -1,0 +1,38 @@
+kind: helper
+name: realtime-beta-protocol-ga-events-for-beta
+call:
+  realtime_beta_protocol:
+    function: ga_events_for_beta
+    websockets: []
+    sessions: []
+    events:
+      - type: conversation.item.added
+        item:
+          id: i1
+          content:
+            - {type: output_text, text: hi}
+            - {type: output_audio, audio: AAA}
+            - {type: input_audio, audio: BBB}
+            - not-an-object
+      - {type: conversation.item.done, item: {id: i2, content: [{type: output_text, text: hi}]}}
+      - {type: response.output_text.delta, delta: hi}
+      - {type: response.output_audio.delta, delta: AAA}
+      - {type: response.output_audio_transcript.delta, delta: hi}
+      - {type: response.output_text.done, text: hi}
+      - {type: response.output_audio.done}
+      - {type: response.output_audio_transcript.done}
+      - type: response.done
+        response:
+          id: r1
+          output:
+            - {type: message, content: [{type: output_text, text: hi}]}
+            - {type: output_audio, audio: AAA}
+            - 7
+      - type: response.future
+        response:
+          id: r2
+          output: [{type: output_audio, audio: AAA}]
+      - {type: response.created, response_id: r1}
+      - {type: response.output_text.delta, response: {output: null}}
+env: {}
+compare: {ignore: []}

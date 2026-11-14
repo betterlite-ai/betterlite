@@ -1,0 +1,22 @@
+kind: helper
+name: realtime-beta-protocol-beta-session-nested-precedence
+call:
+  realtime_beta_protocol:
+    function: session_remap
+    websockets: []
+    sessions:
+      - audio:
+          input:
+            format: {type: audio/old, rate: 1}
+            noise_reduction: {type: near_field}
+          output: {voice: old, speed: 1.1}
+        input_audio_format: pcm16
+        voice: alloy
+      - audio:
+          input: {turn_detection: {type: server_vad}}
+        turn_detection: null
+      - audio: null
+        voice: alloy
+    events: []
+env: {}
+compare: {ignore: []}
