@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-import { PatchError, sha256Hex } from "./patches.mjs";
+import { PatchError, readPatchFiles, sha256Hex } from "./patches.mjs";
 
 const APP = "ui/litellm-dashboard";
 const READY_MARKER = ".litellm_ui_ready";
@@ -64,34 +64,6 @@ export function cacheFlags(env) {
   return flags;
 }
 
-async function readPatchFiles(patchesDir) {
-  let names;
-  try {
-    names = (await fs.readdir(patchesDir, { withFileTypes: true }))
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".patch"))
-      .map((entry) => entry.name)
-      .sort();
-  } catch (error) {
-    if (error.code === "ENOENT") return [];
-    throw error;
-  }
-  const patches = [];
-  for (const name of names) {
-    const recordName = `${name.slice(0, -".patch".length)}.json`;
-    try {
-      patches.push({
-        name,
-        patch: await fs.readFile(path.join(patchesDir, name)),
-        record: await fs.readFile(path.join(patchesDir, recordName)),
-      });
-    } catch (error) {
-      if (error.code === "ENOENT") throw new PatchError("patch-record", `${name} has no adjacent ${recordName}`);
-      throw error;
-    }
-  }
-  return patches;
-}
-
 export async function bundleInputs({ repoRoot, apiBase = "" }) {
   checkApiBase(apiBase);
   const read = (relative) => fs.readFile(path.join(repoRoot, relative));
@@ -130,7 +102,7 @@ export async function bundleInputs({ repoRoot, apiBase = "" }) {
 async function patchedSources(patchesDir) {
   const sources = new Set();
   for (const file of await readPatchFiles(patchesDir)) {
-    for (const target of JSON.parse(file.record).targets) {
+    for (const target of file.targets) {
       const relative = target.path.slice(`${APP}/`.length);
       if (target.postimage !== null && /\.tsx?$/.test(relative)) sources.add(relative);
     }
