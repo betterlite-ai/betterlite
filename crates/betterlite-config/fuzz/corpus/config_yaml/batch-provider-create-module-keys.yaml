@@ -1,0 +1,10 @@
+litellm_settings:
+  api_base: https://module.example/v1
+  organization: module-org
+  api_key: module-key
+  openai_key: openai-key
+  api_version: "2024-02-01"
+  azure_key: azure-key
+  vertex_project: module-project
+  vertex_location: module-location
+model_list: []

@@ -1,0 +1,5 @@
+task: B1036
+deviations:
+  - what: A create call whose metadata, extra_headers and extra_body hold more entries together than ApiLimits.max_items fails with 400 too_many_items before any provider is called.
+    why: The bounded-inputs rule requires finite memory use, and B1087 already caps collected items for every other API module. LiteLLM copies the three maps into the batch request without a count check.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L239-L247

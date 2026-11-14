@@ -1,0 +1,29 @@
+kind: helper
+name: completion-window
+call:
+  batch_provider_create:
+    env: {}
+    module: {}
+    steps:
+      - completion_window: "24h"
+        endpoint: "/v1/chat/completions"
+        input_file_id: file-1
+        custom_llm_provider: openai
+      - completion_window: "24h"
+        endpoint: "/v1/embeddings"
+        input_file_id: file-2
+        custom_llm_provider: openai
+      - completion_window: "24h"
+        endpoint: "/v1/images/generations"
+        input_file_id: file-3
+        custom_llm_provider: openai
+      - completion_window: "24h"
+        endpoint: "/v1/videos/extensions"
+        input_file_id: file-4
+        custom_llm_provider: openai
+      - completion_window: "24h"
+        endpoint: "/v1/ocr"
+        input_file_id: file-5
+        custom_llm_provider: xai
+env: {}
+compare: {ignore: []}

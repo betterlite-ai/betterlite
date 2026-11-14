@@ -1,0 +1,14 @@
+kind: helper
+name: batch-provider-create-seed
+call:
+  batch_provider_create:
+    env: {OPENAI_BASE_URL: "https://seed.example/v1"}
+    module: {api_base: null, organization: null, api_key: null, openai_key: null}
+    steps:
+      - completion_window: "24h"
+        endpoint: "/v1/chat/completions"
+        input_file_id: file-seed
+        custom_llm_provider: openai
+        metadata: {seed: one}
+env: {}
+compare: {ignore: []}
