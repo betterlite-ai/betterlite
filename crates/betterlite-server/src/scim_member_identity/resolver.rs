@@ -13,32 +13,6 @@ fn skipped_member(value: &str, reason: SkipReason) -> ClassifiedGroupMember {
     }
 }
 
-// a value that is one account's exact user_id is still ambiguous when another account uses it as an identity
-fn keyed_resolution(value: &str, named: &[String]) -> ClassifiedGroupMember {
-    if named.iter().any(|other| other != value) {
-        return ClassifiedGroupMember::Ambiguous {
-            value: value.to_owned(),
-        };
-    }
-    ClassifiedGroupMember::Resolved {
-        user_id: value.to_owned(),
-    }
-}
-
-fn named_resolution(value: &str, named: &[String]) -> ClassifiedGroupMember {
-    match named {
-        [] => ClassifiedGroupMember::Unknown {
-            value: value.to_owned(),
-        },
-        [user_id] => ClassifiedGroupMember::Resolved {
-            user_id: user_id.clone(),
-        },
-        _ => ClassifiedGroupMember::Ambiguous {
-            value: value.to_owned(),
-        },
-    }
-}
-
 impl MemberResolver<'_> {
     pub async fn classify_group_member(
         &self,
@@ -51,7 +25,15 @@ impl MemberResolver<'_> {
         }
         let named = self.accounts_named_by_member_value(value).await?;
         if named.iter().any(|found| found == value) {
-            return Ok(keyed_resolution(value, &named));
+            // the keyed row still loses to an account that shares the value as an identity
+            if named.iter().any(|other| other != value) {
+                return Ok(ClassifiedGroupMember::Ambiguous {
+                    value: value.to_owned(),
+                });
+            }
+            return Ok(ClassifiedGroupMember::Resolved {
+                user_id: value.to_owned(),
+            });
         }
         if member_type.as_deref().is_some_and(|kind| kind != "user") {
             return Ok(skipped_member(value, SkipReason::NonUserType));
@@ -59,7 +41,17 @@ impl MemberResolver<'_> {
         if member_type.is_none() && self.is_scim_managed_team(value).await? {
             return Ok(skipped_member(value, SkipReason::ExistingTeam));
         }
-        Ok(named_resolution(value, &named))
+        match named.as_slice() {
+            [] => Ok(ClassifiedGroupMember::Unknown {
+                value: value.to_owned(),
+            }),
+            [user_id] => Ok(ClassifiedGroupMember::Resolved {
+                user_id: user_id.clone(),
+            }),
+            _ => Ok(ClassifiedGroupMember::Ambiguous {
+                value: value.to_owned(),
+            }),
+        }
     }
 
     // every account sharing the value leaves with the one member of this roster it names
