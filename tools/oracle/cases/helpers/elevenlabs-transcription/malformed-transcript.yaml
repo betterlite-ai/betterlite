@@ -6,6 +6,7 @@ call:
     - {function: transcript, body: not json}
     - {function: transcript, body: '[]'}
     - {function: transcript, body: '{"words": "hi"}'}
+    - {function: transcript, body: '{"words": null}'}
     - {function: transcript, body: '{"words": [1]}'}
     - {function: transcript, body: '{"text": 5}'}
     - {function: transcript, body: '{} {}'}

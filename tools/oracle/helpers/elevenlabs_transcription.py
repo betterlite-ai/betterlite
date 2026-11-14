@@ -118,7 +118,7 @@ class Mapped(TypedDict):
 
 class Requested(TypedDict):
     ok: bool
-    form: dict[str, str]
+    form: list[tuple[str, str]]
     file: File
 
 
@@ -168,9 +168,10 @@ def map_answer(call: MapCall) -> Mapped:
 
 def form_answer(request: FormView) -> Requested:
     filename, body, content_type = PARTS.validate_python(request.files)["file"]
+    pairs = [(name, value) for name, value in STRINGS.validate_python(request.data).items()]
     return {
         "ok": True,
-        "form": STRINGS.validate_python(request.data),
+        "form": pairs,
         "file": {
             "name": "file",
             "filename": filename,
@@ -216,9 +217,12 @@ def transcript_answer(call: TranscriptCall) -> Transcribed:
     body = call["body"].encode()
     response = httpx.Response(200, content=body)
     result = BASE.transform_audio_transcription_response(raw_response=response)
+    # TranscriptionResponse declares usage, which the transformation never sets
+    dumped = OBJECT.validate_json(result.model_dump_json())
+    dumped.pop("usage", None)
     return {
         "ok": True,
-        "response": OBJECT.validate_json(result.model_dump_json(exclude_none=True)),
+        "response": dumped,
         "hidden": OBJECT.validate_json(body),
     }
 

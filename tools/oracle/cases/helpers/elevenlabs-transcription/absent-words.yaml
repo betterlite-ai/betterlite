@@ -8,5 +8,10 @@ call:
     - {function: transcript, body: '{"language_code": "eng"}'}
     - {function: transcript, body: '{"words": []}'}
     - {function: transcript, body: '{"words": [{"type": "spacing", "text": " "}, {"type": "audio_event", "text": "(laughs)"}]}'}
+    - {function: transcript, body: '{"text": null, "language_code": null}'}
+    - {function: transcript, body: '{"text": null, "language_code": "eng"}'}
+    - {function: transcript, body: '{"text": "hi", "language_code": null}'}
+    - {function: transcript, body: '{"text": "hi", "words": [{"type": "word", "text": null, "start": null, "end": null}]}'}
+    - {function: transcript, body: '{"text": "hi", "words": [{"type": "word", "text": "x", "start": 1.5, "end": null}, {"type": "word", "end": 2}]}'}
 compare: {ignore: []}
 env: {}

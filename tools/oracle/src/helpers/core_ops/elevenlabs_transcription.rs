@@ -139,9 +139,14 @@ fn request_answer(
     transform_request(model, &audio, optional_params).map_or_else(
         |_| json!({ "ok": false }),
         |form| {
+            let fields: Vec<Value> = form
+                .fields
+                .iter()
+                .map(|(name, value)| json!([name, value]))
+                .collect();
             json!({
                 "ok": true,
-                "form": form.fields,
+                "form": fields,
                 "file": {
                     "name": form.file.name,
                     "filename": form.file.file_name,
