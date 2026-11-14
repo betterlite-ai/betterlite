@@ -1,0 +1,12 @@
+kind: helper
+name: vertex-batch-rows-empty-id
+call:
+  vertex_batch_rows:
+    operation: rows
+    rows:
+      - {key: ""}
+      - request: {labels: {litellm_custom_id_raw: "b32_"}}
+      - request: {labels: {litellm_custom_id: ""}}
+      - request: {labels: {litellm_custom_id_raw: ""}}
+env: {}
+compare: {ignore: []}
