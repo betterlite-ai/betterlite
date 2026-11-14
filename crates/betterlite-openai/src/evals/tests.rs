@@ -12,7 +12,10 @@ use super::types::{
 };
 use crate::openai_base_config::{Headers, Object};
 
-fn context<'call>(params: &'call Object, headers: &'call Headers) -> EvalsRequestContext<'call> {
+fn request_context<'call>(
+    params: &'call Object,
+    headers: &'call Headers,
+) -> EvalsRequestContext<'call> {
     EvalsRequestContext {
         litellm_params: params,
         headers,
@@ -51,7 +54,7 @@ fn case_create_eval() {
     let config = OpenAiEvalsConfig::default();
     let params = Object::new();
     let headers = Headers::from([("X-Unused".to_owned(), "kept".to_owned())]);
-    let context = context(&params, &headers);
+    let context = request_context(&params, &headers);
     let request: CreateEvalRequest = serde_json::from_str(
         r#"{"name":null,"data_source_config":{"type":"custom","item_schema":{"role":"string","required":false,"count":0,"note":null,"tags":[]},"include_sample_schema":false},"testing_criteria":[{"type":"llm_as_judge","model":"gpt-4o"},{"type":"custom","function_id":"fn-1"},{"type":"ground_truth","metric":"f1_score"}],"metadata":{"team":"ml","flag":false,"count":0,"tags":[],"note":null}}"#,
     )
@@ -87,7 +90,7 @@ fn case_update_eval() {
         ("X-Custom".to_owned(), "kept".to_owned()),
         ("Authorization".to_owned(), "Bearer original".to_owned()),
     ]);
-    let context = context(&params, &headers);
+    let context = request_context(&params, &headers);
     let request: UpdateEvalRequest =
         serde_json::from_str(r#"{"name":null,"metadata":{"a":1,"b":null}}"#).unwrap();
     let (url, sent, body) = config
@@ -112,7 +115,7 @@ fn case_create_run_body() {
     let config = OpenAiEvalsConfig::default();
     let headers = Headers::new();
     let params: Object = object(r#"{"api_base":"https://runs.test/v1"}"#);
-    let context = context(&params, &headers);
+    let context = request_context(&params, &headers);
     let request: CreateRunRequest = serde_json::from_str(
         r#"{"data_source":{"type":"inline","samples":[{"input":null,"ok":false,"count":0}]},"name":null,"metadata":{"run":1,"note":null}}"#,
     )
@@ -128,7 +131,7 @@ fn case_create_run_body() {
         )
     );
     let empty = Object::new();
-    let context = context(&empty, &headers);
+    let context = request_context(&empty, &headers);
     let request: CreateRunRequest = serde_json::from_str(r#"{"data_source":{}}"#).unwrap();
     let (url, body) = config
         .transform_create_run_request("eval/4", &request, &context)
@@ -147,7 +150,7 @@ fn case_eval_list_pagination() {
     let config = OpenAiEvalsConfig::default();
     let headers = Headers::new();
     let params: Object = object(r#"{"api_base":"https://evals.test/base"}"#);
-    let context = context(&params, &headers);
+    let context = request_context(&params, &headers);
     let list: ListEvalsParams = serde_json::from_str(
         r#"{"limit":5,"after":"eval_5","before":"eval_9","order":"asc","order_by":"updated_at"}"#,
     )
@@ -163,7 +166,7 @@ fn case_eval_list_pagination() {
         )
     );
     let params: Object = object(r#"{"api_base":""}"#);
-    let context = context(&params, &headers);
+    let context = request_context(&params, &headers);
     let list: ListEvalsParams =
         serde_json::from_str(r#"{"limit":0,"after":"","before":"","order":null,"order_by":null}"#)
             .unwrap();
@@ -171,47 +174,47 @@ fn case_eval_list_pagination() {
         .transform_list_evals_request(&list, &context)
         .unwrap();
     assert_eq!(url, "https://api.openai.com/v1/evals");
-    assert_eq!(Value::Object(query), value(r#"{}"#));
+    assert_eq!(Value::Object(query), value("{}"));
     let params: Object = object(r#"{"api_base":null}"#);
-    let context = context(&params, &headers);
+    let context = request_context(&params, &headers);
     let list: ListEvalsParams = serde_json::from_str(r#"{"limit":2,"model":"o3"}"#).unwrap();
     let (url, query) = config
         .transform_list_evals_request(&list, &context)
         .unwrap();
     assert_eq!(url, "https://api.openai.com/v1/evals");
     assert_eq!(Value::Object(query), value(r#"{"limit":2}"#));
-    let list: ListEvalsParams = serde_json::from_str(r#"{}"#).unwrap();
+    let list: ListEvalsParams = serde_json::from_str("{}").unwrap();
     let (_, query) = config
         .transform_list_evals_request(&list, &context)
         .unwrap();
-    assert_eq!(Value::Object(query), value(r#"{}"#));
+    assert_eq!(Value::Object(query), value("{}"));
 }
 
 fn case_eval_get_delete_cancel() {
     let config = OpenAiEvalsConfig::default();
     let params = Object::new();
     let headers = Headers::from([("X-Kept".to_owned(), "yes".to_owned())]);
-    let context = context(&params, &headers);
+    let context = request_context(&params, &headers);
     let (url, sent) = config
         .transform_get_eval_request("eval/1", "https://fixture.test", &context)
         .unwrap();
     assert_eq!(url, "https://fixture.test/v1/evals/eval%2F1");
     assert_eq!(sent, headers);
     let empty = Headers::new();
-    let context = context(&params, &empty);
+    let context = request_context(&params, &empty);
     let (url, sent) = config
         .transform_delete_eval_request("ev.al-1", "https://fixture.test", &context)
         .unwrap();
     assert_eq!(url, "https://fixture.test/v1/evals/ev.al-1");
     assert_eq!(sent, empty);
     let cancel_headers = Headers::from([("X-Kept".to_owned(), "cancel".to_owned())]);
-    let context = context(&params, &cancel_headers);
+    let context = request_context(&params, &cancel_headers);
     let (url, sent, body) = config
         .transform_cancel_eval_request("ev al", "https://fixture.test", &context)
         .unwrap();
     assert_eq!(url, "https://fixture.test/v1/evals/ev%20al/cancel");
     assert_eq!(sent, cancel_headers);
-    assert_eq!(Value::Object(body), value(r#"{}"#));
+    assert_eq!(Value::Object(body), value("{}"));
     let (url, _) = config
         .transform_get_eval_request("", "https://fixture.test", &context)
         .unwrap();
@@ -237,7 +240,7 @@ fn case_run_create_data_source() {
     let config = OpenAiEvalsConfig::default();
     let headers = Headers::new();
     let params = Object::new();
-    let context = context(&params, &headers);
+    let context = request_context(&params, &headers);
     let request: CreateRunRequest = serde_json::from_str(
         r#"{"data_source":{"type":"dataset","dataset_id":"ds-1","extra":null,"flags":[false,0,[]]}}"#,
     )
@@ -253,7 +256,7 @@ fn case_run_create_data_source() {
         )
     );
     let params: Object = object(r#"{"api_base":"https://runs.test"}"#);
-    let context = context(&params, &headers);
+    let context = request_context(&params, &headers);
     let request: CreateRunRequest = serde_json::from_str(
         r#"{"data_source":{"type":"inline","samples":[{"input":null,"ok":false,"count":0}]},"name":"run one","metadata":{"k":"v","n":null}}"#,
     )
@@ -269,7 +272,7 @@ fn case_run_create_data_source() {
         )
     );
     let params: Object = object(r#"{"api_base":""}"#);
-    let context = context(&params, &headers);
+    let context = request_context(&params, &headers);
     let request: CreateRunRequest = serde_json::from_str(r#"{"data_source":{}}"#).unwrap();
     let (url, _) = config
         .transform_create_run_request("eval/1", &request, &context)
@@ -285,7 +288,7 @@ fn case_run_list_pagination() {
     let config = OpenAiEvalsConfig::default();
     let headers = Headers::new();
     let params: Object = object(r#"{"api_base":"https://runs.test"}"#);
-    let context = context(&params, &headers);
+    let context = request_context(&params, &headers);
     let list: ListRunsParams = serde_json::from_str(
         r#"{"limit":3,"after":"r1","before":"r9","order":"desc","order_by":"created_at"}"#,
     )
@@ -303,10 +306,10 @@ fn case_run_list_pagination() {
     let (_, query) = config
         .transform_list_runs_request("eval-2", &list, &context)
         .unwrap();
-    assert_eq!(Value::Object(query), value(r#"{}"#));
+    assert_eq!(Value::Object(query), value("{}"));
     let params: Object = object(r#"{"api_base":"https://runs.test/v1"}"#);
-    let context = context(&params, &headers);
-    let list: ListRunsParams = serde_json::from_str(r#"{}"#).unwrap();
+    let context = request_context(&params, &headers);
+    let list: ListRunsParams = serde_json::from_str("{}").unwrap();
     let (url, _) = config
         .transform_list_runs_request("eval/2", &list, &context)
         .unwrap();
@@ -321,20 +324,20 @@ fn case_run_get_cancel_delete() {
     let config = OpenAiEvalsConfig::default();
     let params = Object::new();
     let headers = Headers::from([("X-Kept".to_owned(), "a".to_owned())]);
-    let context = context(&params, &headers);
+    let context = request_context(&params, &headers);
     let (url, sent) = config
         .transform_get_run_request("eval/1", "run 1", "https://fixture.test", &context)
         .unwrap();
     assert_eq!(url, "https://fixture.test/v1/evals/eval%2F1/runs/run%201");
     assert_eq!(sent, headers);
     let empty = Headers::new();
-    let context = context(&params, &empty);
+    let context = request_context(&params, &empty);
     let (url, sent, body) = config
         .transform_delete_run_request("eval-1", "run-1", "https://fixture.test", &context)
         .unwrap();
     assert_eq!(url, "https://fixture.test/v1/evals/eval-1/runs/run-1");
     assert_eq!(sent, empty);
-    assert_eq!(Value::Object(body), value(r#"{}"#));
+    assert_eq!(Value::Object(body), value("{}"));
     let (url, sent, body) = config
         .transform_cancel_run_request("eval-1", "run/1", "https://fixture.test", &context)
         .unwrap();
@@ -343,7 +346,7 @@ fn case_run_get_cancel_delete() {
         "https://fixture.test/v1/evals/eval-1/runs/run%2F1/cancel"
     );
     assert_eq!(sent, empty);
-    assert_eq!(Value::Object(body), value(r#"{}"#));
+    assert_eq!(Value::Object(body), value("{}"));
     assert!(matches!(
         config.transform_get_run_request("eval-1", ".", "https://fixture.test", &context),
         Err(EvalsError::PathSegment { .. })
@@ -359,14 +362,14 @@ fn malformed_json_body_replies() {
     let headers = Headers::new();
     assert_json_failure(
         config.transform_create_eval_response(&reply(
-            r##"{"id": "eval-1", "created_at": 1"##,
+            r#"{"id": "eval-1", "created_at": 1"#,
             &headers,
         )),
     );
     assert_json_failure(config.transform_get_eval_response(&reply("not json", &headers)));
     assert_json_failure(config.transform_cancel_run_response(&reply("", &headers)));
     assert_json_failure(
-        config.transform_delete_run_response(&reply(r##"{"run_id": "run-1""##, &headers)),
+        config.transform_delete_run_response(&reply(r#"{"run_id": "run-1""#, &headers)),
     );
 }
 

@@ -25,22 +25,26 @@ pub(super) fn present_secret(secret: Option<&SecretString>) -> Option<&str> {
     }
 }
 
-pub(super) fn request_object<T: Serialize>(request: &T) -> Result<Object, EvalsError> {
+pub(super) fn request_object<T>(request: &T) -> Result<Object, EvalsError>
+where
+    T: Serialize,
+{
     match serde_json::to_value(request).map_err(|source| EvalsError::RequestEncode { source })? {
         Value::Object(fields) => Ok(fields),
         _ => Err(EvalsError::RequestNotObject),
     }
 }
 
-pub(super) fn parse_reply<T: DeserializeOwned>(
-    raw_response: &EvalsHttpResponse<'_>,
-) -> Result<T, EvalsError> {
+pub(super) fn parse_reply<T>(raw_response: &EvalsHttpResponse<'_>) -> Result<T, EvalsError>
+where
+    T: DeserializeOwned,
+{
     decode_eval_reply(raw_response.text.as_bytes()).and_then(|value| {
         serde_json::from_value(value).map_err(|source| EvalsError::ReplyModel { source })
     })
 }
 
-pub(super) fn context_api_base(context: &EvalsRequestContext<'_>) -> &str {
+pub(super) fn context_api_base<'call>(context: &EvalsRequestContext<'call>) -> &'call str {
     present(
         context
             .litellm_params
