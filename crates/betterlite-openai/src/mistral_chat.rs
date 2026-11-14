@@ -9,7 +9,7 @@ mod tests;
 use thiserror::Error;
 
 use crate::chat_content::ChatContentError;
-use crate::compatible_wire::CompatibleWireError;
+use crate::compatible_wire::error::CompatibleWireError;
 
 pub const PROVIDER: &str = "mistral";
 
