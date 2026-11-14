@@ -1,0 +1,9 @@
+litellm_settings:
+  api_base: https://configured.example
+  organization: org-configured
+  api_key: os.environ/BATCH_CANCEL_OPENAI_KEY
+  openai_key: sk-openai-configured
+  api_version: 2024-02-01
+  azure_key: os.environ/BATCH_CANCEL_AZURE_KEY
+  vertex_project: project-configured
+  vertex_location: location-configured

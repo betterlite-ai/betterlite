@@ -1,0 +1,22 @@
+kind: helper
+name: batch-provider-async-invoke-completed
+call:
+  batch_provider_cancel:
+    input:
+      async_invoke:
+        invocationArn: "arn:aws:bedrock:us-east-1:123456789012:async-invoke/abc123"
+        modelArn: "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
+        status: Completed
+        failureMessage: null
+        outputDataConfig:
+          s3OutputDataConfig:
+            s3Uri: s3://bucket/output.jsonl
+        submitTime: "2024-01-01T00:00:00Z"
+        lastModifiedTime: "2024-01-01T00:01:00Z"
+        endTime: "2024-01-01T00:02:00Z"
+    settings: null
+    env: {}
+    now: 0
+    script: {batch: null, error: null}
+env: {}
+compare: {ignore: []}
