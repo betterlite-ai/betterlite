@@ -1,0 +1,43 @@
+kind: helper
+name: background-request-skipped
+call:
+  b3774: {
+      "inputs": {
+        "structured_messages": [
+          {
+            "role": "system",
+            "content": "sys"
+          },
+          {
+            "role": "user",
+            "content": "long text"
+          },
+          {
+            "role": "assistant",
+            "content": "answer"
+          },
+          {
+            "role": "user",
+            "content": "now"
+          }
+        ]
+      },
+      "request_data": {
+        "background": true
+      },
+      "input_type": "request",
+      "answer": {
+        "status": 200,
+        "headers": {},
+        "body": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "short"
+            }
+          ]
+        }
+      }
+    }
+env: {}
+compare: {ignore: []}

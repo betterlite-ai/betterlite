@@ -1,0 +1,24 @@
+kind: helper
+name: vertex-rerank-missing-score-stable-order
+call:
+  vertex_rerank:
+    model: semantic-ranker-512@latest
+    api_base: null
+    vertex_project: null
+    vertex_credentials: null
+    access_project: access-project
+    headers: {}
+    query: which one
+    documents: ["a", "b", "c", "d"]
+    top_n: null
+    return_documents: false
+    non_default_params: {}
+    litellm_params: null
+    response:
+      records:
+        - {id: "2"}
+        - {id: "0", score: 0.5}
+        - {id: "1"}
+        - {id: "3", score: 1}
+env: {}
+compare: {ignore: []}

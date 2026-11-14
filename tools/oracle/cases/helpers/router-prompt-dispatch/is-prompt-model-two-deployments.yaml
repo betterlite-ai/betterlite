@@ -1,0 +1,18 @@
+kind: helper
+name: prompt-dispatch-is-prompt-model-two-deployments
+call:
+  b8466:
+    check: is_prompt_model
+    model: langfuse/my-prompt
+    model_list:
+    - model_name: langfuse/my-prompt
+      litellm_params:
+        model: langfuse/my-prompt
+        prompt_id: greeting
+    - model_name: langfuse/my-prompt
+      litellm_params:
+        model: langfuse/second-prompt
+        prompt_id: farewell
+env: {}
+compare:
+  ignore: []
