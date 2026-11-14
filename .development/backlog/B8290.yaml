@@ -1,7 +1,7 @@
 id: B8290
 milestone: M6 guardrails
 title: Guardrail hook initializer arguments
-status: todo
+status: done
 depends_on: [B3662]
 file: tasks/B8290-guardrail-hook-initializers.yaml
 covers:
@@ -13,7 +13,7 @@ covers:
   - "litellm/proxy/guardrails/guardrail_hooks/openai/__init__.py"
 parent: B106
 split_from: B106
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1597
