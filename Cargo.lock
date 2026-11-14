@@ -2454,6 +2454,7 @@ dependencies = [
  "betterlite-tokenizer",
  "betterlite-transcribe",
  "chrono",
+ "futures-util",
  "hex",
  "indexmap 2.14.2",
  "jiff",
