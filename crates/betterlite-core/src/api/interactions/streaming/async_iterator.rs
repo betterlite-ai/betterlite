@@ -65,9 +65,6 @@ where
     pub async fn next_chunk(
         &mut self,
     ) -> Option<Result<InteractionsStreamChunk, AsyncStreamError<Response, Config>>> {
-        if self.base.finished {
-            return None;
-        }
         loop {
             let line = match self.lines.next_line().await {
                 Ok(Some(line)) => line,

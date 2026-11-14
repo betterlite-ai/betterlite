@@ -66,9 +66,6 @@ where
     pub fn next_chunk(
         &mut self,
     ) -> Option<Result<InteractionsStreamChunk, SyncStreamError<Response, Config>>> {
-        if self.base.finished {
-            return None;
-        }
         loop {
             let line = match self.lines.next() {
                 Some(Ok(line)) => line,
