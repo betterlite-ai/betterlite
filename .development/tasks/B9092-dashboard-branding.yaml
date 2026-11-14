@@ -67,6 +67,8 @@ scope:
     - ui/dashboard/patches/20-branding.json
     - ui/dashboard/tests/branding/**
     - tools/dashboard/check-branding.sh
+    - tools/dashboard/build.sh
+    - tools/dashboard/check-build.sh
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/layout.tsx#L14-L41
