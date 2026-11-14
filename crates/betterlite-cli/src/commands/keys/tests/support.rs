@@ -141,7 +141,7 @@ pub(super) fn table(title: &str, headers: &[&str], rows: &[&[&str]]) -> String {
 }
 
 pub(super) fn keys_page(keys: &str) -> String {
-    format!(r#"{{"keys":{keys}}}"#)
+    format!(r#"{{"keys":[{keys}]}}"#)
 }
 
 #[derive(clap::Parser)]

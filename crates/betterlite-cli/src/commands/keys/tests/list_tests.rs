@@ -114,7 +114,7 @@ fn list_rejects_a_response_that_is_not_an_object(#[case] format: OutputFormat) {
     let KeysError::NotAnObject { url } = &error else {
         panic!("expected a not-an-object error, got {error:?}");
     };
-    assert!(url.ends_with("/key/list"), "{url}");
+    assert!(url.contains("/key/list?return_full_object=true"), "{url}");
     assert!(stdout.is_empty(), "{stdout}");
 }
 
@@ -286,5 +286,5 @@ fn list_names_the_url_when_the_body_is_not_json() {
     let KeysError::Client(ApiError::Response { url, .. }) = &error else {
         panic!("expected a response error, got {error:?}");
     };
-    assert!(url.ends_with("/key/list"), "{url}");
+    assert!(url.contains("/key/list?return_full_object=true"), "{url}");
 }

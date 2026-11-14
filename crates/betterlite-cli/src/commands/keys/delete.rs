@@ -16,11 +16,11 @@ pub(super) fn delete_keys(options: &DeleteKeys, ports: KeysPorts<'_>) -> Result<
         stdout,
         stderr,
     } = ports;
-    let body = KeyDeleteBody {
+    let request = KeyDeleteBody {
         keys: split_commas(options.keys.as_deref()),
         key_aliases: split_commas(options.key_aliases.as_deref()),
     };
-    let encoded = serde_json::to_vec(&body).map_err(KeysError::Json)?;
+    let encoded = serde_json::to_vec(&request).map_err(KeysError::Json)?;
     let api = KeysClient {
         transport: client,
         base_url: context.base_url.trim_end_matches('/'),

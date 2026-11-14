@@ -22,14 +22,14 @@ pub(super) fn generate_key(options: &GenerateKey, ports: KeysPorts<'_>) -> Resul
         stdout,
         stderr,
     } = ports;
-    let body = generate_body(options)?;
+    let encoded = generate_body(options)?;
     let api = KeysClient {
         transport: client,
         base_url: context.base_url.trim_end_matches('/'),
         api_key: context.api_key.as_ref(),
         redactor,
     };
-    match api.send(Method::POST, GENERATE_PATH, &[], Some(body)) {
+    match api.send(Method::POST, GENERATE_PATH, &[], Some(encoded)) {
         Ok(reply) => output::write_json(&reply.value, output::JsonText::Pretty, stdout)
             .map_err(KeysError::Json),
         Err(ApiError::Http { status, body, .. }) => {
@@ -64,25 +64,25 @@ fn generate_body(options: &GenerateKey) -> Result<Vec<u8>, KeysError> {
 }
 
 fn parse_spend(spend: Option<Decimal>) -> Result<Option<Number>, UsageError> {
-    let Some(spend) = spend else {
+    let Some(amount) = spend else {
         return Ok(None);
     };
-    let number = spend
+    let number = amount
         .to_string()
         .parse::<Number>()
         .map_err(|source| UsageError::Spend { source })?;
     Ok(Some(number))
 }
 
-fn parse_object<T: DeserializeOwned>(
-    text: Option<&str>,
-    option: &'static str,
-) -> Result<Option<T>, UsageError> {
-    let Some(text) = text else {
+fn parse_object<T>(text: Option<&str>, option: &'static str) -> Result<Option<T>, UsageError>
+where
+    T: DeserializeOwned,
+{
+    let Some(raw) = text else {
         return Ok(None);
     };
     let value: JsonValue =
-        serde_json::from_str(text).map_err(|source| UsageError::InvalidJson { source })?;
+        serde_json::from_str(raw).map_err(|source| UsageError::InvalidJson { source })?;
     let parsed = serde_json::from_value(value)
         .map_err(|source| UsageError::OptionType { option, source })?;
     Ok(Some(parsed))

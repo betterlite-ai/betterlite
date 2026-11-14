@@ -20,39 +20,29 @@ fn import_pages_the_source_at_one_hundred_and_stops_on_a_short_page() {
 
     result.unwrap();
     assert!(stderr.is_empty(), "{stderr}");
-    assert!(
-        stdout.starts_with(&format!(
-            "Fetching keys from source server: {}\n",
-            source.base_url
-        )),
-        "{stdout}"
-    );
-    assert!(stdout.contains("Fetched page 1: 100 keys"), "{stdout}");
-    assert!(stdout.contains("Fetched page 2: 1 keys"), "{stdout}");
-    assert!(
-        stdout.contains("Found 101 keys in source instance."),
-        "{stdout}"
-    );
-    assert!(stdout.contains("\n--- DRY RUN MODE ---\n"), "{stdout}");
-    assert!(stdout.contains("Keys that would be imported"), "{stdout}");
+    let header = format!("Fetching keys from source server: {}\n", source.base_url);
+    assert!(stdout.starts_with(&header), "{stdout}");
+    for fragment in [
+        "Fetched page 1: 100 keys",
+        "Fetched page 2: 1 keys",
+        "Found 101 keys in source instance.",
+        "\n--- DRY RUN MODE ---\n",
+        "Keys that would be imported",
+    ] {
+        assert!(stdout.contains(fragment), "{stdout}");
+    }
     let requests = source.finish();
     assert_eq!(requests.len(), 2);
-    assert_eq!(
-        query_pairs(&requests[0]),
-        vec![
-            (String::from("page"), String::from("1")),
-            (String::from("size"), String::from("100")),
-            (String::from("return_full_object"), String::from("true")),
-        ]
-    );
-    assert_eq!(
-        query_pairs(&requests[1]),
-        vec![
-            (String::from("page"), String::from("2")),
-            (String::from("size"), String::from("100")),
-            (String::from("return_full_object"), String::from("true")),
-        ]
-    );
+    for (request, page) in requests.iter().zip(["1", "2"]) {
+        assert_eq!(
+            query_pairs(request),
+            vec![
+                (String::from("page"), String::from(page)),
+                (String::from("size"), String::from("100")),
+                (String::from("return_full_object"), String::from("true")),
+            ]
+        );
+    }
     assert!(destination.finish().is_empty());
 }
 
@@ -86,14 +76,13 @@ fn import_names_a_page_field_of_another_type() {
     let mut options = support::import(&source.base_url);
     options.dry_run = true;
 
-    let (result, stdout, _stderr) = support::run(KeysCommand::Import(options), &fixture);
+    let (result, stdout, stderr) = support::run(KeysCommand::Import(options), &fixture);
 
-    let error = result.expect_err("a string spend is an error");
-    let KeysError::PageField { page, field, .. } = &error else {
-        panic!("expected a page field error, got {error:?}");
-    };
-    assert_eq!(*page, 1);
-    assert_eq!(field, "keys[0].spend");
+    assert!(matches!(result, Err(KeysError::Aborted)), "{result:?}");
+    assert!(
+        stderr.starts_with("Error: the field keys[0].spend of page 1 is not valid: "),
+        "{stderr}"
+    );
     assert!(
         stdout.contains("Fetching keys from source server:"),
         "{stdout}"
@@ -108,13 +97,13 @@ fn import_names_a_page_that_is_not_an_object() {
     let mut options = support::import(&source.base_url);
     options.dry_run = true;
 
-    let (result, _stdout, _stderr) = support::run(KeysCommand::Import(options), &fixture);
+    let (result, _stdout, stderr) = support::run(KeysCommand::Import(options), &fixture);
 
-    let error = result.expect_err("a page that is not an object is an error");
-    let KeysError::PageNotAnObject { page } = &error else {
-        panic!("expected a page not-an-object error, got {error:?}");
-    };
-    assert_eq!(*page, 1);
+    assert!(matches!(result, Err(KeysError::Aborted)), "{result:?}");
+    assert_eq!(
+        stderr,
+        "Error: the response for page 1 is not a JSON object\n"
+    );
 }
 
 #[test]
@@ -416,12 +405,11 @@ fn import_names_created_at_when_the_dry_run_table_cannot_read_it() {
     let mut options = support::import(&source.base_url);
     options.dry_run = true;
 
-    let (result, _stdout, _stderr) = support::run(KeysCommand::Import(options), &fixture);
+    let (result, _stdout, stderr) = support::run(KeysCommand::Import(options), &fixture);
 
-    let error = result.expect_err("a created_at that is not a date-time is an error");
-    let KeysError::CreatedAt { value, .. } = &error else {
-        panic!("expected a created_at error, got {error:?}");
-    };
-    assert_eq!(value, "yesterday");
-    assert!(error.to_string().contains("created_at"), "{error}");
+    assert!(matches!(result, Err(KeysError::Aborted)), "{result:?}");
+    assert!(
+        stderr.starts_with("Error: the created_at value 'yesterday' is not a date-time: "),
+        "{stderr}"
+    );
 }

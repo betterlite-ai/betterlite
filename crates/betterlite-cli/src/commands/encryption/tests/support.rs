@@ -56,7 +56,20 @@ pub(super) fn run(
     )
 }
 
-pub(super) fn migrate(check: bool, dry_run: bool) -> MigrateEncryption {
+pub(super) enum Flags {
+    None,
+    Check,
+    DryRun,
+    Both,
+}
+
+pub(super) fn migrate(flags: Flags) -> MigrateEncryption {
+    let (check, dry_run) = match flags {
+        Flags::None => (false, false),
+        Flags::Check => (true, false),
+        Flags::DryRun => (false, true),
+        Flags::Both => (true, true),
+    };
     MigrateEncryption { check, dry_run }
 }
 

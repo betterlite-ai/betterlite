@@ -18,7 +18,7 @@ fn output_prints_standard_json_with_a_two_space_indent_and_a_newline() {
     assert_eq!(value(&stdout), expected);
     assert_eq!(
         stdout,
-        serde_json::to_string_pretty(&expected).unwrap() + "\n"
+        format!("{}\n", serde_json::to_string_pretty(&expected).unwrap())
     );
     assert!(stdout.contains("  \"key\": \"sk-new\""), "{stdout}");
 }
@@ -51,7 +51,7 @@ fn output_prints_a_json_error_body_pretty() {
     assert!(matches!(result, Err(KeysError::Aborted)), "{result:?}");
     assert_eq!(
         stdout,
-        serde_json::to_string_pretty(&value(body)).unwrap() + "\n"
+        format!("{}\n", serde_json::to_string_pretty(&value(body)).unwrap())
     );
 }
 

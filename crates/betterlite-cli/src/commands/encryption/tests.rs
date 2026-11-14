@@ -9,7 +9,7 @@ use crate::commands::tests::support::{Answer, TestServer};
 
 use super::{EncryptionCommand, EncryptionError};
 
-use support::{Fixture, pretty, value};
+use support::{Fixture, Flags, pretty, value};
 
 #[test]
 fn migrate_check_sends_a_get_without_a_content_type() {
@@ -17,7 +17,7 @@ fn migrate_check_sends_a_get_without_a_content_type() {
     let fixture = Fixture::new(&server, Some("sk-test"));
 
     let (result, _stdout, _stderr) = support::run(
-        EncryptionCommand::Migrate(support::migrate(true, false)),
+        EncryptionCommand::Migrate(support::migrate(Flags::Check)),
         &fixture,
     );
 
@@ -38,7 +38,7 @@ fn migrate_sends_a_post_with_an_empty_json_body() {
     let fixture = Fixture::new(&server, None);
 
     let (result, _stdout, _stderr) = support::run(
-        EncryptionCommand::Migrate(support::migrate(false, false)),
+        EncryptionCommand::Migrate(support::migrate(Flags::None)),
         &fixture,
     );
 
@@ -58,7 +58,7 @@ fn migrate_dry_run_sends_the_dry_run_query_parameter() {
     let fixture = Fixture::new(&server, None);
 
     let (result, _stdout, _stderr) = support::run(
-        EncryptionCommand::Migrate(support::migrate(false, true)),
+        EncryptionCommand::Migrate(support::migrate(Flags::DryRun)),
         &fixture,
     );
 
@@ -77,7 +77,7 @@ fn migrate_check_wins_when_both_flags_are_given() {
     let fixture = Fixture::new(&server, None);
 
     let (result, _stdout, _stderr) = support::run(
-        EncryptionCommand::Migrate(support::migrate(true, true)),
+        EncryptionCommand::Migrate(support::migrate(Flags::Both)),
         &fixture,
     );
 
@@ -98,7 +98,7 @@ fn migrate_prints_the_response_pretty() {
     let fixture = Fixture::new(&server, None);
 
     let (result, stdout, stderr) = support::run(
-        EncryptionCommand::Migrate(support::migrate(false, false)),
+        EncryptionCommand::Migrate(support::migrate(Flags::None)),
         &fixture,
     );
 
@@ -120,7 +120,7 @@ fn migrate_prints_the_residual_line_above_zero() {
     let fixture = Fixture::new(&server, None);
 
     let (result, stdout, _stderr) = support::run(
-        EncryptionCommand::Migrate(support::migrate(true, false)),
+        EncryptionCommand::Migrate(support::migrate(Flags::Check)),
         &fixture,
     );
 
@@ -145,7 +145,7 @@ fn migrate_prints_nothing_for_an_absent_null_or_negative_residual(#[case] body: 
     let fixture = Fixture::new(&server, None);
 
     let (result, stdout, _stderr) = support::run(
-        EncryptionCommand::Migrate(support::migrate(true, false)),
+        EncryptionCommand::Migrate(support::migrate(Flags::Check)),
         &fixture,
     );
 
@@ -159,7 +159,7 @@ fn migrate_rejects_a_response_that_is_not_an_object() {
     let fixture = Fixture::new(&server, None);
 
     let (result, stdout, _stderr) = support::run(
-        EncryptionCommand::Migrate(support::migrate(true, false)),
+        EncryptionCommand::Migrate(support::migrate(Flags::Check)),
         &fixture,
     );
 
@@ -180,7 +180,7 @@ fn migrate_rejects_a_report_that_is_not_an_object() {
     let fixture = Fixture::new(&server, None);
 
     let (result, _stdout, _stderr) = support::run(
-        EncryptionCommand::Migrate(support::migrate(true, false)),
+        EncryptionCommand::Migrate(support::migrate(Flags::Check)),
         &fixture,
     );
 
@@ -199,7 +199,7 @@ fn migrate_rejects_a_residual_that_is_not_an_integer(#[case] body: &str) {
     let fixture = Fixture::new(&server, None);
 
     let (result, _stdout, _stderr) = support::run(
-        EncryptionCommand::Migrate(support::migrate(true, false)),
+        EncryptionCommand::Migrate(support::migrate(Flags::Check)),
         &fixture,
     );
 
@@ -216,7 +216,7 @@ fn migrate_passes_an_http_error_through_unchanged() {
     let fixture = Fixture::new(&server, None);
 
     let (result, stdout, stderr) = support::run(
-        EncryptionCommand::Migrate(support::migrate(false, false)),
+        EncryptionCommand::Migrate(support::migrate(Flags::None)),
         &fixture,
     );
 
@@ -245,7 +245,7 @@ fn migrate_does_not_turn_a_401_into_unauthorized() {
     let fixture = Fixture::new(&server, None);
 
     let (result, _stdout, _stderr) = support::run(
-        EncryptionCommand::Migrate(support::migrate(true, false)),
+        EncryptionCommand::Migrate(support::migrate(Flags::Check)),
         &fixture,
     );
 
@@ -265,7 +265,7 @@ fn migrate_names_the_url_when_the_body_is_not_json() {
     let fixture = Fixture::new(&server, None);
 
     let (result, _stdout, _stderr) = support::run(
-        EncryptionCommand::Migrate(support::migrate(true, false)),
+        EncryptionCommand::Migrate(support::migrate(Flags::Check)),
         &fixture,
     );
 

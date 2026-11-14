@@ -106,10 +106,10 @@ pub fn interpret(reply: &Reply, redactor: Option<&Redactor>) -> Result<JsonValue
             reply.status, reply.method, reply.url
         );
         if reply.status == 401
-            && let Some(redactor) = redactor
+            && let Some(masker) = redactor
         {
             return Err(ApiError::Unauthorized {
-                text: redactor.redact_string(&text),
+                text: masker.redact_string(&text),
             });
         }
         return Err(ApiError::Http {

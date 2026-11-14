@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::io::Write;
 
 use betterlite_config::sections::settings::JsonValue;
 use http::Method;

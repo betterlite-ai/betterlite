@@ -1,3 +1,5 @@
+use std::net::TcpListener;
+
 use rstest::rstest;
 use rust_decimal::Decimal;
 
@@ -215,7 +217,7 @@ fn generate_passes_a_401_through_without_an_http_line() {
 
 #[test]
 fn generate_passes_a_transport_error_through() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     drop(listener);
     let fixture = Fixture::at(&base_url, None);

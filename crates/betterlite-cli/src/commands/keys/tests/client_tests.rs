@@ -1,12 +1,16 @@
+use std::time::Duration;
+
+use http::Method;
 use rstest::rstest;
 
+use crate::commands::REQUEST_TIMEOUT;
 use crate::commands::tables::OutputFormat;
 use crate::commands::tests::support::{Answer, TestServer};
 
-use super::super::api::ApiError;
+use super::super::api::{ApiError, Reply, interpret};
 use super::super::{KeysCommand, KeysError};
 use super::support;
-use super::support::{Fixture, generate, list};
+use super::support::{Fixture, list};
 
 #[test]
 fn client_strips_every_trailing_slash_from_the_base_url() {
@@ -45,26 +49,23 @@ fn client_adds_bearer_only_when_a_key_is_given(
 
 #[test]
 fn client_uses_the_thirty_second_request_timeout() {
-    assert_eq!(
-        crate::commands::REQUEST_TIMEOUT,
-        std::time::Duration::from_secs(30)
-    );
+    assert_eq!(REQUEST_TIMEOUT, Duration::from_secs(30));
 }
 
 #[test]
 fn client_reports_the_status_reason_method_and_url() {
-    let server = TestServer::start(vec![Answer::json(422, "{}")]);
-    let fixture = Fixture::new(&server, None);
+    let reply = Reply {
+        method: Method::POST,
+        url: String::from("http://proxy.test/key/generate"),
+        status: 422,
+        body: b"{}".to_vec(),
+    };
 
-    let (result, _stdout, _stderr) = support::run(KeysCommand::Generate(generate()), &fixture);
+    let error = interpret(&reply, None).expect_err("a 422 is an HTTP error");
 
-    let error = result.expect_err("a 422 is an HTTP error");
     assert_eq!(
         error.to_string(),
-        format!(
-            "HTTP 422 Unprocessable Entity for POST {}/key/generate",
-            server.base_url
-        )
+        "HTTP 422 Unprocessable Entity for POST http://proxy.test/key/generate"
     );
 }
 

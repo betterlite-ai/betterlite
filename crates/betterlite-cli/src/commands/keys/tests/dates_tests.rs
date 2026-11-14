@@ -27,15 +27,15 @@ fn dates_rejects_other_created_since_text(#[case] text: &str) {
 }
 
 #[rstest]
-#[case::plain("2024-05-01T23:30:00")]
-#[case::fraction("2024-05-01T23:30:00.123456")]
-#[case::utc("2024-05-01T23:30:00Z")]
-#[case::offset("2024-05-01T23:30:00+02:00")]
-#[case::negative_offset("2024-05-01T23:30:00-02:00")]
-fn dates_reads_a_created_at_wall_time(#[case] text: &str) {
+#[case::plain("2024-05-01T23:30:00", 0)]
+#[case::fraction("2024-05-01T23:30:00.123456", 123_456)]
+#[case::utc("2024-05-01T23:30:00Z", 0)]
+#[case::offset("2024-05-01T23:30:00+02:00", 0)]
+#[case::negative_offset("2024-05-01T23:30:00-02:00", 0)]
+fn dates_reads_a_created_at_wall_time(#[case] text: &str, #[case] micros: u32) {
     let expected = NaiveDate::from_ymd_opt(2024, 5, 1)
         .unwrap()
-        .and_hms_opt(23, 30, 0)
+        .and_hms_micro_opt(23, 30, 0, micros)
         .unwrap();
     assert_eq!(dates::parse_created_at(text).unwrap(), expected);
 }
