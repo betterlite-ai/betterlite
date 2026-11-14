@@ -13,7 +13,7 @@ use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_core::routes::CallType;
 
 use crate::guardrail_base::GuardrailBase;
-use crate::guardrail_base::failure::{GuardrailFailure, SensitiveDataRouteFailure};
+use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::settings::GuardrailSettings;
 use crate::guardrail_deployment::hook_target::{
     DeploymentHookTarget, HookTarget, PreCallOutcome, StampedKeyFields,
@@ -156,13 +156,15 @@ impl DeploymentHookTarget for Recorder {
         data: &mut Data,
         response: GuardrailValue,
     ) -> Result<Option<GuardrailValue>, GuardrailFailure> {
-        self.post_calls.lock().unwrap().push(PostCallSeen {
+        let answer = self.post.clone();
+        let seen = PostCallSeen {
             target,
             key: key.clone(),
             data: data.clone(),
             response,
-        });
-        self.post.clone()
+        };
+        self.post_calls.lock().unwrap().push(seen);
+        answer
     }
 }
 
@@ -281,9 +283,10 @@ pub(super) fn with_hook(mut base: GuardrailBase, hook: &str) -> GuardrailBase {
     base
 }
 
-pub(super) fn tagged() -> GuardrailBase {
+pub(super) fn tagged(hook: &str) -> GuardrailBase {
     let mut base = guardrail(Some("g"));
-    base.settings.event_hook = Some(serde_json::from_str(r#"{"tags":{"a":"pre_call"}}"#).unwrap());
+    let tags = format!(r#"{{"tags":{{"a":"{hook}"}}}}"#);
+    base.settings.event_hook = Some(serde_json::from_str(&tags).unwrap());
     base
 }
 
@@ -292,7 +295,7 @@ pub(super) fn key(user: Option<&str>) -> StampedKeyFields {
         user_id: user.map(str::to_owned),
         team_id: None,
         end_user_id: None,
-        api_key: None,
+        api_key_hash: None,
         request_route: None,
     }
 }
@@ -340,17 +343,6 @@ pub(super) fn rejected(message: &str) -> MessagesHookError {
 
 pub(super) fn pre_call_guardrail() -> GuardrailBase {
     with_hook(guardrail(Some("g")), "pre_call")
-}
-
-pub(super) fn reroute(name: Option<&str>) -> GuardrailFailure {
-    GuardrailFailure::SensitiveDataRoute(Box::new(SensitiveDataRouteFailure {
-        route_to_model: "safe-model".to_owned(),
-        session_id: "s".to_owned(),
-        guardrail_name: name.map(str::to_owned),
-        detection_info: Data::new(),
-        message: None,
-        sticky_session_routing: true,
-    }))
 }
 
 pub(super) fn legacy_call<'call>(

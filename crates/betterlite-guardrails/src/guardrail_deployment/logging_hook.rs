@@ -75,11 +75,6 @@ fn output_translation<'registry, T>(
         .ok_or(LoggingHookError::NoOutputTranslation)
 }
 
-fn parse_call_type(name: &str) -> Option<CallType> {
-    let text: StrDeserializer<'_, TextError> = name.into_deserializer();
-    CallType::deserialize(text).ok()
-}
-
 // The response LiteLLM scans: the assembled streaming response when there is one, else the call's result
 fn logged_response(kwargs: &Data, result: &GuardrailValue) -> (Option<GuardrailValue>, bool) {
     for key in [
@@ -96,18 +91,22 @@ fn logged_response(kwargs: &Data, result: &GuardrailValue) -> (Option<GuardrailV
     (result_found, false)
 }
 
+// logged[outer][inner]; a missing or null outer is just absent
+fn logged_inner<'kwargs>(
+    kwargs: &'kwargs Data,
+    outer: &'static str,
+    inner: &str,
+) -> Result<Option<&'kwargs GuardrailValue>, LoggingHookError> {
+    match kwargs.get(outer) {
+        None | Some(GuardrailValue::Null) => Ok(None),
+        Some(GuardrailValue::Object(fields)) => Ok(fields.get(inner)),
+        Some(_) => Err(LoggingHookError::NotObject { field: outer }),
+    }
+}
+
 // The logged request's metadata without the verdict record, so the scan writes a fresh one
 fn scratch_metadata(kwargs: &Data) -> Result<Data, LoggingHookError> {
-    let metadata = match kwargs.get("litellm_params") {
-        None | Some(GuardrailValue::Null) => return Ok(Data::new()),
-        Some(GuardrailValue::Object(params)) => params.get("metadata"),
-        Some(_) => {
-            return Err(LoggingHookError::NotObject {
-                field: "litellm_params",
-            });
-        }
-    };
-    match metadata {
+    match logged_inner(kwargs, "litellm_params", "metadata")? {
         None | Some(GuardrailValue::Null) => Ok(Data::new()),
         Some(GuardrailValue::Object(fields)) => Ok(fields
             .iter()
@@ -116,18 +115,6 @@ fn scratch_metadata(kwargs: &Data) -> Result<Data, LoggingHookError> {
             .collect()),
         Some(_) => Err(LoggingHookError::NotObject {
             field: "litellm_params.metadata",
-        }),
-    }
-}
-
-fn logged_tools(kwargs: &Data) -> Result<GuardrailValue, LoggingHookError> {
-    match kwargs.get("optional_params") {
-        None | Some(GuardrailValue::Null) => Ok(GuardrailValue::Null),
-        Some(GuardrailValue::Object(params)) => {
-            Ok(params.get("tools").cloned().unwrap_or(GuardrailValue::Null))
-        }
-        Some(_) => Err(LoggingHookError::NotObject {
-            field: "optional_params",
         }),
     }
 }
@@ -177,7 +164,10 @@ async fn scan_logged_call<T: BaseTranslation>(
     kwargs: &Data,
     metadata: &mut Data,
 ) -> Result<(), ScanFailure<T::Failure>> {
-    let tools = logged_tools(kwargs).map_err(ScanFailure::Request)?;
+    let tools = logged_inner(kwargs, "optional_params", "tools")
+        .map_err(ScanFailure::Request)?
+        .cloned()
+        .unwrap_or(GuardrailValue::Null);
     let mut request = scratch_request(kwargs, tools, mem::take(metadata));
     let scanned = run_scan(scan, &mut request).await;
     if let Some(GuardrailValue::Object(returned)) = request.remove("metadata") {
@@ -232,7 +222,10 @@ impl GuardrailBase {
             return Ok(call.kwargs);
         }
         let name = self.settings.guardrail_name.as_deref().unwrap_or("None");
-        let Some(input) = parse_call_type(call.call_type).and_then(|kind| registry.get(kind))
+        let kind: StrDeserializer<'_, TextError> = call.call_type.into_deserializer();
+        let Some(input) = CallType::deserialize(kind)
+            .ok()
+            .and_then(|kind| registry.get(kind))
         else {
             tracing::debug!(
                 "Guardrail {name}: no guardrail translation for call_type={}, skipping logging_only scan",

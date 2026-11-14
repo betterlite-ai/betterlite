@@ -1,7 +1,7 @@
 mod hooks;
 mod scan;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
@@ -66,25 +66,14 @@ pub(crate) enum Input {
         settings: Settings,
         kwargs: Data,
         call_type: Option<CallType>,
-        suppressed: Vec<String>,
+        suppressed: BTreeSet<String>,
     },
     DeploymentPost {
         #[serde(flatten)]
         settings: Settings,
         request_data: Data,
-        suppressed: Vec<String>,
+        suppressed: BTreeSet<String>,
     },
-}
-
-fn refusal(class: &str, message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
 }
 
 fn guardrail_of(settings: &Settings) -> GuardrailBase {
@@ -103,13 +92,6 @@ fn guardrail_of(settings: &Settings) -> GuardrailBase {
     base
 }
 
-fn marked(settings: &Settings, data: &Data) -> Value {
-    let mut scratch = data.clone();
-    guardrail_of(settings)
-        .mark_pre_call_hook_ran(&PreCallToken(FIXED_TOKEN.to_owned()), &mut scratch);
-    json!(scratch)
-}
-
 async fn dispatch(input: &Input) -> Result<Value, Box<HelperError>> {
     match input {
         Input::ScanFilter {
@@ -117,15 +99,22 @@ async fn dispatch(input: &Input) -> Result<Value, Box<HelperError>> {
             texts,
             cached,
             data,
-        } => Ok(scan::filter(settings, texts.as_deref(), cached, data).await),
+        } => Ok(scan::scan(settings, texts.as_deref(), cached, data, false).await),
         Input::ScanMark {
             settings,
             texts,
             existing,
             data,
-        } => Ok(scan::mark(settings, texts.as_deref(), existing, data).await),
-        Input::MarkPreCall { settings, data } => Ok(marked(settings, data)),
-        Input::AlreadyRan { settings, data } => hooks::already_ran(settings, data).await,
+        } => Ok(scan::scan(settings, texts.as_deref(), existing, data, true).await),
+        Input::MarkPreCall { settings, data } => {
+            let mut scratch = data.clone();
+            let token = PreCallToken(FIXED_TOKEN.to_owned());
+            guardrail_of(settings).mark_pre_call_hook_ran(&token, &mut scratch);
+            Ok(json!(scratch))
+        }
+        Input::AlreadyRan { settings, data } => Ok(Value::Bool(
+            hooks::probed_keys(settings, data).await?.is_empty(),
+        )),
         Input::StampedKeyFields { settings, data } => hooks::stamped(settings, data).await,
         Input::DeploymentPre {
             settings,

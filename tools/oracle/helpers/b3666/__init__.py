@@ -1,8 +1,8 @@
 import asyncio
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from functools import partial
-from typing import Literal, TypeAlias, TypedDict
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict
 
 from litellm.caching.dual_cache import DualCache
 from litellm.integrations.custom_guardrail import CustomGuardrail
@@ -16,10 +16,13 @@ from typing_extensions import override
 
 EventHook: TypeAlias = GuardrailEventHooks | list[GuardrailEventHooks] | Mode | None
 # The request dict LiteLLM declares as dict[str, object]: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L480
-Request: TypeAlias = dict[str, object]  # ast-grep-ignore: no-loose-types
-FIXED_TOKEN = "fixed-token"
-REQUEST = TypeAdapter(Request)
-WIRE = TypeAdapter(dict[str, Json])
+Request: TypeAlias = dict[str, object]
+# LiteLLM returns LLMResponseTypes | None and the helper only asks whether it is None: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L905-L910
+Response: TypeAlias = object
+FIXED_MARKER: Final = "fixed-token"
+REQUEST: Final[TypeAdapter[Request]] = TypeAdapter(Request)
+WIRE: Final[TypeAdapter[dict[str, Json]]] = TypeAdapter(dict[str, Json])
+JSON: Final[TypeAdapter[Json]] = TypeAdapter(Json)
 
 
 class Settings(TypedDict):
@@ -45,18 +48,8 @@ class ScanMarkInput(Settings):
     data: dict[str, Json]
 
 
-class MarkPreCallInput(Settings):
-    function: Literal["mark_pre_call"]
-    data: dict[str, Json]
-
-
-class AlreadyRanInput(Settings):
-    function: Literal["already_ran"]
-    data: dict[str, Json]
-
-
-class StampedInput(Settings):
-    function: Literal["stamped_key_fields"]
+class DataInput(Settings):
+    function: Literal["mark_pre_call", "already_ran", "stamped_key_fields"]
     data: dict[str, Json]
 
 
@@ -76,9 +69,7 @@ class DeploymentPostInput(Settings):
 Input: TypeAlias = (
     ScanFilterInput
     | ScanMarkInput
-    | MarkPreCallInput
-    | AlreadyRanInput
-    | StampedInput
+    | DataInput
     | DeploymentPreInput
     | DeploymentPostInput
 )
@@ -92,17 +83,30 @@ class Marked(TypedDict):
     metadata: Executed
 
 
+class Hooked(Protocol):
+    keys: list[UserAPIKeyAuth]
+
+    def mark_pre_call_hook_ran(self, data: Request) -> None: ...
+
+    async def async_pre_call_deployment_hook(
+        self, kwargs: Request, call_type: CallTypes | None
+    ) -> Request | None: ...
+
+    async def async_post_call_success_deployment_hook(
+        self, request_data: Request, response: ModelResponse, call_type: CallTypes | None
+    ) -> Response | None: ...
+
+    async def filter_new_texts_for_session(
+        self, texts: list[str] | None, request_data: Request, cache: DualCache
+    ) -> list[str] | None: ...
+
+    async def mark_texts_scanned(
+        self, texts: list[str] | None, request_data: Request, cache: DualCache
+    ) -> None: ...
+
+
 class Probe(CustomGuardrail):
-    def __init__(self, settings: Settings) -> None:
-        super().__init__(
-            guardrail_name=settings["guardrail_name"],
-            event_hook=TypeAdapter(EventHook).validate_python(settings["event_hook"]),
-            default_on=settings["default_on"],
-            only_scan_new_messages=settings["only_scan_new_messages"],
-            mask_request_content=settings["mask_request_content"],
-            mask_response_content=settings["mask_response_content"],
-        )
-        self.keys: list[UserAPIKeyAuth] = []
+    keys: list[UserAPIKeyAuth]
 
     @override
     async def async_pre_call_hook(
@@ -112,7 +116,6 @@ class Probe(CustomGuardrail):
         data: dict[str, Json],
         call_type: str,
     ) -> dict[str, Json]:
-        del cache, data, call_type
         self.keys.append(user_api_key_dict)
         return {"messages": [{"role": "user", "content": "hooked"}]}
 
@@ -123,21 +126,38 @@ class Probe(CustomGuardrail):
         user_api_key_dict: UserAPIKeyAuth,
         response: LLMResponseTypes,
     ) -> ModelResponse:
-        del data, user_api_key_dict, response
         return ModelResponse()
 
 
 class StoredCache(DualCache):
     def __init__(self) -> None:
         super().__init__()
+        self.entries: dict[str, list[str]] = {}
         self.last: list[str] = []
+
+    @override
+    async def async_get_cache(self, key: str, *args: Json, **kwargs: Json) -> list[str] | None:
+        return self.entries.get(key)
 
     @override
     async def async_set_cache(
         self, key: str, value: list[str], local_only: bool = False, **kwargs: Json
     ) -> None:
+        self.entries[key] = value
         self.last = value
-        await super().async_set_cache(key, value, local_only, **kwargs)
+
+
+def build_probe(settings: Settings) -> Hooked:
+    probe = Probe(
+        guardrail_name=settings["guardrail_name"],
+        event_hook=TypeAdapter(EventHook).validate_python(settings["event_hook"]),
+        default_on=settings["default_on"],
+        only_scan_new_messages=settings["only_scan_new_messages"],
+        mask_request_content=settings["mask_request_content"],
+        mask_response_content=settings["mask_response_content"],
+    )
+    probe.keys = []
+    return probe
 
 
 def pre_call_token() -> str:
@@ -148,12 +168,8 @@ def pre_call_token() -> str:
     return marked["metadata"]["_pre_call_executed_guardrails"][0].removesuffix(":probe")
 
 
-def swap(value: Request, old: str, new: str) -> Request:
-    return REQUEST.validate_json(REQUEST.dump_json(value).decode().replace(old, new))
-
-
 @contextmanager
-def suppressing(names: list[str]) -> Iterator[None]:
+def suppressing(names: list[str]) -> Generator[None]:
     original = auto_router_compression.suppressed_compression_guardrails
     auto_router_compression.suppressed_compression_guardrails = partial(frozenset, names)
     try:
@@ -172,41 +188,44 @@ async def seeded(name: str | None, texts: list[str], data: dict[str, Json]) -> S
         mask_request_content=False,
         mask_response_content=False,
     )
-    await Probe(seeding).mark_texts_scanned(texts, REQUEST.validate_python(data), cache)
+    await build_probe(seeding).mark_texts_scanned(texts, REQUEST.validate_python(data), cache)
     return cache
 
 
 async def scan_filter(args: ScanFilterInput) -> Json:
     cache = await seeded(args["guardrail_name"], args["cached"], args["data"])
-    return await Probe(args).filter_new_texts_for_session(
-        args["texts"], REQUEST.validate_python(args["data"]), cache
-    )
+    request = REQUEST.validate_python(args["data"])
+    kept = await build_probe(args).filter_new_texts_for_session(args["texts"], request, cache)
+    return JSON.validate_python(kept)
 
 
 async def scan_mark(args: ScanMarkInput) -> Json:
     cache = await seeded(args["guardrail_name"], args["existing"], args["data"])
-    data = REQUEST.validate_python(args["data"])
-    await Probe(args).mark_texts_scanned(args["texts"], data, cache)
-    return cache.last
+    request = REQUEST.validate_python(args["data"])
+    await build_probe(args).mark_texts_scanned(args["texts"], request, cache)
+    return JSON.validate_python(cache.last)
 
 
-def mark_pre_call(args: MarkPreCallInput) -> Json:
+def mark_pre_call(args: DataInput) -> Json:
     token = pre_call_token()
-    scratch = swap(REQUEST.validate_python(args["data"]), FIXED_TOKEN, token)
-    Probe(args).mark_pre_call_hook_ran(scratch)
-    return WIRE.validate_python(swap(scratch, token, FIXED_TOKEN))
+    scratch = REQUEST.validate_json(
+        WIRE.dump_json(args["data"]).decode().replace(FIXED_MARKER, token)
+    )
+    build_probe(args).mark_pre_call_hook_ran(scratch)
+    return WIRE.validate_json(REQUEST.dump_json(scratch).decode().replace(token, FIXED_MARKER))
 
 
-async def already_ran(args: AlreadyRanInput) -> Json:
+async def already_ran(args: DataInput) -> Json:
     token = pre_call_token()
-    kwargs = swap({"guardrails": [], **args["data"]}, FIXED_TOKEN, token)
-    probe = Probe(args)
+    data = WIRE.dump_json({"guardrails": [], **args["data"]}).decode()
+    kwargs = REQUEST.validate_json(data.replace(FIXED_MARKER, token))
+    probe = build_probe(args)
     await probe.async_pre_call_deployment_hook(kwargs, CallTypes.completion)
     return not probe.keys
 
 
-async def stamped_key_fields(args: StampedInput) -> Json:
-    probe = Probe(args)
+async def stamped_key_fields(args: DataInput) -> Json:
+    probe = build_probe(args)
     kwargs = REQUEST.validate_python({"guardrails": [], **args["data"]})
     await probe.async_pre_call_deployment_hook(kwargs, CallTypes.completion)
     [key] = probe.keys
@@ -221,20 +240,22 @@ async def stamped_key_fields(args: StampedInput) -> Json:
 
 async def pre_hook(args: DeploymentPreInput) -> Json:
     token = pre_call_token()
-    kwargs = swap(REQUEST.validate_python(args["kwargs"]), FIXED_TOKEN, token)
+    kwargs = REQUEST.validate_json(
+        WIRE.dump_json(args["kwargs"]).decode().replace(FIXED_MARKER, token)
+    )
     call_type = None if args["call_type"] is None else CallTypes(args["call_type"])
     try:
         with suppressing(args["suppressed"]):
-            await Probe(args).async_pre_call_deployment_hook(kwargs, call_type)
+            await build_probe(args).async_pre_call_deployment_hook(kwargs, call_type)
     except ImportError:
         return "rejected"
-    return WIRE.validate_python(swap(kwargs, token, FIXED_TOKEN))
+    return WIRE.validate_json(REQUEST.dump_json(kwargs).decode().replace(token, FIXED_MARKER))
 
 
 async def post_hook(args: DeploymentPostInput) -> Json:
     try:
         with suppressing(args["suppressed"]):
-            result = await Probe(args).async_post_call_success_deployment_hook(
+            result = await build_probe(args).async_post_call_success_deployment_hook(
                 REQUEST.validate_python(args["request_data"]), ModelResponse(), None
             )
     except ImportError:
@@ -245,16 +266,17 @@ async def post_hook(args: DeploymentPostInput) -> Json:
 def run(input_value: Input) -> dict[str, Json]:
     match input_value["function"]:
         case "scan_filter":
-            return {"result": asyncio.run(scan_filter(input_value))}
+            result = asyncio.run(scan_filter(input_value))
         case "scan_mark":
-            return {"result": asyncio.run(scan_mark(input_value))}
+            result = asyncio.run(scan_mark(input_value))
         case "mark_pre_call":
-            return {"result": mark_pre_call(input_value)}
+            result = mark_pre_call(input_value)
         case "already_ran":
-            return {"result": asyncio.run(already_ran(input_value))}
+            result = asyncio.run(already_ran(input_value))
         case "stamped_key_fields":
-            return {"result": asyncio.run(stamped_key_fields(input_value))}
+            result = asyncio.run(stamped_key_fields(input_value))
         case "deployment_pre":
-            return {"result": asyncio.run(pre_hook(input_value))}
+            result = asyncio.run(pre_hook(input_value))
         case "deployment_post":
-            return {"result": asyncio.run(post_hook(input_value))}
+            result = asyncio.run(post_hook(input_value))
+    return {"result": result}

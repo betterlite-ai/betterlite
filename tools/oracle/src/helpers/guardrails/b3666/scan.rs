@@ -48,29 +48,25 @@ async fn seeded(settings: &Settings, texts: &[String], data: &Data) -> Store {
     store
 }
 
-pub(super) async fn filter(
+// Seeds the cache with `seed`, then either marks `texts` as scanned (and answers the list written) or filters them
+pub(super) async fn scan(
     settings: &Settings,
     texts: Option<&[String]>,
-    cached: &[String],
+    seed: &[String],
     data: &Data,
+    marking: bool,
 ) -> Value {
-    let store = seeded(settings, cached, data).await;
-    let filtered = guardrail_of(settings)
-        .filter_new_texts_for_session(texts, data, &store)
-        .await;
-    json!(filtered)
-}
-
-pub(super) async fn mark(
-    settings: &Settings,
-    texts: Option<&[String]>,
-    existing: &[String],
-    data: &Data,
-) -> Value {
-    let store = seeded(settings, existing, data).await;
-    guardrail_of(settings)
-        .mark_texts_scanned(texts, data, &store, SCAN_TTL_SECONDS)
-        .await;
-    let last = store.last.lock().await.clone();
-    json!(last)
+    let store = seeded(settings, seed, data).await;
+    let guardrail = guardrail_of(settings);
+    if marking {
+        guardrail
+            .mark_texts_scanned(texts, data, &store, SCAN_TTL_SECONDS)
+            .await;
+        return json!(*store.last.lock().await);
+    }
+    json!(
+        guardrail
+            .filter_new_texts_for_session(texts, data, &store)
+            .await
+    )
 }

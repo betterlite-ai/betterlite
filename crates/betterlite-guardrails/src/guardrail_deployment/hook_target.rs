@@ -22,7 +22,7 @@ pub struct StampedKeyFields {
     pub user_id: Option<String>,
     pub team_id: Option<String>,
     pub end_user_id: Option<String>,
-    pub api_key: Option<String>,
+    pub api_key_hash: Option<String>,
     pub request_route: Option<String>,
 }
 
@@ -79,7 +79,7 @@ pub fn stamped_key_fields(data: &Data) -> StampedKeyFields {
         user_id: text("user_api_key_user_id"),
         team_id: text("user_api_key_team_id"),
         end_user_id: text("user_api_key_end_user_id"),
-        api_key: text("user_api_key_hash"),
+        api_key_hash: text("user_api_key_hash"),
         request_route: text("user_api_key_request_route"),
     }
 }

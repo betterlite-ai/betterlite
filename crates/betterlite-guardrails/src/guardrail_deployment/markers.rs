@@ -39,32 +39,32 @@ impl GuardrailBase {
             return;
         };
         let marker = GuardrailValue::Text(text);
-        for location in ["metadata", "litellm_metadata"] {
-            let Some(GuardrailValue::Object(bucket)) = data.get_mut(location) else {
-                continue;
-            };
-            match bucket.get_mut(PRE_CALL_EXECUTED_KEY) {
-                Some(GuardrailValue::Array(executed)) => {
-                    if !executed.contains(&marker) {
-                        executed.push(marker);
-                    }
-                }
-                _ => {
-                    bucket.insert(
-                        PRE_CALL_EXECUTED_KEY.to_owned(),
-                        GuardrailValue::Array(vec![marker]),
-                    );
-                }
-            }
+        let found = ["metadata", "litellm_metadata"]
+            .into_iter()
+            .find(|name| matches!(data.get(*name), Some(GuardrailValue::Object(_))));
+        let location = if let Some(name) = found {
+            name
+        } else {
+            data.insert(
+                "metadata".to_owned(),
+                GuardrailValue::Object(BTreeMap::new()),
+            );
+            "metadata"
+        };
+        let Some(GuardrailValue::Object(bucket)) = data.get_mut(location) else {
             return;
+        };
+        let executed = bucket
+            .entry(PRE_CALL_EXECUTED_KEY.to_owned())
+            .or_insert_with(|| GuardrailValue::Array(Vec::new()));
+        if !matches!(executed, GuardrailValue::Array(_)) {
+            *executed = GuardrailValue::Array(Vec::new());
         }
-        data.insert(
-            "metadata".to_owned(),
-            GuardrailValue::Object(BTreeMap::from([(
-                PRE_CALL_EXECUTED_KEY.to_owned(),
-                GuardrailValue::Array(vec![marker]),
-            )])),
-        );
+        if let GuardrailValue::Array(list) = executed
+            && !list.contains(&marker)
+        {
+            list.push(marker);
+        }
     }
 
     // True when the marker is in the list of either bucket

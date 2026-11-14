@@ -3,7 +3,7 @@
 mod fixtures;
 
 use rstest::rstest;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -16,12 +16,12 @@ use super::logging_hook::{LoggedCall, LoggedResultKind, LoggingHookError};
 use super::markers::PreCallToken;
 use super::messages_hook::MessagesHookError;
 use crate::guardrail_base::GuardrailBase;
-use crate::guardrail_base::failure::GuardrailFailure;
+use crate::guardrail_base::failure::{GuardrailFailure, SensitiveDataRouteFailure};
 use fixtures::{
     GIVEN, GUARDED, HOOKED, LOGGED, PostCallSeen, PreCallSeen, Recorder, SCAN_REQUEST, Scanner,
     VERDICT, applying, boom, capture, data, given, guardrail, key, legacy_call, pre_call_guardrail,
-    pre_completion, record, recording_registry, registry, rejected, reroute, run_pre, scan_logged,
-    shared, tag_mode_error, tagged, token, two_translations, value, with_hook,
+    pre_completion, record, recording_registry, registry, rejected, run_pre, scan_logged, shared,
+    tag_mode_error, tagged, token, two_translations, value, with_hook,
 };
 
 #[test]
@@ -138,7 +138,7 @@ fn stamped_reads_every_field_from_metadata() {
         user_id: Some("u".to_owned()),
         team_id: Some("t".to_owned()),
         end_user_id: Some("e".to_owned()),
-        api_key: Some("h".to_owned()),
+        api_key_hash: Some("h".to_owned()),
         request_route: Some("/chat".to_owned()),
     };
     assert_eq!(stamped_key_fields(&request), expected);
@@ -355,7 +355,13 @@ async fn pre_hook_returns_what_the_hook_raised() {
 #[tokio::test]
 async fn pre_hook_tag_mode_is_an_error_even_without_a_call_type() {
     let hooks = Recorder::answering(PreCallOutcome::Unchanged);
-    let result = run_pre(&tagged(), &hooks, data(r#"{"guardrails":["g"]}"#), None).await;
+    let result = run_pre(
+        &tagged("pre_call"),
+        &hooks,
+        data(r#"{"guardrails":["g"]}"#),
+        None,
+    )
+    .await;
     assert_eq!(result, Err(tag_mode_error()));
     assert!(hooks.pre_calls().is_empty());
 }
@@ -366,7 +372,7 @@ async fn pre_hook_checks_the_marker_before_the_gate() {
     let request =
         data(r#"{"guardrails":["g"],"metadata":{"_pre_call_executed_guardrails":["tok:g"]}}"#);
     let result = run_pre(
-        &tagged(),
+        &tagged("pre_call"),
         &hooks,
         request.clone(),
         Some(CallType::Completion),
@@ -421,7 +427,7 @@ async fn post_hook_returns_none_when_the_hook_changes_nothing() {
 async fn post_hook_skips_a_request_without_a_guardrails_list(#[case] request: &str) {
     let hooks = Recorder::post_answering(Ok(Some(value("1"))));
     let mut body = data(request);
-    let result = tagged()
+    let result = tagged("post_call")
         .post_call_deployment_hook(&hooks, &BTreeSet::new(), &mut body, value("{}"))
         .await
         .unwrap();
@@ -452,7 +458,7 @@ async fn post_hook_skips_a_guardrail_the_gate_turns_off(
 async fn post_hook_tag_mode_is_an_error() {
     let hooks = Recorder::post_answering(Ok(None));
     let mut request = data(r#"{"guardrails":["g"]}"#);
-    let result = tagged()
+    let result = tagged("post_call")
         .post_call_deployment_hook(&hooks, &BTreeSet::new(), &mut request, value("{}"))
         .await;
     assert_eq!(result, Err(tag_mode_error()));
@@ -537,6 +543,18 @@ async fn messages_hook_fails_with_the_hooks_failure(#[case] hooks: Recorder) {
             event_hook: Some(LitellmParamsMode::One("pre_call".to_owned())),
         })
     );
+}
+
+fn reroute(name: Option<&str>) -> GuardrailFailure {
+    let route = Box::new(SensitiveDataRouteFailure {
+        route_to_model: "safe-model".to_owned(),
+        session_id: "s".to_owned(),
+        guardrail_name: name.map(str::to_owned),
+        detection_info: BTreeMap::new(),
+        message: None,
+        sticky_session_routing: true,
+    });
+    GuardrailFailure::SensitiveDataRoute(route)
 }
 
 #[rstest]

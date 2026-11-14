@@ -12,8 +12,8 @@ use betterlite_guardrails::guardrail_selection::error::GuardrailSelectionError;
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
 
-use super::{Data, FIXED_TOKEN, Settings, guardrail_of, refusal};
-use crate::helpers::HelperError;
+use super::{Data, FIXED_TOKEN, Settings, guardrail_of};
+use crate::helpers::{HelperError, OrHelperError as _};
 
 // Both sides run the same hook and note the key fields it was handed
 #[derive(Default)]
@@ -54,19 +54,19 @@ impl DeploymentHookTarget for Probe {
     }
 }
 
-// The Python probe sends the same request, with an empty guardrails list unless the case sets one
-fn with_empty_guardrails(data: &Data) -> Data {
-    let mut kwargs = BTreeMap::from([("guardrails".to_owned(), GuardrailValue::Array(Vec::new()))]);
-    kwargs.extend(data.clone());
-    kwargs
-}
-
-fn hook_failure(error: DeploymentHookError) -> Result<Value, Box<HelperError>> {
-    match error {
-        DeploymentHookError::Selection(GuardrailSelectionError::TagMode { .. }) => {
+// A tag-mode rejection is an answer both sides give; any other failure is a refusal
+fn verdict<T, F>(
+    outcome: Result<T, DeploymentHookError>,
+    shape: F,
+) -> Result<Value, Box<HelperError>>
+where
+    F: FnOnce(T) -> Value,
+{
+    match outcome {
+        Err(DeploymentHookError::Selection(GuardrailSelectionError::TagMode { .. })) => {
             Ok(json!("rejected"))
         }
-        other => Err(refusal("DeploymentHookError", other.to_string())),
+        other => other.map(shape).or_value_error(),
     }
 }
 
@@ -74,90 +74,66 @@ pub(super) async fn pre_hook(
     settings: &Settings,
     kwargs: &Data,
     call_type: Option<CallType>,
-    suppressed: &[String],
+    suppressed: &BTreeSet<String>,
 ) -> Result<Value, Box<HelperError>> {
     let token = PreCallToken(FIXED_TOKEN.to_owned());
-    let names: BTreeSet<String> = suppressed.iter().cloned().collect();
     let context = PreCallContext {
         token: &token,
-        suppressed: &names,
+        suppressed,
     };
     let outcome = guardrail_of(settings)
         .pre_call_deployment_hook(&Probe::default(), &context, kwargs.clone(), call_type)
         .await;
-    match outcome {
-        Ok(result) => Ok(json!(result)),
-        Err(error) => hook_failure(error),
-    }
+    verdict(outcome, |result| json!(result))
 }
 
 pub(super) async fn post_hook(
     settings: &Settings,
     request_data: &Data,
-    suppressed: &[String],
+    suppressed: &BTreeSet<String>,
 ) -> Result<Value, Box<HelperError>> {
-    let names: BTreeSet<String> = suppressed.iter().cloned().collect();
     let mut data = request_data.clone();
     let outcome = guardrail_of(settings)
         .post_call_deployment_hook(
             &Probe::default(),
-            &names,
+            suppressed,
             &mut data,
             GuardrailValue::Object(BTreeMap::new()),
         )
         .await;
-    match outcome {
-        Ok(result) => Ok(Value::Bool(result.is_some())),
-        Err(error) => hook_failure(error),
-    }
+    verdict(outcome, |result| Value::Bool(result.is_some()))
 }
 
-// Runs the pre-call hook the way the Python probe does and gives back every key set the target was handed
-async fn probed_keys(
+// Runs the pre-call hook as the Python probe does, with an empty guardrails list unless the case sets one
+pub(super) async fn probed_keys(
     settings: &Settings,
     data: &Data,
 ) -> Result<Vec<StampedKeyFields>, Box<HelperError>> {
     let token = PreCallToken(FIXED_TOKEN.to_owned());
-    let names = BTreeSet::new();
     let context = PreCallContext {
         token: &token,
-        suppressed: &names,
+        suppressed: &BTreeSet::new(),
     };
     let probe = Probe::default();
+    let mut kwargs = BTreeMap::from([("guardrails".to_owned(), GuardrailValue::Array(Vec::new()))]);
+    kwargs.extend(data.clone());
     guardrail_of(settings)
-        .pre_call_deployment_hook(
-            &probe,
-            &context,
-            with_empty_guardrails(data),
-            Some(CallType::Completion),
-        )
+        .pre_call_deployment_hook(&probe, &context, kwargs, Some(CallType::Completion))
         .await
-        .map_err(|error| refusal("DeploymentHookError", error.to_string()))?;
-    let keys = probe.keys.lock().await.clone();
-    Ok(keys)
-}
-
-pub(super) async fn already_ran(
-    settings: &Settings,
-    data: &Data,
-) -> Result<Value, Box<HelperError>> {
-    let keys = probed_keys(settings, data).await?;
-    Ok(Value::Bool(keys.is_empty()))
+        .or_value_error()?;
+    Ok(probe.keys.into_inner())
 }
 
 pub(super) async fn stamped(settings: &Settings, data: &Data) -> Result<Value, Box<HelperError>> {
     let keys = probed_keys(settings, data).await?;
     let [key] = keys.as_slice() else {
-        return Err(refusal(
-            "InputError",
-            "the hook did not run once".to_owned(),
-        ));
+        return Err::<Value, _>("the hook did not run once").or_value_error();
     };
     Ok(json!({
         "user_id": key.user_id,
         "team_id": key.team_id,
         "end_user_id": key.end_user_id,
-        "api_key": key.api_key,
+        "api_key": key.api_key_hash,
         "request_route": key.request_route,
     }))
 }
