@@ -69,6 +69,26 @@ fn rendered_headers(headers: &RequestHeaders) -> IndexMap<String, String> {
         .collect()
 }
 
+fn reply_answer(
+    status: u16,
+    headers: &[(String, String)],
+    body: &str,
+) -> Result<Value, Box<HelperError>> {
+    let mut map = HeaderMap::new();
+    for (name, value) in headers {
+        map.insert(
+            HeaderName::try_from(name.as_str()).or_config_error()?,
+            HeaderValue::try_from(value.as_str()).or_config_error()?,
+        );
+    }
+    let reply = UpstreamResponse {
+        status,
+        headers: map,
+        body: body.as_bytes().to_vec(),
+    };
+    outcome(decode_studio_transcription(&reply))
+}
+
 fn step(step: &Step) -> Result<Value, Box<HelperError>> {
     match step {
         Step::Supported => serde_json::to_value(SUPPORTED_PARAMS).or_config_error(),
@@ -105,21 +125,7 @@ fn step(step: &Step) -> Result<Value, Box<HelperError>> {
             status,
             headers,
             body,
-        } => {
-            let mut map = HeaderMap::new();
-            for (name, value) in headers {
-                map.insert(
-                    HeaderName::try_from(name.as_str()).or_config_error()?,
-                    HeaderValue::try_from(value.as_str()).or_config_error()?,
-                );
-            }
-            let reply = UpstreamResponse {
-                status: *status,
-                headers: map,
-                body: body.as_bytes().to_vec(),
-            };
-            outcome(decode_studio_transcription(&reply))
-        }
+        } => reply_answer(*status, headers, body),
     }
 }
 
