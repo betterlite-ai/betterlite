@@ -1,0 +1,8 @@
+task: B1710
+deviations:
+  - what: User-detail reads bind one native PostgreSQL array through B700's find_many_in instead of LiteLLM's sequential 5000-value membership statements.
+    why: B700 replaced chunked_in.find_many_in with a single = ANY($1) read, and this task's user lookup reuses that primitive; no live caller passes a chunk size.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/chunked_in.py#L76-L102
+  - what: A missing database pool is treated like a driver failure and yields empty attribution instead of raising.
+    why: betterlite reports an unconfigured pool as NoDbConnected inside the same catch boundary LiteLLM uses for driver errors; a working LiteLLM setup always has a Prisma client, so nothing relies on the exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/key_metadata_recovery.py#L169-L180

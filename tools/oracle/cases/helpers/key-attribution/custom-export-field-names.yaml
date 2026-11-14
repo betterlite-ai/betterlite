@@ -1,0 +1,28 @@
+kind: helper
+name: custom_export_field_names
+call:
+  key_attribution:
+    digest_values: []
+    cli_keys: []
+    double_hashed_keys: []
+    daily_keys: []
+    users:
+      - {user_id: u1, user_email: cli@example.com, teams: [team-a]}
+      - {user_id: u2, user_email: null, teams: [team-b]}
+    active_token_rows:
+      - {digest: '1111111111111111111111111111111111111111111111111111111111111111', key_alias: hashed-alias, team_id: hashed-team, user_id: u1}
+      - {digest: '3333333333333333333333333333333333333333333333333333333333333333', key_alias: ignored-alias, team_id: ignored-team, user_id: u2}
+    deleted_token_rows:
+      - {digest: abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd, key_alias: deleted-alias, team_id: deleted-team, user_id: null}
+    daily_owner_rows: []
+    attach_metadata: {}
+    export_rows:
+      - {key: cli-session-u1, label: '', team: null, mail: ''}
+      - {key: '1111111111111111111111111111111111111111111111111111111111111111', label: old, mail: row@example.com}
+      - {key: abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd, label: null}
+      - {key: sk-plain, label: kept, team: row-team}
+      - {key: '', label: null}
+      - {key: '1111111111111111111111111111111111111111111111111111111111111111'}
+    export_fields: {api_key: key, alias: label, team_id: team, user_email: mail}
+env: {}
+compare: {ignore: []}
