@@ -69,18 +69,11 @@ where
     }
 }
 
-// Python's int() takes surrounding whitespace, one sign and single underscores between digits
+// Python rejects a leading, trailing or doubled underscore, and i64::from_str rejects the rest
 fn parsed_integer(text: &str) -> Option<i64> {
     let trimmed = text.trim();
     let digits = trimmed.strip_prefix(['+', '-']).unwrap_or(trimmed);
-    if digits.is_empty()
-        || digits.starts_with('_')
-        || digits.ends_with('_')
-        || digits.contains("__")
-        || !digits
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || byte == b'_')
-    {
+    if digits.starts_with('_') || digits.ends_with('_') || digits.contains("__") {
         return None;
     }
     i64::from_str(&trimmed.replace('_', "")).ok()
