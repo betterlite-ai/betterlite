@@ -49,11 +49,11 @@ fn jina_reads_the_dictionary_and_not_the_formal_arguments() {
     let result = answer("jina-formals-versus-dictionary.yaml");
     assert_eq!(
         result["mapped"],
-        json!({"top_n": 1, "return_documents": true})
+        json!({"top_n": 1_i32, "return_documents": true})
     );
     assert_eq!(
         result["request"],
-        json!({"model": "jina-reranker-v2", "top_n": 1, "return_documents": true})
+        json!({"model": "jina-reranker-v2", "top_n": 1_i32, "return_documents": true})
     );
     assert_eq!(
         result["headers"],
@@ -102,7 +102,7 @@ fn an_empty_document_is_left_out_and_the_counters_are_read() {
     assert_eq!(response["results"][1]["document"], json!({"text": "b"}));
     assert_eq!(
         response["meta"]["tokens"],
-        json!({"input_tokens": 3, "output_tokens": 2})
+        json!({"input_tokens": 3_i32, "output_tokens": 2_i32})
     );
 }
 
@@ -119,19 +119,25 @@ fn the_output_counter_is_not_clamped_at_zero() {
     let result = answer("negative-output-and-token-cost.yaml");
     assert_eq!(
         result["response"]["meta"]["tokens"],
-        json!({"input_tokens": 10, "output_tokens": -6})
+        json!({"input_tokens": 10_i32, "output_tokens": -6_i32})
     );
-    assert_eq!(result["cost"], Value::Null);
 }
 
 #[test]
-fn jina_prices_the_total_tokens_and_the_output_is_free() {
-    let result = answer("jina-token-cost.yaml");
-    assert_eq!(result["cost"], json!([2.0, 0.0]));
-    assert_eq!(result["response"]["id"], FIXED_ID);
+fn jina_reply_is_decoded_and_the_raw_text_reaches_the_hook() {
+    let result = answer("jina-reply-and-hook.yaml");
+    let response = &result["response"];
+    assert_eq!(response["id"], "r");
+    assert_eq!(response["results"][0]["document"], json!({"text": "a"}));
     assert_eq!(
-        result["response"]["results"][0]["document"],
-        json!({"text": "a"})
+        response["meta"]["billed_units"],
+        json!({"total_tokens": 8_i32})
     );
-    assert_eq!(result["hook"].as_array().map(Vec::len), Some(1));
+    assert_eq!(response["meta"]["tokens"], json!({"input_tokens": 8_i32}));
+    assert_eq!(
+        result["hook"],
+        json!([
+            r#"{"id":"r","usage":{"total_tokens":8,"input_tokens":8},"results":[{"index":0,"relevance_score":0.5,"document":"a"}]}"#
+        ])
+    );
 }

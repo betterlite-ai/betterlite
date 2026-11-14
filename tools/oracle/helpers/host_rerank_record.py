@@ -1,30 +1,71 @@
 import os
+from collections.abc import Callable
 from datetime import UTC, datetime
-from types import SimpleNamespace
 from typing import Literal, NotRequired, Protocol, TypedDict
-from unittest.mock import patch
-from uuid import UUID
 
 import httpx
 import litellm
-import litellm.llms.infinity.rerank.transformation as infinity_module
-import litellm.llms.jina_ai.rerank.transformation as jina_module
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.infinity.rerank.transformation import InfinityRerankConfig
 from litellm.llms.jina_ai.rerank.transformation import JinaAIRerankConfig
-from litellm.types.rerank import RerankBilledUnits, RerankResponse
+from litellm.types.rerank import RerankResponse
 from pydantic import JsonValue, TypeAdapter
 
 Params = dict[str, JsonValue]
 Document = str | dict[str, JsonValue]
+OptText = str | None
+OptCount = int | None
 ADAPTER: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
-JINA_MODEL = "jina_ai/oracle-rerank"
+
+MapParams = Callable[
+    [
+        Params,
+        str,
+        bool,
+        str,
+        list[Document],
+        OptText,
+        OptCount,
+        list[str] | None,
+        bool | None,
+        OptCount,
+        OptCount,
+        OptText,
+    ],
+    Params,
+]
+
+
+class RerankConfig(Protocol):
+    @property
+    def map_cohere_rerank_params(self) -> MapParams: ...
+
+    def validate_environment(
+        self, headers: dict[str, str], model: str, api_key: OptText, optional_params: Params
+    ) -> dict[str, str]: ...
+
+    def get_complete_url(
+        self, api_base: OptText, model: str, optional_params: Params
+    ) -> str: ...
+
+    def transform_rerank_request(
+        self, model: str, optional_rerank_params: Params, headers: dict[str, str]
+    ) -> Params: ...
+
+    def transform_rerank_response(
+        self,
+        model: str,
+        raw_response: httpx.Response,
+        model_response: RerankResponse,
+        logging_obj: Logging,
+    ) -> RerankResponse: ...
 
 
 class Options(TypedDict):
     query: str
     documents: list[Document]
     top_n: NotRequired[int | None]
+    return_documents: NotRequired[bool | None]
 
 
 class Reply(TypedDict):
@@ -42,81 +83,88 @@ class Input(TypedDict):
     global_key: NotRequired[str | None]
     api_base: NotRequired[str | None]
     api_key: NotRequired[str | None]
-    input_cost_per_token: NotRequired[float | None]
     reply: NotRequired[Reply | None]
 
 
-class RerankConfig(Protocol):
-    def map_cohere_rerank_params(
-        self,
-        non_default_params: Params,
-        model: str,
-        drop_params: bool,
-        query: str,
-        documents: list[Document],
-        custom_llm_provider: str | None,
-        top_n: int | None,
-        rank_fields: list[str] | None,
-        return_documents: bool | None,
-        max_chunks_per_doc: int | None,
-        max_tokens_per_doc: int | None,
-        instruction: str | None,
-    ) -> Params: ...
+class Hook:
+    def __init__(self) -> None:
+        self.events: list[JsonValue] = []
 
-    def validate_environment(
-        self, headers: dict[str, str], model: str, api_key: str | None, optional_params: Params
-    ) -> dict[str, str]: ...
-
-    def get_complete_url(
-        self, api_base: str | None, model: str, optional_params: Params
-    ) -> str: ...
-
-    def transform_rerank_request(
-        self, model: str, optional_rerank_params: Params, headers: dict[str, str]
-    ) -> Params: ...
-
-    def transform_rerank_response(
-        self,
-        model: str,
-        raw_response: httpx.Response,
-        model_response: RerankResponse,
-        logging_obj: Logging,
-    ) -> RerankResponse: ...
+    def __call__(self, details: dict[str, JsonValue]) -> None:
+        self.events.append(details["original_response"])
 
 
-class Hook(list[JsonValue]):
-    def __call__(self, details: dict[str, object]) -> None:
-        self.append(ADAPTER.validate_python(details["original_response"]))
+class RecordingLogging(Logging):
+    logger_fn: Hook | None = None
 
 
-FIXED_UUID = SimpleNamespace(uuid4=lambda: UUID("00000000-0000-4000-8000-000000000001"))
+JINA: RerankConfig = JinaAIRerankConfig()
+INFINITY: RerankConfig = InfinityRerankConfig()
 
 
-def jina_cost(call: Input, billed: RerankBilledUnits | None) -> JsonValue:
-    litellm.register_model(
-        {
-            JINA_MODEL: {
-                "input_cost_per_token": call.get("input_cost_per_token"),
-                "litellm_provider": "jina_ai",
-                "mode": "rerank",
-            }
-        }
+def config_for(provider: Literal["jina", "infinity"]) -> RerankConfig:
+    if provider == "jina":
+        return JINA
+    return INFINITY
+
+
+def apply_environment(env: dict[str, str] | None) -> None:
+    os.environ.pop("INFINITY_API_KEY", None)
+    if env is None:
+        return
+    for name, value in env.items():
+        os.environ[name] = value
+
+
+def caller_headers(input_value: Input) -> dict[str, str]:
+    headers = input_value.get("headers")
+    if headers is None:
+        return {}
+    return headers
+
+
+def map_options(config: RerankConfig, input_value: Input) -> Params:
+    options = input_value["options"]
+    non_default = input_value.get("non_default")
+    if non_default is None:
+        non_default = {}
+    drop_params = False
+    return config.map_cohere_rerank_params(
+        non_default,
+        input_value["model"],
+        drop_params,
+        options["query"],
+        options["documents"],
+        None,
+        options.get("top_n"),
+        None,
+        options.get("return_documents") is not False,
+        None,
+        None,
+        None,
     )
-    model_info = litellm.get_model_info(model=JINA_MODEL, custom_llm_provider="jina_ai")
-    prompt, completion = JinaAIRerankConfig().calculate_rerank_cost(
-        call["model"], "jina_ai", billed, model_info
+
+
+def decode_reply(config: RerankConfig, input_value: Input, logging_object: Logging) -> JsonValue:
+    reply = input_value.get("reply")
+    if reply is None:
+        return None
+    transformed = config.transform_rerank_response(
+        input_value["model"],
+        httpx.Response(reply["status"], content=reply["body"]),
+        RerankResponse(),
+        logging_object,
     )
-    return [prompt, completion]
+    return ADAPTER.validate_json(transformed.model_dump_json())
 
 
 def run(input_value: Input) -> JsonValue:
-    config: RerankConfig = (
-        JinaAIRerankConfig() if input_value["provider"] == "jina" else InfinityRerankConfig()
-    )
-    options = input_value["options"]
+    config = config_for(input_value["provider"])
     model = input_value["model"]
+    apply_environment(input_value.get("env"))
+    litellm.infinity_key = input_value.get("global_key")
     hook = Hook()
-    logging_object = Logging(
+    logging_object = RecordingLogging(
         model="rerank-model",
         messages=None,
         stream=False,
@@ -125,54 +173,19 @@ def run(input_value: Input) -> JsonValue:
         litellm_call_id="rerank-call",
         function_id="rerank-function",
     )
-    logging_object.update_environment_variables(
-        litellm_params={"logger_fn": hook}, optional_params={}
+    logging_object.logger_fn = hook
+    mapped = map_options(config, input_value)
+    headers = config.validate_environment(
+        caller_headers(input_value), model, input_value.get("api_key"), mapped
     )
-    litellm.infinity_key = input_value.get("global_key")
-    with (
-        patch.dict(os.environ, input_value.get("env", {}), clear=True),
-        patch.object(jina_module, "uuid", new=FIXED_UUID),
-        patch.object(infinity_module, "uuid", new=FIXED_UUID),
-    ):
-        mapped = config.map_cohere_rerank_params(
-            input_value.get("non_default", {}),
-            model,
-            False,
-            options["query"],
-            options["documents"],
-            None,
-            options.get("top_n"),
-            None,
-            True,
-            None,
-            None,
-            None,
-        )
-        headers = config.validate_environment(
-            input_value.get("headers", {}), model, input_value.get("api_key"), mapped
-        )
-        url = config.get_complete_url(input_value.get("api_base"), model, mapped)
-        request = config.transform_rerank_request(model, mapped, headers)
-        reply = input_value.get("reply")
-        response: JsonValue = None
-        cost: JsonValue = None
-        if reply is not None:
-            transformed = config.transform_rerank_response(
-                model,
-                httpx.Response(reply["status"], content=reply["body"]),
-                RerankResponse(),
-                logging_object,
-            )
-            response = ADAPTER.validate_json(transformed.model_dump_json())
-            meta = transformed.meta
-            if input_value["provider"] == "jina":
-                cost = jina_cost(input_value, None if meta is None else meta.get("billed_units"))
+    url = config.get_complete_url(input_value.get("api_base"), model, mapped)
+    request = config.transform_rerank_request(model, mapped, headers)
+    response = decode_reply(config, input_value, logging_object)
     return {
         "mapped": mapped,
         "headers": {**headers},
         "url": url,
         "request": request,
         "response": response,
-        "hook": hook,
-        "cost": cost,
+        "hook": hook.events,
     }

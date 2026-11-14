@@ -6,14 +6,12 @@ use betterlite_openai::cohere_rerank::RerankParams;
 use betterlite_openai::host_rerank::error::HostRerankError;
 use betterlite_openai::host_rerank::{
     HostProvider, decode_host_rerank, infinity_complete_url, infinity_request_headers,
-    jina_complete_url, jina_request_headers, jina_rerank_cost, map_params, transform_request,
+    jina_complete_url, jina_request_headers, map_params, transform_request,
 };
 use betterlite_openai::openai_base_config::Headers;
-use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive as _;
 use secrecy::SecretString;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 use uuid::Uuid;
 
 use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
@@ -38,7 +36,6 @@ pub(crate) struct Input {
     global_key: Option<String>,
     api_base: Option<String>,
     api_key: Option<String>,
-    input_cost_per_token: Option<f64>,
     reply: Option<Reply>,
 }
 
@@ -114,23 +111,6 @@ impl Helper for Op {
             })
             .transpose()
             .map_err(fail)?;
-        let cost = match (provider, &response) {
-            (HostProvider::Jina, Some(decoded)) => {
-                let billed = decoded
-                    .meta
-                    .as_ref()
-                    .and_then(|meta| meta.billed_units.as_ref())
-                    .and_then(Option::as_ref);
-                let price = input
-                    .input_cost_per_token
-                    .map(Decimal::try_from)
-                    .transpose()
-                    .or_value_error()?;
-                let (prompt, completion) = jina_rerank_cost(billed, price).map_err(fail)?;
-                json!([prompt.to_f64(), completion.to_f64()])
-            }
-            _ => Value::Null,
-        };
         Ok(json!({
             "mapped": mapped,
             "headers": headers,
@@ -138,7 +118,6 @@ impl Helper for Op {
             "request": request,
             "response": response,
             "hook": hook,
-            "cost": cost,
         }))
     }
 }
