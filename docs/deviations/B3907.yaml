@@ -6,8 +6,8 @@ deviations:
       included. A dynamic request whose four config fields are all absent, reachable only through an empty
       langfuse_secret, therefore shares the global logger's empty-key entry here, while LiteLLM mints a second logger.
     why: >-
-      The task injects the cache so no logger holds hidden state, and its key is a BTreeMap of the present fields,
-      which cannot encode an absent field. Every credential set that resolves to the same values shares one logger
+      The task injects the cache so no logger holds hidden state, and its key is a BTreeMap of the present fields.
+      That map cannot encode an absent field. Every credential set that resolves to the same values shares one logger
       either way, and the empty-secret request resolves to the same environment credentials the global logger uses.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_handler.py#L85-L120
   - what: >-
@@ -45,7 +45,7 @@ deviations:
       holding the logger reads it there.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L338-L348
   - what: >-
-      A logger holds its MAX_LANGFUSE_INITIALIZED_CLIENTS slot in a committed reservation, which gives the slot back
+      A logger holds its MAX_LANGFUSE_INITIALIZED_CLIENTS slot in a committed reservation. The reservation gives the slot back
       once when stop takes it or when the logger is dropped without stop; stop then releases the tracing channel for
       the grace period. LiteLLM's stop() releases only the tracing channel; its client count is decremented by
       DynamicLoggingCache when the entry expires, so a logger stopped by hand there keeps its slot until eviction.
