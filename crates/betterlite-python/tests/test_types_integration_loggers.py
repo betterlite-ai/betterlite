@@ -441,7 +441,9 @@ def test_covered_module_names(report: FullReport) -> None:
 def test_class_names(report: FullReport, module_name: str) -> None:
     theirs = report["litellm"]["modules"][module_name]["classes"]
     ours = report["betterlite"]["modules"][module_name]["classes"]
-    extra = EXTRA_CLASS_NAMES.get(module_name, frozenset[str]())
+    extra: frozenset[str] = frozenset[str]()
+    if module_name in EXTRA_CLASS_NAMES:
+        extra = EXTRA_CLASS_NAMES[module_name]
     assert len(theirs) == CLASS_COUNTS[module_name], module_name
     assert len(ours) == CLASS_COUNTS[module_name] + len(extra), module_name
     assert set(ours) - set(theirs) == set(extra), module_name
@@ -462,7 +464,9 @@ def test_constant_names(report: FullReport, module_name: str) -> None:
 def test_function_names(report: FullReport, module_name: str) -> None:
     theirs = report["litellm"]["modules"][module_name]["functions"]
     ours = report["betterlite"]["modules"][module_name]["functions"]
-    expected = FUNCTION_NAMES_BY_MODULE.get(module_name, frozenset[str]())
+    expected: frozenset[str] = frozenset[str]()
+    if module_name in FUNCTION_NAMES_BY_MODULE:
+        expected = FUNCTION_NAMES_BY_MODULE[module_name]
     assert set(theirs) == set(expected), module_name
     assert ours == theirs, module_name
 
@@ -471,7 +475,9 @@ def test_function_names(report: FullReport, module_name: str) -> None:
 def test_alias_names(report: FullReport, module_name: str) -> None:
     theirs = report["litellm"]["modules"][module_name]["aliases"]
     ours = report["betterlite"]["modules"][module_name]["aliases"]
-    expected = ALIAS_NAMES_BY_MODULE.get(module_name, frozenset[str]())
+    expected: frozenset[str] = frozenset[str]()
+    if module_name in ALIAS_NAMES_BY_MODULE:
+        expected = ALIAS_NAMES_BY_MODULE[module_name]
     assert set(theirs) == set(expected), module_name
     assert ours == theirs, module_name
 

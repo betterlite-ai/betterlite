@@ -64,10 +64,10 @@ class PagerDutyRequestBody(TypedDict, total=False):
 
 class AlertingConfig(TypedDict, total=False):
     failure_threshold: int
-    failure_threshold_window_seconds: int
+    failure_threshold_window_seconds: int  # ast-grep-ignore: no-long-names
     hanging_threshold_seconds: float
     hanging_threshold_fails: int
-    hanging_threshold_window_seconds: int
+    hanging_threshold_window_seconds: int  # ast-grep-ignore: no-long-names
 
 
 # ast-grep-ignore: no-long-names
