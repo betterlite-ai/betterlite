@@ -128,7 +128,7 @@ fn url(
     api_base: Option<&str>,
     environment: &BTreeMap<String, String>,
 ) -> Result<Value, Option<u16>> {
-    let url = match provider {
+    let endpoint = match provider {
         Provider::Nimble => NimbleSearch::load(environment)
             .complete_url(api_base, &Object::new(), None)
             .map_err(|_error| None)?,
@@ -136,7 +136,7 @@ fn url(
             .complete_url(api_base, &Object::new(), None)
             .map_err(|_error| None)?,
     };
-    Ok(Value::String(url))
+    Ok(Value::String(endpoint))
 }
 
 fn request(
@@ -188,13 +188,14 @@ fn reply(
             let parsed = ParallelAiSearch::load(environment)
                 .transform_search_response(&response)
                 .map_err(|_error| None)?;
-            let usage = parsed
-                .hidden_params
-                .get(PARALLEL_AI_USAGE_PARAM)
-                .cloned()
-                .unwrap_or(Value::Null);
-            let reply = serde_json::to_value(parsed).map_err(|_error| None)?;
-            Ok(serde_json::json!({"reply": reply, "usage": usage}))
+            let usage = parsed.hidden_params.get(PARALLEL_AI_USAGE_PARAM).cloned();
+            let encoded = serde_json::to_value(parsed).map_err(|_error| None)?;
+            // LiteLLM always writes the key, so an absent one must read as a different answer, not as null
+            let answer = match usage {
+                Some(present) => serde_json::json!({"reply": encoded, "usage": present}),
+                None => serde_json::json!({"reply": encoded}),
+            };
+            Ok(answer)
         }
     }
 }
