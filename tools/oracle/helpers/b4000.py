@@ -27,7 +27,6 @@ IDENTITY_MODULE = azure.identity.__name__
 START_SECONDS = 1_700_000_000.0
 BEARER = "tok-1"
 JSON_VALUE = TypeAdapter(JsonValue)
-SUCCESS_STATUS = {"create_directory": 201, "create_file": 201, "append": 202}
 # LiteLLM's event methods need premium_user; a licensed setup has it, and betterlite never checks
 proxy_server.premium_user = True
 
@@ -109,22 +108,23 @@ class ManualClock:
         return self.now
 
 
-def operation(method: str, url: str) -> str:
+# every scripted operation answers with the status its SDK call treats as success
+def classify_call(method: str, url: str) -> tuple[str, int]:
     if method == "HEAD":
-        return "exists"
+        return "exists", 200
     if "resource=directory" in url:
-        return "create_directory"
+        return "create_directory", 201
     if "resource=file" in url:
-        return "create_file"
+        return "create_file", 201
     if "action=append" in url:
-        return "append"
+        return "append", 202
     if "action=flush" in url:
-        return "flush"
-    return "other"
+        return "flush", 200
+    return "other", 200
 
 
 def answer(method: str, url: str, body: bytes) -> tuple[int, str]:
-    op = operation(method, url)
+    op, success_status = classify_call(method, url)
     # the flush position counts JSON bytes, and json.dumps spacing is outside the parity contract
     masked = re.sub(r"(\?action=flush&position=)\d+", r"\1{bytes}", url)
     entry: dict[str, JsonValue] = {"op": op, "url": re.sub(r"\d{4}-\d{2}-\d{2}", "{date}", masked)}
@@ -136,8 +136,7 @@ def answer(method: str, url: str, body: bytes) -> tuple[int, str]:
     if Wire.replies:
         reply = Wire.replies.pop(0)
         return reply["status"], reply["body"]
-    status = SUCCESS_STATUS[op] if op in SUCCESS_STATUS else 200
-    return status, ""
+    return success_status, ""
 
 
 def serve(request: httpx.Request) -> httpx.Response:
@@ -221,10 +220,10 @@ class NoCredentialChain:
 async def perform(
     action: Action,
     logger: AzureBlobStorageLogger,
+    sink: EventSink,
     clock: ManualClock,
     base: dict[str, JsonValue],
 ) -> JsonValue:
-    sink: EventSink = logger
     try:
         if action["do"] == "event":
             kwargs: dict[str, JsonValue] = {"standard_logging_object": {**base, "id": action["id"]}}
@@ -259,10 +258,8 @@ def apply_environment(environment: dict[str, str]) -> None:
 async def drive(scenario: Scenario, cache: ClientCache) -> JsonValue:
     apply_environment(scenario["environment"])
     replies = scenario.get("replies")
-    Wire.calls = []
-    Wire.replies = [] if replies is None else list(replies)
-    Wire.created = 0
-    Wire.closed = 0
+    Wire.calls, Wire.replies = [], [] if replies is None else list(replies)
+    Wire.created = Wire.closed = 0
     clock = ManualClock()
     try:
         logger = AzureBlobStorageLogger(
@@ -274,11 +271,11 @@ async def drive(scenario: Scenario, cache: ClientCache) -> JsonValue:
         key="async_httpx_client" + httpxSpecialProvider.LoggingCallback,
         value=AsyncHTTPHandler(transport=httpx.MockTransport(serve)),
     )
-    base = scenario.get("payload")
-    base_payload = {} if base is None else base
+    payload = scenario.get("payload")
+    base = {} if payload is None else payload
     sys.modules[AIO_MODULE] = ScriptedAio(AIO_MODULE)
     sys.modules[IDENTITY_MODULE] = ScriptedIdentity(IDENTITY_MODULE)
-    results = [await perform(step, logger, clock, base_payload) for step in scenario["actions"]]
+    results = [await perform(step, logger, logger, clock, base) for step in scenario["actions"]]
     queue: Queue = logger
     return {
         "initialized": True,
