@@ -416,14 +416,23 @@ fn names_that_are_utf8_without_the_flag_are_read_as_utf8() {
     writer.start_file(placeholder.as_str(), options).unwrap();
     writer.write_all(b"data").unwrap();
     let mut bytes = writer.finish().unwrap().into_inner();
-    let mut patched = 0;
-    for start in 0..=bytes.len() - name.len() {
-        if &bytes[start..start + name.len()] == placeholder.as_bytes() {
-            bytes[start..start + name.len()].copy_from_slice(name.as_bytes());
-            patched += 1;
-        }
-    }
-    assert_eq!(patched, 2);
+    let width = placeholder.len();
+    let first = bytes
+        .windows(width)
+        .position(|window| window == placeholder.as_bytes())
+        .unwrap();
+    let last = bytes
+        .windows(width)
+        .rposition(|window| window == placeholder.as_bytes())
+        .unwrap();
+    assert_ne!(first, last);
+    bytes[first..first + width].copy_from_slice(name.as_bytes());
+    bytes[last..last + width].copy_from_slice(name.as_bytes());
+    assert!(
+        !bytes
+            .windows(width)
+            .any(|window| window == placeholder.as_bytes())
+    );
     let files = extract_all_files(&archive_row(&bytes, Some("fallback")));
     assert_eq!(files.get("café.txt"), Some(&b"data".to_vec()));
 }
