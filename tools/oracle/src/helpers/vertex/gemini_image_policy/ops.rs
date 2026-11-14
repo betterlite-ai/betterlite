@@ -57,13 +57,14 @@ fn case_value(case: &Case, settings: &Settings) -> Result<Value, Box<HelperError
         image_size_support: case.catalog_supports_image_size,
         parse_image_config_string: case.parse_image_config_string,
     };
-    let mut mapped = map_image_params(&mapping).map_err(failure)?;
+    let mut mapped = map_image_params(&mapping).map_err(|error| failure(&error))?;
     if let Some(pre_mapped) = &case.pre_mapped {
         for (key, value) in pre_mapped {
             mapped.insert(key.clone(), value.clone());
         }
     }
-    let tools = map_gemini_image_tools_params(&case.params, &mapped, settings).map_err(failure)?;
+    let tools = map_gemini_image_tools_params(&case.params, &mapped, settings)
+        .map_err(|error| failure(&error))?;
     Ok(json!({
         "supports_image_size": supports_gemini_image_size(&case.model, case.catalog_supports_image_size),
         "is_image_model": is_gemini_image_model(&case.model),
@@ -74,7 +75,7 @@ fn case_value(case: &Case, settings: &Settings) -> Result<Value, Box<HelperError
     }))
 }
 
-fn failure(error: GeminiImagePolicyError) -> Box<HelperError> {
+fn failure(error: &GeminiImagePolicyError) -> Box<HelperError> {
     let (class, status, message) = if matches!(error, GeminiImagePolicyError::ImageConfigJson(_)) {
         (
             "UnsupportedParamsError",
