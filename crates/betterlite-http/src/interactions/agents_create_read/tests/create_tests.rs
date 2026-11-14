@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use rstest::rstest;
 use secrecy::SecretString;
 
 use super::AgentRequestError;
@@ -238,6 +239,30 @@ fn create_agent_reports_a_non_string_api_base() {
     );
     assert!(config.calls().is_empty());
     assert_eq!(clients.sync_clients.len(), 1);
+}
+
+#[rstest]
+#[case::absent("{}")]
+#[case::null(r#"{"api_base": null}"#)]
+fn create_agent_passes_an_empty_api_base_to_the_url_transform(#[case] params_text: &str) {
+    let serving = support::serve_post(base::reply("200 OK", &[], "{}"), None);
+    let config = Config::for_address(serving.address);
+    let params = base::params(params_text);
+    let request = support::create_request("agent-1", &params);
+    let mut clients = clients();
+    let mut logging = Recorder::default();
+
+    create_agent(&config, &mut clients, &mut logging, None, &request).unwrap();
+
+    assert!(
+        config
+            .calls()
+            .iter()
+            .any(|call| call.as_str() == "create_url|"),
+        "{:?}",
+        config.calls()
+    );
+    serving.request.join().unwrap();
 }
 
 #[tokio::test]
