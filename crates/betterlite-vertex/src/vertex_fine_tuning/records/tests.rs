@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use betterlite_openai::fine_tuning::job::FineTuneCreate;
+use betterlite_openai::fine_tuning::job::{FineTuneCreate, FineTuneJob};
 use jiff::tz::TimeZone;
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -33,43 +33,27 @@ fn request(text: &str, adapter: Option<&str>) -> VertexTuningJobCreate {
 
 #[test]
 fn a_request_keeps_the_vertex_names() {
-    let value = serde_json::to_value(request(
+    let text = serde_json::to_string(&request(
         r#"{"model":"gemini-1.5-flash-002","training_file":"gs://bucket/train.jsonl","suffix":"my-run","validation_file":"gs://bucket/valid.jsonl","hyperparameters":{"n_epochs":3,"learning_rate_multiplier":0.1,"batch_size":4}}"#,
         Some("ADAPTER_SIZE_ONE"),
     ))
     .unwrap();
     assert_eq!(
-        value,
-        serde_json::json!({
-            "baseModel": "gemini-1.5-flash-002",
-            "supervisedTuningSpec": {
-                "training_dataset_uri": "gs://bucket/train.jsonl",
-                "validation_dataset": "gs://bucket/valid.jsonl",
-                "hyperParameters": {
-                    "epoch_count": 3,
-                    "learning_rate_multiplier": 0.1,
-                    "adapter_size": "ADAPTER_SIZE_ONE",
-                },
-            },
-            "tunedModelDisplayName": "my-run",
-        })
+        text,
+        r#"{"baseModel":"gemini-1.5-flash-002","supervisedTuningSpec":{"training_dataset_uri":"gs://bucket/train.jsonl","validation_dataset":"gs://bucket/valid.jsonl","hyperParameters":{"epoch_count":3,"learning_rate_multiplier":0.1,"adapter_size":"ADAPTER_SIZE_ONE"}},"tunedModelDisplayName":"my-run"}"#
     );
 }
 
 #[test]
 fn a_null_suffix_stays_null_and_an_empty_validation_file_is_dropped() {
-    let value = serde_json::to_value(request(
+    let text = serde_json::to_string(&request(
         r#"{"model":"m","training_file":"f","suffix":null,"validation_file":""}"#,
         None,
     ))
     .unwrap();
     assert_eq!(
-        value,
-        serde_json::json!({
-            "baseModel": "m",
-            "supervisedTuningSpec": {"training_dataset_uri": "f"},
-            "tunedModelDisplayName": null,
-        })
+        text,
+        r#"{"baseModel":"m","supervisedTuningSpec":{"training_dataset_uri":"f"},"tunedModelDisplayName":null}"#
     );
 }
 
@@ -100,10 +84,10 @@ fn zero_valued_hyperparameters_are_omitted(
 ) {
     let text =
         format!(r#"{{"model":"m","training_file":"f","hyperparameters":{hyperparameters}}}"#);
-    let value = serde_json::to_value(request(&text, adapter)).unwrap();
+    let spec = request(&text, adapter).supervised_tuning_spec;
     assert_eq!(
-        value["supervisedTuningSpec"],
-        serde_json::json!({"training_dataset_uri": "f"})
+        serde_json::to_string(&spec).unwrap(),
+        r#"{"training_dataset_uri":"f"}"#
     );
 }
 
@@ -140,14 +124,15 @@ fn an_unknown_adapter_size_is_kept_as_sent() {
 
 #[test]
 fn string_hyperparameters_are_parsed_and_a_text_zero_is_kept() {
-    let value = serde_json::to_value(request(
+    let sent = request(
         r#"{"model":"m","training_file":"f","hyperparameters":{"n_epochs":"0","learning_rate_multiplier":"0.25"}}"#,
         None,
-    ))
-    .unwrap();
+    )
+    .supervised_tuning_spec
+    .hyperparameters;
     assert_eq!(
-        value["supervisedTuningSpec"]["hyperParameters"],
-        serde_json::json!({"epoch_count": 0, "learning_rate_multiplier": 0.25})
+        serde_json::to_string(&sent).unwrap(),
+        r#"{"epoch_count":0,"learning_rate_multiplier":0.25}"#
     );
 }
 
@@ -192,34 +177,13 @@ fn a_full_response_maps_every_openai_field() {
         &utc(),
     )
     .unwrap();
+    let expected: FineTuneJob = serde_json::from_str(
+        r#"{"id":"projects/p/locations/us-central1/tuningJobs/1","created_at":1704067200,"error":null,"fine_tuned_model":"tuned-1","finished_at":null,"hyperparameters":{"batch_size":null,"learning_rate_multiplier":0.1,"n_epochs":3,"adapter_size":"ADAPTER_SIZE_FOUR"},"model":"gemini-1.5-flash-002","object":"fine_tuning.job","organization_id":"","result_files":[],"seed":0,"status":"succeeded","trained_tokens":null,"training_file":"gs://b/train.jsonl","validation_file":null,"estimated_finish":null,"integrations":[],"metadata":null,"method":null}"#,
+    )
+    .unwrap();
     assert_eq!(
-        serde_json::to_value(&job).unwrap(),
-        serde_json::json!({
-            "id": "projects/p/locations/us-central1/tuningJobs/1",
-            "created_at": 1_704_067_200_i64,
-            "error": null,
-            "fine_tuned_model": "tuned-1",
-            "finished_at": null,
-            "hyperparameters": {
-                "batch_size": null,
-                "learning_rate_multiplier": 0.1,
-                "n_epochs": 3,
-                "adapter_size": "ADAPTER_SIZE_FOUR",
-            },
-            "model": "gemini-1.5-flash-002",
-            "object": "fine_tuning.job",
-            "organization_id": "",
-            "result_files": [],
-            "seed": 0,
-            "status": "succeeded",
-            "trained_tokens": null,
-            "training_file": "gs://b/train.jsonl",
-            "validation_file": null,
-            "estimated_finish": null,
-            "integrations": [],
-            "metadata": null,
-            "method": null,
-        })
+        serde_json::to_string(&job).unwrap(),
+        serde_json::to_string(&expected).unwrap()
     );
 }
 
@@ -230,17 +194,21 @@ fn a_minimal_response_takes_the_source_defaults() {
     assert_eq!(value["id"], serde_json::json!(""));
     assert_eq!(value["model"], serde_json::json!(""));
     assert_eq!(value["fine_tuned_model"], serde_json::json!(""));
-    assert_eq!(value["created_at"], serde_json::json!(0));
+    assert_eq!(value["created_at"], serde_json::json!(0_i64));
     assert_eq!(value["training_file"], serde_json::json!(""));
-    assert_eq!(value["seed"], serde_json::json!(0));
+    assert_eq!(value["seed"], serde_json::json!(0_i64));
     assert_eq!(value["object"], serde_json::json!("fine_tuning.job"));
     assert_eq!(value["organization_id"], serde_json::json!(""));
     assert_eq!(value["result_files"], serde_json::json!([]));
     assert_eq!(value["integrations"], serde_json::json!([]));
+    let hyperparameters = &value["hyperparameters"];
+    assert_eq!(hyperparameters["batch_size"], serde_json::json!(null));
     assert_eq!(
-        value["hyperparameters"],
-        serde_json::json!({"batch_size": null, "learning_rate_multiplier": null, "n_epochs": 0})
+        hyperparameters["learning_rate_multiplier"],
+        serde_json::json!(null)
     );
+    assert_eq!(hyperparameters["n_epochs"], serde_json::json!(0_i64));
+    assert!(hyperparameters.get("adapter_size").is_none());
 }
 
 #[test]
@@ -298,7 +266,7 @@ fn an_absent_epoch_count_defaults_to_zero(#[case] text: &str) {
     let job = decode_vertex_tuning_job(text.as_bytes(), &utc()).unwrap();
     assert_eq!(
         serde_json::to_value(&job).unwrap()["hyperparameters"]["n_epochs"],
-        serde_json::json!(0)
+        serde_json::json!(0_i64)
     );
 }
 

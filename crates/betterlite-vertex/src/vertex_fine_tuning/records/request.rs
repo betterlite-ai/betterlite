@@ -86,18 +86,18 @@ struct Given {
 }
 
 fn hyperparameter<T>(
-    given: Option<Given>,
+    candidate: Option<Given>,
     field: &'static str,
     parse: fn(&str) -> Option<T>,
 ) -> Result<Option<T>, TuningRecordError>
 where
     T: Default + PartialEq,
 {
-    let Some(given) = given.filter(|given| !given.text.is_empty()) else {
+    let Some(entry) = candidate.filter(|present| !present.text.is_empty()) else {
         return Ok(None);
     };
-    let parsed = parse(given.text.trim()).ok_or(TuningRecordError::Hyperparameter { field })?;
-    Ok((given.is_text || parsed != T::default()).then_some(parsed))
+    let parsed = parse(entry.text.trim()).ok_or(TuningRecordError::Hyperparameter { field })?;
+    Ok((entry.is_text || parsed != T::default()).then_some(parsed))
 }
 
 fn vertex_job(

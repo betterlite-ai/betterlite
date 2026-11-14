@@ -60,9 +60,8 @@ impl TuningTransport for Scripted {
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.order.lock().unwrap().push("post");
-        let body = match request.body {
-            RequestBody::Json(data) => data,
-            RequestBody::Bytes { data, .. } => data,
+        let sent = match request.body {
+            RequestBody::Json(data) | RequestBody::Bytes { data, .. } => data,
             RequestBody::Empty | RequestBody::Multipart { .. } => Vec::new(),
         };
         self.requests.lock().unwrap().push(Recorded {
@@ -70,7 +69,7 @@ impl TuningTransport for Scripted {
             url: request.url.to_string(),
             headers: request.headers,
             deadline: request.deadline,
-            body,
+            body: sent,
         });
         let reply = self.replies.lock().unwrap().pop_front().unwrap();
         ready(match reply {
@@ -180,6 +179,15 @@ fn scripted(replies: Vec<Reply>, order: &Order) -> Scripted {
     }
 }
 
+async fn posted(fixture: &Fixture) -> Scripted {
+    let order: Order = Arc::new(Mutex::new(Vec::new()));
+    let transport = scripted(vec![reply(200, JOB)], &order);
+    create_tuning_job(&transport, &fixture.request(None, None), lookup)
+        .await
+        .unwrap();
+    transport
+}
+
 #[tokio::test]
 async fn token_before_post() {
     let fixture = Fixture::new();
@@ -199,6 +207,11 @@ async fn token_before_post() {
     assert_eq!(job.status, JobStatus::Succeeded);
     assert_eq!(job.created_at, 1_704_067_200);
     assert_eq!(job.training_file, "gs://bucket/train.jsonl");
+}
+
+#[tokio::test]
+async fn the_post_carries_the_bearer_and_the_json_content_type() {
+    let transport = posted(&Fixture::new()).await;
     let recorded = &transport.requests.lock().unwrap()[0];
     assert_eq!(recorded.method, Method::POST);
     assert_eq!(recorded.url, TUNING_URL);
@@ -220,6 +233,12 @@ async fn token_before_post() {
             .unwrap(),
         "application/json"
     );
+}
+
+#[tokio::test]
+async fn the_post_body_is_the_vertex_request() {
+    let transport = posted(&Fixture::new()).await;
+    let recorded = &transport.requests.lock().unwrap()[0];
     assert_eq!(
         serde_json::from_slice::<VertexTuningJobCreate>(&recorded.body).unwrap(),
         VertexTuningJobCreate {
