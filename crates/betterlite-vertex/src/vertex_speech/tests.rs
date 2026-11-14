@@ -3,18 +3,19 @@
 use std::fs;
 use std::future::{Future, ready};
 use std::path::PathBuf;
-use std::pin::Pin;
 use std::sync::Mutex;
 
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_streaming::stream_content_assembly::AssemblyError;
 use indexmap::IndexMap;
 use rstest::rstest;
+use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 
 use super::audio::{BinaryAudio, decode_vertex_speech_audio};
-use super::error::{Base64Error, VertexSpeechError};
+use super::error::VertexSpeechError;
 use super::mapping::{
     DEFAULT_SPEAKING_RATE, SpeechAudioConfig, SpeechKwargs, SpeechMapping, SpeechOptionalParams,
     SpeechVoice, map_openai_params, voice_language,
@@ -210,13 +211,15 @@ fn defaults_to_linear16_without_a_response_format() {
 }
 
 #[rstest]
-#[case::whole(2, "2")]
-#[case::zero(0, "0")]
-#[case::negative(-1, "-1")]
-fn stringifies_a_non_none_speed(#[case] speed: i64, #[case] rate: &str) {
+#[case::whole(2, 0, "2")]
+#[case::zero(0, 0, "0")]
+#[case::negative(-1, 0, "-1")]
+#[case::one_and_a_half(15, 1, "1.5")]
+#[case::quarter(25, 2, "0.25")]
+fn stringifies_a_non_none_speed(#[case] mantissa: i64, #[case] scale: u32, #[case] rate: &str) {
     let optional = SpeechOptionalParams {
         response_format: None,
-        speed: Some(speed),
+        speed: Some(Decimal::new(mantissa, scale)),
     };
     assert_eq!(
         mapping(optional, SpeechKwargs::default())
@@ -239,6 +242,7 @@ fn copies_a_full_audio_config_and_use_ssml_from_the_kwargs() {
     let audio_config = SpeechAudioConfig {
         audio_encoding: Some("MP3".to_owned()),
         speaking_rate: Some("2".to_owned()),
+        other: Object::new(),
     };
     let kwargs = SpeechKwargs {
         audio_config: Some(audio_config.clone()),
@@ -353,8 +357,11 @@ fn copies_caller_headers_and_forces_json_and_utf8() {
 
 #[rstest]
 #[case::default_endpoint(None, TTS_API_URL)]
-#[case::empty_base("", TTS_API_URL)]
-#[case::custom_base("https://host/v1/text:synthesize", "https://host/v1/text:synthesize")]
+#[case::empty_base(Some(""), TTS_API_URL)]
+#[case::custom_base(
+    Some("https://host/v1/text:synthesize"),
+    "https://host/v1/text:synthesize"
+)]
 fn resolves_the_synthesis_url(#[case] api_base: Option<&str>, #[case] url: &str) {
     assert_eq!(complete_url(api_base), url);
 }
@@ -368,6 +375,7 @@ fn defaults_to_the_studio_voice() {
         SpeechVoiceSettings {
             language_code: Some("en-US".to_owned()),
             name: Some("en-US-Studio-O".to_owned()),
+            other: Object::new(),
         }
     );
 }
@@ -429,23 +437,39 @@ fn rejects_a_non_string_voice_field() {
 }
 
 #[test]
-fn rejects_an_unknown_voice_field() {
+fn passes_an_unmodeled_voice_field_through() {
     let mut options = Object::new();
-    options.insert("pitch".to_owned(), Json::Text("low".to_owned()));
+    options.insert("ssmlGender".to_owned(), Json::Text("FEMALE".to_owned()));
     let mapped = map_openai_params(
-        Some(&SpeechVoice::Options(options)),
+        Some(&SpeechVoice::Options(options.clone())),
         &SpeechOptionalParams::default(),
         &SpeechKwargs::default(),
     );
-    assert!(matches!(
-        request_for(&call("hi", &mapped)),
-        Err(VertexSpeechError::VoiceRecord(_))
-    ));
+    let request = request_for(&call("hi", &mapped)).unwrap();
+    assert_eq!(request.body.voice.other, options);
+    assert_eq!(
+        serde_json::to_value(&request.body.voice).unwrap(),
+        serde_json::json!({"ssmlGender": "FEMALE"})
+    );
 }
 
 #[test]
-fn rejects_an_unknown_audio_config_field() {
-    assert!(serde_json::from_str::<SpeechAudioConfig>(r#"{"pitch": "low"}"#).is_err());
+fn passes_unmodeled_audio_config_fields_through() {
+    let audio_config = serde_json::from_str::<SpeechAudioConfig>(
+        r#"{"audioEncoding": "MP3", "pitch": -2.5, "sampleRateHertz": 24000, "effectsProfileId": ["a"]}"#,
+    )
+    .unwrap();
+    assert_eq!(audio_config.audio_encoding.as_deref(), Some("MP3"));
+    assert_eq!(audio_config.other.len(), 3);
+    assert_eq!(
+        serde_json::to_value(&audio_config).unwrap(),
+        serde_json::json!({
+            "audioEncoding": "MP3",
+            "pitch": -2.5,
+            "sampleRateHertz": 24000,
+            "effectsProfileId": ["a"]
+        })
+    );
 }
 
 #[test]
@@ -457,6 +481,7 @@ fn builds_the_default_audio_config() {
         SpeechAudioConfig {
             audio_encoding: Some("LINEAR16".to_owned()),
             speaking_rate: Some(DEFAULT_SPEAKING_RATE.to_owned()),
+            other: Object::new(),
         }
     );
 }
@@ -467,13 +492,14 @@ fn lets_a_full_audio_config_replace_the_encoding_and_rate() {
         audio_config: Some(SpeechAudioConfig {
             audio_encoding: None,
             speaking_rate: Some("2".to_owned()),
+            other: Object::new(),
         }),
         use_ssml: false,
     };
     let mapped = mapping(
         SpeechOptionalParams {
             response_format: Some("mp3".to_owned()),
-            speed: Some(4),
+            speed: Some(Decimal::from(4)),
         },
         kwargs,
     );
@@ -483,6 +509,7 @@ fn lets_a_full_audio_config_replace_the_encoding_and_rate() {
         SpeechAudioConfig {
             audio_encoding: None,
             speaking_rate: Some("2".to_owned()),
+            other: Object::new(),
         }
     );
 }
@@ -589,7 +616,7 @@ fn rejects_a_non_text_audio_content(#[case] body: &str) {
 fn rejects_a_non_ascii_audio_content() {
     assert!(matches!(
         decode("{\"audioContent\": \"\u{e9}\"}"),
-        Err(VertexSpeechError::AudioContentNotAscii)
+        Err(VertexSpeechError::Audio(AssemblyError::NonAsciiAudio))
     ));
 }
 
@@ -617,7 +644,7 @@ fn decodes_permissive_base64(#[case] body: &str, #[case] expected: &[u8]) {
 fn rejects_base64_without_final_padding(#[case] body: &str) {
     assert!(matches!(
         decode(body),
-        Err(VertexSpeechError::Base64(Base64Error::MissingPadding))
+        Err(VertexSpeechError::Audio(AssemblyError::InvalidAudioPadding))
     ));
 }
 
@@ -625,7 +652,7 @@ fn rejects_base64_without_final_padding(#[case] body: &str) {
 fn rejects_a_lone_base64_character() {
     assert!(matches!(
         decode(r#"{"audioContent": "Q"}"#),
-        Err(VertexSpeechError::Base64(Base64Error::SingleCharacter))
+        Err(VertexSpeechError::Audio(AssemblyError::InvalidAudioPadding))
     ));
 }
 
@@ -699,12 +726,18 @@ fn maps_mp3_to_the_mp3_encoding() {
 
 #[test]
 fn defaults_to_the_synthesis_endpoint() {
-    assert_eq!(complete_url(None), TTS_API_URL);
+    assert_eq!(
+        complete_url(None),
+        "https://texttospeech.googleapis.com/v1/text:synthesize"
+    );
 }
 
 #[test]
 fn treats_an_empty_base_as_unset() {
-    assert_eq!(complete_url(Some("")), TTS_API_URL);
+    assert_eq!(
+        complete_url(Some("")),
+        "https://texttospeech.googleapis.com/v1/text:synthesize"
+    );
 }
 
 #[test]
@@ -751,7 +784,7 @@ fn decodes_one_padded_quad() {
 fn rejects_two_characters_without_padding() {
     assert!(matches!(
         decode(r#"{"audioContent": "QQ"}"#),
-        Err(VertexSpeechError::Base64(Base64Error::MissingPadding))
+        Err(VertexSpeechError::Audio(AssemblyError::InvalidAudioPadding))
     ));
 }
 
@@ -759,7 +792,7 @@ fn rejects_two_characters_without_padding() {
 fn rejects_three_characters_without_padding() {
     assert!(matches!(
         decode(r#"{"audioContent": "QUJ"}"#),
-        Err(VertexSpeechError::Base64(Base64Error::MissingPadding))
+        Err(VertexSpeechError::Audio(AssemblyError::InvalidAudioPadding))
     ));
 }
 

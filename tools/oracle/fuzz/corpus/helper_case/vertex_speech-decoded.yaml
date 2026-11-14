@@ -3,6 +3,6 @@ name: vertex-speech-decoded-seed
 call:
   vertex_speech:
     function: decoded_status_200
-    bodies: ['{"audioContent": "WFk="}', '{"audioContent": ""}']
+    bodies: ['{"audioContent": "ZkxhQwA="}', '{"audioContent": ""}']
 env: {}
 compare: {ignore: []}

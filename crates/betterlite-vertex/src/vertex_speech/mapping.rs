@@ -1,4 +1,5 @@
 use betterlite_prompts::arguments::json::{Json, Object};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_LANGUAGE_CODE: &str = "en-US";
@@ -36,7 +37,7 @@ pub enum SpeechVoice {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SpeechOptionalParams {
     pub response_format: Option<String>,
-    pub speed: Option<i64>,
+    pub speed: Option<Decimal>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -46,12 +47,13 @@ pub struct SpeechKwargs {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SpeechAudioConfig {
     #[serde(rename = "audioEncoding", skip_serializing_if = "Option::is_none")]
     pub audio_encoding: Option<String>,
     #[serde(rename = "speakingRate", skip_serializing_if = "Option::is_none")]
     pub speaking_rate: Option<String>,
+    #[serde(flatten)]
+    pub other: Object,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -88,7 +90,7 @@ pub fn map_openai_params(
 }
 
 // an unmapped key passes through unchanged
-fn lookup<'a>(table: &[(&'static str, &'static str)], key: &'a str) -> &'a str {
+fn lookup<'key>(table: &[(&'static str, &'static str)], key: &'key str) -> &'key str {
     table
         .iter()
         .find(|(source, _)| *source == key)
@@ -116,8 +118,8 @@ fn map_voice(voice: Option<&SpeechVoice>) -> (Option<String>, Option<Object>) {
 pub(crate) fn voice_language(name: &str) -> String {
     name.split_once('-').map_or_else(
         || DEFAULT_LANGUAGE_CODE.to_owned(),
-        |(language, region)| {
-            let region = region.split('-').next().unwrap_or_default();
+        |(language, tail)| {
+            let region = tail.split('-').next().unwrap_or_default();
             format!("{language}-{region}")
         },
     )

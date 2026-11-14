@@ -129,7 +129,7 @@ fn case_views(runtime: &Runtime, cases: &[Case], key: &str, field: &str) -> Valu
 }
 
 fn decoded(bodies: &[String]) -> Value {
-    let sniff = |audio: &[u8]| (audio.first() == Some(&b'X')).then_some("audio/x-test".to_owned());
+    let sniff = |audio: &[u8]| audio.starts_with(b"fLaC").then(|| "audio/flac".to_owned());
     let views: Vec<Value> = bodies
         .iter()
         .map(|body| match decode_vertex_speech_audio(body.as_bytes(), &sniff) {

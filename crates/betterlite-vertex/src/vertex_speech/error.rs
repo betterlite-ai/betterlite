@@ -1,16 +1,9 @@
+use betterlite_streaming::stream_content_assembly::AssemblyError;
 use serde_json::Error as JsonError;
 use thiserror::Error;
 
 use crate::model_urls::error::VertexUrlError;
 use crate::token_cache::error::CredentialCacheError;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
-pub enum Base64Error {
-    #[error("a base64 group ends after a single character")]
-    SingleCharacter,
-    #[error("the final base64 group lacks the padding it needs")]
-    MissingPadding,
-}
 
 #[derive(Debug, Error)]
 pub enum VertexSpeechError {
@@ -28,10 +21,8 @@ pub enum VertexSpeechError {
     MissingAudioContent,
     #[error("the audioContent of the Vertex AI TTS response is not a string")]
     AudioContentNotText,
-    #[error("the audioContent of the Vertex AI TTS response is not ASCII")]
-    AudioContentNotAscii,
-    #[error("the audioContent of the Vertex AI TTS response is not valid base64")]
-    Base64(#[source] Base64Error),
+    #[error("the audioContent of the Vertex AI TTS response cannot be decoded")]
+    Audio(#[source] AssemblyError),
     #[error("SSML input is required when use_ssml is set")]
     SsmlRequired,
     #[error("either a text or an ssml input is required")]

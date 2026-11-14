@@ -1,5 +1,2 @@
 task: B1352
-deviations:
-  - what: A voice record or audioConfig carrying a key other than languageCode, name, audioEncoding or speakingRate is rejected before the request is sent.
-    why: The records are typed structs here, so an unknown key cannot ride along. Google's endpoint answers the same input with an invalid-argument error.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/text_to_speech/transformation.py#L408-L410
+deviations: []

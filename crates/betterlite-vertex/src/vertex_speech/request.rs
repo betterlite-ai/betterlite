@@ -26,12 +26,14 @@ pub struct SpeechInput {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SpeechVoiceSettings {
     #[serde(rename = "languageCode", skip_serializing_if = "Option::is_none")]
     pub language_code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    // the other fields of a Google voice (ssmlGender and the like) go through unchanged
+    #[serde(flatten)]
+    pub other: Object,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -151,6 +153,7 @@ fn request_body(call: &SpeechCall<'_>) -> Result<SpeechRequestBody, VertexSpeech
                     .clone()
                     .unwrap_or_else(|| DEFAULT_SPEAKING_RATE.to_owned()),
             ),
+            other: Object::new(),
         });
     Ok(SpeechRequestBody {
         input,
@@ -173,10 +176,12 @@ fn voice_settings(call: &SpeechCall<'_>) -> Result<SpeechVoiceSettings, VertexSp
         return Ok(SpeechVoiceSettings {
             language_code: Some(DEFAULT_LANGUAGE_CODE.to_owned()),
             name: Some(DEFAULT_VOICE_NAME.to_owned()),
+            other: Object::new(),
         });
     };
     Ok(SpeechVoiceSettings {
         language_code: Some(voice_language(name)),
         name: Some(name.to_owned()),
+        other: Object::new(),
     })
 }

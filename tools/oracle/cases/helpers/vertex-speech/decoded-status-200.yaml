@@ -5,6 +5,7 @@ call:
     function: decoded_status_200
     bodies:
       - '{"audioContent": "WFk="}'
+      - '{"audioContent": "ZkxhQwA="}'
       - '{"audioContent": "QUJD", "other": 1}'
       - '{"audioContent": "!!!"}'
       - '{"audioContent": "QQ=="}'
