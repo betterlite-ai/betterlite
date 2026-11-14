@@ -7,6 +7,8 @@ from typing import Literal, TypeAlias, TypedDict
 import httpx
 from litellm.google_genai.streaming_iterator import (
     AsyncGoogleGenAIGenerateContentStreamingIterator as AsyncNativeIterator,
+)
+from litellm.google_genai.streaming_iterator import (
     GoogleGenAIGenerateContentStreamingIterator as NativeSyncIterator,
 )
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -38,7 +40,7 @@ class IteratorArgs(TypedDict):
     response: httpx.Response
     model: str
     logging_obj: Logging
-    generate_content_provider_config: GenAiConfig  # ast-grep-ignore: no-long-names
+    generate_content_provider_config: GenAiConfig
     litellm_metadata: dict[str, JsonValue]
     custom_llm_provider: str
     request_body: dict[str, JsonValue]
@@ -100,7 +102,9 @@ def answer(iterator: NativeIterator, yielded: list[bytes]) -> Output:
         "model": iterator.model,
         "endpoint": iterator.endpoint_type.name,
         "yielded": [base64.b64encode(chunk).decode("ascii") for chunk in yielded],
-        "collected": [base64.b64encode(chunk).decode("ascii") for chunk in iterator.collected_chunks],
+        "collected": [
+            base64.b64encode(chunk).decode("ascii") for chunk in iterator.collected_chunks
+        ],
         "yielded_matches_collected": yielded == iterator.collected_chunks,
     }
 
