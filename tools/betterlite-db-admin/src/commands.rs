@@ -92,21 +92,16 @@ impl Operation {
             }),
             Self::DatabaseViews => DbAdminCommand::DatabaseViews,
             Self::DailyToolSpend { cutover } => {
-                DbAdminCommand::DailyToolSpend(DailyToolSpendOptions {
-                    cutover,
-                    spend_partition: None,
-                })
+                DbAdminCommand::DailyToolSpend(DailyToolSpendOptions { cutover })
             }
             Self::KeyTotalSpend => DbAdminCommand::KeyTotalSpend,
             Self::KeyTotalSpendFromLogs => DbAdminCommand::KeyTotalSpendFromLogs,
-            Self::PartitionSpendLogs => DbAdminCommand::DailyToolSpend(DailyToolSpendOptions {
-                cutover: DateTime::<Utc>::UNIX_EPOCH,
-                spend_partition: Some(SpendPartitionOperation::Partition),
-            }),
-            Self::UnpartitionSpendLogs => DbAdminCommand::DailyToolSpend(DailyToolSpendOptions {
-                cutover: DateTime::<Utc>::UNIX_EPOCH,
-                spend_partition: Some(SpendPartitionOperation::Unpartition),
-            }),
+            Self::PartitionSpendLogs => {
+                DbAdminCommand::SpendPartition(SpendPartitionOperation::Partition)
+            }
+            Self::UnpartitionSpendLogs => {
+                DbAdminCommand::SpendPartition(SpendPartitionOperation::Unpartition)
+            }
         }
     }
 }
@@ -119,19 +114,6 @@ pub const DAILY_TOOL_SPEND_KEY: Operation = Operation::DailyToolSpend {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DailyToolSpendOptions {
     pub cutover: DateTime<Utc>,
-    // the exhaustive command matches outside this task's scope leave the daily payload as the only extendable variant
-    pub spend_partition: Option<SpendPartitionOperation>,
-}
-
-impl DailyToolSpendOptions {
-    #[must_use]
-    pub const fn operation(self) -> Operation {
-        match self.spend_partition {
-            Some(SpendPartitionOperation::Partition) => Operation::PartitionSpendLogs,
-            Some(SpendPartitionOperation::Unpartition) => Operation::UnpartitionSpendLogs,
-            None => DAILY_TOOL_SPEND_KEY,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,6 +123,7 @@ pub enum DbAdminCommand {
     DailyToolSpend(DailyToolSpendOptions),
     KeyTotalSpend,
     KeyTotalSpendFromLogs,
+    SpendPartition(SpendPartitionOperation),
 }
 
 impl DbAdminCommand {
@@ -149,9 +132,15 @@ impl DbAdminCommand {
         match self {
             Self::Migrate(_) => Operation::Migrate,
             Self::DatabaseViews => Operation::DatabaseViews,
-            Self::DailyToolSpend(options) => options.operation(),
+            Self::DailyToolSpend(_) => DAILY_TOOL_SPEND_KEY,
             Self::KeyTotalSpend => Operation::KeyTotalSpend,
             Self::KeyTotalSpendFromLogs => Operation::KeyTotalSpendFromLogs,
+            Self::SpendPartition(SpendPartitionOperation::Partition) => {
+                Operation::PartitionSpendLogs
+            }
+            Self::SpendPartition(SpendPartitionOperation::Unpartition) => {
+                Operation::UnpartitionSpendLogs
+            }
         }
     }
 }

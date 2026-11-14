@@ -28,13 +28,12 @@ const fn partition_operation(
     command: DbAdminCommand,
 ) -> Result<SpendPartitionOperation, DbAdminError> {
     match command {
-        DbAdminCommand::DailyToolSpend(options) => match options.spend_partition {
-            Some(operation) => Ok(operation),
-            None => Err(DbAdminError::Unregistered {
-                operation: options.operation().name(),
-            }),
-        },
-        other => Err(DbAdminError::Unregistered {
+        DbAdminCommand::SpendPartition(operation) => Ok(operation),
+        other @ (DbAdminCommand::Migrate(_)
+        | DbAdminCommand::DatabaseViews
+        | DbAdminCommand::DailyToolSpend(_)
+        | DbAdminCommand::KeyTotalSpend
+        | DbAdminCommand::KeyTotalSpendFromLogs) => Err(DbAdminError::Unregistered {
             operation: other.operation().name(),
         }),
     }
