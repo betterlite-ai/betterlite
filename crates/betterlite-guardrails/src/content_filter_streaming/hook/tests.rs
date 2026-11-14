@@ -628,6 +628,25 @@ async fn hook_skips_a_final_chunk_that_buffers_nothing() {
 }
 
 #[tokio::test]
+async fn hook_skips_a_choice_without_a_delta() {
+    let without_delta = GuardrailValue::Object(BTreeMap::from([
+        ("index".to_owned(), GuardrailValue::SignedInteger(0)),
+        ("finish_reason".to_owned(), GuardrailValue::Null),
+    ]));
+    let with_null_delta = GuardrailValue::Object(BTreeMap::from([
+        ("index".to_owned(), GuardrailValue::SignedInteger(0)),
+        ("delta".to_owned(), GuardrailValue::Null),
+        ("finish_reason".to_owned(), GuardrailValue::Null),
+    ]));
+    let case = stream_case(vec![chunk(vec![without_delta, with_null_delta])]);
+    let run = run_stream(&case).await;
+    assert_eq!(run.chunks.len(), 1);
+    assert!(field(choice_of(&run.chunks[0], 0), &["delta", "content"]).is_none());
+    assert!(field(choice_of(&run.chunks[0], 1), &["delta", "content"]).is_none());
+    assert!(run.outcome.is_ok());
+}
+
+#[tokio::test]
 async fn hook_accepts_the_caller_key_without_reading_it() {
     let mut case = stream_case(vec![chunk(vec![choice(
         Some(0),
