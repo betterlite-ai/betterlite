@@ -16,15 +16,16 @@ pub struct ScimNames {
 }
 
 // key presence alone decides whether scim_metadata is read, so a stored non-object fails instead of falling back
-fn stored_names(metadata: &Metadata) -> Result<Option<UserScimMetadata>, ProjectionError> {
+fn stored_names(metadata: &Metadata) -> Result<UserScimMetadata, ProjectionError> {
     match metadata.get(SCIM_METADATA_KEY) {
-        None => Ok(None),
+        None => Ok(UserScimMetadata {
+            given_name: None,
+            family_name: None,
+        }),
         Some(object @ JsonData::Object(_)) => {
             let text = serde_json::to_string(object)
                 .map_err(|source| ProjectionError::Encode { source })?;
-            let stored = serde_json::from_str(&text)
-                .map_err(|source| ProjectionError::ScimMetadata { source })?;
-            Ok(Some(stored))
+            serde_json::from_str(&text).map_err(|source| ProjectionError::ScimMetadata { source })
         }
         Some(
             JsonData::Null
@@ -43,10 +44,7 @@ pub fn scim_names(
 ) -> Result<ScimNames, ProjectionError> {
     let non_empty = |text: &&str| !text.is_empty();
     let alias = user_alias.filter(non_empty);
-    let stored = stored_names(metadata)?.unwrap_or(UserScimMetadata {
-        given_name: None,
-        family_name: None,
-    });
+    let stored = stored_names(metadata)?;
     Ok(ScimNames {
         user_name: user_email
             .filter(non_empty)

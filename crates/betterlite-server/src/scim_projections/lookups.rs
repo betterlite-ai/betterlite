@@ -1,8 +1,8 @@
+use super::MEMBER_KIND;
 use super::error::ProjectionError;
 use super::group::project_group;
-use super::member::user_member;
 use super::user::{ScimUserSource, UserProjection, project_user};
-use crate::scim_records::group::{Group, Member};
+use crate::scim_records::group::{Group, Member, MemberKind};
 use crate::scim_records::user::{GroupKind, UserGroup};
 use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
@@ -139,7 +139,11 @@ impl<'database> ScimLookups<'database> {
                     .as_deref()
                     .filter(|email| !email.is_empty())
                     .unwrap_or(&user.user_id);
-                members.push(user_member(&user.user_id, display));
+                members.push(Member {
+                    value: user.user_id.clone(),
+                    display: Some(display.to_owned()),
+                    kind: MemberKind(Some(MEMBER_KIND.to_owned())),
+                });
             }
         }
         Ok(members)

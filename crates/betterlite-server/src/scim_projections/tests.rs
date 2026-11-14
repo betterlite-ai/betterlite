@@ -7,7 +7,7 @@ use super::directory::{
 use super::error::ProjectionError;
 use super::group::project_group;
 use super::lookups::ScimLookups;
-use super::member::{project_member, team_member_user_ids, user_member};
+use super::member::{project_member, team_member_user_ids};
 use super::naming::scim_names;
 use super::timestamps::{isoformat, resource_meta};
 use super::truthiness::is_set;
@@ -271,14 +271,6 @@ fn scim_projections_member_value_and_display(
     let member = project_member(user_id, email);
     assert_eq!(member.value, value);
     assert_eq!(member.display.as_deref(), Some(display));
-    assert_eq!(member.kind.0.as_deref(), Some("User"));
-}
-
-#[test]
-fn scim_projections_user_member_keeps_value_and_display() {
-    let member = user_member("u1", "Ann");
-    assert_eq!(member.value, "u1");
-    assert_eq!(member.display.as_deref(), Some("Ann"));
     assert_eq!(member.kind.0.as_deref(), Some("User"));
 }
 
