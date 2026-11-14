@@ -36,7 +36,7 @@ fn model_group_alias_defaults_to_an_empty_map(#[case] source: &str) {
 #[rstest]
 #[case::plain_target("gpt: gpt-4", alias("gpt-4", false))]
 #[case::item_target("gpt: {model: gpt-4, hidden: true}", alias("gpt-4", true))]
-#[case::item_without_hidden("gpt: {model: gpt-4}", alias("gpt-4", false))]
+#[case::item_target_visible("gpt: {model: gpt-4, hidden: false}", alias("gpt-4", false))]
 #[case::empty_target("gpt: ''", alias("", false))]
 #[case::environment_reference("gpt: os.environ/TARGET", alias("gpt-4", false))]
 #[case::environment_reference_in_item(
@@ -64,11 +64,33 @@ fn model_group_alias_keeps_the_declared_order() {
 
 #[test]
 fn model_group_alias_names_an_unknown_item_key() {
-    let source = "router_settings:\n  model_group_alias:\n    fast: {model: gpt-4, visible: true}\n    ok: {model: a}";
+    let source = "router_settings:\n  model_group_alias:\n    fast: {model: gpt-4, visible: true, hidden: false}\n    ok: {model: a, hidden: false}";
     let error = settings(source, &[]).unwrap_err();
     assert_eq!(
         error,
         r#"unsupported config keys: ["router_settings.model_group_alias.fast.visible"]"#
+    );
+}
+
+#[rstest]
+#[case::first_alias("fast")]
+#[case::another_alias("smart")]
+fn model_group_alias_requires_hidden_on_an_item(#[case] name: &str) {
+    let source = format!("router_settings:\n  model_group_alias:\n    {name}: {{model: gpt-4}}");
+    let error = settings(&source, &[]).unwrap_err();
+    assert_eq!(
+        error,
+        format!(r#"unsupported config keys: ["router_settings.model_group_alias.{name}.hidden"]"#)
+    );
+}
+
+#[test]
+fn model_group_alias_reports_a_missing_hidden_beside_an_unknown_key() {
+    let source = "router_settings:\n  model_group_alias:\n    fast: {model: gpt-4, visible: true}";
+    let error = settings(source, &[]).unwrap_err();
+    assert_eq!(
+        error,
+        r#"unsupported config keys: ["router_settings.model_group_alias.fast.visible", "router_settings.model_group_alias.fast.hidden"]"#
     );
 }
 
