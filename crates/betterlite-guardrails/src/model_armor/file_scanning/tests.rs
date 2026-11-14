@@ -361,6 +361,17 @@ fn plan_warns_when_base64_does_not_decode() {
 }
 
 #[test]
+fn plan_does_not_warn_for_a_remote_reference() {
+    let log = captured_log(|| {
+        let plan = plan_of(
+            r#"{"type":"file","file":{"file_data":"gs://bucket/a.pdf","format":"application/pdf"}}"#,
+        );
+        assert_eq!(plan.unscannable_count, 1);
+    });
+    assert!(!log.contains("undecodable base64"));
+}
+
+#[test]
 fn plan_accepts_non_zero_trailing_bits() {
     let plan =
         plan_of(r#"{"type":"file","file":{"file_data":"aGVsbG9=","format":"application/pdf"}}"#);

@@ -268,6 +268,19 @@ async fn url_empty_configured_project_takes_the_resolved_one() {
 }
 
 #[test]
+fn url_empty_resolved_project_is_not_remembered() {
+    let transport = transport(None, StubTokens::new(None));
+    transport.resolved_project.remember(None, Some(""));
+    transport
+        .resolved_project
+        .remember(None, Some("resolved-later"));
+    assert_eq!(
+        transport.resolved_project.effective(None),
+        Some("resolved-later".to_owned())
+    );
+}
+
+#[test]
 fn body_text_for_both_sources() {
     assert_eq!(
         serde_json::to_string(&text_body("hello", Source::UserPrompt)).expect("body"),
@@ -353,6 +366,19 @@ async fn request_returns_the_decoded_verdict_and_body() {
         .expect("request");
     assert!(should_block_content(&result.verdict, false));
     assert!(!should_block_content(&result.verdict, true));
+}
+
+#[tokio::test]
+async fn request_reads_a_body_above_two_kib() {
+    let padding = "a".repeat(4096);
+    let body =
+        format!(r#"{{"sanitizationResult":{{"filterResults":{{}}}},"padding":"{padding}"}}"#);
+    let (endpoint, _captured, _server) = serve(Reply::ok(&body)).await;
+    let transport = transport(Some(&endpoint), StubTokens::new(None));
+    let result = transport
+        .make_model_armor_request(Some("hello"), Source::UserPrompt, None)
+        .await;
+    assert!(result.is_ok());
 }
 
 #[tokio::test]

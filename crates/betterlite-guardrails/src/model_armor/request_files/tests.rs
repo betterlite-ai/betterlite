@@ -1,13 +1,14 @@
 #![cfg(test)]
 
 use std::collections::VecDeque;
-use std::future::IntoFuture as _;
+use std::future::{Future, IntoFuture as _};
 use std::io;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use axum::Router;
 use axum::body::{Body, Bytes};
+use axum::extract::DefaultBodyLimit;
 use axum::http::{HeaderMap, StatusCode, Uri};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -68,7 +69,9 @@ async fn serve(replies: Vec<(StatusCode, String)>) -> (String, Arc<Mutex<usize>>
             (status, Body::from(body))
         }
     };
-    let router = Router::new().fallback(handler);
+    let router = Router::new()
+        .fallback(handler)
+        .layer(DefaultBodyLimit::disable());
     let mut server = JoinSet::new();
     server.spawn(axum::serve(listener, router).into_future());
     (endpoint, requests, server)
@@ -126,6 +129,39 @@ fn blocked(error: ScanError) -> (u16, IndexMap<String, GuardrailValue>) {
 
 fn metadata(request_data: &MetadataSlots) -> &MetadataMap {
     request_data.metadata.as_ref().expect("metadata bucket")
+}
+
+#[derive(Clone, Default)]
+struct LogSink(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for LogSink {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|_poisoned| io::Error::other("poisoned"))?
+            .extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+async fn logged<Run>(run: Run) -> String
+where
+    Run: Future<Output = ()>,
+{
+    let sink = LogSink::default();
+    let writer = sink.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(move || writer.clone())
+        .finish();
+    let guard = tracing::subscriber::set_default(subscriber);
+    run.await;
+    drop(guard);
+    String::from_utf8(sink.0.lock().expect("log").clone()).expect("utf8 log")
 }
 
 #[tokio::test]
@@ -551,4 +587,62 @@ async fn request_files_a_block_wins_over_a_later_clean_attachment() {
     .await;
     blocked(result.expect_err("the first attachment blocks"));
     assert_eq!(*requests.lock().expect("requests"), 1);
+}
+
+#[tokio::test]
+async fn request_files_exactly_four_mib_is_scanned() {
+    let (endpoint, requests, _server) = serve(vec![(StatusCode::OK, CLEAN.to_owned())]).await;
+    let transport = transport(&endpoint, true);
+    let payload = STANDARD.encode(vec![b'a'; MAX_FILE_SIZE_BYTES]);
+    let block = format!(
+        r#"{{"type":"file","file":{{"file_data":"data:application/pdf;base64,{payload}"}}}}"#
+    );
+    let mut request_data = slots();
+    let result = scan_request_files(
+        &messages(&block),
+        &mut request_data,
+        &transport,
+        &settings(Some("armor"), true, false),
+    )
+    .await;
+    assert!(result.is_ok());
+    assert_eq!(*requests.lock().expect("requests"), 1);
+}
+
+#[tokio::test]
+async fn request_files_warns_when_unscannable_attachments_are_skipped() {
+    let (endpoint, _requests, _server) = serve(Vec::new()).await;
+    let transport = transport(&endpoint, true);
+    let mut request_data = slots();
+    let log = logged(async {
+        let result = scan_request_files(
+            &messages(r#"{"type":"document","source":{"media_type":"application/pdf"}}"#),
+            &mut request_data,
+            &transport,
+            &settings(Some("armor"), true, true),
+        )
+        .await;
+        assert!(result.is_ok());
+    })
+    .await;
+    assert!(log.contains("skip_unscannable_attachments"));
+}
+
+#[tokio::test]
+async fn request_files_does_not_warn_about_skipping_an_empty_count() {
+    let (endpoint, _requests, _server) = serve(vec![(StatusCode::OK, CLEAN.to_owned())]).await;
+    let transport = transport(&endpoint, true);
+    let mut request_data = slots();
+    let log = logged(async {
+        let result = scan_request_files(
+            &messages(&pdf_attachment()),
+            &mut request_data,
+            &transport,
+            &settings(Some("armor"), true, true),
+        )
+        .await;
+        assert!(result.is_ok());
+    })
+    .await;
+    assert!(!log.contains("skip_unscannable_attachments"));
 }
