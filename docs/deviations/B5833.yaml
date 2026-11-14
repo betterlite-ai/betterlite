@@ -1,0 +1,14 @@
+task: B5833
+deviations:
+  - what: Costs are exact Decimal values, so web_search_cost can differ from LiteLLM's binary float in the last digits.
+    why: B204 forbids binary floating point in prices. Oracle cases compare the two as 12-place decimals.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/groq/cost_calculator.py#L27
+  - what: A stream error chunk whose code is missing, not an integer, or outside 0..=65535 gets status 500.
+    why: Statuses are integers in betterlite, and 500 is what the base chunk parser uses for the same input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/groq/chat/transformation.py#L355
+  - what: The Groq STT drop_params global is an explicit bool argument, not read from a process global.
+    why: Provider modules take settings from the caller, so tests need no process state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/groq/stt/transformation.py#L89
+  - what: A reply whose JSON has no service_tier key maps to "auto" instead of raising.
+    why: LiteLLM reads the attribute with getattr without a default, so a Groq reply that omits service_tier fails with an AttributeError, a 500 on a reply LiteLLM already parses. No working setup can rely on that, and null already maps to "auto".
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/groq/chat/transformation.py#L308

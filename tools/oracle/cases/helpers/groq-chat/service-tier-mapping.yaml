@@ -1,0 +1,51 @@
+kind: helper
+name: groq-service-tier-mapping
+call:
+  b5833:
+    replies:
+      - reply:
+          id: c1
+          object: chat.completion
+          created: 1
+          model: llama-3.3-70b-versatile
+          service_tier: null
+          choices:
+            - index: 0
+              message: {role: assistant, content: hi}
+              finish_reason: stop
+          usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}
+      - reply:
+          id: c2
+          object: chat.completion
+          created: 1
+          model: llama-3.3-70b-versatile
+          service_tier: flex
+          choices:
+            - index: 0
+              message: {role: assistant, content: hi}
+              finish_reason: stop
+          usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}
+      - reply:
+          id: c3
+          object: chat.completion
+          created: 1
+          model: llama-3.3-70b-versatile
+          service_tier: scale
+          choices:
+            - index: 0
+              message: {role: assistant, content: hi}
+              finish_reason: stop
+          usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}
+      - reply:
+          id: c4
+          object: chat.completion
+          created: 1
+          model: llama-3.3-70b-versatile
+          service_tier: default
+          choices:
+            - index: 0
+              message: {role: assistant, content: hi}
+              finish_reason: stop
+          usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}
+env: {}
+compare: {ignore: []}

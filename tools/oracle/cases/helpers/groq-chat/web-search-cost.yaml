@@ -1,0 +1,17 @@
+kind: helper
+name: groq-web-search-cost
+call:
+  b5833:
+    costs:
+      - web_search_requests: 2
+        browser_open_requests: 3
+        medium_rate: "0.005"
+      - browser_open_requests: 4
+      - medium_rate: "0.005"
+      - web_search_requests: 3
+        medium_rate: "0.005"
+      - web_search_requests: 1
+        browser_open_requests: 0
+        medium_rate: "0.010"
+env: {}
+compare: {ignore: []}

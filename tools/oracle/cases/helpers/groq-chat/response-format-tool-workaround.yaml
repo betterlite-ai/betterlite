@@ -1,0 +1,22 @@
+kind: helper
+name: groq-response-format-tool-workaround
+call:
+  b5833:
+    capabilities:
+      web_search: "no"
+      reasoning: "no"
+      response_schema: "no"
+    options:
+      - model: llama-3.3-70b-versatile
+        non_default:
+          response_format:
+            type: json_schema
+            json_schema:
+              schema:
+                type: object
+                properties:
+                  answer: {type: string}
+        optional_params:
+          temperature: 0.2
+env: {}
+compare: {ignore: []}
