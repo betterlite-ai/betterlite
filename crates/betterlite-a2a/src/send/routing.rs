@@ -5,7 +5,7 @@ use betterlite_core::agents::json::AgentJson;
 use super::error::SendCallError;
 
 // LiteLLM's "if custom_llm_provider:" gate: an absent, null or empty provider takes the native path
-pub fn completion_provider(
+pub(super) fn completion_provider(
     litellm_params: &BTreeMap<String, AgentJson>,
 ) -> Result<Option<&str>, SendCallError> {
     let Some(value) = litellm_params.get("custom_llm_provider") else {

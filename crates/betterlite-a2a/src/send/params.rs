@@ -11,7 +11,9 @@ use crate::logging_context::A2A_COST_PARAM_KEYS;
 use super::error::SendCallError;
 
 // LiteLLM's request.params.model_dump(mode="json"): the bridge handler reads the request as plain parameters
-pub fn bridge_params(request: &SendMessageRequest) -> Result<MessageSendParams, SendCallError> {
+pub(super) fn bridge_params(
+    request: &SendMessageRequest,
+) -> Result<MessageSendParams, SendCallError> {
     let encoded = serde_json::to_value(&request.params).map_err(|source| SendCallError::Json {
         value: "request params",
         source,
@@ -23,7 +25,7 @@ pub fn bridge_params(request: &SendMessageRequest) -> Result<MessageSendParams, 
 }
 
 // Only the pricing keys LiteLLM's _a2a_cost_params selects reach the logging object
-pub fn pricing_params(
+pub(super) fn pricing_params(
     litellm_params: &BTreeMap<String, AgentJson>,
 ) -> Result<IndexMap<String, Json>, SendCallError> {
     let mut pricing = IndexMap::new();

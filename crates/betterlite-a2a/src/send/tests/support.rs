@@ -227,27 +227,25 @@ pub(crate) fn unused_base() -> String {
 }
 
 pub(crate) fn card_json(endpoint: &str) -> String {
-    serde_json::json!({
-        "name": "fake-agent",
-        "url": endpoint,
-        "version": "1.0",
-        "capabilities": {"streaming": true},
-        "defaultInputModes": ["text"],
-        "defaultOutputModes": ["text"],
-        "skills": []
-    })
-    .to_string()
+    let url = serde_json::to_string(endpoint).expect("the endpoint serializes as JSON");
+    format!(
+        r#"{{"name":"fake-agent","url":{url},"version":"1.0","capabilities":{{"streaming":true}},"defaultInputModes":["text"],"defaultOutputModes":["text"],"skills":[]}}"#
+    )
 }
 
 // The JSON-RPC envelope every fixture frame carries
-fn json_rpc_result(result: AgentJson) -> AgentJson {
-    serde_json::json!({"jsonrpc": "2.0", "id": "rpc-1", "result": result})
+fn json_rpc_result(result: &str) -> AgentJson {
+    serde_json::from_str(&format!(
+        r#"{{"jsonrpc":"2.0","id":"rpc-1","result":{result}}}"#
+    ))
+    .expect("the fixture envelope is JSON")
 }
 
 pub(crate) fn buffered_message(text: &str) -> String {
-    json_rpc_result(serde_json::json!({
-        "message": {"messageId": "m-1", "role": "ROLE_AGENT", "parts": [{"text": text}]}
-    }))
+    let text = serde_json::to_string(text).expect("the message text serializes as JSON");
+    json_rpc_result(&format!(
+        r#"{{"message":{{"messageId":"m-1","role":"ROLE_AGENT","parts":[{{"text":{text}}}]}}}}"#
+    ))
     .to_string()
 }
 
@@ -256,13 +254,10 @@ pub(crate) fn message_frame(text: &str) -> String {
 }
 
 pub(crate) fn status_frame(state: &str) -> String {
-    let payload = json_rpc_result(serde_json::json!({
-        "statusUpdate": {
-            "taskId": "t-1",
-            "contextId": "c-1",
-            "status": {"state": format!("TASK_STATE_{}", state.to_uppercase())}
-        }
-    }));
+    let payload = json_rpc_result(&format!(
+        r#"{{"statusUpdate":{{"taskId":"t-1","contextId":"c-1","status":{{"state":"TASK_STATE_{}"}}}}}}"#,
+        state.to_uppercase()
+    ));
     format!("data: {payload}\n\n")
 }
 
@@ -271,27 +266,24 @@ pub(crate) fn request(text: &str) -> SendMessageRequest {
 }
 
 pub(crate) fn request_with_id(id: &str, text: &str) -> SendMessageRequest {
-    let body = serde_json::json!({
-        "id": id,
-        "params": {"message": {
-            "kind": "message",
-            "messageId": "m-1",
-            "role": "user",
-            "parts": [{"kind": "text", "text": text}]
-        }}
-    });
-    serde_json::from_value(body).expect("the fixture request deserializes")
+    let id = serde_json::to_string(id).expect("the request id serializes as JSON");
+    let text = serde_json::to_string(text).expect("the message text serializes as JSON");
+    serde_json::from_str(&format!(
+        r#"{{"id":{id},"params":{{"message":{{"kind":"message","messageId":"m-1","role":"user","parts":[{{"kind":"text","text":{text}}}]}}}}}}"#
+    ))
+    .expect("the fixture request deserializes")
 }
 
 pub(crate) fn messages(text: &str) -> Vec<AgentJson> {
-    serde_json::from_value(serde_json::json!([{"role": "user", "content": text}]))
+    let text = serde_json::to_string(text).expect("the message text serializes as JSON");
+    serde_json::from_str(&format!(r#"[{{"role":"user","content":{text}}}]"#))
         .expect("the fixture messages are JSON")
 }
 
 pub(crate) fn params_with_provider(provider: Option<AgentJson>) -> BTreeMap<String, AgentJson> {
     let mut params = litellm_params(&[("model", AgentJson::String("agent".to_owned()))]);
-    if let Some(provider) = provider {
-        params.insert("custom_llm_provider".to_owned(), provider);
+    if let Some(value) = provider {
+        params.insert("custom_llm_provider".to_owned(), value);
     }
     params
 }
@@ -380,7 +372,6 @@ pub(crate) struct LoggingSnapshot {
 
 #[derive(Clone)]
 pub(crate) struct Recorded {
-    pub(crate) call: StreamSuccessCall,
     pub(crate) logging: LoggingSnapshot,
 }
 
@@ -400,7 +391,7 @@ pub(crate) fn recording_dispatch() -> (RecordingDispatch, Arc<Mutex<Vec<Recorded
 
 #[async_trait]
 impl StreamSuccessDispatch for RecordingDispatch {
-    async fn dispatch(&mut self, logging: &mut LoggingState, call: StreamSuccessCall) {
+    async fn dispatch(&mut self, logging: &mut LoggingState, _call: StreamSuccessCall) {
         let snapshot = LoggingSnapshot {
             model: logging.model.clone(),
             call_type: logging.call_type.clone(),
@@ -413,10 +404,7 @@ impl StreamSuccessDispatch for RecordingDispatch {
         self.calls
             .lock()
             .expect("the fixture lock is not poisoned")
-            .push(Recorded {
-                call,
-                logging: snapshot,
-            });
+            .push(Recorded { logging: snapshot });
     }
 }
 
@@ -575,9 +563,9 @@ impl StreamFixture {
     pub(crate) fn new() -> Self {
         let issued = Arc::new(Mutex::new(Vec::new()));
         let generator: Box<dyn Fn() -> String + Sync + Send> = {
-            let issued = Arc::clone(&issued);
+            let shared = Arc::clone(&issued);
             Box::new(move || {
-                let mut ids = issued.lock().expect("the fixture lock is not poisoned");
+                let mut ids = shared.lock().expect("the fixture lock is not poisoned");
                 let id = format!("generated-{}", ids.len().saturating_add(1));
                 ids.push(id.clone());
                 id

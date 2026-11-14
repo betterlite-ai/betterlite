@@ -24,14 +24,14 @@ use super::support::{
 #[tokio::test]
 async fn stream_logging_builds_an_object_when_absent(#[case] key: &str, #[case] expected: &str) {
     let reply = Reply::Sse(vec![status_frame("working"), message_frame("hi")]);
-    let (outcome, _seen) = with_agent(reply, |base| async move {
+    let (outcome, _seen) = Box::pin(with_agent(reply, |base| async move {
         let mut fixture = SendFixture::new();
         let mut call = stream_call(send_call("hello world", Some(base), pricing_params()));
         call.agent_id = Some("agent-7".to_owned());
         call.metadata = Some(json(r#"{"user_id":"u-1"}"#));
         call.proxy_server_request = Some(json(r#"{"path":"/v1/a2a/message"}"#));
-        fixture.stream(call, None).await
-    })
+        Box::pin(fixture.stream(call, None)).await
+    }))
     .await;
 
     assert_eq!(outcome.dispatch.len(), 1);
@@ -52,13 +52,13 @@ async fn stream_logging_builds_an_object_when_absent(#[case] key: &str, #[case] 
 #[tokio::test]
 async fn stream_logging_reuses_the_given_object() {
     let reply = Reply::Sse(vec![message_frame("hi")]);
-    let (outcome, _seen) = with_agent(reply, |base| async move {
+    let (outcome, _seen) = Box::pin(with_agent(reply, |base| async move {
         let mut fixture = SendFixture::new();
         let mut call = stream_call(send_call("hello", Some(base), BTreeMap::new()));
         call.agent_id = Some("agent-7".to_owned());
         let logging = logging_state(Some("logging-trace"));
-        fixture.stream(call, Some(logging)).await
-    })
+        Box::pin(fixture.stream(call, Some(logging))).await
+    }))
     .await;
 
     assert_eq!(outcome.dispatch.len(), 1);
@@ -76,15 +76,15 @@ async fn stream_logging_reuses_the_given_object() {
 #[tokio::test]
 async fn stream_iterator_yields_the_agent_chunks() {
     let reply = Reply::Sse(vec![status_frame("working"), message_frame("hi")]);
-    let (outcome, seen) = with_agent(reply, |base| async move {
+    let (outcome, seen) = Box::pin(with_agent(reply, |base| async move {
         let mut fixture = SendFixture::new();
         let call = stream_call(send_call(
             "hello world",
             Some(base),
             params_with_provider(None),
         ));
-        fixture.stream(call, None).await
-    })
+        Box::pin(fixture.stream(call, None)).await
+    }))
     .await;
 
     let collected = outcome.events;
@@ -118,14 +118,16 @@ async fn stream_iterator_yields_the_agent_chunks() {
 #[tokio::test]
 async fn stream_iterator_reports_a_stream_error() {
     let reply = Reply::Sse(vec!["data: not-json\n\n".to_owned()]);
-    let (outcome, _seen) = with_agent(reply, |base| async move {
+    let (outcome, _seen) = Box::pin(with_agent(reply, |base| async move {
         let mut fixture = SendFixture::new();
         let call = stream_call(send_call("hello", Some(base), params_with_provider(None)));
-        fixture.stream(call, None).await
-    })
+        Box::pin(fixture.stream(call, None)).await
+    }))
     .await;
 
     assert_eq!(outcome.events.len(), 1);
-    assert!(outcome.events[0].is_err());
+    outcome.events[0]
+        .as_ref()
+        .expect_err("the stream error is reported");
     assert!(outcome.dispatch.is_empty());
 }

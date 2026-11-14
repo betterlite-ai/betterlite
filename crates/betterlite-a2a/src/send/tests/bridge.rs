@@ -83,7 +83,7 @@ async fn stream_routing_uses_the_completion_bridge_for_a_non_empty_provider() {
         params_with_provider(Some(AgentJson::String("langgraph".to_owned()))),
     ));
 
-    let outcome = fixture.stream(call, None).await;
+    let outcome = Box::pin(fixture.stream(call, None)).await;
 
     assert_eq!(
         summaries(&outcome.events),
@@ -125,7 +125,7 @@ async fn stream_routing_selects_a_registered_provider() {
     ));
     call.agent_extra_headers = Some(agent_headers.clone());
 
-    let outcome = fixture.stream(call, None).await;
+    let outcome = Box::pin(fixture.stream(call, None)).await;
 
     assert_eq!(
         selected_configs(&fixture.providers),
@@ -159,7 +159,7 @@ async fn stream_routing_selects_a_bedrock_agentcore_provider() {
     );
     let call = stream_call(send_call("hello", None, params));
 
-    let outcome = fixture.stream(call, None).await;
+    let outcome = Box::pin(fixture.stream(call, None)).await;
 
     assert_eq!(
         selected_configs(&fixture.providers),
@@ -176,7 +176,7 @@ async fn stream_routing_reports_a_params_failure() {
     params.insert("model".to_owned(), AgentJson::Bool(true));
     let call = stream_call(send_call("hello", None, params));
 
-    let outcome = fixture.stream(call, None).await;
+    let outcome = Box::pin(fixture.stream(call, None)).await;
 
     assert_eq!(outcome.events.len(), 1);
     assert!(matches!(
@@ -199,7 +199,7 @@ async fn stream_routing_reports_a_provider_failure() {
         params_with_provider(Some(AgentJson::String("langflow".to_owned()))),
     ));
 
-    let outcome = fixture.stream(call, None).await;
+    let outcome = Box::pin(fixture.stream(call, None)).await;
 
     assert_eq!(outcome.events.len(), 1);
     assert!(matches!(

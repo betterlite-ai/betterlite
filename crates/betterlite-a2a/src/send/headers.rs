@@ -6,19 +6,19 @@ use secrecy::SecretString;
 
 use crate::logging_context::json_rpc_id_text;
 
-pub const TRACE_ID_HEADER: &str = "X-LiteLLM-Trace-Id";
-pub const AGENT_ID_HEADER: &str = "X-LiteLLM-Agent-Id";
+pub(super) const TRACE_ID_HEADER: &str = "X-LiteLLM-Trace-Id";
+pub(super) const AGENT_ID_HEADER: &str = "X-LiteLLM-Agent-Id";
 
 // The agent's own headers are applied after the LiteLLM ones, so a name the agent sets wins
 #[must_use]
-pub fn client_headers(
+pub(super) fn client_headers(
     trace_id: &str,
     agent_id: Option<&str>,
     agent_extra_headers: Option<&BTreeMap<String, String>>,
 ) -> BTreeMap<String, SecretString> {
     let mut headers = BTreeMap::from([(TRACE_ID_HEADER.to_owned(), SecretString::from(trace_id))]);
-    if let Some(agent_id) = agent_id {
-        headers.insert(AGENT_ID_HEADER.to_owned(), SecretString::from(agent_id));
+    if let Some(id) = agent_id {
+        headers.insert(AGENT_ID_HEADER.to_owned(), SecretString::from(id));
     }
     if let Some(extra) = agent_extra_headers {
         headers.extend(
@@ -31,7 +31,7 @@ pub fn client_headers(
 }
 
 #[must_use]
-pub fn logging_trace_id(
+pub(super) fn logging_trace_id(
     logging: Option<&LoggingState>,
     trace_ids: &(dyn Fn() -> String + Sync),
 ) -> String {
@@ -43,7 +43,7 @@ pub fn logging_trace_id(
 
 // A streaming request id backs the trace id when no logging object supplied one; LiteLLM skips a falsy id
 #[must_use]
-pub fn stream_trace_id(
+pub(super) fn stream_trace_id(
     logging: Option<&LoggingState>,
     request_id: &JsonRpcId,
     trace_ids: &(dyn Fn() -> String + Sync),
@@ -51,8 +51,8 @@ pub fn stream_trace_id(
     let trace_id = logging
         .map(|state| state.litellm_trace_id.as_str())
         .filter(|trace_id| !trace_id.is_empty());
-    if let Some(trace_id) = trace_id {
-        return trace_id.to_owned();
+    if let Some(current) = trace_id {
+        return current.to_owned();
     }
     let request_text = json_rpc_id_text(request_id);
     if request_text.is_empty() {

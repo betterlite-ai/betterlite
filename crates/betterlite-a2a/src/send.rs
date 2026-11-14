@@ -12,18 +12,17 @@ mod usage;
 
 mod tests;
 
-use betterlite_core::agents::json::AgentJson;
 use betterlite_core::agents::provider::a2a::LiteLLMSendMessageResponse;
 use betterlite_logging::logging_state::LoggingState;
 use chrono::{DateTime, FixedOffset};
 use futures_util::StreamExt as _;
-use futures_util::stream::BoxStream;
 
 use crate::completion_bridge::EventSource;
 use crate::completion_bridge::completion::CompletionPort;
 use crate::completion_bridge::dispatch::A2AProviderDispatch;
 use crate::streaming_iterator::StreamSuccessDispatch;
 
+use self::bridge::StreamedBridge;
 use self::call::{SendCall, StreamCall};
 use self::deps::{BridgeDeps, NativeDeps, StreamingDeps};
 use self::error::{SendCallError, SendEntryError};
@@ -52,7 +51,7 @@ pub async fn asend_message_streaming<'deps, C, P, S, Clock, Dispatch>(
     logging: Option<LoggingState>,
     deps: StreamingDeps<'deps, Clock, Dispatch>,
     bridge: &'deps mut BridgeDeps<'deps, C, P, S>,
-) -> Result<BoxStream<'deps, Result<AgentJson, SendEntryError<C::Error, P::Error>>>, SendCallError>
+) -> Result<StreamedBridge<'deps, C, P>, SendCallError>
 where
     C: CompletionPort,
     P: A2AProviderDispatch,

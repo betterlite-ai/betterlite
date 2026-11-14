@@ -46,15 +46,18 @@ async fn send_routing_takes_the_completion_bridge_for_a_non_empty_provider() {
 async fn send_routing_uses_native_for_an_absent_null_or_empty_provider(
     #[case] provider_value: Option<AgentJson>,
 ) {
-    let (outcome, seen) = with_agent(Reply::Json(buffered_message("hi")), |base| async move {
-        let mut fixture = SendFixture::new();
-        let call = send_call("hello", Some(base), params_with_provider(provider_value));
-        let result = fixture.send(call, None).await;
-        (result, recorded_calls(&fixture.completion))
-    })
+    let (outcome, seen) = Box::pin(with_agent(
+        Reply::Json(buffered_message("hi")),
+        |base| async move {
+            let mut fixture = SendFixture::new();
+            let call = send_call("hello", Some(base), params_with_provider(provider_value));
+            let result = fixture.send(call, None).await;
+            (result, recorded_calls(&fixture.completion))
+        },
+    ))
     .await;
 
-    assert!(outcome.0.is_ok());
+    outcome.0.expect("the native send answers");
     assert!(outcome.1.is_empty());
     assert!(posted(&seen).body.contains("\"method\":\"SendMessage\""));
 }

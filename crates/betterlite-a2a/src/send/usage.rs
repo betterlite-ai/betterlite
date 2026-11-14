@@ -8,7 +8,7 @@ use crate::client::records::response::SendMessageResponse;
 use super::error::SendCallError;
 
 // LiteLLM's asyncified A2ARequestUtils.calculate_usage_from_request_response, reading the response's root dump
-pub async fn usage_from(
+pub(super) async fn usage_from(
     counter: &Counter,
     request: &SendMessageRequest,
     response: &SendMessageResponse,

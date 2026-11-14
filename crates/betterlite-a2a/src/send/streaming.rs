@@ -13,7 +13,7 @@ use crate::logging_context::{
     json_rpc_id_text, set_agent_id_on_logging_obj,
 };
 use crate::streaming_iterator::{
-    A2AStreamingIterator, StreamSetup, StreamSuccessDispatch, StreamedChunk,
+    A2AStreamingIterator, StreamSetup, StreamSuccessDispatch, StreamedChunk as _,
 };
 
 use super::call::StreamCall;

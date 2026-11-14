@@ -16,6 +16,14 @@ use super::error::SendEntryError;
 use super::params::bridge_params;
 use super::response::response_from_dict;
 
+pub(super) type StreamedBridge<'deps, C, P> = BoxStream<
+    'deps,
+    Result<
+        AgentJson,
+        SendEntryError<<C as CompletionPort>::Error, <P as A2AProviderDispatch>::Error>,
+    >,
+>;
+
 pub(super) async fn send_via_completion_bridge<C, P, S>(
     call: &SendCall,
     provider: &str,
@@ -51,7 +59,7 @@ pub(super) fn stream_via_completion_bridge<'deps, C, P, S>(
     completion: &'deps C,
     providers: &'deps P,
     mut source: &'deps mut S,
-) -> BoxStream<'deps, Result<AgentJson, SendEntryError<C::Error, P::Error>>>
+) -> StreamedBridge<'deps, C, P>
 where
     C: CompletionPort,
     P: A2AProviderDispatch,

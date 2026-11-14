@@ -10,7 +10,7 @@ use crate::logging_context::json_rpc_id_text;
 use super::error::SendCallError;
 
 // LiteLLM's from_a2a_response: the SDK response's null fields are dropped before the JSON-RPC id is backfilled
-pub fn response_from_a2a(
+pub(super) fn response_from_a2a(
     response: &SendMessageResponse,
     request: &SendMessageRequest,
 ) -> Result<LiteLLMSendMessageResponse, SendCallError> {
@@ -24,7 +24,7 @@ pub fn response_from_a2a(
 }
 
 // LiteLLM's from_dict: the bridge answer is normalized as sent, without the SDK dump's null filtering
-pub fn response_from_dict(
+pub(super) fn response_from_dict(
     response: &AgentJson,
     request_id: &str,
 ) -> Result<LiteLLMSendMessageResponse, SendCallError> {

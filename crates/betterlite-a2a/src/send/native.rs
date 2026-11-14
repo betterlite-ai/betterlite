@@ -74,14 +74,12 @@ pub(super) async fn send_native(
         agent_id,
         agent_extra_headers,
     } = call;
-    let client = match a2a_client {
-        Some(client) => client,
-        None => {
-            let trace_id = logging_trace_id(logging.as_deref(), deps.trace_ids);
-            let headers =
-                client_headers(&trace_id, agent_id.as_deref(), agent_extra_headers.as_ref());
-            create_client(api_base.clone(), headers, &litellm_params, false, deps).await?
-        }
+    let client = if let Some(existing) = a2a_client {
+        existing
+    } else {
+        let trace_id = logging_trace_id(logging.as_deref(), deps.trace_ids);
+        let headers = client_headers(&trace_id, agent_id.as_deref(), agent_extra_headers.as_ref());
+        create_client(api_base.clone(), headers, &litellm_params, false, deps).await?
     };
     let agent_name = get_a2a_model_info(Some(&client.agent_card), logging.as_deref_mut());
     tracing::info!(
@@ -96,6 +94,6 @@ pub(super) async fn send_native(
         usage_from(deps.counter, &request, &a2a_response).await?;
     set_usage_on_logging_obj(logging.as_deref_mut(), prompt_tokens, completion_tokens)?;
     set_litellm_params(logging.as_deref_mut(), &pricing_params(&litellm_params)?)?;
-    set_agent_id_on_logging_obj(logging.as_deref_mut(), agent_id.as_deref());
+    set_agent_id_on_logging_obj(logging, agent_id.as_deref());
     Ok(response)
 }

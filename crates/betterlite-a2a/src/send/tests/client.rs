@@ -16,15 +16,15 @@ use super::support::{
 #[tokio::test]
 async fn send_client_sends_a_generated_trace_id_and_the_agent_id() {
     let reply = Reply::Json(buffered_message("hi"));
-    let (outcome, seen) = with_agent(reply, |base| async move {
+    let (outcome, seen) = Box::pin(with_agent(reply, |base| async move {
         let mut fixture = SendFixture::new();
         let mut call = send_call("hello", Some(base), params_with_provider(None));
         call.agent_id = Some("agent-7".to_owned());
         fixture.send(call, None).await
-    })
+    }))
     .await;
 
-    assert!(outcome.is_ok());
+    outcome.expect("the send succeeds");
     assert_eq!(card_requests(&seen).len(), 1);
     let posted = posted(&seen);
     assert_eq!(
@@ -44,15 +44,15 @@ async fn send_client_sends_a_generated_trace_id_and_the_agent_id() {
 #[tokio::test]
 async fn send_client_prefers_the_logging_trace_id() {
     let reply = Reply::Json(buffered_message("hi"));
-    let (outcome, seen) = with_agent(reply, |base| async move {
+    let (outcome, seen) = Box::pin(with_agent(reply, |base| async move {
         let mut fixture = SendFixture::new();
         let call = send_call("hello", Some(base), params_with_provider(None));
         let mut logging = logging_state(Some("logging-trace"));
         fixture.send(call, Some(&mut logging)).await
-    })
+    }))
     .await;
 
-    assert!(outcome.is_ok());
+    outcome.expect("the send succeeds");
     let posted = posted(&seen);
     assert_eq!(
         posted.headers.get("x-litellm-trace-id").map(String::as_str),
@@ -64,15 +64,15 @@ async fn send_client_prefers_the_logging_trace_id() {
 #[tokio::test]
 async fn send_client_generates_a_trace_id_for_an_empty_logging_trace() {
     let reply = Reply::Json(buffered_message("hi"));
-    let (outcome, seen) = with_agent(reply, |base| async move {
+    let (outcome, seen) = Box::pin(with_agent(reply, |base| async move {
         let mut fixture = SendFixture::new();
         let call = send_call("hello", Some(base), params_with_provider(None));
         let mut logging = logging_state(Some(""));
         fixture.send(call, Some(&mut logging)).await
-    })
+    }))
     .await;
 
-    assert!(outcome.is_ok());
+    outcome.expect("the send succeeds");
     let posted = posted(&seen);
     assert_eq!(
         posted.headers.get("x-litellm-trace-id").map(String::as_str),
@@ -83,7 +83,7 @@ async fn send_client_generates_a_trace_id_for_an_empty_logging_trace() {
 #[tokio::test]
 async fn send_client_lets_agent_headers_override_the_litellm_headers() {
     let reply = Reply::Json(buffered_message("hi"));
-    let (outcome, seen) = with_agent(reply, |base| async move {
+    let (outcome, seen) = Box::pin(with_agent(reply, |base| async move {
         let mut fixture = SendFixture::new();
         let mut call = send_call("hello", Some(base), params_with_provider(None));
         call.agent_id = Some("agent-7".to_owned());
@@ -93,10 +93,10 @@ async fn send_client_lets_agent_headers_override_the_litellm_headers() {
             ("x-team".to_owned(), "blue".to_owned()),
         ]));
         fixture.send(call, None).await
-    })
+    }))
     .await;
 
-    assert!(outcome.is_ok());
+    outcome.expect("the send succeeds");
     let posted = posted(&seen);
     assert_eq!(
         posted.headers.get("x-litellm-trace-id").map(String::as_str),
@@ -130,7 +130,7 @@ async fn stream_client_requires_an_api_base_without_a_client() {
     let mut fixture = SendFixture::new();
     let call = stream_call(send_call("hello", None, params_with_provider(None)));
 
-    let error = fixture.start_error(call, None).await;
+    let error = Box::pin(fixture.start_error(call, None)).await;
 
     assert!(matches!(error, SendCallError::MissingClient));
 }
@@ -138,7 +138,7 @@ async fn stream_client_requires_an_api_base_without_a_client() {
 #[tokio::test]
 async fn stream_client_uses_the_provided_client_without_fetching_the_card_again() {
     let reply = Reply::Sse(vec![message_frame("hi")]);
-    let (outcome, seen) = with_agent(reply, |base| async move {
+    let (outcome, seen) = Box::pin(with_agent(reply, |base| async move {
         let pool = pool();
         let environment = BTreeMap::new();
         let settings = A2AClientSettings {
@@ -155,19 +155,21 @@ async fn stream_client_uses_the_provided_client_without_fetching_the_card_again(
         let mut fixture = SendFixture::new();
         let mut call = stream_call(send_call("hello", None, params_with_provider(None)));
         call.a2a_client = Some(client);
-        fixture.stream(call, None).await
-    })
+        Box::pin(fixture.stream(call, None)).await
+    }))
     .await;
 
     assert_eq!(outcome.events.len(), 1);
-    assert!(outcome.events[0].is_ok());
+    outcome.events[0]
+        .as_ref()
+        .expect("the event is not an error");
     assert_eq!(card_requests(&seen).len(), 1);
 }
 
 #[tokio::test]
 async fn send_client_uses_the_provided_client_without_fetching_the_card_again() {
     let reply = Reply::Json(buffered_message("hi"));
-    let (outcome, seen) = with_agent(reply, |base| async move {
+    let (outcome, seen) = Box::pin(with_agent(reply, |base| async move {
         let pool = pool();
         let environment = BTreeMap::new();
         let settings = A2AClientSettings {
@@ -185,10 +187,10 @@ async fn send_client_uses_the_provided_client_without_fetching_the_card_again() 
         let mut call = send_call("hello", None, params_with_provider(None));
         call.a2a_client = Some(client);
         fixture.send(call, None).await
-    })
+    }))
     .await;
 
-    assert!(outcome.is_ok());
+    outcome.expect("the send succeeds");
     assert_eq!(card_requests(&seen).len(), 1);
     assert!(posted(&seen).body.contains("\"method\":\"SendMessage\""));
 }
@@ -196,7 +198,7 @@ async fn send_client_uses_the_provided_client_without_fetching_the_card_again() 
 #[tokio::test]
 async fn send_client_uses_the_configured_agent_card_path() {
     let reply = Reply::Json(buffered_message("hi"));
-    let (outcome, seen) = with_agent(reply, |base| async move {
+    let (outcome, seen) = Box::pin(with_agent(reply, |base| async move {
         let mut fixture = SendFixture::new();
         let mut call = send_call("hello", Some(base), params_with_provider(None));
         call.litellm_params.insert(
@@ -204,10 +206,10 @@ async fn send_client_uses_the_configured_agent_card_path() {
             AgentJson::String("custom/card.json".to_owned()),
         );
         fixture.send(call, None).await
-    })
+    }))
     .await;
 
-    assert!(outcome.is_ok());
+    outcome.expect("the send succeeds");
     let cards = card_requests(&seen);
     assert_eq!(cards.len(), 1);
     assert_eq!(cards[0].path, CUSTOM_CARD_PATH);
@@ -217,14 +219,17 @@ async fn send_client_uses_the_configured_agent_card_path() {
 #[tokio::test]
 async fn send_client_retries_with_the_agent_card_url_and_api_base() {
     let reply = Reply::Json(buffered_message("retried"));
-    let (outcome, seen) = with_agent_advertising_a_dead_port(reply, |base| async move {
-        let mut fixture = SendFixture::new();
-        let call = send_call("hello", Some(base), params_with_provider(None));
-        fixture.send(call, None).await
-    })
+    let (outcome, seen) = Box::pin(with_agent_advertising_a_dead_port(
+        reply,
+        |base| async move {
+            let mut fixture = SendFixture::new();
+            let call = send_call("hello", Some(base), params_with_provider(None));
+            fixture.send(call, None).await
+        },
+    ))
     .await;
 
-    assert!(outcome.is_ok());
+    outcome.expect("the send succeeds");
     assert_eq!(
         seen.iter().filter(|entry| entry.path == "/").count(),
         1,
@@ -236,15 +241,20 @@ async fn send_client_retries_with_the_agent_card_url_and_api_base() {
 #[tokio::test]
 async fn stream_client_retries_with_the_agent_card_url_and_api_base() {
     let reply = Reply::Sse(vec![message_frame("retried")]);
-    let (outcome, seen) = with_agent_advertising_a_dead_port(reply, |base| async move {
-        let mut fixture = SendFixture::new();
-        let call = stream_call(send_call("hello", Some(base), params_with_provider(None)));
-        fixture.stream(call, None).await
-    })
+    let (outcome, seen) = Box::pin(with_agent_advertising_a_dead_port(
+        reply,
+        |base| async move {
+            let mut fixture = SendFixture::new();
+            let call = stream_call(send_call("hello", Some(base), params_with_provider(None)));
+            Box::pin(fixture.stream(call, None)).await
+        },
+    ))
     .await;
 
     assert_eq!(outcome.events.len(), 1);
-    assert!(outcome.events[0].is_ok());
+    outcome.events[0]
+        .as_ref()
+        .expect("the event is not an error");
     assert_eq!(
         seen.iter().filter(|entry| entry.path == "/").count(),
         1,
@@ -264,18 +274,20 @@ async fn stream_client_trace_id_fallbacks(
     #[case] expected_trace: &str,
 ) {
     let reply = Reply::Sse(vec![message_frame("hi")]);
-    let (outcome, seen) = with_agent(reply, |base| async move {
+    let (outcome, seen) = Box::pin(with_agent(reply, |base| async move {
         let mut fixture = SendFixture::new();
         let mut call = stream_call(send_call("hello", Some(base), params_with_provider(None)));
         call.request = request_with_id(request_id, "hello");
         call.agent_id = Some("agent-7".to_owned());
         let logging = logging_trace.map(|trace| logging_state(Some(trace)));
-        fixture.stream(call, logging).await
-    })
+        Box::pin(fixture.stream(call, logging)).await
+    }))
     .await;
 
     assert_eq!(outcome.events.len(), 1);
-    assert!(outcome.events[0].is_ok());
+    outcome.events[0]
+        .as_ref()
+        .expect("the event is not an error");
     let posted = posted(&seen);
     assert_eq!(
         posted.headers.get("x-litellm-trace-id").map(String::as_str),
@@ -290,7 +302,7 @@ async fn stream_client_trace_id_fallbacks(
 #[tokio::test]
 async fn stream_client_lets_agent_headers_override_the_litellm_headers() {
     let reply = Reply::Sse(vec![message_frame("hi")]);
-    let (outcome, seen) = with_agent(reply, |base| async move {
+    let (outcome, seen) = Box::pin(with_agent(reply, |base| async move {
         let mut fixture = SendFixture::new();
         let mut call = stream_call(send_call("hello", Some(base), params_with_provider(None)));
         call.agent_id = Some("agent-7".to_owned());
@@ -298,8 +310,8 @@ async fn stream_client_lets_agent_headers_override_the_litellm_headers() {
             "X-LiteLLM-Trace-Id".to_owned(),
             "agent-trace".to_owned(),
         )]));
-        fixture.stream(call, None).await
-    })
+        Box::pin(fixture.stream(call, None)).await
+    }))
     .await;
 
     assert_eq!(outcome.events.len(), 1);
