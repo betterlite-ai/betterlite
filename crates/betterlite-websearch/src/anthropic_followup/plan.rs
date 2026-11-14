@@ -4,7 +4,7 @@ use betterlite_context::agentic_loop_plan::{
 use serde_json::value::to_raw_value;
 
 use super::AnthropicFollowupError;
-use super::patch::{AnthropicPatchRequest, FollowupLogging, build_request_patch};
+use super::patch::{AnthropicPatchRequest, FollowupLogging, build_anthropic_request_patch};
 use crate::call_transformation::wire::{Call, Thinking};
 use crate::chat_responses_followup::ChatResponsesFollowup;
 use crate::chat_responses_followup::chat::FollowupRequest;
@@ -32,7 +32,7 @@ pub struct AnthropicPlanRequest<'request> {
 }
 
 impl AnthropicFollowup {
-    pub async fn build_plan(
+    pub async fn build_agentic_loop_plan(
         &self,
         tools: &ToolsDict,
         request: &AnthropicPlanRequest<'_>,
@@ -85,7 +85,7 @@ impl AnthropicFollowup {
             kwargs: request.kwargs,
         };
         let (patch, outcomes) =
-            build_request_patch(self.followup.search.as_ref(), &patch_request).await?;
+            build_anthropic_request_patch(self.followup.search.as_ref(), &patch_request).await?;
         let mut metadata = anthropic_metadata()?;
         if !native_flag(request.kwargs)? {
             return Ok(running_plan(patch, metadata));

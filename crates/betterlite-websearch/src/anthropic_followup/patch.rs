@@ -39,7 +39,7 @@ struct AgenticLoopParams {
     model: Option<String>,
 }
 
-pub async fn build_request_patch(
+pub async fn build_anthropic_request_patch(
     executor: &dyn SearchExecutor,
     request: &AnthropicPatchRequest<'_>,
 ) -> Result<(AgenticLoopRequestPatch, Vec<SearchOutcome>), AnthropicFollowupError> {

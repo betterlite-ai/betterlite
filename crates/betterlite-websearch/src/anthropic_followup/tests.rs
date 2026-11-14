@@ -10,7 +10,9 @@ use serde_json::json;
 use super::AnthropicFollowupError;
 use super::followup_kwargs::prepare_followup_kwargs;
 use super::max_tokens::resolve_max_tokens;
-use super::patch::{AnthropicPatchRequest, FollowupLogging, build_request_patch, patch_log_line};
+use super::patch::{
+    AnthropicPatchRequest, FollowupLogging, build_anthropic_request_patch, patch_log_line,
+};
 use super::plan::{AnthropicFollowup, AnthropicPlanRequest};
 use crate::call_transformation::WebSearchTransformation;
 use crate::call_transformation::outcome::SearchResult;
@@ -162,7 +164,7 @@ async fn patch_of(
         logging: None,
         kwargs,
     };
-    build_request_patch(searcher.as_ref(), &request)
+    build_anthropic_request_patch(searcher.as_ref(), &request)
         .await
         .unwrap()
 }
@@ -182,7 +184,10 @@ async fn plan_value(
         logging: None,
         kwargs,
     };
-    let plan = followup.build_plan(tools, &request).await.unwrap();
+    let plan = followup
+        .build_agentic_loop_plan(tools, &request)
+        .await
+        .unwrap();
     serde_json::to_value(plan).unwrap()
 }
 
@@ -372,7 +377,7 @@ async fn request_patch_prepends_thinking_blocks_to_the_assistant_message() {
         logging: None,
         kwargs: &kwargs,
     };
-    let (patch, _outcomes) = build_request_patch(searcher.as_ref(), &request)
+    let (patch, _outcomes) = build_anthropic_request_patch(searcher.as_ref(), &request)
         .await
         .unwrap();
     let value = serde_json::to_value(&patch).unwrap();
@@ -411,7 +416,7 @@ async fn request_patch_takes_the_model_from_the_logging_object() {
         logging: Some(&logging),
         kwargs: &kwargs,
     };
-    let (patch, _outcomes) = build_request_patch(searcher.as_ref(), &request)
+    let (patch, _outcomes) = build_anthropic_request_patch(searcher.as_ref(), &request)
         .await
         .unwrap();
     assert_eq!(patch.model.as_deref(), Some("claude-unprefixed"));
@@ -438,7 +443,7 @@ async fn request_patch_falls_back_to_the_model_argument() {
         logging: Some(&logging),
         kwargs: &kwargs,
     };
-    let (patch, _outcomes) = build_request_patch(searcher.as_ref(), &request)
+    let (patch, _outcomes) = build_anthropic_request_patch(searcher.as_ref(), &request)
         .await
         .unwrap();
     assert_eq!(patch.model.as_deref(), Some(MODEL));
@@ -556,7 +561,7 @@ async fn request_patch_appends_the_assistant_and_user_messages() {
         logging: None,
         kwargs: &kwargs,
     };
-    let (patch, _outcomes) = build_request_patch(searcher.as_ref(), &request)
+    let (patch, _outcomes) = build_anthropic_request_patch(searcher.as_ref(), &request)
         .await
         .unwrap();
     assert_eq!(patch.messages.as_ref().map(Vec::len), Some(4));
@@ -717,7 +722,7 @@ async fn anthropic_plan_rejects_a_non_boolean_native_flag() {
         logging: None,
         kwargs: &kwargs,
     };
-    let result = followup.build_plan(&tools, &request).await;
+    let result = followup.build_agentic_loop_plan(&tools, &request).await;
     assert!(matches!(
         result,
         Err(AnthropicFollowupError::InvalidNativeBlocksFlag(_))
@@ -804,7 +809,7 @@ async fn request_patch_rejects_a_non_object_agentic_loop_params() {
         logging: Some(&logging),
         kwargs: &kwargs,
     };
-    let result = build_request_patch(searcher.as_ref(), &request).await;
+    let result = build_anthropic_request_patch(searcher.as_ref(), &request).await;
     assert!(matches!(
         result,
         Err(AnthropicFollowupError::InvalidAgenticLoopParams(_))
@@ -827,7 +832,7 @@ async fn anthropic_plan_rejects_a_malformed_thinking_block() {
         logging: None,
         kwargs: &kwargs,
     };
-    let result = followup.build_plan(&tools, &request).await;
+    let result = followup.build_agentic_loop_plan(&tools, &request).await;
     assert!(matches!(
         result,
         Err(AnthropicFollowupError::InvalidThinkingBlock(_))

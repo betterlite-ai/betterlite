@@ -191,7 +191,7 @@ fn run_case(case: &Case) -> Result<Value, Box<crate::helpers::HelperError>> {
         followup: ChatResponsesFollowup { search },
     };
     let request = plan_request(case, logging.as_ref());
-    let plan = block_on(followup.build_plan(&tools, &request))?.map_err(failure)?;
+    let plan = block_on(followup.build_agentic_loop_plan(&tools, &request))?.map_err(failure)?;
     let plan = serde_json::to_value(plan).map_err(failure)?;
     Ok(json!({"plan": plan, "searches": executor.recorded()}))
 }
