@@ -293,6 +293,7 @@ async fn deployment_hook_merge() {
     assert_eq!(calls[0].0.get("custom_llm_provider"), Some(&text("openai")));
     drop(calls);
     deployment_hook_failure().await;
+    deployment_hook_merge_preserves_missing_and_skips_without_override().await;
 }
 
 async fn deployment_hook_failure() {
@@ -305,7 +306,6 @@ async fn deployment_hook_failure() {
     assert_eq!(source.to_string(), "deployment hook crashed");
 }
 
-#[tokio::test]
 async fn deployment_hook_merge_preserves_missing_and_skips_without_override() {
     let partial = ScriptedDispatcher {
         result: Some(map(vec![("model", text("m"))])),
