@@ -99,15 +99,15 @@ fn visibility_answer(caller: Option<&CallerFields>, plugins: &[PluginRecord]) ->
 fn plugin_caller(fields: &CallerFields) -> PluginCaller {
     PluginCaller {
         principal: principal(fields.user_role.as_deref()),
-        object_permission: permission(fields.key_skills.as_deref()),
-        team_object_permission: permission(fields.team_skills.as_deref()),
+        object_permission: fields.key_skills.as_deref().map(permission),
+        team_object_permission: fields.team_skills.as_deref().map(permission),
     }
 }
 
-fn permission(values: Option<&[String]>) -> Option<PluginObjectPermission> {
-    values.map(|granted| PluginObjectPermission {
+fn permission(granted: &[String]) -> PluginObjectPermission {
+    PluginObjectPermission {
         skills: Some(granted.to_vec()),
-    })
+    }
 }
 
 fn principal(role: Option<&str>) -> Principal {
