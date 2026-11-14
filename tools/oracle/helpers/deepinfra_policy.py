@@ -209,6 +209,8 @@ def response_record(case: ResponseCase) -> JsonValue:
     )
     return {
         "response": VALUE.validate_json(transformed.model_dump_json()),
+        # pydantic keeps PrivateAttr values here, and _hidden_params has no public reader
+        "hidden_params": VALUE.validate_python(transformed.__pydantic_private__),
         "calls": VALUE.validate_python(recording.calls),
     }
 

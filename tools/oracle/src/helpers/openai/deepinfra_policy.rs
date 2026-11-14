@@ -204,8 +204,15 @@ fn rerank_response(params: &Value) -> Result<Value, String> {
                 },
             },
         );
+        // the Python record reads pydantic's private attribute map, which nests the returned map under its name
+        let mut hidden = serde_json::Map::new();
+        hidden.insert(
+            String::from("_hidden_params"),
+            serde_json::to_value(&projected.hidden_params).map_err(|error| error.to_string())?,
+        );
         results.push(serde_json::json!({
             "response": serde_json::to_value(&projected).map_err(|error| error.to_string())?,
+            "hidden_params": hidden,
             "calls": recording.calls,
         }));
     }
