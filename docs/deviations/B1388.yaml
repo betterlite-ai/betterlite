@@ -1,0 +1,8 @@
+task: B1388
+deviations:
+  - what: get_complete_url without an api_base returns VertexUrlError::LocationRequired or ProjectRequired when the location or project is absent, where LiteLLM's f-string writes the literal None into the projects/locations path.
+    why: projects/None/locations/None is a URL no working Vertex setup relies on; failing at construction names the missing setting instead of sending a request that cannot succeed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vector_stores/rag_api/transformation.py#L145-L153
+  - what: A bare corpus id with no configured project or location returns VertexUrlError::ProjectRequired or LocationRequired, where LiteLLM writes the literal None into the ragCorpora path.
+    why: projects/None/locations/None/ragCorpora/id cannot be routed, and the error names the missing setting instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vector_stores/rag_api/transformation.py#L176-L185
