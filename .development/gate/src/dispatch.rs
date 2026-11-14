@@ -1,7 +1,7 @@
 mod attempt;
 mod chain;
 mod checkpoint;
-mod ci_failures;
+pub(crate) mod ci_failures;
 mod maintenance;
 pub(crate) mod overlap;
 mod preparation;
