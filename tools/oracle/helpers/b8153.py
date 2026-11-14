@@ -242,6 +242,7 @@ def reply_value(call: ReplyCase) -> JsonValue:
     responder = Responder(call["body"], call["status"], call["headers"])
     client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(responder.handle)))
     try:
+        # litellm.completion's decorated return is Any to mypy, so its type is named here.
         reply: ModelResponse = litellm.completion(
             model=f"petals/{call['model']}",
             messages=call["messages"],
