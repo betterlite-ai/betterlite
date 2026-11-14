@@ -941,3 +941,20 @@ def test_extra_field_names() -> None:
         {"unknown_knob": True},
     )
     assert config.model_dump()["unknown_knob"] is True
+
+
+def test_optional_params_names() -> None:
+    config = tool_permission.ToolPermissionGuardrailConfigModel.model_validate(
+        {"optional_params": {"nested_knob": True}},
+    )
+    assert config.optional_params is not None
+    dumped = TypeAdapter(dict[str, JsonValue]).validate_json(config.model_dump_json())
+    assert dumped["optional_params"] == {}
+
+
+def test_description_absent_names() -> None:
+    schema = TypeAdapter(dict[str, JsonValue]).validate_python(
+        tool_permission.ToolPermissionRule.model_json_schema(),
+    )
+    properties = TypeAdapter(dict[str, dict[str, JsonValue]]).validate_python(schema["properties"])
+    assert all("description" not in field_schema for field_schema in properties.values())
