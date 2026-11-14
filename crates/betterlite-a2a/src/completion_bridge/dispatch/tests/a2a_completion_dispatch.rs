@@ -271,6 +271,10 @@ async fn streaming_accumulates_choice_zero_text() {
         working["result"]["status"]["message"]["parts"][0]["text"],
         "Processing request..."
     );
+    assert_eq!(
+        working["result"]["status"]["timestamp"],
+        "2026-01-02T03:04:05.123456+00:00"
+    );
     assert_eq!(working["result"]["final"], false);
     assert_eq!(
         events[0].as_ref().expect("the task event is an event")["id"],
