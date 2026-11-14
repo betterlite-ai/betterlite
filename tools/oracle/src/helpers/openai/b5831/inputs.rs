@@ -9,86 +9,96 @@ use serde_json::Value;
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct Input {
-    model_cost: BTreeMap<String, BTreeMap<String, Value>>,
-    chat_supported: Vec<ChatSupportedStep>,
-    chat_map: Vec<ChatMapStep>,
-    chat_messages: Vec<ChatMessagesStep>,
-    completion: Vec<CompletionStep>,
-    rerank_requests: Vec<RerankRequestStep>,
-    rerank_responses: Vec<RerankResponseStep>,
-    cost_categories: Vec<CategoryStep>,
-    cost_registry: Vec<RegistryStep>,
+    pub(crate) model_cost: BTreeMap<String, BTreeMap<String, Value>>,
+    pub(crate) chat_supported: Vec<ChatSupportedStep>,
+    pub(crate) chat_map: Vec<ChatMapStep>,
+    pub(crate) chat_messages: Vec<ChatMessagesStep>,
+    pub(crate) completion: Vec<CompletionStep>,
+    pub(crate) rerank_requests: Vec<RerankRequestStep>,
+    pub(crate) rerank_responses: Vec<RerankResponseStep>,
+    pub(crate) cost_categories: Vec<CategoryStep>,
+    pub(crate) cost_registry: Vec<RegistryStep>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChatSupportedStep {
-    model: String,
+    pub(crate) model: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChatMapStep {
-    model: String,
-    params: Object,
+    pub(crate) model: String,
+    pub(crate) params: Object,
     #[serde(default)]
-    optional_params: Object,
+    pub(crate) optional_params: Object,
     #[serde(default)]
-    drop_params: bool,
+    pub(crate) drop_params: bool,
     #[serde(default)]
-    global_drop_params: bool,
+    pub(crate) global_drop_params: bool,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChatMessagesStep {
-    messages: Vec<ChatMessage>,
+    pub(crate) messages: Vec<ChatMessage>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CompletionStep {
-    model: String,
-    messages: Vec<Value>,
+    pub(crate) model: String,
+    pub(crate) messages: Vec<Value>,
     #[serde(default)]
-    optional_params: Object,
+    pub(crate) optional_params: Object,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RerankRequestStep {
-    model: String,
-    query: String,
-    documents: Vec<RerankDocument>,
+    pub(crate) model: String,
+    pub(crate) query: String,
+    pub(crate) documents: Vec<RerankDocument>,
     #[serde(default)]
-    top_n: Option<i64>,
+    pub(crate) top_n: Option<i64>,
     #[serde(default)]
-    rank_fields: Option<Vec<String>>,
-    #[serde(default, with = "serde_with::rust::double_option")]
-    return_documents: Option<Option<bool>>,
+    pub(crate) rank_fields: Option<Vec<String>>,
     #[serde(default)]
-    max_chunks_per_doc: Option<i64>,
-    api_key: String,
-    api_base: String,
+    pub(crate) return_documents: ReturnDocumentsStep,
+    #[serde(default)]
+    pub(crate) max_chunks_per_doc: Option<i64>,
+    pub(crate) api_key: String,
+    pub(crate) api_base: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum ReturnDocumentsStep {
+    #[default]
+    #[serde(skip_deserializing)]
+    Absent,
+    Null,
+    Flag(bool),
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RerankResponseStep {
-    response: Value,
-    next_id: String,
+    pub(crate) response: Value,
+    pub(crate) next_id: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CategoryStep {
-    model: String,
+    pub(crate) model: String,
     #[serde(default)]
-    call_type: Option<String>,
+    pub(crate) call_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RegistryStep {
-    model: String,
+    pub(crate) model: String,
 }

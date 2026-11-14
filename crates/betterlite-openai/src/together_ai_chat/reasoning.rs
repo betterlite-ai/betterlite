@@ -54,10 +54,10 @@ pub(super) fn rewrite_reasoning_effort(
     model: &str,
     capabilities: &dyn TogetherCapabilities,
 ) {
-    let Some(Value::String(effort)) = optional_params.get(REASONING_EFFORT) else {
+    let Some(Value::String(requested)) = optional_params.get(REASONING_EFFORT) else {
         return;
     };
-    let effort = effort.clone();
+    let effort = requested.clone();
     optional_params.remove(REASONING_EFFORT);
     for (key, value) in reasoning_payload(&effort, model, capabilities) {
         optional_params.entry(key).or_insert(value);
@@ -68,44 +68,44 @@ fn reasoning_payload(effort: &str, model: &str, capabilities: &dyn TogetherCapab
     if effort == DEFAULT_EFFORT {
         return Object::new();
     }
+    if effort == NO_EFFORT && !ADJUSTABLE_REASONING_MODELS.contains(&model) {
+        let reasoning = Object::from_iter([(String::from("enabled"), Value::Bool(false))]);
+        return Object::from_iter([(String::from("reasoning"), Value::Object(reasoning))]);
+    }
+    let level = chosen_level(effort, model, capabilities);
+    Object::from_iter([(
+        String::from(REASONING_EFFORT),
+        Value::String(level.to_owned()),
+    )])
+}
+
+fn chosen_level<'effort>(
+    effort: &'effort str,
+    model: &str,
+    capabilities: &dyn TogetherCapabilities,
+) -> &'effort str {
     if ADJUSTABLE_REASONING_MODELS.contains(&model) {
-        let adjusted = if effort == NO_EFFORT {
+        if effort == NO_EFFORT {
             tracing::debug!(
                 model,
                 "together_ai model cannot disable reasoning; mapping reasoning_effort=none to low"
             );
-            LOW_EFFORT
-        } else {
-            translated(effort, &EFFORT_TRANSLATION)
-        };
-        return Object::from_iter([(
-            String::from(REASONING_EFFORT),
-            Value::String(adjusted.to_owned()),
-        )]);
-    }
-    if effort == NO_EFFORT {
-        let mut reasoning = Object::new();
-        reasoning.insert(String::from("enabled"), Value::Bool(false));
-        return Object::from_iter([(String::from("reasoning"), Value::Object(reasoning))]);
+            return LOW_EFFORT;
+        }
+        return translated(effort, &EFFORT_TRANSLATION);
     }
     let declared = capabilities
         .declared_reasoning_efforts(model)
         .unwrap_or_default();
-    if declared.iter().any(|declared| declared == effort) {
-        return Object::from_iter([(
-            String::from(REASONING_EFFORT),
-            Value::String(effort.to_owned()),
-        )]);
+    if declared.iter().any(|level| level == effort) {
+        return effort;
     }
     let table = if model.starts_with(HIGH_MAX_EFFORT_MODEL_PREFIX) {
         &HIGH_MAX_EFFORT_TRANSLATION[..]
     } else {
         &EFFORT_TRANSLATION[..]
     };
-    Object::from_iter([(
-        String::from(REASONING_EFFORT),
-        Value::String(translated(effort, table).to_owned()),
-    )])
+    translated(effort, table)
 }
 
 fn translated<'effort>(effort: &'effort str, table: &[(&str, &'static str)]) -> &'effort str {

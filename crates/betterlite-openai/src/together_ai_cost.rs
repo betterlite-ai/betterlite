@@ -1,8 +1,8 @@
 mod tests;
 
 const REGISTRY_PREFIX: &str = "together_ai/";
-const BILLION_SUFFIX: u8 = b'b';
-const MILLION_SUFFIX: u8 = b'm';
+const BILLION_SUFFIX: char = 'b';
+const MILLION_SUFFIX: char = 'm';
 const UP_TO_4B: &str = "together-ai-up-to-4b";
 const FROM_4_1B_TO_8B: &str = "together-ai-4.1b-8b";
 const FROM_8_1B_TO_21B: &str = "together-ai-8.1b-21b";
@@ -92,21 +92,12 @@ pub fn pricing_category(
 }
 
 // LiteLLM's re.search(r"(\d+b)") takes the leftmost digit run the suffix follows, so mixtral-8x7b is 7
-fn parameter_count(name: &str, suffix: u8) -> Option<f64> {
-    let bytes = name.as_bytes();
-    for start in 0..bytes.len() {
-        if !bytes[start].is_ascii_digit() {
-            continue;
-        }
-        let mut end = start;
-        while bytes.get(end).is_some_and(u8::is_ascii_digit) {
-            end += 1;
-        }
-        if bytes.get(end) == Some(&suffix) {
-            return name.get(start..end)?.parse::<f64>().ok();
-        }
-    }
-    None
+fn parameter_count(name: &str, suffix: char) -> Option<f64> {
+    name.match_indices(suffix).find_map(|(index, _)| {
+        let before = name.get(..index)?;
+        let run_start = before.trim_end_matches(|c: char| c.is_ascii_digit()).len();
+        name.get(run_start..index)?.parse::<f64>().ok()
+    })
 }
 
 fn first_matching(count: f64, limits: &[(u32, &'static str)]) -> Option<&'static str> {

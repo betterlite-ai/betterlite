@@ -18,6 +18,12 @@ mod tests;
 
 const RERANK_PATH: &str = "rerank";
 const JSON_CONTENT_TYPE: &str = "application/json";
+const USAGE_FIELDS: [&str; 4] = [
+    "search_units",
+    "total_tokens",
+    "input_tokens",
+    "output_tokens",
+];
 
 // Python's `return_documents: bool | None = True` argument: Default is the argument the caller omitted
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -71,6 +77,11 @@ pub enum TogetherRerankError {
     InvalidUsage { usage: Value },
     #[error("the rerank response usage field {field} is not an integer: {value}")]
     UsageField { field: String, value: Value },
+    #[error("the rerank response usage cannot be read: {source}")]
+    UsageDecode {
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("the rerank response document is not an object: {document}")]
     InvalidDocument { document: Value },
     #[error("score cannot be represented as an exact decimal")]
@@ -142,8 +153,8 @@ pub fn transform_response(
     next_id: &dyn Fn() -> Uuid,
 ) -> Result<RerankResponse, TogetherRerankError> {
     let usage = match response.get("usage") {
-        None | Some(Value::Null) => None,
-        Some(Value::Object(fields)) => Some(fields),
+        None | Some(Value::Null) => Map::new(),
+        Some(Value::Object(fields)) => fields.clone(),
         Some(usage) => {
             return Err(TogetherRerankError::InvalidUsage {
                 usage: usage.clone(),
@@ -164,40 +175,40 @@ pub fn transform_response(
         .and_then(Value::as_str)
         .filter(|id| !id.is_empty())
         .map_or_else(|| next_id().to_string(), str::to_owned);
+    let (billed_units, tokens) = usage_blocks(usage)?;
     Ok(RerankResponse {
         id: Some(id),
         results: Some(transformed),
         meta: Some(RerankResponseMeta {
             api_version: None,
-            billed_units: Some(Some(RerankBilledUnits {
-                search_units: integer_field(usage, "search_units")?,
-                total_tokens: integer_field(usage, "total_tokens")?,
-            })),
-            tokens: Some(Some(RerankTokens {
-                input_tokens: integer_field(usage, "input_tokens")?,
-                output_tokens: integer_field(usage, "output_tokens")?,
-            })),
+            billed_units: Some(Some(billed_units)),
+            tokens: Some(Some(tokens)),
         }),
         hidden_params: BTreeMap::new(),
     })
 }
 
 // Both blocks are filled from the same usage object; each keeps the keys its TypedDict declares
-fn integer_field(
-    usage: Option<&Map<String, Value>>,
-    name: &str,
-) -> Result<Option<Option<i64>>, TogetherRerankError> {
-    match usage.and_then(|fields| fields.get(name)) {
-        None => Ok(None),
-        Some(Value::Null) => Ok(Some(None)),
-        Some(value) => value
-            .as_i64()
-            .map(|parsed| Some(Some(parsed)))
-            .ok_or_else(|| TogetherRerankError::UsageField {
+fn usage_blocks(
+    usage: Map<String, Value>,
+) -> Result<(RerankBilledUnits, RerankTokens), TogetherRerankError> {
+    for name in USAGE_FIELDS {
+        if let Some(value) = usage.get(name)
+            && !value.is_null()
+            && value.as_i64().is_none()
+        {
+            return Err(TogetherRerankError::UsageField {
                 field: name.to_owned(),
                 value: value.clone(),
-            }),
+            });
+        }
     }
+    let usage = Value::Object(usage);
+    let billed_units = serde_json::from_value(usage.clone())
+        .map_err(|source| TogetherRerankError::UsageDecode { source })?;
+    let tokens = serde_json::from_value(usage)
+        .map_err(|source| TogetherRerankError::UsageDecode { source })?;
+    Ok((billed_units, tokens))
 }
 
 fn transform_result(result: &Value) -> Result<RerankResponseResult, TogetherRerankError> {

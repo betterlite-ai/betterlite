@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use betterlite_error::error::ErrorClass;
 use indexmap::IndexMap;
 use rstest::rstest;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::reasoning::supports_together_reasoning;
 use super::{
@@ -20,9 +20,7 @@ use crate::reasoning_models::DropParams;
 
 #[derive(Default)]
 struct Answers {
-    function_calling: bool,
-    response_schema: bool,
-    reasoning: bool,
+    checks: BTreeMap<TogetherFlag, bool>,
     failed: bool,
     registry: BTreeMap<TogetherFlag, bool>,
     declared: Option<Vec<String>>,
@@ -35,11 +33,7 @@ impl TogetherCapabilities for Answers {
                 message: String::from("the catalog lookup timed out"),
             });
         }
-        Ok(match flag {
-            TogetherFlag::SupportsFunctionCalling => self.function_calling,
-            TogetherFlag::SupportsResponseSchema => self.response_schema,
-            TogetherFlag::SupportsReasoning => self.reasoning,
-        })
+        Ok(self.checks.get(&flag).copied().unwrap_or(false))
     }
 
     fn registry_flag(&self, flag: TogetherFlag, _model: &str) -> Option<bool> {
@@ -69,22 +63,26 @@ fn empty_catalog() -> CatalogCapabilities {
     }
 }
 
-fn object(value: Value) -> Object {
-    serde_json::from_value(value).unwrap()
+fn value(text: &str) -> Value {
+    serde_json::from_str(text).unwrap()
 }
 
-fn message(role: Role, extra: Value) -> ChatMessage {
-    let mut body = json!({"role": role, "content": "hi"});
-    if let Value::Object(fields) = extra {
-        body.as_object_mut().unwrap().extend(fields);
-    }
-    serde_json::from_value(body).unwrap()
+fn object(text: &str) -> Object {
+    serde_json::from_str(text).unwrap()
+}
+
+fn message(role: Role, extra: &str) -> ChatMessage {
+    let mut body = Object::new();
+    body.insert(String::from("role"), serde_json::to_value(role).unwrap());
+    body.insert(String::from("content"), Value::String(String::from("hi")));
+    body.extend(object(extra));
+    serde_json::from_value(Value::Object(body)).unwrap()
 }
 
 fn map_existing(
     model: &str,
-    requested: Value,
-    existing: Value,
+    requested: &str,
+    existing: &str,
     drop_params: DropParams,
     answers: &Answers,
 ) -> Result<Object, TogetherChatError> {
@@ -105,34 +103,42 @@ fn map_existing(
 
 fn map_with(
     model: &str,
-    requested: Value,
+    requested: &str,
     drop_params: DropParams,
     answers: &Answers,
 ) -> Result<Object, TogetherChatError> {
-    map_existing(model, requested, json!({}), drop_params, answers)
+    map_existing(model, requested, "{}", drop_params, answers)
 }
 
 fn false_verdict(flag: TogetherFlag) -> Answers {
-    let mut answers = Answers::default();
-    answers.registry.insert(flag, false);
-    answers
+    Answers {
+        registry: BTreeMap::from([(flag, false)]),
+        ..Answers::default()
+    }
+}
+
+fn checked_true(flag: TogetherFlag) -> Answers {
+    Answers {
+        checks: BTreeMap::from([(flag, true)]),
+        ..Answers::default()
+    }
 }
 
 #[test]
 fn assistant_messages_lose_only_the_internal_fields() {
     let mut messages = vec![message(
         Role::Assistant,
-        json!({
+        r#"{
             "thinking_blocks": [{"type": "thinking"}],
             "provider_specific_fields": {"cached": true},
             "reasoning_content": "kept",
-            "audio": {"id": "a"},
-        }),
+            "audio": {"id": "a"}
+        }"#,
     )];
     TogetherAiChatConfig::strip_internal_fields(&mut messages);
     let expected = IndexMap::from([
-        (String::from("reasoning_content"), json!("kept")),
-        (String::from("audio"), json!({"id": "a"})),
+        (String::from("reasoning_content"), value(r#""kept""#)),
+        (String::from("audio"), value(r#"{"id": "a"}"#)),
     ]);
     assert_eq!(messages[0].passthrough, expected);
 }
@@ -146,7 +152,7 @@ fn assistant_messages_lose_only_the_internal_fields() {
 fn other_roles_keep_the_internal_fields(#[case] role: Role) {
     let mut messages = vec![message(
         role,
-        json!({"thinking_blocks": [], "provider_specific_fields": {}}),
+        r#"{"thinking_blocks": [], "provider_specific_fields": {}}"#,
     )];
     TogetherAiChatConfig::strip_internal_fields(&mut messages);
     assert_eq!(messages[0].passthrough.len(), 2);
@@ -154,7 +160,7 @@ fn other_roles_keep_the_internal_fields(#[case] role: Role) {
 
 #[test]
 fn a_message_without_the_internal_fields_is_unchanged() {
-    let original = message(Role::Assistant, json!({"reasoning_content": "kept"}));
+    let original = message(Role::Assistant, r#"{"reasoning_content": "kept"}"#);
     let mut messages = vec![original.clone()];
     TogetherAiChatConfig::strip_internal_fields(&mut messages);
     assert_eq!(messages, vec![original]);
@@ -192,57 +198,63 @@ fn other_models_get_the_base_list(#[case] model: &str) {
 
 #[test]
 fn a_capability_answer_for_reasoning_appends_reasoning_effort() {
-    let mut answers = Answers::default();
-    answers.reasoning = true;
+    let answers = checked_true(TogetherFlag::SupportsReasoning);
     let params = config().supported_params("custom/reasoning", &empty_catalog(), &answers);
     assert_eq!(params.last(), Some(&"reasoning_effort"));
 }
 
 #[test]
 fn a_failed_reasoning_check_is_not_support() {
-    let mut answers = Answers::default();
-    answers.failed = true;
+    let answers = Answers {
+        failed: true,
+        ..checked_true(TogetherFlag::SupportsReasoning)
+    };
     assert!(!supports_together_reasoning("custom/reasoning", &answers));
 }
 
 #[test]
 fn a_true_tool_verdict_keeps_every_tool_param() {
-    let mut answers = Answers::default();
-    answers.function_calling = true;
+    let answers = checked_true(TogetherFlag::SupportsFunctionCalling);
     let mapped = map_with(
         "together/qwen",
-        json!({
+        r#"{
             "tools": [{"type": "function"}],
             "tool_choice": "auto",
-            "function_call": {"name": "x"},
-        }),
+            "function_call": {"name": "x"}
+        }"#,
         DropParams::default(),
         &answers,
     )
     .unwrap();
-    assert_eq!(mapped.get("tool_choice"), Some(&json!("auto")));
-    assert_eq!(mapped.get("function_call"), Some(&json!({"name": "x"})));
-    assert_eq!(mapped.get("tools"), Some(&json!([{"type": "function"}])));
+    assert_eq!(mapped.get("tool_choice"), Some(&value(r#""auto""#)));
+    assert_eq!(
+        mapped.get("function_call"),
+        Some(&value(r#"{"name": "x"}"#))
+    );
+    assert_eq!(
+        mapped.get("tools"),
+        Some(&value(r#"[{"type": "function"}]"#))
+    );
 }
 
 #[test]
 fn an_unknown_tool_verdict_keeps_the_params() {
     let mapped = map_with(
         "together/qwen",
-        json!({"tools": [], "tool_choice": "auto"}),
+        r#"{"tools": [], "tool_choice": "auto"}"#,
         DropParams::default(),
         &Answers::default(),
     )
     .unwrap();
-    assert_eq!(mapped.get("tools"), Some(&json!([])));
-    assert_eq!(mapped.get("tool_choice"), Some(&json!("auto")));
+    assert_eq!(mapped.get("tools"), Some(&value("[]")));
+    assert_eq!(mapped.get("tool_choice"), Some(&value(r#""auto""#)));
 }
 
 #[test]
 fn a_false_tool_verdict_without_drop_fails() {
     let error = map_with(
         "together/qwen",
-        json!({"tools": [], "tool_choice": "auto", "function_call": {"name": "x"}}),
+        r#"{"tools": [], "tool_choice": "auto", "function_call": {"name": "x"}}"#,
         DropParams::default(),
         &false_verdict(TogetherFlag::SupportsFunctionCalling),
     )
@@ -259,7 +271,7 @@ fn a_false_tool_verdict_without_drop_fails() {
 fn the_error_names_only_the_tool_params_that_were_passed() {
     let error = map_with(
         "together/qwen",
-        json!({"tool_choice": "auto"}),
+        r#"{"tool_choice": "auto"}"#,
         DropParams::default(),
         &false_verdict(TogetherFlag::SupportsFunctionCalling),
     )
@@ -275,7 +287,7 @@ fn the_error_names_only_the_tool_params_that_were_passed() {
 fn the_drop_argument_removes_the_tool_params() {
     let mapped = map_with(
         "together/qwen",
-        json!({"tools": [], "tool_choice": "auto", "function_call": {"name": "x"}}),
+        r#"{"tools": [], "tool_choice": "auto", "function_call": {"name": "x"}}"#,
         DropParams {
             request: true,
             global: false,
@@ -290,7 +302,7 @@ fn the_drop_argument_removes_the_tool_params() {
 fn the_global_drop_flag_removes_the_tool_params() {
     let mapped = map_with(
         "together/qwen",
-        json!({"tools": []}),
+        r#"{"tools": []}"#,
         DropParams {
             request: false,
             global: true,
@@ -303,11 +315,13 @@ fn the_global_drop_flag_removes_the_tool_params() {
 
 #[test]
 fn a_failed_check_still_consults_the_registry_flag() {
-    let mut answers = false_verdict(TogetherFlag::SupportsFunctionCalling);
-    answers.failed = true;
+    let answers = Answers {
+        failed: true,
+        ..false_verdict(TogetherFlag::SupportsFunctionCalling)
+    };
     let error = map_with(
         "together/qwen",
-        json!({"tools": []}),
+        r#"{"tools": []}"#,
         DropParams::default(),
         &answers,
     )
@@ -317,34 +331,33 @@ fn a_failed_check_still_consults_the_registry_flag() {
 
 #[test]
 fn a_stored_true_flag_is_not_a_verdict() {
-    let mut answers = Answers::default();
-    answers
-        .registry
-        .insert(TogetherFlag::SupportsFunctionCalling, true);
+    let answers = Answers {
+        registry: BTreeMap::from([(TogetherFlag::SupportsFunctionCalling, true)]),
+        ..Answers::default()
+    };
     let mapped = map_with(
         "together/qwen",
-        json!({"tools": []}),
+        r#"{"tools": []}"#,
         DropParams::default(),
         &answers,
     )
     .unwrap();
-    assert_eq!(mapped.get("tools"), Some(&json!([])));
+    assert_eq!(mapped.get("tools"), Some(&value("[]")));
 }
 
 #[test]
 fn a_true_response_schema_verdict_keeps_response_format() {
-    let mut answers = Answers::default();
-    answers.response_schema = true;
+    let answers = checked_true(TogetherFlag::SupportsResponseSchema);
     let mapped = map_with(
         "together/qwen",
-        json!({"response_format": {"type": "json_object"}}),
+        r#"{"response_format": {"type": "json_object"}}"#,
         DropParams::default(),
         &answers,
     )
     .unwrap();
     assert_eq!(
         mapped.get("response_format"),
-        Some(&json!({"type": "json_object"}))
+        Some(&value(r#"{"type": "json_object"}"#))
     );
 }
 
@@ -352,7 +365,7 @@ fn a_true_response_schema_verdict_keeps_response_format() {
 fn an_unknown_response_schema_verdict_keeps_response_format() {
     let mapped = map_with(
         "together/qwen",
-        json!({"response_format": {"type": "json_object"}}),
+        r#"{"response_format": {"type": "json_object"}}"#,
         DropParams::default(),
         &Answers::default(),
     )
@@ -364,7 +377,7 @@ fn an_unknown_response_schema_verdict_keeps_response_format() {
 fn a_false_response_schema_verdict_drops_with_drop_params() {
     let mapped = map_with(
         "together/qwen",
-        json!({"response_format": {"type": "json_object"}}),
+        r#"{"response_format": {"type": "json_object"}}"#,
         DropParams {
             request: true,
             global: false,
@@ -379,7 +392,7 @@ fn a_false_response_schema_verdict_drops_with_drop_params() {
 fn the_global_drop_flag_drops_response_format() {
     let mapped = map_with(
         "together/qwen",
-        json!({"response_format": {"type": "json_object"}}),
+        r#"{"response_format": {"type": "json_object"}}"#,
         DropParams {
             request: false,
             global: true,
@@ -394,7 +407,7 @@ fn the_global_drop_flag_drops_response_format() {
 fn a_false_response_schema_verdict_fails_without_drop_params() {
     let error = map_with(
         "together/qwen",
-        json!({"response_format": {"type": "json_object"}, "temperature": 0.5}),
+        r#"{"response_format": {"type": "json_object"}, "temperature": 0.5}"#,
         DropParams::default(),
         &false_verdict(TogetherFlag::SupportsResponseSchema),
     )
@@ -407,13 +420,13 @@ fn a_false_response_schema_verdict_fails_without_drop_params() {
     assert_eq!(
         map_with(
             "together/qwen",
-            json!({"temperature": 0.5}),
+            r#"{"temperature": 0.5}"#,
             DropParams::default(),
             &false_verdict(TogetherFlag::SupportsResponseSchema),
         )
         .unwrap()
         .get("temperature"),
-        Some(&json!(0.5))
+        Some(&value("0.5"))
     );
 }
 
@@ -437,19 +450,22 @@ fn reasoning_efforts_reach_the_pinned_payload(
 ) {
     let mapped = map_with(
         model,
-        json!({"reasoning_effort": requested}),
+        &format!(r#"{{"reasoning_effort": "{requested}"}}"#),
         DropParams::default(),
         &Answers::default(),
     )
     .unwrap();
-    assert_eq!(mapped, object(json!({"reasoning_effort": expected})));
+    assert_eq!(
+        mapped,
+        object(&format!(r#"{{"reasoning_effort": "{expected}"}}"#))
+    );
 }
 
 #[test]
 fn the_default_effort_leaves_no_keys() {
     let mapped = map_with(
         "openai/gpt-oss-120b",
-        json!({"reasoning_effort": "default"}),
+        r#"{"reasoning_effort": "default"}"#,
         DropParams::default(),
         &Answers::default(),
     )
@@ -461,79 +477,85 @@ fn the_default_effort_leaves_no_keys() {
 fn a_none_effort_disables_reasoning_on_other_models() {
     let mapped = map_with(
         "MiniMaxAI/MiniMax-M3",
-        json!({"reasoning_effort": "none"}),
+        r#"{"reasoning_effort": "none"}"#,
         DropParams::default(),
         &Answers::default(),
     )
     .unwrap();
-    assert_eq!(mapped, object(json!({"reasoning": {"enabled": false}})));
+    assert_eq!(mapped, object(r#"{"reasoning": {"enabled": false}}"#));
 }
 
 #[test]
 fn a_declared_effort_is_kept_unchanged() {
-    let mut answers = Answers::default();
-    answers.declared = Some(vec![String::from("minimal"), String::from("high")]);
+    let answers = Answers {
+        declared: Some(vec![String::from("minimal"), String::from("high")]),
+        ..Answers::default()
+    };
     let mapped = map_with(
         "MiniMaxAI/MiniMax-M3",
-        json!({"reasoning_effort": "minimal"}),
+        r#"{"reasoning_effort": "minimal"}"#,
         DropParams::default(),
         &answers,
     )
     .unwrap();
-    assert_eq!(mapped, object(json!({"reasoning_effort": "minimal"})));
+    assert_eq!(mapped, object(r#"{"reasoning_effort": "minimal"}"#));
 }
 
 #[test]
 fn an_undeclared_effort_goes_through_the_translation() {
-    let mut answers = Answers::default();
-    answers.declared = Some(vec![String::from("high")]);
+    let answers = Answers {
+        declared: Some(vec![String::from("high")]),
+        ..Answers::default()
+    };
     let mapped = map_with(
         "MiniMaxAI/MiniMax-M3",
-        json!({"reasoning_effort": "xhigh"}),
+        r#"{"reasoning_effort": "xhigh"}"#,
         DropParams::default(),
         &answers,
     )
     .unwrap();
-    assert_eq!(mapped, object(json!({"reasoning_effort": "high"})));
+    assert_eq!(mapped, object(r#"{"reasoning_effort": "high"}"#));
 }
 
 #[test]
 fn a_declared_deepseek_effort_skips_the_high_max_table() {
-    let mut answers = Answers::default();
-    answers.declared = Some(vec![String::from("medium")]);
+    let answers = Answers {
+        declared: Some(vec![String::from("medium")]),
+        ..Answers::default()
+    };
     let mapped = map_with(
         "deepseek-ai/DeepSeek-V4-Pro",
-        json!({"reasoning_effort": "medium"}),
+        r#"{"reasoning_effort": "medium"}"#,
         DropParams::default(),
         &answers,
     )
     .unwrap();
-    assert_eq!(mapped, object(json!({"reasoning_effort": "medium"})));
+    assert_eq!(mapped, object(r#"{"reasoning_effort": "medium"}"#));
 }
 
 #[test]
 fn a_caller_set_key_wins_over_the_payload() {
     let mapped = map_existing(
         "MiniMaxAI/MiniMax-M3",
-        json!({"reasoning_effort": "none"}),
-        json!({"reasoning": {"enabled": true}}),
+        r#"{"reasoning_effort": "none"}"#,
+        r#"{"reasoning": {"enabled": true}}"#,
         DropParams::default(),
         &Answers::default(),
     )
     .unwrap();
-    assert_eq!(mapped, object(json!({"reasoning": {"enabled": true}})));
+    assert_eq!(mapped, object(r#"{"reasoning": {"enabled": true}}"#));
 }
 
 #[test]
 fn a_non_string_effort_is_left_untouched() {
     let mapped = map_with(
         "openai/gpt-oss-20b",
-        json!({"reasoning_effort": 5}),
+        r#"{"reasoning_effort": 5}"#,
         DropParams::default(),
         &Answers::default(),
     )
     .unwrap();
-    assert_eq!(mapped, object(json!({"reasoning_effort": 5})));
+    assert_eq!(mapped, object(r#"{"reasoning_effort": 5}"#));
 }
 
 #[test]
@@ -553,7 +575,7 @@ fn the_flag_names_match_litellm() {
 fn a_plain_model_never_reaches_the_payload_step() {
     let mapped = map_with(
         "some/model",
-        json!({"reasoning_effort": "high"}),
+        r#"{"reasoning_effort": "high"}"#,
         DropParams::default(),
         &Answers::default(),
     )
@@ -563,28 +585,27 @@ fn a_plain_model_never_reaches_the_payload_step() {
 
 #[test]
 fn a_capability_reasoning_model_reaches_the_payload_step() {
-    let mut answers = Answers::default();
-    answers.reasoning = true;
+    let answers = checked_true(TogetherFlag::SupportsReasoning);
     let mapped = map_with(
         "custom/reasoning",
-        json!({"reasoning_effort": "minimal"}),
+        r#"{"reasoning_effort": "minimal"}"#,
         DropParams::default(),
         &answers,
     )
     .unwrap();
-    assert_eq!(mapped, object(json!({"reasoning_effort": "low"})));
+    assert_eq!(mapped, object(r#"{"reasoning_effort": "low"}"#));
 }
 
 #[test]
 fn unsupported_and_null_params_are_filtered_before_the_overrides() {
     let mapped = map_with(
         "some/model",
-        json!({"unknown_param": true, "temperature": 0.2, "stream": true}),
+        r#"{"unknown_param": true, "temperature": 0.2, "stream": true}"#,
         DropParams::default(),
         &Answers::default(),
     )
     .unwrap();
     assert!(!mapped.contains_key("unknown_param"));
-    assert_eq!(mapped.get("temperature"), Some(&json!(0.2)));
-    assert_eq!(mapped.get("stream"), Some(&json!(true)));
+    assert_eq!(mapped.get("temperature"), Some(&value("0.2")));
+    assert_eq!(mapped.get("stream"), Some(&Value::Bool(true)));
 }

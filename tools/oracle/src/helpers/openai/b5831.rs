@@ -23,8 +23,8 @@ use uuid::Uuid;
 mod inputs;
 
 use inputs::{
-    CategoryStep, ChatMapStep, ChatMessagesStep, ChatSupportedStep, CompletionStep, Input,
-    RegistryStep, RerankRequestStep, RerankResponseStep,
+    CategoryStep, ChatMapStep, ChatMessagesStep, CompletionStep, Input, RerankRequestStep,
+    RerankResponseStep, ReturnDocumentsStep,
 };
 
 pub(crate) struct Op;
@@ -143,7 +143,7 @@ fn rerank_kind(error: &TogetherRerankError) -> &'static str {
         }
         TogetherRerankError::InvalidDocument { .. } => "invalid_document",
         TogetherRerankError::Score { .. } => "score",
-        TogetherRerankError::Encode { .. } => "encode",
+        TogetherRerankError::Encode { .. } | TogetherRerankError::UsageDecode { .. } => "encode",
     }
 }
 
@@ -157,9 +157,9 @@ fn outcome(result: Result<Value, &'static str>) -> Value {
 fn rerank_request_step(step: &RerankRequestStep) -> Value {
     let key = SecretString::from(step.api_key.clone());
     let returned = match step.return_documents {
-        None => ReturnDocuments::Default,
-        Some(None) => ReturnDocuments::Null,
-        Some(Some(value)) => ReturnDocuments::Value(value),
+        ReturnDocumentsStep::Absent => ReturnDocuments::Default,
+        ReturnDocumentsStep::Null => ReturnDocuments::Null,
+        ReturnDocumentsStep::Flag(value) => ReturnDocuments::Value(value),
     };
     let call = RerankCall {
         model: &step.model,
@@ -193,8 +193,7 @@ fn category_step(step: &CategoryStep) -> Value {
     let call_type = match step.call_type.as_deref() {
         Some("embedding") => PricingCallType::Embedding,
         Some("aembedding") => PricingCallType::Aembedding,
-        Some(_other) => PricingCallType::Other,
-        None => PricingCallType::Other,
+        Some(_) | None => PricingCallType::Other,
     };
     json!(pricing_category(
         &step.model,
