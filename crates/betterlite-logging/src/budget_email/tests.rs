@@ -349,6 +349,7 @@ async fn team_budget_alert_renders_absent_fields_as_none() {
     let result = send_team_budget_alert(&event, &environment(&[]), None, &sender).await;
     assert!(!result.unwrap());
     let delivered = sender.sent();
+    assert_eq!(delivered[0].subject, "LiteLLM budget_crossed for Team None");
     let html = &delivered[0].html;
     assert!(html.contains("Budget Crossed for Team <b> None </b>"));
     assert!(html.contains("budget of $None"));
