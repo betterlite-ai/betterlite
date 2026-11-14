@@ -52,6 +52,36 @@ pub(crate) struct Session {
     setup_messages: Vec<String>,
 }
 
+impl Scenario {
+    fn answer(&self) -> Value {
+        let callbacks: Vec<&CallbackSpec> = self.callbacks.iter().collect();
+        let Ok(audio) =
+            guardrails_run_for_hooks(&callbacks, &self.request_data, &TRANSCRIPTION_EVENT_HOOKS);
+        let Ok(hooks) = guardrails_run_for_hooks(&callbacks, &self.request_data, &self.event_hooks);
+        json!({ "audio": audio, "hooks": hooks })
+    }
+}
+
+impl Session {
+    fn answer(&self) -> Result<Value, Box<HelperError>> {
+        let callbacks: Vec<&CallbackSpec> = self.callbacks.iter().collect();
+        let mut sent = self.sent;
+        let mut messages = Vec::with_capacity(self.setup_messages.len());
+        for text in &self.setup_messages {
+            let injected =
+                inject_auto_response_disable(text, &mut sent, &callbacks, &self.request_data)
+                    .map_err(failure)?;
+            let output = injected.as_deref().unwrap_or(text);
+            messages.push(json!({
+                "changed": injected.is_some(),
+                "sent": sent,
+                "message": serde_json::from_str::<Value>(output).ok(),
+            }));
+        }
+        Ok(json!({ "sent": sent, "messages": messages }))
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
@@ -75,21 +105,7 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input {
             Input::TranscriptionSelection { scenarios } => {
-                let mut answers = Vec::with_capacity(scenarios.len());
-                for scenario in scenarios {
-                    let callbacks: Vec<&CallbackSpec> = scenario.callbacks.iter().collect();
-                    let Ok(audio) = guardrails_run_for_hooks(
-                        &callbacks,
-                        &scenario.request_data,
-                        &TRANSCRIPTION_EVENT_HOOKS,
-                    );
-                    let Ok(hooks) = guardrails_run_for_hooks(
-                        &callbacks,
-                        &scenario.request_data,
-                        &scenario.event_hooks,
-                    );
-                    answers.push(json!({ "audio": audio, "hooks": hooks }));
-                }
+                let answers: Vec<Value> = scenarios.iter().map(Scenario::answer).collect();
                 Ok(json!({ "scenarios": answers }))
             }
             Input::DisableAutoResponseShapes {
@@ -105,25 +121,7 @@ impl crate::helpers::Helper for Op {
             Input::SetupGuardrailInjection { sessions } => {
                 let mut answers = Vec::with_capacity(sessions.len());
                 for session in sessions {
-                    let callbacks: Vec<&CallbackSpec> = session.callbacks.iter().collect();
-                    let mut sent = session.sent;
-                    let mut messages = Vec::with_capacity(session.setup_messages.len());
-                    for text in &session.setup_messages {
-                        let injected = inject_auto_response_disable(
-                            text,
-                            &mut sent,
-                            &callbacks,
-                            &session.request_data,
-                        )
-                        .map_err(failure)?;
-                        let output = injected.as_deref().unwrap_or(text);
-                        messages.push(json!({
-                            "changed": injected.is_some(),
-                            "sent": sent,
-                            "message": serde_json::from_str::<Value>(output).ok(),
-                        }));
-                    }
-                    answers.push(json!({ "sent": sent, "messages": messages }));
+                    answers.push(session.answer()?);
                 }
                 Ok(json!({ "sessions": answers }))
             }

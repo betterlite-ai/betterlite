@@ -534,9 +534,12 @@ struct GateFailure {
     keys: usize,
 }
 
-struct Failing;
+struct Raising<Make>(Make);
 
-impl RealtimeGuardrailCallback for Failing {
+impl<Make> RealtimeGuardrailCallback for Raising<Make>
+where
+    Make: Fn(&RequestData, GuardrailEventHooks) -> GateFailure,
+{
     type Error = GateFailure;
 
     fn is_custom_guardrail(&self) -> bool {
@@ -548,17 +551,18 @@ impl RealtimeGuardrailCallback for Failing {
         data: &RequestData,
         event: GuardrailEventHooks,
     ) -> Result<bool, GateFailure> {
-        Err(GateFailure {
-            event,
-            keys: data.len(),
-        })
+        Err((self.0)(data, event))
     }
 }
 
 #[test]
 fn a_failing_predicate_error_is_returned_not_read_as_false() {
+    let failing = Raising(|data: &RequestData, event| GateFailure {
+        event,
+        keys: data.len(),
+    });
     let detected = guardrails_run_for_hooks(
-        &[&Failing],
+        &[&failing],
         &RequestData::default(),
         &TRANSCRIPTION_EVENT_HOOKS,
     );
@@ -573,11 +577,15 @@ fn a_failing_predicate_error_is_returned_not_read_as_false() {
 
 #[test]
 fn setup_injection_surfaces_a_failing_predicate_and_leaves_the_flag_unset() {
+    let failing = Raising(|data: &RequestData, event| GateFailure {
+        event,
+        keys: data.len(),
+    });
     let mut sent = false;
     let injected = inject_auto_response_disable(
         r#"{"setup": {}}"#,
         &mut sent,
-        &[&Failing],
+        &[&failing],
         &RequestData::default(),
     );
     assert!(matches!(
