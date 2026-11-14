@@ -65,6 +65,7 @@ CONTENT_PAYLOADS: Final[tuple[dict[str, JsonValue], ...]] = (
 )
 TOOL_PAYLOADS: Final[tuple[dict[str, JsonValue], ...]] = (
     {"type": "function", "name": "f"},
+    {"type": "function", "parameters": {"type": "object", "properties": {}}},
     {"type": "google_search"},
     {"type": "code_execution"},
     {"type": "url_context"},
@@ -371,6 +372,12 @@ def test_names_litellm_responses(name: str) -> None:
     assert ours == theirs, name
     extra: JsonValue = dumped_value(OUR_CLASSES[name], {"id": "i", "extra": 1})
     assert extra == dumped_value(THEIR_CLASSES[name], {"id": "i", "extra": 1})
+    payload: dict[str, JsonValue] = {
+        "id": "i",
+        "outputs": [{"type": "text", "text": "x"}],
+        "usage": {"total_tokens": 1},
+    }
+    assert dumped_value(OUR_CLASSES[name], payload) == dumped_value(THEIR_CLASSES[name], payload)
 
 
 def test_names_tool_choice_union() -> None:
@@ -394,7 +401,11 @@ def test_names_computer_wire() -> None:
 
 
 def test_names_create_params() -> None:
-    model_payload: dict[str, JsonValue] = {"model": "gemini-3", "input": "hi"}
+    model_payload: dict[str, JsonValue] = {
+        "model": "gemini-3",
+        "input": "hi",
+        "response_format": {"type": "object"},
+    }
     ours: JsonValue = dumped_value(interaction.CreateModelInteractionParams, model_payload)
     assert ours == dumped_value(THEIR_CLASSES["CreateModelInteractionParams"], model_payload)
     agent_payload: dict[str, JsonValue] = {
