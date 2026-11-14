@@ -1,0 +1,14 @@
+task: B1360
+deviations:
+- what: A record id is read from an integer JSON number or from text holding a signed decimal integer with surrounding whitespace. LiteLLM calls int() on it, so it also takes "1_0" and the float 1.0, and betterlite refuses both with an error that names the record position.
+  why: Discovery Engine echoes the plain zero-based string ids the request carried, and docs/compatibility.md does not port Python's int() parsing.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rerank/transformation.py#L190
+- what: A response body over the shared byte limit, or a score outside the exact decimal range such as 1e30, is an error. LiteLLM reads any size and keeps the score as a float.
+  why: The task requires bounded decoding with decode_vertex_rerank, and the relevance score is an exact decimal that is refused instead of rounded. A real ranking score lies between 0 and 1.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rerank/transformation.py#L175
+- what: A document mapping whose text is a number, list or object, or whose title is not text, is refused with an error that names the document index. LiteLLM evaluates the title default eagerly and calls content.split() on the text, which raises an unhandled AttributeError, and sends a non-text title to Discovery Engine as it is.
+  why: Discovery Engine needs text content and a text title, so no working setup sends either; betterlite answers with a typed error that names the document where LiteLLM returns HTTP 500 or a provider request error.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rerank/transformation.py#L140-L141
+- what: A malformed rerank reply is refused with a typed error that names the record position when the root is not a JSON object, records is not a list, a record is not an object, a record id is missing or not an integer, a score is a bool, text, list or object, the bytes do not parse, or the nesting passes serde_json's depth limit. A null score counts as missing and ranks as exactly 1.
+  why: LiteLLM sorts the raw values, so a bool score ranks as 1 and all-text scores sort as text and are coerced by pydantic, while the other shapes raise an unhandled AttributeError, KeyError, TypeError or ValidationError that the proxy returns as HTTP 500; a Discovery Engine reply carries integer ids and numeric scores, so no working setup sends them.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rerank/transformation.py#L174-L202
