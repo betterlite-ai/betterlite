@@ -10,7 +10,7 @@ use crate::sections::Section;
 
 mod tests;
 
-const PATH_ROOT: &str = "litellm_params.max_agentic_loops";
+const FIELD: &str = "litellm_params.max_agentic_loops";
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
@@ -45,7 +45,7 @@ impl Section for Raw {
     {
         let mut deployments = Vec::with_capacity(self.model_list.len());
         for (index, deployment) in self.model_list.into_iter().enumerate() {
-            let path = format!("model_list.{index}.{PATH_ROOT}");
+            let path = format!("model_list.{index}.{FIELD}");
             deployments.push(resolve_ceiling(
                 deployment.litellm_params.max_agentic_loops,
                 &path,
@@ -71,10 +71,10 @@ where
         RawNumber::Boolean(flag) => AgenticLoopValue::Boolean(flag),
         RawNumber::Text(text) => AgenticLoopValue::Text(text),
     };
-    let ceiling = validated_max_agentic_loops(&parsed, path).map_err(|_source| {
-        ConfigError::InvalidScalar {
+    let ceiling = validated_max_agentic_loops(&parsed, FIELD).map_err(|source| {
+        ConfigError::AgenticLoopCeiling {
             path: path.to_owned(),
-            value: false,
+            source,
         }
     })?;
     Ok(ceiling.unwrap_or(DEFAULT_MAX_AGENTIC_LOOPS))
