@@ -118,60 +118,80 @@ fn decoded(
 }
 
 fn build(body: Body, generated: Uuid) -> Result<RerankResponse, ResponseFailure> {
-    let results = match body.scores {
-        None => Vec::new(),
-        Some(Some(Json::List(values))) => values
-            .iter()
-            .enumerate()
-            .map(|(position, value)| {
-                let number = finite_float(value).ok_or(ResponseFailure)?;
-                // the debug text keeps the ".0" Python prints for an integral float, and an exponent stays float-looking for the oracle
-                let relevance = parse_decimal_lexeme(&format!("{number:?}"))
-                    .map(Score)
-                    .map_err(|_error| ResponseFailure)?;
-                let index = i64::try_from(position).map_err(|_source| ResponseFailure)?;
-                Ok(RerankResponseResult {
-                    index,
-                    relevance_score: relevance,
-                    document: None,
-                })
+    Ok(RerankResponse {
+        id: Some(response_id(&body, generated)?),
+        results: Some(results(&body)?),
+        meta: Some(response_meta(input_tokens(&body)?)),
+        hidden_params: hidden_params(&inference_status(&body)?),
+    })
+}
+
+fn results(body: &Body) -> Result<Vec<RerankResponseResult>, ResponseFailure> {
+    let values = match &body.scores {
+        None => return Ok(Vec::new()),
+        Some(Some(Json::List(values))) => values,
+        Some(_) => return Err(ResponseFailure),
+    };
+    values
+        .iter()
+        .enumerate()
+        .map(|(position, value)| {
+            let number = finite_float(value).ok_or(ResponseFailure)?;
+            // the debug text keeps the ".0" Python prints for an integral float, and an exponent stays float-looking for the oracle
+            let relevance = parse_decimal_lexeme(&format!("{number:?}"))
+                .map(Score)
+                .map_err(|_error| ResponseFailure)?;
+            let index = i64::try_from(position).map_err(|_source| ResponseFailure)?;
+            Ok(RerankResponseResult {
+                index,
+                relevance_score: relevance,
+                document: None,
             })
-            .collect::<Result<Vec<_>, ResponseFailure>>()?,
-        Some(
-            Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_))
-            | None,
-        ) => return Err(ResponseFailure),
-    };
-    let input_tokens = match body.input_tokens {
-        None => Some(0),
-        Some(None) => None,
-        Some(Some(Json::Number(number))) => Some(number.as_i64().ok_or(ResponseFailure)?),
-        Some(Some(
-            Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_),
-        )) => return Err(ResponseFailure),
-    };
-    let inference = match body.inference_status {
-        None => IndexMap::new(),
-        Some(Some(Json::Object(status))) => status,
-        Some(
-            Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-            | None,
-        ) => return Err(ResponseFailure),
-    };
-    let given = match body.request_id {
-        Some(Some(Json::Text(text))) => text,
-        Some(
-            Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-            | None,
-        )
-        | None => String::new(),
-    };
-    let id = if given.is_empty() {
-        generated.to_string()
-    } else {
-        given
-    };
-    let meta = RerankResponseMeta {
+        })
+        .collect()
+}
+
+// response_json.get("input_tokens", 0): absent is zero, an explicit null stays None
+fn input_tokens(body: &Body) -> Result<Option<i64>, ResponseFailure> {
+    match &body.input_tokens {
+        None => Ok(Some(0)),
+        Some(None) => Ok(None),
+        Some(Some(Json::Number(number))) => number.as_i64().map(Some).ok_or(ResponseFailure),
+        Some(_) => Err(ResponseFailure),
+    }
+}
+
+// response_json.get("inference_status", {}) then .get(...) on that value, so null or a non-object fails the block
+fn inference_status(body: &Body) -> Result<IndexMap<String, Json>, ResponseFailure> {
+    match &body.inference_status {
+        None => Ok(IndexMap::new()),
+        Some(Some(Json::Object(status))) => Ok(status.clone()),
+        Some(_) => Err(ResponseFailure),
+    }
+}
+
+// request_id or str(uuid.uuid4()): a falsey value generates the UUID, and pydantic rejects any truthy non-string
+fn response_id(body: &Body, generated: Uuid) -> Result<String, ResponseFailure> {
+    match &body.request_id {
+        None | Some(None) => Ok(generated.to_string()),
+        Some(Some(Json::Text(text))) if text.is_empty() => Ok(generated.to_string()),
+        Some(Some(Json::Text(text))) => Ok(text.clone()),
+        Some(Some(Json::Null | Json::Bool(false))) => Ok(generated.to_string()),
+        Some(Some(Json::Number(number)))
+            if number
+                .as_f64()
+                .is_some_and(|parsed| parsed.to_bits() & 0x7fff_ffff_ffff_ffff == 0) =>
+        {
+            Ok(generated.to_string())
+        }
+        Some(Some(Json::List(values))) if values.is_empty() => Ok(generated.to_string()),
+        Some(Some(Json::Object(fields))) if fields.is_empty() => Ok(generated.to_string()),
+        Some(Some(_)) => Err(ResponseFailure),
+    }
+}
+
+fn response_meta(input_tokens: Option<i64>) -> RerankResponseMeta {
+    RerankResponseMeta {
         api_version: None,
         billed_units: Some(Some(RerankBilledUnits {
             search_units: None,
@@ -181,13 +201,7 @@ fn build(body: Body, generated: Uuid) -> Result<RerankResponse, ResponseFailure>
             input_tokens: Some(input_tokens),
             output_tokens: Some(Some(0)),
         })),
-    };
-    Ok(RerankResponse {
-        id: Some(id),
-        results: Some(results),
-        meta: Some(meta),
-        hidden_params: hidden_params(&inference),
-    })
+    }
 }
 
 // Python's float() takes a JSON number and refuses everything the declared float list cannot hold
