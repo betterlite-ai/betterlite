@@ -634,7 +634,7 @@ async fn strip_params_are_dropped_and_remaining_keys_kept() {
     let mapped = extra_body(&mut capabilities, "m", &optional).await;
     assert_eq!(
         mapped.get("extra_body"),
-        Some(&object(r#"{"custom":{"kept":true}}"#))
+        Some(&value(r#"{"custom":{"kept":true}}"#))
     );
 }
 
@@ -805,7 +805,7 @@ async fn guided_json_wins_over_the_other_guided_keys() {
     let mapped = extra_body(&mut capabilities, "m", &optional).await;
     assert_eq!(
         mapped.get("response_format"),
-        Some(&object(
+        Some(&value(
             r#"{"type":"json_schema","json_schema":{"name":"response","schema":{"type":"object"}}}"#
         ))
     );
@@ -813,7 +813,7 @@ async fn guided_json_wins_over_the_other_guided_keys() {
     let chosen = extra_body(&mut capabilities, "m", &choice_only).await;
     assert_eq!(
         chosen.get("response_format"),
-        Some(&object(
+        Some(&value(
             r#"{"type":"json_schema","json_schema":{"name":"choice","schema":{"type":"string","enum":["one"]}}}"#
         ))
     );
@@ -931,92 +931,4 @@ async fn only_a_truthy_response_schema_becomes_a_tool(
     );
 }
 
-fn capture_logs<Run: FnOnce()>(run: Run) -> String {
-    let log = tempfile::NamedTempFile::new().expect("a log file");
-    let subscriber = tracing_subscriber::fmt()
-        .without_time()
-        .with_ansi(false)
-        .with_max_level(tracing::Level::DEBUG)
-        .with_writer(std::sync::Arc::new(log.reopen().expect("a log writer")))
-        .finish();
-    tracing::subscriber::with_default(subscriber, run);
-    std::fs::read_to_string(log.path()).expect("the log text")
-}
-
-fn test_runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("a runtime")
-}
-
-#[test]
-fn debug_logs_report_stripped_params_only_when_a_strip_key_is_present() {
-    let runtime = test_runtime();
-    let with_strip = capture_logs(|| {
-        runtime.block_on(async {
-            let mut capabilities = TestCapabilities::none();
-            let optional = object(r#"{"extra_body":{"stop_token_ids":[1]}}"#);
-            extra_body(&mut capabilities, "m", &optional).await;
-        });
-    });
-    assert!(with_strip.contains("does not support NIM/vLLM params"));
-    let without_strip = capture_logs(|| {
-        runtime.block_on(async {
-            let mut capabilities = TestCapabilities::none();
-            let optional = object(r#"{"extra_body":{"custom":1}}"#);
-            extra_body(&mut capabilities, "m", &optional).await;
-        });
-    });
-    assert!(!without_strip.contains("does not support NIM/vLLM params"));
-}
-
-#[test]
-fn debug_logs_report_a_dropped_extra_body_response_format_only_when_both_are_set() {
-    let runtime = test_runtime();
-    let both = capture_logs(|| {
-        runtime.block_on(async {
-            let mut capabilities = TestCapabilities::none();
-            let optional = object(
-                r#"{"response_format":{"type":"text"},"extra_body":{"response_format":{"type":"text"}}}"#,
-            );
-            extra_body(&mut capabilities, "m", &optional).await;
-        });
-    });
-    assert!(both.contains("dropping extra_body.response_format"));
-    let optional_only = capture_logs(|| {
-        runtime.block_on(async {
-            let mut capabilities = TestCapabilities::none();
-            let optional =
-                object(r#"{"response_format":{"type":"text"},"extra_body":{"custom":1}}"#);
-            extra_body(&mut capabilities, "m", &optional).await;
-        });
-    });
-    assert!(!optional_only.contains("dropping extra_body.response_format"));
-}
-
-#[test]
-fn debug_logs_report_unknown_chat_template_kwargs_keys_only_when_some_are_unknown() {
-    let runtime = test_runtime();
-    let unknown = capture_logs(|| {
-        runtime.block_on(async {
-            let mut capabilities = TestCapabilities::none();
-            let optional = object(r#"{"extra_body":{"chat_template_kwargs":{"foo":1}}}"#);
-            extra_body(&mut capabilities, "m", &optional).await;
-        });
-    });
-    assert!(unknown.contains("does not support chat_template_kwargs keys"));
-    let known = capture_logs(|| {
-        runtime.block_on(async {
-            let mut capabilities = TestCapabilities {
-                function_calling: false,
-                tool_choice: false,
-                reasoning: true,
-            };
-            let optional = object(r#"{"extra_body":{"chat_template_kwargs":{"low_effort":true}}}"#);
-            let mapped = extra_body(&mut capabilities, "m", &optional).await;
-            assert_eq!(mapped.get("reasoning_effort"), Some(&value(r#""low""#)));
-        });
-    });
-    assert!(!known.contains("does not support chat_template_kwargs keys"));
-}
+mod logs;
