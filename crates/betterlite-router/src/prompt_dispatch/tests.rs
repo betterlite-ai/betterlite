@@ -114,68 +114,67 @@ fn is_prompt_model_is_false_when_the_model_is_not_a_string() {
     ));
 }
 
+const LITELLM_CUSTOM_LOGGER_NAMES: [&str; 55] = [
+    "lago",
+    "openmeter",
+    "logfire",
+    "literalai",
+    "litellm_agent",
+    "dynamic_rate_limiter",
+    "dynamic_rate_limiter_v3",
+    "langsmith",
+    "prometheus",
+    "otel",
+    "datadog",
+    "datadog_metrics",
+    "datadog_llm_observability",
+    "galileo",
+    "braintrust",
+    "arize",
+    "arize_phoenix",
+    "langtrace",
+    "gcs_bucket",
+    "azure_storage",
+    "opik",
+    "argilla",
+    "mlflow",
+    "langfuse",
+    "langfuse_otel",
+    "weave_otel",
+    "pagerduty",
+    "humanloop",
+    "azure_sentinel",
+    "gcs_pubsub",
+    "agentops",
+    "anthropic_cache_control_hook",
+    "generic_api",
+    "resend_email",
+    "sendgrid_email",
+    "smtp_email",
+    "deepeval",
+    "s3_v2",
+    "clickhouse",
+    "pointfive",
+    "zerobus",
+    "aws_sqs",
+    "vector_store_pre_call_hook",
+    "dotprompt",
+    "bitbucket",
+    "gitlab",
+    "cloudzero",
+    "focus",
+    "mavvrik",
+    "vantage",
+    "posthog",
+    "levo",
+    "compression_interception",
+    "newrelic",
+    "signoz",
+];
+
 #[test]
 fn known_callbacks_are_the_names_of_litellms_custom_logger_literal_in_order() {
-    assert_eq!(
-        KNOWN_CALLBACKS,
-        [
-            "lago",
-            "openmeter",
-            "logfire",
-            "literalai",
-            "litellm_agent",
-            "dynamic_rate_limiter",
-            "dynamic_rate_limiter_v3",
-            "langsmith",
-            "prometheus",
-            "otel",
-            "datadog",
-            "datadog_metrics",
-            "datadog_llm_observability",
-            "galileo",
-            "braintrust",
-            "arize",
-            "arize_phoenix",
-            "langtrace",
-            "gcs_bucket",
-            "azure_storage",
-            "opik",
-            "argilla",
-            "mlflow",
-            "langfuse",
-            "langfuse_otel",
-            "weave_otel",
-            "pagerduty",
-            "humanloop",
-            "azure_sentinel",
-            "gcs_pubsub",
-            "agentops",
-            "anthropic_cache_control_hook",
-            "generic_api",
-            "resend_email",
-            "sendgrid_email",
-            "smtp_email",
-            "deepeval",
-            "s3_v2",
-            "clickhouse",
-            "pointfive",
-            "zerobus",
-            "aws_sqs",
-            "vector_store_pre_call_hook",
-            "dotprompt",
-            "bitbucket",
-            "gitlab",
-            "cloudzero",
-            "focus",
-            "mavvrik",
-            "vantage",
-            "posthog",
-            "levo",
-            "compression_interception",
-            "newrelic",
-            "signoz",
-        ]
-    );
+    assert_eq!(KNOWN_CALLBACKS, LITELLM_CUSTOM_LOGGER_NAMES);
 }
 
 #[test]
@@ -548,6 +547,12 @@ async fn prompt_factory_passes_the_reference_arguments_to_every_port() {
 }
 
 fn assert_reference_arguments(observed: &Observation) {
+    assert_selection(observed);
+    assert_compile_call(observed);
+    assert_final_call(observed);
+}
+
+fn assert_selection(observed: &Observation) {
     let (selected_model, specific) = observed.selected.as_ref().unwrap();
     assert_eq!(selected_model, "support-prompt");
     assert_eq!(specific, &Some(Json::Bool(true)));
@@ -555,14 +560,23 @@ fn assert_reference_arguments(observed: &Observation) {
         observed.selected_messages,
         Some(vec![json_object(&[("role", text("user"))])])
     );
+    let expected_request = object(&[
+        ("litellm_logging_obj", text("handle")),
+        ("custom_provider_param", text("kept")),
+        ("temperature", number(1)),
+        ("original_function", text("acompletion")),
+    ]);
+    assert_eq!(observed.selected_request, Some(expected_request));
+}
+
+fn assert_compile_call(observed: &Observation) {
+    assert!(observed.updated);
     let mut expected_request = object(&[
         ("litellm_logging_obj", text("handle")),
         ("custom_provider_param", text("kept")),
         ("temperature", number(1)),
         ("original_function", text("acompletion")),
     ]);
-    assert_eq!(observed.selected_request, Some(expected_request.clone()));
-    assert!(observed.updated);
     expected_request.insert("deployment_marker".to_owned(), Json::Bool(true));
     assert_eq!(observed.compile_request, Some(expected_request));
     assert_eq!(
@@ -588,6 +602,9 @@ fn assert_reference_arguments(observed: &Observation) {
     );
     assert_eq!(observed.compile_prompt_id, Some(text("greeting")));
     assert_eq!(observed.compile_injected, Some(true));
+}
+
+fn assert_final_call(observed: &Observation) {
     let called = observed.direct.as_ref().unwrap();
     assert!(!called.contains_key("specific_deployment"));
     assert!(!called.contains_key("original_function"));
