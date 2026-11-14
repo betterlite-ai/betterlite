@@ -1,0 +1,17 @@
+kind: helper
+name: genai-stream-vertex
+call:
+  b3487:
+    mode: async
+    provider: vertex_ai
+    model: gemini-2.5-pro
+    lines:
+      - 'data: {"candidates":[{"content":{"parts":[{"text":"first"}]}}]}'
+      - ''
+      - 'data: {"candidates":[{"content":{"parts":[{"text":"second"}]}}]}'
+      - ''
+      - 'data: {"usageMetadata":{"promptTokenCount":4,"candidatesTokenCount":2}}'
+      - ''
+      - 'data: {"candidates":[{"content":{"parts":[{"text":"left open"}]}}]}'
+env: {}
+compare: {ignore: []}

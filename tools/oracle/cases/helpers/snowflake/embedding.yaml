@@ -1,0 +1,15 @@
+kind: helper
+name: snowflake-embedding
+call:
+  b5844:
+    steps:
+      - {kind: embedding_request, model: snowflake-arctic-embed-m, text: hello, options: {}}
+      - {kind: embedding_request, model: snowflake/snowflake-arctic-embed-m, text: [a, b], options: {model: override, extra: true}}
+      - kind: embedding_response
+        model: snowflake-arctic-embed-m
+        body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[[0.25,0.5,0.75],[9.5]]},{"object":"embedding","index":1,"embedding":[[0.125,0.375]]}],"model":"snowflake-arctic-embed-m","usage":{"prompt_tokens":4,"total_tokens":4}}'
+      - kind: embedding_response
+        model: snowflake/e5-base-v2
+        body: '{"data":[{"index":0,"embedding":[[1.5]]}],"usage":{"prompt_tokens":1,"total_tokens":1}}'
+env: {}
+compare: {ignore: []}
