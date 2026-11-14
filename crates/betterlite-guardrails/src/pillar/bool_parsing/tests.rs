@@ -3,7 +3,7 @@
 use betterlite_config::loader::EnvironmentLookup;
 use rstest::rstest;
 
-use super::bool_config::{BoolSetting, parse_bool_value, resolve_bool_config};
+use super::bool_config::{BoolSetting, parse_flag_setting, resolve_bool_config};
 use super::error::PillarError;
 use super::settings::{FallbackAction, OnFlaggedAction};
 
@@ -29,7 +29,7 @@ fn text(value: &str) -> BoolSetting {
 #[case::integer_one(BoolSetting::Integer(1))]
 #[case::integer_negative(BoolSetting::Integer(-3))]
 fn parses_true_values(#[case] value: BoolSetting) {
-    assert_eq!(parse_bool_value(&value), Ok(true));
+    assert_eq!(parse_flag_setting(&value), Ok(true));
 }
 
 #[rstest]
@@ -42,7 +42,7 @@ fn parses_true_values(#[case] value: BoolSetting) {
 #[case::boolean_false(BoolSetting::Boolean(false))]
 #[case::integer_zero(BoolSetting::Integer(0))]
 fn parses_false_values(#[case] value: BoolSetting) {
-    assert_eq!(parse_bool_value(&value), Ok(false));
+    assert_eq!(parse_flag_setting(&value), Ok(false));
 }
 
 #[rstest]
@@ -51,7 +51,7 @@ fn parses_false_values(#[case] value: BoolSetting) {
 #[case::number(text("2"))]
 #[case::dash(text("-"))]
 fn rejects_unrecognised_values(#[case] value: BoolSetting) {
-    let error = parse_bool_value(&value).expect_err("an unrecognised value is rejected");
+    let error = parse_flag_setting(&value).expect_err("an unrecognised value is rejected");
     let BoolSetting::Text(raw) = &value else {
         panic!("the case is text");
     };

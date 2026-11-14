@@ -19,6 +19,25 @@ pub struct KeyContext {
     pub org_id: Option<String>,
 }
 
+// LiteLLM drops a context field that is absent or empty
+fn insert_key_headers(headers: &mut BTreeMap<String, String>, key: &KeyContext) {
+    let fields = [
+        ("X-LiteLLM-Key-Name", &key.key_name),
+        ("X-LiteLLM-Key-Alias", &key.key_alias),
+        ("X-LiteLLM-User-Id", &key.user_id),
+        ("X-LiteLLM-User-Email", &key.user_email),
+        ("X-LiteLLM-Team-Id", &key.team_id),
+        ("X-LiteLLM-Team-Name", &key.team_alias),
+        ("X-LiteLLM-Org-Id", &key.org_id),
+    ];
+    for (name, value) in fields {
+        let Some(text) = value.as_deref().filter(|text| !text.is_empty()) else {
+            continue;
+        };
+        headers.insert(name.to_owned(), text.to_owned());
+    }
+}
+
 pub fn prepare_headers(
     settings: &PillarSettings,
     key: &KeyContext,
@@ -50,20 +69,6 @@ pub fn prepare_headers(
     if let Some(value) = settings.persist_session {
         headers.insert("plr_persist".to_owned(), value.to_string());
     }
-    let fields = [
-        ("X-LiteLLM-Key-Name", &key.key_name),
-        ("X-LiteLLM-Key-Alias", &key.key_alias),
-        ("X-LiteLLM-User-Id", &key.user_id),
-        ("X-LiteLLM-User-Email", &key.user_email),
-        ("X-LiteLLM-Team-Id", &key.team_id),
-        ("X-LiteLLM-Team-Name", &key.team_alias),
-        ("X-LiteLLM-Org-Id", &key.org_id),
-    ];
-    for (name, value) in fields {
-        let Some(value) = value.as_deref().filter(|value| !value.is_empty()) else {
-            continue;
-        };
-        headers.insert(name.to_owned(), value.to_owned());
-    }
+    insert_key_headers(&mut headers, key);
     Ok(headers)
 }

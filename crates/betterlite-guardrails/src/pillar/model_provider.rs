@@ -34,6 +34,22 @@ pub struct CatalogResolver<'context> {
     pub registry: &'context JSONProviderRegistry,
 }
 
+fn resolve_with(
+    request: &ResolutionRequest<'_>,
+    resolver: &CatalogResolver<'_>,
+) -> Result<(String, String), ResolutionError> {
+    let context = ResolutionContext {
+        catalog: resolver.catalog,
+        known_model_names: resolver.known_model_names,
+        custom_providers: resolver.custom_providers,
+        environment: resolver.environment,
+        registry: resolver.registry.clone(),
+        policies: ProviderPolicies::default(),
+        globals: GlobalCredentials::default(),
+    };
+    resolve(request, &context).map(|resolved| (resolved.model, resolved.provider.slug().to_owned()))
+}
+
 impl ModelProviderResolver for CatalogResolver<'_> {
     fn model_and_provider(
         &self,
@@ -42,24 +58,14 @@ impl ModelProviderResolver for CatalogResolver<'_> {
         api_base: Option<&str>,
         api_key: Option<&str>,
     ) -> Result<(String, String), ResolutionError> {
-        let api_key = api_key.map(|text| SecretString::from(text.to_owned()));
+        let secret = api_key.map(|text| SecretString::from(text.to_owned()));
         let request = ResolutionRequest {
             model,
             custom_llm_provider,
             api_base,
-            api_key: api_key.as_ref(),
+            api_key: secret.as_ref(),
         };
-        let context = ResolutionContext {
-            catalog: self.catalog,
-            known_model_names: self.known_model_names,
-            custom_providers: self.custom_providers,
-            environment: self.environment,
-            registry: self.registry.clone(),
-            policies: ProviderPolicies::default(),
-            globals: GlobalCredentials::default(),
-        };
-        resolve(&request, &context)
-            .map(|resolved| (resolved.model, resolved.provider.slug().to_owned()))
+        resolve_with(&request, self)
     }
 }
 
@@ -104,9 +110,11 @@ pub fn extract_model_and_provider(
     ) {
         Ok((resolved, provider)) => Ok((non_empty(resolved), non_empty(provider))),
         Err(_) => {
-            let declared = custom
-                .filter(|value| !value.is_empty())
-                .or(optional_text(data, "provider")?);
+            // LiteLLM reads the provider field only when the custom provider is absent or empty
+            let declared = match custom {
+                Some(custom) if !custom.is_empty() => Some(custom),
+                _ => optional_text(data, "provider")?,
+            };
             Ok((non_empty(model), non_empty(declared.unwrap_or_default())))
         }
     }

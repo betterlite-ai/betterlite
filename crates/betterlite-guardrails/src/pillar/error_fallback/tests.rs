@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
@@ -19,7 +20,7 @@ fn pillar_settings(fallback_on_error: FallbackAction) -> PillarSettings {
         include_scanners: true,
         include_evidence: true,
         fallback_on_error,
-        timeout: std::time::Duration::from_secs(5),
+        timeout: Duration::from_secs(5),
     }
 }
 

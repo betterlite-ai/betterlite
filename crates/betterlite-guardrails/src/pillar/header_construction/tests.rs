@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use rstest::rstest;
 use secrecy::SecretString;
@@ -19,7 +20,7 @@ fn pillar_settings(api_key: Option<&str>) -> PillarSettings {
         include_scanners: true,
         include_evidence: true,
         fallback_on_error: FallbackAction::Allow,
-        timeout: std::time::Duration::from_secs(5),
+        timeout: Duration::from_secs(5),
     }
 }
 
@@ -99,8 +100,13 @@ fn every_key_context_field_becomes_its_own_header() {
 #[test]
 fn a_missing_context_field_sets_no_header() {
     let context = KeyContext {
+        key_name: None,
+        key_alias: None,
         user_id: Some(String::from("user-1")),
-        ..KeyContext::default()
+        user_email: None,
+        team_id: None,
+        team_alias: None,
+        org_id: None,
     };
     let headers =
         prepare_headers(&pillar_settings(Some("sk-test")), &context).expect("a key is configured");
@@ -113,8 +119,12 @@ fn a_missing_context_field_sets_no_header() {
 fn an_empty_context_field_sets_no_header() {
     let context = KeyContext {
         key_name: Some(String::new()),
+        key_alias: None,
         user_id: Some(String::from("user-1")),
-        ..KeyContext::default()
+        user_email: None,
+        team_id: None,
+        team_alias: None,
+        org_id: None,
     };
     let headers =
         prepare_headers(&pillar_settings(Some("sk-test")), &context).expect("a key is configured");

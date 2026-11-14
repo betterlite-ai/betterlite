@@ -2,10 +2,7 @@ use betterlite_config::loader::EnvironmentLookup;
 
 use super::error::PillarError;
 
-const TRUE_VALUES: [&str; 5] = ["true", "1", "yes", "y", "on"];
-const FALSE_VALUES: [&str; 5] = ["false", "0", "no", "n", "off"];
-
-// LiteLLM's _parse_bool_value takes bool, int or str, and so does the resolver's provided value
+// LiteLLM's _parse_bool_value takes bool, int or str, and the resolver's provided value can be any of them
 #[derive(Debug, Clone, PartialEq)]
 pub enum BoolSetting {
     Boolean(bool),
@@ -13,22 +10,25 @@ pub enum BoolSetting {
     Text(String),
 }
 
-pub fn parse_bool_value(value: &BoolSetting) -> Result<bool, PillarError> {
+pub fn parse_flag_setting(value: &BoolSetting) -> Result<bool, PillarError> {
     match value {
-        BoolSetting::Boolean(value) => Ok(*value),
-        BoolSetting::Integer(value) => Ok(*value != 0),
-        BoolSetting::Text(text) => {
-            let normalized = text.trim().to_lowercase();
-            if TRUE_VALUES.contains(&normalized.as_str()) {
-                return Ok(true);
-            }
-            if FALSE_VALUES.contains(&normalized.as_str()) {
-                return Ok(false);
-            }
-            Err(PillarError::BoolValue {
-                value: text.clone(),
-            })
-        }
+        BoolSetting::Boolean(flag) => Ok(*flag),
+        BoolSetting::Integer(number) => Ok(*number != 0),
+        BoolSetting::Text(text) => flag_from_text(text),
+    }
+}
+
+// betterlite-env reads the shared words; the Pillar hook also takes a bare y or n
+fn flag_from_text(text: &str) -> Result<bool, PillarError> {
+    if let Ok(Some(flag)) = betterlite_env::flag("", text) {
+        return Ok(flag);
+    }
+    match text.trim().to_lowercase().as_str() {
+        "y" => Ok(true),
+        "n" => Ok(false),
+        _ => Err(PillarError::BoolValue {
+            value: text.to_owned(),
+        }),
     }
 }
 
@@ -40,7 +40,7 @@ pub fn resolve_bool_config(
     setting_name: &str,
 ) -> Option<bool> {
     if let Some(value) = provided {
-        if let Ok(parsed) = parse_bool_value(value) {
+        if let Ok(parsed) = parse_flag_setting(value) {
             return Some(parsed);
         }
         let text = match value {
@@ -61,7 +61,7 @@ pub fn resolve_bool_config(
         return default;
     };
     let value = BoolSetting::Text(text.clone());
-    if let Ok(parsed) = parse_bool_value(&value) {
+    if let Ok(parsed) = parse_flag_setting(&value) {
         return Some(parsed);
     }
     tracing::warn!(
