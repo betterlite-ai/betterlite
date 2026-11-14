@@ -34,7 +34,7 @@ pub(crate) enum Input {
         request: JsonObject,
         #[serde(default)]
         messages: Vec<Json>,
-        compiled: CompiledRow,
+        compiled: Box<CompiledRow>,
     },
 }
 
@@ -72,6 +72,21 @@ struct HelperPorts {
     compiled: CompiledPrompt,
     compile_call: Mutex<Value>,
     selection: Mutex<Value>,
+}
+
+impl HelperPorts {
+    fn new(model_list: &[DeploymentRow], compiled: &CompiledRow) -> Self {
+        Self {
+            deployments: specs(model_list),
+            compiled: CompiledPrompt {
+                model: compiled.model.clone(),
+                messages: compiled.messages.clone(),
+                optional_params: compiled.optional_params.clone(),
+            },
+            compile_call: Mutex::new(Value::Null),
+            selection: Mutex::new(Value::Null),
+        }
+    }
 }
 
 #[async_trait]
@@ -162,43 +177,42 @@ impl Helper for Op {
                 messages,
                 compiled,
             } => {
-                let ports = HelperPorts {
-                    deployments: specs(model_list),
-                    compiled: CompiledPrompt {
-                        model: compiled.model.clone(),
-                        messages: compiled.messages.clone(),
-                        optional_params: compiled.optional_params.clone(),
-                    },
-                    compile_call: Mutex::new(Value::Null),
-                    selection: Mutex::new(Value::Null),
-                };
-                let mut request = router_request(model, messages, request);
-                let handle = Json::Text(LOGGING_HANDLE.to_owned());
-                request.insert("litellm_logging_obj".to_owned(), handle.clone());
-                let runtime = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .map_err(|error| value_error(error.to_string()))?;
-                let mut outcome = runtime
-                    .block_on(prompt_factory(model, messages, request, &ports))
-                    .map_err(|error| value_error(error.to_string()))?;
-                let logging_kept =
-                    outcome.request.shift_remove("litellm_logging_obj") == Some(handle);
-                let original_function_kept = outcome.request.contains_key("original_function");
-                for key in ROUTER_ONLY_KEYS {
-                    outcome.request.shift_remove(key);
-                }
-                Ok(json!({
-                    "compile_call": ports.compile_call.into_inner(),
-                    "request": outcome.request,
-                    "logging_kept": logging_kept,
-                    "selection": ports.selection.into_inner(),
-                    "original_function_kept": original_function_kept,
-                    "call": outcome.call,
-                }))
+                let ports = HelperPorts::new(model_list, compiled);
+                let kwargs = router_request(model, messages, request);
+                factory_answer(model, messages, kwargs, ports)
             }
         }
     }
+}
+
+fn factory_answer(
+    model: &str,
+    messages: &[Json],
+    mut kwargs: JsonObject,
+    ports: HelperPorts,
+) -> HelperResult {
+    let handle = Json::Text(LOGGING_HANDLE.to_owned());
+    kwargs.insert("litellm_logging_obj".to_owned(), handle.clone());
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| value_error(error.to_string()))?;
+    let mut outcome = runtime
+        .block_on(prompt_factory(model, messages, kwargs, &ports))
+        .map_err(|error| value_error(error.to_string()))?;
+    let logging_kept = outcome.request.shift_remove("litellm_logging_obj") == Some(handle);
+    let original_function_kept = outcome.request.contains_key("original_function");
+    for key in ROUTER_ONLY_KEYS {
+        outcome.request.shift_remove(key);
+    }
+    Ok(json!({
+        "compile_call": ports.compile_call.into_inner(),
+        "request": outcome.request,
+        "logging_kept": logging_kept,
+        "selection": ports.selection.into_inner(),
+        "original_function_kept": original_function_kept,
+        "call": outcome.call,
+    }))
 }
 
 fn scrubbed(request: &JsonObject) -> JsonObject {
