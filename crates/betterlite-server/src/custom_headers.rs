@@ -62,8 +62,8 @@ impl HeaderSet {
 
     fn into_header_map(self) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        for (name, text) in self.entries {
-            let Some(text) = text.filter(|text| !text.is_empty() && text != "None") else {
+        for (name, rendered) in self.entries {
+            let Some(text) = rendered.filter(|text| !text.is_empty() && text != "None") else {
                 continue;
             };
             insert_header(&mut headers, &name, &text);

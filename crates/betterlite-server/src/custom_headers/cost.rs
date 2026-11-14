@@ -53,10 +53,10 @@ pub(crate) struct BreakdownHeaders {
 }
 
 pub(crate) fn breakdown_headers(
-    logging: Option<&LoggingHeaderView>,
+    logging_view: Option<&LoggingHeaderView>,
     response_cost: Option<&JsonValue>,
 ) -> BreakdownHeaders {
-    let Some(logging) = logging else {
+    let Some(logging) = logging_view else {
         return BreakdownHeaders::default();
     };
     let Some(breakdown) = logging
@@ -67,48 +67,34 @@ pub(crate) fn breakdown_headers(
         return missing_breakdown(logging, response_cost);
     };
     BreakdownHeaders {
-        original_cost: part(
-            breakdown,
-            "x-litellm-response-cost-original",
-            "original_cost",
-        ),
-        discount_amount: part(
-            breakdown,
-            "x-litellm-response-cost-discount-amount",
-            "discount_amount",
-        ),
-        margin_total_amount: part(
-            breakdown,
-            "x-litellm-response-cost-margin-amount",
-            "margin_total_amount",
-        ),
-        margin_percent: part(
-            breakdown,
-            "x-litellm-response-cost-margin-percent",
-            "margin_percent",
-        ),
+        original_cost: breakdown
+            .get("original_cost")
+            .and_then(|value| python_str("x-litellm-response-cost-original", value)),
+        discount_amount: breakdown
+            .get("discount_amount")
+            .and_then(|value| python_str("x-litellm-response-cost-discount-amount", value)),
+        margin_total_amount: breakdown
+            .get("margin_total_amount")
+            .and_then(|value| python_str("x-litellm-response-cost-margin-amount", value)),
+        margin_percent: breakdown
+            .get("margin_percent")
+            .and_then(|value| python_str("x-litellm-response-cost-margin-percent", value)),
         input_cost: uncached_input_cost(breakdown),
-        output_cost: part(breakdown, "x-litellm-response-cost-output", "output_cost"),
-        cache_read_cost: part(
-            breakdown,
-            "x-litellm-response-cost-cache-read",
-            "cache_read_cost",
-        ),
-        cache_creation_cost: part(
-            breakdown,
-            "x-litellm-response-cost-cache-creation",
-            "cache_creation_cost",
-        ),
-        reasoning_cost: part(
-            breakdown,
-            "x-litellm-response-cost-reasoning",
-            "reasoning_cost",
-        ),
-        tool_usage_cost: part(
-            breakdown,
-            "x-litellm-response-cost-tool-usage",
-            "tool_usage_cost",
-        ),
+        output_cost: breakdown
+            .get("output_cost")
+            .and_then(|value| python_str("x-litellm-response-cost-output", value)),
+        cache_read_cost: breakdown
+            .get("cache_read_cost")
+            .and_then(|value| python_str("x-litellm-response-cost-cache-read", value)),
+        cache_creation_cost: breakdown
+            .get("cache_creation_cost")
+            .and_then(|value| python_str("x-litellm-response-cost-cache-creation", value)),
+        reasoning_cost: breakdown
+            .get("reasoning_cost")
+            .and_then(|value| python_str("x-litellm-response-cost-reasoning", value)),
+        tool_usage_cost: breakdown
+            .get("tool_usage_cost")
+            .and_then(|value| python_str("x-litellm-response-cost-tool-usage", value)),
     }
 }
 
@@ -119,29 +105,21 @@ fn missing_breakdown(
     if NON_INFERENCE_CALL_TYPES.contains(&logging.call_type.as_str())
         && totals_to_zero(response_cost)
     {
-        return zero_breakdown();
+        let zero = "0.0".to_owned();
+        return BreakdownHeaders {
+            original_cost: Some(zero.clone()),
+            discount_amount: Some(zero.clone()),
+            margin_total_amount: Some(zero.clone()),
+            margin_percent: Some(zero.clone()),
+            input_cost: Some(zero.clone()),
+            output_cost: Some(zero.clone()),
+            tool_usage_cost: Some(zero),
+            cache_read_cost: None,
+            cache_creation_cost: None,
+            reasoning_cost: None,
+        };
     }
     BreakdownHeaders::default()
-}
-
-fn zero_breakdown() -> BreakdownHeaders {
-    let zero = "0.0".to_owned();
-    BreakdownHeaders {
-        original_cost: Some(zero.clone()),
-        discount_amount: Some(zero.clone()),
-        margin_total_amount: Some(zero.clone()),
-        margin_percent: Some(zero.clone()),
-        input_cost: Some(zero.clone()),
-        output_cost: Some(zero.clone()),
-        tool_usage_cost: Some(zero),
-        cache_read_cost: None,
-        cache_creation_cost: None,
-        reasoning_cost: None,
-    }
-}
-
-fn part(breakdown: &JsonMap, header: &str, field: &str) -> Option<String> {
-    python_str(header, breakdown.get(field)?)
 }
 
 // LiteLLM subtracts the cache costs from the stored input cost and advertises the additive split
@@ -178,7 +156,7 @@ fn numeric_total(value: &JsonValue, field: &str) -> Option<f64> {
 // LiteLLM's `cache_read_cost or 0.0`: a missing, null or falsey cache cost counts as zero
 fn cache_part(value: Option<&JsonValue>, field: &str) -> Option<f64> {
     match value {
-        Some(value) if truthy(value) => numeric_total(value, field),
+        Some(cost) if truthy(cost) => numeric_total(cost, field),
         Some(_) | None => Some(0.0),
     }
 }

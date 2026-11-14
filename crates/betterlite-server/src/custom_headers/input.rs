@@ -81,10 +81,10 @@ pub(super) fn resolved_call_id(input: &CustomHeadersInput) -> Option<String> {
 
 // LiteLLM keeps the query string off the api base, since it can carry a key
 pub(super) fn api_base(api_base: Option<&str>) -> Option<String> {
-    let api_base = api_base.filter(|text| !text.is_empty())?;
-    let base = api_base
+    let base_url = api_base.filter(|text| !text.is_empty())?;
+    let base = base_url
         .split_once('?')
-        .map_or(api_base, |(base, _query)| base);
+        .map_or(base_url, |(base, _query)| base);
     Some(base.to_owned())
 }
 
