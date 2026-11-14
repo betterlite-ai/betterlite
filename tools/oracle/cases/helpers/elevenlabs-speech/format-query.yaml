@@ -1,0 +1,35 @@
+kind: helper
+name: elevenlabs-speech-format-query
+call:
+  elevenlabs_speech:
+    calls:
+    - {function: map_params, voice: alloy, optional_params: {response_format: mp3}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {response_format: pcm}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {response_format: opus}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {response_format: mp3_22050_32}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {response_format: wav}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {response_format: null}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {}, kwargs: {__elevenlabs_query_params__: {output_format: mp3}}}
+    - {function: map_params, voice: alloy, optional_params: {response_format: opus}, kwargs: {__elevenlabs_query_params__: {output_format: mp3}}}
+    - function: url
+      api_base: null
+      environment: {}
+      litellm_params: {__elevenlabs_voice_id__: voice, __elevenlabs_query_params__: {output_format: mp3_44100_128}}
+    - function: url
+      api_base: null
+      environment: {}
+      litellm_params: {__elevenlabs_voice_id__: voice, __elevenlabs_query_params__: {q: "a b", r: "a*b", s: "a~b", t: "%7E"}}
+    - function: url
+      api_base: null
+      environment: {}
+      litellm_params: {__elevenlabs_voice_id__: voice, __elevenlabs_query_params__: {n: 5}}
+    - function: url
+      api_base: null
+      environment: {}
+      litellm_params: {__elevenlabs_voice_id__: voice, __elevenlabs_query_params__: {}}
+    - function: url
+      api_base: null
+      environment: {}
+      litellm_params: {__elevenlabs_voice_id__: voice, __elevenlabs_query_params__: null}
+compare: {ignore: []}
+env: {}

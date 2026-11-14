@@ -1,0 +1,17 @@
+task: B3773
+deviations:
+  - what: fail_open logs at error level instead of Python's critical level.
+    why: Rust's tracing has no critical level, and the message text is kept as LiteLLM writes it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L577-L583
+  - what: A `restore_protected_messages` call with fewer compressed rows than unprotected rows returns a typed error.
+    why: Python raises KeyError there, which would be a 500; B3774 already rejects a changed row count before this call, so the error only guards against a caller bug.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L277-L281
+  - what: A config `unreachable_fallback` other than `fail_closed` or `fail_open` is a config error naming the field.
+    why: LiteLLM's pydantic model rejects it the same way; the constructor's quiet fall back to fail_closed only applies to a caller that bypasses the model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/headroom.py#L27-L34
+  - what: request_headers returns a typed error when the configured API key cannot be a header value, where LiteLLM hands the string to httpx and fails when the request is sent.
+    why: A header value cannot carry control characters, and the secrets-stay-secret rule requires the token to become a sensitive header value at the boundary rather than a plain string on a request object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L540-L545
+  - what: A configured timeout that is finite and positive but larger than a `std::time::Duration` can hold (above about 1.8e19 seconds) is treated as unusable and falls back to 60 seconds with the same warning.
+    why: The timeout is a Duration in betterlite, and httpx would have accepted the float as an effectively endless deadline; no working setup configures such a value, and silently capping it would be a lied-about setting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L547-L562

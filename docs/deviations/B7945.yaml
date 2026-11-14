@@ -1,0 +1,22 @@
+task: B7945
+deviations:
+  - what: >-
+      CacheSettingsField.field_value and field_default, RouterSettingsField.field_value and
+      field_default, and CoordinationRedisSettingsField.field_value and field_default are typed
+      as pydantic's JsonValue, where LiteLLM declares Any on the first two models and
+      object | None on the third.
+    why: >-
+      The wheel's rules forbid Any and object in annotations, and every value these fields hold
+      in the three field lists is a JSON value, so JsonValue describes what the models accept
+      and return there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/cache_settings_endpoints.py#L13-L15
+  - what: >-
+      The module docstrings and the FallbackCreateRequest, FallbackResponse, FallbackGetResponse
+      and FallbackDeleteResponse class docstrings are not ported, and neither are the
+      Field(description=...) texts on their 13 fields, so __doc__, model_fields[name].description
+      and the model_json_schema() descriptions are absent.
+    why: >-
+      The repository keeps no docstrings, and the task's definition of done fixes parity at the
+      names, keys, required keys, Literal values and defaults, none of which these texts change;
+      the field_description values the settings UI reads live in the data lists and are ported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/router_settings_endpoints.py#L13-L23

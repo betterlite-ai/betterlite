@@ -1,0 +1,12 @@
+kind: helper
+name: agents-item-async-delete-delegates-to-sync
+call:
+  b3505:
+    operation: adelete
+    name: agent-1
+    api_key: key-1
+    litellm_call_id: call-adelete
+    status: 200
+    body: '{}'
+env: {}
+compare: {ignore: []}
