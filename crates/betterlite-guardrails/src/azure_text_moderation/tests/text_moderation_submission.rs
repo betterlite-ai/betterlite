@@ -51,6 +51,18 @@ async fn posts_the_configured_request_body_options() {
 }
 
 #[tokio::test]
+async fn parses_a_response_that_reports_blocklist_matches() {
+    let server = mock(
+        200,
+        r#"{"blocklistsMatch":[{"blocklistName":"list-a","blocklistItemId":"1","blocklistItemText":"match"}],"categoriesAnalysis":[{"category":"Hate","severity":0}]}"#.to_owned(),
+    )
+    .await;
+    let hook = guardrail(&server.base, OptionalParams::default());
+    let answer = hook.async_make_request("hello").await.unwrap();
+    assert_eq!(answer, analysis(&[("Hate", 0)]));
+}
+
+#[tokio::test]
 async fn splits_a_long_text_and_returns_the_last_response() {
     let text = "x".repeat(10_001);
     let server = mock_scripted(vec![
