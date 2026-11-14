@@ -24,3 +24,6 @@ deviations:
   - what: A connection or protocol error on create's async POST returns the transport error; it is not retried on a fresh single-connection client the way LiteLLM's AsyncHTTPHandler.post retries, and its timeout returns the transport error instead of litellm.Timeout.
     why: the async client comes from B3492's base module, which builds one client per provider with reqwest's automatic retries off, so a POST goes out at most once and a retry cannot submit the same agent twice; the timeout is carried by the same reqwest error for the caller to classify.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L834-L866
+  - what: A timeout on create's blocking POST returns the transport error instead of litellm.Timeout.
+    why: reqwest reports its deadline as the request's own error, and the shared transport passes it through handle_error unchanged for the caller to classify, as B3492's blocking interactions already do.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1516-L1521
