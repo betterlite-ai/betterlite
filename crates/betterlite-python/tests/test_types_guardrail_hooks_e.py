@@ -765,13 +765,25 @@ def test_warning_names(report: FullReport) -> None:
 
 
 def test_ui_names(report: FullReport) -> None:
-    theirs = report["litellm"]["ui"]
+    expected: dict[str, str] = {
+        "proxy.guardrails.guardrail_hooks.tool_permission.ToolPermissionGuardrailConfigModel": (
+            "LiteLLM Tool Permission Guardrail"
+        ),
+        "proxy.guardrails.guardrail_hooks.typesafe.TypeSafeGuardrailConfigModel": (
+            "TypeSafe (Jev) Compaction"
+        ),
+        "proxy.guardrails.guardrail_hooks.vigil_guard.VigilGuardGuardrailConfigModel": (
+            "Vigil Guard"
+        ),
+        "proxy.guardrails.guardrail_hooks.xecguard.XecGuardConfigModel": "XecGuard",
+        "proxy.guardrails.guardrail_hooks.zscaler_ai_guard.ZscalerAIGuardConfigModel": (
+            "Zscaler AI Guard"
+        ),
+    }
     ours = report["betterlite"]["ui"]
-    assert len(theirs) == UI_COUNT
-    assert ours == theirs
-    assert ours["proxy.guardrails.guardrail_hooks.zscaler_ai_guard.ZscalerAIGuardConfigModel"] == (
-        "Zscaler AI Guard"
-    )
+    assert len(ours) == UI_COUNT
+    assert ours == expected
+    assert report["litellm"]["ui"] == expected
 
 
 def test_abstract_names(report: FullReport) -> None:
