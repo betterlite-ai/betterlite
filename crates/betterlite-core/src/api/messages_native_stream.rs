@@ -50,7 +50,7 @@ impl RelayLimits {
             .ok_or(RelayConfigError::NonPositiveQueue)?;
         // The source comparison makes zero and negative caps disable detached draining
         let max_detached_stream_drains =
-            usize::try_from(settings.max_detached_stream_drains).unwrap_or(0);
+            usize::try_from(settings.max_detached_stream_drains).unwrap_or_default();
         Ok(Self {
             queue_maxsize,
             max_detached_stream_drains,
@@ -224,7 +224,7 @@ where
     F: StreamFailureLogging + 'static,
     ReportedFailure: From<P::Error>,
 {
-    let registration = registry.start_pump();
+    let registration = registry.register_pump();
     let worker_queue = Arc::clone(&queue);
     let tracker = Arc::new(TaskTracker::new());
     tracker.spawn(async move {
@@ -244,12 +244,18 @@ where
 // LiteLLM's _is_message_stop_chunk and _is_provider_error_chunk, which B3608 probes through its AnthropicFrameProbe trait
 #[must_use]
 pub fn is_message_stop_chunk(frames: &[u8]) -> bool {
-    classified_flags(frames).is_some_and(|flags| flags.contains(&ChunkFlag::MessageStop))
+    let Some(flags) = classified_flags(frames) else {
+        return false;
+    };
+    flags.contains(&ChunkFlag::MessageStop)
 }
 
 #[must_use]
 pub fn is_provider_error_chunk(frames: &[u8]) -> bool {
-    classified_flags(frames).is_some_and(|flags| flags.contains(&ChunkFlag::ProviderError))
+    let Some(flags) = classified_flags(frames) else {
+        return false;
+    };
+    flags.contains(&ChunkFlag::ProviderError)
 }
 
 // The frames are already in memory, so the per-read byte bound must not reject a joined stream

@@ -17,9 +17,18 @@ pub struct RegistrySizes {
 }
 
 impl StreamRegistry {
-    #[must_use]
-    pub fn start_pump(self: &Arc<Self>) -> Slot {
-        self.register(SlotKind::Pump)
+    pub(super) fn register_pump(self: &Arc<Self>) -> Slot {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let _inserted = self
+            .pumps
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(id);
+        Slot {
+            registry: Arc::clone(self),
+            id,
+            kind: SlotKind::Pump,
+        }
     }
 
     #[must_use]
@@ -53,20 +62,6 @@ impl StreamRegistry {
             id,
             kind: SlotKind::Drain,
         })
-    }
-
-    fn register(self: &Arc<Self>, kind: SlotKind) -> Slot {
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let _inserted = self
-            .set(kind)
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(id);
-        Slot {
-            registry: Arc::clone(self),
-            id,
-            kind,
-        }
     }
 
     fn set(&self, kind: SlotKind) -> &Mutex<BTreeSet<usize>> {
