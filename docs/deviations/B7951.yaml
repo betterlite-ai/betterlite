@@ -1,12 +1,14 @@
 task: B7951
 deviations:
   - what: >-
-      betterlite.types.search does not re-export SearchProvider and SearchProviders.
+      betterlite.types.search does not re-export SearchProvider and SearchProviders,
+      and sets no __all__, where LiteLLM's __all__ names those two.
     why: >-
       LiteLLM's search.py imports the SearchProviders Enum from litellm.types.utils
       (B048) and aliases it as SearchProvider; betterlite.types.utils does not
       declare that Enum yet, and declaring a second copy here would give the same
-      type two homes.
+      type two homes. An __all__ that named only the two omitted names would make
+      the module export nothing.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/search.py#L9-L14
   - what: >-
       The four string Enums derive from enum.StrEnum, where LiteLLM declares them as
