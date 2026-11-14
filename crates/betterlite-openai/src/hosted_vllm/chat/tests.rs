@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeSet;
 
 use betterlite_models::projections::reasoning_effort::ThinkingBudgetThresholds;
