@@ -49,8 +49,8 @@ impl Http<'_> {
 
     async fn frames(&self, body: &IndexMap<String, Json>) -> Result<Vec<Vec<u8>>, SdkHttpError> {
         let (response, _lease) = self.post(body).await?;
-        let text = String::from_utf8(Self::read(response).await?)
-            .map_err(|error| SdkHttpError::Logging(error.to_string()))?;
+        let text =
+            String::from_utf8(Self::read(response).await?).map_err(SdkHttpError::FrameUtf8)?;
         Ok(text
             .split_inclusive("\n\n")
             .map(|frame| frame.as_bytes().to_vec())

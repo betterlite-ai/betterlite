@@ -82,9 +82,8 @@ impl StreamSuccessDispatch for NoDispatch {
 }
 
 pub(super) fn logging_object() -> Result<Arc<StreamLoggingObject>, SdkHttpError> {
-    let fixture = |error: &dyn std::fmt::Display| SdkHttpError::Logging(error.to_string());
     let mut context = CorrelationContext::default();
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| fixture(&error))?;
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
     let logging = LoggingState::new(
         LoggingInit {
             model: "claude".to_owned(),
@@ -113,7 +112,7 @@ pub(super) fn logging_object() -> Result<Arc<StreamLoggingObject>, SdkHttpError>
         || "generated-trace".to_owned(),
         Duration::default,
     )
-    .map_err(|error| fixture(&error))?;
+    .map_err(SdkHttpError::LoggingState)?;
     Ok(Arc::new(StreamLoggingObject {
         slot: Mutex::new(Some(StreamLoggingState {
             logging,

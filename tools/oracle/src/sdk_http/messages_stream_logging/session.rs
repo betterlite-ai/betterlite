@@ -43,8 +43,8 @@ impl Session {
         warnings: Warnings,
     ) -> Result<Self, SdkHttpError> {
         let recorder = Arc::new(Recorder::default());
-        let worker = LoggingWorker::start(WorkerSettings::default())
-            .map_err(|error| SdkHttpError::Logging(error.to_string()))?;
+        let worker =
+            LoggingWorker::start(WorkerSettings::default()).map_err(SdkHttpError::Worker)?;
         let worker = Arc::new(worker);
         let slots = Arc::new(StreamSlots::default());
         let handler = Arc::new(PassThroughEndpointLogging {
@@ -83,6 +83,18 @@ impl Session {
         http: &Http<'_>,
     ) -> Result<StepOutcome, SdkHttpError> {
         let mut outcome = StepOutcome::default();
+        self.apply(step, http, &mut outcome).await?;
+        self.worker.flush().await;
+        self.observe(&mut outcome);
+        Ok(outcome)
+    }
+
+    async fn apply(
+        &mut self,
+        step: &LoggingStep,
+        http: &Http<'_>,
+        outcome: &mut StepOutcome,
+    ) -> Result<(), SdkHttpError> {
         match step {
             LoggingStep::Collect { first_chunk } => {
                 self.frames = http.frames(&self.body).await?;
@@ -134,15 +146,12 @@ impl Session {
                     ChunkSpec::Mapping(mapping) => SseChunk::Mapping(mapping.clone()),
                     ChunkSpec::Bytes(bytes) => SseChunk::Bytes(bytes.clone().into_bytes()),
                 };
-                let frame = convert_chunk_to_sse_format(chunk)
-                    .map_err(|error| SdkHttpError::Logging(error.to_string()))?;
+                let frame = convert_chunk_to_sse_format(chunk).map_err(SdkHttpError::Chunk)?;
                 outcome.text = Some(String::from_utf8_lossy(&frame).into_owned());
             }
-            LoggingStep::Delegate => self.delegate(http, &mut outcome).await?,
+            LoggingStep::Delegate => self.delegate(http, outcome).await?,
         }
-        self.worker.flush().await;
-        self.observe(&mut outcome);
-        Ok(outcome)
+        Ok(())
     }
 
     fn fields(&self) -> MutexGuard<'_, Fields> {
@@ -154,12 +163,16 @@ impl Session {
 
     fn arm_deferred(&self) {
         let args = Arc::clone(&self.callback_args);
-        let ran = Arc::clone(&self.recorder.ran);
         self.fields().deferred_callback = Some(Box::new(move |parked: Vec<LoggingFuture>| {
             args.lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .push(parked.len());
-            counted_future(&ran)
+            Box::pin(async move {
+                for future in parked {
+                    future.await?;
+                }
+                Ok(())
+            })
         }));
     }
 
