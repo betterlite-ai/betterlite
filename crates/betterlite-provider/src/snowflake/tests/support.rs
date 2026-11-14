@@ -11,6 +11,7 @@ use betterlite_prompts::arguments::json::Json;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 use betterlite_prompts::message_content::Message;
+use tokio::task::yield_now;
 use uuid::Uuid;
 
 #[derive(Default)]
@@ -45,6 +46,15 @@ impl MediaSource {
     pub(crate) fn converted(&self) -> Vec<String> {
         self.conversions.lock().unwrap().clone()
     }
+
+    fn result_for(&self, url: &str) -> Result<String, ImageFetchError> {
+        self.mapping
+            .get(url)
+            .cloned()
+            .ok_or_else(|| ImageFetchError::Rejected {
+                url: url.to_owned(),
+            })
+    }
 }
 
 impl RemoteMediaFetcher for MediaSource {
@@ -54,7 +64,7 @@ impl RemoteMediaFetcher for MediaSource {
         let slow = self.slow;
         async move {
             if slow {
-                tokio::task::yield_now().await;
+                yield_now().await;
             }
             outcome
         }
@@ -70,17 +80,6 @@ impl RemoteMediaFetcher for MediaSource {
             .extend(urls.iter().cloned());
         let results = urls.iter().map(|url| self.result_for(url)).collect();
         ready(results)
-    }
-}
-
-impl MediaSource {
-    fn result_for(&self, url: &str) -> Result<String, ImageFetchError> {
-        self.mapping
-            .get(url)
-            .cloned()
-            .ok_or_else(|| ImageFetchError::Rejected {
-                url: url.to_owned(),
-            })
     }
 }
 

@@ -5,7 +5,7 @@ use crate::api::file_contracts::config::Headers;
 
 const CHAT_PARAMS: &str =
     "temperature max_tokens max_completion_tokens top_p stream tools tool_choice";
-const EMBEDDING_PARAMS: &str =
+pub const EMBEDDING_PARAMS: &str =
     "temperature max_tokens top_p stream response_format tools tool_choice";
 const API_SUFFIX: &str = "/api/v2";
 
@@ -23,11 +23,6 @@ pub fn get_supported_openai_params(model: &str) -> Vec<&'static str> {
     params
 }
 
-#[must_use]
-pub fn embedding_supported_params() -> Vec<&'static str> {
-    EMBEDDING_PARAMS.split_whitespace().collect()
-}
-
 pub fn map_openai_params(non_default_params: &Object, optional_params: &mut Object, model: &str) {
     copy_supported(
         non_default_params,
@@ -37,11 +32,8 @@ pub fn map_openai_params(non_default_params: &Object, optional_params: &mut Obje
 }
 
 pub fn map_embedding_openai_params(non_default_params: &Object, optional_params: &mut Object) {
-    copy_supported(
-        non_default_params,
-        optional_params,
-        &embedding_supported_params(),
-    );
+    let supported: Vec<&str> = EMBEDDING_PARAMS.split_whitespace().collect();
+    copy_supported(non_default_params, optional_params, &supported);
 }
 
 fn copy_supported(non_default_params: &Object, optional_params: &mut Object, supported: &[&str]) {
@@ -85,7 +77,7 @@ fn valid_account_id(account_id: &str) -> bool {
         && !body.contains('\n')
         && body
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            .all(|letter| letter.is_ascii_alphanumeric() || letter == '_' || letter == '-')
 }
 
 fn with_api_suffix(api_base: &str) -> String {
@@ -116,8 +108,9 @@ pub fn get_embed_complete_url(
     params: &mut Object,
     account_id_env: Option<&str>,
 ) -> Result<String, SnowflakeError> {
-    let base = get_api_base(api_base, params, account_id_env)?;
-    Ok(format!("{base}/cortex/inference:embed"))
+    let mut url = get_api_base(api_base, params, account_id_env)?;
+    url.push_str("/cortex/inference:embed");
+    Ok(url)
 }
 
 pub fn validate_environment(
@@ -159,5 +152,4 @@ pub fn provider_info(
     (api_base.map(str::to_owned), dynamic_key)
 }
 
-#[cfg(test)]
 mod tests;

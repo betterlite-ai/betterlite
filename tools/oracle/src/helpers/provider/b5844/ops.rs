@@ -3,9 +3,9 @@ use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 use betterlite_provider::api::file_contracts::config::Headers;
 use betterlite_provider::snowflake::config::{
-    embedding_supported_params, get_complete_url, get_embed_complete_url,
-    get_supported_openai_params, is_claude_model, map_embedding_openai_params, map_openai_params,
-    provider_info, validate_environment,
+    EMBEDDING_PARAMS, get_complete_url, get_embed_complete_url, get_supported_openai_params,
+    is_claude_model, map_embedding_openai_params, map_openai_params, provider_info,
+    validate_environment,
 };
 use betterlite_provider::snowflake::embedding::{
     transform_embedding_request, transform_embedding_response,
@@ -74,7 +74,7 @@ fn run_step(runtime: &Runtime, handler: &mut Handler, step: &Step) -> StepResult
             let mut mapped = Object::new();
             let supported = if *embedding {
                 map_embedding_openai_params(non_default, &mut mapped);
-                embedding_supported_params()
+                EMBEDDING_PARAMS.split_whitespace().collect::<Vec<_>>()
             } else {
                 map_openai_params(non_default, &mut mapped, model);
                 get_supported_openai_params(model)

@@ -1,4 +1,7 @@
+use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use thiserror::Error;
+
+use crate::api::file_contracts::error::BaseLlmException;
 
 pub mod config;
 pub mod embedding;
@@ -7,11 +10,11 @@ pub mod request;
 pub mod response;
 pub mod stream;
 
-pub type SnowflakeException = crate::api::file_contracts::error::BaseLlmException;
+pub type SnowflakeException = BaseLlmException;
 
 // The fetchers are all async-only, so the three call sites share one bound instead of repeating it
-pub trait Fetcher: betterlite_prompts::media::inline::RemoteMediaFetcher + Sync {}
-impl<T> Fetcher for T where T: betterlite_prompts::media::inline::RemoteMediaFetcher + Sync {}
+pub trait Fetcher: RemoteMediaFetcher + Sync {}
+impl<T> Fetcher for T where T: RemoteMediaFetcher + Sync {}
 
 #[derive(Debug, PartialEq, Eq, Error)]
 pub enum SnowflakeError {
@@ -25,5 +28,4 @@ pub enum SnowflakeError {
     AccountIdType,
 }
 
-#[cfg(test)]
 pub(crate) mod tests;

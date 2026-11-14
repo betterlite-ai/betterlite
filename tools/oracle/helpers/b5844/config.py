@@ -3,16 +3,8 @@ import os
 from litellm.litellm_core_utils.get_llm_provider_logic import get_llm_provider
 from pydantic import JsonValue
 
-from .views import (
-    ChatView,
-    EmbeddingView,
-    HeadersStep,
-    InfoStep,
-    ParamsConfig,
-    ParamsStep,
-    UrlConfig,
-    UrlStep,
-)
+from .steps import HeadersStep, InfoStep, ParamsStep, UrlStep
+from .views import ChatView, EmbeddingView, ParamsConfig, UrlConfig
 
 
 def set_env(name: str, value: str | None) -> None:

@@ -1,5 +1,7 @@
+#![cfg(test)]
 use betterlite_prompts::anthropic_results::tool_result::ToolResultError;
 use betterlite_prompts::arguments::json::Json;
+use rstest::rstest;
 
 use crate::snowflake::tests::support::{MediaSource, messages, parsed};
 
@@ -40,15 +42,13 @@ async fn a_non_empty_system_string_becomes_one_text_block() {
     );
 }
 
+#[rstest]
+#[case::empty(r#"[{"role":"system","content":""},{"role":"user","content":"hi"}]"#)]
+#[case::absent(r#"[{"role":"user","content":"hi"}]"#)]
 #[tokio::test]
-async fn an_empty_or_absent_system_adds_nothing() {
-    for source in [
-        r#"[{"role":"system","content":""},{"role":"user","content":"hi"}]"#,
-        r#"[{"role":"user","content":"hi"}]"#,
-    ] {
-        let split = split_turns(source).await;
-        assert_eq!(split.system, None);
-    }
+async fn an_empty_or_absent_system_adds_nothing(#[case] source: &str) {
+    let split = split_turns(source).await;
+    assert_eq!(split.system, None);
 }
 
 #[tokio::test]
@@ -367,18 +367,15 @@ async fn a_user_image_url_with_a_document_data_uri_becomes_a_document_block() {
     );
 }
 
+#[rstest]
+#[case::empty_object(r#"{"type":"image_url","image_url":{}}"#)]
+#[case::empty_url(r#"{"type":"image_url","image_url":{"url":""}}"#)]
+#[case::a_number(r#"{"type":"image_url","image_url":5}"#)]
 #[tokio::test]
-async fn an_image_url_without_a_url_stays_as_it_is() {
-    for part in [
-        r#"{"type":"image_url","image_url":{}}"#,
-        r#"{"type":"image_url","image_url":{"url":""}}"#,
-        r#"{"type":"image_url","image_url":5}"#,
-    ] {
-        let source = format!(r#"[{{"role":"user","content":[{part}]}}]"#);
-        let expected = format!(r#"[{{"role":"user","content":[{part}]}}]"#);
-        let split = split_turns(&source).await;
-        assert_eq!(conversation(&split), parsed(&expected));
-    }
+async fn an_image_url_without_a_url_stays_as_it_is(#[case] part: &str) {
+    let source = format!(r#"[{{"role":"user","content":[{part}]}}]"#);
+    let split = split_turns(&source).await;
+    assert_eq!(conversation(&split), parsed(&source));
 }
 
 #[tokio::test]
@@ -430,25 +427,37 @@ fn a_non_function_tool_cleans_a_present_schema_and_keeps_the_rest() {
 }
 
 #[test]
+fn a_tool_needs_both_the_function_type_and_a_function_to_be_converted() {
+    assert_eq!(
+        Json::List(
+            transform_tools(&tool_list(
+                r#"[{"type":"function","input_schema":{"$schema":"s","type":"object"}},{"type":"custom","function":{"name":"f"}}]"#
+            ))
+            .unwrap()
+        ),
+        parsed(
+            r#"[{"type":"function","input_schema":{"type":"object"}},{"type":"custom","function":{"name":"f"}}]"#
+        )
+    );
+}
+
+#[test]
 fn a_tool_that_is_not_an_object_is_an_error() {
     let error = transform_tools(&tool_list("[5]")).unwrap_err();
     assert_eq!(error.to_string(), "tools must be a list of objects");
 }
 
-#[test]
-fn tool_choice_strings_map_to_anthropic_types() {
-    for (source, expected) in [
-        (r#""auto""#, r#"{"type":"auto"}"#),
-        (r#""required""#, r#"{"type":"any"}"#),
-        (r#""none""#, r#"{"type":"none"}"#),
-        (r#""unknown""#, r#"{"type":"auto"}"#),
-        ("5", r#"{"type":"auto"}"#),
-    ] {
-        assert_eq!(
-            transform_tool_choice(&parsed(source)).unwrap(),
-            parsed(expected)
-        );
-    }
+#[rstest]
+#[case::auto(r#""auto""#, r#"{"type":"auto"}"#)]
+#[case::required(r#""required""#, r#"{"type":"any"}"#)]
+#[case::none(r#""none""#, r#"{"type":"none"}"#)]
+#[case::unknown(r#""unknown""#, r#"{"type":"auto"}"#)]
+#[case::a_number("5", r#"{"type":"auto"}"#)]
+fn tool_choice_strings_map_to_anthropic_types(#[case] source: &str, #[case] expected: &str) {
+    assert_eq!(
+        transform_tool_choice(&parsed(source)).unwrap(),
+        parsed(expected)
+    );
 }
 
 #[test]

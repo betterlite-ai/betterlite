@@ -1,88 +1,65 @@
 use serde_json::{Value, json};
 
-// A missing field reads as null here, as the Python views declare it nullable or never leave it out
-fn usage(value: &Value) -> Value {
+// Keeps the keys the Python views declare; a key the value lacks reads as null, and an object or list shape over a non-matching value is null
+fn project(value: &Value, shape: &Value) -> Value {
+    match (shape, value) {
+        (Value::Object(fields), Value::Object(_)) => Value::Object(
+            fields
+                .iter()
+                .map(|(key, inner)| (key.clone(), project(&value[key.as_str()], inner)))
+                .collect(),
+        ),
+        (Value::Array(_), Value::Array(elements)) => elements
+            .iter()
+            .map(|element| project(element, &shape[0_usize]))
+            .collect(),
+        (Value::Object(_) | Value::Array(_), _) => Value::Null,
+        (Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_), _) => value.clone(),
+    }
+}
+
+fn usage_shape() -> Value {
     json!({
-        "prompt_tokens": value["prompt_tokens"],
-        "completion_tokens": value["completion_tokens"],
-        "total_tokens": value["total_tokens"],
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null,
     })
 }
 
-fn tool_view(call: &Value, with_index: bool) -> Value {
-    let mut view = json!({
-        "id": call["id"],
-        "type": call["type"],
-        "function": {
-            "name": call["function"]["name"],
-            "arguments": call["function"]["arguments"],
-        },
-    });
-    if with_index {
-        view["index"] = call["index"].clone();
-    }
-    view
-}
-
-fn calls(value: &Value, with_index: bool) -> Value {
-    let views = value.as_array().map(|items| {
-        items
-            .iter()
-            .map(|call| tool_view(call, with_index))
-            .collect()
-    });
-    views.map_or(Value::Null, Value::Array)
+fn tool_call_shape() -> Value {
+    json!({
+        "id": null,
+        "type": null,
+        "function": {"name": null, "arguments": null},
+    })
 }
 
 pub(crate) fn reply(value: &Value) -> Value {
-    let mut choices = Vec::new();
-    for item in value["choices"].as_array().into_iter().flatten() {
-        choices.push(json!({
-            "index": item["index"],
-            "finish_reason": item["finish_reason"],
-            "message": {
-                "role": item["message"]["role"],
-                "content": item["message"]["content"],
-                "tool_calls": calls(&item["message"]["tool_calls"], false),
-            },
-        }));
-    }
-    json!({
-        "id": value["id"],
-        "model": value["model"],
-        "choices": choices,
-        "usage": usage(&value["usage"]),
-    })
+    let message = json!({
+        "role": null,
+        "content": null,
+        "tool_calls": [tool_call_shape()],
+    });
+    let choice = json!({"index": null, "finish_reason": null, "message": message});
+    let shape = json!({"id": null, "model": null, "choices": [choice], "usage": usage_shape()});
+    project(value, &shape)
 }
 
 pub(crate) fn embedding(value: &Value) -> Value {
-    let mut data = Vec::new();
-    for item in value["data"].as_array().into_iter().flatten() {
-        data.push(json!({"index": item["index"], "embedding": item["embedding"]}));
-    }
-    json!({
-        "model": value["model"],
-        "data": data,
-        "usage": usage(&value["usage"]),
-    })
+    let item = json!({"index": null, "embedding": null});
+    project(
+        value,
+        &json!({"model": null, "data": [item], "usage": usage_shape()}),
+    )
 }
 
 pub(crate) fn event(value: &Value) -> Value {
-    let mut choices = Vec::new();
-    for item in value["choices"].as_array().into_iter().flatten() {
-        choices.push(json!({
-            "index": item["index"],
-            "finish_reason": item["finish_reason"],
-            "delta": {
-                "content": item["delta"]["content"],
-                "tool_calls": calls(&item["delta"]["tool_calls"], true),
-            },
-        }));
-    }
-    let counted = if value["usage"].is_null() {
-        Value::Null
-    } else {
-        usage(&value["usage"])
-    };
-    json!({"model": value["model"], "choices": choices, "usage": counted})
+    let mut tool_call = tool_call_shape();
+    tool_call["index"] = Value::Null;
+    let delta = json!({"content": null, "tool_calls": [tool_call]});
+    let choice = json!({"index": null, "finish_reason": null, "delta": delta});
+    project(
+        value,
+        &json!({"model": null, "choices": [choice], "usage": usage_shape()}),
+    )
 }

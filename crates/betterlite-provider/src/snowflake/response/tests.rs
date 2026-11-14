@@ -1,6 +1,8 @@
+#![cfg(test)]
 use std::sync::Mutex;
 
 use betterlite_prompts::arguments::json::Json;
+use rstest::rstest;
 
 use crate::snowflake::tests::support::{WordCounter, answer, parsed};
 
@@ -36,14 +38,12 @@ impl PostCallLogger for Recorder {
 
 fn claude_body(stop_reason: Option<&str>) -> String {
     let usage = r#""usage":{"input_tokens":3,"output_tokens":4}"#;
-    match stop_reason {
-        Some(reason) => format!(
-            r#"{{"id":"msg_1","model":"claude-3-5-sonnet","content":[{{"type":"text","text":"hi"}}],"stop_reason":"{reason}",{usage}}}"#
-        ),
-        None => format!(
-            r#"{{"id":"msg_1","model":"claude-3-5-sonnet","content":[{{"type":"text","text":"hi"}}],{usage}}}"#
-        ),
-    }
+    let stop = stop_reason.map_or_else(String::new, |reason| {
+        format!(r#""stop_reason":"{reason}","#)
+    });
+    format!(
+        r#"{{"id":"msg_1","model":"claude-3-5-sonnet","content":[{{"type":"text","text":"hi"}}],{stop}{usage}}}"#
+    )
 }
 
 fn claude_reply<'reply>(
@@ -134,23 +134,23 @@ fn the_claude_reply_logs_the_body_the_request_data_and_an_empty_key() {
     assert_eq!(calls[0].original_response, parsed(&body));
 }
 
-#[test]
-fn every_claude_stop_reason_maps_to_an_openai_finish_reason() {
-    for (stop_reason, expected) in [
-        (Some("end_turn"), "stop"),
-        (Some("max_tokens"), "length"),
-        (Some("tool_use"), "tool_calls"),
-        (Some("stop_sequence"), "stop"),
-        (Some("something_else"), "stop"),
-        (None, "stop"),
-    ] {
-        let recorder = Recorder::default();
-        let turns = vec![parsed(r#"{"role":"user","content":"hi"}"#)];
-        let request = parsed("{}");
-        let body = claude_body(stop_reason);
-        let reply = claude_reply(&body, &turns, &request, &recorder);
-        assert_eq!(reply.choices[0].finish_reason, expected);
-    }
+#[rstest]
+#[case(Some("end_turn"), "stop")]
+#[case(Some("max_tokens"), "length")]
+#[case(Some("tool_use"), "tool_calls")]
+#[case(Some("stop_sequence"), "stop")]
+#[case(Some("something_else"), "stop")]
+#[case(None, "stop")]
+fn every_claude_stop_reason_maps_to_an_openai_finish_reason(
+    #[case] stop_reason: Option<&str>,
+    #[case] expected: &str,
+) {
+    let recorder = Recorder::default();
+    let turns = vec![parsed(r#"{"role":"user","content":"hi"}"#)];
+    let request = parsed("{}");
+    let body = claude_body(stop_reason);
+    let reply = claude_reply(&body, &turns, &request, &recorder);
+    assert_eq!(reply.choices[0].finish_reason, expected);
 }
 
 #[test]

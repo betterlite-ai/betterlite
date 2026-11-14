@@ -1,3 +1,4 @@
+#![cfg(test)]
 use crate::snowflake::tests::support::{SequenceIds, WordCounter, answer};
 
 use super::{SnowflakeChunk, SnowflakeStreamingHandler, get_model_response_iterator};
@@ -112,7 +113,7 @@ fn a_malformed_choices_field_is_an_error_naming_the_field() {
     let error = parser
         .chunk_parser(&answer(r#"{"choices":{"index":0}}"#))
         .unwrap_err();
-    assert_eq!(error.to_string(), "the stream chunk choices must be a list");
+    assert_eq!(error.to_string(), "choices must be a list");
 }
 
 #[test]
@@ -121,8 +122,5 @@ fn a_non_string_content_is_an_error_naming_the_field() {
     let error = parser
         .chunk_parser(&answer(r#"{"choices":[{"delta":{"content":5}}]}"#))
         .unwrap_err();
-    assert_eq!(
-        error.to_string(),
-        "the stream chunk field content must be a string"
-    );
+    assert_eq!(error.to_string(), "content must be a string");
 }

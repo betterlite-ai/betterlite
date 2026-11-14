@@ -53,7 +53,7 @@ pub fn transform_embedding_response(
     let Json::Object(fields) = &mut body else {
         return Err(EmbeddingError::Data);
     };
-    unwrap_vectors(fields.get_mut("data"))?;
+    unwrap_vectors(fields)?;
     // LiteLLM's EmbeddingResponse always writes object as "list"
     fields.insert("object".to_owned(), Json::Text("list".to_owned()));
     let response_model = fields
@@ -76,17 +76,16 @@ pub fn transform_embedding_response(
 }
 
 // Cortex nests every vector one level deep, so LiteLLM keeps element 0 and drops the rest
-fn unwrap_vectors(data: Option<&mut Json>) -> Result<(), EmbeddingError> {
-    let Some(Json::List(items)) = data else {
+fn unwrap_vectors(body: &mut Object) -> Result<(), EmbeddingError> {
+    let Some(Json::List(items)) = body.get_mut("data") else {
         return Err(EmbeddingError::Data);
     };
     for (index, item) in items.iter_mut().enumerate() {
         let Json::Object(fields) = item else {
             return Err(EmbeddingError::Item { index });
         };
-        let values = match fields.get("embedding") {
-            Some(Json::List(values)) => values,
-            None | Some(_) => return Err(EmbeddingError::Shape { index }),
+        let Some(Json::List(values)) = fields.get("embedding") else {
+            return Err(EmbeddingError::Shape { index });
         };
         let first = values.first().ok_or(EmbeddingError::Empty { index })?;
         let Json::List(numbers) = first else {
@@ -115,5 +114,4 @@ pub fn get_error_class(message: &str, status_code: u16, headers: Headers) -> Sno
     }
 }
 
-#[cfg(test)]
 mod tests;

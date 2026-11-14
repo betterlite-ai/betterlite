@@ -1,12 +1,12 @@
+#![cfg(test)]
 use rstest::rstest;
 
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde_json::Number;
 
 use super::{
-    embedding_supported_params, get_complete_url, get_embed_complete_url,
-    get_supported_openai_params, is_claude_model, map_embedding_openai_params, map_openai_params,
-    provider_info, validate_environment,
+    get_complete_url, get_embed_complete_url, get_supported_openai_params, is_claude_model,
+    map_embedding_openai_params, map_openai_params, provider_info, validate_environment,
 };
 use crate::api::file_contracts::config::Headers;
 use crate::snowflake::SnowflakeError;
@@ -63,22 +63,6 @@ fn chat_supported_params_keep_litellms_order_and_add_thinking_for_claude() {
             "tools",
             "tool_choice",
             "thinking"
-        ]
-    );
-}
-
-#[test]
-fn embedding_supported_params_are_the_base_list() {
-    assert_eq!(
-        embedding_supported_params(),
-        vec![
-            "temperature",
-            "max_tokens",
-            "top_p",
-            "stream",
-            "response_format",
-            "tools",
-            "tool_choice"
         ]
     );
 }
@@ -214,7 +198,7 @@ fn one_trailing_newline_after_a_valid_account_id_is_accepted_and_kept_in_the_hos
 
 #[test]
 fn a_non_string_account_id_names_the_field() {
-    let mut optional = object(&[("account_id", Json::Number(Number::from(5)))]);
+    let mut optional = object(&[("account_id", Json::Number(Number::from(5_i32)))]);
     assert_eq!(
         get_embed_complete_url(None, &mut optional, Some("env_id")),
         Err(SnowflakeError::AccountIdType)

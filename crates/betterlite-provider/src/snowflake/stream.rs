@@ -34,7 +34,7 @@ pub enum OpenAiChunkError {
 #[serde(untagged)]
 pub enum SnowflakeChunk {
     OpenAi(OpenAiStreamChunk),
-    Anthropic(StreamEventChunk),
+    Anthropic(Box<StreamEventChunk>),
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -112,23 +112,21 @@ where
         if has_choices {
             return Ok(SnowflakeChunk::OpenAi(parse_openai_chunk(chunk)?));
         }
-        Ok(SnowflakeChunk::Anthropic(self.parser.chunk_parser(chunk)?))
+        Ok(SnowflakeChunk::Anthropic(Box::new(
+            self.parser.chunk_parser(chunk)?,
+        )))
     }
 }
 
 fn parse_openai_chunk(chunk: &Json) -> Result<OpenAiStreamChunk, OpenAiChunkError> {
     let Json::Object(fields) = chunk else {
-        return Err(OpenAiChunkError::Message(
-            "a stream chunk must be an object",
-        ));
+        return Err(OpenAiChunkError::Message("a chunk must be an object"));
     };
     let choices = match fields.get("choices") {
         None | Some(Json::Null) => return Ok(OpenAiStreamChunk::default()),
         Some(Json::List(items)) => items.as_slice(),
         Some(_) => {
-            return Err(OpenAiChunkError::Message(
-                "the stream chunk choices must be a list",
-            ));
+            return Err(OpenAiChunkError::Message("choices must be a list"));
         }
     };
     let Some(first) = choices.first() else {
@@ -148,10 +146,7 @@ fn parse_openai_chunk(chunk: &Json) -> Result<OpenAiStreamChunk, OpenAiChunkErro
         "finish_reason must be a string",
     )?;
     Ok(OpenAiStreamChunk {
-        text: text_field(
-            delta.get("content"),
-            "the stream chunk field content must be a string",
-        )?,
+        text: text_field(delta.get("content"), "content must be a string")?,
         is_finished: !finish_reason.is_empty(),
         finish_reason,
         usage: None,
@@ -209,5 +204,4 @@ fn index_field(value: Option<&Json>) -> Result<i64, OpenAiChunkError> {
     }
 }
 
-#[cfg(test)]
 mod tests;

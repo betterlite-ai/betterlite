@@ -5,16 +5,10 @@ from litellm.llms.snowflake.chat.transformation import SnowflakeConfig
 from litellm.llms.snowflake.embedding.transformation import SnowflakeEmbeddingConfig
 from pydantic import JsonValue
 
-from .chat import (
-    chunk_step,
-    embedding_request_step,
-    embedding_response_step,
-    event_step,
-    request_step,
-    response_step,
-)
+from .chat import chunk_step, embedding_response_step, event_step, response_step
 from .config import headers_step, info_step, params_step, url_step
-from .views import ChatView, EmbeddingView, Input, Pair, Step, StreamHandler
+from .steps import Input, Step
+from .views import ChatView, EmbeddingView, Pair, StreamHandler
 
 __all__ = ["litellm", "run"]
 
@@ -29,11 +23,26 @@ def run_step(chat: ChatView, embed: EmbeddingView, handler: StreamHandler, step:
     elif step["kind"] == "info":
         result = info_step(step)
     elif step["kind"] == "request":
-        result = request_step(chat, step)
+        result = {
+            "body": chat.transform_request(
+                model=step["model"],
+                messages=step["messages"],
+                optional_params=dict(step["options"]),
+                litellm_params={},
+                headers={},
+            )
+        }
     elif step["kind"] == "response":
         result = response_step(chat, step)
     elif step["kind"] == "embedding_request":
-        result = embedding_request_step(embed, step)
+        result = {
+            "body": embed.transform_embedding_request(
+                model=step["model"],
+                input=step["text"],
+                optional_params=dict(step["options"]),
+                headers={},
+            )
+        }
     elif step["kind"] == "embedding_response":
         result = embedding_response_step(embed, step)
     elif step["kind"] == "chunk":

@@ -31,7 +31,7 @@ pub enum RequestError {
     List { field: &'static str },
 }
 
-// The values both body builders share: the model as sent, the turns, the stream flag and extra_body
+// The values both body builders share: the model as sent without its prefix, the turns, the stream flag and extra_body
 struct RequestParts<'call> {
     model: &'call str,
     messages: &'call [Message],
@@ -59,7 +59,7 @@ where
         Some(_) => return Err(RequestError::ExtraBody),
     };
     let parts = RequestParts {
-        model,
+        model: model.strip_prefix("snowflake/").unwrap_or(model),
         messages,
         stream,
         extra_body,
@@ -94,12 +94,8 @@ fn openai_body(parts: &RequestParts<'_>, mut params: Object) -> Object {
         Some(value) if value.is_truthy() => Some(value),
         Some(_) | None => plain.filter(|value| !matches!(value, Json::Null)),
     };
-    let model = parts
-        .model
-        .strip_prefix("snowflake/")
-        .unwrap_or(parts.model);
     let mut body = Object::from_iter([
-        ("model".to_owned(), Json::Text(model.to_owned())),
+        ("model".to_owned(), Json::Text(parts.model.to_owned())),
         (
             "messages".to_owned(),
             Json::List(parts.messages.iter().map(project_message).collect()),
@@ -127,19 +123,7 @@ where
         .filter(|value| !matches!(value, Json::Null));
     let split = super::messages::extract_system_and_messages(parts.messages, fetcher).await?;
     let system = passthrough.or_else(|| split.system.map(Json::List));
-    if params.contains_key("tools") {
-        let Some(Json::List(tools)) = params.get("tools") else {
-            return Err(RequestError::List { field: "tools" });
-        };
-        let transformed = transform_tools(tools)?;
-        params.insert("tools".to_owned(), Json::List(transformed));
-    }
-    if let Some(tool_choice) = params.get("tool_choice").cloned() {
-        params.insert(
-            "tool_choice".to_owned(),
-            transform_tool_choice(&tool_choice)?,
-        );
-    }
+    map_tool_params(&mut params)?;
     if let Some(value) = params
         .shift_remove(MAX_COMPLETION_TOKENS)
         .filter(Json::is_truthy)
@@ -147,12 +131,8 @@ where
     {
         params.insert(MAX_TOKENS.to_owned(), value);
     }
-    let model = parts
-        .model
-        .strip_prefix("snowflake/")
-        .unwrap_or(parts.model);
     let mut body = Object::from_iter([
-        ("model".to_owned(), Json::Text(model.to_owned())),
+        ("model".to_owned(), Json::Text(parts.model.to_owned())),
         ("messages".to_owned(), Json::List(split.conversation)),
         ("stream".to_owned(), parts.stream.clone()),
     ]);
@@ -169,6 +149,21 @@ where
     Ok(finished)
 }
 
+fn map_tool_params(params: &mut Object) -> Result<(), RequestError> {
+    if let Some(tools) = params.get("tools") {
+        let Json::List(list) = tools else {
+            return Err(RequestError::List { field: "tools" });
+        };
+        let transformed = transform_tools(list)?;
+        params.insert("tools".to_owned(), Json::List(transformed));
+    }
+    if let Some(tool_choice) = params.get("tool_choice") {
+        let transformed = transform_tool_choice(tool_choice)?;
+        params.insert("tool_choice".to_owned(), transformed);
+    }
+    Ok(())
+}
+
 // system is added to the body after the cache control normalization, so it is normalized on its own
 fn with_system(mut body: Object, system: Option<Json>) -> Object {
     let Some(present) = system else {
@@ -181,5 +176,4 @@ fn with_system(mut body: Object, system: Option<Json>) -> Object {
     body
 }
 
-#[cfg(test)]
 mod tests;

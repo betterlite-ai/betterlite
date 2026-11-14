@@ -1,3 +1,4 @@
+use betterlite_models::decisions::Json as ChunkJson;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::Message;
 use betterlite_provider::api::file_contracts::config::Headers;
@@ -55,9 +56,9 @@ pub(crate) enum Step {
         body: String,
     },
     Chunk {
-        chunk: Json,
+        chunk: ChunkJson,
     },
     Event {
-        chunk: Json,
+        chunk: ChunkJson,
     },
 }

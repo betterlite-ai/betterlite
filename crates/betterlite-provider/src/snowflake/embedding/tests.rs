@@ -1,3 +1,4 @@
+#![cfg(test)]
 use std::collections::BTreeMap;
 
 use betterlite_openai::embedding::EmbeddingVector;
@@ -17,7 +18,8 @@ fn body(data: &str) -> String {
 #[test]
 fn the_request_keeps_text_first_then_the_model_then_optional_params() {
     let input = Json::Text("hello".to_owned());
-    let optional = Object::from_iter([("temperature".to_owned(), Json::Number(Number::from(0)))]);
+    let optional =
+        Object::from_iter([("temperature".to_owned(), Json::Number(Number::from(0_i32)))]);
     let request = transform_embedding_request(&input, "snowflake/e5-base", &optional);
     let keys: Vec<&str> = request.keys().map(String::as_str).collect();
     assert_eq!(keys, ["text", "model", "temperature"]);
@@ -45,7 +47,11 @@ fn the_nested_embedding_keeps_element_zero() {
     assert_eq!(reply.hidden_model, "snowflake/e5-base");
     assert_eq!(
         reply.response.data[0].embedding,
-        EmbeddingVector::Floats(vec![Number::from(1), Number::from(2), Number::from(3)])
+        EmbeddingVector::Floats(vec![
+            Number::from(1_i32),
+            Number::from(2_i32),
+            Number::from(3_i32)
+        ])
     );
 }
 

@@ -1,3 +1,6 @@
+use betterlite_prompts::anthropic_invokes::documents::FileMessageError;
+use betterlite_prompts::anthropic_results::images::ImageError;
+use betterlite_prompts::anthropic_results::tool_result::ToolResultError;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::{Content, ContentPart, Message};
 use thiserror::Error;
@@ -11,14 +14,11 @@ pub mod tools;
 #[derive(Debug, Error)]
 pub enum MessageError {
     #[error(transparent)]
-    Image(#[from] betterlite_prompts::anthropic_results::images::ImageError),
+    Image(#[from] ImageError),
     #[error(transparent)]
-    File(#[from] betterlite_prompts::anthropic_invokes::documents::FileMessageError),
+    File(#[from] FileMessageError),
     #[error(transparent)]
-    ToolResult(
-        #[from]
-        betterlite_prompts::anthropic_results::tool_result::ToolResultError<files::FileBlockError>,
-    ),
+    ToolResult(#[from] ToolResultError<files::FileBlockError>),
     #[error(transparent)]
     FileBlock(#[from] files::FileBlockError),
     #[error("message field {field} must be {expected}")]
@@ -48,7 +48,11 @@ where
             "system" => collect_system(message, &mut system),
             "assistant" => assistant_turn(message, &mut conversation)?,
             "tool" => tool_turn(message, fetcher, &mut conversation).await?,
-            role => conversation.push(other_turn(role, message, fetcher).await?),
+            role => {
+                let content =
+                    image::convert_image_url_blocks(message.content.as_ref(), fetcher).await?;
+                conversation.push(object_turn(role, content));
+            }
         }
     }
     Ok(SplitMessages {
@@ -85,10 +89,6 @@ fn text_block(text: Json) -> Object {
         ("type".to_owned(), Json::Text("text".to_owned())),
         ("text".to_owned(), text),
     ])
-}
-
-fn text_or_empty(value: Option<&Json>) -> Json {
-    value.cloned().unwrap_or_else(|| Json::Text(String::new()))
 }
 
 // Only signed thinking blocks round-trip: Cortex rejects an unsigned block
@@ -143,6 +143,7 @@ fn tool_use_blocks(
     if content.is_truthy() {
         blocks.push(Json::Object(text_block(content.clone())));
     }
+    let empty = Json::Text(String::new());
     for call in calls {
         let fields = call.as_object().ok_or(MessageError::Field {
             field: "tool_calls",
@@ -151,8 +152,11 @@ fn tool_use_blocks(
         let function = call_function(fields)?;
         blocks.push(Json::Object(Object::from_iter([
             ("type".to_owned(), Json::Text("tool_use".to_owned())),
-            ("id".to_owned(), text_or_empty(fields.get("id"))),
-            ("name".to_owned(), text_or_empty(function.get("name"))),
+            ("id".to_owned(), fields.get("id").unwrap_or(&empty).clone()),
+            (
+                "name".to_owned(),
+                function.get("name").unwrap_or(&empty).clone(),
+            ),
             ("input".to_owned(), tool_input(function.get("arguments"))),
         ])));
     }
@@ -241,18 +245,6 @@ fn append_tool_result(conversation: &mut Vec<Json>, block: Object) {
     conversation.push(object_turn("user", Json::List(vec![Json::Object(block)])));
 }
 
-async fn other_turn<Source>(
-    role: &str,
-    message: &Message,
-    fetcher: &Source,
-) -> Result<Json, MessageError>
-where
-    Source: Fetcher,
-{
-    let content = image::convert_image_url_blocks(message.content.as_ref(), fetcher).await?;
-    Ok(object_turn(role, content))
-}
-
 fn object_turn(role: &str, content: Json) -> Json {
     Json::Object(Object::from_iter([
         ("role".to_owned(), Json::Text(role.to_owned())),
@@ -274,5 +266,4 @@ pub(crate) fn part_json(part: &ContentPart) -> Json {
     Json::Object(fields)
 }
 
-#[cfg(test)]
 mod tests;

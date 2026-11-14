@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use std::error::Error as StdError;
 
 use betterlite_anthropic::response_content::wire::{
@@ -47,13 +48,13 @@ pub struct ClaudeMessage {
 }
 
 #[derive(Debug, Error)]
-pub enum ResponseError<CounterFailure = std::convert::Infallible>
+pub enum ResponseError<CounterFailure = Infallible>
 where
     CounterFailure: StdError + Send + Sync + 'static,
 {
     #[error("the provider answer could not be read: {source}")]
     Decode {
-        #[source]
+        #[from]
         source: serde_json::Error,
     },
     #[error(transparent)]
@@ -84,14 +85,14 @@ pub fn transform_response_openai(
     input: &ResponseInput<'_>,
     logger: &dyn PostCallLogger,
 ) -> Result<OpenAiReply, ResponseError> {
-    let body: AnswerJson = serde_json::from_str(input.raw_response).map_err(decode)?;
+    let body: AnswerJson = serde_json::from_str(input.raw_response)?;
     logger.post_call(PostCall {
         input: input.messages,
         api_key: "",
         complete_input_dict: input.request_data,
         original_response: &body,
     });
-    let mut response: ChatResponse = serde_json::from_str(input.raw_response).map_err(decode)?;
+    let mut response: ChatResponse = serde_json::from_str(input.raw_response)?;
     response.model = format!("snowflake/{}", response.model);
     Ok(OpenAiReply {
         response,
@@ -107,15 +108,14 @@ pub fn transform_response_claude<Counter>(
 where
     Counter: ReasoningTokenCounter,
 {
-    let body: AnswerJson = serde_json::from_str(input.raw_response).map_err(decode)?;
+    let body: AnswerJson = serde_json::from_str(input.raw_response)?;
     logger.post_call(PostCall {
         input: input.messages,
         api_key: "",
         complete_input_dict: input.request_data,
         original_response: &body,
     });
-    let wire: AnthropicCompletionResponse =
-        serde_json::from_str(input.raw_response).map_err(decode)?;
+    let wire: AnthropicCompletionResponse = serde_json::from_str(input.raw_response)?;
     let reply = project_response(&wire, None)?;
     let usage_object = field(&body, "usage")
         .cloned()
@@ -173,19 +173,11 @@ fn field<'answer>(answer: &'answer AnswerJson, name: &str) -> Option<&'answer An
     None
 }
 
-fn answer_text(answer: &AnswerJson) -> Option<&str> {
+const fn answer_text(answer: &AnswerJson) -> Option<&str> {
     if let AnswerJson::Text(text) = answer {
         return Some(text.as_str());
     }
     None
 }
 
-fn decode<CounterFailure>(source: serde_json::Error) -> ResponseError<CounterFailure>
-where
-    CounterFailure: StdError + Send + Sync + 'static,
-{
-    ResponseError::Decode { source }
-}
-
-#[cfg(test)]
 mod tests;
