@@ -36,7 +36,7 @@ class EmbeddingConfig(Protocol):
         _api_key: str | None = None,
         _api_base: str | None = None,
         /,
-    ) -> dict[str, JsonValue]: ...
+    ) -> dict[str, JsonValue]: ...  # positional-only: LiteLLM names them api_key and api_base
 
     def get_complete_url(
         self,
