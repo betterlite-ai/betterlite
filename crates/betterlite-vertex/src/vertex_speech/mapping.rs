@@ -72,7 +72,7 @@ pub fn map_openai_params(
     optional_params: &SpeechOptionalParams,
     kwargs: &SpeechKwargs,
 ) -> SpeechMapping {
-    let (voice, voice_dict) = map_voice(voice);
+    let (voice_name, voice_dict) = map_voice(voice);
     let encoding = optional_params
         .response_format
         .as_deref()
@@ -80,7 +80,7 @@ pub fn map_openai_params(
             lookup(&FORMAT_MAPPINGS, format)
         });
     SpeechMapping {
-        voice,
+        voice: voice_name,
         voice_dict,
         audio_encoding: encoding.to_owned(),
         speaking_rate: optional_params.speed.map(|speed| speed.to_string()),

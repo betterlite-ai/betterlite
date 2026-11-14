@@ -13,6 +13,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
+use tokio::runtime::Builder;
 
 use super::audio::{BinaryAudio, decode_vertex_speech_audio};
 use super::error::VertexSpeechError;
@@ -72,7 +73,7 @@ fn block_on<Call, Output>(future: Call) -> Output
 where
     Call: Future<Output = Output>,
 {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .build()
         .unwrap()
         .block_on(future)
@@ -85,8 +86,8 @@ fn settings_object(language: &str, name: &str) -> Object {
     object
 }
 
-fn mapping(optional: SpeechOptionalParams, kwargs: SpeechKwargs) -> SpeechMapping {
-    map_openai_params(None, &optional, &kwargs)
+fn mapping(optional: &SpeechOptionalParams, kwargs: &SpeechKwargs) -> SpeechMapping {
+    map_openai_params(None, optional, kwargs)
 }
 
 fn named_voice(name: &str) -> SpeechVoice {
@@ -197,7 +198,7 @@ fn maps_a_response_format_to_its_audio_encoding(#[case] format: &str, #[case] en
         speed: None,
     };
     assert_eq!(
-        mapping(optional, SpeechKwargs::default()).audio_encoding,
+        mapping(&optional, &SpeechKwargs::default()).audio_encoding,
         encoding
     );
 }
@@ -205,7 +206,7 @@ fn maps_a_response_format_to_its_audio_encoding(#[case] format: &str, #[case] en
 #[test]
 fn defaults_to_linear16_without_a_response_format() {
     assert_eq!(
-        mapping(SpeechOptionalParams::default(), SpeechKwargs::default()).audio_encoding,
+        mapping(&SpeechOptionalParams::default(), &SpeechKwargs::default()).audio_encoding,
         "LINEAR16"
     );
 }
@@ -222,7 +223,7 @@ fn stringifies_a_non_none_speed(#[case] mantissa: i64, #[case] scale: u32, #[cas
         speed: Some(Decimal::new(mantissa, scale)),
     };
     assert_eq!(
-        mapping(optional, SpeechKwargs::default())
+        mapping(&optional, &SpeechKwargs::default())
             .speaking_rate
             .as_deref(),
         Some(rate)
@@ -232,7 +233,7 @@ fn stringifies_a_non_none_speed(#[case] mantissa: i64, #[case] scale: u32, #[cas
 #[test]
 fn leaves_the_speaking_rate_unset_without_a_speed() {
     assert_eq!(
-        mapping(SpeechOptionalParams::default(), SpeechKwargs::default()).speaking_rate,
+        mapping(&SpeechOptionalParams::default(), &SpeechKwargs::default()).speaking_rate,
         None
     );
 }
@@ -248,7 +249,7 @@ fn copies_a_full_audio_config_and_use_ssml_from_the_kwargs() {
         audio_config: Some(audio_config.clone()),
         use_ssml: true,
     };
-    let mapped_params = mapping(SpeechOptionalParams::default(), kwargs);
+    let mapped_params = mapping(&SpeechOptionalParams::default(), &kwargs);
     assert_eq!(mapped_params.audio_config, Some(audio_config));
     assert!(mapped_params.use_ssml);
     assert_eq!(mapped_params.audio_encoding, "LINEAR16");
@@ -257,7 +258,7 @@ fn copies_a_full_audio_config_and_use_ssml_from_the_kwargs() {
 #[test]
 fn leaves_the_audio_config_unset_without_the_kwarg() {
     assert_eq!(
-        mapping(SpeechOptionalParams::default(), SpeechKwargs::default()).audio_config,
+        mapping(&SpeechOptionalParams::default(), &SpeechKwargs::default()).audio_config,
         None
     );
 }
@@ -368,7 +369,7 @@ fn resolves_the_synthesis_url(#[case] api_base: Option<&str>, #[case] url: &str)
 
 #[test]
 fn defaults_to_the_studio_voice() {
-    let mapped = mapping(SpeechOptionalParams::default(), SpeechKwargs::default());
+    let mapped = mapping(&SpeechOptionalParams::default(), &SpeechKwargs::default());
     let request = request_for(&call("hi", &mapped)).unwrap();
     assert_eq!(
         request.body.voice,
@@ -448,8 +449,8 @@ fn passes_an_unmodeled_voice_field_through() {
     let request = request_for(&call("hi", &mapped)).unwrap();
     assert_eq!(request.body.voice.other, options);
     assert_eq!(
-        serde_json::to_value(&request.body.voice).unwrap(),
-        serde_json::json!({"ssmlGender": "FEMALE"})
+        serde_json::to_string(&request.body.voice).unwrap(),
+        r#"{"ssmlGender":"FEMALE"}"#
     );
 }
 
@@ -462,19 +463,14 @@ fn passes_unmodeled_audio_config_fields_through() {
     assert_eq!(audio_config.audio_encoding.as_deref(), Some("MP3"));
     assert_eq!(audio_config.other.len(), 3);
     assert_eq!(
-        serde_json::to_value(&audio_config).unwrap(),
-        serde_json::json!({
-            "audioEncoding": "MP3",
-            "pitch": -2.5,
-            "sampleRateHertz": 24000,
-            "effectsProfileId": ["a"]
-        })
+        serde_json::to_string(&audio_config).unwrap(),
+        r#"{"audioEncoding":"MP3","pitch":-2.5,"sampleRateHertz":24000,"effectsProfileId":["a"]}"#
     );
 }
 
 #[test]
 fn builds_the_default_audio_config() {
-    let mapped = mapping(SpeechOptionalParams::default(), SpeechKwargs::default());
+    let mapped = mapping(&SpeechOptionalParams::default(), &SpeechKwargs::default());
     let request = request_for(&call("hi", &mapped)).unwrap();
     assert_eq!(
         request.body.audio_config,
@@ -497,11 +493,11 @@ fn lets_a_full_audio_config_replace_the_encoding_and_rate() {
         use_ssml: false,
     };
     let mapped = mapping(
-        SpeechOptionalParams {
+        &SpeechOptionalParams {
             response_format: Some("mp3".to_owned()),
-            speed: Some(Decimal::from(4)),
+            speed: Some(Decimal::from(4_i32)),
         },
-        kwargs,
+        &kwargs,
     );
     let request = request_for(&call("hi", &mapped)).unwrap();
     assert_eq!(
@@ -516,7 +512,7 @@ fn lets_a_full_audio_config_replace_the_encoding_and_rate() {
 
 #[test]
 fn overwrites_authorization_and_the_project_header() {
-    let mapped = mapping(SpeechOptionalParams::default(), SpeechKwargs::default());
+    let mapped = mapping(&SpeechOptionalParams::default(), &SpeechKwargs::default());
     let mut caller = IndexMap::new();
     caller.insert("Authorization".to_owned(), "caller-secret".to_owned());
     let mint = FixedMint::new();
@@ -541,7 +537,7 @@ fn overwrites_authorization_and_the_project_header() {
 
 #[test]
 fn redacts_header_values_in_debug() {
-    let mapped = mapping(SpeechOptionalParams::default(), SpeechKwargs::default());
+    let mapped = mapping(&SpeechOptionalParams::default(), &SpeechKwargs::default());
     let mut caller = IndexMap::new();
     caller.insert("x-api-key".to_owned(), "caller-secret".to_owned());
     let mint = FixedMint::new();
@@ -553,15 +549,15 @@ fn redacts_header_values_in_debug() {
 
 #[test]
 fn treats_an_empty_location_as_the_default() {
-    let mapped = mapping(SpeechOptionalParams::default(), SpeechKwargs::default());
+    let mapped = mapping(&SpeechOptionalParams::default(), &SpeechKwargs::default());
     let mut speech_call = call("hi", &mapped);
     speech_call.location = Some("");
-    assert!(request_for(&speech_call).is_ok());
+    request_for(&speech_call).unwrap();
 }
 
 #[test]
 fn rejects_an_invalid_vertex_location() {
-    let mapped = mapping(SpeechOptionalParams::default(), SpeechKwargs::default());
+    let mapped = mapping(&SpeechOptionalParams::default(), &SpeechKwargs::default());
     let mut speech_call = call("hi", &mapped);
     speech_call.location = Some("Bad_Location");
     assert!(matches!(
@@ -719,7 +715,7 @@ fn maps_mp3_to_the_mp3_encoding() {
         speed: None,
     };
     assert_eq!(
-        mapping(optional, SpeechKwargs::default()).audio_encoding,
+        mapping(&optional, &SpeechKwargs::default()).audio_encoding,
         "MP3"
     );
 }
