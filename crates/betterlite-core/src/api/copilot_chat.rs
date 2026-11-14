@@ -164,15 +164,16 @@ where
             model: &lowered,
             custom_llm_provider: None,
         };
-        if self
+        let reasoning = self
             .predicates
             .supports_factory(&request, NamedCapability::Reasoning.key())
-            .await
-        {
-            for name in ["thinking", "reasoning_effort"] {
-                if !params.contains(&name) {
-                    params.push(name);
-                }
+            .await;
+        if !reasoning {
+            return params;
+        }
+        for name in ["thinking", "reasoning_effort"] {
+            if !params.contains(&name) {
+                params.push(name);
             }
         }
         params

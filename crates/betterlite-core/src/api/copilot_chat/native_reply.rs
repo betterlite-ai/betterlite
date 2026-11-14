@@ -37,9 +37,13 @@ pub fn transform_parsed_response(mut reply: NativeReply) -> Result<NativeReply, 
     if reply.has_choices() {
         return Ok(reply);
     }
-    let (content, tool_calls, thinking_blocks) = native_content(&reply)?;
-    let reason = choice_finish_reason(&content, &tool_calls, &reply);
-    let choice = assistant_choice(content, &tool_calls, thinking_blocks, reason);
+    let NativeContent {
+        text,
+        tool_calls,
+        thinking_blocks,
+    } = native_content(&reply)?;
+    let reason = choice_finish_reason(&text, &tool_calls, &reply);
+    let choice = assistant_choice(text, &tool_calls, thinking_blocks, reason);
     reply.choices = Some(Json::List(vec![Json::Object(choice)]));
     if let Some(Json::Object(usage)) = reply.fields.get_mut("usage") {
         normalize_usage(usage)?;
@@ -47,10 +51,14 @@ pub fn transform_parsed_response(mut reply: NativeReply) -> Result<NativeReply, 
     Ok(reply)
 }
 
+struct NativeContent {
+    text: String,
+    tool_calls: Vec<AnthropicToolCall>,
+    thinking_blocks: Option<Vec<Json>>,
+}
+
 // text, tool calls and thinking come from the content blocks through B578's extraction
-fn native_content(
-    reply: &NativeReply,
-) -> Result<(String, Vec<AnthropicToolCall>, Option<Vec<Json>>), CopilotChatError> {
+fn native_content(reply: &NativeReply) -> Result<NativeContent, CopilotChatError> {
     match reply.fields.get("content") {
         Some(Json::List(blocks)) => {
             let response = AnthropicCompletionResponse {
@@ -58,15 +66,23 @@ fn native_content(
                 fields: IndexMap::new(),
             };
             let projected = project_response(&response, None)?;
-            Ok((
-                projected.content,
-                projected.tool_calls,
-                projected.thinking_blocks,
-            ))
+            Ok(NativeContent {
+                text: projected.content,
+                tool_calls: projected.tool_calls,
+                thinking_blocks: projected.thinking_blocks,
+            })
         }
-        Some(Json::Text(text)) => Ok((text.clone(), Vec::new(), None)),
+        Some(Json::Text(text)) => Ok(NativeContent {
+            text: text.clone(),
+            tool_calls: Vec::new(),
+            thinking_blocks: None,
+        }),
         None | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_)) => {
-            Ok((String::new(), Vec::new(), None))
+            Ok(NativeContent {
+                text: String::new(),
+                tool_calls: Vec::new(),
+                thinking_blocks: None,
+            })
         }
     }
 }
