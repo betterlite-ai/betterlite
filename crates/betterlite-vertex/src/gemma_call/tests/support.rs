@@ -8,6 +8,7 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat::response::ChatResponse;
 use betterlite_prompts::arguments::json::Object;
+use reqwest::Client;
 use secrecy::SecretString;
 use tokio::runtime::Builder;
 use uuid::Uuid;
@@ -89,10 +90,10 @@ impl GemmaPost for FixtureClient {
             }),
             Reply::Failure => Err(TransportError::Closed),
             Reply::Timeout => Err(TransportError::Deadline(
-                reqwest::Client::new().get("x").build().unwrap_err(),
+                Client::new().get("x").build().unwrap_err(),
             )),
             Reply::ConnectTimeout => Err(TransportError::ConnectTimeout(
-                reqwest::Client::new().get("x").build().unwrap_err(),
+                Client::new().get("x").build().unwrap_err(),
             )),
         };
         Box::pin(ready(reply))
