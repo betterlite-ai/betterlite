@@ -135,7 +135,7 @@ fn skip_tools<S>(context: &SessionContext<S>) -> BTreeSet<String> {
 
 // the runtime turns this entry back into deepagents' ToolFilterMiddleware for the default subagent
 #[derive(Serialize)]
-struct ToolFilterEntry<'a> {
+struct ToolFilterEntry<'blocked> {
     name: &'static str,
-    blocked: &'a BTreeSet<String>,
+    blocked: &'blocked BTreeSet<String>,
 }
