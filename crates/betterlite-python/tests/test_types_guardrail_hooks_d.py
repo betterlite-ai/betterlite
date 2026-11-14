@@ -55,6 +55,20 @@ DUMP_COUNT: Final = 41
 REJECTION_COUNT: Final = 25
 UI_COUNT: Final = 9
 ABSTRACT_COUNT: Final = 27
+PRESIDIO_REQUEST: presidio.PresidioAnalyzeRequest = {
+    "text": "hello",
+    "language": "en",
+    "ad_hoc_recognizers": ["EMAIL_ADDRESS"],
+    "entities": ["PERSON", "US_SSN"],
+}
+PRESIDIO_RESPONSE: presidio.PresidioAnalyzeResponseItem = {
+    "entity_type": "PERSON",
+    "start": 0,
+    "end": 5,
+    "score": 0.9,
+    "analysis_explanation": {"entity_type": "PERSON"},
+    "recognition_metadata": {"recognizer_name": "spacy"},
+}
 DESCRIBE_SCRIPT = """
 import importlib
 import inspect
@@ -844,17 +858,25 @@ def test_ui_friendly_names() -> None:
 
 def test_default_names() -> None:
     assert straiker.STRAIKER_WEBHOOK_SCHEMA_VERSION == "1"
-    optional_params = straiker.StraikerGuardrailConfigModelOptionalParams()
-    assert optional_params.timeout == 5.0
-    assert optional_params.max_retries == 2
-    assert optional_params.initial_backoff == 0.1
-    assert optional_params.max_backoff == 2.0
-    assert optional_params.unreachable_fallback == "fail_closed"
-    assert optional_params.fail_on_error is True
-    assert optional_params.max_payload_bytes == 524288
-    assert optional_params.api_version is None
-    assert optional_params.format_hint is None
-    assert optional_params.verbose is False
+    optional_params: dict[str, JsonValue] = (
+        straiker.StraikerGuardrailConfigModelOptionalParams().model_dump()
+    )
+    assert optional_params == {
+        "timeout": 5.0,
+        "max_retries": 2,
+        "initial_backoff": 0.1,
+        "max_backoff": 2.0,
+        "unreachable_fallback": "fail_closed",
+        "fail_on_error": True,
+        "max_payload_bytes": 524288,
+        "api_version": None,
+        "agent_ref": None,
+        "client": None,
+        "format_hint": None,
+        "custom_headers": None,
+        "metadata": None,
+        "verbose": False,
+    }
     config = straiker.StraikerGuardrailConfigModel(api_key="key")
     assert config.api_base == "https://api.prod.straiker.ai"
     assert config.default_app == "LiteLLM Gateway"
@@ -913,42 +935,14 @@ def test_straiker_event_names() -> None:
 
 def test_presidio_names() -> None:
     requests = TypeAdapter(presidio.PresidioAnalyzeRequest)
-    request = requests.validate_python(
-        {
-            "text": "hello",
-            "language": "en",
-            "ad_hoc_recognizers": ["EMAIL_ADDRESS"],
-            "entities": ["PERSON", "US_SSN"],
-            "unknown_key": True,
-        }
-    )
-    assert set(request) == {"text", "language", "ad_hoc_recognizers", "entities"}
-    assert request["entities"] == ["PERSON", "US_SSN"]
+    request = requests.validate_python({**PRESIDIO_REQUEST, "unknown_key": True})
+    assert request == PRESIDIO_REQUEST
     with pytest.raises(ValidationError):
         requests.validate_python({"text": "hello", "entities": 1})
 
     items = TypeAdapter(presidio.PresidioAnalyzeResponseItem)
-    item = items.validate_python(
-        {
-            "entity_type": "PERSON",
-            "start": 0,
-            "end": 5,
-            "score": 0.9,
-            "analysis_explanation": {"entity_type": "PERSON"},
-            "recognition_metadata": {"recognizer_name": "spacy"},
-        }
-    )
-    assert set(item) == {
-        "entity_type",
-        "start",
-        "end",
-        "score",
-        "analysis_explanation",
-        "recognition_metadata",
-    }
-    assert item["entity_type"] == "PERSON"
-    assert item["start"] == 0
-    assert item["score"] == 0.9
+    item = items.validate_python(PRESIDIO_RESPONSE)
+    assert item == PRESIDIO_RESPONSE
     with pytest.raises(ValidationError):
         items.validate_python({"entity_type": 7})
     with pytest.raises(ValidationError):
