@@ -1,6 +1,6 @@
 from typing import Literal, TypeAlias, TypedDict
 
-from litellm.proxy.management_endpoints.scim.scim_v2 import _admitted_member_ids, _AmbiguousMember, _json_object_fields, _member_value, _normalized_member_type, _partition_classified_members, _PartitionedMembers, _ResolvedUserMember, _roster_entries_named_by, _SkippedGroupMember, _team_metadata_has_scim_provenance, _UnknownMember  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L487-L851
+from litellm.proxy.management_endpoints.scim.scim_v2 import _admitted_member_ids, _AmbiguousMember, _json_object_fields, _member_value, _normalized_member_type, _partition_classified_members, _PartitionedMembers, _ResolvedUserMember, _roster_entries_named_by, _SkippedGroupMember, _team_metadata_has_scim_provenance, _UnknownMember  # noqa: E501  # isort: skip  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L487-L851
 from litellm.types.proxy.management_endpoints.scim_v2 import SCIMMember
 from pydantic import JsonValue, TypeAdapter
 
