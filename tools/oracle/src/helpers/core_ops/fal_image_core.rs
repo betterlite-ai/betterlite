@@ -100,42 +100,19 @@ impl Helper for Op {
                 models,
                 model,
                 cases,
-            } => {
-                let settings = settings(environment);
-                let mut urls = Vec::new();
-                for api_base in api_bases {
-                    for candidate in models {
-                        urls.push(json!({
-                            "generic": settings.complete_url(api_base.as_deref(), ""),
-                            "gpt": gpt_complete_url(&settings, api_base.as_deref(), candidate),
-                        }));
-                    }
-                }
-                let outcomes: Vec<Value> = cases
-                    .iter()
-                    .map(|case| generic_outcome(case, model))
-                    .collect();
-                Ok(json!({"urls": urls, "cases": outcomes}))
-            }
-            Input::KeyScheme { environment, cases } => {
-                let settings = settings(environment);
-                let outcomes: Vec<Value> = cases
-                    .iter()
-                    .map(|case| key_outcome(case, &settings))
-                    .collect();
-                Ok(json!({"cases": outcomes}))
-            }
+            } => Ok(generic_base_outcome(
+                environment,
+                api_bases,
+                models,
+                model,
+                cases,
+            )),
+            Input::KeyScheme { environment, cases } => Ok(key_scheme_outcome(environment, cases)),
             Input::MixedImageObjects { replies } | Input::BoolDimensionsExcluded { replies } => {
-                let outcomes: Vec<Value> = replies.iter().map(reply_outcome).collect();
-                Ok(json!({"cases": outcomes}))
+                Ok(json!({"cases": reply_outcomes(replies)}))
             }
             Input::GptDestinationPrecedence { model, cases } => {
-                let catalog = BundledCatalog::default().get();
-                let outcomes: Vec<Value> = cases
-                    .iter()
-                    .map(|case| gpt_outcome(case, model, &catalog))
-                    .collect();
-                Ok(json!({"cases": outcomes}))
+                Ok(gpt_destination_outcome(model, cases))
             }
             Input::PricingQualityAlias {
                 model,
@@ -145,15 +122,63 @@ impl Helper for Op {
                 let catalog = catalog_from(catalog)?;
                 Ok(quality_outcome(model, &catalog, qualities))
             }
-            Input::MalformedSizeKept { sizes } => {
-                let mapped: Vec<Value> = sizes
-                    .iter()
-                    .map(|size| json!(map_gpt_image_size(size)))
-                    .collect();
-                Ok(json!({"sizes": mapped}))
-            }
+            Input::MalformedSizeKept { sizes } => Ok(size_outcomes(sizes)),
         }
     }
+}
+
+fn generic_base_outcome(
+    environment: &Environment,
+    api_bases: &[Option<String>],
+    models: &[String],
+    model: &str,
+    cases: &[MappingCase],
+) -> Value {
+    let settings = settings(environment);
+    let mut urls = Vec::new();
+    for api_base in api_bases {
+        for candidate in models {
+            urls.push(json!({
+                "generic": settings.complete_url(api_base.as_deref(), ""),
+                "gpt": gpt_complete_url(&settings, api_base.as_deref(), candidate),
+            }));
+        }
+    }
+    let outcomes: Vec<Value> = cases
+        .iter()
+        .map(|case| generic_outcome(case, model))
+        .collect();
+    json!({"urls": urls, "cases": outcomes})
+}
+
+fn key_scheme_outcome(environment: &Environment, cases: &[KeyCase]) -> Value {
+    let settings = settings(environment);
+    let outcomes: Vec<Value> = cases
+        .iter()
+        .map(|case| key_outcome(case, &settings))
+        .collect();
+    json!({"cases": outcomes})
+}
+
+fn reply_outcomes(replies: &[ReplyCase]) -> Vec<Value> {
+    replies.iter().map(reply_outcome).collect()
+}
+
+fn gpt_destination_outcome(model: &str, cases: &[MappingCase]) -> Value {
+    let catalog = BundledCatalog::default().get();
+    let outcomes: Vec<Value> = cases
+        .iter()
+        .map(|case| gpt_outcome(case, model, &catalog))
+        .collect();
+    json!({"cases": outcomes})
+}
+
+fn size_outcomes(sizes: &[Json]) -> Value {
+    let mapped: Vec<Value> = sizes
+        .iter()
+        .map(|size| json!(map_gpt_image_size(size)))
+        .collect();
+    json!({"sizes": mapped})
 }
 
 fn settings(environment: &Environment) -> FalImageSettings {
