@@ -89,13 +89,17 @@ fn settings(api_base: &str) -> TransportSettings {
     }
 }
 
-fn transport(api_base: &str) -> CompresrTransport {
+fn configured(built: TransportSettings) -> CompresrTransport {
     CompresrTransport::new(
-        settings(api_base),
+        built,
         SecretString::from("test-key"),
         reqwest::Client::default(),
     )
     .expect("transport")
+}
+
+fn transport(api_base: &str) -> CompresrTransport {
+    configured(settings(api_base))
 }
 
 fn target(context: &str, query: &str) -> CompressTarget {
@@ -226,12 +230,7 @@ async fn the_optional_ratios_are_sent_only_when_set() {
     let mut built = settings(&base);
     built.dynamic_min_ratio = Some(0.2);
     built.dynamic_max_ratio = Some(0.8);
-    let transport = CompresrTransport::new(
-        built,
-        SecretString::from("test-key"),
-        reqwest::Client::default(),
-    )
-    .expect("transport");
+    let transport = configured(built);
     transport
         .compress(&[target("context", "query")])
         .await
@@ -258,12 +257,7 @@ async fn passthrough_params_are_sent_but_never_replace_the_request_content() {
         ("inputs".to_owned(), text("hijacked inputs")),
         ("temperature".to_owned(), GuardrailValue::Decimal(0.2)),
     ]);
-    let transport = CompresrTransport::new(
-        built,
-        SecretString::from("test-key"),
-        reqwest::Client::default(),
-    )
-    .expect("transport");
+    let transport = configured(built);
     transport
         .compress(&[target("the context", "the query")])
         .await
@@ -280,7 +274,6 @@ async fn passthrough_params_are_sent_but_never_replace_the_request_content() {
 async fn a_passthrough_key_the_request_names_is_replaced_by_the_named_value() {
     let (base, recorded, _server) = serve(200, r#"{"data":{}}"#).await;
     let mut built = settings(&base);
-    built.dynamic_min_ratio = Some(0.25);
     built.compression_params = BTreeMap::from([
         ("coarse".to_owned(), GuardrailValue::Boolean(false)),
         ("source".to_owned(), text("hijacked source")),
@@ -290,18 +283,8 @@ async fn a_passthrough_key_the_request_names_is_replaced_by_the_named_value() {
             GuardrailValue::Decimal(0.9),
         ),
         ("dynamic".to_owned(), GuardrailValue::Boolean(false)),
-        (
-            "dynamic_min_ratio".to_owned(),
-            GuardrailValue::Decimal(0.75),
-        ),
-        ("dynamic_max_ratio".to_owned(), GuardrailValue::Decimal(0.8)),
     ]);
-    let transport = CompresrTransport::new(
-        built,
-        SecretString::from("test-key"),
-        reqwest::Client::default(),
-    )
-    .expect("transport");
+    let transport = configured(built);
     transport
         .compress(&[target("the context", "the query")])
         .await
@@ -316,13 +299,27 @@ async fn a_passthrough_key_the_request_names_is_replaced_by_the_named_value() {
         GuardrailValue::Decimal(0.5)
     );
     assert_eq!(field(body, "dynamic"), GuardrailValue::Boolean(true));
+}
+
+#[tokio::test]
+async fn a_passthrough_ratio_bound_loses_to_the_one_named_in_the_settings() {
+    let (base, recorded, _server) = serve(200, r#"{"data":{}}"#).await;
+    let mut built = settings(&base);
+    built.dynamic_min_ratio = Some(0.25);
+    built.compression_params = BTreeMap::from([(
+        "dynamic_min_ratio".to_owned(),
+        GuardrailValue::Decimal(0.75),
+    )]);
+    let transport = configured(built);
+    transport
+        .compress(&[target("the context", "the query")])
+        .await
+        .expect("outcome");
+    let calls = calls(&recorded);
+    let body = calls[0].body.as_ref().expect("request body");
     assert_eq!(
         field(body, "dynamic_min_ratio"),
         GuardrailValue::Decimal(0.25)
-    );
-    assert_eq!(
-        field(body, "dynamic_max_ratio"),
-        GuardrailValue::Decimal(0.8)
     );
 }
 
@@ -338,12 +335,7 @@ async fn a_passthrough_ratio_bound_survives_when_the_other_bound_is_the_one_set(
         ),
         ("dynamic_max_ratio".to_owned(), GuardrailValue::Decimal(0.8)),
     ]);
-    let transport = CompresrTransport::new(
-        built,
-        SecretString::from("test-key"),
-        reqwest::Client::default(),
-    )
-    .expect("transport");
+    let transport = configured(built);
     transport
         .compress(&[target("the context", "the query")])
         .await
@@ -387,12 +379,7 @@ async fn a_reply_over_the_size_limit_goes_through_the_fail_policy() {
     let (base, _recorded, _server) = serve(200, &reply_of_length(ONE_MIB + 1)).await;
     let mut built = settings(&base);
     built.fallback = UnreachableFallback::FailOpen;
-    let transport = CompresrTransport::new(
-        built,
-        SecretString::from("test-key"),
-        reqwest::Client::default(),
-    )
-    .expect("transport");
+    let transport = configured(built);
     let outcome = transport
         .compress(&[target("context", "query")])
         .await
@@ -433,12 +420,7 @@ async fn fail_open_forwards_the_request_uncompressed_after_an_upstream_error() {
     let (base, _recorded, _server) = serve(500, r#"{"error":"upstream"}"#).await;
     let mut built = settings(&base);
     built.fallback = UnreachableFallback::FailOpen;
-    let transport = CompresrTransport::new(
-        built,
-        SecretString::from("test-key"),
-        reqwest::Client::default(),
-    )
-    .expect("transport");
+    let transport = configured(built);
     let outcome = transport
         .compress(&[target("context", "query")])
         .await
@@ -451,12 +433,7 @@ async fn fail_open_treats_an_unreadable_body_as_a_failed_compression() {
     let (base, _recorded, _server) = serve(200, "{not json").await;
     let mut built = settings(&base);
     built.fallback = UnreachableFallback::FailOpen;
-    let transport = CompresrTransport::new(
-        built,
-        SecretString::from("test-key"),
-        reqwest::Client::default(),
-    )
-    .expect("transport");
+    let transport = configured(built);
     let outcome = transport
         .compress(&[target("context", "query"), target("other", "query")])
         .await
@@ -487,12 +464,7 @@ async fn a_batch_with_the_wrong_number_of_results_is_forwarded_when_fail_open() 
     .await;
     let mut built = settings(&base);
     built.fallback = UnreachableFallback::FailOpen;
-    let transport = CompresrTransport::new(
-        built,
-        SecretString::from("test-key"),
-        reqwest::Client::default(),
-    )
-    .expect("transport");
+    let transport = configured(built);
     let outcome = transport
         .compress(&[target("first", "q1"), target("second", "q2")])
         .await

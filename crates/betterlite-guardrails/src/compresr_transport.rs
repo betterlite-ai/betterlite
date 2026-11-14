@@ -126,6 +126,14 @@ impl CompresrTransport {
                 });
             }
         };
+        self.finish_response(response, targets.len()).await
+    }
+
+    async fn finish_response(
+        &self,
+        response: reqwest::Response,
+        expected: usize,
+    ) -> Result<CompressOutcome, CompresrTransportError> {
         let status = response.status();
         let text = response::read_body(response).await;
         if !status.is_success() {
@@ -138,7 +146,7 @@ impl CompresrTransport {
                 detail,
             });
         }
-        match response::parse_results(text.as_deref(), targets.len()) {
+        match response::parse_results(text.as_deref(), expected) {
             Ok(results) => Ok(CompressOutcome::Results(results)),
             Err(failure) => self.failed(failure),
         }

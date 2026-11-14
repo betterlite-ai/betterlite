@@ -24,10 +24,13 @@ fn body(source: &str) -> Option<&str> {
 #[case::padded_text(r#"" 42 ""#, 42)]
 #[case::non_numeric_text(r#""lots""#, 0)]
 #[case::float_text(r#""4.5""#, 0)]
+#[case::underscored_text(r#""1_0""#, 0)]
 #[case::null("null", 0)]
-#[case::boolean("true", 0)]
+#[case::boolean_true("true", 1)]
+#[case::boolean_false("false", 0)]
 #[case::list("[]", 0)]
 #[case::object("{}", 0)]
+#[case::huge_decimal("1e300", 0)]
 fn token_stats_parse_defensively(#[case] source: &str, #[case] expected: i64) {
     assert_eq!(safe_int(Some(&value(source))), expected);
 }
@@ -35,6 +38,14 @@ fn token_stats_parse_defensively(#[case] source: &str, #[case] expected: i64) {
 #[test]
 fn a_missing_token_stat_is_zero() {
     assert_eq!(safe_int(None), 0);
+}
+
+#[test]
+fn a_non_finite_token_stat_is_zero() {
+    let nan = GuardrailValue::Decimal(f64::NAN);
+    let infinity = GuardrailValue::Decimal(f64::INFINITY);
+    assert_eq!(safe_int(Some(&nan)), 0);
+    assert_eq!(safe_int(Some(&infinity)), 0);
 }
 
 #[test]

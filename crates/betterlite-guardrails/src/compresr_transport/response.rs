@@ -1,4 +1,8 @@
+use std::collections::BTreeMap;
+
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive as _;
 
 use super::failure::{BATCH_MISMATCH, Failure, UNEXPECTED_SHAPE, UNREADABLE};
 use super::{CompressionResult, SAFE_RESPONSE_TEXT_LIMIT};
@@ -23,15 +27,13 @@ pub fn safe_int(value: Option<&GuardrailValue>) -> i64 {
     match value {
         Some(GuardrailValue::SignedInteger(number)) => *number,
         Some(GuardrailValue::UnsignedInteger(number)) => i64::try_from(*number).unwrap_or(i64::MAX),
-        Some(GuardrailValue::Decimal(number)) => i64::try_from(*number).unwrap_or(0),
+        Some(GuardrailValue::Decimal(number)) => Decimal::from_f64(*number)
+            .and_then(|decimal| i64::try_from(decimal.trunc()).ok())
+            .unwrap_or(0),
+        Some(GuardrailValue::Boolean(boolean)) => i64::from(*boolean),
         Some(GuardrailValue::Text(text)) => text.trim().parse::<i64>().unwrap_or(0),
         None
-        | Some(
-            GuardrailValue::Null
-            | GuardrailValue::Boolean(_)
-            | GuardrailValue::Array(_)
-            | GuardrailValue::Object(_),
-        ) => 0,
+        | Some(GuardrailValue::Null | GuardrailValue::Array(_) | GuardrailValue::Object(_)) => 0,
     }
 }
 
@@ -83,6 +85,13 @@ pub(super) fn parse_results(
     if expected == 1 {
         return Ok(vec![CompressionResult::from_fields(data)]);
     }
+    batch_results(data, expected)
+}
+
+fn batch_results(
+    data: &BTreeMap<String, GuardrailValue>,
+    expected: usize,
+) -> Result<Vec<CompressionResult>, Failure> {
     let Some(GuardrailValue::Array(results)) = data.get("results") else {
         return Err(Failure {
             message: BATCH_MISMATCH,
