@@ -111,7 +111,16 @@ fn deployment_hook(input: &Input) -> crate::helpers::HelperResult {
         optional_params,
         generic_params,
     );
-    let outcome = run_responses_pre_hook(request, &lists, &resolver, &dispatcher)
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .map_err(|error| failure("RuntimeError", error.to_string()))?;
+    let outcome = runtime
+        .block_on(run_responses_pre_hook(
+            request,
+            &lists,
+            &resolver,
+            &dispatcher,
+        ))
         .map_err(|error| failure("DeploymentHookError", error.to_string()))?;
     Ok(deployment_json(&outcome))
 }
