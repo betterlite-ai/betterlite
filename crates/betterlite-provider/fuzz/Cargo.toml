@@ -12,9 +12,11 @@ workspace = true
 cargo-fuzz = true
 
 [dependencies]
+betterlite-anthropic = { path = "../../betterlite-anthropic" }
 betterlite-openai = { path = "../../betterlite-openai" }
 betterlite-provider = { path = ".." }
 libfuzzer-sys = "0.4.9"
+serde_json = "1.0.154"
 
 [[bin]]
 name = "gdc_auth_payload"
@@ -110,6 +112,13 @@ bench = false
 [[bin]]
 name = "manus_files_reply"
 path = "fuzz_targets/manus_files_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "snowflake_reply"
+path = "fuzz_targets/snowflake_reply.rs"
 test = false
 doc = false
 bench = false

@@ -1,0 +1,1 @@
+[{"role":"user","content":[{"type":"file","file":{"file_data":"gs://bucket/a.pdf"}},{"type":"file","file":{"file_data":"  HTTPS://example.test/a.pdf"}},{"type":"document","source":{"media_type":"application/pdf"}}]}]
