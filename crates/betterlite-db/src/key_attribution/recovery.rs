@@ -113,13 +113,12 @@ pub async fn recover_cli_session_keys(
 
 pub async fn attach_user_details(
     store: &PostgresStore,
-    recovered: &BTreeMap<String, KeyMetadata>,
+    mut recovered: BTreeMap<String, KeyMetadata>,
 ) -> Result<BTreeMap<String, KeyMetadata>, KeyAttributionError> {
-    let needing = needed_user_ids(recovered);
+    let needing = needed_user_ids(&recovered);
     let details = details_for_user_ids(store, &needing).await?;
-    let mut attached = recovered.clone();
-    attach_details(&mut attached, &details);
-    Ok(attached)
+    attach_details(&mut recovered, &details);
+    Ok(recovered)
 }
 
 async fn details_for_user_ids(
@@ -174,7 +173,7 @@ pub async fn fill_missing_api_key_aliases(
     let from_double = recover_double_hashed_keys(store, &remaining).await?;
     let merged: BTreeMap<String, KeyMetadata> =
         from_session.into_iter().chain(from_double).collect();
-    let recovered = attach_user_details(store, &merged).await?;
+    let recovered = attach_user_details(store, merged).await?;
     if recovered.is_empty() {
         return Ok(rows.to_vec());
     }

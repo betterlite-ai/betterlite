@@ -59,8 +59,10 @@ pub fn cli_metadata(
             details.contains_key(user_id).then(|| {
                 let meta = KeyMetadata {
                     key_alias: Some(key.clone()),
+                    team_id: None,
                     user_id: Some(user_id.clone()),
-                    ..KeyMetadata::default()
+                    user_email: None,
+                    key_exists: None,
                 };
                 (key.clone(), meta)
             })

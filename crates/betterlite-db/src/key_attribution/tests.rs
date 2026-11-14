@@ -824,7 +824,7 @@ async fn postgres_user_detail_read_binds_one_array_beyond_one_chunk() {
             )
         })
         .collect();
-    let attached = attach_user_details(&store, &recovered).await.unwrap();
+    let attached = attach_user_details(&store, recovered).await.unwrap();
     assert_eq!(
         attached["key-5000"].user_email.as_deref(),
         Some("last@example.com")
@@ -852,7 +852,9 @@ async fn postgres_driver_failures_fall_back_to_empty_attribution() {
     );
     let recovered = BTreeMap::from([("key".to_owned(), meta_with(Some("user")))]);
     assert_eq!(
-        attach_user_details(&store, &recovered).await.unwrap(),
+        attach_user_details(&store, recovered.clone())
+            .await
+            .unwrap(),
         recovered
     );
 }
@@ -869,7 +871,7 @@ async fn postgres_malformed_user_rows_propagate() {
         .await
         .unwrap();
     let recovered = BTreeMap::from([("key".to_owned(), meta_with(Some("broken")))]);
-    let result = attach_user_details(&store, &recovered).await;
+    let result = attach_user_details(&store, recovered).await;
     assert!(matches!(result, Err(KeyAttributionError::User { .. })));
     close(fixture, store).await;
 }
