@@ -240,21 +240,18 @@ def _settings_from_litellm() -> PrometheusLabelSettings:
     )
 
 
-# ast-grep-ignore: no-long-names
-def test_names_metric_label_lists_match_litellm() -> None:
+def test_names_label_lists() -> None:
     assert len(OUR_LABELS) == len(THEIR_LABELS)
     assert OUR_LABELS == THEIR_LABELS
 
 
-# ast-grep-ignore: no-long-names
-def test_names_metric_class_members_match_litellm() -> None:
+def test_names_class_members() -> None:
     ours = set(dir(PrometheusMetricLabels))
     theirs = set(dir(litellm_prometheus.PrometheusMetricLabels))
     assert ours == theirs
 
 
-# ast-grep-ignore: no-long-names
-def test_names_get_labels_defaults_match_litellm() -> None:
+def test_names_get_labels_defaults() -> None:
     _assert_all_labels_match(None)
     assert PrometheusMetricLabels.get_labels("litellm_spend_metric") == [
         *PrometheusMetricLabels.litellm_spend_metric,
@@ -263,15 +260,13 @@ def test_names_get_labels_defaults_match_litellm() -> None:
     ]
 
 
-# ast-grep-ignore: no-long-names
-def test_names_get_labels_custom_labels_match_litellm() -> None:
+def test_names_get_labels_custom() -> None:
     litellm.custom_prometheus_metadata_labels = ["my label", "x.y", "team", "9lives"]
     litellm.custom_prometheus_tags = ["team-name", "a b"]
     _assert_all_labels_match(_settings_from_litellm())
 
 
-# ast-grep-ignore: no-long-names
-def test_names_get_labels_opt_in_labels_match_litellm() -> None:
+def test_names_get_labels_opt_in() -> None:
     litellm.prometheus_emit_stream_label = True
     litellm.prometheus_emit_rate_limit_labels = True
     litellm.prometheus_emit_input_sequence_length_label = True
@@ -279,8 +274,7 @@ def test_names_get_labels_opt_in_labels_match_litellm() -> None:
     _assert_all_labels_match(_settings_from_litellm())
 
 
-# ast-grep-ignore: no-long-names
-def test_names_get_labels_colliding_labels_match_litellm() -> None:
+def test_names_get_labels_collide() -> None:
     litellm.custom_prometheus_metadata_labels = ["org_id", "user_email", "rate_limit_category"]
     litellm.prometheus_emit_rate_limit_labels = True
     litellm.prometheus_emit_input_sequence_length_label = True
@@ -289,8 +283,7 @@ def test_names_get_labels_colliding_labels_match_litellm() -> None:
 
 
 @pytest.mark.parametrize("mode", MODE_NAMES)
-# ast-grep-ignore: no-long-names
-def test_names_get_labels_caller_identity_matches_litellm(mode: str) -> None:
+def test_names_caller_identity(mode: str) -> None:
     validate_caller_identity_settings(
         {"prometheus_deployment_and_latency_caller_identity": mode},
     )
@@ -300,8 +293,7 @@ def test_names_get_labels_caller_identity_matches_litellm(mode: str) -> None:
     _assert_all_labels_match(None)
 
 
-# ast-grep-ignore: no-long-names
-def test_names_get_labels_reject_undeclared_metric() -> None:
+def test_names_reject_unknown() -> None:
     with pytest.raises(
         UnknownMetricError,
         match="litellm_in_flight_requests",
@@ -312,8 +304,7 @@ def test_names_get_labels_reject_undeclared_metric() -> None:
         litellm_prometheus.PrometheusMetricLabels.get_labels("litellm_in_flight_requests")
 
 
-# ast-grep-ignore: no-long-names
-def test_names_get_labels_stream_label_not_duplicated() -> None:
+def test_names_stream_deduped() -> None:
     litellm.custom_prometheus_metadata_labels = ["stream"]
     litellm.prometheus_emit_stream_label = True
     theirs = litellm_prometheus.PrometheusMetricLabels.get_labels(
@@ -330,8 +321,7 @@ def test_names_get_labels_stream_label_not_duplicated() -> None:
     assert ours.count("stream") == 1
 
 
-# ast-grep-ignore: no-long-names
-def test_names_label_value_defaults_match_litellm() -> None:
+def test_names_value_defaults() -> None:
     ours = UserAPIKeyLabelValues()
     theirs = litellm_prometheus.UserAPIKeyLabelValues()
     assert dict(ours.model_dump()) == theirs.model_dump()
@@ -341,8 +331,7 @@ def test_names_label_value_defaults_match_litellm() -> None:
     ]
 
 
-# ast-grep-ignore: no-long-names
-def test_names_label_value_fields_match_litellm() -> None:
+def test_names_label_value_fields() -> None:
     ours = UserAPIKeyLabelValues(
         end_user="eu",
         user="u",
@@ -423,15 +412,13 @@ def test_names_label_value_fields_match_litellm() -> None:
     assert dict(replaced_ours.model_dump()) == replaced_theirs.model_dump()
 
 
-# ast-grep-ignore: no-long-names
-def test_names_label_value_rejects_unknown_keywords() -> None:
+def test_names_value_rejects_keys() -> None:
     pytest.raises(TypeError, UserAPIKeyLabelValues, bogus=1)
     pytest.raises(TypeError, UserAPIKeyLabelValues, api_key_hash="hashed")
     pytest.raises(TypeError, UserAPIKeyLabelValues, "end_user")
 
 
-# ast-grep-ignore: no-long-names
-def test_names_metric_config_fields_match_litellm() -> None:
+def test_names_metric_config() -> None:
     ours = PrometheusMetricsConfig(group="g", metrics=["a", "b"])
     theirs = litellm_prometheus.PrometheusMetricsConfig(group="g", metrics=["a", "b"])
     assert (ours.group, ours.metrics, ours.include_labels) == (
@@ -454,8 +441,7 @@ def test_names_metric_config_fields_match_litellm() -> None:
     assert our_settings.prometheus_metrics_config == their_settings.prometheus_metrics_config
 
 
-# ast-grep-ignore: no-long-names
-def test_names_label_settings_defaults_match_litellm() -> None:
+def test_names_label_settings() -> None:
     settings = PrometheusLabelSettings()
     assert list(settings.custom_prometheus_metadata_labels) == (
         litellm.custom_prometheus_metadata_labels
@@ -473,8 +459,7 @@ def test_names_label_settings_defaults_match_litellm() -> None:
     )
 
 
-# ast-grep-ignore: no-long-names
-def test_names_noop_metric_accepts_every_call() -> None:
+def test_names_noop_metric_calls() -> None:
     metric = NoOpMetric()
     assert metric.labels("model", team="t") is metric
     metric.inc()
