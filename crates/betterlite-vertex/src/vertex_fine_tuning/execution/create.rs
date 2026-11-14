@@ -54,21 +54,6 @@ where
     Make: FnOnce(Option<&ConfiguredCredentials>, Option<&str>) -> Lookup,
     Lookup: Future<Output = Result<AccessToken, CredentialCacheError>> + Send,
 {
-    let (access, prepared) = resolve_target(request, make_lookup).await?;
-    let job = to_vertex_request(request.data, request.original_hyperparameters)?;
-    let body = serde_json::to_vec(&job)
-        .map_err(|source| TuningExecutionError::Record(TuningRecordError::Json(source)))?;
-    post_tuning_job(transport, request, &prepared, &access.project, body).await
-}
-
-async fn resolve_target<Make, Lookup>(
-    request: &TuningCreateRequest<'_>,
-    make_lookup: Make,
-) -> Result<(AccessToken, EndpointTarget), TuningExecutionError>
-where
-    Make: FnOnce(Option<&ConfiguredCredentials>, Option<&str>) -> Lookup,
-    Lookup: Future<Output = Result<AccessToken, CredentialCacheError>> + Send,
-{
     // B1302 resolves the credentials before anything is prepared or sent
     let access = ensure_access_token(
         VertexCapabilityProvider::VertexAiBeta,
@@ -92,7 +77,10 @@ where
             use_psc_endpoint_format: false,
         },
     )?;
-    Ok((access, prepared))
+    let job = to_vertex_request(request.data, request.original_hyperparameters)?;
+    let body = serde_json::to_vec(&job)
+        .map_err(|source| TuningExecutionError::Record(TuningRecordError::Json(source)))?;
+    post_tuning_job(transport, request, &prepared, &access.project, body).await
 }
 
 async fn post_tuning_job<T>(

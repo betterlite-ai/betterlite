@@ -226,10 +226,15 @@ async fn fixed_timeout() {
     create_tuning_job(&transport, &fixture.request(None, None), lookup)
         .await
         .unwrap();
-    for recorded in transport.requests.lock().unwrap().iter() {
-        assert_eq!(recorded.deadline, TUNING_TIMEOUT);
-        assert_eq!(recorded.deadline, Duration::from_secs(600));
-    }
+    let deadlines: Vec<Duration> = transport
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|recorded| recorded.deadline)
+        .collect();
+    assert_eq!(deadlines, [TUNING_TIMEOUT, TUNING_TIMEOUT]);
+    assert_eq!(TUNING_TIMEOUT, Duration::from_secs(600));
 }
 
 #[tokio::test]
