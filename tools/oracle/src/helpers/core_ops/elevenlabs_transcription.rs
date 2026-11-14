@@ -56,6 +56,7 @@ enum Call {
     },
 }
 
+// xai_stt.rs holds the same stub; sharing it needs an edit to that file or the oracle registry, both outside this task's scope
 struct NoFiles;
 
 impl AuthorizedAudioFiles for NoFiles {
