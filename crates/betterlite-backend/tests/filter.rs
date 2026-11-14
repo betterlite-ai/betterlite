@@ -1,3 +1,4 @@
+#![cfg(test)]
 use betterlite_backend::BACKEND_ROUTES;
 use betterlite_server::server::filter::keeps_route;
 use rstest::rstest;

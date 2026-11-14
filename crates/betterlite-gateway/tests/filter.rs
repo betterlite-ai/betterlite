@@ -1,3 +1,4 @@
+#![cfg(test)]
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use axum::middleware::from_fn;
