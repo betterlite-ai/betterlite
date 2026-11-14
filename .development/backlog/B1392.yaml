@@ -1,14 +1,14 @@
 id: B1392
 milestone: M3 providers
 title: Studio native agent lifecycle records and credential scoping
-status: todo
+status: done
 depends_on: [B1331, B171]
 file: tasks/B1392-studio-native-agents.yaml
 covers:
   - "litellm/llms/gemini/agents/**"
 parent: B035
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1677
