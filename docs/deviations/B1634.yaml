@@ -1,0 +1,5 @@
+task: B1634
+deviations:
+  - what: The classification events go through tracing with the member value and matched account as fields, not through verbose_proxy_logger with a formatted message.
+    why: betterlite logs structured events through tracing, and verbose_proxy_logger is a Python logger.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L674-L698

@@ -17,6 +17,26 @@ fn skipped_member(value: &str, reason: SkipReason) -> ClassifiedGroupMember {
     }
 }
 
+fn named_member(value: &str, named: &[String]) -> ClassifiedGroupMember {
+    match named {
+        [] => ClassifiedGroupMember::Unknown {
+            value: value.to_owned(),
+        },
+        [user_id] => {
+            tracing::info!(%value, %user_id, "SCIM: member matched a user by SSO or email");
+            ClassifiedGroupMember::Resolved {
+                user_id: user_id.clone(),
+            }
+        }
+        _ => {
+            tracing::warn!(%value, "SCIM: member names several accounts and is ambiguous");
+            ClassifiedGroupMember::Ambiguous {
+                value: value.to_owned(),
+            }
+        }
+    }
+}
+
 pub struct MemberResolver<'database> {
     pub store: &'database PostgresStore,
 }
@@ -35,6 +55,7 @@ impl MemberResolver<'_> {
         if named.iter().any(|found| found == value) {
             // the keyed row still loses to an account that shares the value as an identity
             if named.iter().any(|other| other != value) {
+                tracing::warn!(%value, "SCIM: member is also another account's identity or email");
                 return Ok(ClassifiedGroupMember::Ambiguous {
                     value: value.to_owned(),
                 });
@@ -49,17 +70,7 @@ impl MemberResolver<'_> {
         if member_type.is_none() && is_scim_managed_team(self.store, value).await? {
             return Ok(skipped_member(value, SkipReason::ExistingTeam));
         }
-        match named.as_slice() {
-            [] => Ok(ClassifiedGroupMember::Unknown {
-                value: value.to_owned(),
-            }),
-            [user_id] => Ok(ClassifiedGroupMember::Resolved {
-                user_id: user_id.clone(),
-            }),
-            _ => Ok(ClassifiedGroupMember::Ambiguous {
-                value: value.to_owned(),
-            }),
-        }
+        Ok(named_member(value, &named))
     }
 
     // every account sharing the value leaves with the one member of this roster it names
