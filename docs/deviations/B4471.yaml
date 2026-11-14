@@ -1,0 +1,14 @@
+task: B4471
+deviations:
+  - what: Route filtering runs as an axum middleware that checks the template of the route each request matched, instead of trimming FastAPI's route table inside the startup lifespan.
+    why: axum's Router is built once and immutable, so there is no runtime route list to filter; the middleware reads the matched route template (for example /{provider}/v1/files) and answers the application's 404 for one outside the component's allowlist. A request that matches no route reaches the application's own 404.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/main.py#L52-L60
+  - what: A route template under a kept mount path, such as /swagger/{*path} under /swagger, is kept on the backend, and a plain route registered at a mount path is kept too.
+    why: LiteLLM keeps a whole Starlette Mount when its path is in the mount set. axum has no Mount type and registers a mounted service as several routes (/swagger/ and /swagger/{*path}), so the filter keeps the mount path and every template below it. A plain route at a mount path is kept as well, where LiteLLM keeps only a Mount there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/backend/main.py#L35-L38
+  - what: The gateway and backend are separate Cargo binary targets that share the serve runtime in betterlite-server, not Python modules that import the same proxy_server.app.
+    why: betterlite runs separate Rust binaries with independent entry points; the startup, filter install and exit status live once in betterlite_server::server::component.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/backend/main.py#L7-L25
+  - what: A server startup failure exits with status 2, not the exit status uvicorn gives when the lifespan raises.
+    why: the component binaries build the app and bind the listener themselves, and the task gives status 2 to a startup failure such as a port already in use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1438-L1447

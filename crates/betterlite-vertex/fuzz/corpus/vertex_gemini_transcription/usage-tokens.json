@@ -1,0 +1,1 @@
+{"candidates":[{"content":{"parts":[{"text":"hi"}]}}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":4,"totalTokenCount":14,"promptTokensDetails":[{"modality":"AUDIO","tokenCount":6},{"modality":"TEXT","tokenCount":2},{"modality":"audio","tokenCount":3}]}}

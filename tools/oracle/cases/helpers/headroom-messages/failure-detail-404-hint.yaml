@@ -1,0 +1,9 @@
+kind: helper
+name: headroom-messages-failure-detail-404-hint
+call:
+  b3773:
+    function: compress_failure_detail
+    status: 404
+    body: "not found"
+env: {}
+compare: {ignore: []}

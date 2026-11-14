@@ -1,0 +1,41 @@
+task: B7790
+deviations:
+  - what: >-
+      The gateway key comes from the token file only. A key stored only in the OS keychain is not found.
+    why: >-
+      The wheel must not link the keyring or betterlite-cli. LiteLLM falls back to the file the same way when the keychain is unavailable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L372-L391
+  - what: >-
+      The clients use the standard library urllib, and return_request=True returns betterlite's Request dataclass, not a
+      requests.Request. Errors are betterlite.proxy.client.HTTPError and RequestError, not requests.exceptions.HTTPError
+      and RequestException.
+    why: >-
+      The wheel depends only on python-dotenv, so requests is not there. A script that catches the requests classes must
+      catch these.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/http_client.py#L83-L94
+  - what: >-
+      HTTPClient.request takes params as a named argument, makes every option keyword-only, and raises TypeError for any
+      other extra keyword.
+    why: >-
+      LiteLLM forwards **kwargs to requests.request, which has no counterpart here. params is the one extra the other
+      clients in LiteLLM need, and the repository's boolean-trap lint forbids positional booleans.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/http_client.py#L24-L33
+  - what: >-
+      ModelGroupsManagementClient.info takes return_request as a keyword-only argument, so info(True) raises TypeError
+      where LiteLLM accepts it.
+    why: >-
+      ruff's FBT001 and FBT002 forbid positional booleans, and the task budget allows no per-line suppression. A script
+      that passes the flag positionally must name it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/model_groups.py#L34-L50
+  - what: >-
+      HealthManagementClient.get_readiness raises RequestError when the reply is not a JSON object, and
+      ModelGroupsManagementClient.info raises RequestError when the reply has no data field.
+    why: >-
+      LiteLLM declares dict[str, Any] for the readiness reply and raises KeyError for a reply without data. betterlite
+      names the field in a typed error instead, and both cases are outside the declared types.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/model_groups.py#L60
+  - what: This task has no helper oracle cases.
+    why: >-
+      The pytest file imports both packages and compares them against one recording server, and helper cases speak to
+      Rust functions only.
+    link: ""
