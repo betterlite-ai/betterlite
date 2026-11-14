@@ -65,8 +65,8 @@ struct SequenceEntropy;
 
 impl VerifierEntropy for SequenceEntropy {
     fn fill(&self, bytes: &mut [u8]) -> Result<(), getrandom::Error> {
-        for (index, byte) in bytes.iter_mut().enumerate() {
-            *byte = u8::try_from(index).unwrap_or(u8::MAX);
+        for (byte, value) in bytes.iter_mut().zip(0_u8..) {
+            *byte = value;
         }
         Ok(())
     }
