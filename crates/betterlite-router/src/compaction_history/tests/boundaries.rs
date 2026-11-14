@@ -42,6 +42,7 @@ pub(super) fn run(name: &str) {
         "counts_text_and_object_thinking_blocks_by_truthiness" => {
             counts_text_and_object_thinking_blocks_by_truthiness();
         }
+        "a_non_text_responses_type_is_unavailable" => a_non_text_responses_type_is_unavailable(),
         other => panic!("unknown boundary case {other}"),
     }
 }
@@ -434,6 +435,27 @@ fn counts_numeric_thinking_blocks_by_truthiness() {
     )
     .unwrap();
     assert_eq!(absent.prefix_count, 1);
+}
+
+fn a_non_text_responses_type_is_unavailable() {
+    let conversation = items(
+        r#"[{"type":42,"role":"user","content":[{"type":"input_text","text":"first"}]},
+            {"role":"user","content":[{"type":"input_text","text":"latest"}]}]"#,
+    );
+    let tools: Vec<Json> = items("[]");
+    let error = portable_history(
+        &Conversation::Responses {
+            items: conversation.as_slice(),
+            tools: tools.as_slice(),
+        },
+        "parent-model",
+    )
+    .unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Unavailable);
+    assert_eq!(
+        error.reason,
+        "Opaque or provider-managed Responses items require client-managed native compaction"
+    );
 }
 
 fn counts_text_and_object_thinking_blocks_by_truthiness() {

@@ -86,9 +86,13 @@ fn partition(items: &[Json], model: &str) -> Result<History, CompactionError> {
 }
 
 fn item_kind(item: &Json) -> Option<&str> {
-    match item {
-        Json::Object(fields) => Some(field_text(fields, "type").unwrap_or("message")),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
+    let Json::Object(fields) = item else {
+        return None;
+    };
+    match fields.get("type") {
+        None | Some(Json::Null) => Some("message"),
+        Some(Json::Text(kind)) => Some(kind.as_str()),
+        Some(_) => None,
     }
 }
 

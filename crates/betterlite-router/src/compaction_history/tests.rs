@@ -36,7 +36,9 @@ fn runtime() -> Runtime {
 #[case::treats_thinking_blocks_as_unavailable("treats_thinking_blocks_as_unavailable")]
 #[case::treats_chat_thinking_blocks_as_unavailable("treats_chat_thinking_blocks_as_unavailable")]
 #[case::keeps_empty_thinking_blocks("keeps_empty_thinking_blocks")]
-#[case::treats_missing_responses_type_as_message("treats_missing_responses_type_as_message")]
+#[case::treats_missing_or_null_responses_type_as_message(
+    "treats_missing_or_null_responses_type_as_message"
+)]
 #[case::budget_prefers_max_completion_tokens("budget_prefers_max_completion_tokens")]
 #[case::budget_prefers_max_output_tokens("budget_prefers_max_output_tokens")]
 #[case::budget_prefers_payload_max_tokens("budget_prefers_payload_max_tokens")]
@@ -91,6 +93,7 @@ fn compaction_history_behaviors(#[case] name: &str) {
 #[case::counts_text_and_object_thinking_blocks_by_truthiness(
     "counts_text_and_object_thinking_blocks_by_truthiness"
 )]
+#[case::a_non_text_responses_type_is_unavailable("a_non_text_responses_type_is_unavailable")]
 fn compaction_history_boundaries(#[case] name: &str) {
     boundaries::run(name);
 }

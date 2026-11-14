@@ -46,7 +46,9 @@ pub(super) fn run(name: &str) {
             treats_chat_thinking_blocks_as_unavailable();
         }
         "keeps_empty_thinking_blocks" => keeps_empty_thinking_blocks(),
-        "treats_missing_responses_type_as_message" => treats_missing_responses_type_as_message(),
+        "treats_missing_or_null_responses_type_as_message" => {
+            treats_missing_or_null_responses_type_as_message();
+        }
         "budget_prefers_max_completion_tokens" => budget_case(
             OutputAllowance {
                 max_completion_tokens: Some(7),
@@ -463,9 +465,9 @@ fn keeps_empty_thinking_blocks() {
     assert_eq!(history.tail_count, 1);
 }
 
-fn treats_missing_responses_type_as_message() {
+fn treats_missing_or_null_responses_type_as_message() {
     let conversation = items(
-        r#"[{"role":"user","content":[{"type":"input_text","text":"first"}]},
+        r#"[{"type":null,"role":"user","content":[{"type":"input_text","text":"first"}]},
             {"role":"user","content":[{"type":"input_text","text":"latest"}]}]"#,
     );
     let tools: Vec<Json> = items("[]");
