@@ -1,0 +1,40 @@
+kind: helper
+name: parallel-processor-mapping
+call:
+  b8025:
+    provider: parallel_ai
+    calls:
+      - operation: request
+        query: rust
+        optional_params:
+          mode: turbo
+      - operation: request
+        query: rust
+        optional_params:
+          processor: base
+      - operation: request
+        query: rust
+        optional_params:
+          processor: pro
+      - operation: request
+        query: rust
+        optional_params:
+          processor: custom
+      - operation: request
+        query: rust
+        optional_params:
+          mode: fast
+          processor: pro
+      - operation: request
+        query: rust
+        optional_params:
+          mode: ""
+      - operation: request
+        query: rust
+      - operation: request
+        query: rust
+        optional_params:
+          mode: null
+          processor: pro
+env: {}
+compare: {ignore: []}

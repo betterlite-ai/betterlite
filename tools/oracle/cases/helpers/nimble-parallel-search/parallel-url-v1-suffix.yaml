@@ -1,0 +1,31 @@
+kind: helper
+name: parallel-url-v1-suffix
+call:
+  b8025:
+    provider: parallel_ai
+    calls:
+      - operation: url
+        api_base: https://api.parallel.ai
+      - operation: url
+        api_base: https://api.parallel.ai/
+      - operation: url
+        api_base: https://api.parallel.ai/v1
+      - operation: url
+        api_base: https://api.parallel.ai/v1/
+      - operation: url
+        api_base: https://api.parallel.ai/v1/search
+      - operation: url
+        api_base: https://api.parallel.ai/v1/search/
+      - operation: url
+        api_base: https://proxy.test/other
+      - operation: url
+        api_base: https://proxy.test/v1beta
+      - operation: url
+        environment:
+          PARALLEL_AI_API_BASE: https://env.test/v1
+      - operation: url
+        api_base: null
+        environment:
+          PARALLEL_AI_API_BASE: https://env.test/v1/
+env: {}
+compare: {ignore: []}
