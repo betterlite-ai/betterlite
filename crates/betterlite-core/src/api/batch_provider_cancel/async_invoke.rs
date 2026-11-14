@@ -15,10 +15,12 @@ pub const ASYNC_INVOKE_ENDPOINT: &str = "/v1/embeddings";
 
 // the fields of AWS GetAsyncInvoke's answer that _handle_async_invoke_status reads
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+#[serde(rename_all = "camelCase")]
 pub struct AsyncInvokeStatus {
+    // the source reads both ARNs as required keys; a missing status means failed
     pub invocation_arn: String,
     pub model_arn: String,
+    #[serde(default)]
     pub status: String,
     pub failure_message: Option<String>,
     pub output_data_config: Option<AsyncInvokeOutput>,

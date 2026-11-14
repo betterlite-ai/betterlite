@@ -848,6 +848,26 @@ fn batch_provider_cancel_input_decodes_the_case_json() {
 }
 
 #[test]
+fn async_invoke_rejects_a_status_without_the_arns() {
+    let decoded: Result<BatchProviderCancelInput, _> = serde_json::from_value(json!({
+        "async_invoke": {
+            "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/marengo",
+            "status": "Completed",
+        }
+    }));
+    let error = decoded.expect_err("the invocation ARN is required");
+    assert!(error.to_string().contains("invocationArn"), "{error}");
+    let missing_model: Result<BatchProviderCancelInput, _> = serde_json::from_value(json!({
+        "async_invoke": {
+            "invocationArn": "arn:aws:bedrock:us-east-1:1:async-invoke/abc",
+            "status": "Completed",
+        }
+    }));
+    let error = missing_model.expect_err("the model ARN is required");
+    assert!(error.to_string().contains("modelArn"), "{error}");
+}
+
+#[test]
 fn cancel_timeout_serializes_as_a_number() {
     let timeout = CancelTimeout::Seconds(12.0);
     assert_eq!(serde_json::to_value(timeout).expect("json"), json!(12.0));
