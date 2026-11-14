@@ -116,7 +116,8 @@ fn scim_member_identity_member_value_keeps_the_original_spelling(
     #[case] value: &str,
     #[case] expected: Option<&str>,
 ) {
-    let checked = member_value(&member(value, None));
+    let candidate = member(value, None);
+    let checked = member_value(&candidate);
     assert_eq!(checked.ok(), expected);
 }
 
