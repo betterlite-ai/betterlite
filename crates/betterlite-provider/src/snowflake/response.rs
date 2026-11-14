@@ -19,7 +19,7 @@ use thiserror::Error;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct OpenAiReply {
     pub response: ChatResponse,
-    pub hidden_model: Option<String>,
+    pub hidden_model: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -28,7 +28,7 @@ pub struct ClaudeReply {
     pub model: String,
     pub choices: Vec<ClaudeChoice>,
     pub usage: AnthropicUsage,
-    pub hidden_model: Option<String>,
+    pub hidden_model: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -96,7 +96,7 @@ pub fn transform_response_openai(
     response.model = format!("snowflake/{}", response.model);
     Ok(OpenAiReply {
         response,
-        hidden_model: Some(input.model.to_owned()),
+        hidden_model: input.model.to_owned(),
     })
 }
 
@@ -143,7 +143,7 @@ where
             message: claude_message(reply),
         }],
         usage,
-        hidden_model: Some(input.model.to_owned()),
+        hidden_model: input.model.to_owned(),
     })
 }
 

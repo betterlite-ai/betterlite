@@ -4,9 +4,9 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use serde_json::Number;
 
 use super::{
-    get_complete_url, get_embed_complete_url, get_embedding_supported_openai_params,
-    get_openai_compatible_provider_info, get_supported_openai_params, is_claude_model,
-    map_embedding_openai_params, map_openai_params, validate_environment,
+    embedding_supported_params, get_complete_url, get_embed_complete_url,
+    get_supported_openai_params, is_claude_model, map_embedding_openai_params, map_openai_params,
+    provider_info, validate_environment,
 };
 use crate::api::file_contracts::config::Headers;
 use crate::snowflake::SnowflakeError;
@@ -70,7 +70,7 @@ fn chat_supported_params_keep_litellms_order_and_add_thinking_for_claude() {
 #[test]
 fn embedding_supported_params_are_the_base_list() {
     assert_eq!(
-        get_embedding_supported_openai_params(),
+        embedding_supported_params(),
         vec![
             "temperature",
             "max_tokens",
@@ -305,19 +305,16 @@ fn validate_environment_overwrites_the_headers_it_owns_and_keeps_the_rest() {
 #[test]
 fn provider_info_keeps_the_base_and_prefers_a_non_empty_key() {
     assert_eq!(
-        get_openai_compatible_provider_info(Some("https://base"), Some("key"), Some("env-key")),
+        provider_info(Some("https://base"), Some("key"), Some("env-key")),
         (Some("https://base".to_owned()), Some("key".to_owned()))
     );
     assert_eq!(
-        get_openai_compatible_provider_info(None, Some(""), Some("env-key")),
+        provider_info(None, Some(""), Some("env-key")),
         (None, Some("env-key".to_owned()))
     );
     assert_eq!(
-        get_openai_compatible_provider_info(None, None, Some("")),
+        provider_info(None, None, Some("")),
         (None, Some(String::new()))
     );
-    assert_eq!(
-        get_openai_compatible_provider_info(None, None, None),
-        (None, None)
-    );
+    assert_eq!(provider_info(None, None, None), (None, None));
 }

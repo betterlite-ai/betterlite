@@ -3,9 +3,9 @@ use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 use betterlite_provider::api::file_contracts::config::Headers;
 use betterlite_provider::snowflake::config::{
-    get_complete_url, get_embed_complete_url, get_embedding_supported_openai_params,
-    get_openai_compatible_provider_info, get_supported_openai_params, is_claude_model,
-    map_embedding_openai_params, map_openai_params, validate_environment,
+    embedding_supported_params, get_complete_url, get_embed_complete_url,
+    get_supported_openai_params, is_claude_model, map_embedding_openai_params, map_openai_params,
+    provider_info, validate_environment,
 };
 use betterlite_provider::snowflake::embedding::{
     transform_embedding_request, transform_embedding_response,
@@ -74,7 +74,7 @@ fn run_step(runtime: &Runtime, handler: &mut Handler, step: &Step) -> StepResult
             let mut mapped = Object::new();
             let supported = if *embedding {
                 map_embedding_openai_params(non_default, &mut mapped);
-                get_embedding_supported_openai_params()
+                embedding_supported_params()
             } else {
                 map_openai_params(non_default, &mut mapped, model);
                 get_supported_openai_params(model)
@@ -86,11 +86,8 @@ fn run_step(runtime: &Runtime, handler: &mut Handler, step: &Step) -> StepResult
             api_key,
             jwt_env,
         } => {
-            let (base, key) = get_openai_compatible_provider_info(
-                api_base.as_deref(),
-                api_key.as_deref(),
-                jwt_env.as_deref(),
-            );
+            let (base, key) =
+                provider_info(api_base.as_deref(), api_key.as_deref(), jwt_env.as_deref());
             Ok(json!({"api_base": base, "api_key": key}))
         }
         Step::Request {

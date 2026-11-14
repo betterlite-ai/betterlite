@@ -42,7 +42,7 @@ fn the_nested_embedding_keeps_element_zero() {
     )
     .unwrap();
     assert_eq!(reply.response.model, "snowflake/e5-base");
-    assert_eq!(reply.hidden_model, Some("snowflake/e5-base".to_owned()));
+    assert_eq!(reply.hidden_model, "snowflake/e5-base");
     assert_eq!(
         reply.response.data[0].embedding,
         EmbeddingVector::Floats(vec![Number::from(1), Number::from(2), Number::from(3)])
@@ -50,7 +50,7 @@ fn the_nested_embedding_keeps_element_zero() {
 }
 
 #[test]
-fn a_reply_without_object_fields_gets_litellms_defaults() {
+fn a_reply_without_object_fields_gets_list_and_embedding() {
     let reply = transform_embedding_response(
         "e5-base",
         r#"{"data":[{"index":0,"embedding":[[1]]}],"model":"e5-base","usage":{"prompt_tokens":1,"total_tokens":1}}"#,
@@ -61,13 +61,13 @@ fn a_reply_without_object_fields_gets_litellms_defaults() {
 }
 
 #[test]
-fn a_reply_object_field_is_kept_as_sent() {
+fn the_body_object_is_always_list_and_an_item_object_is_kept_as_sent() {
     let reply = transform_embedding_response(
         "e5-base",
         r#"{"object":"other","data":[{"object":"vector","index":0,"embedding":[[1]]}],"model":"e5-base","usage":{"prompt_tokens":1,"total_tokens":1}}"#,
     )
     .unwrap();
-    assert_eq!(reply.response.object, "other");
+    assert_eq!(reply.response.object, "list");
     assert_eq!(reply.response.data[0].object, "vector");
 }
 

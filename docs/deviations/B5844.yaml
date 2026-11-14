@@ -6,3 +6,6 @@ deviations:
   - what: An embedding whose first element is not a list of numbers is an error that names the data index.
     why: LiteLLM indexes item["embedding"][0] without a check and fails with an IndexError or TypeError on a malformed Cortex reply. No working setup relies on that crash.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/snowflake/embedding/transformation.py#L14-L65
+  - what: An embedding item that Cortex sends without an object field gets object "embedding".
+    why: LiteLLM leaves the item as sent, but its Embedding type declares object as the literal "embedding" and the shared embedding record here has no way to leave it out. No working setup relies on a missing object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2280-L2283

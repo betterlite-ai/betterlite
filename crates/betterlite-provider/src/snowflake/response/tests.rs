@@ -84,10 +84,7 @@ fn the_openai_reply_prefixes_the_model_and_names_the_hidden_one() {
         Some("hi")
     );
     assert_eq!(reply.response.usage.total_tokens, 3);
-    assert_eq!(
-        reply.hidden_model.as_deref(),
-        Some("snowflake/mistral-large")
-    );
+    assert_eq!(reply.hidden_model, "snowflake/mistral-large");
 }
 
 #[test]
@@ -197,10 +194,7 @@ fn a_claude_reply_carries_content_tool_calls_thinking_and_reasoning() {
     assert_eq!(reply.usage.total_tokens, 7);
     assert_eq!(reply.usage.completion_tokens_details.reasoning, Some(1));
     assert_eq!(reply.usage.completion_tokens_details.text, Some(3));
-    assert_eq!(
-        reply.hidden_model.as_deref(),
-        Some("snowflake/claude-3-5-sonnet")
-    );
+    assert_eq!(reply.hidden_model, "snowflake/claude-3-5-sonnet");
 }
 
 #[test]

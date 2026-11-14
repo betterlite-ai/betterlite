@@ -9,7 +9,7 @@ use crate::api::file_contracts::config::Headers;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct EmbeddingReply {
     pub response: EmbeddingResponse,
-    pub hidden_model: Option<String>,
+    pub hidden_model: String,
 }
 
 #[derive(Debug, Error)]
@@ -54,10 +54,8 @@ pub fn transform_embedding_response(
         return Err(EmbeddingError::Data);
     };
     unwrap_vectors(fields.get_mut("data"))?;
-    // LiteLLM's EmbeddingResponse fills object in as "list" when Cortex leaves it out
-    fields
-        .entry("object".to_owned())
-        .or_insert_with(|| Json::Text("list".to_owned()));
+    // LiteLLM's EmbeddingResponse always writes object as "list"
+    fields.insert("object".to_owned(), Json::Text("list".to_owned()));
     let response_model = fields
         .get("model")
         .and_then(Json::as_str)
@@ -73,7 +71,7 @@ pub fn transform_embedding_response(
         serde_json::from_str(&encoded).map_err(|source| EmbeddingError::Decode { source })?;
     Ok(EmbeddingReply {
         response,
-        hidden_model: Some(model.to_owned()),
+        hidden_model: model.to_owned(),
     })
 }
 
@@ -97,8 +95,9 @@ fn unwrap_vectors(data: Option<&mut Json>) -> Result<(), EmbeddingError> {
         if !numbers.iter().all(|value| matches!(value, Json::Number(_))) {
             return Err(EmbeddingError::Shape { index });
         }
-        let first = first.clone();
-        fields.insert("embedding".to_owned(), first);
+        let flattened = first.clone();
+        fields.insert("embedding".to_owned(), flattened);
+        // LiteLLM declares Embedding.object as "embedding", so a missing one is filled in
         fields
             .entry("object".to_owned())
             .or_insert_with(|| Json::Text("embedding".to_owned()));

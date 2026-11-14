@@ -26,7 +26,7 @@ pub async fn tool_result_from_parts<Source: Fetcher>(
     cache_control: Option<Json>,
     fetcher: &Source,
 ) -> Result<Object, MessageError> {
-    let parts = prefetch_file_data(parts, fetcher).await?;
+    let prefetched = prefetch_file_data(parts, fetcher).await?;
     let mut fields = Object::from_iter([(
         "tool_call_id".to_owned(),
         Json::Text(tool_call_id.to_owned()),
@@ -36,12 +36,12 @@ pub async fn tool_result_from_parts<Source: Fetcher>(
     }
     let message = Message {
         role: "tool".to_owned(),
-        content: Some(Content::Parts(parts)),
+        content: Some(Content::Parts(prefetched)),
         name: None,
         provider_specific_fields: fields,
     };
     let blocks = RemoteFileBlocks { fetcher };
-    let id_source = String::new();
+    let id_source = String::new;
     Ok(to_anthropic_tool_result(&message, true, fetcher, &blocks, &id_source).await?)
 }
 

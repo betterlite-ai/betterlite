@@ -24,7 +24,7 @@ pub fn get_supported_openai_params(model: &str) -> Vec<&'static str> {
 }
 
 #[must_use]
-pub fn get_embedding_supported_openai_params() -> Vec<&'static str> {
+pub fn embedding_supported_params() -> Vec<&'static str> {
     EMBEDDING_PARAMS.split_whitespace().collect()
 }
 
@@ -40,7 +40,7 @@ pub fn map_embedding_openai_params(non_default_params: &Object, optional_params:
     copy_supported(
         non_default_params,
         optional_params,
-        &get_embedding_supported_openai_params(),
+        &embedding_supported_params(),
     );
 }
 
@@ -147,7 +147,7 @@ pub fn validate_environment(
 }
 
 #[must_use]
-pub fn get_openai_compatible_provider_info(
+pub fn provider_info(
     api_base: Option<&str>,
     api_key: Option<&str>,
     jwt_env: Option<&str>,

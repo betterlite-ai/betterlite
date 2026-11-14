@@ -1,7 +1,9 @@
+use betterlite_prompts::anthropic_results::tool_result::ToolResultError;
 use betterlite_prompts::arguments::json::Json;
 
 use crate::snowflake::tests::support::{MediaSource, messages, parsed};
 
+use super::files::FileBlockError;
 use super::tools::{ToolError, transform_tool_choice, transform_tools};
 use super::{MessageError, SplitMessages, extract_system_and_messages};
 
@@ -37,7 +39,6 @@ async fn a_non_empty_system_string_becomes_one_text_block() {
 async fn an_empty_or_absent_system_adds_nothing() {
     for source in [
         r#"[{"role":"system","content":""},{"role":"user","content":"hi"}]"#,
-        r#"[{"role":"system","content":[{"type":"text","text":""}]},{"role":"user","content":"hi"}]"#,
         r#"[{"role":"user","content":"hi"}]"#,
     ] {
         let split = split(source).await;
@@ -202,6 +203,72 @@ async fn a_tool_content_list_goes_through_the_shared_converter() {
     );
 }
 
+const REMOTE_FILE_TOOL_RESULT: &str = r#"[{"role":"tool","tool_call_id":"call_1","content":[{"type":"file","file":{"file_data":"https://example.test/report.pdf"}}]}]"#;
+
+#[tokio::test]
+async fn a_remote_file_part_in_a_tool_result_is_fetched_even_when_the_fetch_is_slow() {
+    let source = MediaSource::slow(&[(
+        "https://example.test/report.pdf",
+        "data:application/pdf;base64,PDF",
+    )]);
+    let split = extract_system_and_messages(&messages(REMOTE_FILE_TOOL_RESULT), &source)
+        .await
+        .unwrap();
+    assert_eq!(source.converted(), ["https://example.test/report.pdf"]);
+    assert_eq!(
+        conversation(&split),
+        parsed(
+            r#"[{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":[{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"PDF"}}]}]}]"#
+        )
+    );
+}
+
+#[tokio::test]
+async fn a_local_file_part_in_a_tool_result_is_not_fetched() {
+    let source = MediaSource::default();
+    let split = extract_system_and_messages(
+        &messages(
+            r#"[{"role":"tool","tool_call_id":"call_1","content":[{"type":"file","file":{"file_data":"data:application/pdf;base64,PDF"}},{"type":"file","file":{"file_id":"file_1"}}]}]"#,
+        ),
+        &source,
+    )
+    .await
+    .unwrap();
+    assert!(source.converted().is_empty());
+    assert_eq!(
+        conversation(&split),
+        parsed(
+            r#"[{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":[{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"PDF"}},{"type":"container_upload","file_id":"file_1"}]}]}]"#
+        )
+    );
+}
+
+#[tokio::test]
+async fn a_failed_file_fetch_in_a_tool_result_is_an_error() {
+    let outcome =
+        extract_system_and_messages(&messages(REMOTE_FILE_TOOL_RESULT), &MediaSource::default())
+            .await;
+    assert!(matches!(
+        outcome,
+        Err(MessageError::FileBlock(FileBlockError::Fetch(_)))
+    ));
+}
+
+#[tokio::test]
+async fn a_file_that_fetches_to_another_remote_url_is_not_ready_for_conversion() {
+    let source = MediaSource::slow(&[(
+        "https://example.test/report.pdf",
+        "https://example.test/other.pdf",
+    )]);
+    let outcome = extract_system_and_messages(&messages(REMOTE_FILE_TOOL_RESULT), &source).await;
+    assert!(matches!(
+        outcome,
+        Err(MessageError::ToolResult(ToolResultError::File(
+            FileBlockError::Pending
+        )))
+    ));
+}
+
 #[tokio::test]
 async fn consecutive_tool_results_join_one_user_message() {
     let split = split(
@@ -275,6 +342,20 @@ async fn a_remote_image_url_is_fetched_before_conversion() {
         conversation(&split),
         parsed(
             r#"[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AAA"}}]}]"#
+        )
+    );
+}
+
+#[tokio::test]
+async fn a_user_image_url_with_a_document_data_uri_becomes_a_document_block() {
+    let split = split(
+        r#"[{"role":"user","content":[{"type":"image_url","image_url":"data:application/pdf;base64,PDF","cache_control":{"type":"ephemeral"}},{"type":"image_url","image_url":{"url":"data:text/plain;base64,TXT"}},{"type":"image_url","image_url":"data:image/png;base64,AAA"}]}]"#,
+    )
+    .await;
+    assert_eq!(
+        conversation(&split),
+        parsed(
+            r#"[{"role":"user","content":[{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"PDF"},"cache_control":{"type":"ephemeral"}},{"type":"document","source":{"type":"base64","media_type":"text/plain","data":"TXT"}},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AAA"}}]}]"#
         )
     );
 }

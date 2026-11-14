@@ -16,6 +16,7 @@ use uuid::Uuid;
 pub struct MediaSource {
     pub conversions: Mutex<Vec<String>>,
     pub mapping: BTreeMap<String, String>,
+    pub slow: bool,
 }
 
 impl MediaSource {
@@ -27,6 +28,16 @@ impl MediaSource {
                 .iter()
                 .map(|(url, data_url)| ((*url).to_owned(), (*data_url).to_owned()))
                 .collect(),
+            slow: false,
+        }
+    }
+
+    // its fetches are not ready on the first poll, like a real download
+    #[must_use]
+    pub fn slow(pairs: &[(&str, &str)]) -> Self {
+        Self {
+            slow: true,
+            ..Self::with(pairs)
         }
     }
 
@@ -38,7 +49,14 @@ impl MediaSource {
 impl RemoteMediaFetcher for MediaSource {
     fn convert_url(&self, url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
         self.conversions.lock().unwrap().push(url.to_owned());
-        ready(self.result_for(url))
+        let outcome = self.result_for(url);
+        let slow = self.slow;
+        async move {
+            if slow {
+                tokio::task::yield_now().await;
+            }
+            outcome
+        }
     }
 
     fn convert_urls(

@@ -161,10 +161,10 @@ async fn claude_body<Source: Fetcher>(
 
 // system is added to the body after the cache control normalization, so it is normalized on its own
 fn with_system(mut body: Object, system: Option<Json>) -> Object {
-    let Some(system) = system else {
+    let Some(present) = system else {
         return body;
     };
-    let wrapped = Object::from_iter([("system".to_owned(), system)]);
+    let wrapped = Object::from_iter([("system".to_owned(), present)]);
     if let Some(normalized) = normalize_cache_control(&wrapped).get("system") {
         body.insert("system".to_owned(), normalized.clone());
     }

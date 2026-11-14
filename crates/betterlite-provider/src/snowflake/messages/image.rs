@@ -1,6 +1,5 @@
-use betterlite_prompts::anthropic_invokes::documents::{
-    ContentBlockType, process_openai_file_message, select_content_block_type,
-};
+use betterlite_prompts::anthropic_invokes::documents::process_openai_file_message;
+use betterlite_prompts::anthropic_results::document_uri::is_anthropic_document_data_uri;
 use betterlite_prompts::anthropic_results::images::create_anthropic_image_param;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::{Content, ContentPart};
@@ -40,22 +39,21 @@ async fn convert_block<Source: Fetcher>(
         .as_object()
         .and_then(|fields| fields.get("format"))
         .and_then(Json::as_str);
-    let mut block =
-        if select_content_block_type(data_uri_media_type(url)) == ContentBlockType::Document {
-            let element = Object::from_iter([
-                ("type".to_owned(), Json::Text("file".to_owned())),
-                (
-                    "file".to_owned(),
-                    Json::Object(Object::from_iter([(
-                        "file_data".to_owned(),
-                        Json::Text(url.to_owned()),
-                    )])),
-                ),
-            ]);
-            process_openai_file_message(&element, fetcher).await?
-        } else {
-            create_anthropic_image_param(image_url, format, true, fetcher).await?
-        };
+    let mut block = if is_anthropic_document_data_uri(url) {
+        let element = Object::from_iter([
+            ("type".to_owned(), Json::Text("file".to_owned())),
+            (
+                "file".to_owned(),
+                Json::Object(Object::from_iter([(
+                    "file_data".to_owned(),
+                    Json::Text(url.to_owned()),
+                )])),
+            ),
+        ]);
+        process_openai_file_message(&element, fetcher).await?
+    } else {
+        create_anthropic_image_param(image_url, format, true, fetcher).await?
+    };
     if let Some(cache_control) = part
         .fields
         .get("cache_control")
@@ -72,13 +70,4 @@ fn image_url_url(image_url: &Json) -> Option<&str> {
         Json::Object(fields) => fields.get("url").and_then(Json::as_str),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => None,
     }
-}
-
-// Python's re.match(r"data:([^;,]+)") reads the media type up to the first ; or ,
-fn data_uri_media_type(url: &str) -> &str {
-    let Some(rest) = url.strip_prefix("data:") else {
-        return "";
-    };
-    let end = rest.find([';', ',']).unwrap_or(rest.len());
-    rest.get(..end).unwrap_or(rest)
 }
