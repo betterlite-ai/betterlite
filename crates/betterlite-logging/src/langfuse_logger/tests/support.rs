@@ -122,10 +122,6 @@ pub(crate) fn services_with(
     id_generator: Option<Arc<dyn IdGenerator>>,
 ) -> LangfuseServices {
     let environment = lookup(variables);
-    let generator: Arc<dyn IdGenerator> = match id_generator {
-        Some(supplied) => supplied,
-        None => Arc::new(RequestedIdGenerator::default()),
-    };
     LangfuseServices {
         settings: settings(variables),
         environment: Arc::new(environment),
@@ -134,9 +130,13 @@ pub(crate) fn services_with(
         tasks: TaskTracker::new(),
         runtime: Handle::current(),
         assembly: AssemblyDefaults::default(),
-        id_generator: generator,
+        id_generator: id_generator.unwrap_or_else(requested_ids),
         clients,
     }
+}
+
+fn requested_ids() -> Arc<dyn IdGenerator> {
+    Arc::new(RequestedIdGenerator::default())
 }
 
 pub(crate) fn real_builder() -> Arc<dyn LangfuseClientBuilder> {

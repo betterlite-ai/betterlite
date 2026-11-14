@@ -61,18 +61,16 @@ impl LangFuseHandler {
         cache: &DynamicLoggerCache<Arc<LangFuseLogger>>,
         global: Option<Arc<LangFuseLogger>>,
     ) -> Result<Arc<LangFuseLogger>, LangfuseSelectionError> {
-        match global {
-            Some(existing) => Ok(existing),
-            None => {
-                Self::cached_or_created(
-                    services,
-                    cache,
-                    BTreeMap::new(),
-                    LangfuseLoggingConfig::default(),
-                )
-                .await
-            }
+        if let Some(existing) = global {
+            return Ok(existing);
         }
+        Self::cached_or_created(
+            services,
+            cache,
+            BTreeMap::new(),
+            LangfuseLoggingConfig::default(),
+        )
+        .await
     }
 
     // the cache lookup both selection paths end in
