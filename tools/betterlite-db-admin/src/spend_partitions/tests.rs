@@ -3,9 +3,11 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 
+use betterlite_db::spend_partitions::SpendPartitionOperation;
 use betterlite_db_admin::command_shell::{
     AdminEnvironment, DbAdminBackend, Diagnostics, ExitStatus, run,
 };
+use betterlite_db_admin::commands::{DbAdminCommand, Operation};
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -36,6 +38,23 @@ const LIVE_SQL: &str = r#"INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type
 
 const PARTITION_LINE: &str = "partition-spend-logs completed; the new LiteLLM_SpendLogs is empty and rows remain in LiteLLM_SpendLogs_legacy.";
 const UNPARTITION_LINE: &str = "unpartition-spend-logs completed; every surviving row now lives in the plain LiteLLM_SpendLogs.";
+
+#[test]
+fn maps_partition_commands_to_their_variant() {
+    let environment = BTreeMap::new();
+    let partition = Operation::PartitionSpendLogs.command(&environment);
+    assert_eq!(
+        partition,
+        DbAdminCommand::SpendPartition(SpendPartitionOperation::Partition)
+    );
+    assert_eq!(partition.operation(), Operation::PartitionSpendLogs);
+    let unpartition = Operation::UnpartitionSpendLogs.command(&environment);
+    assert_eq!(
+        unpartition,
+        DbAdminCommand::SpendPartition(SpendPartitionOperation::Unpartition)
+    );
+    assert_eq!(unpartition.operation(), Operation::UnpartitionSpendLogs);
+}
 
 #[derive(Parser)]
 struct TestEnvironment {
