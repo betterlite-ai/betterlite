@@ -12,7 +12,7 @@ pub fn deployment_markers(
         .deployments
         .get(deployment)
         .and_then(Option::as_ref)
-        .map(markers)
+        .map(|configured| markers(configured))
 }
 
 fn markers(configured: &[section::MarkerPair]) -> Vec<MarkerPair<'_>> {
