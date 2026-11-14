@@ -279,14 +279,10 @@ fn nonadmin_plugin_denied(#[case] role: Option<&str>, #[case] expected: Option<u
     let caller = role.map(|role| self::caller(Some(role), None, None));
     let result = require_proxy_admin(caller.as_ref());
     assert_eq!(result.is_ok(), expected.is_none());
-    let detail = result.err().map(|error| error.fields().detail.error);
+    let fields = result.err().map(|error| error.fields());
+    assert_eq!(fields.as_ref().map(|fields| fields.status_code), expected);
+    let detail = fields.map(|fields| fields.detail.error);
     assert_eq!(detail, expected.map(|_| NOT_PROXY_ADMIN.to_owned()));
-    assert_eq!(
-        super::require_proxy_admin(caller.as_ref())
-            .err()
-            .map(|error| error.fields().status_code),
-        expected
-    );
 }
 
 #[test]
@@ -299,10 +295,13 @@ fn a_nonadmin_caller_is_refused_before_the_database_is_consulted() {
     );
     let admin = caller(Some(ADMIN), None, None);
     assert!(require_proxy_admin(Some(&admin)).is_ok());
+    let database_down = require_database(false).err().map(|error| error.fields());
     assert_eq!(
-        require_database(false)
-            .err()
-            .map(|error| error.fields().detail.error),
+        database_down.as_ref().map(|fields| fields.status_code),
+        Some(500)
+    );
+    assert_eq!(
+        database_down.map(|fields| fields.detail.error),
         Some(DB_NOT_CONNECTED.to_owned())
     );
     assert!(require_database(true).is_ok());
@@ -345,6 +344,18 @@ fn the_error_envelope_names_the_error_key() {
     r#"{"source":{"source":"github","repo":"org/repo"},"author":{"name":"Ada","url":"https://ada.dev"}}"#,
     r#"{"name":"my-plugin","source":{"source":"github","repo":"org/repo"},"version":"1.0.0","author":{"name":"Ada"}}"#
 )]
+#[case::git_subdir_source_keeps_url_and_path(
+    r#"{"source":{"source":"git-subdir","url":"https://host/repo.git","path":"plugins/x"}}"#,
+    r#"{"name":"my-plugin","source":{"source":"git-subdir","url":"https://host/repo.git","path":"plugins/x"},"version":"1.0.0"}"#
+)]
+#[case::archive_source_keeps_url_and_sha256(
+    r#"{"source":{"source":"archive","url":"https://host/p.zip","sha256":"0000000000000000000000000000000000000000000000000000000000000000"}}"#,
+    r#"{"name":"my-plugin","source":{"source":"archive","url":"https://host/p.zip","sha256":"0000000000000000000000000000000000000000000000000000000000000000"},"version":"1.0.0"}"#
+)]
+#[case::author_email_kept(
+    r#"{"source":{"source":"github","repo":"org/repo"},"author":{"name":"Ada","email":"ada@example.com"}}"#,
+    r#"{"name":"my-plugin","source":{"source":"github","repo":"org/repo"},"version":"1.0.0","author":{"name":"Ada","email":"ada@example.com"}}"#
+)]
 #[case::extra_source_keys_survive(
     r#"{"source":{"source":"github","repo":"org/repo","ref":"main"}}"#,
     r#"{"name":"my-plugin","source":{"source":"github","repo":"org/repo","ref":"main"},"version":"1.0.0"}"#
@@ -365,6 +376,19 @@ fn an_update_clears_an_omitted_version() {
     assert_eq!(
         serde_json::to_string(&manifest).unwrap(),
         r#"{"name":"my-plugin","source":{"source":"url","url":"https://host/repo.git"}}"#
+    );
+}
+
+#[test]
+fn an_update_keeps_every_field_it_carries() {
+    let update: UpdatePluginSpec = serde_json::from_str(
+        r#"{"source":{"source":"github","repo":"org/repo"},"version":"2.0.0","description":"desc","author":{"name":"Ada","email":"ada@example.com"},"homepage":"https://h","keywords":["k"],"category":"cat","domain":"dom","namespace":"ns"}"#,
+    )
+    .unwrap();
+    let manifest = build_plugin_manifest("my-plugin", &PluginSpec::from(update));
+    assert_eq!(
+        serde_json::to_string(&manifest).unwrap(),
+        r#"{"name":"my-plugin","source":{"source":"github","repo":"org/repo"},"version":"2.0.0","description":"desc","author":{"name":"Ada","email":"ada@example.com"},"homepage":"https://h","keywords":["k"],"category":"cat","domain":"dom","namespace":"ns"}"#
     );
 }
 

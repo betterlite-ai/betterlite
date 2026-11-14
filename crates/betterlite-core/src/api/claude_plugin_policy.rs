@@ -118,7 +118,7 @@ pub struct NameFilter {
     pub names: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ClaudePluginPolicyInput {
     pub caller: Option<PluginCaller>,
     pub plugins: Vec<PluginRecord>,

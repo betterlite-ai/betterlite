@@ -19,8 +19,8 @@ pub const ARCHIVE_SHA256_INVALID: &str = "archive 'sha256' must be a 64-characte
 pub const UNKNOWN_SOURCE: &str =
     "source.source must be 'github', 'url', 'git-subdir', or 'archive'";
 pub const GIT_SUBDIR_PATH_PATTERN: &str =
-    r"^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$";
-pub const SHA256_PATTERN: &str = r"^[0-9a-fA-F]{64}$";
+    "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$";
+pub const SHA256_PATTERN: &str = "^[0-9a-fA-F]{64}$";
 pub const PATTERN_INVALID: &str = "a plugin source pattern cannot be compiled";
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
