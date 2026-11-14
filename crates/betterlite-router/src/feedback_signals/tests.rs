@@ -364,6 +364,7 @@ enum Behavior {
 #[case::counted(Behavior::Counted)]
 #[case::credit_once(Behavior::CreditOnce)]
 #[case::advance_bounds(Behavior::AdvanceBounds)]
+#[case::satisfaction_not_matched(Behavior::Feedback(None, "run it", None, true, NONE))]
 fn feedback_signals_behaviors(#[case] behavior: Behavior) {
     match behavior {
         Behavior::Feedback(previous, current, tool, allow, expected) => {
