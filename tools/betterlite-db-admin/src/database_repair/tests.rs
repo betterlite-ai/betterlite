@@ -182,7 +182,13 @@ async fn dispatches_native_operation() {
         .expect("the seeded rows");
     let url = postgres.fixture.options.url.expose_secret().to_owned();
     let backend = crate::backend();
-    let (status, lines) = run_command(&["update-unassigned-teams"], &url, &backend).await;
+    dispatches_the_team_repair(&postgres, &url, &backend).await;
+    dispatches_the_token_import(&postgres, &url, &backend).await;
+    postgres.close().await;
+}
+
+async fn dispatches_the_team_repair(postgres: &Postgres, url: &str, backend: &DbAdminBackend) {
+    let (status, lines) = run_command(&["update-unassigned-teams"], url, backend).await;
     assert_eq!(status, ExitStatus::Success);
     assert_eq!(
         lines,
@@ -195,6 +201,9 @@ async fn dispatches_native_operation() {
         postgres.spend_team("req-one").await.as_deref(),
         Some("team-a")
     );
+}
+
+async fn dispatches_the_token_import(postgres: &Postgres, url: &str, backend: &DbAdminBackend) {
     let directory = tempfile::tempdir().expect("a temporary directory");
     let path = directory.path().join("tokens.csv");
     fs::write(&path, token_csv()).expect("the CSV export");
@@ -204,8 +213,8 @@ async fn dispatches_native_operation() {
             "--csv",
             path.to_str().expect("a UTF-8 path"),
         ],
-        &url,
-        &backend,
+        url,
+        backend,
     )
     .await;
     assert_eq!(status, ExitStatus::Success);
@@ -219,19 +228,22 @@ async fn dispatches_native_operation() {
         ]
     );
     assert!(postgres.token_present("tok-csv").await);
+    rejects_a_missing_csv(url, backend).await;
+}
+
+async fn rejects_a_missing_csv(url: &str, backend: &DbAdminBackend) {
     let (status, lines) = run_command(
         &[
             "migrate-verification-tokens",
             "--csv",
             "/nonexistent/tokens.csv",
         ],
-        &url,
-        &backend,
+        url,
+        backend,
     )
     .await;
     assert_eq!(status, ExitStatus::Failure);
     assert!(lines.iter().any(|line| line.starts_with("err|")));
-    postgres.close().await;
 }
 
 #[tokio::test]
