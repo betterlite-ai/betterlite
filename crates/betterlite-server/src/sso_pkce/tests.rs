@@ -29,7 +29,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tempfile::NamedTempFile;
 use tokio::net::TcpListener;
-use tracing::subscriber::DefaultGuard;
+use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt;
 
 use super::token_exchange::{TokenExchangeParameters, token_exchange_parameters};
@@ -125,10 +125,7 @@ impl VerifierCache for FakeCache {
         if self.fails {
             return CacheRead::Miss;
         }
-        match self.entry.clone() {
-            Some(entry) => CacheRead::Found(entry),
-            None => CacheRead::Miss,
-        }
+        self.entry.clone().map_or(CacheRead::Miss, CacheRead::Found)
     }
 
     async fn delete(&self, cache_key: &str) {
@@ -162,12 +159,9 @@ async fn unreachable_cache() -> RedisCache {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     drop(listener);
-    let overrides: RedisOverrides = serde_json::from_value(serde_json::json!({
-        "host": "127.0.0.1",
-        "port": port,
-        "socket_timeout": 0.05,
-        "socket_connect_timeout": 0.05,
-    }))
+    let overrides: RedisOverrides = serde_json::from_str(&format!(
+        r#"{{"host": "127.0.0.1", "port": {port}, "socket_timeout": 0.05, "socket_connect_timeout": 0.05}}"#
+    ))
     .unwrap();
     let options = RedisCacheOptions {
         overrides,
@@ -222,7 +216,7 @@ fn capture_logs(level: tracing::Level) -> (NamedTempFile, DefaultGuard) {
         .with_ansi(false)
         .with_writer(Arc::new(log.reopen().unwrap()))
         .finish();
-    (log, tracing::subscriber::set_default(subscriber))
+    (log, set_default(subscriber))
 }
 
 fn written(log: &NamedTempFile) -> String {
@@ -287,7 +281,8 @@ fn a_missing_state_becomes_a_uuid_hex_value() {
             .chars()
             .all(|character| character.is_ascii_hexdigit() && !character.is_ascii_uppercase())
     );
-    assert!(uuid::Uuid::parse_str(&redirect.params.state).is_ok());
+    let parsed = uuid::Uuid::parse_str(&redirect.params.state).unwrap();
+    assert_eq!(parsed.simple().to_string(), redirect.params.state);
     let other = generic_sso_redirect_params(None, &settings(false), &OsEntropy)
         .unwrap()
         .params
@@ -308,8 +303,8 @@ fn pkce_parameters_are_absent_when_pkce_is_disabled() {
     assert_eq!(redirect.params.pkce, None);
     assert!(redirect.code_verifier.is_none());
     assert_eq!(
-        serde_json::to_value(&redirect.params).unwrap(),
-        serde_json::json!({"state": "state"})
+        serde_json::to_string(&redirect.params).unwrap(),
+        r#"{"state":"state"}"#
     );
 }
 
@@ -325,12 +320,10 @@ fn pkce_parameters_carry_the_s256_challenge_and_the_verifier() {
         VERIFIER_FOR_SEQUENCE
     );
     assert_eq!(
-        serde_json::to_value(&redirect.params).unwrap(),
-        serde_json::json!({
-            "state": "state",
-            "code_challenge": CHALLENGE_FOR_SEQUENCE,
-            "code_challenge_method": "S256"
-        })
+        serde_json::to_string(&redirect.params).unwrap(),
+        format!(
+            r#"{{"state":"state","code_challenge":"{CHALLENGE_FOR_SEQUENCE}","code_challenge_method":"S256"}}"#
+        )
     );
 }
 
@@ -801,7 +794,7 @@ fn a_serialized_redirect_params_object_omits_the_pkce_fields_when_disabled() {
         pkce: None,
     };
     assert_eq!(
-        serde_json::to_value(&params).unwrap(),
-        serde_json::json!({"state": "state"})
+        serde_json::to_string(&params).unwrap(),
+        r#"{"state":"state"}"#
     );
 }
