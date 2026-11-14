@@ -1,51 +1,18 @@
-use std::collections::BTreeMap;
-
 use betterlite_core::agents::provider::a2a::JsonRpcId;
 
-use crate::completion_bridge::tests::Source;
-use crate::completion_bridge::tests::support::{provider, recorder};
-use crate::send::asend_message;
-use crate::send::call::SendCall;
-use crate::send::deps::{BridgeDeps, NativeDeps};
-
 use super::support::{
-    Reply, buffered_message, counter, json, logging_state, pool, pricing_params, request, tls,
+    Reply, SendFixture, buffered_message, json, logging_state, pricing_params, send_call,
     with_agent,
 };
 
 #[tokio::test]
 async fn send_usage_sets_the_token_counts_and_pricing_params() {
     let (outcome, _seen) = with_agent(Reply::Json(buffered_message("hi")), |base| async move {
-        let counter = counter();
-        let pool = pool();
-        let tls = tls();
-        let environment = BTreeMap::new();
-        let ids = || "generated-trace".to_owned();
-        let deps = NativeDeps {
-            http: &pool,
-            environment: &environment,
-            tls: &tls,
-            counter: &counter,
-            trace_ids: &ids,
-        };
-        let completion = recorder();
-        let providers = provider();
-        let mut source = Source::default();
-        let mut bridge = BridgeDeps {
-            completion: &completion,
-            providers: &providers,
-            source: &mut source,
-        };
-        let call = SendCall {
-            a2a_client: None,
-            request: request("hello world"),
-            api_base: Some(base),
-            litellm_params: pricing_params(),
-            agent_id: Some("agent-7".to_owned()),
-            agent_extra_headers: None,
-        };
+        let mut fixture = SendFixture::new();
+        let mut call = send_call("hello world", Some(base), pricing_params());
+        call.agent_id = Some("agent-7".to_owned());
         let mut logging = logging_state(Some("logging-trace"));
-        let result = asend_message(call, Some(&mut logging), &deps, &mut bridge).await;
+        let result = fixture.send(call, Some(&mut logging)).await;
         (result, logging)
     })
     .await;
@@ -76,39 +43,13 @@ async fn send_usage_sets_the_token_counts_and_pricing_params() {
 #[tokio::test]
 async fn send_usage_merges_pricing_into_existing_logging_params() {
     let (outcome, _seen) = with_agent(Reply::Json(buffered_message("hi")), |base| async move {
-        let counter = counter();
-        let pool = pool();
-        let tls = tls();
-        let environment = BTreeMap::new();
-        let ids = || "generated-trace".to_owned();
-        let deps = NativeDeps {
-            http: &pool,
-            environment: &environment,
-            tls: &tls,
-            counter: &counter,
-            trace_ids: &ids,
-        };
-        let completion = recorder();
-        let providers = provider();
-        let mut source = Source::default();
-        let mut bridge = BridgeDeps {
-            completion: &completion,
-            providers: &providers,
-            source: &mut source,
-        };
-        let call = SendCall {
-            a2a_client: None,
-            request: request("hello"),
-            api_base: Some(base),
-            litellm_params: pricing_params(),
-            agent_id: None,
-            agent_extra_headers: None,
-        };
+        let mut fixture = SendFixture::new();
+        let call = send_call("hello", Some(base), pricing_params());
         let mut logging = logging_state(Some("logging-trace"));
         logging
             .model_call_details
             .insert("litellm_params".to_owned(), json(r#"{"agent_id":"kept"}"#));
-        let result = asend_message(call, Some(&mut logging), &deps, &mut bridge).await;
+        let result = fixture.send(call, Some(&mut logging)).await;
         (result, logging)
     })
     .await;
@@ -127,35 +68,10 @@ async fn send_usage_merges_pricing_into_existing_logging_params() {
 #[tokio::test]
 async fn send_usage_without_a_logging_object_still_answers() {
     let (outcome, _seen) = with_agent(Reply::Json(buffered_message("hi")), |base| async move {
-        let counter = counter();
-        let pool = pool();
-        let tls = tls();
-        let environment = BTreeMap::new();
-        let ids = || "generated-trace".to_owned();
-        let deps = NativeDeps {
-            http: &pool,
-            environment: &environment,
-            tls: &tls,
-            counter: &counter,
-            trace_ids: &ids,
-        };
-        let completion = recorder();
-        let providers = provider();
-        let mut source = Source::default();
-        let mut bridge = BridgeDeps {
-            completion: &completion,
-            providers: &providers,
-            source: &mut source,
-        };
-        let call = SendCall {
-            a2a_client: None,
-            request: request("hello"),
-            api_base: Some(base),
-            litellm_params: pricing_params(),
-            agent_id: Some("agent-7".to_owned()),
-            agent_extra_headers: None,
-        };
-        asend_message(call, None, &deps, &mut bridge).await
+        let mut fixture = SendFixture::new();
+        let mut call = send_call("hello", Some(base), pricing_params());
+        call.agent_id = Some("agent-7".to_owned());
+        fixture.send(call, None).await
     })
     .await;
 

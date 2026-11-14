@@ -23,6 +23,7 @@ use betterlite_config::sections::huggingface_oidc::Settings as OidcSettings;
 use betterlite_config::tls::{TlsPolicy, Verification};
 use betterlite_config::types::ProxyTrust;
 use betterlite_core::agents::json::AgentJson;
+use betterlite_core::agents::provider::a2a::LiteLLMSendMessageResponse;
 use betterlite_http::hub_oauth::clock::{HubClock, SystemHubClock};
 use betterlite_http::hub_token::{HubTokenFileReader, HubTokenResolver, TokioHubTokenFileReader};
 use betterlite_http::proxy::ProxiedClient;
@@ -53,8 +54,16 @@ use tokio::sync::oneshot;
 use tokio::time::Instant;
 
 use crate::client::records::compat::SendMessageRequest;
-use crate::completion_bridge::tests::support::litellm_params;
-use crate::send::deps::{NativeDeps, StreamingDeps};
+use crate::completion_bridge::tests::Source;
+use crate::completion_bridge::tests::support::{
+    RecordingCompletion, RecordingProvider, TestFailure, collect_events, litellm_params, provider,
+    recorder,
+};
+use crate::send::asend_message;
+use crate::send::asend_message_streaming;
+use crate::send::call::{SendCall, StreamCall};
+use crate::send::deps::{BridgeDeps, NativeDeps, StreamingDeps};
+use crate::send::error::{SendCallError, SendEntryError};
 use crate::streaming_iterator::{
     DEFAULT_MAX_RETAINED_BYTES, StreamSuccessCall, StreamSuccessDispatch,
 };
@@ -147,7 +156,8 @@ where
     F: FnOnce(String) -> Fut,
     Fut: Future<Output = T>,
 {
-    live_agent(reply, Some(&unused_base()), scenario).await
+    let advertised = unused_base();
+    live_agent(reply, Some(advertised.as_str()), scenario).await
 }
 
 async fn live_agent<T, F, Fut>(
@@ -529,13 +539,33 @@ fn resolver(settings: &HubSettings, client: &Arc<ProxiedClient>) -> Arc<HubToken
     ))
 }
 
+// The native harness every send borrows: the HTTP pool, env, TLS, counter and trace-id source
+struct NativeFixture<F> {
+    counter: Counter,
+    pool: ProxiedClient,
+    tls: TlsPolicy,
+    environment: BTreeMap<String, String>,
+    ids: F,
+}
+
+impl<F> NativeFixture<F>
+where
+    F: Fn() -> String + Sync,
+{
+    fn deps(&self) -> NativeDeps<'_> {
+        NativeDeps {
+            http: &self.pool,
+            environment: &self.environment,
+            tls: &self.tls,
+            counter: &self.counter,
+            trace_ids: &self.ids,
+        }
+    }
+}
+
 // Owns every dependency the streaming entry borrows, so a test hands out one deps value per call
 pub(crate) struct StreamFixture {
-    pool: ProxiedClient,
-    environment: BTreeMap<String, String>,
-    tls: TlsPolicy,
-    counter: Counter,
-    generator: Box<dyn Fn() -> String + Sync>,
+    native: NativeFixture<Box<dyn Fn() -> String + Sync + Send>>,
     issued: Arc<Mutex<Vec<String>>>,
     monotonic: Box<dyn FnMut() -> Duration + Send>,
     correlation: CorrelationContext,
@@ -545,7 +575,7 @@ pub(crate) struct StreamFixture {
 impl StreamFixture {
     pub(crate) fn new() -> Self {
         let issued = Arc::new(Mutex::new(Vec::new()));
-        let generator = {
+        let generator: Box<dyn Fn() -> String + Sync + Send> = {
             let issued = Arc::clone(&issued);
             Box::new(move || {
                 let mut ids = issued.lock().expect("the fixture lock is not poisoned");
@@ -555,11 +585,13 @@ impl StreamFixture {
             })
         };
         Self {
-            pool: pool(),
-            environment: BTreeMap::new(),
-            tls: tls(),
-            counter: counter(),
-            generator,
+            native: NativeFixture {
+                counter: counter(),
+                pool: pool(),
+                tls: tls(),
+                environment: BTreeMap::new(),
+                ids: generator,
+            },
             issued,
             monotonic: Box::new(|| Duration::ZERO),
             correlation: CorrelationContext::default(),
@@ -572,13 +604,7 @@ impl StreamFixture {
         dispatch: Dispatch,
     ) -> StreamingDeps<'_, fn() -> DateTime<FixedOffset>, Dispatch> {
         StreamingDeps {
-            native: NativeDeps {
-                http: &self.pool,
-                environment: &self.environment,
-                tls: &self.tls,
-                counter: &self.counter,
-                trace_ids: &*self.generator,
-            },
+            native: self.native.deps(),
             clock: fixed_time,
             monotonic: &mut *self.monotonic,
             correlation: &mut self.correlation,
@@ -594,5 +620,116 @@ impl StreamFixture {
             .lock()
             .expect("the fixture lock is not poisoned")
             .clone()
+    }
+}
+
+// A send with the fixture request, no client, no agent id and no agent headers
+pub(crate) fn send_call(
+    text: &str,
+    api_base: Option<String>,
+    litellm_params: BTreeMap<String, AgentJson>,
+) -> SendCall {
+    SendCall {
+        a2a_client: None,
+        request: request(text),
+        api_base,
+        litellm_params,
+        agent_id: None,
+        agent_extra_headers: None,
+    }
+}
+
+// The streaming call is the native call plus the logging metadata the native path doesn't take
+pub(crate) fn stream_call(send: SendCall) -> StreamCall {
+    StreamCall {
+        a2a_client: send.a2a_client,
+        request: send.request,
+        api_base: send.api_base,
+        litellm_params: send.litellm_params,
+        agent_id: send.agent_id,
+        metadata: None,
+        proxy_server_request: None,
+        agent_extra_headers: send.agent_extra_headers,
+    }
+}
+
+// What a streamed send produced: the forwarded events, the logging dispatch and the generated ids
+pub(crate) struct StreamOutcome {
+    pub(crate) events: Vec<Result<AgentJson, SendEntryError<TestFailure, TestFailure>>>,
+    pub(crate) dispatch: Vec<Recorded>,
+    pub(crate) issued: Vec<String>,
+}
+
+// Owns the recorded bridge and the native harness both send entries borrow
+pub(crate) struct SendFixture {
+    stream: StreamFixture,
+    pub(crate) completion: RecordingCompletion,
+    pub(crate) providers: RecordingProvider,
+    source: Source,
+}
+
+impl SendFixture {
+    pub(crate) fn new() -> Self {
+        Self {
+            stream: StreamFixture::new(),
+            completion: recorder(),
+            providers: provider(),
+            source: Source::default(),
+        }
+    }
+
+    pub(crate) async fn send(
+        &mut self,
+        call: SendCall,
+        logging: Option<&mut LoggingState>,
+    ) -> Result<LiteLLMSendMessageResponse, SendEntryError<TestFailure, TestFailure>> {
+        let mut bridge = BridgeDeps {
+            completion: &self.completion,
+            providers: &self.providers,
+            source: &mut self.source,
+        };
+        let deps = self.stream.native.deps();
+        asend_message(call, logging, &deps, &mut bridge).await
+    }
+
+    pub(crate) async fn stream(
+        &mut self,
+        call: StreamCall,
+        logging: Option<LoggingState>,
+    ) -> StreamOutcome {
+        let (dispatch, calls) = recording_dispatch();
+        let mut bridge = BridgeDeps {
+            completion: &self.completion,
+            providers: &self.providers,
+            source: &mut self.source,
+        };
+        let deps = self.stream.deps(dispatch);
+        let events = asend_message_streaming(call, logging, deps, &mut bridge)
+            .await
+            .expect("the stream starts");
+        let events = collect_events(events).await;
+        StreamOutcome {
+            events,
+            dispatch: recorded(&calls),
+            issued: self.stream.issued(),
+        }
+    }
+
+    pub(crate) async fn start_error(
+        &mut self,
+        call: StreamCall,
+        logging: Option<LoggingState>,
+    ) -> SendCallError {
+        let (dispatch, _calls) = recording_dispatch();
+        let mut bridge = BridgeDeps {
+            completion: &self.completion,
+            providers: &self.providers,
+            source: &mut self.source,
+        };
+        let deps = self.stream.deps(dispatch);
+        match asend_message_streaming(call, logging, deps, &mut bridge).await {
+            Ok(_) => panic!("the stream starts"),
+            Err(error) => error,
+        }
     }
 }
