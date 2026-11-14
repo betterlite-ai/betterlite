@@ -35,6 +35,14 @@ call:
       messages:
       - {role: user, content: ''}
       optional_params: {}
+    - model: together/llama
+      messages:
+      - {role: user, content: []}
+      optional_params: {}
+    - model: together/llama
+      messages:
+      - {role: user, content: null}
+      optional_params: {}
     rerank_requests: []
     rerank_responses: []
     cost_categories: []

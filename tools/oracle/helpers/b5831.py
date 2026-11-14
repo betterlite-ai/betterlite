@@ -1,33 +1,55 @@
 import contextlib
 import io
 from collections.abc import Mapping
-from typing import Literal, NotRequired, Protocol, TypedDict
+from typing import Final, Literal, NotRequired, Protocol, TypedDict
 
+import httpx
 import litellm
+from litellm.caching.llm_caching_handler import LLMClientCache
 from litellm.llms.together_ai import cost_calculator
-from litellm.llms.together_ai.chat.transformation import (
-    LITELLM_INTERNAL_ASSISTANT_FIELDS as INTERNAL_FIELDS,
-)
 from litellm.llms.together_ai.chat.transformation import TogetherAIChatConfig
-from litellm.types.llms.openai import (
-    OpenAITextCompletionUserMessage as CompletionUserMessage,
+from litellm.llms.together_ai.completion.transformation import (
+    TogetherAITextCompletionConfig,
 )
-from litellm.types.rerank import RerankRequest
+from litellm.llms.together_ai.rerank.handler import TogetherAIRerank
+from litellm.types.rerank import RerankResponse
 from litellm.types.utils import CallTypes
 from openai import APIStatusError
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
-INPUT_MESSAGES = TypeAdapter(list[CompletionUserMessage])
+INTEGERS: Final = "TogetherAI does not support integers as input"
+MODEL: Final = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
 OBJECT = TypeAdapter(dict[str, JsonValue])
-USAGE = TypeAdapter(dict[str, int | None])
-RESULTS = TypeAdapter(list[dict[str, JsonValue]])
-STRING = TypeAdapter(str)
-TOKENS = TypeAdapter(list[int] | list[list[int]])
 CALL_TYPES: dict[str, CallTypes] = {
     "embedding": CallTypes.embedding,
     "aembedding": CallTypes.aembedding,
     "other": CallTypes.completion,
 }
+
+
+class CapturedClient:
+    def __init__(self, reply: dict[str, JsonValue]) -> None:
+        self.reply = reply
+        self.url = ""
+        self.headers: dict[str, JsonValue] = {}
+        self.payload: JsonValue = None
+
+    def post(self, url: str, headers: dict[str, str], json: JsonValue) -> httpx.Response:
+        self.url = url
+        self.headers = OBJECT.validate_python(headers)
+        self.payload = json
+        return httpx.Response(200, content=OBJECT.dump_json(self.reply))
+
+
+class ClientCache(LLMClientCache):
+    def __init__(self, client: CapturedClient) -> None:
+        super().__init__()
+        self.client = client
+
+    @override
+    def get_cache(self, key: str, **kwargs: JsonValue) -> CapturedClient:
+        return self.client
 
 
 class ModelStep(TypedDict):
@@ -67,15 +89,6 @@ class RerankRequestStep(TypedDict):
 class RerankResponseStep(TypedDict):
     response: dict[str, JsonValue]
     next_id: str
-
-
-class ResultFields(TypedDict, total=False):
-    index: int
-    relevance_score: float
-    document: dict[str, JsonValue]
-
-
-RESULT = TypeAdapter(ResultFields)
 
 
 class CategoryStep(TypedDict):
@@ -125,6 +138,8 @@ class ChatConfig(Protocol):
 
 
 CHAT: ChatConfig = TogetherAIChatConfig()
+CHAT_RAW = TogetherAIChatConfig()
+TEXT_RAW = TogetherAITextCompletionConfig()
 
 
 def chat_supported(step: ModelStep) -> JsonValue:
@@ -147,115 +162,67 @@ def chat_map(step: ChatMapStep) -> JsonValue:
 
 
 def chat_messages(step: ChatMessagesStep) -> JsonValue:
-    stripped: list[JsonValue] = []
-    for message in step["messages"]:
-        if message.get("role") == "assistant":
-            stripped.append(
-                {key: value for key, value in message.items() if key not in INTERNAL_FIELDS}
-            )
-        else:
-            stripped.append(message)
-    return stripped
+    return CHAT_RAW.transform_request(MODEL, step["messages"], {}, {}, {})["messages"]  # type: ignore[arg-type, misc, no-any-return]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L476-L483
 
 
 def completion(step: CompletionStep) -> JsonValue:
-    messages = INPUT_MESSAGES.validate_python(step["messages"])
-    if not messages:
-        return {"ok": False, "error": {"kind": "integers"}}
-    if len(messages) > 1:
-        return {"ok": False, "error": {"kind": "multiple_prompts"}}
-    content = messages[0]["content"]
+    messages = step["messages"]
+    model = step["model"]
+    params = step["optional_params"]
     try:
-        prompt: JsonValue = STRING.validate_python(content)
-    except ValueError:
-        try:
-            TOKENS.validate_python(content)
-        except ValueError:
-            return {"ok": False, "error": {"kind": "multiple_prompts"}}
-        return {"ok": False, "error": {"kind": "integers"}}
-    return {
-        "ok": True,
-        "value": {"model": step["model"], "prompt": prompt, **step["optional_params"]},
-    }
+        value: JsonValue = TEXT_RAW.transform_text_completion_request(model, messages, params, {})  # type: ignore[arg-type, misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/together_ai/completion/transformation.py#L43-L49
+    except ValueError as error:
+        kind = "integers" if str(error) == INTEGERS else "multiple_prompts"
+        return {"ok": False, "error": {"kind": kind}}
+    return {"ok": True, "value": value}
+
+
+def rerank(client: CapturedClient, step: RerankRequestStep) -> RerankResponse:
+    litellm.in_memory_llm_clients_cache = ClientCache(client)
+    returned = step.get("return_documents")
+    if "return_documents" not in step:
+        returned = True
+    return TogetherAIRerank().rerank(
+        step["model"],
+        step["api_key"],
+        step["api_base"],
+        step["query"],
+        step["documents"],
+        step.get("top_n"),
+        step.get("rank_fields"),
+        returned,
+        step.get("max_chunks_per_doc"),
+    )
 
 
 def rerank_request(step: RerankRequestStep) -> JsonValue:
-    returned: bool | None = step.get("return_documents")
-    if "return_documents" not in step:
-        returned = True
-    request = RerankRequest(
-        model=step["model"],
-        query=step["query"],
-        top_n=step.get("top_n"),
-        documents=step["documents"],
-        rank_fields=step.get("rank_fields"),
-        return_documents=returned,
-    )
-    body = OBJECT.validate_json(request.model_dump_json(exclude_none=True))
-    if step.get("max_chunks_per_doc") is not None:
+    client = CapturedClient({"results": []})
+    try:
+        rerank(client, step)
+    except ValueError:
         return {"ok": False, "error": {"kind": "max_chunks"}}
-    return {
-        "ok": True,
-        "value": {
-            "url": step["api_base"].rstrip("/") + "/rerank",
-            "headers": {
-                "accept": "application/json",
-                "content-type": "application/json",
-                "authorization": "Bearer " + step["api_key"],
-            },
-            "body": body,
-        },
-    }
-
-
-def usage_blocks(usage: dict[str, int | None]) -> dict[str, JsonValue]:
-    names = {
-        "billed_units": ("search_units", "total_tokens"),
-        "tokens": ("input_tokens", "output_tokens"),
-    }
-    return {
-        block: {name: usage[name] for name in keys if name in usage}
-        for block, keys in names.items()
-    }
-
-
-def rerank_results(raw: list[dict[str, JsonValue]]) -> list[JsonValue] | None:
-    built: list[JsonValue] = []
-    for entry in raw:
-        parsed = RESULT.validate_python(entry)
-        if "index" not in parsed or "relevance_score" not in parsed:
-            return None
-        result: dict[str, JsonValue] = {
-            "index": parsed["index"],
-            "relevance_score": float(parsed["relevance_score"]),
-        }
-        document = parsed.get("document")
-        if document:
-            text = document.get("text")
-            result["document"] = {"text": "" if text is None else str(text)}
-        built.append(result)
-    return built
+    sent: JsonValue = {"url": client.url, "headers": client.headers, "body": client.payload}
+    return {"ok": True, "value": sent}
 
 
 def rerank_response(step: RerankResponseStep) -> JsonValue:
     response = step["response"]
-    raw_results = response.get("results")
-    if raw_results is None:
-        return {"ok": False, "error": {"kind": "no_results"}}
-    results = rerank_results(RESULTS.validate_python(raw_results))
-    if results is None:
-        return {"ok": False, "error": {"kind": "missing_fields"}}
-    usage = response.get("usage")
-    usage_fields = {} if usage is None else USAGE.validate_python(usage)
-    response_id = TypeAdapter(str | None).validate_python(response.get("id"))
-    return {
-        "ok": True,
-        "value": {
-            "id": response_id or step["next_id"],
-            "results": results,
-            "meta": usage_blocks(usage_fields),
-        },
+    probe: RerankRequestStep = {
+        "model": "m",
+        "query": "q",
+        "documents": [],
+        "api_key": "k",
+        "api_base": "https://together.test",
     }
+    try:
+        reply = rerank(CapturedClient(response), probe)
+    except ValueError as error:
+        kind = "no_results" if str(error).startswith("No results found") else "missing_fields"
+        return {"ok": False, "error": {"kind": kind}}
+    dumped = OBJECT.validate_json(reply.model_dump_json(exclude_none=True))
+    if not response.get("id"):
+        dumped["id"] = step["next_id"]
+    return {"ok": True, "value": dumped}
 
 
 def cost_category(step: CategoryStep) -> JsonValue:
