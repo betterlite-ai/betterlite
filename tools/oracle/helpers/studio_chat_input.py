@@ -1,6 +1,6 @@
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Literal, NotRequired, TypeAlias, TypedDict
+from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict
 
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -11,9 +11,14 @@ from pydantic import JsonValue as Json
 from pydantic import TypeAdapter
 
 JsonObject: TypeAlias = dict[str, Json]
-Transform: TypeAlias = Callable[..., Mapping[str, Json]]
+
+
+class Transform(Protocol):
+    def __call__(self, **kwargs: object) -> Mapping[str, Json]: ...
+
+
 # LiteLLM's request body takes bare dicts and its RequestBody TypedDicts carry Any
-TRANSFORM: Transform = transformation.sync_transform_request_body  # type: ignore[misc, assignment]  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType, reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1262-L1277
+TRANSFORM: Transform = transformation.sync_transform_request_body  # type: ignore[assignment]  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType, reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1262-L1277
 START_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 JSON = TypeAdapter(Json)
 
