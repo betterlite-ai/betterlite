@@ -421,6 +421,28 @@ fn params_skips_with_drop_params() {
     assert_eq!(ids(&result.deployments), ["legacy"]);
 }
 
+// docs/deviations/B364.yaml: LiteLLM returns the whole pool unfiltered when the pre-call count is unavailable.
+#[test]
+fn a_missing_token_count_still_drops_an_unsupported_parameter() {
+    let facts = RequestFacts {
+        response_format: true,
+        ..message_facts("hi")
+    };
+    let result = run(
+        pool(vec![spec(
+            "gpt",
+            "windowed",
+            "openai/gpt-4",
+            r#"{"max_input_tokens":10}"#,
+        )]),
+        &facts,
+        true,
+        &unsupporting(),
+    )
+    .unwrap();
+    assert!(result.deployments.is_empty());
+}
+
 fn params_keeps_an_unresolved_provider() {
     let facts = RequestFacts {
         response_format: true,

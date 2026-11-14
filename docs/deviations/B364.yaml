@@ -1,2 +1,9 @@
 task: B364
-deviations: []
+deviations:
+  - what: When the pre-call token count is unavailable, betterlite still runs the supported-parameter
+      filter; LiteLLM returns the deployment list unfiltered from _pre_call_checks.
+    why: The count reaches the eligibility service as an Option, where None covers both a count that was
+      not needed and one that failed, so the service cannot reproduce the early return that skips the
+      later filters. A response_format-unsupported deployment is therefore still dropped for an
+      uncountable prompt, where LiteLLM keeps it and lets the provider reject the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12510-L12522
