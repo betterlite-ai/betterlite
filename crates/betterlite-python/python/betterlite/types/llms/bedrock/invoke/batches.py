@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from enum import Enum
 from typing import ClassVar, Final, Literal, TypeAlias
 
@@ -46,7 +47,7 @@ class AwsAuthParams(BaseModel):
     aws_web_identity_token: str | None = None
     aws_sts_endpoint: str | None = None
     aws_external_id: str | None = None
-    aws_session_tags: JsonValue = None
+    aws_session_tags: Sequence[AwsSessionTag] | JsonValue = None
 
 
 AWS_AUTH_PARAM_KEYS: Final[tuple[str, ...]] = tuple(AwsAuthParams.model_fields)

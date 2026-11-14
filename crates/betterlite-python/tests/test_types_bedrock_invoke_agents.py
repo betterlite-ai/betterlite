@@ -832,8 +832,8 @@ def test_aws_auth_params_names() -> None:
         "entity_token': FieldInfo(annotation=Union[str, NoneType], required=False, default=No",
         "ne), 'aws_sts_endpoint': FieldInfo(annotation=Union[str, NoneType], required=False, ",
         "default=None), 'aws_external_id': FieldInfo(annotation=Union[str, NoneType], require",
-        "d=False, default=None), 'aws_session_tags': FieldInfo(annotation=JsonValue, required",
-        "=False, default=None)}",
+        "d=False, default=None), 'aws_session_tags': FieldInfo(annotation=Union[Sequence[AwsS",
+        "essionTag], JsonValue], required=False, default=None)}",
     ))
     ported = params.model_validate({"aws_access_key_id": "a", "unexpected": "dropped"})
     assert ported.model_dump() == {
@@ -848,6 +848,9 @@ def test_aws_auth_params_names() -> None:
         "aws_external_id": None,
         "aws_session_tags": None,
     }
+    tags = ({"Key": "team", "Value": "genai"},)
+    tagged = params.model_validate({"aws_session_tags": tags})
+    assert tagged.model_dump()["aws_session_tags"] == tags
 
 
 def test_aliases() -> None:
