@@ -23,9 +23,9 @@ fn limits(max_detached_stream_drains: usize) -> RelayLimits {
 async fn global_detached_drain_cap() {
     let registry = Arc::new(StreamRegistry::default());
     let (captured, _guard) = capture_warnings();
-    let (a, pump_a) = a_held_slot_caps_the_second_drain(&registry).await;
+    let (holder, pump_holder) = a_held_slot_caps_the_second_drain(&registry).await;
     a_cap_hit_stream_bills_and_aborts(&registry).await;
-    the_holder_drains_completely_and_releases(&registry, &a, &pump_a).await;
+    the_holder_drains_completely_and_releases(&registry, &holder, &pump_holder).await;
     a_later_stream_claims_the_released_slot(&registry).await;
     a_zero_cap_bills_every_disconnect(&registry).await;
     let text = captured.text();
@@ -43,25 +43,28 @@ async fn global_detached_drain_cap() {
 async fn a_held_slot_caps_the_second_drain(
     registry: &Arc<StreamRegistry>,
 ) -> (Harness, Arc<TaskTracker>) {
-    let (a, mut relay_a) = Harness::start(limits(1), Arc::clone(registry));
-    a.script.release(SseChunk::Bytes(frame("a1"))).await;
-    assert_eq!(read(&mut relay_a).await, Frame::Chunk("a1".to_owned()));
-    let pump_a = pump_of(&relay_a);
-    drop(relay_a);
-    a.script.release(SseChunk::Bytes(frame("a2"))).await;
+    let (holder, mut relay_holder) = Harness::start(limits(1), Arc::clone(registry));
+    holder.script.release(SseChunk::Bytes(frame("a1"))).await;
+    assert_eq!(read(&mut relay_holder).await, Frame::Chunk("a1".to_owned()));
+    let pump_holder = pump_of(&relay_holder);
+    drop(relay_holder);
+    holder.script.release(SseChunk::Bytes(frame("a2"))).await;
     assert_eq!(registry.sizes().detached_drains, 1);
-    let (d, mut relay_d) = Harness::start(limits(1), Arc::clone(registry));
-    d.script.release(SseChunk::Bytes(frame("d1"))).await;
-    assert_eq!(read(&mut relay_d).await, Frame::Chunk("d1".to_owned()));
-    let pump_d = pump_of(&relay_d);
-    drop(relay_d);
-    d.script.finish().await;
-    pump_d.wait().await;
-    d.worker.flush().await;
+    let (drainer, mut relay_drainer) = Harness::start(limits(1), Arc::clone(registry));
+    drainer.script.release(SseChunk::Bytes(frame("d1"))).await;
+    assert_eq!(
+        read(&mut relay_drainer).await,
+        Frame::Chunk("d1".to_owned())
+    );
+    let pump_drainer = pump_of(&relay_drainer);
+    drop(relay_drainer);
+    drainer.script.finish().await;
+    pump_drainer.wait().await;
+    drainer.worker.flush().await;
     // a stream that ends right after the disconnect bills without claiming a slot
-    assert_eq!(d.routed_frames(), vec![frame("d1")]);
+    assert_eq!(drainer.routed_frames(), vec![frame("d1")]);
     assert_eq!(registry.sizes().detached_drains, 1);
-    (a, pump_a)
+    (holder, pump_holder)
 }
 
 // A disconnect whose next chunk cannot claim a drain slot bills and aborts upstream
@@ -86,18 +89,18 @@ async fn a_cap_hit_stream_bills_and_aborts(registry: &Arc<StreamRegistry>) {
 
 async fn the_holder_drains_completely_and_releases(
     registry: &Arc<StreamRegistry>,
-    a: &Harness,
+    holder: &Harness,
     pump: &Arc<TaskTracker>,
 ) {
-    a.script.release(SseChunk::Bytes(frame("a3"))).await;
-    a.script.finish().await;
+    holder.script.release(SseChunk::Bytes(frame("a3"))).await;
+    holder.script.finish().await;
     pump.wait().await;
-    a.worker.flush().await;
+    holder.worker.flush().await;
     assert_eq!(
-        a.routed_frames(),
+        holder.routed_frames(),
         vec![frame("a1"), frame("a2"), frame("a3")]
     );
-    assert_eq!(a.ran(), 1);
+    assert_eq!(holder.ran(), 1);
     assert_eq!(
         registry.sizes(),
         RegistrySizes {
@@ -108,18 +111,21 @@ async fn the_holder_drains_completely_and_releases(
 }
 
 async fn a_later_stream_claims_the_released_slot(registry: &Arc<StreamRegistry>) {
-    let (c, mut relay_c) = Harness::start(limits(1), Arc::clone(registry));
-    c.script.release(SseChunk::Bytes(frame("c1"))).await;
-    assert_eq!(read(&mut relay_c).await, Frame::Chunk("c1".to_owned()));
-    let pump = pump_of(&relay_c);
-    drop(relay_c);
-    c.script.release(SseChunk::Bytes(frame("c2"))).await;
+    let (claimer, mut relay_claimer) = Harness::start(limits(1), Arc::clone(registry));
+    claimer.script.release(SseChunk::Bytes(frame("c1"))).await;
+    assert_eq!(
+        read(&mut relay_claimer).await,
+        Frame::Chunk("c1".to_owned())
+    );
+    let pump = pump_of(&relay_claimer);
+    drop(relay_claimer);
+    claimer.script.release(SseChunk::Bytes(frame("c2"))).await;
     assert_eq!(registry.sizes().detached_drains, 1);
-    c.script.finish().await;
+    claimer.script.finish().await;
     pump.wait().await;
-    c.worker.flush().await;
-    assert_eq!(c.routed_frames(), vec![frame("c1"), frame("c2")]);
-    assert_eq!(c.ran(), 1);
+    claimer.worker.flush().await;
+    assert_eq!(claimer.routed_frames(), vec![frame("c1"), frame("c2")]);
+    assert_eq!(claimer.ran(), 1);
     assert_eq!(registry.sizes().detached_drains, 0);
 }
 
