@@ -1,6 +1,6 @@
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Literal, TypedDict, cast
+from typing import Literal, Protocol, TypedDict, Unpack, cast
 
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -11,8 +11,30 @@ from pydantic import TypeAdapter
 JsonObject = dict[str, Json]
 Provider = Literal["vertex_ai", "vertex_ai_beta", "gemini"]
 
+
+class TransformArgs(TypedDict):
+    gemini_api_key: None
+    messages: list[JsonObject]
+    api_base: None
+    model: str
+    client: None
+    timeout: None
+    extra_headers: None
+    optional_params: JsonObject
+    logging_obj: Logging
+    custom_llm_provider: str
+    litellm_params: JsonObject
+    vertex_project: None
+    vertex_location: None
+    vertex_auth_header: None
+
+
+class Transform(Protocol):
+    def __call__(self, **kwargs: Unpack[TransformArgs]) -> Mapping[str, Json]: ...
+
+
 # LiteLLM's request body takes bare dicts and its RequestBody TypedDicts carry Any
-TRANSFORM = cast(Callable[..., Mapping[str, Json]], transformation.sync_transform_request_body)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1262-L1277
+TRANSFORM = cast(Transform, transformation.sync_transform_request_body)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1262-L1277
 START_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 JSON_OBJECT = TypeAdapter(dict[str, Json])
 
