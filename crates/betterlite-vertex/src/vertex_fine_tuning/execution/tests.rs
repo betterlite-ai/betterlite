@@ -1,8 +1,9 @@
 #![cfg(test)]
 
 use std::collections::VecDeque;
-use std::future::{Future, Ready, ready};
+use std::future::{Future, Ready, pending, poll_fn, ready};
 use std::sync::{Arc, Mutex};
+use std::task::Poll;
 use std::time::Duration;
 
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
@@ -83,6 +84,32 @@ impl TuningTransport for Scripted {
     }
 }
 
+struct Hanging {
+    order: Order,
+}
+
+struct DropMark(Order);
+
+impl Drop for DropMark {
+    fn drop(&mut self) {
+        self.0.lock().unwrap().push("dropped");
+    }
+}
+
+impl TuningTransport for Hanging {
+    fn send(
+        &self,
+        _request: OutboundRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+        self.order.lock().unwrap().push("post");
+        let mark = DropMark(Arc::clone(&self.order));
+        async move {
+            let _mark = mark;
+            pending::<Result<UpstreamResponse, TransportError>>().await
+        }
+    }
+}
+
 struct Fixture {
     catalog: Arc<ModelCatalog>,
     data: FineTuneCreate,
@@ -105,11 +132,11 @@ impl Fixture {
         }
     }
 
-    fn request<'a>(
-        &'a self,
-        api_base: Option<&'a str>,
+    fn request<'fixture>(
+        &'fixture self,
+        api_base: Option<&'fixture str>,
         timeout: Option<Duration>,
-    ) -> TuningCreateRequest<'a> {
+    ) -> TuningCreateRequest<'fixture> {
         TuningCreateRequest {
             catalog: &self.catalog,
             data: &self.data,
@@ -325,16 +352,14 @@ async fn a_missing_location_fails_before_the_post() {
 async fn cancel_create() {
     let fixture = Fixture::new();
     let order: Order = Arc::new(Mutex::new(Vec::new()));
-    let transport = scripted(vec![reply(200, JOB)], &order);
-    let request = fixture.request(None, None);
-    let recorded_order = Arc::clone(&order);
-    let make_lookup = move |_credentials: Option<&ConfiguredCredentials>,
-                            _project: Option<&str>| {
-        recorded_order.lock().unwrap().push("token");
-        ready(Ok::<AccessToken, CredentialCacheError>(access()))
+    let transport = Hanging {
+        order: Arc::clone(&order),
     };
-    let pending = create_tuning_job(&transport, &request, make_lookup);
-    drop(pending);
-    assert!(order.lock().unwrap().is_empty());
-    assert!(transport.requests.lock().unwrap().is_empty());
+    let request = fixture.request(None, None);
+    let mut create = Box::pin(create_tuning_job(&transport, &request, lookup));
+    let first = poll_fn(|cx| Poll::Ready(create.as_mut().poll(cx))).await;
+    assert!(first.is_pending());
+    assert_eq!(*order.lock().unwrap(), ["post"]);
+    drop(create);
+    assert_eq!(*order.lock().unwrap(), ["post", "dropped"]);
 }

@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use betterlite_openai::fine_tuning::job::FineTuneCreate;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -69,7 +67,7 @@ pub fn to_vertex_request(
             "learning_rate_multiplier",
             // Python's float() reads 2e-05, which Decimal's plain parser refuses
             |text| {
-                Decimal::from_str(text)
+                text.parse::<Decimal>()
                     .or_else(|_error| Decimal::from_scientific(text))
                     .ok()
             },
