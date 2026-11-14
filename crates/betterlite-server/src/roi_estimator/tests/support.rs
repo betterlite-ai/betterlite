@@ -158,7 +158,22 @@ pub(super) fn pull() -> ROIPullEvidence {
         deletions: 2,
         changed_files: 3,
         files: pull_files(),
-        commits: pull_commits(),
+        commits: vec![
+            ROIPullCommit {
+                sha: "abc".to_owned(),
+                message: "first".to_owned(),
+                additions: Some(5),
+                deletions: None,
+                changed_files: None,
+            },
+            ROIPullCommit {
+                sha: "def".to_owned(),
+                message: "second".to_owned(),
+                additions: None,
+                deletions: None,
+                changed_files: Some(None),
+            },
+        ],
         commit_count: 2,
         incomplete_metadata: false,
     }
@@ -177,25 +192,6 @@ fn pull_files() -> Vec<ROIPullFile> {
             status: None,
             additions: None,
             deletions: None,
-        },
-    ]
-}
-
-fn pull_commits() -> Vec<ROIPullCommit> {
-    vec![
-        ROIPullCommit {
-            sha: "abc".to_owned(),
-            message: "first".to_owned(),
-            additions: Some(5),
-            deletions: None,
-            changed_files: None,
-        },
-        ROIPullCommit {
-            sha: "def".to_owned(),
-            message: "second".to_owned(),
-            additions: None,
-            deletions: None,
-            changed_files: Some(None),
         },
     ]
 }
