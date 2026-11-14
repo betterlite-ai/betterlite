@@ -283,6 +283,9 @@ async fn tokens_debug_hides_the_credentials_and_the_token() {
         .tokens(Some(AUTHORIZED_USER), Some("project"))
         .unwrap();
     let before = format!("{tokens:?}");
+    assert!(before.contains("VertexArmorTokens"), "{before}");
+    assert!(before.contains("credentials: true"), "{before}");
+    assert!(before.contains("project"), "{before}");
     assert!(!before.contains("CLIENTSECRET"), "{before}");
     assert!(!before.contains("REFRESHTOKEN"), "{before}");
     let (token, _project) = tokens.access_token().await.unwrap();
