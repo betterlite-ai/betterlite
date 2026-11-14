@@ -9,6 +9,7 @@ use betterlite_provider::api::vector_store_contracts::config::Params;
 
 use crate::case::{Compare, UpstreamAnswer};
 use error::SdkHttpError;
+use messages_stream_logging::call::MessagesStreamLoggingCall;
 use result::SdkResult;
 
 pub(crate) mod anthropic_beta_config;
@@ -17,6 +18,7 @@ mod child;
 pub(crate) mod embedding_executor;
 pub mod error;
 pub(crate) mod messages_header_stream;
+pub mod messages_stream_logging;
 pub(crate) mod native;
 pub(crate) mod python;
 pub mod result;
@@ -65,6 +67,7 @@ pub enum SdkHttpCall {
     VectorQueryEmbedding(VectorQueryEmbeddingCall),
     AnthropicBetaConfig(AnthropicBetaConfigCall),
     MessagesHeaderStream(MessagesHeaderStreamCall),
+    MessagesStreamLogging(MessagesStreamLoggingCall),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -234,7 +237,9 @@ fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHtt
                 ));
             }
         }
-        SdkHttpCall::VectorQueryEmbedding(_) | SdkHttpCall::AnthropicBetaConfig(_) => {}
+        SdkHttpCall::VectorQueryEmbedding(_)
+        | SdkHttpCall::AnthropicBetaConfig(_)
+        | SdkHttpCall::MessagesStreamLogging(_) => {}
     }
     Ok(())
 }

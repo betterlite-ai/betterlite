@@ -1,0 +1,13 @@
+kind: helper
+name: claude-plugin-policy-archive-and-grants
+call:
+  claude_plugin_policy:
+    calls:
+      - {function: validate_source, source: {source: archive, url: "https://host/plugin.zip"}}
+      - {function: require_admin, caller: {user_role: internal_user, key_skills: null, team_skills: null}}
+      - function: visibility
+        caller: {user_role: internal_user, key_skills: [alpha], team_skills: null}
+        plugins:
+          - {name: alpha, enabled: false}
+env: {}
+compare: {ignore: []}

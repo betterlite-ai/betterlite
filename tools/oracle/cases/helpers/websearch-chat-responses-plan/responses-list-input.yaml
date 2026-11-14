@@ -1,0 +1,22 @@
+kind: helper
+name: responses-list-input
+call:
+  b4119:
+    operation: build_responses_plan
+    model: gpt-4o
+    input:
+      - role: user
+        content: keep
+    tool_calls:
+      - type: function_call
+        call_id: call_1
+        name: litellm_web_search
+        arguments: '{"query":"weather"}'
+        input: {query: weather}
+    searches:
+      - kind: success
+        text: result
+    optional_params: {}
+    kwargs: {}
+env: {}
+compare: {ignore: []}

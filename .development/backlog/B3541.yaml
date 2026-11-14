@@ -1,7 +1,7 @@
 id: B3541
 milestone: M5 api families
 title: BM25 and embedding relevance scoring for compression
-status: todo
+status: done
 depends_on: [B014]
 file: tasks/B3541-compression-relevance.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/compression/compress.py"
 parent: B100
 split_from: B100
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1631

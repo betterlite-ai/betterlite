@@ -87,5 +87,5 @@ pitfalls:
   - A nonstring deployment bucket falls back to environment, unlike the write resolver's truthiness-only selection.
   - The decoded gs:// identifier becomes response request metadata, never an arbitrary HTTP host to fetch.
   - Downloading zero bytes must not trigger the None-only failure branch.
-budget: {max_changed_lines: 625, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: standard

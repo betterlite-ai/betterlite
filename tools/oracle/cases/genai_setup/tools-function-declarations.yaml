@@ -1,0 +1,17 @@
+kind: helper
+name: genai-setup-tools-function-declarations
+call:
+  b3483:
+    setups:
+      - model: gemini/gemini-2.5-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        config: null
+        custom_llm_provider: null
+        tools:
+          - functionDeclarations:
+              - name: get_weather
+        kwargs: {}
+        extra_body: null
+        with_logging: true
+env: {}
+compare: {ignore: []}

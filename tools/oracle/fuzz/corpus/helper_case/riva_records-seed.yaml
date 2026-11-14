@@ -1,0 +1,6 @@
+kind: helper
+name: riva-records-seed
+call:
+  riva_records: {"calls": [{"function": "language_cases", "params": {"language": "en", "chunking_strategy": {"type": "server_vad", "threshold": 0.5, "silence_duration_ms": 100}, "riva_model_name": "parakeet"}, "final_results": [], "response_format": "", "duration_seconds": null, "timestamp_granularities": null, "error": {"code": {"kind": "missing"}, "details": {"kind": "missing"}, "text": ""}}, {"function": "verbose_words", "params": {}, "final_results": [{"transcript": " hi", "words": [{"word": "hi", "start_time_ms": 0, "end_time_ms": 100}]}], "response_format": "verbose_json", "duration_seconds": 1.5, "timestamp_granularities": ["word"], "error": {"code": {"kind": "missing"}, "details": {"kind": "missing"}, "text": ""}}, {"function": "grpc_error_table", "params": {}, "final_results": [], "response_format": "", "duration_seconds": null, "timestamp_granularities": null, "error": {"code": {"kind": "returns", "name": "UNAVAILABLE"}, "details": {"kind": "returns", "value": "down"}, "text": "14"}}]}
+compare: {ignore: []}
+env: {}
