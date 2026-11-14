@@ -1,0 +1,74 @@
+kind: helper
+name: gemini-image-policy-search-dedup
+call:
+  gemini_image_policy:
+    settings: {}
+    cases:
+      - model: gemini-b1334-image
+        catalog_supports_image_size: null
+        params:
+          tools:
+            - type: function
+              function: {name: lookup}
+            - googleSearch: {}
+        supported_params: ["n", size, tools, web_search_options]
+        optional_params: {}
+        parse_image_config_string: false
+        pre_mapped: null
+        response: {}
+      - model: gemini-b1334-image
+        catalog_supports_image_size: null
+        params: {web_search_options: {}}
+        supported_params: ["n", size, tools, web_search_options]
+        optional_params: {}
+        parse_image_config_string: false
+        pre_mapped: null
+        response:
+          candidates:
+            - groundingMetadata: {webSearchQueries: [q]}
+      - model: gemini-b1334-image
+        catalog_supports_image_size: null
+        params: {web_search_options: {}}
+        supported_params: ["n", size, tools, web_search_options]
+        optional_params: {}
+        parse_image_config_string: false
+        pre_mapped: {tools: [{urlContext: {}}]}
+        response: {}
+      - model: gemini-b1334-image
+        catalog_supports_image_size: null
+        params: {}
+        supported_params: ["n", size, tools, web_search_options]
+        optional_params: {}
+        parse_image_config_string: false
+        pre_mapped:
+          tools:
+            - googleSearch: {}
+            - googleSearch: {}
+            - googleSearchRetrieval: {}
+        response: {}
+      - model: gemini-b1334-image
+        catalog_supports_image_size: null
+        params: {}
+        supported_params: ["n", size, tools, web_search_options]
+        optional_params: {}
+        parse_image_config_string: false
+        pre_mapped:
+          tools:
+            - googleSearch: {}
+            - urlContext: {}
+            - {googleSearch: {}, urlContext: {}}
+        response: {}
+      - model: gemini-b1334-image
+        catalog_supports_image_size: null
+        params: {}
+        supported_params: ["n", size, tools, web_search_options]
+        optional_params: {}
+        parse_image_config_string: false
+        pre_mapped:
+          tools:
+            - url_context: {}
+            - url_context: {}
+            - urlContext: {}
+        response: {}
+env: {}
+compare: {ignore: []}

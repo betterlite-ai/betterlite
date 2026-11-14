@@ -1,0 +1,30 @@
+kind: sdk_http
+name: native-chunk-format
+env: {}
+call:
+  messages_stream_logging:
+    body:
+      model: claude-sonnet-4-20250514
+      max_tokens: 1
+      messages:
+        - {role: user, content: hi}
+    steps:
+      - op: convert
+        chunk: {delta: {text: plain}}
+      - op: convert
+        chunk: {type: ping}
+      - op: convert
+        chunk: {type: null, index: 1}
+      - op: convert
+        chunk:
+          type: content_block_delta
+          index: 0
+          delta: {type: text_delta, text: "café \"quoted\""}
+      - op: convert
+        chunk: "event: ping\ndata: {}\n\n"
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

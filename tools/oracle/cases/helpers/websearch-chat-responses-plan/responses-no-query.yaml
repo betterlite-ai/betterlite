@@ -1,0 +1,18 @@
+kind: helper
+name: responses-no-query
+call:
+  b4119:
+    operation: build_responses_plan
+    model: gpt-4o
+    input: []
+    tool_calls:
+      - type: function_call
+        call_id: call_1
+        name: litellm_web_search
+        arguments: ''
+        input: {}
+    searches: []
+    optional_params: {}
+    kwargs: {}
+env: {}
+compare: {ignore: []}

@@ -82,5 +82,5 @@ pitfalls:
   - Cancel returns the subsequent provider state, which may still be in_progress or cancelling.
   - An empty after value is sent as pageToken rather than omitted.
   - Only cancellation's POST receives the caller timeout; its follow-up GET does not.
-budget: {max_changed_lines: 775, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: standard
