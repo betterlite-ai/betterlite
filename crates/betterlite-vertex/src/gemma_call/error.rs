@@ -9,7 +9,7 @@ use crate::gemma_envelope::post::PostFailure;
 
 use super::reply::GemmaReplyError;
 
-// a handler or the pooled client raise a timeout as litellm.Timeout, which carries 408; a raw httpx client raises one without a status
+// LiteLLM's handler and pooled client raise a timeout as litellm.Timeout, which carries 408; a raw httpx client raises one without a status
 pub trait FailureStatus: StdError + 'static {
     fn status_code(&self) -> Option<u16>;
 }
