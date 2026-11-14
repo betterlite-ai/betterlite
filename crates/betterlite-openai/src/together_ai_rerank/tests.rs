@@ -120,7 +120,7 @@ fn max_chunks_per_doc_is_refused() {
     let documents = [RerankDocument::Text(String::from("one"))];
     let mut call = base_call(&key, &documents);
     call.max_chunks_per_doc = Some(2);
-    let error = request(&call).unwrap_err();
+    let error = request(&call).err().unwrap();
     assert!(matches!(error, TogetherRerankError::MaxChunksPerDoc));
     assert_eq!(
         error.to_string(),

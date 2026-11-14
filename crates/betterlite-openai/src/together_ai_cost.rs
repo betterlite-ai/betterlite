@@ -73,7 +73,7 @@ pub fn pricing_category(
             ];
             parameter_count(&name, MILLION_SUFFIX)
                 .and_then(|count| first_matching(count, &limits))
-                .unwrap_or(name)
+                .map_or(name, str::to_owned)
         }
         PricingCallType::Other => {
             let limits = [
@@ -86,7 +86,7 @@ pub fn pricing_category(
             ];
             parameter_count(&name, BILLION_SUFFIX)
                 .and_then(|count| first_matching(count, &limits))
-                .unwrap_or(name)
+                .map_or(name, str::to_owned)
         }
     }
 }
