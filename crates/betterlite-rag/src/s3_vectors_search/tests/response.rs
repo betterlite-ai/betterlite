@@ -1,7 +1,8 @@
 use betterlite_models::decisions::Json;
-use betterlite_openai::api::vector_store_records::records::vector::VectorStoreSearchResponse;
+use betterlite_openai::api::vector_store_records::records::vector::{
+    VectorStoreSearchResponse, VectorStoreSearchResult,
+};
 use rstest::rstest;
-use serde_json::Value;
 
 use super::support::{json, reply_headers};
 use crate::s3_vectors_search::error::S3VectorsSearchError;
@@ -11,20 +12,32 @@ fn decode(body: &str, query_text: Option<&str>) -> VectorStoreSearchResponse {
     decode_s3_vectors_search(200, &reply_headers(), body.as_bytes(), query_text).unwrap()
 }
 
+fn wire_score(result: &VectorStoreSearchResult) -> Option<String> {
+    let Ok(text) = serde_json::to_string(result) else {
+        panic!("the result cannot be serialized");
+    };
+    let Json::Object(fields) = json(&text) else {
+        panic!("the result is not an object");
+    };
+    let Some(score) = fields.get("score") else {
+        panic!("the result has no score key");
+    };
+    if score == &Json::Null {
+        return None;
+    }
+    let Json::Number(number) = score else {
+        panic!("the score is not a number");
+    };
+    Some(number.to_string())
+}
+
 fn one_score(distance: &str) -> Option<String> {
     let body = format!(
         r#"{{"vectors": [{{"distance": {distance}, "metadata": {{"source_text": "t"}}}}]}}"#
     );
     let response = decode(&body, None);
     let results = response.data?;
-    let wire = serde_json::to_value(&results[0]).unwrap();
-    match &wire["score"] {
-        Value::Null => {
-            assert!(wire.as_object().unwrap().contains_key("score"));
-            None
-        }
-        score => Some(score.to_string()),
-    }
+    wire_score(results.first()?)
 }
 
 #[test]
@@ -139,9 +152,8 @@ fn a_float32_distance_next_to_one_keeps_its_tiny_score() {
 #[test]
 fn an_absent_distance_gives_no_score() {
     let response = decode(r#"{"vectors": [{"metadata": {"source_text": "t"}}]}"#, None);
-    let wire = serde_json::to_value(&response.data.unwrap()[0]).unwrap();
-    assert!(wire.as_object().unwrap().contains_key("score"));
-    assert_eq!(wire["score"], Value::Null);
+    let results = response.data.unwrap();
+    assert_eq!(wire_score(&results[0]), None);
 }
 
 #[rstest]
