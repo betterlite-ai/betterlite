@@ -128,3 +128,17 @@ fn a_non_numeric_generation_value_names_itself() {
 
     assert!(error.to_string().contains("top_p"), "{error}");
 }
+
+#[test]
+fn a_non_finite_generation_value_names_itself() {
+    let settings = StudioSettings {
+        top_p: Some(f64::INFINITY),
+        ..StudioSettings::default()
+    };
+
+    let error = settings
+        .get_config()
+        .expect_err("infinity has no JSON number");
+
+    assert!(error.to_string().contains("top_p"), "{error}");
+}
