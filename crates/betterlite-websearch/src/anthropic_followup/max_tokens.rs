@@ -46,17 +46,17 @@ fn budget_tokens(optional_params: &JsonMap) -> Result<Option<f64>, AnthropicFoll
     let Some(raw) = optional_params.get(THINKING_KEY) else {
         return Ok(None);
     };
-    let thinking: Option<ThinkingParam> =
+    let parsed: Option<ThinkingParam> =
         serde_json::from_str(raw.get()).map_err(AnthropicFollowupError::InvalidThinking)?;
-    let Some(thinking) = thinking else {
+    let Some(thinking) = parsed else {
         return Ok(None);
     };
     let Some(raw_budget) = thinking.budget_tokens else {
         return Ok(None);
     };
-    let budget: Option<f64> = serde_json::from_str(raw_budget.get())
+    let parsed_budget: Option<f64> = serde_json::from_str(raw_budget.get())
         .map_err(AnthropicFollowupError::InvalidBudgetTokens)?;
-    let Some(budget) = budget else {
+    let Some(budget) = parsed_budget else {
         return Ok(None);
     };
     if !budget.is_finite() || budget <= 0.0_f64 {

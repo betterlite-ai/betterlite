@@ -137,10 +137,10 @@ fn terminated_plan(metadata: JsonMap) -> AgenticLoopPlan {
 fn thinking_blocks(
     blocks: Option<&[ResponseJson]>,
 ) -> Result<Vec<Thinking>, AnthropicFollowupError> {
-    let Some(blocks) = blocks else {
+    let Some(found) = blocks else {
         return Ok(Vec::new());
     };
-    blocks
+    found
         .iter()
         .cloned()
         .map(|block| {

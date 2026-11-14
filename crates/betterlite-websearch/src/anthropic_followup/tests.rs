@@ -88,11 +88,12 @@ impl SearchExecutor for ScriptedSearches {
         if let Ok(mut inputs) = self.rich.lock() {
             inputs.push(rich);
         }
-        let script = {
-            let mut scripts = self.scripts.lock().unwrap_or_else(PoisonError::into_inner);
-            scripts.pop_front()
-        };
-        let Some(script) = script else {
+        let queued = self
+            .scripts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front();
+        let Some(script) = queued else {
             return SearchResult::Failed(unclassified(
                 "the case scripts no search response".to_owned(),
             ));

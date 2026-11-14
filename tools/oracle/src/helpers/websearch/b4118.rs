@@ -128,11 +128,12 @@ impl SearchExecutor for ScriptedSearch {
         if let Ok(mut queries) = self.queries.lock() {
             queries.push(query.to_owned());
         }
-        let script = {
-            let mut scripts = self.scripts.lock().unwrap_or_else(PoisonError::into_inner);
-            scripts.pop_front()
-        };
-        let Some(script) = script else {
+        let queued = self
+            .scripts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front();
+        let Some(script) = queued else {
             return SearchResult::Failed(unclassified(
                 "the case scripts no search response".to_owned(),
             ));
@@ -192,8 +193,8 @@ fn run_case(case: &Case) -> Result<Value, Box<crate::helpers::HelperError>> {
     };
     let request = plan_request(case, logging.as_ref());
     let plan = block_on(followup.build_agentic_loop_plan(&tools, &request))?.map_err(failure)?;
-    let plan = serde_json::to_value(plan).map_err(failure)?;
-    Ok(json!({"plan": plan, "searches": executor.recorded()}))
+    let value = serde_json::to_value(plan).map_err(failure)?;
+    Ok(json!({"plan": value, "searches": executor.recorded()}))
 }
 
 fn tools_dict(case: &Case) -> ToolsDict {
