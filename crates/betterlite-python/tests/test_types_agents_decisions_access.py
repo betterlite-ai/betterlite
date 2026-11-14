@@ -159,9 +159,19 @@ def special_agents(module, spec):
         ).succeeded
         for status in spec["statuses"]
     ]
+    hidden = [
+        plain(item._hidden_params)
+        for item in (
+            module.AgentCreateResponse(id="i"),
+            module.AgentDeleteResult(name="n"),
+            module.AgentListResponse(agents=[{"id": "a"}]),
+            module.AgentVersionsResponse(agent_versions=[]),
+        )
+    ]
     return {
         "succeeded": succeeded,
         "headers": [module.AGENT_CALLER_USER_ID_HEADER, module.AGENT_CALLER_TEAM_ID_HEADER],
+        "hidden": hidden,
     }
 
 
@@ -753,6 +763,7 @@ def test_names_special_agents() -> None:
     assert ours == theirs
     assert ours["headers"] == ["x-litellm-user-id", "x-litellm-team-id"]
     assert ours["succeeded"] == [False, False, True, True, False]
+    assert ours["hidden"] == [{}, {}, {}, {}]
 
 
 def test_names_special_decisions() -> None:
