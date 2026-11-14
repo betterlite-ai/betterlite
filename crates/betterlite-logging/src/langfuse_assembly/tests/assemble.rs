@@ -3,8 +3,8 @@
 use betterlite_models::decisions::Json;
 
 use super::support::{
-    absent, attribute, epoch_plus, fixture, json, payload, payload_with, run, seconds, text,
-    trace_id, value,
+    Fixture, absent, attribute, epoch_plus, fixture, json, payload, payload_with, run, seconds,
+    text, trace_id, value,
 };
 
 const CALL_ID: &str = "0102030405060708090a0b0c0d0e0f10";
@@ -17,8 +17,7 @@ const GUARDRAILS: &str = r#"[{
     "guardrail_response": {"ok": true}
 }]"#;
 
-#[test]
-fn assembles_a_new_trace_and_generation() {
+fn new_trace_case() -> Fixture {
     let mut case = fixture();
     case.inputs.payload = Some(payload(r#"{"user_api_key_end_user_id": "end-user-1"}"#));
     case.inputs
@@ -28,6 +27,12 @@ fn assembles_a_new_trace_and_generation() {
     case.inputs.litellm_call_id = Some(CALL_ID);
     case.inputs.start_time = Some(seconds(1_704_067_200));
     case.inputs.end_time = Some(seconds(1_704_067_201));
+    case
+}
+
+#[test]
+fn assembles_a_new_trace_and_generation() {
+    let case = new_trace_case();
     let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(outcome.trace_id, Some(trace_id(CALL_ID)));
@@ -49,6 +54,13 @@ fn assembles_a_new_trace_and_generation() {
         text(generation, "langfuse.trace.user_id").as_deref(),
         Some("end-user-1")
     );
+}
+
+#[test]
+fn a_new_trace_carries_the_input_output_tags_and_end_time() {
+    let case = new_trace_case();
+    let outcome = run(case.assemble());
+    let generation = outcome.generation().expect("a generation span");
     assert_eq!(
         json(generation, "langfuse.observation.input"),
         case.inputs.input

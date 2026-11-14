@@ -57,11 +57,11 @@ const PAYLOAD_TEMPLATE: &str = r#"{
     "guardrail_information": %GUARDRAILS%
 }"#;
 
-pub fn value(text: &str) -> Json {
+pub(super) fn value(text: &str) -> Json {
     serde_json::from_str(text).expect("valid fixture JSON")
 }
 
-pub fn string_array(items: &[&str]) -> Value {
+pub(super) fn string_array(items: &[&str]) -> Value {
     Value::Array(Array::String(
         items
             .iter()
@@ -70,11 +70,11 @@ pub fn string_array(items: &[&str]) -> Value {
     ))
 }
 
-pub fn payload(metadata: &str) -> StandardLoggingPayload {
+pub(super) fn payload(metadata: &str) -> StandardLoggingPayload {
     payload_with(metadata, r#"{"cache_key": "hidden-1"}"#, "null")
 }
 
-pub fn payload_with(
+pub(super) fn payload_with(
     metadata: &str,
     hidden_params: &str,
     guardrails: &str,
@@ -86,19 +86,19 @@ pub fn payload_with(
     serde_json::from_str(&text).expect("a valid standard logging payload")
 }
 
-pub fn trace_id(text: &str) -> TraceId {
+pub(super) fn trace_id(text: &str) -> TraceId {
     TraceId::from_hex(text).expect("a trace id")
 }
 
-pub fn hashed(text: &str) -> TraceId {
+pub(super) fn hashed(text: &str) -> TraceId {
     resolve_trace_id(Some(text), &RequestedIdGenerator::default())
 }
 
 #[derive(Clone, Default)]
-pub struct Captured(Arc<Mutex<Vec<u8>>>);
+pub(super) struct Captured(Arc<Mutex<Vec<u8>>>);
 
 impl Captured {
-    pub fn text(&self) -> String {
+    pub(super) fn text(&self) -> String {
         let bytes = self
             .0
             .lock()
@@ -130,7 +130,7 @@ impl<'writer> MakeWriter<'writer> for Captured {
     }
 }
 
-pub fn capture_logs() -> (Captured, DefaultGuard) {
+pub(super) fn capture_logs() -> (Captured, DefaultGuard) {
     let captured = Captured::default();
     let writer = captured.clone();
     let subscriber = tracing_subscriber::fmt()
@@ -142,7 +142,7 @@ pub fn capture_logs() -> (Captured, DefaultGuard) {
     (captured, set_default(subscriber))
 }
 
-pub fn run<F>(future: F) -> F::Output
+pub(super) fn run<F>(future: F) -> F::Output
 where
     F: Future,
 {
@@ -153,7 +153,7 @@ where
         .block_on(future)
 }
 
-pub fn upper(value: &Json) -> Json {
+pub(super) fn upper(value: &Json) -> Json {
     match value {
         Json::Text(text) => Json::Text(text.to_uppercase()),
         other => other.clone(),
@@ -164,32 +164,32 @@ fn dyn_mask(mask: &fn(&Json) -> Json) -> Masker<'_> {
     mask
 }
 
-pub struct Inputs {
-    pub metadata: IndexMap<String, Json>,
-    pub litellm_params: Json,
-    pub optional_params: IndexMap<String, Json>,
-    pub payload: Option<StandardLoggingPayload>,
-    pub response: Option<Json>,
-    pub input: Option<Json>,
-    pub output: Option<Json>,
-    pub default_tags: Vec<String>,
-    pub update_trace_keys: bool,
-    pub redact: bool,
-    pub environment: BTreeMap<String, String>,
-    pub cache_hit: Option<bool>,
-    pub preset_cache_key: Option<String>,
-    pub call_type: &'static str,
-    pub level: &'static str,
-    pub model: &'static str,
-    pub provider: Option<&'static str>,
-    pub litellm_call_id: Option<&'static str>,
-    pub litellm_trace_id: Option<&'static str>,
-    pub start_time: Option<Timestamp>,
-    pub end_time: Option<Timestamp>,
-    pub response_cost: Option<Decimal>,
-    pub vertex_location: Option<&'static str>,
-    pub aws_region_name: Option<&'static str>,
-    pub masker: Option<fn(&Json) -> Json>,
+pub(super) struct Inputs {
+    pub(super) metadata: IndexMap<String, Json>,
+    pub(super) litellm_params: Json,
+    pub(super) optional_params: IndexMap<String, Json>,
+    pub(super) payload: Option<StandardLoggingPayload>,
+    pub(super) response: Option<Json>,
+    pub(super) input: Option<Json>,
+    pub(super) output: Option<Json>,
+    pub(super) default_tags: Vec<String>,
+    pub(super) update_trace_keys: bool,
+    pub(super) redact: bool,
+    pub(super) environment: BTreeMap<String, String>,
+    pub(super) cache_hit: Option<bool>,
+    pub(super) preset_cache_key: Option<String>,
+    pub(super) call_type: &'static str,
+    pub(super) level: &'static str,
+    pub(super) model: &'static str,
+    pub(super) provider: Option<&'static str>,
+    pub(super) litellm_call_id: Option<&'static str>,
+    pub(super) litellm_trace_id: Option<&'static str>,
+    pub(super) start_time: Option<Timestamp>,
+    pub(super) end_time: Option<Timestamp>,
+    pub(super) response_cost: Option<Decimal>,
+    pub(super) vertex_location: Option<&'static str>,
+    pub(super) aws_region_name: Option<&'static str>,
+    pub(super) masker: Option<fn(&Json) -> Json>,
 }
 
 impl Default for Inputs {
@@ -225,7 +225,7 @@ impl Default for Inputs {
 }
 
 impl Inputs {
-    pub fn trace(&self) -> GenerationTrace<'_> {
+    pub(super) fn trace(&self) -> GenerationTrace<'_> {
         GenerationTrace {
             call_type: self.call_type,
             level: self.level,
@@ -252,7 +252,7 @@ impl Inputs {
         }
     }
 
-    pub fn settings(&self) -> AssemblySettings<'_> {
+    pub(super) fn settings(&self) -> AssemblySettings<'_> {
         AssemblySettings {
             default_tags: &self.default_tags,
             update_trace_keys: self.update_trace_keys,
@@ -260,19 +260,19 @@ impl Inputs {
         }
     }
 
-    pub fn set_metadata(&mut self, name: &str, value: Json) {
+    pub(super) fn set_metadata(&mut self, name: &str, value: Json) {
         self.metadata.insert(name.to_owned(), value);
     }
 }
 
-pub struct Fixture {
-    pub inputs: Inputs,
-    provider: SdkTracerProvider,
-    exporter: InMemorySpanExporter,
-    client: LangfuseApiClient,
+pub(super) struct Fixture {
+    pub(super) inputs: Inputs,
+    pub(super) provider: SdkTracerProvider,
+    pub(super) exporter: InMemorySpanExporter,
+    pub(super) client: LangfuseApiClient,
 }
 
-pub fn fixture() -> Fixture {
+pub(super) fn fixture() -> Fixture {
     let exporter = InMemorySpanExporter::default();
     let provider = SdkTracerProvider::builder()
         .with_simple_exporter(exporter.clone())
@@ -287,7 +287,7 @@ pub fn fixture() -> Fixture {
 }
 
 impl Fixture {
-    pub async fn assemble(&self) -> Outcome {
+    pub(super) async fn assemble(&self) -> Outcome {
         let tracer = self.provider.tracer("langfuse-assembly");
         let generator = RequestedIdGenerator::default();
         let runtime = AssemblyRuntime {
@@ -310,65 +310,65 @@ impl Fixture {
     }
 }
 
-pub struct Outcome {
-    pub trace_id: Option<TraceId>,
-    pub generation_id: Option<String>,
-    pub spans: Vec<SpanData>,
+pub(super) struct Outcome {
+    pub(super) trace_id: Option<TraceId>,
+    pub(super) generation_id: Option<String>,
+    pub(super) spans: Vec<SpanData>,
 }
 
 impl Outcome {
-    pub fn by_name(&self, name: &str) -> Option<&SpanData> {
+    pub(super) fn by_name(&self, name: &str) -> Option<&SpanData> {
         self.spans.iter().find(|span| span.name.to_string() == name)
     }
 
-    pub fn names(&self) -> Vec<String> {
+    pub(super) fn names(&self) -> Vec<String> {
         self.spans
             .iter()
             .map(|span| span.name.to_string())
             .collect()
     }
 
-    pub fn generation(&self) -> Option<&SpanData> {
+    pub(super) fn generation(&self) -> Option<&SpanData> {
         self.spans
             .iter()
             .find(|span| text(span, "langfuse.observation.type").as_deref() == Some("generation"))
     }
 }
 
-pub fn attribute(data: &SpanData, key: &str) -> Option<Value> {
+pub(super) fn attribute(data: &SpanData, key: &str) -> Option<Value> {
     data.attributes
         .iter()
         .find(|pair| pair.key.as_str() == key)
         .map(|pair| pair.value.clone())
 }
 
-pub fn text(data: &SpanData, key: &str) -> Option<String> {
+pub(super) fn text(data: &SpanData, key: &str) -> Option<String> {
     let Value::String(text) = attribute(data, key)? else {
         return None;
     };
     Some(String::from(text))
 }
 
-pub fn json(data: &SpanData, key: &str) -> Option<Json> {
+pub(super) fn json(data: &SpanData, key: &str) -> Option<Json> {
     serde_json::from_str(&text(data, key)?).ok()
 }
 
-pub fn object_field(value: &Json, name: &str) -> Option<Json> {
+pub(super) fn object_field(value: &Json, name: &str) -> Option<Json> {
     match value {
         Json::Object(fields) => fields.get(name).cloned(),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     }
 }
 
-pub fn absent(data: &SpanData, key: &str) -> bool {
+pub(super) fn absent(data: &SpanData, key: &str) -> bool {
     attribute(data, key).is_none()
 }
 
-pub fn seconds(value: i64) -> Timestamp {
+pub(super) fn seconds(value: i64) -> Timestamp {
     Timestamp::Seconds(Decimal::new(value, 0))
 }
 
-pub fn epoch_plus(seconds: u64) -> std::time::SystemTime {
+pub(super) fn epoch_plus(seconds: u64) -> std::time::SystemTime {
     std::time::UNIX_EPOCH
         .checked_add(Duration::from_secs(seconds))
         .expect("a timestamp")
