@@ -23,10 +23,10 @@ fn feed_parts(parts: &[&[u8]]) -> SSEUsageParser {
 fn a_stream_without_a_newline_stays_under_the_cap_and_later_lines_parse() {
     let chunk = vec![b'x'; 1 << 20];
     let mut parser = SSEUsageParser::default();
-    for _ in 0..40 {
+    (0..40).for_each(|_| {
         parser.feed(&chunk);
         assert!(parser.buffer.len() <= MAX_PENDING_LINE);
-    }
+    });
     assert!(parser.buffer.is_empty());
     parser.feed(b"data: {\"usage\":{\"input_tokens\":7,\"output_tokens\":7}}\n");
     assert_eq!((parser.input_tokens, parser.output_tokens), (0, 0));

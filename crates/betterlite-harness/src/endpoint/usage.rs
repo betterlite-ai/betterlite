@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive as _;
+use rust_decimal::prelude::{FromPrimitive as _, ToPrimitive as _};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 use serde_json::Number;

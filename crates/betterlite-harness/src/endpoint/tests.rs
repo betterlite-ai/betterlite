@@ -11,7 +11,7 @@ use http::HeaderMap;
 use http::header::{AUTHORIZATION, HeaderValue};
 use rstest::rstest;
 use rust_decimal::Decimal;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use super::catalog_prices::CatalogPrices;
 use super::clock::{Clock, SystemClock};
@@ -527,10 +527,7 @@ fn extract_token_reads_bearer_or_api_key(
         map.insert("x-api-key", HeaderValue::from_str(value).unwrap());
     }
     let token = extract_token(&map);
-    assert_eq!(
-        token.as_ref().map(|token| token.expose_secret().as_str()),
-        expected
-    );
+    assert_eq!(token.as_ref().map(ExposeSecret::expose_secret), expected);
 }
 
 #[test]

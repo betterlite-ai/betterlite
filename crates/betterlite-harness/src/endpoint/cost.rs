@@ -1,7 +1,6 @@
 use betterlite_core::cost::call_price::error::CallPriceError;
 use http::HeaderMap;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive as _;
 use thiserror::Error;
 
 use crate::types::JsonObject;
