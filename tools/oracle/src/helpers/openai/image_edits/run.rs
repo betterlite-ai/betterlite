@@ -36,7 +36,7 @@ fn invalid(message: String) -> Box<HelperError> {
 
 fn failure(error: &ImageEditError) -> Box<HelperError> {
     let class = match error {
-        ImageEditError::MultipleImages { .. } => "BadRequestError",
+        ImageEditError::MultipleImages => "BadRequestError",
         ImageEditError::OpenAi(_) => "OpenAIError",
         ImageEditError::Reply(_) => "ValidationError",
         ImageEditError::ApiBase(_)
@@ -135,7 +135,7 @@ fn files_value(files: &ImageFiles) -> Value {
 
 fn error_value(error: &ImageEditError) -> Value {
     let kind = match error {
-        ImageEditError::MultipleImages { .. } => "bad_request",
+        ImageEditError::MultipleImages => "bad_request",
         ImageEditError::OpenAi(_) => "openai_error",
         ImageEditError::Reply(_) => "validation",
         ImageEditError::ApiBase(_)

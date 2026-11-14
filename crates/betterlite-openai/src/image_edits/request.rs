@@ -37,9 +37,7 @@ pub fn transform_image_edit_request(
     if let Some(images) = &request.image {
         // DALL-E-2 counts the list before skipping None entries, so [image, None] still fails
         if family == ImageEditFamily::DallE2 && images.len() > 1 {
-            return Err(ImageEditError::MultipleImages {
-                model: request.model.clone(),
-            });
+            return Err(ImageEditError::MultipleImages);
         }
         for image in images.iter().flatten() {
             files.push(file_record(family.image_field(), image, DEFAULT_IMAGE_NAME));

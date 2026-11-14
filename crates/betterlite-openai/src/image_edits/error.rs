@@ -17,7 +17,7 @@ pub enum ImageEditError {
     #[error("the Authorization header cannot carry the resolved key")]
     Authorization(#[source] InvalidHeaderValue),
     #[error("DALL-E-2 only supports editing a single image. Please provide one image.")]
-    MultipleImages { model: String },
+    MultipleImages,
     #[error(transparent)]
     OpenAi(#[from] OpenAiLikeError),
     #[error(transparent)]
@@ -28,7 +28,7 @@ impl ImageEditError {
     #[must_use]
     pub const fn status(&self) -> Option<u16> {
         match self {
-            Self::MultipleImages { .. } => Some(BAD_REQUEST_STATUS),
+            Self::MultipleImages => Some(BAD_REQUEST_STATUS),
             Self::OpenAi(error) => Some(error.status_code),
             Self::Reply(ImageReplyError::ResponseObject { status, .. }) => Some(*status),
             Self::ApiBase(_)

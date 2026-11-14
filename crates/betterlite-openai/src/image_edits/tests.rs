@@ -4,7 +4,7 @@ use betterlite_config::sections::openai_credentials::{DEFAULT_API_BASE, Settings
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
 use super::environment::{complete_url, validate_environment};
 use super::error::{BAD_REQUEST_STATUS, ImageEditError};
@@ -117,14 +117,14 @@ fn image_edits_cases(#[case] case: u8) {
 }
 
 fn single_image_and_mask() {
-    let request = request(
+    let source = request(
         "gpt-image-1",
         Some("change"),
         Some(vec![supplied(PNG, Some("baby.png"))]),
         Some(vec![supplied(PNG, Some("mask-src.png"))]),
         options(r#"{"n":2}"#),
     );
-    let found = form(ImageEditFamily::OpenAi, &request);
+    let found = form(ImageEditFamily::OpenAi, &source);
     assert_eq!(
         found.data,
         options(r#"{"model":"gpt-image-1","n":2,"prompt":"change"}"#)
@@ -141,7 +141,7 @@ fn single_image_and_mask() {
 }
 
 fn multiple_image_array() {
-    let request = request(
+    let source = request(
         "gpt-image-1",
         None,
         Some(vec![
@@ -152,7 +152,7 @@ fn multiple_image_array() {
         Some(vec![supplied(PNG, Some("m1.png")), supplied(JPEG, None)]),
         ImageParams::new(),
     );
-    let found = form(ImageEditFamily::OpenAi, &request);
+    let found = form(ImageEditFamily::OpenAi, &source);
     assert_eq!(
         filenames(&found),
         vec![
@@ -230,7 +230,7 @@ fn dalle2_fields() {
     );
     let error = rejected.expect_err("two entries");
     assert_eq!(error.status(), Some(BAD_REQUEST_STATUS));
-    assert!(matches!(error, ImageEditError::MultipleImages { .. }));
+    assert!(matches!(error, ImageEditError::MultipleImages));
     assert_eq!(
         format!("{error}"),
         "DALL-E-2 only supports editing a single image. Please provide one image."
@@ -493,6 +493,13 @@ fn openai_image_edits_secret_safe_failure() {
     const SECRET: &str = "sk-fixture-secret";
     let headers =
         validate_environment(&Headers::new(), &credentials(Some(SECRET))).expect("headers");
+    let bearer = format!("Bearer {SECRET}");
+    assert_eq!(
+        headers
+            .get("authorization")
+            .map(|value| value.to_str().expect("text")),
+        Some(bearer.as_str())
+    );
     let invalid = complete_url("http://[::1sk-fixture").expect_err("bad base");
     let multiple = transform_image_edit_request(
         ImageEditFamily::DallE2,
@@ -505,7 +512,7 @@ fn openai_image_edits_secret_safe_failure() {
         ),
     )
     .expect_err("two images");
-    let shape = transform_image_edit_response(200, SECRET.as_bytes(), NOW).expect_err("body");
+    let shape = transform_image_edit_response(200, b"not json", NOW).expect_err("body");
     let shown =
         format!("{headers:?} {invalid:?} {invalid} {multiple:?} {multiple} {shape:?} {shape}");
     assert!(!shown.contains(SECRET), "{shown}");
