@@ -5,6 +5,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::reasoning_models::DropParams;
+use betterlite_vertex::vertex_recognition::error::VertexRecognitionError;
 use betterlite_vertex::vertex_recognition::request::{
     complete_url, map_openai_params, recognize_request,
 };
@@ -67,13 +68,13 @@ fn upstream(
 }
 
 // a raised step keeps only LiteLLM's status, since helper answers compare no error class or message
-fn outcome<T>(result: Result<T, Option<u16>>) -> Result<Value, Box<HelperError>>
+fn outcome<T>(result: Result<T, VertexRecognitionError>) -> Result<Value, Box<HelperError>>
 where
     T: Serialize,
 {
     match result {
         Ok(value) => serde_json::to_value(value).or_config_error(),
-        Err(status) => Ok(json!({ "raised": status })),
+        Err(error) => Ok(json!({ "raised": error.status_code() })),
     }
 }
 
@@ -97,30 +98,24 @@ fn step(step: &Step) -> Result<Value, Box<HelperError>> {
             non_default,
             drop_params,
             global_drop_params,
-        } => outcome(
-            map_openai_params(
-                non_default,
-                optional,
-                DropParams {
-                    global: *global_drop_params,
-                    request: *drop_params,
-                },
-            )
-            .map_err(|error| error.status_code()),
-        ),
+        } => outcome(map_openai_params(
+            non_default,
+            optional,
+            DropParams {
+                global: *global_drop_params,
+                request: *drop_params,
+            },
+        )),
         Step::Url {
             api_base,
             location,
             project,
-        } => outcome(
-            complete_url(
-                api_base.as_deref(),
-                location.as_deref(),
-                project.as_deref(),
-                None,
-            )
-            .map_err(|error| error.status_code()),
-        ),
+        } => outcome(complete_url(
+            api_base.as_deref(),
+            location.as_deref(),
+            project.as_deref(),
+            None,
+        )),
         Step::Request {
             model,
             content,
@@ -132,7 +127,7 @@ fn step(step: &Step) -> Result<Value, Box<HelperError>> {
             body,
         } => {
             let reply = upstream(*status, body, headers)?;
-            outcome(decode_vertex_recognition(&reply).map_err(|error| error.status_code()))
+            outcome(decode_vertex_recognition(&reply))
         }
     }
 }
