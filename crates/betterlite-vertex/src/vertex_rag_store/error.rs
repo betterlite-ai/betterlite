@@ -17,26 +17,14 @@ pub struct ProviderError {
 
 #[derive(Debug, Error)]
 pub enum VertexRagStoreError {
-    #[error("the vector store parameter {field} must be {expected}")]
-    ParamType {
-        field: &'static str,
-        expected: &'static str,
-    },
-    #[error("the {name} authorization header value is not a string")]
-    HeaderText { name: String },
-    #[error("the {name} authorization header value is not JSON text: {source}")]
-    HeaderJson {
-        name: String,
-        #[source]
-        source: serde_json::Error,
-    },
+    #[error("the vector store parameter {0} must be {1}")]
+    ParamType(&'static str, &'static str),
+    #[error("the {0} authorization header value is not a string")]
+    HeaderText(String),
     #[error(transparent)]
     Url(#[from] VertexUrlError),
-    #[error("the vertex access token could not be resolved: {source}")]
-    Credentials {
-        #[source]
-        source: CredentialCacheError,
-    },
+    #[error("the vertex access token could not be resolved: {0}")]
+    Credentials(#[source] CredentialCacheError),
     #[error(transparent)]
     Provider(#[from] ProviderError),
 }

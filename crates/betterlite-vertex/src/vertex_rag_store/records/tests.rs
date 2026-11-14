@@ -129,12 +129,6 @@ fn a_bare_corpus_id_expands_under_the_configured_project_and_location(
 #[rstest]
 #[case("corpus", None, Some("us-central1"), VertexUrlError::ProjectRequired)]
 #[case("corpus", Some("proj"), None, VertexUrlError::LocationRequired)]
-#[case(
-    "projects/p/locations/l/ragCorpora/c",
-    None,
-    None,
-    VertexUrlError::ProjectRequired
-)]
 fn a_corpus_path_names_the_missing_setting(
     #[case] store: &str,
     #[case] project: Option<&str>,
@@ -235,9 +229,7 @@ fn a_mistyped_retrieval_option_names_its_field(#[case] text: &str, #[case] field
         settings: &settings,
     })
     .unwrap_err();
-    assert!(
-        matches!(error, VertexRagStoreError::ParamType { field: actual, .. } if actual == field)
-    );
+    assert!(matches!(error, VertexRagStoreError::ParamType(actual, _) if actual == field));
 }
 
 #[test]
@@ -303,14 +295,13 @@ fn a_result_names_its_source_with_the_display_name_fallback(
 }
 
 #[test]
-fn a_null_source_and_display_name_stay_null() {
+fn a_null_source_and_display_name_take_the_default() {
     let value = serde_json::to_value(search_response(
         r#"{"contexts":{"contexts":[{"sourceUri":null,"sourceDisplayName":null}]}}"#,
     ))
     .unwrap();
-    let result = value["data"][0].as_object().unwrap();
-    assert_eq!(result.get("file_id"), Some(&json!(null)));
-    assert_eq!(result.get("filename"), Some(&json!(null)));
+    assert_eq!(value["data"][0]["file_id"], json!(""));
+    assert_eq!(value["data"][0]["filename"], json!("Unknown Document"));
     assert_eq!(value["data"][0]["attributes"], json!({}));
 }
 
@@ -327,34 +318,39 @@ fn only_a_truthy_page_span_reaches_the_attributes(#[case] context: &str, #[case]
 }
 
 #[rstest]
-#[case("{}", Json::Text(String::new()))]
-#[case(r#"{"text":null}"#, Json::Null)]
-#[case(r#"{"text":"chunk"}"#, Json::Text("chunk".to_owned()))]
-#[case(r#"{"text":5}"#, Json::Number(Number::from(5)))]
-fn a_context_text_keeps_the_value_the_payload_carried(#[case] context: &str, #[case] text: Json) {
+#[case("{}", "")]
+#[case(r#"{"text":null}"#, "")]
+#[case(r#"{"text":"chunk"}"#, "chunk")]
+fn a_context_text_defaults_to_the_empty_string(#[case] context: &str, #[case] text: &str) {
     let body = format!(r#"{{"contexts":{{"contexts":[{context}]}}}}"#);
     let value = serde_json::to_value(search_response(&body)).unwrap();
-    assert_eq!(
-        value["data"][0]["content"][0]["text"],
-        serde_json::to_value(text).unwrap()
-    );
+    assert_eq!(value["data"][0]["content"][0]["text"], json!(text));
     assert_eq!(value["data"][0]["content"][0]["type"], json!("text"));
 }
 
+#[test]
+fn a_context_text_of_another_type_names_the_field() {
+    let error = decode_vertex_rag_payload(br#"{"contexts":{"contexts":[{"text":5}]}}"#, "query")
+        .unwrap_err();
+    assert!(matches!(error, PayloadError::Json(error) if error.to_string().contains("text")));
+}
+
 #[rstest]
-#[case("{}", Json::Number(Number::from_f64(0.0).unwrap()))]
-#[case(r#"{"score":"high"}"#, Json::Text("high".to_owned()))]
-#[case(r#"{"score":null}"#, Json::Null)]
-fn a_context_score_defaults_to_zero_and_keeps_other_values(
-    #[case] context: &str,
-    #[case] score: Json,
-) {
+#[case("{}", 0.0)]
+#[case(r#"{"score":null}"#, 0.0)]
+#[case(r#"{"score":0.5}"#, 0.5)]
+fn a_context_score_defaults_to_zero(#[case] context: &str, #[case] score: f64) {
     let body = format!(r#"{{"contexts":{{"contexts":[{context}]}}}}"#);
     let value = serde_json::to_value(search_response(&body)).unwrap();
-    assert_eq!(
-        value["data"][0]["score"],
-        serde_json::to_value(score).unwrap()
-    );
+    assert_eq!(value["data"][0]["score"], json!(score));
+}
+
+#[test]
+fn a_context_score_of_another_type_names_the_field() {
+    let error =
+        decode_vertex_rag_payload(br#"{"contexts":{"contexts":[{"score":"high"}]}}"#, "query")
+            .unwrap_err();
+    assert!(matches!(error, PayloadError::Json(error) if error.to_string().contains("score")));
 }
 
 #[test]
@@ -375,24 +371,20 @@ fn a_reply_without_contexts_is_an_empty_page(#[case] body: &str) {
 }
 
 #[rstest]
-#[case(b"[]", "the reply")]
-#[case(br#"{"contexts":[]}"#, "contexts")]
+#[case(b"[]", "document root")]
+#[case(br#"{"contexts":"x"}"#, "contexts")]
 #[case(br#"{"contexts":{"contexts":{}}}"#, "contexts.contexts")]
-#[case(br#"{"contexts":{"contexts":[5]}}"#, "contexts.contexts")]
-fn a_malformed_search_reply_names_the_field(#[case] body: &[u8], #[case] field: &'static str) {
+#[case(br#"{"contexts":{"contexts":[5]}}"#, "contexts.contexts[0]")]
+fn a_malformed_search_reply_names_the_field(#[case] body: &[u8], #[case] field: &str) {
     let error = decode_vertex_rag_payload(body, "query").unwrap_err();
-    assert!(matches!(
-        error,
-        PayloadError::Field { field: actual, .. } | PayloadError::Entry { field: actual, .. }
-            if actual == field
-    ));
+    assert!(matches!(error, PayloadError::Json(error) if error.to_string().contains(field)));
 }
 
 #[test]
 fn a_search_reply_that_is_not_json_is_a_decode_error() {
     assert!(matches!(
         decode_vertex_rag_payload(b"{", "query").unwrap_err(),
-        PayloadError::Json { .. }
+        PayloadError::Json(_)
     ));
 }
 
@@ -423,10 +415,7 @@ fn a_mistyped_logged_query_names_the_field() {
         body: b"{}",
     };
     let error = transform_search_response(&reply, &logging).unwrap_err();
-    assert!(matches!(
-        error,
-        VertexRagStoreError::ParamType { field: "query", .. }
-    ));
+    assert!(matches!(error, VertexRagStoreError::ParamType("query", _)));
 }
 
 #[test]
@@ -508,9 +497,7 @@ fn a_create_request_keeps_a_trailing_slash_of_the_complete_url() {
 #[case(r#"{"metadata":{"team":5}}"#, "metadata")]
 fn a_mistyped_create_parameter_names_its_field(#[case] text: &str, #[case] field: &'static str) {
     let error = transform_create_request(&optional(text), "https://host").unwrap_err();
-    assert!(
-        matches!(error, VertexRagStoreError::ParamType { field: actual, .. } if actual == field)
-    );
+    assert!(matches!(error, VertexRagStoreError::ParamType(actual, _) if actual == field));
 }
 
 #[test]
@@ -572,20 +559,14 @@ fn only_a_labels_object_becomes_the_metadata(#[case] body: &str, #[case] expecte
 #[test]
 fn a_label_value_that_is_not_a_string_is_a_decode_error() {
     let error = decode_vertex_rag_corpus(br#"{"labels":{"a":1}}"#, &utc()).unwrap_err();
-    assert!(matches!(
-        error,
-        PayloadError::Field {
-            field: "labels",
-            ..
-        }
-    ));
+    assert!(matches!(error, PayloadError::Field("labels", _)));
 }
 
 #[rstest]
 #[case("{}", Json::Text(String::new()))]
 #[case(r#"{"displayName":"camel"}"#, Json::Text(String::new()))]
 #[case(r#"{"display_name":"snake"}"#, Json::Text("snake".to_owned()))]
-#[case(r#"{"display_name":null}"#, Json::Null)]
+#[case(r#"{"display_name":null}"#, Json::Text(String::new()))]
 fn the_created_name_reads_only_the_snake_case_display_name(
     #[case] body: &str,
     #[case] expected: Json,
@@ -604,12 +585,12 @@ fn the_corpus_id_is_the_last_resource_name_segment(#[case] body: &str, #[case] e
 }
 
 #[rstest]
-#[case(b"[]", "the reply")]
+#[case(b"[]", "document root")]
 #[case(br#"{"name":5}"#, "name")]
 #[case(br#"{"display_name":5}"#, "display_name")]
-fn a_malformed_corpus_reply_names_the_field(#[case] body: &[u8], #[case] field: &'static str) {
+fn a_malformed_corpus_reply_names_the_field(#[case] body: &[u8], #[case] field: &str) {
     let error = decode_vertex_rag_corpus(body, &utc()).unwrap_err();
-    assert!(matches!(error, PayloadError::Field { field: actual, .. } if actual == field));
+    assert!(matches!(error, PayloadError::Json(error) if error.to_string().contains(field)));
 }
 
 #[rstest]

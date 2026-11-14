@@ -137,7 +137,7 @@ async fn a_lookup_failure_becomes_a_credentials_error() {
     )
     .await
     .unwrap_err();
-    assert!(matches!(error, VertexRagStoreError::Credentials { .. }));
+    assert!(matches!(error, VertexRagStoreError::Credentials(_)));
 }
 
 #[test]
@@ -201,7 +201,7 @@ fn a_non_text_auth_header_names_the_header() {
     let error = validate_environment(BTreeMap::new(), &credentials).unwrap_err();
     assert!(matches!(
         error,
-        VertexRagStoreError::HeaderText { name } if name == "Authorization"
+        VertexRagStoreError::HeaderText(name) if name == "Authorization"
     ));
 }
 

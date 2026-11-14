@@ -6,7 +6,7 @@ use betterlite_config::sections::vertex_credential_sources::credential_source::C
 use betterlite_openai::api::vector_store_records::records::vector::{
     BaseVectorStoreAuthCredentials, VectorStoreIndexEndpoints,
 };
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 
 use super::error::VertexRagStoreError;
 use crate::credential_sources::getters::VertexParams;
@@ -56,20 +56,10 @@ where
         make_lookup(credentials, project),
     )
     .await
-    .map_err(|source| VertexRagStoreError::Credentials { source })?;
-    credentials_with_token(&access.token)
-}
-
-fn credentials_with_token(
-    token: &SecretString,
-) -> Result<BaseVectorStoreAuthCredentials, VertexRagStoreError> {
+    .map_err(VertexRagStoreError::Credentials)?;
     let mut headers = BTreeMap::new();
-    for (name, value) in set_headers(Some(token), &BTreeMap::new()) {
-        let json = match serde_json::to_value(value.expose_secret()) {
-            Ok(json) => json,
-            Err(source) => return Err(VertexRagStoreError::HeaderJson { name, source }),
-        };
-        headers.insert(name, json);
+    for (name, value) in set_headers(Some(&access.token), &BTreeMap::new()) {
+        headers.insert(name, serde_json::json!(value.expose_secret()));
     }
     Ok(BaseVectorStoreAuthCredentials {
         headers: Some(headers),
@@ -88,7 +78,7 @@ pub fn validate_environment(
     };
     for (name, value) in auth {
         let Some(text) = value.as_str() else {
-            return Err(VertexRagStoreError::HeaderText { name: name.clone() });
+            return Err(VertexRagStoreError::HeaderText(name.clone()));
         };
         headers.insert(name.clone(), text.to_owned());
     }

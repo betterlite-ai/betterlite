@@ -29,49 +29,34 @@ pub fn transform_create_request(
     optional_params: &BTreeMap<String, Json>,
     api_base: &str,
 ) -> Result<CreateCall, VertexRagStoreError> {
+    let display_name = match optional_params.get("name") {
+        None => Some(DEFAULT_CORPUS_NAME.to_owned()),
+        Some(Json::Null) => None,
+        Some(Json::Text(name)) => Some(name.clone()),
+        Some(_) => return Err(VertexRagStoreError::ParamType("name", "a string")),
+    };
+    let labels = match optional_params.get("metadata") {
+        None | Some(Json::Null) => None,
+        Some(Json::Object(fields)) => Some(
+            fields
+                .iter()
+                .map(|(name, value)| match value {
+                    Json::Text(text) => Ok((name.clone(), text.clone())),
+                    _ => Err(VertexRagStoreError::ParamType(
+                        "metadata",
+                        "an object of strings",
+                    )),
+                })
+                .collect::<Result<BTreeMap<_, _>, _>>()?,
+        ),
+        Some(_) => return Err(VertexRagStoreError::ParamType("metadata", "an object")),
+    };
     Ok(CreateCall {
-        url: format!("{api_base}{CORPUS_SUFFIX}"),
+        url: api_base.to_owned() + CORPUS_SUFFIX,
         body: CreateBody {
-            display_name: display_name(optional_params)?,
+            display_name,
             description: CORPUS_DESCRIPTION,
-            labels: labels(optional_params)?,
+            labels,
         },
     })
-}
-
-fn display_name(
-    optional_params: &BTreeMap<String, Json>,
-) -> Result<Option<String>, VertexRagStoreError> {
-    match optional_params.get("name") {
-        None => Ok(Some(DEFAULT_CORPUS_NAME.to_owned())),
-        Some(Json::Null) => Ok(None),
-        Some(Json::Text(name)) => Ok(Some(name.clone())),
-        Some(_) => Err(VertexRagStoreError::ParamType {
-            field: "name",
-            expected: "a string",
-        }),
-    }
-}
-
-fn labels(
-    optional_params: &BTreeMap<String, Json>,
-) -> Result<Option<BTreeMap<String, String>>, VertexRagStoreError> {
-    match optional_params.get("metadata") {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(fields)) => fields
-            .iter()
-            .map(|(name, value)| match value {
-                Json::Text(text) => Ok((name.clone(), text.clone())),
-                _ => Err(VertexRagStoreError::ParamType {
-                    field: "metadata",
-                    expected: "an object of strings",
-                }),
-            })
-            .collect::<Result<_, _>>()
-            .map(Some),
-        Some(_) => Err(VertexRagStoreError::ParamType {
-            field: "metadata",
-            expected: "an object",
-        }),
-    }
 }
