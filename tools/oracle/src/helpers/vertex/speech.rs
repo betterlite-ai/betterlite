@@ -29,10 +29,9 @@ impl MintAccessToken for FixedMint {
         _credentials: Option<&'mint ConfiguredCredentials>,
         project: Option<&'mint str>,
     ) -> MintFuture<'mint> {
-        let project = project.unwrap_or("project-1").to_owned();
         Box::pin(ready(Ok(AccessToken {
             token: SecretString::from("oracle-token"),
-            project,
+            project: project.unwrap_or("project-1").to_owned(),
         })))
     }
 }
