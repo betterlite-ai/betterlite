@@ -71,7 +71,7 @@ index dc6e1078af3ca62489844084df3b7718806b6792..d1be8aacd3d8e8d4b1ccac0d5f250a36
 @@ -48,9 +49,9 @@ describe("guardrail_garden_data logos", () => {
      }
    });
- 
+
 -  it("uses the LiteLLM logo for every content filter card", () => {
 +  it("uses the betterlite wordmark for every content filter card", () => {
      for (const card of LITELLM_CONTENT_FILTER_CARDS) {
@@ -79,7 +79,7 @@ index dc6e1078af3ca62489844084df3b7718806b6792..d1be8aacd3d8e8d4b1ccac0d5f250a36
 +      expect(card.logo, `card ${card.id}`).toBe(BRAND_WORDMARK_SRC);
      }
    });
- 
+
 diff --git a/ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info_helpers.tsx b/ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info_helpers.tsx
 index 3c6d9e17642cb923be9e458a18ed91aab1d5a632..91c8e1a360de5589df8d04d764995d5a85107c4f 100644
 --- a/ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info_helpers.tsx
@@ -117,7 +117,7 @@ index 3c6d9e17642cb923be9e458a18ed91aab1d5a632..91c8e1a360de5589df8d04d764995d5a
 -  "Decision Model": litellmLogo.src,
 +  "Decision Model": BRAND_WORDMARK_SRC,
  } satisfies Record<string, string>;
- 
+
  export const getGuardrailLogo = (displayName: string): string | undefined =>
 diff --git a/ui/litellm-dashboard/src/app/(dashboard)/layout.tsx b/ui/litellm-dashboard/src/app/(dashboard)/layout.tsx
 index 72f2691906007239d8ab2825161add98bd5d6622..f8d17ff1bcdf34e3db81f0f0f595b3ac7c7ce0cc 100644
@@ -157,7 +157,7 @@ index c7eddb587c0d4189e34e4c2bfceed3ff44fbc548..6433fe21524ad291fdda4dcd6d87d145
 +++ b/ui/litellm-dashboard/src/app/layout.tsx
 @@ -9,8 +9,8 @@ import ReactQueryProvider from "@/contexts/ReactQueryProvider";
  import { Toaster } from "@/components/ui/sonner";
- 
+
  export const metadata: Metadata = {
 -  title: "LiteLLM Dashboard",
 -  description: "LiteLLM Proxy Admin UI",
@@ -165,13 +165,13 @@ index c7eddb587c0d4189e34e4c2bfceed3ff44fbc548..6433fe21524ad291fdda4dcd6d87d145
 +  description: "betterlite Proxy Admin UI",
    icons: { icon: "/get_favicon" },
  };
- 
+
 diff --git a/ui/litellm-dashboard/src/app/login/LoginPage.tsx b/ui/litellm-dashboard/src/app/login/LoginPage.tsx
 index 11cf5ffad3d442f408ce0a029be1b307dc756bc3..0494b0f32fab58401f03617959d084926b8a695e 100644
 --- a/ui/litellm-dashboard/src/app/login/LoginPage.tsx
 +++ b/ui/litellm-dashboard/src/app/login/LoginPage.tsx
 @@ -2,6 +2,7 @@
- 
+
  import { useLogin } from "@/app/(dashboard)/hooks/login/useLogin";
  import { useUIConfig } from "@/app/(dashboard)/hooks/uiConfig/useUIConfig";
 +import { UPSTREAM_LITELLM_DOCS_LABEL } from "@/components/branding/brandLinks";
@@ -194,7 +194,7 @@ index 11cf5ffad3d442f408ce0a029be1b307dc756bc3..0494b0f32fab58401f03617959d08492
 -                <h2 className="text-3xl font-semibold text-foreground">🚅 LiteLLM</h2>
 +                <h2 className="text-3xl font-semibold text-foreground">betterlite</h2>
                </div>
- 
+
                <Alert variant="warning">
 @@ -222,12 +223,12 @@ function LoginPageContent() {
            <TooltipProvider>
@@ -203,13 +203,13 @@ index 11cf5ffad3d442f408ce0a029be1b307dc756bc3..0494b0f32fab58401f03617959d08492
 -                <h2 className="text-3xl font-semibold text-foreground">🚅 LiteLLM</h2>
 +                <h2 className="text-3xl font-semibold text-foreground">betterlite</h2>
                </div>
- 
+
                <div className="text-center">
                  <h3 className="text-2xl font-semibold text-foreground">Login</h3>
 -                <p className="text-sm text-muted-foreground">Access your LiteLLM Admin UI.</p>
 +                <p className="text-sm text-muted-foreground">Access your betterlite Admin UI.</p>
                </div>
- 
+
                {!uiConfig?.hide_default_credentials_hint && (
 @@ -237,13 +238,13 @@ function LoginPageContent() {
                    <AlertDescription>
@@ -248,7 +248,7 @@ index 96eb165d43c6153efc814f556503b6def7cd77a3..66739de8a7c8abfcd31b88a29c3fa08b
  import { UiLoadingSpinner } from "@/components/ui/ui-loading-spinner";
 -import { cn } from "@/lib/cva.config";
  import { useZodForm } from "@/lib/forms/useZodForm";
- 
+
  type OnboardingFormBodyProps = {
 @@ -38,7 +38,9 @@ export function OnboardingFormBody({ variant, userEmail, isPending, claimError,
      <div className="mx-auto w-full max-w-md mt-10">
@@ -264,7 +264,7 @@ index 96eb165d43c6153efc814f556503b6def7cd77a3..66739de8a7c8abfcd31b88a29c3fa08b
 @@ -46,26 +48,6 @@ export function OnboardingFormBody({ variant, userEmail, isPending, claimError,
                : "Claim your user account to login to Admin UI."}
            </p>
- 
+
 -          {variant === "signup" && (
 -            <Alert className="mt-4" variant="info">
 -              <Info />
@@ -322,7 +322,7 @@ index 6e84f22a2a2617253ad0d64dc22fcbf0d489cc40..2d8e5c35e6cb4412aa4e08f580742268
 -import { Github, Slack } from "lucide-react";
 +import { Github, LifeBuoy } from "lucide-react";
  import React from "react";
- 
+
  const COMMUNITY_LINKS = [
    {
 -    href: "https://www.litellm.ai/support",
@@ -353,10 +353,10 @@ index 9b4f4c90b64a346a0e1366c2388c52543eaa2ba1..807621dd2f7517aa47f646b7da5e25d4
  import { NAV_PRODUCT_LINK_CLASS } from "@/components/Navbar/navProductLinkClass";
  import { ChevronDown } from "lucide-react";
  import React from "react";
- 
+
 -export const DOCS_URL = "https://docs.litellm.ai/docs/";
 +export const DOCS_URL = BETTERLITE_DOCS_URL;
- 
+
  const ChevronWidthSpacer: React.FC = () => (
    <ChevronDown className="pointer-events-none size-2.5 opacity-0" aria-hidden />
 diff --git a/ui/litellm-dashboard/src/components/Navbar/NotificationsBell/NotificationsBell.tsx b/ui/litellm-dashboard/src/components/Navbar/NotificationsBell/NotificationsBell.tsx
@@ -372,7 +372,7 @@ index 8b9b7d1d0d2a8f62b2b09424f114527d05cd9045..47e55465875a699fe09a497d219579b1
  import { Button, buttonVariants } from "@/components/ui/button";
  import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 @@ -27,7 +28,7 @@ export const NotificationsBell: React.FC = () => {
- 
+
    const content = (
      <div className="max-w-[280px]">
 -      <PopoverTitle className="mt-0! mb-2!">LiteLLM Auto Router</PopoverTitle>
@@ -417,7 +417,7 @@ index ab9a723e57a5e00e692e253aad23110f0cab386c..5c429e5ef01479079d1f9afaf2105853
  import React, { useEffect, useState } from "react";
 @@ -67,15 +66,7 @@ interface UserDropdownProps {
  }
- 
+
  const UserDropdown: React.FC<UserDropdownProps> = ({ onLogout, variant = "navbar", collapsed = false }) => {
 -  const {
 -    userId,
@@ -502,7 +502,7 @@ index e580b8610d08390f370041ec7eb08bbf7344e119..c7cbd4048263957f7fd4f4656036d7a6
 +import { ChevronsUpDown, IdCard, KeyRound, LogOut, Mail, ShieldCheck } from "lucide-react";
  import { useRouter } from "next/navigation";
  import React from "react";
- 
+
 -const RELEASE_NOTES_URL = "https://docs.litellm.ai/release_notes";
 -
  function hueFromString(seed: string): number {
@@ -542,7 +542,7 @@ index e580b8610d08390f370041ec7eb08bbf7344e119..c7cbd4048263957f7fd4f4656036d7a6
                v{version}
 @@ -210,19 +208,6 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
          </div>
- 
+
          <div className="flex flex-col px-3 py-2">
 -          <InfoRow icon={<Crown className="size-[17px]" />} label="Tier">
 -            {premiumUser ? (
@@ -571,7 +571,7 @@ index e580b8610d08390f370041ec7eb08bbf7344e119..c7cbd4048263957f7fd4f4656036d7a6
 +            LiteLLM license and notices (Berri AI, MIT)
 +          </a>
          </div>
- 
+
          <Separator />
 @@ -250,12 +241,12 @@ const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({ onLogout, colla
            ))}
@@ -685,7 +685,7 @@ index 2d46efa3a2daefa826c8d3b1b5b9d4ed1d8276ca..4cb7e6e0f4557f6c402ca3de51c02cc9
 +import { BrandWordmark } from "@/components/branding/BrandWordmark";
  import { cx } from "@/lib/cva.config";
  import { UiLoadingSpinner } from "../ui/ui-loading-spinner";
- 
+
  export default function LoadingScreen() {
    return (
      <div className={cx("h-screen", "flex items-center justify-center gap-4")}>
@@ -693,7 +693,7 @@ index 2d46efa3a2daefa826c8d3b1b5b9d4ed1d8276ca..4cb7e6e0f4557f6c402ca3de51c02cc9
 +      <div className="text-lg font-medium py-2 pr-4 border-r border-r-gray-200">
 +        <BrandWordmark />
 +      </div>
- 
+
        <div className="flex items-center justify-center gap-2">
          <UiLoadingSpinner className="size-4" />
 diff --git a/ui/litellm-dashboard/src/components/leftnav.tsx b/ui/litellm-dashboard/src/components/leftnav.tsx
@@ -717,12 +717,12 @@ index 2221b43e68dbc7514d03e0d1fbf0105c05101f19..4eebaa96024b5ee0b5a4946d0446dde9
  import SidebarAccountMenu from "./SidebarAccountMenu/SidebarAccountMenu";
 -import SidebarUsageCard from "./SidebarUsageCard";
  import { routeSegmentForPathname, uiHref } from "@/utils/uiHref";
- 
+
  const ICON = { strokeWidth: 1.75 } as const;
 @@ -87,11 +86,6 @@ const ICON = { strokeWidth: 1.75 } as const;
  const LOGO_CLASS_NAME =
    "h-5 w-auto max-w-[150px] object-contain group-data-[collapsed=true]/sidebar:h-7 group-data-[collapsed=true]/sidebar:w-7";
- 
+
 -function bundledLogoSrc(baseUrl: string, { dark, monogram }: { dark: boolean; monogram: boolean }): string {
 -  const query = [dark && "theme=dark", monogram && "variant=monogram"].filter(Boolean).join("&");
 -  return `${baseUrl}/get_image${query ? `?${query}` : ""}`;
@@ -755,7 +755,7 @@ index 2221b43e68dbc7514d03e0d1fbf0105c05101f19..4eebaa96024b5ee0b5a4946d0446dde9
 -  const [erroredDarkLogo, setErroredDarkLogo] = useState<string | null>(null);
    const { data: healthData } = useHealthReadinessDetails(accessToken);
    const logout = useLogout(accessToken);
- 
+
 -  const baseUrl = getProxyBaseUrl();
    const version = healthData?.litellm_version;
    const currentRoute = routeForPathname(usePathname());
@@ -763,7 +763,7 @@ index 2221b43e68dbc7514d03e0d1fbf0105c05101f19..4eebaa96024b5ee0b5a4946d0446dde9
 @@ -631,29 +629,18 @@ const Sidebar_: React.FC<SidebarProps> = ({
      );
    };
- 
+
 -  const logoSrc = logoUrl || bundledLogoSrc(baseUrl, { dark: false, monogram: collapsed });
 -  const reachableDarkLogo = logoUrlDark === erroredDarkLogo ? null : logoUrlDark;
 -  const darkLogoSrc = reachableDarkLogo || logoUrl || bundledLogoSrc(baseUrl, { dark: true, monogram: collapsed });
@@ -795,7 +795,7 @@ index 2221b43e68dbc7514d03e0d1fbf0105c05101f19..4eebaa96024b5ee0b5a4946d0446dde9
                  v{version}
 @@ -687,13 +674,6 @@ const Sidebar_: React.FC<SidebarProps> = ({
        </ScrollArea>
- 
+
        <SidebarFooter>
 -        {isAdminRole(userRole) && (
 -          <SidebarUsageCard
@@ -908,7 +908,7 @@ index 66c10f1e222dcd5861df4c0341d7fca6fdef378f..bb8be34ae7cc9563227c708abc070b06
 @@ -19,6 +20,10 @@ export const Logo: React.FC<LogoProps> = ({ provider, src, label, className = "w
    const resolvedSrc = provider !== undefined ? getProviderLogoAndName(provider).logo : resolveLogoSrc(src) ?? "";
    const name = label ?? provider ?? "";
- 
+
 +  if (src === BRAND_WORDMARK_SRC) {
 +    return <BrandWordmark collapsed />;
 +  }
@@ -954,16 +954,16 @@ index 8bc9b06969efc21efb57fd65f6a218927e212266..d509c181097d8a3c8a7b3e69e3f1ebc8
 @@ -45,9 +41,6 @@ const Navbar: React.FC<NavbarProps> = ({
    const { isControlPlane, selectedWorker } = useWorker();
    const showWorkerSwitch = isControlPlane && selectedWorker !== null;
- 
+
 -  const imageUrl = logoUrl || `${baseUrl}/get_image`;
 -  const darkImageUrl = logoUrl || `${baseUrl}/get_image?theme=dark`;
 -
    const handleLogout = useLogout(accessToken);
- 
+
    const handleWorkerSwitch = (workerId: string) => {
 @@ -78,16 +71,10 @@ const Navbar: React.FC<NavbarProps> = ({
              )}
- 
+
              <div className="flex items-center gap-2">
 -              <Link href={uiHref("")} className="flex items-center">
 +              <Link href={uiHref("")} className="flex items-center" aria-label="betterlite home">
@@ -1007,7 +1007,7 @@ index 8bc9b06969efc21efb57fd65f6a218927e212266..d509c181097d8a3c8a7b3e69e3f1ebc8
                <DocsLink />
 -              <BlogDropdown />
              </nav>
- 
+
              {!hideCommunityLinks && (
 diff --git a/ui/litellm-dashboard/src/lib/logoTreatments.test.ts b/ui/litellm-dashboard/src/lib/logoTreatments.test.ts
 index 828ea72a57f74059b793e95f2ca10835db017a1a..20db2e3fd27e23ca78714692a2b751c93d56e471 100644
@@ -1016,7 +1016,7 @@ index 828ea72a57f74059b793e95f2ca10835db017a1a..20db2e3fd27e23ca78714692a2b751c9
 @@ -6,10 +6,10 @@ describe("logoTreatmentFor", () => {
      expect(logoTreatmentFor("/ui/assets/logos/github.svg")).toBe("invert");
    });
- 
+
 -  it("inverts the bundled LiteLLM monogram into the white brand mark on dark", () => {
 -    expect(logoTreatmentFor("/litellm-asset-prefix/_next/static/media/litellm_monogram.16r2_rdj4dq8r.svg")).toBe(
 -      "invert",
@@ -1026,7 +1026,7 @@ index 828ea72a57f74059b793e95f2ca10835db017a1a..20db2e3fd27e23ca78714692a2b751c9
 +      logoTreatmentFor("/litellm-asset-prefix/_next/static/media/litellm_monogram.16r2_rdj4dq8r.svg"),
 +    ).toBeUndefined();
    });
- 
+
    it("marks a multicolor dark mark for a plate instead of inversion", () => {
 diff --git a/ui/litellm-dashboard/src/lib/logoTreatments.ts b/ui/litellm-dashboard/src/lib/logoTreatments.ts
 index fc19c5c364d36603ab775009771627365e991d10..1448dfa686d493f8e35ed761cc1e9d3d46d2ace6 100644
