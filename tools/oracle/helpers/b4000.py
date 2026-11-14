@@ -203,12 +203,12 @@ class ScriptedCredential:
 
 
 class ScriptedAio(ModuleType):
-    DataLakeServiceClient = ScriptedClient
+    DataLakeServiceClient: type[ScriptedClient] = ScriptedClient
 
 
 class ScriptedIdentity(ModuleType):
-    ClientSecretCredential = ScriptedCredential
-    get_bearer_token_provider = ScriptedProvider
+    ClientSecretCredential: type[ScriptedCredential] = ScriptedCredential
+    get_bearer_token_provider: type[ScriptedProvider] = ScriptedProvider
 
 
 class NoCredentialChain:
