@@ -376,6 +376,21 @@ fn a_false_response_schema_verdict_drops_with_drop_params() {
 }
 
 #[test]
+fn the_global_drop_flag_drops_response_format() {
+    let mapped = map_with(
+        "together/qwen",
+        json!({"response_format": {"type": "json_object"}}),
+        DropParams {
+            request: false,
+            global: true,
+        },
+        &false_verdict(TogetherFlag::SupportsResponseSchema),
+    )
+    .unwrap();
+    assert!(mapped.is_empty());
+}
+
+#[test]
 fn a_false_response_schema_verdict_fails_without_drop_params() {
     let error = map_with(
         "together/qwen",
