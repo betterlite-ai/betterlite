@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 
 use super::log_json_data_on_gcs;
 use crate::gcs_client::gcs_storage_auth::error::GcsClientError;
@@ -143,18 +144,21 @@ async fn the_parsed_response_is_returned() {
     );
 }
 
+#[rstest]
+#[case::informational(199)]
+#[case::redirect(300)]
+#[case::forbidden(403)]
+#[case::server_error(500)]
 #[tokio::test]
-async fn a_non_success_status_is_an_error() {
-    for status in [199, 300, 403, 500] {
-        let harness = harness_with(RecordingClient::responding(
-            status,
-            "{\"error\":{\"code\":500}}",
-        ));
-        let base = harness.build(None);
-        let payload = GcsLoggingPayload::Text("body".to_owned());
-        let result = log_json_data_on_gcs(&base, &headers(&[]), "bucket", "object", &payload).await;
-        assert!(matches!(result, Err(GcsClientError::Status { status: got }) if got == status));
-    }
+async fn a_non_success_status_is_an_error(#[case] status: u16) {
+    let harness = harness_with(RecordingClient::responding(
+        status,
+        "{\"error\":{\"code\":500}}",
+    ));
+    let base = harness.build(None);
+    let payload = GcsLoggingPayload::Text("body".to_owned());
+    let result = log_json_data_on_gcs(&base, &headers(&[]), "bucket", "object", &payload).await;
+    assert!(matches!(result, Err(GcsClientError::Status { status: got }) if got == status));
 }
 
 #[tokio::test]
@@ -231,17 +235,23 @@ async fn the_mock_upload_answers_with_the_canned_object() {
     assert!(harness.requests().is_empty(), "the real client was reached");
 }
 
+#[rstest]
+#[case::ok(200, false)]
+#[case::created(201, true)]
 #[tokio::test]
-async fn only_a_success_other_than_200_is_logged_as_an_error() {
+async fn only_a_success_other_than_200_is_logged_as_an_error(
+    #[case] status: u16,
+    #[case] logs_an_error: bool,
+) {
     let (captured, _guard) = capture_logs();
-    for status in [200, 201] {
-        let harness = harness_with(RecordingClient::responding(status, "{}"));
-        let base = harness.build(None);
-        let payload = GcsLoggingPayload::Text("body".to_owned());
-        log_json_data_on_gcs(&base, &headers(&[]), "bucket", "object", &payload)
-            .await
-            .expect("a 2xx response is parsed");
-        let logged = captured.text();
-        assert_eq!(logged.contains("GCS Bucket logging error"), status == 201);
-    }
+    let harness = harness_with(RecordingClient::responding(status, "{}"));
+    let base = harness.build(None);
+    let payload = GcsLoggingPayload::Text("body".to_owned());
+    log_json_data_on_gcs(&base, &headers(&[]), "bucket", "object", &payload)
+        .await
+        .expect("a 2xx response is parsed");
+    assert_eq!(
+        captured.text().contains("GCS Bucket logging error"),
+        logs_an_error
+    );
 }
