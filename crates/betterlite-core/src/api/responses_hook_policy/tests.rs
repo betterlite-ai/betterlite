@@ -9,11 +9,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde_json::Number;
 
-use super::agentic::{
-    RefusedToolIdentifiers, can_replace_turn_with_terminal_response, check_agentic_loop_safety,
-    fingerprint_agentic_tools, get_agentic_loop_settings, is_refused_tool_use_block,
-    refused_agentic_tool_identifiers,
-};
+use super::agentic::get_agentic_loop_settings;
 use super::callbacks::{
     CallbackLists, CallbackValue, DeploymentHookDispatcher, NamedCallbackResolver, PolicyCallback,
     ResponsesHookOutcome, ResponsesHookRequest, custom_logger_callbacks,
@@ -22,6 +18,10 @@ use super::callbacks::{
 };
 use super::error::{AgenticFollowupKwargsError, AgenticLoopSafetyError, DeploymentHookError};
 use super::followup::{AgenticFollowupInput, build_agentic_followup_kwargs};
+use super::safety::{
+    RefusedToolIdentifiers, can_replace_turn_with_terminal_response, check_agentic_loop_safety,
+    fingerprint_agentic_tools, is_refused_tool_use_block, refused_agentic_tool_identifiers,
+};
 
 #[derive(Default)]
 struct ScriptedDispatcher {
