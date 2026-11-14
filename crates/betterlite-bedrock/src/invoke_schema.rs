@@ -56,10 +56,9 @@ pub fn inline_output_format(output_format: &Object, body: &mut Object) {
     else {
         return;
     };
-    let Some(Json::List(messages)) = body.get(MESSAGES) else {
+    let Some(Json::List(mut messages)) = body.get(MESSAGES).cloned() else {
         return;
     };
-    let messages = messages.clone();
     let Some(index) = messages.iter().rposition(|message| {
         matches!(
             message,
@@ -69,27 +68,25 @@ pub fn inline_output_format(output_format: &Object, body: &mut Object) {
     }) else {
         return;
     };
-    let Some(Json::Object(original)) = messages.get(index).cloned() else {
+    let Some(Json::Object(mut original)) = messages.get(index).cloned() else {
         return;
     };
-    let mut new_content = match original.get("content") {
+    let Ok(text) = serde_json::to_string(schema) else {
+        return;
+    };
+    let mut content = match original.get("content") {
         None => Vec::new(),
         Some(Json::Text(existing)) => vec![text_block(existing)],
         Some(Json::List(items)) => items.clone(),
         Some(_) => return,
     };
-    let Ok(text) = serde_json::to_string(schema) else {
+    content.push(text_block(&text));
+    original.insert("content".to_owned(), Json::List(content));
+    let Some(slot) = messages.get_mut(index) else {
         return;
     };
-    new_content.push(text_block(&text));
-    let mut updated = original;
-    updated.insert("content".to_owned(), Json::List(new_content));
-    let mut new_messages = messages;
-    let Some(slot) = new_messages.get_mut(index) else {
-        return;
-    };
-    *slot = Json::Object(updated);
-    body.insert(MESSAGES.to_owned(), Json::List(new_messages));
+    *slot = Json::Object(original);
+    body.insert(MESSAGES.to_owned(), Json::List(messages));
 }
 
 fn text_block(text: &str) -> Json {

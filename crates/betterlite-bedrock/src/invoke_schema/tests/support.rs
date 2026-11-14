@@ -1,8 +1,9 @@
 use std::fmt::Debug;
-use std::future::ready;
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_models::model_capability_predicates::CapabilityRequest;
+use tokio::runtime::{Builder, Runtime};
 use tracing::field::{Field, Visit};
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level, Subscriber};
@@ -32,7 +33,7 @@ impl InvokeSchemaCapabilities for Capabilities {
         &mut self,
         request: &CapabilityRequest<'_>,
         key: &str,
-    ) -> impl std::future::Future<Output = bool> + Send {
+    ) -> impl Future<Output = bool> + Send {
         self.queries.push(Query {
             model: request.model.to_owned(),
             provider: request.custom_llm_provider.map(str::to_owned),
@@ -45,10 +46,7 @@ impl InvokeSchemaCapabilities for Capabilities {
         })
     }
 
-    fn supports_effort_param(
-        &mut self,
-        model: &str,
-    ) -> impl std::future::Future<Output = bool> + Send {
+    fn supports_effort_param(&mut self, model: &str) -> impl Future<Output = bool> + Send {
         self.effort_models.push(model.to_owned());
         ready(self.effort)
     }
@@ -97,8 +95,8 @@ pub(crate) fn capture_warnings() -> (DefaultGuard, Warnings) {
     (set_default(subscriber), warnings)
 }
 
-pub(crate) fn runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_current_thread()
+pub(crate) fn runtime() -> Runtime {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("a current-thread runtime")
