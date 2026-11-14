@@ -10,6 +10,16 @@ class _OCIModel(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore", serialize_by_alias=True)
 
 
+class _ChatOptions(_OCIModel):
+    max_tokens: int | None = Field(default=None, alias="maxTokens")
+    temperature: float | None = None
+    top_p: float | None = Field(default=None, alias="topP")
+    frequency_penalty: float | None = Field(default=None, alias="frequencyPenalty")
+    presence_penalty: float | None = Field(default=None, alias="presencePenalty")
+    seed: int | None = None
+    response_format: dict[str, JsonValue] | None = Field(default=None, alias="responseFormat")
+
+
 class OCIVendors(Enum):
     COHERE = "COHERE"
     GENERIC = "GENERIC"
@@ -58,22 +68,15 @@ class OCIMessage(_OCIModel):
     tool_call_id: str | None = Field(default=None, alias="toolCallId")
 
 
-class OCIChatRequestPayload(_OCIModel):
+class OCIChatRequestPayload(_ChatOptions):
     api_format: str = Field(alias="apiFormat")
     messages: list[OCIMessage]
     tools: list[OCIToolDefinition] | None = None
     is_stream: bool = Field(default=False, alias="isStream")
     num_generations: int | None = Field(default=None, alias="numGenerations")
-    max_tokens: int | None = Field(default=None, alias="maxTokens")
     max_completion_tokens: int | None = Field(default=None, alias="maxCompletionTokens")
-    temperature: float | None = None
-    top_p: float | None = Field(default=None, alias="topP")
     stop: list[str] | None = None
-    seed: int | None = None
-    frequency_penalty: float | None = Field(default=None, alias="frequencyPenalty")
-    presence_penalty: float | None = Field(default=None, alias="presencePenalty")
     reasoning_effort: str | None = Field(default=None, alias="reasoningEffort")
-    response_format: dict[str, JsonValue] | None = Field(default=None, alias="responseFormat")
     tool_choice: str | dict[str, JsonValue] | None = Field(default=None, alias="toolChoice")
     logit_bias: dict[str, JsonValue] | None = Field(default=None, alias="logitBias")
     log_probs: int | None = Field(default=None, alias="logProbs")
@@ -132,21 +135,14 @@ class CohereToolMessage(CohereMessage):
     tool_results: list[CohereToolResult] = Field(alias="toolResults")
 
 
-class CohereChatRequest(_OCIModel):
+class CohereChatRequest(_ChatOptions):
     message: str
     api_format: Literal["COHERE"] = Field(default="COHERE", alias="apiFormat")
     chat_history: list[SerializeAsAny[CohereMessage]] | None = Field(
         default=None, alias="chatHistory")
-    max_tokens: int | None = Field(default=None, alias="maxTokens")
-    temperature: float | None = None
-    top_p: float | None = Field(default=None, alias="topP")
     top_k: int | None = Field(default=None, alias="topK")
-    frequency_penalty: float | None = Field(default=None, alias="frequencyPenalty")
-    presence_penalty: float | None = Field(default=None, alias="presencePenalty")
     stop_sequences: list[str] | None = Field(default=None, alias="stopSequences")
-    seed: int | None = None
     tools: list[CohereTool] | None = None
-    response_format: dict[str, JsonValue] | None = Field(default=None, alias="responseFormat")
     preamble_override: str | None = Field(default=None, alias="preambleOverride")
     documents: list[dict[str, JsonValue]] | None = None
     search_queries_only: bool | None = Field(default=None, alias="searchQueriesOnly")
