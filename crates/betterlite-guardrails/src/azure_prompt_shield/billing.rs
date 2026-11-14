@@ -59,7 +59,6 @@ pub fn billing_tracing_detail(
         cost_tier.map(CostTier::wire_name),
         price_per_1000_text_records,
     )?;
-    let guardrail_cost_in_spend = cost.map(|_amount| false);
     Ok(Some(GuardrailTracingDetail {
         guardrail_id: None,
         policy_template: None,
@@ -73,8 +72,8 @@ pub fn billing_tracing_detail(
         violation_categories: None,
         guardrail_action: None,
         guardrail_usage: Some(units),
-        guardrail_cost,
+        guardrail_cost: cost,
         guardrail_cost_by_unit: None,
-        guardrail_cost_in_spend,
+        guardrail_cost_in_spend: cost.map(|_amount| false),
     }))
 }

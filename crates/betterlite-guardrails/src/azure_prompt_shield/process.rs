@@ -36,55 +36,55 @@ pub struct ErrorRecord {
     pub usage: BillingUsage,
 }
 
-// LiteLLM's _process_response override: the prompt is summarized away, the usage priced, and the provider labelled.
-pub fn process_response(
-    guardrail: &AzurePromptShieldGuardrail,
-    context: &mut GuardrailRecordContext<'_>,
-    record: ResponseRecord<'_>,
-) -> Result<(), PromptShieldError> {
-    let guardrail_response =
-        summarize_guardrail_response(record.response, record.baseline, record.event_type);
-    let tracing_detail = billing_tracing_detail(
-        record.usage,
-        guardrail.cost_tier,
-        guardrail.price_per_1000_text_records,
-    )?;
-    add_guardrail_record(
-        context,
-        GuardrailRecordInput {
-            guardrail_response,
-            guardrail_status: GuardrailStatus::Success,
-            start_time: record.timing.start_time,
-            end_time: record.timing.end_time,
-            duration: record.timing.duration,
-            masked_entity_count: None,
-            guardrail_provider: Some(AZURE_PROVIDER.to_owned()),
-            event_type: record.event_type,
-            tracing_detail,
-        },
-    )?;
-    Ok(())
+// One invocation ended either with a response or with an error, and both paths log the same record.
+pub enum ScanOutcome<'record> {
+    Response(ResponseRecord<'record>),
+    Error(&'record GuardrailFailure, ErrorRecord),
 }
 
-// LiteLLM's _process_error override: a chunk that was submitted before the block was still billed, so its usage records here.
-pub fn process_error(
-    guardrail: &AzurePromptShieldGuardrail,
-    context: &mut GuardrailRecordContext<'_>,
+fn error_response(
+    context: &GuardrailRecordContext<'_>,
     failure: &GuardrailFailure,
-    record: ErrorRecord,
-) -> Result<(), PromptShieldError> {
-    let guardrail_status = if failure.is_intervention() {
-        GuardrailStatus::GuardrailIntervened
-    } else {
-        GuardrailStatus::GuardrailFailedToRespond
-    };
-    let guardrail_response = if context.base.settings.switches.deny_text_on_error {
+) -> GuardrailValue {
+    if context.base.settings.switches.deny_text_on_error {
         GuardrailValue::Text("deny".to_owned())
     } else {
         GuardrailValue::Text(failure.to_string())
+    }
+}
+
+fn error_status(failure: &GuardrailFailure) -> GuardrailStatus {
+    if failure.is_intervention() {
+        GuardrailStatus::GuardrailIntervened
+    } else {
+        GuardrailStatus::GuardrailFailedToRespond
+    }
+}
+
+// LiteLLM's _process_response and _process_error overrides differ only in the response and the status; both attach the priced usage and the azure provider label.
+pub fn process_outcome(
+    guardrail: &AzurePromptShieldGuardrail,
+    context: &mut GuardrailRecordContext<'_>,
+    outcome: ScanOutcome<'_>,
+) -> Result<(), PromptShieldError> {
+    let (guardrail_response, guardrail_status, timing, event_type, usage) = match outcome {
+        ScanOutcome::Response(record) => (
+            summarize_guardrail_response(record.response, record.baseline, record.event_type),
+            GuardrailStatus::Success,
+            record.timing,
+            record.event_type,
+            record.usage,
+        ),
+        ScanOutcome::Error(failure, record) => (
+            error_response(context, failure),
+            error_status(failure),
+            record.timing,
+            record.event_type,
+            record.usage,
+        ),
     };
     let tracing_detail = billing_tracing_detail(
-        record.usage,
+        usage,
         guardrail.cost_tier,
         guardrail.price_per_1000_text_records,
     )?;
@@ -93,12 +93,12 @@ pub fn process_error(
         GuardrailRecordInput {
             guardrail_response,
             guardrail_status,
-            start_time: record.timing.start_time,
-            end_time: record.timing.end_time,
-            duration: record.timing.duration,
+            start_time: timing.start_time,
+            end_time: timing.end_time,
+            duration: timing.duration,
             masked_entity_count: None,
             guardrail_provider: Some(AZURE_PROVIDER.to_owned()),
-            event_type: record.event_type,
+            event_type,
             tracing_detail,
         },
     )?;

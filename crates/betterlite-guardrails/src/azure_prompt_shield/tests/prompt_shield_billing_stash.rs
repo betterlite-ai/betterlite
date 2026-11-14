@@ -9,7 +9,7 @@ use super::support::{
 };
 use crate::azure_prompt_shield::billing::BillingUsage;
 use crate::azure_prompt_shield::guardrail::{AzurePromptShieldGuardrail, PreCallReturn};
-use crate::azure_prompt_shield::process::{ResponseRecord, process_response};
+use crate::azure_prompt_shield::process::{ResponseRecord, ScanOutcome, process_outcome};
 
 fn empty_log(guardrail: &AzurePromptShieldGuardrail) -> Log {
     Log::new(&guardrail.base, BTreeMap::new())
@@ -27,16 +27,16 @@ async fn the_counters_survive_a_request_data_swap_and_reach_the_record() {
         .unwrap();
     assert_eq!(returned, PreCallReturn::None);
     let mut log = empty_log(&guardrail);
-    process_response(
+    process_outcome(
         &guardrail,
         &mut log.context(&DiscardSink),
-        ResponseRecord {
+        ScanOutcome::Response(ResponseRecord {
             response: None,
             baseline: None,
             event_type: Some(GuardrailEventHooks::PreCall),
             timing: NOW,
             usage,
-        },
+        }),
     )
     .unwrap();
     let records = stored(&log.data);
@@ -70,16 +70,16 @@ async fn each_invocation_starts_the_counters_from_zero() {
 fn a_usage_free_invocation_records_no_tracing_detail() {
     let guardrail = guardrail("http://127.0.0.1:1");
     let mut log = empty_log(&guardrail);
-    process_response(
+    process_outcome(
         &guardrail,
         &mut log.context(&DiscardSink),
-        ResponseRecord {
+        ScanOutcome::Response(ResponseRecord {
             response: None,
             baseline: None,
             event_type: None,
             timing: NOW,
             usage: BillingUsage::default(),
-        },
+        }),
     )
     .unwrap();
     let records = stored(&log.data);
@@ -99,18 +99,18 @@ fn a_priced_usage_is_recorded_but_never_counted_in_spend() {
         ),
         &NoSecrets,
     );
-    let long = "x".repeat(4800);
+    let prompt = "x".repeat(4800);
     let mut log = empty_log(&guardrail);
-    process_response(
+    process_outcome(
         &guardrail,
         &mut log.context(&DiscardSink),
-        ResponseRecord {
+        ScanOutcome::Response(ResponseRecord {
             response: None,
             baseline: None,
             event_type: None,
             timing: NOW,
-            usage: usage_with(&[long.as_str()]),
-        },
+            usage: usage_with(&[prompt.as_str()]),
+        }),
     )
     .unwrap();
     let record = stored(&log.data).first().cloned().unwrap();

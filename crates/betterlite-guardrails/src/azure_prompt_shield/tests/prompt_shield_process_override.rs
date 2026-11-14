@@ -13,7 +13,7 @@ use crate::azure_prompt_shield::billing::BillingUsage;
 use crate::azure_prompt_shield::error::PromptShieldError;
 use crate::azure_prompt_shield::guardrail::AzurePromptShieldGuardrail;
 use crate::azure_prompt_shield::process::{
-    ErrorRecord, ResponseRecord, process_error, process_response,
+    ErrorRecord, ResponseRecord, ScanOutcome, process_outcome,
 };
 use crate::guardrail_base::failure::GuardrailFailure;
 
@@ -21,16 +21,16 @@ use crate::guardrail_base::failure::GuardrailFailure;
 fn process_response_records_a_success_with_the_azure_provider() {
     let guardrail = guardrail("http://127.0.0.1:1");
     let mut log = Log::new(&guardrail.base, BTreeMap::new());
-    process_response(
+    process_outcome(
         &guardrail,
         &mut log.context(&DiscardSink),
-        ResponseRecord {
+        ScanOutcome::Response(ResponseRecord {
             response: None,
             baseline: None,
             event_type: Some(GuardrailEventHooks::PreCall),
             timing: NOW,
             usage: BillingUsage::default(),
-        },
+        }),
     )
     .unwrap();
     let record = stored(&log.data).first().cloned().unwrap();
@@ -59,16 +59,16 @@ fn process_response_summarizes_a_pre_call_prompt(#[case] modified: bool, #[case]
         value(r#"{"messages":[{"role":"user","content":"hi"}]}"#)
     };
     let mut log = Log::new(&guardrail.base, BTreeMap::new());
-    process_response(
+    process_outcome(
         &guardrail,
         &mut log.context(&DiscardSink),
-        ResponseRecord {
+        ScanOutcome::Response(ResponseRecord {
             response: Some(&response),
             baseline: Some(&baseline),
             event_type: Some(GuardrailEventHooks::PreCall),
             timing: NOW,
             usage: BillingUsage::default(),
-        },
+        }),
     )
     .unwrap();
     let record = stored(&log.data).first().cloned().unwrap();
@@ -98,15 +98,17 @@ fn process_error_records_the_failure_status(
 ) {
     let guardrail = guardrail("http://127.0.0.1:1");
     let mut log = Log::new(&guardrail.base, BTreeMap::new());
-    process_error(
+    process_outcome(
         &guardrail,
         &mut log.context(&DiscardSink),
-        &failure,
-        ErrorRecord {
-            event_type: Some(GuardrailEventHooks::PreCall),
-            timing: NOW,
-            usage: usage_with(&["bad prompt"]),
-        },
+        ScanOutcome::Error(
+            &failure,
+            ErrorRecord {
+                event_type: Some(GuardrailEventHooks::PreCall),
+                timing: NOW,
+                usage: usage_with(&["bad prompt"]),
+            },
+        ),
     )
     .unwrap();
     let record = stored(&log.data).first().cloned().unwrap();
@@ -123,18 +125,20 @@ fn process_error_stores_deny_when_the_switch_is_on() {
     let mut base = guardrail.base.clone();
     base.settings.switches.deny_text_on_error = true;
     let mut log = Log::new(&base, BTreeMap::new());
-    process_error(
+    process_outcome(
         &guardrail,
         &mut log.context(&DiscardSink),
-        &GuardrailFailure::Http {
-            status: 400,
-            detail: "attack".to_owned(),
-        },
-        ErrorRecord {
-            event_type: None,
-            timing: NOW,
-            usage: BillingUsage::default(),
-        },
+        ScanOutcome::Error(
+            &GuardrailFailure::Http {
+                status: 400,
+                detail: "attack".to_owned(),
+            },
+            ErrorRecord {
+                event_type: None,
+                timing: NOW,
+                usage: BillingUsage::default(),
+            },
+        ),
     )
     .unwrap();
     let record = stored(&log.data).first().cloned().unwrap();
@@ -175,10 +179,10 @@ fn process_response_attaches_usage_and_keeps_the_cost_out_of_spend() {
     let guardrail = priced_guardrail();
     let prompt = "x".repeat(1000);
     let mut log = Log::new(&guardrail.base, BTreeMap::new());
-    process_response(
+    process_outcome(
         &guardrail,
         &mut log.context(&DiscardSink),
-        response_record(&prompt),
+        ScanOutcome::Response(response_record(&prompt)),
     )
     .unwrap();
     let record = stored(&log.data).first().cloned().unwrap();
@@ -199,14 +203,16 @@ fn process_error_attaches_usage_and_keeps_the_cost_out_of_spend() {
     let guardrail = priced_guardrail();
     let prompt = "x".repeat(1000);
     let mut log = Log::new(&guardrail.base, BTreeMap::new());
-    process_error(
+    process_outcome(
         &guardrail,
         &mut log.context(&DiscardSink),
-        &GuardrailFailure::Http {
-            status: 400,
-            detail: "blocked".to_owned(),
-        },
-        error_record(&prompt),
+        ScanOutcome::Error(
+            &GuardrailFailure::Http {
+                status: 400,
+                detail: "blocked".to_owned(),
+            },
+            error_record(&prompt),
+        ),
     )
     .unwrap();
     let record = stored(&log.data).first().cloned().unwrap();
@@ -225,10 +231,10 @@ fn a_response_pricing_error_leaves_the_record_unwritten() {
     guardrail.price_per_1000_text_records = Some(Decimal::MAX);
     let prompt = "x".repeat(3000);
     let mut log = Log::new(&guardrail.base, BTreeMap::new());
-    let error = process_response(
+    let error = process_outcome(
         &guardrail,
         &mut log.context(&DiscardSink),
-        response_record(&prompt),
+        ScanOutcome::Response(response_record(&prompt)),
     )
     .unwrap_err();
     assert!(matches!(&error, PromptShieldError::Pricing(_)), "{error}");
@@ -241,11 +247,13 @@ fn an_error_pricing_error_leaves_the_record_unwritten() {
     guardrail.price_per_1000_text_records = Some(Decimal::MAX);
     let prompt = "x".repeat(3000);
     let mut log = Log::new(&guardrail.base, BTreeMap::new());
-    let error = process_error(
+    let error = process_outcome(
         &guardrail,
         &mut log.context(&DiscardSink),
-        &GuardrailFailure::Other("x".to_owned()),
-        error_record(&prompt),
+        ScanOutcome::Error(
+            &GuardrailFailure::Other("x".to_owned()),
+            error_record(&prompt),
+        ),
     )
     .unwrap_err();
     assert!(matches!(&error, PromptShieldError::Pricing(_)), "{error}");

@@ -25,11 +25,16 @@ pub fn resolved_reference(
     let Some(name) = text.strip_prefix(ENV_PREFIX) else {
         return Ok(text.to_owned());
     };
-    lookup
-        .get_secret_str(name)
-        .map(|secret| secret.expose_secret().to_owned())
-        .filter(|resolved| !resolved.trim().is_empty())
-        .ok_or_else(|| PromptShieldError::UnsetSecret {
+    let Some(secret) = lookup.get_secret_str(name) else {
+        return Err(PromptShieldError::UnsetSecret {
             reference: text.to_owned(),
-        })
+        });
+    };
+    let resolved = secret.expose_secret().to_owned();
+    if resolved.trim().is_empty() {
+        return Err(PromptShieldError::UnsetSecret {
+            reference: text.to_owned(),
+        });
+    }
+    Ok(resolved)
 }
