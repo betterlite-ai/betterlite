@@ -22,7 +22,7 @@ use tokio::task::{JoinSet, yield_now};
 use super::error::{AimError, CONTENT_POLICY_VIOLATION};
 use super::input;
 use super::output::AimOutput;
-use super::settings::{AimGuardrail, AimHook, AimParams, DEFAULT_TIMEOUT};
+use super::settings::{AimGuardrail, AimHook, AimParams, DEFAULT_TIMEOUT, SUPPORTED_EVENT_HOOKS};
 use super::stream::{
     AimFrameReader, AimFrameWriter, AimSocket, AimSocketConnector, AimStreamChunk, CONNECT_TIMEOUT,
     MAX_STREAM_FRAME_BYTES, VerifiedChunk,
@@ -825,6 +825,12 @@ async fn aim_guardrail_stream_defaults_the_frame_wait_to_the_guardrail_timeout()
         .unwrap();
     let timings = state.timings.lock().unwrap_or_else(PoisonError::into_inner);
     assert_eq!(*timings, vec![(CONNECT_TIMEOUT, DEFAULT_TIMEOUT)]);
+}
+
+#[test]
+fn aim_guardrail_supports_the_conversational_hooks() {
+    let hooks = serde_json::to_value(SUPPORTED_EVENT_HOOKS).unwrap();
+    assert_eq!(hooks, json!(["pre_call", "during_call", "post_call"]));
 }
 
 #[test]
