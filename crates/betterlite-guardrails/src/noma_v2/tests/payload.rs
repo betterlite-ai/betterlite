@@ -21,7 +21,7 @@ async fn the_payload_carries_the_inputs_and_request_data() {
         GuardrailInputType::Request,
     )
     .await;
-    assert!(outcome.result.is_ok());
+    outcome.result.unwrap();
     let body = captured_body(&mock);
     let inputs_json = serde_json::to_string(&inputs()).unwrap();
     assert_eq!(body.get("inputs"), Some(&value(&inputs_json)));
@@ -58,7 +58,7 @@ async fn the_payload_excludes_messages_and_input_from_request_data() {
         GuardrailInputType::Request,
     )
     .await;
-    assert!(outcome.result.is_ok());
+    outcome.result.unwrap();
     let body = captured_body(&mock);
     let Some(GuardrailValue::Object(sent)) = body.get("request_data") else {
         panic!("the payload has no request_data object");
@@ -84,7 +84,7 @@ async fn the_payload_carries_the_gateway_name_when_configured() {
         GuardrailInputType::Request,
     )
     .await;
-    assert!(outcome.result.is_ok());
+    outcome.result.unwrap();
     assert_eq!(
         captured_body(&mock).get("gateway_name"),
         Some(&GuardrailValue::Text(String::from("gw-1")))
@@ -101,7 +101,7 @@ async fn the_payload_marks_a_response_input_type() {
         GuardrailInputType::Response,
     )
     .await;
-    assert!(outcome.result.is_ok());
+    outcome.result.unwrap();
     assert_eq!(
         captured_body(&mock).get("input_type"),
         Some(&GuardrailValue::Text(String::from("response")))
@@ -120,7 +120,7 @@ async fn the_payload_omits_an_unresolved_application_id() {
         GuardrailInputType::Request,
     )
     .await;
-    assert!(outcome.result.is_ok());
+    outcome.result.unwrap();
     assert_eq!(captured_body(&mock).get("application_id"), None);
 }
 
@@ -149,7 +149,7 @@ async fn the_payload_logging_object_drops_the_duplicate_keys() {
             Some(&mut target),
         )
         .await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let body = captured_body(&mock);
     let Some(GuardrailValue::Object(sent)) = body.get("request_data") else {
         panic!("the payload has no request_data object");
@@ -181,7 +181,7 @@ async fn the_payload_logging_object_is_null_without_model_call_details() {
             Some(&mut target),
         )
         .await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let body = captured_body(&mock);
     let Some(GuardrailValue::Object(sent)) = body.get("request_data") else {
         panic!("the payload has no request_data object");
@@ -205,7 +205,7 @@ async fn application_id_fallback_prefers_the_dynamic_value() {
         GuardrailInputType::Request,
     )
     .await;
-    assert!(outcome.result.is_ok());
+    outcome.result.unwrap();
     assert_eq!(
         captured_body(&mock).get("application_id"),
         Some(&GuardrailValue::Text(String::from("dynamic-app")))
@@ -223,7 +223,7 @@ async fn application_id_fallback_uses_the_configured_value() {
         GuardrailInputType::Request,
     )
     .await;
-    assert!(outcome.result.is_ok());
+    outcome.result.unwrap();
     assert_eq!(
         captured_body(&mock).get("application_id"),
         Some(&GuardrailValue::Text(String::from("app-1")))
@@ -243,7 +243,7 @@ async fn application_id_fallback_uses_the_litellm_metadata_alias() {
         GuardrailInputType::Request,
     )
     .await;
-    assert!(outcome.result.is_ok());
+    outcome.result.unwrap();
     assert_eq!(
         captured_body(&mock).get("application_id"),
         Some(&GuardrailValue::Text(String::from("alias-app")))
@@ -263,7 +263,7 @@ async fn application_id_fallback_uses_the_metadata_alias() {
         GuardrailInputType::Request,
     )
     .await;
-    assert!(outcome.result.is_ok());
+    outcome.result.unwrap();
     assert_eq!(
         captured_body(&mock).get("application_id"),
         Some(&GuardrailValue::Text(String::from("alias-app")))
@@ -288,7 +288,7 @@ async fn application_id_fallback_skips_an_empty_dynamic_value() {
         GuardrailInputType::Request,
     )
     .await;
-    assert!(outcome.result.is_ok());
+    outcome.result.unwrap();
     assert_eq!(
         captured_body(&mock).get("application_id"),
         Some(&GuardrailValue::Text(String::from("alias-app")))
@@ -308,7 +308,7 @@ async fn application_id_fallback_skips_a_non_object_metadata() {
         GuardrailInputType::Request,
     )
     .await;
-    assert!(outcome.result.is_ok());
+    outcome.result.unwrap();
     assert_eq!(captured_body(&mock).get("application_id"), None);
 }
 
@@ -330,7 +330,7 @@ async fn application_id_fallback_skips_a_non_text_dynamic_value() {
         GuardrailInputType::Request,
     )
     .await;
-    assert!(outcome.result.is_ok());
+    outcome.result.unwrap();
     assert_eq!(
         captured_body(&mock).get("application_id"),
         Some(&GuardrailValue::Text(String::from("alias-app")))

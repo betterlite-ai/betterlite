@@ -55,6 +55,6 @@ fn strict_modes_off_keeps_an_unsupported_hook_with_a_warning() {
     let outcome = with_default(log.subscriber(Level::WARN), || {
         initialize_guardrail_v2(&configured, &env, base_builder(), &mut registry)
     });
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert!(log.text().contains("LITELLM_STRICT_GUARDRAIL_MODES=false"));
 }

@@ -19,7 +19,7 @@ async fn the_authorization_header_carries_the_bearer_key() {
         GuardrailInputType::Request,
     )
     .await;
-    assert!(outcome.result.is_ok());
+    outcome.result.unwrap();
     let headers = captured_headers(&mock);
     let bearer = format!("Bearer {API_KEY}");
     assert_eq!(headers.get(AUTHORIZATION).unwrap(), bearer.as_str());
@@ -39,7 +39,7 @@ async fn a_custom_hostname_no_api_key_sends_no_authorization_header() {
         GuardrailInputType::Request,
     )
     .await;
-    assert!(outcome.result.is_ok());
+    outcome.result.unwrap();
     assert!(captured_headers(&mock).get(AUTHORIZATION).is_none());
 }
 

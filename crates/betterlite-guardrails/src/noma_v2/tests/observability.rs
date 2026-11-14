@@ -20,7 +20,7 @@ async fn the_observability_record_carries_provider_status_and_timing() {
         GuardrailInputType::Request,
     )
     .await;
-    assert!(outcome.result.is_ok());
+    outcome.result.unwrap();
     let record = &records(&outcome.request_data)[0];
     assert_eq!(
         text_field(record, "guardrail_name").as_deref(),
@@ -58,7 +58,7 @@ async fn the_observability_record_carries_the_scan_response_and_duration() {
         GuardrailInputType::Request,
     )
     .await;
-    assert!(outcome.result.is_ok());
+    outcome.result.unwrap();
     let record = &records(&outcome.request_data)[0];
     assert_eq!(
         field(record, "guardrail_response"),
@@ -138,7 +138,7 @@ async fn the_logging_object_receives_the_record() {
         GuardrailInputType::Request,
     )
     .await;
-    assert!(outcome.result.is_ok());
+    outcome.result.unwrap();
     let Some(logging_params) = outcome.log_target.litellm_params.as_ref() else {
         panic!("the logging object has no litellm_params");
     };

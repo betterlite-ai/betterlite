@@ -23,6 +23,7 @@ use betterlite_http::proxy::base_builder;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use tokio::time::sleep;
 use tracing::{Level, Subscriber};
 use tracing_subscriber::fmt;
 
@@ -58,15 +59,15 @@ pub(crate) async fn mock_noma_after(delay: Duration, status: StatusCode, reply: 
     let recorded = Arc::clone(&seen);
     let canned = reply.to_owned();
     let answer = move |uri: Uri, headers: HeaderMap, body: Bytes| {
-        let seen = Arc::clone(&recorded);
+        let captured = Arc::clone(&recorded);
         let answer = canned.clone();
         async move {
-            seen.lock().unwrap().push(Seen {
+            captured.lock().unwrap().push(Seen {
                 path: uri.path().to_owned(),
                 headers,
                 body,
             });
-            tokio::time::sleep(delay).await;
+            sleep(delay).await;
             (status, [("content-type", "application/json")], answer)
         }
     };
@@ -131,9 +132,16 @@ pub(crate) fn lookup(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
 pub(crate) fn params() -> NomaV2Params {
     NomaV2Params {
         guardrail_name: Some(String::from("noma-v2-test")),
+        api_key: None,
+        api_base: None,
+        application_id: None,
+        gateway_name: None,
+        monitor_mode: None,
+        block_failures: None,
+        timeout: None,
         mode: Some(LitellmParamsMode::One(String::from("pre_call"))),
+        default_on: false,
         strict_modes: true,
-        ..NomaV2Params::default()
     }
 }
 
@@ -328,7 +336,11 @@ impl CapturedLog {
 
 impl io::Write for CapturedLog {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
+        let mut log = self
+            .0
+            .lock()
+            .map_err(|_poisoned| io::Error::other("the captured log lock is poisoned"))?;
+        log.extend_from_slice(buf);
         Ok(buf.len())
     }
 

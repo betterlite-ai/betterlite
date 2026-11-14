@@ -109,7 +109,7 @@ fn config_falls_back_to_litellms_request_timeout() {
 #[test]
 fn config_uses_a_configured_timeout_as_the_request_timeout() {
     let mut configured = params();
-    configured.timeout = Some(2.5);
+    configured.timeout = Some(2.5_f64);
     let env = lookup(&[("NOMA_API_KEY", "env-key")]);
     let settings = NomaV2Settings::resolve(&configured, &env).unwrap();
     assert_eq!(settings.request_timeout, Duration::from_millis(2_500));
@@ -133,7 +133,7 @@ fn config_constructor_overrides_environment() {
         gateway_name: Some(String::from("configured-gateway")),
         monitor_mode: Some(false),
         block_failures: Some(true),
-        timeout: Some(2.5),
+        timeout: Some(2.5_f64),
         mode: Some(LitellmParamsMode::One(String::from("post_call"))),
         default_on: true,
         strict_modes: true,
@@ -178,7 +178,7 @@ fn initialize_guardrail_v2_carries_the_default_on_flag_and_timeout() {
     let mut configured = params();
     configured.mode = Some(LitellmParamsMode::One(String::from("post_call")));
     configured.default_on = true;
-    configured.timeout = Some(0.5);
+    configured.timeout = Some(0.5_f64);
     let mut registry = Registry::default();
     let guardrail = initialize_guardrail_v2(
         &configured,
@@ -188,7 +188,7 @@ fn initialize_guardrail_v2_carries_the_default_on_flag_and_timeout() {
     )
     .unwrap();
     assert!(guardrail.base.settings.default_on);
-    assert_eq!(guardrail.base.settings.timeout, Some(0.5));
+    assert_eq!(guardrail.base.settings.timeout, Some(0.5_f64));
     assert_eq!(guardrail.settings.timeout, Some(Duration::from_millis(500)));
 }
 
@@ -239,7 +239,7 @@ fn initialize_guardrail_v2_reads_litellm_params() {
         from_params.mode,
         Some(LitellmParamsMode::One(String::from("pre_call")))
     );
-    assert_eq!(from_params.timeout, Some(4.0));
+    assert_eq!(from_params.timeout, Some(4.0_f64));
     assert!(from_params.strict_modes);
 }
 

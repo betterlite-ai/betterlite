@@ -25,7 +25,7 @@ fn validation_falls_back_to_the_environment_for_whitespace_only_values() {
     let mut configured = params();
     configured.api_key = Some(SecretString::from(String::from("  ")));
     configured.application_id = Some(String::from(" "));
-    configured.gateway_name = Some(String::from(""));
+    configured.gateway_name = Some(String::new());
     let env = lookup(&[
         ("NOMA_API_KEY", " env-key "),
         ("NOMA_APPLICATION_ID", " env-app "),
@@ -58,7 +58,7 @@ fn validation_trims_an_explicit_value() {
 #[test]
 fn validation_rejects_a_negative_timeout() {
     let mut configured = params();
-    configured.timeout = Some(-1.0);
+    configured.timeout = Some(-1.0_f64);
     let error = NomaV2Settings::resolve(&configured, &empty_env()).unwrap_err();
     assert!(matches!(error, NomaV2Error::Timeout { .. }));
 }
@@ -67,7 +67,7 @@ fn validation_rejects_a_negative_timeout() {
 fn validation_accepts_a_zero_timeout() {
     let mut configured = params();
     configured.api_key = Some(SecretString::from(String::from("key-1")));
-    configured.timeout = Some(0.0);
+    configured.timeout = Some(0.0_f64);
     let resolved = NomaV2Settings::resolve(&configured, &empty_env()).unwrap();
     assert_eq!(resolved.timeout, Some(Duration::ZERO));
 }

@@ -22,7 +22,7 @@ fn parse_accepts_each_action(#[case] reply: &str, #[case] expected: Action) {
 
 #[rstest]
 #[case::unknown(r#"{"action": "MAYBE"}"#)]
-#[case::missing(r#"{}"#)]
+#[case::missing("{}")]
 #[case::not_a_string(r#"{"action": 3}"#)]
 #[case::not_an_object(r#"["NONE"]"#)]
 fn parse_rejects_every_other_answer(#[case] reply: &str) {
