@@ -6,3 +6,6 @@ deviations:
   - what: A cache TTL computed from a negative or non-finite threshold becomes zero or the maximum duration instead of raising or storing a negative TTL.
     why: Python's int() raises on an infinite threshold and stores a negative TTL for a negative one; a typed Duration cannot hold either, so the check keeps running with an already expired cache.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/hanging_request_check.py#L43-L48
+  - what: A _latency_per_deployment entry whose latency is not a number drops the deployment-latency block instead of failing the slow-response callback.
+    why: LiteLLM returns no block when sorting the map raises, but round() on a map of strings or booleans raises TypeError out of the callback; betterlite reads the values as numbers and treats the malformed block as absent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L248-L261
