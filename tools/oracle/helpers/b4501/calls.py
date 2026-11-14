@@ -34,9 +34,7 @@ def update_call(repository: LensRepository, call: Call) -> tuple[JsonValue, int]
     if lens_id is None or attempts is None or changed_only is None or transform is None:
         raise ValueError("update needs lens_id, attempts, changed_only and transform")
     counting = CountingTransform(transform)
-    updated = asyncio.run(
-        repository.update(lens_id, counting, attempts, changed_only=changed_only)
-    )
+    updated = asyncio.run(repository.update(lens_id, counting, attempts, changed_only=changed_only))
     return (None if updated is None else dump(updated), counting.calls)
 
 
@@ -72,14 +70,18 @@ def worker_call(repository: LensRepository, call: Call) -> JsonValue:
 
 def output(store: Store, result: JsonValue, transform_calls: int) -> Output:
     lenses: list[dict[str, JsonValue]] = []
-    for lens_id, row in sorted(store.lenses.items()):
-        lenses.append({"id": lens_id, "version": row["version"], "data": dump(row["lens"])})
+    for lens_id, lens_row in sorted(store.lenses.items()):
+        lenses.append(
+            {"id": lens_id, "version": lens_row["version"], "data": dump(lens_row["lens"])}
+        )
     runs: list[dict[str, JsonValue]] = []
-    for job_id, run in sorted(store.runs.items()):
-        runs.append({"id": job_id, "lens_id": run["lens_id"], "data": dump(run["job"])})
+    for job_id, run_row in sorted(store.runs.items()):
+        runs.append({"id": job_id, "lens_id": run_row["lens_id"], "data": dump(run_row["job"])})
     workers: list[dict[str, JsonValue]] = []
-    for worker_id, row in sorted(store.workers.items()):
-        workers.append({"id": worker_id, "token_hash": row["token_hash"], "data": row["data"]})
+    for worker_id, worker_row in sorted(store.workers.items()):
+        workers.append(
+            {"id": worker_id, "token_hash": worker_row["token_hash"], "data": worker_row["data"]}
+        )
     return {
         "result": result,
         "transform_calls": transform_calls,

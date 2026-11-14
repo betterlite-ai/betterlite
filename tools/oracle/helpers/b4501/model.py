@@ -83,7 +83,7 @@ class StoredWorker(TypedDict):
     data: dict[str, JsonValue]
 
 
-def dump(model: Lens | Job) -> JsonValue:
+def dump(model: Lens | Job | Worker) -> JsonValue:
     text = model.model_dump_json()
     return TypeAdapter(JsonValue).validate_json(text)
 

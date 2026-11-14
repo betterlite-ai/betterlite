@@ -1,4 +1,4 @@
-from typing import TypeVar
+from types import MappingProxyType
 
 from litellm.proxy.lens.models import Job, Lens, Worker
 from pydantic import JsonValue
@@ -14,9 +14,6 @@ from .model import (
     dump_mapping,
 )
 
-T = TypeVar("T")
-
-
 def order_of(entry: tuple[str, str, JsonValue]) -> tuple[str, str]:
     created_at, job_id, _data = entry
     return (created_at, job_id)
@@ -30,24 +27,24 @@ class Store:
         self.conflicts = conflicts
         lenses = seed.get("lenses")
         if lenses is not None:
-            for lens_id, row in lenses.items():
-                lens = Lens.model_validate(row["data"])
-                self.lenses[lens_id] = {"version": row["version"], "lens": lens}
+            for lens_id, lens_seed in lenses.items():
+                lens = Lens.model_validate(lens_seed["data"])
+                self.lenses[lens_id] = {"version": lens_seed["version"], "lens": lens}
         runs = seed.get("runs")
         if runs is not None:
-            for job_id, row in runs.items():
-                job = Job.model_validate(row["data"])
-                self.runs[job_id] = {"lens_id": row["lens_id"], "job": job}
+            for job_id, run_seed in runs.items():
+                job = Job.model_validate(run_seed["data"])
+                self.runs[job_id] = {"lens_id": run_seed["lens_id"], "job": job}
         workers = seed.get("workers")
         if workers is not None:
-            for worker_id, row in workers.items():
-                worker = Worker.model_validate(row["data"])
+            for worker_id, worker_seed in workers.items():
+                worker = Worker.model_validate(worker_seed["data"])
                 self.workers[worker_id] = {
-                    "token_hash": row["token_hash"],
+                    "token_hash": worker_seed["token_hash"],
                     "data": dump_mapping(worker),
                 }
 
-    async def query_raw(self, query: str, *args: T) -> list[dict[str, JsonValue]]:
+    async def query_raw(self, query: str, *args: object) -> list[dict[str, JsonValue]]:
         if query.startswith("WITH previous"):
             return self.rewrite(args)
         if "LiteLLM_LensWorker" in query:
@@ -61,7 +58,7 @@ class Store:
             return []
         return [{"data": dump(row["lens"])}]
 
-    def single_job(self, args: tuple[T, ...]) -> list[dict[str, JsonValue]]:
+    def single_job(self, args: tuple[object, ...]) -> list[dict[str, JsonValue]]:
         job_id = str(args[1])
         found = self.runs.get(job_id)
         if found is not None and found["lens_id"] == str(args[0]):
@@ -73,31 +70,23 @@ class Store:
                     return [{"data": dump(job)}]
         return []
 
-    async def execute_raw(self, query: str, *args: T) -> int:
+    async def execute_raw(self, query: str, *args: object) -> int:
         if query.startswith('INSERT INTO "LiteLLM_LensWorker"'):
             worker = Worker.model_validate_json(str(args[2]))
-            self.workers[str(args[0])] = {
-                "token_hash": str(args[1]),
-                "data": dump_mapping(worker),
-            }
+            self.workers[str(args[0])] = {"token_hash": str(args[1]), "data": dump_mapping(worker)}
+            return 1
+        row = self.workers.get(str(args[-1]))
+        if row is None:
             return 1
         if query.startswith('UPDATE "LiteLLM_LensWorker" SET data=$1::jsonb'):
-            worker = Worker.model_validate_json(str(args[0]))
-            worker_id = str(args[1])
-            if worker_id in self.workers:
-                self.workers[worker_id]["data"] = dump_mapping(worker)
-            return 1
-        if "{revoked}" in query:
-            row = self.workers.get(str(args[0]))
-            if row is not None:
-                row["data"]["revoked"] = True
-            return 1
-        row = self.workers.get(str(args[1]))
-        if row is not None:
+            row["data"] = dump_mapping(Worker.model_validate_json(str(args[0])))
+        elif "{revoked}" in query:
+            row["data"]["revoked"] = True
+        else:
             row["data"]["last_seen"] = str(args[0])
         return 1
 
-    def rewrite(self, args: tuple[T, ...]) -> list[dict[str, JsonValue]]:
+    def rewrite(self, args: tuple[object, ...]) -> list[dict[str, JsonValue]]:
         data = str(args[0])
         lens_id = str(args[1])
         version = int(str(args[2]))
@@ -107,7 +96,9 @@ class Store:
             if raced is not None:
                 next_version = raced["version"] + 1
                 raced["version"] = next_version
-                raced["lens"] = raced["lens"].model_copy(update={"version": next_version})
+                raced["lens"] = raced["lens"].model_copy(
+                    update=MappingProxyType({"version": next_version})
+                )
         row = self.lenses.get(lens_id)
         if row is None or row["version"] != version:
             return [count_row(0)]
@@ -132,7 +123,7 @@ class Store:
         entries.sort(key=order_of, reverse=True)
         return [{"data": entry[2]} for entry in entries[offset : offset + 50]]
 
-    def bill_worker(self, args: tuple[T, ...]) -> list[dict[str, JsonValue]]:
+    def bill_worker(self, args: tuple[object, ...]) -> list[dict[str, JsonValue]]:
         row = self.workers.get(str(args[1]))
         if row is None or row["data"].get("revoked") is True:
             return []
@@ -148,11 +139,12 @@ def apply(lens: Lens, transform: Transform) -> Lens:
         revision = transform.get("revision")
         if revision is None:
             raise ValueError("set_revision needs a revision")
-        return lens.model_copy(update={"revision": revision})
+        return lens.model_copy(update=MappingProxyType({"revision": revision}))
     job_id = transform.get("job_id")
     if job_id is None:
         raise ValueError("drop_job needs a job_id")
-    return lens.model_copy(update={"jobs": tuple(job for job in lens.jobs if job.id != job_id)})
+    kept = tuple(job for job in lens.jobs if job.id != job_id)
+    return lens.model_copy(update=MappingProxyType({"jobs": kept}))
 
 
 class CountingTransform:
