@@ -34,22 +34,6 @@ pub struct CatalogResolver<'context> {
     pub registry: &'context JSONProviderRegistry,
 }
 
-fn resolve_with(
-    request: &ResolutionRequest<'_>,
-    resolver: &CatalogResolver<'_>,
-) -> Result<(String, String), ResolutionError> {
-    let context = ResolutionContext {
-        catalog: resolver.catalog,
-        known_model_names: resolver.known_model_names,
-        custom_providers: resolver.custom_providers,
-        environment: resolver.environment,
-        registry: resolver.registry.clone(),
-        policies: ProviderPolicies::default(),
-        globals: GlobalCredentials::default(),
-    };
-    resolve(request, &context).map(|resolved| (resolved.model, resolved.provider.slug().to_owned()))
-}
-
 impl ModelProviderResolver for CatalogResolver<'_> {
     fn model_and_provider(
         &self,
@@ -65,7 +49,17 @@ impl ModelProviderResolver for CatalogResolver<'_> {
             api_base,
             api_key: secret.as_ref(),
         };
-        resolve_with(&request, self)
+        let context = ResolutionContext {
+            catalog: self.catalog,
+            known_model_names: self.known_model_names,
+            custom_providers: self.custom_providers,
+            environment: self.environment,
+            registry: self.registry.clone(),
+            policies: ProviderPolicies::default(),
+            globals: GlobalCredentials::default(),
+        };
+        resolve(&request, &context)
+            .map(|resolved| (resolved.model, resolved.provider.slug().to_owned()))
     }
 }
 

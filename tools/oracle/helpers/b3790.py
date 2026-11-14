@@ -1,5 +1,5 @@
 import asyncio
-from typing import Literal, Protocol, TypeAlias, TypedDict
+from typing import Literal, TypeAlias, TypedDict
 
 import httpx
 from fastapi import HTTPException
@@ -66,12 +66,6 @@ class ProtectInput(TypedDict):
 Input: TypeAlias = ResolveBoolInput | ProtectInput
 
 
-class Runner(Protocol):
-    async def run_pillar_guardrail(
-        self, data: dict[str, JsonValue], user_api_key_dict: UserAPIKeyAuth
-    ) -> dict[str, JsonValue]: ...
-
-
 def reported_header(name: str) -> bool:
     lowered = name.lower()
     return lowered == "content-type" or lowered.startswith(("plr_", "x-litellm-"))
@@ -97,7 +91,7 @@ class Scripted:
         return httpx.Response(self.reply["status"], json=self.reply["body"])
 
 
-def build_runner(settings: Settings, scripted: Scripted) -> Runner:
+def build_runner(settings: Settings, scripted: Scripted) -> PillarGuardrail:
     guard = PillarGuardrail(
         api_key=settings["api_key"],
         api_base=API_BASE,

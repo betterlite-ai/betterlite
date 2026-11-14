@@ -22,11 +22,8 @@ use super::fail;
 use crate::case::UpstreamAnswer;
 use crate::helpers::{HelperError, HelperResult};
 use crate::mock::MockProvider;
-use crate::routing_mock_scripts::{
-    MockScript, Outcome, ProviderCall, ScriptSpec, ScriptedReply, Wait,
-};
+use crate::routing_mock_scripts::{MockScript, ProviderCall};
 
-const SCRIPT_DEADLINE_MILLIS: u64 = 30_000;
 const TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -146,20 +143,14 @@ fn guardrail_data(value: &Value) -> Result<BTreeMap<String, GuardrailValue>, Box
 }
 
 fn start_mock(answer: &Answer) -> Result<MockProvider, Box<HelperError>> {
-    let reply = ScriptedReply {
-        wait: Wait::None,
-        then: Outcome::Answer(UpstreamAnswer {
-            status: answer.status,
-            headers: BTreeMap::new(),
-            body: Some(answer.body.clone()),
-            events: None,
-        }),
+    let reply = UpstreamAnswer {
+        status: answer.status,
+        headers: BTreeMap::new(),
+        body: Some(answer.body.clone()),
+        events: None,
     };
-    let script = MockScript::try_from(ScriptSpec {
-        deadline_ms: SCRIPT_DEADLINE_MILLIS,
-        replies: vec![reply],
-    })
-    .map_err(|error| fail("MockError", error.to_string(), None))?;
+    let script = MockScript::try_from(std::slice::from_ref(&reply))
+        .map_err(|error| fail("MockError", error.to_string(), None))?;
     MockProvider::start(script).map_err(|error| fail("MockError", error.to_string(), None))
 }
 
@@ -170,41 +161,21 @@ async fn call_and_process(
     resolver: &dyn ModelProviderResolver,
     data: &mut BTreeMap<String, GuardrailValue>,
 ) -> Option<u16> {
-    let prepared = prepare_headers(settings, key)
-        .and_then(|headers| prepare_payload(data, resolver).map(|payload| (headers, payload)));
-    let result = match prepared {
-        Ok((headers, payload)) => call_pillar_api(client, settings, &headers, &payload)
-            .await
-            .and_then(|response| process_pillar_response(&response, data, settings)),
-        Err(error) => Err(error),
-    };
+    let result = async {
+        let headers = prepare_headers(settings, key)?;
+        let payload = prepare_payload(data, resolver)?;
+        let response = call_pillar_api(client, settings, &headers, &payload).await?;
+        process_pillar_response(&response, data, settings)
+    }
+    .await;
     match result {
         Ok(()) => Some(200),
-        Err(error) => {
-            if let Some(status) = http_status(&error) {
-                return Some(status);
-            }
-            match handle_api_error(&error, data.clone(), settings) {
-                Ok(_) => Some(200),
-                Err(failure) => http_status(&failure),
-            }
-        }
-    }
-}
-
-fn http_status(error: &PillarError) -> Option<u16> {
-    match error {
-        PillarError::Http(GuardrailFailure::HttpObject { status, .. }) => Some(*status),
-        PillarError::MissingApiKey
-        | PillarError::Request { .. }
-        | PillarError::Status { .. }
-        | PillarError::Response { .. }
-        | PillarError::ResponseTooLarge { .. }
-        | PillarError::InvalidHeaderName { .. }
-        | PillarError::InvalidHeaderValue { .. }
-        | PillarError::Field { .. }
-        | PillarError::BoolValue { .. }
-        | PillarError::Http(_) => None,
+        Err(PillarError::Http(GuardrailFailure::HttpObject { status, .. })) => Some(status),
+        Err(error) => match handle_api_error(&error, data.clone(), settings) {
+            Ok(_) => Some(200),
+            Err(PillarError::Http(GuardrailFailure::HttpObject { status, .. })) => Some(status),
+            Err(_) => None,
+        },
     }
 }
 
@@ -222,14 +193,13 @@ fn captured_headers(headers: &BTreeMap<String, String>) -> BTreeMap<String, Stri
 }
 
 fn captured_request(calls: &[ProviderCall]) -> Option<Value> {
-    calls.first().map(|call| {
-        json!({
-            "method": call.request.method.to_uppercase(),
-            "path": call.request.path.clone(),
-            "headers": captured_headers(&call.request.headers),
-            "body": call.request.body.clone(),
-        })
-    })
+    let call = calls.first()?;
+    Some(json!({
+        "method": call.request.method.to_uppercase(),
+        "path": call.request.path.clone(),
+        "headers": captured_headers(&call.request.headers),
+        "body": call.request.body.clone(),
+    }))
 }
 
 fn deliver(
@@ -241,8 +211,7 @@ fn deliver(
     let client = betterlite_http::proxy::base_builder()
         .build()
         .map_err(|error| fail("RequestError", error.to_string(), None))?;
-    let mut bundled = BundledCatalog::default();
-    let catalog = bundled.get();
+    let catalog = BundledCatalog::default().get();
     let known = BTreeSet::new();
     let custom = BTreeSet::new();
     let environment = BTreeMap::new();
