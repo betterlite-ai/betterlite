@@ -29,7 +29,7 @@ pub struct Summary {
     pub other: BTreeMap<String, GuardrailValue>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Details {
     pub policy_violation: Option<PolicyViolationDetail>,

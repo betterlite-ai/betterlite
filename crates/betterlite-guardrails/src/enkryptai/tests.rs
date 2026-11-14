@@ -431,6 +431,32 @@ async fn enkryptai_guardrail_detects_prompt_injection_and_jailbreak() {
 }
 
 #[tokio::test]
+async fn enkryptai_guardrail_reports_unknown_detector_details() {
+    let (base, _state, mut server) = serve(vec![Reply {
+        status: StatusCode::OK,
+        body: r#"{"summary":{"nsfw":1,"spam":1},"details":{"nsfw":{"score":0.7}}}"#.to_owned(),
+    }])
+    .await;
+    let error = guardrail(&base)
+        .apply(inputs(&["bad"]), &mut BTreeMap::new(), None)
+        .await
+        .expect_err("detected");
+    let message = match error {
+        GuardrailFailure::GuardrailRaised {
+            message,
+            status_code: 400,
+            ..
+        } => message,
+        other => panic!("unexpected failure: {other:?}"),
+    };
+    assert_eq!(
+        message,
+        "EnkryptAI guardrail detected 2 violation(s):\n- NSFW: details: {\"score\":0.7}\n- SPAM: details: {}"
+    );
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn enkryptai_guardrail_batch_evaluates_each_text() {
     let (base, state, mut server) = serve(vec![
         Reply {
@@ -677,16 +703,16 @@ async fn enkryptai_guardrail_rejects_an_invalid_policy_header() {
 fn enkryptai_guardrail_processes_the_summary(#[case] body: &str, #[case] detected: bool) {
     let value = parse_value(body);
     let response = parsed_response(&value);
-    let processed: Processed = process(&response).expect("process");
+    let processed: Processed = process(&response);
     assert_eq!(!processed.attacks.is_empty(), detected);
 }
 
 #[test]
-fn enkryptai_guardrail_collects_attack_details_from_the_response() {
+fn enkryptai_guardrail_collects_the_detected_attacks_in_order() {
     let body = r#"{"summary":{"policy_violation":1,"pii":1,"toxicity":["toxic"],"keyword_detected":1,"bias":1,"prompt_injection":1,"jailbreak":1},"details":{"policy_violation":{"violating_policy":"p","explanation":"e"},"pii":{"pii":{"email":1}},"toxicity":{"toxic":0.9},"keyword_detected":{"detected_keywords":["k"]},"bias":{"bias_detected":true},"prompt_injection":{"score":0.8},"jailbreak":{"score":0.9}}}"#;
     let value = parse_value(body);
     let response = parsed_response(&value);
-    let processed = process(&response).expect("process");
+    let processed = process(&response);
     assert_eq!(
         processed.attacks,
         vec![
@@ -699,48 +725,19 @@ fn enkryptai_guardrail_collects_attack_details_from_the_response() {
             "jailbreak"
         ]
     );
-    assert_eq!(
-        processed.details["policy_violation"],
-        parse_value(r#"{"violating_policy":"p","explanation":"e"}"#)
-    );
-    assert_eq!(
-        processed.details["pii"],
-        parse_value(r#"{"pii":{"email":1}}"#)
-    );
-    assert_eq!(
-        processed.details["toxicity"],
-        parse_value(r#"{"toxic":0.9}"#)
-    );
-    assert_eq!(
-        processed.details["keyword_detected"],
-        parse_value(r#"{"detected_keywords":["k"]}"#)
-    );
-    assert_eq!(
-        processed.details["bias"],
-        parse_value(r#"{"bias_detected":true}"#)
-    );
-    assert_eq!(
-        processed.details["prompt_injection"],
-        parse_value(r#"{"score":0.8}"#)
-    );
-    assert_eq!(
-        processed.details["jailbreak"],
-        parse_value(r#"{"score":0.9}"#)
-    );
 }
 
 #[test]
 fn enkryptai_guardrail_processes_unknown_integer_detectors() {
     let zero = parsed_response(&parse_value(r#"{"summary":{"nsfw":0}}"#));
-    assert!(process(&zero).expect("process").attacks.is_empty());
+    assert!(process(&zero).attacks.is_empty());
     let one = parsed_response(&parse_value(
         r#"{"summary":{"nsfw":1},"details":{"nsfw":{"score":0.9}}}"#,
     ));
-    let processed = process(&one).expect("process");
+    let processed = process(&one);
     assert_eq!(processed.attacks, vec!["nsfw"]);
-    assert_eq!(processed.details["nsfw"], parse_value(r#"{"score":0.9}"#));
     let float = parsed_response(&parse_value(r#"{"summary":{"nsfw":1.0}}"#));
-    assert_eq!(process(&float).expect("process").attacks, vec!["nsfw"]);
+    assert_eq!(process(&float).attacks, vec!["nsfw"]);
 }
 
 #[test]

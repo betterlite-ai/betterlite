@@ -5,7 +5,7 @@ use std::time::SystemTime;
 use betterlite_config::loader::{ConfigError, ConfigLoader};
 use betterlite_config::sections::enkryptai_detection::Configured;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use betterlite_guardrails::enkryptai::process::{Processed, process};
+use betterlite_guardrails::enkryptai::process::process;
 use betterlite_guardrails::enkryptai::wire::{DetectPayload, DetectionResponse};
 use betterlite_guardrails::enkryptai::{
     API_PATH, EnkryptAiGuardrail, GUARDRAIL_PROVIDER, SUPPORTED_EVENT_HOOKS,
@@ -207,10 +207,7 @@ fn detect(args: DetectArgs<'_>) -> HelperResult {
         "requests": request_views(&calls)?,
         "raised": outcome.is_err(),
         "statuses": statuses(&request_data),
-        "processed": {
-            "attacks": processed.attacks,
-            "details": processed.details,
-        },
+        "processed": processed,
         "result": result_value(&outcome)?,
     }))
 }
@@ -244,13 +241,24 @@ fn request_views(calls: &[ProviderCall]) -> Result<Vec<serde_json::Value>, Box<H
     Ok(views)
 }
 
-fn process_answer(answer: &UpstreamAnswer) -> Result<Processed, Box<HelperError>> {
+fn process_answer(answer: &UpstreamAnswer) -> Result<serde_json::Value, Box<HelperError>> {
     let body = answer.body.clone().ok_or_else(|| {
         helper_error("ValidationError", "the answer needs a JSON body".to_owned())
     })?;
     let response: DetectionResponse = serde_json::from_value(body)
         .map_err(|error| helper_error("ValidationError", error.to_string()))?;
-    process(&response).map_err(|error| helper_error("ValueError", error.to_string()))
+    let processed = process(&response);
+    let all = serde_json::to_value(&response.details)
+        .map_err(|error| helper_error("ValidationError", error.to_string()))?;
+    let mut details = serde_json::Map::new();
+    for attack in &processed.attacks {
+        let detail = match all.get(attack) {
+            None | Some(serde_json::Value::Null) => json!({}),
+            Some(detail) => detail.clone(),
+        };
+        details.insert(attack.clone(), detail);
+    }
+    Ok(json!({"attacks": processed.attacks, "details": details}))
 }
 
 fn statuses(request_data: &BTreeMap<String, GuardrailValue>) -> Vec<String> {

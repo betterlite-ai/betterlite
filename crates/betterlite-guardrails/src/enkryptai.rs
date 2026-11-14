@@ -132,15 +132,13 @@ impl EnkryptAiGuardrail {
         let Response { raw, parsed } = response;
         let (outcome, status) = match parsed {
             Parsed::Response(parsed) => {
-                let outcome = process::process(&parsed);
-                let status = outcome
-                    .as_ref()
-                    .map_or(GuardrailStatus::GuardrailFailedToRespond, Processed::status);
-                let detection = outcome.map(|processed| Detection {
+                let processed = process::process(&parsed);
+                let status = processed.status();
+                let detection = Detection {
                     response: parsed,
                     processed,
-                });
-                (detection, status)
+                };
+                (Ok(detection), status)
             }
             Parsed::Malformed(error) => (Err(error), GuardrailStatus::GuardrailFailedToRespond),
         };

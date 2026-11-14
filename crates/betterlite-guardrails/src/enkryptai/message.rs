@@ -1,3 +1,5 @@
+use serde::Serialize;
+
 use super::process::Processed;
 use super::wire::{DetectionResponse, ToxicityDetail};
 
@@ -16,16 +18,12 @@ pub(crate) fn detected(
         message.push_str("\n- ");
         message.push_str(&attack.to_ascii_uppercase());
         message.push_str(": ");
-        message.push_str(&describe(attack, processed, response)?);
+        message.push_str(&describe(attack, response)?);
     }
     Ok(message)
 }
 
-fn describe(
-    attack: &str,
-    processed: &Processed,
-    response: &DetectionResponse,
-) -> Result<String, serde_json::Error> {
+fn describe(attack: &str, response: &DetectionResponse) -> Result<String, serde_json::Error> {
     let details = &response.details;
     match attack {
         "policy_violation" => Ok(policy(response)),
@@ -54,7 +52,9 @@ fn describe(
                 .as_ref()
                 .is_some_and(|detail| detail.bias_detected)
         )),
-        other => unknown(other, processed),
+        "prompt_injection" => unknown(details.prompt_injection.as_ref()),
+        "jailbreak" => unknown(details.jailbreak.as_ref()),
+        other => unknown(details.other.get(other)),
     }
 }
 
@@ -69,8 +69,11 @@ fn policy(response: &DetectionResponse) -> String {
     format!("policy \"{violating_policy}\", explanation \"{explanation}\"")
 }
 
-fn unknown(attack: &str, processed: &Processed) -> Result<String, serde_json::Error> {
-    match processed.details.get(attack) {
+fn unknown<T>(detail: Option<&T>) -> Result<String, serde_json::Error>
+where
+    T: Serialize,
+{
+    match detail {
         Some(detail) => Ok(format!("details: {}", serde_json::to_string(detail)?)),
         None => Ok("details: {}".to_owned()),
     }
