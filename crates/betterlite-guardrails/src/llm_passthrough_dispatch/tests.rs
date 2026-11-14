@@ -16,10 +16,13 @@ use tracing_subscriber::fmt::{MakeWriter, fmt};
 use super::{
     LlmPassthroughRouteHandler, PASSTHROUGH_TRANSLATION_KINDS, PassthroughTranslationKind,
 };
+use crate::generic_guardrail_contracts::GuardrailMessage;
 use crate::guardrail_base::contract::GuardrailContract;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::GuardrailLogTarget;
-use crate::guardrail_translation::{BaseTranslation, StreamTransformSink, TranslationCall};
+use crate::guardrail_translation::{
+    BaseTranslation, StreamTransformSink, StreamingScanKey, TranslationCall,
+};
 
 type Dispatch = LlmPassthroughRouteHandler<FakeProvider>;
 
@@ -48,6 +51,7 @@ struct Ledger(Arc<Mutex<LedgerRows>>);
 struct LedgerRows {
     inputs: Vec<SeenInput>,
     outputs: Vec<SeenOutput>,
+    streams: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -169,6 +173,62 @@ impl BaseTranslation for FakeProvider {
             return ready(Err(GuardrailFailure::Other("output failed".to_owned())));
         }
         ready(Ok(self.response.clone()))
+    }
+
+    fn process_streaming_response(
+        &self,
+        responses_so_far: &mut Vec<GuardrailValue>,
+        _guardrail: &Self::Guardrail,
+        _call: TranslationCall<'_, Self::LogTarget>,
+    ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
+        responses_so_far.push(text("provider chunk"));
+        self.ledger
+            .0
+            .lock()
+            .expect("ledger")
+            .streams
+            .push("process_streaming_response".to_owned());
+        ready(Ok(()))
+    }
+
+    fn get_streaming_scan_key(
+        &self,
+        _responses_so_far: &[GuardrailValue],
+    ) -> Option<StreamingScanKey> {
+        Some(StreamingScanKey {
+            texts: vec!["provider".to_owned()],
+            tool_calls: Vec::new(),
+            stream_ended: false,
+            tool_calls_in_flight: false,
+        })
+    }
+
+    fn build_block_sse_chunks(
+        &self,
+        _failure: &Self::Failure,
+        _stream_started: bool,
+        _responses_so_far: Option<&[GuardrailValue]>,
+    ) -> Option<Vec<Vec<u8>>> {
+        Some(vec![b"block".to_vec()])
+    }
+
+    fn build_stream_error_items(
+        &self,
+        _failure: &Self::Failure,
+        _responses_so_far: Option<&[GuardrailValue]>,
+    ) -> Option<Vec<GuardrailValue>> {
+        Some(vec![text("provider error")])
+    }
+
+    fn get_structured_messages(
+        &self,
+        _data: &BTreeMap<String, GuardrailValue>,
+    ) -> Option<Vec<GuardrailMessage>> {
+        Some(Vec::new())
+    }
+
+    fn extract_request_tool_names(&self, _data: &BTreeMap<String, GuardrailValue>) -> Vec<String> {
+        vec!["provider-tool".to_owned()]
     }
 }
 
@@ -548,24 +608,23 @@ async fn defaults_streaming_keeps_the_items_and_calls_no_provider() {
         .await
         .unwrap();
     assert_eq!(responses, original);
-    assert!(rows(&ledger).inputs.is_empty());
-    assert!(rows(&ledger).outputs.is_empty());
+    assert!(rows(&ledger).streams.is_empty());
 }
 
 #[test]
 fn defaults_scan_key_and_stream_builders_are_absent() {
     let handler = Dispatch::new(vec![("bedrock".to_owned(), provider())]);
     let failure = GuardrailFailure::Other("blocked".to_owned());
-    let chunks = [text("chunk")];
-    assert!(handler.get_streaming_scan_key(&chunks).is_none());
+    let chunks: &[GuardrailValue] = &[text("chunk")];
+    assert!(handler.get_streaming_scan_key(chunks).is_none());
     assert!(
         handler
-            .build_block_sse_chunks(&failure, true, Some(&chunks))
+            .build_block_sse_chunks(&failure, true, Some(chunks))
             .is_none()
     );
     assert!(
         handler
-            .build_stream_error_items(&failure, Some(&chunks))
+            .build_stream_error_items(&failure, Some(chunks))
             .is_none()
     );
 }
