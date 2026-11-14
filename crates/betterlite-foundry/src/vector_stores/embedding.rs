@@ -40,6 +40,7 @@ pub fn query_embedding_model(litellm_params: &Params) -> Result<&str, AzureSearc
     }
 }
 
+#[must_use]
 pub fn query_embedding_configuration(litellm_params: &Params) -> Params {
     match litellm_params.get("litellm_embedding_config") {
         Some(Json::Object(configuration)) => configuration
