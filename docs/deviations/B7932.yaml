@@ -1,0 +1,68 @@
+task: B7932
+deviations:
+  - what: >-
+      The ported config models derive from the wheel's ResponseObject instead of pydantic's
+      BaseModel. ResponseObject sets extra="allow", so an unknown key survives validation and
+      appears in model_dump(), and model_json_schema() carries additionalProperties: true where
+      LiteLLM's schema has none. This covers GuardrailConfigModel, AzureContentSafetyConfigModel,
+      CiscoAIDefenseRule and every config model built on them, including the nested
+      optional_params models; LiteLLM only allows extras explicitly on
+      CiscoAIDefenseGuardrailConfigModelOptionalParams.
+    why: >-
+      Every ported pydantic model under betterlite.types goes on ResponseObject, as B7930 set for
+      the guardrail types. The declared fields, required keys, defaults, Literal values, validation
+      errors and dumps of the declared fields match LiteLLM; only keys LiteLLM never declares
+      differ.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/base.py#L9
+  - what: >-
+      AzureTextModerationOptionalParams names its blocklistNames, haltOnBlocklistHit and outputType
+      fields blocklist_names, halt_on_blocklist_hit and output_type, with the LiteLLM spelling as a
+      pydantic alias and serialize_by_alias=True. Construction, validation errors, the schema
+      property names and model_dump() use the camelCase names; attribute access and model_fields
+      keys use the snake_case names.
+    why: >-
+      The Python rules reject mixed-case class attributes, so the attributes cannot keep LiteLLM's
+      spelling. The aliases keep the proxy config keys and the dumped JSON that LiteLLM produces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/azure/azure_text_moderation.py#L59-L70
+  - what: >-
+      AzureContentSafetyTextModerationConfigModel.optional_params is declared
+      AzureTextModerationOptionalParams | None, where LiteLLM declares the bare model. The field has
+      no default either way, so a config without optional_params fails as required in both; this
+      port additionally accepts an explicit null, which LiteLLM rejects.
+    why: >-
+      Literal narrowing of a mutable pydantic field in a subclass fails basedpyright's invariant
+      override check, and the field has to stay required. Keys, required keys, defaults and Literal
+      values of the model match LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/azure/azure_text_moderation.py#L77-L79
+  - what: >-
+      AzurePromptShieldGuardrailResponse.documentsAnalysis and
+      AzureTextModerationGuardrailResponse.blocklistsMatch are list[dict[str, JsonValue]] where
+      LiteLLM writes list[dict[str, Any]].
+    why: >-
+      The Python rules forbid Any in annotations, and JsonValue is the JSON type the wheel uses. A
+      JSON body validates the same; a non-JSON Python object, which Any accepts, is rejected here.
+      The JSON schema of the field is the same open object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/azure/azure_prompt_shield.py#L22-L26
+  - what: >-
+      Config models LiteLLM leaves on the unparametrized GuardrailConfigModel are spelled
+      GuardrailConfigModel[BaseModel] here, and GuardrailConfigModel derives from ResponseObject.
+      Pydantic resolves an unbound TypeVar to its BaseModel bound, so optional_params has the same
+      BaseModel | None type, schema and validation on both sides. A config whose optional_params
+      holds a value dumps here ({} for a plain BaseModel value); with LiteLLM's unparametrized
+      base, pydantic 2.14.1 gives that field a mock serializer, and model_dump() raises
+      TypeError because the mock is not an instance of SchemaSerializer.
+    why: >-
+      basedpyright strict reports a generic base class used without type arguments, and BaseModel is
+      the bound the unparametrized generic resolves to at runtime. The parametrized spelling also
+      keeps serialization working where LiteLLM's unparametrized generic crashes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/aim.py#L8
+  - what: >-
+      The ported models carry no pydantic Field descriptions and no class docstrings, so
+      model_json_schema() has no description keys where LiteLLM's does. The JSON schema extras that
+      drive the UI (ui_type on inspect_embeddings, the multiselect options and percentage bounds on
+      BlockCodeExecutionGuardrailConfigModel, the akto_base_url examples) are kept.
+    why: >-
+      The repository keeps no docstrings and caps a module at 300 lines; the description prose is
+      most of the LiteLLM files. Keys, required keys, types, Literal values, defaults and
+      constraints are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/aim.py#L9-L12
