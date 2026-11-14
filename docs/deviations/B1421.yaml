@@ -1,10 +1,11 @@
 task: B1421
 deviations:
   - what: >-
-      A Voyage rerank reply whose data entry lacks a numeric index or relevance_score,
-      whose data is not a list, or whose usage is not an object fails with a typed
-      bad-gateway error instead of LiteLLM's uncaught KeyError, TypeError or pydantic
-      ValidationError, which the proxy answers as a 500.
+      A Voyage rerank reply that is not a JSON object, whose data is missing, null or
+      not a list, whose data entry is not an object or lacks a numeric index or
+      relevance_score, or whose usage is neither absent, null nor an object, fails with
+      a typed bad-gateway error instead of LiteLLM's uncaught AttributeError, ValueError,
+      KeyError, TypeError or pydantic ValidationError, which the proxy answers as a 500.
     why: >-
       A malformed provider reply is not the caller's input, so a 502 names the gateway
       side; no working LiteLLM setup depends on a 500 from its own KeyError.

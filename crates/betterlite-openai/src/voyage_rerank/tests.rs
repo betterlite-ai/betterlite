@@ -250,7 +250,10 @@ fn nonstring_documents_are_preserved() {
 #[case::wrong_index(r#"{"data":[{"index":"0","relevance_score":1}]}"#, "index")]
 #[case::wrong_data(r#"{"data":{}}"#, "data")]
 #[case::wrong_item(r#"{"data":[7]}"#, "data[]")]
-fn malformed_results_name_their_field(#[case] body: &str, #[case] field: &'static str) {
+#[case::wrong_usage(r#"{"data":[],"usage":[]}"#, "usage")]
+#[case::wrong_root("[]", "response")]
+#[case::non_text_id(r#"{"data":[],"id":4}"#, "id")]
+fn malformed_replies_name_their_field(#[case] body: &str, #[case] field: &'static str) {
     let (result, _) = decode(body, 200);
     assert!(matches!(
         result,
