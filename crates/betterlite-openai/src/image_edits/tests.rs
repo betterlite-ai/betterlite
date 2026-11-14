@@ -444,6 +444,9 @@ fn edit_reply_error() {
     assert_eq!(missing.status(), Some(200));
     assert!(matches!(missing, ImageEditError::OpenAi(_)));
     assert_eq!(format!("{missing}"), "not json");
+    // httpx decodes raw_response.text with errors="replace", so invalid bytes arrive as U+FFFD
+    let invalid = transform_image_edit_response(200, b"not \xff json", NOW).expect_err("bytes");
+    assert_eq!(format!("{invalid}"), "not \u{fffd} json");
     let shape =
         transform_image_edit_response(200, br#"{"created":"nope"}"#, NOW).expect_err("wrong shape");
     assert_eq!(shape.status(), None);
