@@ -3153,6 +3153,7 @@ dependencies = [
  "aws-smithy-types",
  "axum",
  "base64 0.23.1",
+ "betterlite-a2a",
  "betterlite-auth",
  "betterlite-billing",
  "betterlite-cache",
