@@ -1,0 +1,16 @@
+model_list:
+  - model_name: smart-cheap-router
+    litellm_params:
+      model: auto_router/adaptive_router
+      adaptive_router_config:
+        available_models: [fast]
+        weights:
+          quality: 0.6
+          cost: 0.4
+  - model_name: fast
+    litellm_params:
+      model: openai/gpt-4o-mini
+    model_info:
+      adaptive_router_preferences:
+        quality_tier: 3
+        strengths: [code_generation]

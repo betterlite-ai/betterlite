@@ -14,6 +14,7 @@ fn object_response(content: Vec<ContentBlock>) -> HookResponse {
     HookResponse::Object(ObjectResponse {
         content,
         choices: Vec::new(),
+        stop_reason: None,
         generated_files: GeneratedFilesAttribute::Rejected,
         model_extra: None,
     })
@@ -33,6 +34,7 @@ fn block(kind: &str, id: Option<&str>, name: Option<&str>, input: &str) -> Conte
         id: id.map(str::to_owned),
         name: name.map(str::to_owned),
         input: serde_json::from_str(input).unwrap(),
+        text: None,
     }
 }
 

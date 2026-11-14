@@ -91,5 +91,5 @@ pitfalls:
   - A fully qualified resource does not override the host region chosen from configuration.
   - Buffered responses ignore data:-prefixed lines even though the streaming iterator accepts them.
   - An empty first text part prevents state_delta fallback for that object.
-budget: {max_changed_lines: 700, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: standard

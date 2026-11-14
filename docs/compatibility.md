@@ -15,3 +15,5 @@ What betterlite does instead:
 - Python object behavior isn't ported: no identity checks, no changes to a dict the caller passed in, no repr text.
 
 Since this file covers these cases, a task doesn't list them in its deviation log and a review doesn't report them. Oracle cases send inputs of the declared type, because a case that feeds LiteLLM a value only Python accepts tests the accident. Every other difference a user can see still goes into the task's docs/deviations file, with a link to the LiteLLM line.
+
+A LiteLLM bug that a working setup relies on is copied on purpose, since fixing it would break that setup after the switch. The task that ports it lists it under kept_bugs in its docs/deviations file, with the LiteLLM line, next to the places where betterlite differs.
