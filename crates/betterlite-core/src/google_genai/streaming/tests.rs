@@ -3,8 +3,9 @@
 use std::fs;
 use std::path::Path;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::task::{Context, Poll, Waker};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_http::error::HttpError;
@@ -29,6 +30,9 @@ use chrono::{DateTime, FixedOffset};
 use futures_util::Stream;
 use futures_util::stream::{BoxStream, iter};
 use indexmap::IndexMap;
+use tokio::sync::{Notify, oneshot};
+use tokio::time::timeout;
+use tokio_util::task::TaskTracker;
 
 use super::logging::GenAiStreamLogging;
 use super::metadata::GenAiStreamMetadata;
@@ -36,7 +40,7 @@ use super::provider::GenAiProvider;
 use super::{AsyncGoogleGenAiStream, GenAiStreamError, GoogleGenAiStream};
 
 const LINE_LIMIT: usize = 0x0010_0000;
-const SMALL_LINE_LIMIT: usize = 8;
+const SMALL_LINE_LIMIT: usize = 9;
 const NOW: &str = "2000-01-01T00:00:00+00:00";
 const CORPUS_SEEDS: usize = 7;
 
@@ -59,18 +63,80 @@ struct RecordingHandler {
 
 impl CollectedChunksHandler for RecordingHandler {
     fn handle(&self, call: &CollectedChunksCall<'_>) -> Result<HandlerOutcome, HandlerError> {
-        let recorded = RecordedCall {
-            handler: self.name,
-            url_route: call.url_route.to_owned(),
-            request_body: call.request_body.cloned(),
-            endpoint_type: call.endpoint_type,
-            start_time: call.start_time,
-            end_time: call.end_time,
-            lines: call.lines.to_vec(),
-            model: call.model.map(str::to_owned),
-        };
-        self.calls.lock().expect("the call log lock").push(recorded);
+        self.calls
+            .lock()
+            .expect("the call log lock")
+            .push(recorded(self.name, call));
         Ok(HandlerOutcome::default())
+    }
+}
+
+fn recorded(name: &'static str, call: &CollectedChunksCall<'_>) -> RecordedCall {
+    RecordedCall {
+        handler: name,
+        url_route: call.url_route.to_owned(),
+        request_body: call.request_body.cloned(),
+        endpoint_type: call.endpoint_type,
+        start_time: call.start_time,
+        end_time: call.end_time,
+        lines: call.lines.to_vec(),
+        model: call.model.map(str::to_owned),
+    }
+}
+
+// the collected chunks build runs on a blocking thread, so the handler can hold it until the test lets it go
+struct BlockingHandler {
+    calls: Arc<Mutex<Vec<RecordedCall>>>,
+    gate: Arc<Gate>,
+    started: Mutex<Option<oneshot::Sender<()>>>,
+    done: Mutex<Option<oneshot::Sender<()>>>,
+}
+
+impl CollectedChunksHandler for BlockingHandler {
+    fn handle(&self, call: &CollectedChunksCall<'_>) -> Result<HandlerOutcome, HandlerError> {
+        self.calls
+            .lock()
+            .expect("the call log lock")
+            .push(recorded("gemini", call));
+        let started = self
+            .started
+            .lock()
+            .expect("the started lock")
+            .take()
+            .expect("the test waits for the handler");
+        started
+            .send(())
+            .expect("the test holds the started receiver");
+        self.gate.wait();
+        let done = self
+            .done
+            .lock()
+            .expect("the done lock")
+            .take()
+            .expect("the test waits for the handler");
+        done.send(()).expect("the test holds the done receiver");
+        Ok(HandlerOutcome::default())
+    }
+}
+
+#[derive(Default)]
+struct Gate {
+    opened: Mutex<bool>,
+    changed: Condvar,
+}
+
+impl Gate {
+    fn open(&self) {
+        let mut opened = self.opened.lock().expect("the gate lock");
+        *opened = true;
+        self.changed.notify_all();
+    }
+
+    fn wait(&self) {
+        let mut opened = self.opened.lock().expect("the gate lock");
+        while !*opened {
+            opened = self.changed.wait(opened).expect("the gate lock");
+        }
     }
 }
 
@@ -114,11 +180,15 @@ impl TinyfishStreamBilling for NoTinyfish {
     }
 }
 
-struct NoDispatch;
+struct RecordingDispatch {
+    done: Arc<Notify>,
+}
 
 #[async_trait]
-impl StreamSuccessDispatch for NoDispatch {
-    async fn dispatch_success(&self, _call: StreamSuccessCall<'_>) {}
+impl StreamSuccessDispatch for RecordingDispatch {
+    async fn dispatch_success(&self, _call: StreamSuccessCall<'_>) {
+        self.done.notify_one();
+    }
 }
 
 struct FixedClock;
@@ -137,7 +207,21 @@ fn recorded_calls(calls: &Mutex<Vec<RecordedCall>>) -> Vec<RecordedCall> {
     calls.lock().expect("the call log lock").clone()
 }
 
-fn logging_for(calls: Arc<Mutex<Vec<RecordedCall>>>) -> GenAiStreamLogging {
+fn logging_for(calls: Arc<Mutex<Vec<RecordedCall>>>) -> (GenAiStreamLogging, Arc<Notify>) {
+    let done = Arc::new(Notify::new());
+    let gemini = Arc::new(RecordingHandler {
+        name: "gemini",
+        calls: Arc::clone(&calls),
+    });
+    let logging = logging_with_gemini(gemini, calls, Arc::clone(&done));
+    (logging, done)
+}
+
+fn logging_with_gemini(
+    gemini: Arc<dyn CollectedChunksHandler>,
+    calls: Arc<Mutex<Vec<RecordedCall>>>,
+    done: Arc<Notify>,
+) -> GenAiStreamLogging {
     let handlers = ProviderChunkHandlers {
         anthropic: Arc::new(RecordingHandler {
             name: "anthropic",
@@ -147,10 +231,7 @@ fn logging_for(calls: Arc<Mutex<Vec<RecordedCall>>>) -> GenAiStreamLogging {
             name: "vertex",
             calls: Arc::clone(&calls),
         }),
-        gemini: Arc::new(RecordingHandler {
-            name: "gemini",
-            calls: Arc::clone(&calls),
-        }),
+        gemini,
         openai: Arc::new(RecordingHandler {
             name: "openai",
             calls,
@@ -165,11 +246,12 @@ fn logging_for(calls: Arc<Mutex<Vec<RecordedCall>>>) -> GenAiStreamLogging {
         router: Arc::new(router),
         logging_obj: Arc::new(StreamLoggingObject {
             slot: Mutex::new(None),
-            dispatch: Arc::new(NoDispatch),
+            dispatch: Arc::new(RecordingDispatch { done }),
         }),
         passthrough: Arc::new(PassThroughEndpointLogging {
             injected_log_dispatch: None,
         }),
+        tasks: TaskTracker::new(),
     }
 }
 
@@ -352,7 +434,50 @@ fn sync_stream_reports_a_long_line_after_the_events_before_it() {
         .expect_err("the long line is refused");
     assert!(matches!(
         failure,
-        GenAiStreamError::Lines(AlephAlphaError::LineTooLong { limit: 8 })
+        GenAiStreamError::Lines(AlephAlphaError::LineTooLong {
+            limit: SMALL_LINE_LIMIT
+        })
+    ));
+    assert!(stream.next().is_none());
+}
+
+#[test]
+fn sync_stream_refuses_a_long_line_inside_one_read() {
+    let mut stream = GoogleGenAiStream::new(
+        vec![Ok(b"data: 0123456789\n\n".to_vec())].into_iter(),
+        metadata(GenAiProvider::Gemini),
+        SMALL_LINE_LIMIT,
+    );
+    let failure = stream
+        .next()
+        .expect("the limit error")
+        .expect_err("the long line is refused");
+    assert!(matches!(
+        failure,
+        GenAiStreamError::Lines(AlephAlphaError::LineTooLong {
+            limit: SMALL_LINE_LIMIT
+        })
+    ));
+    assert!(stream.next().is_none());
+}
+
+#[test]
+fn sync_stream_refuses_an_event_that_grows_past_the_limit() {
+    let input = body(&["data: a", "data: b"]);
+    let mut stream = GoogleGenAiStream::new(
+        vec![Ok(input)].into_iter(),
+        metadata(GenAiProvider::Gemini),
+        SMALL_LINE_LIMIT,
+    );
+    let failure = stream
+        .next()
+        .expect("the limit error")
+        .expect_err("the growing event is refused");
+    assert!(matches!(
+        failure,
+        GenAiStreamError::EventTooLong {
+            limit: SMALL_LINE_LIMIT
+        }
     ));
     assert!(stream.next().is_none());
 }
@@ -410,16 +535,18 @@ async fn async_stream_yields_the_same_events_and_collects_them() {
 #[tokio::test]
 async fn async_stream_routes_the_collected_events_to_the_gemini_handler_at_eof() {
     let calls = call_log();
+    let (logging, logged) = logging_for(Arc::clone(&calls));
     let mut stream = async_stream(
         vec![body(&["data: {\"a\":1}", "", "data: {\"b\":2}"])],
         metadata(GenAiProvider::Gemini),
-        Some(logging_for(Arc::clone(&calls))),
+        Some(logging),
     );
     let events = drain(&mut stream).await;
+    logged.notified().await;
     assert_eq!(events.len(), 2);
-    let logged = recorded_calls(&calls);
-    assert_eq!(logged.len(), 1);
-    let call = logged.first().expect("one call was recorded");
+    let calls_recorded = recorded_calls(&calls);
+    assert_eq!(calls_recorded.len(), 1);
+    let call = calls_recorded.first().expect("one call was recorded");
     assert_eq!(call.handler, "gemini");
     assert_eq!(call.url_route, "/v1/generateContent");
     assert_eq!(call.endpoint_type, EndpointType::Gemini);
@@ -441,14 +568,12 @@ async fn async_stream_logs_the_request_body_it_was_given() {
     stream_metadata
         .request_body
         .insert("contents".to_owned(), Json::Text("hi".to_owned()));
-    let mut stream = async_stream(
-        vec![body(&["data: a", ""])],
-        stream_metadata,
-        Some(logging_for(Arc::clone(&calls))),
-    );
+    let (logging, logged) = logging_for(Arc::clone(&calls));
+    let mut stream = async_stream(vec![body(&["data: a", ""])], stream_metadata, Some(logging));
     assert_eq!(drain(&mut stream).await.len(), 1);
-    let logged = recorded_calls(&calls);
-    let call = logged.first().expect("one call was recorded");
+    logged.notified().await;
+    let calls_recorded = recorded_calls(&calls);
+    let call = calls_recorded.first().expect("one call was recorded");
     let expected = Json::Object(IndexMap::from([(
         "contents".to_owned(),
         Json::Text("hi".to_owned()),
@@ -459,14 +584,16 @@ async fn async_stream_logs_the_request_body_it_was_given() {
 #[tokio::test]
 async fn async_stream_routes_a_vertex_provider_to_the_vertex_handler() {
     let calls = call_log();
+    let (logging, logged) = logging_for(Arc::clone(&calls));
     let mut stream = async_stream(
         vec![body(&["data: a", ""])],
         metadata(GenAiProvider::VertexAi),
-        Some(logging_for(Arc::clone(&calls))),
+        Some(logging),
     );
     assert_eq!(drain(&mut stream).await.len(), 1);
-    let logged = recorded_calls(&calls);
-    let call = logged.first().expect("one call was recorded");
+    logged.notified().await;
+    let calls_recorded = recorded_calls(&calls);
+    let call = calls_recorded.first().expect("one call was recorded");
     assert_eq!(call.handler, "vertex");
     assert_eq!(call.endpoint_type, EndpointType::VertexAi);
 }
@@ -474,31 +601,37 @@ async fn async_stream_routes_a_vertex_provider_to_the_vertex_handler() {
 #[tokio::test]
 async fn async_stream_logs_once_and_only_after_the_end() {
     let calls = call_log();
+    let (logging, logged) = logging_for(Arc::clone(&calls));
     let mut stream = async_stream(
         vec![body(&["data: a", ""])],
         metadata(GenAiProvider::Gemini),
-        Some(logging_for(Arc::clone(&calls))),
+        Some(logging),
     );
     let first = stream.next_event().await.expect("the first event");
     assert_eq!(first, Some(b"data: a\n\n".to_vec()));
     assert!(recorded_calls(&calls).is_empty());
     assert!(stream.next_event().await.expect("the end").is_none());
+    logged.notified().await;
     assert_eq!(recorded_calls(&calls).len(), 1);
     assert!(stream.next_event().await.expect("the end again").is_none());
+    assert!(
+        timeout(Duration::from_millis(200), logged.notified())
+            .await
+            .is_err(),
+        "the completion is not logged twice"
+    );
     assert_eq!(recorded_calls(&calls).len(), 1);
 }
 
 #[tokio::test]
 async fn async_stream_logs_an_empty_stream_at_eof() {
     let calls = call_log();
-    let mut stream = async_stream(
-        Vec::new(),
-        metadata(GenAiProvider::Gemini),
-        Some(logging_for(Arc::clone(&calls))),
-    );
+    let (logging, logged) = logging_for(Arc::clone(&calls));
+    let mut stream = async_stream(Vec::new(), metadata(GenAiProvider::Gemini), Some(logging));
     assert!(stream.next_event().await.expect("the end").is_none());
-    let logged = recorded_calls(&calls);
-    let call = logged.first().expect("one call was recorded");
+    logged.notified().await;
+    let calls_recorded = recorded_calls(&calls);
+    let call = calls_recorded.first().expect("one call was recorded");
     assert!(call.lines.is_empty());
     assert_eq!(call.request_body, Some(Json::Object(IndexMap::new())));
 }
@@ -506,14 +639,12 @@ async fn async_stream_logs_an_empty_stream_at_eof() {
 #[tokio::test]
 async fn async_stream_logs_nothing_after_a_transport_failure() {
     let calls = call_log();
+    let (logging, logged) = logging_for(Arc::clone(&calls));
     let chunks: Vec<Result<Vec<u8>, HttpError>> =
         vec![Ok(b"data: a\n\ndata: b".to_vec()), Err(HttpError::Timeout)];
     let source: BoxStream<'static, Result<Vec<u8>, HttpError>> = Box::pin(iter(chunks));
-    let mut stream = async_stream_from_source(
-        source,
-        metadata(GenAiProvider::Gemini),
-        Some(logging_for(Arc::clone(&calls))),
-    );
+    let mut stream =
+        async_stream_from_source(source, metadata(GenAiProvider::Gemini), Some(logging));
     let first = stream.next_event().await.expect("the first event");
     assert_eq!(first, Some(b"data: a\n\n".to_vec()));
     assert!(matches!(
@@ -527,7 +658,98 @@ async fn async_stream_logs_nothing_after_a_transport_failure() {
             .expect("the stream is over")
             .is_none()
     );
+    assert!(
+        timeout(Duration::from_millis(200), logged.notified())
+            .await
+            .is_err(),
+        "a failed stream is never logged"
+    );
     assert!(recorded_calls(&calls).is_empty());
+}
+
+#[tokio::test]
+async fn async_stream_logs_nothing_after_a_line_limit_failure() {
+    let calls = call_log();
+    let (logging, logged) = logging_for(Arc::clone(&calls));
+    let chunks: Vec<Result<Vec<u8>, HttpError>> = vec![
+        Ok(b"data: a\n\n".to_vec()),
+        Ok(b"data: 0123456789\n\n".to_vec()),
+    ];
+    let source: BoxStream<'static, Result<Vec<u8>, HttpError>> = Box::pin(iter(chunks));
+    let mut stream = AsyncGoogleGenAiStream::new(
+        source,
+        metadata(GenAiProvider::Gemini),
+        Some(logging),
+        Arc::new(FixedClock),
+        SMALL_LINE_LIMIT,
+    );
+    let first = stream.next_event().await.expect("the first event");
+    assert_eq!(first, Some(b"data: a\n\n".to_vec()));
+    let failure = stream
+        .next_event()
+        .await
+        .expect_err("the long line is refused");
+    assert!(matches!(
+        failure,
+        GenAiStreamError::Lines(AlephAlphaError::LineTooLong {
+            limit: SMALL_LINE_LIMIT
+        })
+    ));
+    assert!(
+        stream
+            .next_event()
+            .await
+            .expect("the stream is over")
+            .is_none()
+    );
+    assert!(
+        timeout(Duration::from_millis(200), logged.notified())
+            .await
+            .is_err(),
+        "a stream that failed on a long line is never logged"
+    );
+    assert!(recorded_calls(&calls).is_empty());
+}
+
+#[tokio::test]
+async fn async_stream_returns_the_end_before_the_completion_log_finishes() {
+    let calls = call_log();
+    let gate = Arc::new(Gate::default());
+    let (started_tx, started_rx) = oneshot::channel();
+    let (done_tx, mut done_rx) = oneshot::channel();
+    let handler = Arc::new(BlockingHandler {
+        calls: Arc::clone(&calls),
+        gate: Arc::clone(&gate),
+        started: Mutex::new(Some(started_tx)),
+        done: Mutex::new(Some(done_tx)),
+    });
+    let logging = logging_with_gemini(handler, Arc::clone(&calls), Arc::new(Notify::new()));
+    let mut stream = async_stream(
+        vec![body(&["data: a", ""])],
+        metadata(GenAiProvider::Gemini),
+        Some(logging),
+    );
+    let end = timeout(Duration::from_secs(5), stream.next_event())
+        .await
+        .expect("the end of the stream does not wait for the completion log")
+        .expect("the end parses");
+    assert!(end.is_none());
+    started_rx.await.expect("the handler started");
+    assert!(done_rx.try_recv().is_err(), "the handler is still blocked");
+    drop(stream);
+    gate.open();
+    done_rx
+        .await
+        .expect("the completion log finished after the stream was dropped");
+    let calls_recorded = recorded_calls(&calls);
+    assert_eq!(calls_recorded.len(), 1);
+    assert_eq!(
+        calls_recorded
+            .first()
+            .expect("one call was recorded")
+            .handler,
+        "gemini"
+    );
 }
 
 #[test]
