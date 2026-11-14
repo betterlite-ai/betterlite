@@ -52,6 +52,17 @@ expect_header "${gateway}" \
   "ARG PGBOUNCER_SHA256=afd25dd61ee6775d37b40629b87ce08736b3e6955f3057bb212e410fbf21c71d"
 expect_header "${backend}" "ARG LITELLM_RUNTIME_IMAGE=${wolfi}"
 
+expect_line "${gateway}" "FROM rust:1.98.0-bookworm AS builder" "gateway builder stage"
+expect_line "${backend}" "FROM rust:1.98.0-bookworm AS builder" "backend builder stage"
+expect_line "${gateway}" "COPY Cargo.toml Cargo.lock rust-toolchain.toml /app/" "gateway builder manifest copy"
+expect_line "${backend}" "COPY Cargo.toml Cargo.lock rust-toolchain.toml /app/" "backend builder manifest copy"
+expect_line "${gateway}" "COPY crates/ /app/crates/" "gateway builder crate copy"
+expect_line "${backend}" "COPY crates/ /app/crates/" "backend builder crate copy"
+expect_line "${gateway}" "COPY tools/ /app/tools/" "gateway builder tool copy"
+expect_line "${backend}" "COPY tools/ /app/tools/" "backend builder tool copy"
+expect_line "${gateway}" "COPY packaging/docker/component_entrypoint.sh /app/docker/component_entrypoint.sh" "gateway entrypoint source copy"
+expect_line "${backend}" "COPY packaging/docker/component_entrypoint.sh /app/docker/component_entrypoint.sh" "backend entrypoint source copy"
+
 expect_text "${gateway}" "cargo build --release --locked -p betterlite-gateway" "gateway build command"
 refute_text "${gateway}" "-p betterlite-backend" "gateway builds the backend binary"
 expect_text "${backend}" "cargo build --release --locked -p betterlite-backend" "backend build command"
