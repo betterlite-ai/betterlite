@@ -8,7 +8,9 @@ use super::{
     build_guard_input_for_request, build_guard_input_for_response, extract_transformed_texts,
     messages_since_last_assistant,
 };
-use crate::crowdstrike_aidr::models::{GuardInput, Message, MessageContent};
+use crate::crowdstrike_aidr::models::{
+    ContentPart, GuardInput, Message, MessageContent, TextContentPart, TextPartType,
+};
 use crate::generic_guardrail_contracts::{GuardrailMessage, GuardrailToolParam};
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 
@@ -164,6 +166,30 @@ fn _build_guard_input_for_request_empty_content() {
     assert_eq!(
         built.guard_input.messages[1].content,
         Some(MessageContent::Text(String::new()))
+    );
+}
+
+#[test]
+fn _build_guard_input_for_request_keeps_non_empty_content_parts() {
+    let mut listed = message("user", "placeholder");
+    listed.extra.insert(
+        "content".to_owned(),
+        GuardrailValue::Array(vec![GuardrailValue::Object(BTreeMap::from([
+            ("type".to_owned(), GuardrailValue::Text("text".to_owned())),
+            ("text".to_owned(), GuardrailValue::Text("part".to_owned())),
+        ]))]),
+    );
+    let built = build_guard_input_for_request(&inputs(vec![listed]))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        built.guard_input.messages[0].content,
+        Some(MessageContent::Parts(vec![ContentPart::Text(
+            TextContentPart {
+                part_type: TextPartType::Text,
+                text: "part".to_owned(),
+            }
+        )]))
     );
 }
 
