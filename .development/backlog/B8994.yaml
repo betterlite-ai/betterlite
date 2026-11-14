@@ -1,14 +1,14 @@
 id: B8994
 milestone: M6 guardrails
 title: Guardrail scan metadata and response header utilities
-status: todo
+status: done
 depends_on: [B3660, B3662, B3664, B3731, B3786]
 file: tasks/B8994-guardrail-audit-metadata.yaml
 covers:
   - "litellm/proxy/common_utils/callback_utils.py"
 parent: B104
 split_from: B104
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1614
