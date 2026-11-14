@@ -1,12 +1,10 @@
+import asyncio
 from hashlib import sha256
 from typing import Final, Literal, NoReturn
 
 from litellm.exceptions import RateLimitError
 from litellm.router import Router
-from litellm.router_utils.client_initalization_utils import (
-    InitalizeCachedClient,
-    MaxParallelRequestsLimit,
-)
+from litellm.router_utils.client_initalization_utils import MaxParallelRequestsLimit
 from litellm.router_utils.clientside_credential_handler import (
     get_dynamic_litellm_params,
     is_clientside_credential,
@@ -173,7 +171,7 @@ def model_entry(spec: CachedInput) -> dict[str, object]:
     }
 
 
-def cached_lookups(spec: CachedInput) -> list[CachedObservation]:
+async def cached_lookups(spec: CachedInput) -> list[CachedObservation]:
     router = Router(
         model_list=[model_entry(spec)],
         default_max_parallel_requests=spec.default_max_parallel_requests,
@@ -182,13 +180,11 @@ def cached_lookups(spec: CachedInput) -> list[CachedObservation]:
     observations: list[CachedObservation] = []
     previous: object | None = None
     for _index in range(spec.lookups):
+        installed = router.cache.get_cache(key=key, local_only=True) is None
+        _response = await router.acompletion(
+            model=spec.model_group, messages=[{"role": "user", "content": "probe"}], mock_response="probe"
+        )
         cached: object | None = router.cache.get_cache(key=key, local_only=True)
-        installed = cached is None
-        if cached is None:
-            InitalizeCachedClient.set_max_parallel_requests_client(
-                litellm_router_instance=router, model=model_entry(spec)
-            )
-            cached = router.cache.get_cache(key=key, local_only=True)
         observations.append(
             CachedObservation(
                 installed=installed,
@@ -241,6 +237,6 @@ class DeploymentClients(Operation):
                 for case in self.calculate
             ],
             limits=[limit_steps(spec) for spec in self.limits],
-            cached=[cached_lookups(spec) for spec in self.cached],
+            cached=[asyncio.run(cached_lookups(spec)) for spec in self.cached],
             credentials=[credential_lookup(spec) for spec in self.credentials],
         )
