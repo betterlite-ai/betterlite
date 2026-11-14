@@ -104,10 +104,7 @@ where
     UnexpectedStream { operation: Operation },
 }
 
-pub type GenerateContentResult<Source>
-where
-    Source: Error + 'static,
-= Result<GenerateContentOutcome, ChatCallError<Source>>;
+pub type GenerateContentResult<Source> = Result<GenerateContentOutcome, ChatCallError<Source>>;
 
 pub fn generate_content_handler<'call, Executor>(
     executor: &'call Executor,
