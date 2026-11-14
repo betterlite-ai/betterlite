@@ -93,21 +93,25 @@ enum WeightsOutcome {
 
 #[rstest]
 #[case::defaults(None, None, WeightsOutcome::Accepted(0.7, 0.3))]
-#[case::all_quality(Some(1.0), Some(0.0), WeightsOutcome::Accepted(1.0, 0.0))]
-#[case::all_economy(Some(0.0), Some(1.0), WeightsOutcome::Accepted(0.0, 1.0))]
-#[case::inside_tolerance(Some(0.75), Some(0.251), WeightsOutcome::Accepted(0.75, 0.251))]
-#[case::outside_tolerance(Some(0.75), Some(0.249), WeightsOutcome::Sum(0.75, 0.249))]
-#[case::just_inside_tolerance(Some(0.7009), Some(0.3), WeightsOutcome::Accepted(0.7009, 0.3))]
-#[case::just_outside_tolerance(Some(0.7012), Some(0.3), WeightsOutcome::Sum(0.7012, 0.3))]
-#[case::far_from_one(Some(0.9), Some(0.5), WeightsOutcome::Sum(0.9, 0.5))]
-#[case::quality_alone(Some(0.9), None, WeightsOutcome::Accepted(0.9, 0.3))]
-#[case::cost_alone_matching(None, Some(0.3), WeightsOutcome::Accepted(0.7, 0.3))]
-#[case::cost_alone_off_sum(None, Some(0.4), WeightsOutcome::Sum(0.7, 0.4))]
-#[case::quality_below_zero(Some(-0.1), Some(1.1), WeightsOutcome::QualityWeight)]
-#[case::economy_above_one(Some(0.5), Some(1.5), WeightsOutcome::EconomyWeight)]
-#[case::economy_below_zero(Some(0.5), Some(-0.2), WeightsOutcome::EconomyWeight)]
+#[case::all_quality(Some(1.0_f64), Some(0.0_f64), WeightsOutcome::Accepted(1.0, 0.0))]
+#[case::all_economy(Some(0.0_f64), Some(1.0_f64), WeightsOutcome::Accepted(0.0, 1.0))]
+#[case::inside_tolerance(Some(0.75_f64), Some(0.251_f64), WeightsOutcome::Accepted(0.75, 0.251))]
+#[case::outside_tolerance(Some(0.75_f64), Some(0.249_f64), WeightsOutcome::Sum(0.75, 0.249))]
+#[case::just_inside_tolerance(
+    Some(0.7009_f64),
+    Some(0.3_f64),
+    WeightsOutcome::Accepted(0.7009, 0.3)
+)]
+#[case::just_outside_tolerance(Some(0.7012_f64), Some(0.3_f64), WeightsOutcome::Sum(0.7012, 0.3))]
+#[case::far_from_one(Some(0.9_f64), Some(0.5_f64), WeightsOutcome::Sum(0.9, 0.5))]
+#[case::quality_alone(Some(0.9_f64), None, WeightsOutcome::Accepted(0.9, 0.3))]
+#[case::cost_alone_matching(None, Some(0.3_f64), WeightsOutcome::Accepted(0.7, 0.3))]
+#[case::cost_alone_off_sum(None, Some(0.4_f64), WeightsOutcome::Sum(0.7, 0.4))]
+#[case::quality_below_zero(Some(-0.1_f64), Some(1.1_f64), WeightsOutcome::QualityWeight)]
+#[case::economy_above_one(Some(0.5_f64), Some(1.5_f64), WeightsOutcome::EconomyWeight)]
+#[case::economy_below_zero(Some(0.5_f64), Some(-0.2_f64), WeightsOutcome::EconomyWeight)]
 #[case::not_a_number(Some(f64::NAN), None, WeightsOutcome::QualityWeight)]
-#[case::not_a_number_cost(Some(0.7), Some(f64::NAN), WeightsOutcome::EconomyWeight)]
+#[case::not_a_number_cost(Some(0.7_f64), Some(f64::NAN), WeightsOutcome::EconomyWeight)]
 fn adaptive_classification_boundaries(
     #[case] quality: Option<f64>,
     #[case] cost: Option<f64>,
@@ -204,15 +208,18 @@ fn classifier_keeps_the_first_two_thousand_characters() {
     assert_eq!(classify(&exact), RequestType::CodeGeneration);
     let over = format!("{} write python", "a".repeat(1988));
     assert_eq!(classify(&over), RequestType::General);
-    let multibyte = format!("{} write python", "é".repeat(1985));
+    let multibyte = format!("{} write python", "\u{e9}".repeat(1985));
     assert_eq!(classify(&multibyte), RequestType::CodeGeneration);
-    let past_boundary = format!("{} write python", "é".repeat(1990));
+    let past_boundary = format!("{} write python", "\u{e9}".repeat(1990));
     assert_eq!(classify(&past_boundary), RequestType::General);
 }
 
 #[test]
 fn classifier_keeps_rust_unicode_classes() {
-    assert_eq!(classify("WRİTE a python function"), RequestType::General);
+    assert_eq!(
+        classify("WR\u{130}TE a python function"),
+        RequestType::General
+    );
     assert_eq!(
         classify("Explain this function\u{0301}."),
         RequestType::General
@@ -231,6 +238,10 @@ fn constants_keep_the_pinned_values() {
     );
     assert_eq!(STRENGTH_BONUS.to_bits(), 0.3_f64.to_bits());
     assert_eq!(COLD_START_MASS.to_bits(), 10.0_f64.to_bits());
+}
+
+#[test]
+fn detector_constants_keep_the_pinned_values() {
     assert_eq!(SAMPLE_CAP, 200);
     assert_eq!(MIN_TURNS_FOR_CLEAN_CREDIT, 3);
     assert_eq!(OWNER_CACHE_TTL_SECONDS, 86_400);
@@ -239,6 +250,10 @@ fn constants_keep_the_pinned_values() {
     assert_eq!(STAGNATION_JACCARD_NEAR_DUP.to_bits(), 0.5_f64.to_bits());
     assert_eq!(LOOP_REPEAT_THRESHOLD, 3);
     assert_eq!(TOOL_CALL_HISTORY_MAX, 20);
+}
+
+#[test]
+fn header_constants_keep_the_pinned_values() {
     assert_eq!(MIN_QUALITY_TIER_HEADER, "x-litellm-min-quality-tier");
     assert_eq!(MIN_QUALITY_TIER_METADATA_KEY, "min_quality_tier");
     assert_eq!(CHOSEN_MODEL_KEY, "adaptive_router_chosen_model");
