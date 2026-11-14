@@ -575,11 +575,11 @@ fn record_parts_build_a_base_and_a_log_target() {
 fn log_targets_reject_an_integer_past_u64() {
     let target =
         r#"{"litellm_params": {"id": 123456789012345678901234567890}, "model_call_params": null}"#;
-    let error = log_target_from_text(target).unwrap_err();
-    assert_eq!(error.kind(), "InvalidJson");
+    let target_error = log_target_from_text(target).unwrap_err();
+    assert_eq!(target_error.kind(), "InvalidJson");
     let context = format!(r#"{{"settings": {{}}, "log_target": {target}}}"#);
-    let error = record_parts(&context).err().unwrap();
-    assert_eq!(error.kind(), "InvalidJson");
+    let parts_error = record_parts(&context).err().unwrap();
+    assert_eq!(parts_error.kind(), "InvalidJson");
 }
 
 #[test]
