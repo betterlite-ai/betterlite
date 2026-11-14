@@ -844,6 +844,43 @@ fn enkryptai_config_uses_the_environment_for_an_empty_configured_key() {
     );
 }
 
+#[rstest]
+#[case::integer("3", Duration::from_secs(3))]
+#[case::decimal("0.5", Duration::from_millis(500))]
+#[case::flag("true", Duration::from_secs(1))]
+#[case::padded_text("' 7 '", Duration::from_secs(7))]
+#[case::empty_text("''", Duration::from_secs(600))]
+#[case::null("null", Duration::from_secs(600))]
+fn enkryptai_config_reads_each_timeout_form(#[case] value: &str, #[case] expected: Duration) {
+    let source = format!(
+        "guardrails:\n  - guardrail_name: guard\n    litellm_params:\n      guardrail: enkryptai\n      api_key: key\n      timeout: {value}\n"
+    );
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&source)
+    .expect("config");
+    assert_eq!(
+        config.sections.enkryptai_detection.guardrails[0].timeout,
+        expected
+    );
+}
+
+#[test]
+fn enkryptai_config_rejects_a_negative_timeout() {
+    let source = "guardrails:\n  - guardrail_name: guard\n    litellm_params:\n      guardrail: enkryptai\n      api_key: key\n      timeout: -1\n";
+    let error = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(source)
+    .expect_err("negative timeout");
+    assert!(
+        error
+            .to_string()
+            .contains("timeout must be a finite nonnegative duration")
+    );
+}
+
 #[test]
 fn enkryptai_config_rejects_an_invalid_timeout() {
     let source = "guardrails:\n  - guardrail_name: guard\n    litellm_params:\n      guardrail: enkryptai\n      api_key: key\n      timeout: nope\n";
