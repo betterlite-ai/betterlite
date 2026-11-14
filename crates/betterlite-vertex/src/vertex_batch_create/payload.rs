@@ -22,9 +22,10 @@ pub struct VertexDeployedModel {
 }
 
 // one bounded decoder serves the batch job and endpoint envelopes, and B1373's lifecycle calls read their jobs through it too
-pub fn decode_vertex_batch_payload<Payload: DeserializeOwned>(
-    bytes: &[u8],
-) -> Result<Payload, VertexBatchCreateError> {
+pub fn decode_vertex_batch_payload<Payload>(bytes: &[u8]) -> Result<Payload, VertexBatchCreateError>
+where
+    Payload: DeserializeOwned,
+{
     if bytes.len() > VERTEX_BATCH_PAYLOAD_LIMIT {
         return Err(VertexBatchCreateError::PayloadTooLarge {
             limit: VERTEX_BATCH_PAYLOAD_LIMIT,

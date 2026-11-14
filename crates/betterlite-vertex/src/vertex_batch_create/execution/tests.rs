@@ -39,7 +39,7 @@ use crate::provider_metadata::timestamp::LocalTimeContext;
 use crate::vertex_batch_create::error::VertexBatchCreateError;
 use crate::vertex_batch_create::fetch::{ProtectedGet, SafeGet};
 use crate::vertex_batch_records::types::VertexAIBatchPredictionJob;
-use support::{Gated, JOB, Reply, Scripted, access, reply, reply_bytes, stalling_server};
+use support::{JOB, Reply, Scripted, access, reply, reply_bytes, stalling_server};
 
 const TUNED: &str = "gs://bucket/endpoints/222/file.jsonl";
 const PUBLISHER: &str = "gs://bucket/publishers/google/models/gemini-pro/file.jsonl";
@@ -259,7 +259,7 @@ async fn lookup_status_propagation(#[case] status: u16) {
 #[tokio::test]
 async fn async_no_blocking() {
     let (open, gate) = oneshot::channel();
-    let transport = Gated::new(gate);
+    let transport = Scripted::new(vec![reply(200, JOB)]).gated(gate);
     let fetcher = Scripted::new(Vec::new());
     let input = create(PUBLISHER);
     let request = base(&input);
@@ -425,14 +425,25 @@ async fn create_status_is_preserved(#[case] status: u16, #[case] body: &str) {
     assert!(error.to_string().contains(body));
 }
 
+#[rstest]
+#[case::ok(200, true)]
+#[case::created(201, true)]
+#[case::last_success(299, true)]
+#[case::multiple_choices(300, false)]
+#[case::not_modified(304, false)]
+#[case::permanent_redirect(308, false)]
 #[tokio::test]
-async fn a_status_below_400_is_not_a_create_failure() {
-    let transport = Scripted::new(vec![reply(399, JOB)]);
+async fn only_a_2xx_create_is_a_success(#[case] status: u16, #[case] succeeds: bool) {
+    let transport = Scripted::new(vec![reply(status, JOB)]);
     let fetcher = Scripted::new(Vec::new());
-    let object = run(&transport, &fetcher, &base(&create(PUBLISHER)))
-        .await
-        .unwrap();
-    assert_eq!(object.id, "777");
+    let outcome = run(&transport, &fetcher, &base(&create(PUBLISHER))).await;
+    if succeeds {
+        assert_eq!(outcome.unwrap().id, "777");
+    } else {
+        let error = outcome.unwrap_err();
+        assert!(matches!(error, VertexBatchCreateError::Http { .. }));
+        assert_eq!(error.status_code(), status);
+    }
 }
 
 #[rstest]

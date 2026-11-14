@@ -57,6 +57,21 @@ pub(super) fn access(project: &str) -> Result<AccessToken, CredentialCacheError>
 pub(super) struct Scripted {
     replies: Mutex<VecDeque<Reply>>,
     requests: Mutex<Vec<Recorded>>,
+    gate: Mutex<Option<oneshot::Receiver<()>>>,
+    pub entered: Arc<AtomicBool>,
+}
+
+impl Reply {
+    fn answer(self) -> Result<UpstreamResponse, TransportError> {
+        match self {
+            Self::Status { status, body } => Ok(UpstreamResponse {
+                status,
+                headers: HeaderMap::new(),
+                body,
+            }),
+            Self::Failure => Err(TransportError::Closed),
+        }
+    }
 }
 
 impl Scripted {
@@ -64,7 +79,15 @@ impl Scripted {
         Self {
             replies: Mutex::new(VecDeque::from(replies)),
             requests: Mutex::new(Vec::new()),
+            gate: Mutex::new(None),
+            entered: Arc::default(),
         }
+    }
+
+    // the create answers only after the test opens the gate, so a call that blocked its thread would never see it open
+    pub(super) fn gated(self, gate: oneshot::Receiver<()>) -> Self {
+        *self.gate.lock().unwrap() = Some(gate);
+        self
     }
 
     pub(super) fn requests(&self) -> Vec<Recorded> {
@@ -82,6 +105,8 @@ impl CacheTransport for Scripted {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+        self.entered.store(true, Ordering::SeqCst);
+        let gate = self.gate.lock().unwrap().take();
         let body = if let RequestBody::Json(bytes) = request.body {
             bytes
         } else {
@@ -94,14 +119,12 @@ impl CacheTransport for Scripted {
             body,
             deadline: request.deadline,
         });
-        ready(match reply {
-            Reply::Status { status, body } => Ok(UpstreamResponse {
-                status,
-                headers: HeaderMap::new(),
-                body,
-            }),
-            Reply::Failure => Err(TransportError::Closed),
-        })
+        async move {
+            if let Some(gate) = gate {
+                gate.await.ok();
+            }
+            reply.answer()
+        }
     }
 }
 
@@ -119,51 +142,11 @@ impl ProtectedGet for Scripted {
             body: Vec::new(),
             deadline,
         });
-        ready(match reply {
-            Reply::Status { status, body } => Ok(UpstreamResponse {
-                status,
-                headers: HeaderMap::new(),
-                body,
-            }),
-            Reply::Failure => Err(VertexBatchCreateError::from_transport(
-                TransportError::Closed,
-            )),
-        })
-    }
-}
-
-// answers only after the test opens the gate, so a call that blocked its thread would never see the gate open
-pub(super) struct Gated {
-    gate: Mutex<Option<oneshot::Receiver<()>>>,
-    pub entered: Arc<AtomicBool>,
-}
-
-impl Gated {
-    pub(super) fn new(gate: oneshot::Receiver<()>) -> Self {
-        Self {
-            gate: Mutex::new(Some(gate)),
-            entered: Arc::default(),
-        }
-    }
-}
-
-impl CacheTransport for Gated {
-    fn send(
-        &self,
-        _request: OutboundRequest,
-    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        self.entered.store(true, Ordering::SeqCst);
-        let gate = self.gate.lock().unwrap().take();
-        async move {
-            if let Some(gate) = gate {
-                gate.await.ok();
-            }
-            Ok(UpstreamResponse {
-                status: 200,
-                headers: HeaderMap::new(),
-                body: JOB.as_bytes().to_vec(),
-            })
-        }
+        ready(
+            reply
+                .answer()
+                .map_err(VertexBatchCreateError::from_transport),
+        )
     }
 }
 

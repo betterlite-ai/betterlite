@@ -25,7 +25,10 @@ pub struct SafeGet<'urls, Resolver> {
     pub client: &'urls ProxiedClient,
 }
 
-impl<Resolver: Resolve> ProtectedGet for SafeGet<'_, Resolver> {
+impl<Resolver> ProtectedGet for SafeGet<'_, Resolver>
+where
+    Resolver: Resolve,
+{
     async fn get(
         &self,
         url: &str,

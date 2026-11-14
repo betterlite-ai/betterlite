@@ -131,10 +131,13 @@ where
     to_batch_object(&created, local).map_err(|source| VertexBatchCreateError::Records { source })
 }
 
-async fn post_batch_job<Transport: CacheTransport>(
+async fn post_batch_job<Transport>(
     transport: &Transport,
     prepared: PreparedBatchCreate,
-) -> Result<VertexBatchPredictionResponse, VertexBatchCreateError> {
+) -> Result<VertexBatchPredictionResponse, VertexBatchCreateError>
+where
+    Transport: CacheTransport,
+{
     let collection = collection_url(
         prepared.api_base.as_deref(),
         &prepared.project,
@@ -154,8 +157,8 @@ async fn post_batch_job<Transport: CacheTransport>(
         })
         .await
         .map_err(VertexBatchCreateError::from_transport)?;
-    // httpx's raise_for_status ends the call on a 4xx or 5xx and returns every other status
-    if reply.status >= 400 {
+    // the shared client follows no redirect here, and raise_for_status fails on every status outside 2xx
+    if !(200..300).contains(&reply.status) {
         let message = body_text(&reply.body);
         tracing::error!(
             "Vertex AI batch create failed: status={}, body={}",
@@ -181,10 +184,13 @@ fn body_text(body: &[u8]) -> String {
 }
 
 // the v1 batch API only takes Model resources, so an endpoint resource is swapped for the first deployed model it lists
-async fn resolve_model<Fetch: ProtectedGet>(
+async fn resolve_model<Fetch>(
     fetcher: &Fetch,
     prepared: &PreparedBatchCreate,
-) -> Result<String, VertexBatchCreateError> {
+) -> Result<String, VertexBatchCreateError>
+where
+    Fetch: ProtectedGet,
+{
     let model = &prepared.job.model;
     if !model.contains("/endpoints/") {
         return Ok(model.clone());
