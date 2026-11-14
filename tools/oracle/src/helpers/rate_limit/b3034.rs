@@ -84,10 +84,9 @@ impl crate::helpers::Helper for Op {
         let script: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&main_script);
         let refunds: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&refund_script);
         let response = settle(input, &store, &clock, script, refunds)?;
-        let mut calls = main_script.calls();
-        if let Some(planned) = &batch {
-            calls = planned.calls();
-        }
+        let calls = batch
+            .as_deref()
+            .map_or_else(|| main_script.calls(), PlannedBatch::calls);
         Ok(json!({
             "response": response_json(&response),
             "calls": calls,
