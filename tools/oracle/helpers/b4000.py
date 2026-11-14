@@ -12,7 +12,6 @@ import azure.identity
 import httpx
 import litellm
 import requests
-import urllib3
 from azure.core.pipeline.transport._requests_asyncio import AsyncioRequestsTransport
 from azure.storage.filedatalake.aio import DataLakeServiceClient
 from litellm.integrations.azure_storage.azure_storage import AzureBlobStorageLogger
@@ -21,6 +20,7 @@ from litellm.proxy import proxy_server
 from pydantic import JsonValue, TypeAdapter
 from requests.adapters import HTTPAdapter
 from typing_extensions import override
+from urllib3.response import HTTPResponse
 
 AIO_MODULE = "azure.storage.filedatalake.aio"
 IDENTITY_MODULE = azure.identity.__name__
@@ -164,7 +164,7 @@ class ScriptedAdapter(HTTPAdapter):
                 raw = b""
         status, text = answer(f"{request.method}", f"{request.url}", raw)
         payload = text.encode("utf-8")
-        reply = urllib3.response.HTTPResponse(
+        reply = HTTPResponse(
             body=io.BytesIO(payload),
             headers={"Content-Length": str(len(payload))},
             status=status,
