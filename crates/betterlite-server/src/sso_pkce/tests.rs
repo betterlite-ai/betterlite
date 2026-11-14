@@ -22,6 +22,7 @@ use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
 use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
 use betterlite_redis::redis_client_reuse::store::RedisClientStore;
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
+use betterlite_redis::redis_connection_settings::model::scalars::Scalar;
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use betterlite_redis::redis_live_client::LiveClientFactory;
 use indexmap::IndexMap;
@@ -159,10 +160,13 @@ async fn unreachable_cache() -> RedisCache {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     drop(listener);
-    let overrides: RedisOverrides = serde_json::from_str(&format!(
-        r#"{{"host": "127.0.0.1", "port": {port}, "socket_timeout": 0.05, "socket_connect_timeout": 0.05}}"#
-    ))
-    .unwrap();
+    let overrides = RedisOverrides {
+        host: Some("127.0.0.1".to_owned()),
+        port: Some(Scalar::Value(i64::from(port))),
+        socket_timeout: Some(Scalar::Value(0.05_f64)),
+        socket_connect_timeout: Some(Scalar::Value(0.05_f64)),
+        ..RedisOverrides::default()
+    };
     let options = RedisCacheOptions {
         overrides,
         family: RedisCacheFamily::Standalone,
