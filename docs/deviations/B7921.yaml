@@ -18,3 +18,12 @@ deviations:
   - what: "ErrorEventError.param is str | dict[str, JsonValue] | None, where LiteLLM declares str | dict[str, object] | None."
     why: "object admits values that have no JSON form, and the field arrives over the wire as JSON; a nested non-JSON Python object now fails validation naming param, where LiteLLM only fails at serialization."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1867-L1873
+  - what: "ComputerToolParam.environment and ComputerToolParam.type are typed str here, where LiteLLM writes Literal[...] | str for each."
+    why: "The str arm already accepts every string, so ruff PYI051 reports the Literal as redundant and the budgets allow no suppression; the accepted values and required keys are unchanged."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1218-L1228
+  - what: "ShellToolParam.type is typed str here, where LiteLLM writes Literal[\"shell\"] | str."
+    why: "The str arm already accepts every string, so ruff PYI051 reports the Literal as redundant and the budgets allow no suppression; the accepted values and required keys are unchanged."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1231-L1237
+  - what: "OpenAIChatCompletionToolParam.type is typed str here, where LiteLLM writes Literal[\"function\"] | str."
+    why: "The str arm already accepts every string, so ruff PYI051 reports the Literal as redundant and the budgets allow no suppression; the accepted values and required keys are unchanged."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1030-L1032
