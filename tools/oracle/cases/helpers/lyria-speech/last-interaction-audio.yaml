@@ -1,0 +1,26 @@
+kind: helper
+name: lyria-last-interaction-audio
+call:
+  vertex_lyria_speech:
+    function: decoded
+    cases:
+      - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [{"type": "audio", "data": "QUJD", "mime_type": "audio/mp3"}, {"type": "audio", "data": "WFk=", "mime_type": "audio/wav"}]}'}
+      - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [{"type": "audio", "data": "QUJD", "mime_type": "audio/wav"}, {"type": "text", "data": "WFk="}, {"type": "model_output", "content": []}]}'}
+      - {model: lyria-3-pro-preview, status: 200, body: '{"outputs": [{"type": "audio", "data": "QUJD"}]}'}
+      - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [{"type": "model_output", "content": [{"type": "text", "data": "aGVsbG8="}, {"type": "audio", "data": "QUJD", "mime_type": "audio/wav"}]}]}'}
+      - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [{"type": "model_output", "content": [{"type": "audio", "data": "QUJD", "mime_type": "audio/mp3"}, {"type": "audio", "data": "ZkxhQwA="}]}]}'}
+      - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [{"type": "text", "data": "QUJD"}, {"type": "audio", "data": ""}, {"type": "audio"}]}'}
+      - {model: lyria-3-pro-preview, status: 200, body: '{}'}
+      - {model: lyria-3-pro-preview, status: 200, body: '{"steps": null, "outputs": [{"type": "audio", "data": "QUJD"}]}'}
+      - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [], "outputs": [{"type": "audio", "data": "QUJD"}]}'}
+      - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [{"type": "audio", "data": "ZkxhQwA=", "mime_type": "audio/wav"}]}'}
+      - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [{"type": "model_output", "content": [{"type": "model_output", "content": [{"type": "audio", "data": "QUJD"}]}]}]}'}
+      - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [{"type": "audio", "data": "", "content": [{"type": "audio", "data": "QUJD"}]}]}'}
+      - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [{"type": "model_output", "content": null}]}'}
+      - {model: lyria-3-clip-preview, status: 200, body: '{"outputs": [{"type": "audio", "data": "QUJD", "mime_type": "audio/mp3"}]}'}
+      - {model: vertex_ai/lyria-3-pro-preview, status: 500, body: '{"steps": [{"type": "audio", "data": "WFk=", "mime_type": "audio/wav"}]}'}
+      - {model: lyria-3-pro-preview, status: 200, body: '{"steps": [{"type": "audio", "data": "QUJD", "mime_type": "audio/mp3"}, {"type": "audio", "data": "WFk=", "mime_type": null}]}'}
+      - {model: lyria-9, status: 200, body: '{"steps": [{"type": "audio", "data": "QUJD"}]}'}
+      - {model: lyria-3-pro-preview, status: 200, body: '[]'}
+env: {}
+compare: {ignore: []}
