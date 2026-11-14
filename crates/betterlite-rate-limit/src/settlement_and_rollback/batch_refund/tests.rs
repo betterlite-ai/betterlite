@@ -4,10 +4,7 @@ use rstest::rstest;
 
 use crate::limiter_records::{CacheCounterValue, CounterRefund};
 use crate::settlement_and_rollback::SettlementError;
-use crate::settlement_and_rollback::refunds::{
-    // ast-grep-ignore: no-long-names
-    counter_refunds_from_batch_values as batch_refunds,
-};
+use crate::settlement_and_rollback::refunds::counter_refunds_from_batch_values as batch_refunds;
 use crate::settlement_and_rollback::tests::support::{int_value, key_list, text_value};
 
 fn projected(refunds: &[CounterRefund]) -> Vec<(String, String, String, i64)> {

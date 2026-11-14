@@ -362,26 +362,30 @@ pub(crate) fn store(cache: Arc<FakeCache>) -> WindowStore {
 
 pub(crate) fn pipelined_store(cache: Arc<FakeCache>, batch: Arc<FakeBatch>) -> WindowStore {
     WindowStore {
-        cache,
-        rate_limiter_script: None,
-        counter_read_script: None,
         request_batch: Some(Arc::new(FakeBatchSource { batch })),
-        check_and_increment_lock: AsyncMutex::new(()),
+        ..store(cache)
     }
 }
 
-pub(crate) fn settlement<'a>(
-    windows: &'a WindowStore,
-    clock: &'a FixedClock,
-    script: Option<Arc<dyn CounterScript>>,
-    refund_script: Option<Arc<dyn CounterScript>>,
+fn script_object<S>(script: Arc<S>) -> Arc<dyn CounterScript>
+where
+    S: CounterScript + 'static,
+{
+    script
+}
+
+pub(crate) fn settlement<'settlement>(
+    windows: &'settlement WindowStore,
+    clock: &'settlement FixedClock,
+    script: Option<Arc<FakeScript>>,
+    refund_script: Option<Arc<FakeScript>>,
     fail_closed: bool,
-) -> AtomicSettlement<'a> {
+) -> AtomicSettlement<'settlement> {
     AtomicSettlement {
         windows,
         clock,
-        script,
-        refund_script,
+        script: script.map(script_object),
+        refund_script: refund_script.map(script_object),
         fail_closed: FailClosedPolicy {
             enabled: fail_closed,
         },

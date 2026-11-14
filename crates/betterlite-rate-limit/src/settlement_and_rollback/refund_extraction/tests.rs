@@ -4,10 +4,7 @@ use rstest::rstest;
 
 use crate::limiter_records::{AtomicCounterMeta, CacheCounterValue};
 use crate::settlement_and_rollback::SettlementError;
-use crate::settlement_and_rollback::refunds::{
-    // ast-grep-ignore: no-long-names
-    counter_refunds_from_atomic_response as atomic_response_refunds,
-};
+use crate::settlement_and_rollback::refunds::counter_refunds_from_atomic_response as atomic_response_refunds;
 use crate::settlement_and_rollback::tests::support::{int_value, meta, text_value};
 
 fn metas(entries: &[(&str, i64)]) -> Vec<AtomicCounterMeta> {

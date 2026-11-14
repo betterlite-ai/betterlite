@@ -124,7 +124,8 @@ async fn the_memory_path_reports_an_over_limit_without_writing() {
     assert_eq!(status.current_limit, 10);
     assert_eq!(status.limit_remaining, 0);
     assert!(cache.writes().is_empty());
-    let read_keys: Vec<&str> = cache.reads().iter().map(|read| read.key.as_str()).collect();
+    let reads = cache.reads();
+    let read_keys: Vec<&str> = reads.iter().map(|read| read.key.as_str()).collect();
     assert_eq!(
         read_keys,
         vec!["{model:gpt-4}:window", "{model:gpt-4}:requests"]
