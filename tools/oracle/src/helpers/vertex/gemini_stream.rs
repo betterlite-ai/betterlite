@@ -36,12 +36,12 @@ impl Helper for Op {
         for fragment in &input.fragments {
             match decoder.push(fragment.as_bytes()) {
                 Ok(chunk) => chunks.push(chunk.as_ref().map(state)),
-                Err(error) => return Err(stream_error(error)),
+                Err(error) => return Err(stream_error(&error)),
             }
         }
         let mut drained = Vec::new();
-        while let Some(chunk) = decoder.finish().map_err(stream_error)? {
-            drained.push(state(&chunk));
+        while let Some(chunk) = decoder.finish().as_ref().map_err(stream_error)? {
+            drained.push(state(chunk));
         }
         Ok(json!({ "chunks": chunks, "drained": drained }))
     }
@@ -56,10 +56,16 @@ fn header_map(headers: &BTreeMap<String, String>) -> Result<HeaderMap, Box<Helpe
     }
     Ok(map)
 }
-fn stream_error(error: StreamError) -> Box<HelperError> {
-    let (status, message) = match &error {
+fn stream_error(error: &StreamError) -> Box<HelperError> {
+    let (status, message) = match error {
         StreamError::Embedded { status, message } => (Some(*status), message.clone()),
-        other => (None, other.to_string()),
+        StreamError::Utf8 { .. }
+        | StreamError::NotAnObject
+        | StreamError::TooLarge { .. }
+        | StreamError::Decode(_)
+        | StreamError::Candidates(_)
+        | StreamError::Usage(_)
+        | StreamError::Close => (None, error.to_string()),
     };
     Box::new(HelperError {
         class: "VertexAIError".to_owned(),
