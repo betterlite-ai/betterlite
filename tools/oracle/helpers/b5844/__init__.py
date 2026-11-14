@@ -1,19 +1,56 @@
-from typing import cast
+from typing import TypeAlias, TypedDict, cast
 
 import litellm
 from litellm.llms.snowflake.chat.transformation import SnowflakeConfig
 from litellm.llms.snowflake.embedding.transformation import SnowflakeEmbeddingConfig
 from pydantic import JsonValue
 
-from .chat import chunk_step, embedding_response_step, event_step, response_step
-from .config import headers_step, info_step, params_step, url_step
-from .steps import Input, Step
+from .chat import (
+    ChunkStep,
+    EmbeddingRequestStep,
+    EmbeddingResponseStep,
+    EventStep,
+    RequestStep,
+    ResponseStep,
+    chunk_step,
+    embedding_response_step,
+    event_step,
+    response_step,
+)
+from .config import (
+    HeadersStep,
+    InfoStep,
+    ParamsStep,
+    UrlStep,
+    headers_step,
+    info_step,
+    params_step,
+    url_step,
+)
 from .views import ChatView, EmbeddingView, Pair, StreamHandler
 
 __all__ = ["litellm", "run"]
 
+Step: TypeAlias = (
+    UrlStep
+    | HeadersStep
+    | ParamsStep
+    | InfoStep
+    | RequestStep
+    | ResponseStep
+    | EmbeddingRequestStep
+    | EmbeddingResponseStep
+    | ChunkStep
+    | EventStep
+)
+
+
+class Input(TypedDict):
+    steps: list[Step]
+
 
 def run_step(chat: ChatView, embed: EmbeddingView, handler: StreamHandler, step: Step) -> JsonValue:
+    result: JsonValue
     if step["kind"] == "url":
         result = url_step(chat, embed, step)
     elif step["kind"] == "headers":

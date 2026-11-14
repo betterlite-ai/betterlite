@@ -3,11 +3,30 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use super::SnowflakeError;
 use crate::api::file_contracts::config::Headers;
 
-const CHAT_PARAMS: &str =
-    "temperature max_tokens max_completion_tokens top_p stream tools tool_choice";
-pub const EMBEDDING_PARAMS: &str =
-    "temperature max_tokens top_p stream response_format tools tool_choice";
+const CHAT_PARAMS: [&str; 7] = [
+    "temperature",
+    "max_tokens",
+    "max_completion_tokens",
+    "top_p",
+    "stream",
+    "tools",
+    "tool_choice",
+];
+pub const EMBEDDING_PARAMS: [&str; 7] = [
+    "temperature",
+    "max_tokens",
+    "top_p",
+    "stream",
+    "response_format",
+    "tools",
+    "tool_choice",
+];
 const API_SUFFIX: &str = "/api/v2";
+
+pub enum Endpoint<'model> {
+    Chat(&'model str),
+    Embedding,
+}
 
 #[must_use]
 pub fn is_claude_model(model: &str) -> bool {
@@ -18,25 +37,16 @@ pub fn is_claude_model(model: &str) -> bool {
 
 #[must_use]
 pub fn get_supported_openai_params(model: &str) -> Vec<&'static str> {
-    let mut params: Vec<&'static str> = CHAT_PARAMS.split_whitespace().collect();
+    let mut params = CHAT_PARAMS.to_vec();
     params.extend(is_claude_model(model).then_some("thinking"));
     params
 }
 
-pub fn map_openai_params(non_default_params: &Object, optional_params: &mut Object, model: &str) {
-    copy_supported(
-        non_default_params,
-        optional_params,
-        &get_supported_openai_params(model),
-    );
-}
-
-pub fn map_embedding_openai_params(non_default_params: &Object, optional_params: &mut Object) {
-    let supported: Vec<&str> = EMBEDDING_PARAMS.split_whitespace().collect();
-    copy_supported(non_default_params, optional_params, &supported);
-}
-
-fn copy_supported(non_default_params: &Object, optional_params: &mut Object, supported: &[&str]) {
+pub fn map_openai_params(
+    non_default_params: &Object,
+    optional_params: &mut Object,
+    supported: &[&str],
+) {
     for (name, value) in non_default_params {
         if supported.contains(&name.as_str()) {
             optional_params.insert(name.clone(), value.clone());
@@ -90,27 +100,17 @@ fn with_api_suffix(api_base: &str) -> String {
 
 pub fn get_complete_url(
     api_base: Option<&str>,
-    model: &str,
+    endpoint: &Endpoint<'_>,
     params: &mut Object,
     account_id_env: Option<&str>,
 ) -> Result<String, SnowflakeError> {
     let base = get_api_base(api_base, params, account_id_env)?;
-    let path = if is_claude_model(model) {
-        "/cortex/v1/messages"
-    } else {
-        "/cortex/v1/chat/completions"
+    let path = match endpoint {
+        Endpoint::Chat(model) if is_claude_model(model) => "/cortex/v1/messages",
+        Endpoint::Chat(_) => "/cortex/v1/chat/completions",
+        Endpoint::Embedding => "/cortex/inference:embed",
     };
     Ok(format!("{base}{path}"))
-}
-
-pub fn get_embed_complete_url(
-    api_base: Option<&str>,
-    params: &mut Object,
-    account_id_env: Option<&str>,
-) -> Result<String, SnowflakeError> {
-    let mut url = get_api_base(api_base, params, account_id_env)?;
-    url.push_str("/cortex/inference:embed");
-    Ok(url)
 }
 
 pub fn validate_environment(

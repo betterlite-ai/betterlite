@@ -3,9 +3,8 @@ use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 use betterlite_provider::api::file_contracts::config::Headers;
 use betterlite_provider::snowflake::config::{
-    EMBEDDING_PARAMS, get_complete_url, get_embed_complete_url, get_supported_openai_params,
-    is_claude_model, map_embedding_openai_params, map_openai_params, provider_info,
-    validate_environment,
+    EMBEDDING_PARAMS, Endpoint, get_complete_url, get_supported_openai_params, is_claude_model,
+    map_openai_params, provider_info, validate_environment,
 };
 use betterlite_provider::snowflake::embedding::{
     transform_embedding_request, transform_embedding_response,
@@ -51,11 +50,12 @@ fn run_step(runtime: &Runtime, handler: &mut Handler, step: &Step) -> StepResult
         } => {
             let mut given = params.clone();
             let (base, env) = (api_base.as_deref(), account_env.as_deref());
-            let url = if *embedding {
-                get_embed_complete_url(base, &mut given, env)
+            let endpoint = if *embedding {
+                Endpoint::Embedding
             } else {
-                get_complete_url(base, model, &mut given, env)
+                Endpoint::Chat(model)
             };
+            let url = get_complete_url(base, &endpoint, &mut given, env);
             Ok(url.map_or_else(
                 |error| json!({"error": error.to_string()}),
                 |address| json!({"url": address, "params": given}),
@@ -73,12 +73,11 @@ fn run_step(runtime: &Runtime, handler: &mut Handler, step: &Step) -> StepResult
         } => {
             let mut mapped = Object::new();
             let supported = if *embedding {
-                map_embedding_openai_params(non_default, &mut mapped);
-                EMBEDDING_PARAMS.split_whitespace().collect::<Vec<_>>()
+                EMBEDDING_PARAMS.to_vec()
             } else {
-                map_openai_params(non_default, &mut mapped, model);
                 get_supported_openai_params(model)
             };
+            map_openai_params(non_default, &mut mapped, &supported);
             Ok(json!({"supported": supported, "mapped": mapped}))
         }
         Step::Info {
@@ -126,7 +125,7 @@ fn run_step(runtime: &Runtime, handler: &mut Handler, step: &Step) -> StepResult
         Step::Event { chunk } => {
             let parsed = handler.chunk_parser(chunk).or_value_error()?;
             let view = serde_json::to_value(&parsed).or_value_error()?;
-            Ok(json!({"chunk": project::event(&view)}))
+            Ok(json!({"chunk": project::choices(&view, true)}))
         }
     }
 }
@@ -172,7 +171,7 @@ fn response_step(input: &ResponseInput<'_>) -> StepResult {
         )
     };
     Ok(json!({
-        "reply": project::reply(&reply),
+        "reply": project::choices(&reply, false),
         "hidden_model": hidden_model,
         "logged": recorder.into_calls(),
     }))

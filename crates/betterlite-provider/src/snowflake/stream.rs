@@ -33,7 +33,7 @@ pub enum OpenAiChunkError {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 pub enum SnowflakeChunk {
-    OpenAi(OpenAiStreamChunk),
+    OpenAi(Box<OpenAiStreamChunk>),
     Anthropic(Box<StreamEventChunk>),
 }
 
@@ -110,7 +110,7 @@ where
     ) -> Result<SnowflakeChunk, StreamError<Counter::Failure>> {
         let has_choices = matches!(chunk, Json::Object(fields) if fields.contains_key("choices"));
         if has_choices {
-            return Ok(SnowflakeChunk::OpenAi(parse_openai_chunk(chunk)?));
+            return Ok(SnowflakeChunk::OpenAi(Box::new(parse_openai_chunk(chunk)?)));
         }
         Ok(SnowflakeChunk::Anthropic(Box::new(
             self.parser.chunk_parser(chunk)?,

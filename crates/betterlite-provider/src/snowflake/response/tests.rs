@@ -12,6 +12,8 @@ use super::{
 
 const OPENAI_REPLY: &str = r#"{"id":"chatcmpl-1","object":"chat.completion","created":7,"model":"mistral-large","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#;
 
+const TOOL_USE_REPLY: &str = r#"{"id":"msg_7","model":"claude-3-5-sonnet","content":[{"type":"thinking","thinking":"plan","signature":"sig"},{"type":"text","text":"call"},{"type":"tool_use","id":"t1","name":"f","input":{"a":1}}],"stop_reason":"tool_use","usage":{"input_tokens":3,"output_tokens":4}}"#;
+
 struct Recorded {
     input: Vec<Json>,
     api_key: String,
@@ -158,8 +160,7 @@ fn a_claude_reply_carries_content_tool_calls_thinking_and_reasoning() {
     let recorder = Recorder::default();
     let turns = vec![parsed(r#"{"role":"user","content":"hi"}"#)];
     let request = parsed("{}");
-    let body = r#"{"id":"msg_7","model":"claude-3-5-sonnet","content":[{"type":"thinking","thinking":"plan","signature":"sig"},{"type":"text","text":"call"},{"type":"tool_use","id":"t1","name":"f","input":{"a":1}}],"stop_reason":"tool_use","usage":{"input_tokens":3,"output_tokens":4}}"#;
-    let reply = claude_reply(body, &turns, &request, &recorder);
+    let reply = claude_reply(TOOL_USE_REPLY, &turns, &request, &recorder);
     assert_eq!(reply.id, "msg_7");
     assert_eq!(reply.model, "snowflake/claude-3-5-sonnet");
     assert_eq!(reply.choices.len(), 1);
@@ -183,6 +184,14 @@ fn a_claude_reply_carries_content_tool_calls_thinking_and_reasoning() {
         reply.choices[0].message.reasoning_content.as_deref(),
         Some("plan")
     );
+}
+
+#[test]
+fn a_claude_tool_use_reply_maps_the_stop_and_splits_reasoning_tokens() {
+    let recorder = Recorder::default();
+    let turns = vec![parsed(r#"{"role":"user","content":"hi"}"#)];
+    let request = parsed("{}");
+    let reply = claude_reply(TOOL_USE_REPLY, &turns, &request, &recorder);
     assert_eq!(reply.choices[0].finish_reason, "tool_calls");
     assert_eq!(reply.usage.prompt_tokens, 3);
     assert_eq!(reply.usage.completion_tokens, 4);

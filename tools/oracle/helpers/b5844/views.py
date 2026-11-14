@@ -4,7 +4,15 @@ import httpx
 from litellm.types.utils import EmbeddingResponse, ModelResponse
 from pydantic import JsonValue
 
-from .steps import ChoicesChunk, EventChunk, Object
+Object: TypeAlias = dict[str, JsonValue]
+
+
+class ChoicesChunk(TypedDict):
+    choices: list[Object]
+
+
+class EventChunk(TypedDict):
+    type: str
 
 
 class UrlArgs(TypedDict):

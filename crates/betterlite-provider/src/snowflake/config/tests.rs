@@ -5,8 +5,8 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use serde_json::Number;
 
 use super::{
-    get_complete_url, get_embed_complete_url, get_supported_openai_params, is_claude_model,
-    map_embedding_openai_params, map_openai_params, provider_info, validate_environment,
+    EMBEDDING_PARAMS, Endpoint, get_complete_url, get_supported_openai_params, is_claude_model,
+    map_openai_params, provider_info, validate_environment,
 };
 use crate::api::file_contracts::config::Headers;
 use crate::snowflake::SnowflakeError;
@@ -76,7 +76,11 @@ fn map_openai_params_copies_supported_keys_and_ignores_the_rest() {
         ("response_format", text("json_object")),
     ]);
     let mut optional = object(&[("top_p", Json::Number(Number::from_f64(0.9).unwrap()))]);
-    map_openai_params(&non_default, &mut optional, "snowflake/mistral-large");
+    map_openai_params(
+        &non_default,
+        &mut optional,
+        &get_supported_openai_params("snowflake/mistral-large"),
+    );
     assert_eq!(
         optional,
         object(&[
@@ -91,9 +95,13 @@ fn map_openai_params_copies_supported_keys_and_ignores_the_rest() {
 fn map_openai_params_keeps_response_format_for_claude_only_through_extra_keys() {
     let non_default = object(&[("response_format", text("json_object"))]);
     let mut optional = Object::new();
-    map_openai_params(&non_default, &mut optional, "snowflake/claude-3-5-sonnet");
+    map_openai_params(
+        &non_default,
+        &mut optional,
+        &get_supported_openai_params("snowflake/claude-3-5-sonnet"),
+    );
     assert!(optional.is_empty());
-    map_embedding_openai_params(&non_default, &mut optional);
+    map_openai_params(&non_default, &mut optional, &EMBEDDING_PARAMS);
     assert_eq!(optional, non_default);
 }
 
@@ -102,7 +110,7 @@ fn a_given_api_base_is_trimmed_and_gets_the_version_suffix() {
     let mut optional = object(&[("account_id", text("left-in"))]);
     let base = get_complete_url(
         Some("https://example.test/custom///"),
-        "snowflake/mistral-large",
+        &Endpoint::Chat("snowflake/mistral-large"),
         &mut optional,
         None,
     )
@@ -119,7 +127,7 @@ fn a_given_api_base_that_already_ends_with_the_version_keeps_one_suffix() {
     let mut optional = Object::new();
     let base = get_complete_url(
         Some("https://example.test/api/v2/"),
-        "snowflake/claude-3-5-sonnet",
+        &Endpoint::Chat("snowflake/claude-3-5-sonnet"),
         &mut optional,
         None,
     )
@@ -130,7 +138,8 @@ fn a_given_api_base_that_already_ends_with_the_version_keeps_one_suffix() {
 #[test]
 fn a_missing_api_base_is_built_from_the_account_id_in_optional_params() {
     let mut optional = object(&[("account_id", text("ab_c-1"))]);
-    let base = get_embed_complete_url(None, &mut optional, Some("ignored")).unwrap();
+    let base =
+        get_complete_url(None, &Endpoint::Embedding, &mut optional, Some("ignored")).unwrap();
     assert_eq!(
         base,
         "https://ab_c-1.snowflakecomputing.com/api/v2/cortex/inference:embed"
@@ -141,7 +150,7 @@ fn a_missing_api_base_is_built_from_the_account_id_in_optional_params() {
 #[test]
 fn a_missing_api_base_falls_back_to_the_env_argument() {
     let mut optional = Object::new();
-    let base = get_embed_complete_url(None, &mut optional, Some("env_id")).unwrap();
+    let base = get_complete_url(None, &Endpoint::Embedding, &mut optional, Some("env_id")).unwrap();
     assert_eq!(
         base,
         "https://env_id.snowflakecomputing.com/api/v2/cortex/inference:embed"
@@ -151,7 +160,13 @@ fn a_missing_api_base_falls_back_to_the_env_argument() {
 #[test]
 fn an_empty_api_base_counts_as_missing() {
     let mut optional = Object::new();
-    let base = get_embed_complete_url(Some(""), &mut optional, Some("env_id")).unwrap();
+    let base = get_complete_url(
+        Some(""),
+        &Endpoint::Embedding,
+        &mut optional,
+        Some("env_id"),
+    )
+    .unwrap();
     assert_eq!(
         base,
         "https://env_id.snowflakecomputing.com/api/v2/cortex/inference:embed"
@@ -162,7 +177,7 @@ fn an_empty_api_base_counts_as_missing() {
 fn the_account_id_from_optional_params_is_popped_even_when_it_is_null() {
     let mut optional = object(&[("account_id", Json::Null)]);
     assert_eq!(
-        get_embed_complete_url(None, &mut optional, Some("env_id")),
+        get_complete_url(None, &Endpoint::Embedding, &mut optional, Some("env_id")),
         Err(SnowflakeError::MissingAccountId)
     );
     assert!(optional.is_empty());
@@ -181,7 +196,7 @@ fn an_account_id_outside_the_pattern_is_rejected(
 ) {
     let mut optional = Object::new();
     assert_eq!(
-        get_embed_complete_url(None, &mut optional, env),
+        get_complete_url(None, &Endpoint::Embedding, &mut optional, env),
         Err(expected)
     );
 }
@@ -189,7 +204,7 @@ fn an_account_id_outside_the_pattern_is_rejected(
 #[test]
 fn one_trailing_newline_after_a_valid_account_id_is_accepted_and_kept_in_the_host() {
     let mut optional = Object::new();
-    let base = get_embed_complete_url(None, &mut optional, Some("good\n")).unwrap();
+    let base = get_complete_url(None, &Endpoint::Embedding, &mut optional, Some("good\n")).unwrap();
     assert_eq!(
         base,
         "https://good\n.snowflakecomputing.com/api/v2/cortex/inference:embed"
@@ -200,7 +215,7 @@ fn one_trailing_newline_after_a_valid_account_id_is_accepted_and_kept_in_the_hos
 fn a_non_string_account_id_names_the_field() {
     let mut optional = object(&[("account_id", Json::Number(Number::from(5_i32)))]);
     assert_eq!(
-        get_embed_complete_url(None, &mut optional, Some("env_id")),
+        get_complete_url(None, &Endpoint::Embedding, &mut optional, Some("env_id")),
         Err(SnowflakeError::AccountIdType)
     );
 }

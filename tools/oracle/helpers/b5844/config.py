@@ -1,10 +1,40 @@
 import os
+from typing import Literal, TypedDict
 
 from litellm.litellm_core_utils.get_llm_provider_logic import get_llm_provider
 from pydantic import JsonValue
 
-from .steps import HeadersStep, InfoStep, ParamsStep, UrlStep
-from .views import ChatView, EmbeddingView, ParamsConfig, UrlConfig
+from .views import ChatView, EmbeddingView, Object, ParamsConfig, UrlConfig
+
+
+class UrlStep(TypedDict):
+    kind: Literal["url"]
+    model: str
+    embedding: bool
+    api_base: str | None
+    account_env: str | None
+    params: Object
+
+
+class HeadersStep(TypedDict):
+    kind: Literal["headers"]
+    model: str
+    api_key: str | None
+    headers: Object
+
+
+class ParamsStep(TypedDict):
+    kind: Literal["params"]
+    model: str
+    embedding: bool
+    non_default: Object
+
+
+class InfoStep(TypedDict):
+    kind: Literal["info"]
+    api_base: str | None
+    api_key: str | None
+    jwt_env: str | None
 
 
 def set_env(name: str, value: str | None) -> None:

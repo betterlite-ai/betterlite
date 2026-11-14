@@ -26,22 +26,23 @@ fn usage_shape() -> Value {
     })
 }
 
-fn tool_call_shape() -> Value {
-    json!({
+// A reply choice holds a message; a stream event choice holds a delta whose tool calls carry an index
+pub(crate) fn choices(value: &Value, streamed: bool) -> Value {
+    let mut tool_call = json!({
         "id": null,
         "type": null,
         "function": {"name": null, "arguments": null},
-    })
-}
-
-pub(crate) fn reply(value: &Value) -> Value {
-    let message = json!({
-        "role": null,
-        "content": null,
-        "tool_calls": [tool_call_shape()],
     });
-    let choice = json!({"index": null, "finish_reason": null, "message": message});
-    let shape = json!({"id": null, "model": null, "choices": [choice], "usage": usage_shape()});
+    let mut choice = json!({"index": null, "finish_reason": null});
+    let mut shape = json!({"model": null, "usage": usage_shape()});
+    if streamed {
+        tool_call["index"] = Value::Null;
+        choice["delta"] = json!({"content": null, "tool_calls": [tool_call]});
+    } else {
+        choice["message"] = json!({"role": null, "content": null, "tool_calls": [tool_call]});
+        shape["id"] = Value::Null;
+    }
+    shape["choices"] = json!([choice]);
     project(value, &shape)
 }
 
@@ -50,16 +51,5 @@ pub(crate) fn embedding(value: &Value) -> Value {
     project(
         value,
         &json!({"model": null, "data": [item], "usage": usage_shape()}),
-    )
-}
-
-pub(crate) fn event(value: &Value) -> Value {
-    let mut tool_call = tool_call_shape();
-    tool_call["index"] = Value::Null;
-    let delta = json!({"content": null, "tool_calls": [tool_call]});
-    let choice = json!({"index": null, "finish_reason": null, "delta": delta});
-    project(
-        value,
-        &json!({"model": null, "choices": [choice], "usage": usage_shape()}),
     )
 }

@@ -1,15 +1,17 @@
-from typing import TypeVar
+from typing import Literal, TypedDict, TypeVar
 
 import httpx
 from litellm.types.utils import EmbeddingResponse, ModelResponse
 from pydantic import JsonValue, TypeAdapter
 
-from .steps import ChoicesChunk, EmbeddingResponseStep, EventChunk, Object, ResponseStep
 from .views import (
     ChatView,
+    ChoicesChunk,
     EmbeddingReplyView,
     EmbeddingView,
+    EventChunk,
     EventView,
+    Object,
     OpenAiChunkView,
     Recorder,
     Reply,
@@ -18,6 +20,44 @@ from .views import (
 )
 
 Shape = TypeVar("Shape")
+
+
+class RequestStep(TypedDict):
+    kind: Literal["request"]
+    model: str
+    messages: list[Object]
+    options: Object
+
+
+class ResponseStep(TypedDict):
+    kind: Literal["response"]
+    model: str
+    body: str
+    request_data: Object
+    messages: list[Object]
+
+
+class EmbeddingRequestStep(TypedDict):
+    kind: Literal["embedding_request"]
+    model: str
+    text: str | list[str]
+    options: Object
+
+
+class EmbeddingResponseStep(TypedDict):
+    kind: Literal["embedding_response"]
+    model: str
+    body: str
+
+
+class ChunkStep(TypedDict):
+    kind: Literal["chunk"]
+    chunk: ChoicesChunk
+
+
+class EventStep(TypedDict):
+    kind: Literal["event"]
+    chunk: EventChunk
 
 
 def shaped(adapter: TypeAdapter[Shape], source: str | bytes) -> JsonValue:

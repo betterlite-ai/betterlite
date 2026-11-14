@@ -12,7 +12,7 @@ fn openai(source: &str) -> super::OpenAiStreamChunk {
     let SnowflakeChunk::OpenAi(chunk) = handler().chunk_parser(&answer(source)).unwrap() else {
         panic!("the chunk routed to the Anthropic parser");
     };
-    chunk
+    *chunk
 }
 
 #[test]
