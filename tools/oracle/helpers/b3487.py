@@ -40,7 +40,6 @@ class IteratorArgs(TypedDict):
     response: httpx.Response
     model: str
     logging_obj: Logging
-    generate_content_provider_config: GenAiConfig
     litellm_metadata: dict[str, JsonValue]
     custom_llm_provider: str
     request_body: dict[str, JsonValue]
@@ -68,12 +67,12 @@ def native_provider(provider: str) -> LlmProviders:
     return LlmProviders.VERTEX_AI
 
 
-def provider_config(model: str, provider: LlmProviders) -> GenAiConfig:
+def config_of(input_value: Input) -> GenAiConfig:
     selected = ProviderConfigManager.get_provider_google_genai_generate_content_config(
-        model, provider
+        input_value["model"], native_provider(input_value["provider"])
     )
     if selected is None:
-        raise ValueError(f"no native GenAI config for {model}")
+        raise ValueError(f"no native GenAI config for {input_value['model']}")
     return selected
 
 
@@ -87,9 +86,6 @@ def iterator_args(input_value: Input) -> IteratorArgs:
         response=response_of(input_value),
         model=input_value["model"],
         logging_obj=logging_object(input_value["model"]),
-        generate_content_provider_config=provider_config(
-            input_value["model"], native_provider(input_value["provider"])
-        ),
         litellm_metadata={},
         custom_llm_provider=input_value["provider"],
         request_body={},
@@ -110,13 +106,19 @@ def answer(iterator: NativeIterator, yielded: list[bytes]) -> Output:
 
 
 def sync_events(input_value: Input) -> Output:
-    iterator = NativeSyncIterator(**iterator_args(input_value))
+    iterator = NativeSyncIterator(
+        **iterator_args(input_value),
+        generate_content_provider_config=config_of(input_value),
+    )
     stream: Iterator[bytes] = iterator
     return answer(iterator, list(stream))
 
 
 async def async_events(input_value: Input) -> Output:
-    iterator = AsyncNativeIterator(**iterator_args(input_value))
+    iterator = AsyncNativeIterator(
+        **iterator_args(input_value),
+        generate_content_provider_config=config_of(input_value),
+    )
     stream: AsyncIterator[bytes] = iterator
     return answer(iterator, [chunk async for chunk in stream])
 
