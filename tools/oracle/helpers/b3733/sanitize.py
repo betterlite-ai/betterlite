@@ -1,13 +1,13 @@
 import base64
-from typing import Final, Literal, TypedDict
+from collections.abc import Awaitable
+from typing import Final, Literal, Protocol, TypedDict, runtime_checkable
 
 import httpx
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.proxy.guardrails.guardrail_hooks.model_armor.model_armor import (
     ModelArmorGuardrail,
 )
-from pydantic import JsonValue as Json
-from pydantic import TypeAdapter
+from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 from typing_extensions import override
 
 
@@ -35,10 +35,27 @@ class SanitizeCall(TypedDict):
 
 class RecordedRequest(TypedDict):
     url: str
-    body: Json
+    body: JsonValue
 
 
-_BODY_ADAPTER: Final = TypeAdapter(Json)
+@runtime_checkable
+class Guardrail(Protocol):
+    def make_model_armor_request(
+        self,
+        *,
+        content: str | None = None,
+        source: Literal["user_prompt", "model_response"] = "user_prompt",
+        file_bytes: bytes | None = None,
+        file_type: str | None = None,
+    ) -> Awaitable[dict[str, JsonValue]]: ...
+
+
+class GuardrailRecord(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    guard: Guardrail
+
+
+_BODY_ADAPTER: Final = TypeAdapter(JsonValue)
 
 
 class TokenProvider:
@@ -61,7 +78,20 @@ class Recorder(httpx.AsyncBaseTransport):
         return httpx.Response(200, content=b"{}", request=request)
 
 
-async def send(guard: ModelArmorGuardrail, run: RequestRun) -> None:
+def build_guardrail(call: SanitizeCall, recorder: Recorder) -> Guardrail:
+    guard = ModelArmorGuardrail(
+        template_id=call["template_id"],
+        project_id=call["project_id"],
+        location=call["location"],
+        api_endpoint=call["api_endpoint"],
+        access_token_provider=TokenProvider(call["access_token"], call["resolved_project_id"]),
+        async_handler=AsyncHTTPHandler(transport=recorder),
+    )
+    # LiteLLM leaves make_model_armor_request's request_data and reply as dict[Any, Any]
+    return GuardrailRecord.model_validate({"guard": guard}).guard
+
+
+async def send(guard: Guardrail, run: RequestRun) -> None:
     file = run["file"]
     if file is not None:
         await guard.make_model_armor_request(
@@ -76,19 +106,12 @@ async def send(guard: ModelArmorGuardrail, run: RequestRun) -> None:
     await guard.make_model_armor_request(content=content, source=run["source"])
 
 
-async def sanitize(call: SanitizeCall) -> Json:
+async def sanitize(call: SanitizeCall) -> JsonValue:
     recorder = Recorder()
-    guard = ModelArmorGuardrail(
-        template_id=call["template_id"],
-        project_id=call["project_id"],
-        location=call["location"],
-        api_endpoint=call["api_endpoint"],
-        access_token_provider=TokenProvider(call["access_token"], call["resolved_project_id"]),
-        async_handler=AsyncHTTPHandler(transport=recorder),
-    )
+    guard = build_guardrail(call, recorder)
     for run in call["requests"]:
         await send(guard, run)
-    requests: list[Json] = [
+    requests: list[JsonValue] = [
         {"url": request["url"], "body": request["body"]} for request in recorder.requests
     ]
     return {"requests": requests}

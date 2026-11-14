@@ -5,11 +5,11 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_guardrails::model_armor::config::DEFAULT_LOCATION;
 use betterlite_guardrails::model_armor::file_scanning::ByteDataType;
+use betterlite_guardrails::model_armor::transport::error::ArmorTokenError;
 use betterlite_guardrails::model_armor::transport::project::ResolvedProject;
 use betterlite_guardrails::model_armor::transport::tokens::ArmorTokens;
-use betterlite_guardrails::model_armor::transport::{
-    ArmorTokenError, ModelArmorTransport, SanitizeBody, Source, file_body, text_body,
-};
+use betterlite_guardrails::model_armor::transport::wire::{SanitizeBody, Source};
+use betterlite_guardrails::model_armor::transport::{ModelArmorTransport, file_body, text_body};
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 

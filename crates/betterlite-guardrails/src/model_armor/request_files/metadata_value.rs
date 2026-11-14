@@ -1,5 +1,8 @@
+use std::collections::BTreeMap;
+
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use serde_json::Number;
 
 pub(super) fn json_to_guardrail_value(value: &Json) -> GuardrailValue {
@@ -8,16 +11,25 @@ pub(super) fn json_to_guardrail_value(value: &Json) -> GuardrailValue {
         Json::Bool(flag) => GuardrailValue::Boolean(*flag),
         Json::Number(number) => number_to_guardrail_value(number),
         Json::Text(text) => GuardrailValue::Text(text.clone()),
-        Json::List(items) => {
-            GuardrailValue::Array(items.iter().map(json_to_guardrail_value).collect())
-        }
-        Json::Object(fields) => GuardrailValue::Object(
-            fields
-                .iter()
-                .map(|(key, value)| (key.clone(), json_to_guardrail_value(value)))
-                .collect(),
-        ),
+        Json::List(items) => json_list_to_guardrail(items),
+        Json::Object(fields) => json_object_to_guardrail(fields),
     }
+}
+
+fn json_list_to_guardrail(items: &[Json]) -> GuardrailValue {
+    let mut converted = Vec::with_capacity(items.len());
+    for item in items {
+        converted.push(json_to_guardrail_value(item));
+    }
+    GuardrailValue::Array(converted)
+}
+
+fn json_object_to_guardrail(fields: &IndexMap<String, Json>) -> GuardrailValue {
+    let mut converted = BTreeMap::new();
+    for (key, item) in fields {
+        converted.insert(key.clone(), json_to_guardrail_value(item));
+    }
+    GuardrailValue::Object(converted)
 }
 
 fn number_to_guardrail_value(number: &Number) -> GuardrailValue {
@@ -50,7 +62,7 @@ pub(super) fn guardrail_value_to_json(value: &GuardrailValue) -> Json {
         GuardrailValue::Object(fields) => Json::Object(
             fields
                 .iter()
-                .map(|(key, value)| (key.clone(), guardrail_value_to_json(value)))
+                .map(|(key, item)| (key.clone(), guardrail_value_to_json(item)))
                 .collect(),
         ),
     }

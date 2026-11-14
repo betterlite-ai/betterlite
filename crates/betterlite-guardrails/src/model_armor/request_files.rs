@@ -16,10 +16,10 @@ use crate::model_armor::decisions::{
 use crate::model_armor::file_scanning::{
     FileAttachment, FileScanPlan, MAX_FILE_SIZE_BYTES, plan_file_scans,
 };
-use crate::model_armor::transport::error::TransportError;
-use crate::model_armor::transport::{
-    ArmorCallError, ArmorResponse, ArmorTokens, ModelArmorTransport, Source,
-};
+use crate::model_armor::transport::error::{ArmorCallError, TransportError};
+use crate::model_armor::transport::tokens::ArmorTokens;
+use crate::model_armor::transport::wire::Source;
+use crate::model_armor::transport::{ArmorResponse, ModelArmorTransport};
 
 use metadata_value::{guardrail_value_to_json, json_to_guardrail_value};
 
@@ -49,12 +49,15 @@ pub enum ScanError<E: StdError + Send + Sync + 'static> {
     Transport(#[from] TransportError<E>),
 }
 
-pub async fn scan_request_files<T: ArmorTokens>(
+pub async fn scan_request_files<T>(
     messages: &[Message],
     request_data: &mut MetadataSlots,
     transport: &ModelArmorTransport<T>,
     settings: &FileScanSettings,
-) -> Result<(), ScanError<T::Error>> {
+) -> Result<(), ScanError<T::Error>>
+where
+    T: ArmorTokens,
+{
     let plan = plan_file_scans(messages);
     let unscannable = unscannable_references(&plan, settings.skip_unscannable_attachments);
     if plan.attachments.is_empty() && unscannable == 0 {
@@ -64,7 +67,15 @@ pub async fn scan_request_files<T: ArmorTokens>(
     if let Some(name) = settings.guardrail_name.as_deref() {
         record_applied_guardrail(metadata, name);
     }
-    check_unscannable::<T::Error>(metadata, unscannable, settings.fail_on_error)?;
+    if unscannable > 0 {
+        block_unscannable(
+            metadata,
+            settings.fail_on_error,
+            &format!(
+                "{unscannable} attachment(s) reference a document with no inline bytes (file_id or remote URL) that Model Armor cannot scan"
+            ),
+        )?;
+    }
     for attachment in &plan.attachments {
         scan_attachment(metadata, transport, settings, attachment).await?;
     }
@@ -84,34 +95,48 @@ fn unscannable_references(plan: &FileScanPlan, skip: bool) -> usize {
     0
 }
 
-fn check_unscannable<E: StdError + Send + Sync + 'static>(
+fn block_unscannable<E>(
     metadata: &mut MetadataMap,
-    count: usize,
     fail_on_error: bool,
-) -> Result<(), ScanError<E>> {
-    if count == 0 {
-        return Ok(());
-    }
-    let reason = format!(
-        "{count} attachment(s) reference a document with no inline bytes (file_id or remote URL) that Model Armor cannot scan"
-    );
-    tracing::warn!(reason = %reason, "Model Armor: unscannable attachment");
+    reason: &str,
+) -> Result<(), ScanError<E>>
+where
+    E: StdError + Send + Sync + 'static,
+{
+    tracing::warn!(reason = %reason, "Model Armor: attachment cannot be scanned");
     if !fail_on_error {
         return Ok(());
     }
     metadata.insert(STATUS_KEY.to_owned(), Json::Text(BLOCKED.to_owned()));
-    Err(unscannable_block_error(&reason))
+    Err(ScanError::Blocked {
+        status: 400,
+        detail: IndexMap::from([(
+            "error".to_owned(),
+            GuardrailValue::Text(format!(
+                "Model Armor could not scan an attachment and blocked the request: {reason}"
+            )),
+        )]),
+    })
 }
 
-async fn scan_attachment<T: ArmorTokens>(
+async fn scan_attachment<T>(
     metadata: &mut MetadataMap,
     transport: &ModelArmorTransport<T>,
     settings: &FileScanSettings,
     attachment: &FileAttachment,
-) -> Result<(), ScanError<T::Error>> {
+) -> Result<(), ScanError<T::Error>>
+where
+    T: ArmorTokens,
+{
     let length = attachment.file_bytes.len();
     if length > MAX_FILE_SIZE_BYTES {
-        return oversize(metadata, length, settings.fail_on_error);
+        return block_unscannable(
+            metadata,
+            settings.fail_on_error,
+            &format!(
+                "attachment of {length} bytes exceeds Model Armor's {MAX_FILE_SIZE_BYTES} byte scan limit"
+            ),
+        );
     }
     let response = match transport
         .make_model_armor_request(
@@ -137,27 +162,14 @@ async fn scan_attachment<T: ArmorTokens>(
     record_response(metadata, transport, &response)
 }
 
-fn oversize<E: StdError + Send + Sync + 'static>(
-    metadata: &mut MetadataMap,
-    length: usize,
-    fail_on_error: bool,
-) -> Result<(), ScanError<E>> {
-    let reason = format!(
-        "attachment of {length} bytes exceeds Model Armor's {MAX_FILE_SIZE_BYTES} byte scan limit"
-    );
-    tracing::warn!(reason = %reason, "Model Armor: attachment over the scan limit");
-    if !fail_on_error {
-        return Ok(());
-    }
-    metadata.insert(STATUS_KEY.to_owned(), Json::Text(BLOCKED.to_owned()));
-    Err(unscannable_block_error(&reason))
-}
-
-fn record_response<T: ArmorTokens>(
+fn record_response<T>(
     metadata: &mut MetadataMap,
     transport: &ModelArmorTransport<T>,
     response: &ArmorResponse,
-) -> Result<(), ScanError<T::Error>> {
+) -> Result<(), ScanError<T::Error>>
+where
+    T: ArmorTokens,
+{
     let blocked = should_block_content(&response.verdict, false);
     let existing = metadata.get(RESPONSE_KEY).map(json_to_guardrail_value);
     let logged = build_logging_response(&response.body, transport.sanitize_error_detail);
@@ -184,44 +196,29 @@ fn record_applied_guardrail(metadata: &mut MetadataMap, name: &str) {
     let entry = metadata
         .entry(APPLIED_KEY.to_owned())
         .or_insert_with(|| Json::List(Vec::new()));
-    match entry {
-        Json::List(names) => {
-            if !names
-                .iter()
-                .any(|item| matches!(item, Json::Text(text) if text == name))
-            {
-                names.push(Json::Text(name.to_owned()));
-            }
+    if let Json::List(names) = entry {
+        if !names
+            .iter()
+            .any(|item| matches!(item, Json::Text(text) if text == name))
+        {
+            names.push(Json::Text(name.to_owned()));
         }
-        other => {
-            let kind = match other {
-                Json::Null => "null",
-                Json::Bool(_) => "boolean",
-                Json::Number(_) => "number",
-                Json::Text(_) => "string",
-                Json::List(_) => "list",
-                Json::Object(_) => "object",
-            };
-            tracing::warn!(
-                key = APPLIED_KEY,
-                found = kind,
-                "Model Armor: replacing an applied_guardrails value that is not a list"
-            );
-            *other = Json::List(vec![Json::Text(name.to_owned())]);
-        }
+        return;
     }
-}
-
-fn unscannable_block_error<E: StdError + Send + Sync + 'static>(reason: &str) -> ScanError<E> {
-    ScanError::Blocked {
-        status: 400,
-        detail: IndexMap::from([(
-            "error".to_owned(),
-            GuardrailValue::Text(format!(
-                "Model Armor could not scan an attachment and blocked the request: {reason}"
-            )),
-        )]),
-    }
+    let kind = match &*entry {
+        Json::Null => "null",
+        Json::Bool(_) => "boolean",
+        Json::Number(_) => "number",
+        Json::Text(_) => "string",
+        Json::List(_) => "list",
+        Json::Object(_) => "object",
+    };
+    tracing::warn!(
+        key = APPLIED_KEY,
+        found = kind,
+        "Model Armor: replacing an applied_guardrails value that is not a list"
+    );
+    *entry = Json::List(vec![Json::Text(name.to_owned())]);
 }
 
 mod metadata_value;

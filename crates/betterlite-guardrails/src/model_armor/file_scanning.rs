@@ -1,5 +1,3 @@
-use std::fmt::{Display, Formatter, Result as FmtResult};
-
 use base64::engine::{GeneralPurpose, GeneralPurposeConfig};
 use base64::{Engine as _, alphabet};
 use betterlite_prompts::message_content::{Content, ContentPart, Message};
@@ -108,12 +106,6 @@ impl ByteDataType {
     }
 }
 
-impl Display for ByteDataType {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
-        formatter.write_str(self.as_str())
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileAttachment {
     pub file_bytes: Vec<u8>,
@@ -133,7 +125,8 @@ struct FileBlock {
 
 #[derive(Debug, Deserialize)]
 struct FileData {
-    file_data: Option<String>,
+    #[serde(rename = "file_data")]
+    data: Option<String>,
     format: Option<String>,
     filename: Option<String>,
 }
@@ -203,12 +196,7 @@ fn classify_block(part: &ContentPart) -> Classified {
 }
 
 fn classify_file(block: &FileBlock) -> Classified {
-    let Some(raw) = block
-        .file
-        .file_data
-        .as_deref()
-        .filter(|raw| !raw.is_empty())
-    else {
+    let Some(raw) = block.file.data.as_deref().filter(|raw| !raw.is_empty()) else {
         return Classified::Unscannable;
     };
     if is_remote_uri(raw) {
@@ -218,18 +206,18 @@ fn classify_file(block: &FileBlock) -> Classified {
     let data = parsed.unwrap_or(raw);
     let declared = declared_byte_data_type(&block.file);
     let header = mime_to_byte_data_type(uri_mime);
-    let Some(declared) = declared else {
+    let Some(declared_type) = declared else {
         return decode_attachment(header, data);
     };
-    if let Some(header) = header.filter(|header| *header != declared) {
+    if let Some(differing) = header.filter(|candidate| *candidate != declared_type) {
         tracing::warn!(
             uri_mime = ?uri_mime,
-            header = %header,
-            declared = %declared,
+            header = %differing.as_str(),
+            declared = %declared_type.as_str(),
             "Model Armor: the data URI MIME maps to a different byteDataType than the attachment declares; scanning with the declared type"
         );
     }
-    decode_attachment(Some(declared), data)
+    decode_attachment(Some(declared_type), data)
 }
 
 fn classify_document(block: &DocumentBlock) -> Classified {
@@ -245,27 +233,30 @@ fn classify_document(block: &DocumentBlock) -> Classified {
 fn declared_byte_data_type(file: &FileData) -> Option<ByteDataType> {
     let from_format = mime_to_byte_data_type(file.format.as_deref());
     from_format.or_else(|| {
-        file.filename
+        let mime = file
+            .filename
             .as_deref()
-            .and_then(|filename| mime_guess::from_path(filename).first_raw())
-            .and_then(|mime| mime_to_byte_data_type(Some(mime)))
+            .and_then(|filename| mime_guess::from_path(filename).first_raw())?;
+        mime_to_byte_data_type(Some(mime))
     })
 }
 
-fn decode_attachment(byte_data_type: Option<ByteDataType>, data: &str) -> Classified {
-    let Some(byte_data_type) = byte_data_type else {
+fn decode_attachment(declared: Option<ByteDataType>, data: &str) -> Classified {
+    let Some(byte_data_type) = declared else {
         return Classified::Skip;
     };
-    match STRICT_BASE64.decode(data) {
-        Ok(file_bytes) => Classified::Attachment(FileAttachment {
-            file_bytes,
-            byte_data_type,
-        }),
-        Err(_) => {
+    STRICT_BASE64.decode(data).map_or_else(
+        |_| {
             tracing::warn!("Model Armor: skipping attachment with undecodable base64 content");
             Classified::Unscannable
-        }
-    }
+        },
+        |file_bytes| {
+            Classified::Attachment(FileAttachment {
+                file_bytes,
+                byte_data_type,
+            })
+        },
+    )
 }
 
 fn parse_data_uri(raw: &str) -> (Option<&str>, Option<&str>) {
@@ -279,10 +270,10 @@ fn parse_data_uri(raw: &str) -> (Option<&str>, Option<&str>) {
 }
 
 fn mime_to_byte_data_type(mime: Option<&str>) -> Option<ByteDataType> {
-    let mime = mime?;
-    let media_type = mime
+    let raw = mime?;
+    let media_type = raw
         .split_once(';')
-        .map_or(mime, |(media_type, _)| media_type);
+        .map_or(raw, |(media_type, _)| media_type);
     let normalized = media_type.trim().to_lowercase();
     MIME_TO_BYTE_DATA_TYPE
         .iter()

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::{fs, io};
 
+use betterlite_prompts::message_content::Message;
 use rstest::rstest;
 use tracing::subscriber::set_default;
 
@@ -39,7 +40,10 @@ impl io::Write for LogSink {
     }
 }
 
-fn captured_log<Run: FnOnce()>(run: Run) -> String {
+fn captured_log<Run>(run: Run) -> String
+where
+    Run: FnOnce(),
+{
     let sink = LogSink::default();
     let writer = sink.clone();
     let subscriber = tracing_subscriber::fmt()
@@ -54,7 +58,7 @@ fn captured_log<Run: FnOnce()>(run: Run) -> String {
 
 #[test]
 fn max_file_size_bytes_is_four_mib() {
-    assert_eq!(MAX_FILE_SIZE_BYTES, 4_194_304);
+    assert_eq!(MAX_FILE_SIZE_BYTES, 0x0040_0000);
 }
 
 #[rstest]
@@ -73,7 +77,6 @@ fn byte_data_type_serializes_as_its_wire_name(
         format!("\"{wire}\"")
     );
     assert_eq!(byte_data_type.as_str(), wire);
-    assert_eq!(byte_data_type.to_string(), wire);
     assert_eq!(
         serde_json::from_str::<ByteDataType>(&format!("\"{wire}\"")).expect("wire"),
         byte_data_type

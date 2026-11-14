@@ -1,4 +1,3 @@
-use std::error::Error as StdError;
 use std::string::FromUtf8Error;
 
 use betterlite_http::proxy::limits::ReadError;
@@ -14,7 +13,7 @@ pub struct ArmorTokenError {
 }
 
 #[derive(Debug, Error)]
-pub enum TransportError<E: StdError + Send + Sync + 'static> {
+pub enum TransportError<E> {
     #[error("Model Armor needs a template id")]
     MissingTemplate,
     #[error("Model Armor needs text content or file bytes")]
@@ -36,7 +35,7 @@ pub enum TransportError<E: StdError + Send + Sync + 'static> {
 }
 
 #[derive(Debug, Error)]
-pub enum ArmorCallError<E: StdError + Send + Sync + 'static> {
+pub enum ArmorCallError<E> {
     #[error(transparent)]
     Api(#[from] ModelArmorAPIError),
     #[error(transparent)]

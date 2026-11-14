@@ -20,11 +20,10 @@ mod tests;
 pub mod tokens;
 pub mod wire;
 
-pub use error::{ArmorCallError, ArmorTokenError, TransportError};
-pub use tokens::ArmorTokens;
-pub use wire::{PromptData, SanitizeBody, Source};
-
+use error::{ArmorCallError, TransportError};
 use project::ResolvedProject;
+use tokens::ArmorTokens;
+use wire::{PromptData, SanitizeBody, Source};
 
 // The response carries findings, not a document, so a megabyte is far beyond any real sanitize answer
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
@@ -50,14 +49,13 @@ pub struct ArmorResponse {
 impl<T: ArmorTokens> ModelArmorTransport<T> {
     #[must_use]
     pub fn api_endpoint(&self) -> String {
-        match self
-            .api_endpoint
+        self.api_endpoint
             .as_deref()
             .filter(|endpoint| !endpoint.is_empty())
-        {
-            Some(endpoint) => endpoint.to_owned(),
-            None => format!("https://modelarmor.{}.rep.googleapis.com", self.location),
-        }
+            .map_or_else(
+                || format!("https://modelarmor.{}.rep.googleapis.com", self.location),
+                str::to_owned,
+            )
     }
 
     #[must_use]
@@ -101,7 +99,7 @@ impl<T: ArmorTokens> ModelArmorTransport<T> {
         match file {
             Some((file_bytes, byte_data_type)) => tracing::debug!(
                 url = %url,
-                byte_data_type = %byte_data_type,
+                byte_data_type = %byte_data_type.as_str(),
                 bytes = file_bytes.len(),
                 "Model Armor file request"
             ),
@@ -156,21 +154,27 @@ impl<T: ArmorTokens> ModelArmorTransport<T> {
     }
 }
 
-fn request_body<E: StdError + Send + Sync + 'static>(
+fn request_body<E>(
     content: Option<&str>,
     source: Source,
     file: Option<(&[u8], ByteDataType)>,
-) -> Result<SanitizeBody, ArmorCallError<E>> {
+) -> Result<SanitizeBody, ArmorCallError<E>>
+where
+    E: StdError + Send + Sync + 'static,
+{
     if let Some((file_bytes, byte_data_type)) = file {
         return Ok(file_body(file_bytes, byte_data_type, source));
     }
-    match content {
-        Some(content) => Ok(text_body(content, source)),
-        None => Err(ArmorCallError::from(TransportError::NoContent)),
-    }
+    let Some(text) = content else {
+        return Err(ArmorCallError::from(TransportError::NoContent));
+    };
+    Ok(text_body(text, source))
 }
 
-fn request_error<E: StdError + Send + Sync + 'static>(source: reqwest::Error) -> ArmorCallError<E> {
+fn request_error<E>(source: reqwest::Error) -> ArmorCallError<E>
+where
+    E: StdError + Send + Sync + 'static,
+{
     if source.is_timeout() {
         ArmorCallError::from(TransportError::Timeout(source))
     } else {
@@ -178,9 +182,10 @@ fn request_error<E: StdError + Send + Sync + 'static>(source: reqwest::Error) ->
     }
 }
 
-fn parse_response<E: StdError + Send + Sync + 'static>(
-    text: &str,
-) -> Result<ArmorResponse, ArmorCallError<E>> {
+fn parse_response<E>(text: &str) -> Result<ArmorResponse, ArmorCallError<E>>
+where
+    E: StdError + Send + Sync + 'static,
+{
     let verdict = serde_json::from_str::<SanitizeResponse>(text)
         .map_err(|source| ArmorCallError::<E>::from(TransportError::<E>::ResponseJson(source)))?;
     let body = serde_json::from_str::<GuardrailValue>(text)

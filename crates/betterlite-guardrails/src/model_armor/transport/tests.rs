@@ -40,7 +40,6 @@ struct Captured {
 struct Reply {
     status: StatusCode,
     body: Vec<u8>,
-    delay: Option<Duration>,
 }
 
 impl Reply {
@@ -48,7 +47,6 @@ impl Reply {
         Self {
             status: StatusCode::OK,
             body: body.as_bytes().to_vec(),
-            delay: None,
         }
     }
 }
@@ -78,7 +76,7 @@ impl ArmorTokens for StubTokens {
 
     async fn access_token(&self) -> Result<(SecretString, Option<String>), ArmorTokenError> {
         let mut calls = self.calls.lock().expect("token calls");
-        *calls = calls.saturating_add(1);
+        *calls = (*calls).saturating_add(1);
         Ok((SecretString::from("secret-token"), self.project.clone()))
     }
 }
@@ -99,9 +97,6 @@ async fn serve(reply: Reply) -> (String, Arc<Mutex<Captured>>, Server) {
             request.content_type = header(&headers, CONTENT_TYPE.as_str());
             request.body = body.to_vec();
             drop(request);
-            if let Some(delay) = reply.delay {
-                sleep(delay).await;
-            }
             (reply.status, Body::from(reply.body))
         }
     };
@@ -109,6 +104,19 @@ async fn serve(reply: Reply) -> (String, Arc<Mutex<Captured>>, Server) {
     let mut server = JoinSet::new();
     server.spawn(axum::serve(listener, router).into_future());
     (endpoint, captured, server)
+}
+
+async fn hang() -> (String, Server) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let endpoint = format!("http://{}", listener.local_addr().expect("address"));
+    let answer = || async {
+        sleep(Duration::from_secs(30)).await;
+        StatusCode::OK
+    };
+    let router = Router::new().fallback(answer);
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, router).into_future());
+    (endpoint, server)
 }
 
 fn header(headers: &HeaderMap, name: &str) -> String {
@@ -456,9 +464,7 @@ async fn request_without_content_or_file_fails_before_the_request() {
 
 #[tokio::test]
 async fn request_timeout_is_a_typed_timeout() {
-    let mut reply = Reply::ok("{}");
-    reply.delay = Some(Duration::from_millis(400));
-    let (endpoint, _captured, _server) = serve(reply).await;
+    let (endpoint, _server) = hang().await;
     let mut transport = transport(Some(&endpoint), StubTokens::new(None));
     transport.timeout = Some(Duration::from_millis(50));
     let result = transport
@@ -513,7 +519,6 @@ async fn error_2xx_non_200_is_an_api_error() {
     let (endpoint, _captured, _server) = serve(Reply {
         status: StatusCode::NO_CONTENT,
         body: Vec::new(),
-        delay: None,
     })
     .await;
     let transport = transport(Some(&endpoint), StubTokens::new(None));
@@ -546,7 +551,6 @@ async fn error_non_utf8_body_is_a_response_text_error() {
     let (endpoint, _captured, _server) = serve(Reply {
         status: StatusCode::OK,
         body: vec![0xff, 0xfe],
-        delay: None,
     })
     .await;
     let transport = transport(Some(&endpoint), StubTokens::new(None));
@@ -682,7 +686,6 @@ async fn error_api_errors_are_typed_before_other_transport_errors() {
     let (endpoint, _captured, _server) = serve(Reply {
         status: StatusCode::TOO_MANY_REQUESTS,
         body: b"slow down".to_vec(),
-        delay: None,
     })
     .await;
     let transport = transport(Some(&endpoint), StubTokens::new(None));

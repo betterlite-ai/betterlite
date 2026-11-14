@@ -18,6 +18,7 @@ use betterlite_models::decisions::Json;
 use betterlite_prompts::message_content::Message;
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use serde_json::Number;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
@@ -59,7 +60,7 @@ async fn serve(replies: Vec<(StatusCode, String)>) -> (String, Arc<Mutex<usize>>
         let replies = Arc::clone(&handler_queue);
         async move {
             let mut total = request_count.lock().expect("requests");
-            *total = total.saturating_add(1);
+            *total = (*total).saturating_add(1);
             drop(total);
             let reply = replies.lock().expect("replies").pop_front();
             let (status, body) = reply.unwrap_or_else(|| {
@@ -567,6 +568,77 @@ async fn request_files_status_stays_blocked_and_the_response_appends() {
     );
     match metadata(&request_data).get(RESPONSE_KEY) {
         Some(Json::List(responses)) => assert_eq!(responses.len(), 2),
+        other => panic!("expected two scan responses, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn request_files_keeps_every_metadata_response_shape() {
+    let (endpoint, _requests, _server) = serve(vec![(StatusCode::OK, CLEAN.to_owned())]).await;
+    let transport = transport(&endpoint, true);
+    let mut request_data = slots();
+    let existing = Json::Object(MetadataMap::from([
+        ("flag".to_owned(), Json::Bool(true)),
+        ("missing".to_owned(), Json::Null),
+        (
+            "items".to_owned(),
+            Json::List(vec![Json::Null, Json::Bool(false)]),
+        ),
+        ("big".to_owned(), Json::Number(Number::from(u64::MAX))),
+        ("negative".to_owned(), Json::Number(Number::from(-7))),
+        (
+            "fraction".to_owned(),
+            Json::Number(Number::from_f64(1.5).expect("a finite number")),
+        ),
+        ("label".to_owned(), Json::Text("kept".to_owned())),
+    ]));
+    request_data.metadata = Some(MetadataMap::from([(
+        RESPONSE_KEY.to_owned(),
+        existing.clone(),
+    )]));
+    let result = scan_request_files(
+        &messages(&pdf_attachment()),
+        &mut request_data,
+        &transport,
+        &settings(Some("armor"), true, false),
+    )
+    .await;
+    assert!(result.is_ok());
+    match metadata(&request_data).get(RESPONSE_KEY) {
+        Some(Json::List(responses)) => {
+            assert_eq!(responses.len(), 2);
+            assert_eq!(responses.first(), Some(&existing));
+        }
+        other => panic!("expected two scan responses, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn request_files_keeps_an_unrepresentable_metadata_number_as_text() {
+    let (endpoint, _requests, _server) = serve(vec![(StatusCode::OK, CLEAN.to_owned())]).await;
+    let transport = transport(&endpoint, true);
+    let mut request_data = slots();
+    let big: Number = serde_json::from_str("1e400").expect("an arbitrary-precision number");
+    request_data.metadata = Some(MetadataMap::from([(
+        RESPONSE_KEY.to_owned(),
+        Json::Object(MetadataMap::from([("big".to_owned(), Json::Number(big))])),
+    )]));
+    let result = scan_request_files(
+        &messages(&pdf_attachment()),
+        &mut request_data,
+        &transport,
+        &settings(Some("armor"), true, false),
+    )
+    .await;
+    assert!(result.is_ok());
+    match metadata(&request_data).get(RESPONSE_KEY) {
+        Some(Json::List(responses)) => assert_eq!(
+            responses.first(),
+            Some(&Json::Object(MetadataMap::from([(
+                "big".to_owned(),
+                Json::Text("1e400".to_owned()),
+            )])))
+        ),
         other => panic!("expected two scan responses, got {other:?}"),
     }
 }

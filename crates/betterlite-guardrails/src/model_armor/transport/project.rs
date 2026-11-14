@@ -7,8 +7,8 @@ pub struct ResolvedProject(Mutex<Option<String>>);
 impl ResolvedProject {
     #[must_use]
     pub fn effective(&self, configured: Option<&str>) -> Option<String> {
-        if let Some(configured) = configured.filter(|id| !id.is_empty()) {
-            return Some(configured.to_owned());
+        if let Some(configured_id) = configured.filter(|id| !id.is_empty()) {
+            return Some(configured_id.to_owned());
         }
         self.0
             .lock()
@@ -20,12 +20,12 @@ impl ResolvedProject {
         if configured.is_some_and(|id| !id.is_empty()) {
             return;
         }
-        let Some(resolved) = resolved.filter(|id| !id.is_empty()) else {
+        let Some(resolved_id) = resolved.filter(|id| !id.is_empty()) else {
             return;
         };
         let mut remembered = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         if remembered.is_none() {
-            *remembered = Some(resolved.to_owned());
+            *remembered = Some(resolved_id.to_owned());
         }
     }
 }

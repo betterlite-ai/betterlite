@@ -28,7 +28,7 @@ pub enum SanitizeBody {
 
 impl SanitizeBody {
     #[must_use]
-    pub fn wrap(source: Source, data: PromptData) -> Self {
+    pub const fn wrap(source: Source, data: PromptData) -> Self {
         match source {
             Source::UserPrompt => Self::UserPromptData(data),
             Source::ModelResponse => Self::ModelResponseData(data),
