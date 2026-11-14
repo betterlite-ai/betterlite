@@ -34,13 +34,16 @@ pub fn filter_single_text(
 ) -> Result<String, ContentFilterActionError> {
     let exceptions = matching_exceptions(source.categories);
     let mut filtered = text.to_owned();
-    if let Some(found) = check_conditional_categories(text, &exceptions, source.categories)? {
+    let conditional = check_conditional_categories(text, &exceptions, source.categories)?;
+    if let Some(found) = conditional {
         filtered = handle_conditional_match(&found, text, detections.as_deref_mut())?;
     }
-    if let Some(found) = check_phrase_patterns(text, &exceptions, source.categories)? {
+    let phrase = check_phrase_patterns(text, &exceptions, source.categories)?;
+    if let Some(found) = phrase {
         filtered = handle_conditional_match(&found, text, detections.as_deref_mut())?;
     }
-    if let Some(found) = check_category_keywords(text, &exceptions, source.categories)? {
+    let keyword = check_category_keywords(text, &exceptions, source.categories)?;
+    if let Some(found) = keyword {
         filtered = handle_category_keyword_match(
             &found,
             &filtered,
