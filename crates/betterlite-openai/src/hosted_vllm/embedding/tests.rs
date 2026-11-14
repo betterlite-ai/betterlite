@@ -605,6 +605,18 @@ fn a_non_integer_error_code_reports_status_422() {
 }
 
 #[test]
+fn a_null_error_message_with_a_code_uses_the_default_message() {
+    let mut body = full_reply();
+    body.as_object_mut()
+        .expect("object")
+        .insert(String::from("error"), json!({"message": null, "code": 429}));
+    assert_eq!(
+        provider_parts(reply_error(body)),
+        (String::from("Error in response object"), 429)
+    );
+}
+
+#[test]
 fn a_large_error_code_reports_status_422() {
     let mut body = full_reply();
     body.as_object_mut()
