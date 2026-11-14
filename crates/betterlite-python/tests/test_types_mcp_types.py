@@ -19,6 +19,7 @@ import betterlite.types.mcp.headers as betterlite_headers
 import betterlite.types.mcp.hooks as betterlite_hooks
 import betterlite.types.mcp.models as betterlite_models
 import betterlite.types.mcp_server.mcp_server_manager as betterlite_manager
+import betterlite.types.mcp_server.server_metadata as betterlite_metadata
 import betterlite.types.mcp_server.mcp_toolset as betterlite_toolset
 import betterlite.types.mcp_server.tool_registry as betterlite_registry
 
@@ -161,15 +162,15 @@ class ServerFlagsClass(Protocol):
     def model_validate(self, obj: JsonValue) -> ServerFlags: ...
 
 
-class ServerFlagsModule(Protocol):
-    MCPServer: ServerFlagsClass
+class ServerFlagsClasses(Protocol):
+    def __getattr__(self, name: str) -> ServerFlagsClass: ...
 
 
 their_mcp: ModelClasses = importlib.import_module("litellm.types.mcp")
 their_manager: ModelClasses = importlib.import_module("litellm.types.mcp_server.mcp_server_manager")
 their_toolset: ModelClasses = importlib.import_module("litellm.types.mcp_server.mcp_toolset")
 their_registry: ModelClasses = importlib.import_module("litellm.types.mcp_server.tool_registry")
-their_flags: ServerFlagsModule = importlib.import_module(
+their_flags: ServerFlagsClasses = importlib.import_module(
     "litellm.types.mcp_server.mcp_server_manager"
 )
 
@@ -191,9 +192,9 @@ BETTERLITE_MODELS: Final[list[type[BaseModel]]] = [
     betterlite_hooks.MCPGatewaySessionGroupCount,
     betterlite_hooks.MCPGatewaySessionsResponse,
     betterlite_hooks.MCPGatewaySessionsTerminateResponse,
-    betterlite_manager.MCPOAuthMetadata,
-    betterlite_manager.MCPOAuthIdentityBinding,
-    betterlite_manager.PinnedMCPTool,
+    betterlite_metadata.MCPOAuthMetadata,
+    betterlite_metadata.MCPOAuthIdentityBinding,
+    betterlite_metadata.PinnedMCPTool,
     betterlite_manager.MCPServer,
     betterlite_toolset.MCPToolset,
     betterlite_toolset.NewMCPToolsetRequest,
@@ -513,7 +514,7 @@ def test_names_exist() -> None:
     assert set(dir(litellm_mcp)) >= LITELLM_MCP_NAMES
     assert betterlite_mcp_names >= LITELLM_MCP_NAMES
     assert set(dir(litellm_manager)) >= LITELLM_MANAGER_NAMES
-    assert set(dir(betterlite_manager)) >= LITELLM_MANAGER_NAMES
+    assert set(dir(betterlite_manager)) | set(dir(betterlite_metadata)) >= LITELLM_MANAGER_NAMES
     assert set(dir(litellm_toolset)) >= LITELLM_TOOLSET_NAMES
     assert set(dir(betterlite_toolset)) >= LITELLM_TOOLSET_NAMES
     assert set(dir(litellm_registry)) >= LITELLM_REGISTRY_NAMES
@@ -737,7 +738,7 @@ def test_names_server_repr() -> None:
 
 @pytest.mark.parametrize("value", PINNED_VALUES)
 def test_names_pinned_tools(value: JsonValue) -> None:
-    ours = pinned_result(betterlite_manager.parse_pinned_tools, value)
+    ours = pinned_result(betterlite_metadata.parse_pinned_tools, value)
     theirs = pinned_result(litellm_manager.parse_pinned_tools, value)
     assert ours == theirs
 

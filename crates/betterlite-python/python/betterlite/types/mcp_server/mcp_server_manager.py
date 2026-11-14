@@ -1,18 +1,7 @@
-import json
-from collections.abc import Mapping
 from datetime import datetime
-from typing import Annotated, ClassVar, Final, Literal, Self
+from typing import ClassVar, Final, Literal, Self
 
-from pydantic import (
-    AfterValidator,
-    BaseModel,
-    ConfigDict,
-    Field,
-    JsonValue,
-    TypeAdapter,
-    field_validator,
-    model_validator,
-)
+from pydantic import BaseModel, ConfigDict, JsonValue, field_validator, model_validator
 from typing_extensions import override
 
 from betterlite.types.mcp.enums import (
@@ -24,8 +13,13 @@ from betterlite.types.mcp.enums import (
     MCPUpstreamProtocol,
 )
 from betterlite.types.mcp.headers import normalize_upstream_header_name
+from betterlite.types.mcp_server.server_metadata import (
+    UPSTREAM_PROTOCOL,
+    MCPInfo,
+    MCPOAuthIdentityBinding,
+    PinnedMCPTool,
+)
 
-_UPSTREAM_PROTOCOL: Final[TypeAdapter[MCPUpstreamProtocol]] = TypeAdapter(MCPUpstreamProtocol)
 _CREDENTIAL_HEADER_NAMES: Final = ("authorization", "x-api-key", "api-key", "apikey")
 _HEADER_AUTH_TYPES: Final = frozenset(
     {
@@ -41,65 +35,6 @@ _HEADER_AUTH_TYPES: Final = frozenset(
 )
 # ruff S105 reads a literal assigned to a token_ name as a password, so the default sits here
 _EXCHANGE_PROFILE: Final = "rfc8693"
-
-
-def _validate_mcp_protocol_metadata(  # ast-grep-ignore: no-long-names
-    value: dict[str, JsonValue],
-) -> dict[str, JsonValue]:
-    if "protocol_version" in value:
-        _UPSTREAM_PROTOCOL.validate_python(value["protocol_version"])
-    return value
-
-
-MCPInfo = Annotated[
-    dict[str, JsonValue],
-    AfterValidator(_validate_mcp_protocol_metadata),  # ast-grep-ignore: no-long-names
-]
-
-
-class MCPOAuthMetadata(BaseModel):
-    scopes: list[str] | None = None
-    authorization_url: str | None = None
-    token_url: str | None = None
-    registration_url: str | None = None
-    discovered_issuer: str | None = None
-    from_origin_fallback: bool = False
-
-
-class MCPOAuthIdentityBinding(BaseModel):
-    mode: Literal["disabled", "audit", "enforce"] = "disabled"
-    issuer: str
-    jwks_url: str | None = None
-    audiences: Annotated[list[str], Field(min_length=1)]
-    principal_claim: str = "email"
-    caller_field: Literal["user_email", "user_id"] = "user_email"
-    require_email_verified: bool = True
-
-
-class PinnedMCPTool(BaseModel):
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
-
-    description: str = ""
-    input_schema: dict[str, JsonValue] = Field(default_factory=dict)
-
-
-_PINNED_TOOLS: Final[TypeAdapter[dict[str, PinnedMCPTool] | None]] = TypeAdapter(
-    dict[str, PinnedMCPTool] | None
-)
-
-
-def parse_pinned_tools(
-    value: JsonValue | Mapping[str, PinnedMCPTool],
-) -> dict[str, PinnedMCPTool] | None:
-    decoded: JsonValue | Mapping[str, PinnedMCPTool] = value
-    match value:
-        case str() if value:
-            decoded = json.loads(value)
-        case str() | bool() | int() | float() | list() | Mapping() | None:
-            pass
-    if not decoded:
-        return None
-    return _PINNED_TOOLS.validate_python(decoded)
 
 
 def _has_credential_header(headers: list[str] | None) -> bool:
@@ -238,7 +173,7 @@ class MCPServer(BaseModel):
             and self.mcp_info is not None
             and "protocol_version" in self.mcp_info
         ):
-            self.protocol_version = _UPSTREAM_PROTOCOL.validate_python(
+            self.protocol_version = UPSTREAM_PROTOCOL.validate_python(
                 self.mcp_info["protocol_version"]
             )
         return self
