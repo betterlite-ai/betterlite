@@ -75,11 +75,10 @@ class ClassifierMessageText(Operation):
             {"role": message.role, "content": message.content} for message in self.messages
         ]
         ask, system_prompt = router.ask_and_system_prompt(messages)
-        marker_kwargs: dict[str, object] = {}
-        if self.user_agent is not None:
-            marker_kwargs["metadata"] = {"user_agent": self.user_agent}
-        markers = router.selected_markers(marker_kwargs)
         request_kwargs: dict[str, object] = {"proxy_server_request": {"body": self.body}}
+        if self.user_agent is not None:
+            request_kwargs["metadata"] = {"user_agent": self.user_agent}
+        markers = router.selected_markers(request_kwargs)
         return Output(
             ask=ask,
             system_prompt=system_prompt,
