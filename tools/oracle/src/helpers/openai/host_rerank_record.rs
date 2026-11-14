@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::Section as _;
 use betterlite_config::sections::jina_infinity_rerank::{Raw, Settings};
+use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 use betterlite_openai::cohere_rerank::RerankParams;
 use betterlite_openai::host_rerank::error::HostRerankError;
 use betterlite_openai::host_rerank::{
@@ -11,7 +12,7 @@ use betterlite_openai::host_rerank::{
 use betterlite_openai::openai_base_config::Headers;
 use secrecy::SecretString;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
@@ -71,6 +72,26 @@ fn settings(input: &Input) -> Result<Settings, Box<HelperError>> {
     raw.convert(&input.env).or_value_error()
 }
 
+// Jina's hook sees the raw text only after its status check; Infinity never logs
+fn decode_reply(
+    provider: HostProvider,
+    reply: Option<&Reply>,
+    hook: &mut Vec<Value>,
+) -> Result<Option<RerankResponse>, Box<HelperError>> {
+    let decoded = reply.map(|reply| {
+        decode_host_rerank(
+            provider,
+            reply.status,
+            reply.body.as_bytes(),
+            || Uuid::from_u128(FALLBACK_ID),
+            |text| hook.push(json!(text)),
+        )
+    });
+    decoded
+        .transpose()
+        .map_err(|error| failure(provider, &error))
+}
+
 impl Helper for Op {
     type Input = Input;
 
@@ -97,20 +118,7 @@ impl Helper for Op {
         let url = url.map_err(fail)?;
         let request = transform_request(provider, &input.model, &mapped).map_err(fail)?;
         let mut hook = Vec::new();
-        let response = input
-            .reply
-            .as_ref()
-            .map(|reply| {
-                decode_host_rerank(
-                    provider,
-                    reply.status,
-                    reply.body.as_bytes(),
-                    || Uuid::from_u128(FALLBACK_ID),
-                    |text| hook.push(json!(text)),
-                )
-            })
-            .transpose()
-            .map_err(fail)?;
+        let response = decode_reply(provider, input.reply.as_ref(), &mut hook)?;
         Ok(json!({
             "mapped": mapped,
             "headers": headers,

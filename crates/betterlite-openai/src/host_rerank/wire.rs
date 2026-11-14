@@ -147,7 +147,7 @@ fn counter(usage: &IndexMap<String, Json>, name: &'static str) -> Result<Counted
 
 pub(super) fn result(
     provider: HostProvider,
-    entry: WireResult,
+    entry: &WireResult,
 ) -> Result<RerankResponseResult, HostRerankError> {
     let score = parse_decimal_lexeme(&entry.relevance_score.to_string())
         .map_err(RerankContractError::ScoreOutOfRange)?;

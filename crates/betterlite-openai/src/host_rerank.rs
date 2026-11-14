@@ -185,7 +185,7 @@ where
         .results
         .unwrap_or_default()
         .into_iter()
-        .map(|entry| wire::result(provider, entry))
+        .map(|entry| wire::result(provider, &entry))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(RerankResponse {
         id: Some(
