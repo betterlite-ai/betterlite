@@ -127,6 +127,7 @@ fn an_unexpected_body_shape_fails(#[case] source: &str) {
 
 #[rstest]
 #[case::not_json("{")]
+#[case::number_out_of_range(r#"{"data":{"original_tokens":1e400}}"#)]
 fn an_unreadable_body_fails(#[case] source: &str) {
     let failure = parse_results(body(source), 1).expect_err("failure");
     assert_eq!(failure.message, UNREADABLE);
