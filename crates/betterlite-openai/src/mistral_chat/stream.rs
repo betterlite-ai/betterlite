@@ -12,11 +12,6 @@ pub struct MistralChatResponseIterator {
     pub json_mode: bool,
 }
 
-#[must_use]
-pub fn get_model_response_iterator(json_mode: bool) -> MistralChatResponseIterator {
-    MistralChatResponseIterator { json_mode }
-}
-
 pub fn chunk_parser(
     chunk: &mut Value,
     identifier: fn() -> Uuid,

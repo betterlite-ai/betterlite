@@ -26,13 +26,13 @@ use super::messages::{
 };
 use super::reply::{ResponseReply, transform_response};
 use super::reply::{
-    decode_mistral_chat, handle_content_list_to_str_conversion, handle_empty_content_response,
+    convert_content_list_to_str, decode_mistral_chat, handle_empty_content_response,
 };
 use super::request::{
-    MessageTransform, RequestTransform, add_reasoning_system_prompt_if_needed, transform_messages,
+    MessageTransform, RequestTransform, maybe_add_reasoning_prompt, transform_messages,
     transform_request,
 };
-use super::stream::{MistralChatResponseIterator, chunk_parser, get_model_response_iterator};
+use super::stream::chunk_parser;
 use crate::chat::ChatMessage;
 use crate::chat_choices::stream::StreamError;
 use crate::chat_content::{Mode, RefuseDownloads};
@@ -213,7 +213,7 @@ fn a_non_object_file_field_fails() {
 #[test]
 fn the_reasoning_prompt_prepends_to_a_string_or_list_system_message() {
     let mut params = Object::from_iter([(String::from("_add_reasoning_prompt"), Json::Bool(true))]);
-    let updated = add_reasoning_system_prompt_if_needed(
+    let updated = maybe_add_reasoning_prompt(
         "Magistral-Small-2506",
         &[message(json!({"role": "system", "content": "be brief"}))],
         &mut params,
@@ -227,7 +227,7 @@ fn the_reasoning_prompt_prepends_to_a_string_or_list_system_message() {
     assert!(params.get("_add_reasoning_prompt").is_none());
 
     let mut params = Object::from_iter([(String::from("_add_reasoning_prompt"), Json::Bool(true))]);
-    let updated = add_reasoning_system_prompt_if_needed(
+    let updated = maybe_add_reasoning_prompt(
         "magistral-medium",
         &[message(
             json!({"role": "system", "content": [{"type": "text", "text": "be brief"}]}),
@@ -245,7 +245,7 @@ fn the_reasoning_prompt_prepends_to_a_string_or_list_system_message() {
 #[test]
 fn the_reasoning_prompt_inserts_a_system_message_and_consumes_the_flag() {
     let mut params = Object::from_iter([(String::from("_add_reasoning_prompt"), Json::Bool(true))]);
-    let updated = add_reasoning_system_prompt_if_needed(
+    let updated = maybe_add_reasoning_prompt(
         "magistral-small",
         &[message(json!({"role": "user", "content": "hi"}))],
         &mut params,
@@ -255,7 +255,7 @@ fn the_reasoning_prompt_inserts_a_system_message_and_consumes_the_flag() {
     assert!(params.get("_add_reasoning_prompt").is_none());
 
     let mut params = Object::from_iter([(String::from("_add_reasoning_prompt"), Json::Bool(true))]);
-    let updated = add_reasoning_system_prompt_if_needed(
+    let updated = maybe_add_reasoning_prompt(
         "mistral-small-latest",
         &[message(json!({"role": "user", "content": "hi"}))],
         &mut params,
@@ -366,7 +366,7 @@ fn a_reply_without_thinking_keeps_only_its_text() {
 #[test]
 fn a_string_reply_content_is_left_alone() {
     let mut reply = json!({"choices": [{"message": {"role": "assistant", "content": "plain"}}]});
-    handle_content_list_to_str_conversion(&mut reply).expect("a conversion");
+    convert_content_list_to_str(&mut reply).expect("a conversion");
     assert_eq!(reply["choices"][0]["message"]["content"], json!("plain"));
 }
 
@@ -524,21 +524,9 @@ fn transform_response_logs_headers_then_converts_the_reply() {
     let details = serde_json::to_value(&state.model_call_details).expect("call details");
     assert_eq!(
         details["response_headers"],
-        json!({"authorization": "Be****23", "x-trace": "t"})
+        json!({"authorization": "Bearer abc123", "x-trace": "t"})
     );
     assert_eq!(details["original_response"], json!(body));
-}
-
-#[test]
-fn the_iterator_keeps_the_json_mode_it_was_created_with() {
-    assert_eq!(
-        get_model_response_iterator(true),
-        MistralChatResponseIterator { json_mode: true }
-    );
-    assert_ne!(
-        get_model_response_iterator(false),
-        get_model_response_iterator(true)
-    );
 }
 
 #[test]

@@ -57,11 +57,8 @@ pub fn transform_messages(
 
 pub fn transform_request(request: &RequestTransform<'_>) -> Result<Object, MistralChatError> {
     let mut optional_params = request.optional_params.clone();
-    let messages = add_reasoning_system_prompt_if_needed(
-        request.model,
-        request.messages,
-        &mut optional_params,
-    );
+    let messages =
+        maybe_add_reasoning_prompt(request.model, request.messages, &mut optional_params);
     optional_params.shift_remove(CLIENT_METADATA);
     let prepared = prepared_messages(&messages)?;
     let mut transformed = parent_transform(
@@ -129,7 +126,7 @@ fn parent_transform(
 }
 
 #[must_use]
-pub fn add_reasoning_system_prompt_if_needed(
+pub fn maybe_add_reasoning_prompt(
     model: &str,
     messages: &[ChatMessage],
     optional_params: &mut Object,
@@ -141,45 +138,55 @@ pub fn add_reasoning_system_prompt_if_needed(
         return messages.to_vec();
     }
     optional_params.shift_remove(REASONING_FLAG);
-    let prompt = REASONING_SYSTEM_PROMPT;
     let mut updated = messages.to_vec();
     let Some(index) = updated
         .iter()
         .position(|message| message.role == Role::System)
     else {
-        updated.insert(
-            0,
-            ChatMessage {
-                role: Role::System,
-                content: Some(MessageContent::Text(prompt.to_owned())),
-                name: None,
-                tool_calls: None,
-                tool_call_id: None,
-                passthrough: IndexMap::new(),
-            },
-        );
+        updated.insert(0, reasoning_system_message());
         return updated;
     };
-    if let Some(message) = updated.get_mut(index) {
-        let content = message.content.take();
-        message.content = Some(match content {
-            Some(MessageContent::Parts(mut parts)) => {
-                let mut fields = IndexMap::new();
-                fields.insert(String::from("text"), Value::String(format!("{prompt}\n\n")));
-                parts.insert(
-                    0,
-                    ContentPart {
-                        kind: String::from("text"),
-                        fields,
-                    },
-                );
-                MessageContent::Parts(parts)
-            }
-            Some(MessageContent::Text(text)) => MessageContent::Text(format!("{prompt}\n\n{text}")),
-            None => MessageContent::Text(format!("{prompt}\n\n")),
-        });
-    }
+    prepend_reasoning_prompt(&mut updated, index);
     updated
+}
+
+fn reasoning_system_message() -> ChatMessage {
+    ChatMessage {
+        role: Role::System,
+        content: Some(MessageContent::Text(REASONING_SYSTEM_PROMPT.to_owned())),
+        name: None,
+        tool_calls: None,
+        tool_call_id: None,
+        passthrough: IndexMap::new(),
+    }
+}
+
+fn prepend_reasoning_prompt(messages: &mut [ChatMessage], index: usize) {
+    let Some(message) = messages.get_mut(index) else {
+        return;
+    };
+    let content = message.content.take();
+    message.content = Some(match content {
+        Some(MessageContent::Parts(mut parts)) => {
+            let mut fields = IndexMap::new();
+            fields.insert(
+                String::from("text"),
+                Value::String(format!("{REASONING_SYSTEM_PROMPT}\n\n")),
+            );
+            parts.insert(
+                0,
+                ContentPart {
+                    kind: String::from("text"),
+                    fields,
+                },
+            );
+            MessageContent::Parts(parts)
+        }
+        Some(MessageContent::Text(text)) => {
+            MessageContent::Text(format!("{REASONING_SYSTEM_PROMPT}\n\n{text}"))
+        }
+        None => MessageContent::Text(format!("{REASONING_SYSTEM_PROMPT}\n\n")),
+    });
 }
 
 fn prompt_message(message: &ChatMessage) -> Result<Message, MistralChatError> {

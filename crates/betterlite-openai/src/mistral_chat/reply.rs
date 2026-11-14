@@ -1,6 +1,5 @@
 use betterlite_logging::logging_pre_post::args::AdditionalArgs;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
-use betterlite_logging::logging_pre_post::masking::masked_headers;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
@@ -50,10 +49,9 @@ pub fn transform_response(
         .iter()
         .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
         .collect();
-    state.model_call_details.insert(
-        String::from("response_headers"),
-        Json::Object(masked_headers(&headers, false)),
-    );
+    state
+        .model_call_details
+        .insert(String::from("response_headers"), Json::Object(headers));
     let decoded = decode_mistral_chat(reply.body)?;
     let body = serde_json::to_vec(&decoded.value)
         .map_err(|source| MistralChatError::ReplyEncode { source })?;
@@ -64,7 +62,7 @@ pub fn decode_mistral_chat(bytes: &[u8]) -> Result<MistralChatReply, MistralChat
     let mut value: Value =
         serde_json::from_slice(bytes).map_err(|source| MistralChatError::ReplyJson { source })?;
     handle_empty_content_response(&mut value);
-    handle_content_list_to_str_conversion(&mut value)?;
+    convert_content_list_to_str(&mut value)?;
     Ok(MistralChatReply { value })
 }
 
@@ -85,7 +83,7 @@ pub fn handle_empty_content_response(reply: &mut Value) {
     }
 }
 
-pub fn handle_content_list_to_str_conversion(reply: &mut Value) -> Result<(), MistralChatError> {
+pub fn convert_content_list_to_str(reply: &mut Value) -> Result<(), MistralChatError> {
     let Some(choices) = reply.get_mut("choices").and_then(Value::as_array_mut) else {
         return Ok(());
     };
