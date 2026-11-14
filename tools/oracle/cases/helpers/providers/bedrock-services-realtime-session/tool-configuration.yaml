@@ -1,0 +1,55 @@
+kind: helper
+name: tool-configuration
+call:
+  bedrock_services_realtime_session:
+    case: tool_configuration
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+      - 00000000-0000-4000-8000-000000000004
+    model: amazon.nova-2-sonic-v1:0
+    trace_id: trace-realtime-1
+    updates:
+      - session:
+          tools: []
+      - session:
+          tools: null
+      - session:
+          tools:
+            - type: function
+              function:
+                name: get_weather
+                description: Read the weather
+                parameters:
+                  type: object
+                  properties: {}
+      - session:
+          tools:
+            - type: function
+              function:
+                name: nulls
+                description: null
+                parameters: null
+      - session:
+          tools:
+            - type: function
+              name: flattened
+              parameters:
+                a: 1
+      - session:
+          tools:
+            - type: computer_use_preview
+            - type: function
+              function:
+                name: kept
+      - session:
+          tools:
+            - type: computer_use_preview
+    urls: []
+    modalities: null
+    models: []
+    headers: []
+    error: null
+env: {}
+compare: {ignore: []}
