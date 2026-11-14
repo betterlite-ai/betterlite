@@ -1,4 +1,4 @@
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 
 use crate::image_models::params::{Field, Params};
 use crate::pegasus::error::PegasusError;
@@ -7,42 +7,26 @@ use crate::pegasus::error::PegasusError;
 #[serde(default)]
 pub struct PromptMessage {
     pub role: Option<String>,
-    #[serde(deserialize_with = "content_field")]
-    pub content: Content,
-}
-
-#[derive(Debug, Clone, Default)]
-pub enum Content {
-    #[default]
-    Missing,
-    Given(Field),
-}
-
-fn content_field<'de, D>(deserializer: D) -> Result<Content, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Field::deserialize(deserializer)?;
-    Ok(Content::Given(value))
+    pub content: Option<Field>,
 }
 
 pub fn convert_messages_to_prompt(messages: &[PromptMessage]) -> Result<String, PegasusError> {
     let mut parts = Vec::with_capacity(messages.len());
     for message in messages {
         let role = message.role.as_deref().unwrap_or("user");
-        let content = content_text(&message.content)?;
+        let content = content_text(message.content.as_ref())?;
         parts.push(format!("{role}: {content}"));
     }
     Ok(parts.join("\n").trim().to_owned())
 }
 
-fn content_text(content: &Content) -> Result<String, PegasusError> {
+fn content_text(content: Option<&Field>) -> Result<String, PegasusError> {
     match content {
-        Content::Missing => Ok(String::new()),
-        Content::Given(Field::Null) => Ok("None".to_owned()),
-        Content::Given(Field::Text(text)) => Ok(text.clone()),
-        Content::Given(Field::List(items)) => join_fragments(items),
-        Content::Given(Field::Bool(_) | Field::Int(_) | Field::Float(_) | Field::Mapping(_)) => {
+        None => Ok(String::new()),
+        Some(Field::Null) => Ok("None".to_owned()),
+        Some(Field::Text(text)) => Ok(text.clone()),
+        Some(Field::List(items)) => join_fragments(items),
+        Some(Field::Bool(_) | Field::Int(_) | Field::Float(_) | Field::Mapping(_)) => {
             Err(PegasusError::NotText { field: "content" })
         }
     }
