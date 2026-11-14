@@ -18,3 +18,23 @@ deviations:
       Python's parser accepts is unreadable here, so created_at falls back to the injected clock and
       the status stamps stay null instead of being parsed in the host's local timezone.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L464-L465
+  - what: >-
+      A timeout that arrives as text is parsed with the shared SDK timeout grammar. Plain decimal
+      spellings, an underscore separator such as "1_000" and surrounding whitespace all read as the
+      seconds Python's float() gives, but a value float() would reject fails with the shared
+      TimeoutError instead of a bare ValueError, and an inf or nan spelling float() accepts is
+      refused as non-finite.
+    why: >-
+      cancel_batch uses the same float() read as the batch, file and SDK surfaces, so the one
+      grammar lives in one place and names the timeout field. A working setup sends a number or a
+      plain decimal string, which both readers take the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L975
+  - what: >-
+      vertex_credentials is taken as text, so a JSON object for it is refused when the request is
+      decoded. LiteLLM declares str | dict there and hands either form to the Vertex handler.
+    why: >-
+      This slice resolves the credential text that the call, litellm_settings and
+      VERTEXAI_CREDENTIALS carry and passes it to the provider dispatch. Turning an inline
+      service-account object into Google credentials is the genai setup's job in betterlite-core,
+      and the batch cancel path reads the resolved text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L342

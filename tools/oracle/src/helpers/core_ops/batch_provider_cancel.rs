@@ -156,7 +156,6 @@ scripted_branches! {
         "api_base": call.api_base,
         "api_key": call.api_key.map(|key| key.expose_secret()),
         "organization": call.organization,
-        "timeout": call.timeout,
         "max_retries": call.max_retries,
     };
     azure(AzureCancelCall, call): "azure" => {
@@ -165,7 +164,7 @@ scripted_branches! {
         "api_base": call.api_base,
         "api_key": call.api_key.map(|key| key.expose_secret()),
         "api_version": call.api_version,
-        "timeout": call.timeout,
+        "azure_ad_token": call.azure_ad_token.map(|token| token.expose_secret()),
         "max_retries": call.max_retries,
     };
     vertex(VertexCancelCall, call): "vertex" => {
@@ -175,7 +174,6 @@ scripted_branches! {
         "vertex_project": call.vertex_project,
         "vertex_location": call.vertex_location,
         "vertex_credentials": call.vertex_credentials.map(|token| token.expose_secret()),
-        "timeout": call.timeout,
         "max_retries": call.max_retries,
     };
     xai(XaiCancelCall, call): "xai" => {
@@ -183,14 +181,21 @@ scripted_branches! {
         "batch_id": call.batch_id,
         "api_base": call.api_base,
         "api_key": call.api_key.map(|key| key.expose_secret()),
-        "timeout": call.timeout,
     };
     bedrock(BedrockCancelCall, call): "bedrock" => {
         "batch_id": call.batch_id,
         "aws_region_name": call.params.aws_region_name.as_deref(),
+        "aws_access_key_id": call.params.aws_access_key_id,
         "aws_session_token": call.params.aws_session_token.as_ref().map(|token| token.expose_secret()),
-        "timeout": call.params.timeout.as_ref(),
     };
+}
+
+fn recorded_request(request: &BatchIdRequest) -> Value {
+    json!({
+        "batch_id": request.batch_id,
+        "extra_headers": request.extra_headers,
+        "extra_body": request.extra_body,
+    })
 }
 
 fn helper_error(
@@ -244,12 +249,12 @@ impl crate::helpers::Helper for Op {
                 })
             })?;
         let result = runtime.block_on(service.run(&input.input));
-        let calls = calls.lock().unwrap_or_else(PoisonError::into_inner).clone();
+        let recorded = calls.lock().unwrap_or_else(PoisonError::into_inner).clone();
         match result {
             Ok(result) => Ok(json!({
                 "batch": result.batch,
                 "model": result.model,
-                "calls": calls,
+                "calls": recorded,
             })),
             Err(error) => Err(helper_error(&error)),
         }

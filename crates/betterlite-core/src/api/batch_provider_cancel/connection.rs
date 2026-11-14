@@ -1,14 +1,14 @@
-use std::num::ParseFloatError;
-
 use betterlite_config::sections::batch_provider_cancel::Settings;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
+use serde::Deserialize;
 
-use super::{CancelBatchCall, CancelProvider};
+use crate::api::resource_sdk_settings::timeout::{
+    FineTuningTimeout, StructuredTimeout, TimeoutError, TimeoutValue, request_timeout,
+    resolve_fine_tuning_timeout,
+};
+use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSettings};
 
-pub const DEFAULT_TIMEOUT_SECONDS: f64 = 600.0;
-pub const DEFAULT_OPENAI_BASE: &str = "https://api.openai.com/v1";
+use super::CancelBatchCall;
 
 // the kwargs cancel_batch reads through GenericLiteLLMParams and get_litellm_params
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -26,136 +26,108 @@ pub struct CancelParams {
     pub aws_access_key_id: Option<String>,
     pub aws_secret_access_key: Option<SecretString>,
     pub aws_session_token: Option<SecretString>,
-    pub timeout: Option<TimeoutValue>,
+    pub timeout: Option<CancelTimeout>,
     pub request_timeout: Option<f64>,
     pub max_retries: Option<i64>,
 }
 
 // GenericLiteLLMParams.timeout declares float | str | httpx.Timeout
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum TimeoutValue {
-    Seconds(f64),
-    Text(String),
-    Structured(StructuredTimeout),
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct StructuredTimeout {
-    pub connect: Option<f64>,
-    pub read: Option<f64>,
-    pub write: Option<f64>,
-    pub pool: Option<f64>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum CancelTimeout {
-    Seconds(f64),
+    Plain(TimeoutValue),
     Structured(StructuredTimeout),
 }
 
-#[derive(Debug, Error)]
-pub enum TimeoutValueError {
-    #[error("the timeout {value} is not a number of seconds")]
-    Invalid {
-        value: String,
-        #[source]
-        source: ParseFloatError,
-    },
-}
-
-// supports_httpx_timeout names openai, azure and bedrock; every other provider reads the timeout's read value
-#[must_use]
-pub const fn supports_httpx_timeout(provider: &CancelProvider) -> bool {
-    matches!(
-        provider,
-        CancelProvider::Openai | CancelProvider::Azure | CancelProvider::Bedrock
-    )
-}
-
-#[must_use]
-pub fn resolve_timeout(call: &CancelBatchCall) -> Result<CancelTimeout, TimeoutValueError> {
-    let configured = match &call.params.timeout {
-        Some(value) => Some(timeout_from(value)?),
-        None => call.params.request_timeout.map(CancelTimeout::Seconds),
-    };
-    let timeout = configured.unwrap_or(CancelTimeout::Seconds(DEFAULT_TIMEOUT_SECONDS));
-    match timeout {
-        // httpx.Timeout.read or 600: a structured timeout a provider cannot take collapses to its read value
-        CancelTimeout::Structured(structured) if !supports_httpx_timeout(&call.provider) => Ok(
-            CancelTimeout::Seconds(structured.read.unwrap_or(DEFAULT_TIMEOUT_SECONDS)),
-        ),
-        other => Ok(other),
-    }
-}
-
-fn timeout_from(value: &TimeoutValue) -> Result<CancelTimeout, TimeoutValueError> {
-    match value {
-        TimeoutValue::Seconds(seconds) => Ok(CancelTimeout::Seconds(*seconds)),
-        TimeoutValue::Structured(structured) => Ok(CancelTimeout::Structured(*structured)),
-        TimeoutValue::Text(text) => text
-            .trim()
-            .parse::<f64>()
-            .map(CancelTimeout::Seconds)
-            .map_err(|source| TimeoutValueError::Invalid {
-                value: text.clone(),
-                source,
-            }),
-    }
-}
-
-#[must_use]
-pub fn openai_base(params: &CancelParams, settings: &Settings) -> String {
-    let candidates = [
-        params.api_base.as_deref(),
-        settings.api_base.as_deref(),
-        settings.openai_base_url.as_deref(),
-        settings.openai_api_base.as_deref(),
-    ];
-    candidates
-        .into_iter()
-        .flatten()
-        .find(|value| !value.is_empty())
-        .unwrap_or(DEFAULT_OPENAI_BASE)
-        .to_owned()
-}
-
-// the source's `a or b or c` chains, where an empty value counts as unset
-macro_rules! fallback_accessors {
-    ($value:ty, $borrow:ident, $empty:expr; $(
-        $method:ident: $request_field:ident => [$($setting:ident),*];
-    )+) => {$(
-        #[must_use]
-        pub fn $method<'value>(
-            params: &'value CancelParams,
-            settings: &'value Settings,
-        ) -> Option<&'value $value> {
-            let candidates = [
-                params.$request_field.$borrow(),
-                $(settings.$setting.$borrow(),)*
-            ];
-            candidates
-                .into_iter()
-                .flatten()
-                .find(|value| !($empty)(value))
+impl From<&Settings> for ResourceSdkSettings {
+    fn from(settings: &Settings) -> Self {
+        Self {
+            api_base: settings.api_base.clone(),
+            api_version: settings.api_version.clone(),
+            api_key: settings.api_key.clone(),
+            openai_key: settings.openai_key.clone(),
+            azure_key: settings.azure_key.clone(),
+            azure_ad_token: settings.azure_ad_token.clone(),
+            organization: settings.organization.clone(),
+            vertex_project: settings.vertex_project.clone(),
+            vertex_location: settings.vertex_location.clone(),
+            openai_base_url: settings.openai_base_url.clone(),
+            openai_api_base: settings.openai_api_base.clone(),
+            openai_api_key: settings.openai_api_key.clone(),
+            openai_organization: settings.openai_organization.clone(),
+            azure_api_base: settings.azure_api_base.clone(),
+            azure_api_version: settings.azure_api_version.clone(),
+            azure_openai_api_key: settings.azure_openai_api_key.clone(),
+            azure_api_key: settings.azure_api_key.clone(),
+            vertexai_project: settings.vertexai_project.clone(),
+            vertexai_location: settings.vertexai_location.clone(),
+            vertexai_credentials: settings.vertexai_credentials.clone(),
         }
-    )+};
+    }
 }
 
-fallback_accessors! {
-    str, as_deref, str::is_empty;
-    openai_organization: organization => [organization, openai_organization];
-    azure_base: api_base => [api_base, azure_api_base];
-    azure_version: api_version => [api_version, azure_api_version];
-    vertex_project: vertex_project => [vertex_project, vertexai_project];
-    vertex_location: vertex_location => [vertex_location, vertexai_location];
+impl From<&CancelParams> for ResourceSdkRequestOptions {
+    fn from(params: &CancelParams) -> Self {
+        Self {
+            api_base: params.api_base.clone(),
+            api_version: params.api_version.clone(),
+            api_key: params.api_key.clone(),
+            organization: params.organization.clone(),
+            vertex_project: params.vertex_project.clone(),
+            vertex_location: params.vertex_location.clone(),
+            vertex_credentials: params.vertex_credentials.clone(),
+        }
+    }
 }
 
-fallback_accessors! {
-    SecretString, as_ref, |value: &SecretString| value.expose_secret().is_empty();
-    openai_api_key: api_key => [api_key, openai_key, openai_api_key];
-    azure_api_key: api_key => [api_key, azure_key, azure_openai_api_key, azure_api_key];
-    vertex_credentials: vertex_credentials => [vertexai_credentials];
+// cancel_batch's only fallback the shared settings lack: the AD token get_azure_ad_token reads
+#[must_use]
+pub fn azure_ad_token<'settings>(
+    params: &'settings CancelParams,
+    settings: &'settings ResourceSdkSettings,
+) -> Option<&'settings SecretString> {
+    [
+        params.azure_ad_token.as_ref(),
+        settings.azure_ad_token.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|token| !token.expose_secret().is_empty())
+}
+
+#[must_use]
+pub fn resolve_timeout(call: &CancelBatchCall) -> Result<FineTuningTimeout, TimeoutError> {
+    let provider = call.provider.wire_name();
+    match configured(call.params.timeout.as_ref()) {
+        Configured::Structured(timeout) => {
+            resolve_fine_tuning_timeout(None, provider, Some(timeout))
+        }
+        Configured::Plain(value) => resolve_fine_tuning_timeout(Some(value), provider, None),
+        // optional_params.timeout or request_timeout or 600, where a zero or an empty value falls through
+        Configured::Unset => Ok(FineTuningTimeout::Seconds(request_timeout(
+            None,
+            call.params.request_timeout,
+        )?)),
+    }
+}
+
+enum Configured<'value> {
+    Unset,
+    Plain(&'value TimeoutValue),
+    Structured(StructuredTimeout),
+}
+
+fn configured(timeout: Option<&CancelTimeout>) -> Configured<'_> {
+    match timeout {
+        Some(CancelTimeout::Structured(structured)) => Configured::Structured(*structured),
+        Some(CancelTimeout::Plain(value @ TimeoutValue::Number(seconds)))
+            if *seconds != 0.0_f64 =>
+        {
+            Configured::Plain(value)
+        }
+        Some(CancelTimeout::Plain(value @ TimeoutValue::String(text))) if !text.is_empty() => {
+            Configured::Plain(value)
+        }
+        None | Some(CancelTimeout::Plain(_)) => Configured::Unset,
+    }
 }

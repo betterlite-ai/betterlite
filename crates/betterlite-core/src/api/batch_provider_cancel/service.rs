@@ -9,6 +9,8 @@ use indexmap::IndexMap;
 use crate::api::api_boundaries::{
     ApiBoundariesInput, ApiLimitError, ApiLimits, ItemsBoundary, JsonBoundary,
 };
+use crate::api::resource_sdk_settings::timeout::FineTuningTimeout;
+use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSettings};
 
 use super::async_invoke;
 use super::connection;
@@ -29,7 +31,9 @@ pub struct BatchProviderCancel<Dispatch> {
 struct Prepared {
     is_async: bool,
     request: BatchIdRequest,
-    timeout: connection::CancelTimeout,
+    timeout: FineTuningTimeout,
+    settings: ResourceSdkSettings,
+    options: ResourceSdkRequestOptions,
 }
 
 impl<Dispatch> BatchProviderCancel<Dispatch>
@@ -66,6 +70,8 @@ where
                 timeout: None,
             },
             timeout: connection::resolve_timeout(call)?,
+            settings: ResourceSdkSettings::from(&self.settings),
+            options: ResourceSdkRequestOptions::from(&call.params),
         };
         let batch = self.dispatch_branch(call, &prepared).await?;
         Ok(BatchProviderCancelResult {
@@ -98,13 +104,13 @@ where
         call: &CancelBatchCall,
         prepared: &Prepared,
     ) -> Result<BatchObject, BatchProviderCancelError<Dispatch::Error>> {
-        let api_base = connection::openai_base(&call.params, &self.settings);
+        let api_base = prepared.settings.openai_base(&prepared.options);
         self.dispatch
             .openai(OpenAiCancelCall {
                 is_async: prepared.is_async,
                 api_base: &api_base,
-                api_key: connection::openai_api_key(&call.params, &self.settings),
-                organization: connection::openai_organization(&call.params, &self.settings),
+                api_key: prepared.settings.openai_api_key(&prepared.options),
+                organization: prepared.settings.openai_organization(&prepared.options),
                 request: &prepared.request,
                 timeout: &prepared.timeout,
                 max_retries: call.params.max_retries,
@@ -121,10 +127,10 @@ where
         self.dispatch
             .azure(AzureCancelCall {
                 is_async: prepared.is_async,
-                api_base: connection::azure_base(&call.params, &self.settings),
-                api_key: connection::azure_api_key(&call.params, &self.settings),
-                api_version: connection::azure_version(&call.params, &self.settings),
-                azure_ad_token: call.params.azure_ad_token.as_ref(),
+                api_base: prepared.settings.azure_base(&prepared.options),
+                api_key: prepared.settings.azure_api_key(&prepared.options),
+                api_version: prepared.settings.azure_version(&prepared.options),
+                azure_ad_token: connection::azure_ad_token(&call.params, &prepared.settings),
                 request: &prepared.request,
                 timeout: &prepared.timeout,
                 max_retries: call.params.max_retries,
@@ -142,10 +148,10 @@ where
             .vertex(VertexCancelCall {
                 is_async: prepared.is_async,
                 batch_id: &call.batch_id,
-                api_base: call.params.api_base.as_deref(),
-                vertex_project: connection::vertex_project(&call.params, &self.settings),
-                vertex_location: connection::vertex_location(&call.params, &self.settings),
-                vertex_credentials: connection::vertex_credentials(&call.params, &self.settings),
+                api_base: prepared.options.api_base.as_deref(),
+                vertex_project: prepared.settings.vertex_project(&prepared.options),
+                vertex_location: prepared.settings.vertex_location(&prepared.options),
+                vertex_credentials: prepared.settings.vertex_credentials(&prepared.options),
                 timeout: &prepared.timeout,
                 max_retries: call.params.max_retries,
             })
@@ -162,8 +168,8 @@ where
             .xai(XaiCancelCall {
                 is_async: prepared.is_async,
                 batch_id: &call.batch_id,
-                api_base: call.params.api_base.as_deref(),
-                api_key: call.params.api_key.as_ref(),
+                api_base: prepared.options.api_base.as_deref(),
+                api_key: prepared.options.api_key.as_ref(),
                 timeout: &prepared.timeout,
             })
             .await

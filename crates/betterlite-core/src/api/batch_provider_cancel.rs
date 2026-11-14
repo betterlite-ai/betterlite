@@ -10,13 +10,14 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::api::api_boundaries::ApiLimitError;
+use crate::api::resource_sdk_settings::timeout::{FineTuningTimeout, TimeoutError};
 
 pub mod async_invoke;
 pub mod connection;
 pub mod service;
 mod tests;
 
-use connection::{CancelParams, CancelTimeout};
+use connection::CancelParams;
 
 // cancel_batch's provider union: the declared literal names plus the str branch that answers 400
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -44,6 +45,21 @@ impl CancelProvider {
             "bedrock" => Self::Bedrock,
             "xai" => Self::Xai,
             other => Self::Other(other.to_owned()),
+        }
+    }
+
+    // supports_httpx_timeout reads this name: only openai, azure and bedrock keep a structured timeout
+    #[must_use]
+    pub fn wire_name(&self) -> &str {
+        match self {
+            Self::Openai => "openai",
+            Self::HostedVllm => "hosted_vllm",
+            Self::LitellmProxy => "litellm_proxy",
+            Self::Azure => "azure",
+            Self::VertexAi => "vertex_ai",
+            Self::Bedrock => "bedrock",
+            Self::Xai => "xai",
+            Self::Other(name) => name,
         }
     }
 }
@@ -112,7 +128,7 @@ where
     #[error(transparent)]
     Limits(#[from] ApiLimitError),
     #[error(transparent)]
-    Timeout(#[from] connection::TimeoutValueError),
+    Timeout(#[from] TimeoutError),
     #[error("LiteLLM doesn't support {provider} for 'cancel_batch'")]
     Unsupported { provider: String },
     #[error(transparent)]
@@ -144,7 +160,7 @@ pub struct OpenAiCancelCall<'call> {
     pub api_key: Option<&'call SecretString>,
     pub organization: Option<&'call str>,
     pub request: &'call BatchIdRequest,
-    pub timeout: &'call CancelTimeout,
+    pub timeout: &'call FineTuningTimeout,
     pub max_retries: Option<i64>,
 }
 
@@ -156,7 +172,7 @@ pub struct AzureCancelCall<'call> {
     pub api_version: Option<&'call str>,
     pub azure_ad_token: Option<&'call SecretString>,
     pub request: &'call BatchIdRequest,
-    pub timeout: &'call CancelTimeout,
+    pub timeout: &'call FineTuningTimeout,
     pub max_retries: Option<i64>,
 }
 
@@ -168,7 +184,7 @@ pub struct VertexCancelCall<'call> {
     pub vertex_project: Option<&'call str>,
     pub vertex_location: Option<&'call str>,
     pub vertex_credentials: Option<&'call SecretString>,
-    pub timeout: &'call CancelTimeout,
+    pub timeout: &'call FineTuningTimeout,
     pub max_retries: Option<i64>,
 }
 
@@ -178,7 +194,7 @@ pub struct XaiCancelCall<'call> {
     pub batch_id: &'call str,
     pub api_base: Option<&'call str>,
     pub api_key: Option<&'call SecretString>,
-    pub timeout: &'call CancelTimeout,
+    pub timeout: &'call FineTuningTimeout,
 }
 
 // the source forwards its whole kwargs dict to the bedrock handler, which only names credential fields
