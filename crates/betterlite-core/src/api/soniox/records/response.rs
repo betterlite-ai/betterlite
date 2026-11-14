@@ -176,20 +176,20 @@ fn set_language(
     if !has_language {
         return Ok(());
     }
-    let mut languages: Vec<&str> = Vec::new();
+    let mut seen: Vec<&str> = Vec::new();
     for token in tokens {
         let language = token.language.as_deref().filter(|value| !value.is_empty());
         let Some(language) = language else {
             continue;
         };
-        if !languages.contains(&language) {
-            languages.push(language);
+        if !seen.contains(&language) {
+            seen.push(language);
         }
     }
-    let Some(language) = languages.first() else {
+    let Some(language) = seen.first() else {
         return Ok(());
     };
-    if languages.len() != 1 {
+    if seen.len() != 1 {
         return Ok(());
     }
     let encoded = to_value(language).map_err(|source| RecordsError::Value {
