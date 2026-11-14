@@ -1,5 +1,6 @@
 use betterlite_config::sections::alert_settings::types::AlertType;
 use betterlite_config::sections::alert_settings::webhooks::WebhookUrl;
+use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
