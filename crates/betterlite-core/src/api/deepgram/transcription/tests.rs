@@ -14,7 +14,7 @@ use betterlite_openai::api::audio_file_input::{
 use betterlite_openai::api::transcription_contract::AudioTranscriptionData;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use rstest::rstest;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 use serde_json::json;
 
@@ -51,6 +51,64 @@ fn params(value: impl Serialize) -> Object {
 
 fn url(api_base: Option<&str>, optional_params: impl Serialize) -> String {
     config(None).complete_url(api_base, "nova-3", &params(optional_params))
+}
+
+fn environment(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
+    entries
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
+#[test]
+fn deepgram_transcription_settings_default_to_the_hosted_base_and_no_key() {
+    let settings = DeepgramTranscriptionConfig::from_environment(&environment(&[]));
+
+    assert!(settings.api_key.is_none());
+    assert_eq!(settings.api_base, "https://api.deepgram.com/v1");
+}
+
+#[test]
+fn deepgram_transcription_settings_read_the_environment() {
+    let settings = DeepgramTranscriptionConfig::from_environment(&environment(&[
+        ("DEEPGRAM_API_KEY", "server-key"),
+        ("DEEPGRAM_API_BASE", "https://proxy.test/v1"),
+    ]));
+
+    assert_eq!(
+        settings.api_key.as_ref().map(ExposeSecret::expose_secret),
+        Some("server-key")
+    );
+    assert_eq!(settings.api_base, "https://proxy.test/v1");
+}
+
+#[test]
+fn deepgram_transcription_settings_treat_empty_variables_as_unset() {
+    let settings = DeepgramTranscriptionConfig::from_environment(&environment(&[
+        ("DEEPGRAM_API_KEY", ""),
+        ("DEEPGRAM_API_BASE", ""),
+    ]));
+
+    assert!(settings.api_key.is_none());
+    assert_eq!(settings.api_base, "https://api.deepgram.com/v1");
+}
+
+#[test]
+fn deepgram_transcription_settings_read_each_variable_alone() {
+    let key_only =
+        DeepgramTranscriptionConfig::from_environment(&environment(&[("DEEPGRAM_API_KEY", "k")]));
+    let base_only = DeepgramTranscriptionConfig::from_environment(&environment(&[(
+        "DEEPGRAM_API_BASE",
+        "https://eu.test/v1",
+    )]));
+
+    assert_eq!(
+        key_only.api_key.as_ref().map(ExposeSecret::expose_secret),
+        Some("k")
+    );
+    assert_eq!(key_only.api_base, "https://api.deepgram.com/v1");
+    assert!(base_only.api_key.is_none());
+    assert_eq!(base_only.api_base, "https://eu.test/v1");
 }
 
 fn reply(alternative: impl Serialize) -> Vec<u8> {

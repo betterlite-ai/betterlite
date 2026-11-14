@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::io::{self, Read};
 use std::path::Path;
 
-use betterlite_config::sections::Sections;
 use betterlite_core::api::deepgram::transcription::request::{
     DeepgramTranscriptionConfig, SUPPORTED_OPENAI_PARAMS, map_openai_params, raw_audio_request,
 };
@@ -159,8 +158,7 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let (api_key, api_base) = Sections::deepgram_transcript_settings(&input.env);
-        let config = DeepgramTranscriptionConfig { api_key, api_base };
+        let config = DeepgramTranscriptionConfig::from_environment(&input.env);
         let answers = input
             .steps
             .iter()
