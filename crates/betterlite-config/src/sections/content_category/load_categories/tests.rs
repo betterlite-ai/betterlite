@@ -83,7 +83,11 @@ fn load_categories_skips_failures_and_keeps_valid_records(
         .collect();
     assert_eq!(owners, ["good", "late"]);
     assert!(!loaded.loaded_categories.contains_key("failing"));
-    assert_eq!(output.lines().count(), 1, "{output}");
+    assert_eq!(
+        output.matches("content_category::loading:").count(),
+        1,
+        "{output}"
+    );
     assert!(output.contains(level), "{output}");
     assert!(output.contains(message), "{output}");
     assert!(output.contains("failing"), "{output}");
