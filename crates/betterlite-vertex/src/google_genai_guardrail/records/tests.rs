@@ -30,6 +30,10 @@ fn json(source: &str) -> Json {
     r#"{"systemInstruction":null,"system_instruction":{"parts":[{"text":"snake"}]}}"#,
     &["snake"]
 )]
+#[case::root_snake_before_config_camel(
+    r#"{"system_instruction":{"parts":[{"text":"snake"}]},"config":{"systemInstruction":{"parts":[{"text":"config"}]}}}"#,
+    &["snake"]
+)]
 #[case::empty_root_value_blocks_the_config(
     r#"{"systemInstruction":"","config":{"systemInstruction":{"parts":[{"text":"config"}]}}}"#,
     &[]
@@ -129,6 +133,10 @@ fn request_write_back_rewrites_only_located_text_fields() {
 #[case::config_snake(
     r#"{"config":{"system_instruction":{"role":"system","parts":[{"text":"old"}]}}}"#,
     r#"{"config":{"system_instruction":{"role":"system","parts":[{"text":"SYS"}]}}}"#
+)]
+#[case::root_snake_before_config_camel(
+    r#"{"system_instruction":{"role":"system","parts":[{"text":"old"}]},"config":{"systemInstruction":{"role":"system","parts":[{"text":"config"}]}}}"#,
+    r#"{"system_instruction":{"role":"system","parts":[{"text":"SYS"}]},"config":{"systemInstruction":{"role":"system","parts":[{"text":"config"}]}}}"#
 )]
 fn system_instruction_write_back_reaches_the_selected_field(
     #[case] source: &str,
@@ -290,9 +298,10 @@ fn data_lines_are_scanned_without_a_space(#[case] chunk: &[u8]) {
 
 #[test]
 fn each_chunk_decodes_with_replacement_before_the_join() {
-    let payload = "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"é\"}]}}]}\r\n\r\n";
+    let payload =
+        "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"\u{e9}\"}]}}]}\r\n\r\n";
     let bytes = payload.as_bytes();
-    let index = payload.find('é').unwrap();
+    let index = payload.find('\u{e9}').unwrap();
     let (first, second) = bytes.split_at(index.saturating_add(1));
     assert_eq!(
         decode_google_guardrail_sse(&[first, second]),

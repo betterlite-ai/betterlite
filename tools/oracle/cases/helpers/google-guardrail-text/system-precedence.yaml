@@ -24,5 +24,10 @@ call:
       - function: request
         data:
           config: {system_instruction: {parts: [{text: config-snake}]}}
+      - function: request
+        data:
+          system_instruction: {parts: [{text: root-snake}]}
+          config: {systemInstruction: {parts: [{text: config-camel}]}}
+        replacement: [masked]
 env: {}
 compare: {ignore: []}
