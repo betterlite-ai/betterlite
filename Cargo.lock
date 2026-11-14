@@ -1431,6 +1431,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-secret-managers",
  "betterlite-secrets",
+ "betterlite-vertex",
  "chrono",
  "fancy-regex 0.19.2",
  "indexmap 2.14.2",
