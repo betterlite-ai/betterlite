@@ -301,6 +301,8 @@ PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ..
             {"github_api_url": " https://example.com/ "},
             {"github_api_url": "http://example.com"},
             {"github_api_url": "https://user:pass@example.com"},
+            {"github_api_url": "https://:pass@example.com"},
+            {"github_api_url": "https://user@example.com"},
             {"github_api_url": "https://example.com?q=1"},
             {"github_api_url": "https://example.com#f"},
             {"github_api_url": ""},
@@ -310,6 +312,9 @@ PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ..
             {"repos": ["bad repo"]},
             {"repos": ["a/../b"]},
             {"repos": ["a/b", "."]},
+            {"repos": ["./b"]},
+            {"repos": ["a/.."]},
+            {"repos": [" owner/repo "]},
             {"estimator_prompt": "  hi  "},
             {"estimator_prompt": "   "},
             {"estimator_prompt": "x" * 20000},
@@ -328,6 +333,7 @@ PROBES: tuple[tuple[type[BaseModel], type[BaseModel], tuple[JsonValue, ...]], ..
             {"update_interval_minutes": math.nan},
             {"identity_map": {"User": "User@Example.COM"}},
             {"identity_map": {"user": "user@users.noreply.github.com"}},
+            {"identity_map": {"user": " user@example.com "}},
             {"identity_map": {"user": "not-an-email"}},
             {"identity_map": {"bad login": "user@example.com"}},
             {"identity_map": {"User": "a@example.com", "user": "b@example.com"}},
@@ -654,6 +660,14 @@ def test_constant_names_match() -> None:
     assert roi_calculator.DEFAULT_PROMPT == LiteLLMRoi.DEFAULT_PROMPT
 
 
+@pytest.mark.parametrize("payload", [{}, {"identity_map": {"User": "u@example.com"}}])
+def test_settings_repr_names_match(payload: dict[str, JsonValue]) -> None:
+    # the repr shows that identity_map stays a read-only mappingproxy, as in LiteLLM
+    ours = roi_calculator.ROISettings.model_validate(payload)
+    theirs = LiteLLMRoi.ROISettings.model_validate(payload)
+    assert repr(ours) == repr(theirs)
+
+
 @pytest.mark.parametrize(("ours", "theirs", "payload"), CASES)
 def test_behavior_names_match(
     ours: type[BaseModel], theirs: type[BaseModel], payload: JsonValue,
@@ -661,7 +675,7 @@ def test_behavior_names_match(
     try:
         # ROISettings keeps identity_map as a mappingproxy, which pydantic doesn't write as JSON
         expected: dict[str, JsonValue] = theirs.model_validate(payload).model_dump(
-            mode="json", fallback=dict,
+            mode="json", fallback=dict[str, str],
         )
     except ValidationError as error:
         with pytest.raises(ValidationError) as raised:
@@ -673,7 +687,7 @@ def test_behavior_names_match(
         ]
         return
     validated: dict[str, JsonValue] = ours.model_validate(payload).model_dump(
-        mode="json", fallback=dict,
+        mode="json", fallback=dict[str, str],
     )
     assert validated == expected
 
@@ -687,5 +701,3 @@ def test_attribute_names_match() -> None:
     theirs: dict[str, JsonValue] = reference.model_dump(mode="json")
     assert ours == theirs
     assert ours == {"choices": [{"finish_reason": "stop", "message": {"content": "x"}}]}
-
-

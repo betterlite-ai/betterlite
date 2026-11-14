@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+
 class ROIMetricsResponse(BaseModel):
     matched_spend: float
     output_hours: float
