@@ -1,0 +1,14 @@
+kind: helper
+name: agentcore-transform-config-seed
+call:
+  b4804:
+    {
+      "function": "config",
+      "request_id": "req-1",
+      "params": {"message": {"kind": "message", "role": "user", "parts": []}},
+      "litellm_params": null,
+      "answer": {"status": 200, "body": {"jsonrpc": "2.0"}},
+      "stream_answer": {"status": 200, "content_type": "text/event-stream", "lines": ["data: {}"]},
+    }
+env: {}
+compare: {ignore: []}

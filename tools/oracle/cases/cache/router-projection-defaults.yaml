@@ -1,0 +1,59 @@
+kind: helper
+name: cache-router-projection-defaults
+call:
+  b4125:
+    operation: router_projection
+    probes:
+      - models: [claude-alias]
+        messages: [{role: system, content: be nice}, {role: user, content: hello}]
+        global_enable: true
+        alias_map: {claude-alias: anthropic/claude-sonnet-4-5}
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - models: [gpt-4o, claude-alias]
+        messages: [{role: system, content: be nice}, {role: user, content: hello}]
+        global_enable: true
+        alias_map: {claude-alias: anthropic/claude-sonnet-4-5}
+        model_cost:
+          gpt-4o: {litellm_provider: openai, supports_prompt_caching: true}
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - models: [claude-alias]
+        messages: [{role: system, content: be nice}, {role: user, content: hello}]
+        alias_map: {claude-alias: anthropic/claude-sonnet-4-5}
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - models: [claude-alias]
+        messages: [{role: system, content: be nice}, {role: user, content: hello}]
+        enable_prompt_caching: true
+        alias_map: {claude-alias: anthropic/claude-sonnet-4-5}
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - models: [claude-alias]
+        messages: [{role: user, content: hello, cache_control: {type: ephemeral}}]
+        global_enable: true
+        alias_map: {claude-alias: anthropic/claude-sonnet-4-5}
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - models: [claude-alias]
+        messages: [{role: user, content: hello}]
+        request_kwargs: {system: [{type: text, text: be nice, cache_control: {type: ephemeral}}]}
+        global_enable: true
+        alias_map: {claude-alias: anthropic/claude-sonnet-4-5}
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - models: [claude-alias]
+        messages: [{role: user, content: hello}]
+        ttl: 1h
+        global_enable: true
+        alias_map: {claude-alias: anthropic/claude-sonnet-4-5}
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+env: {}
+compare: {ignore: []}

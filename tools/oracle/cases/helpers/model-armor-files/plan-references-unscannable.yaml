@@ -1,0 +1,19 @@
+kind: helper
+name: plan-references-unscannable
+call:
+  b3733:
+    function: plan_file_scans
+    messages:
+      - role: user
+        content:
+          - {type: document, source: {}}
+          - {type: document, source: {data: "", media_type: application/pdf}}
+          - {type: document, source: {data: null, media_type: application/pdf}}
+          - {type: file, file: {file_data: "gs://bucket/doc.pdf"}}
+          - {type: file, file: {file_data: "https://example.com/doc.pdf"}}
+          - {type: file, file: {file_data: "  HTTPS://Example.com/Doc.pdf  "}}
+          - {type: file, file: {file_data: "http://example.com/doc.pdf"}}
+          - {type: file, file: {file_data: ""}}
+          - {type: file, file: {}}
+env: {}
+compare: {ignore: []}
