@@ -48,5 +48,5 @@ pitfalls:
 - The surface test must not call a provider on the network. Use B6040's local server only.
 review_level: standard
 budget:
-  max_changed_lines: 300
+  max_changed_lines: 1500
   max_new_expects: 0
