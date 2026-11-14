@@ -1,11 +1,12 @@
 import subprocess
 import sys
-from typing import Final, TypedDict
+from typing import Final, TypedDict, get_type_hints
 
 import pytest
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from betterlite.types.proxy.guardrails.guardrail_hooks import (
+    compresr,
     conduct,
     crowdstrike_aidr,
     deepkeep,
@@ -792,6 +793,7 @@ def test_enum_names() -> None:
     applicable = [member.value for member in dynamoai.PolicyApplicableTo]
     assert applicable == ["INPUT", "OUTPUT", "ALL"]
     assert dynamoai.DynamoTextType("MODEL_INPUT") is dynamoai.DynamoTextType.MODEL_INPUT
+    assert str(dynamoai.DynamoTextType.MODEL_INPUT) == "MODEL_INPUT"
 
 
 def test_tool_param_names() -> None:
@@ -799,6 +801,17 @@ def test_tool_param_names() -> None:
     param = generic_guardrail_api.GuardrailToolParam.model_validate(payload)
     assert param.type == "code_interpreter"
     assert param.model_dump() == payload
+
+
+def test_open_json_names() -> None:
+    generic_hints = get_type_hints(generic_guardrail_api.GenericGuardrailAPIOptionalParams)
+    assert generic_hints["additional_provider_specific_params"] == dict[str, JsonValue] | None
+    compresr_hints = get_type_hints(compresr.CompresrGuardrailOptionalParams)
+    assert compresr_hints["compression_params"] == dict[str, JsonValue] | None
+    dynamo_hints = get_type_hints(dynamoai.DynamoAIProcessedResult)
+    assert dynamo_hints["violation_details"] == dict[str, JsonValue]
+    enkrypt_hints = get_type_hints(enkryptai.EnkryptAIGuardrailConfigs)
+    assert enkrypt_hints["detectors"] == dict[str, JsonValue] | None
 
 
 def test_coerce_names(report: FullReport) -> None:
