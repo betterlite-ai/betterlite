@@ -1,6 +1,6 @@
 from typing import Literal, TypeAlias, TypedDict
 
-from litellm.proxy.management_endpoints.scim.scim_v2 import (  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L487-L851
+from litellm.proxy.management_endpoints.scim.scim_v2 import (  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L487-L851
     _admitted_member_ids,
     _AmbiguousMember,
     _json_object_fields,
