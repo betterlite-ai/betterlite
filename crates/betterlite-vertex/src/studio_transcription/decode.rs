@@ -90,29 +90,18 @@ fn usage_record(usage: &Usage) -> Result<Json, StudioTranscriptionError> {
         .total_input_tokens
         .checked_sub(audio_tokens)
         .ok_or(StudioTranscriptionError::UsageOverflow)?;
+    let token_count = |value: i64| Json::Number(Number::from(value));
+    let total_input = usage.total_input_tokens;
+    let total_output = usage.total_output_tokens;
+    let total = usage.total_tokens;
     let mut details = IndexMap::new();
-    details.insert(
-        "audio_tokens".to_owned(),
-        Json::Number(Number::from(audio_tokens)),
-    );
-    details.insert(
-        "text_tokens".to_owned(),
-        Json::Number(Number::from(text_tokens)),
-    );
+    details.insert("audio_tokens".to_owned(), token_count(audio_tokens));
+    details.insert("text_tokens".to_owned(), token_count(text_tokens));
     let mut record = IndexMap::new();
     record.insert("type".to_owned(), Json::Text("tokens".to_owned()));
-    record.insert(
-        "input_tokens".to_owned(),
-        Json::Number(Number::from(usage.total_input_tokens)),
-    );
-    record.insert(
-        "output_tokens".to_owned(),
-        Json::Number(Number::from(usage.total_output_tokens)),
-    );
-    record.insert(
-        "total_tokens".to_owned(),
-        Json::Number(Number::from(usage.total_tokens)),
-    );
+    record.insert("input_tokens".to_owned(), token_count(total_input));
+    record.insert("output_tokens".to_owned(), token_count(total_output));
+    record.insert("total_tokens".to_owned(), token_count(total));
     record.insert("input_token_details".to_owned(), Json::Object(details));
     Ok(Json::Object(record))
 }

@@ -9,9 +9,8 @@ use betterlite_openai::api::transcription_contract::{
 use betterlite_openai::openai_base_config::Object;
 use indexmap::IndexMap;
 
-use crate::studio_interactions::credentials::{
-    self, RequestHeaders, StudioParams, resolve_api_key,
-};
+use crate::studio_interactions::credentials as studio;
+use crate::studio_interactions::credentials::{RequestHeaders, StudioParams, resolve_api_key};
 use crate::studio_transcription::SUPPORTED_PARAMS;
 use crate::studio_transcription::error::StudioTranscriptionError;
 use crate::studio_transcription::types::{
@@ -43,11 +42,7 @@ pub fn validate_environment(
     if resolve_api_key(params, settings).is_none() {
         return Err(StudioTranscriptionError::MissingApiKey);
     }
-    Ok(credentials::validate_environment(
-        caller,
-        Some(params),
-        settings,
-    ))
+    Ok(studio::validate_environment(caller, Some(params), settings))
 }
 
 fn wants_word_timestamps(optional: &Object) -> bool {

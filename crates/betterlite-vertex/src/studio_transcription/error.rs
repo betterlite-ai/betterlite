@@ -4,13 +4,9 @@ use crate::gemini_response::decode::MAX_RESPONSE_BYTES;
 
 #[derive(Debug, Error)]
 pub enum StudioTranscriptionError {
-    #[error(
-        "Google API key is required. Set GOOGLE_API_KEY or GEMINI_API_KEY environment variable."
-    )]
+    #[error("Google API key is required. Set GOOGLE_API_KEY or GEMINI_API_KEY.")]
     MissingApiKey,
-    #[error(
-        "the Gemini Interactions reply is {size} bytes, over the {MAX_RESPONSE_BYTES} byte limit"
-    )]
+    #[error("the reply is {size} bytes, over the {MAX_RESPONSE_BYTES} byte limit")]
     TooLarge { size: usize },
     #[error("the Gemini Interactions reply is not JSON")]
     NotJson {

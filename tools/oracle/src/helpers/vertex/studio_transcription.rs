@@ -50,25 +50,6 @@ pub(crate) enum Step {
     },
 }
 
-fn upstream(
-    status: u16,
-    body: &str,
-    headers: &[(String, String)],
-) -> Result<UpstreamResponse, Box<HelperError>> {
-    let mut map = HeaderMap::new();
-    for (name, value) in headers {
-        map.insert(
-            HeaderName::try_from(name.as_str()).or_config_error()?,
-            HeaderValue::try_from(value.as_str()).or_config_error()?,
-        );
-    }
-    Ok(UpstreamResponse {
-        status,
-        headers: map,
-        body: body.as_bytes().to_vec(),
-    })
-}
-
 // a raised step keeps only LiteLLM's status, since helper answers compare no error class or message
 fn outcome<T>(result: Result<T, StudioTranscriptionError>) -> Result<Value, Box<HelperError>>
 where
@@ -88,33 +69,6 @@ fn rendered_headers(headers: &RequestHeaders) -> IndexMap<String, String> {
         .collect()
 }
 
-fn environment_step(
-    headers: &[(String, String)],
-    api_key: Option<&str>,
-) -> Result<Value, Box<HelperError>> {
-    let caller: IndexMap<String, String> = headers
-        .iter()
-        .map(|(name, value)| (name.clone(), value.clone()))
-        .collect();
-    let params = StudioParams {
-        api_key: api_key.map(SecretString::from),
-    };
-    outcome(
-        validate_environment(&caller, &params, &Settings::default())
-            .map(|headers| rendered_headers(&headers)),
-    )
-}
-
-fn request_step(model: &str, content: &str, optional: &Object) -> Result<Value, Box<HelperError>> {
-    let audio = ProcessedAudioFile {
-        file_content: content.as_bytes().to_vec(),
-        filename: "audio.wav".to_owned(),
-        content_type: "audio/wav".to_owned(),
-    };
-    let data = transform_audio_request(model, &audio, optional).or_config_error()?;
-    serde_json::to_value(data.data).or_config_error()
-}
-
 fn step(step: &Step) -> Result<Value, Box<HelperError>> {
     match step {
         Step::Supported => serde_json::to_value(SUPPORTED_PARAMS).or_config_error(),
@@ -123,18 +77,47 @@ fn step(step: &Step) -> Result<Value, Box<HelperError>> {
             optional,
             non_default,
         } => serde_json::to_value(map_openai_params(non_default, optional)).or_config_error(),
-        Step::Environment { headers, api_key } => environment_step(headers, api_key.as_deref()),
+        Step::Environment { headers, api_key } => {
+            let caller: IndexMap<String, String> = headers
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect();
+            let params = StudioParams {
+                api_key: api_key.as_deref().map(SecretString::from),
+            };
+            let checked = validate_environment(&caller, &params, &Settings::default());
+            outcome(checked.map(|headers| rendered_headers(&headers)))
+        }
         Step::Request {
             model,
             content,
             optional,
-        } => request_step(model, content, optional),
+        } => {
+            let audio = ProcessedAudioFile {
+                file_content: content.as_bytes().to_vec(),
+                filename: "audio.wav".to_owned(),
+                content_type: "audio/wav".to_owned(),
+            };
+            let data = transform_audio_request(model, &audio, optional).or_config_error()?;
+            serde_json::to_value(data.data).or_config_error()
+        }
         Step::Reply {
             status,
             headers,
             body,
         } => {
-            let reply = upstream(*status, body, headers)?;
+            let mut map = HeaderMap::new();
+            for (name, value) in headers {
+                map.insert(
+                    HeaderName::try_from(name.as_str()).or_config_error()?,
+                    HeaderValue::try_from(value.as_str()).or_config_error()?,
+                );
+            }
+            let reply = UpstreamResponse {
+                status: *status,
+                headers: map,
+                body: body.as_bytes().to_vec(),
+            };
             outcome(decode_studio_transcription(&reply))
         }
     }
@@ -146,11 +129,7 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let answers = input
-            .steps
-            .iter()
-            .map(step)
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(Value::Array(answers))
+        let answers: Result<Vec<_>, _> = input.steps.iter().map(step).collect();
+        Ok(Value::Array(answers?))
     }
 }
