@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-rag-store-null-create-name
+call:
+  vertex_rag_store:
+    calls:
+      - function: create_request
+        api_base: https://host/v1
+        optional_params: {name: null, metadata: {team: rag}}
+      - function: create_request
+        api_base: https://host/v1
+        optional_params: {metadata: null}
+env: {}
+compare: {ignore: []}

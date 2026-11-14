@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-rag-store-zero-top-k
+call:
+  vertex_rag_store:
+    calls:
+      - function: search
+        vector_store_id: corpus
+        query: zero
+        api_base: https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1
+        litellm_params: {vertex_project: p, vertex_location: us-central1}
+        optional_params: {max_num_results: 0}
+env: {}
+compare: {ignore: []}
