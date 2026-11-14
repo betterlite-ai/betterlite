@@ -1,9 +1,10 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::net::TcpListener;
 use std::time::Duration;
 
-use betterlite_error::error::details::ResponseDetails;
+use betterlite_error::error::details::{ResponseDetails, TimeoutDetails};
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_http::interactions::base::clients::HttpClients;
 use betterlite_logging::logging_state::correlation::{
@@ -20,6 +21,7 @@ use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 
 use super::creation::{acreate, create};
+use super::errors::{failure as classify, identity_of};
 use super::listing::{alist, list};
 use super::{
     AgentCollection, AgentCollectionFailure, AgentCollectionHandled, AgentCreation, AgentFailure,
@@ -213,6 +215,13 @@ fn api_connection(class: &ErrorClass) -> &ErrorContext {
         panic!("the class should be an api connection error");
     };
     context
+}
+
+fn timed_out(class: &ErrorClass) -> &TimeoutDetails {
+    let ErrorClass::Timeout(details) = class else {
+        panic!("the class should be a timeout");
+    };
+    details
 }
 
 #[test]
@@ -597,6 +606,90 @@ fn list_reports_an_unsupported_provider_with_an_empty_model() {
     assert_eq!(fixture.logging.call_type, "list_agents");
 }
 
+#[test]
+fn list_uses_the_provider_status_to_classify_a_provider_error() {
+    let provider = Provider::start(404, "the agent is gone", None);
+    let kwargs = map(&[("api_base", text(&provider.url()))]);
+    let mut fixture = Fixture::new();
+
+    let failure = failure_of(list(fixture.collection(), list_call(&kwargs)));
+
+    let details = not_found(&failure.class);
+    assert_eq!(details.status.0, 404);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("gemini"));
+    assert_eq!(
+        details.message,
+        "gemini: Vertex AI could not find the requested resource"
+    );
+}
+
+#[test]
+fn list_rejects_a_provider_kwarg_of_the_wrong_type() {
+    let kwargs = map(&[("custom_llm_provider", Json::Bool(true))]);
+    let mut fixture = Fixture::new();
+
+    let failure = failure_of(list(fixture.collection(), list_call(&kwargs)));
+
+    let details = bad_request(&failure.class);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("gemini"));
+    assert_eq!(details.body_param.as_deref(), Some("custom_llm_provider"));
+}
+
+#[test]
+fn list_forwards_extra_headers_to_the_provider() {
+    let provider = Provider::start(200, "{}", None);
+    let kwargs = map(&[("api_base", text(&provider.url()))]);
+    let mut fixture = Fixture::new();
+    let call = AgentListing {
+        extra_headers: headers(&[("x-extra", "yes")]),
+        ..list_call(&kwargs)
+    };
+
+    completed(list(fixture.collection(), call).expect("the provider answers"));
+
+    let sent = provider.sent();
+    assert!(sent.starts_with("GET /v1beta/agents HTTP/1.1"), "{sent}");
+    assert!(sent.contains("x-extra: yes\r\n"), "{sent}");
+}
+
+#[test]
+fn list_keeps_running_when_the_async_flag_is_not_true() {
+    let provider = Provider::start(200, "{}", None);
+    let kwargs = map(&[
+        ("api_base", text(&provider.url())),
+        ("alist_agents", Json::Bool(false)),
+    ]);
+    let mut fixture = Fixture::new();
+
+    let output = completed(list(fixture.collection(), list_call(&kwargs)).expect("answers"));
+
+    assert_eq!(output, "{}");
+    let sent = provider.sent();
+    assert!(sent.starts_with("GET /v1beta/agents HTTP/1.1"), "{sent}");
+    assert!(!sent.contains("alist_agents"));
+}
+
+#[tokio::test]
+async fn list_returns_a_pending_call_when_the_async_flag_is_true() {
+    let provider = Provider::start(200, "{}", None);
+    let kwargs = map(&[
+        ("api_base", text(&provider.url())),
+        ("alist_agents", Json::Bool(true)),
+    ]);
+    let mut fixture = Fixture::new();
+
+    let pending_call =
+        pending(list(fixture.collection(), list_call(&kwargs)).expect("the call prepares"));
+    let output = pending_call.await.expect("the provider answers");
+
+    assert_eq!(output, "{}");
+    let sent = provider.sent();
+    assert!(sent.starts_with("GET /v1beta/agents HTTP/1.1"), "{sent}");
+    assert!(!sent.contains("alist_agents"));
+}
+
 #[tokio::test]
 async fn alist_awaits_the_list_the_async_entry_starts() {
     let provider = Provider::start(200, "{}", None);
@@ -643,6 +736,46 @@ async fn alist_takes_the_default_provider_over_a_kwarg() {
     );
 }
 
+#[tokio::test]
+async fn alist_uses_the_provider_status_to_classify_a_provider_error() {
+    let provider = Provider::start(404, "the agent is gone", None);
+    let kwargs = map(&[("api_base", text(&provider.url()))]);
+    let mut fixture = Fixture::new();
+
+    let failure = alist(fixture.collection(), list_call(&kwargs))
+        .await
+        .expect_err("the provider refuses");
+
+    let details = not_found(&failure.class);
+    assert_eq!(details.status.0, 404);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("gemini"));
+}
+
+// a list request carries no deadline of its own, so this feeds the timeout a failed GET would report into the same classifier
+#[test]
+fn list_keeps_a_transport_timeout_as_a_connection_error() {
+    let provider = Provider::start(200, "{}", Some(Duration::from_millis(300)));
+    let kwargs = map(&[("api_base", text(&provider.url()))]);
+    let mut fixture = Fixture::new();
+    let call = AgentCreation {
+        timeout: Some(Duration::from_millis(20)),
+        ..create_call("runner", &kwargs)
+    };
+    let transport = failure_of(create(fixture.collection(), call)).error;
+
+    let listed = classify(
+        transport,
+        identity_of("", "gemini", false),
+        &fixture.redactor,
+    );
+
+    let context = api_connection(&listed.class);
+    assert_eq!(listed.class.metadata().status_code, 500);
+    assert_eq!(context.model.as_deref(), Some(""));
+    assert_eq!(context.provider.as_deref(), Some("gemini"));
+}
+
 #[test]
 fn create_uses_the_provider_status_to_classify_a_provider_error() {
     let provider = Provider::start(404, "the agent is gone", None);
@@ -685,7 +818,7 @@ fn create_uses_the_provider_message_to_classify_a_provider_error() {
 }
 
 #[test]
-fn create_wraps_a_transport_failure_as_a_connection_error() {
+fn create_reports_a_transport_timeout_as_a_timeout_error() {
     let provider = Provider::start(200, "{}", Some(Duration::from_millis(300)));
     let kwargs = map(&[("api_base", text(&provider.url()))]);
     let mut fixture = Fixture::new();
@@ -696,13 +829,11 @@ fn create_wraps_a_transport_failure_as_a_connection_error() {
 
     let failure = failure_of(create(fixture.collection(), call));
 
-    let context = api_connection(&failure.class);
-    assert_eq!(
-        context.message,
-        "GeminiException - the request to the provider failed"
-    );
-    assert_eq!(context.model.as_deref(), Some("runner"));
-    assert_eq!(context.provider.as_deref(), Some("gemini"));
+    let details = timed_out(&failure.class);
+    assert_eq!(details.original_status.0, 408);
+    assert_eq!(details.context.message, "the request to gemini timed out");
+    assert_eq!(details.context.model.as_deref(), Some("runner"));
+    assert_eq!(details.context.provider.as_deref(), Some("gemini"));
     assert!(
         fixture
             .records
@@ -710,6 +841,45 @@ fn create_wraps_a_transport_failure_as_a_connection_error() {
             .iter()
             .all(|call| !call.starts_with("post|"))
     );
+}
+
+#[tokio::test]
+async fn acreate_reports_a_transport_timeout_as_a_timeout_error() {
+    let provider = Provider::start(200, "{}", Some(Duration::from_millis(300)));
+    let kwargs = map(&[("api_base", text(&provider.url()))]);
+    let mut fixture = Fixture::new();
+    let call = AgentCreation {
+        timeout: Some(Duration::from_millis(20)),
+        ..create_call("runner", &kwargs)
+    };
+
+    let failure = acreate(fixture.collection(), call)
+        .await
+        .expect_err("the provider does not answer in time");
+
+    let details = timed_out(&failure.class);
+    assert_eq!(details.original_status.0, 408);
+    assert_eq!(details.context.model.as_deref(), Some("runner"));
+}
+
+#[test]
+fn create_reports_a_refused_connection_as_an_api_connection_error() {
+    let closed = TcpListener::bind("127.0.0.1:0").expect("the fixture binds");
+    let address = closed.local_addr().expect("the address is readable");
+    drop(closed);
+    let kwargs = map(&[("api_base", text(&format!("http://{address}")))]);
+    let mut fixture = Fixture::new();
+
+    let failure = failure_of(create(fixture.collection(), create_call("runner", &kwargs)));
+
+    let context = api_connection(&failure.class);
+    assert_eq!(failure.class.metadata().status_code, 500);
+    assert_eq!(
+        context.message,
+        "GeminiException - the request to the provider failed"
+    );
+    assert_eq!(context.model.as_deref(), Some("runner"));
+    assert_eq!(context.provider.as_deref(), Some("gemini"));
 }
 
 #[test]
@@ -721,6 +891,7 @@ fn create_sends_the_collection_request_timeout() {
 
     let failure = failure_of(create(fixture.collection(), create_call("runner", &kwargs)));
 
-    let context = api_connection(&failure.class);
-    assert_eq!(context.model.as_deref(), Some("runner"));
+    let details = timed_out(&failure.class);
+    assert_eq!(details.original_status.0, 408);
+    assert_eq!(details.context.model.as_deref(), Some("runner"));
 }

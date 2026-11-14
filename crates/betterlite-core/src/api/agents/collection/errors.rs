@@ -1,8 +1,10 @@
+use std::io::{Error as IoError, ErrorKind};
+
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::error::details::ResponseDetails;
-use betterlite_error::error::{ErrorClass, ErrorContext};
+use betterlite_error::error::{ErrorClass, ErrorContext, TaxonomyError};
 use betterlite_http::interactions::agents_create_read::AgentRequestError;
-use betterlite_http::interactions::base::ClientError;
+use betterlite_http::interactions::base::{ClientError, RequestFailure};
 use betterlite_redact::secret::Redactor;
 
 use super::{AgentCollectionError, AgentCollectionFailure, AgentFailure, AgentPreparationError};
@@ -10,12 +12,15 @@ use super::{AgentCollectionError, AgentCollectionFailure, AgentFailure, AgentPre
 pub(super) struct AgentCallIdentity {
     model: String,
     provider: String,
+    // HTTPHandler.post turns a transport timeout into litellm.Timeout; HTTPHandler.get lets it reach the client as a connection error
+    post: bool,
 }
 
-pub(super) fn identity_of(model: &str, provider: &str) -> AgentCallIdentity {
+pub(super) fn identity_of(model: &str, provider: &str, post: bool) -> AgentCallIdentity {
     AgentCallIdentity {
         model: model.to_owned(),
         provider: provider.to_owned(),
+        post,
     }
 }
 
@@ -61,6 +66,14 @@ where
         AgentCollectionError::Request(
             AgentRequestError::Client(source) | AgentRequestError::Parameters(source),
         ) => raw_class(identity, &source.to_string(), None, redactor),
+        AgentCollectionError::Request(AgentRequestError::Transport(RequestFailure::Transport(
+            source,
+        ))) if identity.post && source.is_timeout() => TaxonomyError::Timeout {
+            provider: identity.provider.clone(),
+            model: Some(identity.model.clone()),
+            cause: IoError::new(ErrorKind::TimedOut, source.to_string()),
+        }
+        .classify(),
         AgentCollectionError::Request(AgentRequestError::Transport(source)) => {
             raw_class(identity, &source.to_string(), None, redactor)
         }

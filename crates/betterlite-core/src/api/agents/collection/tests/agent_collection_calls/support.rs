@@ -170,7 +170,16 @@ fn query_text(value: &JsonValue) -> Option<String> {
     }
 }
 
+// the real Gemini config raises its provider error for a failing status, as LiteLLM's _raise_for_status does
 fn decoded(response: &UpstreamResponse) -> Result<String, ProviderRefusal> {
+    if !(200..300).contains(&response.status_code) {
+        return Err(ProviderRefusal {
+            message: str::from_utf8(&response.body)
+                .unwrap_or_default()
+                .to_owned(),
+            status: Some(response.status_code),
+        });
+    }
     str::from_utf8(&response.body)
         .map(str::to_owned)
         .map_err(|_utf8| ProviderRefusal {

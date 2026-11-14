@@ -30,25 +30,24 @@ where
         let named = call.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
         failure(
             AgentCollectionError::Prepare(error),
-            identity_of("", named),
+            identity_of("", named, false),
             collection.redactor,
         )
     })?;
-    let identity = identity_of("", provider);
+    let identity = identity_of("", provider, false);
     let prepared = prepare_listing(collection.logging, &call, provider).map_err(|error| {
         failure(
             AgentCollectionError::Prepare(error),
-            identity_of("", provider),
+            identity_of("", provider, false),
             collection.redactor,
         )
     })?;
     let AgentCollection {
         config,
         clients,
-        logging: _,
         records,
         redactor,
-        request_timeout: _,
+        ..
     } = collection;
     if prepared.is_async {
         return Ok(AgentCollectionHandled::Pending(async move {
