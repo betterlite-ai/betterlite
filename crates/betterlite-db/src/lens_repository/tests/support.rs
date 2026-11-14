@@ -219,12 +219,20 @@ pub(crate) struct Recorder<Db> {
 }
 
 impl<Db: Database> Database for Recorder<Db> {
-    fn query_raw(&self, query: &str, args: &[SqlBind]) -> QueryFuture<'_> {
+    fn query_raw<'database>(
+        &'database self,
+        query: &'database str,
+        args: &'database [SqlBind],
+    ) -> QueryFuture<'database> {
         self.queries.lock().unwrap().push(query.to_owned());
         self.database.query_raw(query, args)
     }
 
-    fn execute_raw(&self, query: &str, args: &[SqlBind]) -> ExecuteFuture<'_> {
+    fn execute_raw<'database>(
+        &'database self,
+        query: &'database str,
+        args: &'database [SqlBind],
+    ) -> ExecuteFuture<'database> {
         self.database.execute_raw(query, args)
     }
 }

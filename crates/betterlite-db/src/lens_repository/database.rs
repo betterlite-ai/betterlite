@@ -4,7 +4,7 @@ use std::pin::Pin;
 use deadpool_postgres::GenericClient;
 use thiserror::Error;
 use tokio_postgres::Statement;
-use tokio_postgres::types::{ToSql, Type};
+use tokio_postgres::types::ToSql;
 
 use crate::daily_spend_sql::bind::SqlBind;
 
