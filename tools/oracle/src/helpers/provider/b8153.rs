@@ -3,10 +3,11 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use betterlite_openai::openai_base_config::Object;
+use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
 use betterlite_openai::passthrough::transformation::types::{
     PassthroughTarget, PassthroughUrlRequest,
 };
-use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::arguments::json::{Json, Object as Params};
 use betterlite_prompts::builtin::Message;
 use betterlite_prompts::factory::PromptFactory;
 use betterlite_prompts::factory::hub::{Hub, builtin_entries};
@@ -78,9 +79,9 @@ pub(crate) struct ParamsInput {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MapCase {
-    non_default: Object,
+    non_default: Params,
     #[serde(default)]
-    optional: Object,
+    optional: Params,
 }
 
 #[derive(Deserialize)]
@@ -166,7 +167,10 @@ impl Helper for Op {
     }
 }
 
-fn setup_result(result: Result<impl serde::Serialize, VllmSetupError>) -> Value {
+fn setup_result<T>(result: Result<T, VllmSetupError>) -> Value
+where
+    T: serde::Serialize,
+{
     match result {
         Ok(value) => json!({"ok": true, "value": value}),
         Err(error) => json!({"ok": false, "message": error.to_string()}),
@@ -307,7 +311,7 @@ fn one_request(
     context: &RequestContext<'_>,
     request: &RequestCase,
 ) -> HelperResult {
-    let mut options = Object::new();
+    let mut options = Params::new();
     map_openai_params(&openai_params(request), &mut options);
     match runtime.block_on(context.transform_request(
         &request.model,
@@ -324,8 +328,8 @@ fn one_request(
     }
 }
 
-fn openai_params(request: &RequestCase) -> Object {
-    let mut params = Object::new();
+fn openai_params(request: &RequestCase) -> Params {
+    let mut params = Params::new();
     let fields = [
         ("max_tokens", &request.max_tokens),
         ("temperature", &request.temperature),
@@ -340,8 +344,8 @@ fn openai_params(request: &RequestCase) -> Object {
     params
 }
 
-fn form(body: &RequestBody) -> Result<Object, Box<HelperError>> {
-    let mut form = Object::new();
+fn form(body: &RequestBody) -> Result<Params, Box<HelperError>> {
+    let mut form = Params::new();
     form.insert(String::from("model"), Json::Text(body.model.clone()));
     form.insert(
         String::from("inputs"),
@@ -369,7 +373,7 @@ fn form_text(value: &Json) -> Option<String> {
         Json::Bool(flag) => Some(flag.to_string()),
         Json::Number(number) => Some(number.to_string()),
         Json::Text(text) => Some(text.clone()),
-        Json::Array(_) | Json::Object(_) => None,
+        Json::List(_) | Json::Object(_) => None,
     }
 }
 

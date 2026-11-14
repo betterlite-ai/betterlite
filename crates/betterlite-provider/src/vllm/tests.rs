@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use betterlite_openai::error::{ProviderError, ProviderErrorParts};
 use betterlite_openai::hosted_vllm::chat::ChatConfig;
 use betterlite_openai::openai_base_config::{Headers, Object};
-use betterlite_openai::passthrough::transformation::BasePassthroughConfig;
+use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
 use betterlite_openai::passthrough::transformation::types::{
     PassthroughTarget, PassthroughUrlRequest,
 };
