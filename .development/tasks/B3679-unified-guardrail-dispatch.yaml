@@ -184,5 +184,5 @@ pitfalls:
   - "The transform path is chosen from the route alone, before any chunk arrives. A request with no route never uses it, whatever the first chunk looks like."
 review_level: standard
 budget:
-  max_changed_lines: 1500
-  max_new_expects: 0
+  max_changed_lines: 1900
+  max_new_expects: 2

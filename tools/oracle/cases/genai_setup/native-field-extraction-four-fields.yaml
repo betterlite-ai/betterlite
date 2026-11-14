@@ -1,0 +1,20 @@
+kind: helper
+name: genai-setup-native-field-extraction-four-fields
+call:
+  b3483:
+    setups:
+      - model: gemini/gemini-2.5-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        config: null
+        custom_llm_provider: null
+        tools: null
+        kwargs:
+          safetySettings: [{category: HARM_CATEGORY_HATE_SPEECH}]
+          toolConfig: {functionCallingConfig: {mode: AUTO}}
+          cachedContent: cache-1
+          labels: {team: x}
+          unrelated: 1
+        extra_body: null
+        with_logging: true
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,28 @@
+kind: probe
+name: repeated-tool-loop
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      feedback_signals:
+        turns:
+          - user_content: go
+            tool_calls:
+              - {id: call-1, type: function, function: {name: shell, arguments: "{}"}}
+            response_status: 200
+          - user_content: "go on"
+            tool_calls:
+              - {id: call-2, type: function, function: {name: shell, arguments: "{}"}}
+            response_status: 200
+          - user_content: continue
+            tool_calls:
+              - {id: call-3, type: function, function: {name: shell, arguments: "{}"}}
+            response_status: 200
+          - user_content: next
+            tool_calls:
+              - {id: call-4, type: function, function: {name: shell, arguments: '{"pwd":true}'}}
+            response_status: 200
+          - user_content: again
+            tool_calls:
+              - {id: call-5, type: function, function: {name: shell, arguments: "{}"}}
+            response_status: 200
