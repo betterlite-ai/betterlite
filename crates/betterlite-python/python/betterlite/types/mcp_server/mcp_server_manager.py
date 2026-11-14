@@ -292,9 +292,7 @@ class MCPServer(BaseModel):
 
     @property
     def is_oauth_passthrough(self) -> bool:
-        if self.auth_type not in (None, MCPAuth.none):
-            return False
-        if not self.extra_headers:
+        if self.auth_type not in (None, MCPAuth.none) or not self.extra_headers:
             return False
         if self.oauth_passthrough is not True:
             return False
