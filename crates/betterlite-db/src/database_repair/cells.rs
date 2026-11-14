@@ -225,7 +225,8 @@ impl Cells<'_> {
     }
 }
 
-pub fn decode_row(columns: &HeaderIndex, record: &StringRecord) -> TypedRow {
+#[must_use]
+pub(crate) fn decode_row(columns: &HeaderIndex, record: &StringRecord) -> TypedRow {
     let cells = Cells { columns, record };
     let Ok(token) = cells.required("token") else {
         return TypedRow {

@@ -33,7 +33,12 @@ impl DbAdminService for DatabaseRepairService {
                         lines: report_lines(&report),
                     })
                 }
-                other => Err(DbAdminError::Unregistered {
+                other @ (DbAdminCommand::Migrate(_)
+                | DbAdminCommand::DatabaseViews
+                | DbAdminCommand::DailyToolSpend(_)
+                | DbAdminCommand::KeyTotalSpend
+                | DbAdminCommand::KeyTotalSpendFromLogs
+                | DbAdminCommand::SpendPartition(_)) => Err(DbAdminError::Unregistered {
                     operation: other.operation().name(),
                 }),
             }
