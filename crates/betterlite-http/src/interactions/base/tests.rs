@@ -175,6 +175,26 @@ fn sync_client_verifies_a_certificate_without_an_override() {
     assert!(server.join().unwrap().is_err());
 }
 
+#[test]
+fn sync_client_keeps_a_policy_that_skips_verification_without_an_override() {
+    let authority = support::tls_authority();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = support::spawn_tls_server(authority, listener);
+    let mut clients = HttpClients::new(
+        support::policy(Verification::Disabled, None),
+        support::proxy_policy(&[]),
+    );
+
+    let client = clients.sync_client(&support::params("{}"), None).unwrap();
+    let outcome = client
+        .get(format!("https://localhost:{}/x", address.port()))
+        .send();
+
+    assert!(outcome.is_ok(), "{outcome:?}");
+    assert!(server.join().unwrap().is_ok());
+}
+
 #[tokio::test]
 async fn async_client_honors_ssl_verify_from_litellm_params() {
     let authority = support::tls_authority();
@@ -277,6 +297,30 @@ fn sync_client_sends_the_request_through_the_configured_proxy() {
     );
     assert!(
         sent.contains("proxy-authorization: Basic dXNlcjpzZWNyZXQ="),
+        "{sent}"
+    );
+}
+
+#[test]
+fn a_proxy_for_the_scheme_beats_the_all_proxy() {
+    let listener = support::listener();
+    let proxy = format!("http://{}", listener.local_addr().unwrap());
+    let serving = support::serve_on(listener, support::reply("200 OK", &[], "{}"), None);
+    let mut clients = HttpClients::new(
+        support::policy(Verification::Enabled, None),
+        support::proxy_policy(&[
+            ("ALL_PROXY", "http://127.0.0.1:1"),
+            ("HTTP_PROXY", proxy.as_str()),
+        ]),
+    );
+
+    let client = clients.sync_client(&support::params("{}"), None).unwrap();
+    let answer = client.get("http://127.0.0.1:1/x").send().unwrap();
+
+    assert_eq!(answer.status().as_u16(), 200);
+    let sent = serving.request.join().unwrap();
+    assert!(
+        sent.starts_with("GET http://127.0.0.1:1/x HTTP/1.1"),
         "{sent}"
     );
 }
