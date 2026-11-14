@@ -1,7 +1,7 @@
 #![cfg(test)]
 
-use std::fs;
-use std::path::Path;
+mod corpus;
+
 use std::pin::Pin;
 use std::sync::{Arc, Condvar, Mutex};
 use std::task::{Context, Poll, Waker};
@@ -50,7 +50,7 @@ use crate::google_genai::provider::GenAiProvider;
 const LINE_LIMIT: usize = 0x0010_0000;
 const SMALL_LINE_LIMIT: usize = 9;
 const NOW: &str = "2000-01-01T00:00:00+00:00";
-const CORPUS_SEEDS: usize = 7;
+const LOG_WAIT: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Debug)]
 struct RecordedCall {
@@ -663,6 +663,26 @@ async fn async_stream_yields_the_same_events_and_collects_them() {
 }
 
 #[tokio::test]
+async fn async_stream_returns_none_after_the_last_event() {
+    let mut stream = async_stream(
+        vec![body(&["data: a", ""])],
+        metadata(GenAiProvider::Gemini),
+        None,
+    );
+    let first = stream
+        .next_event()
+        .await
+        .expect("the first event parses")
+        .expect("the first event arrives");
+    assert_eq!(first, b"data: a\n\n".to_vec());
+    assert!(stream.next_event().await.expect("the end parses").is_none());
+    assert_eq!(
+        stream.collected_chunks(),
+        [b"data: a\n\n".to_vec()].as_slice()
+    );
+}
+
+#[tokio::test]
 async fn async_stream_routes_the_collected_events_to_the_gemini_handler_at_eof() {
     let calls = call_log();
     let (logging, logged) = logging_for(Arc::clone(&calls));
@@ -672,7 +692,7 @@ async fn async_stream_routes_the_collected_events_to_the_gemini_handler_at_eof()
         Some(logging),
     );
     let events = drain(&mut stream).await;
-    timeout(Duration::from_secs(5), logged.notified())
+    timeout(LOG_WAIT, logged.notified())
         .await
         .expect("the completion log runs");
     assert_eq!(events.len(), 2);
@@ -703,7 +723,9 @@ async fn async_stream_logs_the_request_body_it_was_given() {
     let (logging, logged) = logging_for(Arc::clone(&calls));
     let mut stream = async_stream(vec![body(&["data: a", ""])], stream_metadata, Some(logging));
     assert_eq!(drain(&mut stream).await.len(), 1);
-    logged.notified().await;
+    timeout(LOG_WAIT, logged.notified())
+        .await
+        .expect("the completion log runs");
     let calls_recorded = recorded_calls(&calls);
     let call = calls_recorded.first().expect("one call was recorded");
     let expected = Json::Object(IndexMap::from([(
@@ -723,7 +745,9 @@ async fn async_stream_routes_a_vertex_provider_to_the_vertex_handler() {
         Some(logging),
     );
     assert_eq!(drain(&mut stream).await.len(), 1);
-    logged.notified().await;
+    timeout(LOG_WAIT, logged.notified())
+        .await
+        .expect("the completion log runs");
     let calls_recorded = recorded_calls(&calls);
     let call = calls_recorded.first().expect("one call was recorded");
     assert_eq!(call.handler, "vertex");
@@ -743,7 +767,9 @@ async fn async_stream_logs_once_and_only_after_the_end() {
     assert_eq!(first, Some(b"data: a\n\n".to_vec()));
     assert!(recorded_calls(&calls).is_empty());
     assert!(stream.next_event().await.expect("the end").is_none());
-    logged.notified().await;
+    timeout(LOG_WAIT, logged.notified())
+        .await
+        .expect("the completion log runs");
     assert_eq!(recorded_calls(&calls).len(), 1);
     assert!(stream.next_event().await.expect("the end again").is_none());
     assert!(
@@ -761,7 +787,9 @@ async fn async_stream_logs_an_empty_stream_at_eof() {
     let (logging, logged) = logging_for(Arc::clone(&calls));
     let mut stream = async_stream(Vec::new(), metadata(GenAiProvider::Gemini), Some(logging));
     assert!(stream.next_event().await.expect("the end").is_none());
-    logged.notified().await;
+    timeout(LOG_WAIT, logged.notified())
+        .await
+        .expect("the completion log runs");
     let calls_recorded = recorded_calls(&calls);
     let call = calls_recorded.first().expect("one call was recorded");
     assert!(call.lines.is_empty());
@@ -865,16 +893,20 @@ async fn async_stream_returns_the_end_before_the_completion_log_finishes() {
         .expect("the end of the stream does not wait for the completion log")
         .expect("the end parses");
     assert!(end.is_none());
-    started_rx.await.expect("the handler started");
+    timeout(LOG_WAIT, started_rx)
+        .await
+        .expect("the handler starts")
+        .expect("the handler started");
     assert!(done_rx.try_recv().is_err(), "the handler is still blocked");
     drop(stream);
     gate.open();
-    timeout(Duration::from_secs(5), dispatched.notified())
+    timeout(LOG_WAIT, dispatched.notified())
         .await
         .expect("the success dispatch runs after the stream was dropped");
-    done_rx
+    timeout(LOG_WAIT, done_rx)
         .await
-        .expect("the completion log finished after the stream was dropped");
+        .expect("the log finishes")
+        .expect("the log finished");
     let calls_recorded = recorded_calls(&calls);
     assert_eq!(calls_recorded.len(), 1);
     let call = calls_recorded.first().expect("one call was recorded");
@@ -894,87 +926,5 @@ fn provider_spelling_maps_only_gemini_to_the_gemini_endpoint() {
     assert_eq!(
         GenAiProvider::from_spelling("Vertex").endpoint_type(),
         EndpointType::VertexAi
-    );
-}
-
-#[tokio::test]
-async fn replays_the_genai_sse_corpus() {
-    let seeds = corpus_seeds();
-    assert_eq!(seeds.len(), CORPUS_SEEDS);
-    replay_all(seeds).await;
-}
-
-fn corpus_seeds() -> Vec<(String, Vec<u8>)> {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/genai_sse");
-    let mut seeds: Vec<(String, Vec<u8>)> = Vec::new();
-    for entry in fs::read_dir(corpus).expect("the corpus folder") {
-        let entry = entry.expect("a corpus entry");
-        let bytes = fs::read(entry.path()).expect("a seed file");
-        let name = entry
-            .file_name()
-            .to_str()
-            .expect("the seed name is UTF-8")
-            .to_owned();
-        seeds.push((name, bytes));
-    }
-    seeds.sort();
-    seeds
-}
-
-async fn replay_all(seeds: Vec<(String, Vec<u8>)>) {
-    for (name, bytes) in seeds {
-        let whole = replay(vec![bytes.clone()]);
-        let byte_wise: Vec<Vec<u8>> = bytes.chunks(1).map(<[u8]>::to_vec).collect();
-        assert_eq!(
-            replay(byte_wise),
-            whole,
-            "{name} parses the same byte by byte"
-        );
-        let mut stream = async_stream(vec![bytes.clone()], metadata(GenAiProvider::Gemini), None);
-        assert_eq!(
-            drain(&mut stream).await,
-            whole,
-            "{name} parses the same asynchronously"
-        );
-        assert!(
-            whole.iter().all(|event| event.ends_with(b"\n\n")),
-            "{name} ends every event with a blank line"
-        );
-        check_corpus_expectation(&name, &bytes, &whole);
-    }
-}
-
-fn replay(chunks: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
-    let mut stream = sync_stream(chunks);
-    sync_events(&mut stream)
-}
-
-fn check_corpus_expectation(name: &str, bytes: &[u8], events: &[Vec<u8>]) {
-    match name {
-        "blank-line-delimiter" | "unterminated-final-event" => assert_eq!(
-            events,
-            [
-                b"data: {\"a\":1}\n\n".to_vec(),
-                b"data: {\"b\":2}\n\n".to_vec()
-            ]
-        ),
-        "crlf-lines" => assert_eq!(events, [b"data: {\"a\":1}\n\n".to_vec()]),
-        "empty" => assert!(events.is_empty()),
-        "invalid-utf8" => check_replacement_decoding(events),
-        "large-inline-media" | "split-utf8" => assert_eq!(events, [bytes.to_vec()]),
-        other => panic!("the corpus seed {other} has no expectation"),
-    }
-}
-
-fn check_replacement_decoding(events: &[Vec<u8>]) {
-    let [event] = events else {
-        panic!("the invalid UTF-8 seed yields one event");
-    };
-    assert!(event.starts_with(b"data: "));
-    assert!(event.ends_with(b"\n\n"));
-    assert!(
-        event
-            .windows(3)
-            .any(|window| window == b"\xEF\xBF\xBD".as_slice())
     );
 }
