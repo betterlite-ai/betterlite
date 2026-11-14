@@ -67,7 +67,10 @@ fn answer(call: &Call) -> Value {
         Call::Request {
             text,
             optional_params,
-        } => request_answer(text, optional_params),
+        } => {
+            let data = transform_request(MODEL, text, optional_params);
+            json!({ "ok": true, "dict_body": data.dict_body, "headers": data.headers })
+        }
         Call::Url {
             api_base,
             environment,
@@ -89,11 +92,6 @@ fn answer(call: &Call) -> Value {
             environment,
         ),
     }
-}
-
-fn request_answer(text: &str, optional_params: &Object) -> Value {
-    let data = transform_request(MODEL, text, optional_params);
-    json!({ "ok": true, "dict_body": data.dict_body, "headers": data.headers })
 }
 
 fn url_answer(
