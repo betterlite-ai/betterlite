@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
@@ -148,13 +148,12 @@ impl Scripted {
     ) -> Result<CompletionOutput, ScriptedFailure> {
         self.seen
             .lock()
-            .expect("the seen calls")
+            .unwrap_or_else(PoisonError::into_inner)
             .push((operation, call));
-        self.answer
-            .lock()
-            .expect("the scripted answer")
+        let mut scripted = self.answer.lock().unwrap_or_else(PoisonError::into_inner);
+        scripted
             .take()
-            .expect("an unused scripted answer")
+            .unwrap_or(Err(ScriptedFailure("the scripted answer was used twice")))
     }
 }
 

@@ -96,8 +96,10 @@ fn prepare_sets_stream_to_what_the_caller_asked_for(#[case] stream: bool) {
 #[test]
 fn an_input_failure_is_not_wrapped_and_skips_the_completion() {
     let environment = Environment::limited(SchemaLimits {
+        max_schema_bytes: 1_048_576,
+        max_response_bytes: 1_048_576,
+        max_depth: 100,
         max_nodes: 3,
-        ..SchemaLimits::default()
     });
     let resolution = environment.resolution();
     let context = environment.context(&resolution);

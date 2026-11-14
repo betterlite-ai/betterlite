@@ -80,7 +80,10 @@ pub enum Handled<Pending> {
 
 // LiteLLM wraps everything after the preparation as ValueError("Error calling litellm.<operation> for generate_content: <error>")
 #[derive(Debug, Error)]
-pub enum ChatCallError<Source: Error + 'static> {
+pub enum ChatCallError<Source>
+where
+    Source: Error + 'static,
+{
     #[error(transparent)]
     Input(#[from] GenAiInputError),
     #[error("Error calling litellm.{operation} for generate_content: {source}")]
@@ -101,14 +104,22 @@ pub enum ChatCallError<Source: Error + 'static> {
     UnexpectedStream { operation: Operation },
 }
 
-pub fn generate_content_handler<'call, Executor: CompletionExecutor + Sync>(
+pub type GenerateContentResult<Source>
+where
+    Source: Error + 'static,
+= Result<GenerateContentOutcome, ChatCallError<Source>>;
+
+pub fn generate_content_handler<'call, Executor>(
     executor: &'call Executor,
     call: GenerateContentCall<'call>,
     is_async: bool,
 ) -> Result<
-    Handled<impl Future<Output = Result<GenerateContentOutcome, ChatCallError<Executor::Error>>>>,
+    Handled<impl Future<Output = GenerateContentResult<Executor::Error>>>,
     ChatCallError<Executor::Error>,
-> {
+>
+where
+    Executor: CompletionExecutor + Sync,
+{
     if is_async {
         return Ok(Handled::Pending(async_generate_content_handler(
             executor, call,
@@ -125,10 +136,13 @@ pub fn generate_content_handler<'call, Executor: CompletionExecutor + Sync>(
     finish(Operation::Completion, stream, output).map(Handled::Done)
 }
 
-pub async fn async_generate_content_handler<Executor: CompletionExecutor + Sync>(
+pub async fn async_generate_content_handler<Executor>(
     executor: &Executor,
     call: GenerateContentCall<'_>,
-) -> Result<GenerateContentOutcome, ChatCallError<Executor::Error>> {
+) -> Result<GenerateContentOutcome, ChatCallError<Executor::Error>>
+where
+    Executor: CompletionExecutor + Sync,
+{
     let stream = call.stream;
     let prepared = prepare_completion_call(call)?;
     let output =
@@ -156,11 +170,14 @@ fn prepare_completion_call(
 }
 
 // a stream answer to a streaming call goes to the streaming translation; every other response is translated whole
-fn finish<Source: Error + 'static>(
+fn finish<Source>(
     operation: Operation,
     stream: bool,
     output: CompletionOutput,
-) -> Result<GenerateContentOutcome, ChatCallError<Source>> {
+) -> Result<GenerateContentOutcome, ChatCallError<Source>>
+where
+    Source: Error + 'static,
+{
     match output {
         CompletionOutput::Stream(chunks) if stream => {
             Ok(GenerateContentOutcome::Stream(translate_stream(chunks)))
