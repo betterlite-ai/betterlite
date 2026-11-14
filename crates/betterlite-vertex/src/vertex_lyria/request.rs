@@ -117,7 +117,7 @@ pub async fn prepare_request(
     })
 }
 
-fn location(call: &LyriaCall<'_>) -> &str {
+fn location<'call>(call: &LyriaCall<'call>) -> &'call str {
     call.location
         .filter(|value| !value.is_empty())
         .unwrap_or(DEFAULT_LOCATION)

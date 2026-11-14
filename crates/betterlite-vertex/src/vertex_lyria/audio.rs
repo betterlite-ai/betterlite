@@ -114,21 +114,27 @@ impl InteractionResponse {
             .unwrap_or_default();
         let mut found = None;
         for step in steps {
-            let items = if step.kind.as_deref() == Some("model_output") {
-                step.content.unwrap_or_default()
-            } else {
-                vec![step]
-            };
-            for item in items {
-                if item.kind.as_deref() == Some("audio")
-                    && let Some(data) = item.data.filter(|value| !value.is_empty())
-                {
-                    found = Some((data, item.mime_type));
-                }
-            }
+            found = last_audio_of_step(step).or(found);
         }
         found
     }
+}
+
+fn last_audio_of_step(step: InteractionItem) -> Option<(String, Option<String>)> {
+    let items = if step.kind.as_deref() == Some("model_output") {
+        step.content.unwrap_or_default()
+    } else {
+        vec![step]
+    };
+    let mut found = None;
+    for item in items {
+        if item.kind.as_deref() == Some("audio")
+            && let Some(data) = item.data.filter(|value| !value.is_empty())
+        {
+            found = Some((data, item.mime_type));
+        }
+    }
+    found
 }
 
 fn missing_audio(model: &str) -> VertexLyriaError {
