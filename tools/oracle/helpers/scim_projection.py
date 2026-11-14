@@ -57,7 +57,7 @@ def user_output(value: dict[str, JsonValue]) -> JsonValue:
     sys.modules[PROXY_MODULE] = connected_proxy()
     try:
         # teams stay empty so the projection needs no team lookup
-        user = LiteLLM_UserTable.model_validate({**value, "teams": []})  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/user.py#L34
+        user = LiteLLM_UserTable.model_validate({**value, "teams": []})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/user.py#L34
         record = asyncio.run(
             ScimTransformations.transform_litellm_user_to_scim_user(user)
         )
@@ -78,7 +78,7 @@ def group_output(value: dict[str, JsonValue]) -> JsonValue:
     try:
         # the transform builds the team row itself, as it does for an unvalidated Prisma row
         group = asyncio.run(
-            ScimTransformations.transform_litellm_team_to_scim_group(  # pyright: ignore[reportUnknownMemberType]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_transformations.py#L159
+            ScimTransformations.transform_litellm_team_to_scim_group(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_transformations.py#L159
                 value
             )
         )
