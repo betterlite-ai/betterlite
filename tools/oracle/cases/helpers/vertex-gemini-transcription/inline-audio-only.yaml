@@ -1,0 +1,9 @@
+kind: helper
+name: inline-audio-only
+call:
+  vertex_gemini_transcription:
+    steps:
+      - {step: request, content: audio, language: en}
+      - {step: request, content: hello world, language: de}
+env: {}
+compare: {ignore: []}

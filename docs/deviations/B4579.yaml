@@ -1,0 +1,18 @@
+task: B4579
+deviations:
+  - what: >-
+      Tables are drawn with comfy-table instead of rich. The title, column headers, row order and cell
+      text are LiteLLM's, but borders, column widths and wrapping differ, there is no color, and cell
+      text is never read as rich markup.
+    why: >-
+      rich's table layout is a large port for output people read, and B4578 draws its tables with a Rust
+      table crate too. Scripts use --format json.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/keys.py#L97-L112
+  - what: >-
+      --spend is parsed as a decimal number, so a value click's float accepts in scientific notation,
+      such as 1e3, is refused as a usage error naming --spend.
+    why: >-
+      rules.yaml's money-is-decimal rule keeps spend a Decimal from the moment it is read, and Rust's
+      Decimal parser has no exponent form. Every decimal amount LiteLLM writes (12.5, 0, 300) parses
+      the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/keys.py#L118

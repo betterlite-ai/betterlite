@@ -1,7 +1,7 @@
 id: B3906
 milestone: M7 observability
 title: Langfuse generation and trace assembly
-status: todo
+status: done
 depends_on: [B3901, B3905, B3912, B002, B188, B206, B2204, B254]
 file: tasks/B3906-langfuse-generation.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/integrations/langfuse.py"
 parent: B112
 split_from: B112
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1596
