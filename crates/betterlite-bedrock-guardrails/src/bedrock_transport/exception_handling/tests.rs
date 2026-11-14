@@ -16,13 +16,11 @@ async fn exception_handling_parses_a_client_error() {
     let error = sign_and_post(&guardrail, &prepared_request(), &transport, &log, true)
         .await
         .expect_err("the HTTP error");
-    match error {
-        PostError::Http { status, detail } => {
-            assert_eq!(status, 400);
-            assert_eq!(detail, "bad input");
-        }
-        other => panic!("expected the HTTP error, got {other}"),
-    }
+    let PostError::Http { status, detail } = error else {
+        panic!("expected the HTTP error, got {error}");
+    };
+    assert_eq!(status, 400);
+    assert_eq!(detail, "bad input");
 }
 
 #[tokio::test]
@@ -33,13 +31,11 @@ async fn exception_handling_parses_a_server_error_nested_shape() {
     let error = sign_and_post(&guardrail, &prepared_request(), &transport, &log, true)
         .await
         .expect_err("the HTTP error");
-    match error {
-        PostError::Http { status, detail } => {
-            assert_eq!(status, 500);
-            assert_eq!(detail, "boom");
-        }
-        other => panic!("expected the HTTP error, got {other}"),
-    }
+    let PostError::Http { status, detail } = error else {
+        panic!("expected the HTTP error, got {error}");
+    };
+    assert_eq!(status, 500);
+    assert_eq!(detail, "boom");
 }
 
 #[tokio::test]
@@ -50,12 +46,10 @@ async fn exception_handling_returns_the_transport_error() {
     let error = sign_and_post(&guardrail, &prepared_request(), &transport, &log, true)
         .await
         .expect_err("the transport error");
-    match error {
-        PostError::Transport { source } => {
-            assert!(matches!(source, TransportError::Closed));
-        }
-        other => panic!("expected the transport error, got {other}"),
-    }
+    let PostError::Transport { source } = error else {
+        panic!("expected the transport error, got {error}");
+    };
+    assert!(matches!(source, TransportError::Closed));
 }
 
 #[tokio::test]
@@ -66,13 +60,11 @@ async fn exception_handling_rejects_a_redirect_response() {
     let error = sign_and_post(&guardrail, &prepared_request(), &transport, &log, true)
         .await
         .expect_err("the HTTP error");
-    match error {
-        PostError::Http { status, detail } => {
-            assert_eq!(status, 302);
-            assert_eq!(detail, "Bedrock guardrail request failed");
-        }
-        other => panic!("expected the HTTP error, got {other}"),
-    }
+    let PostError::Http { status, detail } = error else {
+        panic!("expected the HTTP error, got {error}");
+    };
+    assert_eq!(status, 302);
+    assert_eq!(detail, "Bedrock guardrail request failed");
 }
 
 #[tokio::test]

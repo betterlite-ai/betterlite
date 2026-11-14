@@ -82,7 +82,9 @@ pub(crate) fn prepared_request() -> AwsSignedRequest {
 }
 
 pub(crate) fn signing_time() -> SystemTime {
-    SystemTime::UNIX_EPOCH + Duration::from_secs(1_764_000_000)
+    SystemTime::UNIX_EPOCH
+        .checked_add(Duration::from_hours(490_000))
+        .expect("the signing time")
 }
 
 #[derive(Clone, Default)]
@@ -178,11 +180,8 @@ impl RecordingTransport {
     }
 }
 
-impl GuardrailTransport for RecordingTransport {
-    fn send(
-        &self,
-        request: OutboundRequest,
-    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+impl Sent {
+    fn from_request(request: OutboundRequest) -> Self {
         let body = match request.body {
             RequestBody::Json(bytes) => bytes,
             RequestBody::Empty | RequestBody::Bytes { .. } | RequestBody::Multipart { .. } => {
@@ -205,18 +204,26 @@ impl GuardrailTransport for RecordingTransport {
             .filter(|(_, value)| value.is_sensitive())
             .map(|(name, _)| name.to_string())
             .collect();
-        let sent = Sent {
+        Self {
             method: request.method.to_string(),
             url: request.url.to_string(),
             headers,
             body,
             deadline: request.deadline,
             sensitive_headers,
-        };
+        }
+    }
+}
+
+impl GuardrailTransport for RecordingTransport {
+    fn send(
+        &self,
+        request: OutboundRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.sent
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(sent);
+            .push(Sent::from_request(request));
         let reply = self
             .reply
             .lock()

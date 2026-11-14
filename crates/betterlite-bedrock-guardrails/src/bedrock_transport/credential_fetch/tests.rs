@@ -6,7 +6,7 @@ use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret;
 
 use crate::bedrock_credentials::{CredentialLoadError, RegionEnvironment, load_credentials};
 use crate::bedrock_transport::test_support::{
@@ -14,52 +14,24 @@ use crate::bedrock_transport::test_support::{
 };
 
 fn aws_parameters() -> OpaqueParams {
-    OpaqueParams(BTreeMap::from([
-        (
-            "aws_access_key_id".to_owned(),
-            GuardrailValue::Text("AKIAEXAMPLE".to_owned()),
-        ),
-        (
-            "aws_secret_access_key".to_owned(),
-            GuardrailValue::Text("secret".to_owned()),
-        ),
-        (
-            "aws_session_token".to_owned(),
-            GuardrailValue::Text("session".to_owned()),
-        ),
-        (
-            "aws_region_name".to_owned(),
-            GuardrailValue::Text("eu-west-1".to_owned()),
-        ),
-        (
-            "aws_role_name".to_owned(),
-            GuardrailValue::Text("role".to_owned()),
-        ),
-        (
-            "aws_session_name".to_owned(),
-            GuardrailValue::Text("session-name".to_owned()),
-        ),
-        (
-            "aws_profile_name".to_owned(),
-            GuardrailValue::Text("profile".to_owned()),
-        ),
-        (
-            "aws_web_identity_token".to_owned(),
-            GuardrailValue::Text("web-identity".to_owned()),
-        ),
-        (
-            "aws_sts_endpoint".to_owned(),
-            GuardrailValue::Text("https://sts.example".to_owned()),
-        ),
-        (
-            "aws_external_id".to_owned(),
-            GuardrailValue::Text("external".to_owned()),
-        ),
-    ]))
-}
-
-fn secret(value: Option<&SecretString>) -> Option<String> {
-    value.map(|secret| secret.expose_secret().to_owned())
+    let pairs = [
+        ("aws_access_key_id", "AKIAEXAMPLE"),
+        ("aws_secret_access_key", "secret"),
+        ("aws_session_token", "session"),
+        ("aws_region_name", "eu-west-1"),
+        ("aws_role_name", "role"),
+        ("aws_session_name", "session-name"),
+        ("aws_profile_name", "profile"),
+        ("aws_web_identity_token", "web-identity"),
+        ("aws_sts_endpoint", "https://sts.example"),
+        ("aws_external_id", "external"),
+    ];
+    OpaqueParams(
+        pairs
+            .into_iter()
+            .map(|(key, value)| (key.to_owned(), GuardrailValue::Text(value.to_owned())))
+            .collect(),
+    )
 }
 
 fn first_call(source: &RecordingCredentials) -> (AwsSettings, String) {
@@ -72,11 +44,11 @@ fn first_call(source: &RecordingCredentials) -> (AwsSettings, String) {
 async fn credential_fetch_passes_every_aws_setting() {
     let guardrail = guardrail_with(aws_parameters());
     let source = RecordingCredentials::replying(aws_credentials());
-    let (resolved, region) =
+    let (loaded, region) =
         load_credentials(&guardrail, None, RegionEnvironment::default(), &source)
             .await
             .expect("the credentials");
-    let resolved = resolved.expect("the resolved credentials");
+    let resolved = loaded.expect("the resolved credentials");
     assert_eq!(
         resolved.access_key_id.expose_secret(),
         "AKIAIOSFODNN7EXAMPLE"
@@ -86,20 +58,32 @@ async fn credential_fetch_passes_every_aws_setting() {
     assert_eq!(called_region, "eu-west-1");
     assert_eq!(settings.region_name.as_deref(), Some("eu-west-1"));
     assert_eq!(
-        secret(settings.access_key_id.as_ref()),
-        Some("AKIAEXAMPLE".to_owned())
+        settings
+            .access_key_id
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        Some("AKIAEXAMPLE")
     );
     assert_eq!(
-        secret(settings.secret_access_key.as_ref()),
-        Some("secret".to_owned())
+        settings
+            .secret_access_key
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        Some("secret")
     );
     assert_eq!(
-        secret(settings.session_token.as_ref()),
-        Some("session".to_owned())
+        settings
+            .session_token
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        Some("session")
     );
     assert_eq!(
-        secret(settings.web_identity_token.as_ref()),
-        Some("web-identity".to_owned())
+        settings
+            .web_identity_token
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        Some("web-identity")
     );
     assert_eq!(settings.session_name.as_deref(), Some("session-name"));
     assert_eq!(settings.profile_name.as_deref(), Some("profile"));
@@ -120,10 +104,10 @@ async fn credential_fetch_uses_the_environment_region() {
         region_name: None,
         region: Some("us-east-2"),
     };
-    let (resolved, region) = load_credentials(&guardrail, None, environment, &source)
+    let (loaded, region) = load_credentials(&guardrail, None, environment, &source)
         .await
         .expect("the credentials");
-    let resolved = resolved.expect("the resolved credentials");
+    let resolved = loaded.expect("the resolved credentials");
     assert_eq!(
         resolved.access_key_id.expose_secret(),
         "AKIAIOSFODNN7EXAMPLE"

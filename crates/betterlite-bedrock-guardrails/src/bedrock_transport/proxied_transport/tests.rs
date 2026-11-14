@@ -33,7 +33,6 @@ async fn post_to_local_server(reply: &'static str) -> (Result<u16, PostError>, S
         .await
         .expect("the listener");
     let address = listener.local_addr().expect("the address");
-    let server = tokio::spawn(serve_once(listener, reply));
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("the policy"),
     );
@@ -42,8 +41,10 @@ async fn post_to_local_server(reply: &'static str) -> (Result<u16, PostError>, S
     request.url = format!("http://{address}/guardrail/gr-1/version/1/apply");
     let guardrail = guardrail_with(OpaqueParams::default());
     let log = RecordingLog::default();
-    let result = sign_and_post(&guardrail, &request, &client, &log, true).await;
-    let sent = server.await.expect("the server task");
+    let (result, sent) = tokio::join!(
+        sign_and_post(&guardrail, &request, &client, &log, true),
+        serve_once(listener, reply)
+    );
     (result.map(|response| response.status), sent)
 }
 
@@ -63,11 +64,10 @@ async fn proxied_transport_posts_the_signed_request_over_http() {
 async fn proxied_transport_reports_the_http_error_body() {
     let reply = "HTTP/1.1 400 Bad Request\r\ncontent-length: 23\r\nconnection: close\r\n\r\n{\"message\":\"bad input\"}";
     let (result, _sent) = post_to_local_server(reply).await;
-    match result.expect_err("the HTTP error") {
-        PostError::Http { status, detail } => {
-            assert_eq!(status, 400);
-            assert_eq!(detail, "bad input");
-        }
-        other => panic!("expected the HTTP error, got {other}"),
-    }
+    let error = result.expect_err("the HTTP error");
+    let PostError::Http { status, detail } = error else {
+        panic!("expected the HTTP error, got {error}");
+    };
+    assert_eq!(status, 400);
+    assert_eq!(detail, "bad input");
 }
