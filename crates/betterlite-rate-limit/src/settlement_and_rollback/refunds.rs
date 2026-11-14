@@ -83,7 +83,7 @@ impl AtomicSettlement<'_> {
             let keys = vec![refund.window_key.clone(), refund.counter_key.clone()];
             let args = vec![
                 RedisScalar::Text(refund.window_start.clone()),
-                RedisScalar::Text((-i128::from(refund.increment)).to_string()),
+                RedisScalar::Text(i128::from(refund.increment).saturating_neg().to_string()),
                 RedisScalar::Text("0".to_owned()),
             ];
             let Err(error) = script.run(&keys, &args).await else {
