@@ -19,17 +19,7 @@ pub fn tools(
     followup_messages(&replaced).map(Some)
 }
 
-pub fn optional_params(optional_params: &Map<String, Value>) -> Result<JsonMap, serde_json::Error> {
-    let filtered = followup_filtering::optional_params(optional_params);
-    raw_map(&filtered)
-}
-
-pub fn kwargs(kwargs: &Map<String, Value>) -> Result<JsonMap, serde_json::Error> {
-    let filtered = followup_filtering::agentic_loop_kwargs(kwargs);
-    raw_map(&filtered)
-}
-
-fn raw_map(values: &Map<String, Value>) -> Result<JsonMap, serde_json::Error> {
+pub fn raw_map(values: &Map<String, Value>) -> Result<JsonMap, serde_json::Error> {
     let mut mapped = JsonMap::new();
     for (key, value) in values {
         mapped.insert(key.clone(), to_raw_value(value)?);

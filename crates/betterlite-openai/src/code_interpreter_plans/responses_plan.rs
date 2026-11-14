@@ -1,11 +1,14 @@
-use serde_json::{Map, Value};
+use serde::Serialize;
+use serde_json::Value;
 
 use betterlite_context::agentic_loop_plan::AgenticLoopPlan;
 
 use crate::code_execution_records::code_parsing;
 use crate::code_execution_records::container_extraction;
 use crate::code_execution_records::responses_dialect;
-use crate::code_execution_records::{CODE_EXECUTION_TOOL_NAME, CallDialect, CodeExecutionToolCall};
+use crate::code_execution_records::{
+    CODE_EXECUTION_TOOL_NAME, CallDialect, CodeExecutionToolCall, SESSION_SCOPED_KEY,
+};
 use crate::sandbox_lifecycle::cache_operations::{
     Clock, SandboxCache, get_or_create_container, prune_expired_cache,
 };
@@ -15,11 +18,30 @@ use crate::sandbox_lifecycle::tool_execution::run_tool_call;
 
 use super::error::PlanError;
 use super::error_handling::delete_after_failure;
-use super::extraction::{container_identity, session_scoped};
+use super::extraction::container_identity;
 use super::initialization::CodeInterpreterInterceptionLogger;
 use super::plan;
 use super::records::CodeInterpreterCall;
 use super::request::PlanRequest;
+
+// A Responses input item that reports the function call the sandbox ran
+#[derive(Serialize)]
+struct FunctionCallItem<'a> {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    call_id: Option<&'a str>,
+    name: &'static str,
+    arguments: &'a str,
+}
+
+// A Responses input item that carries the sandbox output back to the model
+#[derive(Serialize)]
+struct FunctionCallOutputItem<'a> {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    call_id: Option<&'a str>,
+    output: &'a str,
+}
 
 pub async fn build_responses_plan<C, R, T, Clk>(
     logger: &mut CodeInterpreterInterceptionLogger<C>,
@@ -61,7 +83,10 @@ where
     .await?;
     let metadata = plan::metadata(
         sandbox_key.as_deref(),
-        session_scoped(request.kwargs),
+        matches!(
+            request.kwargs.get(SESSION_SCOPED_KEY),
+            Some(Value::Bool(true))
+        ),
         &code_interpreter_calls,
         None,
     )?;
@@ -95,8 +120,8 @@ where
                 );
             }
         };
-        input_list.push(function_call_item(tool_call));
-        input_list.push(function_call_output_item(tool_call, &stdout));
+        input_list.push(function_call_item(tool_call)?);
+        input_list.push(function_call_output_item(tool_call, &stdout)?);
         code_interpreter_calls.push(CodeInterpreterCall::completed(
             code_parsing::parse_code(&tool_call.arguments),
             container_id.clone(),
@@ -106,37 +131,24 @@ where
     Ok((input_list, code_interpreter_calls))
 }
 
-fn function_call_item(tool_call: &CodeExecutionToolCall) -> Value {
-    let mut item = Map::new();
-    item.insert("type".to_owned(), Value::String("function_call".to_owned()));
-    item.insert("call_id".to_owned(), call_id_value(tool_call));
-    item.insert(
-        "name".to_owned(),
-        Value::String(CODE_EXECUTION_TOOL_NAME.to_owned()),
-    );
-    item.insert(
-        "arguments".to_owned(),
-        Value::String(tool_call.arguments.clone()),
-    );
-    Value::Object(item)
+fn function_call_item(tool_call: &CodeExecutionToolCall) -> Result<Value, serde_json::Error> {
+    serde_json::to_value(FunctionCallItem {
+        kind: "function_call",
+        call_id: tool_call.call_id.as_deref(),
+        name: CODE_EXECUTION_TOOL_NAME,
+        arguments: &tool_call.arguments,
+    })
 }
 
-fn function_call_output_item(tool_call: &CodeExecutionToolCall, stdout: &str) -> Value {
-    let mut item = Map::new();
-    item.insert(
-        "type".to_owned(),
-        Value::String("function_call_output".to_owned()),
-    );
-    item.insert("call_id".to_owned(), call_id_value(tool_call));
-    item.insert("output".to_owned(), Value::String(stdout.to_owned()));
-    Value::Object(item)
-}
-
-fn call_id_value(tool_call: &CodeExecutionToolCall) -> Value {
-    tool_call
-        .call_id
-        .as_ref()
-        .map_or(Value::Null, |call_id| Value::String(call_id.clone()))
+fn function_call_output_item(
+    tool_call: &CodeExecutionToolCall,
+    stdout: &str,
+) -> Result<Value, serde_json::Error> {
+    serde_json::to_value(FunctionCallOutputItem {
+        kind: "function_call_output",
+        call_id: tool_call.call_id.as_deref(),
+        output: stdout,
+    })
 }
 
 include!("responses_plan/tests/cases.rs");

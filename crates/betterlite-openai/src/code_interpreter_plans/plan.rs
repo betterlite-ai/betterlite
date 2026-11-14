@@ -1,13 +1,25 @@
+use serde::Serialize;
 use serde_json::Value;
-use serde_json::value::to_raw_value;
 
 use betterlite_context::agentic_loop_plan::{AgenticLoopPlan, AgenticLoopRequestPatch, JsonMap};
 
 use crate::code_execution_records::CallDialect;
+use crate::code_execution_records::followup_filtering;
 
 use super::followup;
 use super::records::{CodeInterpreterCall, followup_messages};
 use super::request::PlanRequest;
+
+// LiteLLM's plan metadata object: the tool type, the sandbox key, the scope flag and each call record
+#[derive(Serialize)]
+struct PlanMetadata<'a> {
+    tool_type: &'static str,
+    sandbox_key: &'a str,
+    is_session_scoped: bool,
+    code_interpreter_calls: &'a [CodeInterpreterCall],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_format: Option<&'a str>,
+}
 
 pub fn metadata(
     sandbox_key: Option<&str>,
@@ -15,24 +27,15 @@ pub fn metadata(
     code_interpreter_calls: &[CodeInterpreterCall],
     response_format: Option<&str>,
 ) -> Result<JsonMap, serde_json::Error> {
-    let mut metadata = JsonMap::new();
-    metadata.insert("tool_type".to_owned(), to_raw_value("code_interpreter")?);
-    metadata.insert(
-        "sandbox_key".to_owned(),
-        to_raw_value(sandbox_key.unwrap_or_default())?,
-    );
-    metadata.insert(
-        "is_session_scoped".to_owned(),
-        to_raw_value(&is_session_scoped)?,
-    );
-    metadata.insert(
-        "code_interpreter_calls".to_owned(),
-        to_raw_value(code_interpreter_calls)?,
-    );
-    if let Some(response_format) = response_format {
-        metadata.insert("response_format".to_owned(), to_raw_value(response_format)?);
-    }
-    Ok(metadata)
+    let fields = PlanMetadata {
+        tool_type: "code_interpreter",
+        sandbox_key: sandbox_key.unwrap_or_default(),
+        is_session_scoped,
+        code_interpreter_calls,
+        response_format,
+    };
+    let serialized = serde_json::to_string(&fields)?;
+    serde_json::from_str(&serialized)
 }
 
 pub fn assemble(
@@ -46,8 +49,10 @@ pub fn assemble(
         messages: Some(followup_messages(messages)?),
         tools: followup::tools(request.optional_params.get("tools"), dialect)?,
         max_tokens: None,
-        optional_params: followup::optional_params(request.optional_params)?,
-        kwargs: followup::kwargs(request.kwargs)?,
+        optional_params: followup::raw_map(&followup_filtering::optional_params(
+            request.optional_params,
+        ))?,
+        kwargs: followup::raw_map(&followup_filtering::agentic_loop_kwargs(request.kwargs))?,
     };
     Ok(AgenticLoopPlan {
         run_agentic_loop: true,

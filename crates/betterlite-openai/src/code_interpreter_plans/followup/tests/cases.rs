@@ -2,6 +2,8 @@
 use serde_json::json;
 
 #[cfg(test)]
+use crate::code_execution_records::followup_filtering;
+#[cfg(test)]
 use crate::code_execution_records::tool_shapes::function_tool;
 
 #[cfg(test)]
@@ -56,13 +58,13 @@ fn params_drop_tools_and_only_a_code_interpreter_tool_choice() {
         ("tool_choice", json!({"type": "code_interpreter"})),
         ("temperature", json!(0.2)),
     ]);
-    let filtered = optional_params(&request_params).unwrap();
+    let filtered = raw_map(&followup_filtering::optional_params(&request_params)).unwrap();
     assert!(filtered.get("tools").is_none());
     assert!(filtered.get("tool_choice").is_none());
     assert_eq!(metadata_value(&filtered, "temperature"), json!(0.2));
 
     let automatic = test_map([("tool_choice", json!("auto")), ("temperature", json!(0.1))]);
-    let kept = optional_params(&automatic).unwrap();
+    let kept = raw_map(&followup_filtering::optional_params(&automatic)).unwrap();
     assert_eq!(metadata_value(&kept, "tool_choice"), json!("auto"));
 }
 
@@ -77,7 +79,7 @@ fn kwargs_drop_the_logging_object_and_other_interceptors() {
         ("_code_interpreter_interception_active", json!(true)),
         ("max_agentic_loops", json!(3)),
     ]);
-    let filtered = kwargs(&request_kwargs).unwrap();
+    let filtered = raw_map(&followup_filtering::agentic_loop_kwargs(&request_kwargs)).unwrap();
     assert_eq!(metadata_value(&filtered, "model"), json!("openai/gpt-5"));
     assert_eq!(
         metadata_value(&filtered, "_code_interpreter_interception_active"),

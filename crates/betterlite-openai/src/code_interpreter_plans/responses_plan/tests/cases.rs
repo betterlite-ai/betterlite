@@ -2,7 +2,7 @@
 use std::time::{Duration, Instant};
 
 #[cfg(test)]
-use serde_json::json;
+use serde_json::{Map, json};
 
 #[cfg(test)]
 use crate::code_execution_records::SANDBOX_KEY;
