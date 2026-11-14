@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
-use crate::resolve::{resolve_number, resolve_string};
+use crate::resolve::{parse_money, resolve_number, resolve_string};
 use crate::sections::Section;
 
 mod tests;
@@ -186,14 +186,6 @@ where
         });
     }
     Ok(deployments)
-}
-
-fn parse_money(text: &str, path: &str) -> Result<Decimal, ConfigError> {
-    text.parse::<Decimal>()
-        .map_err(|_source| ConfigError::InvalidScalar {
-            path: path.to_owned(),
-            value: false,
-        })
 }
 
 // a resolved empty environment string counts as unset, as every other config string does
