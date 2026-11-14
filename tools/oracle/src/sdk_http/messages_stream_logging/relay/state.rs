@@ -135,7 +135,7 @@ impl StreamSeams for StreamState {
 
 #[async_trait]
 impl StreamFailureLogging for StreamState {
-    async fn schedule_stream_failure_logging(&self, call: StreamFailureCall) {
+    async fn schedule_failure_logging(&self, call: StreamFailureCall) {
         self.failures
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

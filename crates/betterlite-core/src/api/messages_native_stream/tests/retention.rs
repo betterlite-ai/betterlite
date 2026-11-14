@@ -5,13 +5,15 @@ use std::sync::atomic::Ordering;
 
 use betterlite_logging::passthrough_stream_logging::types::EndpointType;
 
+use super::super::RelayLimits;
 use super::super::registry::StreamRegistry;
-use super::super::{RelayLimits, RetainedOutputLimit, RetentionBudget, error_sse_event};
+use super::super::retention::{RetainedOutputLimit, RetentionBudget};
 use super::support::{Frame, Harness, bytes, pump_of, read};
-use crate::api::api_boundaries::LimitErrorFields;
+use crate::api::api_boundaries::{ApiLimits, LimitErrorFields};
 use crate::api::messages_stream_logging::SseChunk;
 
 const LIMIT_MESSAGE: &str = "Messages stream exceeded its retained-output limit";
+const LIMIT_EVENT: &str = "event: error\ndata: {\"type\": \"error\", \"error\": {\"type\": \"api_error\", \"message\": \"Messages stream exceeded its retained-output limit\"}}\n\n";
 const LIMIT: usize = 1024 * 1024;
 
 fn limits() -> RelayLimits {
@@ -35,6 +37,7 @@ async fn relay_retained_bytes_are_bounded() {
     the_budget_accepts_the_limit_and_rejects_the_first_excess();
     a_detached_overflow_records_one_partial_failure().await;
     a_started_stream_ends_with_the_api_error_event().await;
+    a_started_stream_stops_at_the_chunk_limit().await;
 }
 
 fn the_budget_accepts_the_limit_and_rejects_the_first_excess() {
@@ -92,19 +95,41 @@ async fn a_started_stream_ends_with_the_api_error_event() {
         assert!(matches!(read(&mut relay).await, Frame::Chunk(_)));
     }
     harness.script.release(SseChunk::Bytes(bytes(LIMIT))).await;
-    let event = String::from_utf8(error_sse_event(LIMIT_MESSAGE)).expect("the event is UTF-8");
-    assert_eq!(read(&mut relay).await, Frame::Chunk(event.clone()));
-    assert!(event.starts_with("event: error\ndata: "));
-    assert!(event.contains("\"type\":\"api_error\""));
-    assert!(event.contains(LIMIT_MESSAGE));
-    assert!(!event.contains("message_stop"));
-    assert!(!event.contains("\"param\""));
-    assert!(!event.contains("\"code\""));
+    assert_eq!(read(&mut relay).await, Frame::Chunk(LIMIT_EVENT.to_owned()));
     let pump = pump_of(&relay);
     pump.wait().await;
     assert_eq!(read(&mut relay).await, Frame::End);
     assert!(harness.closed.load(Ordering::SeqCst));
     assert_eq!(harness.billed(), 0);
     assert_eq!(harness.failures().len(), 1);
+    assert_eq!(registry.sizes().live_pumps, 0);
+}
+
+async fn a_started_stream_stops_at_the_chunk_limit() {
+    let registry = Arc::new(StreamRegistry::default());
+    let boundaries = ApiLimits {
+        max_json_bytes: LIMIT,
+        max_event_bytes: LIMIT,
+        max_items: 3,
+    };
+    let (harness, mut relay) = Harness::start_with(limits(), Arc::clone(&registry), boundaries);
+    for _ in 0..3_u8 {
+        harness.script.release(SseChunk::Bytes(bytes(1))).await;
+        assert_eq!(read(&mut relay).await, Frame::Chunk("x".to_owned()));
+    }
+    // the fourth chunk is the first excess: it never reaches the client and never bills
+    harness.script.release(SseChunk::Bytes(bytes(1))).await;
+    assert_eq!(read(&mut relay).await, Frame::Chunk(LIMIT_EVENT.to_owned()));
+    let pump = pump_of(&relay);
+    pump.wait().await;
+    assert_eq!(read(&mut relay).await, Frame::End);
+    harness.worker.flush().await;
+    assert!(harness.closed.load(Ordering::SeqCst));
+    assert_eq!(harness.billed(), 0);
+    let failures = harness.failures();
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].failure.kind, "BadGatewayError");
+    assert_eq!(failures[0].failure.message, LIMIT_MESSAGE);
+    assert_eq!(failures[0].raw_bytes.len(), 3);
     assert_eq!(registry.sizes().live_pumps, 0);
 }

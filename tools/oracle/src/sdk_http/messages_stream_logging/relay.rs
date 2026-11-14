@@ -88,46 +88,15 @@ impl Session {
         );
         let slots = Arc::new(StreamSlots::default());
         let gate = Arc::new(Gate::default());
-        let frames = http.frames(&call.body).await?;
-        let hook: Arc<dyn DetachedFailureHook> = Arc::clone(&state);
-        slots
-            .fields
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .detached_failure_hook = Some(hook);
-        let relay = start_relay(
-            GateSource {
-                frames,
-                index: 0,
-                gate: Arc::clone(&gate),
-            },
-            RelaySetup {
-                logging: StreamDeps {
-                    seams: Arc::clone(&state),
-                    worker: Arc::clone(&worker),
-                    slots: Arc::clone(&slots),
-                    clock: Arc::new(StepClock::default()),
-                    success_handler: Arc::new(PassThroughEndpointLogging {
-                        injected_log_dispatch: None,
-                    }),
-                },
-                logging_obj: logging_object()?,
-                request_body: call.body.clone(),
-                failure_logging: Arc::clone(&state),
-                registry,
-                limits: RelayLimits {
-                    queue_maxsize: call.queue_maxsize,
-                    max_detached_stream_drains: call.max_detached_stream_drains,
-                },
-                boundaries: ApiLimits::default(),
-            },
-        );
+        let source = gate_source(http, call, &gate).await?;
+        install_failure_hook(&slots, &state);
+        let setup = relay_setup(call, &state, &worker, &slots, registry)?;
         Ok(Self {
             state,
             worker,
             slots,
             gate,
-            relay: Some(relay),
+            relay: Some(start_relay(source, setup)),
             callback_args: Arc::new(Mutex::new(Vec::new())),
         })
     }
@@ -253,6 +222,56 @@ impl Session {
             closed: Flag(self.gate.closed.load(Ordering::SeqCst)),
         })
     }
+}
+
+async fn gate_source(
+    http: &Http<'_>,
+    call: &MessagesNativeStreamCall,
+    gate: &Arc<Gate>,
+) -> Result<GateSource, SdkHttpError> {
+    Ok(GateSource {
+        frames: http.frames(&call.body).await?,
+        index: 0,
+        gate: Arc::clone(gate),
+    })
+}
+
+fn install_failure_hook(slots: &StreamSlots, state: &Arc<StreamState>) {
+    let hook: Arc<dyn DetachedFailureHook> = Arc::clone(state);
+    slots
+        .fields
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .detached_failure_hook = Some(hook);
+}
+
+fn relay_setup(
+    call: &MessagesNativeStreamCall,
+    state: &Arc<StreamState>,
+    worker: &Arc<LoggingWorker<LoggingJob>>,
+    slots: &Arc<StreamSlots>,
+    registry: Arc<StreamRegistry>,
+) -> Result<RelaySetup<StreamState, StreamState>, SdkHttpError> {
+    Ok(RelaySetup {
+        logging: StreamDeps {
+            seams: Arc::clone(state),
+            worker: Arc::clone(worker),
+            slots: Arc::clone(slots),
+            clock: Arc::new(StepClock::default()),
+            success_handler: Arc::new(PassThroughEndpointLogging {
+                injected_log_dispatch: None,
+            }),
+        },
+        logging_obj: logging_object()?,
+        request_body: call.body.clone(),
+        failure_logging: Arc::clone(state),
+        registry,
+        limits: RelayLimits {
+            queue_maxsize: call.queue_maxsize,
+            max_detached_stream_drains: call.max_detached_stream_drains,
+        },
+        boundaries: ApiLimits::default(),
+    })
 }
 
 fn text_frames(raw: Vec<Vec<u8>>) -> Result<Vec<String>, SdkHttpError> {

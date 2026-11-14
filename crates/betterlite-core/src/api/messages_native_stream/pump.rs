@@ -2,16 +2,15 @@ use std::mem::take;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use betterlite_anthropic::api::messages_errors::decode::WireDecodeLimits;
 use betterlite_logging::passthrough_stream_logging::types::EndpointType;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use super::queue::{ClientQueue, QueueItem};
 use super::registry::{Slot, StreamRegistry};
-use super::{
-    MessagesChunkSource, ReportedFailure, RetentionBudget, StreamFailureCall, StreamFailureLogging,
-    error_sse_event,
-};
+use super::retention::RetentionBudget;
+use super::{MessagesChunkSource, ReportedFailure, StreamFailureCall, StreamFailureLogging};
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::messages_sse_events::chunk::{ChunkFlag, DecodedMessagesChunk};
 use crate::api::messages_sse_events::render::incomplete_error_sse_event;
@@ -19,6 +18,9 @@ use crate::api::messages_sse_events::{decode_messages_sse_chunk, decode_messages
 use crate::api::messages_stream_logging::seams::StreamSeams;
 use crate::api::messages_stream_logging::{
     MessagesStreamLogging, SseChunk, abort_upstream, convert_chunk_to_sse_format,
+};
+use crate::api::messages_stream_split::errors::{
+    MessagesStreamSplitError, StreamFailure, mid_stream_error_sse_event,
 };
 
 enum Step {
@@ -192,15 +194,24 @@ where
     }
 
     async fn limit_reached<E>(&mut self, queue: &ClientQueue<E>, failure: ReportedFailure) -> Step {
-        let event = error_sse_event(&failure.message);
+        let event = error_sse_event(&failure.message, &self.boundaries);
         self.schedule_failure(failure).await;
-        let _queued = queue.enqueue(QueueItem::Chunk(event)).await;
+        match event {
+            Ok(event) => {
+                let _queued = queue.enqueue(QueueItem::Chunk(event)).await;
+            }
+            Err(error) => {
+                tracing::warn!(
+                    "async_sse_wrapper: the limit error frame could not be encoded: {error}"
+                );
+            }
+        }
         Step::Abort
     }
 
     async fn schedule_failure(&self, failure: ReportedFailure) {
         self.failure_logging
-            .schedule_stream_failure_logging(StreamFailureCall {
+            .schedule_failure_logging(StreamFailureCall {
                 request_body: self.request_body.clone(),
                 endpoint: EndpointType::Anthropic,
                 failure,
@@ -213,4 +224,17 @@ where
         let collected = take(&mut self.collected);
         let _logged = self.logging.bill_collected_chunks(collected, teardown);
     }
+}
+
+// B081's Anthropic error envelope, with the relay's own wire bounds
+fn error_sse_event(message: &str, limits: &ApiLimits) -> Result<Vec<u8>, MessagesStreamSplitError> {
+    let wire = WireDecodeLimits {
+        max_json_bytes: limits.max_json_bytes,
+        max_event_bytes: limits.max_event_bytes,
+        max_items: limits.max_items,
+    };
+    let failure = StreamFailure::Unclassified {
+        text: message.to_owned(),
+    };
+    mid_stream_error_sse_event(&failure, wire).map(String::into_bytes)
 }

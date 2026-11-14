@@ -57,8 +57,7 @@ impl<E> ClientQueue<E> {
         }
     }
 
-    // Python's _enqueue_for_client: a full queue waits on space and the detach signal, and a
-    // completed put wins even when the detach is ready too
+    // Python's _enqueue_for_client: a full queue waits on space or detach, and a completed put wins
     pub(super) async fn enqueue(&self, mut item: QueueItem<E>) -> bool {
         if self.client_detached.load(Ordering::SeqCst) {
             return false;

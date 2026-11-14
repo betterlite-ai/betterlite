@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 
 use super::super::RelayLimits;
 use super::super::registry::StreamRegistry;
-use super::support::{Frame, Harness, frame, read, settle};
+use super::support::{Frame, Harness, at, frame, read, settle};
 use crate::api::messages_sse_events::render::incomplete_error_sse_event;
 use crate::api::messages_stream_logging::SseChunk;
 
@@ -56,7 +56,7 @@ async fn forwards_raw_bytes_and_encodes_dicts() {
     match read(&mut relay).await {
         Frame::Chunk(encoded) => {
             assert!(encoded.starts_with("event: content_block_delta\ndata: {"));
-            assert!(encoded.contains("\"text\":\"hi\""));
+            assert!(encoded.contains("\"text\": \"hi\""));
         }
         other => panic!("the mapping is encoded, got {other:?}"),
     }
@@ -148,20 +148,14 @@ async fn eof_emits_the_incomplete_event_without_billing_it() {
 
 async fn the_first_chunk_stamps_the_completion_time_once() {
     let (harness, mut relay) = Harness::start(limits(), Arc::new(StreamRegistry::default()));
-    harness
-        .script
-        .release(SseChunk::Bytes(frame("event: ping\ndata: {}\n\n")))
-        .await;
-    assert!(matches!(read(&mut relay).await, Frame::Chunk(_)));
-    let stamped = harness
-        .completion_start_time()
-        .expect("the first chunk stamps the completion time");
-    harness
-        .script
-        .release(SseChunk::Bytes(frame("event: ping\ndata: {}\n\n")))
-        .await;
-    assert!(matches!(read(&mut relay).await, Frame::Chunk(_)));
-    assert_eq!(harness.completion_start_time(), Some(stamped));
+    let ping = "event: ping\ndata: {\"type\": \"ping\"}\n\n";
+    harness.script.release(SseChunk::Bytes(frame(ping))).await;
+    assert_eq!(read(&mut relay).await, Frame::Chunk(ping.to_owned()));
+    harness.script.release(SseChunk::Bytes(frame(ping))).await;
+    assert_eq!(read(&mut relay).await, Frame::Chunk(ping.to_owned()));
     harness.script.finish().await;
     settle(relay).await;
+    harness.worker.flush().await;
+    // the teardown and pump copies read the clock first, so the first chunk stamps at(2)
+    assert_eq!(harness.completion_start_time(), Some(at(2)));
 }

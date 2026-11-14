@@ -172,7 +172,7 @@ impl SuccessClock for StepClock {
     }
 }
 
-fn at(seconds: i64) -> DateTime<FixedOffset> {
+pub(super) fn at(seconds: i64) -> DateTime<FixedOffset> {
     let base =
         DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00").expect("the fixture is RFC 3339");
     let step = Seconds::try_seconds(seconds).expect("the step is small");
@@ -259,7 +259,7 @@ impl StreamSeams for Recorder {
 
 #[async_trait]
 impl StreamFailureLogging for Recorder {
-    async fn schedule_stream_failure_logging(&self, call: StreamFailureCall) {
+    async fn schedule_failure_logging(&self, call: StreamFailureCall) {
         self.failures
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -282,59 +282,39 @@ impl Harness {
         limits: RelayLimits,
         registry: Arc<StreamRegistry>,
     ) -> (Self, ClientRelay<Recorder, ProviderError>) {
-        let (commands, receiver) = mpsc::channel(16);
-        let (delivered, reported) = mpsc::channel(16);
-        let pulls = Arc::new(AtomicUsize::new(0));
-        let closed = Arc::new(AtomicBool::new(false));
-        let source = ScriptedSource {
-            script: Script {
-                commands: receiver,
-                delivered,
-            },
-            pulls: Arc::clone(&pulls),
-            closed: Arc::clone(&closed),
-        };
+        Self::start_with(limits, registry, ApiLimits::default())
+    }
+
+    // A case that drives the relay's own read and item bounds passes them here instead
+    pub(super) fn start_with(
+        limits: RelayLimits,
+        registry: Arc<StreamRegistry>,
+        boundaries: ApiLimits,
+    ) -> (Self, ClientRelay<Recorder, ProviderError>) {
+        let (source, script, closed) = scripted_source();
         let seams = Arc::new(Recorder::default());
         let worker = Arc::new(LoggingWorker::start(WorkerSettings::default()).expect("starts"));
         let slots = Arc::new(StreamSlots::default());
         let logging_obj = logging_object();
-        let deps = StreamDeps {
-            seams: Arc::clone(&seams),
-            worker: Arc::clone(&worker),
-            slots: Arc::clone(&slots),
-            clock: Arc::new(StepClock {
-                reads: Mutex::new(0),
-            }),
-            success_handler: Arc::new(PassThroughEndpointLogging {
-                injected_log_dispatch: None,
-            }),
-        };
-        let setup = RelaySetup {
-            logging: deps,
-            logging_obj: Arc::clone(&logging_obj),
-            request_body: IndexMap::from([("model".to_owned(), Json::Text("claude".to_owned()))]),
-            failure_logging: Arc::clone(&seams),
-            registry: Arc::clone(&registry),
+        let deps = stream_deps(Arc::clone(&seams), Arc::clone(&worker), Arc::clone(&slots));
+        let setup = relay_setup(
             limits,
-            boundaries: ApiLimits::default(),
-        };
+            boundaries,
+            Arc::clone(&registry),
+            deps,
+            Arc::clone(&logging_obj),
+        );
         let relay = start_relay(source, setup);
-        (
-            Self {
-                seams,
-                slots,
-                logging_obj,
-                worker,
-                registry,
-                script: ScriptHandle {
-                    commands,
-                    delivered: reported,
-                    pulls,
-                },
-                closed,
-            },
-            relay,
-        )
+        let harness = Self {
+            seams,
+            slots,
+            logging_obj,
+            worker,
+            registry,
+            script,
+            closed,
+        };
+        (harness, relay)
     }
 
     pub(super) fn routed_frames(&self) -> Vec<Vec<u8>> {
@@ -383,6 +363,64 @@ impl Harness {
             .unwrap_or_else(PoisonError::into_inner)
             .deferred_args
             .is_some()
+    }
+}
+
+fn scripted_source() -> (ScriptedSource, ScriptHandle, Arc<AtomicBool>) {
+    let (commands, receiver) = mpsc::channel(16);
+    let (delivered, reported) = mpsc::channel(16);
+    let pulls = Arc::new(AtomicUsize::new(0));
+    let closed = Arc::new(AtomicBool::new(false));
+    let source = ScriptedSource {
+        script: Script {
+            commands: receiver,
+            delivered,
+        },
+        pulls: Arc::clone(&pulls),
+        closed: Arc::clone(&closed),
+    };
+    let script = ScriptHandle {
+        commands,
+        delivered: reported,
+        pulls,
+    };
+    (source, script, closed)
+}
+
+fn stream_deps(
+    seams: Arc<Recorder>,
+    worker: Arc<LoggingWorker<LoggingJob>>,
+    slots: Arc<StreamSlots>,
+) -> StreamDeps<Recorder> {
+    StreamDeps {
+        seams,
+        worker,
+        slots,
+        clock: Arc::new(StepClock {
+            reads: Mutex::new(0),
+        }),
+        success_handler: Arc::new(PassThroughEndpointLogging {
+            injected_log_dispatch: None,
+        }),
+    }
+}
+
+fn relay_setup(
+    limits: RelayLimits,
+    boundaries: ApiLimits,
+    registry: Arc<StreamRegistry>,
+    deps: StreamDeps<Recorder>,
+    logging_obj: Arc<StreamLoggingObject>,
+) -> RelaySetup<Recorder, Recorder> {
+    let failure_logging = Arc::clone(&deps.seams);
+    RelaySetup {
+        logging: deps,
+        logging_obj,
+        request_body: IndexMap::from([("model".to_owned(), Json::Text("claude".to_owned()))]),
+        failure_logging,
+        registry,
+        limits,
+        boundaries,
     }
 }
 
