@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::time::UNIX_EPOCH;
 
 use betterlite_a2a::agentcore_transform::SignedRequest;
+use betterlite_a2a::agentcore_transform::call::AgentCoreHandler;
 use betterlite_a2a::agentcore_transform::runtime::{
     AgentCoreRuntime, HttpRequest, HttpResponse, SigningRequest, StreamedResponse,
 };
@@ -46,8 +47,38 @@ pub(super) enum Failure {
 }
 
 pub(super) struct FixtureRuntime<'case> {
-    pub(super) answer: Option<&'case Answer>,
-    pub(super) stream: Option<&'case StreamAnswer>,
+    answer: Option<&'case Answer>,
+    stream: Option<&'case StreamAnswer>,
+}
+
+impl<'case> FixtureRuntime<'case> {
+    pub(super) const fn silent() -> Self {
+        Self {
+            answer: None,
+            stream: None,
+        }
+    }
+
+    pub(super) const fn buffered(answer: &'case Answer) -> Self {
+        Self {
+            answer: Some(answer),
+            stream: None,
+        }
+    }
+
+    pub(super) const fn streamed(stream: &'case StreamAnswer) -> Self {
+        Self {
+            answer: None,
+            stream: Some(stream),
+        }
+    }
+
+    pub(super) const fn into_handler(self) -> AgentCoreHandler<Self, Source> {
+        AgentCoreHandler {
+            runtime: self,
+            ids: Source,
+        }
+    }
 }
 
 impl AgentCoreRuntime for FixtureRuntime<'_> {
@@ -118,7 +149,7 @@ impl AgentCoreRuntime for FixtureRuntime<'_> {
         Ok(StreamedResponse {
             status: answer.status,
             content_type: answer.content_type.clone(),
-            lines: stream::iter(lines.into_iter()),
+            lines: stream::iter(lines),
         })
     }
 }

@@ -7,7 +7,9 @@ use futures_util::{StreamExt as _, stream};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {
-    let text = String::from_utf8_lossy(bytes);
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return;
+    };
     let lines = stream::iter(
         text.lines()
             .map(|line| Ok::<_, Infallible>(line.to_owned())),

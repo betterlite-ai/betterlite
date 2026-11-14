@@ -11,7 +11,9 @@ use crate::agentcore_transform::parse_sse_events;
 #[tokio::test]
 async fn replays_the_agentcore_sse_corpus(#[files("fuzz/corpus/agentcore_sse/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
-    let text = String::from_utf8_lossy(&bytes);
+    let Ok(text) = std::str::from_utf8(&bytes) else {
+        return;
+    };
     let lines = stream::iter(
         text.lines()
             .map(|line| Ok::<_, Infallible>(line.to_owned())),

@@ -1,14 +1,11 @@
 use std::collections::BTreeMap;
-use std::error::Error;
-use std::fmt::{Display, Formatter};
 use std::sync::Mutex;
 
 use betterlite_core::agents::json::AgentJson;
-use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
 use futures_util::stream;
-use indexmap::IndexMap;
 use secrecy::SecretString;
+use thiserror::Error;
 use uuid::Uuid;
 
 use crate::agentcore_transform::SignedRequest;
@@ -25,16 +22,9 @@ pub(crate) const SESSION_PREFIX: &str = "litellm-session";
 pub(crate) const URL: &str =
     "https://bedrock-agentcore.us-west-2.amazonaws.com/runtimes/agentcore/arn/invocations/";
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("{0}")]
 pub(crate) struct FixtureError(pub(crate) &'static str);
-
-impl Display for FixtureError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(self.0)
-    }
-}
-
-impl Error for FixtureError {}
 
 pub(crate) struct Source;
 
@@ -49,11 +39,15 @@ impl EventSource for Source {
 }
 
 pub(crate) struct Signing {
-    pub(crate) url: String,
     pub(crate) model: String,
     pub(crate) api_key: Option<SecretString>,
-    pub(crate) request_data: IndexMap<String, Json>,
     pub(crate) headers: BTreeMap<String, String>,
+}
+
+pub(crate) struct Posted {
+    pub(crate) url: String,
+    pub(crate) headers: BTreeMap<String, String>,
+    pub(crate) body: Vec<u8>,
 }
 
 pub(crate) struct FixtureRuntime {
@@ -69,6 +63,7 @@ pub(crate) struct FixtureRuntime {
     pub(crate) lines: Vec<String>,
     pub(crate) post_error: Option<&'static str>,
     pub(crate) signing: Mutex<Vec<Signing>>,
+    pub(crate) posted: Mutex<Vec<Posted>>,
 }
 
 pub(crate) fn fixture() -> FixtureRuntime {
@@ -85,6 +80,27 @@ pub(crate) fn fixture() -> FixtureRuntime {
         lines: Vec::new(),
         post_error: None,
         signing: Mutex::new(Vec::new()),
+        posted: Mutex::new(Vec::new()),
+    }
+}
+
+impl FixtureRuntime {
+    fn response(&self) -> HttpResponse {
+        HttpResponse {
+            status: self.status,
+            body: self.body.clone(),
+        }
+    }
+
+    fn record(&self, request: &HttpRequest<'_>) {
+        self.posted
+            .lock()
+            .expect("the fixture lock is not poisoned")
+            .push(Posted {
+                url: request.url.to_owned(),
+                headers: request.headers.clone(),
+                body: request.body.to_vec(),
+            });
     }
 }
 
@@ -125,10 +141,8 @@ impl AgentCoreRuntime for FixtureRuntime {
             .lock()
             .expect("the fixture lock is not poisoned")
             .push(Signing {
-                url: request.api_base.to_owned(),
                 model: request.model.to_owned(),
                 api_key: request.api_key.cloned(),
-                request_data: request.request_data.clone(),
                 headers: request.headers.clone(),
             });
         match self.signing_error {
@@ -141,20 +155,17 @@ impl AgentCoreRuntime for FixtureRuntime {
         }
     }
 
-    async fn post(&self, _request: &HttpRequest<'_>) -> Result<HttpResponse, Self::Error> {
-        match self.post_error {
-            Some(message) => Err(FixtureError(message)),
-            None => Ok(HttpResponse {
-                status: self.status,
-                body: self.body.clone(),
-            }),
-        }
+    async fn post(&self, request: &HttpRequest<'_>) -> Result<HttpResponse, Self::Error> {
+        self.record(request);
+        self.post_error
+            .map_or_else(|| Ok(self.response()), |message| Err(FixtureError(message)))
     }
 
     async fn post_stream(
         &self,
-        _request: &HttpRequest<'_>,
+        request: &HttpRequest<'_>,
     ) -> Result<StreamedResponse<Self::Lines>, Self::Error> {
+        self.record(request);
         if let Some(message) = self.post_error {
             return Err(FixtureError(message));
         }
@@ -162,7 +173,7 @@ impl AgentCoreRuntime for FixtureRuntime {
         Ok(StreamedResponse {
             status: self.status,
             content_type: self.content_type.clone(),
-            lines: stream::iter(lines.into_iter()),
+            lines: stream::iter(lines),
         })
     }
 }
@@ -197,5 +208,6 @@ pub(crate) fn bearer_params() -> LitellmParams {
     litellm_params(&[
         ("model", serde_json::json!("bedrock/agentcore/arn")),
         ("api_key", serde_json::json!("jwt-token")),
+        ("litellm_a2a_user_api_key_hash", serde_json::json!("key-2")),
     ])
 }

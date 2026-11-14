@@ -1,7 +1,7 @@
 import asyncio
 import json
-from collections.abc import AsyncIterator, Callable, Mapping
-from typing import Literal, Protocol, TypeAlias, TypedDict, runtime_checkable
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from typing import Literal, Protocol, TypeAlias, TypedDict, TypeVar, runtime_checkable
 
 import httpx
 import litellm
@@ -15,6 +15,7 @@ from pydantic import JsonValue, TypeAdapter
 
 DECODER: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 CLIENT_KEY = "async_httpx_client"
+Outcome = TypeVar("Outcome")
 
 
 @runtime_checkable
@@ -29,8 +30,8 @@ class Transformation(Protocol):
         request_id: str,
         params: Mapping[str, JsonValue],
         litellm_params: dict[str, JsonValue],
+        *,
         method: str = "message/send",
-        stream: bool = False,
         agent_extra_headers: dict[str, str] | None = None,
     ) -> tuple[str, dict[str, str], bytes]: ...
 
@@ -68,7 +69,7 @@ class AgentConfig(Protocol):
         request_id: str,
         params: dict[str, JsonValue],
         api_base: str | None = None,
-        **kwargs: object,
+        **kwargs: JsonValue,
     ) -> dict[str, JsonValue]: ...
 
     def handle_streaming(
@@ -76,7 +77,7 @@ class AgentConfig(Protocol):
         request_id: str,
         params: dict[str, JsonValue],
         api_base: str | None = None,
-        **kwargs: object,
+        **kwargs: JsonValue,
     ) -> AsyncIterator[dict[str, JsonValue]]: ...
 
 
@@ -215,72 +216,44 @@ def parse_sse(input_value: ParseSseInput) -> JsonValue:
     return output
 
 
-async def call_non_streaming(
-    handler: AgentHandler, input_value: NonStreamingInput
-) -> dict[str, JsonValue]:
-    install_client(json_reply(input_value["answer"]))
-    return await handler.handle_non_streaming(
-        input_value["request_id"],
-        input_value["params"],
-        input_value["litellm_params"],
-        input_value["agent_extra_headers"],
-    )
-
-
-async def call_streaming(handler: AgentHandler, input_value: StreamingInput) -> list[JsonValue]:
-    install_client(stream_reply(input_value["answer"]))
-    events = handler.handle_streaming(
-        input_value["request_id"],
-        input_value["params"],
-        input_value["litellm_params"],
-        input_value["agent_extra_headers"],
-    )
-    return await collected(events)
-
-
-async def call_config_non_streaming(
-    config: AgentConfig, input_value: ConfigInput
-) -> dict[str, JsonValue]:
-    install_client(json_reply(input_value["answer"]))
-    return await config.handle_non_streaming(
-        input_value["request_id"],
-        input_value["params"],
-        litellm_params=input_value["litellm_params"],
-    )
-
-
-async def call_config_streaming(config: AgentConfig, input_value: ConfigInput) -> list[JsonValue]:
-    install_client(stream_reply(input_value["stream_answer"]))
-    events = config.handle_streaming(
-        input_value["request_id"],
-        input_value["params"],
-        litellm_params=input_value["litellm_params"],
-    )
-    return await collected(events)
-
-
-def config_non_streaming(config: AgentConfig, input_value: ConfigInput) -> JsonValue:
-    try:
-        value = asyncio.run(call_config_non_streaming(config, input_value))
-    except ValueError:
-        return {"ok": False}
-    return {"ok": True, "value": value}
-
-
-def config_streaming(config: AgentConfig, input_value: ConfigInput) -> JsonValue:
-    try:
-        value = asyncio.run(call_config_streaming(config, input_value))
-    except ValueError:
-        return {"ok": False}
-    return {"ok": True, "value": value}
+async def answered(reply: Reply, response: Awaitable[Outcome]) -> Outcome:
+    install_client(reply)
+    return await response
 
 
 def config(input_value: ConfigInput) -> JsonValue:
     instance = CONFIG()
-    output: dict[str, JsonValue] = {
-        "non_streaming": config_non_streaming(instance, input_value),
-        "streaming": config_streaming(instance, input_value),
-    }
+    output: dict[str, JsonValue] = {}
+    try:
+        value = asyncio.run(
+            answered(
+                json_reply(input_value["answer"]),
+                instance.handle_non_streaming(
+                    input_value["request_id"],
+                    input_value["params"],
+                    litellm_params=input_value["litellm_params"],
+                ),
+            )
+        )
+        output["non_streaming"] = {"ok": True, "value": value}
+    except ValueError:
+        output["non_streaming"] = {"ok": False}
+    try:
+        events = asyncio.run(
+            answered(
+                stream_reply(input_value["stream_answer"]),
+                collected(
+                    instance.handle_streaming(
+                        input_value["request_id"],
+                        input_value["params"],
+                        litellm_params=input_value["litellm_params"],
+                    )
+                ),
+            )
+        )
+        output["streaming"] = {"ok": True, "value": events}
+    except ValueError:
+        output["streaming"] = {"ok": False}
     return output
 
 
@@ -290,9 +263,31 @@ def run(input_value: Input) -> JsonValue:
     if input_value["function"] == "parse_sse":
         return parse_sse(input_value)
     if input_value["function"] == "non_streaming":
-        return asyncio.run(call_non_streaming(HANDLER(), input_value))
+        return asyncio.run(
+            answered(
+                json_reply(input_value["answer"]),
+                HANDLER().handle_non_streaming(
+                    input_value["request_id"],
+                    input_value["params"],
+                    input_value["litellm_params"],
+                    input_value["agent_extra_headers"],
+                ),
+            )
+        )
     if input_value["function"] == "streaming":
-        values = asyncio.run(call_streaming(HANDLER(), input_value))
-        output: dict[str, JsonValue] = {"events": values}
+        events = asyncio.run(
+            answered(
+                stream_reply(input_value["answer"]),
+                collected(
+                    HANDLER().handle_streaming(
+                        input_value["request_id"],
+                        input_value["params"],
+                        input_value["litellm_params"],
+                        input_value["agent_extra_headers"],
+                    )
+                ),
+            )
+        )
+        output: dict[str, JsonValue] = {"events": events}
         return output
     return config(input_value)

@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 
 use betterlite_core::agents::json::AgentJson;
 
-use super::call::{AgentCoreHandler, HandlerCall, StreamedEvents};
+use super::call::{AgentCoreHandler, HandlerCall};
 use super::params::LitellmParams;
 use super::runtime::AgentCoreRuntime;
-use super::{AgentCoreError, TransformError};
+use super::{Events, Outcome, TransformError};
 use crate::completion_bridge::EventSource;
 use crate::completion_bridge::wire::MessageSendParams;
 
@@ -40,19 +40,18 @@ where
     R: AgentCoreRuntime,
     S: EventSource + Send,
 {
-    pub async fn handle_non_streaming(
-        &mut self,
-        call: &ConfigCall<'_>,
-    ) -> Result<AgentJson, AgentCoreError<R::Error>> {
+    pub async fn handle_non_streaming(&mut self, call: &ConfigCall<'_>) -> Outcome<AgentJson, R> {
+        tracing::debug!(id = call.request_id, "AgentCore: forwarding a request");
         self.handler
             .handle_non_streaming(&handler_call(call)?)
             .await
     }
 
-    pub async fn handle_streaming(
-        &mut self,
-        call: &ConfigCall<'_>,
-    ) -> Result<StreamedEvents<R::Error>, AgentCoreError<R::Error>> {
+    pub async fn handle_streaming(&mut self, call: &ConfigCall<'_>) -> Outcome<Events<R>, R> {
+        tracing::debug!(
+            id = call.request_id,
+            "AgentCore: forwarding a streaming request"
+        );
         self.handler.handle_streaming(&handler_call(call)?).await
     }
 }

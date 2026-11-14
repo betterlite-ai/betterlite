@@ -13,8 +13,9 @@ use crate::completion_bridge::wire::MessageSendParams;
 use crate::utils::session_scoping::{get_session_id_from_a2a_params, scope_session_to_principal};
 use call::{AgentCoreHandler, HandlerCall, SignedRequestCall, StreamedEvents};
 use headers::filter_reserved_headers;
-use params::LitellmParams;
-use runtime::{AgentCoreRuntime, HttpRequest, RpcMethod, SigningRequest};
+use runtime::{
+    AgentCoreRuntime, HttpRequest, HttpResponse, RpcMethod, SigningRequest, StreamedResponse,
+};
 
 pub mod call;
 pub mod config;
@@ -99,6 +100,40 @@ fn envelope(
     ]))
 }
 
+fn request_headers<R, S>(
+    runtime: &R,
+    call: &SignedRequestCall<'_>,
+    ids: &mut S,
+) -> Result<BTreeMap<String, String>, AgentCoreError<R::Error>>
+where
+    R: AgentCoreRuntime,
+    S: EventSource + Send,
+{
+    let optional_params = &call.litellm_params.optional;
+    let mut headers = BTreeMap::new();
+    let derived = scoped_session_id(call.params, call.litellm_params.principal.as_deref());
+    let session_id = match derived {
+        Some(scoped) => scoped,
+        None => runtime
+            .session_id(optional_params, ids.next_uuid())
+            .map_err(AgentCoreError::Runtime)?,
+    };
+    headers.insert(
+        SESSION_HEADER.to_owned(),
+        validate_runtime_session_id(&session_id)?,
+    );
+    let configured = runtime
+        .user_id(optional_params)
+        .map_err(AgentCoreError::Runtime)?;
+    if let Some(user_id) = configured.filter(|value| !value.is_empty()) {
+        headers.insert(USER_HEADER.to_owned(), user_id);
+    }
+    if let Some(extra_headers) = call.agent_extra_headers {
+        headers.extend(filter_reserved_headers(extra_headers));
+    }
+    Ok(headers)
+}
+
 // LiteLLM's fn get_url_and_signed_request returns (url, signed_headers, signed_body_bytes), here a SignedRequest -> never a missing body
 pub async fn get_url_and_signed_request<R, S>(
     runtime: &R,
@@ -116,27 +151,7 @@ where
         .complete_url(agentcore_model, optional_params)
         .map_err(AgentCoreError::Runtime)?;
     let request_data = envelope(call.request_id, call.method, call.params)?;
-    let mut headers = BTreeMap::new();
-    let derived = scoped_session_id(call.params, call.litellm_params.principal.as_deref());
-    let session_id = match derived {
-        Some(session_id) => session_id,
-        None => runtime
-            .session_id(optional_params, ids.next_uuid())
-            .map_err(AgentCoreError::Runtime)?,
-    };
-    headers.insert(
-        SESSION_HEADER.to_owned(),
-        validate_runtime_session_id(&session_id)?,
-    );
-    let user_id = runtime
-        .user_id(optional_params)
-        .map_err(AgentCoreError::Runtime)?;
-    if let Some(user_id) = user_id.filter(|value| !value.is_empty()) {
-        headers.insert(USER_HEADER.to_owned(), user_id);
-    }
-    if let Some(extra_headers) = call.agent_extra_headers {
-        headers.extend(filter_reserved_headers(extra_headers));
-    }
+    let headers = request_headers(runtime, call, ids)?;
     let request = SigningRequest {
         headers: &headers,
         optional_params,
@@ -158,23 +173,23 @@ where
     E: Error + 'static,
 {
     async_stream::stream! {
-        let mut lines = std::pin::pin!(lines);
-        while let Some(line) = lines.next().await {
-            let line = match line {
-                Ok(line) => line,
+        let mut pinned = std::pin::pin!(lines);
+        while let Some(next) = pinned.next().await {
+            let raw = match next {
+                Ok(raw) => raw,
                 Err(source) => {
                     yield Err(AgentCoreError::Runtime(source));
                     return;
                 }
             };
-            let line = line.trim();
-            if line.is_empty() {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
                 continue;
             }
-            let Some(payload) = line.strip_prefix("data:") else {
+            let Some(rest) = trimmed.strip_prefix("data:") else {
                 continue;
             };
-            let payload = payload.trim();
+            let payload = rest.trim();
             if payload.is_empty() {
                 continue;
             }
@@ -194,12 +209,61 @@ fn decode_body(body: &[u8]) -> Result<AgentJson, TransformError> {
     Ok(value)
 }
 
-fn check_status<E: Error + 'static>(status: u16) -> Result<(), AgentCoreError<E>> {
+fn check_status<E>(status: u16) -> Result<(), AgentCoreError<E>>
+where
+    E: Error + 'static,
+{
     if (200..300).contains(&status) {
         return Ok(());
     }
     Err(AgentCoreError::Status { status })
 }
+
+impl SignedRequest {
+    const fn request(&self) -> HttpRequest<'_> {
+        HttpRequest {
+            url: &self.url,
+            headers: &self.headers,
+            body: &self.body,
+        }
+    }
+}
+
+fn replies<L, E>(response: StreamedResponse<L>) -> StreamedEvents<E>
+where
+    L: Stream<Item = Result<String, E>> + Send + 'static,
+    E: Error + Send + 'static,
+{
+    let json_reply = response
+        .content_type
+        .to_lowercase()
+        .contains(JSON_CONTENT_TYPE);
+    let lines = response.lines;
+    Box::pin(async_stream::stream! {
+        if json_reply {
+            let body = match runtime::collect_body(lines).await {
+                Ok(body) => body,
+                Err(error) => {
+                    yield Err(error);
+                    return;
+                }
+            };
+            match serde_json::from_str::<AgentJson>(&body) {
+                Ok(value) => yield Ok(value),
+                Err(source) => yield Err(AgentCoreError::Transform(TransformError::Decode(source))),
+            }
+        } else {
+            let mut events = std::pin::pin!(parse_sse_events(lines));
+            while let Some(event) = events.next().await {
+                yield event;
+            }
+        }
+    })
+}
+
+type Outcome<T, R> = Result<T, AgentCoreError<<R as AgentCoreRuntime>::Error>>;
+type Events<R> = StreamedEvents<<R as AgentCoreRuntime>::Error>;
+type Streamed<R> = StreamedResponse<<R as AgentCoreRuntime>::Lines>;
 
 impl<R, S> AgentCoreHandler<R, S>
 where
@@ -210,8 +274,8 @@ where
         &mut self,
         call: &HandlerCall<'_>,
         method: RpcMethod,
-    ) -> Result<SignedRequest, AgentCoreError<R::Error>> {
-        get_url_and_signed_request(
+    ) -> Outcome<SignedRequest, R> {
+        let signed = get_url_and_signed_request(
             &self.runtime,
             &SignedRequestCall {
                 request_id: call.request_id,
@@ -222,70 +286,37 @@ where
             },
             &mut self.ids,
         )
-        .await
+        .await?;
+        tracing::info!(url = %signed.url, method = method.name(), "BedrockAgentCore A2A: sending a request");
+        Ok(signed)
     }
 
-    pub async fn handle_non_streaming(
-        &mut self,
-        call: &HandlerCall<'_>,
-    ) -> Result<AgentJson, AgentCoreError<R::Error>> {
-        let signed = self.signed(call, RpcMethod::Send).await?;
-        // LiteLLM's client.post(url, headers=headers, data=body) then response.json(), with the httpx client behind the runtime seam
-        tracing::info!(url = %signed.url, "BedrockAgentCore A2A: sending a non-streaming request");
-        let response = self
-            .runtime
-            .post(&HttpRequest {
-                url: &signed.url,
-                headers: &signed.headers,
-                body: &signed.body,
-            })
-            .await
-            .map_err(AgentCoreError::Runtime)?;
+    // LiteLLM's client.post(url, headers=headers, data=body), with the httpx client behind the runtime seam
+    async fn sent(runtime: &R, signed: &SignedRequest) -> Outcome<HttpResponse, R> {
+        let request = signed.request();
+        let posted = runtime.post(&request).await;
+        let response = posted.map_err(AgentCoreError::Runtime)?;
         check_status::<R::Error>(response.status)?;
+        Ok(response)
+    }
+
+    async fn opened(runtime: &R, signed: &SignedRequest) -> Outcome<Streamed<R>, R> {
+        let request = signed.request();
+        let posted = runtime.post_stream(&request).await;
+        let response = posted.map_err(AgentCoreError::Runtime)?;
+        check_status::<R::Error>(response.status)?;
+        Ok(response)
+    }
+
+    pub async fn handle_non_streaming(&mut self, call: &HandlerCall<'_>) -> Outcome<AgentJson, R> {
+        let signed = self.signed(call, RpcMethod::Send).await?;
+        let response = Self::sent(&self.runtime, &signed).await?;
         Ok(decode_body(&response.body)?)
     }
 
-    pub async fn handle_streaming(
-        &mut self,
-        call: &HandlerCall<'_>,
-    ) -> Result<StreamedEvents<R::Error>, AgentCoreError<R::Error>> {
+    pub async fn handle_streaming(&mut self, call: &HandlerCall<'_>) -> Outcome<Events<R>, R> {
         let signed = self.signed(call, RpcMethod::Stream).await?;
-        tracing::info!(url = %signed.url, "BedrockAgentCore A2A: sending a streaming request");
-        let response = self
-            .runtime
-            .post_stream(&HttpRequest {
-                url: &signed.url,
-                headers: &signed.headers,
-                body: &signed.body,
-            })
-            .await
-            .map_err(AgentCoreError::Runtime)?;
-        check_status::<R::Error>(response.status)?;
-        let json_reply = response
-            .content_type
-            .to_lowercase()
-            .contains(JSON_CONTENT_TYPE);
-        let lines = response.lines;
-        Ok(async_stream::stream! {
-            if json_reply {
-                let body = match runtime::collect_body(lines).await {
-                    Ok(body) => body,
-                    Err(error) => {
-                        yield Err(error);
-                        return;
-                    }
-                };
-                match serde_json::from_str::<AgentJson>(&body) {
-                    Ok(value) => yield Ok(value),
-                    Err(source) => yield Err(AgentCoreError::Transform(TransformError::Decode(source))),
-                }
-            } else {
-                let mut events = std::pin::pin!(parse_sse_events(lines));
-                while let Some(event) = events.next().await {
-                    yield event;
-                }
-            }
-        }
-        .boxed())
+        let response = Self::opened(&self.runtime, &signed).await?;
+        Ok(replies(response))
     }
 }

@@ -37,7 +37,7 @@ fn handler_call<'call>(
     }
 }
 
-fn config_call<'call>(
+const fn config_call<'call>(
     request: &'call MessageSendParams,
     litellm_params: Option<&'call BTreeMap<String, AgentJson>>,
 ) -> ConfigCall<'call> {
@@ -77,11 +77,11 @@ fn envelope_body(result: &Result<SignedRequest, AgentCoreError<FixtureError>>) -
 
 async fn collected<S>(stream: S) -> Vec<Result<AgentJson, AgentCoreError<FixtureError>>>
 where
-    S: Stream<Item = Result<AgentJson, AgentCoreError<FixtureError>>>,
+    S: Stream<Item = Result<AgentJson, AgentCoreError<FixtureError>>> + Send,
 {
-    let mut stream = std::pin::pin!(stream);
+    let mut pinned = std::pin::pin!(stream);
     let mut items = Vec::new();
-    while let Some(item) = stream.next().await {
+    while let Some(item) = pinned.next().await {
         items.push(item);
     }
     items
@@ -99,8 +99,7 @@ fn valid_lines(items: &[&str]) -> impl Stream<Item = Result<String, FixtureError
         items
             .iter()
             .map(|line| Ok((*line).to_owned()))
-            .collect::<Vec<_>>()
-            .into_iter(),
+            .collect::<Vec<_>>(),
     )
 }
 
@@ -230,7 +229,7 @@ async fn the_streaming_envelope_uses_message_stream() {
 #[tokio::test]
 async fn the_bedrock_prefix_is_stripped_before_the_runtime() {
     let runtime = fixture();
-    let request = params(Some(json!(CONTEXT_ID)));
+    let request = params(None);
     let litellm = litellm_params(&[
         ("model", json!("bedrock/agentcore/arn")),
         ("api_key", json!("jwt-token")),
@@ -249,7 +248,7 @@ async fn the_bedrock_prefix_is_stripped_before_the_runtime() {
 #[tokio::test]
 async fn a_model_without_the_prefix_reaches_the_runtime_unchanged() {
     let runtime = fixture();
-    let request = params(Some(json!(CONTEXT_ID)));
+    let request = params(None);
     let litellm = litellm_params(&[
         ("model", json!("agentcore/arn")),
         ("api_key", json!("jwt-token")),
@@ -273,17 +272,17 @@ async fn the_session_and_user_headers_are_set_before_signing() {
 
     let result = signed_request(&runtime, &request, &litellm, RpcMethod::Send).await;
 
-    let request = result.expect("the request is signed");
+    let signed = result.expect("the request is signed");
     assert_eq!(
-        request.headers.get(SESSION_HEADER).map(String::as_str),
+        signed.headers.get(SESSION_HEADER).map(String::as_str),
         Some(expected_session.as_str())
     );
     assert_eq!(
-        request.headers.get(USER_HEADER).map(String::as_str),
+        signed.headers.get(USER_HEADER).map(String::as_str),
         Some("user-1")
     );
     let signing = runtime.signing.lock().expect("the fixture lock");
-    assert_eq!(signing[0].headers, request.headers);
+    assert_eq!(signing[0].headers, signed.headers);
 }
 
 #[tokio::test]
@@ -313,10 +312,8 @@ async fn the_signature_sees_the_api_key_and_the_model() {
 
     assert!(result.is_ok());
     let signing = runtime.signing.lock().expect("the fixture lock");
-    assert_eq!(
-        signing[0].api_key.as_ref().map(|key| key.expose_secret()),
-        Some("jwt-token")
-    );
+    let api_key = signing[0].api_key.as_ref().expect("the api key is signed");
+    assert_eq!(api_key.expose_secret(), "jwt-token");
     assert_eq!(signing[0].model, "agentcore/arn");
 }
 
@@ -445,7 +442,7 @@ async fn lines_without_the_data_prefix_are_ignored() {
 
 #[tokio::test]
 async fn a_broken_line_stream_is_reported() {
-    let lines = futures_util::stream::iter(vec![
+    let lines = futures_util::stream::iter([
         Ok("data: {\"a\": 1}".to_owned()),
         Err(FixtureError("the stream breaks")),
     ]);
@@ -574,11 +571,11 @@ async fn streaming_yields_every_sse_event() {
     let request = params(Some(json!(CONTEXT_ID)));
     let litellm = bearer_params();
 
-    let events = handler
+    let stream = handler
         .handle_streaming(&handler_call(&request, &litellm))
         .await
         .expect("the agent streams");
-    let events = collected(events).await;
+    let events = collected(stream).await;
 
     assert_eq!(
         values(events),
@@ -598,11 +595,11 @@ async fn a_json_content_type_yields_one_event() {
     let request = params(Some(json!(CONTEXT_ID)));
     let litellm = bearer_params();
 
-    let events = handler
+    let stream = handler
         .handle_streaming(&handler_call(&request, &litellm))
         .await
         .expect("the agent answers with JSON");
-    let events = collected(events).await;
+    let events = collected(stream).await;
 
     assert_eq!(values(events), vec![json!({"a": 1, "b": 2})]);
 }
@@ -796,4 +793,79 @@ fn a_non_text_model_is_an_error_naming_the_field() {
         error,
         TransformError::FieldType { field: "model" }
     ));
+}
+
+#[tokio::test]
+async fn the_signed_request_is_what_gets_posted() {
+    let mut runtime = fixture();
+    runtime.body = br#"{"jsonrpc":"2.0","id":"req-1","result":{}}"#.to_vec();
+    let mut handler = AgentCoreHandler {
+        runtime,
+        ids: Source,
+    };
+    let request = params(Some(json!(CONTEXT_ID)));
+    let litellm = bearer_params();
+
+    handler
+        .handle_non_streaming(&handler_call(&request, &litellm))
+        .await
+        .expect("the agent answers");
+
+    let posted = handler.runtime.posted.lock().expect("the fixture lock");
+    let sent: AgentJson = serde_json::from_slice(&posted[0].body).expect("the body is JSON");
+    assert_eq!(sent["method"], json!("message/send"));
+    assert_eq!(posted.len(), 1);
+    assert_eq!(posted[0].url, format!("{URL}agentcore/arn"));
+    assert_eq!(
+        posted[0].headers.get(SESSION_HEADER).map(String::as_str),
+        Some(format!("{SCOPED_PREFIX}-{CONTEXT_ID}").as_str())
+    );
+}
+
+#[tokio::test]
+async fn the_streaming_post_carries_the_stream_envelope() {
+    let mut runtime = fixture();
+    runtime.content_type = "text/event-stream".to_owned();
+    let mut handler = AgentCoreHandler {
+        runtime,
+        ids: Source,
+    };
+    let request = params(Some(json!(CONTEXT_ID)));
+    let litellm = bearer_params();
+
+    let _events = handler
+        .handle_streaming(&handler_call(&request, &litellm))
+        .await
+        .expect("the agent streams");
+
+    let posted = handler.runtime.posted.lock().expect("the fixture lock");
+    let sent: AgentJson = serde_json::from_slice(&posted[0].body).expect("the body is JSON");
+    assert_eq!(sent["method"], json!("message/stream"));
+    assert_eq!(posted[0].url, format!("{URL}agentcore/arn"));
+}
+
+#[tokio::test]
+async fn the_config_streams_with_present_params() {
+    let mut runtime = fixture();
+    runtime.content_type = "text/event-stream".to_owned();
+    runtime.lines = vec!["data: {\"kind\": \"task\"}".to_owned()];
+    let mut config = BedrockAgentCoreConfig {
+        handler: AgentCoreHandler {
+            runtime,
+            ids: Source,
+        },
+    };
+    let request = params(None);
+    let raw = BTreeMap::from([
+        ("model".to_owned(), json!("bedrock/agentcore/arn")),
+        ("api_key".to_owned(), json!("jwt-token")),
+    ]);
+
+    let stream = config
+        .handle_streaming(&config_call(&request, Some(&raw)))
+        .await
+        .expect("the agent streams");
+    let events = collected(stream).await;
+
+    assert_eq!(values(events), vec![json!({"kind": "task"})]);
 }

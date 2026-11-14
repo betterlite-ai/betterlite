@@ -97,13 +97,13 @@ pub(crate) const MAX_RESPONSE_BYTES: usize = 0x80_0000;
 // httpx hands a JSON reply back as one body; joining its lines with "\n" is the same text for JSON input
 pub(crate) async fn collect_body<L, E>(lines: L) -> Result<String, super::AgentCoreError<E>>
 where
-    L: Stream<Item = Result<String, E>>,
-    E: Error + 'static,
+    L: Stream<Item = Result<String, E>> + Send,
+    E: Error + Send + 'static,
 {
-    let mut lines = std::pin::pin!(lines);
+    let mut pinned = std::pin::pin!(lines);
     let mut body = String::new();
-    while let Some(line) = lines.next().await {
-        let line = line.map_err(super::AgentCoreError::Runtime)?;
+    while let Some(next) = pinned.next().await {
+        let line = next.map_err(super::AgentCoreError::Runtime)?;
         let separator = usize::from(!body.is_empty());
         if body
             .len()
