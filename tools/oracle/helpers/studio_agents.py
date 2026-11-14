@@ -87,12 +87,10 @@ def request(call: Request) -> JsonValue:
     }
     function = call["function"]
     if function == "validate":
-        headers = call.get("headers")
-        validated = API.validate_environment({} if headers is None else headers, params)
+        validated = API.validate_environment(call.get("headers", {}), params)
         return {"headers": OBJECT.validate_python(validated)}
     if function == "create_body":
-        body = API.transform_create_request(call["name"], params)
-        return {"body": OBJECT.validate_python(body)}
+        return {"body": OBJECT.validate_python(API.transform_create_request(call["name"], params))}
     if function == "list_request":
         url, query = API.transform_list_request(call.get("api_base"), params)
     else:
@@ -111,11 +109,6 @@ def raw_response(call: Response) -> httpx.Response:
     )
 
 
-def delete(call: Delete) -> JsonValue:
-    deleted = API.transform_delete_response(raw_response(call), call["name"])
-    return {"name": deleted.name, "deleted": deleted.deleted}
-
-
 def reply(call: Reply) -> JsonValue:
     response = raw_response(call)
     operation = call["operation"]
@@ -127,11 +120,9 @@ def reply(call: Reply) -> JsonValue:
     recorder = WarningRecorder()
     logger = logging.getLogger("LiteLLM")
     logger.addHandler(recorder)
+    parse = API.transform_create_response if operation == "create" else API.transform_get_response
     try:
-        if operation == "create":
-            agent = API.transform_create_response(response, call["name"])
-        else:
-            agent = API.transform_get_response(response, call["name"])
+        agent = parse(response, call["name"])
     finally:
         logger.removeHandler(recorder)
     return {"agent": OBJECT.validate_json(agent.model_dump_json()), "warnings": recorder.subjects}
@@ -143,7 +134,8 @@ def run(input_value: JsonValue) -> JsonValue:
         if call["function"] == "reply":
             results.append(reply(call))
         elif call["function"] == "delete":
-            results.append(delete(call))
+            deleted = API.transform_delete_response(raw_response(call), call["name"])
+            results.append({"name": deleted.name, "deleted": deleted.deleted})
         else:
             results.append(request(call))
     return {"calls": results}

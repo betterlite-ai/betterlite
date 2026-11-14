@@ -82,7 +82,7 @@ fn oracle_identity_defaults_are_compared() {
     );
     assert_eq!(
         calls[2]["agent"],
-        json!({"id": "provider-id", "name": "provider-id", "extra": {"k": [1]}})
+        json!({"id": "provider-id", "name": "provider-id", "extra": {"k": [1_i32]}})
     );
 }
 

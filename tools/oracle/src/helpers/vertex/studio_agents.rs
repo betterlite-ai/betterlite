@@ -94,16 +94,14 @@ fn resolve(call: &Call) -> HelperResult {
     };
     let target = match call.function {
         Function::Validate => {
-            let found = validate_environment(&call.headers, &params, &settings).map_err(fail)?;
+            let found = validate_environment(&call.headers, &params, &settings)?;
             let revealed = found
                 .iter()
                 .map(|(name, value)| (name.as_str(), value.expose_secret()))
                 .collect::<BTreeMap<_, _>>();
             return Ok(json!({ "headers": revealed }));
         }
-        Function::CreateBody => {
-            return Ok(json!({ "body": create_agent_body(&call.name, &params) }));
-        }
+        Function::CreateBody => return Ok(json!({"body": create_agent_body(&call.name, &params)})),
         Function::ListRequest => collection_target(&params, &settings),
         Function::VersionsRequest => versions_target(&call.name, &params, &settings),
         Function::Reply | Function::Delete => return reply_value(call),
@@ -119,36 +117,37 @@ fn reply_value(call: &Call) -> HelperResult {
         body: call.body.as_bytes(),
     };
     match (call.function, call.operation) {
-        (Function::Delete, _) => decode_studio_agent_delete(&response, &call.name)
-            .map(|deleted| json!(deleted))
-            .map_err(fail),
-        (_, Some(operation)) => decode_studio_agent_payload(&response, operation, &call.name)
-            .map(|decoded| match decoded.payload {
+        (Function::Delete, _) => Ok(json!(decode_studio_agent_delete(&response, &call.name)?)),
+        (_, Some(operation)) => {
+            let decoded = decode_studio_agent_payload(&response, operation, &call.name)?;
+            Ok(match decoded.payload {
                 AgentPayload::Agent(agent) => {
                     json!({ "agent": agent, "warnings": decoded.warnings })
                 }
                 AgentPayload::Agents(page) => json!(page),
                 AgentPayload::Versions(page) => json!(page),
             })
-            .map_err(fail),
+        }
         (_, None) => Err("a reply names its operation").or_value_error(),
     }
 }
 
-fn fail(error: StudioAgentError) -> Box<HelperError> {
-    let status = match &error {
-        StudioAgentError::Gemini { status, .. } => Some(*status),
-        StudioAgentError::CustomBaseWithoutKey
-        | StudioAgentError::MissingApiKey
-        | StudioAgentError::ResponseTooLarge { .. }
-        | StudioAgentError::Shape { .. } => None,
-    };
-    Box::new(HelperError {
-        class: "ValueError".to_owned(),
-        status,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
+impl From<StudioAgentError> for Box<HelperError> {
+    fn from(error: StudioAgentError) -> Self {
+        let status = match &error {
+            StudioAgentError::Gemini { status, .. } => Some(*status),
+            StudioAgentError::CustomBaseWithoutKey
+            | StudioAgentError::MissingApiKey
+            | StudioAgentError::ResponseTooLarge { .. }
+            | StudioAgentError::Shape { .. } => None,
+        };
+        Self::new(HelperError {
+            class: "ValueError".to_owned(),
+            status,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    }
 }

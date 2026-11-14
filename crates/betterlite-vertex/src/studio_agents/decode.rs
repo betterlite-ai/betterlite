@@ -55,9 +55,7 @@ pub fn decode_studio_agent_payload(
     let payload = match operation {
         AgentOperation::Create | AgentOperation::Get => {
             if parsed.is_none() && operation == AgentOperation::Create {
-                tracing::warn!(
-                    "Gemini answered the create-agent call with a non-JSON body; the request name is used"
-                );
+                tracing::warn!("non-JSON create response; the request name is used");
                 warnings.push(AgentWarning::MalformedCreateReply);
             }
             AgentPayload::Agent(agent_record(parsed, request_name)?)
