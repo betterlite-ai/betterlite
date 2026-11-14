@@ -108,46 +108,18 @@ impl BlockCodeExecutionGuardrail {
             Some(name) if !name.is_empty() => name,
             Some(_) | None => DEFAULT_GUARDRAIL_NAME.to_owned(),
         };
-        let mode = event_hook_mode(&params.event_hook);
+        let mode = event_hook_mode(params.event_hook.as_ref());
         validate_event_hook(
             Some(&mode),
             &ALL_EVENT_HOOKS,
             &BLOCK_CODE_EXECUTION_SWITCHES,
         )?;
-        let settings = GuardrailSettings {
-            guardrail_name: Some(name),
-            supported_event_hooks: Some(SUPPORTED_EVENT_HOOKS.to_vec()),
-            event_hook: Some(mode),
-            default_on: params.default_on,
-            mask_request_content: false,
-            mask_response_content: false,
-            violation_message_template: None,
-            end_session_after_n_fails: None,
-            on_violation: None,
-            realtime_violation_message: None,
-            on_sensitive_data: None,
-            sensitive_data_route_to_model: None,
-            sticky_session_routing: true,
-            run_in_parallel: false,
-            scan_raw_request: false,
-            only_scan_new_messages: false,
-            timeout: None,
-            switches: BLOCK_CODE_EXECUTION_SWITCHES,
-        };
-        let base = GuardrailBase::new(settings, strict_modes)?;
-        let fenced_block = Regex::new(FENCED_BLOCK_PATTERN)
-            .map_err(|source| BlockCodeExecutionError::Pattern { source })?;
+        let base = GuardrailBase::new(
+            guardrail_settings(name, mode, params.default_on),
+            strict_modes,
+        )?;
+        let scanner = code_block_scanner(&params)?;
         let block_all = params.blocked_languages.as_ref().is_none_or(Vec::is_empty);
-        let detector_languages = params.blocked_languages.clone().unwrap_or_default();
-        let scanner = CodeBlockScanner {
-            detector: BlockDetector {
-                fenced_block,
-                blocked_languages: detector_languages,
-                confidence_threshold: params.confidence_threshold.clamp(0.0, 1.0),
-            },
-            action: params.action,
-            detect_execution_intent: params.detect_execution_intent,
-        };
         Ok(Self {
             base,
             blocked_languages: params.blocked_languages,
@@ -158,7 +130,50 @@ impl BlockCodeExecutionGuardrail {
     }
 }
 
-fn event_hook_mode(selection: &Option<EventHookSelection>) -> LitellmParamsMode {
+fn guardrail_settings(
+    name: String,
+    mode: LitellmParamsMode,
+    default_on: bool,
+) -> GuardrailSettings {
+    GuardrailSettings {
+        guardrail_name: Some(name),
+        supported_event_hooks: Some(SUPPORTED_EVENT_HOOKS.to_vec()),
+        event_hook: Some(mode),
+        default_on,
+        mask_request_content: false,
+        mask_response_content: false,
+        violation_message_template: None,
+        end_session_after_n_fails: None,
+        on_violation: None,
+        realtime_violation_message: None,
+        on_sensitive_data: None,
+        sensitive_data_route_to_model: None,
+        sticky_session_routing: true,
+        run_in_parallel: false,
+        scan_raw_request: false,
+        only_scan_new_messages: false,
+        timeout: None,
+        switches: BLOCK_CODE_EXECUTION_SWITCHES,
+    }
+}
+
+fn code_block_scanner(
+    params: &BlockCodeExecutionParams,
+) -> Result<CodeBlockScanner, BlockCodeExecutionError> {
+    let fenced_block = Regex::new(FENCED_BLOCK_PATTERN)
+        .map_err(|source| BlockCodeExecutionError::Pattern { source })?;
+    Ok(CodeBlockScanner {
+        detector: BlockDetector {
+            fenced_block,
+            blocked_languages: params.blocked_languages.clone().unwrap_or_default(),
+            confidence_threshold: params.confidence_threshold.clamp(0.0, 1.0),
+        },
+        action: params.action,
+        detect_execution_intent: params.detect_execution_intent,
+    })
+}
+
+fn event_hook_mode(selection: Option<&EventHookSelection>) -> LitellmParamsMode {
     match selection {
         None => LitellmParamsMode::Many(vec!["pre_call".to_owned(), "post_call".to_owned()]),
         Some(EventHookSelection::One(name)) => LitellmParamsMode::One(name.clone()),

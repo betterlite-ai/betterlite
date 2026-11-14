@@ -149,23 +149,31 @@ fn invocation_record(invocation: &Invocation<'_>) -> GuardrailRecordInput {
         masked_entity_count: None,
         guardrail_provider: Some(GUARDRAIL_PROVIDER.to_owned()),
         event_type: Some(event_type(invocation.input_type)),
-        tracing_detail: Some(GuardrailTracingDetail {
-            guardrail_id: invocation.guardrail_name.clone(),
-            policy_template: None,
-            detection_method: Some(DETECTION_METHOD.to_owned()),
-            confidence_score,
-            classification: None,
-            match_details: Some(response),
-            patterns_checked: None,
-            alert_recipients: None,
-            risk_score: None,
-            violation_categories: None,
-            guardrail_action: None,
-            guardrail_usage: None,
-            guardrail_cost: None,
-            guardrail_cost_by_unit: None,
-            guardrail_cost_in_spend: None,
-        }),
+        tracing_detail: Some(tracing_detail(invocation, response, confidence_score)),
+    }
+}
+
+fn tracing_detail(
+    invocation: &Invocation<'_>,
+    response: GuardrailValue,
+    confidence_score: Option<f64>,
+) -> GuardrailTracingDetail {
+    GuardrailTracingDetail {
+        guardrail_id: invocation.guardrail_name.clone(),
+        policy_template: None,
+        detection_method: Some(DETECTION_METHOD.to_owned()),
+        confidence_score,
+        classification: None,
+        match_details: Some(response),
+        patterns_checked: None,
+        alert_recipients: None,
+        risk_score: None,
+        violation_categories: None,
+        guardrail_action: None,
+        guardrail_usage: None,
+        guardrail_cost: None,
+        guardrail_cost_by_unit: None,
+        guardrail_cost_in_spend: None,
     }
 }
 

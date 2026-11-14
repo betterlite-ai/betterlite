@@ -159,10 +159,10 @@ fn blocked_languages(params: &LitellmParams) -> Result<Option<Vec<String>>, Init
 }
 
 fn action(params: &LitellmParams) -> Result<BlockCodeAction, InitializerError> {
-    match get_param(params, ParamKey::Action) {
-        None => Ok(DEFAULT_ACTION),
-        Some(value) => decode(ParamKey::Action, &value),
-    }
+    let Some(value) = get_param(params, ParamKey::Action) else {
+        return Ok(DEFAULT_ACTION);
+    };
+    decode(ParamKey::Action, &value)
 }
 
 fn confidence_threshold(params: &LitellmParams) -> Result<f64, InitializerError> {
@@ -186,10 +186,7 @@ fn threshold_number(value: &GuardrailValue) -> Result<f64, InitializerError> {
         GuardrailValue::Text(text) => {
             match betterlite_env::number::<f64>("confidence_threshold", text) {
                 Ok(Some(number)) => Ok(number),
-                Ok(None) => Err(InitializerError::InvalidParam {
-                    field: ParamKey::ConfidenceThreshold.name().to_owned(),
-                }),
-                Err(_not_a_number) => Err(InitializerError::InvalidParam {
+                Ok(None) | Err(_) => Err(InitializerError::InvalidParam {
                     field: ParamKey::ConfidenceThreshold.name().to_owned(),
                 }),
             }
@@ -215,7 +212,7 @@ fn read_flag(
 ) -> Result<bool, InitializerError> {
     match get_param(params, key) {
         None => Ok(absent_default),
-        Some(GuardrailValue::Null) => null_default.ok_or(InitializerError::InvalidParam {
+        Some(GuardrailValue::Null) => null_default.ok_or_else(|| InitializerError::InvalidParam {
             field: key.name().to_owned(),
         }),
         Some(GuardrailValue::Boolean(flag)) => Ok(flag),
