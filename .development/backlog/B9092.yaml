@@ -1,7 +1,7 @@
 id: B9092
 milestone: M10 admin ui
 title: Rebrand the retained dashboard shell and bundle its MIT notices
-status: done
+status: todo
 depends_on: [B9090, B9091]
 file: tasks/B9092-dashboard-branding.yaml
 covers:
@@ -16,7 +16,7 @@ covers:
   - "litellm/proxy/{cached_logo.jpg,logo.png,logo_dark.png,logo_monogram.png,logo_monogram_dark.png}"
 parent: B144
 split_from: B144
-resolution: merged
+resolution: null
 superseded_by: null
 blocked_reason: null
-pr: 1806
+pr: null
