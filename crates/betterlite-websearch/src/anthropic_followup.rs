@@ -16,6 +16,8 @@ pub enum AnthropicFollowupError {
     Followup(#[from] FollowupError),
     #[error("cannot transform the search results for the follow-up request")]
     Transformation(#[from] TransformationError),
+    #[error("the search results use the openai format, not the anthropic one")]
+    UnexpectedResultFormat,
     #[error("cannot encode a follow-up request or plan value")]
     Json(#[from] serde_json::Error),
     #[error("max_tokens must be a non-negative integer")]

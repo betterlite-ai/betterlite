@@ -79,8 +79,9 @@ fn followup_messages(
     assistant.prepend_thinking(request.thinking_blocks);
     let mut messages: Vec<FollowupMessage> = request.messages.to_vec();
     messages.push(FollowupMessage(to_raw_value(&assistant)?));
-    if let Results::Anthropic(user) = results {
-        messages.push(FollowupMessage(to_raw_value(&user)?));
+    match results {
+        Results::Anthropic(user) => messages.push(FollowupMessage(to_raw_value(&user)?)),
+        Results::OpenAi(_) => return Err(AnthropicFollowupError::UnexpectedResultFormat),
     }
     Ok(messages)
 }
