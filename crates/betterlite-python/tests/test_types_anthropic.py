@@ -563,7 +563,8 @@ class Report(TypedDict):
 
 @pytest.fixture(scope="module")
 def report() -> Report:
-    names = json.dumps({group: sorted(NAMES[group]) for group in NAMES})
+    requested: dict[str, list[str]] = {group: sorted(NAMES[group]) for group in NAMES}
+    names = json.dumps(requested)
     completed = subprocess.run(
         [sys.executable, "-c", DESCRIBE_SCRIPT, names],
         check=True,
@@ -719,8 +720,8 @@ def test_names_constants(report: Report) -> None:
     constants = report["constants"]
     assert constants["betterlite"] == constants["litellm"]
     assert constants["betterlite"] == CONSTANTS
-    assert ANTHROPIC_API_HEADERS == {"anthropic-beta", "anthropic-version"}
-    assert ANTHROPIC_API_ONLY_HEADERS == {"anthropic-beta"}
+    assert sorted(ANTHROPIC_API_HEADERS) == ["anthropic-beta", "anthropic-version"]
+    assert sorted(ANTHROPIC_API_ONLY_HEADERS) == ["anthropic-beta"]
 
 
 def test_names_enums(report: Report) -> None:
@@ -733,9 +734,9 @@ def test_names_enums(report: Report) -> None:
     assert beta is not None
     assert beta["kind"] == "enum"
     assert dict(beta["enum_members"]) == BETA_HEADER_MEMBERS
-    assert AnthropicHostedToolNames.BASH == "bash"
+    assert AnthropicHostedToolNames.BASH.value == "bash"
     assert AnthropicHostedToolNames.TOOL_SEARCH_TOOL.value == "tool_search_tool"
-    assert AnthropicBetaHeaderValues.COMPACT_2026_01_12 == "compact-2026-01-12"
+    assert AnthropicBetaHeaderValues.COMPACT_2026_01_12.value == "compact-2026-01-12"
     assert AnthropicBetaHeaderValues.WEB_FETCH_2025_09_10.value == "web-fetch-2025-09-10"
 
 
