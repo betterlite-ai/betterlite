@@ -150,6 +150,7 @@ fn event_from(payload: &str, stream: bool) -> LoggerEvent {
     LoggerEvent {
         payload: Arc::new(serde_json::from_str(payload).expect("the fixture payload decodes")),
         dynamic_params: Arc::new(Json::Object(IndexMap::new())),
+        litellm_metadata: Arc::new(IndexMap::new()),
         stream,
         guardrail_snapshot: None,
     }

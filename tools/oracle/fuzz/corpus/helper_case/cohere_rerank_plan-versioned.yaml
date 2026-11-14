@@ -1,0 +1,16 @@
+kind: helper
+name: cohere-rerank-plan-seed
+call:
+  cohere_rerank_plan:
+    calls:
+      - version: v2
+        model: rerank-v4.0
+        api_base: https://gateway.test/cohere/
+        api_key: seed-key
+        headers: {accept: application/json}
+        settings: {co_api_key: seed-env}
+        options: {query: why, documents: [first, {title: second}], top_n: 1, max_tokens_per_doc: 8}
+        non_default: {extension: ignored}
+        responses: [{status: 503, body: '{}'}]
+compare: {ignore: []}
+env: {}

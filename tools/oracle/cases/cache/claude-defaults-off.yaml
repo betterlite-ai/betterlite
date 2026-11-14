@@ -1,0 +1,44 @@
+kind: helper
+name: cache-claude-defaults-off
+call:
+  b4125:
+    operation: messages_injection
+    probes:
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello}]
+        system: be nice
+        params: {}
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello}]
+        system: be nice
+        params: {enable_prompt_caching: false}
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/llama-3-70b
+        messages: [{role: user, content: hello}]
+        system: be nice
+        params: {}
+        global_enable: true
+        model_cost:
+          anthropic/llama-3-70b: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello}]
+        system: be nice
+        params: {}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: false}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: false}
+      - model: openai/gpt-4o
+        messages: [{role: user, content: hello}]
+        system: be nice
+        params: {}
+        global_enable: true
+        model_cost:
+          openai/gpt-4o: {litellm_provider: openai, supports_prompt_caching: true}
+env: {}
+compare: {ignore: []}

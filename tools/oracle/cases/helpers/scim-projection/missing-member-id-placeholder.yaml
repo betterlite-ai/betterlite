@@ -1,0 +1,16 @@
+kind: helper
+name: missing-member-id-placeholder
+call:
+  scim_projection:
+    kind: group
+    value:
+      team_id: t-1
+      team_alias: alpha
+      members_with_roles:
+        - {user_id: u-1, user_email: ann@example.com, role: admin}
+        - {user_id: u-2, role: user}
+        - {user_email: nobody@example.com, role: user}
+      created_at: "2026-02-03T04:05:06+00:00"
+env: {}
+compare:
+  ignore: []

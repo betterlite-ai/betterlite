@@ -1,0 +1,13 @@
+kind: helper
+name: streaming-flag-order
+call:
+  b3679:
+    function: streaming_flag
+    attribute_present: true
+    attribute: attribute
+    guardrail_config: {streaming_end_of_stream_only: config}
+    optional_params: {streaming_end_of_stream_only: optional}
+    name: streaming_end_of_stream_only
+    default: default
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+kind: helper
+name: endpoint-resolution
+call:
+  b3679:
+    function: endpoint_resolution
+    request_route: /chat/completions
+    first_item: null
+    entries: [{call_type: acompletion, translation: OpenAIChatCompletionsHandler, chat_completions: true}]
+env: {}
+compare: {ignore: []}
