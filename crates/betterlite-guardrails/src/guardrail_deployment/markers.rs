@@ -1,23 +1,15 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use uuid::Uuid;
 
 use crate::guardrail_base::GuardrailBase;
 
 // LiteLLM's PRE_CALL_EXECUTED_GUARDRAILS_KEY; the name limit drops GUARDRAILS
 pub const PRE_CALL_EXECUTED_KEY: &str = "_pre_call_executed_guardrails";
 
-// The per-process secret that tags every pre-call marker; startup makes one and passes it to every call
+// The per-process secret that tags every pre-call marker; startup makes one from Uuid::new_v4().simple(), 32 lowercase hex like secrets.token_hex(16)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreCallToken(pub String);
-
-// LiteLLM's secrets.token_hex(16): 32 lowercase hex characters
-impl From<Uuid> for PreCallToken {
-    fn from(id: Uuid) -> Self {
-        Self(id.simple().to_string())
-    }
-}
 
 impl GuardrailBase {
     // LiteLLM's _pre_call_marker; an empty name is used as given

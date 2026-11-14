@@ -4,7 +4,6 @@ mod fixtures;
 
 use rstest::rstest;
 use std::collections::{BTreeMap, BTreeSet};
-use uuid::Uuid;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
@@ -13,7 +12,6 @@ use betterlite_core::routes::CallType;
 use super::hook_target::{HookTarget, PreCallOutcome, StampedKeyFields, stamped_key_fields};
 use super::hooks::{DeploymentHookError, PreCallContext};
 use super::logging_hook::{LoggedCall, LoggedResultKind, LoggingHookError};
-use super::markers::PreCallToken;
 use super::messages_hook::MessagesHookError;
 use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::failure::{GuardrailFailure, SensitiveDataRouteFailure};
@@ -23,12 +21,6 @@ use fixtures::{
     pre_completion, record, recording_registry, registry, rejected, run_pre, scan_logged, shared,
     tag_mode_error, tagged, token, two_translations, value, with_hook,
 };
-
-#[test]
-fn marker_token_from_a_uuid_is_thirty_two_lowercase_hex_characters() {
-    let made = PreCallToken::from(Uuid::from_u128(0xab));
-    assert_eq!(made.0, "000000000000000000000000000000ab");
-}
 
 #[rstest]
 #[case::named(Some("g"), Some("tok:g"))]
