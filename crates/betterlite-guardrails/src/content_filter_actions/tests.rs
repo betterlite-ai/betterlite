@@ -257,6 +257,63 @@ mod content_filter_actions_behavior {
     }
 
     #[test]
+    fn block_details_serialize_conditional_and_keyword_objects() {
+        let conditional = ContentFilterBlockDetail::Conditional {
+            error: "Content blocked: child_safety conditional match 'minor + romantic' detected (severity: high)"
+                .to_owned(),
+            category: "child_safety".to_owned(),
+            matched_phrase: "minor + romantic".to_owned(),
+            severity: "high".to_owned(),
+        };
+        assert_eq!(
+            serde_json::to_string(&conditional).unwrap(),
+            r#"{"error":"Content blocked: child_safety conditional match 'minor + romantic' detected (severity: high)","category":"child_safety","matched_phrase":"minor + romantic","severity":"high"}"#
+        );
+        let keyword = ContentFilterBlockDetail::CategoryKeyword {
+            error:
+                "Content blocked: operational category keyword 'alert' detected (severity: medium)"
+                    .to_owned(),
+            category: "operational".to_owned(),
+            keyword: "alert".to_owned(),
+            severity: "medium".to_owned(),
+        };
+        assert_eq!(
+            serde_json::to_string(&keyword).unwrap(),
+            r#"{"error":"Content blocked: operational category keyword 'alert' detected (severity: medium)","category":"operational","keyword":"alert","severity":"medium"}"#
+        );
+    }
+
+    #[test]
+    fn block_details_serialize_pattern_and_blocked_word_objects() {
+        let pattern = ContentFilterBlockDetail::Pattern {
+            error: "Content blocked: email pattern detected".to_owned(),
+            pattern: "email".to_owned(),
+        };
+        assert_eq!(
+            serde_json::to_string(&pattern).unwrap(),
+            r#"{"error":"Content blocked: email pattern detected","pattern":"email"}"#
+        );
+        let word = ContentFilterBlockDetail::BlockedWord {
+            error: "Content blocked: keyword 'hunter2' detected".to_owned(),
+            keyword: "hunter2".to_owned(),
+            description: None,
+        };
+        assert_eq!(
+            serde_json::to_string(&word).unwrap(),
+            r#"{"error":"Content blocked: keyword 'hunter2' detected","keyword":"hunter2","description":null}"#
+        );
+        let described = ContentFilterBlockDetail::BlockedWord {
+            error: "Content blocked: keyword 'hunter2' detected (do not share it)".to_owned(),
+            keyword: "hunter2".to_owned(),
+            description: Some("do not share it".to_owned()),
+        };
+        assert_eq!(
+            serde_json::to_string(&described).unwrap(),
+            r#"{"error":"Content blocked: keyword 'hunter2' detected (do not share it)","keyword":"hunter2","description":"do not share it"}"#
+        );
+    }
+
+    #[test]
     fn conditional_mask_logs_a_warning_and_leaves_the_text_unchanged() {
         let mut categories = CategoryLoadResult::default();
         categories.conditional_categories.insert(
