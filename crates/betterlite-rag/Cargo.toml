@@ -15,6 +15,7 @@ betterlite-openai = { path = "../betterlite-openai" }
 betterlite-provider = { path = "../betterlite-provider" }
 betterlite-redis = { path = "../betterlite-redis" }
 hex.workspace = true
+indexmap = { version = "2.14.2", features = ["serde"] }
 percent-encoding.workspace = true
 redis.workspace = true
 rust_decimal.workspace = true
@@ -24,6 +25,7 @@ serde_json = { version = "1.0.154", features = ["raw_value"] }
 sha2.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
+tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
