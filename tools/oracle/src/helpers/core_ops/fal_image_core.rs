@@ -109,7 +109,8 @@ impl Helper for Op {
             )),
             Input::KeyScheme { environment, cases } => Ok(key_scheme_outcome(environment, cases)),
             Input::MixedImageObjects { replies } | Input::BoolDimensionsExcluded { replies } => {
-                Ok(json!({"cases": reply_outcomes(replies)}))
+                let outcomes: Vec<Value> = replies.iter().map(reply_outcome).collect();
+                Ok(json!({"cases": outcomes}))
             }
             Input::GptDestinationPrecedence { model, cases } => {
                 Ok(gpt_destination_outcome(model, cases))
@@ -158,10 +159,6 @@ fn key_scheme_outcome(environment: &Environment, cases: &[KeyCase]) -> Value {
         .map(|case| key_outcome(case, &settings))
         .collect();
     json!({"cases": outcomes})
-}
-
-fn reply_outcomes(replies: &[ReplyCase]) -> Vec<Value> {
-    replies.iter().map(reply_outcome).collect()
 }
 
 fn gpt_destination_outcome(model: &str, cases: &[MappingCase]) -> Value {
@@ -222,13 +219,17 @@ fn key_outcome(case: &KeyCase, settings: &FalImageSettings) -> Value {
 fn reply_outcome(case: &ReplyCase) -> Value {
     let mut data = None;
     match append_generation_images(&mut data, case.status, &case.headers, case.body.as_bytes()) {
-        Ok(()) => json!({"images": records(data.as_deref().unwrap_or_default())}),
+        Ok(()) => {
+            let images: Vec<Value> = data
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .map(record)
+                .collect();
+            json!({"images": images})
+        }
         Err(_) => json!({"error": {"status": case.status}}),
     }
-}
-
-fn records(images: &[FalImage]) -> Vec<Value> {
-    images.iter().map(record).collect()
 }
 
 fn record(image: &FalImage) -> Value {
