@@ -1,5 +1,6 @@
 use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity;
-use serde::{Deserialize, Serialize};
+use secrecy::SecretString;
+use serde::Deserialize;
 
 // LiteLLM declares use_v2 with Field(default=False), so an absent key is False and an explicit null keeps None
 #[must_use]
@@ -7,12 +8,12 @@ pub const fn default_use_v2() -> Option<bool> {
     Some(false)
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct NomaGuardrailConfigModel {
     #[serde(default = "default_use_v2")]
     pub use_v2: Option<bool>,
     #[serde(default)]
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     #[serde(default)]
     pub api_base: Option<String>,
     #[serde(default)]
@@ -25,10 +26,10 @@ impl GuardrailConfigModelIdentity for NomaGuardrailConfigModel {
     }
 }
 
-#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct NomaV2GuardrailConfigModel {
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     pub api_base: Option<String>,
     pub application_id: Option<String>,
     pub gateway_name: Option<String>,

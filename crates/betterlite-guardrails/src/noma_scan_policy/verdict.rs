@@ -68,7 +68,8 @@ pub(super) fn extract_anonymized_content(
                 field: "scanResult",
             });
         };
-        if has_role(fields, role) {
+        if matches!(fields.get("role"), Some(GuardrailValue::Text(found)) if found == role.as_str())
+        {
             return anonymized_in(fields);
         }
     }
@@ -100,7 +101,8 @@ pub(super) fn should_anonymize(
                 field: "scanResult",
             });
         };
-        if !has_role(fields, role) {
+        if !matches!(fields.get("role"), Some(GuardrailValue::Text(found)) if found == role.as_str())
+        {
             continue;
         }
         let results = match fields.get("results") {
@@ -188,10 +190,6 @@ pub(super) fn decide_verdict(
     }
     check_verdict(settings, role, message, response)?;
     Ok(Verdict::Allowed)
-}
-
-fn has_role(fields: &BTreeMap<String, GuardrailValue>, role: MessageRole) -> bool {
-    matches!(fields.get("role"), Some(GuardrailValue::Text(found)) if found == role.as_str())
 }
 
 fn is_result_true(value: &GuardrailValue) -> bool {

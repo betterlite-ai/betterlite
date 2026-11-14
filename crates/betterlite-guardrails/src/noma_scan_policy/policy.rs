@@ -4,8 +4,6 @@ use std::time::SystemTime;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde_json::value::{RawValue, to_raw_value};
 
-use crate::guardrail_records::record::GuardrailStatus;
-
 use super::error::NomaError;
 use super::messages::{
     message_content, replace_last_user_message, replace_response_content, response_id, scan_items,
@@ -13,7 +11,7 @@ use super::messages::{
 use super::records::{GuardrailRun, ScanTiming, record_scan};
 use super::transport::{ScanTarget, call_noma_api};
 use super::verdict::{Verdict, decide_verdict, determine_guardrail_status};
-use super::wire::{InputMessage, ScanResponse, TextPart};
+use super::wire::{InputMessage, TextPart};
 use super::{MessageRole, NomaScanPolicy, ScanCallContext, ScanOutcome};
 
 struct ScanRound<'round> {
@@ -30,7 +28,7 @@ async fn scan_and_record(
     request_data: &mut BTreeMap<String, GuardrailValue>,
     call: ScanCallContext<'_>,
     round: &ScanRound<'_>,
-) -> Result<(ScanResponse, GuardrailStatus, Verdict), NomaError> {
+) -> Result<ScanOutcome, NomaError> {
     let target = ScanTarget {
         user_auth: call.user_auth,
         extra_data: call.extra_data,
@@ -50,7 +48,15 @@ async fn scan_and_record(
     };
     record_scan(policy, request_data, &run)?;
     let verdict = decide_verdict(&policy.settings, round.role, round.scanned, &response)?;
-    Ok((response, status, verdict))
+    let anonymized = match verdict {
+        Verdict::Allowed => None,
+        Verdict::Anonymized(text) => Some(text),
+    };
+    Ok(ScanOutcome {
+        status,
+        response,
+        anonymized,
+    })
 }
 
 impl NomaScanPolicy {
@@ -72,20 +78,12 @@ impl NomaScanPolicy {
             scanned: &scanned,
             llm_request_id: None,
         };
-        let (response, status, verdict) = scan_and_record(self, request_data, call, &round).await?;
-        let anonymized = match verdict {
-            Verdict::Allowed => None,
-            Verdict::Anonymized(text) => {
-                replace_last_user_message(request_data, &text)?;
-                tracing::debug!("Noma guardrail anonymized user message: {text}");
-                Some(text)
-            }
-        };
-        Ok(Some(ScanOutcome {
-            status,
-            response,
-            anonymized,
-        }))
+        let outcome = scan_and_record(self, request_data, call, &round).await?;
+        if let Some(text) = &outcome.anonymized {
+            replace_last_user_message(request_data, text)?;
+            tracing::debug!("Noma guardrail anonymized user message: {text}");
+        }
+        Ok(Some(outcome))
     }
 
     pub async fn process_llm_response_check(
@@ -115,20 +113,11 @@ impl NomaScanPolicy {
             scanned: &content,
             llm_request_id: request_id.as_deref(),
         };
-        let (scan_response, status, verdict) =
-            scan_and_record(self, request_data, call, &round).await?;
-        let anonymized = match verdict {
-            Verdict::Allowed => None,
-            Verdict::Anonymized(text) => {
-                replace_response_content(response, &text);
-                tracing::debug!("Noma guardrail anonymized LLM response: {text}");
-                Some(text)
-            }
-        };
-        Ok(Some(ScanOutcome {
-            status,
-            response: scan_response,
-            anonymized,
-        }))
+        let outcome = scan_and_record(self, request_data, call, &round).await?;
+        if let Some(text) = &outcome.anonymized {
+            replace_response_content(response, text);
+            tracing::debug!("Noma guardrail anonymized LLM response: {text}");
+        }
+        Ok(Some(outcome))
     }
 }
