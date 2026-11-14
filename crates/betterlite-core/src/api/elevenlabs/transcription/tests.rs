@@ -15,6 +15,7 @@ use super::auth::{TranscriptionKeys, validate_environment};
 use super::endpoint::complete_url;
 use super::error::TranscriptionError;
 use super::mapping::{SUPPORTED_OPENAI_PARAMS, map_openai_params};
+use super::provider_error::error_class;
 use super::request::{FILE_FIELD, number_text, transform_request};
 use super::response::{
     ElevenTranscript, MAX_REPLY_BYTES, TranscriptTask, TranscriptWord, decode_eleven_transcript,
@@ -265,6 +266,18 @@ fn validating_the_environment_overwrites_the_auth_header_and_keeps_the_rest() {
         headers(&[("Accept", "application/json"), ("xi-api-key", "k")])
     );
     assert_eq!(given.get("xi-api-key").map(String::as_str), Some("old"));
+}
+
+#[test]
+fn the_error_class_carries_the_provider_message_status_and_headers() {
+    let provider_headers = headers(&[("Content-Type", "application/json")]);
+
+    let error = error_class("bad key", 401, provider_headers.clone());
+
+    assert_eq!(error.status_code, 401);
+    assert_eq!(error.message, "bad key");
+    assert_eq!(error.to_string(), "bad key");
+    assert_eq!(error.headers, provider_headers);
 }
 
 #[test]
