@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use crate::settlement_and_rollback::tests::support::{
-    FakeBatch, FakeCache, FakeScript, FixedClock, amounts, descriptor, expected_refund_calls,
-    pipelined_store, recorded_calls, reply, run_batched, settlement,
+    FakeBatch, FakeCache, FakeScript, FixedClock, RunMode, amounts, descriptor,
+    expected_refund_calls, pipelined_store, recorded_calls, reply, run_settlement, settlement,
 };
 
 const NOW: u64 = 1_700_000_000;
@@ -46,8 +46,8 @@ async fn an_over_limit_group_refunds_the_groups_that_ran_after_it() {
         ],
         &[],
     );
-    let run = run_batched(
-        &batch,
+    let run = run_settlement(
+        RunMode::Batched(&batch),
         &[reply(&[1]), reply(&[1]), reply(&[1]), reply(&[1])],
         false,
         &[

@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use crate::limiter_records::RateLimitResponse;
 use crate::settlement_and_rollback::tests::support::{
-    FakeBatch, FakeCache, FakeScript, FixedClock, amounts, descriptor, pipelined_store, reply,
-    run_batched, settlement,
+    FakeBatch, FakeCache, FakeScript, FixedClock, RunMode, amounts, descriptor, pipelined_store,
+    reply, run_settlement, settlement,
 };
 
 const NOW: u64 = 1_700_000_000;
@@ -37,8 +37,8 @@ async fn ok_groups_aggregate_their_statuses_and_windows() {
         ],
         &[],
     );
-    let run = run_batched(
-        &batch,
+    let run = run_settlement(
+        RunMode::Batched(&batch),
         &[],
         false,
         &[

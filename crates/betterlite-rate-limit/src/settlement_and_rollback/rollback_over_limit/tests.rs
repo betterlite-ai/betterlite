@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use crate::settlement_and_rollback::tests::support::{
-    FakeCache, FakeScript, FixedClock, amounts, descriptor, expected_refund_calls, recorded_calls,
-    reply, run_scripted, settlement, store,
+    FakeCache, FakeScript, FixedClock, RunMode, amounts, descriptor, expected_refund_calls,
+    recorded_calls, reply, run_settlement, settlement, store,
 };
 
 const NOW: u64 = 1_700_000_000;
@@ -22,8 +22,8 @@ const REFUNDED_GROUPS: &[(&str, &str, &str, &str)] = &[
 #[tokio::test]
 async fn an_over_limit_group_refunds_the_groups_before_it() {
     let script = FakeScript::new(vec![reply(&[0, 4, 1000, 5, 1000]), reply(&[1, 1, 9, 10])]);
-    let run = run_scripted(
-        Arc::clone(&script),
+    let run = run_settlement(
+        RunMode::Scripted(Arc::clone(&script)),
         &[reply(&[1]), reply(&[1])],
         false,
         &[

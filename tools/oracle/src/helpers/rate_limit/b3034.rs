@@ -84,10 +84,9 @@ impl crate::helpers::Helper for Op {
         let script: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&main_script);
         let refunds: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(&refund_script);
         let response = settle(input, &store, &clock, script, refunds)?;
-        let calls = match &batch {
-            Some(batch) => batch.calls(),
-            None => main_script.calls(),
-        };
+        let calls = batch
+            .as_ref()
+            .map_or_else(|| main_script.calls(), |planned| planned.calls());
         Ok(json!({
             "response": response_json(&response),
             "calls": calls,
@@ -137,5 +136,5 @@ fn settle(
     let runtime = tokio::runtime::Builder::new_current_thread().build()?;
     runtime
         .block_on(settlement.atomic_check_and_increment_by_n(&input.descriptors, &input.increments))
-        .map_err(settlement_error)
+        .map_err(|error| settlement_error(&error))
 }

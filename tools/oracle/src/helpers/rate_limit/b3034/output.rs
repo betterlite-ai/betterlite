@@ -4,8 +4,8 @@ use serde_json::{Value, json};
 
 use crate::helpers::HelperError;
 
-pub(super) fn settlement_error(error: SettlementError) -> Box<HelperError> {
-    let status = match &error {
+pub(super) fn settlement_error(error: &SettlementError) -> Box<HelperError> {
+    let status = match error {
         SettlementError::Unverifiable(unverifiable) => Some(unverifiable.status_code),
         SettlementError::DescriptorCount { .. }
         | SettlementError::Reply(_)

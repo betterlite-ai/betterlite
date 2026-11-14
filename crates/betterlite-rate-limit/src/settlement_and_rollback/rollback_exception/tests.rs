@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use crate::settlement_and_rollback::SettlementError;
 use crate::settlement_and_rollback::tests::support::{
-    FakeCache, FakeScript, FixedClock, LogCapture, amounts, descriptor, key_list, reply,
-    run_scripted, settlement, store, text,
+    FakeCache, FakeScript, FixedClock, LogCapture, RunMode, amounts, descriptor, key_list, reply,
+    run_settlement, settlement, store, text,
 };
 
 const NOW: u64 = 1_700_000_000;
@@ -14,8 +14,8 @@ const NOW: u64 = 1_700_000_000;
 async fn a_failed_script_refunds_applied_groups_and_falls_back_to_memory() {
     let capture = LogCapture::start();
     let script = FakeScript::failing(vec![reply(&[0, 1, 100]), reply(&[0, 1, 200])], &[1]);
-    let run = run_scripted(
-        Arc::clone(&script),
+    let run = run_settlement(
+        RunMode::Scripted(Arc::clone(&script)),
         &[reply(&[1])],
         false,
         &[

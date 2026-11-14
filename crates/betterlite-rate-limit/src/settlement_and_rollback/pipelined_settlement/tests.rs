@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::settlement_and_rollback::tests::support::{
-    FakeBatch, amounts, descriptor, key_list, reply, run_batched, text,
+    FakeBatch, RunMode, amounts, descriptor, key_list, reply, run_settlement, text,
 };
 
 #[tokio::test]
@@ -14,8 +14,8 @@ async fn every_group_is_enqueued_in_one_batch_round() {
         ],
         &[],
     );
-    let run = run_batched(
-        &batch,
+    let run = run_settlement(
+        RunMode::Batched(&batch),
         &[],
         false,
         &[
@@ -49,8 +49,8 @@ async fn every_group_is_enqueued_in_one_batch_round() {
 #[tokio::test]
 async fn the_batch_carries_both_counters_of_a_descriptor() {
     let batch = FakeBatch::new(vec![reply(&[0, 1, 100, 2, 200])], &[]);
-    let run = run_batched(
-        &batch,
+    let run = run_settlement(
+        RunMode::Batched(&batch),
         &[],
         false,
         &[descriptor("model", "gpt-4", Some(10), Some(100))],

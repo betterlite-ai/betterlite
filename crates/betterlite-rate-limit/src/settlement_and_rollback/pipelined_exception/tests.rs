@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use crate::settlement_and_rollback::SettlementError;
 use crate::settlement_and_rollback::tests::support::{
-    FakeBatch, FakeCache, FakeScript, FixedClock, LogCapture, amounts, descriptor, key_list,
-    pipelined_store, reply, run_batched, settlement, text,
+    FakeBatch, FakeCache, FakeScript, FixedClock, LogCapture, RunMode, amounts, descriptor,
+    key_list, pipelined_store, reply, run_settlement, settlement, text,
 };
 
 const NOW: u64 = 1_700_000_000;
@@ -14,8 +14,8 @@ const NOW: u64 = 1_700_000_000;
 async fn a_failed_group_refunds_the_ok_groups_and_falls_back() {
     let capture = LogCapture::start();
     let batch = FakeBatch::new(vec![reply(&[0, 1, 100]), reply(&[0, 2, 200])], &[0]);
-    let run = run_batched(
-        &batch,
+    let run = run_settlement(
+        RunMode::Batched(&batch),
         &[reply(&[1])],
         false,
         &[

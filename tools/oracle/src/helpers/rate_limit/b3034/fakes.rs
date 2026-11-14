@@ -139,10 +139,7 @@ impl ScriptBatch for PlannedBatch {
         args: &[RedisScalar],
     ) -> ScriptHandle {
         let index = self.record(keys, args);
-        let reply = match planned_reply(&self.plan, index) {
-            Some(reply) => Ok(reply),
-            None => Err(Arc::new(BatchError::Cancelled)),
-        };
+        let reply = planned_reply(&self.plan, index).ok_or_else(|| Arc::new(BatchError::Cancelled));
         Box::pin(async move { reply })
     }
 }

@@ -415,24 +415,34 @@ pub(crate) fn expected_refund_calls(
         .collect()
 }
 
-pub(crate) struct BatchedRun {
+pub(crate) enum RunMode<'a> {
+    Batched(&'a Arc<FakeBatch>),
+    Scripted(Arc<FakeScript>),
+}
+
+pub(crate) struct SettlementRun {
     pub(crate) cache: Arc<FakeCache>,
     pub(crate) direct: Arc<FakeScript>,
     pub(crate) refunds: Arc<FakeScript>,
     pub(crate) outcome: Result<RateLimitResponse, SettlementError>,
 }
 
-pub(crate) async fn run_batched(
-    batch: &Arc<FakeBatch>,
+pub(crate) async fn run_settlement(
+    mode: RunMode<'_>,
     refund_replies: &[ScriptReply],
     fail_closed: bool,
     descriptors: &[RateLimitDescriptor],
     increments: &[IncrementAmounts],
-) -> BatchedRun {
+) -> SettlementRun {
     let cache = FakeCache::empty();
-    let windows_store = pipelined_store(Arc::clone(&cache), Arc::clone(batch));
+    let (windows_store, direct) = match mode {
+        RunMode::Batched(batch) => (
+            pipelined_store(Arc::clone(&cache), Arc::clone(batch)),
+            FakeScript::new(Vec::new()),
+        ),
+        RunMode::Scripted(script) => (store(Arc::clone(&cache)), script),
+    };
     let clock = FixedClock::at(SETTLEMENT_NOW);
-    let direct = FakeScript::new(Vec::new());
     let refunds = FakeScript::new(refund_replies.to_vec());
     let settler = settlement(
         &windows_store,
@@ -444,43 +454,9 @@ pub(crate) async fn run_batched(
     let outcome = settler
         .atomic_check_and_increment_by_n(descriptors, increments)
         .await;
-    BatchedRun {
+    SettlementRun {
         cache,
         direct,
-        refunds,
-        outcome,
-    }
-}
-
-pub(crate) struct ScriptedRun {
-    pub(crate) cache: Arc<FakeCache>,
-    pub(crate) refunds: Arc<FakeScript>,
-    pub(crate) outcome: Result<RateLimitResponse, SettlementError>,
-}
-
-pub(crate) async fn run_scripted(
-    script: Arc<FakeScript>,
-    refund_replies: &[ScriptReply],
-    fail_closed: bool,
-    descriptors: &[RateLimitDescriptor],
-    increments: &[IncrementAmounts],
-) -> ScriptedRun {
-    let cache = FakeCache::empty();
-    let windows_store = store(Arc::clone(&cache));
-    let clock = FixedClock::at(SETTLEMENT_NOW);
-    let refunds = FakeScript::new(refund_replies.to_vec());
-    let settler = settlement(
-        &windows_store,
-        &clock,
-        Some(script),
-        Some(Arc::clone(&refunds)),
-        fail_closed,
-    );
-    let outcome = settler
-        .atomic_check_and_increment_by_n(descriptors, increments)
-        .await;
-    ScriptedRun {
-        cache,
         refunds,
         outcome,
     }

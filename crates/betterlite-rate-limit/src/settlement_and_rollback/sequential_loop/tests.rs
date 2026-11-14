@@ -5,8 +5,8 @@ use std::sync::Arc;
 use crate::limiter_records::{RateLimitResponse, ReservationBackend, ScriptReply};
 use crate::settlement_and_rollback::SettlementError;
 use crate::settlement_and_rollback::tests::support::{
-    FakeCache, FakeScript, FixedClock, amounts, descriptor, key_list, reply, run_scripted,
-    settlement, store,
+    FakeCache, FakeScript, FixedClock, RunMode, amounts, descriptor, key_list, reply,
+    run_settlement, settlement, store,
 };
 
 const NOW: u64 = 1_700_000_000;
@@ -37,8 +37,8 @@ fn redis_window(counter_key: &str, window_start: &str) -> (String, String, Reser
 #[tokio::test]
 async fn each_descriptor_runs_its_own_script_call_in_order() {
     let script = FakeScript::new(vec![reply(&[0, 1, 100]), reply(&[0, 2, 200, 300, 200])]);
-    let run = run_scripted(
-        Arc::clone(&script),
+    let run = run_settlement(
+        RunMode::Scripted(Arc::clone(&script)),
         &[],
         false,
         &[
