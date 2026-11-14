@@ -15,6 +15,9 @@ pub struct DetailedTiming {
     pub enabled: bool,
 }
 
+// the sections macro reads every section's settings through the module's Settings name
+pub type Settings = DetailedTiming;
+
 impl Section for Raw {
     type Settings = DetailedTiming;
 
