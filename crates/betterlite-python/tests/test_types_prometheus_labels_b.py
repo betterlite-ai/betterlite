@@ -1,3 +1,4 @@
+import inspect
 from collections.abc import Sequence
 from dataclasses import replace
 from typing import Final, get_args
@@ -413,6 +414,9 @@ def test_names_label_value_fields() -> None:
 
 
 def test_names_value_rejects_keys() -> None:
+    parameters = inspect.signature(UserAPIKeyLabelValues).parameters
+    kinds = {parameter.kind for parameter in parameters.values()}
+    assert kinds == {inspect.Parameter.KEYWORD_ONLY}
     accepted = UserAPIKeyLabelValues()
     with pytest.raises(TypeError):
         _ = replace(accepted, bogus="1")
