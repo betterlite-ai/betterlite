@@ -1,0 +1,11 @@
+task: B3814
+deviations:
+  - what: The policy registry and the route tool-name extractor are injected traits, and a refusal is GuardrailFailure::HttpObject with status 400 and an ordered detail map where LiteLLM raises fastapi.HTTPException with a dict detail.
+    why: betterlite-guardrails cannot depend on betterlite-db or betterlite-auth, and B5471's HttpObject variant carries the dict detail as an IndexMap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_policy/tool_policy_guardrail.py#L182-L189
+  - what: A tool call or auth value that is a Python object instead of a JSON object is not read.
+    why: docs/compatibility.md leaves duck typing to the runtime; requests are JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_policy/tool_policy_guardrail.py#L95-L102
+  - what: When user_api_key_auth is a JSON object, betterlite reads its object_permission_id and team_object_permission_id first; LiteLLM's hasattr gate only matches a class instance, so for the same JSON body it reads the flat metadata keys instead.
+    why: betterlite reads JSON objects per docs/compatibility.md and the task text, while a LiteLLM proxy picks these ids from the UserAPIKeyAuth instance it attaches to request_data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_policy/tool_policy_guardrail.py#L57-L65

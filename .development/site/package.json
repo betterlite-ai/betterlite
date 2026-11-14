@@ -1,0 +1,31 @@
+{
+  "name": "betterlite-progress",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check": "tsc --noEmit && eslint . && prettier --check ."
+  },
+  "dependencies": {
+    "d3-dsv": "3.0.2",
+    "js-yaml": "5.5.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "uplot": "1.6.32",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/d3-dsv": "3.0.7",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "eslint": "10.14.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vite": "8.3.6"
+  }
+}
