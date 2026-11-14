@@ -14,15 +14,11 @@ use crate::mcp_stored_contracts::JsonValue;
 
 const JSON_MAP_FIELDS: [&str; 2] = ["tool_name_to_display_name", "tool_name_to_description"];
 
-pub fn prepare_mcp_server_data<N, D>(
+pub fn prepare_mcp_server_data<N: NonceSource, D: SecretDiagnostics>(
     request: &McpServerRequest,
     mode: PrepareMode<'_>,
     cipher: &StoredCipher<N, D>,
-) -> Result<PreparedServerData, McpEncodingError>
-where
-    N: NonceSource,
-    D: SecretDiagnostics,
-{
+) -> Result<PreparedServerData, McpEncodingError> {
     let mut data = Dumper { request, mode }.dump()?;
     match mode {
         PrepareMode::Create => {
@@ -63,15 +59,11 @@ fn apply_partial_defaults(data: &mut PreparedServerData, original_fields: &Field
     }
 }
 
-fn prepare_credentials<N, D>(
+fn prepare_credentials<N: NonceSource, D: SecretDiagnostics>(
     data: &mut PreparedServerData,
     mode: PrepareMode<'_>,
     cipher: &StoredCipher<N, D>,
-) -> Result<(), McpEncodingError>
-where
-    N: NonceSource,
-    D: SecretDiagnostics,
-{
+) -> Result<(), McpEncodingError> {
     let Some(value) = data.remove("credentials") else {
         return Ok(());
     };
@@ -99,15 +91,11 @@ where
     Ok(())
 }
 
-fn prepare_secret_map<N, D>(
+fn prepare_secret_map<N: NonceSource, D: SecretDiagnostics>(
     data: &mut PreparedServerData,
     field: &'static str,
     cipher: &StoredCipher<N, D>,
-) -> Result<(), McpEncodingError>
-where
-    N: NonceSource,
-    D: SecretDiagnostics,
-{
+) -> Result<(), McpEncodingError> {
     let Some(value) = data.remove(field) else {
         return Ok(());
     };
@@ -130,14 +118,10 @@ where
     Ok(())
 }
 
-fn prepare_env_vars<N, D>(
+fn prepare_env_vars<N: NonceSource, D: SecretDiagnostics>(
     data: &mut PreparedServerData,
     cipher: &StoredCipher<N, D>,
-) -> Result<(), McpEncodingError>
-where
-    N: NonceSource,
-    D: SecretDiagnostics,
-{
+) -> Result<(), McpEncodingError> {
     let Some(value) = data.remove("env_vars") else {
         return Ok(());
     };

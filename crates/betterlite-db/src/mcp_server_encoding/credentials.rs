@@ -51,14 +51,10 @@ pub const fn credential_auth_class(auth_type: Option<MCPAuth>) -> Option<Credent
     }
 }
 
-pub fn encrypt_credentials<N, D>(
+pub fn encrypt_credentials<N: NonceSource, D: SecretDiagnostics>(
     credentials: &mut CredentialBlob,
     cipher: &StoredCipher<N, D>,
-) -> Result<(), McpEncodingError>
-where
-    N: NonceSource,
-    D: SecretDiagnostics,
-{
+) -> Result<(), McpEncodingError> {
     for field in SECRET_FIELDS {
         let Some(value) = credentials.get_mut(field) else {
             continue;

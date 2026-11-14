@@ -168,10 +168,7 @@ impl Dumper<'_, '_> {
     }
 }
 
-fn stored<T>(value: &T) -> Result<JsonValue, McpEncodingError>
-where
-    T: Serialize,
-{
+fn stored<T: Serialize>(value: &T) -> Result<JsonValue, McpEncodingError> {
     let text = serde_json::to_string(value).map_err(McpEncodingError::Json)?;
     let parsed = serde_json::from_str(&text).map_err(McpEncodingError::Json)?;
     Ok(parsed)

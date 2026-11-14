@@ -27,14 +27,10 @@ pub fn is_global_env_var_scope(scope: Option<McpEnvVarScope>) -> bool {
     entry_scope != McpEnvVarScope::User
 }
 
-pub fn encrypt_global_env_var_values<N, D>(
+pub fn encrypt_global_env_var_values<N: NonceSource, D: SecretDiagnostics>(
     env_vars: &mut [JsonValue],
     cipher: &StoredCipher<N, D>,
-) -> Result<(), McpEncodingError>
-where
-    N: NonceSource,
-    D: SecretDiagnostics,
-{
+) -> Result<(), McpEncodingError> {
     for entry in env_vars {
         let JsonValue::Object(fields) = entry else {
             return Err(McpEncodingError::EnvVarNotObject);
