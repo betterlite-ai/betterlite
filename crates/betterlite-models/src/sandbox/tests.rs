@@ -110,15 +110,20 @@ async fn read_capped_lines_keeps_the_same_lines_for_output_under_the_cap() {
 
 #[tokio::test]
 async fn read_capped_lines_counts_bare_newlines_until_the_cap() {
-    let data = vec![b'\n'; SANDBOX_MAX_OUTPUT_BYTES.saturating_add(1)];
+    let data = vec![b'\n'; SANDBOX_MAX_OUTPUT_BYTES.saturating_mul(2)];
+    let chunk_count = data.chunks(4096).len();
+    let mut streamed = 0_usize;
     let chunks = stream::iter(
         data.chunks(4096)
+            .inspect(|_| streamed = streamed.saturating_add(1))
             .map(|chunk| Ok::<Vec<u8>, io::Error>(chunk.to_vec())),
     );
+    let error = read_capped_lines(chunks).await.unwrap_err();
     assert!(matches!(
-        read_capped_lines(chunks).await.unwrap_err(),
+        error,
         SandboxOutputError::Exceeded { limit } if limit == SANDBOX_MAX_OUTPUT_BYTES
     ));
+    assert!(streamed < chunk_count);
 }
 
 #[tokio::test]
