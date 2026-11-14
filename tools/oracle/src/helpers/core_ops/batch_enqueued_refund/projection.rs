@@ -24,10 +24,10 @@ pub(super) fn read_memory(
     store: &Arc<Mutex<RecordingStore>>,
     keys: &[String],
 ) -> Result<Map<String, Value>, Box<HelperError>> {
-    let mut store = store.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut held = store.lock().unwrap_or_else(PoisonError::into_inner);
     let mut memory = Map::new();
     for key in keys {
-        let stored = store
+        let stored = held
             .counters
             .cache
             .get(key)

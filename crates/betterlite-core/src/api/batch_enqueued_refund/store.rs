@@ -72,9 +72,11 @@ impl EnqueuedLocalStore for LocalTokenCounters {
             Some(CacheValue::Bytes(bytes)) => Ok(Some(bytes)),
             // a credential never lands under a reservation key, so it is no record at all
             Some(CacheValue::Credential(_)) => Ok(None),
-            Some(value) => serde_json::to_vec(&value)
-                .map(Some)
-                .map_err(|source| BatchEnqueuedRefundError::Encode { source }),
+            Some(value) => serde_json::to_vec(&value).map(Some).map_err(|source| {
+                BatchEnqueuedRefundError::Encode {
+                    source: Box::new(source),
+                }
+            }),
             None => Ok(None),
         }
     }

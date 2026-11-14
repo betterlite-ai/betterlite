@@ -16,8 +16,10 @@ where
     Store: EnqueuedLocalStore,
 {
     let record_key = format!("{RESERVATION_RECORD_PREFIX}{batch_id}");
-    let serialized = serde_json::to_string(reservation)
-        .map_err(|source| BatchEnqueuedRefundError::Encode { source })?;
+    let serialized =
+        serde_json::to_string(reservation).map_err(|source| BatchEnqueuedRefundError::Encode {
+            source: Box::new(source),
+        })?;
     let elapsed = reservation
         .reserved_at_monotonic
         .mul_add(-1.0_f64, (service.clock)());

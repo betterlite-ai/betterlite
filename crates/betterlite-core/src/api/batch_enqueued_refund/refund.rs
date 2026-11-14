@@ -2,7 +2,6 @@ use std::sync::PoisonError;
 
 use crate::api::batch_enqueued_reserve::ReservationBackend;
 use crate::api::batch_enqueued_reserve::keys::COUNTER_KEY_PREFIX;
-use crate::api::batch_enqueued_reserve::store::ReservationScripts;
 
 use super::record::ReservationRecord;
 use super::store::{EnqueuedLocalStore, ReservationRecordScripts};

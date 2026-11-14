@@ -67,14 +67,26 @@ pub struct PostCallOutcome {
 #[derive(Debug, Error)]
 pub enum BatchEnqueuedRefundError {
     #[error("the local enqueued-token store failed")]
-    Store(#[from] BatchEnqueuedReserveError),
+    Store(Box<BatchEnqueuedReserveError>),
     #[error("the local enqueued-token cache failed")]
-    Cache(#[from] CacheError),
+    Cache(Box<CacheError>),
     #[error("the enqueued-token reservation record could not be encoded")]
     Encode {
         #[source]
-        source: serde_json::Error,
+        source: Box<serde_json::Error>,
     },
+}
+
+impl From<BatchEnqueuedReserveError> for BatchEnqueuedRefundError {
+    fn from(source: BatchEnqueuedReserveError) -> Self {
+        Self::Store(Box::new(source))
+    }
+}
+
+impl From<CacheError> for BatchEnqueuedRefundError {
+    fn from(source: CacheError) -> Self {
+        Self::Cache(Box::new(source))
+    }
 }
 
 // the store methods the source splits across refund, save_reservation and pop_reservation, over one set of injected dependencies
@@ -128,20 +140,20 @@ where
         status: &str,
         pending: Option<&ReservationRecord>,
     ) -> Result<PostCallOutcome, BatchEnqueuedRefundError> {
-        let batch_id = canonical_provider_batch_id(batch_id);
+        let canonical_id = canonical_provider_batch_id(batch_id);
         if let Some(pending) = pending {
-            save::save_reservation(self, &batch_id, pending).await?;
+            save::save_reservation(self, &canonical_id, pending).await?;
         }
         let lowered = status.to_lowercase();
         let mut refunded = false;
         if BATCH_ENQUEUED_REFUND_STATUSES.contains(&lowered.as_str())
-            && let Some(reservation) = pop::pop_reservation(self, &batch_id).await?
+            && let Some(reservation) = pop::pop_reservation(self, &canonical_id).await?
         {
             refund::refund(self, &reservation).await?;
             refunded = true;
         }
         Ok(PostCallOutcome {
-            batch_id,
+            batch_id: canonical_id,
             saved: pending.is_some(),
             refunded,
         })

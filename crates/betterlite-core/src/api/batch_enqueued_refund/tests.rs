@@ -16,8 +16,8 @@ use tracing_subscriber::registry;
 use super::record::{ReservationRecord, record_ttl};
 use super::store::ReservationRecordScripts;
 use super::{
-    BATCH_ENQUEUED_REFUND_STATUSES, BatchEnqueuedRefundInput, BatchEnqueuedRefundResult,
-    EnqueuedTokenRefund, PostCallOutcome,
+    BATCH_ENQUEUED_REFUND_STATUSES, BatchEnqueuedRefundError, BatchEnqueuedRefundInput,
+    BatchEnqueuedRefundResult, EnqueuedTokenRefund, PostCallOutcome,
 };
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::batch_enqueued_reserve::store::{
@@ -569,6 +569,33 @@ async fn local_backend_refund(#[case] current: Option<i64>, #[case] remaining: O
     }
     assert!(scripts.calls().is_empty());
     assert!(captured.levels().is_empty());
+}
+
+#[tokio::test]
+async fn local_refund_with_a_negative_ttl_fails_in_the_store() {
+    let time = Arc::new(Mutex::new(0.0_f64));
+    let counters = counters_at(&time);
+    let counter = key_scope();
+    seed_counter(&counters, &counter, 800);
+    let mut service = refund_service(None, Arc::clone(&counters));
+    service.settings.ttl_seconds = -1;
+    let reservation = record(500, ReservationBackend::Memory, "worker-a", vec![counter]);
+    let outcome = service
+        .run(&BatchEnqueuedRefundInput::Refund { reservation })
+        .await;
+    assert!(matches!(outcome, Err(BatchEnqueuedRefundError::Store(_))));
+}
+
+#[tokio::test]
+async fn local_pop_with_a_broken_clock_fails_in_the_cache() {
+    let time = Arc::new(Mutex::new(f64::NAN));
+    let service = refund_service(None, counters_at(&time));
+    let outcome = service
+        .run(&BatchEnqueuedRefundInput::Pop {
+            batch_id: "batch-1".to_owned(),
+        })
+        .await;
+    assert!(matches!(outcome, Err(BatchEnqueuedRefundError::Cache(_))));
 }
 
 #[tokio::test]
