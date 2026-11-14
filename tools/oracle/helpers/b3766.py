@@ -1,8 +1,7 @@
 import asyncio
-from typing import Literal, NotRequired, Protocol, Required, TypedDict
+from typing import Literal, NotRequired, Required, TypedDict
 
 import httpx
-from fastapi import HTTPException
 from litellm.proxy.guardrails.guardrail_hooks.crowdstrike_aidr.crowdstrike_aidr import (
     CrowdStrikeAIDRGuardrailMissingSecrets as MissingSecrets,
 )
@@ -13,18 +12,8 @@ from litellm.types.guardrails import LitellmParams
 from litellm.types.proxy.guardrails.guardrail_hooks.crowdstrike_aidr import (
     CrowdStrikeAIDRGuardrailConfigModelOptionalParams as OptionalParams,
 )
-from litellm.types.utils import GenericGuardrailAPIInputs
 from pydantic import JsonValue, TypeAdapter, ValidationError
-
-
-class GuardrailEntry(Protocol):
-    async def apply_guardrail(
-        self,
-        inputs: GenericGuardrailAPIInputs,
-        request_data: dict[str, JsonValue],
-        input_type: Literal["request", "response"],
-        logging_obj: None = None,
-    ) -> GenericGuardrailAPIInputs: ...
+from starlette.exceptions import HTTPException
 
 
 class SettingsFields(TypedDict, total=False):
@@ -39,6 +28,24 @@ class SettingsFields(TypedDict, total=False):
     sampling_rate: int
 
 
+class Sent(TypedDict, total=False):
+    texts: list[str]
+    tools: JsonValue
+    tool_calls: JsonValue
+    structured_messages: JsonValue
+    model: str | None
+
+
+class Returned(TypedDict, total=False):
+    texts: list[str]
+    tools: JsonValue
+    tool_calls: JsonValue
+    structured_messages: JsonValue
+
+
+BACK = TypeAdapter(Returned)
+
+
 class Answer(TypedDict):
     status: int
     body: JsonValue
@@ -48,7 +55,7 @@ class Answer(TypedDict):
 class Input(TypedDict):
     function: str
     settings: Required[SettingsFields]
-    inputs: Required[GenericGuardrailAPIInputs]
+    inputs: Required[Sent]
     request_data: Required[dict[str, JsonValue]]
     input_type: Required[Literal["request", "response"]]
     params: Required[dict[str, JsonValue]]
@@ -139,16 +146,6 @@ def streaming_fields(handler: CrowdStrikeAIDRHandler) -> StreamingFields:
     }
 
 
-def project(result: GenericGuardrailAPIInputs) -> Projection:
-    projected = TypeAdapter(Projection).validate_python(result)
-    return {
-        "texts": projected.get("texts"),
-        "tools": projected.get("tools"),
-        "tool_calls": projected.get("tool_calls"),
-        "structured_messages": projected.get("structured_messages"),
-    }
-
-
 class Bucket(TypedDict, total=False):
     applied_guardrails: list[str]
 
@@ -171,25 +168,17 @@ def applied_guardrails(request_data: dict[str, JsonValue]) -> list[str]:
     return names
 
 
-async def run_entry(
-    entry: GuardrailEntry,
-    inputs: GenericGuardrailAPIInputs,
-    request_data: dict[str, JsonValue],
-    input_type: Literal["request", "response"],
-) -> GenericGuardrailAPIInputs:
-    call = entry.apply_guardrail
-    return await call(inputs, request_data, input_type, None)
-
-
 def apply(args: Input) -> ApplyOutput:
     handler = make_handler(args["settings"])
     recorder = Recorder(args.get("answer"))
     handler.async_handler.client = httpx.AsyncClient(transport=httpx.MockTransport(recorder.handle))
-    request_data = dict(args["request_data"])
+    data = dict(args["request_data"])
+    inputs = args["inputs"]
+    kind = args["input_type"]
     outcome: AllowOutcome | HttpOutcome | PlainOutcome
     result: Projection | None = None
     try:
-        returned = asyncio.run(run_entry(handler, args["inputs"], request_data, args["input_type"]))
+        out = BACK.validate_python(asyncio.run(handler.apply_guardrail(inputs, data, kind)))  # type: ignore[misc, arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536
     except HTTPException as error:
         outcome = {"tag": "http_error", "status": error.status_code}
     except ValidationError:
@@ -198,7 +187,12 @@ def apply(args: Input) -> ApplyOutput:
         outcome = {"tag": "internal_error"}
     else:
         outcome = {"tag": "allow"}
-        result = project(returned)
+        result = {
+            "texts": out.get("texts"),
+            "tools": out.get("tools"),
+            "tool_calls": out.get("tool_calls"),
+            "structured_messages": out.get("structured_messages"),
+        }
     path = recorder.paths[0] if recorder.paths else None
     request = recorder.bodies[0] if recorder.bodies else None
     return {
@@ -206,7 +200,7 @@ def apply(args: Input) -> ApplyOutput:
         "request": request,
         "outcome": outcome,
         "result": result,
-        "applied_guardrails": applied_guardrails(request_data),
+        "applied_guardrails": applied_guardrails(data),
     }
 
 
@@ -220,22 +214,17 @@ def construct(args: Input) -> Construction | MissingSecret:
         "api_base": handler.api_base,
         "fail_on_error": handler.fail_on_error,
         "streaming": streaming_fields(handler),
-        "event_hooks": [hook.value for hook in CrowdStrikeAIDRHandler.get_supported_event_hooks()],
+        "event_hooks": [hook.value for hook in handler.get_supported_event_hooks()],
     }
-
-
-def litellm_params(value: dict[str, JsonValue]) -> LitellmParams:
-    nested = value.get("optional_params")
-    if nested is None:
-        return LitellmParams.model_validate(value)
-    model = OptionalParams.model_validate(nested)
-    merged = {**value, "optional_params": model}
-    return LitellmParams.model_validate(merged)
 
 
 def streaming_params(args: Input) -> StreamingFields:
     handler = make_handler(args["settings"])
-    handler.update_in_memory_litellm_params(litellm_params(args["params"]))
+    fields: dict[str, JsonValue | OptionalParams] = dict(args["params"])
+    nested = args["params"].get("optional_params")
+    if nested is not None:
+        fields["optional_params"] = OptionalParams.model_validate(nested)
+    handler.update_in_memory_litellm_params(LitellmParams.model_validate(fields))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1192
     return streaming_fields(handler)
 
 
