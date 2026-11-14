@@ -112,6 +112,8 @@ fn gpt_url_trims_the_base_and_prefers_an_explicit_one() {
     "\u{0661}\u{0660}x\u{0662}\u{0660}",
     text("\u{0661}\u{0660}x\u{0662}\u{0660}")
 )]
+#[case::min_i64("-9223372036854775808x20", text("-9223372036854775808x20"))]
+#[case::fal_separator("1024-x-768", text("1024-x-768"))]
 fn gpt_size_maps_only_two_plain_integer_dimensions(#[case] value: &str, #[case] expected: Json) {
     assert_eq!(map_gpt_image_size(&text(value)), expected);
 }
