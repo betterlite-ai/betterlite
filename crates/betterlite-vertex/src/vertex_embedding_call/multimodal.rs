@@ -114,11 +114,7 @@ async fn prepare(
         },
     )
     .map_err(|source| VertexEmbeddingCallError::Target { source })?;
-    let headers = target::headers(
-        target.auth.as_ref(),
-        target::MULTIMODAL_CONTENT_TYPE,
-        call.headers,
-    );
+    let headers = target::multimodal_headers(target.auth.as_ref(), call.headers);
     let payload = transform_request(call.input, call.optional_params)?;
     let body = serde_json::to_vec(&payload)
         .map_err(|source| VertexEmbeddingCallError::Encode { source })?;

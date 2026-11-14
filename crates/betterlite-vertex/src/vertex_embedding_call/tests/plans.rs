@@ -159,8 +159,16 @@ async fn plans_multimodal_forced_headers() {
 
 #[tokio::test]
 async fn plans_multimodal_none_timeout() {
-    let sync_none = ClientTimeout::Explicit(HANDLER_DEFAULT_TIMEOUT);
-    assert_eq!(multimodal_timeout(None, sync_none), sync_none);
+    let six_hundred = Timeout {
+        total: Duration::from_secs(600),
+        connect: Duration::from_secs(5),
+    };
+    assert_eq!(HANDLER_DEFAULT_TIMEOUT, six_hundred);
+    let sync_none = ClientTimeout::Explicit(six_hundred);
+    assert_eq!(
+        multimodal_timeout(None, ClientTimeout::Explicit(HANDLER_DEFAULT_TIMEOUT)),
+        sync_none
+    );
     assert_eq!(
         multimodal_timeout(None, ClientTimeout::HandlerDefault),
         ClientTimeout::HandlerDefault
@@ -199,10 +207,7 @@ async fn plans_multimodal_none_timeout() {
         .await
         .unwrap();
     let calls = recorder.recorded();
-    assert_eq!(
-        calls[0].timeout,
-        ClientTimeout::Explicit(HANDLER_DEFAULT_TIMEOUT)
-    );
+    assert_eq!(calls[0].timeout, sync_none);
     assert_eq!(calls[1].timeout, ClientTimeout::HandlerDefault);
 }
 
@@ -220,8 +225,8 @@ fn plans_supported_names() {
 fn plans_multimodal_default_timeout() {
     assert_eq!(DEFAULT_TIMEOUT, Duration::from_secs(300));
     let explicit = ClientTimeout::Explicit(Timeout {
-        total: DEFAULT_TIMEOUT,
-        connect: DEFAULT_TIMEOUT,
+        total: Duration::from_secs(300),
+        connect: Duration::from_secs(300),
     });
     assert_eq!(
         multimodal_timeout(Some(DEFAULT_TIMEOUT), ClientTimeout::HandlerDefault),

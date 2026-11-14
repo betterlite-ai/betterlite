@@ -11,23 +11,23 @@ use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::model_urls::{ApiVersion, UrlMode};
 
 // VertexBase.set_headers writes this content type; the multimodal validate_environment forces the charset too
-pub const TEXT_CONTENT_TYPE: &str = "application/json";
-pub const MULTIMODAL_CONTENT_TYPE: &str = "application/json; charset=utf-8";
+const TEXT_CONTENT_TYPE: &str = "application/json";
+const MULTIMODAL_CONTENT_TYPE: &str = "application/json; charset=utf-8";
 
-pub struct TargetRequest<'call> {
-    pub provider: VertexCapabilityProvider,
-    pub model: &'call str,
-    pub auth_token: Option<&'call SecretString>,
-    pub gemini_api_key: Option<&'call SecretString>,
-    pub project: Option<&'call str>,
-    pub location: Option<&'call str>,
-    pub api_base: Option<&'call str>,
-    pub use_psc_endpoint_format: bool,
+pub(super) struct TargetRequest<'call> {
+    pub(super) provider: VertexCapabilityProvider,
+    pub(super) model: &'call str,
+    pub(super) auth_token: Option<&'call SecretString>,
+    pub(super) gemini_api_key: Option<&'call SecretString>,
+    pub(super) project: Option<&'call str>,
+    pub(super) location: Option<&'call str>,
+    pub(super) api_base: Option<&'call str>,
+    pub(super) use_psc_endpoint_format: bool,
 }
 
 // LiteLLM's _get_token_and_url for an embedding: mode="embedding", version v1, and no alt=sse query
 #[must_use]
-pub fn embedding_target(
+pub(super) fn embedding_target(
     catalog: &ModelCatalog,
     request: &TargetRequest<'_>,
 ) -> Result<EndpointTarget, EndpointTargetError> {
@@ -58,18 +58,47 @@ const fn target_provider(provider: VertexCapabilityProvider) -> TargetProvider {
     }
 }
 
-// The token becomes a bearer header and a Gemini key its own header; either way the caller's headers are written last
+// VertexBase.set_headers writes its own headers first and the caller's after, so a caller header wins
 #[must_use]
-pub fn headers(
+pub(super) fn text_headers(
     auth: Option<&AuthHeader>,
-    content_type: &'static str,
     caller: &BTreeMap<String, String>,
 ) -> BTreeMap<String, SecretString> {
-    let mut headers = BTreeMap::new();
-    headers.insert(
+    let mut headers = forced_headers(auth, TEXT_CONTENT_TYPE);
+    for (name, value) in caller {
+        headers.insert(name.clone(), SecretString::from(value.clone()));
+    }
+    headers
+}
+
+// The multimodal validate_environment updates the caller's headers, so its content type and auth win in any case
+#[must_use]
+pub(super) fn multimodal_headers(
+    auth: Option<&AuthHeader>,
+    caller: &BTreeMap<String, String>,
+) -> BTreeMap<String, SecretString> {
+    let forced = forced_headers(auth, MULTIMODAL_CONTENT_TYPE);
+    let mut headers: BTreeMap<String, SecretString> = caller
+        .iter()
+        .filter(|(name, _)| {
+            !forced
+                .keys()
+                .any(|forced_name| forced_name.eq_ignore_ascii_case(name.as_str()))
+        })
+        .map(|(name, value)| (name.clone(), SecretString::from(value.clone())))
+        .collect();
+    headers.extend(forced);
+    headers
+}
+
+fn forced_headers(
+    auth: Option<&AuthHeader>,
+    content_type: &'static str,
+) -> BTreeMap<String, SecretString> {
+    let mut headers = BTreeMap::from([(
         String::from("Content-Type"),
         SecretString::from(content_type),
-    );
+    )]);
     match auth {
         Some(AuthHeader::Token(token)) => {
             headers.insert(
@@ -83,9 +112,6 @@ pub fn headers(
             }
         }
         None => {}
-    }
-    for (name, value) in caller {
-        headers.insert(name.clone(), SecretString::from(value.clone()));
     }
     headers
 }

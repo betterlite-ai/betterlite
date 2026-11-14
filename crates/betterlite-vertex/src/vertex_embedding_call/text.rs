@@ -159,11 +159,7 @@ where
         },
     )
     .map_err(|source| VertexEmbeddingCallError::Target { source })?;
-    let headers = target::headers(
-        target.auth.as_ref(),
-        target::TEXT_CONTENT_TYPE,
-        call.extra_headers,
-    );
+    let headers = target::text_headers(target.auth.as_ref(), call.extra_headers);
     let request = transform_request(
         call.input,
         call.optional_params,

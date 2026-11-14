@@ -7,7 +7,7 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use http::Method;
-use http::header::{HeaderMap, HeaderName, HeaderValue};
+use http::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue, PROXY_AUTHORIZATION};
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 use url::Url;
@@ -35,6 +35,15 @@ pub const HANDLER_DEFAULT_TIMEOUT: Timeout = Timeout {
     connect: Duration::from_secs(5),
 };
 
+// Only these values leave the process as secrets; a cross-origin redirect drops each sensitive header, so a content type must not be one
+const CREDENTIAL_HEADERS: [HeaderName; 5] = [
+    AUTHORIZATION,
+    PROXY_AUTHORIZATION,
+    HeaderName::from_static("x-api-key"),
+    HeaderName::from_static("api-key"),
+    HeaderName::from_static("x-goog-api-key"),
+];
+
 pub struct PostRequest<'request> {
     pub url: &'request str,
     pub headers: &'request BTreeMap<String, SecretString>,
@@ -54,7 +63,7 @@ pub trait EmbeddingPost: Send + Sync {
 
 #[derive(Debug, Error)]
 pub enum PostError {
-    #[error("the request URL is not valid: {source}")]
+    #[error("the request URL is not valid: {0}")]
     Url(#[source] url::ParseError),
     #[error("the {name} header name is not valid: {source}")]
     HeaderName {
@@ -94,7 +103,12 @@ impl EmbeddingPost for ProxiedClient {
                 body: RequestBody::Json(request.body.to_vec()),
                 deadline,
             };
-            match self.send_buffered(outbound).await {
+            let sent = self.send_following(outbound).await;
+            let reply = match sent {
+                Ok(stream) => stream.buffered(self.limits.body_bytes).await,
+                Err(source) => Err(source),
+            };
+            match reply {
                 Ok(response) => Ok(PostReply {
                     status: response.status,
                     body: response.body,
@@ -122,7 +136,9 @@ fn header_map(headers: &BTreeMap<String, SecretString>) -> Result<HeaderMap, Pos
                 source,
             }
         })?;
-        header_value.set_sensitive(true);
+        if CREDENTIAL_HEADERS.contains(&header_name) {
+            header_value.set_sensitive(true);
+        }
         map.insert(header_name, header_value);
     }
     Ok(map)
