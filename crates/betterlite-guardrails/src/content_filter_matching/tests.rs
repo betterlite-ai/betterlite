@@ -59,7 +59,7 @@ fn conditional_categories(blocks: &[&str]) -> CategoryLoadResult {
 
 fn keyword_categories(entries: &[(&str, &str, &str, ContentFilterAction)]) -> CategoryLoadResult {
     let mut categories = CategoryLoadResult::default();
-    categories.category_keywords = keyword_map(entries);
+    categories.category_keywords.extend(keyword_map(entries));
     categories
 }
 
