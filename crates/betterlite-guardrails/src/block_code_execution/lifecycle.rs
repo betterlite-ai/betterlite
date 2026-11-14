@@ -104,6 +104,7 @@ impl BlockCodeExecutionGuardrail {
         params: BlockCodeExecutionParams,
         strict_modes: bool,
     ) -> Result<Self, BlockCodeExecutionError> {
+        let scanner = code_block_scanner(&params)?;
         let name = match params.guardrail_name {
             Some(name) if !name.is_empty() => name,
             Some(_) | None => DEFAULT_GUARDRAIL_NAME.to_owned(),
@@ -118,7 +119,6 @@ impl BlockCodeExecutionGuardrail {
             guardrail_settings(name, mode, params.default_on),
             strict_modes,
         )?;
-        let scanner = code_block_scanner(&params)?;
         let block_all = params.blocked_languages.as_ref().is_none_or(Vec::is_empty);
         Ok(Self {
             base,
