@@ -3,10 +3,10 @@ import time
 from collections.abc import Mapping
 from datetime import datetime
 from enum import Enum, StrEnum
-from typing import Final
+from typing import Final, NotRequired
 
 from pydantic import BaseModel, Field, JsonValue
-from typing_extensions import NotRequired, ReadOnly, TypedDict
+from typing_extensions import ReadOnly, TypedDict
 
 from betterlite.types.llms.base import LiteLLMPydanticObjectBase
 

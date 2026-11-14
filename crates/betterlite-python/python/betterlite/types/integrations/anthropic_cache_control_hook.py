@@ -1,6 +1,6 @@
-from typing import Final, Literal
+from typing import Final, Literal, NotRequired
 
-from typing_extensions import NotRequired, ReadOnly, TypedDict
+from typing_extensions import ReadOnly, TypedDict
 
 # ast-grep-ignore: no-long-names
 GATEWAY_INJECTED_CACHE_METADATA_KEY: Final = "litellm_gateway_injected_cache"

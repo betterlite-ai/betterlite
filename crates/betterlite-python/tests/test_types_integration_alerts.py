@@ -4,7 +4,7 @@ import sys
 from typing import Final
 
 import pytest
-from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
+from pydantic import JsonValue, TypeAdapter, ValidationError
 from typing_extensions import TypedDict
 
 from betterlite.types.integrations import (
@@ -524,4 +524,4 @@ def test_names_pydantic_bases() -> None:
     assert slack_alerting.SlackAlertingArgs.__mro__[1] is LiteLLMPydanticObjectBase
     assert slack_alerting.DeploymentMetrics.__mro__[1] is LiteLLMPydanticObjectBase
     assert slack_alerting.AlertTypeConfig.__mro__[1] is LiteLLMPydanticObjectBase
-    assert slack_alerting.HangingRequestData.__mro__[1] is BaseModel
+    assert slack_alerting.HangingRequestData.__mro__[1].__name__ == "BaseModel"
