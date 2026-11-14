@@ -1,0 +1,17 @@
+task: B4661
+deviations:
+  - what: The token POST goes through the pooled betterlite-http client with its response size cap and deadlines, and a body over the cap is Unreachable (detail BodyTooLarge) instead of being read in full.
+    why: LiteLLM's edge reads any body size; the bounded-inputs rule and B173's pool set the caps for every outbound call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/client_credentials.py#L95-L142
+  - what: expires_in strings accept ASCII digits only and a value outside the i64 range counts as unparsable, so the default TTL applies; a value that parses but is past what chrono can represent leaves expires_at at DateTime::MAX_UTC.
+    why: Python int() also accepts other Unicode digits and arbitrary-size integers, and its float timestamps have no fixed range; bounded integer and time handling need fixed widths.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/client_credentials.py#L145-L160
+  - what: Warning logs carry the status code and the scheme and host of the token URL, not request headers or body previews.
+    why: LiteLLM's describe_upstream_response prints masked headers and body previews; that debug module belongs to another task and a token endpoint reply is a place secrets can leak.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/client_credentials.py#L112-L124
+  - what: A token URL that is not parseable as a URL is Unreachable with detail InvalidUrl before any request is made; LiteLLM lets httpx raise and reports its exception class name (for example UnsupportedProtocol).
+    why: betterlite-http parses the URL before sending and names its own failure kind, and the detail is meant to be the failure kind only, never the URL.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/client_credentials.py#L112-L124
+  - what: The retry is a send_with_retry method on the bearer auth, driven by the caller's call object, instead of an httpx2.Auth async generator.
+    why: The Rust client has no auth-flow generator; the observable behavior (one retry with a fresh token, the second response stands) is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/client_credentials.py#L341-L376
