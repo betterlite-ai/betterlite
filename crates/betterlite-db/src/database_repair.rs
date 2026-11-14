@@ -13,7 +13,7 @@ use unassigned::UnassignedTeamError;
 
 pub const MAX_CSV_BYTES: usize = 0x0010_0000;
 // one byte past the cap, so a capped read and a file that fits look different
-pub const MAX_CSV_READ_BYTES: u64 = 0x0010_0001;
+pub const MAX_CSV_READ_BYTES: u64 = 0x0010_0000 + 1;
 pub const MAX_JSON_DEPTH: usize = 64;
 
 #[derive(Debug, thiserror::Error)]
