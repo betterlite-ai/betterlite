@@ -111,6 +111,7 @@ class MessageView(TypedDict):
 
 class ChoiceView(TypedDict):
     finish_reason: str | None
+    provider_specific_fields: dict[str, JsonValue] | None
     message: MessageView
 
 
@@ -131,14 +132,9 @@ class ReplyView(TypedDict):
     usage: UsageView
 
 
-class DeltaView(TypedDict):
-    role: NotRequired[str | None]
-
-
 class StreamChoiceView(TypedDict):
     index: int
     finish_reason: NotRequired[str | None]
-    delta: DeltaView
 
 
 class StreamView(TypedDict):
@@ -170,15 +166,16 @@ class Warnings(logging.Handler):
 
 
 def install(settings: Settings) -> None:
-    os.environ.pop("XAI_API_KEY", None)
-    os.environ.pop("XAI_API_BASE", None)
-    os.environ.pop("XAI_OAUTH_API_BASE", None)
-    if settings["environment_key"] is not None:
-        os.environ["XAI_API_KEY"] = settings["environment_key"]
-    if settings["api_base"] is not None:
-        os.environ["XAI_API_BASE"] = settings["api_base"]
-    if settings["oauth_api_base"] is not None:
-        os.environ["XAI_OAUTH_API_BASE"] = settings["oauth_api_base"]
+    wanted = {
+        "XAI_API_KEY": settings["environment_key"],
+        "XAI_API_BASE": settings["api_base"],
+        "XAI_OAUTH_API_BASE": settings["oauth_api_base"],
+    }
+    for name, value in wanted.items():
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
     litellm.xai_key = settings["xai_key"]
 
 
@@ -186,17 +183,6 @@ def supported_step(step: SupportedStep) -> JsonValue:
     litellm.supports_reasoning = Scripted(outcome=step["supports_reasoning"])
     supported: list[JsonValue] = [*CONFIG.get_supported_openai_params(step["model"])]
     return {"supported": supported}
-
-
-def map_step(step: MapStep) -> JsonValue:
-    drop_params = False
-    mapped = CONFIG.map_openai_params(
-        dict(step["params"]),
-        dict(step["optional_params"]),
-        step["model"],
-        drop_params,
-    )
-    return {"mapped": mapped}
 
 
 def request_step(step: RequestStep) -> JsonValue:
@@ -216,44 +202,6 @@ def request_step(step: RequestStep) -> JsonValue:
     return {"body": body, "warnings": len(warnings.messages)}
 
 
-def environment_step(step: EnvironmentStep) -> JsonValue:
-    headers = CONFIG.validate_environment(
-        dict(step["headers"]),
-        step["model"],
-        [],
-        {},
-        {"use_xai_oauth": step["use_xai_oauth"]},
-        step["api_key"],
-        None,
-    )
-    rendered: dict[str, JsonValue] = dict(headers.items())
-    return {"headers": rendered}
-
-
-def url_step(step: UrlStep) -> JsonValue:
-    _, _provider, api_key, api_base = get_llm_provider(
-        model="xai/grok-4",
-        api_base=step["api_base"],
-        api_key=step["api_key"],
-    )
-    url = CONFIG.get_complete_url(
-        api_base,
-        api_key,
-        "grok-4",
-        {},
-        {"use_xai_oauth": step["use_xai_oauth"]},
-        None,
-    )
-    return {"url": url, "api_base": api_base, "api_key": api_key}
-
-
-def tool_count(choice: ChoiceView) -> int:
-    calls = choice["message"].get("tool_calls")
-    if calls is None:
-        return 0
-    return len(calls)
-
-
 def usage_view(usage: UsageView) -> dict[str, JsonValue]:
     cost = usage.get("cost")
     details = usage.get("prompt_tokens_details")
@@ -269,7 +217,7 @@ def usage_view(usage: UsageView) -> dict[str, JsonValue]:
     }
 
 
-def reply_step(step: ReplyStep) -> JsonValue:
+def reply_view(step: ReplyStep) -> ReplyView:
     logging_obj = Logging(
         model="xai/grok-4",
         messages=None,
@@ -279,25 +227,23 @@ def reply_step(step: ReplyStep) -> JsonValue:
         litellm_call_id="oracle-call",
         function_id="oracle-function",
     )
+    response = httpx.Response(200, content=step["body"])
     transformed = CONFIG.transform_response(
-        step["model"],
-        httpx.Response(200, content=step["body"]),
-        ModelResponse(),
-        logging_obj,
-        {},
-        [],
-        {},
-        {},
-        None,
+        step["model"], response, ModelResponse(), logging_obj, {}, [], {}, {}, None
     )
-    view = TypeAdapter(ReplyView).validate_json(transformed.model_dump_json())
-    choices: list[JsonValue] = [
-        {
-            "finish_reason": choice["finish_reason"],
-            "tool_calls": tool_count(choice),
-        }
-        for choice in view["choices"]
-    ]
+    return TypeAdapter(ReplyView).validate_json(transformed.model_dump_json())
+
+
+def reply_step(step: ReplyStep) -> JsonValue:
+    view = reply_view(step)
+    choices: list[JsonValue] = []
+    for choice in view["choices"]:
+        fields = choice["provider_specific_fields"]
+        calls = choice["message"].get("tool_calls")
+        reading: dict[str, JsonValue] = {"finish_reason": choice["finish_reason"]}
+        reading["provider_specific_fields"] = {} if fields is None else fields
+        reading["tool_calls"] = 0 if calls is None else len(calls)
+        choices.append(reading)
     return {"choices": choices, "usage": usage_view(view["usage"])}
 
 
@@ -308,8 +254,7 @@ def chunk_step(step: ChunkStep) -> JsonValue:
     parsed = handler.chunk_parser(dict(step["chunk"]))  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/chat/transformation.py#L408
     view = TypeAdapter(StreamView).validate_json(parsed.model_dump_json())
     choices: list[JsonValue] = [
-        {"index": choice["index"], "finish_reason": choice.get("finish_reason")}
-        for choice in view["choices"]
+        {"index": c["index"], "finish_reason": c.get("finish_reason")} for c in view["choices"]
     ]
     usage: JsonValue = None
     if "usage" in view:
@@ -325,13 +270,27 @@ def run(input_value: Input) -> JsonValue:
         if step["kind"] == "supported":
             results.append(supported_step(step))
         elif step["kind"] == "map":
-            results.append(map_step(step))
+            drop_params = False
+            mapped = CONFIG.map_openai_params(
+                dict(step["params"]), dict(step["optional_params"]), step["model"], drop_params
+            )
+            results.append({"mapped": mapped})
         elif step["kind"] == "request":
             results.append(request_step(step))
         elif step["kind"] == "environment":
-            results.append(environment_step(step))
+            oauth: Params = {"use_xai_oauth": step["use_xai_oauth"]}
+            headers = CONFIG.validate_environment(
+                dict(step["headers"]), step["model"], [], {}, oauth, step["api_key"], None
+            )
+            rendered: dict[str, JsonValue] = dict(headers.items())
+            results.append({"headers": rendered})
         elif step["kind"] == "url":
-            results.append(url_step(step))
+            _, _provider, api_key, api_base = get_llm_provider(
+                model="xai/grok-4", api_base=step["api_base"], api_key=step["api_key"]
+            )
+            oauth = {"use_xai_oauth": step["use_xai_oauth"]}
+            url = CONFIG.get_complete_url(api_base, api_key, "grok-4", {}, oauth, None)
+            results.append({"url": url, "api_base": api_base, "api_key": api_key})
         elif step["kind"] == "reply":
             results.append(reply_step(step))
         elif step["kind"] == "chunk":

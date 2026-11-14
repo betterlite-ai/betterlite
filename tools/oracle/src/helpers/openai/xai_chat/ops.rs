@@ -17,11 +17,12 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 use tracing::subscriber::with_default;
+use tracing_subscriber::layer::SubscriberExt as _;
 use uuid::Uuid;
 
 use super::logs::Warnings;
 use super::oauth::{CapabilityLookup, identity, oauth};
-use super::{Settings, failure, stream_failure};
+use super::{CHAT_FAILURE, STREAM_FAILURE, Settings, failure};
 use crate::helpers::HelperResult;
 
 pub(super) struct Run<'request> {
@@ -49,7 +50,8 @@ impl Run<'_> {
     ) -> HelperResult {
         let mut optional = optional_params.clone();
         let requested = Object::from_iter(params.iter().cloned());
-        map_openai_params(model, supports_reasoning, &requested, &mut optional).map_err(failure)?;
+        map_openai_params(model, supports_reasoning, &requested, &mut optional)
+            .map_err(|error| failure(CHAT_FAILURE, Some(error.status_code()), error))?;
         Ok(json!({ "mapped": optional }))
     }
 
@@ -75,7 +77,7 @@ impl Run<'_> {
                 downloads: &RefuseDownloads,
             })
         })
-        .map_err(failure)?;
+        .map_err(|error| failure(CHAT_FAILURE, Some(error.status_code()), error))?;
         let count = warnings
             .0
             .lock()
@@ -103,7 +105,7 @@ impl Run<'_> {
                 use_xai_oauth,
                 oauth: &mut authenticator,
             }))
-            .map_err(failure)?;
+            .map_err(|error| failure(CHAT_FAILURE, Some(error.status_code()), error))?;
         Ok(json!({ "headers": resolved }))
     }
 
@@ -134,7 +136,7 @@ impl Run<'_> {
         let converted = transform_response(&ReplyInput {
             body: body.as_bytes(),
         })
-        .map_err(failure)?;
+        .map_err(|error| failure(CHAT_FAILURE, Some(error.status_code()), error))?;
         let choices: Vec<Value> = converted
             .response
             .choices
@@ -142,6 +144,7 @@ impl Run<'_> {
             .map(|choice| {
                 json!({
                     "finish_reason": choice.finish_reason,
+                    "provider_specific_fields": choice.provider_specific_fields,
                     "tool_calls": choice.message.tool_calls.as_ref().map_or(0, Vec::len),
                 })
             })
@@ -161,7 +164,8 @@ impl Run<'_> {
 
     pub(super) fn chunk(&self, raw: &Value) -> HelperResult {
         let mut chunk = raw.clone();
-        let reply = parse_chunk(&mut chunk, Uuid::nil, || 0).map_err(stream_failure)?;
+        let reply = parse_chunk(&mut chunk, Uuid::nil, || 0)
+            .map_err(|error| failure(STREAM_FAILURE, None, error))?;
         let choices: Vec<Value> = reply
             .choices
             .iter()

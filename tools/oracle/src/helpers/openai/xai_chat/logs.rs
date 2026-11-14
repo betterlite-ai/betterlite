@@ -19,7 +19,10 @@ impl Visit for Message {
     }
 }
 
-impl<Inner: Subscriber> Layer<Inner> for Warnings {
+impl<Inner> Layer<Inner> for Warnings
+where
+    Inner: Subscriber,
+{
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
         if *event.metadata().level() != Level::WARN {
             return;

@@ -1,7 +1,7 @@
+use std::fmt;
+
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::openai_base_config::Headers;
-use betterlite_openai::xai_chat::error::XaiChatError;
-use betterlite_openai::xai_chat::stream::XaiStreamError;
 use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -80,21 +80,13 @@ fn invalid(message: String) -> Box<HelperError> {
     })
 }
 
-fn failure(error: XaiChatError) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: String::from("XaiChatError"),
-        status: Some(error.status_code()),
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
-}
+const CHAT_FAILURE: &str = "XaiChatError";
+const STREAM_FAILURE: &str = "XaiStreamError";
 
-fn stream_failure(error: XaiStreamError) -> Box<HelperError> {
+fn failure(class: &str, status: Option<u16>, error: impl fmt::Display) -> Box<HelperError> {
     Box::new(HelperError {
-        class: String::from("XaiStreamError"),
-        status: None,
+        class: class.to_owned(),
+        status,
         error_type: None,
         param: None,
         code: None,
