@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 from typing import TypedDict
@@ -524,3 +525,9 @@ def test_streaming_extra_names() -> None:
     assert "unknown" not in params.model_dump()
     defaults = vendor_configs.BedrockGuardrailStreamingParams.from_extras(None)
     assert defaults.streaming_sampling_rate == DEFAULT_SAMPLING_RATE
+
+
+def test_str_enum_names() -> None:
+    assert core.Role.SYSTEM == "system"
+    assert pii.PiiEntityCategory.GENERAL == "General"
+    assert json.dumps({"action": pii.PiiAction.BLOCK}) == '{"action": "BLOCK"}'
