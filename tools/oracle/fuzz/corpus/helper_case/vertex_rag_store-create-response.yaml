@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-rag-store-create-response-seed
+call:
+  vertex_rag_store:
+    calls:
+      - function: create_response
+        status: 200
+        body: '{"name":"projects/p/locations/us-central1/ragCorpora/seed","display_name":"seed","createTime":"2024-01-01T00:00:00Z","labels":{"team":"rag"}}'
+env: {}
+compare: {ignore: []}

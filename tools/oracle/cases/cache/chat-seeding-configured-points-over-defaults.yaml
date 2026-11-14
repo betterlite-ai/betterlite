@@ -1,0 +1,38 @@
+kind: helper
+name: cache-chat-seeding-configured-points-over-defaults
+call:
+  b4125:
+    operation: chat_seeding
+    probes:
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: system, content: be nice}, {role: user, content: hello}]
+        params: {cache_control_injection_points: [{location: message, role: user, index: -1, control: {type: ephemeral}}]}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello, cache_control: {type: ephemeral}}]
+        params: {cache_control_injection_points: [{location: message, role: user, index: -1, control: {type: ephemeral}}]}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: system, content: be nice}, {role: user, content: hello}]
+        params: {cache_control_injection_points: [{location: message, role: system, index: null, control: {type: ephemeral}}]}
+        enable_prompt_caching: true
+        ttl: 1h
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: claude-alias
+        messages: [{role: system, content: be nice}, {role: user, content: hello}]
+        params: {cache_control_injection_points: [{location: message, role: user, index: 0, control: {type: ephemeral}}]}
+        global_enable: true
+        alias_map: {claude-alias: anthropic/claude-sonnet-4-5}
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: oci-chat-cohere-stream-flag-state
+call:
+  b5843:
+    function: stream
+    reads:
+      - "data: {\"apiFormat\": \"COHERE\", \"text\": \"Hel\"}\n"
+      - "data: {\"apiFormat\": \"COHERE\", \"text\": \"lo\"}\n"
+      - "data: {\"apiFormat\": \"COHERE\", \"text\": \"Hello\", \"finishReason\": \"COMPLETE\", \"chatHistory\": []}\n"
+      - "data: {\"apiFormat\": \"COHERE\", \"text\": \"Hello\", \"toolCalls\": [{\"name\": \"lookup\", \"parameters\": {}}]}\n"
+      - "data: {\"apiFormat\": \"COHERE\", \"text\": \"Hello\", \"chatHistory\": [], \"toolCalls\": [{\"name\": \"lookup\", \"parameters\": {}}]}\n"
+      - "data: [DONE]\n"
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: null-and-populated-final-usage
+call:
+  xai_chat:
+    settings: {api_base: null, oauth_api_base: null, xai_key: null, environment_key: null}
+    steps:
+      - kind: chunk
+        chunk: {id: "c1", object: "chat.completion.chunk", created: 1, model: grok-4, choices: [], usage: null}
+      - kind: chunk
+        chunk: {id: "c2", object: "chat.completion.chunk", created: 1, model: grok-4, choices: [], usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 17, completion_tokens_details: {reasoning_tokens: 5}, cost_in_usd_ticks: 123}}
+      - kind: chunk
+        chunk: {id: "c3", object: "chat.completion.chunk", created: 1, model: grok-4, choices: [{index: 0, delta: {content: hi}, finish_reason: stop}], usage: {prompt_tokens: 3, completion_tokens: 1, total_tokens: 4}}
+env: {}
+compare: {ignore: []}

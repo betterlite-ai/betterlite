@@ -1,0 +1,41 @@
+diff --git a/ui/litellm-dashboard/next.config.mjs b/ui/litellm-dashboard/next.config.mjs
+index 128ce0a..6f0ed26 100644
+--- a/ui/litellm-dashboard/next.config.mjs
++++ b/ui/litellm-dashboard/next.config.mjs
+@@ -21,6 +21,8 @@ const nextConfig = {
+   basePath: "",
+   assetPrefix: "/litellm-asset-prefix",
+   trailingSlash: true,
++  // tools/dashboard/build.sh derives the id from its inputs so two builds of one input match
++  generateBuildId: async () => process.env.BETTERLITE_BUILD_ID ?? null,
+   turbopack: {
+     // Must be absolute; "." is no longer allowed
+     root: __dirname,
+diff --git a/ui/litellm-dashboard/src/app/layout.tsx b/ui/litellm-dashboard/src/app/layout.tsx
+index 60db710..c7eddb5 100644
+--- a/ui/litellm-dashboard/src/app/layout.tsx
++++ b/ui/litellm-dashboard/src/app/layout.tsx
+@@ -1,5 +1,4 @@
+ import type { Metadata } from "next";
+-import { Inter } from "next/font/google";
+ import "./globals.css";
+
+ import { NuqsAdapter } from "nuqs/adapters/next/app";
+@@ -9,8 +8,6 @@ import { AuthProvider } from "@/contexts/AuthContext";
+ import ReactQueryProvider from "@/contexts/ReactQueryProvider";
+ import { Toaster } from "@/components/ui/sonner";
+
+-const inter = Inter({ subsets: ["latin"] });
+-
+ export const metadata: Metadata = {
+   title: "LiteLLM Dashboard",
+   description: "LiteLLM Proxy Admin UI",
+@@ -26,7 +23,7 @@ export default function RootLayout({
+     // next-themes stamps the theme class on <html> before paint, which the exported markup
+     // cannot predict; suppressHydrationWarning confines that mismatch to this element.
+     <html lang="en" suppressHydrationWarning>
+-      <body className={inter.className}>
++      <body>
+         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
+           <NuqsAdapter>
+             <ReactQueryProvider>

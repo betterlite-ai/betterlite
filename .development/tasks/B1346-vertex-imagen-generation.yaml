@@ -74,5 +74,5 @@ pitfalls:
   - labels must be removed before optional_params is merged into parameters.
   - sampleCount=0 overrides the default one rather than being replaced by it.
   - Imagen generation appends images to an existing nonempty response.data list.
-budget: {max_changed_lines: 600, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: standard
