@@ -58,7 +58,7 @@ fn apply_speed(optional_params: &mut Object, params: &mut Object, speed: &Number
 
 fn add_specific_params(
     voice_id: &str,
-    query: Object,
+    query: &Object,
     remaining: Object,
     kwargs: &mut Object,
 ) -> Object {
@@ -66,10 +66,10 @@ fn add_specific_params(
         .into_iter()
         .filter(|(_, value)| !value.is_null())
         .collect();
-    let extra_body = kwargs
+    if let Some(extra_body) = kwargs
         .remove("extra_body")
-        .and_then(|extra| extra.as_object().cloned());
-    if let Some(extra_body) = extra_body {
+        .and_then(|extra| extra.as_object().cloned())
+    {
         mapped.extend(extra_body.into_iter().filter(|(_, value)| !value.is_null()));
     }
     let consumed: Vec<String> = kwargs
@@ -103,10 +103,10 @@ pub fn map_openai_params(
     let mut params = optional_params.clone();
     let voice_id = resolve_voice_id(voice, &mut params)?;
     let mut query = Object::new();
-    let requested = params
+    let requested_format = params
         .remove("response_format")
         .and_then(|format| format.as_str().map(str::to_owned));
-    if let Some(requested) = requested {
+    if let Some(requested) = requested_format {
         let mapped = FORMAT_MAPPINGS
             .iter()
             .find(|(name, _)| *name == requested)
@@ -117,6 +117,9 @@ pub fn map_openai_params(
         apply_speed(optional_params, &mut params, &speed);
     }
     params.remove("instructions");
-    let params = add_specific_params(&voice_id, query, params, kwargs);
-    Ok(SpeechMapping { voice_id, params })
+    let body_params = add_specific_params(&voice_id, &query, params, kwargs);
+    Ok(SpeechMapping {
+        voice_id,
+        params: body_params,
+    })
 }

@@ -447,11 +447,11 @@ fn transforming_the_request_leaves_the_options_untouched() {
 }
 
 fn url_params(voice_id: &str, query: Option<&str>) -> Object {
-    let query = query.map_or_else(String::new, |query| {
-        format!(r#", "__elevenlabs_query_params__": {query}"#)
+    let suffix = query.map_or_else(String::new, |text| {
+        format!(r#", "__elevenlabs_query_params__": {text}"#)
     });
     object(&format!(
-        r#"{{"__elevenlabs_voice_id__": {voice_id}{query}}}"#
+        r#"{{"__elevenlabs_voice_id__": {voice_id}{suffix}}}"#
     ))
 }
 
@@ -641,17 +641,13 @@ fn the_api_key_follows_the_or_chain(
     #[case] environment: Option<&str>,
     #[case] expected: &str,
 ) {
-    let explicit = explicit.map(secret);
-    let global_api_key = global_api_key.map(secret);
-    let global_openai_key = global_openai_key.map(secret);
-    let environment = environment.map(secret);
     let updated = validate_environment(
         &IndexMap::new(),
         &SpeechKeys {
-            explicit: explicit.as_ref(),
-            global_api_key: global_api_key.as_ref(),
-            global_openai_key: global_openai_key.as_ref(),
-            environment: environment.as_ref(),
+            explicit: explicit.map(secret).as_ref(),
+            global_api_key: global_api_key.map(secret).as_ref(),
+            global_openai_key: global_openai_key.map(secret).as_ref(),
+            environment: environment.map(secret).as_ref(),
         },
     )
     .expect("validated headers");

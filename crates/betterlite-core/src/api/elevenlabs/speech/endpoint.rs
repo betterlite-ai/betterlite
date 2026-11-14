@@ -40,13 +40,13 @@ pub fn complete_url(
     let encoded = encode_segment(voice_id, "voice_id")
         .map_err(|source| SpeechError::VoiceSegment { source })?;
     let url = format!("{base}{TTS_ENDPOINT_PATH}/{encoded}");
-    let Some(query) = litellm_params
+    let Some(query_value) = litellm_params
         .get(QUERY_PARAMS_KEY)
-        .filter(|query| !query.is_null())
+        .filter(|value| !value.is_null())
     else {
         return Ok(url);
     };
-    let query = query.as_object().ok_or(SpeechError::QueryShape)?;
+    let query = query_value.as_object().ok_or(SpeechError::QueryShape)?;
     if query.is_empty() {
         return Ok(url);
     }

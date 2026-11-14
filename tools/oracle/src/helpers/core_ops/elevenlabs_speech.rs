@@ -67,21 +67,12 @@ fn answer(call: &Call) -> Value {
         Call::Request {
             text,
             optional_params,
-        } => {
-            let data = transform_request(MODEL, text, optional_params);
-            json!({ "ok": true, "dict_body": data.dict_body, "headers": data.headers })
-        }
+        } => request_answer(text, optional_params),
         Call::Url {
             api_base,
             environment,
             litellm_params,
-        } => {
-            let (_, environment_base) = LiteLlmParams::elevenlabs_speech_settings(environment);
-            complete_url(api_base.as_deref(), &environment_base, litellm_params).map_or_else(
-                |_| json!({ "ok": false }),
-                |url| json!({ "ok": true, "url": url }),
-            )
-        }
+        } => url_answer(api_base.as_deref(), environment, litellm_params),
         Call::Headers {
             headers,
             api_key,
@@ -100,18 +91,35 @@ fn answer(call: &Call) -> Value {
     }
 }
 
+fn request_answer(text: &str, optional_params: &Object) -> Value {
+    let data = transform_request(MODEL, text, optional_params);
+    json!({ "ok": true, "dict_body": data.dict_body, "headers": data.headers })
+}
+
+fn url_answer(
+    api_base: Option<&str>,
+    environment: &BTreeMap<String, String>,
+    litellm_params: &Object,
+) -> Value {
+    let (_, environment_base) = LiteLlmParams::elevenlabs_speech_settings(environment);
+    complete_url(api_base, &environment_base, litellm_params).map_or_else(
+        |_| json!({ "ok": false }),
+        |url| json!({ "ok": true, "url": url }),
+    )
+}
+
 fn map_answer(voice: Option<&SpeechVoice>, optional_params: &Object, kwargs: &Object) -> Value {
-    let mut optional_params = optional_params.clone();
-    let mut kwargs = kwargs.clone();
-    map_openai_params(&mut optional_params, voice, &mut kwargs).map_or_else(
+    let mut options = optional_params.clone();
+    let mut forwarded = kwargs.clone();
+    map_openai_params(&mut options, voice, &mut forwarded).map_or_else(
         |_| json!({ "ok": false }),
         |mapping| {
             json!({
                 "ok": true,
                 "voice_id": mapping.voice_id,
                 "params": mapping.params,
-                "optional_params": optional_params,
-                "kwargs": kwargs,
+                "optional_params": options,
+                "kwargs": forwarded,
             })
         },
     )
