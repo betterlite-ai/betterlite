@@ -93,16 +93,15 @@ class HookHandler(BaseLLMHTTPHandler):
         litellm_params: GenericLiteLLMParams,
         logging_obj: Logging,
     ) -> JsonValue:
-        model_out, input_out, provider_out, optional_out, params_out = (
-            self._run_sync_responses_pre_call_deployment_hook(
-                model=case["model"],
-                input=case["input"],
-                custom_llm_provider=case["custom_llm_provider"],
-                response_api_optional_request_params=optional_params,
-                litellm_params=litellm_params,
-                logging_obj=logging_obj,
-            )
+        outcome = self._run_sync_responses_pre_call_deployment_hook(
+            model=case["model"],
+            input=case["input"],
+            custom_llm_provider=case["custom_llm_provider"],
+            response_api_optional_request_params=optional_params,
+            litellm_params=litellm_params,
+            logging_obj=logging_obj,
         )
+        model_out, input_out, provider_out, optional_out, params_out = outcome
         return {
             "model": model_out,
             "input": JSON.validate_python(input_out),
@@ -229,23 +228,22 @@ def deployment_answer(case: DeploymentCase) -> JsonValue:
 
 def settings_answer(case: SettingsCase) -> JsonValue:
     handler = HookHandler()
-    answers: list[JsonValue] = []
-    for probe in case["probes"]:
-        try:
-            depth, max_loops, fingerprints = handler.loop_settings(object_map(probe))
-        except (TypeError, ValueError) as error:
-            answers.append({"error": {"class": type(error).__name__, "message": str(error)}})
-            continue
-        answers.append(
-            {
-                "settings": {
-                    "depth": depth,
-                    "max_loops": max_loops,
-                    "fingerprints": JSON.validate_python(fingerprints),
-                }
-            }
-        )
+    answers = [settings_probe(handler, probe) for probe in case["probes"]]
     return {"probes": answers}
+
+
+def settings_probe(handler: HookHandler, probe: dict[str, JsonValue]) -> JsonValue:
+    try:
+        depth, max_loops, fingerprints = handler.loop_settings(object_map(probe))
+    except (TypeError, ValueError) as error:
+        return {"error": {"class": type(error).__name__, "message": str(error)}}
+    return {
+        "settings": {
+            "depth": depth,
+            "max_loops": max_loops,
+            "fingerprints": JSON.validate_python(fingerprints),
+        }
+    }
 
 
 def safety_answer(case: SafetyCase) -> JsonValue:
