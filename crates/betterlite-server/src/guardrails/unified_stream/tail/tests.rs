@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 
 use crate::guardrails::unified_stream::tests::support::{

@@ -4,7 +4,6 @@ pub mod round;
 pub mod run;
 pub mod tail;
 
-#[cfg(test)]
 mod tests;
 
 use std::collections::{BTreeMap, VecDeque};

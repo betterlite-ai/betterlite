@@ -40,7 +40,7 @@ pub(crate) struct LoopState<'run, T, G, S> {
 
 // LiteLLM's _run_incremental_transform_stream: withhold the raw chunks, send the transformed diffs
 #[must_use]
-pub fn run_incremental_transform_stream<'run, T, G, S>(
+pub fn incremental_transform_stream<'run, T, G, S>(
     params: StreamLoopParams<'run, T, G>,
     source: S,
 ) -> impl Stream<Item = Result<StreamOutput, StreamLoopError>> + Send + 'run
@@ -176,7 +176,7 @@ where
     async fn finish_stream(&mut self) {
         if self.seen.tool_calls {
             let mut assembled = self.responses_so_far.clone();
-            let inspected = inspect::inspect_full_response_for_block(
+            let inspected = inspect::inspect_response_for_block(
                 &mut self.params,
                 &mut assembled,
                 &self.responses_yielded,

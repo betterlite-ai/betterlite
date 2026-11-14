@@ -11,7 +11,7 @@ use super::round;
 use super::{StreamLoopParams, StreamOutput};
 
 // LiteLLM's _inspect_full_response_for_block: the transforms are dropped, only the block matters
-pub(crate) async fn inspect_full_response_for_block<T, G>(
+pub(crate) async fn inspect_response_for_block<T, G>(
     params: &mut StreamLoopParams<'_, T, G>,
     assembled: &mut Vec<GuardrailValue>,
     responses_yielded: &[GuardrailValue],

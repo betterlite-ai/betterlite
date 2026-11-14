@@ -142,7 +142,10 @@ where
     T: BaseTranslation<Failure = GuardrailFailure> + ?Sized,
 {
     match failure {
-        RoundCallError::Http(error) => terminate_with_http(error, context, request_data, outputs),
+        RoundCallError::Http(error) => {
+            let emission = stream_error_emission(context, request_data);
+            terminate_with_http(error, &emission, outputs)
+        }
         RoundCallError::Guardrail(GuardrailFailure::ModifyResponse(mut details)) => {
             if details.original_response.is_none() {
                 details.original_response =
@@ -161,30 +164,37 @@ where
                     source: other,
                 }));
             };
-            terminate_with_http(error, context, request_data, outputs)
+            let emission = stream_error_emission(context, request_data);
+            terminate_with_http(error, &emission, outputs)
         }
     }
 }
 
-// LiteLLM turns an HTTPException inside a round into an in-stream error and stops the stream
-fn terminate_with_http<T>(
-    error: StreamHttpError,
-    context: &FailureContext<'_, T>,
-    request_data: &BTreeMap<String, GuardrailValue>,
-    outputs: &mut VecDeque<StreamOutput>,
-) -> Result<(), RoundFailure>
-where
-    T: BaseTranslation<Failure = GuardrailFailure> + ?Sized,
-{
-    let emission = StreamErrorEmission {
+// LiteLLM's emit_streaming_http_error arguments, built from the failed round's lists
+fn stream_error_emission<'state, T: ?Sized>(
+    context: &'state FailureContext<'_, T>,
+    request_data: &'state BTreeMap<String, GuardrailValue>,
+) -> StreamErrorEmission<'state, T> {
+    StreamErrorEmission {
         call_type: Some(context.call_type),
         responses_so_far: context.responses_so_far,
         request_data,
         translation: Some(context.translation),
         stream_started: !context.responses_yielded.is_empty(),
         responses_yielded: Some(context.responses_yielded),
-    };
-    let items = emit_streaming_http_error(error, &emission)
+    }
+}
+
+// LiteLLM turns an HTTPException inside a round into an in-stream error and stops the stream
+fn terminate_with_http<T>(
+    error: StreamHttpError,
+    emission: &StreamErrorEmission<'_, T>,
+    outputs: &mut VecDeque<StreamOutput>,
+) -> Result<(), RoundFailure>
+where
+    T: BaseTranslation<Failure = GuardrailFailure> + ?Sized,
+{
+    let items = emit_streaming_http_error(error, emission)
         .map_err(|source| StreamLoopError::Http { source })?;
     for item in items {
         outputs.push_back(StreamOutput::Item(item));

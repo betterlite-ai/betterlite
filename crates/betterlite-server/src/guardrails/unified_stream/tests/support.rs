@@ -14,7 +14,7 @@ use futures_util::StreamExt as _;
 use futures_util::stream;
 
 use crate::guardrails::unified_stream::error::StreamLoopError;
-use crate::guardrails::unified_stream::run::run_incremental_transform_stream;
+use crate::guardrails::unified_stream::run::incremental_transform_stream;
 use crate::guardrails::unified_stream::{StreamLoopParams, StreamOutput};
 
 pub(crate) struct FakeGuardrail;
@@ -61,7 +61,7 @@ impl FakeTranslation {
     pub(crate) fn planned(plans: Vec<Plan>) -> Self {
         Self {
             state: Mutex::new(FakeState {
-                plans: plans.into(),
+                plans: VecDeque::from(plans),
                 calls: Vec::new(),
             }),
             terminator: true,
@@ -262,12 +262,10 @@ fn choice_text(item: &GuardrailValue) -> Option<String> {
 }
 
 pub(crate) fn object(fields: Vec<(&str, GuardrailValue)>) -> GuardrailValue {
-    GuardrailValue::Object(
-        fields
-            .into_iter()
-            .map(|(key, value)| (key.to_owned(), value))
-            .collect(),
-    )
+    let entries = fields
+        .into_iter()
+        .map(|(key, value)| (key.to_owned(), value));
+    GuardrailValue::Object(entries.collect())
 }
 
 pub(crate) fn chunk_with(choices: Vec<GuardrailValue>) -> GuardrailValue {
@@ -324,44 +322,40 @@ pub(crate) fn tool_calls() -> GuardrailValue {
     ])])
 }
 
-pub(crate) fn text_chunk(text: &str) -> GuardrailValue {
+fn delta_chunk(
+    content: GuardrailValue,
+    tool_calls: GuardrailValue,
+    finish_reason: Option<&str>,
+) -> GuardrailValue {
     chunk_with(vec![choice(
         0,
+        content,
+        GuardrailValue::Null,
+        tool_calls,
+        finish_reason,
+    )])
+}
+
+pub(crate) fn text_chunk(text: &str) -> GuardrailValue {
+    delta_chunk(
         GuardrailValue::Text(text.to_owned()),
         GuardrailValue::Null,
-        GuardrailValue::Null,
         None,
-    )])
+    )
 }
 
 pub(crate) fn text_chunk_finishing(text: &str, reason: &str) -> GuardrailValue {
-    chunk_with(vec![choice(
-        0,
-        GuardrailValue::Text(text.to_owned()),
-        GuardrailValue::Null,
-        GuardrailValue::Null,
-        Some(reason),
-    )])
+    let content = GuardrailValue::Text(text.to_owned());
+    delta_chunk(content, GuardrailValue::Null, Some(reason))
 }
 
 pub(crate) fn tool_chunk() -> GuardrailValue {
-    chunk_with(vec![choice(
-        0,
-        GuardrailValue::Null,
-        GuardrailValue::Null,
-        tool_calls(),
-        None,
-    )])
+    delta_chunk(GuardrailValue::Null, tool_calls(), None)
 }
 
 pub(crate) fn mixed_tool_chunk(text: &str, reason: Option<&str>) -> GuardrailValue {
-    chunk_with(vec![choice(
-        0,
-        GuardrailValue::Text(text.to_owned()),
-        GuardrailValue::Null,
-        tool_calls(),
-        reason,
-    )])
+    let content = GuardrailValue::Text(text.to_owned());
+    delta_chunk(content, tool_calls(), reason)
 }
 
 pub(crate) fn metadata_chunk() -> GuardrailValue {
@@ -405,13 +399,8 @@ pub(crate) fn synthetic(
 }
 
 pub(crate) fn terminator(reason: &str) -> GuardrailValue {
-    chunk_with(vec![choice(
-        0,
-        GuardrailValue::Text(String::new()),
-        GuardrailValue::Null,
-        GuardrailValue::Null,
-        Some(reason),
-    )])
+    let content = GuardrailValue::Text(String::new());
+    delta_chunk(content, GuardrailValue::Null, Some(reason))
 }
 
 pub(crate) fn modify_response(original_response: Option<GuardrailValue>) -> GuardrailFailure {
@@ -462,7 +451,7 @@ pub(crate) async fn collect_outputs(
     params: StreamLoopParams<'_, FakeTranslation, FakeGuardrail>,
     source: Vec<GuardrailValue>,
 ) -> Vec<Result<StreamOutput, StreamLoopError>> {
-    run_incremental_transform_stream(params, stream::iter(source))
+    incremental_transform_stream(params, stream::iter(source))
         .collect()
         .await
 }
