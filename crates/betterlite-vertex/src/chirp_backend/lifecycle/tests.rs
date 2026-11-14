@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use google_cloud_speech_v2::model::{
     RecognitionResponseMetadata, StreamingRecognizeRequest, StreamingRecognizeResponse,
-    streaming_recognize_response::SpeechEventType,
+    recognition_config::DecodingConfig, streaming_recognize_response::SpeechEventType,
 };
 use google_cloud_wkt::Duration as ProtoDuration;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -39,12 +39,32 @@ struct Recorder {
     closed: AtomicUsize,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RecordedConfig {
+    model: String,
+    language_codes: Vec<String>,
+    sample_rate_hertz: i32,
+}
+
 #[derive(Clone)]
 struct SentRequest {
     stream: usize,
     recognizer: String,
-    has_streaming_config: bool,
+    streaming_config: Option<RecordedConfig>,
     audio: Vec<u8>,
+}
+
+fn recorded_config(request: &StreamingRecognizeRequest) -> Option<RecordedConfig> {
+    let streaming = request.streaming_config()?;
+    let config = streaming.config.as_ref()?;
+    let DecodingConfig::ExplicitDecodingConfig(decoding) = config.decoding_config.as_ref()? else {
+        return None;
+    };
+    Some(RecordedConfig {
+        model: config.model.clone(),
+        language_codes: config.language_codes.clone(),
+        sample_rate_hertz: decoding.sample_rate_hertz,
+    })
 }
 
 impl Recorder {
@@ -216,6 +236,7 @@ impl RequestSink for TestSink {
             let audio = request
                 .audio()
                 .map_or_else(Vec::new, |bytes| bytes.to_vec());
+            let streaming_config = recorded_config(&request);
             self.recorder
                 .sent
                 .lock()
@@ -223,7 +244,7 @@ impl RequestSink for TestSink {
                 .push(SentRequest {
                     stream: self.stream,
                     recognizer: request.recognizer().to_owned(),
-                    has_streaming_config: request.streaming_config().is_some(),
+                    streaming_config,
                     audio,
                 });
             self.recorder.requests.fetch_add(1, Ordering::SeqCst);
@@ -326,6 +347,27 @@ async fn wait_for(counter: &AtomicUsize, expected: usize) {
     .expect("the backend reaches the expected state");
 }
 
+async fn wait_for_outbox(backend: &ChirpBackend, expected: usize) {
+    timeout(Duration::from_secs(5), async {
+        while backend.outbox.len() < expected {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the outbox reaches the expected depth");
+}
+
+#[derive(serde::Deserialize)]
+struct BilledEvent {
+    billed_seconds: f64,
+}
+
+fn billed_seconds(event: &str) -> f64 {
+    serde_json::from_str::<BilledEvent>(event)
+        .expect("the event is JSON")
+        .billed_seconds
+}
+
 #[tokio::test]
 async fn configure_queues_the_configured_event_without_opening_a_stream() {
     let mut harness = harness(Vec::new());
@@ -349,6 +391,31 @@ async fn audio_before_configuration_fails() {
 }
 
 #[tokio::test]
+async fn audio_sent_to_an_ended_stream_fails_loudly() {
+    let (first, first_responses) = scripted(2);
+    let mut harness = harness(vec![first]);
+    harness.send_text(CONFIGURE).await;
+    assert_eq!(harness.recv().await, r#"{"kind":"configured"}"#);
+    harness.send_audio(1).await;
+    drop(first_responses);
+    wait_for(&harness.recorder.closed, 1).await;
+    let error = harness
+        .backend
+        .send_audio(vec![2])
+        .await
+        .expect_err("audio nobody can read is refused");
+    assert!(matches!(
+        error,
+        ChirpBackendError::Stream(ChirpStreamError::QueueClosed)
+    ));
+    assert_eq!(
+        harness.recorder.opened(),
+        1,
+        "the stream is reused until its rotation threshold"
+    );
+}
+
+#[tokio::test]
 async fn the_first_audio_opens_a_stream_with_the_configured_request() {
     let (script, _responses) = scripted(4);
     let mut harness = harness(vec![script]);
@@ -358,8 +425,17 @@ async fn the_first_audio_opens_a_stream_with_the_configured_request() {
     wait_for(&harness.recorder.requests, 2).await;
     let sent = harness.recorder.sent();
     assert_eq!(sent[0].recognizer, RECOGNIZER);
-    assert!(sent[0].has_streaming_config);
+    assert_eq!(
+        sent[0].streaming_config,
+        Some(RecordedConfig {
+            model: "chirp_2".to_owned(),
+            language_codes: vec!["en-US".to_owned()],
+            sample_rate_hertz: 24000,
+        }),
+        "the first request carries the configure command's streaming settings"
+    );
     assert!(sent[0].audio.is_empty());
+    assert_eq!(sent[1].streaming_config, None);
     assert_eq!(sent[1].audio, vec![7]);
     assert_eq!(harness.recorder.tokens(), vec!["token-1".to_owned()]);
 }
@@ -490,12 +566,13 @@ async fn finish_fifo() {
 
 #[tokio::test]
 async fn discard_suppresses_old_events() {
-    let (first, responses) = scripted(4);
-    let mut harness = harness(vec![first]);
+    let (first, first_responses) = scripted(2);
+    let (second, second_responses) = scripted(2);
+    let mut harness = harness(vec![first, second]);
     harness.send_text(CONFIGURE).await;
     assert_eq!(harness.recv().await, r#"{"kind":"configured"}"#);
     harness.send_audio(1).await;
-    responses
+    first_responses
         .send(Some(Ok(response(
             SpeechEventType::Unspecified,
             0,
@@ -503,22 +580,31 @@ async fn discard_suppresses_old_events() {
         ))))
         .await
         .expect("the response is scripted");
-    responses
-        .send(Some(Ok(response(
-            SpeechEventType::Unspecified,
-            0,
-            500_000_000,
-        ))))
-        .await
-        .expect("the response is scripted");
-    drop(responses);
+    wait_for_outbox(&harness.backend, 1).await;
+    harness.clock.advance(Duration::from_secs(240));
+    harness.send_audio(2).await;
+    drop(first_responses);
     wait_for(&harness.recorder.closed, 1).await;
+    second_responses
+        .send(Some(Ok(response(
+            SpeechEventType::Unspecified,
+            0,
+            250_000_000,
+        ))))
+        .await
+        .expect("the response is scripted");
+    wait_for_outbox(&harness.backend, 2).await;
     harness.send_text(DISCARD).await;
+    let marker = timeout(Duration::from_secs(5), harness.backend.recv())
+        .await
+        .expect("the discard marker reaches the caller while the stream is still relaying")
+        .expect("the marker is delivered");
     assert_eq!(
-        harness.recv().await,
-        r#"{"kind":"turn_discarded","billed_seconds":0.5}"#,
-        "the discarded turn's results never reach the caller"
+        marker, r#"{"kind":"turn_discarded","billed_seconds":0.75}"#,
+        "the discarded turn's results never reach the caller and both streams bill once"
     );
+    wait_for(&harness.recorder.closed, 2).await;
+    drop(second_responses);
 }
 
 #[tokio::test]
@@ -552,6 +638,38 @@ async fn a_discarded_turn_leaves_the_next_turn_deliverable() {
 }
 
 #[tokio::test]
+async fn billing_accumulates_across_turns() {
+    let (first, first_responses) = scripted(2);
+    let (second, second_responses) = scripted(2);
+    let mut harness = harness(vec![first, second]);
+    harness.send_text(CONFIGURE).await;
+    assert_eq!(harness.recv().await, r#"{"kind":"configured"}"#);
+    harness.send_audio(1).await;
+    first_responses
+        .send(Some(Ok(response(SpeechEventType::Unspecified, 2, 0))))
+        .await
+        .expect("the response is scripted");
+    assert_eq!(
+        billed_seconds(&harness.recv().await).to_bits(),
+        2.0_f64.to_bits()
+    );
+    harness.send_text(FINISH).await;
+    drop(first_responses);
+    assert_eq!(harness.recv().await, r#"{"kind":"turn_finished"}"#);
+    harness.send_audio(2).await;
+    second_responses
+        .send(Some(Ok(response(SpeechEventType::Unspecified, 1, 0))))
+        .await
+        .expect("the response is scripted");
+    assert_eq!(
+        billed_seconds(&harness.recv().await).to_bits(),
+        3.0_f64.to_bits(),
+        "the second turn's result carries both turns' billed seconds"
+    );
+    drop(second_responses);
+}
+
+#[tokio::test]
 async fn fresh_token_each_stream() {
     let (first, _first_responses) = scripted(2);
     let (second, _second_responses) = scripted(2);
@@ -567,6 +685,34 @@ async fn fresh_token_each_stream() {
     assert_eq!(
         harness.recorder.tokens(),
         vec!["token-1".to_owned(), "token-2".to_owned()]
+    );
+}
+
+#[tokio::test]
+async fn rotation_and_finish_tolerate_a_stream_that_already_ended() {
+    let (first, first_responses) = scripted(2);
+    let (second, second_responses) = scripted(2);
+    let mut harness = harness(vec![first, second]);
+    harness.send_text(CONFIGURE).await;
+    assert_eq!(harness.recv().await, r#"{"kind":"configured"}"#);
+    harness.send_audio(1).await;
+    drop(first_responses);
+    wait_for(&harness.recorder.closed, 1).await;
+    harness.clock.advance(Duration::from_secs(240));
+    harness.send_audio(2).await;
+    assert_eq!(
+        harness.recorder.opened(),
+        2,
+        "an expired stream whose relay already ended still rotates"
+    );
+    assert_eq!(harness.tokens.issued.load(Ordering::SeqCst), 2);
+    drop(second_responses);
+    wait_for(&harness.recorder.closed, 2).await;
+    harness.send_text(FINISH).await;
+    assert_eq!(
+        harness.recv().await,
+        r#"{"kind":"turn_finished"}"#,
+        "finishing a turn whose last stream already ended still reports the turn"
     );
 }
 
@@ -603,15 +749,14 @@ async fn a_stream_failure_closes_with_the_stream_failure_code() {
 async fn close_queues_the_closed_sentinel_after_buffered_events() {
     let mut harness = harness(Vec::new());
     harness.send_text(FINISH).await;
-    timeout(Duration::from_secs(5), async {
-        while harness.backend.outbox.len() < 1 {
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .expect("the outbox holds the buffered event");
+    wait_for_outbox(&harness.backend, 1).await;
     harness.backend.close().await;
     harness.backend.close().await;
+    assert_eq!(
+        harness.backend.outbox.len(),
+        2,
+        "close queues the closed sentinel behind the buffered event"
+    );
     assert_eq!(harness.recv().await, r#"{"kind":"turn_finished"}"#);
     let error = harness
         .backend
@@ -633,14 +778,13 @@ async fn full_outbox_close() {
     for _ in 0..256 {
         harness.send_text(FINISH).await;
     }
-    timeout(Duration::from_secs(5), async {
-        while harness.backend.outbox.len() < 256 {
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .expect("the outbox fills up");
+    wait_for_outbox(&harness.backend, 256).await;
     harness.backend.close().await;
+    assert_eq!(
+        harness.backend.outbox.len(),
+        256,
+        "a full outbox leaves no room for the closed sentinel"
+    );
     for _ in 0..256 {
         assert_eq!(harness.recv().await, r#"{"kind":"turn_finished"}"#);
     }
@@ -675,6 +819,31 @@ async fn a_closed_backend_refuses_further_messages() {
             ..
         }
     ));
+}
+
+#[tokio::test]
+async fn close_closes_a_stream_still_waiting_in_the_link_queue() {
+    let (first, first_responses) = scripted(2);
+    let (second, _second_responses) = scripted(2);
+    let mut harness = harness(vec![first, second]);
+    harness.send_text(CONFIGURE).await;
+    assert_eq!(harness.recv().await, r#"{"kind":"configured"}"#);
+    harness.send_audio(1).await;
+    harness.clock.advance(Duration::from_secs(240));
+    harness.send_audio(2).await;
+    assert_eq!(
+        harness.recorder.opened(),
+        2,
+        "the second stream is opened while the pump still relays the first"
+    );
+    harness.backend.close().await;
+    wait_for(&harness.recorder.closed, 2).await;
+    assert_eq!(
+        harness.recorder.closed(),
+        2,
+        "close reaches the relayed stream and the one still in the link queue"
+    );
+    drop(first_responses);
 }
 
 #[tokio::test]

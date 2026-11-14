@@ -72,6 +72,19 @@ fn serializes_the_control_events() {
 
 #[rstest]
 fn replays_the_chirp_command_corpus(#[files("fuzz/corpus/chirp_command/*")] path: PathBuf) {
-    let bytes = fs::read(path).expect("the corpus file is readable");
-    drop(decode_chirp_command(&bytes));
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("the corpus file has a UTF-8 name");
+    let accepted = matches!(
+        name,
+        "configure.json" | "discard-turn.json" | "finish-turn.json" | "unknown-field.json"
+    );
+    let bytes = fs::read(&path).expect("the corpus file is readable");
+    assert_eq!(
+        decode_chirp_command(&bytes).is_ok(),
+        accepted,
+        "{} decodes the way LiteLLM's command adapter does",
+        path.display()
+    );
 }
