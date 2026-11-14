@@ -322,7 +322,7 @@ fn conditional_category_exceptions_skip_that_category_and_keep_looking() {
         conditional(ContentFilterAction::Mask, "low", &["minor"], &["romantic"]),
     );
     assert_eq!(
-        check_conditional_categories("a minor with romantic ideas, safe", &[], &categories)
+        check_conditional_categories("a minor with romantic ideas, SAFE", &[], &categories)
             .unwrap(),
         Some(CategoryMatch {
             matched: "minor + romantic".to_owned(),
@@ -520,9 +520,9 @@ fn phrase_patterns_take_the_conditional_action_and_report_high_severity() {
 }
 
 #[rstest]
-#[case::category_exception("put my money to make it grow, safe", None)]
+#[case::category_exception("PUT MY MONEY TO MAKE IT GROW, SAFE", None)]
 #[case::without_the_exception(
-    "put my money to make it grow",
+    "PUT MY MONEY TO MAKE IT GROW",
     Some("phrase: put my money to make it grow")
 )]
 fn phrase_patterns_skip_a_category_whose_exception_is_present(
@@ -561,7 +561,7 @@ fn phrase_patterns_stop_on_a_global_exception() {
     );
     assert_eq!(
         check_phrase_patterns(
-            "put my money to make it grow, safe",
+            "PUT MY MONEY TO MAKE IT GROW, SAFE",
             &["safe".to_owned()],
             &categories
         )
@@ -642,7 +642,7 @@ fn always_block_keywords_are_checked_before_regular_keywords() {
         ContentFilterAction::Mask,
     )]));
     assert_eq!(
-        check_category_keywords("an apple next to a zebra", &[], &categories).unwrap(),
+        check_category_keywords("an APPLE next to a ZEBRA", &[], &categories).unwrap(),
         Some(CategoryMatch {
             matched: "zebra".to_owned(),
             category: "always".to_owned(),
@@ -688,7 +688,7 @@ fn regular_keywords_skip_a_category_whose_exception_is_present() {
         ("danger", "risk", "high", ContentFilterAction::Block),
     ]));
     assert_eq!(
-        check_category_keywords("apple and danger are safe", &[], &categories).unwrap(),
+        check_category_keywords("apple and danger are SAFE", &[], &categories).unwrap(),
         Some(CategoryMatch {
             matched: "danger".to_owned(),
             category: "risk".to_owned(),
@@ -713,7 +713,7 @@ fn regular_keywords_return_none_when_only_the_exempt_category_matches() {
         ContentFilterAction::Mask,
     )]));
     assert_eq!(
-        check_category_keywords("apple is safe", &[], &categories).unwrap(),
+        check_category_keywords("apple is SAFE", &[], &categories).unwrap(),
         None
     );
 }
@@ -730,7 +730,7 @@ fn category_keywords_stop_on_a_global_exception() {
             ContentFilterAction::Block,
         )]));
     assert_eq!(
-        check_category_keywords("a zebra is safe", &["safe".to_owned()], &categories).unwrap(),
+        check_category_keywords("a zebra is SAFE", &["safe".to_owned()], &categories).unwrap(),
         None
     );
 }
