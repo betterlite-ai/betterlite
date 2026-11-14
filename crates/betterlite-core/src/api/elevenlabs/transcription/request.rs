@@ -24,10 +24,15 @@ pub fn transform_request(
 ) -> Result<TranscriptionForm, TranscriptionError> {
     let mut fields = IndexMap::new();
     fields.insert(MODEL_ID_FIELD.to_owned(), model.to_owned());
-    for (name, value) in optional_params {
-        if value.is_null() || EXCLUDED_PARAMS.contains(&name.as_str()) {
-            continue;
-        }
+    let supported = optional_params.iter().filter(|(name, value)| {
+        !value.is_null() && SUPPORTED_OPENAI_PARAMS.contains(&name.as_str())
+    });
+    let provider = optional_params.iter().filter(|(name, value)| {
+        !value.is_null()
+            && !EXCLUDED_PARAMS.contains(&name.as_str())
+            && !SUPPORTED_OPENAI_PARAMS.contains(&name.as_str())
+    });
+    for (name, value) in supported.chain(provider) {
         let text = match (value.as_str(), value.as_bool(), value.as_number()) {
             (Some(text), _, _) => text.to_owned(),
             (_, Some(flag), _) => {

@@ -10,12 +10,13 @@ use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::Number;
 
+use crate::api::elevenlabs::common::ElevenLabsError;
+
 use super::PROVIDER;
 use super::auth::{TranscriptionKeys, validate_environment};
 use super::endpoint::complete_url;
 use super::error::TranscriptionError;
 use super::mapping::{SUPPORTED_OPENAI_PARAMS, map_openai_params};
-use super::provider_error::error_class;
 use super::request::{FILE_FIELD, number_text, transform_request};
 use super::response::{
     ElevenTranscript, MAX_REPLY_BYTES, TranscriptTask, TranscriptWord, decode_eleven_transcript,
@@ -49,9 +50,9 @@ fn transcript(body: &str) -> ElevenTranscript {
 
 fn word(text: &str, start: Number, end: Number) -> TranscriptWord {
     TranscriptWord {
-        word: text.to_owned(),
-        start,
-        end,
+        word: Some(text.to_owned()),
+        start: Some(start),
+        end: Some(end),
     }
 }
 
@@ -112,9 +113,9 @@ fn the_form_starts_with_model_id_and_converts_supported_values() {
         fields,
         [
             ("model_id".to_owned(), "scribe_v1".to_owned()),
+            ("temperature".to_owned(), "0.4".to_owned()),
             ("language_code".to_owned(), "en".to_owned()),
             ("seed".to_owned(), "3".to_owned()),
-            ("temperature".to_owned(), "0.4".to_owned()),
             ("vad".to_owned(), "True".to_owned()),
         ]
     );
@@ -269,10 +270,14 @@ fn validating_the_environment_overwrites_the_auth_header_and_keeps_the_rest() {
 }
 
 #[test]
-fn the_error_class_carries_the_provider_message_status_and_headers() {
+fn the_provider_error_keeps_the_message_status_and_headers() {
     let provider_headers = headers(&[("Content-Type", "application/json")]);
 
-    let error = error_class("bad key", 401, provider_headers.clone());
+    let error = ElevenLabsError {
+        status_code: 401,
+        message: "bad key".to_owned(),
+        headers: provider_headers.clone(),
+    };
 
     assert_eq!(error.status_code, 401);
     assert_eq!(error.message, "bad key");
@@ -284,9 +289,9 @@ fn the_error_class_carries_the_provider_message_status_and_headers() {
 fn a_complete_reply_projects_the_words_and_keeps_the_provider_answer_hidden() {
     let reply = transcript(COMPLETE_REPLY);
 
-    assert_eq!(reply.text, "hello world");
+    assert_eq!(reply.text.as_deref(), Some("hello world"));
     assert_eq!(reply.task, TranscriptTask::Transcribe);
-    assert_eq!(reply.language, "eng");
+    assert_eq!(reply.language.as_deref(), Some("eng"));
     assert_eq!(
         reply.words,
         Some(vec![
@@ -316,9 +321,27 @@ fn the_transcript_serializes_the_hidden_answer_out_of_the_response() {
     );
 }
 
+#[test]
+fn the_transcript_keeps_present_nulls_on_the_wire() {
+    let reply = transcript(
+        r#"{"text": null, "language_code": null, "words": [{"type": "word", "text": null, "start": null, "end": null}]}"#,
+    );
+
+    let rendered = serde_json::to_value(&reply).expect("a serialized transcript");
+
+    assert_eq!(
+        rendered,
+        serde_json::json!({
+            "text": null,
+            "task": "transcribe",
+            "language": null,
+            "words": [{"word": null, "start": null, "end": null}],
+        })
+    );
+}
+
 #[rstest]
 #[case::absent("{}", None)]
-#[case::null(r#"{"words": null}"#, None)]
 #[case::empty(r#"{"words": []}"#, Some(vec![]))]
 #[case::spacing_only(r#"{"words": [{"type": "spacing", "text": " "}]}"#, Some(vec![]))]
 #[case::events_only(
@@ -337,32 +360,45 @@ fn words_are_present_exactly_when_the_provider_sends_the_field(
 }
 
 #[rstest]
-#[case::empty_document("{}", "", "unknown")]
-#[case::explicit_nulls(r#"{"text": null, "language_code": null}"#, "", "unknown")]
-fn missing_or_null_text_and_language_take_the_source_defaults(
+#[case::empty_document("{}", Some(""), Some("unknown"))]
+#[case::explicit_nulls(r#"{"text": null, "language_code": null}"#, None, None)]
+#[case::null_text_only(r#"{"text": null, "language_code": "eng"}"#, None, Some("eng"))]
+#[case::null_language_only(r#"{"text": "hi", "language_code": null}"#, Some("hi"), None)]
+fn absent_text_and_language_take_the_source_defaults_and_nulls_stay_null(
     #[case] body: &str,
-    #[case] text: &str,
-    #[case] language: &str,
+    #[case] text: Option<&str>,
+    #[case] language: Option<&str>,
 ) {
     let reply = transcript(body);
 
-    assert_eq!(reply.text, text);
-    assert_eq!(reply.language, language);
+    assert_eq!(reply.text.as_deref(), text);
+    assert_eq!(reply.language.as_deref(), language);
 }
 
 #[rstest]
-#[case::missing_text_and_bounds(r#"{"type": "word", "start": 0.5}"#, "", "0.5", "0")]
+#[case::missing_text_and_bounds(
+    r#"{"type": "word", "start": 0.5}"#,
+    Some(""),
+    Some("0.5"),
+    Some("0")
+)]
 #[case::null_text_and_end(
     r#"{"type": "word", "text": null, "start": 1, "end": null}"#,
-    "",
-    "1",
-    "0"
+    None,
+    Some("1"),
+    None
 )]
-fn words_copy_text_and_bounds_with_empty_and_zero_defaults(
+#[case::null_start_and_missing_end(
+    r#"{"type": "word", "text": "hi", "start": null}"#,
+    Some("hi"),
+    None,
+    Some("0")
+)]
+fn words_take_empty_and_zero_defaults_only_when_the_field_is_absent(
     #[case] entry: &str,
-    #[case] text: &str,
-    #[case] start: &str,
-    #[case] end: &str,
+    #[case] text: Option<&str>,
+    #[case] start: Option<&str>,
+    #[case] end: Option<&str>,
 ) {
     let reply = transcript(&format!(r#"{{"words": [{entry}]}}"#));
 
@@ -371,9 +407,12 @@ fn words_copy_text_and_bounds_with_empty_and_zero_defaults(
         .and_then(|words| words.into_iter().next())
         .expect("one word");
 
-    assert_eq!(found.word, text);
-    assert_eq!(found.start.to_string(), start);
-    assert_eq!(found.end.to_string(), end);
+    assert_eq!(found.word.as_deref(), text);
+    assert_eq!(
+        found.start.as_ref().map(Number::to_string).as_deref(),
+        start
+    );
+    assert_eq!(found.end.as_ref().map(Number::to_string).as_deref(), end);
 }
 
 #[rstest]
@@ -381,6 +420,7 @@ fn words_copy_text_and_bounds_with_empty_and_zero_defaults(
 #[case::array_body("[]")]
 #[case::trailing_bytes("{} {}")]
 #[case::words_not_a_list(r#"{"words": "hi"}"#)]
+#[case::words_null(r#"{"words": null}"#)]
 #[case::word_not_an_object(r#"{"words": [1]}"#)]
 #[case::text_not_a_string(r#"{"text": 5}"#)]
 #[case::start_not_a_number(r#"{"words": [{"type": "word", "start": "0"}]}"#)]
@@ -413,7 +453,7 @@ fn a_reply_at_the_limit_decodes_and_one_byte_over_is_an_error() {
     let reply = decode_eleven_transcript(body, body.len()).expect("a reply at the limit");
     let error = decode_eleven_transcript(body, body.len() - 1).expect_err("an over-limit reply");
 
-    assert_eq!(reply.text, "hi");
+    assert_eq!(reply.text.as_deref(), Some("hi"));
     assert!(matches!(
         error,
         TranscriptionError::ReplyTooLarge { limit } if limit == body.len() - 1
