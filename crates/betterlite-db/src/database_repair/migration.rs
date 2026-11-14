@@ -2,6 +2,7 @@ use std::io;
 use std::path::Path;
 
 use serde_json::Error as JsonError;
+use tokio::fs::File;
 use tokio::io::AsyncReadExt as _;
 use tokio_postgres::Client;
 use tokio_postgres::Error as PostgresError;
@@ -10,7 +11,7 @@ use tokio_postgres::types::ToSql;
 use crate::budget_permission_rows::JsonData;
 
 use super::cells::{RowError, VerificationTokenRow};
-use super::{DecodeError, MAX_CSV_BYTES, TypedValue, decode_verification_csv};
+use super::{DecodeError, MAX_CSV_READ_BYTES, TypedValue, decode_verification_csv};
 
 const EXISTS_SQL: &str = r#"SELECT 1 FROM "LiteLLM_VerificationToken" WHERE "token" = $1::text"#;
 
@@ -100,13 +101,8 @@ impl ImportReport {
 }
 
 pub(super) async fn read_verification_csv(path: &Path) -> Result<Vec<u8>, ImportError> {
-    let limit = u64::try_from(MAX_CSV_BYTES)
-        .unwrap_or(u64::MAX)
-        .saturating_add(1);
-    let file = tokio::fs::File::open(path)
-        .await
-        .map_err(ImportError::Read)?;
-    let mut limited = file.take(limit);
+    let file = File::open(path).await.map_err(ImportError::Read)?;
+    let mut limited = file.take(MAX_CSV_READ_BYTES);
     let mut bytes = Vec::new();
     limited
         .read_to_end(&mut bytes)

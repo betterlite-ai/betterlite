@@ -414,13 +414,13 @@ fn replays_the_database_repair_corpus(#[files("fuzz/corpus/database_repair/*")] 
 async fn csv_file_read_stops_at_the_byte_limit() {
     let directory = tempfile::tempdir().unwrap();
     let oversized = directory.path().join("oversized.csv");
-    fs::write(&oversized, vec![b'a'; MAX_CSV_BYTES + 1]).unwrap();
-    let bytes = read_verification_csv(&oversized).await.unwrap();
-    assert_eq!(bytes.len(), MAX_CSV_BYTES + 1);
+    fs::write(&oversized, vec![b'a'; MAX_CSV_BYTES * 2]).unwrap();
+    let capped = read_verification_csv(&oversized).await.unwrap();
+    assert_eq!(capped.len(), MAX_CSV_BYTES + 1);
     let exact = directory.path().join("exact.csv");
     fs::write(&exact, vec![b'a'; MAX_CSV_BYTES]).unwrap();
-    let bytes = read_verification_csv(&exact).await.unwrap();
-    assert_eq!(bytes.len(), MAX_CSV_BYTES);
+    let whole = read_verification_csv(&exact).await.unwrap();
+    assert_eq!(whole.len(), MAX_CSV_BYTES);
 }
 
 #[tokio::test]
