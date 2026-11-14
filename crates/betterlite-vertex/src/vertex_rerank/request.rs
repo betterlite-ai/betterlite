@@ -1,0 +1,199 @@
+use std::collections::BTreeMap;
+
+use betterlite_logging::analytics::python::repr;
+use betterlite_models::decisions::{Extra, Json};
+use betterlite_openai::api::rerank_contracts::records::RerankDocument;
+use serde::Serialize;
+use serde_json::Number;
+
+use crate::request_labels::request_labels_from_params;
+
+use super::error::VertexRerankError;
+
+const TITLE_WORDS: usize = 3;
+
+#[derive(Debug, Serialize)]
+pub struct RankRecord {
+    pub id: String,
+    pub title: String,
+    pub content: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RankRequest {
+    pub model: String,
+    pub query: String,
+    pub records: Vec<RankRecord>,
+    #[serde(rename = "topN", skip_serializing_if = "Option::is_none")]
+    pub top_n: Option<i64>,
+    #[serde(rename = "ignoreRecordDetailsInResponse")]
+    pub ignore_record_details: bool,
+    #[serde(rename = "userLabels", skip_serializing_if = "Option::is_none")]
+    pub user_labels: Option<BTreeMap<String, String>>,
+}
+
+// LiteLLM's map_cohere_rerank_params: the four rerank fields first, then every non-default param over them
+#[must_use]
+pub fn map_rerank_params(
+    non_default_params: &Extra,
+    query: &str,
+    documents: &[RerankDocument],
+    top_n: Option<i64>,
+    return_documents: Option<bool>,
+) -> Extra {
+    let mut mapped = Extra::new();
+    mapped.insert(String::from("query"), Json::Text(query.to_owned()));
+    mapped.insert(
+        String::from("documents"),
+        Json::List(documents.iter().map(RerankDocument::as_json).collect()),
+    );
+    mapped.insert(
+        String::from("top_n"),
+        top_n.map_or(Json::Null, |count| Json::Number(Number::from(count))),
+    );
+    mapped.insert(
+        String::from("return_documents"),
+        return_documents.map_or(Json::Null, Json::Bool),
+    );
+    for (name, value) in non_default_params {
+        mapped.insert(name.clone(), value.clone());
+    }
+    mapped
+}
+
+// query and documents are required by presence, so an empty string or list is still a request
+pub fn transform_request(
+    model: &str,
+    params: &Extra,
+    litellm_params: Option<&Json>,
+) -> Result<RankRequest, VertexRerankError> {
+    let query = required_text(params, "query")?;
+    let documents = required_list(params, "documents")?;
+    let mut records = Vec::with_capacity(documents.len());
+    for (index, document) in documents.iter().enumerate() {
+        records.push(record(index, document)?);
+    }
+    Ok(RankRequest {
+        model: model.to_owned(),
+        query: query.to_owned(),
+        records,
+        top_n: top_n(params)?,
+        ignore_record_details: !return_documents(params)?,
+        user_labels: request_labels_from_params(litellm_params),
+    })
+}
+
+fn required_text<'params>(
+    params: &'params Extra,
+    field: &'static str,
+) -> Result<&'params str, VertexRerankError> {
+    match params.get(field) {
+        None | Some(Json::Null) => Err(VertexRerankError::MissingField { field }),
+        Some(Json::Text(text)) => Ok(text),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            Err(VertexRerankError::FieldType {
+                field,
+                expected: "text",
+            })
+        }
+    }
+}
+
+fn required_list<'params>(
+    params: &'params Extra,
+    field: &'static str,
+) -> Result<&'params [Json], VertexRerankError> {
+    match params.get(field) {
+        None | Some(Json::Null) => Err(VertexRerankError::MissingField { field }),
+        Some(Json::List(items)) => Ok(items),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
+            Err(VertexRerankError::FieldType {
+                field,
+                expected: "a list",
+            })
+        }
+    }
+}
+
+fn top_n(params: &Extra) -> Result<Option<i64>, VertexRerankError> {
+    match params.get("top_n") {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Number(number)) if number.is_i64() => Ok(number.as_i64()),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+            Err(VertexRerankError::FieldType {
+                field: "top_n",
+                expected: "a whole number",
+            })
+        }
+    }
+}
+
+fn return_documents(params: &Extra) -> Result<bool, VertexRerankError> {
+    match params.get("return_documents") {
+        None | Some(Json::Null) => Ok(true),
+        Some(Json::Bool(flag)) => Ok(*flag),
+        Some(Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+            Err(VertexRerankError::FieldType {
+                field: "return_documents",
+                expected: "true or false",
+            })
+        }
+    }
+}
+
+fn record(index: usize, document: &Json) -> Result<RankRecord, VertexRerankError> {
+    let (content, title) = match document {
+        Json::Text(text) => (text.clone(), first_words(text)),
+        Json::Object(fields) => mapping_content_and_title(index, fields)?,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => {
+            return Err(VertexRerankError::DocumentType { index });
+        }
+    };
+    Ok(RankRecord {
+        id: index.to_string(),
+        title,
+        content,
+    })
+}
+
+// a mapping without text is sent as its Python str(), and a missing title is that content's first words
+fn mapping_content_and_title(
+    index: usize,
+    fields: &Extra,
+) -> Result<(String, String), VertexRerankError> {
+    let content = match document_text(index, fields, "text")? {
+        Some(text) => text.to_owned(),
+        None => repr(fields).map_err(|source| VertexRerankError::DocumentText { index, source })?,
+    };
+    let title = match document_text(index, fields, "title")? {
+        Some(title) => title.to_owned(),
+        None => first_words(&content),
+    };
+    Ok((content, title))
+}
+
+fn document_text<'fields>(
+    index: usize,
+    fields: &'fields Extra,
+    field: &'static str,
+) -> Result<Option<&'fields str>, VertexRerankError> {
+    match fields.get(field) {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Text(text)) => Ok(Some(text)),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            Err(VertexRerankError::DocumentField { index, field })
+        }
+    }
+}
+
+// Python's str.split() also breaks on the four separator controls that Rust does not call whitespace
+fn first_words(content: &str) -> String {
+    content
+        .split(|character: char| {
+            character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
+        })
+        .filter(|word| !word.is_empty())
+        .take(TITLE_WORDS)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
