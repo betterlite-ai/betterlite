@@ -1,0 +1,62 @@
+task: B7930
+deviations:
+  - what: >-
+      The two Bedrock models keep LiteLLM's camelCase keys as pydantic aliases on snake_case
+      attributes: content_filter/contentFilter, sensitive_information/sensitiveInformation,
+      guardrail_identifier/guardrailIdentifier and guardrail_version/guardrailVersion, with
+      serialize_by_alias=True. Construction with the camelCase keywords, validation error paths,
+      model_json_schema() property names, and the default model_dump() and model_dump_json() output
+      use the wire names. Attribute access, model_fields keys, pydantic's generated title text and a
+      dump with by_alias=False use the snake_case names.
+    why: >-
+      The Python rules reject mixed-case class attributes, so the attributes cannot keep LiteLLM's
+      spelling. The aliases keep the proxy config keys, the validation errors and the dumped JSON that
+      LiteLLM produces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L581
+  - what: >-
+      The ported models derive from ResponseObject, whose model_config allows extra fields, instead of
+      LiteLLM's plain BaseModel, which drops them. An unknown key survives validation and appears in
+      model_dump(), and model_json_schema() carries additionalProperties: true where LiteLLM's schema
+      has no such key.
+    why: The task puts the ported pydantic models on ResponseObject.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L172
+  - what: >-
+      Fields LiteLLM types as a bare dict are dict[str, JsonValue] or dict[str, dict[str, JsonValue]]
+      here: GuardrailItem.callback_args and GuardrailItemSpec.callback_args, mock_redacted_text,
+      LakeraV2GuardrailConfigModel.metadata, and JavelinGuardrailConfigModel.metadata and config. The
+      extras mapping BedrockGuardrailStreamingParams.from_extras takes is Mapping[str, JsonValue]
+      instead of Mapping[str, object].
+    why: >-
+      The Python rules forbid Any and unparameterized containers in annotations, and these fields carry
+      JSON config. A non-JSON Python value, which a bare dict accepts, is rejected here, and the JSON
+      schema shows additionalProperties as a reference to JsonValue where LiteLLM shows true.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L169
+  - what: >-
+      Role subclasses enum.StrEnum instead of plain Enum.
+    why: >-
+      A StrEnum member is a str, so it fits the protocol input types without a cast. Member names and
+      values are unchanged; a member now compares equal to its string value and JSON serializes it
+      where LiteLLM's plain Enum raises. GuardrailItem's use_enum_values stores plain strings either
+      way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L155
+  - what: >-
+      PiiAction, PiiEntityCategory, PiiEntityType and GuardrailParamUITypes subclass enum.StrEnum
+      instead of (str, Enum).
+    why: >-
+      Ruff UP042 requires StrEnum for a str-mixin Enum. Member names, values, comparisons to str and
+      JSON output are unchanged; str() and repr text is not part of parity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L207
+  - what: >-
+      The ported models carry no pydantic Field descriptions and no class docstrings, so
+      model_json_schema() has no description keys where LiteLLM's does.
+    why: >-
+      The repository keeps no docstrings and caps a module at 300 lines; the description prose is most
+      of the LiteLLM file. Keys, required keys, types, Literal values, defaults, constraints and the
+      output_parse_pii ui_type marker are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L442
+  - what: >-
+      BEDROCK_APPLY_GUARDRAIL_CHUNK_BUDGET_CHARS is defined in types/guardrails/vendor_configs.py.
+    why: >-
+      LiteLLM defines it in litellm/constants.py and imports it; the wheel has no constants module yet,
+      and BedrockGuardrailConfigModel needs the value as a field default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L405

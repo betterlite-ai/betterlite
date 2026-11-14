@@ -4,13 +4,17 @@ use std::str::Utf8Error;
 use std::string::FromUtf8Error;
 
 use betterlite_config::loader::ConfigError;
+use betterlite_core::api::messages_stream_logging::ChunkError;
 use betterlite_env::EnvError;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_logging::logging_state::LoggingStateError;
+use betterlite_logging::worker::WorkerError;
 use betterlite_openai::chat::RequestError;
 use betterlite_openai::chat::deployment::DeploymentError;
 use betterlite_openai::chat::execution::ChatError;
 use betterlite_provider::api::vector_store_contracts::error::VectorStoreEmbeddingError;
+use betterlite_redact::error::RedactionError;
 
 use thiserror::Error;
 
@@ -85,4 +89,16 @@ pub enum SdkHttpError {
     HeaderValue(String),
     #[error("the provider streamed more than {limit} bytes")]
     StreamTooLarge { limit: usize },
+    #[error("the stream frame is not UTF-8: {0}")]
+    FrameUtf8(#[source] FromUtf8Error),
+    #[error("the captured warnings are not UTF-8: {0}")]
+    WarningsUtf8(#[source] FromUtf8Error),
+    #[error("cannot start the stream logging worker: {0}")]
+    Worker(#[source] WorkerError),
+    #[error("cannot convert the stream chunk: {0}")]
+    Chunk(#[source] ChunkError),
+    #[error("cannot build the fixture redactor: {0}")]
+    Redactor(#[source] RedactionError),
+    #[error("cannot build the fixture logging state: {0}")]
+    LoggingState(#[source] LoggingStateError),
 }

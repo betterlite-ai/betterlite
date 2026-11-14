@@ -1,0 +1,45 @@
+task: B3574
+deviations:
+  - what: >-
+      The provider table is passed to LlmPassthroughRouteHandler::new as an explicit list, and the
+      registration rows are the PASSTHROUGH_TRANSLATION_KINDS constant. LiteLLM scans every llms
+      package for guardrail_translation_mappings, loads them, and builds the provider table with a
+      lazy import inside _get_provider_handlers.
+    why: >-
+      The code rules forbid auto-discovery, reflection and module-level state, and the lazy import
+      only avoids a Python import cycle. A caller passes the same single "bedrock" provider and the
+      same two call types.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/__init__.py#L83-L162
+  - what: >-
+      The five static event-stream helpers of LlmPassthroughRouteHandler (is_event_stream_response,
+      event_stream_media_type, _resolve_event_stream_de_anonymizer,
+      supports_event_stream_de_anonymization and de_anonymize_event_stream) are not built.
+    why: >-
+      Nothing calls them at the pinned commit, so no request path can reach them; B8693 builds them
+      in passthrough_reply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L262-L311
+  - what: >-
+      A custom_llm_provider holding a non-empty array or object skips the guardrail with the debug
+      line and leaves the data or response untouched, on the request path and the response path
+      alike. LiteLLM's _get_provider_handlers().get(provider or "") raises TypeError for an
+      unhashable non-empty list or object, so the request fails with a 500.
+    why: >-
+      The lookup crashed on a value of the wrong type; no working setup sends an array or object
+      provider expecting a scan, and skipping keeps the request going.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L224-L225
+  - what: >-
+      An empty custom_llm_provider always skips, even when a provider is registered under the
+      empty name. LiteLLM's "provider or empty" fallback keeps the empty string and would call a
+      handler registered under it.
+    why: >-
+      LiteLLM's own table holds only "bedrock", so no working setup can rely on an empty-name
+      handler, and an empty string is not a provider name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L224-L225
+  - what: >-
+      The dispatcher owns the provider handler values it was built with and calls the stored value
+      for every request. LiteLLM calls handler_cls(), building a new provider handler object per
+      request.
+    why: >-
+      The handler is stateless, so a stored value answers the same; the table shape is this task's,
+      and Rust handlers are values a caller builds once instead of classes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L232-L236
