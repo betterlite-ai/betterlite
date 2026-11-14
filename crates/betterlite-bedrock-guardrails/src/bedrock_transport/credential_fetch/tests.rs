@@ -40,6 +40,25 @@ fn first_call(source: &RecordingCredentials) -> (AwsSettings, String) {
     calls.remove(0)
 }
 
+fn assert_forwarded_secrets(settings: &AwsSettings) {
+    let exposed = [
+        settings.access_key_id.as_ref(),
+        settings.secret_access_key.as_ref(),
+        settings.session_token.as_ref(),
+        settings.web_identity_token.as_ref(),
+    ]
+    .map(|secret| secret.map(ExposeSecret::expose_secret));
+    assert_eq!(
+        exposed,
+        [
+            Some("AKIAEXAMPLE"),
+            Some("secret"),
+            Some("session"),
+            Some("web-identity")
+        ]
+    );
+}
+
 #[tokio::test]
 async fn credential_fetch_passes_every_aws_setting() {
     let guardrail = guardrail_with(aws_parameters());
@@ -57,34 +76,7 @@ async fn credential_fetch_passes_every_aws_setting() {
     let (settings, called_region) = first_call(&source);
     assert_eq!(called_region, "eu-west-1");
     assert_eq!(settings.region_name.as_deref(), Some("eu-west-1"));
-    assert_eq!(
-        settings
-            .access_key_id
-            .as_ref()
-            .map(ExposeSecret::expose_secret),
-        Some("AKIAEXAMPLE")
-    );
-    assert_eq!(
-        settings
-            .secret_access_key
-            .as_ref()
-            .map(ExposeSecret::expose_secret),
-        Some("secret")
-    );
-    assert_eq!(
-        settings
-            .session_token
-            .as_ref()
-            .map(ExposeSecret::expose_secret),
-        Some("session")
-    );
-    assert_eq!(
-        settings
-            .web_identity_token
-            .as_ref()
-            .map(ExposeSecret::expose_secret),
-        Some("web-identity")
-    );
+    assert_forwarded_secrets(&settings);
     assert_eq!(settings.session_name.as_deref(), Some("session-name"));
     assert_eq!(settings.profile_name.as_deref(), Some("profile"));
     assert_eq!(settings.role_name.as_deref(), Some("role"));
