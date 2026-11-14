@@ -1,0 +1,12 @@
+kind: helper
+name: headroom-messages-restore-shapes-count-mismatch
+call:
+  b3773:
+    function: restore_shapes
+    originals:
+      - {role: user, content: "one"}
+    returned:
+      - {role: user, content: "two"}
+      - {role: user, content: "three"}
+env: {}
+compare: {ignore: []}
