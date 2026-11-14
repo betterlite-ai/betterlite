@@ -1,9 +1,9 @@
 import asyncio
 import io
 import os
+import re
 import sys
-import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from datetime import timedelta
 from types import ModuleType
 from typing import ClassVar, Literal, NotRequired, Protocol, TypedDict
@@ -26,6 +26,7 @@ AIO_MODULE = "azure.storage.filedatalake.aio"
 IDENTITY_MODULE = azure.identity.__name__
 START_SECONDS = 1_700_000_000.0
 BEARER = "tok-1"
+BODY = TypeAdapter(bytes | str | None)
 JSON_VALUE = TypeAdapter(JsonValue)
 SUCCESS_STATUS = {"create_directory": 201, "create_file": 201, "append": 202}
 # LiteLLM's event methods need premium_user; a licensed setup has it, and betterlite never checks
@@ -43,12 +44,16 @@ class Log(TypedDict):
     failure: NotRequired[bool]
 
 
-class Control(TypedDict):
-    do: Literal["flush", "advance"]
-    seconds: NotRequired[int]
+class Flush(TypedDict):
+    do: Literal["flush"]
 
 
-Action = Log | Control
+class Advance(TypedDict):
+    do: Literal["advance"]
+    seconds: int
+
+
+Action = Log | Flush | Advance
 
 
 class Scenario(TypedDict):
@@ -121,8 +126,7 @@ def operation(method: str, url: str) -> str:
 
 def answer(method: str, url: str, body: bytes) -> tuple[int, str]:
     op = operation(method, url)
-    today = time.strftime("%Y-%m-%d")
-    entry: dict[str, JsonValue] = {"op": op, "url": url.replace(today, "{date}")}
+    entry: dict[str, JsonValue] = {"op": op, "url": re.sub(r"\d{4}-\d{2}-\d{2}", "{date}", url)}
     if op == "append":
         text = body.decode("utf-8")
         entry["body"] = JSON_VALUE.validate_json(text.rstrip("\n"))
@@ -145,19 +149,19 @@ class ScriptedAdapter(HTTPAdapter):
         self,
         request: requests.PreparedRequest,
         stream: bool = False,
-        timeout: float | tuple[float, float] | tuple[float, None] | None = None,
+        timeout: float | tuple[float | None, float | None] | None = None,
         verify: bool | str = True,
-        cert: bytes | str | tuple[bytes | str, bytes | str] | None = None,
-        proxies: Mapping[str, str] | None = None,
+        cert: str | tuple[str, str] | None = None,
+        proxies: dict[str, str] | None = None,
     ) -> requests.Response:
-        body = request.body
-        if body is None:
-            body = b""
-        match body:
+        del stream, timeout, verify, cert, proxies
+        match BODY.validate_python(request.body):
             case bytes() as content:
                 raw = content
             case str() as text:
                 raw = text.encode("utf-8")
+            case None:
+                raw = b""
         status, text = answer(f"{request.method}", f"{request.url}", raw)
         payload = text.encode("utf-8")
         reply = urllib3.response.HTTPResponse(
