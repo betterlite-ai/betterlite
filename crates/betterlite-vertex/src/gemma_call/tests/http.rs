@@ -1,10 +1,11 @@
 #![cfg(test)]
 
-use betterlite_models::decisions::Json;
+use betterlite_prompts::arguments::json::Json;
 
 use super::support::{
     ENDPOINT, Event, Fixture, MODEL, Reply, STRIPPED_MODEL, TOKEN, body_json, run,
 };
+use crate::gemma_call::error::GemmaCallError;
 use crate::gemma_call::plan::{SuppliedClientKind, for_call};
 use crate::gemma_envelope::response::GemmaReply;
 
@@ -123,6 +124,37 @@ fn raw_client_serves_the_call() {
     assert!(run.pooled_requests.is_empty());
     let Ok(GemmaReply::Response(response)) = run.result else {
         panic!("a raw async client serves a non-streaming call");
+    };
+    assert_eq!(response.model, STRIPPED_MODEL);
+}
+
+#[test]
+fn transport_failure_is_a_vertex_500() {
+    let fixture = Fixture::new();
+    let call = fixture.call(MODEL, Some(ENDPOINT), false);
+    let run = run(call, Reply::Failure, Some(SuppliedClientKind::AsyncHandler));
+    let Err(error) = run.result else {
+        panic!("a transport failure is an error");
+    };
+    assert!(matches!(&error, GemmaCallError::Transport(_)));
+    assert_eq!(error.status_code(), 500);
+    assert!(run.wrapped.is_empty());
+}
+
+#[test]
+fn mismatched_client_falls_back_to_the_pooled_client() {
+    let fixture = Fixture::new();
+    let call = fixture.call(MODEL, Some(ENDPOINT), false);
+    let run = run(
+        call,
+        Reply::Ok(VALID_REPLY),
+        Some(SuppliedClientKind::SyncHandler),
+    );
+    assert!(run.caller_requests.is_empty());
+    assert_eq!(run.pooled_requests.len(), 1);
+    assert_eq!(run.pooled_requests[0].url, PREDICT_URL);
+    let Ok(GemmaReply::Response(response)) = run.result else {
+        panic!("the pooled client serves a non-streaming call");
     };
     assert_eq!(response.model, STRIPPED_MODEL);
 }

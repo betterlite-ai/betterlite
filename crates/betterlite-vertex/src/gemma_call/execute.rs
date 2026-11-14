@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
+use std::str;
 
 use betterlite_openai::chat_content::{ChatContent, RefuseDownloads};
 use secrecy::ExposeSecret as _;
@@ -26,7 +27,7 @@ pub async fn completion<Client, Pooled, Factory>(
 where
     Client: GemmaPost,
     Pooled: GemmaPost,
-    Factory: SingleResponseStreamFactory,
+    Factory: SingleResponseStreamFactory + Sync,
 {
     let planned = for_call(call, supplied.as_ref().map(|client| client.kind))?;
     let caller = caller_client(&planned, supplied.map(|client| client.client));
@@ -46,7 +47,10 @@ where
     if reply.status != ACCEPTED_STATUS {
         return Err(GemmaCallError::Status {
             status: reply.status,
-            body: String::from_utf8_lossy(&reply.body).into_owned(),
+            body: str::from_utf8(&reply.body).map_or_else(
+                |_| format!("{} bytes that are not UTF-8", reply.body.len()),
+                str::to_owned,
+            ),
         });
     }
     let mut response = decode_gemma_reply(&reply.body, call.identifier, call.clock)?;
@@ -58,7 +62,7 @@ where
     ))
 }
 
-fn caller_client<'client, Client>(
+const fn caller_client<'client, Client>(
     planned: &GemmaPlan,
     supplied: Option<&'client Client>,
 ) -> Option<CallerClient<'client, Client>> {

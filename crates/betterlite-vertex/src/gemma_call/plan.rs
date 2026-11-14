@@ -6,7 +6,6 @@ use betterlite_prompts::arguments::json::Object;
 use secrecy::{ExposeSecret as _, SecretString};
 use uuid::Uuid;
 
-use crate::endpoint_target::error::EndpointTargetError;
 use crate::endpoint_target::target::{CustomProxyInput, TargetProvider, check_custom_proxy};
 use crate::model_urls::model_name::get_vertex_base_model_name;
 use crate::model_urls::{ApiVersion, Endpoint};
