@@ -99,10 +99,9 @@ impl EmailSender for RecordingSender {
             subject: subject.to_owned(),
             html: html.to_owned(),
         });
-        match &self.failure {
-            Some(error) => Err(error.clone()),
-            None => Ok(()),
-        }
+        self.failure
+            .as_ref()
+            .map_or(Ok(()), |error| Err(error.clone()))
     }
 }
 
