@@ -85,6 +85,33 @@ fn dropping_the_restore_guard_restores_the_settings() {
     );
 }
 
+#[test]
+fn dropping_the_restore_guard_reports_a_corrupt_backup_on_stderr() {
+    let world = prepared();
+    world.seed(
+        &world.settings_path(),
+        r#"{"env":{"ANTHROPIC_AUTH_TOKEN":"sk-live"}}"#,
+    );
+    world.seed(&world.backup_path(), "{not json");
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    {
+        let _guard = RestoreOnce {
+            home: world.home_path(),
+            files: &world.private_files,
+            stdout: &mut stdout,
+            stderr: &mut stderr,
+            done: std::sync::atomic::AtomicBool::new(false),
+        };
+    }
+    let text = String::from_utf8_lossy(&stderr);
+    assert!(text.contains("invalid or unexpected JSON"), "{text}");
+    assert_eq!(
+        super::support::json_file(&world.settings_path()),
+        serde_json::json!({"env": {"ANTHROPIC_AUTH_TOKEN": "sk-live"}})
+    );
+}
+
 #[cfg(unix)]
 #[rstest::rstest]
 #[case::sigint(signal_hook::consts::SIGINT)]
