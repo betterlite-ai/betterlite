@@ -63,12 +63,14 @@ impl<S: StreamSeams> MessagesStreamLogging<S> {
         logging_obj: Arc<StreamLoggingObject>,
         request_body: IndexMap<String, Json>,
     ) -> Self {
+        let start_time = deps.clock.now();
+        let completion_start_time = None;
         Self {
-            start_time: deps.clock.now(),
+            start_time,
             deps,
             logging_obj,
             request_body,
-            completion_start_time: None,
+            completion_start_time,
         }
     }
 
@@ -164,15 +166,17 @@ impl<S: StreamSeams> MessagesStreamLogging<S> {
         request_body: IndexMap<String, Json>,
         logging_obj: Arc<StreamLoggingObject>,
     ) -> S::Stream {
-        self.deps.seams.chunk_processor(ChunkProcessorCall {
+        let success_handler = Arc::clone(&self.deps.success_handler);
+        let call = ChunkProcessorCall {
             response,
             request_body,
             logging_obj,
             endpoint_type: EndpointType::Anthropic,
             start_time: self.start_time,
-            success_handler: Arc::clone(&self.deps.success_handler),
+            success_handler,
             url_route: MESSAGES_ROUTE,
-        })
+        };
+        self.deps.seams.chunk_processor(call)
     }
 }
 
