@@ -42,6 +42,10 @@ pub async fn send_team_budget_alert(
     database: Option<&PostgresStore>,
     sender: &dyn EmailSender,
 ) -> Result<bool, BudgetEmailError> {
+    tracing::debug!(
+        "Email Alerting: Sending Team Budget Alert for team={}",
+        event.team_alias.as_deref().unwrap_or("None")
+    );
     let branding = branding::resolve_branding(environment);
     let recipient_emails =
         team_members::get_all_team_member_emails(database, event.team_id.as_deref()).await?;

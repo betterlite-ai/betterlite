@@ -232,7 +232,10 @@ async fn team_budget_alert_sends_the_litellm_template() {
         "LiteLLM budget_crossed for Team Alpha"
     );
     assert_eq!(delivered[0].html, TEAM_EMAIL_HTML);
-    assert!(!logs.contents().contains("no recipient"));
+    let output = logs.contents();
+    assert!(output.contains("Sending Team Budget Alert for team=Alpha"));
+    assert!(output.contains("Sending team budget alert to "));
+    assert!(!output.contains("no recipient"));
     drop(guard);
 }
 

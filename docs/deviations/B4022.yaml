@@ -6,8 +6,8 @@ deviations:
   - what: Missing branding falls back to LiteLLM's logo URL and support contact constants, with no implicit asset fetching.
     why: B4020 supplies the two constants and this task uses them; an empty environment value counts as unset.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/email_alerting.py#L86-L89
-  - what: The missing-recipient error names the event and the user id instead of dumping the webhook event, and the team path logs the joined recipient string instead of the member rows.
-    why: The dumped event carries the key token and the member rows carry user emails; betterlite never writes either to an error log. LiteLLM's team-side warning is also unreachable there, since a joined list is never None.
+  - what: The missing-recipient error names the event and the user id instead of dumping the webhook event, and the team path logs the joined recipient string instead of the member roster and the fetched email rows.
+    why: The dumped event carries the key token and the roster rows carry user ids and emails; betterlite never writes either to an error log. LiteLLM's team-side warning is also unreachable there, since a joined list is never None.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1392-L1393
   - what: Budget and spend amounts in the HTML render with the Decimal's text, so 100 prints as 100 where LiteLLM's f-string prints the float 100.0.
     why: Money is a rust_decimal::Decimal from the moment it is read, and only the trailing .0 of a whole number differs.
