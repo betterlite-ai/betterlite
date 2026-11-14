@@ -63,10 +63,10 @@ fn name_block(data: &ScimUserData) -> JsonData {
 }
 
 fn text_field(value: Option<&str>) -> JsonData {
-    match value {
-        Some(text) => JsonData::String(text.to_owned()),
-        None => JsonData::Null,
-    }
+    let Some(text) = value else {
+        return JsonData::Null;
+    };
+    JsonData::String(text.to_owned())
 }
 
 fn enterprise_block(enterprise: &EnterpriseUser) -> JsonData {

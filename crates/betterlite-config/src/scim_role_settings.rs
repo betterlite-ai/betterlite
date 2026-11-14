@@ -47,7 +47,8 @@ impl Section for Raw {
         let litellm = self.litellm_settings.unwrap_or_default();
         let general = self.general_settings.unwrap_or_default();
         Ok(Settings {
-            scim_upsert_user: scim_upsert_user(litellm.scim_upsert_user.as_ref()),
+            // bool(litellm_settings.get("scim_upsert_user", True)) keeps Python's truthiness for every present value
+            scim_upsert_user: litellm.scim_upsert_user.as_ref().is_none_or(is_set),
             scim_admin_group: scim_admin_group(litellm.scim_admin_group.as_ref())?,
             default_user_role: default_user_role(general.default_internal_user_params.as_ref())?,
         })
@@ -59,13 +60,6 @@ where
 {
     let (raw, _ignored) = parse_view::<Raw>(source)?;
     Section::convert(raw, lookup)
-}
-// bool(litellm_settings.get("scim_upsert_user", True)) keeps Python's truthiness for every present value
-fn scim_upsert_user(configured: Option<&JsonValue>) -> bool {
-    match configured {
-        None => true,
-        Some(value) => is_set(value),
-    }
 }
 // LiteLLM reads the group with litellm_settings.get("scim_admin_group") or None
 fn scim_admin_group(configured: Option<&JsonValue>) -> Result<Option<String>, ConfigError> {
@@ -115,7 +109,7 @@ fn is_set(value: &JsonValue) -> bool {
     match value {
         JsonValue::Null => false,
         JsonValue::Bool(flag) => *flag,
-        JsonValue::Number(number) => number.as_f64().is_some_and(|float| float != 0.0),
+        JsonValue::Number(number) => number.as_f64().is_some_and(|float| float != 0.0_f64),
         JsonValue::String(text) => !text.is_empty(),
         JsonValue::Array(items) => !items.is_empty(),
         JsonValue::Object(entries) => !entries.is_empty(),

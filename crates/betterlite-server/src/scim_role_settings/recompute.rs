@@ -57,17 +57,10 @@ async fn update_user_role(store: &PostgresStore, user_id: &str, role: &str) -> R
 
 // a team that no longer exists still contributes its id as the group value
 fn team_alias(team: &TeamRecord) -> Option<String> {
-    match team.fields.get("team_alias") {
-        Some(JsonData::String(alias)) => Some(alias.clone()),
-        Some(
-            JsonData::Null
-            | JsonData::Bool(_)
-            | JsonData::Number(_)
-            | JsonData::Array(_)
-            | JsonData::Object(_),
-        )
-        | None => None,
-    }
+    let Some(JsonData::String(alias)) = team.fields.get("team_alias") else {
+        return None;
+    };
+    Some(alias.clone())
 }
 
 pub async fn scim_groups_from_team_ids(
@@ -83,10 +76,8 @@ pub async fn scim_groups_from_team_ids(
     };
     let mut groups = Vec::with_capacity(team_ids.len());
     for team_id in team_ids {
-        let display = match teams.table().find_unique(team_id).await? {
-            Some(team) => team_alias(&team),
-            None => None,
-        };
+        let found = teams.table().find_unique(team_id).await?;
+        let display = found.as_ref().and_then(team_alias);
         groups.push(UserGroup {
             value: team_id.clone(),
             display,

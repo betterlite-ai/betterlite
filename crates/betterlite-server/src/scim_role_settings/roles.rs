@@ -17,10 +17,10 @@ pub const fn user_role(configured: ScimUserRole) -> UserRole {
 // _default_scim_user_role falls back to the viewer role when no user_role is configured
 #[must_use]
 pub const fn default_scim_user_role(settings: &Settings) -> UserRole {
-    match settings.default_user_role {
-        Some(configured) => user_role(configured),
-        None => UserRole::InternalUserViewer,
-    }
+    let Some(configured) = settings.default_user_role else {
+        return UserRole::InternalUserViewer;
+    };
+    user_role(configured)
 }
 
 // None means no admin group is configured, so the caller leaves the stored role untouched

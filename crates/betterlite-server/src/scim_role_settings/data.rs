@@ -19,20 +19,20 @@ pub struct ScimUserData {
 #[must_use]
 pub fn extract_scim_user_data(user: &User) -> ScimUserData {
     let scim_name = user.name.as_ref();
+    let emails = user.emails.as_deref().unwrap_or_default();
     ScimUserData {
-        user_email: match user.emails.as_deref() {
-            Some([first, ..]) => Some(first.value.0.clone()),
-            _ => None,
-        },
-        user_alias: match scim_name.and_then(|name| name.given_name.as_deref()) {
-            Some(given) if !given.is_empty() => Some(given.to_owned()),
-            _ => None,
-        },
+        user_email: emails.first().map(|email| email.value.0.clone()),
+        user_alias: scim_name
+            .and_then(|name| name.given_name.as_deref())
+            .filter(|given| !given.is_empty())
+            .map(str::to_owned),
         sso_user_id: user.external_id.clone(),
-        teams: match user.groups.as_ref() {
-            Some(groups) => groups.iter().map(|group| group.value.clone()).collect(),
-            None => Vec::new(),
-        },
+        teams: user
+            .groups
+            .iter()
+            .flatten()
+            .map(|group| group.value.clone())
+            .collect(),
         given_name: scim_name.and_then(|name| name.given_name.clone()),
         family_name: scim_name.and_then(|name| name.family_name.clone()),
         // the SCIMUser model defaults active to true, so an extraction always knows the value
