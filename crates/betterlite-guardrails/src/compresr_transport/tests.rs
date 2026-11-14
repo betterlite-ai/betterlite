@@ -427,18 +427,17 @@ async fn a_configured_timeout_bounds_the_request() {
     server.spawn(async move {
         let router = Router::new().fallback(|| async {
             sleep(Duration::from_millis(300)).await;
-            "{}"
+            r#"{"data":{"compressed_context":"slow","original_tokens":1,"compressed_tokens":1}}"#
         });
         let _served = axum::serve(listener, router).await;
     });
     let mut built = settings(&format!("http://{address}"));
     built.timeout = Duration::from_millis(50);
-    built.fallback = UnreachableFallback::FailOpen;
-    let outcome = configured(built)
+    let error = configured(built)
         .compress(&[target("context", "query")])
         .await
-        .expect("outcome");
-    assert_eq!(outcome, CompressOutcome::Uncompressed);
+        .expect_err("timeout");
+    assert_eq!(error.status_code(), Some(502));
 }
 
 #[tokio::test]
