@@ -483,6 +483,14 @@ fn batch_cancel_reads_the_vertex_location_setting() {
 }
 
 #[test]
+fn batch_cancel_reads_the_vertex_location_setting_alone() {
+    let mut settings = base_settings();
+    settings.vertex_location = Some("location-settings".to_owned());
+    let call = first_call(settings, "vertex_ai", base_params());
+    assert_eq!(call["vertex_location"], json!("location-settings"));
+}
+
+#[test]
 fn batch_cancel_reads_the_vertex_project_environment() {
     let mut settings = base_settings();
     settings.vertexai_project = Some("project-env".to_owned());
