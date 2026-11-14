@@ -1,0 +1,14 @@
+kind: helper
+name: sigterm-restores
+call:
+  b4577:
+    operation: up
+    stored:
+      base_url: http://gateway.test:4000
+      key: sk-live
+      timestamp: 1000.0
+      expires_at: 4000000000.0
+    api_key: sk-live
+    stop: sigterm
+env: {}
+compare: {ignore: [{pointer: /value/snapshot/settings/statusLine, why: "the status line command embeds the runtime's own executable path"}]}

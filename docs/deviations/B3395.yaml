@@ -1,0 +1,23 @@
+task: B3395
+deviations:
+  - what: The enabled flag and the skill files are read only from the hook's request-scoped state, never from litellm_metadata or metadata sent by the client.
+    why: LiteLLM reads both keys from client metadata and strips nothing, so a client could start the sandbox loop with files it sends itself.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L398-L405
+  - what: A tool call with no name is treated as the name "", so detection skips it and the loop answers "Tool '' not handled".
+    why: LiteLLM calls startswith on None and raises AttributeError; a typed optional name has no such crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L420-L424
+  - what: A non-object entry in a Dict response's content array becomes a text block holding the entry as JSON text.
+    why: LiteLLM writes Python's str(entry), which is repr text that docs/compatibility.md excludes; real Messages responses only hold objects here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L528-L542
+  - what: input["code"] that is not a JSON string is treated as "".
+    why: LiteLLM passes the raw value to the sandbox; the typed executor takes a string, and the model's tool schema declares code as a string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L560-L566
+  - what: The loop has no "response is None" early return.
+    why: The response is a typed HookResponse, so it cannot be None; LiteLLM's guard only covers a caller that passes None.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L505-L507
+  - what: The continuation call goes through the injected MessagesContinuation trait instead of litellm.anthropic.acreate.
+    why: B1134 owns the Messages dispatch, and the loop must not depend on it; the four forwarded fields are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L589-L595
+  - what: A Dict response whose content is a value that is not a list gives an empty assistant content.
+    why: LiteLLM iterates whatever the value is, so a string would be split into one text block per character; the declared type of content is a list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L528-L542

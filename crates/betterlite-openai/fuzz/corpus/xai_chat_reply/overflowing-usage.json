@@ -1,0 +1,1 @@
+{"id":"c","object":"chat.completion","created":1,"model":"grok-4","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":null}],"usage":{"prompt_tokens":9223372036854775807,"completion_tokens":9223372036854775807,"total_tokens":1,"completion_tokens_details":{"reasoning_tokens":9223372036854775807},"cost_in_usd_ticks":true}}

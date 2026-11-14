@@ -1,0 +1,97 @@
+kind: helper
+name: cache-claude-one-shot-suppressed
+call:
+  b4125:
+    operation: messages_injection
+    probes:
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello}]
+        system: "x-anthropic-billing-header: cc_version=2.0.1; cc_is_subagent=true"
+        params: {proxy_server_request: {headers: {User-Agent: claude-cli/2.0.1}}}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello}]
+        system: [{type: text, text: "x-anthropic-billing-header: cc_is_subagent=true"}]
+        params: {proxy_server_request: {headers: {user-agent: claude-code/1.0.0}}}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello}]
+        system: "x-anthropic-billing-header: cc_is_subagent=true"
+        params: {proxy_server_request: {headers: {User-Agent: claude-cli/2.0.1}}}
+        tools: [{type: custom, name: lookup}]
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello}, {role: user, content: again}]
+        system: "x-anthropic-billing-header: cc_is_subagent=true"
+        params: {proxy_server_request: {headers: {User-Agent: claude-cli/2.0.1}}}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: assistant, content: hello}]
+        system: "x-anthropic-billing-header: cc_is_subagent=true"
+        params: {proxy_server_request: {headers: {User-Agent: claude-cli/2.0.1}}}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello}]
+        system: "x-anthropic-billing-header: cc_is_subagent=true"
+        params: {proxy_server_request: {headers: {User-Agent: curl/8.0}}}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello}]
+        system: "x-anthropic-billing-header: cc_is_subagent=false"
+        params: {proxy_server_request: {headers: {User-Agent: claude-cli/2.0.1}}}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello}]
+        system: "x-anthropic-billing-header: cc_is_subagent"
+        params: {proxy_server_request: {headers: {User-Agent: claude-cli/2.0.1}}}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello}]
+        system: "x-anthropic-billing-header: cc_is_subagent=true\nsecond line"
+        params: {proxy_server_request: {headers: {User-Agent: claude-cli/2.0.1}}}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello}]
+        system: [{type: text, text: "x-anthropic-billing-header: cc_is_subagent=true"}, {type: image, source: {}}]
+        params: {proxy_server_request: {headers: {User-Agent: claude-cli/2.0.1}}}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+      - model: anthropic/claude-sonnet-4-5
+        messages: [{role: user, content: hello}]
+        system: "x-anthropic-billing-header: cc_is_subagent=true"
+        params: {}
+        global_enable: true
+        model_cost:
+          anthropic/claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+          claude-sonnet-4-5: {litellm_provider: anthropic, supports_prompt_caching: true}
+env: {}
+compare: {ignore: []}

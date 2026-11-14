@@ -157,7 +157,9 @@ fn lines_with(recorder: &Recorder, prefix: &str) -> Vec<String> {
 }
 
 fn captured_command(harness: &Harness) -> DbAdminCommand {
-    harness.captures.lock().expect("captures")[0].command
+    harness.captures.lock().expect("captures")[0]
+        .command
+        .clone()
 }
 
 fn captured(harness: &Harness) -> Vec<(String, Option<String>, i64)> {
@@ -356,8 +358,12 @@ async fn migration_flags_case_and_whitespace(#[case] value: &str, #[case] expect
         DbAdminCommand::DatabaseViews => panic!("the migrate operation produced another command"),
         DbAdminCommand::DailyToolSpend(_)
         | DbAdminCommand::KeyTotalSpend
-        | DbAdminCommand::KeyTotalSpendFromLogs => {
-            panic!("the migrate operation produced a spend backfill command")
+        | DbAdminCommand::KeyTotalSpendFromLogs
+        | DbAdminCommand::SpendPartition(_) => {
+            panic!("the migrate operation produced a spend command")
+        }
+        DbAdminCommand::UpdateUnassignedTeams | DbAdminCommand::MigrateVerificationTokens(_) => {
+            panic!("the migrate operation produced a repair command")
         }
     }
 }
@@ -383,8 +389,12 @@ async fn push_inverts_use_migrate(#[case] value: &str, #[case] use_migrate: bool
         DbAdminCommand::DatabaseViews => panic!("the migrate operation produced another command"),
         DbAdminCommand::DailyToolSpend(_)
         | DbAdminCommand::KeyTotalSpend
-        | DbAdminCommand::KeyTotalSpendFromLogs => {
-            panic!("the migrate operation produced a spend backfill command")
+        | DbAdminCommand::KeyTotalSpendFromLogs
+        | DbAdminCommand::SpendPartition(_) => {
+            panic!("the migrate operation produced a spend command")
+        }
+        DbAdminCommand::UpdateUnassignedTeams | DbAdminCommand::MigrateVerificationTokens(_) => {
+            panic!("the migrate operation produced a repair command")
         }
     }
 }
