@@ -1,0 +1,14 @@
+{
+  "targets": [
+    {
+      "path": "ui/litellm-dashboard/next.config.mjs",
+      "preimage": "84b40685a6de77e6f23928b923bd0b5cba79a67bda175c94e6163d231cc849a8",
+      "postimage": "b401625c484b81abb3d55f3d71da6fcc28989045a38744388047863a4f8fe75d"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/app/layout.tsx",
+      "preimage": "1a7163e59864fbaa14672752a70c8b38086117e5a14afa00893611dfc2fa803c",
+      "postimage": "d45e53d9fb4a865a88aaf1f6e80b52835ca26c4e60c883adcf9da16336d5a79f"
+    }
+  ]
+}
