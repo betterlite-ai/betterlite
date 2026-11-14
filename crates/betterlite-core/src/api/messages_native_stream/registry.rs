@@ -1,16 +1,13 @@
 use std::collections::BTreeSet;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-
-use tokio::sync::Notify;
 
 // One process-wide registry of live pumps and detached drains, shared by every stream
 #[derive(Default)]
 pub struct StreamRegistry {
-    live_pumps: Mutex<BTreeSet<u64>>,
-    detached_drains: Mutex<BTreeSet<u64>>,
-    next_id: AtomicU64,
-    idle: Notify,
+    pumps: Mutex<BTreeSet<usize>>,
+    drains: Mutex<BTreeSet<usize>>,
+    next_id: AtomicUsize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,27 +18,19 @@ pub struct RegistrySizes {
 
 impl StreamRegistry {
     #[must_use]
-    pub fn start_pump(self: &Arc<Self>) -> PumpRegistration {
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        self.live_pumps
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(id);
-        PumpRegistration {
-            registry: Arc::clone(self),
-            id,
-        }
+    pub fn start_pump(self: &Arc<Self>) -> Slot {
+        self.register(SlotKind::Pump)
     }
 
     #[must_use]
     pub fn sizes(&self) -> RegistrySizes {
         let live_pumps = self
-            .live_pumps
+            .pumps
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .len();
         let detached_drains = self
-            .detached_drains
+            .drains
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .len();
@@ -51,63 +40,66 @@ impl StreamRegistry {
         }
     }
 
-    // Shutdown awaits this: every pump and drain registered before the call has finished
-    pub async fn wait_until_idle(&self) {
-        loop {
-            let notified = self.idle.notified();
-            let sizes = self.sizes();
-            if sizes.live_pumps == 0 && sizes.detached_drains == 0 {
-                return;
-            }
-            notified.await;
-        }
-    }
-
-    pub(super) fn claim_drain(self: &Arc<Self>, cap: usize) -> Option<DrainRegistration> {
-        let mut drains = self
-            .detached_drains
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+    pub(super) fn claim_drain(self: &Arc<Self>, cap: usize) -> Option<Slot> {
+        let mut drains = self.drains.lock().unwrap_or_else(PoisonError::into_inner);
         if drains.len() >= cap {
             return None;
         }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        drains.insert(id);
-        Some(DrainRegistration {
+        let _inserted = drains.insert(id);
+        drop(drains);
+        Some(Slot {
             registry: Arc::clone(self),
             id,
+            kind: SlotKind::Drain,
         })
     }
-}
 
-pub struct PumpRegistration {
-    registry: Arc<StreamRegistry>,
-    id: u64,
-}
-
-impl Drop for PumpRegistration {
-    fn drop(&mut self) {
-        self.registry
-            .live_pumps
+    fn register(self: &Arc<Self>, kind: SlotKind) -> Slot {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let _inserted = self
+            .set(kind)
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .remove(&self.id);
-        self.registry.idle.notify_waiters();
+            .insert(id);
+        Slot {
+            registry: Arc::clone(self),
+            id,
+            kind,
+        }
+    }
+
+    fn set(&self, kind: SlotKind) -> &Mutex<BTreeSet<usize>> {
+        match kind {
+            SlotKind::Pump => &self.pumps,
+            SlotKind::Drain => &self.drains,
+        }
+    }
+
+    fn release(&self, kind: SlotKind, id: usize) {
+        let _removed = self
+            .set(kind)
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&id);
     }
 }
 
-pub(super) struct DrainRegistration {
-    registry: Arc<StreamRegistry>,
-    id: u64,
+#[derive(Clone, Copy)]
+enum SlotKind {
+    Pump,
+    Drain,
 }
 
-impl Drop for DrainRegistration {
+// Dropping either guard releases its entry when the task ends
+pub struct Slot {
+    registry: Arc<StreamRegistry>,
+    id: usize,
+    kind: SlotKind,
+}
+
+impl Drop for Slot {
     fn drop(&mut self) {
-        self.registry
-            .detached_drains
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(&self.id);
-        self.registry.idle.notify_waiters();
+        self.registry.release(self.kind, self.id);
     }
 }

@@ -18,8 +18,8 @@ use tracing::subscriber::set_default;
 
 use super::Http;
 use super::call::{
-    FailureCall, FrameRead, MessagesNativeStreamCall, NativeStreamRun, RelayStep,
-    StreamObservation, WaitUntil,
+    FailureCall, FrameRead, MessagesNativeStreamCall, RelayOp, RelayStep, StreamObservation,
+    WaitUntil,
 };
 use super::outcome::Flag;
 use super::recording::{StepClock, Warnings, drain, logging_object};
@@ -64,9 +64,7 @@ pub(crate) async fn send(
     for step in &call.steps {
         steps.push(run.apply(step).await?);
     }
-    Ok(SdkResult::MessagesNativeStream {
-        value: NativeStreamRun { steps },
-    })
+    Ok(SdkResult::MessagesNativeStream { value: steps })
 }
 
 struct Session {
@@ -135,23 +133,23 @@ impl Session {
     }
 
     async fn apply(&mut self, step: &RelayStep) -> Result<Option<FrameRead>, SdkHttpError> {
-        match step {
-            RelayStep::Read { .. } => Ok(Some(self.read().await?)),
-            RelayStep::Release { count, .. } => {
+        match step.op {
+            RelayOp::Read => Ok(Some(self.read().await?)),
+            RelayOp::Release => {
                 self.gate
                     .state
-                    .send_modify(|state| state.permits = state.permits.saturating_add(*count));
+                    .send_modify(|state| state.permits = state.permits.saturating_add(step.count));
                 Ok(None)
             }
-            RelayStep::Detach { .. } => {
+            RelayOp::Detach => {
                 self.relay = None;
                 Ok(None)
             }
-            RelayStep::Finish { .. } => {
+            RelayOp::Finish => {
                 self.gate.state.send_modify(|state| state.finished = true);
                 Ok(None)
             }
-            RelayStep::Fail { .. } => {
+            RelayOp::Fail => {
                 self.gate.state.send_modify(|state| {
                     state.failure = Some(ReportedFailure {
                         kind: "RateLimitError".to_owned(),
@@ -160,15 +158,15 @@ impl Session {
                 });
                 Ok(None)
             }
-            RelayStep::Arm { .. } => {
+            RelayOp::Arm => {
                 self.arm();
                 Ok(None)
             }
-            RelayStep::Wait { until, .. } => {
-                self.wait(*until).await;
+            RelayOp::Wait => {
+                self.wait(step.until).await;
                 Ok(None)
             }
-            RelayStep::Start { .. } | RelayStep::Settle => Ok(None),
+            RelayOp::Start | RelayOp::Settle => Ok(None),
         }
     }
 
@@ -240,7 +238,7 @@ impl Session {
                 })
             })
             .collect::<Result<Vec<_>, SdkHttpError>>()?;
-        let billed = drain(&self.state.routed)
+        let billed = drain(&self.state.recorder.routed)
             .into_iter()
             .map(|call| text_frames(call.raw_bytes))
             .collect::<Result<Vec<_>, SdkHttpError>>()?;
@@ -249,10 +247,10 @@ impl Session {
             failures,
             hook_calls: drain(&self.state.hook_calls),
             callback_args: drain(&self.callback_args),
-            ran: self.state.ran.load(Ordering::SeqCst),
+            ran: self.state.recorder.ran.load(Ordering::SeqCst),
             armed,
             parked,
-            closed: Flag(*self.gate.closed.borrow()),
+            closed: Flag(self.gate.closed.load(Ordering::SeqCst)),
         })
     }
 }

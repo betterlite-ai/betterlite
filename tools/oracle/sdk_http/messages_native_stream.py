@@ -49,11 +49,6 @@ class Gate:
         self.failure = RateLimitError("busy")
         self.ready.set()
 
-    async def quiesce(self) -> None:
-        while not self.finished and (self.permits > 0 or self.waiting == 0):
-            self.idle.clear()
-            await self.idle.wait()
-
 
 class GatedSource(AsyncIterator[bytes]):
     def __init__(self, gate: Gate) -> None:
@@ -134,27 +129,11 @@ class RelayHook:
         self.fired.set()
 
 
-def split_frames(content: bytes) -> list[bytes]:
-    parts = content.split(b"\n\n")
-    frames = [part + b"\n\n" for part in parts[:-1]]
-    if parts[-1]:
-        frames.append(parts[-1])
-    return frames
-
-
 class RelayStep(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     op: Literal[
-        "start",
-        "release",
-        "read",
-        "detach",
-        "finish",
-        "fail",
-        "arm",
-        "wait",
-        "settle",
+        "start", "release", "read", "detach", "finish", "fail", "arm", "wait", "settle"
     ]
     stream: str = ""
     count: int = 0
@@ -194,7 +173,10 @@ class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
 
     async def start(self) -> None:
         response = await self.client.post(f"{self.api_base}/messages", json=self.body)
-        self.source.frames = split_frames(response.content)
+        parts = response.content.split(b"\n\n")
+        self.source.frames = [part + b"\n\n" for part in parts[:-1]]
+        if parts[-1]:
+            self.source.frames.append(parts[-1])
         self.dispatcher.bind(self.logging, self.recorder)
 
     async def read(self) -> Json:
@@ -218,15 +200,18 @@ class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
             await coroutine
 
     async def wait(self, until: Literal["idle", "parked", "hook"]) -> None:
-        match until:
-            case "idle":
-                await self.gate.quiesce()
-            case "parked":
-                await self.recorder.recorded.wait()
-            case "hook":
-                await self.hook.fired.wait()
+        if until == "parked":
+            await self.recorder.recorded.wait()
+        elif until == "hook":
+            await self.hook.fired.wait()
+        else:
+            while not self.gate.finished and (self.gate.permits > 0 or self.gate.waiting == 0):
+                self.gate.idle.clear()
+                await self.gate.idle.wait()
 
-    async def configure(self, step: RelayStep) -> None:
+    async def run(self, step: RelayStep) -> Json:
+        if step.op == "read":
+            return await self.read()
         if step.op == "release":
             self.gate.release(step.count)
         elif step.op == "detach":
@@ -239,11 +224,6 @@ class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
             self.arm()
         elif step.op == "wait":
             await self.wait(step.until)
-
-    async def run(self, step: RelayStep) -> Json:
-        if step.op == "read":
-            return await self.read()
-        await self.configure(step)
         return None
 
     def observe(self) -> Json:
@@ -311,5 +291,5 @@ async def run_steps(call: MessagesNativeStreamCall, api_base: str) -> list[Json]
 
 def run_messages_native_stream(call: MessagesNativeStreamCall, api_base: str) -> str:
     steps = asyncio.run(run_steps(call, api_base))
-    outcome: Json = {"messages_native_stream": {"value": {"steps": steps}}}
+    outcome: Json = {"messages_native_stream": {"value": steps}}
     return json.dumps(outcome)

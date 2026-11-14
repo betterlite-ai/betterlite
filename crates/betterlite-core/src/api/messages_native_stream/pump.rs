@@ -7,7 +7,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use super::queue::{ClientQueue, QueueItem};
-use super::registry::{DrainRegistration, StreamRegistry};
+use super::registry::{Slot, StreamRegistry};
 use super::{
     MessagesChunkSource, ReportedFailure, RetentionBudget, StreamFailureCall, StreamFailureLogging,
     error_sse_event,
@@ -36,7 +36,7 @@ pub(super) struct Pump<S, F> {
     pub(super) collected: Vec<Vec<u8>>,
     pub(super) budget: RetentionBudget,
     pub(super) saw_terminal: bool,
-    pub(super) drain: Option<DrainRegistration>,
+    pub(super) drain: Option<Slot>,
 }
 
 impl<S, F> Pump<S, F>

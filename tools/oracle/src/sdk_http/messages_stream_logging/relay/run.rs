@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 use super::super::Http;
 use super::super::recording::Warnings;
 use super::Session;
-use super::call::{MessagesNativeStreamCall, Observation, RelayStep, StepOutcome};
+use super::call::{MessagesNativeStreamCall, Observation, RelayOp, RelayStep, StepOutcome};
 use super::state::wait_true;
 use crate::sdk_http::error::SdkHttpError;
 
@@ -20,19 +20,19 @@ pub(super) struct Run<'run> {
 
 impl Run<'_> {
     pub(super) async fn apply(&mut self, step: &RelayStep) -> Result<StepOutcome, SdkHttpError> {
-        match step {
-            RelayStep::Settle => Ok(StepOutcome {
+        match step.op {
+            RelayOp::Settle => Ok(StepOutcome {
                 frame: None,
                 observation: Some(self.settle().await?),
             }),
-            RelayStep::Start { stream } => {
+            RelayOp::Start => {
                 let session =
                     Session::start(self.call, self.http, Arc::clone(&self.registry)).await?;
-                self.sessions.insert(stream.clone(), session);
+                self.sessions.insert(step.stream.clone(), session);
                 Ok(StepOutcome::default())
             }
             _ => {
-                let session = self.sessions.get_mut(step.stream()).ok_or_else(|| {
+                let session = self.sessions.get_mut(&step.stream).ok_or_else(|| {
                     SdkHttpError::Invalid("the step names an unknown stream".to_owned())
                 })?;
                 Ok(StepOutcome {

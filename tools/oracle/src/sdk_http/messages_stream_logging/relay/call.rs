@@ -14,47 +14,38 @@ pub struct MessagesNativeStreamCall {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
-pub enum RelayStep {
-    Start { stream: String },
-    Release { stream: String, count: usize },
-    Read { stream: String },
-    Detach { stream: String },
-    Finish { stream: String },
-    Fail { stream: String },
-    Arm { stream: String },
-    Wait { stream: String, until: WaitUntil },
-    Settle,
+#[serde(deny_unknown_fields)]
+pub struct RelayStep {
+    pub(crate) op: RelayOp,
+    #[serde(default)]
+    pub(crate) stream: String,
+    #[serde(default)]
+    pub(crate) count: usize,
+    #[serde(default)]
+    pub(crate) until: WaitUntil,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum RelayOp {
+    Start,
+    Release,
+    Read,
+    Detach,
+    Finish,
+    Fail,
+    Arm,
+    Wait,
+    Settle,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum WaitUntil {
+    #[default]
     Idle,
     Parked,
     Hook,
-}
-
-impl RelayStep {
-    pub(super) fn stream(&self) -> &str {
-        match self {
-            Self::Start { stream }
-            | Self::Release { stream, .. }
-            | Self::Read { stream }
-            | Self::Detach { stream }
-            | Self::Finish { stream }
-            | Self::Fail { stream }
-            | Self::Arm { stream }
-            | Self::Wait { stream, .. } => stream,
-            Self::Settle => "",
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct NativeStreamRun {
-    pub steps: Vec<StepOutcome>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
