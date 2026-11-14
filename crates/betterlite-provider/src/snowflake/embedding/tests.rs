@@ -50,6 +50,28 @@ fn the_nested_embedding_keeps_element_zero() {
 }
 
 #[test]
+fn a_reply_without_object_fields_gets_litellms_defaults() {
+    let reply = transform_embedding_response(
+        "e5-base",
+        r#"{"data":[{"index":0,"embedding":[[1]]}],"model":"e5-base","usage":{"prompt_tokens":1,"total_tokens":1}}"#,
+    )
+    .unwrap();
+    assert_eq!(reply.response.object, "list");
+    assert_eq!(reply.response.data[0].object, "embedding");
+}
+
+#[test]
+fn a_reply_object_field_is_kept_as_sent() {
+    let reply = transform_embedding_response(
+        "e5-base",
+        r#"{"object":"other","data":[{"object":"vector","index":0,"embedding":[[1]]}],"model":"e5-base","usage":{"prompt_tokens":1,"total_tokens":1}}"#,
+    )
+    .unwrap();
+    assert_eq!(reply.response.object, "other");
+    assert_eq!(reply.response.data[0].object, "vector");
+}
+
+#[test]
 fn a_reply_without_a_model_still_gets_the_prefix() {
     let reply = transform_embedding_response(
         "snowflake/e5-base",

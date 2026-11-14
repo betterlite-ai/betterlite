@@ -10,10 +10,7 @@ pub mod stream;
 pub type SnowflakeException = crate::api::file_contracts::error::BaseLlmException;
 
 // The fetchers are all async-only, so the three call sites share one bound instead of repeating it
-pub(crate) trait Fetcher:
-    betterlite_prompts::media::inline::RemoteMediaFetcher + Sync
-{
-}
+pub trait Fetcher: betterlite_prompts::media::inline::RemoteMediaFetcher + Sync {}
 impl<T: betterlite_prompts::media::inline::RemoteMediaFetcher + Sync> Fetcher for T {}
 
 #[derive(Debug, Error)]

@@ -54,6 +54,10 @@ pub fn transform_embedding_response(
         return Err(EmbeddingError::Data);
     };
     unwrap_vectors(fields.get_mut("data"))?;
+    // LiteLLM's EmbeddingResponse fills object in as "list" when Cortex leaves it out
+    fields
+        .entry("object".to_owned())
+        .or_insert_with(|| Json::Text("list".to_owned()));
     let response_model = fields
         .get("model")
         .and_then(Json::as_str)
@@ -87,11 +91,17 @@ fn unwrap_vectors(data: Option<&mut Json>) -> Result<(), EmbeddingError> {
             None | Some(_) => return Err(EmbeddingError::Shape { index }),
         };
         let first = values.first().ok_or(EmbeddingError::Empty { index })?;
-        if !matches!(first, Json::Number(_)) {
+        let Json::List(numbers) = first else {
+            return Err(EmbeddingError::Shape { index });
+        };
+        if !numbers.iter().all(|value| matches!(value, Json::Number(_))) {
             return Err(EmbeddingError::Shape { index });
         }
         let first = first.clone();
         fields.insert("embedding".to_owned(), first);
+        fields
+            .entry("object".to_owned())
+            .or_insert_with(|| Json::Text("embedding".to_owned()));
     }
     Ok(())
 }
