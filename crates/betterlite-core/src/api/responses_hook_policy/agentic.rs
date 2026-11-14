@@ -147,13 +147,13 @@ fn trusted_text_depth(text: &str) -> Result<i64, AgenticLoopSettingsError> {
     let digits = trimmed.strip_prefix(['+', '-']).unwrap_or(trimmed);
     if !digits.split('_').all(|part| !part.is_empty()) {
         return Err(AgenticLoopSettingsError::DepthInvalidLiteral {
-            literal: python::repr(text)?,
+            literal: python::repr(&Json::Text(text.to_owned()))?,
         });
     }
     match trimmed.replace('_', "").parse::<i64>() {
         Ok(value) => Ok(value),
         Err(_) => Err(AgenticLoopSettingsError::DepthInvalidLiteral {
-            literal: python::repr(text)?,
+            literal: python::repr(&Json::Text(text.to_owned()))?,
         }),
     }
 }
