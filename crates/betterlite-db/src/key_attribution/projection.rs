@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use crate::budget_permission_rows::JsonData;
+use crate::resource_rows::json_value_is_set;
 
 use super::metadata::KeyMetadata;
 
@@ -76,7 +77,7 @@ pub fn row_with_recovered_fields(
     };
     let email = row
         .get(&fields.user_email)
-        .filter(|value| truthy(value))
+        .filter(|value| json_value_is_set(value))
         .cloned()
         .or_else(|| meta.user_email.clone().map(JsonData::String))
         .unwrap_or(JsonData::Null);
@@ -95,15 +96,4 @@ pub fn project_rows(
     rows.iter()
         .map(|row| row_with_recovered_fields(row, recovered, fields))
         .collect()
-}
-
-fn truthy(value: &JsonData) -> bool {
-    match value {
-        JsonData::Null => false,
-        JsonData::Bool(flag) => *flag,
-        JsonData::Number(number) => number.as_f64().is_some_and(|number| number != 0.0),
-        JsonData::String(text) => !text.is_empty(),
-        JsonData::Array(values) => !values.is_empty(),
-        JsonData::Object(fields) => !fields.is_empty(),
-    }
 }
