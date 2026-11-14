@@ -58,3 +58,31 @@ fn infinity_key_is_read_alone(#[case] environment: &[(&str, &str)], #[case] key:
     assert_eq!(infinity_key.as_deref(), key);
     assert_eq!(base, None);
 }
+
+#[rstest]
+#[case::global_only(&[], None, Some("global"))]
+#[case::environment_and_global(&[("INFINITY_API_KEY", "env")], Some("env"), Some("global"))]
+fn infinity_rerank_global_key(
+    #[case] environment: &[(&str, &str)],
+    #[case] embedding_key: Option<&str>,
+    #[case] rerank_global_key: Option<&str>,
+) {
+    let lookup = environment
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+        .collect::<BTreeMap<_, _>>();
+    let sections = ConfigLoader { lookup }
+        .load("litellm_settings:\n  infinity_key: global\n")
+        .unwrap()
+        .sections;
+    let embedding = sections
+        .embedding_host_settings
+        .infinity_api_key
+        .map(|secret| secret.expose_secret().to_owned());
+    let rerank = sections
+        .jina_infinity_rerank
+        .infinity_key
+        .map(|secret| secret.expose_secret().to_owned());
+    assert_eq!(embedding.as_deref(), embedding_key);
+    assert_eq!(rerank.as_deref(), rerank_global_key);
+}
