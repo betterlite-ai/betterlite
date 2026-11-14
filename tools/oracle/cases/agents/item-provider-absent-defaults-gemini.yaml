@@ -1,0 +1,12 @@
+kind: helper
+name: agents-item-provider-absent-defaults-gemini
+call:
+  b3505:
+    operation: get
+    name: agent-default
+    api_key: key-1
+    litellm_call_id: call-default
+    status: 200
+    body: '{"id": "agent-default"}'
+env: {}
+compare: {ignore: []}
