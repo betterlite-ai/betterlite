@@ -160,6 +160,25 @@ fn mismatched_client_falls_back_to_the_pooled_client() {
 }
 
 #[test]
+fn a_rejected_body_that_is_not_utf8_names_its_length() {
+    let fixture = Fixture::new();
+    let call = fixture.call(MODEL, Some(ENDPOINT), false);
+    let run = run(
+        call,
+        Reply::Raw(500, &[0xff, 0xfe, 0x00]),
+        Some(SuppliedClientKind::AsyncHandler),
+    );
+    let Err(error) = run.result else {
+        panic!("a 500 is rejected");
+    };
+    assert_eq!(error.status_code(), 500);
+    assert_eq!(
+        error.to_string(),
+        "Request failed: 3 bytes that are not UTF-8"
+    );
+}
+
+#[test]
 fn upstream_201_rejection() {
     let fixture = Fixture::new();
     let call = fixture.call(MODEL, Some(ENDPOINT), false);
