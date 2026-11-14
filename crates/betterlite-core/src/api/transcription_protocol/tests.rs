@@ -115,6 +115,13 @@ fn transcription_session_transcription_fields() {
         vec!["prompt".to_owned(), "temperature".to_owned()]
     );
     assert_eq!(update.session_type, None);
+    let ga = parse(
+        r#"{"type":"session.update","session":{"audio":{"input":{"transcription":{"model":"m","language":"en","prompt":"p"}}}}}"#,
+    )
+    .unwrap();
+    assert_eq!(ga.model.as_deref(), Some("m"));
+    assert_eq!(ga.language.as_deref(), Some("en"));
+    assert_eq!(ga.unsupported_transcription_keys, vec!["prompt".to_owned()]);
     let bare = parse(r#"{"type":"session.update","session":{"audio":{}}}"#).unwrap();
     assert_eq!(bare.model, None);
     assert_eq!(bare.language, None);
@@ -129,6 +136,11 @@ fn transcription_session_transcription_fields() {
 )]
 #[case::explicit_null(
     r#"{"type":"session.update","session":{"turn_detection":null}}"#,
+    true,
+    None
+)]
+#[case::nested_null(
+    r#"{"type":"session.update","session":{"audio":{"input":{"turn_detection":null}}}}"#,
     true,
     None
 )]

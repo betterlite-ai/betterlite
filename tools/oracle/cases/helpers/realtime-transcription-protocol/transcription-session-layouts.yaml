@@ -18,5 +18,7 @@ call:
       - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":0,"channels":-1}}}}}'
       - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":1180591620717411303424}}}}}'
       - '{"type":"session.update","session":{"audio":{"input":{"format":{"channels":1}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"transcription":{"model":"m","language":"en","prompt":"p"}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"turn_detection":null}}}}'
 env: {}
 compare: {ignore: []}
