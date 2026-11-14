@@ -68,6 +68,13 @@ impl AzureTextModerationGuardrail {
             },
         }
     }
+
+    async fn scan_texts(&self, texts: &[String]) -> Result<(), AzureTextModerationError> {
+        for text in texts.iter().filter(|text| !text.is_empty()) {
+            self.async_make_request(text).await?;
+        }
+        Ok(())
+    }
 }
 
 impl GuardrailContract for AzureTextModerationGuardrail {
@@ -82,10 +89,8 @@ impl GuardrailContract for AzureTextModerationGuardrail {
             let Some(texts) = inputs.texts.take() else {
                 return Ok(inputs);
             };
-            for text in texts.iter().filter(|text| !text.is_empty()) {
-                if let Err(error) = self.async_make_request(text).await {
-                    return Err(guardrail_failure(error));
-                }
+            if let Err(error) = self.scan_texts(&texts).await {
+                return Err(guardrail_failure(error));
             }
             inputs.texts = Some(texts);
             Ok(inputs)

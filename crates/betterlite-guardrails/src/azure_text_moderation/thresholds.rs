@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use crate::azure_content_safety::legacy_wire::TextCategory;
 
 use super::AzureTextModerationGuardrail;
@@ -13,11 +15,7 @@ impl AzureTextModerationGuardrail {
     ) -> Result<(), AzureTextModerationError> {
         if let Some(thresholds) = self.severity_threshold_by_category.as_ref() {
             for analysis in &response.categories_analysis {
-                let category_threshold = TextCategory::from_name(&analysis.category)
-                    .and_then(|category| thresholds.get(&category).copied());
-                if let Some(category_threshold) = category_threshold {
-                    violation_at(analysis, category_threshold)?;
-                }
+                check_category_entry(thresholds, analysis)?;
             }
         }
         if let Some(threshold) = self.severity_threshold {
@@ -32,6 +30,19 @@ impl AzureTextModerationGuardrail {
         }
         Ok(())
     }
+}
+
+// A response category outside the four names has no map entry and is not checked.
+fn check_category_entry(
+    thresholds: &BTreeMap<TextCategory, i64>,
+    analysis: &CategoryAnalysis,
+) -> Result<(), AzureTextModerationError> {
+    let threshold = TextCategory::from_name(&analysis.category)
+        .and_then(|category| thresholds.get(&category).copied());
+    if let Some(threshold) = threshold {
+        violation_at(analysis, threshold)?;
+    }
+    Ok(())
 }
 
 fn violation_at(
