@@ -1,6 +1,7 @@
-from typing import Literal, Required, TypedDict
+from typing import Literal, Required
 
 from pydantic import JsonValue
+from typing_extensions import TypedDict
 
 
 class FunctionResponse(TypedDict, total=False):

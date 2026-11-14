@@ -1,7 +1,8 @@
 from enum import Enum
-from typing import ClassVar, Literal, Required, TypedDict
+from typing import ClassVar, Literal, Required
 
 from pydantic import ConfigDict, JsonValue
+from typing_extensions import TypedDict
 
 from betterlite.types.llms.gemini.vertex_ai_types import (
     GenerationConfig,

@@ -1,7 +1,7 @@
-from typing import ClassVar, Literal, Required, TypedDict
+from typing import ClassVar, Literal, Required
 
 from pydantic import ConfigDict
-from typing_extensions import ReadOnly
+from typing_extensions import ReadOnly, TypedDict
 
 from betterlite.types.utils.base import ResponseObject
 
