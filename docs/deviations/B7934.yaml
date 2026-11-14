@@ -11,9 +11,11 @@ deviations:
       derives from BaseLiteLLMOpenAIResponseObject on both sides, so it is unchanged.
     why: >-
       Every ported pydantic model under betterlite.types goes on ResponseObject, as B7930 set for
-      the guardrail types. The declared fields, required keys, defaults, Literal values, validation
-      errors and dumps of the declared fields match LiteLLM; only keys LiteLLM never declares
-      differ.
+      the guardrail types. The declared fields, required keys, defaults, Literal values,
+      validation errors and dumps of the declared fields match LiteLLM wherever LiteLLM's own
+      model_dump() works; where a set optional_params makes it raise TypeError, the
+      GuardrailConfigModel[BaseModel] deviation below covers the difference. Only keys LiteLLM
+      never declares differ.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/base.py#L9
   - what: >-
       Fields LiteLLM types as Any or as a bare dict are dict[str, JsonValue], list[JsonValue] or
@@ -33,11 +35,15 @@ deviations:
       LitellmContentFilterGuardrailConfigModel, MCPEndUserPermissionGuardrailConfigModel,
       ModelArmorGuardrailConfigModel, NomaGuardrailConfigModel, NomaV2GuardrailConfigModel,
       OnyxGuardrailConfigModel, OvalixGuardrailConfigModel and the OpenAI moderation models.
+      Pydantic resolves an unbound TypeVar to its BaseModel bound, so optional_params has the same
+      BaseModel | None type, schema and validation on both sides. A config that puts a value in
+      optional_params dumps here ({} for a plain BaseModel value); with LiteLLM's unparametrized
+      base, pydantic 2.14.1 gives that field a mock serializer, and model_dump() raises TypeError
+      because the mock is not an instance of SchemaSerializer.
     why: >-
       basedpyright strict reports a generic base class used without type arguments, and BaseModel
-      is the bound the unparametrized generic resolves to at runtime. Pydantic resolves an unbound
-      TypeVar to its BaseModel bound, so optional_params has the same type, schema and validation
-      on both sides.
+      is the bound the unparametrized generic resolves to at runtime. The parametrized spelling
+      also keeps serialization working where LiteLLM's unparametrized generic crashes.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/hiddenlayer.py#L17
   - what: >-
       The ported models carry no pydantic Field descriptions and no class docstrings, so
