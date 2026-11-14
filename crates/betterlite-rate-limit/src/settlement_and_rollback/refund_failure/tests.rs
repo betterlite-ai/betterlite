@@ -26,7 +26,13 @@ async fn a_failed_refund_is_logged_and_the_rest_still_run() {
     let cache = FakeCache::empty();
     let windows_store = store(Arc::clone(&cache));
     let clock = FixedClock::at(NOW);
-    let settler = settlement(&windows_store, &clock, None, Some(refunds.clone()), false);
+    let settler = settlement(
+        &windows_store,
+        &clock,
+        None,
+        Some(Arc::clone(&refunds)),
+        false,
+    );
     settler
         .refund_counter_increments(&[
             counter_refund("{model:gpt-4}:requests", "1000"),
@@ -61,7 +67,7 @@ async fn a_failed_refund_leaves_the_over_limit_response_standing() {
         &windows_store,
         &clock,
         Some(script),
-        Some(refunds.clone()),
+        Some(Arc::clone(&refunds)),
         false,
     );
     let response = settler

@@ -17,7 +17,13 @@ async fn a_batch_serves_every_group_in_one_round() {
     let cache = FakeCache::empty();
     let windows_store = pipelined_store(Arc::clone(&cache), Arc::clone(&batch));
     let clock = FixedClock::at(NOW);
-    let settler = settlement(&windows_store, &clock, Some(direct.clone()), None, false);
+    let settler = settlement(
+        &windows_store,
+        &clock,
+        Some(Arc::clone(&direct)),
+        None,
+        false,
+    );
     let response = settler
         .atomic_check_and_increment_by_n(
             &[
@@ -54,7 +60,7 @@ async fn a_group_failure_does_not_stop_the_other_groups_reading() {
         &windows_store,
         &clock,
         Some(FakeScript::new(Vec::new())),
-        Some(refunds.clone()),
+        Some(Arc::clone(&refunds)),
         false,
     );
     let response = settler
@@ -85,7 +91,7 @@ async fn an_unreadable_reply_is_that_groups_failure() {
         &windows_store,
         &clock,
         Some(FakeScript::new(Vec::new())),
-        Some(refunds.clone()),
+        Some(Arc::clone(&refunds)),
         false,
     );
     let response = settler

@@ -27,7 +27,7 @@ async fn an_over_limit_group_refunds_the_groups_that_ran_after_it() {
         &windows_store,
         &clock,
         Some(FakeScript::new(Vec::new())),
-        Some(refunds.clone()),
+        Some(Arc::clone(&refunds)),
         false,
     );
     let response = settler
@@ -85,7 +85,7 @@ async fn an_over_limit_group_wins_over_a_coexisting_failure() {
         &windows_store,
         &clock,
         Some(FakeScript::new(Vec::new())),
-        Some(refunds.clone()),
+        Some(Arc::clone(&refunds)),
         false,
     );
     let response = settler

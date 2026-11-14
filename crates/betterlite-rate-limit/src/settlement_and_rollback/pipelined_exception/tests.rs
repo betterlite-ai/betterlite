@@ -22,7 +22,7 @@ async fn a_failed_group_refunds_the_ok_groups_and_falls_back() {
         &windows_store,
         &clock,
         Some(FakeScript::new(Vec::new())),
-        Some(refunds.clone()),
+        Some(Arc::clone(&refunds)),
         false,
     );
     let response = settler
@@ -68,7 +68,7 @@ async fn fail_closed_pipelined_failure_refunds_then_rejects() {
         &windows_store,
         &clock,
         Some(FakeScript::new(Vec::new())),
-        Some(refunds.clone()),
+        Some(Arc::clone(&refunds)),
         true,
     );
     let error = settler
@@ -102,7 +102,7 @@ async fn a_failure_in_the_only_group_falls_back_without_refunds() {
         &windows_store,
         &clock,
         Some(FakeScript::new(Vec::new())),
-        Some(refunds.clone()),
+        Some(Arc::clone(&refunds)),
         false,
     );
     let response = settler

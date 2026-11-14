@@ -19,8 +19,8 @@ async fn an_over_limit_group_refunds_the_groups_before_it() {
     let settler = settlement(
         &windows_store,
         &clock,
-        Some(script.clone()),
-        Some(refunds.clone()),
+        Some(Arc::clone(&script)),
+        Some(Arc::clone(&refunds)),
         false,
     );
     let response = settler
@@ -74,8 +74,8 @@ async fn an_over_limit_first_group_stops_the_loop_without_refunds() {
     let settler = settlement(
         &windows_store,
         &clock,
-        Some(script.clone()),
-        Some(refunds.clone()),
+        Some(Arc::clone(&script)),
+        Some(Arc::clone(&refunds)),
         false,
     );
     let response = settler

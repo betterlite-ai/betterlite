@@ -29,7 +29,13 @@ async fn each_refund_calls_the_guarded_decrement_in_order() {
     let cache = FakeCache::empty();
     let windows_store = store(Arc::clone(&cache));
     let clock = FixedClock::at(NOW);
-    let settler = settlement(&windows_store, &clock, None, Some(refunds.clone()), false);
+    let settler = settlement(
+        &windows_store,
+        &clock,
+        None,
+        Some(Arc::clone(&refunds)),
+        false,
+    );
     settler
         .refund_counter_increments(&[
             counter_refund("{model:gpt-4}:window", "{model:gpt-4}:requests", "1000", 1),
@@ -67,7 +73,13 @@ async fn applied_groups_flatten_into_one_refund_round() {
     let cache = FakeCache::empty();
     let windows_store = store(Arc::clone(&cache));
     let clock = FixedClock::at(NOW);
-    let settler = settlement(&windows_store, &clock, None, Some(refunds.clone()), false);
+    let settler = settlement(
+        &windows_store,
+        &clock,
+        None,
+        Some(Arc::clone(&refunds)),
+        false,
+    );
     settler
         .refund_applied_descriptor_groups(&[
             vec![

@@ -105,7 +105,7 @@ async fn a_descriptor_without_counters_is_filtered_before_dispatch() {
     let cache = FakeCache::empty();
     let windows = store(Arc::clone(&cache));
     let clock = FixedClock::at(NOW);
-    let settler = settlement(&windows, &clock, Some(script.clone()), None, false);
+    let settler = settlement(&windows, &clock, Some(Arc::clone(&script)), None, false);
     let response = settler
         .atomic_check_and_increment_by_n(
             &[

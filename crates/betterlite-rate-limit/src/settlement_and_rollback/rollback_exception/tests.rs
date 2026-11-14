@@ -21,8 +21,8 @@ async fn a_failed_script_refunds_applied_groups_and_falls_back_to_memory() {
     let settler = settlement(
         &windows_store,
         &clock,
-        Some(script.clone()),
-        Some(refunds.clone()),
+        Some(Arc::clone(&script)),
+        Some(Arc::clone(&refunds)),
         false,
     );
     let response = settler
@@ -69,7 +69,7 @@ async fn fail_closed_rejects_after_the_refunds_and_before_the_fallback() {
         &windows_store,
         &clock,
         Some(script),
-        Some(refunds.clone()),
+        Some(Arc::clone(&refunds)),
         true,
     );
     let error = settler
@@ -103,7 +103,7 @@ async fn a_failure_before_any_increment_refunds_nothing() {
         &windows_store,
         &clock,
         Some(script),
-        Some(refunds.clone()),
+        Some(Arc::clone(&refunds)),
         false,
     );
     let response = settler

@@ -15,7 +15,13 @@ async fn one_descriptor_settles_both_counters_from_the_script() {
     let cache = FakeCache::empty();
     let windows_store = store(Arc::clone(&cache));
     let clock = FixedClock::at(NOW);
-    let settler = settlement(&windows_store, &clock, Some(script.clone()), None, false);
+    let settler = settlement(
+        &windows_store,
+        &clock,
+        Some(Arc::clone(&script)),
+        None,
+        false,
+    );
     let response = settler
         .atomic_check_and_increment_by_n(
             &[descriptor("model", "gpt-4", Some(10), Some(100))],
@@ -75,7 +81,7 @@ async fn an_over_limit_descriptor_refunds_nothing() {
         &windows_store,
         &clock,
         Some(script),
-        Some(refunds.clone()),
+        Some(Arc::clone(&refunds)),
         false,
     );
     settler
@@ -118,7 +124,7 @@ async fn a_failing_single_descriptor_falls_back_without_refunds() {
         &windows_store,
         &clock,
         Some(script),
-        Some(refunds.clone()),
+        Some(Arc::clone(&refunds)),
         false,
     );
     let response = settler

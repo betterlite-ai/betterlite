@@ -23,7 +23,13 @@ async fn every_group_is_enqueued_in_one_batch_round() {
     let cache = FakeCache::empty();
     let windows_store = pipelined_store(Arc::clone(&cache), Arc::clone(&batch));
     let clock = FixedClock::at(NOW);
-    let settler = settlement(&windows_store, &clock, Some(direct.clone()), None, false);
+    let settler = settlement(
+        &windows_store,
+        &clock,
+        Some(Arc::clone(&direct)),
+        None,
+        false,
+    );
     let response = settler
         .atomic_check_and_increment_by_n(
             &[

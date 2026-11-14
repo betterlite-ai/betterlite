@@ -17,7 +17,7 @@ async fn a_configured_script_serves_the_lua_path() {
     let cache = FakeCache::empty();
     let windows = store(Arc::clone(&cache));
     let clock = FixedClock::at(NOW);
-    let settler = settlement(&windows, &clock, Some(script.clone()), None, false);
+    let settler = settlement(&windows, &clock, Some(Arc::clone(&script)), None, false);
     let response = settler
         .atomic_check_and_increment_by_n(
             &[descriptor("model", "gpt-4", Some(10), None)],

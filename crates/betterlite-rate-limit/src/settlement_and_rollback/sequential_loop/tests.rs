@@ -30,7 +30,13 @@ async fn each_descriptor_runs_its_own_script_call_in_order() {
     let cache = FakeCache::empty();
     let windows_store = store(Arc::clone(&cache));
     let clock = FixedClock::at(NOW);
-    let settler = settlement(&windows_store, &clock, Some(script.clone()), None, false);
+    let settler = settlement(
+        &windows_store,
+        &clock,
+        Some(Arc::clone(&script)),
+        None,
+        false,
+    );
     let response = settler
         .atomic_check_and_increment_by_n(
             &[
@@ -93,7 +99,13 @@ async fn the_loop_stops_at_the_first_over_limit_group() {
     let cache = FakeCache::empty();
     let windows_store = store(Arc::clone(&cache));
     let clock = FixedClock::at(NOW);
-    let settler = settlement(&windows_store, &clock, Some(script.clone()), None, false);
+    let settler = settlement(
+        &windows_store,
+        &clock,
+        Some(Arc::clone(&script)),
+        None,
+        false,
+    );
     let response = settler
         .atomic_check_and_increment_by_n(
             &[
@@ -120,7 +132,13 @@ async fn one_group_is_one_script_call() {
     let cache = FakeCache::empty();
     let windows_store = store(Arc::clone(&cache));
     let clock = FixedClock::at(NOW);
-    let settler = settlement(&windows_store, &clock, Some(script.clone()), None, false);
+    let settler = settlement(
+        &windows_store,
+        &clock,
+        Some(Arc::clone(&script)),
+        None,
+        false,
+    );
     let response = settler
         .atomic_check_and_increment_by_n(
             &[descriptor("model", "gpt-4", Some(10), None)],
