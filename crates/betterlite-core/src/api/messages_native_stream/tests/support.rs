@@ -306,13 +306,7 @@ impl Harness {
         let slots = Arc::new(StreamSlots::default());
         let logging_obj = logging_object();
         let deps = stream_deps(Arc::clone(&seams), Arc::clone(&worker), Arc::clone(&slots));
-        let setup = relay_setup(
-            limits,
-            boundaries,
-            Arc::clone(&registry),
-            deps,
-            Arc::clone(&logging_obj),
-        );
+        let setup = relay_setup(limits, boundaries, registry, deps, Arc::clone(&logging_obj));
         let handle = start_relay(source, setup);
         let harness = Self {
             seams,
@@ -519,7 +513,7 @@ pub(super) fn pump_of(harness: &Harness) -> Arc<TaskTracker> {
 
 // The pump claims a drain slot on another worker thread, so the test waits for that claim
 pub(super) async fn wait_for_drains(registry: &StreamRegistry, expected: usize) {
-    for _ in 0..1000 {
+    for _ in 0_u16..1_000_u16 {
         if registry.sizes().detached_drains == expected {
             return;
         }
