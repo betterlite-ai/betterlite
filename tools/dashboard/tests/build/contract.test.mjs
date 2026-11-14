@@ -162,7 +162,7 @@ test("the build patch adds a deterministic build id and leaves the export settin
   const patch = await fs.readFile(path.join(REPO_ROOT, "ui/dashboard/patches/10-build.patch"), "utf8");
   const added = (await addedLines("10-build.patch")).join("\n");
   assert.match(added, /generateBuildId: async \(\) => process\.env\.BETTERLITE_BUILD_ID \?\? null,/);
-  for (const setting of ["assetPrefix", "basePath", "trailingSlash", "output", "removeConsole"]) {
+  for (const setting of ["assetPrefix", "basePath", "trailingSlash", "output", "removeConsole", "images", "unoptimized"]) {
     assert.equal(added.includes(setting), false, `${setting} keeps its upstream value`);
     assert.equal(new RegExp(`^-.*${setting}`, "m").test(patch), false, `${setting} is not removed`);
   }
