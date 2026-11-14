@@ -8,7 +8,7 @@ from litellm.llms.vertex_ai.audio_transcription.realtime_transformation import (
 from pydantic import JsonValue as Json
 from websockets.exceptions import ConnectionClosed
 
-_TURN_RESULT, _TURN_DISCARDED_EVENT, _STREAM_FAILURE, _CLOSED, _RECOGNIZE_STREAM = realtime_backend._TurnResult, realtime_backend._TurnDiscardedEvent, realtime_backend._StreamFailure, realtime_backend._Closed, realtime_backend._RecognizeStream  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/realtime_backend.py#L82-L96
+_TURN_RESULT, _TURN_DISCARDED_EVENT, _STREAM_FAILURE, _CLOSED, _RECOGNIZE_STREAM = realtime_backend._TurnResult, realtime_backend._TurnDiscardedEvent, realtime_backend._StreamFailure, realtime_backend._Closed, realtime_backend._RecognizeStream  # type: ignore[misc]  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/realtime_backend.py#L82-L96
 
 
 class Input(TypedDict):
