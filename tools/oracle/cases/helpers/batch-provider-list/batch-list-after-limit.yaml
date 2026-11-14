@@ -1,0 +1,24 @@
+kind: helper
+name: batch-list-after-limit
+call:
+  batch_provider_list:
+    request:
+      provider: openai
+      after: cursor-after
+      limit: 25
+      api_key: request-key
+      api_base: https://request.example/v1
+      organization: request-org
+      timeout: 12.5
+      max_retries: 3
+    litellm_settings:
+      api_key: global-key
+      openai_key: openai-key
+      api_base: https://global.example/v1
+      organization: global-org
+    environment:
+      OPENAI_API_KEY: env-key
+      OPENAI_BASE_URL: https://env.example/v1
+      OPENAI_ORGANIZATION: env-org
+env: {}
+compare: {ignore: []}
