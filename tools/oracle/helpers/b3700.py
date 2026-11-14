@@ -151,7 +151,7 @@ def oldest_record(value: Json) -> Json:
     match value:
         case [dict() as record, *_]:
             return visible_record(record)
-        case None | bool() | int() | float() | str() | list():
+        case None | bool() | int() | float() | str() | list() | dict():
             return None
 
 
