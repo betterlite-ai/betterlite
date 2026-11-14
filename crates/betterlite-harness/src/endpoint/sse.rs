@@ -1,6 +1,4 @@
-use crate::types::JsonObject;
-
-use super::usage::{child_object, usage_from_mapping};
+use super::usage::{Lenient, Payload, usage_from_mapping};
 
 #[derive(Debug, Default)]
 pub struct SSEUsageParser {
@@ -36,30 +34,34 @@ impl SSEUsageParser {
             return;
         };
         let payload = payload.trim_ascii();
-        let Ok(event) = serde_json::from_slice::<JsonObject>(payload) else {
+        let Ok(event) = serde_json::from_slice::<Payload>(payload) else {
             return;
         };
         self.absorb(&event);
     }
 
-    fn absorb(&mut self, event: &JsonObject) {
-        match event.get("type").and_then(|value| value.as_str()) {
-            Some("message_start") => {
-                if let Some(message) = child_object(event, "message") {
-                    self.set(usage_of(&message));
-                }
-            }
-            Some("message_delta") => self.set(usage_of(event)),
-            Some("response.completed") => {
-                if let Some(response) = child_object(event, "response") {
-                    self.set(usage_of(&response));
-                }
-            }
-            Some(_) | None => {
-                if event.get("usage").is_some_and(|value| value.is_object()) {
-                    self.set(usage_of(event));
-                }
-            }
+    // message_delta carries its usage at the top level like any other event, so it takes the last arm.
+    fn absorb(&mut self, event: &Payload) {
+        let kind = event
+            .kind
+            .as_ref()
+            .and_then(Lenient::value)
+            .map_or("", String::as_str);
+        let counts = match kind {
+            "message_start" => event
+                .message
+                .as_ref()
+                .and_then(Lenient::value)
+                .and_then(|message| message.usage.as_ref()),
+            "response.completed" => event
+                .response
+                .as_ref()
+                .and_then(Lenient::value)
+                .and_then(|response| response.usage.as_ref()),
+            _ => event.usage.as_ref(),
+        };
+        if let Some(counts) = counts.and_then(Lenient::value) {
+            self.set(usage_from_mapping(counts));
         }
     }
 
@@ -72,11 +74,4 @@ impl SSEUsageParser {
             self.output_tokens = tokens.1;
         }
     }
-}
-
-fn usage_of(event: &JsonObject) -> (u64, u64) {
-    let Some(usage) = child_object(event, "usage") else {
-        return (0, 0);
-    };
-    usage_from_mapping(&usage)
 }

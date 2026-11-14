@@ -23,7 +23,7 @@ use super::random::{RandomBytes, SystemRandom};
 use super::redact::sanitize;
 use super::route::{POST_ROUTES, ROUTE_PREFIXES, Route, route_of};
 use super::sse::SSEUsageParser;
-use super::usage::{UsageTracker, usage_from_body, usage_from_mapping};
+use super::usage::{TokenCounts, UsageTracker, usage_from_body, usage_from_mapping};
 use super::{EndpointError, EndpointSetup, HARNESS_SESSION_TOKEN_BYTES, ModelEndpoint};
 use crate::context::GatewayTarget;
 use crate::types::{Harness, JsonObject, Usage};
@@ -225,7 +225,7 @@ fn usage_from_mapping_reads_both_field_families(
     #[case] input_tokens: u64,
     #[case] output_tokens: u64,
 ) {
-    let usage = object(json);
+    let usage = serde_json::from_str::<TokenCounts>(json).unwrap();
     let (input, output) = usage_from_mapping(&usage);
     assert_eq!(input, input_tokens);
     assert_eq!(output, output_tokens);
@@ -248,7 +248,7 @@ fn usage_from_body_reads_the_json_response(
     #[case] output_tokens: u64,
 ) {
     assert_eq!(
-        usage_from_body(&object(json)),
+        usage_from_body(json.as_bytes()),
         (input_tokens, output_tokens)
     );
 }
@@ -314,10 +314,20 @@ fn sse_parser_skips_malformed_and_non_object_events() {
     let tokens = parse(
         "data: {not json}\n\
          data: [1,2]\n\
+         data: [null,null,null,{\"input_tokens\":5}]\n\
          data: \"text\"\n\
          data: {\"input_tokens\":4}\n",
     );
     assert_eq!(tokens, (4, 0));
+}
+
+#[test]
+fn sse_parser_reads_usage_of_an_event_with_a_non_text_type() {
+    let tokens = parse(
+        "data: {\"type\":5,\"usage\":{\"input_tokens\":3}}\n\
+         data: {\"type\":null,\"message\":7,\"usage\":{\"output_tokens\":2}}\n",
+    );
+    assert_eq!(tokens, (3, 2));
 }
 
 #[test]
@@ -594,7 +604,7 @@ fn gateway_headers_escape_non_ascii_metadata_so_the_header_stays_valid() {
         gateway_headers(&HeaderMap::new(), &gateway(), Harness::Codex, &metadata).unwrap();
     assert_eq!(
         header_text(&outgoing, "x-litellm-spend-logs-metadata"),
-        r#"{"team": "caf\u00e9 \u2713"}"#
+        r#"{"team": "\u00fc \u2713"}"#
     );
 }
 
