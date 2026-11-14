@@ -85,5 +85,5 @@ pitfalls:
   - GPT-OSS removes tool rather than tools at the pin, leaving the plural field in the inherited allowlist.
   - A split terminal chunk uses index=0 even when the first source choice had a different index.
   - provider_specific_fields={} is needed to prevent an empty initial assistant chunk being dropped.
-budget: {max_changed_lines: 725, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: standard

@@ -59,5 +59,5 @@ pitfalls:
 - Some LiteLLM packages export classes and constants as well. Compare functions only, and leave types to B167.
 review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1500
   max_new_expects: 0

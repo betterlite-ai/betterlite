@@ -84,8 +84,10 @@ enum Command {
         about = "Check task prerequisites without running builds, tests, coverage or mutants"
     )]
     Preflight { task: String },
-    #[command(about = "Check account backoff before preparing a checkout; starts no agents")]
-    Availability,
+    #[command(
+        about = "Check account backoff before preparing a checkout, and with a task whether a runner left on its ladder can start; starts no agents"
+    )]
+    Availability { task: Option<String> },
     #[command(about = "Run every check of a task; exit 1 when any check fails")]
     Run {
         task: String,
@@ -269,8 +271,8 @@ fn run_command(
         Command::Affected { edited, shard } => {
             Ok((affected::affected(&development.root, edited, shard)?, true))
         }
-        Command::Availability => {
-            dispatch::availability(development)?;
+        Command::Availability { task } => {
+            dispatch::availability(development, task.as_deref())?;
             Ok((vec!["a worker vendor is available".to_owned()], true))
         }
         Command::Validate => validate_command(development),
