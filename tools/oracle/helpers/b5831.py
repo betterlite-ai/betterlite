@@ -86,6 +86,7 @@ class ChatMessagesStep(TypedDict):
 class CompletionParams(TypedDict, total=False):
     temperature: float
     stop: list[str]
+    prompt: str
 
 
 class CompletionStep(TypedDict):

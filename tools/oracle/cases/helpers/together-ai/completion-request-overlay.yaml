@@ -16,6 +16,10 @@ call:
     - model: together/llama
       messages:
       - {role: user, content: hello}
+      optional_params: {prompt: other prompt}
+    - model: together/llama
+      messages:
+      - {role: user, content: hello}
       optional_params: {stop: [one, two]}
     rerank_requests: []
     rerank_responses: []
