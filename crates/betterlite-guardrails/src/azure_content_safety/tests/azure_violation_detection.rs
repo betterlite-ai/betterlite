@@ -1,5 +1,6 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use jiff::Timestamp;
 use reqwest::StatusCode;
 use rstest::rstest;
 
@@ -241,6 +242,64 @@ async fn gives_up_after_three_retries_with_the_last_status() {
     let error = hook.test_violation("hello", None).await.unwrap_err();
     assert_eq!(error.status_code(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(server.seen.lock().unwrap().len(), 4);
+}
+
+#[tokio::test]
+async fn waits_the_provider_delay_before_sending_again() {
+    let throttled = Reply {
+        status: 503,
+        payload: "{}".to_owned(),
+        headers: vec![("retry-after-ms", "300")],
+    };
+    let server = mock_with(vec![throttled, reply(200, HATEFUL)], None).await;
+    let hook = legacy(&server.base, None);
+    let started = Instant::now();
+    let error = hook.test_violation("hello", None).await.unwrap_err();
+    let waited = started.elapsed();
+    assert!(matches!(error, AzureContentSafetyError::Violation { .. }));
+    assert_eq!(server.seen.lock().unwrap().len(), 2);
+    assert!(
+        waited >= Duration::from_millis(300),
+        "the retry waited {waited:?} instead of the 300 ms the provider asked for"
+    );
+}
+
+#[tokio::test]
+async fn backs_off_between_retryable_server_errors() {
+    let server = mock(503, "{}").await;
+    let mut hook = legacy(&server.base, None);
+    hook.retry_backoff_factor = Duration::from_millis(50);
+    let started = Instant::now();
+    let error = hook.test_violation("hello", None).await.unwrap_err();
+    let waited = started.elapsed();
+    assert_eq!(error.status_code(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(server.seen.lock().unwrap().len(), 4);
+    assert!(
+        waited >= Duration::from_millis(300),
+        "the three retries waited {waited:?}, less than the 300 ms the backoff asks for"
+    );
+}
+
+#[tokio::test]
+async fn reads_the_injected_clock_for_a_retry_after_date() {
+    let throttled = Reply {
+        status: 503,
+        payload: "{}".to_owned(),
+        headers: vec![("retry-after", "Fri, 02 Jan 2026 03:04:06 GMT")],
+    };
+    let server = mock_with(vec![throttled, reply(200, HATEFUL)], None).await;
+    let mut hook = legacy(&server.base, None);
+    // Only a clock one second before the date turns it into a delay worth waiting.
+    hook.clock = || Timestamp::from_second(1_767_323_045).unwrap();
+    let started = Instant::now();
+    let error = hook.test_violation("hello", None).await.unwrap_err();
+    let waited = started.elapsed();
+    assert!(matches!(error, AzureContentSafetyError::Violation { .. }));
+    assert_eq!(server.seen.lock().unwrap().len(), 2);
+    assert!(
+        waited >= Duration::from_millis(900),
+        "the retry waited {waited:?} instead of the second the date asked for"
+    );
 }
 
 #[tokio::test]
