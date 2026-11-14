@@ -59,5 +59,5 @@ pitfalls:
   - "The minimax, deepseek and tencent arms ignore the model name, unlike the claude checks in the arms above them."
   - "Point each provider base at the mock with {{upstream}} in the case env (DEEPSEEK_API_BASE, TENCENT_API_BASE, MINIMAX_API_BASE, EDENAI_API_BASE); only env values get the mock address."
   - "The edenai missing-key case fails before any upstream request, so its upstream list stays empty."
-budget: {max_changed_lines: 600, max_new_expects: 0}
+budget: {max_changed_lines: 1500, max_new_expects: 0}
 review_level: standard

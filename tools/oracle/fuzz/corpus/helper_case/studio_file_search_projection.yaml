@@ -1,0 +1,34 @@
+kind: helper
+name: studio-file-search-seed-projection
+call:
+  studio_file_search:
+    calls:
+      - function: capabilities
+      - function: environment
+        headers: {Content-Type: application/json, x-goog-api-key: caller}
+        params: {api_key: explicit}
+        environment: {GOOGLE_API_KEY: env}
+      - function: url
+        api_base: "https://studio.example//"
+        environment: {GEMINI_API_BASE: "https://ignored.example"}
+      - function: search
+        vector_store_id: fileSearchStores/seed
+        query: [alpha, beta]
+        filters: {genre: drama}
+        max_num_results: 1
+        api_key: seed-key
+        model: gemini/gemini-2.5-flash
+        environment: {}
+      - function: search_reply
+        status: 200
+        body: '{"candidates":[{"groundingMetadata":{"groundingChunks":[{"retrievedContext":{"text":"passage","uri":"files/seed","title":"seed.txt"}}],"groundingSupports":[{"segment":{"text":"answer"},"confidenceScores":[0.5]}]}}]}'
+        query: seed query
+      - function: create
+        name: Seed
+        api_base: "https://studio.example"
+      - function: create_reply
+        status: 200
+        body: '{"name":"fileSearchStores/seed","displayName":"Seed","createTime":"2024-01-02T03:04:05Z"}'
+        timezone: UTC
+env: {}
+compare: {ignore: []}

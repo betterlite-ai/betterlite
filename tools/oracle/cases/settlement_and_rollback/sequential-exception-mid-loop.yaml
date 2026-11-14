@@ -1,0 +1,36 @@
+kind: helper
+name: sequential-exception-mid-loop
+call:
+  b3034:
+    descriptors:
+      - key: model
+        value: gpt-4
+        rate_limit:
+          requests_per_unit: 10
+          tokens_per_unit: null
+          window_size: null
+      - key: model
+        value: gpt-3.5
+        rate_limit:
+          requests_per_unit: 10
+          tokens_per_unit: null
+          window_size: null
+    increments:
+      - requests: 1
+        tokens: 0
+      - requests: 1
+        tokens: 0
+    window_size: 30
+    now: 1700000000
+    pipelined: false
+    fail_closed: false
+    cache: {}
+    replies:
+      - values: [0, 4, 100]
+      - failure: connection reset
+    refund_replies:
+      - values: [1]
+env:
+  LITELLM_RATE_LIMIT_WINDOW_SIZE: "30"
+compare:
+  ignore: []

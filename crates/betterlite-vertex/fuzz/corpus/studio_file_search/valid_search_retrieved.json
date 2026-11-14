@@ -1,0 +1,1 @@
+{"candidates":[{"groundingMetadata":{"groundingChunks":[{"retrievedContext":{"text":"passage","uri":"files/a","title":"a.txt"}},{"retrievedContext":{"uri":"","title":""}}],"groundingSupports":[{"segment":{"text":"answer"},"groundingChunkIndices":[0,1],"confidenceScores":[0.5,0.75]}]}}]}
