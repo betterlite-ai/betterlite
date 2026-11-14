@@ -1,0 +1,5 @@
+task: B8219
+deviations:
+  - what: The initializer returns ContentFilterArgs and registers nothing. LiteLLM builds a ContentFilterGuardrail and adds it to litellm.logging_callback_manager.
+    why: The class and its matching are other tasks (B8773 and B3693 to B3695) and the initializer registry and callback registration are B3682's, as with B3681. The struct carries the same data the class would receive.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/__init__.py#L53
