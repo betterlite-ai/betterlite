@@ -2,10 +2,9 @@ use std::time::Duration;
 
 use chrono::DateTime;
 
-use crate::azure_arc_identity::MetadataResponse;
+use crate::azure_arc_identity::{MetadataRequest, MetadataResponse};
 
 use super::error::ManagedIdentityError;
-use super::imds::ImdsRequest;
 use super::runtime::ImdsIo;
 
 #[derive(Debug, Clone, Copy)]
@@ -106,7 +105,7 @@ fn sleep(io: &ImdsIo<'_>, delay: Duration) {
 // the IMDS policy picks its backoff factor from the last response and keeps it for later connection errors
 pub fn send(
     io: &ImdsIo<'_>,
-    request: &ImdsRequest,
+    request: &MetadataRequest,
     budget: RetryBudget,
 ) -> Result<MetadataResponse, ManagedIdentityError> {
     let mut counters = Counters {

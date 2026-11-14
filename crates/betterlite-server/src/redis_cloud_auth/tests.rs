@@ -17,7 +17,7 @@ use axum::extract::State;
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::any;
-use betterlite_azure::azure_arc_identity::{ArcHost, ArcPlatform, ArcRequest, ArcTransport};
+use betterlite_azure::azure_arc_identity::{ArcHost, ArcPlatform, ArcTransport, MetadataRequest};
 use betterlite_azure::azure_certificate::assertion::RandomIds;
 use betterlite_azure::azure_certificate::credential::StdFiles;
 use betterlite_azure::azure_client_secret::transport::{
@@ -27,7 +27,7 @@ use betterlite_azure::azure_default_chain::environment::ChainEnvironment;
 use betterlite_azure::azure_default_chain::grant::ChainToken;
 use betterlite_azure::azure_hosted_identity::request::{HostedRequest, HostedTransport};
 use betterlite_azure::azure_managed_identity::environment::ManagedIdentityEnvironment;
-use betterlite_azure::azure_managed_identity::imds::{ImdsRequest, ImdsTransport};
+use betterlite_azure::azure_managed_identity::imds::ImdsTransport;
 use betterlite_azure::azure_managed_identity::runtime::{FsTokenFiles, Scheduler};
 use betterlite_azure::azure_username_password::transport::{
     HttpRequest as PasswordRequest, Transport as PasswordTransport,

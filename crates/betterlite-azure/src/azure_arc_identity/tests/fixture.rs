@@ -8,8 +8,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::azure_arc_identity::error::ArcIdentityError;
 use crate::azure_arc_identity::{
-    ArcAccessToken, ArcHost, ArcIdentity, ArcPlatform, ArcRequest, ArcTransport, MetadataResponse,
-    acquire_arc_token,
+    ArcAccessToken, ArcHost, ArcIdentity, ArcPlatform, ArcTransport, MetadataRequest,
+    MetadataResponse, acquire_arc_token,
 };
 
 pub(super) const ENDPOINT: &str = "http://localhost:40342/metadata/identity/oauth2/token";
@@ -139,21 +139,17 @@ impl FixtureTransport {
 }
 
 impl ArcTransport for FixtureTransport {
-    fn get(&self, request: &ArcRequest) -> io::Result<MetadataResponse> {
+    fn get(&self, request: &MetadataRequest) -> io::Result<MetadataResponse> {
         self.requests
             .lock()
             .map_err(|error| io::Error::other(error.to_string()))?
             .push(Recorded {
                 url: request.url.clone(),
-                query: request
-                    .query
-                    .iter()
-                    .map(|(name, value)| ((*name).to_owned(), value.clone()))
-                    .collect(),
+                query: request.query.clone(),
                 headers: request
                     .headers
                     .iter()
-                    .map(|(name, value)| ((*name).to_owned(), value.expose_secret().to_owned()))
+                    .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
                     .collect(),
             });
         self.replies

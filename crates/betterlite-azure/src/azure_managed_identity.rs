@@ -15,7 +15,7 @@ use std::io::Result as IoResult;
 
 use secrecy::SecretString;
 
-use crate::azure_arc_identity::{ArcHost, ArcRequest, ArcTransport, MetadataResponse};
+use crate::azure_arc_identity::{ArcHost, ArcTransport, MetadataRequest, MetadataResponse};
 use crate::azure_client_secret::token::AccessToken;
 use crate::azure_hosted_identity::credential::{
     CloudShellCredential, HostedCredential, HostedIdentity,
@@ -50,7 +50,7 @@ impl From<AccessToken> for ManagedIdentityToken {
 
 // a fixture transport reaches the arc protocol behind a trait object; the generic seam needs the forwarding impl
 impl ArcTransport for &dyn ArcTransport {
-    fn get(&self, request: &ArcRequest) -> IoResult<MetadataResponse> {
+    fn get(&self, request: &MetadataRequest) -> IoResult<MetadataResponse> {
         (*self).get(request)
     }
 }

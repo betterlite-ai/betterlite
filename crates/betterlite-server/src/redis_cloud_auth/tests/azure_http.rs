@@ -188,11 +188,11 @@ async fn azure_http_the_imds_transport_returns_the_status_and_headers() {
     let reply = run_blocking(move || {
         ImdsTransport::get(
             &transport,
-            &ImdsRequest {
+            &MetadataRequest {
                 url,
                 query: vec![("resource".to_owned(), "https://redis.azure.com/".to_owned())],
-                headers: vec![("Metadata".to_owned(), "true".to_owned())],
-                timeout_seconds: 2,
+                headers: vec![("Metadata".to_owned(), SecretString::from("true"))],
+                timeout: Duration::from_secs(2),
             },
         )
     })
@@ -221,16 +221,17 @@ async fn azure_http_the_arc_transport_carries_its_secret_header() {
     let reply = run_blocking(move || {
         ArcTransport::get(
             &transport,
-            &ArcRequest {
+            &MetadataRequest {
                 url,
-                query: [
-                    ("api-version", "2020-06-01".to_owned()),
-                    ("resource", "r".to_owned()),
+                query: vec![
+                    ("api-version".to_owned(), "2020-06-01".to_owned()),
+                    ("resource".to_owned(), "r".to_owned()),
                 ],
                 headers: vec![(
-                    "Authorization",
+                    "Authorization".to_owned(),
                     SecretString::from("Basic secret".to_owned()),
                 )],
+                timeout: Duration::from_secs(5),
             },
         )
     })
@@ -361,14 +362,14 @@ async fn azure_http_a_repeated_request_header_keeps_every_value() {
     run_blocking(move || {
         ImdsTransport::get(
             &transport,
-            &ImdsRequest {
+            &MetadataRequest {
                 url,
                 query: Vec::new(),
                 headers: vec![
-                    ("x-forwarded".to_owned(), "first".to_owned()),
-                    ("x-forwarded".to_owned(), "second".to_owned()),
+                    ("x-forwarded".to_owned(), SecretString::from("first")),
+                    ("x-forwarded".to_owned(), SecretString::from("second")),
                 ],
-                timeout_seconds: 2,
+                timeout: Duration::from_secs(2),
             },
         )
     })
@@ -395,11 +396,11 @@ async fn azure_http_a_response_header_outside_ascii_is_read_as_latin_1() {
     let reply = run_blocking(move || {
         ImdsTransport::get(
             &transport,
-            &ImdsRequest {
+            &MetadataRequest {
                 url,
                 query: Vec::new(),
                 headers: Vec::new(),
-                timeout_seconds: 2,
+                timeout: Duration::from_secs(2),
             },
         )
     })
