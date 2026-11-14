@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
 
+use serde::Serialize;
+
 use betterlite_harness::cli_handler::setup::copy_skills;
 use betterlite_harness::context::SessionContext;
 use betterlite_harness::deepagents::sandbox_backend::{TOOL_FILTER_NAME, ToolFilterMiddleware};
@@ -20,8 +22,6 @@ use super::DeepAgentsHandler;
 use super::graph::{AgentRuntime, AgentSpec};
 
 const MIDDLEWARE_KEY: &str = "middleware";
-const MIDDLEWARE_NAME_KEY: &str = "name";
-const MIDDLEWARE_BLOCKED_KEY: &str = "blocked";
 
 pub(super) async fn start<C, R, S>(
     handler: &mut DeepAgentsHandler<C, R>,
@@ -33,6 +33,7 @@ where
     S: Sandbox,
 {
     handler.config.validate_environment(context)?;
+    handler.runtime.load_deps()?;
     let blocked = blocked_tools(
         context.settings.permissions,
         &context.settings.disable_tools,
@@ -98,28 +99,16 @@ where
     let mut combined = Vec::new();
     if !blocked.is_empty() && !has_general {
         let mut general = default_subagent;
-        let filter = serde_json::to_value([filter_entry(blocked)?])
-            .map_err(|source| HarnessError::StateEncode { source })?;
+        let filter = serde_json::to_value([ToolFilterEntry {
+            name: TOOL_FILTER_NAME,
+            blocked,
+        }])
+        .map_err(|source| HarnessError::StateEncode { source })?;
         general.insert(MIDDLEWARE_KEY.to_owned(), filter);
         combined.push(general);
     }
     combined.extend(user_subagents);
     Ok(combined)
-}
-
-// the runtime turns this one entry into deepagents' ToolFilterMiddleware for the default subagent
-fn filter_entry(blocked: &BTreeSet<String>) -> Result<JsonObject, HarnessError> {
-    let mut entry = JsonObject::new();
-    entry.insert(
-        MIDDLEWARE_NAME_KEY.to_owned(),
-        serde_json::to_value(TOOL_FILTER_NAME)
-            .map_err(|source| HarnessError::StateEncode { source })?,
-    );
-    entry.insert(
-        MIDDLEWARE_BLOCKED_KEY.to_owned(),
-        serde_json::to_value(blocked).map_err(|source| HarnessError::StateEncode { source })?,
-    );
-    Ok(entry)
 }
 
 async fn install_skills<S>(context: &SessionContext<S>) -> Result<Option<Vec<String>>, HarnessError>
@@ -142,4 +131,11 @@ fn skip_tools<S>(context: &SessionContext<S>) -> BTreeSet<String> {
         .and_then(|schema| schema.get("title"))
         .and_then(|title| title.as_str())
         .map_or_else(BTreeSet::new, |title| BTreeSet::from([title.to_owned()]))
+}
+
+// the runtime turns this entry back into deepagents' ToolFilterMiddleware for the default subagent
+#[derive(Serialize)]
+struct ToolFilterEntry<'a> {
+    name: &'static str,
+    blocked: &'a BTreeSet<String>,
 }

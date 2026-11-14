@@ -63,6 +63,8 @@ pub trait Graph: Send + Sync {
 pub trait AgentRuntime: Send + Sync {
     type Graph: Graph;
 
+    // fails when the runtime's own dependencies are missing, before any spec work, as LiteLLM's load_deps raises
+    fn load_deps(&self) -> Result<(), HarnessError>;
     fn build_agent(&self, spec: AgentSpec) -> Result<Self::Graph, HarnessError>;
     fn general_subagent(&self) -> JsonObject;
     fn openai_messages(&self, messages: &[Message]) -> Vec<JsonObject>;
@@ -77,11 +79,16 @@ pub struct MissingGraph;
 impl AgentRuntime for MissingRuntime {
     type Graph = MissingGraph;
 
-    fn build_agent(&self, _spec: AgentSpec) -> Result<MissingGraph, HarnessError> {
+    fn load_deps(&self) -> Result<(), HarnessError> {
         Err(HarnessError::InstallFailed(io::Error::new(
             io::ErrorKind::NotFound,
             INSTALL_HINT,
         )))
+    }
+
+    fn build_agent(&self, _spec: AgentSpec) -> Result<MissingGraph, HarnessError> {
+        self.load_deps()?;
+        Ok(MissingGraph)
     }
 
     fn general_subagent(&self) -> JsonObject {

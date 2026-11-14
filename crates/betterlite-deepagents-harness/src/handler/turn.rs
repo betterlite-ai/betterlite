@@ -43,7 +43,17 @@ where
         let graph = handler.graph.as_ref().ok_or(HarnessError::SessionClosed)?;
         let usage_callback = handler.runtime.usage_callback(context.settings.model.clone());
         let run_config = handler.run_config(context, usage_callback.clone());
-        let mut input = GraphInput::Messages(user_message(prompt));
+        let mut input = GraphInput::Messages(Message {
+            kind: MessageKind::Human,
+            content: Content::Text(prompt.to_owned()),
+            reasoning_content: String::new(),
+            tool_calls: Vec::new(),
+            tool_call_id: String::new(),
+            name: None,
+            is_error: false,
+            usage: MessageUsage::default(),
+            reported_cost: None,
+        });
         loop {
             let mut state = TurnState::default();
             let mut parts = graph.stream(input, run_config.clone());
@@ -65,20 +75,6 @@ where
             input = GraphInput::Resume(resume);
         }
         finish_turn(context, &graph.state(run_config), usage_callback.as_ref())?;
-    }
-}
-
-fn user_message(prompt: &str) -> Message {
-    Message {
-        kind: MessageKind::Human,
-        content: Content::Text(prompt.to_owned()),
-        reasoning_content: String::new(),
-        tool_calls: Vec::new(),
-        tool_call_id: String::new(),
-        name: None,
-        is_error: false,
-        usage: MessageUsage::default(),
-        reported_cost: None,
     }
 }
 

@@ -12,7 +12,10 @@ deviations:
   - what: The structured-output tool that update events skip is named by the output schema's `title`, not by the Python class `__name__`.
     why: SessionSettings holds a JSON schema, not a class. A pydantic model's schema title is its class name.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/deepagents_handler.py#L142
-  - what: AgentRuntime has a fourth method, `usage_callback(cost_model) -> Option<UsageCallback>`, which the task text does not list.
+  - what: AgentRuntime has a `load_deps` method that `start` calls right after `validate_environment`, and MissingRuntime fails it with InstallFailed.
+    why: LiteLLM calls `load_deps()` before building the agent, so a session without the runtime fails with HarnessInstallFailed before any model, skill or subagent work; the task text names only build_agent for the install failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/deepagents_handler.py#L119-L121
+  - what: AgentRuntime has another method, `usage_callback(cost_model) -> Option<UsageCallback>`, which the task text does not list.
     why: LiteLLM builds `deps.backend.UsageCallback(ctx, ctx.model)` inside `turn`; the Rust UsageCallback needs a TokenPricer, and only the runtime, which owns the model calls, can supply one. None means the runtime has no pricer and the turn counts no usage.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/deepagents_handler.py#L168
   - what: The handler copies the callback's ledger totals into the turn outcome when the turn finishes, so a turn that errors keeps no partial usage; LiteLLM's callback adds each model call's tokens and cost to the session counters as the call ends.
