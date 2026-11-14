@@ -120,6 +120,24 @@ fn trim_cuts_once_the_buffer_passes_twice_the_context() {
 }
 
 #[test]
+fn trim_trims_when_the_masked_prefix_is_exactly_the_yielded_length() {
+    let categories = CategoryLoadResult::default();
+    let source = keyword_source(&categories, &[]);
+    let buffered = "x".repeat(1025);
+    let state = StreamedChoiceState {
+        buffered_text: buffered.clone(),
+        yielded_masked_text_len: 513,
+        committed_detections: Vec::new(),
+        latest_detections: Vec::new(),
+        next_trim_len: 0,
+    };
+    let trimmed = trim_streamed_choice_buffer(&source, state, &buffered, &plan());
+    assert_eq!(trimmed.buffered_text, "x".repeat(512));
+    assert_eq!(trimmed.yielded_masked_text_len, 0);
+    assert_eq!(trimmed.next_trim_len, 0);
+}
+
+#[test]
 fn trim_defers_while_the_buffer_stays_under_next_trim_len() {
     let categories = CategoryLoadResult::default();
     let source = keyword_source(&categories, &[]);

@@ -67,6 +67,13 @@ fn conditional_word_split_across_the_cut_breaks_the_context() {
 }
 
 #[test]
+fn conditional_word_in_the_first_tail_sentence_breaks_the_context() {
+    let plan = plan(&[], &["child"]);
+    let (buffered, head, tail) = head_tail("xxharm".to_owned(), " child. more".to_owned());
+    assert!(cut_breaks_wider_context(&buffered, &head, &tail, &plan));
+}
+
+#[test]
 fn conditional_word_away_from_the_cut_does_not_break_the_context() {
     let plan = plan(&[], &["child"]);
     let (buffered, head, tail) = head_tail(format!("child. {}", "x".repeat(582)), "y".repeat(516));

@@ -54,6 +54,23 @@ fn competitor(intent: &str, confidence: f64, signals: &[&str]) -> ContentFilterD
     })
 }
 
+fn competitor_with_evidence(entry_type: &str, entry_key: &str) -> ContentFilterDetection {
+    ContentFilterDetection::CompetitorIntent(CompetitorIntentDetection {
+        r#type: "competitor_intent".to_owned(),
+        intent: "airline".to_owned(),
+        confidence: 0.9,
+        action_hint: "BLOCK".to_owned(),
+        entities: BTreeMap::new(),
+        signals: vec!["a".to_owned()],
+        evidence: vec![CompetitorIntentEvidenceEntry {
+            r#type: Some(entry_type.to_owned()),
+            key: Some(entry_key.to_owned()),
+            value: Some("matched".to_owned()),
+            r#match: Some("match".to_owned()),
+        }],
+    })
+}
+
 #[test]
 fn merge_keeps_the_first_of_each_equal_detection() {
     let merged = merge_detections(&[
@@ -97,6 +114,16 @@ fn merge_keeps_the_first_occurrence_order() {
 }
 
 #[test]
+fn merge_keeps_the_first_of_each_equal_pattern() {
+    let merged = merge_detections(&[pattern("peek"), pattern("peek")]);
+    assert_eq!(merged.len(), 1);
+    assert_eq!(
+        serde_json::to_value(&merged[0]).unwrap(),
+        serde_json::to_value(pattern("peek")).unwrap()
+    );
+}
+
+#[test]
 fn merge_compares_pattern_name_and_action() {
     let other_action = ContentFilterDetection::Pattern(PatternDetection {
         r#type: "pattern".to_owned(),
@@ -127,6 +154,17 @@ fn merge_compares_competitor_intent_fields() {
         competitor("other", 0.9, &["a"]),
     ]);
     assert_eq!(merged.len(), 4);
+}
+
+#[test]
+fn merge_compares_competitor_intent_evidence() {
+    let merged = merge_detections(&[
+        competitor_with_evidence("keyword", "signal"),
+        competitor_with_evidence("keyword", "signal"),
+        competitor_with_evidence("phrase", "signal"),
+        competitor_with_evidence("keyword", "other"),
+    ]);
+    assert_eq!(merged.len(), 3);
 }
 
 #[test]

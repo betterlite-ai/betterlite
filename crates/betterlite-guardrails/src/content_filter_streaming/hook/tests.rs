@@ -286,6 +286,47 @@ async fn hook_holds_back_the_last_fifty_characters_of_a_non_final_chunk() {
 }
 
 #[tokio::test]
+async fn hook_keeps_a_real_trailing_space_on_a_non_final_chunk() {
+    let content = format!("{} ", "a".repeat(60));
+    let case = stream_case(vec![chunk(vec![choice(
+        Some(0),
+        Some(content.as_str()),
+        None,
+    )])]);
+    let run = run_stream(&case).await;
+    assert_eq!(content_at(&run.chunks[0], 0), "a".repeat(11));
+}
+
+#[tokio::test]
+async fn hook_leaves_an_empty_non_final_delta_without_content() {
+    let first = "a".repeat(60);
+    let case = stream_case(vec![
+        chunk(vec![choice(Some(0), Some(first.as_str()), None)]),
+        chunk(vec![choice(Some(0), None, None)]),
+    ]);
+    let run = run_stream(&case).await;
+    assert_eq!(content_at(&run.chunks[0], 0), "a".repeat(10));
+    assert!(field(choice_of(&run.chunks[1], 0), &["delta", "content"]).is_none());
+}
+
+#[tokio::test]
+async fn hook_keys_an_unsigned_integer_index() {
+    let first = "a".repeat(60);
+    let second = "b".repeat(60);
+    let case = stream_case(vec![
+        chunk(vec![choice_with_index(
+            Some(GuardrailValue::UnsignedInteger(5)),
+            Some(first.as_str()),
+            None,
+        )]),
+        chunk(vec![choice(Some(0), Some(second.as_str()), Some("stop"))]),
+    ]);
+    let run = run_stream(&case).await;
+    assert_eq!(content_at(&run.chunks[0], 0), "a".repeat(10));
+    assert_eq!(content_at(&run.chunks[1], 0), second);
+}
+
+#[tokio::test]
 async fn hook_keeps_a_holdback_per_choice_index() {
     let first = "a".repeat(60);
     let second = "b".repeat(60);
@@ -369,10 +410,28 @@ async fn hook_masks_a_blocked_word_in_the_chunk_it_arrives() {
     assert_eq!(text_field(&detections[0], &["type"]), Some("blocked_word"));
     assert_eq!(text_field(&detections[0], &["keyword"]), Some("secret"));
     assert_eq!(text_field(&detections[0], &["action"]), Some("MASK"));
-    assert!(float_field(record, &["start_time"]).is_some());
-    assert!(float_field(record, &["end_time"]).is_some());
+    let start_time = float_field(record, &["start_time"]).expect("the record has a start time");
+    let end_time = float_field(record, &["end_time"]).expect("the record has an end time");
+    assert!(start_time > 1_700_000_000.0);
+    assert!(end_time >= start_time);
     let seconds = float_field(record, &["duration"]).expect("the record has a duration");
     assert!(seconds > 0.0);
+}
+
+#[tokio::test]
+async fn hook_logs_the_configured_policy_template() {
+    let mut case = stream_case(vec![chunk(vec![choice(
+        Some(0),
+        Some("hello"),
+        Some("stop"),
+    )])]);
+    case.settings.policy_template = Some("stream policy".to_owned());
+    let run = run_stream(&case).await;
+    let record = record(&run);
+    assert_eq!(
+        text_field(record, &["policy_template"]),
+        Some("stream policy")
+    );
 }
 
 #[tokio::test]
@@ -610,4 +669,20 @@ fn stream_status_maps_the_outcome_to_a_record_status() {
         stream_status(&failed),
         GuardrailStatus::GuardrailFailedToRespond
     );
+}
+
+#[test]
+fn blocked_errors_carry_status_400_and_other_errors_carry_none() {
+    let blocked = StreamFilterError::Blocked {
+        detail: ContentFilterBlockDetail::BlockedWord {
+            error: "Content blocked: keyword 'word' detected".to_owned(),
+            keyword: "word".to_owned(),
+            description: None,
+        },
+    };
+    assert_eq!(blocked.status_code(), Some(400));
+    let failed = StreamFilterError::Record(GuardrailRecordError::MessagesShape {
+        call_type: "completion".to_owned(),
+    });
+    assert_eq!(failed.status_code(), None);
 }
