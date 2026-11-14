@@ -5,7 +5,7 @@ use rstest::rstest;
 
 use crate::cost::completion::error::{ChargeInputError, CompletionCostError};
 use crate::cost::completion::tests::rig::{
-    Stored, args, chat_usage, chat_view, dec, dictionary_view, map, rig,
+    Stored, args, chat_usage, chat_view, dec, dictionary_view, map, respond, rig,
 };
 
 const GPT: &[(&str, &str)] = &[
@@ -31,10 +31,14 @@ async fn a_provider_stated_cost_wins_over_the_calculation(
     let usage = chat_usage(10, 5);
     let hidden = map(&header(value));
     let view = chat_view(&usage, Some("gpt-4o"), Some(&hidden));
-    let charge = rig(&[("gpt-4o", GPT)])
-        .respond(&args(Some(&view)), None, None::<&mut Stored>)
-        .await
-        .unwrap();
+    let charge = respond(
+        &rig(&[("gpt-4o", GPT)]),
+        &args(Some(&view)),
+        None,
+        None::<&mut Stored>,
+    )
+    .await
+    .unwrap();
     assert_eq!(charge, dec(expected));
 }
 
@@ -45,8 +49,7 @@ async fn a_provider_stated_cost_wins_under_custom_pricing() {
     let view = chat_view(&usage, Some("gpt-4o"), Some(&hidden));
     let mut call = args(Some(&view));
     call.billing.custom_pricing = Some(true);
-    let charge = rig(&[("gpt-4o", GPT)])
-        .respond(&call, None, None::<&mut Stored>)
+    let charge = respond(&rig(&[("gpt-4o", GPT)]), &call, None, None::<&mut Stored>)
         .await
         .unwrap();
     assert_eq!(charge, dec("0.5"));
@@ -65,10 +68,14 @@ async fn only_a_cache_hit_makes_the_call_free(
     let hidden = map(&header("\"0.5\""));
     let view = chat_view(&usage, Some("gpt-4o"), Some(&hidden));
     let mut stored = Stored::default();
-    let charge = rig(&[("gpt-4o", GPT)])
-        .respond(&args(Some(&view)), cache_hit, Some(&mut stored))
-        .await
-        .unwrap();
+    let charge = respond(
+        &rig(&[("gpt-4o", GPT)]),
+        &args(Some(&view)),
+        cache_hit,
+        Some(&mut stored),
+    )
+    .await
+    .unwrap();
     assert_eq!(charge, dec(expected));
     assert!(stored.0.is_none());
 }
@@ -83,10 +90,14 @@ async fn a_missing_or_null_header_falls_through_to_the_calculation(#[case] hidde
     let usage = chat_usage(10, 5);
     let hidden = map(hidden);
     let view = chat_view(&usage, Some("gpt-4o"), Some(&hidden));
-    let charge = rig(&[("gpt-4o", GPT)])
-        .respond(&args(Some(&view)), None, None::<&mut Stored>)
-        .await
-        .unwrap();
+    let charge = respond(
+        &rig(&[("gpt-4o", GPT)]),
+        &args(Some(&view)),
+        None,
+        None::<&mut Stored>,
+    )
+    .await
+    .unwrap();
     assert_eq!(charge, dec("0.02"));
 }
 
@@ -94,10 +105,14 @@ async fn a_missing_or_null_header_falls_through_to_the_calculation(#[case] hidde
 async fn a_dictionary_response_has_no_hidden_attributes() {
     let usage = chat_usage(10, 5);
     let view = dictionary_view(&usage);
-    let charge = rig(&[("gpt-4o", GPT)])
-        .respond(&args(Some(&view)), None, None::<&mut Stored>)
-        .await
-        .unwrap();
+    let charge = respond(
+        &rig(&[("gpt-4o", GPT)]),
+        &args(Some(&view)),
+        None,
+        None::<&mut Stored>,
+    )
+    .await
+    .unwrap();
     assert_eq!(charge, dec("0.02"));
 }
 
@@ -109,10 +124,14 @@ async fn a_header_that_is_not_a_number_is_a_typed_error(#[case] value: &str) {
     let usage = chat_usage(10, 5);
     let hidden = map(&header(value));
     let view = chat_view(&usage, Some("gpt-4o"), Some(&hidden));
-    let error = rig(&[("gpt-4o", GPT)])
-        .respond(&args(Some(&view)), None, None::<&mut Stored>)
-        .await
-        .unwrap_err();
+    let error = respond(
+        &rig(&[("gpt-4o", GPT)]),
+        &args(Some(&view)),
+        None,
+        None::<&mut Stored>,
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(
         error,
         CompletionCostError::Input(ChargeInputError::CostHeader(_))
@@ -124,10 +143,14 @@ async fn a_header_text_that_is_not_a_decimal_keeps_the_parse_cause() {
     let usage = chat_usage(10, 5);
     let hidden = map(&header("\" free \""));
     let view = chat_view(&usage, Some("gpt-4o"), Some(&hidden));
-    let error = rig(&[("gpt-4o", GPT)])
-        .respond(&args(Some(&view)), None, None::<&mut Stored>)
-        .await
-        .unwrap_err();
+    let error = respond(
+        &rig(&[("gpt-4o", GPT)]),
+        &args(Some(&view)),
+        None,
+        None::<&mut Stored>,
+    )
+    .await
+    .unwrap_err();
     let CompletionCostError::Input(ChargeInputError::CostHeaderValue { header, source }) = error
     else {
         panic!("the header parse failure is typed and carries its text");
@@ -138,8 +161,7 @@ async fn a_header_text_that_is_not_a_decimal_keeps_the_parse_cause() {
 
 #[tokio::test]
 async fn the_calculation_errors_propagate() {
-    let error = rig(&[])
-        .respond(&args(None), None, None::<&mut Stored>)
+    let error = respond(&rig(&[]), &args(None), None, None::<&mut Stored>)
         .await
         .unwrap_err();
     assert!(matches!(error, CompletionCostError::Prepare(_)));
