@@ -80,8 +80,7 @@ fn lax_string_integer(text: &str) -> Option<i64> {
         return None;
     }
     let digits = integral.strip_prefix(['+', '-']).unwrap_or(integral);
-    if digits.is_empty()
-        || digits.starts_with('_')
+    if digits.starts_with('_')
         || digits.ends_with('_')
         || digits.contains("__")
         || !digits

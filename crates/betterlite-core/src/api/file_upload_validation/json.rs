@@ -213,11 +213,13 @@ impl Parser<'_> {
             b'u' => self.unicode()?,
             _ => return None,
         };
-        let keep = ascii && code.is_ascii();
-        if keep {
+        if !code.is_ascii() {
+            return Some(false);
+        }
+        if ascii {
             text.push(code);
         }
-        Some(keep)
+        Some(ascii)
     }
     fn unicode(&mut self) -> Option<char> {
         let hex = self.rest.get(..4)?;
