@@ -298,7 +298,8 @@ fn prepared(url: String, params: Params) -> PreparedRequest {
 }
 
 fn named_url(request: &NamedAgentRequest<'_>, suffix: &str) -> String {
-    format!("{}/agents/{}{suffix}", request.api_base, request.name)
+    let base = request.api_base;
+    format!("{base}/v1beta/agents/{}{suffix}", request.name)
 }
 
 fn agent_response(
@@ -431,7 +432,7 @@ impl Harness {
             },
             &redactor,
             || String::from("generated-trace"),
-            || Duration::default(),
+            Duration::default,
         )
         .expect("the logging fixture builds");
         Self {
@@ -631,13 +632,11 @@ fn a_kwargs_provider_reaches_the_agents_config() {
     let mut harness = Harness::new();
     let call = Call::new("agent-1").kwarg("custom_llm_provider", text("cohere"));
     let error = get(&config, harness.deps(), &call.request()).expect_err("cohere is unsupported");
-    match error.class {
-        ErrorClass::BadRequest(details) => {
-            assert_eq!(details.model.as_deref(), Some(""));
-            assert_eq!(details.provider.as_deref(), Some("cohere"));
-        }
-        other => panic!("expected a bad request, got {other:?}"),
-    }
+    let ErrorClass::BadRequest(details) = &error.class else {
+        panic!("expected a bad request, got {:?}", error.class);
+    };
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("cohere"));
 }
 
 #[test]
@@ -673,16 +672,14 @@ fn the_argument_provider_wins_over_kwargs() {
 fn a_non_string_kwargs_provider_is_a_bad_request_naming_the_field() {
     let config = fixture();
     let mut harness = Harness::new();
-    let call = Call::new("agent-1").kwarg("custom_llm_provider", Json::Number(Number::from(5)));
+    let call = Call::new("agent-1").kwarg("custom_llm_provider", Json::Number(Number::from(5_i64)));
     let error = get(&config, harness.deps(), &call.request()).expect_err("a number is a provider");
-    match error.class {
-        ErrorClass::BadRequest(details) => {
-            assert_eq!(details.body_param.as_deref(), Some("custom_llm_provider"));
-            assert_eq!(details.model.as_deref(), Some("agent-1"));
-            assert_eq!(details.status.0, 400);
-        }
-        other => panic!("expected a bad request, got {other:?}"),
-    }
+    let ErrorClass::BadRequest(details) = &error.class else {
+        panic!("expected a bad request, got {:?}", error.class);
+    };
+    assert_eq!(details.body_param.as_deref(), Some("custom_llm_provider"));
+    assert_eq!(details.model.as_deref(), Some("agent-1"));
+    assert_eq!(details.status.0, 400);
 }
 
 #[test]
@@ -752,7 +749,7 @@ fn list_versions_forwards_the_pagination_parameters() {
     let mut harness = Harness::new();
     let call = Call::new("agent-1")
         .kwarg("api_base", text(&base(serving.address)))
-        .kwarg("page_size", Json::Number(Number::from(2)))
+        .kwarg("page_size", Json::Number(Number::from(2_i64)))
         .kwarg("page_token", text("tok"));
     let output =
         list_versions(&config, harness.deps(), &call.request()).expect("the fixture answers");
@@ -767,7 +764,7 @@ fn list_versions_forwards_the_pagination_parameters() {
     let params = environment_params(&config);
     assert_eq!(
         params.get("page_size"),
-        Some(&JsonValue::Number(Number::from(2)))
+        Some(&JsonValue::Number(Number::from(2_i64)))
     );
     assert_eq!(
         request_line(&head_of(serving)),
@@ -840,18 +837,16 @@ fn an_unsupported_provider_is_a_named_bad_request() {
     let mut harness = Harness::new();
     let call = Call::new("agent-1").provider("cohere");
     let error = get(&config, harness.deps(), &call.request()).expect_err("cohere is unsupported");
-    match error.class {
-        ErrorClass::BadRequest(details) => {
-            assert_eq!(details.model.as_deref(), Some(""));
-            assert_eq!(details.provider.as_deref(), Some("cohere"));
-            assert!(
-                details
-                    .message
-                    .contains("does not have a native agents API")
-            );
-        }
-        other => panic!("expected a bad request, got {other:?}"),
-    }
+    let ErrorClass::BadRequest(details) = &error.class else {
+        panic!("expected a bad request, got {:?}", error.class);
+    };
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("cohere"));
+    assert!(
+        details
+            .message
+            .contains("does not have a native agents API")
+    );
     assert_eq!(harness.state.call_type, "get_agent");
 }
 
@@ -862,14 +857,12 @@ fn a_missing_agent_is_a_not_found_error_with_the_agent_name() {
     let mut harness = Harness::new();
     let call = Call::new("agent-1").kwarg("api_base", text(&base(serving.address)));
     let error = get(&config, harness.deps(), &call.request()).expect_err("the fixture refuses");
-    match error.class {
-        ErrorClass::NotFound(details) => {
-            assert_eq!(details.status.0, 404);
-            assert_eq!(details.model.as_deref(), Some("agent-1"));
-            assert_eq!(details.provider.as_deref(), Some("gemini"));
-        }
-        other => panic!("expected a not found error, got {other:?}"),
-    }
+    let ErrorClass::NotFound(details) = &error.class else {
+        panic!("expected a not found error, got {:?}", error.class);
+    };
+    assert_eq!(details.status.0, 404);
+    assert_eq!(details.model.as_deref(), Some("agent-1"));
+    assert_eq!(details.provider.as_deref(), Some("gemini"));
     drop(head_of(serving));
 }
 
@@ -880,13 +873,11 @@ fn a_failing_delete_is_an_internal_server_error_with_the_agent_name() {
     let mut harness = Harness::new();
     let call = Call::new("agent-1").kwarg("api_base", text(&base(serving.address)));
     let error = delete(&config, harness.deps(), &call.request()).expect_err("the fixture refuses");
-    match error.class {
-        ErrorClass::InternalServer(context) => {
-            assert_eq!(context.model.as_deref(), Some("agent-1"));
-            assert_eq!(context.provider.as_deref(), Some("gemini"));
-        }
-        other => panic!("expected an internal server error, got {other:?}"),
-    }
+    let ErrorClass::InternalServer(context) = &error.class else {
+        panic!("expected an internal server error, got {:?}", error.class);
+    };
+    assert_eq!(context.model.as_deref(), Some("agent-1"));
+    assert_eq!(context.provider.as_deref(), Some("gemini"));
     drop(head_of(serving));
 }
 
@@ -896,14 +887,12 @@ fn a_request_that_cannot_be_built_is_an_api_connection_error() {
     let mut harness = Harness::new();
     let call = Call::new("agent-1");
     let error = get(&config, harness.deps(), &call.request()).expect_err("the url is relative");
-    match error.class {
-        ErrorClass::ApiConnection(context) => {
-            assert_eq!(context.model.as_deref(), Some("agent-1"));
-            assert_eq!(context.provider.as_deref(), Some("gemini"));
-            assert!(context.message.contains("request URL is not valid"));
-        }
-        other => panic!("expected an api connection error, got {other:?}"),
-    }
+    let ErrorClass::ApiConnection(context) = &error.class else {
+        panic!("expected an api connection error, got {:?}", error.class);
+    };
+    assert_eq!(context.model.as_deref(), Some("agent-1"));
+    assert_eq!(context.provider.as_deref(), Some("gemini"));
+    assert!(context.message.contains("request URL is not valid"));
 }
 
 #[test]
@@ -985,7 +974,7 @@ async fn alist_versions_sends_the_same_request_as_list_versions() {
     let mut harness = Harness::new();
     let call = Call::new("agent-1")
         .kwarg("api_base", text(&base(serving.address)))
-        .kwarg("page_size", Json::Number(Number::from(3)));
+        .kwarg("page_size", Json::Number(Number::from(3_i64)));
     let output = alist_versions(&config, harness.deps(), &call.request())
         .await
         .expect("the fixture answers");
