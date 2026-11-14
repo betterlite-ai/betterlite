@@ -153,8 +153,11 @@ def test_chat_timeout(probe: TimeoutProbe) -> None:
         ("http://proxy:4000/chat/completions", 600),
         ("http://proxy:4000/chat/completions", 600),
     ]
-    assert ChatClient("http://other:4000", timeout=7).completions(MODEL, MESSAGES) == {"data": []}
+    custom = ChatClient("http://other:4000", timeout=7)
+    assert custom.completions(MODEL, MESSAGES) == {"data": []}
     assert probe.calls[2] == ("http://other:4000/chat/completions", 7)
+    assert builtins.list(custom.completions_stream(MODEL, MESSAGES)) == []
+    assert probe.calls[3] == ("http://other:4000/chat/completions", 7)
 
 
 def test_teams_timeout(probe: TimeoutProbe) -> None:
