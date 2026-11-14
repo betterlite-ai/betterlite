@@ -28,14 +28,12 @@ pub fn merge_agent_headers(
     static_headers: Option<&BTreeMap<String, String>>,
 ) -> Option<BTreeMap<String, String>> {
     let mut merged = dynamic_headers.cloned().unwrap_or_default();
-    if let Some(static_headers) = static_headers {
-        let static_names: BTreeSet<String> = static_headers
-            .keys()
-            .map(|name| name.to_lowercase())
-            .collect();
+    if let Some(static_map) = static_headers {
+        let static_names: BTreeSet<String> =
+            static_map.keys().map(|name| name.to_lowercase()).collect();
         merged.retain(|name, _value| !static_names.contains(&name.to_lowercase()));
         merged.extend(
-            static_headers
+            static_map
                 .iter()
                 .map(|(name, value)| (name.clone(), value.clone())),
         );
