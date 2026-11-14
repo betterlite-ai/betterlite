@@ -1297,6 +1297,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-bedrock-guardrails"
+version = "0.1.0"
+dependencies = [
+ "betterlite-bedrock",
+ "betterlite-config",
+ "betterlite-http",
+ "betterlite-models",
+ "http 1.5.0",
+ "indexmap 2.14.2",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "betterlite-bedrock-guardrails-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-bedrock-guardrails",
+ "libfuzzer-sys",
+]
+
+[[package]]
 name = "betterlite-billing"
 version = "0.1.0"
 dependencies = [
