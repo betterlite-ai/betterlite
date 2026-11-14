@@ -7,9 +7,11 @@ use betterlite_core::api::messages_native_stream::registry::StreamRegistry;
 use betterlite_core::api::messages_native_stream::{
     ClientRelay, RelayLimits, RelaySetup, start_relay,
 };
-use betterlite_core::api::messages_stream_logging::seams::{LoggingFuture, ReportedFailure};
+use betterlite_core::api::messages_stream_logging::StreamDeps;
+use betterlite_core::api::messages_stream_logging::seams::{
+    LoggingFuture, LoggingJob, ReportedFailure,
+};
 use betterlite_core::api::messages_stream_logging::slots::{DetachedFailureHook, StreamSlots};
-use betterlite_core::api::messages_stream_logging::{LoggingJob, StreamDeps};
 use betterlite_logging::passthrough_logging_state::logger::PassThroughEndpointLogging;
 use betterlite_logging::passthrough_stream_logging::types::EndpointType;
 use betterlite_logging::worker::{LoggingWorker, WorkerSettings};
@@ -17,18 +19,18 @@ use indexmap::IndexMap;
 use tracing::subscriber::set_default;
 
 use super::Http;
-use super::call::{
-    FailureCall, FrameRead, MessagesNativeStreamCall, RelayOp, RelayStep, StreamObservation,
-    WaitUntil,
-};
 use super::outcome::Flag;
 use super::recording::{StepClock, Warnings, drain, logging_object};
 use super::session::await_parked;
-use super::state::{Gate, GateSource, StreamState, quiesce};
 use crate::sdk_http::error::SdkHttpError;
 use crate::sdk_http::result::SdkResult;
 use crate::sdk_http::vector_query_embedding::outbound_client;
+use call::{
+    FailureCall, FrameRead, MessagesNativeStreamCall, RelayOp, RelayStep, StreamObservation,
+    WaitUntil,
+};
 use run::Run;
+use state::{Gate, GateSource, StreamState, quiesce};
 
 pub mod call;
 mod run;
