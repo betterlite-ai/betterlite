@@ -116,6 +116,9 @@ tokio-postgres.workspace = true
 [[test]]
 name = "otlp_normalization"
 path = "src/helpers/logging/otlp_normalization/tests.rs"
+[[test]]
+name = "dashboard_governance_case"
+path = "src/dashboard_governance_fixture/decoder.rs"
 [lints]
 workspace = true
 [package.metadata.cargo-shear]
