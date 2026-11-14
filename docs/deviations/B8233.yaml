@@ -3,6 +3,9 @@ deviations:
   - what: The gateway entrypoint runs betterlite-gateway directly, so NUM_WORKERS has no effect; LiteLLM runs a Python supervisor with --workers "${NUM_WORKERS:-1}" under component_entrypoint.sh.
     why: betterlite-gateway is one process (B4471); gateway/launch.py and its uvicorn worker and pgbouncer supervisor belong to B131.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/Dockerfile#L125-L126
+  - what: The backend entrypoint runs betterlite-backend; LiteLLM runs uvicorn backend.main:app under component_entrypoint.sh.
+    why: The backend is the native betterlite-backend binary (B4471), not a Python ASGI app.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/backend/Dockerfile#L105-L106
   - what: The images are packaging/docker/Dockerfile.gateway and packaging/docker/Dockerfile.backend, not gateway/Dockerfile and backend/Dockerfile.
     why: B5071 and B5073 keep every Dockerfile in packaging/docker/, with the repository root as the build context.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/Dockerfile#L1-L2

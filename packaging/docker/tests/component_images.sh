@@ -61,6 +61,23 @@ entrypoint_line="RUN sed -i 's/\\r\$//' /app/docker/component_entrypoint.sh && c
 expect_line "${gateway}" "${entrypoint_line}" "gateway entrypoint script setup"
 expect_line "${backend}" "${entrypoint_line}" "backend entrypoint script setup"
 
+expect_text "${gateway}" "FROM \$LITELLM_RUNTIME_IMAGE AS runtime" "gateway runtime stage"
+expect_text "${backend}" "FROM \$LITELLM_RUNTIME_IMAGE AS runtime" "backend runtime stage"
+expect_line "${gateway}" "USER root" "gateway installs packages as root"
+expect_line "${backend}" "USER root" "backend installs packages as root"
+expect_text "${gateway}" "for i in 1 2 3; do" "gateway apk retry loop"
+expect_text "${backend}" "for i in 1 2 3; do" "backend apk retry loop"
+expect_text "${gateway}" "apk add failed after 3 retries" "gateway apk retry failure"
+expect_text "${backend}" "apk add failed after 3 retries" "backend apk retry failure"
+expect_line "${gateway}" "WORKDIR /app" "gateway workdir"
+expect_line "${backend}" "WORKDIR /app" "backend workdir"
+expect_line "${gateway}" "ENV HOME=/home/nonroot" "gateway home directory"
+expect_line "${backend}" "ENV HOME=/home/nonroot" "backend home directory"
+expect_line "${gateway}" "COPY --from=builder /app/target/release/betterlite-gateway /usr/local/bin/betterlite-gateway" "gateway binary copy"
+expect_line "${backend}" "COPY --from=builder /app/target/release/betterlite-backend /usr/local/bin/betterlite-backend" "backend binary copy"
+expect_line "${gateway}" "COPY --from=builder --chown=nonroot:nonroot /app/docker /app/docker" "gateway entrypoint copy"
+expect_line "${backend}" "COPY --from=builder --chown=nonroot:nonroot /app/docker /app/docker" "backend entrypoint copy"
+
 expect_line "${gateway}" "USER nonroot" "gateway runs as nonroot"
 expect_line "${backend}" "USER nonroot" "backend runs as nonroot"
 
