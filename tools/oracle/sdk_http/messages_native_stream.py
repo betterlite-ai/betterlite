@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from typing import Literal, TypedDict, Unpack
 
 import httpx
@@ -160,7 +161,8 @@ class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
         dispatcher: Dispatcher,
     ) -> None:
         self.logging = RecordedLogging()
-        super().__init__(self.logging, call.body)
+        self.litellm_logging_obj, self.request_body = self.logging, call.body  # instead of the untyped base __init__
+        self.start_time, self.completion_start_time = datetime.now(UTC).astimezone().replace(tzinfo=None), None
         self.body = call.body
         self.api_base = api_base
         self.client = client
@@ -213,6 +215,8 @@ class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
 
     async def run(self, step: RelayStep) -> Json:
         match step.op:
+            case "start" | "settle":
+                pass
             case "read":
                 return await self.read()
             case "release":
@@ -246,9 +250,7 @@ class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
 
 
 class Run:
-    def __init__(
-        self, call: MessagesNativeStreamCall, api_base: str, client: httpx.AsyncClient
-    ) -> None:
+    def __init__(self, call: MessagesNativeStreamCall, api_base: str, client: httpx.AsyncClient) -> None:
         self.call = call
         self.api_base = api_base
         self.client = client
