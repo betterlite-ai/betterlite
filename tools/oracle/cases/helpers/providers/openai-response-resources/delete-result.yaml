@@ -1,0 +1,15 @@
+kind: helper
+name: openai-response-resources-delete-result
+env: {}
+compare: {ignore: []}
+call:
+  openai_response_resources:
+    delete_result:
+      probes:
+        - {endpoint: delete, body: '{"id":"resp_1","object":"response","deleted":true}', status: 200}
+        - {endpoint: delete, body: '{"id":null,"object":null,"deleted":null}', status: 200}
+        - {endpoint: delete, body: '{"id":"resp_2","object":"response","deleted":false,"vendor":{"n":1}}', status: 200}
+        - {endpoint: delete, body: '{"id":"resp_3","object":"response"}', status: 200}
+        - {endpoint: delete, body: '{"id":7,"object":"response","deleted":true}', status: 200}
+        - {endpoint: delete, body: '[]', status: 200}
+        - {endpoint: delete, body: 'not-json', status: 503}

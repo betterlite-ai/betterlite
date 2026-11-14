@@ -1,0 +1,6 @@
+kind: helper
+name: permission-id-flat-keys
+call:
+  b3814: {"initialized": true, "input_policies": {"dangerous": "untrusted", "plain": "untrusted"}, "output_policies": {}, "blocked_by_permission": {"key-1": ["dangerous"], "key-2": ["plain"]}, "inputs": {}, "input_type": "request", "request_data": {"tools": [{"type": "function", "function": {"name": "dangerous"}}, {"type": "function", "function": {"name": "plain"}}], "litellm_metadata": {"user_api_key_object_permission_id": "key-1", "user_api_key_request_route": "/v1/responses"}, "metadata": {"user_api_key_object_permission_id": "key-2", "user_api_key_request_route": "/v1/chat/completions"}}, "route_names": {"route": "/v1/chat/completions", "names": ["dangerous", "plain"]}}
+env: {}
+compare: {ignore: []}

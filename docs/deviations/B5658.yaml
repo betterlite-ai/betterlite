@@ -1,17 +1,14 @@
 task: B5658
 deviations:
-  - what: "The new classes derive from ResponseObject, so the base differences recorded for B5657 apply here too: no pydantic.BaseModel inheritance, model_validate or model_fields, a value is checked against its annotation only where the type carries behavior, include and exclude take flat field selectors except on ImageResponse's data list, and a validation error names the model, fields and reason in betterlite's words."
-    why: "The wheel depends only on python-dotenv and typing-extensions, and one hand-written field holder keeps every SDK type consistent. Attribute, item and dump access, the defaults and the values on the wire are unchanged."
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2280
   - what: "EmbeddingResponse keeps the response_ms and _response_headers it is built with as private attributes, where LiteLLM assigns them before pydantic's __init__ replaces them with the private defaults, so a LiteLLM object always has None for both. Neither value reaches model_dump."
     why: "Losing both values is lost data no working setup can rely on; LiteLLM itself assigns response headers after construction, and the attributes the class declares stay readable."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2315-L2324
   - what: "LiteLLMFineTuningJob keeps a constructor's _hidden_params in the private attribute and never dumps it, where LiteLLM's pydantic model also stores the name in its extra fields, so its model_dump carries a _hidden_params key whenever the caller passed one."
     why: "Hidden parameters are internal state; keeping them out of model_dump is the safe side of a pydantic accident no working setup relies on, and the attribute stays readable as the class declares."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4307-L4317
-  - what: "ImageResponse applies an include or exclude selector to the image list down to each image's top-level fields, the level _serialize_image_data addresses, while pydantic also filters inside a selected image's nested mapping fields such as provider_specific_fields."
-    why: "The base response objects take flat selectors, and the media serializer adds the image index level the task asks for; a selector inside an image's own mapping field is not part of the task."
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2625-L2660
   - what: "next() on an AdapterCompletionStreamWrapper built over a stream that is not synchronously iterable, such as an async stream or None, raises TypeError instead of returning None."
     why: "LiteLLM catches the TypeError in its logged except block and returns None for every call, so a caller that keeps calling next() never reaches StopIteration and loops forever on None; failing on the first call names the wrong stream."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2820-L2830
+  - what: "A synchronous AdapterCompletionStreamWrapper whose stream raises an error other than its own AdapterStreamError propagates that error, where LiteLLM catches every exception, logs it and returns None."
+    why: "Swallowing a provider stream's failure turns it into an endless run of None chunks; no working setup can rely on hiding the error, and the async wrapper already lets it through."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2820-L2830

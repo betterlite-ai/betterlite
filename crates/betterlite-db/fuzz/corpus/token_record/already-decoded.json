@@ -1,0 +1,1 @@
+{"token":"k","aliases":{"a":1},"config":{"b":2},"permissions":{"c":3},"metadata":{"d":4},"model_spend":{"m":5},"model_max_budget":{"m":6},"router_settings":{"e":7},"budget_limits":[{"m":8}],"litellm_budget_table":{"budget_id":"b"}}

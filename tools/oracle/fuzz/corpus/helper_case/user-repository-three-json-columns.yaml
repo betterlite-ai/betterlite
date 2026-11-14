@@ -1,0 +1,18 @@
+kind: helper
+name: three_user_json_columns
+call:
+  user_repository:
+    records:
+      three_json_columns:
+        user_id: u
+        user_email: User@Example.com
+        spend: 2.5
+        max_budget: 10
+        teams: [team-a]
+        models: [gpt-4, {x: 1}]
+        metadata: '{"role": "admin"}'
+        model_spend: '{"gpt-4": 1.25}'
+        model_max_budget: '{"gpt-4": 10}'
+env: {}
+compare:
+  ignore: []

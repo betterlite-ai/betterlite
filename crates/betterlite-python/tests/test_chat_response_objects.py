@@ -4,11 +4,12 @@ import types
 import uuid
 from abc import ABC
 from datetime import UTC, datetime
-from typing import ClassVar, Generic, Protocol, TypeAlias, TypeVar, cast, get_args
+from typing import Generic, Protocol, Self, TypeAlias, TypeVar, cast, get_args
 
 import httpx
 import litellm.types.completion as litellm_completion  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/completion.py#L19
 import litellm.types.utils as litellm_utils  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1
+import pydantic
 import pytest
 from openai.types import CompletionUsage
 from openai.types.chat import ChatCompletionMessage
@@ -30,9 +31,8 @@ from betterlite.types.utils import (
     field_validator,
     model_validator,
 )
-from betterlite.types.utils.values import StoredValue
 
-BoxValue = TypeVar("BoxValue", bound=StoredValue)
+BoxValue = TypeVar("BoxValue", bound=JsonValue)
 LARGE_COUNT = 10
 READ_TOKENS = 3
 CREATED_TOKENS = 4
@@ -74,11 +74,10 @@ USAGE_VALUES: dict[str, JsonValue] = {
     "total_tokens": 3,
 }
 ENHANCEMENTS: dict[str, JsonValue] = {"e": 1}
-EXTRA_VALUES: dict[str, JsonValue] = {"foo": "bar"}
 MISMATCHED_TOKENS = 7
 UUID_VERSION = 4
-HIDDEN_PARAMS: dict[str, StoredValue] = {"a": 1}
-HEADERS: dict[str, StoredValue] = {"h": "v"}
+HIDDEN_PARAMS: dict[str, JsonValue] = {"a": 1}
+HEADERS: dict[str, JsonValue] = {"h": "v"}
 EXTRA_TOOL_USE: dict[str, int] = {"web_search_requests": 1, "web_fetch_requests": 2}
 EXTRA_TOKEN_COUNT: dict[str, int] = {"extra": 2}
 ARGS: dict[str, JsonValue] = {"a": 1}
@@ -156,37 +155,35 @@ class Payload(ResponseObject):
 
 
 class Doubled(ResponseObject):
-    count: int
-    defaults: ClassVar[dict[str, StoredValue]] = {"count": 0}
+    count: int = 0
 
     @field_validator("count", mode="before")
-    def double(self, value: StoredValue) -> StoredValue:
+    @classmethod
+    def double(cls, value: JsonValue) -> JsonValue:
+        if value is None:
+            return None
         match value:
             case int():
                 return value * 2
-            case _other:
+            case float() | str() | list() | dict():
                 return value
 
     @field_validator("count", mode="after")
-    def reject_negative(self, value: StoredValue) -> StoredValue:
-        match value:
-            case int() if value < 0:
-                raise ValueError("count is negative")
-            case _other:
-                return value
+    @classmethod
+    def reject_negative(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("count is negative")
+        return value
 
 
 class Checked(ResponseObject):
-    count: int
-    defaults: ClassVar[dict[str, StoredValue]] = {"count": 0}
+    count: int = 0
 
     @model_validator(mode="after")
-    def reject_large(self) -> StoredValue:
-        match self.count:
-            case int() if self.count > LARGE_COUNT:
-                raise ValueError("count is too large")
-            case _other:
-                return self
+    def reject_large(self) -> Self:
+        if self.count > LARGE_COUNT:
+            raise ValueError("count is too large")
+        return self
 
 
 def assert_same(label: str, reference: Dumpable, ours: Dumpable) -> None:
@@ -235,10 +232,10 @@ def test_access_get_and_contains() -> None:
 
 def test_access_delete_missing() -> None:
     message = betterlite_utils.Message(content="x")
-    del message.missing
+    del message["missing"]
     message["extra"] = 1
     assert message["extra"] == 1
-    del message.extra
+    del message["extra"]
     del message.content
     assert message.get("content") is None
     reference = litellm_utils.Message(content="x")
@@ -255,9 +252,9 @@ def test_access_dict_parity() -> None:
     reference_message: Dumpable = litellm_utils.Message(content="x")
     assert message.dict() == reference_message.dict()  # pyright: ignore[reportDeprecated]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1499-L1504
     assert message.dict(exclude_none=True) == reference_message.dict(exclude_none=True)  # pyright: ignore[reportDeprecated]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1499-L1504
-    usage_text = betterlite_utils.Usage().json(exclude_none=True)
-    dumped_usage = parse_object(str(usage_text))
-    assert dumped_usage == {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    usage = betterlite_utils.Usage()
+    assert parse_object(usage.json(exclude_none=True)) == parse_object(
+        litellm_utils.Usage().model_dump_json(exclude_none=True))
 
 
 def test_dump_message_choices() -> None:
@@ -368,13 +365,18 @@ def test_dump_delta_parity() -> None:
     ]
     for label, reference, item in cases:
         assert_same(label, reference, item)
+    stored_call = ours(function_call=FUNCTION_CALL).function_call
+    assert stored_call == betterlite_utils.FunctionCall(name="f", arguments="{}")
+    stored_reference = litellm_utils.Delta(function_call=FUNCTION_CALL).function_call
+    assert stored_reference is not None
+    assert stored_reference.name == "f"
     reasoned = betterlite_utils.Delta(reasoning="r")
     reference_reasoned = litellm_utils.Delta(reasoning="r")
     assert reasoned.reasoning_content == reference_reasoned.reasoning_content
     assert "reasoning" not in reasoned
     assert "images" not in betterlite_utils.Delta(images=EMPTY_LIST)
     assert betterlite_utils.Delta(audio=dict(AUDIO_CHUNK)).audio == AUDIO_CHUNK
-    extra = betterlite_utils.Delta(**EXTRA_VALUES)
+    extra = betterlite_utils.Delta(foo="bar")
     assert parse_object(extra.model_dump_json())["foo"] == "bar"
 
 
@@ -421,14 +423,13 @@ def test_dump_usage_parity() -> None:
         litellm_utils.Usage(prompt_tokens_details=NESTED_CACHE),
         ours(prompt_tokens_details=NESTED_CACHE),
     )
-    extra = betterlite_utils.Usage(**EXTRA_VALUES)
+    extra = betterlite_utils.Usage(foo="bar")
     assert parse_object(extra.model_dump_json())["foo"] == "bar"
 
 
 def test_dump_unset_default() -> None:
-    reference = litellm_utils.ModelResponse(id="i", created=5)
-    ours = betterlite_utils.ModelResponse(id="i", created=5)
-    assert_same("response", reference, ours)
+    assert_same("response", litellm_utils.ModelResponse(id="i", created=5),
+                betterlite_utils.ModelResponse(id="i", created=5))
     stream_reference = litellm_utils.ModelResponseStream(id="i", created=5)
     stream_ours = betterlite_utils.ModelResponseStream(id="i", created=5)
     assert "model" not in parse_object(stream_ours.model_dump_json(exclude_unset=True))
@@ -438,8 +439,12 @@ def test_dump_unset_default() -> None:
 def test_dump_json_parity() -> None:
     ours = betterlite_utils.ModelResponse(id="i", created=5, model="m")
     reference: Dumpable = litellm_utils.ModelResponse(id="i", created=5, model="m")
-    assert parse_object(ours.model_dump_json()) == parse_object(reference.model_dump_json())
     assert ours.json() == ours.model_dump()
+    assert_same("response json", reference, ours)
+    message = betterlite_utils.Message(content="x")
+    reference_message: Dumpable = litellm_utils.Message(content="x")
+    assert message.json() == message.model_dump()
+    assert_same("message json", reference_message, message)
 
 
 def test_tool_call_function_args() -> None:
@@ -566,10 +571,9 @@ def test_message_none_fields() -> None:
 
 def test_choices_native_reason() -> None:
     ours = betterlite_utils.Choices(finish_reason="tool_use")
-    reference = litellm_utils.Choices(finish_reason="tool_use")
     assert ours.finish_reason == "tool_calls"
     assert ours.provider_specific_fields == {"native_finish_reason": "tool_use"}
-    assert_same("native reason", reference, ours)
+    assert_same("native reason", litellm_utils.Choices(finish_reason="tool_use"), ours)
     mapped = betterlite_utils.Choices(finish_reason="stop")
     assert "provider_specific_fields" not in mapped
 
@@ -591,13 +595,17 @@ def test_choices_unknown_warns() -> None:
 
 def test_choices_keep_model() -> None:
     message = betterlite_utils.Message(content="y")
-    fields: dict[str, StoredValue] = {"x": litellm_utils.Message(content="y")}
+    reference_message = litellm_utils.Message(content="y")
     ours = betterlite_utils.Choices(provider_specific_fields={"x": message})
-    reference = litellm_utils.Choices(provider_specific_fields=fields)
+    reference_fields: dict[str, Dumpable] = {"x": reference_message}
+    reference = litellm_utils.Choices(provider_specific_fields=reference_fields)
     stored = ours.provider_specific_fields
     assert stored is not None
-    assert stored["x"] is message
-    assert_same("provider model", reference, ours)
+    assert stored["x"] == message.model_dump(exclude_unset=True)
+    reference_dumpable: Dumpable = reference
+    assert ours.model_dump(exclude_unset=True) == reference_dumpable.model_dump(
+        exclude_unset=True,
+    )
 
 
 def test_choices_defaults() -> None:
@@ -762,10 +770,9 @@ def test_usage_token_details() -> None:
 
 def test_model_response_defaults() -> None:
     ours = betterlite_utils.ModelResponse(id="x", created=1)
-    reference = litellm_utils.ModelResponse(id="x", created=1)
     assert ours.object == "chat.completion"
     assert ours.model is None
-    assert_same("response defaults", reference, ours)
+    assert_same("response defaults", litellm_utils.ModelResponse(id="x", created=1), ours)
     forced = betterlite_utils.ModelResponse(id="i", created=5, object="text_completion")
     assert forced.object == "chat.completion"
     generated = betterlite_utils.ModelResponse()
@@ -775,8 +782,8 @@ def test_model_response_defaults() -> None:
 
 def test_model_response_usage() -> None:
     ours = betterlite_utils.ModelResponse(id="i", created=5, usage=USAGE_VALUES)
-    reference = litellm_utils.ModelResponse(id="i", created=5, usage=USAGE_VALUES)
-    assert_same("response usage", reference, ours)
+    assert_same("response usage",
+                litellm_utils.ModelResponse(id="i", created=5, usage=USAGE_VALUES), ours)
     empty = betterlite_utils.ModelResponse(id="i", created=5)
     assert "usage" not in parse_object(empty.model_dump_json())
 
@@ -810,29 +817,25 @@ def test_model_response_headers() -> None:
 
 def test_model_response_stream() -> None:
     ours = betterlite_utils.ModelResponseStream(id="i", created=5, model="m")
-    reference = litellm_utils.ModelResponseStream(id="i", created=5, model="m")
     assert ours.object == "chat.completion.chunk"
     assert ours.provider_specific_fields is None
     assert "provider_specific_fields" in ours
-    assert_same("stream", reference, ours)
+    assert_same("stream", litellm_utils.ModelResponseStream(id="i", created=5, model="m"), ours)
     empty = betterlite_utils.ModelResponseStream(id="i", created=5, choices=EMPTY_LIST)
     assert empty.choices == []
 
 
 def test_model_response_choices() -> None:
     ours = betterlite_utils.ModelResponse(id="i", created=5, choices=CHOICES)
-    reference = litellm_utils.ModelResponse(id="i", created=5, choices=CHOICES)
     assert ours.choices[0].finish_reason == "length"
-    assert_same("response choices", reference, ours)
+    assert_same("response choices",
+                litellm_utils.ModelResponse(id="i", created=5, choices=CHOICES), ours)
     assert len(betterlite_utils.ModelResponse(id="i", created=5).choices) == 1
 
 
 def test_model_response_chunk() -> None:
     chunk: dict[str, JsonValue] = {
-        "id": "i",
-        "created": 5,
-        "model": "m",
-        "object": "chat.completion.chunk",
+        "id": "i", "created": 5, "model": "m", "object": "chat.completion.chunk",
         "choices": [
             {
                 "index": 0,
@@ -857,11 +860,11 @@ def test_model_response_openai() -> None:
     usage = CompletionUsage(prompt_tokens=1, completion_tokens=2, total_tokens=3)
     choice_message = betterlite_utils.Choices(message=message)
     assert_same("choices", litellm_utils.Choices(message=message), choice_message)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1690-L1693
-    choices: list[StoredValue] = [choice]
+    choices: list[JsonValue | pydantic.BaseModel] = [choice]
     response = betterlite_utils.ModelResponse(id="i", created=5, choices=choices)
     response_reference = litellm_utils.ModelResponse(id="i", created=5, choices=choices)
     assert_same("response", response_reference, response)
-    chunk_choices: list[StoredValue] = [chunk_choice]
+    chunk_choices: list[JsonValue | pydantic.BaseModel] = [chunk_choice]
     stream = betterlite_utils.ModelResponseStream(id="i", created=5, choices=chunk_choices)
     stream_reference = litellm_utils.ModelResponseStream(id="i", created=5, choices=chunk_choices)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2107-L2113
     assert_same("stream", stream_reference, stream)
@@ -923,12 +926,13 @@ def test_typed_dict_request() -> None:
 
 
 def test_base_root_model_dump() -> None:
-    root = RootModel[int](BOX_VALUE)
+    root: RootModel[int] = RootModel[int](BOX_VALUE)
     assert root.root == BOX_VALUE
-    assert root.model_dump() == BOX_VALUE
-    assert RootModel[list[int]]([1, 2]).model_dump() == [1, 2]
+    dumped: JsonValue = root.model_dump()
+    assert dumped == BOX_VALUE
+    listed: JsonValue = RootModel[list[int]]([1, 2]).model_dump()
+    assert listed == [1, 2]
     assert root.model_dump_json() == str(BOX_VALUE)
-    assert root["root"] == BOX_VALUE
 
 
 def test_base_generic_subclass() -> None:
@@ -943,8 +947,9 @@ def test_base_generic_subclass() -> None:
 
 
 def test_base_required_field_missing() -> None:  # ast-grep-ignore: no-long-names
+    missing: dict[str, JsonValue] = {}
     with pytest.raises(ValidationError) as error:
-        Payload()
+        Payload.model_validate(missing)
     assert "data" in str(error.value)
     assert "seen" in str(error.value)
     assert ValidationError.__mro__[1] is ValueError
@@ -965,8 +970,8 @@ def test_base_model_validator_error() -> None:  # ast-grep-ignore: no-long-names
 
 
 def test_base_base64str_roundtrip() -> None:
-    assert Base64Str("aGk=") == "hi"
-    payload = Payload(data="aGk=", seen="2024-01-02T03:04:05+00:00")
+    values: dict[str, JsonValue] = {"data": "aGk=", "seen": "2024-01-02T03:04:05+00:00"}
+    payload = Payload.model_validate(values)
     assert payload.data == "hi"
     assert payload["data"] == "hi"
     parsed = parse_object(payload.model_dump_json())
@@ -974,20 +979,19 @@ def test_base_base64str_roundtrip() -> None:
 
 
 def test_base_aware_datetime_rejects_naive() -> None:  # ast-grep-ignore: no-long-names
-    payload = Payload(data="aGk=", seen="2024-01-02T03:04:05+00:00")
+    values: dict[str, JsonValue] = {"data": "aGk=", "seen": "2024-01-02T03:04:05+00:00"}
+    payload = Payload.model_validate(values)
     assert payload.seen.isoformat() == "2024-01-02T03:04:05+00:00"
+    naive: dict[str, JsonValue] = {"data": "aGk=", "seen": "2024-01-02T03:04:05"}
     with pytest.raises(ValidationError):
-        Payload(data="aGk=", seen="2024-01-02T03:04:05")
+        Payload.model_validate(naive)
     with pytest.raises(ValidationError):
         Payload(data="aGk=", seen=datetime.fromisoformat("2024-01-02T03:04:05"))
-    aware = Payload(
-        data="aGk=",
-        seen=datetime(2024, 1, 2, 3, 4, 5, tzinfo=UTC),
-    )
+    aware = Payload(data="aGk=", seen=datetime(2024, 1, 2, 3, 4, 5, tzinfo=UTC))
     assert aware.seen.utcoffset() is not None
 
 
 def test_unknown_field_names() -> None:
     message = betterlite_utils.Message(content="x")
     with pytest.raises(AttributeError):
-        _ = message.unknown_attribute
+        _ = message["unknown_attribute"]

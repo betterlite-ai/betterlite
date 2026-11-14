@@ -1,0 +1,6 @@
+kind: helper
+name: blocked-request-tool
+call:
+  b3814: {"initialized": true, "input_policies": {"dangerous": "blocked", "safe": "untrusted"}, "output_policies": {}, "blocked_by_permission": {}, "inputs": {"tools": [{"type": "function", "function": {"name": "dangerous"}}]}, "input_type": "request", "request_data": {"model": "gpt-4"}}
+env: {}
+compare: {ignore: []}

@@ -1,13 +1,13 @@
 id: B9750
 milestone: M10 admin ui
 title: Guardrail measurement and tool rows for dashboard HTTP fixtures
-status: todo
+status: done
 depends_on: [B9740, B9260]
 file: tasks/B9750-dashboard-governance-fixtures.yaml
 covers: []
 parent: B148
 split_from: B148
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1633
