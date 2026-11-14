@@ -13,7 +13,7 @@ class PipelineStep(ResponseObject):
 
     guardrail: str
     on_fail: str = "block"
-    on_pass: str = "allow"
+    on_pass: str = Field(default="allow")
     on_error: str | None = None
     pass_data: bool = False
     modify_response_message: str | None = None
