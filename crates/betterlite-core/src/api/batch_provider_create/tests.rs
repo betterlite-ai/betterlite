@@ -148,6 +148,7 @@ enum BodyCase {
     OutputExpiryIsOptional,
     MetadataKeepsItsOrder,
     ProviderConfigNeedsAModel,
+    UnresolvedModelKeepsTheProviderConfig,
     ProviderConfigCarriesExtraHeaders,
     LimitsBoundTheCreateMaps,
     VertexCredentialsAcceptFields,
@@ -160,6 +161,7 @@ enum BodyCase {
 #[case::output_expiry_is_optional(BodyCase::OutputExpiryIsOptional)]
 #[case::metadata_keeps_its_order(BodyCase::MetadataKeepsItsOrder)]
 #[case::provider_config_needs_a_model(BodyCase::ProviderConfigNeedsAModel)]
+#[case::unresolved_model_keeps_the_provider_config(BodyCase::UnresolvedModelKeepsTheProviderConfig)]
 #[case::provider_config_carries_extra_headers(BodyCase::ProviderConfigCarriesExtraHeaders)]
 #[case::limits_bound_the_create_maps(BodyCase::LimitsBoundTheCreateMaps)]
 #[case::vertex_credentials_accept_fields(BodyCase::VertexCredentialsAcceptFields)]
@@ -171,6 +173,9 @@ fn batch_create_body(#[case] case: BodyCase) {
         BodyCase::OutputExpiryIsOptional => output_expiry_is_optional(),
         BodyCase::MetadataKeepsItsOrder => metadata_keeps_its_order(),
         BodyCase::ProviderConfigNeedsAModel => provider_config_needs_a_model(),
+        BodyCase::UnresolvedModelKeepsTheProviderConfig => {
+            unresolved_model_keeps_the_provider_config();
+        }
         BodyCase::ProviderConfigCarriesExtraHeaders => provider_config_carries_extra_headers(),
         BodyCase::LimitsBoundTheCreateMaps => limits_bound_the_create_maps(),
         BodyCase::VertexCredentialsAcceptFields => vertex_credentials_accept_fields(),
@@ -269,6 +274,17 @@ fn provider_config_needs_a_model() {
     assert_eq!(call.provider, BatchProvider::Bedrock);
     assert_eq!(call.model, "anthropic.claude-3");
     assert!(call.headers.is_empty());
+}
+
+// get_llm_provider raises for a model it cannot place, and create_batch logs it and keeps the raw model
+fn unresolved_model_keeps_the_provider_config() {
+    let mut request = input(BatchProvider::Bedrock);
+    request.model = Some("no-such-model".to_owned());
+    let result = created(&request, &Settings::default());
+    let BatchProviderCreateCall::ProviderConfig(call) = &result.call else {
+        panic!("the raw model keeps the bedrock branch");
+    };
+    assert_eq!(call.model, "no-such-model");
 }
 
 fn provider_config_carries_extra_headers() {
