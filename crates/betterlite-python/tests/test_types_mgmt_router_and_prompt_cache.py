@@ -1,4 +1,3 @@
-# LiteLLM lacks litellm/types/__init__.py, so pyright calls a direct import under it a missing stub.
 import importlib
 from typing import TypeAlias
 
@@ -9,7 +8,7 @@ import betterlite.types.management_endpoints.auto_router_endpoints as auto_route
 import betterlite.types.management_endpoints.prompt_cache_prediction as prompt_cache
 import betterlite.types.management_endpoints.prompt_caching_requests as prompt_caching
 
-# reading through litellm.types keeps the types; litellm/__init__ imports none of these three
+# litellm/types has no __init__.py, so pyright flags direct imports; load the modules by name
 for module_name in (
     "litellm.types.management_endpoints.auto_router_endpoints",
     "litellm.types.management_endpoints.prompt_cache_prediction",
@@ -304,6 +303,20 @@ REJECTIONS: tuple[ModelPayload, ...] = (
         dict(JOB) | {"targets": []},
     ),
     (
+        auto_router.ShadowEvalJobResponse,
+        litellm_router.ShadowEvalJobResponse,
+        dict(JOB) | {"router_names": []},
+    ),
+    (
+        auto_router.AutoRouterRoutingTestRequest,
+        litellm_router.AutoRouterRoutingTestRequest,
+        {
+            "messages": [{"role": "user", "content": "hi"}],
+            "complexity_router_config": {},
+            "saved_model_id": "",
+        },
+    ),
+    (
         prompt_cache.CacheTokenBuckets,
         litellm_cache.CacheTokenBuckets,
         {"uncached_input_tokens": -1},
@@ -545,6 +558,14 @@ def test_names_wire_body() -> None:
     ours = auto_router.AutoRouterRoutingTestRequest.model_validate(payload)
     reference = litellm_router.AutoRouterRoutingTestRequest.model_validate(payload)
     assert dict(ours.wire_body()) == dict(reference.wire_body())
+    messages_only: dict[str, JsonValue] = {
+        "messages": [{"role": "user", "content": "hi"}],
+        "complexity_router_config": {},
+    }
+    ours_only = auto_router.AutoRouterRoutingTestRequest.model_validate(messages_only)
+    reference_only = litellm_router.AutoRouterRoutingTestRequest.model_validate(messages_only)
+    wanted_body: dict[str, JsonValue] = {"messages": [{"role": "user", "content": "hi"}]}
+    assert dict(ours_only.wire_body()) == dict(reference_only.wire_body()) == wanted_body
 
 
 def test_names_properties() -> None:
@@ -560,8 +581,9 @@ def test_names_properties() -> None:
             "spend": 1.0,
             "attempt_count": 9,
         },
+        {"target_type": "key", "target_id": "k", "max_turns": 10, "max_budget": 1.0},
     )
-    target_expected = (False, True, True, False)
+    target_expected = (False, True, True, False, False)
     for payload, wanted in zip(target_payloads, target_expected, strict=True):
         ours_target = auto_router.ShadowEvalJobTargetResponse.model_validate(payload)
         reference_target = litellm_router.ShadowEvalJobTargetResponse.model_validate(payload)
@@ -571,8 +593,10 @@ def test_names_properties() -> None:
         with_field("stopped_by", "op"),
         with_field("ends_at", "2020-01-01T00:00:00Z"),
         with_field("targets", [SPENT_TARGET]),
+        with_field("targets", [JOB_TARGET | {"stopped_at": "2024-01-01T00:00:00Z"}]),
+        with_field("ends_at", "2999-01-01T00:00:00"),
     )
-    job_expected = ("running", "stopped", "completed", "completed")
+    job_expected = ("running", "stopped", "completed", "completed", "stopped", "running")
     for job_payload, job_wanted in zip(job_payloads, job_expected, strict=True):
         ours_job = auto_router.ShadowEvalJobResponse.model_validate(job_payload)
         reference_job = litellm_router.ShadowEvalJobResponse.model_validate(job_payload)
