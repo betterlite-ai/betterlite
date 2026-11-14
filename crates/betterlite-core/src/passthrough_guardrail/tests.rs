@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::Mutex;
 
@@ -8,19 +9,20 @@ use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 use super::PassThroughEndpointHandler;
-use super::errors::PassthroughGuardrailError;
+use super::errors::{PassthroughGuardrailError, PassthroughPayloadError};
 use super::settings::{
     PassThroughGuardrailSettings, PassthroughGuardrailInputs, PassthroughInputType, RequestData,
     ResponseCall,
 };
 use super::traits::{PassthroughGuardrail, PassthroughLogging, PassthroughPolicy};
+use super::wire::parse_request_data;
 
 fn json(source: &str) -> Json {
     serde_json::from_str(source).unwrap()
 }
 
 fn data(source: &str) -> RequestData {
-    serde_json::from_str(source).unwrap()
+    parse_request_data(source).unwrap()
 }
 
 fn value(source: &str) -> GuardrailValue {
@@ -414,10 +416,9 @@ fn extract_text_for_guardrail_renders_nested_values_as_json() {
 #[test]
 fn extract_text_for_guardrail_passes_every_value_kind_to_the_policy() {
     let policy = FakePolicy::resolving(None);
-    let mut payload = data(
-        r#"{"flag": true, "count": 2, "negative": -3, "nothing": null, "items": [1, "two"], "nested": {"deep": false}}"#,
+    let payload = data(
+        r#"{"flag": true, "count": 2, "negative": -3, "score": 0.5, "nothing": null, "items": [1, "two"], "nested": {"deep": false}}"#,
     );
-    payload.insert("score".to_owned(), GuardrailValue::Decimal(0.5));
     let expressions = names(&[
         "flag", "count", "negative", "score", "nothing", "items", "nested",
     ]);
@@ -876,4 +877,93 @@ async fn process_output_response_scans_a_non_finite_float_as_null() {
             .map(|call| call.inputs.texts.clone()),
         Some(vec![r#"{"score":null}"#.to_owned()])
     );
+}
+
+#[test]
+fn extract_text_for_guardrail_dumps_a_parsed_float_as_a_number() {
+    let policy = FakePolicy::resolving(None);
+    let text = PassThroughEndpointHandler::extract_text_for_guardrail(
+        &data(r#"{"temperature": 0.7}"#),
+        None,
+        &policy,
+    )
+    .unwrap();
+    assert_eq!(text, r#"{"temperature":0.7}"#);
+}
+
+#[test]
+fn parse_request_data_keeps_non_integer_numbers_as_decimals() {
+    let parsed = data(r#"{"temperature": 0.7, "nested": {"weights": [1.5, 2]}}"#);
+    let nested = GuardrailValue::Object(BTreeMap::from([(
+        "weights".to_owned(),
+        GuardrailValue::Array(vec![
+            GuardrailValue::Decimal(1.5),
+            GuardrailValue::SignedInteger(2),
+        ]),
+    )]));
+    assert_eq!(
+        parsed,
+        BTreeMap::from([
+            ("temperature".to_owned(), GuardrailValue::Decimal(0.7)),
+            ("nested".to_owned(), nested),
+        ])
+    );
+}
+
+#[test]
+fn parse_request_data_keeps_integers_of_every_sign_and_width() {
+    let parsed = data(r#"{"small": -3, "wide": 18446744073709551615, "huge": 1e300}"#);
+    assert_eq!(
+        parsed,
+        BTreeMap::from([
+            ("small".to_owned(), GuardrailValue::SignedInteger(-3)),
+            ("wide".to_owned(), GuardrailValue::UnsignedInteger(u64::MAX)),
+            ("huge".to_owned(), GuardrailValue::Decimal(1e300)),
+        ])
+    );
+}
+
+#[test]
+fn parse_request_data_reads_a_lone_private_key_as_the_number_it_carries() {
+    let parsed = data(
+        r#"{"a": {"$serde_json::private::Number": "-5"}, "b": {"$serde_json::private::Number": "18446744073709551615"}}"#,
+    );
+    assert_eq!(
+        parsed,
+        BTreeMap::from([
+            ("a".to_owned(), GuardrailValue::SignedInteger(-5)),
+            ("b".to_owned(), GuardrailValue::UnsignedInteger(u64::MAX)),
+        ])
+    );
+}
+
+#[test]
+fn parse_request_data_keeps_a_private_key_object_that_is_no_number() {
+    let parsed = data(
+        r#"{"a": {"$serde_json::private::Number": "0.5", "other": 1}, "b": {"$serde_json::private::Number": "abc"}}"#,
+    );
+    let key = "$serde_json::private::Number".to_owned();
+    let with_sibling = GuardrailValue::Object(BTreeMap::from([
+        (key.clone(), GuardrailValue::Text("0.5".to_owned())),
+        ("other".to_owned(), GuardrailValue::SignedInteger(1)),
+    ]));
+    let not_a_number = GuardrailValue::Object(BTreeMap::from([(
+        key,
+        GuardrailValue::Text("abc".to_owned()),
+    )]));
+    assert_eq!(
+        parsed,
+        BTreeMap::from([
+            ("a".to_owned(), with_sibling),
+            ("b".to_owned(), not_a_number)
+        ])
+    );
+}
+
+#[test]
+fn parse_request_data_rejects_a_payload_that_is_not_an_object() {
+    assert!(matches!(
+        parse_request_data("[1, 2]"),
+        Err(PassthroughPayloadError::Parse(_))
+    ));
 }

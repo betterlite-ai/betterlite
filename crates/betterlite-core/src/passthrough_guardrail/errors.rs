@@ -4,6 +4,8 @@ use betterlite_logging::private_json::error::PrivateJsonError;
 pub enum PassthroughPayloadError {
     #[error("the passthrough payload cannot be serialized")]
     Serialize(#[source] PrivateJsonError),
+    #[error("the passthrough payload is not a JSON object")]
+    Parse(#[source] serde_json::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -6,6 +6,7 @@ pub mod errors;
 pub mod payload;
 pub mod settings;
 pub mod traits;
+pub mod wire;
 
 mod tests;
 
