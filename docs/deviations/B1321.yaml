@@ -1,0 +1,5 @@
+task: B1321
+deviations:
+  - what: "Async chat requests whose media policy requires inlining return 400 invalid_request_error with code unsupported_remote_media and param identifying that media input; the gateway performs no URL retrieval."
+    why: "The async_inline_remote_media call reaches the unresolved download choice and must remain disabled pending Max's decision."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1373-L1396

@@ -1,0 +1,42 @@
+use betterlite_prompts::error::FactoryError;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use thiserror::Error;
+
+use crate::cache_create::error::CacheCreateError;
+use crate::gemini_history::error::HistoryError;
+
+#[derive(Debug, Error)]
+pub enum BodyError {
+    #[error(transparent)]
+    History(#[from] HistoryError),
+    #[error(transparent)]
+    Prompt(#[from] FactoryError),
+    #[error("`{field}` must be {expected}")]
+    Field {
+        field: &'static str,
+        expected: &'static str,
+    },
+    #[error("a request body value could not be converted")]
+    Encode(#[source] serde_json::Error),
+}
+
+// the cache endpoint request and the body build fail on their own terms, and the caller maps either
+#[derive(Debug, Error)]
+pub enum RequestError {
+    #[error(transparent)]
+    Cache(#[from] CacheCreateError),
+    #[error(transparent)]
+    Body(#[from] BodyError),
+    #[error(transparent)]
+    Inline(#[from] betterlite_prompts::media::error::MediaError),
+}
+
+pub fn encode<T, U>(value: &T) -> Result<U, BodyError>
+where
+    T: Serialize + ?Sized,
+    U: DeserializeOwned,
+{
+    let encoded = serde_json::to_value(value).map_err(BodyError::Encode)?;
+    serde_json::from_value(encoded).map_err(BodyError::Encode)
+}
