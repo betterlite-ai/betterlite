@@ -1,0 +1,28 @@
+kind: probe
+name: deployment-clients-request-url-cannot-reach-builder
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      deployment_clients:
+        calculate: []
+        limits: []
+        cached: []
+        credentials:
+          - config: {model: openai/gpt-4o, api_base: "https://configured.example/v1"}
+            request: {api_base: "https://caller.example/v1"}
+          - config: {model: openai/gpt-4o, api_base: "https://configured.example/v1"}
+            request: {api_key: sk-caller, api_base: "https://caller.example/v1"}
+compare:
+  expected_difference:
+    - pointer: /output/deployment_clients/credentials/0/params/api_base
+      reference: "https://caller.example/v1"
+      rust: "https://configured.example/v1"
+      why: a request destination is never written into the client params, so the configured base stays
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/clientside_credential_handler.py#L76-L105
+    - pointer: /output/deployment_clients/credentials/1/params/api_base
+      reference: "https://caller.example/v1"
+      rust: "https://configured.example/v1"
+      why: the request key is taken, while the request base URL cannot move the client destination
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/clientside_credential_handler.py#L76-L105
+  ignore: []

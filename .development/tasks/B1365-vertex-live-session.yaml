@@ -80,5 +80,5 @@ pitfalls:
   - A later create_response=False update cannot be sent as a second setup and must produce a warning.
   - Partial turn detection normally enables VAD, but literal false create_response must keep it disabled.
   - Vertex function responses omit IDs even when the Studio parent includes them.
-budget: {max_changed_lines: 600, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: security

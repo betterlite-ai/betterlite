@@ -1,0 +1,14 @@
+kind: helper
+name: agentcore-transform-sse-valid-json-lines
+call:
+  b4804:
+    {
+      "function": "parse_sse",
+      "lines": [
+        "data: {\"jsonrpc\": \"2.0\", \"id\": \"1\", \"result\": {\"kind\": \"task\"}}",
+        "",
+        "data: {\"id\": \"2\", \"result\": {\"kind\": \"status-update\"}}"
+      ]
+    }
+env: {}
+compare: {ignore: []}

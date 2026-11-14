@@ -1,0 +1,8 @@
+kind: helper
+name: backend-allowed-exact-path
+call:
+  b4471:
+    component: backend
+    paths: [/docs]
+env: {}
+compare: {ignore: []}

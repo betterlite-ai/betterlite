@@ -1,7 +1,7 @@
 id: B303
 milestone: M2 routing
 title: Deployment client reuse and parallel request guards
-status: todo
+status: done
 depends_on: [B302, B009, B010, B011, B005, B301, B361, B002, B9710]
 file: tasks/B303-deployment-clients.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/router_utils/clientside_credential_handler.py"
 parent: B016
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1612
