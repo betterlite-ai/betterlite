@@ -1,13 +1,14 @@
 task: B7939
 deviations:
   - what: >-
-      Fields and TypedDict entries that LiteLLM types as Any, object, a bare dict or a bare list are
-      typed JsonValue, dict[str, JsonValue] or list[JsonValue] here. This covers the datadog_llm_obs
-      payloads, ArgillaItem.fields, LangsmithInputs.messages, .input and .original_response,
-      LangsmithQueueObject.data, DatadogProxyFailureHookJsonMessage.user_api_key_dict,
+      Fields, function parameters and TypedDict entries that LiteLLM types as Any, object, a bare
+      dict or a bare list are typed JsonValue, dict[str, JsonValue] or list[JsonValue] here. This
+      covers the datadog_llm_obs payloads, ArgillaItem.fields, LangsmithInputs.messages, .input and
+      .original_response, LangsmithQueueObject.data, DatadogProxyFailureHookJsonMessage.user_api_key_dict,
       PagerDutyPayload.custom_details, PostHogEventPayload.properties, s3BatchLoggingElement.payload,
       GCSLogQueueItem.kwargs and response_obj, LLMObsPayload.tags, AgenticLoopPlan.response_override
-      and the AgenticLoopRequestPatch messages, tools, optional_params and kwargs.
+      and .metadata, the AgenticLoopRequestPatch messages, tools, optional_params and kwargs, and the
+      converted_stream_requested params mapping.
     why: >-
       The Python rules forbid Any and object in annotations, and JsonValue is the JSON type the wheel
       uses. A JSON body validates the same; a non-JSON Python object, which Any, object and bare
