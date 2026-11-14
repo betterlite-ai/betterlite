@@ -67,12 +67,8 @@ fn partition(items: &[Json], model: &str) -> Result<History, CompactionError> {
     let mut sorted_results = results.clone();
     sorted_results.sort();
     let duplicated = calls.iter().collect::<BTreeSet<_>>().len() != calls.len();
-    if prefix.is_empty()
-        || calls.iter().any(String::is_empty)
-        || results.iter().any(String::is_empty)
-        || duplicated
-        || sorted_calls != sorted_results
-    {
+    let empty_id = calls.iter().chain(&results).any(String::is_empty);
+    if prefix.is_empty() || empty_id || duplicated || sorted_calls != sorted_results {
         return Err(CompactionError {
             kind: ErrorKind::Unavailable,
             model: model.to_owned(),
