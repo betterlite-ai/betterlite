@@ -28,21 +28,18 @@ fn usage_shape() -> Value {
 
 // A reply choice holds a message; a stream event choice holds a delta whose tool calls carry an index
 pub(crate) fn choices(value: &Value, streamed: bool) -> Value {
-    let mut tool_call = json!({
-        "id": null,
-        "type": null,
-        "function": {"name": null, "arguments": null},
-    });
-    let mut choice = json!({"index": null, "finish_reason": null});
-    let mut shape = json!({"model": null, "usage": usage_shape()});
-    if streamed {
-        tool_call["index"] = Value::Null;
-        choice["delta"] = json!({"content": null, "tool_calls": [tool_call]});
+    let function = json!({"name": null, "arguments": null});
+    let shape = if streamed {
+        let tool_call = json!({"id": null, "type": null, "function": function, "index": null});
+        let delta = json!({"content": null, "tool_calls": [tool_call]});
+        let choice = json!({"index": null, "finish_reason": null, "delta": delta});
+        json!({"model": null, "choices": [choice], "usage": usage_shape()})
     } else {
-        choice["message"] = json!({"role": null, "content": null, "tool_calls": [tool_call]});
-        shape["id"] = Value::Null;
-    }
-    shape["choices"] = json!([choice]);
+        let tool_call = json!({"id": null, "type": null, "function": function});
+        let message = json!({"role": null, "content": null, "tool_calls": [tool_call]});
+        let choice = json!({"index": null, "finish_reason": null, "message": message});
+        json!({"id": null, "model": null, "choices": [choice], "usage": usage_shape()})
+    };
     project(value, &shape)
 }
 
