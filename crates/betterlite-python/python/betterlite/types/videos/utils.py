@@ -62,7 +62,7 @@ def _decode_id_parts(encoded_id: str, kind: _IdKind) -> tuple[str | None, str | 
             parts[1].replace(_MODEL_ID_PREFIX, ""),
             parts[2].replace(kind.field_prefix, ""),
         )
-    except (binascii.Error, UnicodeDecodeError) as error:
+    except (binascii.Error, UnicodeDecodeError, UnicodeEncodeError) as error:
         LOGGER.debug("Error decoding %s '%s': %s", kind.label, encoded_id, error)
         return None, None, encoded_id
 

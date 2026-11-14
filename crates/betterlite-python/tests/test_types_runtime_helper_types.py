@@ -11,7 +11,10 @@ from pydantic import JsonValue, TypeAdapter, ValidationError
 from typing_extensions import TypedDict
 
 from betterlite.types.litellm_core_utils.streaming_chunk_builder_utils import UsagePerChunk
+from betterlite.types.litellm_params_state import ForeignObject
 from betterlite.types.passthrough_endpoints.managed_id_rewriter import (
+    ManagedFileIdReader,
+    ManagedFileIdWriter,
     ManagedFileRow,
     ManagedFileTable,
     ManagedObjectRow,
@@ -77,12 +80,12 @@ SPECS = {
     "managed_id_rewriter": {
         "protocol": [
             "ManagedResourceRow", "ManagedFileRow", "ManagedObjectRow", "ManagedTable",
-            "ManagedFileTable", "ManagedObjectTable",
+            "ManagedFileTable", "ManagedObjectTable", "ManagedFileIdReader", "ManagedFileIdWriter",
         ],
+        "typeddict": ["ManagedListResponse"],
         "literal_alias": ["SortOrder", "ResourceKind"],
         "typevar": ["RowT"],
         "declare": ["PrismaWhereValue", "PrismaWhere", "PrismaOrder", "ManagedRowData"],
-        "unported": ["ManagedListResponse", "ManagedFileIdReader", "ManagedFileIdWriter"],
     },
     "pass_through_endpoints": {
         "enum": ["EndpointType"],
@@ -167,9 +170,7 @@ def model_view(model):
     return described
 
 def typeddict_view(typed):
-    annotations = {}
-    for base in reversed(typed.__mro__):
-        annotations.update(base.__dict__.get("__annotations__", {}))
+    annotations = typing.get_type_hints(typed)
     return {
         "required": sorted(typed.__required_keys__),
         "optional": sorted(typed.__optional_keys__),
@@ -283,8 +284,7 @@ def describe_modules():
                     continue
                 for name in names:
                     entry[side][name] = VIEWS[kind](getattr(module, name))
-        unported = set(spec.get("unported", []))
-        entry["unexpected"] = sorted(defined_names(imported["litellm"]) - declared - unported)
+        entry["unexpected"] = sorted(defined_names(imported["litellm"]) - declared)
         described[key] = entry
     return described
 
@@ -292,30 +292,21 @@ def b64(text):
     return base64.b64encode(text.encode("utf-8")).decode("utf-8")
 
 VIDEO_ENCODE_CASES = [
-    ["vid-1", "openai", None],
-    ["vid-2", "azure", "gpt-4o"],
-    ["vid-3", "", None],
-    ["", "openai", None],
+    ["vid-1", "openai", None], ["vid-2", "azure", "gpt-4o"],
+    ["vid-3", "", None], ["", "openai", None],
     ["video_already", "openai", None],
     ["video_" + b64("litellm:custom_llm_provider:openai;model_id:m;video_id:v"), "openai", "m"],
-    ["video_" + b64("a;b"), "openai", "m"],
-    ["video_a", "openai", "m"],
-    ["video_video_abc", "openai", "m"],
-    ["not_a_video", "openai", "m"],
+    ["video_" + b64("a;b"), "openai", "m"], ["video_a", "openai", "m"],
+    ["video_video_abc", "openai", "m"], ["not_a_video", "openai", "m"],
 ]
 EXTRA_DECODE_INPUTS = [
-    "",
-    "video_",
-    "vid-1",
-    "video_" + b64("x;y;z"),
+    "", "video_", "vid-1", "video_" + b64("x;y;z"),
     "video_" + b64("litellm:custom_llm_provider:openai;model_id:m;video_id:v;extra"),
     "video_" + b64("litellm:custom_llm_provider:openai;model_id:m;video_id:v").rstrip("="),
-    "video_abc",
-    "video_a",
-    "video_!!!",
-    "Video_abc",
+    "video_abc", "video_a", "video_!!!", "Video_abc",
     "character_" + b64("litellm:custom_llm_provider:openai;model_id:m;character_id:c"),
 ]
+SURROGATE_IDS = ["video_" + chr(0xD800), "character_" + chr(0xD800)]
 
 def codec_results(package, label):
     utils = importlib.import_module(package + ".types.videos.utils")
@@ -324,12 +315,17 @@ def codec_results(package, label):
     extract = getattr(utils, "extract_original_" + label + "_id")
     decode_inputs = [case[0] for case in VIDEO_ENCODE_CASES] + EXTRA_DECODE_INPUTS
     encoded = [encode(case[0], case[1], case[2]) for case in VIDEO_ENCODE_CASES]
+    surrogates = [(dict(decode(item)), item) for item in SURROGATE_IDS]
     return {
         "encoded": encoded,
         "decoded": [dict(decode(item)) for item in decode_inputs],
         "original": [extract(item) for item in decode_inputs],
         "reencoded": [encode(item, "azure", "m2") for item in decode_inputs],
         "round_trip": [extract(item) for item in encoded],
+        "surrogate": [
+            [view[label + "_id"] == item, view["custom_llm_provider"], extract(item) == item]
+            for view, item in surrogates
+        ],
     }
 
 ENDPOINT_CASES = [
@@ -533,52 +529,28 @@ print(json.dumps(report, sort_keys=True))
 """
 
 EXPECTED_SECTIONS: Final[tuple[str, ...]] = (
-    "character_ids",
-    "endpoints",
-    "prompts",
-    "scopes",
-    "settings",
-    "video_ids",
-    "video_models",
+    "character_ids", "endpoints", "prompts", "scopes",
+    "settings", "video_ids", "video_models",
 )
 
 MODULE_KEYS: Final[tuple[str, ...]] = (
-    "assembly_ai",
-    "azure_ad_token",
-    "daily_activity",
-    "init_prompts",
-    "managed_id_rewriter",
-    "pass_through_endpoints",
-    "secret_managers_main",
-    "streaming_chunk_builder",
-    "tinyfish",
-    "videos_main",
-    "videos_utils",
+    "assembly_ai", "azure_ad_token", "daily_activity", "init_prompts",
+    "managed_id_rewriter", "pass_through_endpoints", "secret_managers_main",
+    "streaming_chunk_builder", "tinyfish", "videos_main", "videos_utils",
 )
 
 TINYFISH_ENDPOINTS: Final[list[list[JsonValue]]] = [
-    ["POST", "/v1/automation/run", True],
-    ["POST", "/v1/automation/run-async", True],
-    ["POST", "/v1/automation/run-sse", True],
-    ["GET", "/v1/automation/run", False],
-    ["POST", "/v1/automation/run/", False],
-    ["POST", "/v1/automation/run/extra", False],
-    ["GET", "/v1/runs/abc", True],
-    ["POST", "/v1/runs/abc", False],
-    ["GET", "/v1/runs", False],
-    ["GET", "/v1/runs/", False],
-    ["GET", "/v1/runs/abc/cancel", False],
-    ["POST", "/v1/runs/abc/cancel", True],
-    ["POST", "/v1/runs/abc/delete", False],
-    ["POST", "v1/automation/run", False],
-    ["POST", "/v1//runs", False],
-    ["POST", "/v1/./automation/run", False],
-    ["POST", "/v1/automation/../run", False],
-    ["POST", "/v1/../runs/abc/cancel", False],
-    ["get", "/v1/runs/abc", False],
-    ["POST", "", False],
-    ["POST", "/", False],
-    ["POST", "/v1/runs/abc/cancel/", False],
+    ["POST", "/v1/automation/run", True], ["POST", "/v1/automation/run-async", True],
+    ["POST", "/v1/automation/run-sse", True], ["GET", "/v1/automation/run", False],
+    ["POST", "/v1/automation/run/", False], ["POST", "/v1/automation/run/extra", False],
+    ["GET", "/v1/runs/abc", True], ["POST", "/v1/runs/abc", False],
+    ["GET", "/v1/runs", False], ["GET", "/v1/runs/", False],
+    ["GET", "/v1/runs/abc/cancel", False], ["POST", "/v1/runs/abc/cancel", True],
+    ["POST", "/v1/runs/abc/delete", False], ["POST", "v1/automation/run", False],
+    ["POST", "/v1//runs", False], ["POST", "/v1/./automation/run", False],
+    ["POST", "/v1/automation/../run", False], ["POST", "/v1/../runs/abc/cancel", False],
+    ["get", "/v1/runs/abc", False], ["POST", "", False],
+    ["POST", "/", False], ["POST", "/v1/runs/abc/cancel/", False],
 ]
 
 PROMPT_INTEGRATIONS: Final[list[JsonValue]] = [
@@ -617,6 +589,7 @@ class VideoCodecNames(TypedDict):
     original: list[str]
     reencoded: list[str]
     round_trip: list[str]
+    surrogate: list[list[JsonValue]]
 
 
 class CharacterCodecNames(TypedDict):
@@ -625,6 +598,7 @@ class CharacterCodecNames(TypedDict):
     original: list[str]
     reencoded: list[str]
     round_trip: list[str]
+    surrogate: list[list[JsonValue]]
 
 
 class BehaviourNames(TypedDict):
@@ -775,6 +749,23 @@ class _StubObjectTable(_StubTable[ManagedObjectRow]):
         return _StubRow()
 
 
+class _StubManagedHook:
+    async def get_unified_file_id(
+        self, file_id: str, litellm_parent_otel_span: ForeignObject | None = None,
+    ) -> ManagedFileRow | None:
+        _ = (file_id, litellm_parent_otel_span)
+        await sleep(0)
+        return None
+
+    async def store_unified_file_id(
+        self, file_id: str, file_object: ForeignObject | None,
+        litellm_parent_otel_span: ForeignObject | None, model_mappings: dict[str, str],
+        user_api_key_dict: ForeignObject,
+    ) -> None:
+        _ = (file_id, file_object, litellm_parent_otel_span, model_mappings, user_api_key_dict)
+        await sleep(0)
+
+
 @pytest.fixture(scope="module")
 def report() -> Report:
     completed = subprocess.run(
@@ -846,6 +837,13 @@ def test_character_id_codec_names(report: Report) -> None:
     assert character_ids["original"][4] == "video_already"
     assert character_ids["original"][-1] == "c"
     assert character_ids["round_trip"][1] == "vid-2"
+
+
+def test_surrogate_id_codec_names(report: Report) -> None:
+    unchanged: Final[list[JsonValue]] = [True, None, True]
+    codecs = report["behaviour"]["betterlite"]
+    assert codecs["video_ids"]["surrogate"] == [unchanged, unchanged]
+    assert codecs["character_ids"]["surrogate"] == [unchanged, unchanged]
 
 
 def test_tinyfish_endpoint_names(report: Report) -> None:
@@ -974,3 +972,11 @@ def test_protocol_names_are_structural() -> None:
     assert callable(generic_table.find_many)
     assert callable(object_table.update)
     assert callable(object_table.upsert)
+
+
+def test_runtime_protocol_names() -> None:
+    reader: ManagedFileIdReader = _StubManagedHook()
+    writer: ManagedFileIdWriter = _StubManagedHook()
+    assert isinstance(reader, ManagedFileIdReader)  # ast-grep-ignore: no-isinstance
+    assert isinstance(writer, ManagedFileIdWriter)  # ast-grep-ignore: no-isinstance
+    assert not isinstance(_StubRow(), ManagedFileIdReader)  # ast-grep-ignore: no-isinstance

@@ -1,8 +1,10 @@
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Literal, Protocol, TypeAlias, TypeVar
+from typing import Literal, Protocol, TypeAlias, TypedDict, TypeVar, runtime_checkable
 
 from pydantic import JsonValue
+
+from betterlite.types.litellm_params_state import ForeignObject
 
 SortOrder: TypeAlias = Literal["asc", "desc"]
 ResourceKind: TypeAlias = Literal["files", "batches"]
@@ -58,3 +60,30 @@ class ManagedObjectTable(ManagedTable[ManagedObjectRow], Protocol):
     async def upsert(
         self, *, where: PrismaWhere, data: Mapping[str, ManagedRowData],
     ) -> ManagedObjectRow: ...
+
+
+@runtime_checkable
+class ManagedFileIdReader(Protocol):
+    async def get_unified_file_id(
+        self, file_id: str, litellm_parent_otel_span: ForeignObject | None = None,
+    ) -> ManagedFileRow | None: ...
+
+
+@runtime_checkable
+class ManagedFileIdWriter(Protocol):
+    async def store_unified_file_id(
+        self,
+        file_id: str,
+        file_object: ForeignObject | None,
+        litellm_parent_otel_span: ForeignObject | None,
+        model_mappings: dict[str, str],
+        user_api_key_dict: ForeignObject,
+    ) -> None: ...
+
+
+class ManagedListResponse(TypedDict):
+    object: Literal["list"]
+    data: list[dict[str, JsonValue]]
+    first_id: str | None
+    last_id: str | None
+    has_more: bool
