@@ -10,3 +10,8 @@ deviations:
       image plus optional params dict merge does.
     why: the upload is a typed ImageFile part here, so a JSON option cannot take its place.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_variations/transformation.py#L32-L44
+  - what: >-
+      A 2xx variation reply that carries an error object and no data fails as a 500 here, where LiteLLM builds an
+      ImageResponse success with empty data and a wall-clock created.
+    why: the shared reply decoder refuses the error object instead of reporting an empty success.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_variations/handler.py#L190-L206
