@@ -47,7 +47,6 @@ pub struct VertexTuningJobCreate {
     pub tuned_model_display_name: Option<String>,
 }
 
-
 pub fn to_vertex_request(
     create: &FineTuneCreate,
     original: &OriginalHyperparameters,

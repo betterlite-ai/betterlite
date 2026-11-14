@@ -78,8 +78,7 @@ pub fn decode_vertex_tuning_job(
     let response: VertexTuningJob =
         serde_json::from_slice(bytes).map_err(|source| TuningRecordError::Json(source))?;
     let record = openai_record(&response, local)?;
-    let encoded =
-        serde_json::to_vec(&record).map_err(|source| TuningRecordError::Json(source))?;
+    let encoded = serde_json::to_vec(&record).map_err(|source| TuningRecordError::Json(source))?;
     decode_fine_tune_job(&encoded, false).map_err(|source| TuningRecordError::Job(source))
 }
 
