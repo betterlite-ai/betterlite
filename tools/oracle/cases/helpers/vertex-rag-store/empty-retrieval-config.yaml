@@ -1,0 +1,19 @@
+kind: helper
+name: vertex-rag-store-empty-retrieval-config
+call:
+  vertex_rag_store:
+    calls:
+      - function: search
+        vector_store_id: projects/p/locations/us-central1/ragCorpora/corpus
+        query: [plain]
+        api_base: https://host/v1
+        litellm_params: {}
+        optional_params: {}
+      - function: search
+        vector_store_id: projects/p/locations/us-central1/ragCorpora/corpus
+        query: rewrite
+        api_base: https://host/v1
+        litellm_params: {}
+        optional_params: {rewrite_query: true, max_num_results: null, filters: null}
+env: {}
+compare: {ignore: []}

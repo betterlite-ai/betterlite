@@ -88,5 +88,5 @@ pitfalls:
   - RAG creation reads display_name, so a camelCase displayName alone does not populate the returned name.
   - Explicit zero top_k is retained because only None suppresses retrieval options.
   - Corpus creation reports completed immediately without polling an operation.
-budget: {max_changed_lines: 700, max_new_expects: 1}
+budget: {max_changed_lines: 1000, max_new_expects: 1}
 review_level: standard
