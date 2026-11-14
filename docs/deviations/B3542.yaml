@@ -23,6 +23,9 @@ deviations:
       The orchestrator is split into compress() and compress_with_embeddings() instead of
       one compress() taking an optional embedding_model, and the counter arrives as a
       TokenCounter argument rather than as the module-level litellm.token_counter.
+      CompressRequest carries the trigger as a plain usize, so a caller passes
+      DEFAULT_COMPRESSION_TRIGGER (200_000) where LiteLLM's default parameter would apply.
+      The target stays optional because absent there really means trigger * 7 // 10.
     why: >-
       A caller that supplies an embedding model, or none, gets the same result and the
       same order of work. Two typed entry points keep the embedding executor's failure
