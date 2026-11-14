@@ -1594,8 +1594,11 @@ dependencies = [
  "betterlite-config",
  "rstest",
  "rust_decimal",
+ "serde",
+ "serde_json",
  "strum",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -1915,6 +1918,7 @@ dependencies = [
  "aws-types",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-models",
  "bytes",
  "crc32fast",
  "futures-util",
