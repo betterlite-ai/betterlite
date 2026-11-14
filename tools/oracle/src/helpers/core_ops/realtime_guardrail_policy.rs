@@ -27,9 +27,10 @@ impl RealtimeGuardrailCallback for CallbackSpec {
 
     fn should_run_guardrail(
         &self,
-        _data: &RequestData,
+        data: &RequestData,
         event: GuardrailEventHooks,
     ) -> Result<bool, Infallible> {
+        _ = data;
         Ok(self.runs_for.contains(&event))
     }
 }

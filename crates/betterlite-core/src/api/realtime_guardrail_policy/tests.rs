@@ -1,8 +1,7 @@
 #![cfg(test)]
 
 use std::convert::Infallible;
-use std::error::Error;
-use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
+use std::fmt::Debug;
 use std::mem::take;
 use std::ptr::from_ref;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -10,6 +9,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
+use thiserror::Error;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
@@ -527,16 +527,12 @@ fn setup_injection_marks_the_session_before_the_caller_sends() {
     assert!(sent);
 }
 
-#[derive(Debug, PartialEq, Eq)]
-struct GateFailure;
-
-impl Display for GateFailure {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
-        formatter.write_str("the guardrail gate failed")
-    }
+#[derive(Debug, PartialEq, Eq, Error)]
+#[error("the {event:?} gate failed for a request with {keys} keys")]
+struct GateFailure {
+    event: GuardrailEventHooks,
+    keys: usize,
 }
-
-impl Error for GateFailure {}
 
 struct Failing;
 
@@ -549,10 +545,13 @@ impl RealtimeGuardrailCallback for Failing {
 
     fn should_run_guardrail(
         &self,
-        _data: &RequestData,
-        _event: GuardrailEventHooks,
+        data: &RequestData,
+        event: GuardrailEventHooks,
     ) -> Result<bool, GateFailure> {
-        Err(GateFailure)
+        Err(GateFailure {
+            event,
+            keys: data.len(),
+        })
     }
 }
 
@@ -563,7 +562,13 @@ fn a_failing_predicate_error_is_returned_not_read_as_false() {
         &RequestData::default(),
         &TRANSCRIPTION_EVENT_HOOKS,
     );
-    assert_eq!(detected, Err(GateFailure));
+    assert_eq!(
+        detected,
+        Err(GateFailure {
+            event: GuardrailEventHooks::RealtimeInputTranscription,
+            keys: 0,
+        })
+    );
 }
 
 #[test]
@@ -577,7 +582,10 @@ fn setup_injection_surfaces_a_failing_predicate_and_leaves_the_flag_unset() {
     );
     assert!(matches!(
         injected,
-        Err(RealtimeGuardrailPolicyError::Callback(GateFailure))
+        Err(RealtimeGuardrailPolicyError::Callback(GateFailure {
+            event: GuardrailEventHooks::RealtimeInputTranscription,
+            keys: 0,
+        }))
     ));
     assert!(!sent);
 }
