@@ -1,0 +1,73 @@
+task: B7942
+deviations:
+  - what: >-
+      types/agents.py stops at MakeAgentsPublicRequest. _normalize_a2a_jsonrpc_response,
+      LiteLLMSendMessageResponse.from_a2a_response and LiteLLMSendMessageResponse.from_dict are not
+      declared here, so the names do not exist in betterlite.types.agents.
+    why: >-
+      They sit at agents.py L416-L506, past the range this task references (L1-L356), and B8083 declares
+      LiteLLMSendMessageResponse on ResponseObject in betterlite/a2a_protocol/types.py while B4771 owns
+      the same normalization and response on the Rust side. A whole-file port also cannot hold the
+      300-line limit the Python rules put on a source file.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L416-L506
+  - what: >-
+      types/decisions.py stops at OpenAIDecisionResponse. _NO_EXTRA, the sixteen DecisionsIR*
+      dataclasses, the DecisionsIRQuestion and DecisionsIRAnswer aliases and UnsupportedDecisionsRequest
+      are not declared here, so those names do not exist in betterlite.types.decisions.
+    why: >-
+      They sit at decisions.py L372-L497, past the range this task references (L1-L342). B3510 owns the
+      shared intermediate representation and its records in betterlite-models, and a whole-file port
+      cannot hold the 300-line limit the Python rules put on a source file.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/decisions.py#L372-L497
+  - what: >-
+      AgentConfig.identity and PatchAgentRequest.identity are ReadOnly[dict[str, JsonValue] | None] and
+      AgentResponse.identity is dict[str, JsonValue] | None. LiteLLM types them as
+      EntraIdentityConfig | None and AgentIdentityBinding | None, so the Entra fields are not checked
+      here, unknown keys are kept instead of rejected, and tenant_id, client_id and
+      service_principal_id keep their text instead of being normalized to a UUID. The execution_mode
+      fields hold the same Literal values as AgentExecutionMode, and that name plus the two identity
+      types cannot be imported from betterlite.types.agents, while litellm.types.agents re-exports them.
+    why: >-
+      EntraIdentityConfig, AgentIdentityBinding and AgentExecutionMode live in
+      litellm/types/proxy/agent_identity.py, which B7949 ports as betterlite.types.proxy.agent_identity.
+      That module does not exist at this pin, so importing it would make this task depend on an unbuilt
+      task's file.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/agent_identity.py#L10-L46
+  - what: >-
+      AgentResponse.agent_card_params is dict[str, JsonValue]. LiteLLM types it as dict[str, Any], so a
+      value that is not valid JSON is rejected here and kept by LiteLLM.
+    why: >-
+      The Python rules forbid object and Any in a type; JsonValue names the JSON types the field holds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L323
+  - what: >-
+      Every field LiteLLM types as object, dict[str, object], Mapping[str, object] or Sequence[object]
+      is JsonValue, dict[str, JsonValue], Mapping[str, JsonValue] or Sequence[JsonValue] here, so a value
+      that is not a JSON type (a set, a custom class) is rejected by these models where LiteLLM keeps it.
+    why: >-
+      object accepts every value and says nothing about it, which the Python rules forbid; JsonValue is
+      the closed JSON union the repo uses for open payloads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/decisions.py#L11
+  - what: >-
+      The NoulQuestion after-validator is named require_instructions. LiteLLM names it
+      require_instructions_or_criteria, so that attribute name does not exist on the class here.
+    why: >-
+      The name is 32 characters, past the 30-character limit the .ast-grep no-long-names rule enforces,
+      and the commented ignore is reserved for names another package already defines. Pydantic runs the
+      validator on the same input and raises the same message through model_validate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/decisions.py#L29
+  - what: >-
+      Field descriptions and class docstrings are not ported, so model_json_schema() carries no
+      description text where LiteLLM's does. Keys, required keys, Literal values, constraints and
+      defaults are identical.
+    why: >-
+      The definition of done names keys, required keys, Literal values, Enum members and field defaults;
+      the prose is documentation for LiteLLM's OpenAPI page and betterlite serves its own schema.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L143-L148
+  - what: >-
+      systemone_choice_key takes value as a keyword-only argument, so the positional call
+      systemone_choice_key(some_value) that works on LiteLLM raises TypeError here.
+    why: >-
+      The argument is typed str | bool and the FBT001 boolean trap rule rejects a boolean-typed
+      positional argument; this task allows no suppressions, and gateway_requests.py and
+      model_groups.py make their boolean arguments keyword-only the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/decisions.py#L206-L209

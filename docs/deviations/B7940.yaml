@@ -1,0 +1,52 @@
+task: B7940
+deviations:
+  - what: >-
+      AlertType derives from enum.StrEnum, where LiteLLM declares class AlertType(str, Enum).
+    why: >-
+      The repository's ruff rules require StrEnum over a str mixin, and this task's
+      max_new_expects is 0, so the str, Enum form cannot carry the suppression ruff
+      wants. Every member, its name, its value and compare-by-value behavior are
+      identical; str() and format() return the value rather than Class.MEMBER, and
+      Python runtime formatting is outside the compatibility policy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/slack_alerting.py#L162
+  - what: >-
+      ChatCompletionCachedContent is declared in anthropic_cache_control_hook.py,
+      where LiteLLM imports it from litellm.types.llms.openai.
+    why: >-
+      betterlite's betterlite/types/llms/openai package does not declare the TypedDict
+      yet and is outside this task's scope. The local copy has the same keys, required
+      keys and Literal values, and the names test compares it against LiteLLM's own
+      litellm/types/llms/openai.py definition.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L632
+  - what: >-
+      SearchSucceeded.response is typed BaseModel | None, where LiteLLM types it as
+      "SearchResponse | None".
+    why: >-
+      SearchResponse is declared in litellm.llms.base_llm.search.transformation and
+      betterlite has no equivalent module yet; a TYPE_CHECKING forward reference is
+      banned by the repository's Python rules. SearchResponse subclasses
+      LiteLLMPydanticObjectBase, so BaseModel is its declared supertype and the field
+      holds the same values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/websearch_interception.py#L60-L63
+  - what: >-
+      Open JSON positions are declared as dict[str, JsonValue] where LiteLLM writes a
+      bare dict or dict[str, Any], in BedrockKBLocation's location maps,
+      BedrockKBRetrievalResult.metadata, BedrockKBModelConfiguration's
+      additionalModelRequestFields, BedrockKBRerankingConfiguration's
+      bedrockRerankingConfiguration, BedrockKBVectorSearchConfiguration.filter,
+      HangingRequestData.alerting_metadata and
+      CompressionInterceptionConfig.embedding_model_params.
+    why: >-
+      The repository's ast-grep rules reject Any and bare dict in type positions.
+      JsonValue names the same open JSON, and pydantic validates the same values into
+      the same objects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/rag/bedrock_knowledgebase.py#L10
+  - what: >-
+      CodeInterpreterInterceptionConfig, CompressionInterceptionConfig and
+      CompressionSavingsMetadata import TypedDict from typing_extensions, where
+      LiteLLM imports it from typing.
+    why: >-
+      Pydantic rejects typing.TypedDict below Python 3.12 and the wheel declares
+      requires-python >= 3.10, so every TypedDict in the package comes from
+      typing_extensions. Keys, required keys and ReadOnly markers are identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/code_interpreter_interception.py#L5
