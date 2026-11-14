@@ -1,0 +1,47 @@
+task: B7944
+deviations:
+  - what: >-
+      ShadowEvalJobResponse.router_name and ShadowEvalJobResponse.status are plain properties, not
+      pydantic computed fields, so model_dump() and model_dump_json() leave both keys out. The values
+      themselves are the same as LiteLLM's.
+    why: >-
+      mypy strict rejects computed_field applied over a property (prop-decorator and an Any-typed
+      decorator), and the task allows no new type or lint suppression. The server builds these two
+      values when it writes a response, in Rust (B380).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L727-L752
+  - what: >-
+      RequestComplexityRouterConfig declares only plugins and classifier_plugin. LiteLLM inherits the
+      rest of its fields from ComplexityRouterConfig, which has no Python owner at this pin, so tiers,
+      tier_model_configs and the other base fields are not declared here.
+    why: >-
+      Porting the base class would pull in types from litellm.router_strategy.complexity_router that
+      no task owns yet; the field list of the ported class itself is complete.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L18
+  - what: >-
+      Fields LiteLLM types as Mapping[str, object] or Sequence[Mapping[str, object]] use JsonValue, and
+      AutoRouterRoutingTestResponse.routing_decision is an open Mapping[str, JsonValue] rather than the
+      StandardLoggingRoutingDecision TypedDict: an unknown key in a routing decision is kept instead of
+      dropped, and values of the wrong type are rejected by LiteLLM and kept here.
+    why: >-
+      object accepts every value and says nothing about it, which the Python rules forbid, and
+      StandardLoggingRoutingDecision lives in litellm/types/utils.py, which no task owns at this pin.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L75-L110
+  - what: >-
+      The models run no request validators: StartShadowEvalRequest's target, router set, model scope,
+      direction and percentage rules and AutoRouterRoutingTestRequest's message and prompt rules are
+      absent, so a body LiteLLM rejects at model validation (no target, empty messages, a message
+      without a role) validates here. The server applies the same rules in Rust.
+    why: >-
+      B345 owns all eight StartShadowEvalRequest validators and B349 owns the two
+      AutoRouterRoutingTestRequest validators, and the validators that narrow a value to None or use
+      isinstance cannot be written under the Python rules without suppressions.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L441-L513
+  - what: >-
+      Field descriptions and class docstrings are not ported, so the models' JSON schemas carry no
+      description text where LiteLLM's do. Keys, required keys, defaults, Literal values and
+      constraints are identical.
+    why: >-
+      The task's definition of done names keys, required keys, Literal values, Enum members and field
+      defaults; the prose descriptions are documentation for LiteLLM's OpenAPI page and betterlite
+      serves its own schema from the Rust server.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L109

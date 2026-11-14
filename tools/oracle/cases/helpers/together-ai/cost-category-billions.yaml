@@ -1,0 +1,33 @@
+kind: helper
+name: cost-category-billions
+call:
+  b5831:
+    model_cost: {}
+    chat_supported: []
+    chat_map: []
+    chat_messages: []
+    completion: []
+    rerank_requests: []
+    rerank_responses: []
+    cost_categories:
+    - {model: llama-3b, call_type: other}
+    - {model: llama-4b, call_type: other}
+    - {model: llama-5b, call_type: other}
+    - {model: llama-8b, call_type: other}
+    - {model: llama-9b, call_type: other}
+    - {model: llama-21b, call_type: other}
+    - {model: llama-22b, call_type: other}
+    - {model: llama-41b, call_type: other}
+    - {model: llama-42b, call_type: other}
+    - {model: llama-80b, call_type: other}
+    - {model: llama-81b, call_type: other}
+    - {model: llama-110b, call_type: other}
+    - {model: llama-111b, call_type: other}
+    - {model: llama-3-70b-chat, call_type: other}
+    - {model: mixtral-8x7b, call_type: other}
+    - {model: Llama-3-70B, call_type: other}
+    - {model: llama-chat, call_type: other}
+    cost_registry: []
+env: {}
+compare:
+  ignore: []

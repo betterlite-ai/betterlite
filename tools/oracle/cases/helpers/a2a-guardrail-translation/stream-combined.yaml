@@ -1,0 +1,13 @@
+kind: helper
+name: a2a-stream-combined
+call:
+  b6163: {"function": "stream", "scenarios": [
+    {"responses": [{"jsonrpc": "2.0", "id": 1, "result": {"artifact": {"parts": [{"kind": "text", "text": "he"}]}}}, {"jsonrpc": "2.0", "id": 2, "result": {"artifact": {"parts": [{"kind": "text", "text": "llo"}]}}}], "reply": ["REDACTED"]},
+    {"responses": ["{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"parts\":[{\"kind\":\"text\",\"text\":\"hi\"}]}}", "not json", {"result": {"kind": "task"}}], "reply": ["whole"]},
+    {"responses": [{"result": {"parts": [{"kind": "text", "text": "a"}, {"kind": "text", "text": "b"}]}}, {"result": {"status": {"message": {"parts": [{"kind": "text", "text": "c"}]}}}}], "reply": ["all"]},
+    {"responses": [{"result": {"parts": [{"kind": "text", "text": "keep"}]}}], "reply": []},
+    {"responses": [{"jsonrpc": "2.0", "id": 1, "result": {"artifact": {"parts": [{"kind": "text", "text": "he"}]}}}, {"jsonrpc": "2.0", "id": 2, "result": {"artifact": {"parts": [{"kind": "text", "text": "llo"}]}}}], "request_data": {"litellm_metadata": {"keep": true}, "responses_so_far": "kept"}, "reply": ["rewritten"]},
+    {"responses": [{"result": {"kind": "task", "status": {"state": "submitted"}}}, {"result": {"artifact": {"parts": [{"kind": "text", "text": "he"}]}}}, {"result": {"artifact": {"parts": [{"kind": "text", "text": "llo"}]}}}], "reply": ["X"]}
+  ]}
+env: {}
+compare: {ignore: []}

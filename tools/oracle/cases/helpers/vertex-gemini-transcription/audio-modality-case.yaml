@@ -1,0 +1,15 @@
+kind: helper
+name: audio-modality-case
+call:
+  vertex_gemini_transcription:
+    steps:
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"candidates":[],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":4,"totalTokenCount":14,"promptTokensDetails":[{"modality":"AUDIO","tokenCount":6},{"modality":"TEXT","tokenCount":2},{"modality":"audio","tokenCount":3}]}}'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"candidates":[],"usageMetadata":{"promptTokenCount":10,"promptTokensDetails":[{"modality":"AUDIO","tokenCount":6},{"tokenCount":3}]}}'
+env: {}
+compare: {ignore: []}
