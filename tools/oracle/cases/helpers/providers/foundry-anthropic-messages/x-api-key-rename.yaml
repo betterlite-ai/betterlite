@@ -84,6 +84,14 @@ call:
         messages: []
         globals: {api_key: null, azure_key: null}
         environment: {}
+      - headers: {}
+        litellm_params: {}
+        api_key: arg-key
+        api_base: null
+        optional_params: {}
+        messages: []
+        globals: {api_key: glob-key, azure_key: null}
+        environment: {}
 env: {}
 compare:
   ignore: []

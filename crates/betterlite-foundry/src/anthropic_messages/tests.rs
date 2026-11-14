@@ -269,7 +269,9 @@ fn environment(call: EnvironmentCall) -> Outcome {
         {"params": "typed:", "argument_key": "arg-key"},
         {"params": "typed:typed-key", "argument_key": "arg-key"},
         {"configured_key": "cfg-key"},
-        {"token": "ad-token"}
+        {"token": "ad-token"},
+        {"argument_key": "arg-key", "configured_key": "cfg-key"},
+        {"params": "dict:param-key", "argument_key": "arg-key", "configured_key": "cfg-key"}
     ], "expected": [
         {"headers": {"x-api-key": "header-key", "anthropic-version": "2023-06-01", "content-type": "application/json", "anthropic-beta": "fixture-beta"}},
         {"headers": {"x-api-key": "header-key", "anthropic-version": "2023-06-01", "content-type": "application/json", "anthropic-beta": "fixture-beta"}},
@@ -285,7 +287,9 @@ fn environment(call: EnvironmentCall) -> Outcome {
         {"headers": {"x-api-key": "arg-key", "anthropic-version": "2023-06-01", "content-type": "application/json", "anthropic-beta": "fixture-beta"}},
         {"headers": {"x-api-key": "typed-key", "anthropic-version": "2023-06-01", "content-type": "application/json", "anthropic-beta": "fixture-beta"}},
         {"headers": {"x-api-key": "cfg-key", "anthropic-version": "2023-06-01", "content-type": "application/json", "anthropic-beta": "fixture-beta"}},
-        {"headers": {"Authorization": "Bearer ad-token", "anthropic-version": "2023-06-01", "content-type": "application/json", "anthropic-beta": "fixture-beta"}}
+        {"headers": {"Authorization": "Bearer ad-token", "anthropic-version": "2023-06-01", "content-type": "application/json", "anthropic-beta": "fixture-beta"}},
+        {"headers": {"x-api-key": "arg-key", "anthropic-version": "2023-06-01", "content-type": "application/json", "anthropic-beta": "fixture-beta"}},
+        {"headers": {"x-api-key": "param-key", "anthropic-version": "2023-06-01", "content-type": "application/json", "anthropic-beta": "fixture-beta"}}
     ]}}"#
 )]
 #[case::anthropic_version_default(
