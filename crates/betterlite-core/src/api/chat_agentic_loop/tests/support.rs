@@ -513,13 +513,11 @@ impl AgenticCallback for ScriptedCallback {
         plan: &AgenticLoopPlan,
         kwargs: &JsonMap,
     ) -> Result<Box<RawValue>, AgenticHookError> {
-        let hooked = self.scripted_answer(
-            CallRecord::Post(PostRecord {
-                kwargs: kwargs.clone(),
-                stop_reason: plan.stop_reason.clone(),
-            }),
-            &self.post,
-        );
+        let record = PostRecord {
+            kwargs: kwargs.clone(),
+            stop_reason: plan.stop_reason.clone(),
+        };
+        let hooked = self.scripted_answer(CallRecord::Post(record), &self.post);
         hooked.unwrap_or(Ok(response))
     }
 
