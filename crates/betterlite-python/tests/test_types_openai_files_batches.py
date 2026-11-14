@@ -247,15 +247,21 @@ def check_file_content_forms(
     assert operator.is_(theirs[2], PathLike)
 
 
+def check_annotations_equal(
+    ours: TypeForm[JsonValue] | None, theirs: TypeForm[JsonValue] | None
+) -> None:
+    ours_origin: TypeForm[JsonValue] | None = get_origin(ours)
+    theirs_origin: TypeForm[JsonValue] | None = get_origin(theirs)
+    assert operator.is_(ours_origin, ReadOnly) == operator.is_(theirs_origin, ReadOnly)
+    assert literal_values(ours) == literal_values(theirs)
+
+
 def check_hint_maps(
     ours: dict[str, TypeForm[JsonValue]], theirs: dict[str, TypeForm[JsonValue]]
 ) -> None:
     assert ours.keys() == theirs.keys()
     for key in ours.keys() & theirs.keys():
-        ours_origin: TypeForm[JsonValue] | None = get_origin(ours[key])
-        theirs_origin: TypeForm[JsonValue] | None = get_origin(theirs[key])
-        assert operator.is_(ours_origin, ReadOnly) == operator.is_(theirs_origin, ReadOnly)
-        assert literal_values(ours[key]) == literal_values(theirs[key])
+        check_annotations_equal(ours[key], theirs[key])
 
 
 def model_hints(model: type[BaseModel]) -> dict[str, TypeForm[JsonValue]]:
