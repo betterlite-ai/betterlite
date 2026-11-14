@@ -15,7 +15,7 @@ const MAX_NUM_RESULTS: &str = "max_num_results";
 const MAX_RESULTS: &str = "maxResults";
 
 #[must_use]
-pub fn auth_credentials() -> BaseVectorStoreAuthCredentials {
+pub const fn auth_credentials() -> BaseVectorStoreAuthCredentials {
     BaseVectorStoreAuthCredentials {
         headers: None,
         query_params: None,
