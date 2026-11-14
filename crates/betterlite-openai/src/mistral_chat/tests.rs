@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use betterlite_logging::logging_pre_post::args::RawBody;
@@ -16,6 +17,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
 use indexmap::IndexMap;
+use rstest::rstest;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -36,7 +38,7 @@ use super::stream::chunk_parser;
 use crate::chat::ChatMessage;
 use crate::chat_choices::stream::StreamError;
 use crate::chat_content::{Mode, RefuseDownloads};
-use crate::compatible_wire::{LogInput, ReplyOptions};
+use crate::compatible_wire::{LogInput, ReplyOptions, decode_compatible_chat_reply};
 use crate::mistral_options::REASONING_SYSTEM_PROMPT;
 use crate::openai_base_config::Headers;
 
@@ -346,8 +348,10 @@ fn transform_messages_returns_the_conversation_only() {
     assert_eq!(transformed.len(), 1);
 }
 
-#[test]
-fn async_modes_transform_messages_like_the_sync_mode() {
+#[rstest]
+#[case::async_base_class(Mode::AsyncBaseClass)]
+#[case::async_subclass(Mode::AsyncSubclass)]
+fn async_modes_transform_messages_like_the_sync_mode(#[case] mode: Mode) {
     let messages = [
         message(json!({"role": "user", "name": "ada", "content": [
             {"type": "text", "text": "look"},
@@ -364,16 +368,14 @@ fn async_modes_transform_messages_like_the_sync_mode() {
     })
     .expect("sync messages");
     assert_eq!(sync.len(), 2);
-    for mode in [Mode::AsyncBaseClass, Mode::AsyncSubclass] {
-        let asynchronous = transform_messages(&MessageTransform {
-            model: "mistral-small-latest",
-            messages: &messages,
-            mode,
-            downloads: &RefuseDownloads,
-        })
-        .expect("async messages");
-        assert_eq!(asynchronous, sync);
-    }
+    let asynchronous = transform_messages(&MessageTransform {
+        model: "mistral-small-latest",
+        messages: &messages,
+        mode,
+        downloads: &RefuseDownloads,
+    })
+    .expect("async messages");
+    assert_eq!(asynchronous, sync);
 }
 
 #[test]
@@ -475,8 +477,8 @@ fn stream_text_blocks_concatenate_and_thinking_blocks_carry_signatures() {
         {"type": "thinking", "thinking": [{"type": "text", "text": "three"}]}
     ]}}]});
     let reply = chunk_parser(&mut chunk, Uuid::nil, i64::default).expect("a chunk");
-    let reply = serde_json::to_value(reply).expect("a chunk value");
-    let delta = &reply["choices"][0]["delta"];
+    let value = serde_json::to_value(reply).expect("a chunk value");
+    let delta = &value["choices"][0]["delta"];
     assert_eq!(delta["content"], json!("ab"));
     assert_eq!(delta["reasoning_content"], json!("onetwo\nthree"));
     assert_eq!(
@@ -494,8 +496,8 @@ fn stream_text_without_thinking_removes_stale_fields() {
         "reasoning_content": "stale"
     }}]});
     let reply = chunk_parser(&mut chunk, Uuid::nil, i64::default).expect("a chunk");
-    let reply = serde_json::to_value(reply).expect("a chunk value");
-    let delta = &reply["choices"][0]["delta"];
+    let value = serde_json::to_value(reply).expect("a chunk value");
+    let delta = &value["choices"][0]["delta"];
     assert_eq!(delta["content"], json!("only"));
     assert!(delta.get("thinking_blocks").is_none());
     assert!(delta.get("reasoning_content").is_none());
@@ -507,10 +509,10 @@ fn stream_thinking_only_sends_null_content() {
         {"type": "thinking", "thinking": [{"type": "text", "text": "why"}]}
     ]}}]});
     let reply = chunk_parser(&mut chunk, Uuid::nil, i64::default).expect("a chunk");
-    let reply = serde_json::to_value(reply).expect("a chunk value");
-    assert_eq!(reply["choices"][0]["delta"]["content"], Value::Null);
+    let value = serde_json::to_value(reply).expect("a chunk value");
+    assert_eq!(value["choices"][0]["delta"]["content"], Value::Null);
     assert_eq!(
-        reply["choices"][0]["delta"]["reasoning_content"],
+        value["choices"][0]["delta"]["reasoning_content"],
         json!("why")
     );
 }
@@ -605,10 +607,6 @@ fn transform_response_logs_headers_then_converts_the_reply() {
     .expect("a converted reply");
     let converted = serde_json::to_value(&reply.response).expect("a reply value");
     assert_eq!(converted["choices"][0]["message"]["content"], json!("hi"));
-    assert_eq!(
-        converted["choices"][0]["message"]["reasoning_content"],
-        json!("why")
-    );
     let details = serde_json::to_value(&state.model_call_details).expect("call details");
     assert_eq!(
         details["response_headers"],
@@ -617,20 +615,46 @@ fn transform_response_logs_headers_then_converts_the_reply() {
     assert_eq!(details["original_response"], json!(body));
 }
 
+// docs/deviations/B1409.yaml records the field LiteLLM sets and this reply type cannot carry
 #[test]
-fn replays_mistral_chat_corpus() {
-    let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/mistral_chat");
-    let mut seeds = 0_usize;
-    for entry in std::fs::read_dir(&corpus)
-        .expect("the corpus folder")
-        .flatten()
-    {
-        let bytes = std::fs::read(entry.path()).expect("a seed");
-        let _ = decode_mistral_chat(&bytes);
-        if let Ok(mut chunk) = serde_json::from_slice::<Value>(&bytes) {
-            let _ = chunk_parser(&mut chunk, Uuid::nil, i64::default);
-        }
-        seeds += 1;
+fn a_client_reply_drops_the_reasoning_content_it_decoded() {
+    let body = json!({"id": "c", "object": "chat.completion", "created": 1, "model": "m",
+        "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": [
+            {"type": "thinking", "thinking": [{"type": "text", "text": "why"}]},
+            {"type": "text", "text": "hi"}
+        ]}}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}})
+    .to_string();
+    let decoded = decode_mistral_chat(body.as_bytes()).expect("a decoded reply");
+    assert_eq!(
+        decoded.value["choices"][0]["message"]["reasoning_content"],
+        json!("why")
+    );
+    let reply = decode_compatible_chat_reply(
+        &serde_json::to_vec(&decoded.value).expect("a reply body"),
+        &ReplyOptions {
+            json_mode: false,
+            provider: None,
+            base_model: None,
+            identifier: Uuid::nil,
+            clock: i64::default,
+        },
+    )
+    .expect("a converted reply");
+    let converted = serde_json::to_value(&reply.response).expect("a reply value");
+    assert_eq!(converted["choices"][0]["message"]["content"], json!("hi"));
+    assert!(
+        converted["choices"][0]["message"]
+            .get("reasoning_content")
+            .is_none()
+    );
+}
+
+#[rstest]
+fn replays_mistral_chat_corpus(#[files("fuzz/corpus/mistral_chat/*")] path: PathBuf) {
+    let bytes = std::fs::read(path).expect("a seed");
+    let _ = decode_mistral_chat(&bytes);
+    if let Ok(mut chunk) = serde_json::from_slice::<Value>(&bytes) {
+        let _ = chunk_parser(&mut chunk, Uuid::nil, i64::default);
     }
-    assert!(seeds > 0);
 }
