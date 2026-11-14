@@ -243,7 +243,7 @@ impl RequestSink for TestSink {
                 .unwrap_or_else(PoisonError::into_inner)
                 .push(SentRequest {
                     stream: self.stream,
-                    recognizer: request.recognizer().to_owned(),
+                    recognizer: request.recognizer.clone(),
                     streaming_config,
                     audio,
                 });
@@ -291,13 +291,13 @@ fn harness(scripts: Vec<Script>) -> Harness {
         recorder: Arc::clone(&recorder),
         scripts: Mutex::new(VecDeque::from(scripts)),
     });
-    let resolver: Arc<dyn AccessTokenResolver> = Arc::clone(&tokens);
+    let resolver: Arc<dyn AccessTokenResolver> = tokens.clone();
     let target = SpeechStreamingTarget {
         api_endpoint: "speech.googleapis.com".to_owned(),
         recognizer: RECOGNIZER.to_owned(),
         token: resolver,
     };
-    let clock_source: Arc<dyn ChirpClock> = Arc::clone(&clock);
+    let clock_source: Arc<dyn ChirpClock> = clock.clone();
     let backend = ChirpBackend::new(target, factory, clock_source);
     Harness {
         backend,
