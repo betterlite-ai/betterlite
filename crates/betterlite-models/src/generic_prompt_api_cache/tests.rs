@@ -158,12 +158,13 @@ fn insert_prompts(cache: &PromptCache, range: std::ops::Range<usize>) {
 }
 
 #[test]
-fn a_thousand_and_first_insert_keeps_one_thousand_entries_and_drops_the_first_key() {
+fn the_thousand_and_first_insert_drops_the_first_key_and_keeps_one_thousand_entries() {
     let cache = PromptCache::default();
     insert_prompts(&cache, 0..1001);
     let entries = cache.entries.lock().unwrap();
     assert_eq!(entries.len(), 1000);
     assert!(!entries.contains(&PromptCache::get_cache_key(Some("prompt-0"), None, None)));
+    assert!(entries.contains(&PromptCache::get_cache_key(Some("prompt-1000"), None, None)));
 }
 
 #[test]
