@@ -22,4 +22,8 @@ fn frame_probes_classify_stop_and_error() {
     assert!(!is_provider_error_chunk(
         b"event: error\ndata: {\"type\":\"error\"}\n\n"
     ));
+    // a joined stream larger than the per-read bound still classifies
+    let mut large = STOP.to_vec();
+    large.resize(1024 * 1024 + 1, b'\n');
+    assert!(is_message_stop_chunk(&large));
 }
