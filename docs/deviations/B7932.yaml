@@ -49,8 +49,8 @@ deviations:
       Pydantic resolves an unbound TypeVar to its BaseModel bound, so optional_params has the same
       BaseModel | None type, schema and validation on both sides. A config whose optional_params
       holds a value dumps here ({} for a plain BaseModel value); with LiteLLM's unparametrized
-      base, pydantic 2.14.1 gives that field a mock serializer and model_dump() raises
-      TypeError: 'MockValSer' object is not an instance of 'SchemaSerializer'.
+      base, pydantic 2.14.1 gives that field a mock serializer, and model_dump() raises
+      TypeError because the mock is not an instance of SchemaSerializer.
     why: >-
       basedpyright strict reports a generic base class used without type arguments, and BaseModel is
       the bound the unparametrized generic resolves to at runtime. The parametrized spelling also
