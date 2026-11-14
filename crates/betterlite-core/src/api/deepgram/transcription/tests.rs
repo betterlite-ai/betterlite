@@ -15,15 +15,18 @@ use betterlite_openai::api::transcription_contract::AudioTranscriptionData;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
-use serde::Serialize;
-use serde_json::json;
 
 use super::error::DeepgramTranscriptionError;
 use super::request::{DeepgramTranscriptionConfig, map_openai_params, raw_audio_request};
 use super::response::{
-    REPLY_MAX_BYTES, Word, decode_deepgram_transcript, reconstruct_diarized_text,
+    DeepgramTranscription, REPLY_MAX_BYTES, TranscriptionTask, Word, decode_deepgram_transcript,
+    reconstruct_diarized_text,
 };
 use crate::api::deepgram::common::DeepgramException;
+
+const REPLY_BODY: &str = r#"{"metadata": {"duration": 12.5}, "results": {"channels": [{"alternatives": [ALTERNATIVE]}]}}"#;
+
+const SPOKEN_WORD: &str = r#"{"word": "WORD", "start": 0.5, "end": 1.5, "speaker": SPEAKER}"#;
 
 struct NoFiles;
 
@@ -44,13 +47,12 @@ fn config(api_key: Option<&str>) -> DeepgramTranscriptionConfig {
     }
 }
 
-fn params(value: impl Serialize) -> Object {
-    let document = serde_json::to_value(value).expect("the params serialize");
-    serde_json::from_value(document).expect("the params are an object")
+fn object(text: &str) -> Object {
+    serde_json::from_str(text).expect("the text is a JSON object")
 }
 
-fn url(api_base: Option<&str>, optional_params: impl Serialize) -> String {
-    config(None).complete_url(api_base, "nova-3", &params(optional_params))
+fn url(api_base: Option<&str>, optional_params: &str) -> String {
+    config(None).complete_url(api_base, "nova-3", &object(optional_params))
 }
 
 fn environment(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -111,23 +113,27 @@ fn deepgram_transcription_settings_read_each_variable_alone() {
     assert_eq!(base_only.api_base, "https://eu.test/v1");
 }
 
-fn reply(alternative: impl Serialize) -> Vec<u8> {
-    serde_json::to_vec(&json!({
-        "metadata": {"duration": 12.5},
-        "results": {"channels": [{"alternatives": [alternative]}]},
-    }))
-    .expect("the reply serializes")
+fn reply(alternative: &str) -> Vec<u8> {
+    REPLY_BODY.replace("ALTERNATIVE", alternative).into_bytes()
 }
 
-fn decoded(alternative: impl Serialize) -> Object {
-    let response = decode_deepgram_transcript(&reply(alternative)).expect("the reply decodes");
-    serde_json::from_value(serde_json::to_value(response).expect("the response serializes"))
+fn decoded(alternative: &str) -> DeepgramTranscription {
+    decode_deepgram_transcript(&reply(alternative)).expect("the reply decodes")
+}
+
+fn serialized(response: &DeepgramTranscription) -> Object {
+    serde_json::from_str(&serde_json::to_string(response).expect("the response serializes"))
         .expect("the response is an object")
 }
 
-fn word(text: &str, speaker: Option<i64>) -> Object {
-    serde_json::from_value(json!({"word": text, "start": 0.5, "end": 1.5, "speaker": speaker}))
-        .expect("a word")
+fn spoken(text: &str, speaker: Option<i64>) -> Word {
+    let member = serde_json::to_string(&speaker).expect("a speaker serializes");
+    serde_json::from_str(
+        &SPOKEN_WORD
+            .replace("WORD", text)
+            .replace("SPEAKER", &member),
+    )
+    .expect("a word")
 }
 
 #[test]
@@ -171,31 +177,22 @@ fn request_rejects_a_bare_string_like_the_audio_processor() {
 
 #[test]
 fn language_is_the_only_mapped_openai_param() {
-    let non_default = params(json!({
-        "language": "de",
-        "response_format": "json",
-        "temperature": 0.2,
-        "prompt": "hi",
-    }));
-    let mapped = map_openai_params(&non_default, params(json!({"diarize": true})));
-
-    assert_eq!(
-        serde_json::to_value(&mapped).expect("params serialize"),
-        json!({"diarize": true, "language": "de"})
+    let non_default = object(
+        r#"{"language": "de", "response_format": "json", "temperature": 0.2, "prompt": "hi"}"#,
     );
+    let mapped = map_openai_params(&non_default, object(r#"{"diarize": true}"#));
+
+    assert_eq!(mapped, object(r#"{"diarize": true, "language": "de"}"#));
 }
 
 #[test]
 fn a_mapped_language_replaces_an_existing_one() {
     let mapped = map_openai_params(
-        &params(json!({"language": "de"})),
-        params(json!({"language": "en", "diarize": true})),
+        &object(r#"{"language": "de"}"#),
+        object(r#"{"language": "en", "diarize": true}"#),
     );
 
-    assert_eq!(
-        serde_json::to_value(&mapped).expect("params serialize"),
-        json!({"language": "de", "diarize": true})
-    );
+    assert_eq!(mapped, object(r#"{"language": "de", "diarize": true}"#));
 }
 
 #[rstest]
@@ -207,14 +204,14 @@ fn url_takes_the_explicit_base_before_the_configured_one(
     #[case] api_base: Option<&str>,
     #[case] expected: &str,
 ) {
-    assert_eq!(url(api_base, json!({})), expected);
+    assert_eq!(url(api_base, "{}"), expected);
 }
 
 #[test]
 fn query_booleans_are_lowercase_and_null_is_skipped() {
     let built = url(
         None,
-        json!({"diarize": true, "punctuate": false, "smart_format": null, "paragraphs": true}),
+        r#"{"diarize": true, "punctuate": false, "smart_format": null, "paragraphs": true}"#,
     );
 
     assert_eq!(
@@ -225,7 +222,7 @@ fn query_booleans_are_lowercase_and_null_is_skipped() {
 
 #[test]
 fn query_keeps_false_zero_and_empty_values() {
-    let built = url(None, json!({"count": 0, "label": "", "flag": false}));
+    let built = url(None, r#"{"count": 0, "label": "", "flag": false}"#);
 
     assert_eq!(
         built,
@@ -237,13 +234,7 @@ fn query_keeps_false_zero_and_empty_values() {
 fn query_leaves_out_the_model_internal_and_supported_names() {
     let built = url(
         None,
-        json!({
-            "model": "other",
-            "OPENAI_TRANSCRIPTION_PARAMS": ["x"],
-            "language": "en",
-            "Model": "kept",
-            "redact": "pci",
-        }),
+        r#"{"model": "other", "OPENAI_TRANSCRIPTION_PARAMS": ["x"], "language": "en", "Model": "kept", "redact": "pci"}"#,
     );
 
     assert_eq!(
@@ -254,10 +245,7 @@ fn query_leaves_out_the_model_internal_and_supported_names() {
 
 #[test]
 fn query_writes_values_as_compact_json_without_expanding_lists() {
-    let built = url(
-        None,
-        json!({"keywords": ["a", "b"], "alpha": 1.5, "beta": 7}),
-    );
+    let built = url(None, r#"{"keywords": ["a", "b"], "alpha": 1.5, "beta": 7}"#);
 
     assert_eq!(
         built,
@@ -267,7 +255,7 @@ fn query_writes_values_as_compact_json_without_expanding_lists() {
 
 #[test]
 fn query_encodes_like_python_quote_plus() {
-    let built = url(None, json!({"term": "a b&c=d*e~f/é"}));
+    let built = url(None, r#"{"term": "a b&c=d*e~f/\u00e9"}"#);
 
     assert_eq!(
         built,
@@ -277,7 +265,7 @@ fn query_encodes_like_python_quote_plus() {
 
 #[test]
 fn query_encodes_a_percent_sign_that_precedes_a_tilde_escape() {
-    let built = url(None, json!({"term": "%7E~"}));
+    let built = url(None, r#"{"term": "%7E~"}"#);
 
     assert_eq!(
         built,
@@ -302,8 +290,8 @@ fn validate_environment_builds_the_token_header(
     #[case] configured: Option<&str>,
     #[case] expected: &str,
 ) {
-    let explicit = explicit.map(SecretString::from);
-    let headers = config(configured).validate_environment(explicit.as_ref());
+    let key = explicit.map(SecretString::from);
+    let headers = config(configured).validate_environment(key.as_ref());
 
     assert_eq!(headers.len(), 1);
     assert_eq!(
@@ -341,161 +329,177 @@ fn get_error_class_keeps_the_status_message_and_headers() {
 
 #[test]
 fn plain_transcript_without_speakers_uses_the_transcript() {
-    let response = decoded(json!({
-        "transcript": "hello world",
-        "paragraphs": {"transcript": "ignored"},
-        "words": [
-            {"word": "hello", "start": 0.5, "end": 1.5},
-            {"word": "world", "start": 2, "end": 3},
-        ],
-    }));
+    let response = decoded(
+        r#"{
+            "transcript": "hello world",
+            "paragraphs": {"transcript": "ignored"},
+            "words": [
+                {"word": "hello", "start": 0.5, "end": 1.5},
+                {"word": "world", "start": 2, "end": 3}
+            ]
+        }"#,
+    );
 
-    assert_eq!(response["text"], "hello world");
-    assert_eq!(response["task"], "transcribe");
-    assert_eq!(response["language"], "en");
-    assert_eq!(response["duration"], 12.5);
+    assert_eq!(response.text.as_deref(), Some("hello world"));
+    assert_eq!(response.task, TranscriptionTask::Transcribe);
+    assert_eq!(response.language, "en");
+    assert_eq!(response.duration.as_f64(), Some(12.5));
     assert_eq!(
-        response["words"],
-        json!([
-            {"word": "hello", "start": 0.5, "end": 1.5},
-            {"word": "world", "start": 2, "end": 3},
-        ])
+        serde_json::to_string(&response.words).expect("the words serialize"),
+        r#"[{"word":"hello","start":0.5,"end":1.5},{"word":"world","start":2,"end":3}]"#
     );
 }
 
 #[test]
 fn a_reply_without_words_has_no_words_entry() {
-    let response = decoded(json!({"transcript": "hi"}));
+    let response = decoded(r#"{"transcript": "hi"}"#);
 
-    assert!(response.get("words").is_none());
+    assert!(response.words.is_none());
+    assert!(!serialized(&response).contains_key("words"));
 }
 
 #[test]
 fn an_empty_words_list_is_kept_and_uses_the_transcript() {
-    let response = decoded(json!({"transcript": "hi", "words": []}));
+    let response = decoded(r#"{"transcript": "hi", "words": []}"#);
 
-    assert_eq!(response["text"], "hi");
-    assert_eq!(response["words"], json!([]));
+    assert_eq!(response.text.as_deref(), Some("hi"));
+    assert_eq!(
+        serde_json::to_string(&response.words).expect("the words serialize"),
+        "[]"
+    );
 }
 
 #[test]
 fn a_null_transcript_leaves_the_text_out() {
-    let response = decoded(json!({"transcript": null}));
+    let response = decoded(r#"{"transcript": null}"#);
 
-    assert!(response.get("text").is_none());
+    assert!(response.text.is_none());
+    assert!(!serialized(&response).contains_key("text"));
 }
 
 #[test]
 fn a_diarized_reply_prefers_the_paragraphs_transcript() {
-    let response = decoded(json!({
-        "transcript": "plain",
-        "paragraphs": {"transcript": "\nSpeaker 0: from paragraphs\n"},
-        "words": [word("hello", Some(0)), word("there", Some(1))],
-    }));
+    let response = decoded(
+        r#"{
+            "transcript": "plain",
+            "paragraphs": {"transcript": "\nSpeaker 0: from paragraphs\n"},
+            "words": [
+                {"word": "hello", "start": 0.5, "end": 1.5, "speaker": 0},
+                {"word": "there", "start": 0.5, "end": 1.5, "speaker": 1}
+            ]
+        }"#,
+    );
 
-    assert_eq!(response["text"], "\nSpeaker 0: from paragraphs\n");
+    assert_eq!(
+        response.text.as_deref(),
+        Some("\nSpeaker 0: from paragraphs\n")
+    );
 }
 
 #[test]
 fn a_diarized_reply_without_paragraphs_rebuilds_the_runs() {
-    let response = decoded(json!({
-        "transcript": "plain",
-        "words": [
-            {"word": "hi", "punctuated_word": "Hi,", "start": 0, "end": 1, "speaker": 0},
-            word("there", Some(0)),
-            word("hello", Some(1)),
-            word("back", Some(0)),
-        ],
-    }));
+    let response = decoded(
+        r#"{
+            "transcript": "plain",
+            "words": [
+                {"word": "hi", "punctuated_word": "Hi,", "start": 0, "end": 1, "speaker": 0},
+                {"word": "there", "start": 0.5, "end": 1.5, "speaker": 0},
+                {"word": "hello", "start": 0.5, "end": 1.5, "speaker": 1},
+                {"word": "back", "start": 0.5, "end": 1.5, "speaker": 0}
+            ]
+        }"#,
+    );
 
     assert_eq!(
-        response["text"],
-        "Speaker 0: Hi, there\nSpeaker 1: hello\n\nSpeaker 0: back\n"
+        response.text.as_deref(),
+        Some("Speaker 0: Hi, there\nSpeaker 1: hello\n\nSpeaker 0: back\n")
     );
 }
 
 #[test]
 fn the_speaker_is_stripped_from_the_public_words() {
-    let response = decoded(json!({
-        "transcript": "x",
-        "words": [{"word": "hi", "start": 1, "end": 2, "speaker": 3, "confidence": 0.9}],
-    }));
+    let response = decoded(
+        r#"{
+            "transcript": "x",
+            "words": [{"word": "hi", "start": 1, "end": 2, "speaker": 3, "confidence": 0.9}]
+        }"#,
+    );
 
     assert_eq!(
-        response["words"],
-        json!([{"word": "hi", "start": 1, "end": 2}])
+        serde_json::to_string(&response.words).expect("the words serialize"),
+        r#"[{"word":"hi","start":1,"end":2}]"#
     );
 }
 
 #[test]
 fn a_null_speaker_on_the_first_word_turns_diarization_on() {
-    let response = decoded(json!({
-        "transcript": "plain",
-        "words": [
-            {"word": "hi", "start": 1, "end": 2, "speaker": null},
-            {"word": "you", "start": 2, "end": 3},
-        ],
-    }));
+    let response = decoded(
+        r#"{
+            "transcript": "plain",
+            "words": [
+                {"word": "hi", "start": 1, "end": 2, "speaker": null},
+                {"word": "you", "start": 2, "end": 3}
+            ]
+        }"#,
+    );
 
-    assert_eq!(response["text"], "\nSpeaker None: hi you\n");
+    assert_eq!(response.text.as_deref(), Some("\nSpeaker None: hi you\n"));
 }
 
 #[test]
 fn a_speaker_on_the_second_word_alone_does_not_turn_diarization_on() {
-    let response = decoded(json!({
-        "transcript": "plain",
-        "words": [
-            {"word": "hi", "start": 1, "end": 2},
-            {"word": "you", "start": 2, "end": 3, "speaker": 1},
-        ],
-    }));
+    let response = decoded(
+        r#"{
+            "transcript": "plain",
+            "words": [
+                {"word": "hi", "start": 1, "end": 2},
+                {"word": "you", "start": 2, "end": 3, "speaker": 1}
+            ]
+        }"#,
+    );
 
-    assert_eq!(response["text"], "plain");
+    assert_eq!(response.text.as_deref(), Some("plain"));
 }
 
 #[test]
 fn language_is_the_detected_one_unless_it_is_empty_or_null() {
-    let language = |detected: Option<&str>| {
-        let body = json!({
-            "metadata": {"duration": 1},
-            "results": {"channels": [{"detected_language": detected, "alternatives": [{"transcript": "t"}]}]},
-        });
-        let response = decode_deepgram_transcript(&serde_json::to_vec(&body).expect("body"))
-            .expect("the reply decodes");
-        response.language
+    let language = |detected: &str| {
+        let body = r#"{"metadata": {"duration": 1}, "results": {"channels": [{"detected_language": LANGUAGE, "alternatives": [{"transcript": "t"}]}]}}"#
+            .replace("LANGUAGE", detected);
+        decode_deepgram_transcript(body.as_bytes())
+            .expect("the reply decodes")
+            .language
     };
 
-    assert_eq!(language(Some("de")), "de");
-    assert_eq!(language(Some("")), "en");
-    assert_eq!(language(None), "en");
+    assert_eq!(language(r#""de""#), "de");
+    assert_eq!(language(r#""""#), "en");
+    assert_eq!(language("null"), "en");
 }
 
 #[test]
 fn only_the_first_channel_and_alternative_are_read() {
-    let body = json!({
+    let body = r#"{
         "metadata": {"duration": 1},
         "results": {"channels": [
             {"alternatives": [{"transcript": "first"}, 7]},
-            "not a channel",
-        ]},
-    });
-    let response = decode_deepgram_transcript(&serde_json::to_vec(&body).expect("body"))
-        .expect("the reply decodes");
+            "not a channel"
+        ]}
+    }"#;
+    let response = decode_deepgram_transcript(body.as_bytes()).expect("the reply decodes");
 
     assert_eq!(response.text.as_deref(), Some("first"));
 }
 
 #[test]
 fn the_hidden_params_hold_the_complete_provider_payload() {
-    let body = json!({
+    let body = r#"{
         "metadata": {"duration": 1, "request_id": "r"},
         "results": {"channels": [{"alternatives": [{"transcript": "t", "confidence": 0.5}]}]},
-        "extra": [1, 2],
-    });
-    let response = decode_deepgram_transcript(&serde_json::to_vec(&body).expect("body"))
-        .expect("the reply decodes");
+        "extra": [1, 2]
+    }"#;
+    let response = decode_deepgram_transcript(body.as_bytes()).expect("the reply decodes");
 
-    assert_eq!(serde_json::Value::Object(response.hidden_params), body);
+    assert_eq!(response.hidden_params, object(body));
 }
 
 #[rstest]
@@ -538,7 +542,6 @@ fn a_reply_without_the_required_members_is_rejected(#[case] body: &str) {
     r#"{"words": [{"word": "a", "punctuated_word": null, "start": 1, "end": 2, "speaker": 0}]}"#
 )]
 fn a_malformed_alternative_is_rejected(#[case] alternative: &str) {
-    let alternative: Object = serde_json::from_str(alternative).expect("an alternative");
     let error =
         decode_deepgram_transcript(&reply(alternative)).expect_err("the alternative is malformed");
 
@@ -550,16 +553,16 @@ fn a_malformed_alternative_is_rejected(#[case] alternative: &str) {
 
 #[test]
 fn null_paragraphs_are_ignored_when_the_reply_is_not_diarized() {
-    let response = decoded(json!({"transcript": "plain", "paragraphs": null}));
+    let response = decoded(r#"{"transcript": "plain", "paragraphs": null}"#);
 
-    assert_eq!(response["text"], "plain");
+    assert_eq!(response.text.as_deref(), Some("plain"));
 }
 
 #[test]
 fn a_diarized_reply_does_not_need_a_transcript() {
-    let response = decoded(json!({"words": [word("a", Some(0))]}));
+    let response = decoded(r#"{"words": [{"word": "a", "start": 0.5, "end": 1.5, "speaker": 0}]}"#);
 
-    assert_eq!(response["text"], "\nSpeaker 0: a\n");
+    assert_eq!(response.text.as_deref(), Some("\nSpeaker 0: a\n"));
 }
 
 #[test]
@@ -600,11 +603,6 @@ fn a_reply_over_the_size_limit_is_refused_before_it_is_read() {
     ));
 }
 
-fn spoken(text: &str, speaker: Option<i64>) -> Word {
-    serde_json::from_value(serde_json::to_value(word(text, speaker)).expect("a word serializes"))
-        .expect("a word deserializes")
-}
-
 #[test]
 fn reconstruction_of_no_words_is_empty() {
     assert_eq!(reconstruct_diarized_text(&[]).expect("no words"), "");
@@ -635,10 +633,9 @@ fn reconstruction_separates_earlier_runs_by_one_newline_and_the_last_by_two() {
 
 #[test]
 fn reconstruction_prefers_the_punctuated_word_and_falls_back_to_the_word() {
-    let punctuated: Word = serde_json::from_value(json!(
-        {"word": "hi", "punctuated_word": "Hi!", "start": 0, "end": 1, "speaker": 0}
-    ))
-    .expect("a word");
+    let document =
+        r#"{"word": "hi", "punctuated_word": "Hi!", "start": 0, "end": 1, "speaker": 0}"#;
+    let punctuated: Word = serde_json::from_str(document).expect("a word");
 
     assert_eq!(
         reconstruct_diarized_text(&[punctuated, spoken("you", Some(0))]).expect("a run"),
@@ -649,7 +646,7 @@ fn reconstruction_prefers_the_punctuated_word_and_falls_back_to_the_word() {
 #[test]
 fn reconstruction_treats_a_missing_speaker_like_a_null_one() {
     let bare: Word =
-        serde_json::from_value(json!({"word": "b", "start": 0, "end": 1})).expect("a word");
+        serde_json::from_str(r#"{"word": "b", "start": 0, "end": 1}"#).expect("a word");
 
     assert_eq!(
         reconstruct_diarized_text(&[spoken("a", Some(1)), spoken("n", None), bare])
