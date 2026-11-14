@@ -1,0 +1,18 @@
+kind: helper
+name: full-audio-config
+call:
+  vertex_speech:
+    function: full_audio_config
+    cases:
+      - {response_format: mp3, speed: 2}
+      - {response_format: wav}
+      - {speed: 0}
+      - {audio_config: {audioEncoding: MP3, speakingRate: '2'}}
+      - {response_format: mp3, speed: 4, audio_config: {speakingRate: '3'}}
+      - {audio_config: {}}
+      - {speed: 1.5}
+      - {speed: 0.25}
+      - {audio_config: {audioEncoding: MP3, pitch: -2.5, sampleRateHertz: 24000, effectsProfileId: [small-bluetooth-speaker-class-device]}}
+      - {}
+env: {}
+compare: {ignore: []}
