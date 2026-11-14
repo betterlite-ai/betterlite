@@ -20,30 +20,19 @@ fn zone(seconds: i32) -> TimeZone {
     TimeZone::fixed(Offset::from_seconds(seconds).expect("a valid offset"))
 }
 
+const MESSAGE: &str = r#"{
+    "id": "resp_1", "created_at": 1700000000, "model": "resp-model", "status": "completed",
+    "output": [{"type": "message", "id": "msg_1", "status": "completed", "role": "assistant",
+        "content": [
+            {"type": "output_text", "text": "hello", "annotations": []},
+            {"type": "output_text", "text": " world", "annotations": []}
+        ]}],
+    "usage": {"input_tokens": 7, "output_tokens": 3, "total_tokens": 10}
+}"#;
+
 #[test]
-fn builds_the_interaction_from_a_message() {
-    let source = format!(
-        r#"{{
-            "id": "resp_1",
-            "created_at": {CREATED},
-            "model": "resp-model",
-            "status": "completed",
-            "output": [
-                {{
-                    "type": "message",
-                    "id": "msg_1",
-                    "status": "completed",
-                    "role": "assistant",
-                    "content": [
-                        {{"type": "output_text", "text": "hello", "annotations": []}},
-                        {{"type": "output_text", "text": " world", "annotations": []}}
-                    ]
-                }}
-            ],
-            "usage": {{"input_tokens": 7, "output_tokens": 3, "total_tokens": 10}}
-        }}"#
-    );
-    let interaction = to_interactions_response(&parsed(&source), Some("gpt-4o"), &TimeZone::UTC)
+fn builds_the_interaction_envelope_from_a_message() {
+    let interaction = to_interactions_response(&parsed(MESSAGE), Some("gpt-4o"), &TimeZone::UTC)
         .expect("the response should transform");
     assert_eq!(interaction.id.as_deref(), Some("resp_1"));
     assert_eq!(interaction.object.as_deref(), Some("interaction"));
@@ -52,6 +41,20 @@ fn builds_the_interaction_from_a_message() {
     assert_eq!(interaction.status.as_deref(), Some("completed"));
     assert_eq!(interaction.created.as_deref(), Some("2023-11-14T22:13:20"));
     assert_eq!(interaction.updated, interaction.created);
+    assert_eq!(
+        interaction.usage,
+        Some(object(
+            r#"{"total_input_tokens": 7, "total_output_tokens": 3}"#
+        ))
+    );
+    assert!(interaction.extra.is_empty());
+    assert!(interaction.hidden_params.is_empty());
+}
+
+#[test]
+fn a_message_fills_the_legacy_outputs_and_one_step() {
+    let interaction = to_interactions_response(&parsed(MESSAGE), Some("m"), &TimeZone::UTC)
+        .expect("the response should transform");
     assert_eq!(
         interaction.outputs,
         Some(vec![
@@ -68,14 +71,6 @@ fn builds_the_interaction_from_a_message() {
             ]}"#
         )])
     );
-    assert_eq!(
-        interaction.usage,
-        Some(object(
-            r#"{"total_input_tokens": 7, "total_output_tokens": 3}"#
-        ))
-    );
-    assert!(interaction.extra.is_empty());
-    assert!(interaction.hidden_params.is_empty());
 }
 
 #[test]

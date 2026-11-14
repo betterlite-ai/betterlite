@@ -56,27 +56,13 @@ fn extras_overwrite_mapped_parameters_and_keep_the_rest() {
     let built = build_request(
         "gpt-4o",
         None,
-        r#"{
-            "system_instruction": "a",
-            "tools": [{"type": "google_search"}],
+        r#"{"system_instruction": "a", "tools": [{"type": "google_search"}],
             "generation_config": {"temperature": 0.1, "top_p": 0.25, "max_output_tokens": 128},
-            "stream": true,
-            "store": true,
-            "user": "ada"
-        }"#,
-        r#"{
-            "model": "gpt-4o-mini",
-            "instructions": "b",
-            "system_instruction": "c",
-            "tools": [{"type": "code_execution"}],
-            "stream": false,
-            "temperature": 0.9,
-            "top_p": 0.5,
-            "max_output_tokens": 256,
-            "store": null,
-            "user": "grace",
-            "reasoning": {"effort": "low"}
-        }"#,
+            "stream": true, "store": true, "user": "ada"}"#,
+        r#"{"model": "gpt-4o-mini", "instructions": "b", "system_instruction": "c",
+            "tools": [{"type": "code_execution"}], "stream": false, "temperature": 0.9,
+            "top_p": 0.5, "max_output_tokens": 256, "store": null, "user": "grace",
+            "reasoning": {"effort": "low"}}"#,
     );
     assert_eq!(built.model, "gpt-4o-mini");
     assert_eq!(built.instructions.as_deref(), Some("b"));
@@ -88,22 +74,9 @@ fn extras_overwrite_mapped_parameters_and_keep_the_rest() {
     assert_eq!(built.store, None);
     assert_eq!(built.user.as_deref(), Some("grace"));
     assert_eq!(
-        built.passthrough.get("reasoning"),
-        Some(&value(r#"{"effort": "low"}"#))
+        built.passthrough,
+        params(r#"{"reasoning": {"effort": "low"}, "system_instruction": "c"}"#)
     );
-    assert_eq!(
-        built.passthrough.get("system_instruction"),
-        Some(&value("\"c\""))
-    );
-    assert!(!built.passthrough.contains_key("model"));
-    assert!(!built.passthrough.contains_key("instructions"));
-    assert!(!built.passthrough.contains_key("tools"));
-    assert!(!built.passthrough.contains_key("stream"));
-    assert!(!built.passthrough.contains_key("temperature"));
-    assert!(!built.passthrough.contains_key("top_p"));
-    assert!(!built.passthrough.contains_key("max_output_tokens"));
-    assert!(!built.passthrough.contains_key("store"));
-    assert!(!built.passthrough.contains_key("user"));
 }
 
 #[test]

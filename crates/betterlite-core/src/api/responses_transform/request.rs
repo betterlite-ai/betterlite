@@ -8,6 +8,7 @@ use serde_with::rust::double_option;
 use super::error::ResponsesTransformError;
 use super::input::transform_input;
 
+#[derive(Debug)]
 pub struct ResponsesRequest {
     pub model: String,
     pub input: Option<JsonValue>,

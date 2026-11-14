@@ -65,6 +65,30 @@ fn a_missing_or_empty_role_defaults_to_user() {
 }
 
 #[test]
+fn another_turn_role_is_kept_as_given() {
+    assert_eq!(
+        built_input(r#"[{"role": "system", "content": "s"}]"#),
+        value(r#"[{"role": "system", "content": [{"type": "input_text", "text": "s"}]}]"#)
+    );
+}
+
+#[test]
+fn the_step_type_wins_over_the_role() {
+    assert_eq!(
+        built_input(r#"[{"type": "model_output", "role": "user", "content": "x"}]"#),
+        value(r#"[{"role": "assistant", "content": [{"type": "output_text", "text": "x"}]}]"#)
+    );
+}
+
+#[test]
+fn a_text_item_is_rebuilt_without_its_other_keys() {
+    assert_eq!(
+        built_input(r#"[{"type": "text", "text": "z", "annotations": []}]"#),
+        value(r#"[{"role": "user", "content": [{"type": "input_text", "text": "z"}]}]"#)
+    );
+}
+
+#[test]
 fn a_turn_without_leaves_an_empty_content_list() {
     assert_eq!(
         built_input(r#"[{"role": "user"}]"#),

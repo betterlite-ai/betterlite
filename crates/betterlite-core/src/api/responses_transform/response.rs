@@ -20,14 +20,14 @@ pub fn to_interactions_response(
 ) -> Result<InteractionsApiResponse, ResponsesTransformError> {
     let created = local_created(response.created_at, zone)?;
     let (outputs, steps) = outputs_and_steps(&response.output);
-    let model = match model {
+    let reported_model = match model {
         Some(name) if !name.is_empty() => Some(name.to_owned()),
         Some(_) | None => response.model.clone(),
     };
     Ok(InteractionsApiResponse {
         id: Some(response.id.clone()),
         object: Some(String::from("interaction")),
-        model,
+        model: reported_model,
         agent: None,
         status: response.status.clone(),
         created: Some(created.clone()),
