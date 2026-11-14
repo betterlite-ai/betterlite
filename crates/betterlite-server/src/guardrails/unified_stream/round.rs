@@ -171,7 +171,7 @@ where
 }
 
 // LiteLLM's emit_streaming_http_error arguments, built from the failed round's lists
-fn stream_error_emission<'state, T: ?Sized>(
+const fn stream_error_emission<'state, T: ?Sized>(
     context: &'state FailureContext<'_, T>,
     request_data: &'state BTreeMap<String, GuardrailValue>,
 ) -> StreamErrorEmission<'state, T> {
