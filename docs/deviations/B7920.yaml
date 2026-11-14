@@ -23,6 +23,11 @@ deviations:
       betterlite declares JSON types in place of Python's untyped object, Any and bare containers, so a value
       that is not JSON is rejected where LiteLLM accepts it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L609
+  - what: MessageData.metadata is typed dict[str, JsonValue] | None where LiteLLM declares dict | None.
+    why: >-
+      betterlite types the bare dict as a JSON mapping, so a value that is not JSON is rejected where
+      LiteLLM accepts it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L283
   - what: FileContent names PathLike[str] and PathLike[bytes] where LiteLLM writes a bare PathLike.
     why: A bare PathLike means PathLike[Any], which betterlite spells as the two concrete path forms instead.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L96
