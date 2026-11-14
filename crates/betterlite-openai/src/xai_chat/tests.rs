@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
-use std::future::Future;
+use std::future::{self, Future};
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -137,8 +137,8 @@ impl OauthTokens for LoginRequired {
         String::from("https://oauth.example/v1")
     }
 
-    async fn access_token(&mut self) -> Result<SecretString, XaiOauthError> {
-        Err(XaiOauthError::LoginRequired)
+    fn access_token(&mut self) -> impl Future<Output = Result<SecretString, XaiOauthError>> + Send {
+        future::ready(Err(XaiOauthError::LoginRequired))
     }
 }
 

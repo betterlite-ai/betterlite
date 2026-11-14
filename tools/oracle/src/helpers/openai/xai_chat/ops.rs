@@ -116,17 +116,15 @@ impl Run<'_> {
         use_xai_oauth: bool,
     ) -> Value {
         let settings = identity(self.settings);
-        let authenticator = oauth(self.settings, None);
         let resolved = provider_info(api_base, api_key, &settings);
-        let url = complete_url(&UrlInput {
-            api_base,
-            api_key,
-            settings: &settings,
-            use_xai_oauth,
-            oauth: &authenticator,
-        });
         json!({
-            "url": url,
+            "url": complete_url(&UrlInput {
+                api_base,
+                api_key,
+                settings: &settings,
+                use_xai_oauth,
+                oauth: &oauth(self.settings, None),
+            }),
             "api_base": resolved.api_base,
             "api_key": resolved.api_key.map(|key| key.expose_secret().to_owned()),
         })
