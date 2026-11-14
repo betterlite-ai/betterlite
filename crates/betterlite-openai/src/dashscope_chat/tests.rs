@@ -4,8 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_prompts::arguments::json::Object;
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::json;
+use secrecy::{ExposeSecret, SecretString};
 
 use super::{ChatBasePolicy, DEFAULT_BASE, DashscopeChatConfig, TransformInput};
 use crate::chat::ChatMessage;
@@ -52,10 +51,6 @@ fn brand_config(env_base: Option<&str>, env_in_complete_url: bool) -> DashscopeC
 
 fn supported(model: &str, chat_models: &[&str]) -> Vec<&'static str> {
     DashscopeChatConfig::supported_params(model, &catalog(chat_models))
-}
-
-fn exposed(key: Option<&SecretString>) -> Option<String> {
-    key.map(|value| value.expose_secret().to_owned())
 }
 
 #[test]
@@ -148,10 +143,16 @@ fn dashscope_chat_provider_info_chains_base_and_key() {
     let from_env = plain_config(Some("https://env.example/v1"), Some("env-key"));
     let info = from_env.provider_info(None, None);
     assert_eq!(info.api_base, "https://env.example/v1");
-    assert_eq!(exposed(info.api_key.as_ref()).as_deref(), Some("env-key"));
+    assert_eq!(
+        info.api_key.as_ref().map(ExposeSecret::expose_secret),
+        Some("env-key")
+    );
     let given = from_env.provider_info(Some("https://given.example/v1"), Some(&key("given")));
     assert_eq!(given.api_base, "https://given.example/v1");
-    assert_eq!(exposed(given.api_key.as_ref()).as_deref(), Some("given"));
+    assert_eq!(
+        given.api_key.as_ref().map(ExposeSecret::expose_secret),
+        Some("given")
+    );
 }
 
 #[test]
@@ -164,7 +165,7 @@ fn dashscope_chat_provider_info_skips_empty_values() {
     let fallback = env.provider_info(Some(""), Some(&key("")));
     assert_eq!(fallback.api_base, "https://env.example/v1");
     assert_eq!(
-        exposed(fallback.api_key.as_ref()).as_deref(),
+        fallback.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("env-key")
     );
 }
@@ -192,13 +193,10 @@ fn dashscope_chat_keeps_cache_control_for_messages_and_tools() {
         .expect("the dashscope transform");
     let value = serde_json::to_value(body).expect("the rendered body");
     assert_eq!(
-        value["messages"][0]["content"][0]["cache_control"],
-        json!({"type": "ephemeral"})
+        value["messages"][0]["content"][0]["cache_control"]["type"],
+        "ephemeral"
     );
-    assert_eq!(
-        value["tools"][0]["cache_control"],
-        json!({"type": "ephemeral"})
-    );
+    assert_eq!(value["tools"][0]["cache_control"]["type"], "ephemeral");
     assert_eq!(
         value["tools"][0]["function"]["parameters"]["properties"]["name"]["pattern"],
         "\\p{L}+"
