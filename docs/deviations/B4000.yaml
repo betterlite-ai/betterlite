@@ -44,3 +44,16 @@ deviations:
       error, so flush keeps the event queued. LiteLLM catches every exception in that path and logs it.
     why: A swallowed error reports success for a record that was never stored, and the flush then drops the event.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L402-L406
+  - what: >-
+      The client-credentials exchange is written here rather than delegated to B673's get_azure_ad_token_from_entra_id
+      port in betterlite-azure::azure_client_secret: the form, the os.environ/ resolution and the tenant token URL are
+      built in this module. It posts straight to {authority}/{tenant}/oauth2/v2.0/token and skips azure-identity's
+      instance and tenant discovery, so a host outside azure-identity's known authorities gets the token request
+      without the two discovery requests LiteLLM's ClientSecretCredential sends first.
+    why: >-
+      betterlite-azure depends on betterlite-openai, which depends on betterlite-logging, so importing that provider
+      here is a crate cycle. Moving the shared code to a crate both may depend on needs a new workspace crate and an
+      edit to betterlite-azure/src/lib.rs, neither of which this task owns (out_of_scope names B673 as the owner).
+      The request LiteLLM sends for a working setup is the same: scope, form fields, AZURE_AUTHORITY_HOST when set,
+      and os.environ/ references resolved through the environment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L104-L150

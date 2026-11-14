@@ -18,7 +18,8 @@ use crate::azure_storage_logging::http_ops::{
     flush_data_request, storage_request,
 };
 use crate::azure_storage_logging::token::{
-    ChainTokenProvider, TokenError, client_secret_request, credentials, parse_token_response,
+    ChainTokenProvider, TokenError, authority_host, client_secret_request, credentials,
+    parse_token_response,
 };
 use crate::azure_storage_logging::transport::{StorageRequest, StorageResponse};
 
@@ -199,12 +200,10 @@ impl AzureBlobStorageLogger {
         if let Some(token) = cached {
             return Ok(token);
         }
-        let credentials = credentials(&self.settings)?;
-        let response = self
-            .deps
-            .transport
-            .send(client_secret_request(&credentials))
-            .await?;
+        let credentials = credentials(&self.settings, self.deps.environment.as_ref())?;
+        let authority = authority_host(self.deps.environment.as_ref());
+        let request = client_secret_request(&credentials, &authority)?;
+        let response = self.deps.transport.send(request).await?;
         let token = parse_token_response(&response)?;
         self.state
             .lock()
