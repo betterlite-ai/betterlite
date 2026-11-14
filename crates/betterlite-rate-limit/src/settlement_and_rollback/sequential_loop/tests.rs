@@ -2,7 +2,8 @@
 
 use std::sync::Arc;
 
-use crate::limiter_records::{RateLimitResponse, ReservationBackend};
+use crate::limiter_records::{RateLimitResponse, ReservationBackend, ScriptReply};
+use crate::settlement_and_rollback::SettlementError;
 use crate::settlement_and_rollback::tests::support::{
     FakeCache, FakeScript, FixedClock, amounts, descriptor, key_list, reply, settlement, store,
 };
@@ -124,6 +125,66 @@ async fn the_loop_stops_at_the_first_over_limit_group() {
     assert_eq!(status.descriptor_value.as_deref(), Some("gpt-3.5"));
     assert_eq!(status.limit_remaining, 1);
     assert!(response.reservation_windows.is_none());
+}
+
+#[tokio::test]
+async fn an_undecodable_reply_escapes_the_loop_without_a_refund() {
+    let script = FakeScript::new(vec![reply(&[0, 1, 100]), ScriptReply::Int(7)]);
+    let refunds = FakeScript::new(Vec::new());
+    let cache = FakeCache::empty();
+    let windows_store = store(Arc::clone(&cache));
+    let clock = FixedClock::at(NOW);
+    let settler = settlement(
+        &windows_store,
+        &clock,
+        Some(Arc::clone(&script)),
+        Some(Arc::clone(&refunds)),
+        false,
+    );
+    let error = settler
+        .atomic_check_and_increment_by_n(
+            &[
+                descriptor("model", "gpt-4", Some(10), None),
+                descriptor("model", "gpt-3.5", Some(10), None),
+            ],
+            &[amounts(1, 0), amounts(1, 0)],
+        )
+        .await
+        .expect_err("a reply that is not an array is raised to the caller");
+    assert!(matches!(error, SettlementError::Reply(_)));
+    assert!(refunds.calls().is_empty());
+    assert!(cache.reads().is_empty());
+    assert!(cache.writes().is_empty());
+}
+
+#[tokio::test]
+async fn a_short_reply_escapes_the_loop_without_a_refund() {
+    let script = FakeScript::new(vec![reply(&[0, 1, 100]), reply(&[0, 1])]);
+    let refunds = FakeScript::new(Vec::new());
+    let cache = FakeCache::empty();
+    let windows_store = store(Arc::clone(&cache));
+    let clock = FixedClock::at(NOW);
+    let settler = settlement(
+        &windows_store,
+        &clock,
+        Some(Arc::clone(&script)),
+        Some(Arc::clone(&refunds)),
+        false,
+    );
+    let error = settler
+        .atomic_check_and_increment_by_n(
+            &[
+                descriptor("model", "gpt-4", Some(10), None),
+                descriptor("model", "gpt-3.5", Some(10), None),
+            ],
+            &[amounts(1, 0), amounts(1, 0)],
+        )
+        .await
+        .expect_err("a reply too short to decode is raised to the caller");
+    assert!(matches!(error, SettlementError::Response(_)));
+    assert!(refunds.calls().is_empty());
+    assert!(cache.reads().is_empty());
+    assert!(cache.writes().is_empty());
 }
 
 #[tokio::test]
