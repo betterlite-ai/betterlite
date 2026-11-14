@@ -30,10 +30,13 @@ fn an_unset_or_null_tier_is_no_tier() {
 }
 
 #[rstest]
-#[case::unknown_word(text("premium"))]
-#[case::boolean(GuardrailValue::Boolean(true))]
-#[case::number(GuardrailValue::SignedInteger(2))]
-fn a_value_that_is_not_a_tier_is_rejected(#[case] configured: GuardrailValue) {
+#[case::unknown_word(text("premium"), "\"premium\"")]
+#[case::boolean(GuardrailValue::Boolean(true), "True")]
+#[case::number(GuardrailValue::SignedInteger(2), "2")]
+fn a_value_that_is_not_a_tier_is_rejected(
+    #[case] configured: GuardrailValue,
+    #[case] rendered: &str,
+) {
     let error = resolve_cost_tier(Some(&configured), &NoSecrets).unwrap_err();
     assert!(
         matches!(&error, PromptShieldError::InvalidCostTier { .. }),
@@ -43,6 +46,7 @@ fn a_value_that_is_not_a_tier_is_rejected(#[case] configured: GuardrailValue) {
         error.to_string().contains("must be 'free' or 'paid'"),
         "{error}"
     );
+    assert!(error.to_string().contains(rendered), "{error}");
 }
 
 #[test]

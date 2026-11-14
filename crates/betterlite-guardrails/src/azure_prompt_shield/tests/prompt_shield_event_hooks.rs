@@ -112,7 +112,12 @@ async fn apply_guardrail_skips_empty_texts() {
         returned.texts,
         Some(vec![String::new(), "hello".to_owned()])
     );
-    assert_eq!(seen_requests(&server).len(), 1);
+    let seen = seen_requests(&server);
+    assert_eq!(seen.len(), 1);
+    assert_eq!(
+        seen.first().unwrap().body,
+        r#"{"userPrompt":"hello","documents":[]}"#
+    );
 }
 
 #[tokio::test]
