@@ -2,8 +2,8 @@ use super::OutageDetector;
 use super::decision::{OutageAlertState, alert_type_for, append_status, outage_status};
 use super::message::{OutageAlertType, OutageKey, OutageMessage, outage_alert_message};
 use super::ports::{
-    OutageApiBase, OutageClock, OutageDeployment, OutageDeployments, OutageProviders, OutageSender,
-    OutageStore,
+    DeploymentWrite, OutageApiBase, OutageClock, OutageDeployment, OutageDeployments,
+    OutageProviders, OutageSender, OutageStore,
 };
 use super::record::OutageRecord;
 
@@ -13,8 +13,14 @@ struct OutageView<'view> {
     api_base: Option<&'view str>,
 }
 
+// One run borrows the detector for a single failure callback.
+pub(super) struct Run<'run, Store, Deployments, Providers, ApiBase, Sender, Clock> {
+    pub(super) detector:
+        &'run OutageDetector<'run, Store, Deployments, Providers, ApiBase, Sender, Clock>,
+}
+
 impl<Store, Deployments, Providers, ApiBase, Sender, Clock>
-    OutageDetector<'_, Store, Deployments, Providers, ApiBase, Sender, Clock>
+    Run<'_, Store, Deployments, Providers, ApiBase, Sender, Clock>
 where
     Store: OutageStore,
     Deployments: OutageDeployments,
@@ -24,21 +30,21 @@ where
     Clock: OutageClock,
 {
     // LiteLLM wraps this whole body in a bare except, so every failure below ends the call without raising.
-    pub async fn outage_alerts(&self, status_code: Option<i64>, deployment_id: &str) {
-        let Ok(cached) = self.store.get_outage_record(deployment_id).await else {
+    pub(super) async fn outage_alerts(&self, status_code: Option<i64>, deployment_id: &str) {
+        let Ok(cached) = self.detector.store.get_outage_record(deployment_id).await else {
             return;
         };
         let Some(code) = outage_status(status_code) else {
             return;
         };
-        let Some(registry) = self.deployments else {
+        let Some(registry) = self.detector.deployments else {
             return;
         };
         let Ok(Some(deployment)) = registry.deployment(deployment_id) else {
             return;
         };
         let (model, provider) = self.model_and_provider(&deployment);
-        let Ok(api_base) = self.api_base.api_base(&model, deployment_id) else {
+        let Ok(api_base) = self.detector.api_base.api_base(&model, deployment_id) else {
             return;
         };
         let view = OutageView {
@@ -56,18 +62,13 @@ where
     }
 
     fn model_and_provider(&self, deployment: &OutageDeployment) -> (String, String) {
-        let mut model = deployment.model.clone();
-        let provider = match deployment.custom_llm_provider.as_deref() {
-            Some(provider) => provider.to_owned(),
-            None => match self.providers.get_llm_provider(&deployment.model) {
-                Ok(resolved) => {
-                    model = resolved.model;
-                    resolved.provider
-                }
-                Err(_resolution) => String::new(),
-            },
+        let Some(provider) = deployment.custom_llm_provider.as_deref() else {
+            return match self.detector.providers.get_llm_provider(&deployment.model) {
+                Ok(resolved) => (resolved.model, resolved.provider),
+                Err(_resolution) => (deployment.model.clone(), String::new()),
+            };
         };
-        (model, provider)
+        (deployment.model.clone(), provider.to_owned())
     }
 
     async fn store_first_deployment_record(&self, code: i64, deployment_id: &str) {
@@ -76,11 +77,16 @@ where
             alerts: vec![code],
             minor_alert_sent: false,
             major_alert_sent: false,
-            last_updated_at: self.clock.now_unix_seconds(),
+            last_updated_at: self.detector.clock.now_unix_seconds(),
         };
         let _stored = self
+            .detector
             .store
-            .set_outage_record(deployment_id, &record, Some(self.args.outage_alert_ttl))
+            .set_outage_record(DeploymentWrite {
+                key: deployment_id,
+                record: &record,
+                ttl_seconds: Some(self.detector.args.outage_alert_ttl),
+            })
             .await;
     }
 
@@ -94,20 +100,16 @@ where
         append_status(
             &mut record.alerts,
             code,
-            self.args.max_outage_alert_list_size,
+            self.detector.args.max_outage_alert_list_size,
         );
-        record.last_updated_at = self.clock.now_unix_seconds();
+        record.last_updated_at = self.detector.clock.now_unix_seconds();
         let state = OutageAlertState {
             alerts: &record.alerts,
             minor_alert_sent: record.minor_alert_sent,
             major_alert_sent: record.major_alert_sent,
         };
-        if let Some(alert_type) = alert_type_for(&state, self.args, true) {
-            let last_updated_at = record.last_updated_at;
-            let sent = self
-                .send_deployment_alert(view, alert_type, &record.alerts, last_updated_at)
-                .await;
-            if !sent {
+        if let Some(alert_type) = alert_type_for(&state, self.detector.args, true) {
+            if !self.send_deployment_alert(view, alert_type, record).await {
                 return;
             }
             match alert_type {
@@ -116,8 +118,13 @@ where
             }
         }
         let _stored = self
+            .detector
             .store
-            .set_outage_record(deployment_id, record, None)
+            .set_outage_record(DeploymentWrite {
+                key: deployment_id,
+                record,
+                ttl_seconds: None,
+            })
             .await;
     }
 
@@ -125,8 +132,7 @@ where
         &self,
         view: &OutageView<'_>,
         alert_type: OutageAlertType,
-        alerts: &[i64],
-        last_updated_at: f64,
+        record: &OutageRecord,
     ) -> bool {
         let message = OutageMessage {
             alert_type,
@@ -134,11 +140,12 @@ where
             key_value: view.model,
             provider: view.provider,
             api_base: view.api_base,
-            alerts,
-            now: self.clock.now_unix_seconds(),
-            last_updated_at,
+            alerts: &record.alerts,
+            now: self.detector.clock.now_unix_seconds(),
+            last_updated_at: record.last_updated_at,
         };
-        self.sender
+        self.detector
+            .sender
             .send_outage_alert(&outage_alert_message(&message), alert_type.level())
             .await
             .is_ok()

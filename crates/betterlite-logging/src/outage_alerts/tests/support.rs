@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use async_trait::async_trait;
@@ -6,8 +7,8 @@ use betterlite_config::sections::alert_settings::types::SlackAlertingArgs;
 use crate::alert_dispatch::AlertLevel;
 use crate::outage_alerts::OutageDetector;
 use crate::outage_alerts::ports::{
-    OutageApiBase, OutageClock, OutageDeployment, OutageDeployments, OutageProviders, OutageSender,
-    OutageStore, ProviderResolution,
+    DeploymentWrite, OutageApiBase, OutageClock, OutageDeployment, OutageDeployments,
+    OutageProviders, OutageSender, OutageStore, ProviderResolution, RegionWrite,
 };
 use crate::outage_alerts::record::{OutageRecord, RegionOutageRecord};
 
@@ -45,6 +46,48 @@ pub(super) struct StoreState {
     pub(super) fail_write: bool,
 }
 
+trait StoredRecord: Clone + Sized {
+    fn cached(state: &StoreState) -> Option<&Self>;
+    fn store(state: &mut StoreState, record: Self);
+    fn push_write(state: &mut StoreState, key: &str, record: &Self, ttl_seconds: Option<u32>);
+}
+
+impl StoredRecord for OutageRecord {
+    fn cached(state: &StoreState) -> Option<&Self> {
+        state.deployment.as_ref()
+    }
+
+    fn store(state: &mut StoreState, record: Self) {
+        state.deployment = Some(record);
+    }
+
+    fn push_write(state: &mut StoreState, key: &str, record: &Self, ttl_seconds: Option<u32>) {
+        state.writes.push(StoreWrite::Deployment {
+            key: key.to_owned(),
+            record: record.clone(),
+            ttl_seconds,
+        });
+    }
+}
+
+impl StoredRecord for RegionOutageRecord {
+    fn cached(state: &StoreState) -> Option<&Self> {
+        state.region.as_ref()
+    }
+
+    fn store(state: &mut StoreState, record: Self) {
+        state.region = Some(record);
+    }
+
+    fn push_write(state: &mut StoreState, key: &str, record: &Self, ttl_seconds: Option<u32>) {
+        state.writes.push(StoreWrite::Region {
+            key: key.to_owned(),
+            record: record.clone(),
+            ttl_seconds,
+        });
+    }
+}
+
 #[derive(Default)]
 pub(super) struct FakeStore {
     state: Mutex<StoreState>,
@@ -54,6 +97,32 @@ impl FakeStore {
     pub(super) fn lock(&self) -> MutexGuard<'_, StoreState> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
+
+    // One read path and one write path serve both cached record kinds.
+    fn read<Record: StoredRecord>(&self, key: &str) -> Result<Option<Record>, FakeFailure> {
+        let mut state = self.lock();
+        state.reads.push(key.to_owned());
+        if state.fail_read {
+            return Err(FakeFailure);
+        }
+        Ok(Record::cached(&state).cloned())
+    }
+
+    fn write<Record: StoredRecord>(
+        &self,
+        key: &str,
+        record: &Record,
+        ttl_seconds: Option<u32>,
+    ) -> Result<(), FakeFailure> {
+        let mut state = self.lock();
+        state.write_attempts.push(key.to_owned());
+        if state.fail_write {
+            return Err(FakeFailure);
+        }
+        Record::store(&mut state, record.clone());
+        Record::push_write(&mut state, key, record, ttl_seconds);
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -61,64 +130,22 @@ impl OutageStore for FakeStore {
     type Error = FakeFailure;
 
     async fn get_outage_record(&self, key: &str) -> Result<Option<OutageRecord>, FakeFailure> {
-        let mut state = self.lock();
-        state.reads.push(key.to_owned());
-        if state.fail_read {
-            return Err(FakeFailure);
-        }
-        Ok(state.deployment.clone())
+        self.read(key)
     }
 
-    async fn set_outage_record(
-        &self,
-        key: &str,
-        record: &OutageRecord,
-        ttl_seconds: Option<u32>,
-    ) -> Result<(), FakeFailure> {
-        let mut state = self.lock();
-        state.write_attempts.push(key.to_owned());
-        if state.fail_write {
-            return Err(FakeFailure);
-        }
-        state.deployment = Some(record.clone());
-        state.writes.push(StoreWrite::Deployment {
-            key: key.to_owned(),
-            record: record.clone(),
-            ttl_seconds,
-        });
-        Ok(())
+    async fn set_outage_record(&self, write: DeploymentWrite<'_>) -> Result<(), FakeFailure> {
+        self.write(write.key, write.record, write.ttl_seconds)
     }
 
     async fn get_region_outage_record(
         &self,
         key: &str,
     ) -> Result<Option<RegionOutageRecord>, FakeFailure> {
-        let mut state = self.lock();
-        state.reads.push(key.to_owned());
-        if state.fail_read {
-            return Err(FakeFailure);
-        }
-        Ok(state.region.clone())
+        self.read(key)
     }
 
-    async fn set_region_outage_record(
-        &self,
-        key: &str,
-        record: &RegionOutageRecord,
-        ttl_seconds: Option<u32>,
-    ) -> Result<(), FakeFailure> {
-        let mut state = self.lock();
-        state.write_attempts.push(key.to_owned());
-        if state.fail_write {
-            return Err(FakeFailure);
-        }
-        state.region = Some(record.clone());
-        state.writes.push(StoreWrite::Region {
-            key: key.to_owned(),
-            record: record.clone(),
-            ttl_seconds,
-        });
-        Ok(())
+    async fn set_region_outage_record(&self, write: RegionWrite<'_>) -> Result<(), FakeFailure> {
+        self.write(write.key, write.record, write.ttl_seconds)
     }
 }
 
@@ -267,6 +294,7 @@ pub(super) struct Fixture {
     pub(super) sender: FakeSender,
     pub(super) clock: FakeClock,
     pub(super) args: SlackAlertingArgs,
+    pub(super) router: bool,
 }
 
 impl Fixture {
@@ -288,6 +316,7 @@ impl Fixture {
             sender: FakeSender::default(),
             clock: FakeClock { now: NOW },
             args: SlackAlertingArgs::default(),
+            router: true,
         }
     }
 
@@ -304,29 +333,7 @@ impl Fixture {
     > {
         OutageDetector {
             store: &self.store,
-            deployments: Some(&self.deployments),
-            providers: &self.providers,
-            api_base: &self.api_base,
-            sender: &self.sender,
-            clock: &self.clock,
-            args: &self.args,
-        }
-    }
-
-    pub(super) fn detector_without_router(
-        &self,
-    ) -> OutageDetector<
-        '_,
-        FakeStore,
-        FakeDeployments,
-        FakeProviders,
-        FakeApiBase,
-        FakeSender,
-        FakeClock,
-    > {
-        OutageDetector {
-            store: &self.store,
-            deployments: None,
+            deployments: self.router.then_some(&self.deployments),
             providers: &self.providers,
             api_base: &self.api_base,
             sender: &self.sender,
@@ -337,25 +344,15 @@ impl Fixture {
 }
 
 pub(super) fn model_deployment() -> OutageDeployment {
-    OutageDeployment {
-        model: "gpt-4o".to_owned(),
-        custom_llm_provider: Some("openai".to_owned()),
-        region_name: None,
-        vertex_location: None,
-        aws_region_name: None,
-        watsonx_region_name: None,
-    }
+    let mut deployment = regional_deployment("openai", None, None, None, None);
+    deployment.model = "gpt-4o".to_owned();
+    deployment
 }
 
 pub(super) fn vertex_deployment() -> OutageDeployment {
-    OutageDeployment {
-        model: "gemini-1.5-pro".to_owned(),
-        custom_llm_provider: Some("vertex_ai".to_owned()),
-        region_name: None,
-        vertex_location: Some("us-east1".to_owned()),
-        aws_region_name: None,
-        watsonx_region_name: None,
-    }
+    let mut deployment = regional_deployment("vertex_ai", None, Some("us-east1"), None, None);
+    deployment.model = "gemini-1.5-pro".to_owned();
+    deployment
 }
 
 pub(super) fn regional_deployment(
@@ -412,12 +409,13 @@ pub(super) fn region_record(
     deployment_ids: &[&str],
     sent: AlertFlags,
 ) -> RegionOutageRecord {
+    let ids: BTreeSet<String> = deployment_ids.iter().copied().map(str::to_owned).collect();
     RegionOutageRecord {
         provider_region_id: provider_region_id.to_owned(),
         alerts,
         minor_alert_sent: sent.minor,
         major_alert_sent: sent.major,
         last_updated_at: NOW,
-        deployment_ids: deployment_ids.iter().copied().map(str::to_owned).collect(),
+        deployment_ids: ids,
     }
 }

@@ -2,16 +2,19 @@ use rstest::rstest;
 
 use crate::alert_dispatch::AlertLevel;
 use crate::outage_alerts::error::RegionOutageError;
+use crate::outage_alerts::ports::ProviderResolution;
 
 use super::support::{
     BOTH_SENT, FakeFailure, Fixture, MINOR_SENT, NONE_SENT, StoreWrite, model_deployment,
     region_record, regional_deployment, vertex_deployment,
 };
 
+const REGION_MINOR_TWO: &str = "\n\n\n*\u{26a0}\u{fe0f} Minor Service Outage*\n\n\n*Region Name:* `us-east1`\n*Provider:* `vertex_ai`\n\n\n*Errors:*\n\nAPI Errors: 2\n\n\n*Last Check:* `0.0s ago`\n\n\n";
 const REGION_MINOR_FIVE: &str = "\n\n\n*\u{26a0}\u{fe0f} Minor Service Outage*\n\n\n*Region Name:* `us-east1`\n*Provider:* `vertex_ai`\n\n\n*Errors:*\n\nAPI Errors: 5\n\n\n*Last Check:* `0.0s ago`\n\n\n";
 const REGION_MINOR_SEVEN: &str = "\n\n\n*\u{26a0}\u{fe0f} Minor Service Outage*\n\n\n*Region Name:* `us-east1`\n*Provider:* `vertex_ai`\n\n\n*Errors:*\n\nAPI Errors: 7\n\n\n*Last Check:* `0.0s ago`\n\n\n";
 const REGION_MINOR_TEN: &str = "\n\n\n*\u{26a0}\u{fe0f} Minor Service Outage*\n\n\n*Region Name:* `us-east1`\n*Provider:* `vertex_ai`\n\n\n*Errors:*\n\nAPI Errors: 10\n\n\n*Last Check:* `0.0s ago`\n\n\n";
 const REGION_MINOR_ASIA_FIVE: &str = "\n\n\n*\u{26a0}\u{fe0f} Minor Service Outage*\n\n\n*Region Name:* `asia-east1`\n*Provider:* `vertex_ai`\n\n\n*Errors:*\n\nAPI Errors: 5\n\n\n*Last Check:* `0.0s ago`\n\n\n";
+const REGION_MAJOR_FOUR: &str = "\n\n\n*\u{26a0}\u{fe0f} Major Service Outage*\n\n\n*Region Name:* `us-east1`\n*Provider:* `vertex_ai`\n\n\n*Errors:*\n\nAPI Errors: 4\n\n\n*Last Check:* `0.0s ago`\n\n\n";
 const REGION_MAJOR_TEN: &str = "\n\n\n*\u{26a0}\u{fe0f} Major Service Outage*\n\n\n*Region Name:* `us-east1`\n*Provider:* `vertex_ai`\n\n\n*Errors:*\n\nAPI Errors: 10\n\n\n*Last Check:* `0.0s ago`\n\n\n";
 
 #[rstest]
@@ -20,7 +23,10 @@ const REGION_MAJOR_TEN: &str = "\n\n\n*\u{26a0}\u{fe0f} Major Service Outage*\n\
 #[case::above_server_error(599)]
 #[tokio::test]
 async fn region_stores_the_first_qualifying_error_with_the_region_ttl(#[case] status_code: i64) {
-    let fixture = Fixture::new(vertex_deployment());
+    let mut fixture = Fixture::new(vertex_deployment());
+    fixture.args.region_outage_alert_ttl = 30;
+    // One alert already meets this threshold, so the empty sender also proves a lone deployment never alerts.
+    fixture.args.minor_outage_alert_threshold = 1;
     fixture
         .detector()
         .region_outage_alerts(Some(status_code), "dep-1")
@@ -38,7 +44,7 @@ async fn region_stores_the_first_qualifying_error_with_the_region_ttl(#[case] st
                 &["dep-1"],
                 NONE_SENT,
             ),
-            ttl_seconds: Some(60),
+            ttl_seconds: Some(30),
         }]
     );
     drop(state);
@@ -129,6 +135,44 @@ async fn region_falls_back_to_the_vertex_location() {
 }
 
 #[tokio::test]
+async fn region_resolves_the_provider_when_none_is_declared() {
+    let mut deployment = vertex_deployment();
+    deployment.custom_llm_provider = None;
+    let mut fixture = Fixture::new(deployment);
+    fixture.providers.result = Ok(ProviderResolution {
+        model: "gemini-1.5-pro".to_owned(),
+        provider: "vertex_ai".to_owned(),
+    });
+    let seeded = region_record("vertex_aius-east1", vec![500; 4], &["dep-0"], NONE_SENT);
+    fixture.store.lock().region = Some(seeded);
+    fixture
+        .detector()
+        .region_outage_alerts(Some(500), "dep-1")
+        .await
+        .unwrap();
+    assert_eq!(fixture.providers.models(), ["gemini-1.5-pro".to_owned()]);
+    let sent = fixture.sender.sent();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].message, REGION_MINOR_FIVE);
+    assert!(sent[0].message.contains("*Provider:* `vertex_ai`"));
+    let state = fixture.store.lock();
+    assert_eq!(state.reads, ["vertex_aius-east1".to_owned()]);
+    assert_eq!(
+        state.writes,
+        [StoreWrite::Region {
+            key: "vertex_aius-east1".to_owned(),
+            record: region_record(
+                "vertex_aius-east1",
+                vec![500; 5],
+                &["dep-0", "dep-1"],
+                MINOR_SENT,
+            ),
+            ttl_seconds: None,
+        }]
+    );
+}
+
+#[tokio::test]
 async fn region_falls_back_to_the_bedrock_region() {
     let fixture = Fixture::new(regional_deployment(
         "bedrock",
@@ -189,9 +233,10 @@ async fn region_does_nothing_when_no_region_is_found() {
 
 #[tokio::test]
 async fn region_ignores_a_missing_router_lookup() {
-    let fixture = Fixture::new(vertex_deployment());
+    let mut fixture = Fixture::new(vertex_deployment());
+    fixture.router = false;
     fixture
-        .detector_without_router()
+        .detector()
         .region_outage_alerts(Some(500), "dep-1")
         .await
         .unwrap();
@@ -261,9 +306,10 @@ async fn region_never_alerts_while_only_one_deployment_is_recorded() {
 #[tokio::test]
 async fn region_sends_a_minor_alert_when_two_deployments_and_the_threshold_qualify() {
     let mut fixture = Fixture::new(vertex_deployment());
+    fixture.args.minor_outage_alert_threshold = 2;
     fixture.store.lock().region = Some(region_record(
         "vertex_aius-east1",
-        vec![500; 4],
+        vec![500],
         &["dep-0"],
         NONE_SENT,
     ));
@@ -280,7 +326,7 @@ async fn region_sends_a_minor_alert_when_two_deployments_and_the_threshold_quali
     let sent = fixture.sender.sent();
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].level, AlertLevel::Medium);
-    assert_eq!(sent[0].message, REGION_MINOR_FIVE);
+    assert_eq!(sent[0].message, REGION_MINOR_TWO);
     let state = fixture.store.lock();
     assert_eq!(state.writes.len(), 2);
     assert_eq!(
@@ -289,7 +335,7 @@ async fn region_sends_a_minor_alert_when_two_deployments_and_the_threshold_quali
             key: "vertex_aius-east1".to_owned(),
             record: region_record(
                 "vertex_aius-east1",
-                vec![500; 5],
+                vec![500; 2],
                 &["dep-0", "dep-1"],
                 MINOR_SENT,
             ),
@@ -320,9 +366,10 @@ async fn region_sends_the_minor_alert_above_the_threshold_too() {
 #[tokio::test]
 async fn region_sends_a_major_alert_once_the_minor_one_was_sent() {
     let mut fixture = Fixture::new(vertex_deployment());
+    fixture.args.major_outage_alert_threshold = 4;
     fixture.store.lock().region = Some(region_record(
         "vertex_aius-east1",
-        vec![500; 9],
+        vec![500; 3],
         &["dep-0"],
         MINOR_SENT,
     ));
@@ -339,14 +386,14 @@ async fn region_sends_a_major_alert_once_the_minor_one_was_sent() {
     let sent = fixture.sender.sent();
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].level, AlertLevel::High);
-    assert_eq!(sent[0].message, REGION_MAJOR_TEN);
+    assert_eq!(sent[0].message, REGION_MAJOR_FOUR);
     assert_eq!(
         fixture.store.lock().writes[0],
         StoreWrite::Region {
             key: "vertex_aius-east1".to_owned(),
             record: region_record(
                 "vertex_aius-east1",
-                vec![500; 10],
+                vec![500; 4],
                 &["dep-0", "dep-1"],
                 BOTH_SENT,
             ),

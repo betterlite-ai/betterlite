@@ -8,10 +8,11 @@ use super::support::{
     model_deployment,
 };
 
+const MODEL_MINOR_TWO: &str = "\n\n\n*\u{26a0}\u{fe0f} Minor Service Outage*\n\n\n*Model Name:* `gpt-4o`\n*Provider:* `openai`\n*API Base:* `https://api.example.test`\n\n\n*Errors:*\n\nAPI Errors: 2\n\n\n*Last Check:* `0.0s ago`\n\n\n";
 const MODEL_MINOR_FIVE: &str = "\n\n\n*\u{26a0}\u{fe0f} Minor Service Outage*\n\n\n*Model Name:* `gpt-4o`\n*Provider:* `openai`\n*API Base:* `https://api.example.test`\n\n\n*Errors:*\n\nAPI Errors: 5\n\n\n*Last Check:* `0.0s ago`\n\n\n";
 const MODEL_MINOR_SEVEN: &str = "\n\n\n*\u{26a0}\u{fe0f} Minor Service Outage*\n\n\n*Model Name:* `gpt-4o`\n*Provider:* `openai`\n*API Base:* `https://api.example.test`\n\n\n*Errors:*\n\nAPI Errors: 7\n\n\n*Last Check:* `0.0s ago`\n\n\n";
 const MODEL_MINOR_TEN: &str = "\n\n\n*\u{26a0}\u{fe0f} Minor Service Outage*\n\n\n*Model Name:* `gpt-4o`\n*Provider:* `openai`\n*API Base:* `https://api.example.test`\n\n\n*Errors:*\n\nAPI Errors: 10\n\n\n*Last Check:* `0.0s ago`\n\n\n";
-const MODEL_MAJOR_TEN: &str = "\n\n\n*\u{26a0}\u{fe0f} Major Service Outage*\n\n\n*Model Name:* `gpt-4o`\n*Provider:* `openai`\n*API Base:* `https://api.example.test`\n\n\n*Errors:*\n\nAPI Errors: 10\n\n\n*Last Check:* `0.0s ago`\n\n\n";
+const MODEL_MAJOR_FOUR: &str = "\n\n\n*\u{26a0}\u{fe0f} Major Service Outage*\n\n\n*Model Name:* `gpt-4o`\n*Provider:* `openai`\n*API Base:* `https://api.example.test`\n\n\n*Errors:*\n\nAPI Errors: 4\n\n\n*Last Check:* `0.0s ago`\n\n\n";
 const MODEL_UNRESOLVED_FIVE: &str = "\n\n\n*\u{26a0}\u{fe0f} Minor Service Outage*\n\n\n*Model Name:* `gpt-4o-mini`\n*Provider:* ``\n*API Base:* `https://api.example.test`\n\n\n*Errors:*\n\nAPI Errors: 5\n\n\n*Last Check:* `0.0s ago`\n\n\n";
 
 #[rstest]
@@ -35,11 +36,9 @@ async fn deployment_ignores_a_missing_or_non_qualifying_status(#[case] status_co
 
 #[tokio::test]
 async fn deployment_ignores_a_missing_router_lookup() {
-    let fixture = Fixture::new(model_deployment());
-    fixture
-        .detector_without_router()
-        .outage_alerts(Some(500), "dep-1")
-        .await;
+    let mut fixture = Fixture::new(model_deployment());
+    fixture.router = false;
+    fixture.detector().outage_alerts(Some(500), "dep-1").await;
     let state = fixture.store.lock();
     assert_eq!(state.reads, ["dep-1".to_owned()]);
     assert!(state.writes.is_empty());
@@ -69,7 +68,10 @@ async fn deployment_ignores_an_unknown_deployment() {
 async fn deployment_stores_the_first_qualifying_error_with_the_outage_ttl(
     #[case] status_code: i64,
 ) {
-    let fixture = Fixture::new(model_deployment());
+    let mut fixture = Fixture::new(model_deployment());
+    fixture.args.outage_alert_ttl = 120;
+    // One alert already meets this threshold, so an empty sender proves the first record never alerts.
+    fixture.args.minor_outage_alert_threshold = 1;
     fixture
         .detector()
         .outage_alerts(Some(status_code), "dep-1")
@@ -81,7 +83,7 @@ async fn deployment_stores_the_first_qualifying_error_with_the_outage_ttl(
         [StoreWrite::Deployment {
             key: "dep-1".to_owned(),
             record: deployment_record(vec![status_code], NONE_SENT),
-            ttl_seconds: Some(60),
+            ttl_seconds: Some(120),
         }]
     );
     drop(state);
@@ -146,20 +148,21 @@ async fn deployment_stops_the_alerts_list_at_the_max_size() {
 #[tokio::test]
 async fn deployment_sends_a_minor_alert_once_at_the_threshold() {
     let mut fixture = Fixture::new(model_deployment());
-    fixture.store.lock().deployment = Some(deployment_record(vec![500; 4], NONE_SENT));
+    fixture.args.minor_outage_alert_threshold = 2;
+    fixture.store.lock().deployment = Some(deployment_record(vec![500], NONE_SENT));
     fixture.detector().outage_alerts(Some(500), "dep-1").await;
     fixture.detector().outage_alerts(Some(500), "dep-1").await;
     let sent = fixture.sender.sent();
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].level, AlertLevel::Medium);
-    assert_eq!(sent[0].message, MODEL_MINOR_FIVE);
+    assert_eq!(sent[0].message, MODEL_MINOR_TWO);
     let state = fixture.store.lock();
     assert_eq!(state.writes.len(), 2);
     assert_eq!(
         state.writes[0],
         StoreWrite::Deployment {
             key: "dep-1".to_owned(),
-            record: deployment_record(vec![500; 5], MINOR_SENT),
+            record: deployment_record(vec![500; 2], MINOR_SENT),
             ttl_seconds: None,
         }
     );
@@ -167,7 +170,7 @@ async fn deployment_sends_a_minor_alert_once_at_the_threshold() {
         state.writes[1],
         StoreWrite::Deployment {
             key: "dep-1".to_owned(),
-            record: deployment_record(vec![500; 6], MINOR_SENT),
+            record: deployment_record(vec![500; 3], MINOR_SENT),
             ttl_seconds: None,
         }
     );
@@ -187,20 +190,21 @@ async fn deployment_sends_the_minor_alert_above_the_threshold_too() {
 #[tokio::test]
 async fn deployment_sends_a_major_alert_once_at_the_major_threshold() {
     let mut fixture = Fixture::new(model_deployment());
-    fixture.store.lock().deployment = Some(deployment_record(vec![500; 9], MINOR_SENT));
+    fixture.args.major_outage_alert_threshold = 4;
+    fixture.store.lock().deployment = Some(deployment_record(vec![500; 3], MINOR_SENT));
     fixture.detector().outage_alerts(Some(500), "dep-1").await;
     fixture.detector().outage_alerts(Some(500), "dep-1").await;
     let sent = fixture.sender.sent();
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].level, AlertLevel::High);
-    assert_eq!(sent[0].message, MODEL_MAJOR_TEN);
+    assert_eq!(sent[0].message, MODEL_MAJOR_FOUR);
     let state = fixture.store.lock();
     assert_eq!(state.writes.len(), 2);
     assert_eq!(
         state.writes[0],
         StoreWrite::Deployment {
             key: "dep-1".to_owned(),
-            record: deployment_record(vec![500; 10], BOTH_SENT),
+            record: deployment_record(vec![500; 4], BOTH_SENT),
             ttl_seconds: None,
         }
     );

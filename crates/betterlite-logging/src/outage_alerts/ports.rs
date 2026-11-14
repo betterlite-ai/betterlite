@@ -40,30 +40,36 @@ pub trait OutageApiBase: Send + Sync {
     fn api_base(&self, model: &str, deployment_id: &str) -> Result<Option<String>, Self::Error>;
 }
 
+/// A cache write of one deployment's outage record.
+#[derive(Debug, PartialEq)]
+pub struct DeploymentWrite<'record> {
+    pub key: &'record str,
+    pub record: &'record OutageRecord,
+    pub ttl_seconds: Option<u32>,
+}
+
+/// A cache write of one provider region's outage record.
+#[derive(Debug, PartialEq)]
+pub struct RegionWrite<'record> {
+    pub key: &'record str,
+    pub record: &'record RegionOutageRecord,
+    pub ttl_seconds: Option<u32>,
+}
+
 #[async_trait]
 pub trait OutageStore: Send + Sync {
     type Error: StdError + Send + Sync + 'static;
 
     async fn get_outage_record(&self, key: &str) -> Result<Option<OutageRecord>, Self::Error>;
 
-    async fn set_outage_record(
-        &self,
-        key: &str,
-        record: &OutageRecord,
-        ttl_seconds: Option<u32>,
-    ) -> Result<(), Self::Error>;
+    async fn set_outage_record(&self, write: DeploymentWrite<'_>) -> Result<(), Self::Error>;
 
     async fn get_region_outage_record(
         &self,
         key: &str,
     ) -> Result<Option<RegionOutageRecord>, Self::Error>;
 
-    async fn set_region_outage_record(
-        &self,
-        key: &str,
-        record: &RegionOutageRecord,
-        ttl_seconds: Option<u32>,
-    ) -> Result<(), Self::Error>;
+    async fn set_region_outage_record(&self, write: RegionWrite<'_>) -> Result<(), Self::Error>;
 }
 
 #[async_trait]

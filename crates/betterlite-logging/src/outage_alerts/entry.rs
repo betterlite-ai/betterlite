@@ -11,9 +11,12 @@ pub enum FailureKind {
     Other,
 }
 
-impl<Store, Deployments, Providers, ApiBase, Sender, Clock>
-    OutageDetector<'_, Store, Deployments, Providers, ApiBase, Sender, Clock>
-where
+pub(super) async fn on_failure<Store, Deployments, Providers, ApiBase, Sender, Clock>(
+    detector: &OutageDetector<'_, Store, Deployments, Providers, ApiBase, Sender, Clock>,
+    alert_types: &[AlertType],
+    failure: FailureKind,
+    deployment_id: &str,
+) where
     Store: OutageStore,
     Deployments: OutageDeployments,
     Providers: OutageProviders,
@@ -21,20 +24,15 @@ where
     Sender: OutageSender,
     Clock: OutageClock,
 {
-    pub async fn on_failure(
-        &self,
-        alert_types: &[AlertType],
-        failure: FailureKind,
-        deployment_id: &str,
-    ) {
-        let FailureKind::ApiError { status_code } = failure else {
-            return;
-        };
-        if alert_types.contains(&AlertType::OutageAlerts) {
-            self.outage_alerts(status_code, deployment_id).await;
-        }
-        if alert_types.contains(&AlertType::RegionOutageAlerts) {
-            let _dropped = self.region_outage_alerts(status_code, deployment_id).await;
-        }
+    let FailureKind::ApiError { status_code } = failure else {
+        return;
+    };
+    if alert_types.contains(&AlertType::OutageAlerts) {
+        detector.outage_alerts(status_code, deployment_id).await;
+    }
+    if alert_types.contains(&AlertType::RegionOutageAlerts) {
+        let _dropped = detector
+            .region_outage_alerts(status_code, deployment_id)
+            .await;
     }
 }
