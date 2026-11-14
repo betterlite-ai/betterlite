@@ -1,0 +1,32 @@
+kind: helper
+name: normalize-content-unrecognized-type-dropped
+call:
+  b3766:
+    function: apply
+    settings:
+      guardrail_name: cs-aidr
+      api_key: test-key
+      api_base: https://cs.test
+    environment:
+      CS_AIDR_TOKEN: test-key
+      CS_AIDR_BASE_URL: https://cs.test
+    inputs:
+      structured_messages:
+      - role: user
+        content:
+        - type: video_url
+          video_url:
+            url: https://v.test
+        - type: text
+          text: kept
+    request_data: {}
+    input_type: request
+    answer:
+      status: 200
+      headers: {}
+      body:
+        result:
+          transformed: false
+env: {}
+compare:
+  ignore: []

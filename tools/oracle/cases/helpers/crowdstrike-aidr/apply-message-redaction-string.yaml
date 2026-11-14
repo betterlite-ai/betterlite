@@ -1,0 +1,31 @@
+kind: helper
+name: apply-message-redaction-string
+call:
+  b3766:
+    function: apply
+    settings:
+      guardrail_name: cs-aidr
+      api_key: test-key
+      api_base: https://cs.test
+    environment:
+      CS_AIDR_TOKEN: test-key
+      CS_AIDR_BASE_URL: https://cs.test
+    inputs:
+      structured_messages:
+      - role: user
+        content: secret
+    request_data: {}
+    input_type: request
+    answer:
+      status: 200
+      headers: {}
+      body:
+        result:
+          transformed: true
+          guard_output:
+            messages:
+            - role: user
+              content: '***'
+env: {}
+compare:
+  ignore: []

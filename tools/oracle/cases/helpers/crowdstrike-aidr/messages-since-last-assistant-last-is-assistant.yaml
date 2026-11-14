@@ -1,0 +1,31 @@
+kind: helper
+name: messages-since-last-assistant-last-is-assistant
+call:
+  b3766:
+    function: apply
+    settings:
+      guardrail_name: cs-aidr
+      api_key: test-key
+      api_base: https://cs.test
+    environment:
+      CS_AIDR_TOKEN: test-key
+      CS_AIDR_BASE_URL: https://cs.test
+    inputs:
+      structured_messages:
+      - role: system
+        content: s
+      - role: user
+        content: u
+      - role: assistant
+        content: a
+    request_data: {}
+    input_type: request
+    answer:
+      status: 200
+      headers: {}
+      body:
+        result:
+          transformed: false
+env: {}
+compare:
+  ignore: []

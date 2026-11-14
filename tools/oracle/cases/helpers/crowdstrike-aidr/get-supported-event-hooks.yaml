@@ -1,0 +1,15 @@
+kind: helper
+name: get-supported-event-hooks
+call:
+  b3766:
+    function: construct
+    settings:
+      guardrail_name: cs-aidr
+      api_key: test-key
+      api_base: https://cs.test
+    environment:
+      CS_AIDR_TOKEN: test-key
+      CS_AIDR_BASE_URL: https://cs.test
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,23 @@
+kind: helper
+name: streaming-params-from-litellm-params
+call:
+  b3766:
+    function: streaming_params
+    settings:
+      guardrail_name: cs-aidr
+      api_key: test-key
+      api_base: https://cs.test
+    environment:
+      CS_AIDR_TOKEN: test-key
+      CS_AIDR_BASE_URL: https://cs.test
+    params:
+      guardrail: crowdstrike_aidr
+      mode: pre_call
+      streaming_sampling_rate: 7
+      streaming_end_of_stream_only: true
+      optional_params:
+        streaming_sampling_rate: 3
+        streaming_buffer_until_moderated: true
+env: {}
+compare:
+  ignore: []
