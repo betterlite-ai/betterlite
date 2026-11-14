@@ -8,7 +8,9 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Mutex;
 
 use crate::compress::assembly::get_dropped_tool_span_indices;
-use crate::compress::budget::{BudgetSelectionRequest, select_kept_indices_for_budget};
+use crate::compress::budget::{
+    BudgetSelection, BudgetSelectionRequest, select_kept_indices_for_budget,
+};
 use crate::compress::counting::TokenCounter;
 use crate::embedding_scoring::{EmbeddingCall, EmbeddingExecutor};
 use crate::message_normalization::content_to_text;
@@ -120,9 +122,31 @@ fn request<'request>(
         messages,
         model: MODEL,
         call_type: "completion",
-        compression_trigger: Some(trigger),
+        compression_trigger: trigger,
         compression_target: target,
     }
+}
+
+async fn select_budget(
+    normalized: &[Value],
+    scores: &[f64],
+    target: usize,
+    kept: &[usize],
+    spans: &[Vec<usize>],
+) -> BudgetSelection {
+    let request = BudgetSelectionRequest {
+        normalized_messages: normalized,
+        original_messages: normalized,
+        combined_scores: scores,
+        compression_target: target,
+        model: MODEL,
+        initial_kept_indices: kept,
+        tool_exchange_spans: spans,
+    };
+    let counter = fixture_counter(Vec::new());
+    select_kept_indices_for_budget(&request, &counter)
+        .await
+        .expect("selected")
 }
 
 mod compress_behavior {
@@ -134,7 +158,7 @@ mod compress_behavior {
         #[case::at_the_default_trigger(200_000_usize, true)]
         #[case::one_token_above_the_default(200_001, false)]
         #[tokio::test]
-        async fn uses_two_hundred_thousand_tokens_when_none_is_supplied(
+        async fn uses_the_two_hundred_thousand_token_default(
             #[case] original_tokens: usize,
             #[case] skipped: bool,
         ) {
@@ -144,7 +168,7 @@ mod compress_behavior {
                 messages: &messages,
                 model: MODEL,
                 call_type: "completion",
-                compression_trigger: None,
+                compression_trigger: DEFAULT_COMPRESSION_TRIGGER,
                 compression_target: None,
             };
             let result = compress(&compress_request, &counter)
@@ -215,6 +239,8 @@ mod compress_behavior {
         #[case::ten_token_trigger_drops(10, 3, false)]
         #[case::hundred_token_trigger_fits(100, 65, true)]
         #[case::hundred_token_trigger_drops(100, 66, false)]
+        #[case::fifteen_token_trigger_fits(15, 5, true)]
+        #[case::fifteen_token_trigger_drops(15, 6, false)]
         #[tokio::test]
         async fn is_seventy_percent_of_the_trigger(
             #[case] trigger: usize,
@@ -314,6 +340,8 @@ mod compress_behavior {
         #[case::exact_fraction(1000_usize, 400_usize, 0.6_f64)]
         #[case::rounds_to_four_places(3, 2, 0.3333)]
         #[case::ties_round_to_even(32, 31, 0.0312)]
+        #[case::double_rounds_up(160, 7, 0.9563)]
+        #[case::double_rounds_down(160, 9, 0.9437)]
         #[case::grows_when_stubs_are_larger(10, 15, -0.5)]
         #[tokio::test]
         async fn is_one_minus_compressed_over_original(
@@ -419,7 +447,7 @@ mod compress_behavior {
                 messages,
                 model: MODEL,
                 call_type: "anthropic_messages",
-                compression_trigger: Some(0),
+                compression_trigger: 0,
                 compression_target: None,
             }
         }
@@ -525,21 +553,7 @@ mod budget_selection {
         ) {
             let normalized = vec![json!({"content": words(60)}), json!({"content": words(50)})];
             let scores = vec![0.9_f64, 0.8];
-            let counter = fixture_counter(Vec::new());
-            let selection = select_kept_indices_for_budget(
-                &BudgetSelectionRequest {
-                    normalized_messages: &normalized,
-                    original_messages: &normalized,
-                    combined_scores: &scores,
-                    compression_target: target,
-                    model: MODEL,
-                    initial_kept_indices: &[0],
-                    tool_exchange_spans: &[],
-                },
-                &counter,
-            )
-            .await
-            .expect("selected");
+            let selection = select_budget(&normalized, &scores, target, &[0], &[]).await;
             assert_eq!(selection.kept_indices.contains(&1), kept);
             assert!(selection.kept_indices.contains(&0));
         }
@@ -556,21 +570,7 @@ mod budget_selection {
                 json!({"content": words(10)}),
             ];
             let scores = vec![0.1_f64, 0.99, 0.5];
-            let counter = fixture_counter(Vec::new());
-            let selection = select_kept_indices_for_budget(
-                &BudgetSelectionRequest {
-                    normalized_messages: &normalized,
-                    original_messages: &normalized,
-                    combined_scores: &scores,
-                    compression_target: 10,
-                    model: MODEL,
-                    initial_kept_indices: &[0],
-                    tool_exchange_spans: &[],
-                },
-                &counter,
-            )
-            .await
-            .expect("selected");
+            let selection = select_budget(&normalized, &scores, 10, &[0], &[]).await;
             assert_eq!(selection.kept_indices, BTreeSet::from([0]));
         }
     }
@@ -603,21 +603,7 @@ mod budget_selection {
             let message = long_message();
             let normalized = vec![message.clone()];
             let scores = vec![0.9_f64];
-            let counter = fixture_counter(Vec::new());
-            let selection = select_kept_indices_for_budget(
-                &BudgetSelectionRequest {
-                    normalized_messages: &normalized,
-                    original_messages: &normalized,
-                    combined_scores: &scores,
-                    compression_target: target,
-                    model: MODEL,
-                    initial_kept_indices: &[],
-                    tool_exchange_spans: &[],
-                },
-                &counter,
-            )
-            .await
-            .expect("selected");
+            let selection = select_budget(&normalized, &scores, target, &[], &[]).await;
             assert_eq!(selection.kept_indices.contains(&0), truncated);
             if truncated {
                 let expected = truncate_message(&message, target);
@@ -633,21 +619,7 @@ mod budget_selection {
             let normalized = vec![json!({"content": words(60)}), json!({"content": words(60)})];
             let scores = vec![0.9_f64, 0.9];
             let spans = vec![vec![0_usize, 1]];
-            let counter = fixture_counter(Vec::new());
-            let selection = select_kept_indices_for_budget(
-                &BudgetSelectionRequest {
-                    normalized_messages: &normalized,
-                    original_messages: &normalized,
-                    combined_scores: &scores,
-                    compression_target: 100,
-                    model: MODEL,
-                    initial_kept_indices: &[],
-                    tool_exchange_spans: &spans,
-                },
-                &counter,
-            )
-            .await
-            .expect("selected");
+            let selection = select_budget(&normalized, &scores, 100, &[], &spans).await;
             assert!(selection.kept_indices.is_empty());
             assert!(selection.truncated_overrides.is_empty());
         }
@@ -672,24 +644,48 @@ mod budget_selection {
             let normalized = vec![json!({"content": words(150)})];
             let scores = vec![0.9_f64];
             let spans = vec![vec![0_usize]];
+            let selection = select_budget(&normalized, &scores, 100, &[], &spans).await;
+            assert!(selection.kept_indices.is_empty());
+            assert!(selection.truncated_overrides.is_empty());
+        }
+
+        #[tokio::test]
+        async fn counts_the_truncated_message_against_the_budget() {
+            let normalized = vec![long_message(), json!({"content": words(5)})];
+            let scores = vec![0.9_f64, 0.1];
             let counter = fixture_counter(Vec::new());
             let selection = select_kept_indices_for_budget(
                 &BudgetSelectionRequest {
                     normalized_messages: &normalized,
                     original_messages: &normalized,
                     combined_scores: &scores,
-                    compression_target: 100,
+                    compression_target: 120,
                     model: MODEL,
                     initial_kept_indices: &[],
-                    tool_exchange_spans: &spans,
+                    tool_exchange_spans: &[],
                 },
                 &counter,
             )
             .await
             .expect("selected");
-            assert!(selection.kept_indices.is_empty());
-            assert!(selection.truncated_overrides.is_empty());
+            assert!(selection.kept_indices.contains(&0));
+            assert!(!selection.kept_indices.contains(&1));
+            let expected = truncate_message(&normalized[0], 120);
+            let expected_text = expected["content"].as_str().expect("truncated text");
+            let calls = counter.calls.lock().expect("recorded calls").clone();
+            assert!(calls.contains(&CountCall::Text {
+                model: MODEL.to_owned(),
+                text: expected_text.to_owned(),
+            }));
         }
+    }
+
+    #[tokio::test]
+    async fn stops_once_the_budget_is_exhausted() {
+        let normalized = vec![json!({"content": words(10)}), json!({"content": null})];
+        let scores = vec![0.9_f64, 0.5];
+        let selection = select_budget(&normalized, &scores, 10, &[], &[]).await;
+        assert_eq!(selection.kept_indices, BTreeSet::from([0]));
     }
 
     #[tokio::test]
@@ -700,21 +696,7 @@ mod budget_selection {
             json!({"content": words(10)}),
         ];
         let scores = vec![0.1_f64, 0.9, 0.5];
-        let counter = fixture_counter(Vec::new());
-        let selection = select_kept_indices_for_budget(
-            &BudgetSelectionRequest {
-                normalized_messages: &normalized,
-                original_messages: &normalized,
-                combined_scores: &scores,
-                compression_target: 25,
-                model: MODEL,
-                initial_kept_indices: &[],
-                tool_exchange_spans: &[],
-            },
-            &counter,
-        )
-        .await
-        .expect("selected");
+        let selection = select_budget(&normalized, &scores, 25, &[], &[]).await;
         assert_eq!(selection.kept_indices, BTreeSet::from([1, 2]));
     }
 }
@@ -731,21 +713,7 @@ mod tool_exchange_atomicity {
         ];
         let scores = vec![0.1_f64, 0.9, 0.5];
         let spans = vec![vec![0_usize, 1]];
-        let counter = fixture_counter(Vec::new());
-        let selection = select_kept_indices_for_budget(
-            &BudgetSelectionRequest {
-                normalized_messages: &normalized,
-                original_messages: &normalized,
-                combined_scores: &scores,
-                compression_target: 6,
-                model: MODEL,
-                initial_kept_indices: &[],
-                tool_exchange_spans: &spans,
-            },
-            &counter,
-        )
-        .await
-        .expect("selected");
+        let selection = select_budget(&normalized, &scores, 6, &[], &spans).await;
         assert_eq!(selection.kept_indices, BTreeSet::from([0, 1]));
     }
 
@@ -758,21 +726,7 @@ mod tool_exchange_atomicity {
         ];
         let scores = vec![0.9_f64, 0.9, 0.5];
         let spans = vec![vec![0_usize, 1]];
-        let counter = fixture_counter(Vec::new());
-        let selection = select_kept_indices_for_budget(
-            &BudgetSelectionRequest {
-                normalized_messages: &normalized,
-                original_messages: &normalized,
-                combined_scores: &scores,
-                compression_target: 100,
-                model: MODEL,
-                initial_kept_indices: &[],
-                tool_exchange_spans: &spans,
-            },
-            &counter,
-        )
-        .await
-        .expect("selected");
+        let selection = select_budget(&normalized, &scores, 100, &[], &spans).await;
         assert_eq!(selection.kept_indices, BTreeSet::from([2]));
         assert!(selection.truncated_overrides.is_empty());
     }
@@ -786,21 +740,7 @@ mod tool_exchange_atomicity {
         ];
         let scores = vec![0.1_f64, 0.95, 0.5];
         let spans = vec![vec![0_usize, 1]];
-        let counter = fixture_counter(Vec::new());
-        let selection = select_kept_indices_for_budget(
-            &BudgetSelectionRequest {
-                normalized_messages: &normalized,
-                original_messages: &normalized,
-                combined_scores: &scores,
-                compression_target: 3,
-                model: MODEL,
-                initial_kept_indices: &[],
-                tool_exchange_spans: &spans,
-            },
-            &counter,
-        )
-        .await
-        .expect("selected");
+        let selection = select_budget(&normalized, &scores, 3, &[], &spans).await;
         assert_eq!(selection.kept_indices, BTreeSet::from([0, 1]));
     }
 

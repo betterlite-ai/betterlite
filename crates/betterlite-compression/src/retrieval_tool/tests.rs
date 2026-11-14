@@ -8,22 +8,26 @@ mod retrieval_tool_schema {
     #[test]
     fn builds_an_openai_function_tool_with_the_key_enum() {
         let keys = vec!["main.py".to_owned(), "message_3".to_owned()];
-        let tool = build_retrieval_tool(&keys);
-        assert_eq!(tool["type"], "function");
-        assert_eq!(tool["function"]["name"], "litellm_content_retrieve");
         assert_eq!(
-            tool["function"]["parameters"]["properties"]["key"]["enum"],
-            json!(keys)
-        );
-        assert_eq!(tool["function"]["parameters"]["required"], json!(["key"]));
-        assert_eq!(
-            tool["function"]["parameters"]["properties"]["key"]["type"],
-            "string"
-        );
-        assert!(
-            tool["function"]["description"]
-                .as_str()
-                .is_some_and(|text| text.ends_with("main.py, message_3"))
+            build_retrieval_tool(&keys),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "litellm_content_retrieve",
+                    "description": "Retrieve the full content of a file or message that was compressed to save tokens. Use this when you need the complete content to answer accurately. Available keys: main.py, message_3",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "key": {
+                                "type": "string",
+                                "description": "The identifier of the content to retrieve",
+                                "enum": ["main.py", "message_3"],
+                            }
+                        },
+                        "required": ["key"],
+                    },
+                },
+            })
         );
     }
 
@@ -49,10 +53,9 @@ mod retrieval_tool_schema {
             json!(keys)
         );
         assert_eq!(tools[0]["input_schema"]["required"], json!(["key"]));
-        assert!(
-            tools[0]["description"]
-                .as_str()
-                .is_some_and(|text| text.ends_with("Available keys: main.py"))
+        assert_eq!(
+            tools[0]["description"],
+            "Retrieve the full content of a file or message that was compressed to save tokens. Use this when you need the complete content to answer accurately. Available keys: main.py"
         );
     }
 
