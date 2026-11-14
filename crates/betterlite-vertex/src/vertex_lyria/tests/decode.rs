@@ -58,6 +58,13 @@ fn falls_back_to_the_base64_field_when_audio_content_is_empty() {
     assert_eq!(decode("lyria-002", body).unwrap().bytes.as_slice(), b"ABC");
 }
 
+#[test]
+fn ignores_the_later_predictions() {
+    let body = r#"{"predictions": [{"mimeType": "audio/wav"}, {"audioContent": "QUJD"}]}"#;
+    let error = decode("lyria-002", body).unwrap_err();
+    assert!(matches!(error, VertexLyriaError::MissingAudio { .. }));
+}
+
 #[rstest]
 #[case::no_predictions("{}")]
 #[case::empty_predictions(r#"{"predictions": []}"#)]

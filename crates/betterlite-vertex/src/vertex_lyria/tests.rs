@@ -190,6 +190,21 @@ fn rejects_a_format_the_catalog_does_not_declare(
     );
 }
 
+#[rstest]
+#[case::number(Json::Number(Number::from(0_u64)), "response_format=0")]
+#[case::bool(Json::Bool(true), "response_format=true")]
+#[case::list(Json::List(vec![text("wav")]), "response_format=a list")]
+#[case::object(Json::Object(Object::new()), "response_format=an object")]
+fn renders_a_non_string_format_in_the_error(#[case] value: Json, #[case] shown: &str) {
+    let optional = params(&[("response_format", value)]);
+    let error = mapped("lyria-002", &optional, None, DropParams::default()).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains(&format!("does not support {shown}."))
+    );
+}
+
 #[test]
 fn names_the_prefix_stripped_model_in_the_format_error() {
     let optional = params(&[("response_format", text("mp3"))]);
