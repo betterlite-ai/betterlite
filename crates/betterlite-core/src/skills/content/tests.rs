@@ -659,7 +659,7 @@ fn execution_tools_keep_the_litellm_name_and_code_schema() {
 }
 
 #[rstest]
-fn replays_the_skill_zip_corpus(#[files("fuzz/corpus/skill_zip/*")] path: PathBuf) {
+fn replays_skill_zip_corpus(#[files("fuzz/corpus/skill_zip/*")] path: PathBuf) {
     let bytes = std::fs::read(path).unwrap();
     let Ok(mut archive) = decode_skill_zip(bytes) else {
         return;
