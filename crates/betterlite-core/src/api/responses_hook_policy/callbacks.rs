@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::error::Error;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -30,9 +31,9 @@ pub enum CallbackValue {
 }
 
 #[derive(Clone, Copy)]
-pub struct CallbackLists<'a> {
-    pub global: &'a [CallbackValue],
-    pub dynamic: &'a [CallbackValue],
+pub struct CallbackLists<'lists> {
+    pub global: &'lists [CallbackValue],
+    pub dynamic: &'lists [CallbackValue],
 }
 
 pub trait NamedCallbackResolver: Send + Sync {
@@ -43,7 +44,7 @@ pub trait NamedCallbackResolver: Send + Sync {
 // B157's deployment-hook dispatcher behind a typed port; None is the source's null hook result
 #[async_trait]
 pub trait DeploymentHookDispatcher: Send + Sync {
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: Error + Send + Sync + 'static;
 
     async fn pre_call_deployment_hook(
         &self,
@@ -52,7 +53,7 @@ pub trait DeploymentHookDispatcher: Send + Sync {
     ) -> Result<Option<IndexMap<String, Json>>, Self::Error>;
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResponsesHookRequest {
     pub model: String,
     pub input: Json,
@@ -61,7 +62,7 @@ pub struct ResponsesHookRequest {
     pub generic_params: IndexMap<String, Json>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResponsesHookOutcome {
     pub model: String,
     pub input: Json,
@@ -140,7 +141,7 @@ where
     else {
         return Ok(original_outcome(request));
     };
-    split(modified, request).map_err(|source| DeploymentHookError::Render { source })
+    split(&modified, request).map_err(|source| DeploymentHookError::Render { source })
 }
 
 fn build_hook_input(request: &ResponsesHookRequest) -> IndexMap<String, Json> {
@@ -156,16 +157,18 @@ fn build_hook_input(request: &ResponsesHookRequest) -> IndexMap<String, Json> {
 }
 
 fn split(
-    modified: IndexMap<String, Json>,
+    modified: &IndexMap<String, Json>,
     request: ResponsesHookRequest,
 ) -> Result<ResponsesHookOutcome, FormatError> {
     let optional_names = optional_param_names();
     let mut optional_params = request.optional_params;
     let mut generic_params = request.generic_params;
-    for (key, value) in &modified {
+    for (key, value) in modified {
         if optional_names.contains(key) {
             optional_params.insert(key.clone(), value.clone());
-        } else if !matches!(key.as_str(), "model" | "input" | "custom_llm_provider") {
+            continue;
+        }
+        if !matches!(key.as_str(), "model" | "input" | "custom_llm_provider") {
             generic_params.insert(key.clone(), value.clone());
         }
     }

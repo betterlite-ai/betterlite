@@ -84,9 +84,12 @@ class ScriptedCallback(CustomLogger):
         kwargs: dict[str, object],
         call_type: CallTypes | None,
     ) -> dict[str, JsonValue] | None:
-        if call_type is not CallTypes.responses or self.result is None:
+        result = self.result
+        if call_type is not CallTypes.responses or result is None:
             return None
-        return MERGE.validate_python({**kwargs, **self.result})
+        merged = MERGE.validate_python(kwargs)
+        merged.update(result)
+        return merged
 
 
 class HookHandler(BaseLLMHTTPHandler):

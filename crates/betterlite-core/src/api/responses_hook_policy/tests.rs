@@ -1,6 +1,9 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::convert::Infallible;
+use std::error::Error;
+use std::io;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -31,7 +34,7 @@ struct ScriptedDispatcher {
 
 #[async_trait]
 impl DeploymentHookDispatcher for ScriptedDispatcher {
-    type Error = std::convert::Infallible;
+    type Error = Infallible;
 
     async fn pre_call_deployment_hook(
         &self,
@@ -50,14 +53,14 @@ struct FailingDispatcher;
 
 #[async_trait]
 impl DeploymentHookDispatcher for FailingDispatcher {
-    type Error = std::io::Error;
+    type Error = io::Error;
 
     async fn pre_call_deployment_hook(
         &self,
         _request: IndexMap<String, Json>,
         _call_type: &str,
     ) -> Result<Option<IndexMap<String, Json>>, Self::Error> {
-        Err(std::io::Error::other("deployment hook crashed"))
+        Err(io::Error::other("deployment hook crashed"))
     }
 }
 
@@ -66,7 +69,7 @@ struct StaticAgentic {
 }
 
 impl AgenticCallback for StaticAgentic {
-    fn callback_name(&self) -> &str {
+    fn callback_name(&self) -> &'static str {
         "static"
     }
 
@@ -283,15 +286,16 @@ async fn deployment_hook_merge() {
     assert_eq!(outcome.generic_params.get("api_key"), Some(&text("new")));
     assert!(!outcome.generic_params.contains_key("model"));
     assert_eq!(outcome.generic_params.get("input"), Some(&text("generic")));
-    let calls = dispatcher.calls.lock().unwrap();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].1, "responses");
-    assert_eq!(calls[0].0.get("api_key"), Some(&text("old")));
-    assert_eq!(calls[0].0.get("temperature"), Some(&integer(1)));
-    assert_eq!(calls[0].0.get("model"), Some(&text("gpt-4o")));
-    assert_eq!(calls[0].0.get("input"), Some(&text("hello")));
-    assert_eq!(calls[0].0.get("custom_llm_provider"), Some(&text("openai")));
-    drop(calls);
+    {
+        let calls = dispatcher.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].1, "responses");
+        assert_eq!(calls[0].0.get("api_key"), Some(&text("old")));
+        assert_eq!(calls[0].0.get("temperature"), Some(&integer(1)));
+        assert_eq!(calls[0].0.get("model"), Some(&text("gpt-4o")));
+        assert_eq!(calls[0].0.get("input"), Some(&text("hello")));
+        assert_eq!(calls[0].0.get("custom_llm_provider"), Some(&text("openai")));
+    }
     deployment_hook_failure().await;
     deployment_hook_merge_preserves_missing_and_skips_without_override().await;
 }
@@ -302,7 +306,7 @@ async fn deployment_hook_failure() {
         error.to_string(),
         "the deployment hook failed: deployment hook crashed"
     );
-    let source = std::error::Error::source(&error).unwrap();
+    let source = Error::source(&error).unwrap();
     assert_eq!(source.to_string(), "deployment hook crashed");
 }
 
@@ -332,9 +336,9 @@ async fn deployment_hook_merge_preserves_missing_and_skips_without_override() {
     assert!(unrun.calls.lock().unwrap().is_empty());
 }
 
-fn ceiling_kwargs(value: Option<Json>) -> IndexMap<String, Json> {
+fn ceiling_kwargs(raw: Option<Json>) -> IndexMap<String, Json> {
     let mut kwargs = IndexMap::new();
-    if let Some(value) = value {
+    if let Some(value) = raw {
         kwargs.insert("max_agentic_loops".to_owned(), value);
     }
     kwargs
@@ -363,6 +367,11 @@ fn accepted_ceilings() {
 }
 
 fn rejected_ceilings() {
+    not_integer_ceilings();
+    too_small_ceilings();
+}
+
+fn not_integer_ceilings() {
     let not_integers = vec![
         (
             Json::Bool(true),
@@ -385,7 +394,7 @@ fn rejected_ceilings() {
             "litellm_params.max_agentic_loops must be an integer, got 'inf'",
         ),
         (
-            integer(4_294_967_296),
+            integer(0x1_0000_0000),
             "litellm_params.max_agentic_loops must be an integer, got 4294967296",
         ),
     ];
@@ -394,6 +403,9 @@ fn rejected_ceilings() {
         assert_eq!(error.error_class(), "TypeError");
         assert_eq!(error.to_string(), message);
     }
+}
+
+fn too_small_ceilings() {
     let below = get_agentic_loop_settings(&ceiling_kwargs(Some(integer(0)))).unwrap_err();
     assert_eq!(below.error_class(), "ValueError");
     assert_eq!(
@@ -416,6 +428,13 @@ fn agentic_ceiling_and_depth() {
 }
 
 fn depth_cases() {
+    depth_falsy_values();
+    depth_number_values();
+    depth_text_errors();
+    depth_wrong_types();
+}
+
+fn depth_falsy_values() {
     let absent = get_agentic_loop_settings(&IndexMap::new()).unwrap();
     assert_eq!(absent.depth, 0);
     assert_eq!(
@@ -430,6 +449,15 @@ fn depth_cases() {
             .depth,
         0
     );
+    assert_eq!(
+        get_agentic_loop_settings(&depth_kwargs(text("")))
+            .unwrap()
+            .depth,
+        0
+    );
+}
+
+fn depth_number_values() {
     assert_eq!(
         get_agentic_loop_settings(&depth_kwargs(text("2")))
             .unwrap()
@@ -460,12 +488,9 @@ fn depth_cases() {
             .depth,
         1
     );
-    assert_eq!(
-        get_agentic_loop_settings(&depth_kwargs(text("")))
-            .unwrap()
-            .depth,
-        0
-    );
+}
+
+fn depth_text_errors() {
     let malformed = get_agentic_loop_settings(&depth_kwargs(text("three"))).unwrap_err();
     assert_eq!(malformed.error_class(), "ValueError");
     assert_eq!(
@@ -483,6 +508,11 @@ fn depth_cases() {
         empty_part.to_string(),
         "invalid literal for int() with base 10: '1__0'"
     );
+    let non_ascii = get_agentic_loop_settings(&depth_kwargs(text("\u{663}"))).unwrap_err();
+    assert_eq!(non_ascii.error_class(), "ValueError");
+}
+
+fn depth_wrong_types() {
     let wrong = get_agentic_loop_settings(&depth_kwargs(list(vec![integer(1)]))).unwrap_err();
     assert_eq!(wrong.error_class(), "TypeError");
     assert_eq!(
@@ -496,11 +526,15 @@ fn depth_cases() {
         beyond_i64.to_string(),
         "_agentic_loop_depth is outside the supported 64-bit range"
     );
-    let non_ascii = get_agentic_loop_settings(&depth_kwargs(text("٣"))).unwrap_err();
-    assert_eq!(non_ascii.error_class(), "ValueError");
 }
 
 fn fingerprint_cases() {
+    fingerprint_absent_and_empty();
+    fingerprint_kept_and_zero_values();
+    fingerprint_errors();
+}
+
+fn fingerprint_absent_and_empty() {
     assert!(
         get_agentic_loop_settings(&IndexMap::new())
             .unwrap()
@@ -522,6 +556,10 @@ fn fingerprint_cases() {
             .fingerprints
             .is_empty()
     );
+}
+
+fn fingerprint_kept_and_zero_values() {
+    let mut kwargs = IndexMap::new();
     kwargs.insert(
         "_agentic_loop_fingerprints".to_owned(),
         list(vec![text("a")]),
@@ -544,6 +582,10 @@ fn fingerprint_cases() {
             .fingerprints
             .is_empty()
     );
+}
+
+fn fingerprint_errors() {
+    let mut kwargs = IndexMap::new();
     kwargs.insert("_agentic_loop_fingerprints".to_owned(), float(1.5));
     let float_history = get_agentic_loop_settings(&kwargs).unwrap_err();
     assert_eq!(float_history.to_string(), "'float' object is not iterable");

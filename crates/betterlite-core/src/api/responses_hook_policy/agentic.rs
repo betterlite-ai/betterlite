@@ -65,19 +65,16 @@ fn agentic_ceiling(value: &Json) -> Result<u32, AgenticLoopSettingsError> {
 fn number_loop_value(number: &Number) -> AgenticLoopValue {
     let text = number.to_string();
     if text.contains(['.', 'e', 'E']) {
-        return match text.parse::<f64>() {
-            Ok(value) => AgenticLoopValue::Float(value),
-            Err(_) => AgenticLoopValue::Text(text),
-        };
+        return text
+            .parse::<f64>()
+            .map_or(AgenticLoopValue::Text(text), AgenticLoopValue::Float);
     }
-    match text.parse::<i64>() {
-        Ok(value) => AgenticLoopValue::Integer(value),
-        Err(_) => AgenticLoopValue::Text(text),
-    }
+    text.parse::<i64>()
+        .map_or(AgenticLoopValue::Text(text), AgenticLoopValue::Integer)
 }
 
-fn trusted_depth(value: Option<&Json>) -> Result<i64, AgenticLoopSettingsError> {
-    let Some(value) = value else {
+fn trusted_depth(raw: Option<&Json>) -> Result<i64, AgenticLoopSettingsError> {
+    let Some(value) = raw else {
         return Ok(0);
     };
     if is_empty_or_zero(value) {
@@ -109,7 +106,7 @@ fn number_is_zero(number: &Number) -> bool {
     let text = number.to_string();
     if text.contains(['.', 'e', 'E']) {
         let bits = number.as_f64().map(f64::to_bits);
-        return matches!(bits, Some(0) | Some(NEGATIVE_ZERO_BITS));
+        return matches!(bits, Some(0 | NEGATIVE_ZERO_BITS));
     }
     text.parse::<i64>() == Ok(0)
 }
@@ -121,10 +118,8 @@ fn trusted_number_depth(number: &Number) -> Result<i64, AgenticLoopSettingsError
     if text.contains(['.', 'e', 'E']) {
         return float_depth(&text);
     }
-    match text.parse::<i64>() {
-        Ok(value) => Ok(value),
-        Err(_) => Err(AgenticLoopSettingsError::DepthOutOfRange),
-    }
+    text.parse::<i64>()
+        .map_or(Err(AgenticLoopSettingsError::DepthOutOfRange), Ok)
 }
 
 fn float_depth(text: &str) -> Result<i64, AgenticLoopSettingsError> {
@@ -159,8 +154,8 @@ fn trusted_text_depth(text: &str) -> Result<i64, AgenticLoopSettingsError> {
     }
 }
 
-fn fingerprint_history(value: Option<&Json>) -> Result<Vec<Json>, AgenticLoopSettingsError> {
-    let Some(value) = value else {
+fn fingerprint_history(raw: Option<&Json>) -> Result<Vec<Json>, AgenticLoopSettingsError> {
+    let Some(value) = raw else {
         return Ok(Vec::new());
     };
     if is_empty_or_zero(value) {

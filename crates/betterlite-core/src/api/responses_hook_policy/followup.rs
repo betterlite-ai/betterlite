@@ -6,14 +6,14 @@ use serde_json::Number;
 
 use super::error::AgenticFollowupKwargsError;
 
-pub struct AgenticFollowupInput<'a> {
-    pub request_kwargs: &'a IndexMap<String, Json>,
-    pub patch_kwargs: &'a IndexMap<String, Json>,
-    pub request_params: &'a BTreeSet<String>,
+pub struct AgenticFollowupInput<'followup> {
+    pub request_kwargs: &'followup IndexMap<String, Json>,
+    pub patch_kwargs: &'followup IndexMap<String, Json>,
+    pub request_params: &'followup BTreeSet<String>,
     pub depth: i64,
     pub max_loops: u32,
-    pub fingerprints: &'a [Json],
-    pub fingerprint: &'a str,
+    pub fingerprints: &'followup [Json],
+    pub fingerprint: &'followup str,
 }
 
 // request kwargs, then the patch over them, then the trusted bookkeeping, with request params dropped

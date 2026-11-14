@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use betterlite_logging::analytics::python::FormatError;
 use thiserror::Error;
 
@@ -65,7 +67,7 @@ pub enum DeploymentHookError {
     #[error("the deployment hook failed: {source}")]
     Failed {
         #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
+        source: Box<dyn Error + Send + Sync>,
     },
     #[error("the hook result could not be rendered as Python text: {source}")]
     Render {
