@@ -36,7 +36,7 @@ impl ProviderFailure for FixtureError {
 }
 
 // the prepared request the Gemini agents config answers, and the named-agent path both operations hang off
-fn prepared(url: String) -> PreparedRequest {
+const fn prepared(url: String) -> PreparedRequest {
     PreparedRequest {
         url,
         params: Params::new(),
