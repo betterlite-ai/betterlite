@@ -118,21 +118,25 @@ fn sampling_values_are_kept_and_warn_once() {
 }
 
 #[test]
-fn sampling_logs_one_warning_and_an_info_below_one() {
+fn sampling_warns_each_request_and_logs_info_only_below_one() {
     let log = NamedTempFile::new().unwrap();
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)
         .with_writer(Arc::new(log.reopen().unwrap()))
         .finish();
     with_default(subscriber, || {
-        mapped(
-            "gemini-3-pro-preview",
-            r#"{"top_p": 0.9, "temperature": 0.2, "top_k": 5}"#,
+        mapped("gemini-3-pro-preview", r#"{"temperature": 0.2}"#);
+        let after_below_one = fs::read_to_string(log.path()).unwrap();
+        assert_eq!(
+            after_below_one.matches("INFO").count(),
+            1,
+            "{after_below_one}"
         );
+        mapped("gemini-3-pro-preview", r#"{"top_p": 0.9}"#);
         mapped("gemini-3-pro-preview", r#"{"temperature": 1.0}"#);
     });
     let logged = fs::read_to_string(log.path()).unwrap();
-    assert_eq!(logged.matches("WARN").count(), 2, "{logged}");
+    assert_eq!(logged.matches("WARN").count(), 3, "{logged}");
     assert_eq!(logged.matches("INFO").count(), 1, "{logged}");
     assert!(logged.contains("planned for removal"), "{logged}");
 }
@@ -722,6 +726,35 @@ fn a_maps_tool_adds_its_retrieval_config() {
             r#"{
                 "tools": [{"googleMaps": {}}],
                 "toolConfig": {"retrievalConfig": {"latLng": {"latitude": 1.5, "longitude": 2.5}, "languageCode": "en"}}
+            }"#
+        )
+    );
+}
+
+// LiteLLM adds retrievalConfig to the caller's toolConfig instead of replacing it
+#[test]
+fn a_maps_tool_merges_into_an_existing_tool_config() {
+    let request = options(
+        r#"{"tools": [{"googleMaps": {"latitude": 1.5, "longitude": 2.5, "languageCode": "en"}}]}"#,
+    );
+    let mut optional = options(r#"{"toolConfig": {"functionCallingConfig": {"mode": "AUTO"}}}"#);
+    map_with(
+        "gemini-2.5-pro",
+        &request,
+        &mut optional,
+        &OptionSettings::default(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        Json::Object(optional),
+        json(
+            r#"{
+                "toolConfig": {
+                    "functionCallingConfig": {"mode": "AUTO"},
+                    "retrievalConfig": {"latLng": {"latitude": 1.5, "longitude": 2.5}, "languageCode": "en"}
+                },
+                "tools": [{"googleMaps": {}}]
             }"#
         )
     );
