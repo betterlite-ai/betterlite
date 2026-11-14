@@ -150,7 +150,7 @@ fn filled_choices_are_left_alone() {
     r#"{"output_tokens":6}"#,
     r#"{"output_tokens":6,"completion_tokens":6,"total_tokens":6}"#
 )]
-#[case::empty_usage(r#"{}"#, r#"{"total_tokens":0}"#)]
+#[case::empty_usage("{}", r#"{"total_tokens":0}"#)]
 fn usage_is_normalized_without_overwriting_what_is_present(
     #[case] usage: &str,
     #[case] wanted: &str,

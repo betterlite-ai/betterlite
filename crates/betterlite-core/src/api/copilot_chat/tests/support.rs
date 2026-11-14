@@ -2,7 +2,6 @@ use std::collections::BTreeSet;
 use std::future::{Future, ready};
 
 use betterlite_config::sections::copilot_chat::Settings;
-use betterlite_models::decisions::Json;
 use betterlite_models::model_capability_predicates::{CapabilityPredicates, CapabilityRequest};
 use betterlite_openai::copilot::api_key::error::ApiKeyError;
 use betterlite_openai::copilot::device_auth::error::DeviceAuthError;
@@ -18,9 +17,8 @@ pub(super) enum KeyOutcome {
     NoToken,
     Token(&'static str),
     Refresh,
-    Login {
-        status: u16,
-    },
+    // boxed so the login payload stays within 3x of Token, the limit variant_size_differences enforces
+    Login(Box<u16>),
 }
 
 #[derive(Default)]
@@ -33,23 +31,21 @@ pub(super) struct FakeCredentials {
 
 impl CopilotCredentials for FakeCredentials {
     fn api_base(&mut self) -> impl Future<Output = Option<String>> + Send {
-        self.base_calls += 1;
+        self.base_calls = self.base_calls.saturating_add(1);
         ready(self.base.map(String::from))
     }
 
     fn api_key(
         &mut self,
     ) -> impl Future<Output = Result<Option<SecretString>, ApiKeyError>> + Send {
-        self.key_calls += 1;
+        self.key_calls = self.key_calls.saturating_add(1);
         ready(match &self.key {
             KeyOutcome::NoToken => Ok(None),
             KeyOutcome::Token(text) => Ok(Some(SecretString::from(String::from(*text)))),
             KeyOutcome::Refresh => Err(ApiKeyError::Refresh),
-            KeyOutcome::Login { status } => {
-                Err(ApiKeyError::AccessToken(DeviceAuthError::ApiKey {
-                    status: *status,
-                }))
-            }
+            KeyOutcome::Login(status) => Err(ApiKeyError::AccessToken(DeviceAuthError::ApiKey {
+                status: **status,
+            })),
         })
     }
 }
@@ -119,8 +115,4 @@ pub(super) fn config(
             },
         },
     )
-}
-
-pub(super) fn json(text: &str) -> Json {
-    serde_json::from_str(text).unwrap()
 }

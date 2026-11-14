@@ -44,7 +44,9 @@ async fn api_base_without_login_resolves_explicit_cached_environment_then_defaul
 ) {
     let credentials = FakeCredentials {
         base: cached,
-        ..FakeCredentials::default()
+        key: KeyOutcome::NoToken,
+        key_calls: 0,
+        base_calls: 0,
     };
     let mut copilot = config(
         credentials,
@@ -63,8 +65,10 @@ async fn api_base_without_login_resolves_explicit_cached_environment_then_defaul
 #[tokio::test]
 async fn provider_info_ignores_the_supplied_key_and_takes_the_authenticator_key() {
     let credentials = FakeCredentials {
+        base: None,
         key: KeyOutcome::Token("copilot-key"),
-        ..FakeCredentials::default()
+        key_calls: 0,
+        base_calls: 0,
     };
     let mut copilot = config(
         credentials,
@@ -72,10 +76,15 @@ async fn provider_info_ignores_the_supplied_key_and_takes_the_authenticator_key(
         settings_with_base(None),
     );
     let info = copilot
-        .provider_info("gpt-4o", None, Some("supplied-key"), "github_copilot")
+        .provider_info(
+            "gpt-4o",
+            Some("https://explicit.test"),
+            Some("supplied-key"),
+            "github_copilot",
+        )
         .await
         .unwrap();
-    assert_eq!(info.api_base, "https://api.githubcopilot.com");
+    assert_eq!(info.api_base, "https://explicit.test");
     assert_eq!(info.provider, "github_copilot");
     assert_eq!(info.api_key.unwrap().expose_secret(), "copilot-key");
 }
@@ -83,8 +92,10 @@ async fn provider_info_ignores_the_supplied_key_and_takes_the_authenticator_key(
 #[tokio::test]
 async fn provider_info_translates_an_api_key_failure_to_an_authentication_error() {
     let credentials = FakeCredentials {
+        base: None,
         key: KeyOutcome::Refresh,
-        ..FakeCredentials::default()
+        key_calls: 0,
+        base_calls: 0,
     };
     let mut copilot = config(
         credentials,
@@ -110,8 +121,10 @@ async fn provider_info_translates_an_api_key_failure_to_an_authentication_error(
 #[tokio::test]
 async fn provider_info_lets_a_login_failure_keep_its_own_status() {
     let credentials = FakeCredentials {
-        key: KeyOutcome::Login { status: 503 },
-        ..FakeCredentials::default()
+        base: None,
+        key: KeyOutcome::Login(Box::new(503)),
+        key_calls: 0,
+        base_calls: 0,
     };
     let mut copilot = config(
         credentials,
@@ -129,8 +142,10 @@ async fn provider_info_lets_a_login_failure_keep_its_own_status() {
 #[tokio::test]
 async fn validate_environment_lets_the_parent_headers_win_over_the_copilot_defaults() {
     let credentials = FakeCredentials {
+        base: None,
         key: KeyOutcome::Token("copilot-key"),
-        ..FakeCredentials::default()
+        key_calls: 0,
+        base_calls: 0,
     };
     let mut copilot = config(
         credentials,
@@ -153,8 +168,10 @@ async fn validate_environment_lets_the_parent_headers_win_over_the_copilot_defau
 #[tokio::test]
 async fn validate_environment_without_a_key_keeps_only_the_parent_headers() {
     let credentials = FakeCredentials {
+        base: None,
         key: KeyOutcome::Refresh,
-        ..FakeCredentials::default()
+        key_calls: 0,
+        base_calls: 0,
     };
     let mut copilot = config(
         credentials,
@@ -170,8 +187,10 @@ async fn validate_environment_without_a_key_keeps_only_the_parent_headers() {
 #[tokio::test]
 async fn validate_environment_propagates_a_login_failure() {
     let credentials = FakeCredentials {
-        key: KeyOutcome::Login { status: 503 },
-        ..FakeCredentials::default()
+        base: None,
+        key: KeyOutcome::Login(Box::new(503)),
+        key_calls: 0,
+        base_calls: 0,
     };
     let mut copilot = config(
         credentials,
@@ -259,7 +278,7 @@ async fn supported_params_add_thinking_for_reasoning_claude_names_only(
 ) {
     let predicates = FakePredicates {
         reasoning: reasoning.to_vec(),
-        ..FakePredicates::default()
+        asked: Vec::new(),
     };
     let mut copilot = config(
         FakeCredentials::default(),
