@@ -300,6 +300,20 @@ fn batch_cancel_prefers_call_parameters_over_settings() {
 }
 
 #[test]
+fn batch_cancel_reads_the_organization_setting() {
+    let mut settings = base_settings();
+    settings.openai_organization = Some("org-env".to_owned());
+    let (dispatch, calls) = scripted(BatchStatus::Cancelling);
+    let service = service(settings, dispatch);
+    drive(
+        &service,
+        &request("openai", base_params(), CancelCall::Sync),
+    )
+    .expect("answered");
+    assert_eq!(recorded(&calls)[0]["organization"], json!("org-env"));
+}
+
+#[test]
 fn batch_cancel_reads_configured_settings() {
     let mut settings = base_settings();
     settings.api_base = Some("https://settings.example".to_owned());
@@ -716,6 +730,8 @@ fn async_invoke_failed(#[case] raw: &str, #[case] failed: i64) {
 #[case::completed_stamps_the_end("Completed", Some(SECOND + 120), None, None)]
 #[case::failed_stamps_the_failure("Failed", None, Some(SECOND + 120), None)]
 #[case::in_progress_stamps_the_change("InProgress", None, None, Some(SECOND + 60))]
+#[case::validating_stamps_the_change("Validating", None, None, Some(SECOND + 60))]
+#[case::scheduled_stamps_the_change("Scheduled", None, None, Some(SECOND + 60))]
 #[case::lowercase_completed_keeps_no_end("completed", None, None, None)]
 #[case::partially_completed_stamps_completion("PartiallyCompleted", Some(SECOND + 120), None, None)]
 fn async_invoke_timestamps(
