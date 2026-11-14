@@ -105,7 +105,7 @@ where
         let signed = sign_transcription(&validated, &url, &body, &credentials, self.clock.now())?;
         // the native optional_timeout counts a zero, negative, NaN or infinite timeout as unset
         let deadline = match arguments.timeout_seconds {
-            Some(seconds) if seconds.is_finite() && seconds > 0.0 => {
+            Some(seconds) if seconds.is_finite() && seconds > 0.0_f64 => {
                 Duration::try_from_secs_f64(seconds)
                     .map_err(|source| CallError::Timeout { seconds, source })?
             }
