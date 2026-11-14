@@ -1,8 +1,8 @@
 import asyncio
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from types import TracebackType
-from typing import Protocol, TypedDict
+from typing import NamedTuple, Protocol, Self, TypedDict, runtime_checkable
 
 from litellm.caching.redis_batch import request_redis_batch_scope
 from litellm.caching.redis_cache import RedisCircuitBreaker
@@ -11,9 +11,8 @@ from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     RateLimitDescriptor,
     RateLimitResponse,
     RateLimitStatus,
-    ReservationWindowIdentity,
 )
-from pydantic import JsonValue, TypeAdapter
+from pydantic import ConfigDict, JsonValue, TypeAdapter
 from typing_extensions import override
 
 
@@ -91,8 +90,33 @@ class WindowCache(Protocol):
     ) -> None: ...
 
 
-class LuaScript(Protocol):
-    async def __call__(self, *, keys: Sequence[str], args: Sequence[JsonValue]) -> list[int | str]: ...
+def reply_outcome(entry: ReplyInput) -> list[int | str] | Exception:
+    failure = entry.get("failure")
+    if failure is not None:
+        return ConnectionError(failure)
+    values = entry.get("values")
+    if values is None:
+        raise ValueError("a reply with no failure carries values")
+    return values
+
+
+class PlannedScript:
+    def __init__(self, plan: list[ReplyInput]) -> None:
+        self.plan = plan
+        self.calls: list[CallJson] = []
+
+    async def __call__(
+        self, *, keys: Sequence[str], args: Sequence[JsonValue]
+    ) -> list[int | str]:
+        index = len(self.calls)
+        self.calls.append(CallJson(keys=list(keys), args=[str(arg) for arg in args]))
+        if index >= len(self.plan):
+            raise RuntimeError("the script plan ran out of replies")
+        match reply_outcome(self.plan[index]):
+            case Exception() as failure:
+                raise failure
+            case list() as values:
+                return values
 
 
 class FakeServiceLogger:
@@ -102,9 +126,10 @@ class FakeServiceLogger:
 
 
 class FakePipeline:
-    def __init__(self, replies: list[list[int | str] | Exception]) -> None:
+    def __init__(self, replies: list[ReplyInput]) -> None:
         self.replies = replies
         self.calls: list[CallJson] = []
+        self.transaction = True
         self.raise_on_error = True
 
     def evalsha(self, _sha: str, numkeys: int, *values: str | int) -> None:
@@ -114,9 +139,9 @@ class FakePipeline:
 
     async def execute(self, *, raise_on_error: bool = True) -> list[list[int | str] | Exception]:
         self.raise_on_error = raise_on_error
-        return self.replies
+        return [reply_outcome(entry) for entry in self.replies]
 
-    async def __aenter__(self) -> "FakePipeline":
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(
@@ -131,31 +156,33 @@ class FakeClient:
     def __init__(self, pipeline: FakePipeline) -> None:
         self.pipeline_obj = pipeline
 
-    def __call__(self) -> "FakeClient":
+    def __call__(self) -> Self:
         return self
 
     def pipeline(self, *, transaction: bool = False) -> FakePipeline:
+        self.pipeline_obj.transaction = transaction
         return self.pipeline_obj
 
 
 class FakeRedisCache:
     def __init__(self, pipeline: FakePipeline) -> None:
         self.namespace: str | None = None
-        self.redis_kwargs: dict[str, str] = {}
+        self.registered_scripts: list[str] = []
         self._circuit_breaker = RedisCircuitBreaker(failure_threshold=1, recovery_timeout=60)
         self.service_logger_obj = FakeServiceLogger()
         self.init_async_client = FakeClient(pipeline)
 
     def check_and_fix_namespace(self, key: str) -> str:
-        return key
+        prefix = "" if self.namespace is None else self.namespace + ":"
+        return key if key.startswith(prefix) else prefix + key
 
-    def async_register_script(self, _script: str) -> LuaScript:
+    def async_register_script(self, script: str) -> PlannedScript:
+        self.registered_scripts.append(script)
         return PlannedScript([])
 
 
-class FakeDualCache:
-    def __init__(self, redis_cache: FakeRedisCache | None) -> None:
-        self.redis_cache = redis_cache
+class FakeDualCache(NamedTuple):
+    redis_cache: FakeRedisCache | None
 
 
 class RecordingCache(WindowCache):
@@ -186,23 +213,6 @@ class RecordingCache(WindowCache):
         self.values[key] = value
 
 
-class PlannedScript(LuaScript):
-    def __init__(self, plan: list[ReplyInput]) -> None:
-        self.plan = plan
-        self.calls: list[CallJson] = []
-
-    @override
-    async def __call__(self, *, keys: Sequence[str], args: Sequence[JsonValue]) -> list[int | str]:
-        index = len(self.calls)
-        self.calls.append(CallJson(keys=list(keys), args=[str(arg) for arg in args]))
-        if index >= len(self.plan):
-            raise RuntimeError("the script plan ran out of replies")
-        entry = self.plan[index]
-        if "failure" in entry:
-            raise ConnectionError(entry["failure"])
-        return entry["values"]
-
-
 class FixedTime:
     def __init__(self, epoch: int) -> None:
         self.epoch = epoch
@@ -220,35 +230,38 @@ class FixedFailClosed:
 
 
 class AtomicLimiter(Protocol):
-    check_and_increment_by_n_script: LuaScript | None  # ast-grep-ignore: no-long-names
-    window_guarded_token_increment_script: LuaScript | None  # ast-grep-ignore: no-long-names
+    check_and_increment_by_n_script: PlannedScript | None  # ast-grep-ignore: no-long-names
+    window_guarded_token_increment_script: PlannedScript | None  # ast-grep-ignore: no-long-names
 
     async def atomic_check_and_increment_by_n(  # ast-grep-ignore: no-long-names
         self, descriptors: list[RateLimitDescriptor], increments: list[IncrementAmounts]
     ) -> RateLimitResponse: ...
 
 
-def make_limiter(cache: RecordingCache, clock: FixedTime, fail_closed: FixedFailClosed) -> AtomicLimiter:
-    constructor = TypeAdapter(Callable[..., AtomicLimiter]).validate_python(
-        PROXY_HOOKS["parallel_request_limiter"]
-    )
+@runtime_checkable
+class LimiterConstructor(Protocol):
+    def __call__(
+        self, cache: RecordingCache, clock: FixedTime, *, fail_closed_resolver: FixedFailClosed
+    ) -> AtomicLimiter: ...
+
+
+def make_limiter(
+    cache: RecordingCache, clock: FixedTime, fail_closed: FixedFailClosed
+) -> AtomicLimiter:
+    constructor = TypeAdapter[LimiterConstructor](
+        LimiterConstructor, config=ConfigDict(arbitrary_types_allowed=True)
+    ).validate_python(PROXY_HOOKS["parallel_request_limiter"])
     return constructor(cache, clock, fail_closed_resolver=fail_closed)
-
-
-def planned_reply(entry: ReplyInput) -> list[int | str] | Exception:
-    if "failure" in entry:
-        return ConnectionError(entry["failure"])
-    return entry["values"]
-
-
-def window_value(window: ReservationWindowIdentity) -> WindowJson:
-    counter_key, window_start, backend = window
-    return WindowJson(counter_key=counter_key, window_start=window_start, backend=backend)
 
 
 def response_value(response: RateLimitResponse) -> ResponseJson:
     reserved = response.get("reservation_windows")
-    windows = [] if reserved is None else [window_value(window) for window in sorted(reserved)]
+    windows: list[WindowJson] = []
+    if reserved is not None:
+        windows = [
+            WindowJson(counter_key=counter_key, window_start=window_start, backend=backend)
+            for counter_key, window_start, backend in sorted(reserved)
+        ]
     return ResponseJson(
         overall_code=response["overall_code"],
         statuses=response["statuses"],
@@ -257,9 +270,7 @@ def response_value(response: RateLimitResponse) -> ResponseJson:
 
 
 async def settle(input_value: AtomicCheckInput) -> Answer:
-    pipeline: FakePipeline | None = None
-    if input_value["pipelined"]:
-        pipeline = FakePipeline([planned_reply(entry) for entry in input_value["replies"]])
+    pipeline = FakePipeline(input_value["replies"]) if input_value["pipelined"] else None
     cache = RecordingCache(input_value["cache"], pipeline)
     limiter = make_limiter(
         cache,
@@ -274,10 +285,9 @@ async def settle(input_value: AtomicCheckInput) -> Answer:
         response = await limiter.atomic_check_and_increment_by_n(
             input_value["descriptors"], input_value["increments"]
         )
-    calls = script.calls if pipeline is None else pipeline.calls
     return Answer(
         response=response_value(response),
-        calls=calls,
+        calls=script.calls if pipeline is None else pipeline.calls,
         refunds=refund_script.calls,
         reads=cache.reads,
         writes=cache.writes,
