@@ -304,6 +304,29 @@ async fn execution_gemini_reads_no_credentials() {
 }
 
 #[tokio::test]
+async fn execution_text_beta_provider_uses_the_vertex_endpoint() {
+    let optional = json("{}");
+    let input = EmbeddingInput::Text(String::from("hello"));
+    let mut call = text_call(&input, &optional);
+    call.provider = VertexCapabilityProvider::VertexAiBeta;
+    let recorder = Arc::new(PostRecorder::scripted(vec![reply(200, TEXT_ANSWER)]));
+    let fixture = auth();
+    let clients = TextClients {
+        pooled: recorder.as_ref(),
+        caller: None,
+    };
+    text_embedding(&call, &catalog(), &text_auth(&fixture), &clients)
+        .await
+        .unwrap();
+    assert_eq!(fixture.executor.loads.load(Ordering::SeqCst), 1);
+    let calls = recorder.recorded();
+    assert_eq!(
+        calls[0].url,
+        "https://us-central1-aiplatform.googleapis.com/v1/projects/project-p/locations/us-central1/publishers/google/models/text-embedding-005:predict"
+    );
+}
+
+#[tokio::test]
 async fn execution_gemini_multimodal_reads_no_credentials() {
     let input = json(r#""hello""#);
     let optional = extra("{}");
