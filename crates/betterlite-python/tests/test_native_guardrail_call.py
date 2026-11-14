@@ -379,11 +379,12 @@ def test_native_records_own() -> None:
     assert first_record(data_json)["guardrail_status"] == "guardrail_flagged"
 
 
-def test_native_records_unknown() -> None:
+@pytest.mark.parametrize("hook", ["pre_call", "during_call", "post_call"])
+def test_native_records_unknown(hook: str) -> None:
     invocation = _native.NativeGuardrailInvocation.begin("async_custom_hook", EMPTY, None)
-    data_json, _ = invocation.finish_success(EMPTY, None, json.dumps(record_context()))
+    data_json, _ = invocation.finish_success(EMPTY, None, json.dumps(record_context(hook)))
     record = first_record(data_json)
-    assert record["guardrail_mode"] == "pre_call"
+    assert record["guardrail_mode"] == hook
 
 
 def test_native_records_apply() -> None:
