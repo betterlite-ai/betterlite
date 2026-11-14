@@ -1,0 +1,20 @@
+task: B4026
+deviations:
+  - what: Cached deployment_ids are written as a sorted JSON list and read back into a set that also drops duplicates.
+    why: LiteLLM converts its set with list(set), whose order is arbitrary. A stable order keeps cached values and tests repeatable; the read side accepts any order and collapses duplicates like set() does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L173-L192
+  - what: The cache, deployment lookup, provider resolution and api_base lookup are injected traits instead of ProxyLogging's internal_usage_cache, llm_router and litellm.get_api_base, and the clock is injected instead of time.time().
+    why: betterlite has no module state and betterlite-logging cannot build a models ResolutionContext, so B8656 supplies the real implementations and the tests supply fakes. The observable record, message and alert behavior is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L787-L921
+  - what: Provider fallback goes through an OutageProviders trait holding B174's get_llm_provider, which is one port more than the task text's list of outside parts.
+    why: B174 resolves a provider through betterlite_models::resolution::resolve, which needs a ResolutionContext of catalog, environment, registry and policies that betterlite-logging cannot construct, so the call has to enter as a port. B8656 must wire this sixth port to B174 alongside the other five.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L958-L961
+  - what: The region detector calls B5365's get_model_region with no default vertex location, so a vertex_ai deployment with no vertex_location has no region unless region_name is set.
+    why: LiteLLM's _get_model_region falls back to the process-global litellm.vertex_location and the VERTEXAI_LOCATION and VERTEX_LOCATION secrets, which the outage detector cannot read here. B8656 can pass the configured value once the wiring has it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5245-L5267
+  - what: The Last Check seconds come from one clock reading, so a later update's message always prints 0.0s ago.
+    why: LiteLLM sets last_updated_at with one time.time() call and recomputes time.time() inside the message factory, so its text can show a small positive delay such as 0.0001s. One injected clock read makes the output deterministic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L784
+  - what: This task has no oracle cases.
+    why: No route reaches this code yet; B8656 adds the wiring and the HTTP oracle cases, and the message text is covered by exact-string native tests.
+    link: ""
