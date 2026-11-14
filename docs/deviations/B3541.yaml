@@ -1,0 +1,42 @@
+task: B3541
+deviations:
+  - what: >-
+      The scoring package keeps no re-export module: bm25_score_messages and
+      embedding_score_messages are reached at their own module paths instead of
+      through a scoring alias.
+    why: >-
+      The workspace denies clippy::pub_use, this task's expect budget is zero and the
+      worker rules add no re-exports, so the Python import surface stands in as two
+      public module paths: betterlite_compression::bm25_scoring::bm25_score_messages
+      and betterlite_compression::embedding_scoring::embedding_score_messages.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/scoring/__init__.py#L1-L4
+  - what: >-
+      Both scorers extract message content through message_normalization::content_to_text,
+      which unrolls tool_result blocks iteratively and ignores non-text blocks, so a direct
+      call on raw Anthropic content scores nested tool output that LiteLLM's own
+      _extract_content skips.
+    why: >-
+      compress() normalizes every message with _content_to_text before scoring, so the
+      pipeline behavior matches LiteLLM. The shared extractor also keeps the two scorers
+      from carrying near copies of the same function, and the task's DoD requires the
+      iterative tool_result extraction.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/compress.py#L69-L97
+  - what: >-
+      An embedding response with no vectors returns a typed
+      EmbeddingScoringError::EmptyResponse instead of an IndexError from the
+      embeddings[0] read.
+    why: >-
+      LiteLLM raises an unhandled IndexError there, which a proxy surfaces as a 500; a
+      working setup never receives an empty response, so betterlite returns the failure
+      its caller can map.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/scoring/embedding_scorer.py#L89-L94
+  - what: >-
+      Cosine similarity comes from betterlite_semantic::cosine_similarity, which
+      accumulates the dot product with fused multiply-add and squares each value with
+      powi, so a score can differ from LiteLLM's separately rounded sum in the last bit.
+    why: >-
+      The shared function already implements the same zipped dot product, the same full
+      vector norms and the same zero-norm result, and one implementation serves both the
+      semantic router and the compression scorer. BM25 and min-max normalization call
+      the std::ops traits, so their arithmetic matches LiteLLM's operators exactly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/scoring/embedding_scorer.py#L38-L45
