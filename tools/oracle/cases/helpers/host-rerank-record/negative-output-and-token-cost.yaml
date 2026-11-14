@@ -1,0 +1,13 @@
+kind: helper
+name: host-rerank-record-negative-output-and-token-cost
+call:
+  host_rerank_record:
+    provider: infinity
+    model: bge-reranker
+    api_base: "https://i.test"
+    options: {query: q, documents: [a]}
+    reply:
+      status: 200
+      body: '{"id":"r2","usage":{"prompt_tokens":10,"total_tokens":4},"results":[{"index":0,"relevance_score":0.5,"document":"a"}]}'
+env: {}
+compare: {ignore: []}

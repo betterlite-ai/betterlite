@@ -1,0 +1,13 @@
+kind: helper
+name: host-rerank-record-seed-infinity
+call:
+  host_rerank_record:
+    provider: infinity
+    model: bge-reranker
+    api_base: "https://infinity.test"
+    options: {query: q, documents: [a]}
+    reply:
+      status: 200
+      body: '{"results":[{"index":0,"relevance_score":0.5,"document":"a"}]}'
+env: {}
+compare: {ignore: []}

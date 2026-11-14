@@ -480,3 +480,10 @@ path = "fuzz_targets/openai_response_resources.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "host_rerank"
+path = "fuzz_targets/host_rerank.rs"
+test = false
+doc = false
+bench = false

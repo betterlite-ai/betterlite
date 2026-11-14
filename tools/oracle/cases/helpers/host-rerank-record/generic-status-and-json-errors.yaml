@@ -1,0 +1,11 @@
+kind: helper
+name: host-rerank-record-generic-status-and-json-errors
+call:
+  host_rerank_record:
+    provider: jina
+    model: jina-reranker-v2
+    api_key: jk
+    options: {query: q, documents: [a]}
+    reply: {status: 500, body: upstream boom}
+env: {}
+compare: {ignore: []}

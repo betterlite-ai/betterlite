@@ -1,0 +1,11 @@
+kind: helper
+name: host-rerank-record-jina-path-replacement
+call:
+  host_rerank_record:
+    provider: jina
+    model: jina-reranker-v2
+    api_key: jk
+    api_base: "https://x.test/old/path/"
+    options: {query: q, documents: [a]}
+env: {}
+compare: {ignore: []}
