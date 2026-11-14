@@ -25,6 +25,12 @@ fn both_sides_empty_merge_to_none() {
 }
 
 #[test]
+fn an_empty_dynamic_map_without_static_headers_merges_to_none() {
+    let empty = BTreeMap::new();
+    assert_eq!(merge_agent_headers(Some(&empty), None), None);
+}
+
+#[test]
 fn dynamic_headers_survive_without_static_headers() {
     let dynamic = headers(&[("authorization", "Bearer client"), ("x-trace", "t1")]);
     assert_eq!(

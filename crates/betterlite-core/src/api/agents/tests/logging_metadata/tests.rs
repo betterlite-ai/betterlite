@@ -88,6 +88,10 @@ fn make_logging_obj_records_model_provider_call_type_and_optional_params() {
         Some(&text("waverunner"))
     );
     assert_eq!(
+        state.model_call_details.get("model"),
+        Some(&text("waverunner"))
+    );
+    assert_eq!(
         state.model_call_details.get("call_type"),
         Some(&text("create_agent"))
     );
