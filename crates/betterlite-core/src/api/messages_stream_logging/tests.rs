@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::iter::repeat_with;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_logging::passthrough_stream_logging::types::EndpointType;
@@ -149,7 +150,7 @@ async fn deferred_dispatch_clears_both_fields(
     let harness = Harness::new(None);
     let calls = Arc::new(Mutex::new(Vec::new()));
     let parked: Option<Vec<LoggingFuture>> = args.map(|count| {
-        std::iter::repeat_with(|| -> LoggingFuture { Box::pin(async { Ok(()) }) })
+        repeat_with(|| -> LoggingFuture { Box::pin(async { Ok(()) }) })
             .take(count)
             .collect()
     });
