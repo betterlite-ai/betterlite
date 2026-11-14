@@ -5,6 +5,7 @@ pub(crate) mod support;
 use std::time::Duration;
 
 use betterlite_config::sections::alert_settings::types::AlertType;
+use betterlite_models::api_base_lookup::ApiBaseError;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 use tokio::task::yield_now;
@@ -15,6 +16,7 @@ use crate::alert_dispatch::AlertLevel;
 use crate::alert_settings::records::HangingRequestData;
 
 use super::alert::send_hanging_request_alert;
+use super::error::HangingRequestError;
 use super::interval::poll_interval;
 
 #[rstest]
@@ -215,6 +217,53 @@ async fn add_passes_the_deployment_params_to_the_api_base_resolver() {
 }
 
 #[tokio::test]
+async fn add_queries_the_resolver_without_deployment_params() {
+    let fixture = support::fixture();
+    let data = support::object(&[
+        ("model", support::json("\"gpt-4\"")),
+        ("litellm_call_id", support::json("\"call-1\"")),
+        ("deployment", support::json("{}")),
+    ]);
+    fixture
+        .check
+        .add_hanging_request(Some(&data))
+        .await
+        .expect("the request is added");
+    assert_eq!(
+        fixture.resolver.calls(),
+        vec![("gpt-4".to_owned(), support::object(&[]))]
+    );
+    let stored = fixture
+        .cache
+        .stored("call-1")
+        .expect("the request is cached");
+    assert_eq!(stored.api_base.as_deref(), Some("https://api.openai.com"));
+}
+
+#[tokio::test]
+async fn add_returns_the_api_base_error_and_caches_nothing() {
+    let fixture = support::fixture_with(
+        support::alert_settings(300.0),
+        support::FixedResolver::failing(),
+    );
+    let data = support::object(&[
+        ("model", support::json("\"gpt-4\"")),
+        ("litellm_call_id", support::json("\"call-1\"")),
+        ("deployment", support::json(r#"{"litellm_params": {}}"#)),
+    ]);
+    let error = fixture
+        .check
+        .add_hanging_request(Some(&data))
+        .await
+        .expect_err("the resolver fails");
+    assert!(matches!(
+        error,
+        HangingRequestError::ApiBase(ApiBaseError::InvalidVertexLocation { .. })
+    ));
+    assert_eq!(fixture.cache.entry_count(), 0);
+}
+
+#[tokio::test]
 async fn add_treats_a_null_field_as_absent() {
     let fixture = support::fixture();
     let data = support::object(&[
@@ -321,6 +370,22 @@ async fn detect_removes_a_completed_request(#[case] status: &str) {
         fixture.status.reads(),
         vec!["request_status:call-1".to_owned()]
     );
+}
+
+#[tokio::test]
+async fn detect_removes_a_completed_request_before_the_threshold() {
+    let fixture = support::fixture();
+    fixture.cache.seed(support::hanging_record(
+        "call-1",
+        "gpt-4",
+        1.0_f64.mul_add(-1.0, support::NOW),
+    ));
+    fixture
+        .status
+        .set("request_status:call-1", support::json("true"));
+    fixture.check.send_hanging_alerts().await;
+    assert!(fixture.sink.take().is_empty());
+    assert_eq!(fixture.cache.entry_count(), 0);
 }
 
 #[tokio::test]
