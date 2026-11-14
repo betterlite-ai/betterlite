@@ -159,6 +159,11 @@ fn transcription_session_transcription_fields() {
     true,
     None
 )]
+#[case::nested_server_vad(
+    r#"{"type":"session.update","session":{"audio":{"input":{"turn_detection":{"type":"server_vad"}}}}}"#,
+    false,
+    Some("server_vad")
+)]
 fn transcription_session_turn_detection(
     #[case] payload: &str,
     #[case] disabled: bool,
@@ -179,6 +184,12 @@ fn turn_detection_type_ignores_a_null_or_absent_type() {
         parse(r#"{"type":"session.update","session":{"turn_detection":{}}}"#).unwrap();
     assert_eq!(without_type.turn_detection_type(), None);
     assert!(!without_type.turn_detection_disabled);
+}
+
+#[test]
+fn session_type_is_kept() {
+    let update = parse(r#"{"type":"session.update","session":{"type":"transcription"}}"#).unwrap();
+    assert_eq!(update.session_type.as_deref(), Some("transcription"));
 }
 
 #[rstest]
