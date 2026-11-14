@@ -12,7 +12,7 @@ call:
               function: {name: lookup}
             - googleSearch: {}
           web_search_options: {}
-        supported_params: [n, size, tools, web_search_options]
+        supported_params: ["n", size, tools, web_search_options]
         optional_params: {}
         parse_image_config_string: false
         pre_mapped: null

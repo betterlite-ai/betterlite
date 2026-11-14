@@ -27,7 +27,7 @@ pub(crate) struct Input {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Case {
+pub(super) struct Case {
     model: String,
     catalog_supports_image_size: Option<bool>,
     params: Object,

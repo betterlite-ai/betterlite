@@ -61,7 +61,7 @@ fn mapping<'params>(
 #[rstest]
 #[case::square("512x512", "1:1")]
 #[case::large_square("4096x4096", "1:1")]
-#[case::wide_four("256x1024", "1:4")]
+#[case::tall_four_smallest("256x1024", "1:4")]
 #[case::tall_four("2048x8192", "1:4")]
 #[case::tall_eight("192x1536", "1:8")]
 #[case::tall_two_three("424x632", "2:3")]
@@ -103,7 +103,7 @@ fn an_exact_ratio_tie_keeps_the_larger_ratio() {
 #[rstest]
 #[case::two_to_one(2, 1, "16:9")]
 #[case::one_to_two(1, 2, "9:16")]
-#[case::ten_to_one(1, 10, "1:8")]
+#[case::one_to_ten(1, 10, "1:8")]
 #[case::five_to_three(5, 3, "16:9")]
 #[case::square(7, 7, "1:1")]
 fn the_nearest_ratio_minimises_the_multiplicative_distance(
@@ -355,7 +355,11 @@ fn an_image_config_string_that_is_not_an_object_is_ignored() {
 fn optional_params_suppress_a_passthrough_param() {
     let params = object(r#"{"seed":7}"#);
     let optional = object(r#"{"seed":9}"#);
-    let mapped = map_image_params(&mapping(&params, &optional)).expect("mapping");
+    let seeded = ImageParamMapping {
+        supported_params: &["seed"],
+        ..mapping(&params, &optional)
+    };
+    let mapped = map_image_params(&seeded).expect("mapping");
     assert_eq!(wrapped(&mapped), json("{}"));
 }
 
@@ -612,10 +616,10 @@ fn image_options_decode_json_configuration() {
 
 #[test]
 fn the_image_options_limit_covers_the_whole_limit() {
-    let at_the_limit = vec![b'a'; 65_536];
+    let at_the_limit = vec![b'a'; 0x1_0000];
     assert_eq!(
         decode_image_options(&at_the_limit).expect("size"),
-        ImageOptions::Size("a".repeat(65_536))
+        ImageOptions::Size("a".repeat(0x1_0000))
     );
 }
 

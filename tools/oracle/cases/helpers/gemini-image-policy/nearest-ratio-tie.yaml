@@ -7,7 +7,7 @@ call:
       - model: gemini-b1334-image
         catalog_supports_image_size: null
         params: {size: 3x8}
-        supported_params: [n, size, imageConfig, tools, web_search_options]
+        supported_params: ["n", size, imageConfig, tools, web_search_options]
         optional_params: {}
         parse_image_config_string: false
         pre_mapped: null
@@ -15,7 +15,7 @@ call:
       - model: gemini-b1334-image
         catalog_supports_image_size: null
         params: {size: 6x16}
-        supported_params: [n, size, imageConfig, tools, web_search_options]
+        supported_params: ["n", size, imageConfig, tools, web_search_options]
         optional_params: {}
         parse_image_config_string: false
         pre_mapped: null
@@ -23,7 +23,7 @@ call:
       - model: gemini-b1334-image
         catalog_supports_image_size: null
         params: {size: 2x1}
-        supported_params: [n, size, imageConfig, tools, web_search_options]
+        supported_params: ["n", size, imageConfig, tools, web_search_options]
         optional_params: {}
         parse_image_config_string: false
         pre_mapped: null
@@ -31,7 +31,7 @@ call:
       - model: gemini-b1334-image
         catalog_supports_image_size: null
         params: {size: 1x2}
-        supported_params: [n, size, imageConfig, tools, web_search_options]
+        supported_params: ["n", size, imageConfig, tools, web_search_options]
         optional_params: {}
         parse_image_config_string: false
         pre_mapped: null

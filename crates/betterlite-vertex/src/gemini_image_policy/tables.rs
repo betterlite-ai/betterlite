@@ -22,12 +22,12 @@ const SIZE_SCALES: [u64; 4] = [1, 2, 4, 8];
 // these two sizes sit outside the scaled families above
 const PORTRAIT_SIZES: [(u64, u64, &str); 2] = [(1280, 896, "4:3"), (896, 1280, "3:4")];
 
-const AREA_512_LIMIT: u128 = 589_824;
-const AREA_1K_LIMIT: u128 = 2_359_296;
-const AREA_2K_LIMIT: u128 = 9_437_184;
+const AREA_512_LIMIT: u128 = 768 * 768;
+const AREA_1K_LIMIT: u128 = 1536 * 1536;
+const AREA_2K_LIMIT: u128 = 3072 * 3072;
 
 // a dimension past this keeps every rational comparison inside u128
-const MAX_DIMENSION: u64 = 4_294_967_295;
+const MAX_DIMENSION: u64 = 0xFFFF_FFFF;
 
 #[must_use]
 pub fn parse_dimensions(size: &str) -> Option<(u64, u64)> {

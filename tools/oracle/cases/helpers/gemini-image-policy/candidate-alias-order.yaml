@@ -7,39 +7,39 @@ call:
       - model: gemini-b1334-image
         catalog_supports_image_size: null
         params: {}
-        supported_params: [n, size]
+        supported_params: ["n", size]
         optional_params: {}
         parse_image_config_string: false
-        pre_mapped: {candidateCount: 0, candidate_count: 1, sampleCount: 2, n: 3}
+        pre_mapped: {candidateCount: 0, candidate_count: 1, sampleCount: 2, "n": 3}
         response: {}
       - model: gemini-b1334-image
         catalog_supports_image_size: null
         params: {}
-        supported_params: [n, size]
+        supported_params: ["n", size]
         optional_params: {}
         parse_image_config_string: false
-        pre_mapped: {candidate_count: 4, sampleCount: 5, n: 6}
+        pre_mapped: {candidate_count: 4, sampleCount: 5, "n": 6}
         response: {}
       - model: gemini-b1334-image
         catalog_supports_image_size: null
         params: {}
-        supported_params: [n, size]
+        supported_params: ["n", size]
         optional_params: {}
         parse_image_config_string: false
-        pre_mapped: {sampleCount: 0, n: 9}
+        pre_mapped: {sampleCount: 0, "n": 9}
         response: {}
       - model: gemini-b1334-image
         catalog_supports_image_size: null
         params: {}
-        supported_params: [n, size]
+        supported_params: ["n", size]
         optional_params: {}
         parse_image_config_string: false
         pre_mapped: {candidateCount: null, sampleCount: 7}
         response: {}
       - model: gemini-b1334-image
         catalog_supports_image_size: null
-        params: {n: 2}
-        supported_params: [n, size]
+        params: {"n": 2}
+        supported_params: ["n", size]
         optional_params: {}
         parse_image_config_string: false
         pre_mapped: null

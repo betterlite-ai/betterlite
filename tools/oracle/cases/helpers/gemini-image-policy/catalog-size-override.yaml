@@ -7,7 +7,7 @@ call:
       - model: gemini-2.5-flash-b1334-override
         catalog_supports_image_size: true
         params: {size: 1024x1024}
-        supported_params: [n, size, imageConfig, tools, web_search_options]
+        supported_params: ["n", size, imageConfig, tools, web_search_options]
         optional_params: {}
         parse_image_config_string: false
         pre_mapped: null
@@ -15,7 +15,7 @@ call:
       - model: gemini-b1334-denied
         catalog_supports_image_size: false
         params: {size: 1024x1024}
-        supported_params: [n, size, imageConfig, tools, web_search_options]
+        supported_params: ["n", size, imageConfig, tools, web_search_options]
         optional_params: {}
         parse_image_config_string: false
         pre_mapped: null

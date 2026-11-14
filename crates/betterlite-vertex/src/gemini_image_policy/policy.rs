@@ -6,11 +6,11 @@ use super::tables::{aspect_ratio, gemini_image_size, parse_dimensions};
 const HANDLED_PARAMS: [&str; 5] = ["n", "size", "imageConfig", "tools", "web_search_options"];
 
 #[derive(Clone, Copy, Debug)]
-pub struct ImageParamMapping<'a> {
-    pub params: &'a Object,
-    pub model: &'a str,
-    pub supported_params: &'a [&'a str],
-    pub optional_params: &'a Object,
+pub struct ImageParamMapping<'request> {
+    pub params: &'request Object,
+    pub model: &'request str,
+    pub supported_params: &'request [&'request str],
+    pub optional_params: &'request Object,
     pub image_size_support: Option<bool>,
     pub parse_image_config_string: bool,
 }

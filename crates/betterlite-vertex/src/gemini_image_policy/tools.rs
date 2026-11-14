@@ -2,6 +2,7 @@ use betterlite_config::sections::vertex_schema_shaping::Settings;
 use betterlite_prompts::arguments::json::{Json, Object};
 
 use super::error::GeminiImagePolicyError;
+use crate::gemini_options::tools::drop_mixed_search;
 use crate::gemini_tools::assembly::map_tools;
 use crate::gemini_tools::options::map_web_search_options;
 
@@ -26,7 +27,7 @@ pub fn map_gemini_image_tools_params(
     result.shift_remove("web_search_options");
     map_tools_param(non_default_params, &mut result, settings)?;
     add_web_search_tool(non_default_params, &mut result)?;
-    drop_search_beside_functions(&mut result);
+    drop_mixed_search(&mut result);
     dedupe_search_tools(&mut result);
     Ok(result)
 }
@@ -87,7 +88,7 @@ fn add_web_search_tool(
         return Ok(());
     };
     if let Some(Json::List(tools)) = result.get("tools")
-        && tools.iter().any(is_search_tool)
+        && tools.iter().any(|tool| search_key(tool).is_some())
     {
         return Ok(());
     }
@@ -95,48 +96,6 @@ fn add_web_search_tool(
         .and_then(serde_json::from_value::<Json>)
         .map_err(GeminiImagePolicyError::Encode)?;
     add_tools(result, vec![encoded])
-}
-
-fn is_search_tool(tool: &Json) -> bool {
-    let Json::Object(fields) = tool else {
-        return false;
-    };
-    SEARCH_KEYS.iter().any(|key| fields.contains_key(*key))
-}
-
-fn has_function_declarations(tool: &Json) -> bool {
-    let Json::Object(fields) = tool else {
-        return false;
-    };
-    matches!(
-        fields.get("function_declarations"),
-        Some(Json::List(declarations)) if !declarations.is_empty()
-    )
-}
-
-fn drop_search_beside_functions(result: &mut Object) {
-    let Some(Json::List(tools)) = result.get("tools") else {
-        return;
-    };
-    let server_side = matches!(
-        result.get("include_server_side_tool_invocations"),
-        Some(Json::Bool(true))
-    );
-    if server_side
-        || !tools.iter().any(has_function_declarations)
-        || !tools.iter().any(is_search_tool)
-    {
-        return;
-    }
-    tracing::warn!(
-        "function declarations cannot be mixed with search tools; dropping googleSearch, googleSearchRetrieval, enterpriseWebSearch and urlContext"
-    );
-    let kept: Vec<Json> = tools
-        .iter()
-        .filter(|tool| !is_search_tool(tool))
-        .cloned()
-        .collect();
-    result.insert("tools".to_owned(), Json::List(kept));
 }
 
 fn dedupe_search_tools(result: &mut Object) {
