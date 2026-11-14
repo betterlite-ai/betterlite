@@ -7,9 +7,9 @@ pub fn entity_rows(rows: &[DatabaseRow]) -> Result<Vec<EntityRollupRow>, RowErro
     for row in rows {
         decoded.push(EntityRollupRow {
             metrics: metrics_row(row)?,
-            entity_id: row.optional_text("entity_id")?,
+            entity_id: row.optional::<String>("entity_id")?,
             api_key_rolled: row.integer("api_key_rolled")?,
-            distinct_api_keys: row.optional_integer("distinct_api_keys")?,
+            distinct_api_keys: row.optional::<i64>("distinct_api_keys")?,
         });
     }
     Ok(decoded)

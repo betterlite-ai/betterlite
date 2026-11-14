@@ -1,10 +1,19 @@
 use super::super::support::scope;
-use super::support::{insert, repository, run, run_pair, usage};
-use crate::daily_activity_contracts::ExportType;
+use super::support::{PostgresRepository, insert, insert_all, repository, run, run_pair, usage};
 use crate::daily_activity_contracts::identifiers::DailyActivityTable;
+use crate::daily_activity_contracts::{DailyActivityScope, ExportType};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive as _;
 use std::collections::BTreeSet;
+
+async fn drain(
+    repository: &PostgresRepository<'_>,
+    range: &DailyActivityScope,
+    export_type: ExportType,
+) {
+    let mut export = repository.export_rows(range, export_type);
+    while export.next_row().await.unwrap().is_some() {}
+}
 
 #[tokio::test]
 async fn postgres_count_and_rows_need_not_share_snapshot() {
@@ -19,13 +28,16 @@ async fn postgres_count_and_rows_need_not_share_snapshot() {
             &usage("w1", Some("e1"), "2026-08-01", "k1", 1.0),
         )
         .await;
-        for (id, date) in [
-            ("r1", "2026-08-01"),
-            ("r2", "2026-08-02"),
-            ("r3", "2026-08-03"),
-        ] {
-            insert(&reader, table, &usage(id, Some("e1"), date, "k1", 1.0)).await;
-        }
+        insert_all(
+            &reader,
+            table,
+            [
+                usage("r1", Some("e1"), "2026-08-01", "k1", 1.0),
+                usage("r2", Some("e1"), "2026-08-02", "k1", 1.0),
+                usage("r3", Some("e1"), "2026-08-03", "k1", 1.0),
+            ],
+        )
+        .await;
         let first = repository.daily_rows(&scope(table), 1, 2).await.unwrap();
         let ids: Vec<&str> = first.rows.iter().map(|row| row.id.as_str()).collect();
         assert_eq!(first.total_count, 3);
@@ -57,14 +69,15 @@ async fn raw_writer_table_reader_routing() {
             &usage("w1", Some("e1"), "2026-08-01", "k-writer", 7.0),
         )
         .await;
-        for id in ["r1", "r2"] {
-            insert(
-                &reader,
-                table,
-                &usage(id, Some("e1"), "2026-08-01", "k-reader", 1.0),
-            )
-            .await;
-        }
+        insert_all(
+            &reader,
+            table,
+            [
+                usage("r1", Some("e1"), "2026-08-01", "k-reader", 1.0),
+                usage("r2", Some("e1"), "2026-08-01", "k-reader", 1.0),
+            ],
+        )
+        .await;
         writer
             .batch_execute(
                 "INSERT INTO \"LiteLLM_VerificationToken\" (token, key_alias) VALUES ('sk-1', 'writer')",
@@ -146,15 +159,10 @@ async fn postgres_reads_never_write() {
         repository.cache_leakage_keys(&range, 10).await.unwrap();
         let wanted = BTreeSet::from(["k1".to_owned(), "k2".to_owned()]);
         repository.key_metadata(&wanted, None).await.unwrap();
-        for export_type in [
-            ExportType::Daily,
-            ExportType::DailyWithKeys,
-            ExportType::DailyWithModels,
-            ExportType::DailyWithUsers,
-        ] {
-            let mut export = repository.export_rows(&range, export_type);
-            while export.next_row().await.unwrap().is_some() {}
-        }
+        drain(&repository, &range, ExportType::Daily).await;
+        drain(&repository, &range, ExportType::DailyWithKeys).await;
+        drain(&repository, &range, ExportType::DailyWithModels).await;
+        drain(&repository, &range, ExportType::DailyWithUsers).await;
         let rejected = client
             .batch_execute("DELETE FROM \"LiteLLM_DailyTeamSpend\"")
             .await;

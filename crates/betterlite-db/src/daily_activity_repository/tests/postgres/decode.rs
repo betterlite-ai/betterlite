@@ -17,39 +17,43 @@ async fn postgres_decode_every_column_type() {
             .await
             .unwrap();
         let row = DatabaseRow::decode(&rows[0]).unwrap();
-        assert_eq!(row.text("t").unwrap(), "a");
-        assert_eq!(row.text("v").unwrap(), "b");
-        assert_eq!(row.text("b").unwrap(), "c");
-        assert_eq!(row.text("n").unwrap(), "d");
-        assert_eq!(row.integer("i8").unwrap(), 8);
-        assert_eq!(row.integer("i4").unwrap(), 4);
-        assert_eq!(row.integer("i2").unwrap(), 2);
-        assert_eq!(row.decimal("f8").unwrap(), Decimal::new(15, 1));
-        assert_eq!(row.decimal("f4").unwrap(), Decimal::new(25, 2));
-        assert_eq!(row.optional_text("nt").unwrap(), None);
-        assert_eq!(row.optional_integer("ni").unwrap(), None);
-        assert_eq!(row.optional_decimal("nf").unwrap(), None);
-        assert_eq!(row.optional_text("t").unwrap().as_deref(), Some("a"));
-        assert_eq!(row.optional_integer("i8").unwrap(), Some(8));
+        assert_eq!(row.optional::<String>("t").unwrap().as_deref(), Some("a"));
+        assert_eq!(row.optional::<String>("v").unwrap().as_deref(), Some("b"));
+        assert_eq!(row.optional::<String>("b").unwrap().as_deref(), Some("c"));
+        assert_eq!(row.optional::<String>("n").unwrap().as_deref(), Some("d"));
+        assert_eq!(row.optional::<i64>("i8").unwrap(), Some(8));
+        assert_eq!(row.optional::<i64>("i4").unwrap(), Some(4));
+        assert_eq!(row.optional::<i64>("i2").unwrap(), Some(2));
+        assert_eq!(
+            row.optional::<Decimal>("f8").unwrap(),
+            Some(Decimal::new(15, 1))
+        );
+        assert_eq!(
+            row.optional::<Decimal>("f4").unwrap(),
+            Some(Decimal::new(25, 2))
+        );
+        assert_eq!(row.optional::<String>("nt").unwrap(), None);
+        assert_eq!(row.optional::<i64>("ni").unwrap(), None);
+        assert_eq!(row.optional::<Decimal>("nf").unwrap(), None);
         assert_eq!(row.integer_if_present("i8").unwrap(), Some(8));
         assert_eq!(row.integer_if_present("ni").unwrap(), None);
         assert_eq!(row.integer_if_present("absent").unwrap(), None);
         assert!(matches!(
-            row.text("absent"),
+            row.optional::<String>("absent"),
             Err(RowError::MissingColumn { .. })
         ));
-        assert!(matches!(row.text("nt"), Err(RowError::ColumnType { .. })));
         assert!(matches!(
-            row.integer("ni"),
+            row.optional::<String>("i8"),
             Err(RowError::ColumnType { .. })
         ));
         assert!(matches!(
-            row.decimal("nf"),
+            row.optional::<i64>("t"),
             Err(RowError::ColumnType { .. })
         ));
-        assert!(matches!(row.text("i8"), Err(RowError::ColumnType { .. })));
-        assert!(matches!(row.integer("t"), Err(RowError::ColumnType { .. })));
-        assert!(matches!(row.decimal("t"), Err(RowError::ColumnType { .. })));
+        assert!(matches!(
+            row.optional::<Decimal>("t"),
+            Err(RowError::ColumnType { .. })
+        ));
         assert!(matches!(
             row.integer_if_present("t"),
             Err(RowError::ColumnType { .. })

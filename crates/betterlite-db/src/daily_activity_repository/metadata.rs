@@ -42,10 +42,10 @@ where
         };
         let mut newest: BTreeMap<String, DeletedVerificationTokenRow> = BTreeMap::new();
         for row in deleted_rows {
-            match newest.get(&row.token) {
+            match newest.get(&row.row.token) {
                 Some(existing) if existing.deleted_at >= row.deleted_at => {}
                 _ => {
-                    newest.insert(row.token.clone(), row);
+                    newest.insert(row.row.token.clone(), row);
                 }
             }
         }

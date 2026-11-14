@@ -14,6 +14,8 @@ use chrono::{DateTime, Utc};
 use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool};
 use futures_util::FutureExt as _;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive as _;
 use secrecy::SecretString;
 use std::future::Future;
 use std::panic::{AssertUnwindSafe, resume_unwind};
@@ -125,10 +127,10 @@ pub(super) fn repository<'client>(
     }
 }
 
-pub(super) fn scope_with(
-    table: DailyActivityTable,
-    adjust: impl FnOnce(&mut DailyActivityScopeInput),
-) -> DailyActivityScope {
+pub(super) fn scope_with<Adjust>(table: DailyActivityTable, adjust: Adjust) -> DailyActivityScope
+where
+    Adjust: FnOnce(&mut DailyActivityScopeInput),
+{
     let base = scope(table);
     let mut input = AsRef::<DailyActivityScopeInput>::as_ref(&base).clone();
     adjust(&mut input);
@@ -141,7 +143,7 @@ pub(super) struct Usage<'row> {
     pub(super) date: &'row str,
     pub(super) api_key: &'row str,
     pub(super) model: Option<&'row str>,
-    pub(super) spend: f64,
+    pub(super) spend: Decimal,
     pub(super) prompt: i64,
     pub(super) completion: i64,
     pub(super) cache_read: i64,
@@ -160,7 +162,7 @@ pub(super) fn usage<'row>(
         date,
         api_key,
         model: None,
-        spend,
+        spend: Decimal::from_f64(spend).unwrap(),
         prompt: 10,
         completion: 5,
         cache_read: 0,
@@ -170,7 +172,7 @@ pub(super) fn usage<'row>(
 pub(super) async fn insert(client: &Client, table: DailyActivityTable, row: &Usage<'_>) {
     let metadata = table.metadata();
     let sql = format!(
-        "INSERT INTO \"{}\" (id, \"{}\", date, api_key, model, spend, prompt_tokens, completion_tokens, cache_read_input_tokens, api_requests, successful_requests, failed_requests, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7::bigint, $8::bigint, $9::bigint, 1, 1, 0, NOW())",
+        "INSERT INTO \"{}\" (id, \"{}\", date, api_key, model, spend, prompt_tokens, completion_tokens, cache_read_input_tokens, api_requests, successful_requests, failed_requests, updated_at) VALUES ($1, $2, $3, $4, $5, $6::text::float8, $7::bigint, $8::bigint, $9::bigint, 1, 1, 0, NOW())",
         metadata.relation, metadata.entity_field
     );
     client
@@ -182,7 +184,7 @@ pub(super) async fn insert(client: &Client, table: DailyActivityTable, row: &Usa
                 &row.date,
                 &row.api_key,
                 &row.model,
-                &row.spend,
+                &row.spend.to_string(),
                 &row.prompt,
                 &row.completion,
                 &row.cache_read,
@@ -190,6 +192,15 @@ pub(super) async fn insert(client: &Client, table: DailyActivityTable, row: &Usa
         )
         .await
         .unwrap();
+}
+
+pub(super) async fn insert_all<'row, Rows>(client: &Client, table: DailyActivityTable, rows: Rows)
+where
+    Rows: IntoIterator<Item = Usage<'row>>,
+{
+    for row in rows {
+        insert(client, table, &row).await;
+    }
 }
 
 pub(super) async fn texts(client: &Client, sql: &str) -> Vec<String> {

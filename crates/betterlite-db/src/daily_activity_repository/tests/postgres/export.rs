@@ -1,5 +1,5 @@
 use super::super::support::scope;
-use super::support::{PostgresRepository, Usage, insert, repository, run, usage};
+use super::support::{PostgresRepository, Usage, insert, insert_all, repository, run, usage};
 use crate::daily_activity_contracts::identifiers::DailyActivityTable;
 use crate::daily_activity_contracts::{DailyActivityScope, ExportRow, ExportType};
 use crate::daily_activity_sql::PTU_SENTINEL_API_KEY;
@@ -43,7 +43,10 @@ async fn postgres_four_export_types() {
         let client = pool.get().await.unwrap();
         let repository = repository(&client, None);
         let table = DailyActivityTable::Team;
-        for row in [
+        insert_all(
+            &client,
+            table,
+            [
             Usage {
                 model: Some("m1"),
                 ..usage("a", Some("t1"), "2026-08-01", "k1", 1.0)
@@ -58,9 +61,9 @@ async fn postgres_four_export_types() {
             },
             usage("d", Some("t2"), "2026-08-01", "k1", 8.0),
             usage("s", Some("t1"), "2026-08-01", PTU_SENTINEL_API_KEY, 0.0),
-        ] {
-            insert(&client, table, &row).await;
-        }
+            ],
+        )
+        .await;
         client
             .batch_execute(
                 "UPDATE \"LiteLLM_DailyTeamSpend\" SET ptu_flat_cost = 5 WHERE id = 's';

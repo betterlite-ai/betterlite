@@ -24,9 +24,10 @@ where
     Clock: Fn() -> DateTime<Utc>,
 {
     pub(super) async fn query(&self, query: &SqlQuery) -> Result<Vec<DatabaseRow>> {
+        let first_line = query.sql.trim_start().lines().next().unwrap_or_default();
         tracing::debug!(
             "DailyActivityRepository query: {}",
-            first_sql_line(&query.sql)
+            first_line.trim_start_matches('(').trim()
         );
         let rows = self.database.query_raw(query).await?;
         Ok(rows.unwrap_or_default())
@@ -134,9 +135,4 @@ where
             rows: found?,
         })
     }
-}
-
-fn first_sql_line(sql: &str) -> &str {
-    let line = sql.trim_start().lines().next().unwrap_or_default();
-    line.trim_start_matches('(').trim()
 }

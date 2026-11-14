@@ -8,6 +8,7 @@ use crate::daily_activity_contracts::identifiers::DailyActivityTable;
 use crate::daily_activity_repository::DailyActivityRepositoryError;
 use crate::daily_activity_repository::database::DailyRowFilter;
 use crate::daily_activity_repository::rows::DatabaseValue;
+use rstest::rstest;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Barrier;
@@ -116,37 +117,46 @@ async fn invalid_grouping_before_invalid_entity() {
     assert!(error.to_string().contains("group_level"));
 }
 
+#[rstest]
+#[case::zero(0)]
+#[case::over_maximum(101)]
 #[tokio::test]
-async fn all_three_limits_one_hundred_and_reject() {
+async fn all_three_limits_one_hundred_and_reject(#[case] limit: i64) {
     let database = FakeDatabase::default();
     let repository = repository(database, FakeReads::default());
     let scope = scope(DailyActivityTable::User);
-    for limit in [0_i64, 101] {
-        assert!(matches!(
-            repository.search_keys(&scope, "key", limit).await,
-            Err(DailyActivityRepositoryError::Limit { maximum: 100 })
-        ));
-        assert!(matches!(
-            repository
-                .model_top_keys(&scope, "group", false, limit)
-                .await,
-            Err(DailyActivityRepositoryError::Limit { maximum: 100 })
-        ));
-        assert!(matches!(
-            repository.cache_leakage_keys(&scope, limit).await,
-            Err(DailyActivityRepositoryError::Limit { maximum: 100 })
-        ));
-    }
-    assert_eq!(repository.database.query_count(), 0);
-    for limit in [1_i64, 100] {
-        repository.search_keys(&scope, "key", limit).await.unwrap();
+    assert!(matches!(
+        repository.search_keys(&scope, "key", limit).await,
+        Err(DailyActivityRepositoryError::Limit { maximum: 100 })
+    ));
+    assert!(matches!(
         repository
             .model_top_keys(&scope, "group", false, limit)
-            .await
-            .unwrap();
-        repository.cache_leakage_keys(&scope, limit).await.unwrap();
-    }
-    assert_eq!(repository.database.query_count(), 6);
+            .await,
+        Err(DailyActivityRepositoryError::Limit { maximum: 100 })
+    ));
+    assert!(matches!(
+        repository.cache_leakage_keys(&scope, limit).await,
+        Err(DailyActivityRepositoryError::Limit { maximum: 100 })
+    ));
+    assert_eq!(repository.database.query_count(), 0);
+}
+
+#[rstest]
+#[case::minimum(1)]
+#[case::maximum(100)]
+#[tokio::test]
+async fn all_three_limits_accept_one_and_one_hundred(#[case] limit: i64) {
+    let database = FakeDatabase::default();
+    let repository = repository(database, FakeReads::default());
+    let scope = scope(DailyActivityTable::User);
+    repository.search_keys(&scope, "key", limit).await.unwrap();
+    repository
+        .model_top_keys(&scope, "group", false, limit)
+        .await
+        .unwrap();
+    repository.cache_leakage_keys(&scope, limit).await.unwrap();
+    assert_eq!(repository.database.query_count(), 3);
 }
 
 #[tokio::test]

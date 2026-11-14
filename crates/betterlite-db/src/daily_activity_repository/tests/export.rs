@@ -6,6 +6,7 @@ use super::support::{
 use crate::daily_activity_contracts::identifiers::DailyActivityTable;
 use crate::daily_activity_contracts::{ExportRow, ExportType};
 use crate::daily_activity_repository::export::next_cursor;
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 fn cursor_row(
@@ -79,17 +80,14 @@ fn cursor_each_export_group() {
     );
 }
 
-#[test]
-fn cursor_null_group_becomes_empty() {
-    for export_type in [
-        ExportType::Daily,
-        ExportType::DailyWithKeys,
-        ExportType::DailyWithModels,
-        ExportType::DailyWithUsers,
-    ] {
-        let batch = vec![cursor_row("2026-08-02", None, None, None)];
-        assert_eq!(next_cursor(&batch, export_type).unwrap().group_key, "");
-    }
+#[rstest]
+#[case::daily(ExportType::Daily)]
+#[case::keys(ExportType::DailyWithKeys)]
+#[case::models(ExportType::DailyWithModels)]
+#[case::users(ExportType::DailyWithUsers)]
+fn cursor_null_group_becomes_empty(#[case] export_type: ExportType) {
+    let batch = vec![cursor_row("2026-08-02", None, None, None)];
+    assert_eq!(next_cursor(&batch, export_type).unwrap().group_key, "");
 }
 
 #[tokio::test]
