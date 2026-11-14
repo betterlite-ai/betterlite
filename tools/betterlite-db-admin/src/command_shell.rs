@@ -146,7 +146,7 @@ impl DbAdminBackend {
         let operation = command.operation();
         let Some(service) = self.services.get(&operation) else {
             return Err(DbAdminError::Unregistered {
-                operation: operation.name(),
+                operation: <&'static str>::from(operation),
             });
         };
         service.run(command, config).await
