@@ -1,23 +1,51 @@
+mod tests;
+
 use super::usage::{Lenient, Payload, usage_from_mapping};
+
+// A response.completed event carries the whole response, base64 image output included, so a smaller cap drops real usage.
+const MAX_PENDING_LINE: usize = 0x200_0000;
 
 #[derive(Debug, Default)]
 pub struct SSEUsageParser {
     pub input_tokens: u64,
     pub output_tokens: u64,
     buffer: Vec<u8>,
+    skipping: bool,
 }
 
 impl SSEUsageParser {
     pub fn feed(&mut self, chunk: &[u8]) {
-        self.buffer.extend_from_slice(chunk);
-        let Some(position) = self.buffer.iter().rposition(|byte| *byte == b'\n') else {
+        let mut rest = chunk;
+        while let Some(end) = rest.iter().position(|byte| *byte == b'\n') {
+            let (line, after) = rest.split_at(end);
+            self.finish_line(line);
+            rest = after.get(1..).unwrap_or_default();
+        }
+        self.hold(rest);
+    }
+
+    // The bytes after the last newline wait for the next chunk, and an oversized line is dropped up to its newline.
+    fn hold(&mut self, partial: &[u8]) {
+        if self.skipping {
             return;
-        };
-        let complete = position.saturating_add(1);
-        let tail = self.buffer.split_off(complete);
-        let head = std::mem::replace(&mut self.buffer, tail);
-        for line in head.split(|byte| *byte == b'\n') {
-            self.feed_line(line);
+        }
+        if self.buffer.len().saturating_add(partial.len()) > MAX_PENDING_LINE {
+            self.buffer = Vec::new();
+            self.skipping = true;
+        } else {
+            self.buffer.extend_from_slice(partial);
+        }
+    }
+
+    fn finish_line(&mut self, tail: &[u8]) {
+        if self.skipping {
+            self.skipping = false;
+        } else if self.buffer.len().saturating_add(tail.len()) <= MAX_PENDING_LINE {
+            let mut line = std::mem::take(&mut self.buffer);
+            line.extend_from_slice(tail);
+            self.feed_line(&line);
+        } else {
+            self.buffer = Vec::new();
         }
     }
 

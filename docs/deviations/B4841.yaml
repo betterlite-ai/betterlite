@@ -15,3 +15,6 @@ deviations:
   - what: A token counter that is negative, fractional beyond truncation or larger than u64::MAX becomes zero, and the running totals saturate at u64::MAX instead of growing without bound.
     why: betterlite's Usage counts are u64 from B4830, so a provider that sends a nonsense count cannot move the session's accounting.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L134-L139
+  - what: The SSE usage parser splits its whole pending buffer on every chunk and keeps a line without a newline for as long as the stream sends one. betterlite looks for the newline only in the bytes the chunk just added and holds a partial line up to 32 MiB (0x200_0000); past that it drops the line, skips bytes up to the next newline and parses normally again.
+    why: A provider that streams without ever sending a newline grows LiteLLM's buffer without bound and rescans it on each chunk; the cap is large enough for a response.completed event that carries a whole response with base64 image output.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L171-L174
