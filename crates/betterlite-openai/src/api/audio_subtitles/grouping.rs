@@ -36,8 +36,7 @@ pub fn merge_tokens_into_words(tokens: &[SubtitleToken]) -> Vec<Word> {
     let mut words: Vec<Word> = Vec::new();
     let mut current: Vec<&SubtitleToken> = Vec::new();
     let mut previous: Option<&SubtitleToken> = None;
-    for candidate in tokens.iter().filter(|token| !token.text.is_empty()) {
-        let token = *candidate;
+    for token in tokens.iter().filter(|token| !token.text.is_empty()) {
         if previous.is_some_and(|prev| starts_new_word(prev, token)) {
             words.extend(build_word(&current));
             current.clear();

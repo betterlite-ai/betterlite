@@ -79,7 +79,7 @@ fn helper_runs_the_production_subtitle_renderer() {
     let call = HelperCall {
         operation: "audio_subtitles".to_owned(),
         input: json!({"calls": [
-            {"function": "srt", "tokens": [{"text": "Hel", "start_ms": 0}, {"text": "lo", "end_ms": 1000}]}
+            {"function": "srt", "tokens": [{"text": "Hell", "start_ms": 0}, {"text": "o", "end_ms": 1000}]}
         ]}),
     };
     let output = invoke(&call);

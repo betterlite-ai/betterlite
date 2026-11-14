@@ -49,13 +49,13 @@ fn texts(words: &[Word]) -> Vec<&str> {
 fn subtitle_rendering_merges_subword_tokens_into_one_cue() {
     let tokens = [
         SubtitleToken {
-            text: "Hel".to_owned(),
+            text: "Hell".to_owned(),
             start_ms: Some(0),
             end_ms: None,
             speaker: None,
         },
         SubtitleToken {
-            text: "lo".to_owned(),
+            text: "o".to_owned(),
             start_ms: None,
             end_ms: Some(1000),
             speaker: None,
@@ -464,7 +464,7 @@ fn subtitle_cjk_boundaries_count_widths_through_cue_splits() {
 fn subtitle_cjk_boundaries_drop_empty_tokens_and_keep_outer_timestamps() {
     let tokens = [
         SubtitleToken {
-            text: "Hel".to_owned(),
+            text: "Hell".to_owned(),
             start_ms: Some(5),
             end_ms: None,
             speaker: None,
@@ -476,7 +476,7 @@ fn subtitle_cjk_boundaries_drop_empty_tokens_and_keep_outer_timestamps() {
             speaker: None,
         },
         SubtitleToken {
-            text: "lo".to_owned(),
+            text: "o".to_owned(),
             start_ms: None,
             end_ms: Some(9),
             speaker: None,
@@ -510,12 +510,12 @@ fn subtitle_cjk_boundaries_ignore_empty_tokens_between_words() {
 fn subtitle_cjk_boundaries_invent_no_timestamp_for_a_missing_start() {
     let tokens = [
         SubtitleToken {
-            text: "Hel".to_owned(),
+            text: "Hell".to_owned(),
             start_ms: None,
             end_ms: None,
             speaker: None,
         },
-        timed("lo", 3, 3),
+        timed("o", 3, 3),
     ];
     assert_eq!(group_tokens_into_cues(&tokens), vec![cue(3, 3, "Hello")]);
 }
@@ -687,13 +687,13 @@ fn subtitle_word_timing_input_turns_a_record_into_a_spaced_token() {
 fn subtitle_rendering_builds_words_with_the_first_start_and_last_end() {
     let tokens = [
         SubtitleToken {
-            text: "Hel".to_owned(),
+            text: "Hell".to_owned(),
             start_ms: Some(5),
             end_ms: Some(6),
             speaker: Some(Speaker::Text("a".to_owned())),
         },
         SubtitleToken {
-            text: "lo".to_owned(),
+            text: "o".to_owned(),
             start_ms: Some(7),
             end_ms: Some(9),
             speaker: Some(Speaker::Number(2)),

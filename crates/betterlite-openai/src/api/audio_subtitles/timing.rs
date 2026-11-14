@@ -5,9 +5,7 @@ use thiserror::Error;
 
 use super::grouping::group_tokens_into_cues;
 use super::render::{render_subtitle_tokens_as_srt, render_subtitle_tokens_as_vtt};
-use super::{
-    SRT_RESPONSE_FORMAT, SUBTITLE_RESPONSE_FORMATS, Speaker, SubtitleToken, VTT_RESPONSE_FORMAT,
-};
+use super::{SRT_RESPONSE_FORMAT, SUBTITLE_RESPONSE_FORMATS, Speaker, SubtitleToken};
 
 #[derive(Debug, PartialEq, Eq, Error)]
 pub enum SubtitleTimingError {
