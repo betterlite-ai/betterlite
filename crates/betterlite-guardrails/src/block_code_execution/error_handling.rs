@@ -20,47 +20,50 @@ pub fn block_message(language: &str) -> String {
     }
 }
 
-impl BlockCodeExecutionGuardrail {
-    #[must_use]
-    pub fn block_failure(
-        &self,
-        language: &str,
-        input_type: GuardrailInputType,
-        request_data: &BTreeMap<String, GuardrailValue>,
-    ) -> GuardrailFailure {
-        let message = block_message(language);
-        match input_type {
-            GuardrailInputType::Request => {
-                let detection_info = BTreeMap::from([(
-                    "language".to_owned(),
-                    GuardrailValue::Text(language.to_owned()),
-                )]);
-                self.base
-                    .passthrough_failure(&message, request_data, Some(detection_info), None)
-            }
-            GuardrailInputType::Response => GuardrailFailure::HttpObject {
-                status: BLOCKED_STATUS,
-                detail: self.response_detail(language, message),
-            },
-        }
-    }
-
-    fn response_detail(&self, language: &str, message: String) -> IndexMap<String, GuardrailValue> {
-        let name = self
-            .base
-            .settings
-            .guardrail_name
-            .clone()
-            .map_or(GuardrailValue::Null, GuardrailValue::Text);
-        [
-            ("error".to_owned(), GuardrailValue::Text(message)),
-            ("guardrail".to_owned(), name),
-            (
+#[must_use]
+pub fn block_failure(
+    guardrail: &BlockCodeExecutionGuardrail,
+    language: &str,
+    input_type: GuardrailInputType,
+    request_data: &BTreeMap<String, GuardrailValue>,
+) -> GuardrailFailure {
+    let message = block_message(language);
+    match input_type {
+        GuardrailInputType::Request => {
+            let detection_info = BTreeMap::from([(
                 "language".to_owned(),
                 GuardrailValue::Text(language.to_owned()),
-            ),
-        ]
-        .into_iter()
-        .collect()
+            )]);
+            guardrail
+                .base
+                .passthrough_failure(&message, request_data, Some(detection_info), None)
+        }
+        GuardrailInputType::Response => GuardrailFailure::HttpObject {
+            status: BLOCKED_STATUS,
+            detail: response_detail(guardrail, language, message),
+        },
     }
+}
+
+fn response_detail(
+    guardrail: &BlockCodeExecutionGuardrail,
+    language: &str,
+    message: String,
+) -> IndexMap<String, GuardrailValue> {
+    let name = guardrail
+        .base
+        .settings
+        .guardrail_name
+        .clone()
+        .map_or(GuardrailValue::Null, GuardrailValue::Text);
+    [
+        ("error".to_owned(), GuardrailValue::Text(message)),
+        ("guardrail".to_owned(), name),
+        (
+            "language".to_owned(),
+            GuardrailValue::Text(language.to_owned()),
+        ),
+    ]
+    .into_iter()
+    .collect()
 }

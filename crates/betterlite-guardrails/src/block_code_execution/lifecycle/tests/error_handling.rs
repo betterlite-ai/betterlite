@@ -1,6 +1,6 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::block_code_execution::error_handling::{
-    EXECUTION_REQUEST_LANGUAGE, block_message,
+    EXECUTION_REQUEST_LANGUAGE, block_failure, block_message,
 };
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
@@ -32,7 +32,12 @@ fn a_response_block_is_a_400_with_the_detail_object() {
     let mut configured = params();
     configured.guardrail_name = Some("mine".to_owned());
     let built = guardrail(configured);
-    let failure = built.block_failure("python", GuardrailInputType::Response, &request_data());
+    let failure = block_failure(
+        &built,
+        "python",
+        GuardrailInputType::Response,
+        &request_data(),
+    );
     let GuardrailFailure::HttpObject { status, detail } = failure else {
         panic!("a response block must be an object failure");
     };
@@ -56,7 +61,8 @@ fn a_response_block_is_a_400_with_the_detail_object() {
 #[test]
 fn a_request_block_passes_through_with_the_violation() {
     let built = guardrail(params());
-    let failure = built.block_failure(
+    let failure = block_failure(
+        &built,
         EXECUTION_REQUEST_LANGUAGE,
         GuardrailInputType::Request,
         &request_data(),

@@ -8,6 +8,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use thiserror::Error;
 
+use super::error_handling::block_failure;
 use super::lifecycle::BlockCodeExecutionGuardrail;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::failure::GuardrailFailure;
@@ -42,68 +43,72 @@ struct Invocation<'invocation> {
     finished: SystemTime,
 }
 
-impl BlockCodeExecutionGuardrail {
-    pub fn apply_guardrail(
-        &self,
-        inputs: GuardrailApiInputs,
-        context: &mut GuardrailRecordContext<'_>,
-        input_type: GuardrailInputType,
-    ) -> Result<GuardrailApiInputs, ApplyGuardrailError> {
-        let started = (self.clock)();
-        let mut detections: Vec<CodeBlockDetection> = Vec::new();
-        let outcome = self.scan_texts(inputs, &*context.request_data, input_type, &mut detections);
-        let finished = (self.clock)();
-        let status = match &outcome {
-            Ok(_inputs) => GuardrailStatus::Success,
-            Err(failure) => status_for_failure(failure),
-        };
-        let exception_text = match &outcome {
-            Ok(_inputs) => String::new(),
-            Err(failure) => failure.to_string(),
-        };
-        let invocation = Invocation {
-            guardrail_name: context.base.settings.guardrail_name.clone(),
-            detections: &detections,
-            exception_text: &exception_text,
-            status,
-            input_type,
-            started,
-            finished,
-        };
-        let recorded = add_guardrail_record(context, invocation_record(&invocation));
-        match (outcome, recorded) {
-            (Ok(processed), Ok(())) => Ok(processed),
-            (Err(failure), Ok(())) => Err(ApplyGuardrailError::Guardrail(failure)),
-            (_result, Err(error)) => Err(ApplyGuardrailError::Record(error)),
-        }
+pub fn apply_guardrail(
+    guardrail: &BlockCodeExecutionGuardrail,
+    inputs: GuardrailApiInputs,
+    context: &mut GuardrailRecordContext<'_>,
+    input_type: GuardrailInputType,
+) -> Result<GuardrailApiInputs, ApplyGuardrailError> {
+    let started = (guardrail.clock)();
+    let mut detections: Vec<CodeBlockDetection> = Vec::new();
+    let outcome = scan_texts(
+        guardrail,
+        inputs,
+        &*context.request_data,
+        input_type,
+        &mut detections,
+    );
+    let finished = (guardrail.clock)();
+    let status = match &outcome {
+        Ok(_inputs) => GuardrailStatus::Success,
+        Err(failure) => status_for_failure(failure),
+    };
+    let exception_text = match &outcome {
+        Ok(_inputs) => String::new(),
+        Err(failure) => failure.to_string(),
+    };
+    let invocation = Invocation {
+        guardrail_name: context.base.settings.guardrail_name.clone(),
+        detections: &detections,
+        exception_text: &exception_text,
+        status,
+        input_type,
+        started,
+        finished,
+    };
+    let recorded = add_guardrail_record(context, invocation_record(&invocation));
+    match (outcome, recorded) {
+        (Ok(processed), Ok(())) => Ok(processed),
+        (Err(failure), Ok(())) => Err(ApplyGuardrailError::Guardrail(failure)),
+        (_result, Err(error)) => Err(ApplyGuardrailError::Record(error)),
     }
+}
 
-    fn scan_texts(
-        &self,
-        mut inputs: GuardrailApiInputs,
-        request_data: &BTreeMap<String, GuardrailValue>,
-        input_type: GuardrailInputType,
-        detections: &mut Vec<CodeBlockDetection>,
-    ) -> Result<GuardrailApiInputs, GuardrailFailure> {
-        if inputs.texts.as_ref().is_none_or(Vec::is_empty) {
-            return Ok(inputs);
-        }
-        let texts = inputs.texts.take().unwrap_or_default();
-        let mut processed = Vec::with_capacity(texts.len());
-        for text in texts {
-            let (new_text, should_raise) = self.scanner.scan_text(&text, detections, input_type);
-            processed.push(new_text);
-            if should_raise {
-                let language = detections
-                    .iter()
-                    .find(|detection| detection.action_taken == CodeBlockActionTaken::Block)
-                    .map_or(UNKNOWN_LANGUAGE, |detection| detection.language.as_str());
-                return Err(self.block_failure(language, input_type, request_data));
-            }
-        }
-        inputs.texts = Some(processed);
-        Ok(inputs)
+fn scan_texts(
+    guardrail: &BlockCodeExecutionGuardrail,
+    mut inputs: GuardrailApiInputs,
+    request_data: &BTreeMap<String, GuardrailValue>,
+    input_type: GuardrailInputType,
+    detections: &mut Vec<CodeBlockDetection>,
+) -> Result<GuardrailApiInputs, GuardrailFailure> {
+    if inputs.texts.as_ref().is_none_or(Vec::is_empty) {
+        return Ok(inputs);
     }
+    let texts = inputs.texts.take().unwrap_or_default();
+    let mut processed = Vec::with_capacity(texts.len());
+    for text in texts {
+        let (new_text, should_raise) = guardrail.scanner.scan_text(&text, detections, input_type);
+        processed.push(new_text);
+        if should_raise {
+            let language = detections
+                .iter()
+                .find(|detection| detection.action_taken == CodeBlockActionTaken::Block)
+                .map_or(UNKNOWN_LANGUAGE, |detection| detection.language.as_str());
+            return Err(block_failure(guardrail, language, input_type, request_data));
+        }
+    }
+    inputs.texts = Some(processed);
+    Ok(inputs)
 }
 
 #[must_use]

@@ -2,8 +2,8 @@ use betterlite_config::sections::content_filter_records::BlockCodeAction;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_guardrails::block_code_execution::lifecycle::{
-    BlockCodeExecutionError, BlockCodeExecutionGuardrail, BlockCodeExecutionParams,
-    DEFAULT_EVENT_HOOKS, DEFAULT_GUARDRAIL_NAME, EventHookSelection, SUPPORTED_EVENT_HOOKS,
+    BlockCodeExecutionError, BlockCodeExecutionGuardrail, DEFAULT_EVENT_HOOKS,
+    DEFAULT_GUARDRAIL_NAME, EventHookSelection, SUPPORTED_EVENT_HOOKS,
 };
 use betterlite_guardrails::guardrail_base::error::GuardrailBaseError;
 use rstest::rstest;

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::block_code_execution::registration::{
-    ApplyGuardrailError, status_for_failure,
+    ApplyGuardrailError, apply_guardrail, status_for_failure,
 };
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyResponseFailure};
@@ -157,7 +157,8 @@ fn a_failing_span_sink_does_not_change_the_outcome() {
         log_target: None,
         sink: &FailingSink,
     };
-    let outcome = built.apply_guardrail(
+    let outcome = apply_guardrail(
+        &built,
         inputs(&["plain text"]),
         &mut context,
         GuardrailInputType::Request,

@@ -11,7 +11,9 @@ use betterlite_guardrails::block_code_execution::initializer::{
 use betterlite_guardrails::block_code_execution::lifecycle::{
     BlockCodeExecutionError, BlockCodeExecutionGuardrail, BlockCodeExecutionParams,
 };
-use betterlite_guardrails::block_code_execution::registration::ApplyGuardrailError;
+use betterlite_guardrails::block_code_execution::registration::{
+    ApplyGuardrailError, apply_guardrail,
+};
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
 use betterlite_guardrails::guardrail_records::error::GuardrailSpanError;
@@ -19,19 +21,19 @@ use betterlite_guardrails::guardrail_records::record::{
     GuardrailInvocationRecord, GuardrailRecordContext, GuardrailSpanSink,
 };
 
-pub fn params() -> BlockCodeExecutionParams {
+pub(crate) fn params() -> BlockCodeExecutionParams {
     BlockCodeExecutionParams::default()
 }
 
-pub fn litellm_params(json: &str) -> LitellmParams {
+pub(crate) fn litellm_params(json: &str) -> LitellmParams {
     decode_litellm_params(json.as_bytes()).expect("valid litellm params")
 }
 
-pub fn guardrail(configured: BlockCodeExecutionParams) -> BlockCodeExecutionGuardrail {
+pub(crate) fn guardrail(configured: BlockCodeExecutionParams) -> BlockCodeExecutionGuardrail {
     BlockCodeExecutionGuardrail::new(configured, true).expect("guardrail builds")
 }
 
-pub fn request_data() -> BTreeMap<String, GuardrailValue> {
+pub(crate) fn request_data() -> BTreeMap<String, GuardrailValue> {
     BTreeMap::from([
         (
             "model".to_owned(),
@@ -41,7 +43,7 @@ pub fn request_data() -> BTreeMap<String, GuardrailValue> {
     ])
 }
 
-pub fn inputs(texts: &[&str]) -> GuardrailApiInputs {
+pub(crate) fn inputs(texts: &[&str]) -> GuardrailApiInputs {
     GuardrailApiInputs {
         texts: Some(texts.iter().map(|text| (*text).to_owned()).collect()),
         images: None,
@@ -54,12 +56,12 @@ pub fn inputs(texts: &[&str]) -> GuardrailApiInputs {
 }
 
 #[derive(Default)]
-pub struct RecordingSink {
+pub(crate) struct RecordingSink {
     records: Mutex<Vec<GuardrailInvocationRecord>>,
 }
 
 impl RecordingSink {
-    pub fn records(&self) -> Vec<GuardrailInvocationRecord> {
+    pub(crate) fn records(&self) -> Vec<GuardrailInvocationRecord> {
         self.records
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -77,7 +79,7 @@ impl GuardrailSpanSink for RecordingSink {
     }
 }
 
-pub fn apply(
+pub(crate) fn apply(
     guardrail: &BlockCodeExecutionGuardrail,
     inputs: GuardrailApiInputs,
     data: &mut BTreeMap<String, GuardrailValue>,
@@ -86,7 +88,7 @@ pub fn apply(
     apply_capturing(guardrail, inputs, data, input_type).0
 }
 
-pub fn apply_capturing(
+pub(crate) fn apply_capturing(
     guardrail: &BlockCodeExecutionGuardrail,
     inputs: GuardrailApiInputs,
     data: &mut BTreeMap<String, GuardrailValue>,
@@ -102,25 +104,27 @@ pub fn apply_capturing(
         log_target: None,
         sink: &sink,
     };
-    let outcome = guardrail.apply_guardrail(inputs, &mut context, input_type);
+    let outcome = apply_guardrail(guardrail, inputs, &mut context, input_type);
     (outcome, sink.records())
 }
 
-pub fn constructor_error<T>(result: Result<T, BlockCodeExecutionError>) -> BlockCodeExecutionError {
+pub(crate) fn constructor_error<T>(
+    result: Result<T, BlockCodeExecutionError>,
+) -> BlockCodeExecutionError {
     match result {
         Ok(_) => panic!("expected a constructor error"),
         Err(error) => error,
     }
 }
 
-pub fn initializer_error<T>(result: Result<T, InitializerError>) -> InitializerError {
+pub(crate) fn initializer_error<T>(result: Result<T, InitializerError>) -> InitializerError {
     match result {
         Ok(_) => panic!("expected an initializer error"),
         Err(error) => error,
     }
 }
 
-pub fn guardrail_entry(name: &str, params: LitellmParams) -> Guardrail {
+pub(crate) fn guardrail_entry(name: &str, params: LitellmParams) -> Guardrail {
     Guardrail {
         guardrail_id: None,
         guardrail_name: name.to_owned(),
@@ -134,8 +138,8 @@ pub fn guardrail_entry(name: &str, params: LitellmParams) -> Guardrail {
 }
 
 #[derive(Default)]
-pub struct FakeRegistry {
-    pub callbacks: Vec<Arc<BlockCodeExecutionGuardrail>>,
+pub(crate) struct FakeRegistry {
+    pub(crate) callbacks: Vec<Arc<BlockCodeExecutionGuardrail>>,
 }
 
 impl CallbackRegistry for FakeRegistry {
@@ -144,7 +148,7 @@ impl CallbackRegistry for FakeRegistry {
     }
 }
 
-pub struct FailingSink;
+pub(crate) struct FailingSink;
 
 impl GuardrailSpanSink for FailingSink {
     fn emit(&self, _record: &GuardrailInvocationRecord) -> Result<(), GuardrailSpanError> {
