@@ -12,8 +12,8 @@ use serde_json::{Value, json};
 
 use super::error::XaiResponsesError;
 use super::{
-    OauthAccess, get_complete_url, map_openai_params, restate_event_usage, restate_reply_usage,
-    supports_native_websocket, validate_environment,
+    Environment, OauthAccess, SUPPORTS_NATIVE_WEBSOCKET, UrlInput, get_complete_url,
+    map_openai_params, restate_event_usage, restate_reply_usage, validate_environment,
 };
 use crate::api::responses_event_records::records::KnownResponseEvent;
 use crate::api::responses_objects::ResponsesApiResponse;
@@ -275,44 +275,52 @@ fn key(text: &str) -> SecretString {
 #[tokio::test]
 async fn the_explicit_key_replaces_an_existing_authorization() {
     let empty = settings(None, None, None, None);
-    let mut oauth = oauth(false);
-    let validated = validate_environment(
-        headers(&[("Authorization", "Bearer old"), ("X-Keep", "yes")]),
-        Some(&key("explicit")),
-        "grok-4",
-        false,
-        &empty,
-        &mut oauth,
-    )
+    let mut login = oauth(false);
+    let validated = validate_environment(Environment {
+        headers: headers(&[("Authorization", "Bearer old"), ("X-Keep", "yes")]),
+        api_key: Some(&key("explicit")),
+        model: "grok-4",
+        use_xai_oauth: false,
+        settings: &empty,
+        oauth: &mut login,
+    })
     .await
     .unwrap();
     assert_eq!(validated.get("Authorization").unwrap(), "Bearer explicit");
     assert_eq!(validated.get("X-Keep").unwrap(), "yes");
-    assert_eq!(oauth.calls, 0);
+    assert_eq!(login.calls, 0);
 }
 
 #[tokio::test]
 async fn the_generic_key_falls_back_before_the_environment() {
     let both = settings(None, Some("generic"), Some("environment"), None);
-    let mut oauth = oauth(false);
-    let validated = validate_environment(Headers::new(), None, "grok-4", false, &both, &mut oauth)
-        .await
-        .unwrap();
-    assert_eq!(validated.get("Authorization").unwrap(), "Bearer generic");
+    let mut first = oauth(false);
+    let with_generic = validate_environment(Environment {
+        headers: Headers::new(),
+        api_key: None,
+        model: "grok-4",
+        use_xai_oauth: false,
+        settings: &both,
+        oauth: &mut first,
+    })
+    .await
+    .unwrap();
+    assert_eq!(with_generic.get("Authorization").unwrap(), "Bearer generic");
+    assert_eq!(first.calls, 0);
     let environment_only = settings(None, None, Some("environment"), None);
-    let mut oauth = oauth(false);
-    let validated = validate_environment(
-        Headers::new(),
-        None,
-        "grok-4",
-        false,
-        &environment_only,
-        &mut oauth,
-    )
+    let mut second = oauth(false);
+    let with_environment = validate_environment(Environment {
+        headers: Headers::new(),
+        api_key: None,
+        model: "grok-4",
+        use_xai_oauth: false,
+        settings: &environment_only,
+        oauth: &mut second,
+    })
     .await
     .unwrap();
     assert_eq!(
-        validated.get("Authorization").unwrap(),
+        with_environment.get("Authorization").unwrap(),
         "Bearer environment"
     );
 }
@@ -320,66 +328,91 @@ async fn the_generic_key_falls_back_before_the_environment() {
 #[tokio::test]
 async fn a_module_key_beats_the_generic_and_environment_keys() {
     let configured = settings(Some("module"), Some("generic"), Some("environment"), None);
-    let mut oauth = oauth(false);
-    let validated = validate_environment(
-        Headers::new(),
-        None,
-        "grok-4",
-        false,
-        &configured,
-        &mut oauth,
-    )
+    let mut login = oauth(false);
+    let validated = validate_environment(Environment {
+        headers: Headers::new(),
+        api_key: None,
+        model: "grok-4",
+        use_xai_oauth: false,
+        settings: &configured,
+        oauth: &mut login,
+    })
     .await
     .unwrap();
     assert_eq!(validated.get("Authorization").unwrap(), "Bearer module");
+    assert_eq!(login.calls, 0);
 }
 
 #[tokio::test]
 async fn a_missing_key_raises_without_a_status() {
     let empty = settings(None, None, None, None);
-    let mut oauth = oauth(false);
-    let error = validate_environment(Headers::new(), None, "grok-4", false, &empty, &mut oauth)
-        .await
-        .unwrap_err();
+    let mut login = oauth(false);
+    let error = validate_environment(Environment {
+        headers: Headers::new(),
+        api_key: None,
+        model: "grok-4",
+        use_xai_oauth: false,
+        settings: &empty,
+        oauth: &mut login,
+    })
+    .await
+    .unwrap_err();
     assert!(matches!(error, XaiResponsesError::MissingApiKey));
     assert_eq!(error.status_code(), None);
-    assert_eq!(oauth.calls, 0);
+    assert_eq!(login.calls, 0);
 }
 
 #[tokio::test]
 async fn an_opted_in_login_supplies_the_key_only_without_one() {
     let empty = settings(None, None, None, None);
-    let mut oauth = oauth(false);
-    let validated = validate_environment(Headers::new(), None, "grok-4", true, &empty, &mut oauth)
-        .await
-        .unwrap();
-    assert_eq!(
-        validated.get("Authorization").unwrap(),
-        "Bearer oauth-token"
-    );
-    assert_eq!(oauth.calls, 1);
-    let mut oauth = oauth(false);
-    let validated = validate_environment(
-        Headers::new(),
-        Some(&key("explicit")),
-        "grok-4",
-        true,
-        &empty,
-        &mut oauth,
-    )
+    let mut login = oauth(false);
+    let with_login = validate_environment(Environment {
+        headers: Headers::new(),
+        api_key: None,
+        model: "grok-4",
+        use_xai_oauth: true,
+        settings: &empty,
+        oauth: &mut login,
+    })
     .await
     .unwrap();
-    assert_eq!(validated.get("Authorization").unwrap(), "Bearer explicit");
-    assert_eq!(oauth.calls, 0);
+    assert_eq!(
+        with_login.get("Authorization").unwrap(),
+        "Bearer oauth-token"
+    );
+    assert_eq!(login.calls, 1);
+    let mut explicit = oauth(false);
+    let with_explicit = validate_environment(Environment {
+        headers: Headers::new(),
+        api_key: Some(&key("explicit")),
+        model: "grok-4",
+        use_xai_oauth: true,
+        settings: &empty,
+        oauth: &mut explicit,
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        with_explicit.get("Authorization").unwrap(),
+        "Bearer explicit"
+    );
+    assert_eq!(explicit.calls, 0);
 }
 
 #[tokio::test]
 async fn an_oauth_failure_is_an_authentication_error() {
     let empty = settings(None, None, None, None);
-    let mut oauth = oauth(true);
-    let error = validate_environment(Headers::new(), None, "grok-4", true, &empty, &mut oauth)
-        .await
-        .unwrap_err();
+    let mut login = oauth(true);
+    let error = validate_environment(Environment {
+        headers: Headers::new(),
+        api_key: None,
+        model: "grok-4",
+        use_xai_oauth: true,
+        settings: &empty,
+        oauth: &mut login,
+    })
+    .await
+    .unwrap_err();
     assert!(matches!(error, XaiResponsesError::Authentication { .. }));
     assert_eq!(error.status_code(), Some(401));
     assert!(!format!("{error:?}").contains("oauth-token"));
@@ -419,14 +452,14 @@ fn the_normal_base_order_prefers_the_closest_setting(
 ) {
     let configured = settings(None, None, None, environment);
     assert_eq!(
-        get_complete_url(
+        get_complete_url(&UrlInput {
             api_base,
             litellm_api_base,
-            None,
-            false,
-            &configured,
-            "https://oauth.example/v1",
-        ),
+            api_key: None,
+            use_xai_oauth: false,
+            settings: &configured,
+            oauth_base: "https://oauth.example/v1",
+        }),
         expected
     );
 }
@@ -435,25 +468,25 @@ fn the_normal_base_order_prefers_the_closest_setting(
 fn oauth_selects_its_own_base_only_without_a_key() {
     let configured = settings(None, Some("generic"), Some("https://env.example/v1"), None);
     assert_eq!(
-        get_complete_url(
-            Some("https://explicit.example/v1"),
-            None,
-            None,
-            true,
-            &configured,
-            "https://oauth.example/v1/",
-        ),
+        get_complete_url(&UrlInput {
+            api_base: Some("https://explicit.example/v1"),
+            litellm_api_base: None,
+            api_key: None,
+            use_xai_oauth: true,
+            settings: &configured,
+            oauth_base: "https://oauth.example/v1/",
+        }),
         "https://oauth.example/v1/responses"
     );
     assert_eq!(
-        get_complete_url(
-            Some("https://explicit.example/v1"),
-            None,
-            None,
-            false,
-            &configured,
-            "https://oauth.example/v1",
-        ),
+        get_complete_url(&UrlInput {
+            api_base: Some("https://explicit.example/v1"),
+            litellm_api_base: None,
+            api_key: None,
+            use_xai_oauth: false,
+            settings: &configured,
+            oauth_base: "https://oauth.example/v1",
+        }),
         "https://explicit.example/v1/responses"
     );
 }
@@ -588,7 +621,7 @@ fn a_generic_event_is_left_alone() {
 
 #[test]
 fn the_xai_responses_capability_is_not_native_websocket() {
-    assert!(!supports_native_websocket());
+    assert!(!SUPPORTS_NATIVE_WEBSOCKET);
 }
 
 #[test]

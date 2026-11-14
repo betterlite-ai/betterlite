@@ -1,8 +1,9 @@
 pub mod error;
 
 use std::future::Future;
+use std::slice::from_ref;
 
-use betterlite_config::sections::xai_identity::Settings;
+use betterlite_config::sections::xai_identity::Settings as IdentitySettings;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
@@ -17,6 +18,7 @@ use crate::xai_tokens::error::XaiOauthError;
 use crate::xai_usage::xai_reported_cost_in_usd;
 use error::XaiResponsesError;
 
+pub const SUPPORTS_NATIVE_WEBSOCKET: bool = false;
 const DEFAULT_API_BASE: &str = "https://api.x.ai/v1";
 const WEB_SEARCH_TYPE: &str = "web_search";
 const X_SEARCH_TYPE: &str = "x_search";
@@ -44,7 +46,7 @@ pub fn map_openai_params(params: &mut Object) {
     let Some(tools) = params.get("tools") else {
         return;
     };
-    if !truthy(tools) {
+    if !present(tools) {
         return;
     }
     let transformed = tools_of(tools)
@@ -54,12 +56,12 @@ pub fn map_openai_params(params: &mut Object) {
     params.insert(String::from("tools"), Value::Array(transformed));
 }
 
-// Python's truthiness, because a non-list tools value is normalized only when it is truthy
-fn truthy(value: &Value) -> bool {
+// a value counts as set the way Python's `if` reads it, since a non-list tools value is normalized only then
+fn present(value: &Value) -> bool {
     match value {
         Value::Null => false,
         Value::Bool(flag) => *flag,
-        Value::Number(number) => number.as_f64().is_some_and(|number| number != 0.0),
+        Value::Number(number) => number.as_f64().is_some_and(|float| float != 0.0_f64),
         Value::String(text) => !text.is_empty(),
         Value::Array(items) => !items.is_empty(),
         Value::Object(fields) => !fields.is_empty(),
@@ -69,7 +71,9 @@ fn truthy(value: &Value) -> bool {
 fn tools_of(value: &Value) -> &[Value] {
     match value {
         Value::Array(items) => items,
-        other => std::slice::from_ref(other),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => {
+            from_ref(value)
+        }
     }
 }
 
@@ -80,12 +84,12 @@ fn transform_tool(tool: &Value) -> Value {
     match fields.get("type").and_then(Value::as_str) {
         Some(CODE_INTERPRETER_TYPE) => {
             tracing::debug!("XAI: Transforming code_interpreter tool, removing container field");
-            let mut tool = Object::new();
-            tool.insert(
+            let mut stripped = Object::new();
+            stripped.insert(
                 String::from("type"),
                 Value::String(String::from(CODE_INTERPRETER_TYPE)),
             );
-            Value::Object(tool)
+            Value::Object(stripped)
         }
         Some(WEB_SEARCH_TYPE) => {
             tracing::debug!("XAI: Transforming web_search tool to XAI format");
@@ -147,28 +151,37 @@ fn transform_x_search_tool(fields: &Object) -> Value {
     Value::Object(tool)
 }
 
+pub struct Environment<'request, A> {
+    pub headers: Headers,
+    pub api_key: Option<&'request SecretString>,
+    pub model: &'request str,
+    pub use_xai_oauth: bool,
+    pub settings: &'request IdentitySettings,
+    pub oauth: &'request mut A,
+}
+
+// XAIResponsesAPIConfig.validate_environment: B1402's legacy key order, then B1400's login when opted in
 pub async fn validate_environment<A>(
-    headers: Headers,
-    api_key: Option<&SecretString>,
-    model: &str,
-    use_xai_oauth: bool,
-    settings: &Settings,
-    oauth: &mut A,
+    environment: Environment<'_, A>,
 ) -> Result<Headers, XaiResponsesError>
 where
     A: OauthAccess + ?Sized,
 {
-    let mut resolved = get_api_key(api_key, KeyOrder::GenericBeforeEnvironment, settings);
-    if resolved.is_none() && use_xai_oauth {
-        resolved = Some(oauth.access_token().await.map_err(|source| {
+    let mut resolved = get_api_key(
+        environment.api_key,
+        KeyOrder::GenericBeforeEnvironment,
+        environment.settings,
+    );
+    if resolved.is_none() && environment.use_xai_oauth {
+        resolved = Some(environment.oauth.access_token().await.map_err(|source| {
             XaiResponsesError::Authentication {
-                model: model.to_owned(),
+                model: environment.model.to_owned(),
                 source,
             }
         })?);
     }
     let key = resolved.ok_or(XaiResponsesError::MissingApiKey)?;
-    let mut headers = headers;
+    let mut headers = environment.headers;
     headers.insert(
         String::from("Authorization"),
         format!("Bearer {}", key.expose_secret()),
@@ -176,23 +189,30 @@ where
     Ok(headers)
 }
 
-// LiteLLM's get_complete_url: OAuth picks its own base only when it is opted into and no key resolved
+pub struct UrlInput<'request> {
+    pub api_base: Option<&'request str>,
+    pub litellm_api_base: Option<&'request str>,
+    pub api_key: Option<&'request SecretString>,
+    pub use_xai_oauth: bool,
+    pub settings: &'request IdentitySettings,
+    pub oauth_base: &'request str,
+}
+
+// XAIResponsesAPIConfig.get_complete_url: OAuth picks its own base only when it is opted into and no key resolved
 #[must_use]
-pub fn get_complete_url(
-    api_base: Option<&str>,
-    litellm_api_base: Option<&str>,
-    api_key: Option<&SecretString>,
-    use_xai_oauth: bool,
-    settings: &Settings,
-    oauth_base: &str,
-) -> String {
-    let resolved = get_api_key(api_key, KeyOrder::GenericBeforeEnvironment, settings);
-    let base = if use_xai_oauth && resolved.is_none() {
-        oauth_base
+pub fn get_complete_url(input: &UrlInput<'_>) -> String {
+    let resolved = get_api_key(
+        input.api_key,
+        KeyOrder::GenericBeforeEnvironment,
+        input.settings,
+    );
+    let base = if input.use_xai_oauth && resolved.is_none() {
+        input.oauth_base
     } else {
-        api_base
-            .or(litellm_api_base)
-            .or(settings.api_base.as_deref())
+        input
+            .api_base
+            .or(input.litellm_api_base)
+            .or(input.settings.api_base.as_deref())
             .unwrap_or(DEFAULT_API_BASE)
     };
     format!("{}/responses", base.trim_end_matches('/'))
@@ -231,11 +251,6 @@ pub fn restate_event_usage(event: &mut DecodedStreamResponse) {
     {
         restate_response_usage(&mut fields.response);
     }
-}
-
-#[must_use]
-pub const fn supports_native_websocket() -> bool {
-    false
 }
 
 mod tests;
