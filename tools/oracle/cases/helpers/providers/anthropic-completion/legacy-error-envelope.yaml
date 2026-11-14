@@ -1,0 +1,11 @@
+kind: helper
+name: legacy-error-envelope
+call:
+  anthropic_completion:
+    function: error
+    cases:
+      - {message: bad request, status_code: 400, headers: {}}
+      - {message: slow down, status_code: 429, headers: {retry-after: "5"}}
+      - {message: upstream down, status_code: 529, headers: {x-request-id: abc}}
+env: {}
+compare: {ignore: []}

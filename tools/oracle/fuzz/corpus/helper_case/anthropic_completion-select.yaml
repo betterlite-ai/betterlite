@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-completion-select
+call: {anthropic_completion: {function: select, models: [claude-2, claude-instant-1, claude-2.1]}}
+env: {}
+compare: {ignore: []}

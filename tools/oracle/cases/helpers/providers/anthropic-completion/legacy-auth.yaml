@@ -1,0 +1,12 @@
+kind: helper
+name: legacy-auth
+call:
+  anthropic_completion:
+    function: auth
+    cases:
+      - {api_key: sk-legacy, headers: {}}
+      - {api_key: sk-legacy, headers: {accept: text/plain, x-custom: kept}}
+      - {api_key: "", headers: {}}
+      - {api_key: null, headers: {x-custom: kept}}
+env: {}
+compare: {ignore: []}
