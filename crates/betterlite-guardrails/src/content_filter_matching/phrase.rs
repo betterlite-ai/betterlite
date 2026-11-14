@@ -7,7 +7,7 @@ use super::ContentFilterMatchingError;
 use super::category_exception_present;
 use super::global_exception_present;
 
-pub(super) fn check(
+pub fn check_phrase_patterns(
     categories: &CategoryLoadResult,
     text: &str,
     exceptions: &[String],

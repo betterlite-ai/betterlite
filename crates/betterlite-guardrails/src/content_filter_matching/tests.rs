@@ -9,10 +9,10 @@ use betterlite_config::sections::content_filter_records::ContentFilterAction;
 use betterlite_config::sections::content_filter_records::category_types::ConditionalCategoryConfig;
 use rstest::rstest;
 
-use super::{
-    CategoryMatch, ContentFilterMatchingError, check_category_keywords,
-    check_conditional_categories, check_phrase_patterns,
-};
+use super::conditional::check_conditional_categories;
+use super::keywords::check_category_keywords;
+use super::phrase::check_phrase_patterns;
+use super::{CategoryMatch, ContentFilterMatchingError};
 
 type KeywordEntry = (String, String, ContentFilterAction);
 type KeywordMap = BTreeMap<String, KeywordEntry>;

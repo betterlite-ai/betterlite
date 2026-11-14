@@ -7,16 +7,19 @@ use super::ContentFilterMatchingError;
 use super::category_exception_present;
 use super::global_exception_present;
 
-pub(super) fn check(
-    categories: &CategoryLoadResult,
+pub fn check_conditional_categories(
     text: &str,
     exceptions: &[String],
+    categories: &CategoryLoadResult,
 ) -> Result<Option<CategoryMatch>, ContentFilterMatchingError> {
     let text_lower = text.to_lowercase();
     if global_exception_present(exceptions, &text_lower) {
         return Ok(None);
     }
-    let sentences = trimmed_sentences(&text_lower);
+    let sentences = text_lower
+        .split(['.', '!', '?'])
+        .map(str::trim)
+        .collect::<Vec<_>>();
     for (category_name, config) in &categories.conditional_categories {
         if category_exception_present(categories, category_name, &text_lower) {
             continue;
@@ -26,10 +29,6 @@ pub(super) fn check(
         }
     }
     Ok(None)
-}
-
-fn trimmed_sentences(text: &str) -> Vec<&str> {
-    text.split(['.', '!', '?']).map(str::trim).collect()
 }
 
 fn match_conditional_category(

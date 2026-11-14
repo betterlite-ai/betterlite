@@ -8,7 +8,7 @@ use super::category_exception_present;
 use super::global_exception_present;
 use crate::pattern_matching::masking::keyword_pattern;
 
-pub(super) fn check(
+pub fn check_category_keywords(
     categories: &CategoryLoadResult,
     text: &str,
     exceptions: &[String],
