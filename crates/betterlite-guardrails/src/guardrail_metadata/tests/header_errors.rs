@@ -13,5 +13,5 @@ use crate::guardrail_metadata::logging_caching_headers;
 #[case::policy_source_reasons_must_be_strings(r#"{"metadata": {"policy_sources": {"p1": 1}}}"#)]
 #[case::semantic_similarity_must_be_a_number(r#"{"metadata": {"semantic-similarity": "high"}}"#)]
 fn guardrail_metadata_cases(#[case] request: &str) {
-    assert!(logging_caching_headers(&data(request)).is_err());
+    logging_caching_headers(&data(request)).unwrap_err();
 }

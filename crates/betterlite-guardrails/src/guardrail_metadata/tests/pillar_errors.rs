@@ -9,5 +9,5 @@ use crate::guardrail_metadata::logging_caching_headers;
     r#"{"metadata": {"_pillar_response_headers_trusted": true, "pillar_flagged": "yes"}}"#
 )]
 fn guardrail_metadata_cases(#[case] request: &str) {
-    assert!(logging_caching_headers(&data(request)).is_err());
+    logging_caching_headers(&data(request)).unwrap_err();
 }

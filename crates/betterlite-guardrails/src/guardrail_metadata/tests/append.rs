@@ -16,8 +16,7 @@ const RECORD: &str = r#"{"guardrail_name":"model-armor","guardrail_provider":"mo
 #[case::other_call_details_are_kept(Some(r#"{"keep": 1, "standard_logging_object": {"model": "m"}}"#),Some(format!(r#"{{"keep": 1, "standard_logging_object": {{"model": "m", "guardrail_information": [{RECORD}]}}}}"#)))]
 fn guardrail_metadata_cases(#[case] start: Option<&str>, #[case] expected: Option<String>) {
     let mut details = start.map(data);
-    let outcome = append_guardrail_response(details.as_mut(), &record());
-    assert!(outcome.is_ok());
+    append_guardrail_response(details.as_mut(), &record()).unwrap();
     match expected {
         None => assert!(details.is_none()),
         Some(text) => assert_json(&details.unwrap(), &text),

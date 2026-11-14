@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
@@ -24,13 +25,11 @@ pub(super) fn value(source: &str) -> GuardrailValue {
 
 pub(super) fn assert_json<T>(actual: &T, expected_json: &str)
 where
-    T: DeserializeOwned + Serialize,
+    T: DeserializeOwned + Serialize + PartialEq + Debug,
 {
+    let reparsed: T = serde_json::from_str(&serde_json::to_string(actual).unwrap()).unwrap();
     let expected: T = serde_json::from_str(expected_json).unwrap();
-    assert_eq!(
-        serde_json::to_value(actual).unwrap(),
-        serde_json::to_value(expected).unwrap()
-    );
+    assert_eq!(reparsed, expected);
 }
 
 pub(super) fn headers(request_data: &RequestData) -> Vec<(String, String)> {

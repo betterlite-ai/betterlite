@@ -6,6 +6,7 @@ from litellm.types.guardrails import GuardrailEventHooks
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 JSON: Final = TypeAdapter(JsonValue)
+REQUEST_DATA: Final = TypeAdapter(dict[str, JsonValue])
 
 
 class RecordScanFunction(Protocol):
@@ -72,6 +73,25 @@ class AppendInput(TypedDict):
     record: dict[str, JsonValue]
 
 
+# The oracle sorts input keys, while add_guardrail_scan_id builds entries in this field order
+class ScanEntryRecord(BaseModel):
+    guardrail: str | None
+    stage: str
+    provider: str
+    scan_id: str
+
+
+class MetadataBucket(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    guardrail_scan_metadata: list[ScanEntryRecord] | None = None
+
+
+class RequestRecord(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    metadata: MetadataBucket | None = None
+    litellm_metadata: MetadataBucket | None = None
+
+
 class LoggingRecord(Logging):
     model_call_details: dict[str, JsonValue]
 
@@ -92,8 +112,12 @@ def record_scan_answer(input_value: RecordScanInput) -> dict[str, JsonValue]:
 
 
 def headers_answer(input_value: HeadersInput) -> JsonValue:
+    request = RequestRecord.model_validate(input_value["request_data"])
+    request_data = REQUEST_DATA.validate_json(
+        request.model_dump_json(exclude_unset=True)
+    )
     return JSON.validate_python(
-        CALLBACK_UTILS.get_logging_caching_headers(dict(input_value["request_data"]))
+        CALLBACK_UTILS.get_logging_caching_headers(request_data)
     )
 
 

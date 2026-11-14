@@ -10,7 +10,6 @@ use crate::guardrail_metadata::append_guardrail_response;
 )]
 fn guardrail_metadata_cases(#[case] start: &str) {
     let mut details = data(start);
-    let outcome = append_guardrail_response(Some(&mut details), &record());
-    assert!(outcome.is_err());
+    append_guardrail_response(Some(&mut details), &record()).unwrap_err();
     assert_json(&details, start);
 }
