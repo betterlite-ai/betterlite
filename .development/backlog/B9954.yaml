@@ -1,13 +1,13 @@
 id: B9954
 milestone: R2 bug fixes
 title: Prompt API cache keeps at most 1000 entries
-status: todo
+status: done
 depends_on: [B4057]
 file: tasks/B9954-prompt-cache-cap.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1871
