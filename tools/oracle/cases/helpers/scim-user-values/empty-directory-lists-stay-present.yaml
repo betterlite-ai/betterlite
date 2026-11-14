@@ -1,0 +1,17 @@
+kind: helper
+name: empty-directory-lists-stay-present
+call:
+  scim_user_values:
+    user:
+      schemas:
+        - urn:ietf:params:scim:schemas:core:2.0:User
+      userName: dave
+      groups: []
+      entitlements: []
+      roles: []
+    admin_group: team-admins
+    default_role: null
+    active: false
+env: {}
+compare:
+  ignore: []
