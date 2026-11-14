@@ -85,7 +85,7 @@ fn a_paid_tier_accepts_a_positive_price() {
     let price = text("0.5");
     assert_eq!(
         resolve_price(Some(&price), Some(CostTier::Paid), &NoSecrets).unwrap(),
-        Some(Decimal::try_from(0.5).unwrap())
+        Some(Decimal::try_from(0.5_f64).unwrap())
     );
 }
 
@@ -184,7 +184,7 @@ fn a_padded_text_price_is_trimmed() {
     let price = text("  0.5  ");
     assert_eq!(
         resolve_price(Some(&price), None, &NoSecrets).unwrap(),
-        Some(Decimal::try_from(0.5).unwrap())
+        Some(Decimal::try_from(0.5_f64).unwrap())
     );
 }
 
@@ -233,6 +233,6 @@ fn the_guardrail_stores_the_resolved_tier_and_price() {
     assert_eq!(guardrail.cost_tier, Some(CostTier::Paid));
     assert_eq!(
         guardrail.price_per_1000_text_records,
-        Some(Decimal::try_from(0.25).unwrap())
+        Some(Decimal::try_from(0.25_f64).unwrap())
     );
 }

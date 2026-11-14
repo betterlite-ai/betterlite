@@ -24,15 +24,15 @@ impl BillingUsage {
     // Azure bills each submitted chunk: one request, its characters, and ceil(characters / 1000) records.
     pub fn record_chunk(&mut self, chunk: &str) {
         let length = chunk.chars().count();
-        let records = length.div_ceil(TEXT_RECORD_LENGTH);
         let characters = i64::try_from(length).unwrap_or(i64::MAX);
-        let records = i64::try_from(records).unwrap_or(i64::MAX);
+        let records = i64::try_from(length.div_ceil(TEXT_RECORD_LENGTH)).unwrap_or(i64::MAX);
         self.requests = self.requests.saturating_add(1);
         self.input_characters = self.input_characters.saturating_add(characters);
         self.text_records = self.text_records.saturating_add(records);
     }
 
     // None is LiteLLM's None stash: an invocation that scanned nothing records no usage at all.
+    #[must_use]
     pub fn into_units(self) -> Option<BTreeMap<String, i64>> {
         if self.requests == 0 {
             return None;

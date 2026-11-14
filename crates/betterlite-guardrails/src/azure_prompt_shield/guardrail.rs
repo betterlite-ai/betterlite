@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -189,31 +188,29 @@ impl AzurePromptShieldGuardrail {
             return Ok(PreCallReturn::Data);
         }
         let user_prompt = get_user_prompt_from_request(data, call_type)?;
-        let Some(user_prompt) = user_prompt.filter(|prompt| !prompt.is_empty()) else {
+        let Some(prompt) = user_prompt.filter(|prompt| !prompt.is_empty()) else {
             tracing::warn!("Azure Prompt Shield: No user prompt found");
             return Ok(PreCallReturn::None);
         };
-        tracing::debug!("Azure Prompt Shield: User prompt: {user_prompt}");
-        self.async_make_request(&user_prompt, usage).await?;
+        tracing::debug!("Azure Prompt Shield: User prompt: {prompt}");
+        self.async_make_request(&prompt, usage).await?;
         Ok(PreCallReturn::None)
     }
 }
 
 impl GuardrailContract for AzurePromptShieldGuardrail {
-    fn apply_guardrail(
+    async fn apply_guardrail(
         &self,
         inputs: GuardrailApiInputs,
         _request_data: &mut BTreeMap<String, GuardrailValue>,
         _input_type: GuardrailInputType,
         _logging_obj: Option<&mut GuardrailLogTarget>,
-    ) -> impl Future<Output = Result<GuardrailApiInputs, GuardrailFailure>> + Send {
-        async move {
-            let mut usage = BillingUsage::default();
-            self.scan_inputs(&inputs, &mut usage)
-                .await
-                .map_err(GuardrailFailure::from)?;
-            Ok(inputs)
-        }
+    ) -> Result<GuardrailApiInputs, GuardrailFailure> {
+        let mut usage = BillingUsage::default();
+        self.scan_inputs(&inputs, &mut usage)
+            .await
+            .map_err(GuardrailFailure::from)?;
+        Ok(inputs)
     }
 
     fn get_supported_event_hooks(&self) -> Option<Vec<GuardrailEventHooks>> {

@@ -49,7 +49,7 @@ fn an_update_replaces_credentials_pricing_version_and_timeout() {
     assert_eq!(guardrail.cost_tier, Some(CostTier::Paid));
     assert_eq!(
         guardrail.price_per_1000_text_records,
-        Some(Decimal::try_from(0.5).unwrap())
+        Some(Decimal::try_from(0.5_f64).unwrap())
     );
     assert!(guardrail.base.settings.default_on);
 }
@@ -92,7 +92,7 @@ fn an_invalid_update_leaves_the_guardrail_untouched(#[case] update: &str, #[case
     assert_eq!(guardrail.cost_tier, Some(CostTier::Paid));
     assert_eq!(
         guardrail.price_per_1000_text_records,
-        Some(Decimal::try_from(0.25).unwrap())
+        Some(Decimal::try_from(0.25_f64).unwrap())
     );
 }
 

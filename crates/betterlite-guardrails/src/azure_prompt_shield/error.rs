@@ -106,8 +106,12 @@ impl PromptShieldError {
 impl From<PromptShieldError> for GuardrailFailure {
     fn from(error: PromptShieldError) -> Self {
         let status = error.status_code().as_u16();
-        match error.detail() {
-            Some(detail) => {
+        error.detail().map_or_else(
+            || Self::Http {
+                status,
+                detail: error.to_string(),
+            },
+            |detail| {
                 let mut object = IndexMap::new();
                 object.insert(
                     "error".to_owned(),
@@ -121,12 +125,8 @@ impl From<PromptShieldError> for GuardrailFailure {
                     status,
                     detail: object,
                 }
-            }
-            None => Self::Http {
-                status,
-                detail: error.to_string(),
             },
-        }
+        )
     }
 }
 

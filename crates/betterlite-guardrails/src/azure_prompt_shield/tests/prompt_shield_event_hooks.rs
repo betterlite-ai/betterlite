@@ -7,7 +7,7 @@ use super::support::{
 };
 use crate::azure_prompt_shield::guardrail::SUPPORTED_EVENT_HOOKS;
 use crate::generic_guardrail_contracts::GuardrailInputType;
-use crate::guardrail_base::contract::GuardrailContract;
+use crate::guardrail_base::contract::GuardrailContract as _;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 
@@ -162,6 +162,13 @@ async fn apply_guardrail_blocks_an_attack_with_a_400() {
                 Some(text(r#"Attack detected: {"attackDetected":true}"#))
             );
         }
-        other => panic!("expected an object detail, got {other:?}"),
+        other @ (GuardrailFailure::ModifyResponse(_)
+        | GuardrailFailure::GuardrailRaised { .. }
+        | GuardrailFailure::BlockedPii { .. }
+        | GuardrailFailure::SensitiveDataRoute(_)
+        | GuardrailFailure::Http { .. }
+        | GuardrailFailure::Other(_)) => {
+            panic!("expected an object detail, got {other:?}")
+        }
     }
 }

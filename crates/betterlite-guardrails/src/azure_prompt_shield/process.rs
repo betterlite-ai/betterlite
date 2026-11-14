@@ -53,7 +53,7 @@ fn error_response(
     }
 }
 
-fn error_status(failure: &GuardrailFailure) -> GuardrailStatus {
+const fn error_status(failure: &GuardrailFailure) -> GuardrailStatus {
     if failure.is_intervention() {
         GuardrailStatus::GuardrailIntervened
     } else {

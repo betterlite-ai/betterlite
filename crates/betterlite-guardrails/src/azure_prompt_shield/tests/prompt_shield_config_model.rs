@@ -1,4 +1,4 @@
-use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity;
+use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity as _;
 use rust_decimal::Decimal;
 use secrecy::ExposeSecret as _;
 
@@ -29,7 +29,7 @@ fn the_config_model_reads_the_billing_fields() {
     assert_eq!(model.cost_tier.as_deref(), Some("paid"));
     assert_eq!(
         model.price_per_1000_text_records,
-        Some(Decimal::try_from(0.5).unwrap())
+        Some(Decimal::try_from(0.5_f64).unwrap())
     );
 }
 

@@ -57,10 +57,7 @@ async fn a_long_prompt_is_split_at_word_boundaries_and_each_chunk_is_billed() {
             "word ".repeat(2000)
         )
     );
-    assert_eq!(
-        seen.get(1).unwrap().body,
-        r#"{"userPrompt":"word ","documents":[]}"#
-    );
+    assert_eq!(seen[1].body, r#"{"userPrompt":"word ","documents":[]}"#);
     assert_eq!(usage.into_units(), Some(counts(2, 10005, 11)));
 }
 
@@ -120,7 +117,7 @@ async fn a_response_without_the_attack_flag_is_clean() {
 async fn a_multibyte_prompt_is_counted_in_characters_not_bytes() {
     let server = mock(vec![CLEAN]).await;
     let guardrail = guardrail(&server.base);
-    let prompt = "é".repeat(1001);
+    let prompt = "\u{e9}".repeat(1001);
     let mut usage = BillingUsage::default();
     guardrail
         .async_make_request(&prompt, &mut usage)

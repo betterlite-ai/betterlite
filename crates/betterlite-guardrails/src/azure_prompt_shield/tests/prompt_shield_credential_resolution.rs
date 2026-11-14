@@ -90,7 +90,7 @@ fn startup_resolves_the_key_base_and_pricing_references() {
     assert_eq!(guardrail.cost_tier, Some(CostTier::Paid));
     assert_eq!(
         guardrail.price_per_1000_text_records,
-        Some(Decimal::try_from(0.75).unwrap())
+        Some(Decimal::try_from(0.75_f64).unwrap())
     );
 }
 

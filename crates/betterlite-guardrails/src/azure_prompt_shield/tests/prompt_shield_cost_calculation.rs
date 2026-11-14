@@ -36,10 +36,7 @@ fn a_missing_price_tracks_usage_without_a_cost() {
         .unwrap();
     assert_eq!(detail.guardrail_cost, None);
     assert_eq!(detail.guardrail_cost_in_spend, None);
-    assert_eq!(
-        detail.guardrail_usage.as_ref().map(|units| units.len()),
-        Some(3)
-    );
+    assert_eq!(detail.guardrail_usage.as_ref().map(BTreeMap::len), Some(3));
 }
 
 #[test]
@@ -71,11 +68,7 @@ fn a_missing_text_record_count_bills_zero(
 ) {
     let units = BTreeMap::from([("requests".to_owned(), 3_i64)]);
     let cost = azure_prompt_shield_cost(&units, cost_tier.map(CostTier::wire_name), price).unwrap();
-    let expected = if cost_tier == Some(CostTier::Free) || price.is_some() {
-        Some(Decimal::ZERO)
-    } else {
-        None
-    };
+    let expected = (cost_tier == Some(CostTier::Free) || price.is_some()).then_some(Decimal::ZERO);
     assert_eq!(cost, expected);
 }
 

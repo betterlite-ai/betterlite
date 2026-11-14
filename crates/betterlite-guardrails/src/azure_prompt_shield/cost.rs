@@ -29,10 +29,10 @@ pub fn resolve_cost_tier(
     raw: Option<&GuardrailValue>,
     lookup: &dyn SecretLookup,
 ) -> Result<Option<CostTier>, PromptShieldError> {
-    let Some(raw) = raw else {
+    let Some(configured) = raw else {
         return Ok(None);
     };
-    let resolved = resolved_secret_value(raw, lookup)?;
+    let resolved = resolved_secret_value(configured, lookup)?;
     match &resolved {
         GuardrailValue::Null => Ok(None),
         GuardrailValue::Text(text) if text.trim().is_empty() => Ok(None),
@@ -74,18 +74,20 @@ pub fn resolve_price(
 pub fn price_from_value(
     value: Option<&GuardrailValue>,
 ) -> Result<Option<Decimal>, PromptShieldError> {
-    let Some(value) = value else {
+    let Some(configured) = value else {
         return Ok(None);
     };
-    match value {
+    match configured {
         GuardrailValue::Null => Ok(None),
         GuardrailValue::Text(text) => price_from_text(text),
-        GuardrailValue::SignedInteger(amount) => checked_price(Decimal::from(*amount), value),
-        GuardrailValue::UnsignedInteger(amount) => checked_price(Decimal::from(*amount), value),
+        GuardrailValue::SignedInteger(amount) => checked_price(Decimal::from(*amount), configured),
+        GuardrailValue::UnsignedInteger(amount) => {
+            checked_price(Decimal::from(*amount), configured)
+        }
         GuardrailValue::Decimal(amount) => float_price(*amount),
         GuardrailValue::Boolean(_) | GuardrailValue::Array(_) | GuardrailValue::Object(_) => {
             Err(PromptShieldError::PriceNotANumber {
-                value: describe_value(value),
+                value: describe_value(configured),
                 source: None,
             })
         }
@@ -110,7 +112,7 @@ fn price_from_text(text: &str) -> Result<Option<Decimal>, PromptShieldError> {
 
 // LiteLLM's math.isfinite and price < 0 checks for a value the config already delivered as a float.
 fn float_price(amount: f64) -> Result<Option<Decimal>, PromptShieldError> {
-    if !amount.is_finite() || amount < 0.0 {
+    if !amount.is_finite() || amount < 0.0_f64 {
         return Err(PromptShieldError::InvalidPrice {
             value: describe_value(&GuardrailValue::Decimal(amount)),
             source: None,

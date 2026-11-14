@@ -33,9 +33,9 @@ pub(crate) const ATTACK: &str =
     r#"{"userPromptAnalysis":{"attackDetected":true},"documentsAnalysis":[]}"#;
 pub(crate) const RECORDS: &str = "standard_logging_guardrail_information";
 pub(crate) const NOW: RecordTiming = RecordTiming {
-    start_time: Some(1.0),
-    end_time: Some(1.5),
-    duration: Some(0.5),
+    start_time: Some(1.0_f64),
+    end_time: Some(1.5_f64),
+    duration: Some(0.5_f64),
 };
 
 pub(crate) fn text(value: &str) -> GuardrailValue {
@@ -121,7 +121,9 @@ pub(crate) fn guardrail(api_base: &str) -> AzurePromptShieldGuardrail {
 
 pub(crate) fn usage_with(chunks: &[&str]) -> BillingUsage {
     let mut usage = BillingUsage::default();
-    chunks.iter().for_each(|chunk| usage.record_chunk(chunk));
+    for chunk in chunks {
+        usage.record_chunk(chunk);
+    }
     usage
 }
 
@@ -195,7 +197,13 @@ pub(crate) fn stored(
         .iter()
         .map(|entry| match plain(entry.clone()) {
             GuardrailValue::Object(fields) => fields,
-            other => panic!("a record is an object, got {other:?}"),
+            other @ (GuardrailValue::Null
+            | GuardrailValue::Boolean(_)
+            | GuardrailValue::SignedInteger(_)
+            | GuardrailValue::UnsignedInteger(_)
+            | GuardrailValue::Decimal(_)
+            | GuardrailValue::Text(_)
+            | GuardrailValue::Array(_)) => panic!("a record is an object, got {other:?}"),
         })
         .collect()
 }
