@@ -1,3 +1,4 @@
+import asyncio
 import sys
 from types import ModuleType
 from typing import Annotated, NotRequired, TypedDict, cast
@@ -54,6 +55,6 @@ def run(input_value: Input) -> dict[str, JsonValue]:
     counter = GoogleAIStudioTokenCounter()
     calls: list[JsonValue] = []
     for call in input_value["calls"]:
-        cleaned, url = (cast(JsonValue, counter._clean_contents_for_gemini_api(call["contents"])), counter._construct_url(call["model"], call.get("api_base")))  # noqa: SLF001, E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/count_tokens/handler.py#L16-L54
+        cleaned, url = (cast(JsonValue, counter._clean_contents_for_gemini_api(call["contents"])), asyncio.run(counter.validate_environment(api_base=call.get("api_base"), model=call["model"]))[1])  # type: ignore[misc]  # noqa: SLF001, E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/count_tokens/handler.py#L16-L78
         calls.append({"contents": cleaned, "original": call["contents"], "url": url})
     return {"calls": calls}
