@@ -1,0 +1,15 @@
+kind: helper
+name: genai-stream-upstream-error
+call:
+  b3487:
+    mode: async
+    provider: gemini
+    model: gemini-2.5-flash
+    lines:
+      - 'data: {"candidates":[{"content":{"parts":[{"text":"partial"}]}}]}'
+      - ''
+      - 'event: error'
+      - 'data: {"error":{"code":503,"message":"The model is overloaded. Please try again later.","status":"UNAVAILABLE"}}'
+      - ''
+env: {}
+compare: {ignore: []}
