@@ -14,12 +14,18 @@ pub fn transform_image_edit_response(
     serde_json::from_slice::<Json>(body).map_err(|_invalid| {
         ImageEditError::OpenAi(OpenAiLikeError {
             status_code: status,
-            // httpx decodes a body with errors="replace"; this crate names the bytes it cannot read
-            message: str::from_utf8(body).map_or_else(
-                |_invalid| format!("{} bytes that are not UTF-8", body.len()),
-                str::to_owned,
-            ),
+            message: lossy_text(body),
         })
     })?;
     decode_image_reply(body, created_seconds).map_err(ImageEditError::Reply)
+}
+
+// httpx decodes raw_response.text with errors="replace", so the diagnostic keeps its U+FFFD text
+fn lossy_text(body: &[u8]) -> String {
+    let mut text = String::with_capacity(body.len());
+    for part in body.utf8_chunks() {
+        text.push_str(part.valid());
+        text.extend((!part.invalid().is_empty()).then_some('\u{fffd}'));
+    }
+    text
 }
