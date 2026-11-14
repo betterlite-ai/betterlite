@@ -6,21 +6,26 @@ from typing import Final, Literal, NotRequired, Protocol, TypedDict
 import httpx
 import litellm
 from litellm.caching.llm_caching_handler import LLMClientCache
+from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.llms.together_ai import cost_calculator
 from litellm.llms.together_ai.chat.transformation import TogetherAIChatConfig
-from litellm.llms.together_ai.completion.transformation import (
-    TogetherAITextCompletionConfig,
-)
 from litellm.llms.together_ai.rerank.handler import TogetherAIRerank
 from litellm.types.rerank import RerankResponse
 from litellm.types.utils import CallTypes
-from openai import APIStatusError
+from openai import APIStatusError, InternalServerError, OpenAI
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
 INTEGERS: Final = "TogetherAI does not support integers as input"
 MODEL: Final = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
 OBJECT = TypeAdapter(dict[str, JsonValue])
+USAGE: dict[str, JsonValue] = {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+CHOICE: dict[str, JsonValue] = {"index": 0, "finish_reason": "stop"}
+CHAT_REPLY: dict[str, JsonValue] = {
+    "choices": [{**CHOICE, "message": {"role": "assistant", "content": "hi"}}],
+    "usage": USAGE,
+}
+TEXT_REPLY: dict[str, JsonValue] = {"choices": [{**CHOICE, "text": "hi"}], "usage": USAGE}
 CALL_TYPES: dict[str, CallTypes] = {
     "embedding": CallTypes.embedding,
     "aembedding": CallTypes.aembedding,
@@ -40,6 +45,16 @@ class CapturedClient:
         self.headers = OBJECT.validate_python(headers)
         self.payload = json
         return httpx.Response(200, content=OBJECT.dump_json(self.reply))
+
+
+class Recorder:
+    def __init__(self, reply: dict[str, JsonValue]) -> None:
+        self.reply = reply
+        self.body: dict[str, JsonValue] = {}
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        self.body = OBJECT.validate_json(request.content)
+        return httpx.Response(200, json=self.reply)
 
 
 class ClientCache(LLMClientCache):
@@ -68,10 +83,15 @@ class ChatMessagesStep(TypedDict):
     messages: list[dict[str, JsonValue]]
 
 
+class CompletionParams(TypedDict, total=False):
+    temperature: float
+    stop: list[str]
+
+
 class CompletionStep(TypedDict):
     model: str
     messages: list[JsonValue]
-    optional_params: dict[str, JsonValue]
+    optional_params: CompletionParams
 
 
 class RerankRequestStep(TypedDict):
@@ -138,8 +158,6 @@ class ChatConfig(Protocol):
 
 
 CHAT: ChatConfig = TogetherAIChatConfig()
-CHAT_RAW = TogetherAIChatConfig()
-TEXT_RAW = TogetherAITextCompletionConfig()
 
 
 def chat_supported(step: ModelStep) -> JsonValue:
@@ -162,19 +180,34 @@ def chat_map(step: ChatMapStep) -> JsonValue:
 
 
 def chat_messages(step: ChatMessagesStep) -> JsonValue:
-    return CHAT_RAW.transform_request(MODEL, step["messages"], {}, {}, {})["messages"]  # type: ignore[arg-type, misc, no-any-return]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L476-L483
+    recorder = Recorder(CHAT_REPLY)
+    litellm.completion(
+        model=f"together_ai/{MODEL}",
+        messages=step["messages"],
+        client=HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(recorder.handle))),
+        api_key="k",
+    )
+    return recorder.body["messages"]
 
 
 def completion(step: CompletionStep) -> JsonValue:
-    messages = step["messages"]
-    model = step["model"]
-    params = step["optional_params"]
+    recorder = Recorder(TEXT_REPLY)
     try:
-        value: JsonValue = TEXT_RAW.transform_text_completion_request(model, messages, params, {})  # type: ignore[arg-type, misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/together_ai/completion/transformation.py#L43-L49
-    except ValueError as error:
-        kind = "integers" if str(error) == INTEGERS else "multiple_prompts"
+        litellm.completion(
+            model=f"together_ai/{step['model']}",
+            messages=step["messages"],
+            text_completion=True,
+            client=OpenAI(
+                api_key="k",
+                base_url="https://together.test/v1",
+                http_client=httpx.Client(transport=httpx.MockTransport(recorder.handle)),
+            ),
+            **step["optional_params"],
+        )
+    except InternalServerError as error:
+        kind = "integers" if INTEGERS in str(error) else "multiple_prompts"
         return {"ok": False, "error": {"kind": kind}}
-    return {"ok": True, "value": value}
+    return {"ok": True, "value": recorder.body}
 
 
 def rerank(client: CapturedClient, step: RerankRequestStep) -> RerankResponse:
