@@ -364,6 +364,13 @@ GEMMA_PAYLOADS: Final[list[dict[str, JsonValue]]] = [
     {"object": "error", "message": "m", "code": 599},
 ]
 
+GEMMA_REJECTIONS: Final[list[dict[str, JsonValue]]] = [
+    {"object": "error", "message": "m", "code": 399},
+    {"object": "error", "message": "m", "code": 600},
+    {"object": "other", "message": "m", "code": 450},
+    {"object": "error", "message": "m", "code": 450.5},
+]
+
 
 def shape(annotation: type) -> str:
     origin: type | None = get_origin(annotation)
@@ -371,9 +378,7 @@ def shape(annotation: type) -> str:
     if is_typeddict(annotation):
         return f"TypedDict:{annotation.__name__}"
     if origin is None:
-        if annotation.__name__ in ("Any", "JsonValue"):
-            return "json"
-        return annotation.__name__
+        return "json" if annotation.__name__ in ("Any", "JsonValue") else annotation.__name__
     name = origin.__name__
     if name == "Literal":
         return f"Literal{list(arguments)}"
@@ -382,11 +387,6 @@ def shape(annotation: type) -> str:
     if name == "dict" and (not arguments or arguments[1].__name__ in ("Any", "JsonValue")):
         return "dict"
     return name + "[" + ",".join(shape(argument) for argument in arguments) + "]"
-
-
-def signature_text(resolver: type[VertexAccessTokenResolver]) -> str:
-    signature = inspect.signature(resolver.__call__)
-    return str(signature)
 
 
 async def resolve_token(
@@ -440,9 +440,12 @@ def test_names_literal_values(
 
 @pytest.mark.parametrize(("name", "ours", "theirs"), ENUM_PAIRS)
 def test_names_enum_members(name: str, ours: type[Enum], theirs: type[Enum]) -> None:
-    our_members = [(member.name, member.value) for member in ours]
-    their_members = [(member.name, member.value) for member in theirs]
-    assert our_members == their_members, name
+    our_names: list[str] = list(ours.__members__)
+    their_names: list[str] = list(theirs.__members__)
+    assert our_names == their_names, name
+    our_schema: dict[str, JsonValue] = TypeAdapter(ours).json_schema()
+    their_schema: dict[str, JsonValue] = TypeAdapter(theirs).json_schema()
+    assert our_schema["enum"] == their_schema["enum"], name
     assert (str in ours.__mro__) == (str in theirs.__mro__), name
 
 
@@ -450,7 +453,7 @@ def test_names_enum_members(name: str, ours: type[Enum], theirs: type[Enum]) -> 
 def test_names_provider_metadata_fields() -> None:
     theirs: tuple[str, ...] = THEIR_TUPLES.VERTEX_AI_PROVIDER_METADATA_FIELDS
     # ast-grep-ignore: no-long-names
-    assert VERTEX_AI_PROVIDER_METADATA_FIELDS == theirs
+    assert theirs == VERTEX_AI_PROVIDER_METADATA_FIELDS
 
 
 def test_names_json_fields() -> None:
@@ -465,8 +468,8 @@ def test_names_json_fields() -> None:
 
 # ast-grep-ignore: no-long-names
 def test_protocol_resolver_signature() -> None:
-    assert signature_text(VertexAccessTokenResolver) == signature_text(
-        THEIR_RESOLVERS.VertexAccessTokenResolver,
+    assert str(inspect.signature(VertexAccessTokenResolver.__call__)) == str(
+        inspect.signature(THEIR_RESOLVERS.VertexAccessTokenResolver.__call__),
     )
 
 
@@ -492,11 +495,13 @@ def test_protocol_gemma_fields() -> None:
         field.is_required() for field in their_fields.values()
     ]
     for key, their_field in their_fields.items():
-        our_field = our_fields[key]
-        our_annotation: TypeForm[JsonValue] | None = our_field.annotation
+        our_annotation: TypeForm[JsonValue] | None = our_fields[key].annotation
         their_annotation: TypeForm[JsonValue] | None = their_field.annotation
         assert our_annotation == their_annotation, key
-        assert our_field.metadata == their_field.metadata, key
+    our_schema: dict[str, JsonValue] = VertexGemmaContainerError.model_json_schema()
+    their_schema: dict[str, JsonValue] = THEIR_GEMMA.VertexGemmaContainerError.model_json_schema()
+    assert our_schema == their_schema
+    assert VertexGemmaContainerError.model_config["frozen"] is True
     assert dict(VertexGemmaContainerError.model_config) == dict(
         THEIR_GEMMA.VertexGemmaContainerError.model_config,
     )
@@ -514,19 +519,10 @@ def test_protocol_gemma_matches(payload: dict[str, JsonValue]) -> None:
     assert ours.object == "error"
 
 
-@pytest.mark.parametrize("code", [399, 600])
+@pytest.mark.parametrize("payload", GEMMA_REJECTIONS)
 # ast-grep-ignore: no-long-names
-def test_protocol_gemma_rejects_code_outside_bounds(code: int) -> None:
-    payload: dict[str, JsonValue] = {"object": "error", "message": "m", "code": code}
+def test_protocol_gemma_rejects_bad_input(payload: dict[str, JsonValue]) -> None:
     with pytest.raises(ValidationError):
         VertexGemmaContainerError.model_validate(payload)
     with pytest.raises(ValidationError):
         THEIR_GEMMA.VertexGemmaContainerError.model_validate(payload)
-
-
-def test_protocol_gemma_frozen() -> None:
-    error = VertexGemmaContainerError(object="error", message="m", code=400)
-    with pytest.raises(ValidationError):
-        error.code = 401
-    with pytest.raises(ValidationError):
-        error.message = "other"
