@@ -113,6 +113,18 @@ async fn deferred_billing_and_teardown(
             .unwrap_or_else(PoisonError::into_inner)
             .is_empty()
     );
+    drop(fields);
+    // The parked future is the routed logging itself, so dispatching it runs that future
+    assert_eq!(
+        harness.stream.dispatch_pending_logging(),
+        parked.then_some(Admission::Accepted)
+    );
+    harness.worker.flush().await;
+    assert_eq!(harness.ran(), 1);
+    assert_eq!(
+        *calls.lock().unwrap_or_else(PoisonError::into_inner),
+        if parked { vec![1] } else { Vec::new() }
+    );
 }
 
 #[rstest]

@@ -204,7 +204,7 @@ impl Harness {
     }
 }
 
-// Python's callback: it records how many arguments it got and returns a logging future
+// Python's callback: it records how many arguments it got, then runs the parked logging itself
 pub(super) fn deferred_callback(calls: &Arc<Mutex<Vec<usize>>>) -> DeferredCallback {
     let calls = Arc::clone(calls);
     Box::new(move |args: Vec<LoggingFuture>| -> LoggingFuture {
@@ -212,7 +212,12 @@ pub(super) fn deferred_callback(calls: &Arc<Mutex<Vec<usize>>>) -> DeferredCallb
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(args.len());
-        Box::pin(async { Ok(()) })
+        Box::pin(async move {
+            for parked in args {
+                parked.await?;
+            }
+            Ok(())
+        })
     })
 }
 

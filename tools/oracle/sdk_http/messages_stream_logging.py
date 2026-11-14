@@ -13,7 +13,8 @@ from litellm.litellm_core_utils.logging_worker import GLOBAL_LOGGING_WORKER
 from litellm.llms.anthropic.pass_through.messages import streaming_iterator
 from litellm.proxy.pass_through_endpoints.success_handler import PassThroughEndpointLogging
 from litellm.types.passthrough_endpoints.pass_through_endpoints import EndpointType
-from pydantic import BaseModel, ConfigDict, Field, JsonValue as Json
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic import JsonValue as Json
 from typing_extensions import override
 
 Work = Coroutine[object, object, None]
@@ -130,11 +131,10 @@ class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
         self.hook_calls: list[Json] = []
         self.callback_args: list[Json] = []
         self.text: str | None = None
-    def on_deferred(self, *parked: Work) -> Work:
+    async def on_deferred(self, *parked: Work) -> None:
         self.callback_args.append(len(parked))
         for coroutine in parked:
-            coroutine.close()
-        return self.recorder.counted()
+            await coroutine
     async def bill(self, *, teardown: bool) -> None:
         await self._bill_collected_chunks(self.frames, stream_teardown=teardown)
     def dispatch(self) -> None:

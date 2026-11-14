@@ -169,7 +169,9 @@ async fn armed_hook_reaches_post_call_failure_hook(
         outcome,
         seen: Mutex::new(Vec::new()),
     });
-    harness.slots.arm_failure_hook(Arc::clone(&post_call));
+    harness
+        .slots
+        .arm_failure_hook(Arc::<ScriptedPostCall>::clone(&post_call));
     let original = failure("RuntimeError", "upstream");
     let (captured, _guard) = capture_warnings();
     harness.stream.fire_detached_failure_hook(&original).await;
