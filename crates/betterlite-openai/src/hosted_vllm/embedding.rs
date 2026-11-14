@@ -18,6 +18,7 @@ const API_BASE_ENV: &str = "HOSTED_VLLM_API_BASE";
 const API_KEY_ENV: &str = "HOSTED_VLLM_API_KEY";
 const AUTHORIZATION: &str = "Authorization";
 const CONTENT_TYPE: &str = "Content-Type";
+const DEFAULT_ERROR: &str = "Error in response object";
 
 // LiteLLM advertises exactly these four embedding parameters and drops every other request key
 pub const SUPPORTED_OPENAI_PARAMS: [&str; 4] = ["timeout", "dimensions", "encoding_format", "user"];
@@ -139,8 +140,13 @@ pub fn transform_embedding_response(
     if let Ok(text) = str::from_utf8(raw) {
         post_call(text);
     }
-    let reply: RawReply =
+    let reply: Value =
         serde_json::from_slice(raw).map_err(|source| HostedVllmEmbeddingError::Shape { source })?;
+    if let Some(error) = reply_error(&reply) {
+        return Err(error);
+    }
+    let reply: RawReply = serde_json::from_value(reply)
+        .map_err(|source| HostedVllmEmbeddingError::Shape { source })?;
     let mut usage = EmbeddingUsage {
         prompt_tokens: 0,
         completion_tokens: 0,
@@ -159,6 +165,64 @@ pub fn transform_embedding_response(
         model: reply.model,
         usage,
     })
+}
+
+// LiteLLM checks an error object inside a successful reply before it builds the embedding response
+fn reply_error(reply: &Value) -> Option<HostedVllmEmbeddingError> {
+    let error = reply.get("error").filter(|error| !error.is_null())?;
+    match error {
+        Value::String(text) if text.is_empty() => None,
+        Value::Object(fields) => object_error(fields),
+        _ => Some(provider_error(String::from(DEFAULT_ERROR), 422)),
+    }
+}
+
+fn object_error(fields: &Object) -> Option<HostedVllmEmbeddingError> {
+    let message = fields.get("message");
+    let code = fields.get("code");
+    if message.is_none_or(is_blank) && code.is_none_or(Value::is_null) {
+        return None;
+    }
+    let status_code = code
+        .and_then(Value::as_u64)
+        .and_then(|code| u16::try_from(code).ok())
+        .unwrap_or(422);
+    Some(provider_error(error_text(message), status_code))
+}
+
+fn error_text(message: Option<&Value>) -> String {
+    match message {
+        Some(Value::String(text)) => text.clone(),
+        Some(other) if !is_blank(other) => other.to_string(),
+        _ => String::from(DEFAULT_ERROR),
+    }
+}
+
+fn is_blank(value: &Value) -> bool {
+    if value.is_null() {
+        return true;
+    }
+    if let Some(flag) = value.as_bool() {
+        return !flag;
+    }
+    if let Some(number) = value.as_f64() {
+        return number == 0.0;
+    }
+    if let Some(text) = value.as_str() {
+        return text.is_empty();
+    }
+    if let Some(items) = value.as_array() {
+        return items.is_empty();
+    }
+    value.as_object().is_some_and(|fields| fields.is_empty())
+}
+
+fn provider_error(message: String, status_code: u16) -> HostedVllmEmbeddingError {
+    HostedVllmEmbeddingError::Provider {
+        message,
+        status_code,
+        headers: Headers::new(),
+    }
 }
 
 #[must_use]
