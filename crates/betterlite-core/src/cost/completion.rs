@@ -41,9 +41,10 @@ struct Round<'round> {
 }
 
 // One clock reading as a UTC moment; a time before the epoch or past the calendar is an error.
-pub fn reading<Clock: FnMut() -> SystemTime>(
-    clock: &mut Clock,
-) -> Result<DateTime<Utc>, ChargeInputError> {
+pub fn reading<Clock>(clock: &mut Clock) -> Result<DateTime<Utc>, ChargeInputError>
+where
+    Clock: FnMut() -> SystemTime,
+{
     clock()
         .duration_since(UNIX_EPOCH)
         .ok()

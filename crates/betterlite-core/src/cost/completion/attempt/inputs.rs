@@ -68,10 +68,13 @@ fn character_count(
 }
 
 impl Owned {
-    pub(super) fn new<ImageError: Error + 'static>(
+    pub(super) fn new<ImageError>(
         attempt: &Attempt<'_>,
         lookup: &dyn PriceLookup,
-    ) -> Result<Self, CompletionCostError<ImageError>> {
+    ) -> Result<Self, CompletionCostError<ImageError>>
+    where
+        ImageError: Error + 'static,
+    {
         let (args, prepared, billing) = (attempt.args, attempt.prepared, attempt.billing);
         let query = PricingQuery {
             custom_pricing: args.billing.custom_pricing,
