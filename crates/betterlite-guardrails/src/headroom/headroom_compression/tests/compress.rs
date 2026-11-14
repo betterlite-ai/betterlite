@@ -14,11 +14,11 @@ use crate::guardrail_base::failure::GuardrailFailure;
 use crate::headroom_failure::NOT_FOUND_HINT;
 use crate::headroom_settings::HeadroomInput;
 
+use super::super::apply::UNAVAILABLE_MESSAGE;
 use super::super::compress::{
     BODY_PREVIEW_CHARS, COUNT_ERROR, EMPTY_MESSAGES_ERROR, MISSING_MESSAGES_ERROR, NON_JSON_ERROR,
     SERVICE_ERROR, SHAPE_ERROR, UNREACHABLE_ERROR,
 };
-use super::super::record::UNAVAILABLE_MESSAGE;
 
 async fn recorded_response(payload: &str) -> serde_json::Value {
     let server = mock(StatusCode::OK, payload.to_owned()).await;
@@ -67,6 +67,33 @@ async fn the_compression_request_sends_the_configured_model() {
         body.get("model"),
         Some(&serde_json::Value::String("compressor".to_owned()))
     );
+}
+
+#[tokio::test]
+async fn an_empty_configured_model_falls_back_to_the_request_model() {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let input = HeadroomInput {
+        model: Some(String::new()),
+        ..default_input(&server.base)
+    };
+    let guardrail = guardrail_with_clock(input);
+    let mut request = data(r#"{"model":"gpt-4o"}"#);
+    apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
+    let body = json(&only_call(&server).body);
+    assert_eq!(
+        body.get("model"),
+        Some(&serde_json::Value::String("gpt-4o".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn an_empty_request_model_is_not_sent() {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let mut request = data(r#"{"model":""}"#);
+    apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
+    let body = json(&only_call(&server).body);
+    assert!(body.get("model").is_none());
 }
 
 #[tokio::test]

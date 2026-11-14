@@ -1,16 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
+use super::HeadroomError;
 use super::HeadroomGuardrail;
-use super::call_id;
 use super::compress::{CompressError, CompressRequest};
-use super::error::HeadroomError;
 use super::messages::{self, Messages};
-use super::record::{self, Record};
+use super::records::guardrail_value;
 use super::request_data;
 use super::retrieve_tool;
-use super::wire;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
@@ -21,11 +20,14 @@ use crate::headroom_messages::{
 };
 use crate::primitives::json_value::JsonValue;
 
-struct Compressed {
+pub(crate) const UNAVAILABLE_MESSAGE: &str =
+    "headroom compression unavailable; request forwarded uncompressed";
+
+pub(super) struct Compressed {
     messages: Messages,
     result: CompressResult,
-    started: f64,
-    ended: f64,
+    pub(super) started: f64,
+    pub(super) ended: f64,
 }
 
 impl HeadroomGuardrail {
@@ -47,7 +49,13 @@ impl HeadroomGuardrail {
         };
         let compressed = self.compress(request_data, messages).await?;
         if !compressed.result.succeeded {
-            Self::record_unavailable(self.guardrail_name.as_deref(), request_data, &compressed);
+            let response = unavailable();
+            self.record_outcome(
+                request_data,
+                &compressed,
+                GuardrailStatus::GuardrailFailedToRespond,
+                response,
+            );
             return Ok(inputs);
         }
         self.finish_success(inputs, request_data, compressed, logging_obj)
@@ -63,8 +71,9 @@ impl HeadroomGuardrail {
             .settings
             .model
             .as_deref()
+            .filter(|model| !model.is_empty())
             .or_else(|| request_data::model(request_data));
-        let started = record::now();
+        let started = now();
         let result = match self
             .call_compress(CompressRequest { rows: &rows, model })
             .await
@@ -77,7 +86,7 @@ impl HeadroomGuardrail {
                 let detail = failure
                     .body
                     .iter()
-                    .map(|(key, value)| (key.clone(), wire::guardrail_value(value)))
+                    .map(|(key, value)| (key.clone(), guardrail_value(value)))
                     .collect();
                 return Err(GuardrailFailure::HttpObject {
                     status: failure.status,
@@ -85,7 +94,7 @@ impl HeadroomGuardrail {
                 });
             }
         };
-        let ended = record::now();
+        let ended = now();
         Ok(Compressed {
             messages,
             result,
@@ -96,31 +105,27 @@ impl HeadroomGuardrail {
 
     fn finish_success(
         &self,
-        inputs: GuardrailApiInputs,
+        mut inputs: GuardrailApiInputs,
         request_data: &mut BTreeMap<String, GuardrailValue>,
         compressed: Compressed,
         logging_obj: Option<&GuardrailLogTarget>,
     ) -> Result<GuardrailApiInputs, GuardrailFailure> {
         let rows = Self::restore(&compressed)?;
-        self.record_success(request_data, &compressed);
-        let hashes = if self.settings.ccr_retrieval {
-            compressed.result.ccr_hashes.clone()
-        } else {
-            BTreeSet::new()
-        };
-        if hashes.is_empty() {
-            let structured = messages::to_guardrail_messages(&rows)?;
-            return Ok(GuardrailApiInputs {
-                structured_messages: Some(structured),
-                ..inputs
-            });
+        let stats = guardrail_value(&JsonValue::Object(compressed.result.stats.clone()));
+        self.record_outcome(request_data, &compressed, GuardrailStatus::Success, stats);
+        let mut hashes = compressed.result.ccr_hashes.clone();
+        if !self.settings.ccr_retrieval {
+            hashes.clear();
         }
-        self.record_session(request_data, logging_obj, hashes);
-        let tools = retrieve_tool::merged(inputs.tools.as_deref());
-        let structured = messages::to_guardrail_messages(&rows)?;
+        let mut tools = inputs.tools.take();
+        if !hashes.is_empty() {
+            self.record_session(request_data, logging_obj, hashes);
+            tools = Some(retrieve_tool::merged(tools.as_deref())?);
+        }
+        let structured = messages::convert(&rows)?;
         Ok(GuardrailApiInputs {
             structured_messages: Some(structured),
-            tools: Some(tools),
+            tools,
             ..inputs
         })
     }
@@ -139,43 +144,6 @@ impl HeadroomGuardrail {
         Ok(rows)
     }
 
-    fn record_success(
-        &self,
-        request_data: &mut BTreeMap<String, GuardrailValue>,
-        compressed: &Compressed,
-    ) {
-        let stats = wire::guardrail_value(&JsonValue::Object(compressed.result.stats.clone()));
-        append_record(
-            request_data,
-            Record {
-                guardrail_name: self.guardrail_name.as_deref(),
-                response: stats,
-                status: GuardrailStatus::Success,
-                start_time: compressed.started,
-                end_time: compressed.ended,
-            },
-        );
-        record::append_applied(request_data, self.guardrail_name.as_deref());
-    }
-
-    fn record_unavailable(
-        guardrail_name: Option<&str>,
-        request_data: &mut BTreeMap<String, GuardrailValue>,
-        compressed: &Compressed,
-    ) {
-        append_record(
-            request_data,
-            Record {
-                guardrail_name,
-                response: record::unavailable(),
-                status: GuardrailStatus::GuardrailFailedToRespond,
-                start_time: compressed.started,
-                end_time: compressed.ended,
-            },
-        );
-        record::append_applied(request_data, guardrail_name);
-    }
-
     fn record_session(
         &self,
         request_data: &mut BTreeMap<String, GuardrailValue>,
@@ -183,32 +151,30 @@ impl HeadroomGuardrail {
         hashes: BTreeSet<String>,
     ) {
         self.issued.prune_expired((self.clock)());
-        let (call_id, generated) = self.call_identity(logging_obj, request_data);
-        if generated {
-            request_data.insert(
-                request_data::CALL_ID_FIELD.to_owned(),
-                GuardrailValue::Text(call_id.clone()),
-            );
-        }
+        let call_id = match request_data::resolve_call_id(logging_obj, request_data) {
+            Some(call_id) if !call_id.is_empty() => call_id,
+            _ => {
+                let generated = (self.new_id)().to_string();
+                request_data.insert(
+                    request_data::CALL_ID_FIELD.to_owned(),
+                    GuardrailValue::Text(generated.clone()),
+                );
+                generated
+            }
+        };
         self.issued.record(&call_id, hashes, (self.clock)());
-    }
-
-    fn call_identity(
-        &self,
-        logging_obj: Option<&GuardrailLogTarget>,
-        request_data: &BTreeMap<String, GuardrailValue>,
-    ) -> (String, bool) {
-        if let Some(call_id) = call_id::resolve(logging_obj, request_data)
-            && !call_id.is_empty()
-        {
-            return (call_id, false);
-        }
-        ((self.new_id)().to_string(), true)
     }
 }
 
-fn append_record(request_data: &mut BTreeMap<String, GuardrailValue>, invocation: Record<'_>) {
-    if let Err(error) = record::append(request_data, invocation) {
-        tracing::warn!(%error, "Headroom: guardrail record could not be written");
-    }
+fn now() -> f64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0.0, |elapsed| elapsed.as_secs_f64())
+}
+
+fn unavailable() -> GuardrailValue {
+    GuardrailValue::Object(BTreeMap::from([(
+        "error".to_owned(),
+        GuardrailValue::Text(UNAVAILABLE_MESSAGE.to_owned()),
+    )]))
 }

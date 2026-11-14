@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde::de::Error as DeserializeError;
@@ -145,22 +143,11 @@ where
         FAIL_CLOSED => UnreachableFallback::FailClosed,
         FAIL_OPEN => UnreachableFallback::FailOpen,
         other => {
-            return Err(yaml_error(
-                path,
-                format!(
-                    "invalid unreachable_fallback `{other}`; expected `fail_closed` or `fail_open`"
-                ),
+            let source = <serde_saphyr::Error as DeserializeError>::custom(format!(
+                "{path}: invalid unreachable_fallback `{other}`; expected `fail_closed` or `fail_open`"
             ));
+            return Err(ConfigError::Yaml { source });
         }
     };
     Ok(Some(fallback))
-}
-
-fn yaml_error<M>(path: &str, message: M) -> ConfigError
-where
-    M: Display,
-{
-    ConfigError::Yaml {
-        source: <serde_saphyr::Error as DeserializeError>::custom(format!("{path}: {message}")),
-    }
 }

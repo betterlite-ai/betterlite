@@ -97,8 +97,13 @@ fn unreachable(
     error: &str,
     fallback: UnreachableFallback,
 ) -> Result<CompressResult, CompressError> {
-    let detail = IndexMap::from([("detail".to_owned(), JsonValue::String(error.to_owned()))]);
-    failure(fallback, rows, UNREACHABLE_ERROR, detail).map_err(CompressError::Failure)
+    failure(
+        fallback,
+        rows,
+        UNREACHABLE_ERROR,
+        IndexMap::from([("detail".to_owned(), JsonValue::String(error.to_owned()))]),
+    )
+    .map_err(CompressError::Failure)
 }
 
 fn rejected(
@@ -107,8 +112,13 @@ fn rejected(
     rows: &[JsonValue],
     fallback: UnreachableFallback,
 ) -> Result<CompressResult, CompressError> {
-    let detail = build_compress_failure_detail(status, body);
-    failure(fallback, rows, SERVICE_ERROR, detail).map_err(CompressError::Failure)
+    failure(
+        fallback,
+        rows,
+        SERVICE_ERROR,
+        build_compress_failure_detail(status, body),
+    )
+    .map_err(CompressError::Failure)
 }
 
 fn failure(

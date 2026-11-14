@@ -18,7 +18,7 @@ use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use uuid::Uuid;
 
-use super::record::UNAVAILABLE_MESSAGE;
+use super::apply::UNAVAILABLE_MESSAGE;
 use super::{Clock, HeadroomGuardrail};
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::failure::GuardrailFailure;
@@ -236,7 +236,7 @@ fn structure(returned: &GuardrailApiInputs) -> serde_json::Value {
     true
 )]
 #[case::mixed(
-    r#"{"proxy_server_request":{"headers":{"x-headroom-bypass":"TrUe"}}}"#,
+    r#"{"proxy_server_request":{"headers":{"x-headroom-bypass":"True"}}}"#,
     true
 )]
 #[case::false_text(

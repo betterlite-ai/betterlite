@@ -1,8 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
-use super::error::HeadroomError;
+use super::HeadroomError;
 use super::request_data;
 use crate::generic_guardrail_contracts::GuardrailMessage;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
@@ -25,7 +27,7 @@ pub(crate) fn collect(
     if structured.is_empty() {
         return Ok(None);
     }
-    let all = to_json_values(structured)?;
+    let all: Vec<JsonValue> = convert(structured)?;
     let raw_messages = request_data::untranslated_messages(request_data)?;
     let extra_ids = retrieve_call_ids(raw_messages.as_ref());
     let protected = protected_indices(&all, &extra_ids);
@@ -45,18 +47,12 @@ pub(crate) fn collect(
     }))
 }
 
-pub(crate) fn to_json_values(
-    structured: &[GuardrailMessage],
-) -> Result<Vec<JsonValue>, HeadroomError> {
-    let encoded = serde_json::to_value(structured)?;
-    let decoded = serde_json::from_value(encoded)?;
-    Ok(decoded)
-}
-
-pub(crate) fn to_guardrail_messages(
-    rows: &[JsonValue],
-) -> Result<Vec<GuardrailMessage>, HeadroomError> {
-    let encoded = serde_json::to_value(rows)?;
-    let decoded = serde_json::from_value(encoded)?;
-    Ok(decoded)
+pub(crate) fn convert<S, D>(source: &S) -> Result<D, HeadroomError>
+where
+    S: Serialize,
+    D: DeserializeOwned,
+{
+    let encoded = serde_json::to_value(source)?;
+    let converted = serde_json::from_value(encoded)?;
+    Ok(converted)
 }
