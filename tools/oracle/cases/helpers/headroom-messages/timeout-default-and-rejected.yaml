@@ -1,0 +1,8 @@
+kind: helper
+name: headroom-messages-timeout-default-and-rejected
+call:
+  b3773:
+    function: timeout
+    timeout: 0
+env: {}
+compare: {ignore: []}
