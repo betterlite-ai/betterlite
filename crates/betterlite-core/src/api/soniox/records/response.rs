@@ -9,8 +9,7 @@ use serde_json::{from_value, to_value};
 
 use super::error::RecordsError;
 use super::tokens::{
-    FloatMilliseconds, SonioxToken, float_milliseconds, render_soniox_tokens, seconds_value,
-    subtitle_tokens,
+    SonioxToken, float_milliseconds, render_soniox_tokens, seconds_value, subtitle_tokens,
 };
 
 pub const TRANSCRIBE_TASK: &str = "transcribe";
@@ -167,11 +166,7 @@ fn set_duration(
     let Some(quantity) = float_milliseconds(&value) else {
         return Ok(());
     };
-    let shown = match quantity {
-        FloatMilliseconds::Exact(milliseconds) => seconds_value(milliseconds),
-        FloatMilliseconds::NotFinite => Some(JsonValue::Null),
-    };
-    let Some(shown) = shown else {
+    let Some(shown) = seconds_value(quantity) else {
         return Ok(());
     };
     let encoded = to_value(shown).map_err(|source| RecordsError::Value {
@@ -254,15 +249,10 @@ fn word_seconds(timing: Option<&JsonValue>) -> Result<Option<JsonValue>, Records
     let Some(quantity) = float_milliseconds(timing) else {
         return Err(RecordsError::Timing { field: WORDS_FIELD });
     };
-    match quantity {
-        FloatMilliseconds::Exact(milliseconds) => {
-            let Some(seconds) = seconds_value(milliseconds) else {
-                return Err(RecordsError::Timing { field: WORDS_FIELD });
-            };
-            Ok(Some(seconds))
-        }
-        FloatMilliseconds::NotFinite => Ok(Some(JsonValue::Null)),
-    }
+    let Some(seconds) = seconds_value(quantity) else {
+        return Err(RecordsError::Timing { field: WORDS_FIELD });
+    };
+    Ok(Some(seconds))
 }
 
 fn set_hidden(

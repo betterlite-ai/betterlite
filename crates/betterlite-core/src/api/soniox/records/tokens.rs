@@ -1,7 +1,9 @@
+use std::ops::Div as _;
+
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::api::audio_subtitles::{Speaker, SubtitleToken};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::{FromPrimitive as _, ToPrimitive as _};
+use rust_decimal::prelude::ToPrimitive as _;
 use serde::Deserialize;
 use serde_json::Number;
 
@@ -12,6 +14,7 @@ pub const TRANSLATION_STATUS: &str = "translation";
 #[derive(Debug, Clone, Copy)]
 pub(super) enum FloatMilliseconds {
     Exact(Decimal),
+    Approximate(f64),
     NotFinite,
 }
 
@@ -88,11 +91,6 @@ pub struct SonioxToken {
 
 impl SonioxToken {
     #[must_use]
-    pub fn is_translation(&self) -> bool {
-        self.translation_status.as_deref() == Some(TRANSLATION_STATUS)
-    }
-
-    #[must_use]
     pub fn text_string(&self) -> String {
         match self.text.as_ref() {
             Some(Some(JsonValue::Text(text))) => text.clone(),
@@ -145,20 +143,22 @@ pub fn render_soniox_tokens(tokens: &[SonioxToken]) -> String {
             .filter(|language| current_language != Some(*language));
         if let Some(language) = language {
             current_language = Some(language);
-            let prefix = if token.is_translation() {
+            let prefix = if token.translation_status.as_deref() == Some(TRANSLATION_STATUS) {
                 "[Translation] "
             } else {
                 ""
             };
             parts.push(format!("\n{prefix}[{language}] "));
-            text = text.trim_start_matches(is_python_whitespace).to_owned();
+            text = text
+                .trim_start_matches(is_whitespace_or_separator)
+                .to_owned();
         }
         parts.push(text);
     }
     parts.concat()
 }
 
-fn is_python_whitespace(character: char) -> bool {
+fn is_whitespace_or_separator(character: char) -> bool {
     if character.is_whitespace() {
         return true;
     }
@@ -168,7 +168,7 @@ fn is_python_whitespace(character: char) -> bool {
 pub(super) fn subtitle_tokens(tokens: &[SonioxToken]) -> Vec<SubtitleToken> {
     let mut kept: Vec<SubtitleToken> = Vec::new();
     for token in tokens {
-        if token.is_translation() {
+        if token.translation_status.as_deref() == Some(TRANSLATION_STATUS) {
             continue;
         }
         kept.push(SubtitleToken {
@@ -201,27 +201,41 @@ pub(super) fn float_milliseconds(value: &JsonValue) -> Option<FloatMilliseconds>
 }
 
 #[must_use]
-pub(super) fn seconds_value(milliseconds: Decimal) -> Option<JsonValue> {
-    let seconds = milliseconds
-        .checked_div(Decimal::from(1_000_u32))?
-        .to_f64()?;
+pub(super) fn seconds_value(quantity: FloatMilliseconds) -> Option<JsonValue> {
+    let seconds = match quantity {
+        FloatMilliseconds::Exact(milliseconds) => {
+            milliseconds.checked_div(Decimal::ONE_THOUSAND)?.to_f64()?
+        }
+        FloatMilliseconds::Approximate(milliseconds) => milliseconds.div(1_000.0_f64),
+        FloatMilliseconds::NotFinite => return Some(JsonValue::Null),
+    };
     Number::from_f64(seconds).map(JsonValue::Number)
 }
 
 fn milliseconds_from_text(text: &str) -> Option<FloatMilliseconds> {
-    let trimmed = text.trim_matches(is_python_whitespace);
+    let trimmed = text.trim_matches(is_whitespace_or_separator);
     if !underscores_join_digits(trimmed) {
         return None;
     }
     let cleaned = trimmed.replace('_', "");
-    if let Ok(number) = cleaned.parse::<Decimal>() {
-        return Some(FloatMilliseconds::Exact(number));
-    }
     let parsed = cleaned.parse::<f64>().ok()?;
-    if parsed.is_finite() {
-        return Decimal::from_f64(parsed).map(FloatMilliseconds::Exact);
+    if !parsed.is_finite() {
+        return Some(FloatMilliseconds::NotFinite);
     }
-    Some(FloatMilliseconds::NotFinite)
+    let exact = cleaned
+        .parse::<Decimal>()
+        .ok()
+        .filter(|number| number.to_f64() == Some(parsed))
+        .filter(|number| {
+            number
+                .checked_div(Decimal::ONE_THOUSAND)
+                .and_then(|seconds| seconds.to_f64())
+                == Some(parsed.div(1_000.0_f64))
+        });
+    Some(match exact {
+        Some(number) => FloatMilliseconds::Exact(number),
+        None => FloatMilliseconds::Approximate(parsed),
+    })
 }
 
 // float() takes an underscore only between two digits
