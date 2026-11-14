@@ -101,7 +101,7 @@ checks:
       why: the helper cases are missing or do not replay
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/a2a-guardrail-translation)" &&
-        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/a2a-guardrail-translation tools/oracle/cases/chat/websearch-authorization-denied.yaml
 
 oracle_cases:
   - tools/oracle/cases/helpers/a2a-guardrail-translation/input-text-parts.yaml
