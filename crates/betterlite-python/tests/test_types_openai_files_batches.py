@@ -420,6 +420,19 @@ def test_models_file_and_page_dump() -> None:
         first_id="a", last_id="b", has_more=True
     )
     assert filled_page.model_dump() == reference_filled_page.model_dump()
+    extra_payload: dict[str, JsonValue] = {
+        "id": "file_1",
+        "bytes": 7,
+        "created_at": 10,
+        "filename": "a.jsonl",
+        "object": "file",
+        "purpose": "batch",
+        "bogus_field": 1,
+    }
+    extra = core_files.OpenAIFileObject(**extra_payload)
+    reference_extra = litellm_openai.OpenAIFileObject(**extra_payload)
+    assert "bogus_field" in extra.model_dump()
+    assert "bogus_field" not in reference_extra.model_dump()
 
 
 # ast-grep-ignore: no-long-names
