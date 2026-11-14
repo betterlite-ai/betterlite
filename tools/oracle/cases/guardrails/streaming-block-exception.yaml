@@ -22,4 +22,7 @@ call:
               content: "hello blockedword"
             finish_reason: "stop"
 env: {}
-compare: {ignore: []}
+compare:
+  ignore:
+    - pointer: /value/error/detail/error
+      why: betterlite writes its own block message

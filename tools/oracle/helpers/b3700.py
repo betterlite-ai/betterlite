@@ -1,10 +1,10 @@
 import asyncio
 import tempfile
 from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import aclosing
 from pathlib import Path
 from typing import Final, Literal, NotRequired, Protocol, TypedDict
 
-from fastapi import HTTPException
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.litellm_content_filter.content_filter import (
     ContentFilterGuardrail,
@@ -14,7 +14,9 @@ from litellm.types.proxy.guardrails.guardrail_hooks.litellm_content_filter impor
     ContentFilterCategoryConfig,
 )
 from litellm.types.utils import ModelResponseStream
-from pydantic import JsonValue as Json, TypeAdapter
+from pydantic import JsonValue as Json
+from pydantic import TypeAdapter
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 GUARDRAIL_NAME: Final = "stream-filter"
 RECORDS_KEY: Final = "standard_logging_guardrail_information"
@@ -118,7 +120,7 @@ def project(item: ModelResponseStream) -> Json:
     return {"id": dump["id"], "choices": choices}
 
 
-def error_tag(error: HTTPException) -> Json:
+def error_tag(error: StarletteHTTPException) -> Json:
     detail = clean_value(JSON.validate_python(error.detail))
     return {"status": error.status_code, "detail": detail}
 
@@ -163,8 +165,7 @@ def first_record(value: Json) -> Json:
             return None
 
 
-async def run_stream(request: Input, folder: Path) -> Json:
-    streamer: StreamHook = guardrail(request, folder)
+async def run_stream(streamer: StreamHook, request: Input) -> Json:
     request_data: dict[str, Json] = {}
     items = [CHUNK.validate_python(item) for item in request["items"]]
     chunks: list[Json] = []
@@ -173,14 +174,13 @@ async def run_stream(request: Input, folder: Path) -> Json:
         UserAPIKeyAuth(), feed(items), request_data
     )
     try:
-        async for item in streamed:
-            chunks.append(project(item))
-            if request["close_after"] is not None and len(chunks) >= request["close_after"]:
-                break
-    except HTTPException as raised:
+        async with aclosing(streamed) as stream:
+            async for item in stream:
+                chunks.append(project(item))
+                if request["close_after"] is not None and len(chunks) >= request["close_after"]:
+                    break
+    except StarletteHTTPException as raised:
         error = error_tag(raised)
-    finally:
-        await streamed.aclose()
     record = first_record(request_data.get("metadata"))
     return {"chunks": chunks, "record": record, "error": error}
 
@@ -188,4 +188,4 @@ async def run_stream(request: Input, folder: Path) -> Json:
 def run(input_value: dict[str, Json]) -> Json:
     request = INPUT.validate_python(input_value)
     with tempfile.TemporaryDirectory() as folder:
-        return asyncio.run(run_stream(request, Path(folder)))
+        return asyncio.run(run_stream(guardrail(request, Path(folder)), request))

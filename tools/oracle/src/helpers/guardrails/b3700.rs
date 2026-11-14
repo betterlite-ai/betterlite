@@ -94,21 +94,15 @@ fn load_input_categories(
             category_file: Some(path.display().to_string()),
         });
     }
+    // The category files sit in the helper's temp folder, the one root it grants the loader
     Ok(load_categories(
         &configs,
-        &[],
+        &[directory.to_path_buf()],
         Path::new("."),
-        &category_settings(),
+        &CategorySettings {
+            allow_external_paths: false,
+        },
     ))
-}
-
-// LiteLLM's allow_external switch, so a case without the env var jails the category file on both sides
-fn category_settings() -> CategorySettings {
-    let allow_external_paths = std::env::var("LITELLM_CONTENT_FILTER_ALLOW_EXTERNAL_PATHS")
-        .is_ok_and(|value| value.eq_ignore_ascii_case("true"));
-    CategorySettings {
-        allow_external_paths,
-    }
 }
 
 fn compile_patterns(
