@@ -4,9 +4,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use rstest::rstest;
+use serde::Serialize;
 use sha2::{Digest as _, Sha256};
 
 use crate::budget_permission_rows::JsonData;
+use crate::identity_rows::user::LiteLLMUserTable;
 use crate::postgres_store::session::PostgresStore;
 
 use super::error::KeyAttributionError;
@@ -99,9 +101,9 @@ fn only_team_needs_one_nonempty_value(#[case] teams: &[&str], #[case] expected: 
     assert_eq!(only_team(&owned), expected.map(str::to_owned));
 }
 
-fn user(email: &str, teams: &[&str]) -> UserDetails {
+fn user(address: &str, teams: &[&str]) -> UserDetails {
     UserDetails {
-        email: Some(email.to_owned()).filter(|email| !email.is_empty()),
+        email: Some(address.to_owned()).filter(|email| !email.is_empty()),
         only_team: only_team(
             &teams
                 .iter()
@@ -364,14 +366,14 @@ fn row(pairs: &[(&str, JsonData)]) -> BTreeMap<String, JsonData> {
 #[case::null(Some(JsonData::Null), true)]
 #[case::empty(Some(JsonData::String(String::new())), true)]
 #[case::filled(Some(JsonData::String("alias".to_owned())), false)]
-#[case::zero(Some(JsonData::Number(serde_json::Number::from(0))), false)]
+#[case::zero(Some(JsonData::Number(serde_json::Number::from(0_i32))), false)]
 #[case::false_flag(Some(JsonData::Bool(false)), false)]
 fn export_rows_are_missing_only_for_null_or_empty_aliases(
     #[case] alias: Option<JsonData>,
     #[case] missing: bool,
 ) {
     let mut fields = vec![("api_key", JsonData::String("key".to_owned()))];
-    fields.extend(alias.map(|alias| ("api_key_alias", alias)));
+    fields.extend(alias.map(|value| ("api_key_alias", value)));
     let selected = missing_keys(&[row(&fields)], &ExportFields::default());
     assert_eq!(selected.contains("key"), missing);
 }
@@ -482,8 +484,8 @@ fn empty_recovered_alias_and_team_keep_the_row_values() {
 #[rstest]
 #[case::false_flag(JsonData::Bool(false), false)]
 #[case::true_flag(JsonData::Bool(true), true)]
-#[case::zero(JsonData::Number(serde_json::Number::from(0)), false)]
-#[case::nonzero(JsonData::Number(serde_json::Number::from(1)), true)]
+#[case::zero(JsonData::Number(serde_json::Number::from(0_i32)), false)]
+#[case::nonzero(JsonData::Number(serde_json::Number::from(1_i32)), true)]
 #[case::empty_list(JsonData::Array(Vec::new()), false)]
 #[case::filled_list(JsonData::Array(vec![JsonData::Null]), true)]
 #[case::empty_object(JsonData::Object(BTreeMap::new()), false)]
@@ -533,12 +535,12 @@ fn custom_field_names_change_only_the_projection() {
         team_id: "team".to_owned(),
         user_email: "mail".to_owned(),
     };
-    let rows = vec![row(&[
+    let source = row(&[
         ("key", JsonData::String("key".to_owned())),
         ("label", JsonData::String(String::new())),
         ("api_key_alias", JsonData::String("untouched".to_owned())),
-    ])];
-    let first = row_with_recovered_fields(&rows[0], &recovered_alias(Some("alias")), &fields);
+    ]);
+    let first = row_with_recovered_fields(&source, &recovered_alias(Some("alias")), &fields);
     assert_eq!(
         first.get("label"),
         Some(&JsonData::String("alias".to_owned()))
@@ -596,17 +598,20 @@ fn user_details_skip_empty_ids_and_keep_the_last_row() {
     assert_eq!(details["user"].only_team, Some("team-b".to_owned()));
 }
 
-fn user_table(
-    user_id: &str,
-    email: Option<&str>,
-    teams: &[&str],
-) -> crate::identity_rows::user::LiteLLMUserTable {
-    serde_json::from_value(serde_json::json!({
-        "user_id": user_id,
-        "user_email": email,
-        "teams": teams,
-    }))
-    .unwrap()
+#[derive(Serialize)]
+struct UserWire<'a> {
+    user_id: &'a str,
+    user_email: Option<&'a str>,
+    teams: &'a [&'a str],
+}
+
+fn user_table(user_id: &str, email: Option<&str>, teams: &[&str]) -> LiteLLMUserTable {
+    let wire = UserWire {
+        user_id,
+        user_email: email,
+        teams,
+    };
+    serde_json::from_str(&serde_json::to_string(&wire).unwrap()).unwrap()
 }
 
 const MIGRATIONS: &str = concat!(
@@ -810,7 +815,7 @@ async fn postgres_user_detail_read_binds_one_array_beyond_one_chunk() {
         )
         .await
         .unwrap();
-    let recovered: BTreeMap<String, KeyMetadata> = (0..=5000)
+    let recovered: BTreeMap<String, KeyMetadata> = (0_i32..=5_000_i32)
         .map(|index| {
             (
                 format!("key-{index}"),
@@ -876,20 +881,8 @@ async fn postgres_malformed_user_rows_propagate() {
     close(fixture, store).await;
 }
 
-#[tokio::test]
-async fn postgres_export_filling_recovers_cli_and_hashed_rows_in_order() {
-    let (fixture, store) = database().await;
-    let teams = vec!["team-a".to_owned()];
-    client(&store)
-        .await
-        .execute(
-            r#"INSERT INTO "LiteLLM_UserTable" (user_id, user_email, teams) VALUES ($1, $2, $3)"#,
-            &[&"cli-user", &"cli@example.com", &teams],
-        )
-        .await
-        .unwrap();
-    insert_token(&store, "sk-hashed", "hashed-alias", Some("hashed-user")).await;
-    let rows = vec![
+fn cli_hashed_and_plain_rows() -> Vec<BTreeMap<String, JsonData>> {
+    vec![
         row(&[
             (
                 "api_key",
@@ -903,26 +896,37 @@ async fn postgres_export_filling_recovers_cli_and_hashed_rows_in_order() {
             ("api_key", JsonData::String("sk-plain".to_owned())),
             ("api_key_alias", JsonData::String("kept".to_owned())),
         ]),
-    ];
+    ]
+}
+
+#[tokio::test]
+async fn postgres_export_filling_recovers_cli_and_hashed_rows_in_order() {
+    let (fixture, store) = database().await;
+    let teams = vec!["team-a".to_owned()];
+    client(&store)
+        .await
+        .execute(
+            r#"INSERT INTO "LiteLLM_UserTable" (user_id, user_email, teams) VALUES ($1, $2, $3)"#,
+            &[&"cli-user", &"cli@example.com", &teams],
+        )
+        .await
+        .unwrap();
+    insert_token(&store, "sk-hashed", "hashed-alias", Some("hashed-user")).await;
+    let rows = cli_hashed_and_plain_rows();
     let projected = fill_missing_api_key_aliases(&store, &rows, &ExportFields::default())
         .await
         .unwrap();
-    assert_eq!(
-        projected[0].get("api_key_alias"),
-        Some(&JsonData::String("cli-session-cli-user".to_owned()))
-    );
-    assert_eq!(
-        projected[0].get("team_id"),
-        Some(&JsonData::String("team-a".to_owned()))
-    );
-    assert_eq!(
-        projected[0].get("user_email"),
-        Some(&JsonData::String("cli@example.com".to_owned()))
-    );
-    assert_eq!(
-        projected[1].get("api_key_alias"),
-        Some(&JsonData::String("hashed-alias".to_owned()))
-    );
+    for (index, field, expected) in [
+        (0_usize, "api_key_alias", "cli-session-cli-user"),
+        (0_usize, "team_id", "team-a"),
+        (0_usize, "user_email", "cli@example.com"),
+        (1_usize, "api_key_alias", "hashed-alias"),
+    ] {
+        assert_eq!(
+            projected[index].get(field),
+            Some(&JsonData::String(expected.to_owned()))
+        );
+    }
     assert_eq!(projected[2], rows[2]);
     close(fixture, store).await;
 }
