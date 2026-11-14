@@ -261,6 +261,11 @@ OVER_LIMIT_BUDGET_UPDATES: dict[str, JsonValue] = {
     "members": MEMBER_ROW * (team.MAX_BULK_TEAM_MEMBER_BUDGET_UPDATES + 1)
 }
 
+NON_OBJECT_MEMBER_PAYLOADS: tuple[dict[str, JsonValue], ...] = (
+    {"members": ["u"]},
+    {"members": [None]},
+)
+
 
 def schema_properties(schema: dict[str, JsonValue]) -> dict[str, JsonValue]:
     match schema["properties"]:
@@ -664,6 +669,16 @@ def test_names_team_member_limit() -> None:
     }
     assert rejection_errors(team.BulkTeamMemberBudgetUpdateRequest, budget_at_limit) == []
     assert rejection_errors(litellm_team.BulkTeamMemberBudgetUpdateRequest, budget_at_limit) == []
+
+
+def test_names_team_non_object_members() -> None:
+    for payload in NON_OBJECT_MEMBER_PAYLOADS:
+        for request in (
+            team.BulkTeamMemberDeleteRequest,
+            team.BulkTeamMemberBudgetUpdateRequest,
+        ):
+            with pytest.raises(ValidationError):
+                request.model_validate(payload)
 
 
 def test_names_team_deviations() -> None:

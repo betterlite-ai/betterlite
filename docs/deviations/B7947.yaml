@@ -43,6 +43,14 @@ deviations:
       field, per docs/compatibility.md.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L105-L133
   - what: >-
+      A bulk team member request whose members list carries a non-object such as a string or null
+      fails validation with a pydantic error naming the bad item.
+    why: >-
+      LiteLLM's MemberDeleteRequest.check_user_info calls values.get on the raw input, so the same
+      body raises AttributeError there and the endpoint returns a 500; betterlite answers with a
+      422.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4664-L4669
+  - what: >-
       Nested models that have no Python owner are JSON types: TeamListItem.members_with_roles,
       budget_limits, litellm_model_table, object_permission, model_spend and model_max_budget,
       BulkTeamMemberAddRequest.members and TeamMemberInfoResponse.litellm_budget_table are

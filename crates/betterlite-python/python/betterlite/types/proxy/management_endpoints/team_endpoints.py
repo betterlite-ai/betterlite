@@ -138,10 +138,14 @@ class TeamMemberRef(LiteLLMPydanticObjectBase):
 
     @model_validator(mode="before")
     @classmethod
-    def check_user_info(cls, values: dict[str, JsonValue]) -> dict[str, JsonValue]:
-        if values.get("user_id") is None and values.get("user_email") is None:
-            raise ValueError("Either user id or user email must be provided")
-        return values
+    def check_user_info(cls, values: JsonValue | BaseModel) -> JsonValue | BaseModel:
+        match values:
+            case dict():
+                if values.get("user_id") is None and values.get("user_email") is None:
+                    raise ValueError("Either user id or user email must be provided")
+                return values
+            case None | bool() | int() | float() | str() | list() | BaseModel():
+                return values
 
     @model_validator(mode="after")
     def one_identifier(self) -> "TeamMemberRef":
