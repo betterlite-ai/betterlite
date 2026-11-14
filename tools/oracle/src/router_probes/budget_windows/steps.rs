@@ -91,7 +91,11 @@ async fn success_event(
             .ok_or("the step needs current_time")?,
     )
     .map_err(|error| error.to_string())?;
-    let Some(budget) = windows.deployment_budget(model_id) else {
+    let Some(budget) = windows
+        .deployment
+        .as_ref()
+        .and_then(|configs| configs.get(model_id))
+    else {
         return Ok(());
     };
     let names = deployment_keys(model_id, &budget.period);

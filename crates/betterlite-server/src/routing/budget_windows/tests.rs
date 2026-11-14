@@ -65,7 +65,7 @@ fn converts_configured_budgets_into_typed_periods() {
     );
     assert_eq!(
         provider.period.as_ref().map(|period| period.seconds),
-        Some(Duration::from_secs(86_400))
+        Some(Duration::from_hours(24))
     );
     let tag = resolved
         .tag_budget_config
@@ -75,7 +75,7 @@ fn converts_configured_budgets_into_typed_periods() {
     assert_eq!(tag.max_budget, Some(Decimal::from(5_u8)));
     assert_eq!(
         tag.period.as_ref().map(|period| period.seconds),
-        Some(Duration::from_secs(86_400))
+        Some(Duration::from_hours(24))
     );
 }
 

@@ -38,18 +38,6 @@ impl BudgetWindows {
         windows
     }
 
-    #[must_use]
-    pub fn deployment_budget(&self, model_id: &str) -> Option<&DeploymentBudget> {
-        let configs = self.deployment.as_ref()?;
-        configs.get(model_id)
-    }
-
-    #[must_use]
-    pub fn provider_budget(&self, provider: &str) -> Option<&ProviderBudget> {
-        let configs = self.provider.as_ref()?;
-        configs.get(provider)
-    }
-
     // _init_deployment_budgets and register_deployment_budget register only a complete id, limit and duration
     pub fn register_deployment_budget(&mut self, limits: &DeploymentLimits) {
         let (Some(model_id), Some(max_budget), Some(period)) =
@@ -94,51 +82,44 @@ impl BudgetWindows {
     pub fn cache_keys(&self, deployments: &[BudgetDeployment<'_>], tags: &[String]) -> CacheKeys {
         let mut output = CacheKeys::default();
         for deployment in deployments {
-            self.push_provider_key(deployment, &mut output);
-            self.push_deployment_key(deployment, &mut output);
-        }
-        for tag in tags {
-            if let Some(configs) = &self.tag
-                && let Some(budget) = configs.get(tag)
+            if self.provider.is_some() {
+                output
+                    .deployment_providers
+                    .push(deployment.provider.map(str::to_owned));
+            }
+            if let Some(provider) = deployment.provider
+                && let Some(budget) = self
+                    .provider
+                    .as_ref()
+                    .and_then(|configs| configs.get(provider))
+                && budget.period.is_some()
             {
-                output.keys.push(keys::tag_keys(tag, &budget.period).spend);
+                output
+                    .keys
+                    .push(keys::provider_keys(provider, &budget.period).spend);
+                output
+                    .provider_configs
+                    .insert(provider.to_owned(), budget.clone());
+            }
+            if let Some(model_id) = deployment.model_id
+                && let Some(budget) = self
+                    .deployment
+                    .as_ref()
+                    .and_then(|configs| configs.get(model_id))
+            {
+                output
+                    .keys
+                    .push(keys::deployment_keys(model_id, &budget.period).spend);
+                output
+                    .deployment_configs
+                    .insert(model_id.to_owned(), budget.clone());
             }
         }
+        output.keys.extend(tags.iter().filter_map(|tag| {
+            let budget = self.tag.as_ref()?.get(tag)?;
+            Some(keys::tag_keys(tag, &budget.period).spend)
+        }));
         output
-    }
-
-    fn push_provider_key(&self, deployment: &BudgetDeployment<'_>, output: &mut CacheKeys) {
-        let Some(configs) = &self.provider else {
-            return;
-        };
-        output
-            .deployment_providers
-            .push(deployment.provider.map(str::to_owned));
-        if let Some(provider) = deployment.provider
-            && let Some(budget) = configs.get(provider)
-            && budget.period.is_some()
-        {
-            output
-                .keys
-                .push(keys::provider_keys(provider, &budget.period).spend);
-            output
-                .provider_configs
-                .insert(provider.to_owned(), budget.clone());
-        }
-    }
-
-    fn push_deployment_key(&self, deployment: &BudgetDeployment<'_>, output: &mut CacheKeys) {
-        if let Some(configs) = &self.deployment
-            && let Some(model_id) = deployment.model_id
-            && let Some(budget) = configs.get(model_id)
-        {
-            output
-                .keys
-                .push(keys::deployment_keys(model_id, &budget.period).spend);
-            output
-                .deployment_configs
-                .insert(model_id.to_owned(), budget.clone());
-        }
     }
 }
 

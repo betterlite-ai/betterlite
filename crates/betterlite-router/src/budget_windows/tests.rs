@@ -94,7 +94,7 @@ fn spend_value(text: &str) -> CacheValue {
 fn day() -> BudgetPeriod {
     BudgetPeriod {
         spec: "1d".to_owned(),
-        seconds: Duration::from_secs(86_400),
+        seconds: Duration::from_hours(24),
     }
 }
 
@@ -184,7 +184,9 @@ fn configured_maps() {
     assert_eq!(windows.tag.as_ref().map(IndexMap::len), Some(1));
     assert_eq!(
         windows
-            .provider_budget("openai")
+            .provider
+            .as_ref()
+            .and_then(|configs| configs.get("openai"))
             .map(|budget| budget.budget_limit),
         Some(Some(Decimal::from(100_u8)))
     );
@@ -198,7 +200,9 @@ fn configured_maps() {
     );
     assert_eq!(
         windows
-            .deployment_budget("d1")
+            .deployment
+            .as_ref()
+            .and_then(|configs| configs.get("d1"))
             .map(|budget| budget.max_budget),
         Some(Decimal::from(10_u8))
     );
@@ -323,18 +327,18 @@ fn key_names() {
 async fn start_window() {
     let cache = window_cache(0.0, None);
     let key = provider_keys("openai", &None).start_time;
-    let start = get_or_set_budget_start_time(&cache, &key, 100.0, Duration::from_secs(60)).await;
+    let start = get_or_set_budget_start_time(&cache, &key, 100.0, Duration::from_mins(1)).await;
     assert!(start.total_cmp(&100.0).is_eq());
     assert_eq!(stored(&cache, &key), Some(CacheValue::Float(100.0)));
     assert_eq!(
         cache.memory.lock().unwrap().ttl_entries(),
         vec![(key.clone(), 60.0_f64)]
     );
-    let cached = get_or_set_budget_start_time(&cache, &key, 500.0, Duration::from_secs(60)).await;
+    let cached = get_or_set_budget_start_time(&cache, &key, 500.0, Duration::from_mins(1)).await;
     assert!(cached.total_cmp(&100.0).is_eq());
     assert_eq!(stored(&cache, &key), Some(CacheValue::Float(100.0)));
     let pushed = window_cache(0.0, Some(redis_with(&key, 0.0)));
-    let zero = get_or_set_budget_start_time(&pushed, &key, 500.0, Duration::from_secs(60)).await;
+    let zero = get_or_set_budget_start_time(&pushed, &key, 500.0, Duration::from_mins(1)).await;
     assert!(zero.total_cmp(&0.0).is_eq());
     cache
         .memory
@@ -342,7 +346,7 @@ async fn start_window() {
         .unwrap()
         .set(&key, CacheValue::Text("broken".to_owned()), None)
         .unwrap();
-    let restarted = get_or_set_budget_start_time(&cache, &key, 7.0, Duration::from_secs(60)).await;
+    let restarted = get_or_set_budget_start_time(&cache, &key, 7.0, Duration::from_mins(1)).await;
     assert!(restarted.total_cmp(&7.0).is_eq());
     assert_eq!(stored(&cache, &key), Some(CacheValue::Float(7.0)));
 }
@@ -465,14 +469,18 @@ fn registration() {
     assert_eq!(windows.tag.as_ref().map(IndexMap::len), Some(1));
     assert_eq!(
         windows
-            .provider_budget("openai")
+            .provider
+            .as_ref()
+            .and_then(|configs| configs.get("openai"))
             .map(|budget| budget.budget_limit),
         Some(Some(Decimal::from(100_u8)))
     );
     windows.sync_deployment_budget(&deployment("d1", 9));
     assert_eq!(
         windows
-            .deployment_budget("d1")
+            .deployment
+            .as_ref()
+            .and_then(|configs| configs.get("d1"))
             .map(|budget| budget.max_budget),
         Some(Decimal::from(9_u8))
     );
@@ -484,7 +492,12 @@ fn unregistration() {
     let mut windows = BudgetWindows::new(None, None, &[deployment("d1", 1), deployment("d2", 2)]);
     windows.unregister_deployment_budget("gone");
     windows.unregister_deployment_budget("d1");
-    assert!(windows.deployment_budget("d1").is_none());
+    assert!(
+        windows
+            .deployment
+            .as_ref()
+            .is_some_and(|configs| !configs.contains_key("d1"))
+    );
     assert_eq!(windows.deployment.as_ref().map(IndexMap::len), Some(1));
     windows.unregister_deployment_budget("d2");
     assert!(windows.deployment.as_ref().is_none());
@@ -531,7 +544,7 @@ fn exact_keys() {
             budget_limit: None,
             period: Some(BudgetPeriod {
                 spec: "24h".to_owned(),
-                seconds: Duration::from_secs(86_400),
+                seconds: Duration::from_hours(24),
             }),
         },
     );
@@ -563,7 +576,9 @@ async fn zero_budgets() {
     );
     assert_eq!(
         windows
-            .deployment_budget("d1")
+            .deployment
+            .as_ref()
+            .and_then(|configs| configs.get("d1"))
             .map(|budget| budget.max_budget),
         Some(Decimal::ZERO)
     );
@@ -586,8 +601,6 @@ fn empty_and_missing() {
             .is_some_and(|configs| configs.is_empty())
     );
     assert!(windows.deployment.as_ref().is_none());
-    assert!(windows.deployment_budget("missing").is_none());
-    assert!(windows.provider_budget("missing").is_none());
     let output = windows.cache_keys(
         &[BudgetDeployment {
             model_id: Some("d1"),
