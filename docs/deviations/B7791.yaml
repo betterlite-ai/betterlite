@@ -1,0 +1,60 @@
+task: B7791
+deviations:
+  - what: >-
+      return_request=True returns betterlite's Request dataclass, and failures are betterlite.proxy.client.HTTPError,
+      RequestError and UnauthorizedError, not the requests classes.
+    why: >-
+      The wheel has no requests. The task text states the same deviation and B7790 records it for the base.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/keys.py#L98-L111
+  - what: >-
+      The optional arguments of list, generate and update are keyword-only, so a positional call such as list(2) raises
+      TypeError. An unknown keyword raises TypeError naming the arguments, where Python's own message names the one.
+    why: >-
+      ruff's PLR0913 counts keyword-only parameters and rejects the nine of list and the ten of generate, and the
+      budget allows no per-line suppression. A caller that passed these positionally must name them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/keys.py#L38-L49
+  - what: >-
+      delete, info and the four credential calls take return_request as a keyword-only argument.
+    why: >-
+      ruff's FBT001 and FBT002 forbid positional booleans, and the budget allows no per-line suppression.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/keys.py#L188-L193
+  - what: >-
+      update raises KeyUpdateError, a subclass of Exception, with the same "Error updating key: ..." message, and
+      without chaining the original error.
+    why: >-
+      ruff's TRY002 forbids raising Exception itself and B904 requires an explicit from in an except block, while
+      LiteLLM raises a plain Exception and leaves __context__ set. Code that catches Exception still catches this.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/keys.py#L283-L290
+  - what: >-
+      update catches RequestError, UnauthorizedError and ValueError, the failures its send and JSON parse can raise,
+      not every Exception.
+    why: >-
+      ruff's BLE001 forbids a blind except and the budget allows no suppression. Any other exception is a defect in
+      betterlite itself and surfaces instead of becoming "Error updating key".
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/keys.py#L284-L290
+  - what: >-
+      Every key call except update raises RequestError when the reply is not a JSON object, and update wraps that
+      failure in KeyUpdateError. LiteLLM returns whatever response.json() parsed.
+    why: >-
+      betterlite declares dict[str, JsonValue], so a list, string or number reply is outside the declared types.
+      B7790 records the same deviation for the health and model group clients, and the reply of a working proxy is
+      always an object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/keys.py#L106-L107
+  - what: >-
+      401 responses from list, generate, delete and the four credential calls raise UnauthorizedError with the
+      original HTTPError as __cause__; LiteLLM leaves __cause__ unset and the error as __context__.
+    why: >-
+      ruff's B904 requires an explicit from in an except block, so the implicit context chain cannot be copied where
+      the source does not write from None. The class and message are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/keys.py#L108-L111
+  - what: >-
+      The replies and the config and credential mappings are typed with pydantic's JsonValue where LiteLLM says
+      dict[str, object], dict[str, Any] and Mapping[str, object].
+    why: >-
+      The repository's no-loose-types rule forbids object in a type node, and JsonValue is the JSON type the
+      transport already uses. A caller passes the same values either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/credentials.py#L70-L76
+  - what: This task has no helper oracle cases.
+    why: >-
+      The pytest file imports both packages and compares them against one recording server.
+    link: ""
