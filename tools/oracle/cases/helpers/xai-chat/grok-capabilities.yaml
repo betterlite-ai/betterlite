@@ -1,0 +1,21 @@
+kind: helper
+name: grok-capabilities
+call:
+  xai_chat:
+    settings: {api_base: null, oauth_api_base: null, xai_key: null, environment_key: null}
+    steps:
+      - {kind: supported, model: grok-3-mini, supports_reasoning: true}
+      - {kind: supported, model: grok-4, supports_reasoning: true}
+      - {kind: supported, model: grok-code-fast-1, supports_reasoning: false}
+      - {kind: supported, model: grok-2-1212, supports_reasoning: true}
+      - kind: map
+        model: grok-4
+        supports_reasoning: true
+        params:
+          - [max_completion_tokens, 64]
+          - [temperature, null]
+          - [thinking, "on"]
+          - [stream, true]
+        optional_params: {}
+env: {}
+compare: {ignore: []}
