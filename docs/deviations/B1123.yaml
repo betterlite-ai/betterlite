@@ -12,3 +12,6 @@ deviations:
   - what: Event IDs come from an injected EventIdSource, and UuidEventIds is the production source, where LiteLLM calls the fastuuid module directly.
     why: Rule inject-dependencies keeps the random source out of the module, so native tests and the oracle can pin the IDs while the production source still returns uuid4 hex.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transcription_protocol.py#L105-L106
+  - what: A message whose type is a JSON list or object is refused with "expected session.update", where LiteLLM's membership test raises an uncaught TypeError.
+    why: An unhashable type is a malformed frame, so a protocol error names it instead of leaving an unhandled exception where a refused frame belongs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transcription_protocol.py#L113

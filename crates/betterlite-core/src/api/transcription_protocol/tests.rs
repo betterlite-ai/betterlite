@@ -122,7 +122,11 @@ fn transcription_session_transcription_fields() {
 }
 
 #[rstest]
-#[case::absent(r#"{"type":"session.update","session":{}}"#, false, None)]
+#[case::absent(
+    r#"{"type":"session.update","session":{"type":"transcription"}}"#,
+    false,
+    None
+)]
 #[case::explicit_null(
     r#"{"type":"session.update","session":{"turn_detection":null}}"#,
     true,
@@ -154,13 +158,15 @@ fn transcription_session_turn_detection(
 }
 
 #[rstest]
-#[case::malformed(r#"{"#, "invalid JSON object")]
+#[case::malformed("{", "invalid JSON object")]
 #[case::empty("", "invalid JSON object")]
-#[case::trailing(r#"{} {}"#, "invalid JSON object")]
-#[case::array(r#"[]"#, "message must be a JSON object")]
-#[case::scalar(r#"7"#, "message must be a JSON object")]
+#[case::trailing("{} {}", "invalid JSON object")]
+#[case::array("[]", "message must be a JSON object")]
+#[case::scalar("7", "message must be a JSON object")]
 #[case::other_type(r#"{"type":"other"}"#, "expected session.update")]
 #[case::numeric_type(r#"{"type":7}"#, "expected session.update")]
+#[case::list_type(r#"{"type":[]}"#, "expected session.update")]
+#[case::object_type(r#"{"type":{}}"#, "expected session.update")]
 #[case::missing_session(
     r#"{"type":"session.update"}"#,
     "session.update requires a session object"
@@ -310,21 +316,21 @@ fn caller_supplied_error_type_keeps_the_message() {
 
 #[rstest]
 #[case::padded_pair(r#""AAA=""#, None, Ok(vec![0, 0]))]
-#[case::padded_single(r#""AA==""#, None, Ok(vec![0]))]
+#[case::padded_single(r#""AA==""#, None, Err("PCM16 audio must contain complete samples"))]
 #[case::full_quad(r#""AAAA""#, None, Err("PCM16 audio must contain complete samples"))]
 #[case::two_full_quads(r#""AAAAAAAA""#, None, Ok(vec![0, 0, 0, 0, 0, 0]))]
 #[case::empty(r#""""#, None, Ok(vec![]))]
-#[case::trailing_bits(r#""AB==""#, None, Ok(vec![0]))]
-#[case::null(r#"null"#, None, Err("Audio must be a base64 string"))]
-#[case::number(r#"5"#, None, Err("Audio must be a base64 string"))]
-#[case::boolean(r#"true"#, None, Err("Audio must be a base64 string"))]
-#[case::object(r#"{}"#, None, Err("Audio must be a base64 string"))]
-#[case::list(r#"[]"#, None, Err("Audio must be a base64 string"))]
+#[case::trailing_bits(r#""AAB=""#, None, Ok(vec![0, 0]))]
+#[case::null("null", None, Err("Audio must be a base64 string"))]
+#[case::number("5", None, Err("Audio must be a base64 string"))]
+#[case::boolean("true", None, Err("Audio must be a base64 string"))]
+#[case::object("{}", None, Err("Audio must be a base64 string"))]
+#[case::list("[]", None, Err("Audio must be a base64 string"))]
 #[case::whitespace(r#""A A=""#, None, Err("Audio must be valid base64"))]
 #[case::bad_alphabet(r#""ab-_""#, None, Err("Audio must be valid base64"))]
 #[case::missing_padding(r#""AAA""#, None, Err("Audio must be valid base64"))]
 #[case::excess_padding(r#""AA===""#, None, Err("Audio must be valid base64"))]
-#[case::non_ascii(r#""éAA=""#, None, Err("Audio must be valid base64"))]
+#[case::non_ascii("\"\u{e9}AA=\"", None, Err("Audio must be valid base64"))]
 #[case::backlog(
     r#""AAAAAAAA""#,
     Some(4),
@@ -337,7 +343,11 @@ fn caller_supplied_error_type_keeps_the_message() {
 )]
 #[case::limit_accepts_padded_pair(r#""AAA=""#, Some(4), Ok(vec![0, 0]))]
 #[case::limit_accepts_quad(r#""AAAAAAAA""#, Some(8), Ok(vec![0, 0, 0, 0, 0, 0]))]
-#[case::limit_counts_characters(r#""ééééé""#, Some(8), Err("Audio must be valid base64"))]
+#[case::limit_counts_characters(
+    "\"\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\"",
+    Some(8),
+    Err("Audio must be valid base64")
+)]
 fn pcm16_append_validation(
     #[case] value: &str,
     #[case] max_encoded_bytes: Option<usize>,
@@ -376,6 +386,16 @@ impl EventIdSource for FixedIds<'_> {
     }
 }
 
+const SESSION_JSON: &str = r#"{"id":"s","object":"realtime.transcription_session","type":"transcription","audio":{"input":{"format":{"type":"audio/pcm","rate":16000},"transcription":{"model":"m","language":"en"},"turn_detection":{"type":"server_vad"}}}}"#;
+const BARE_SESSION_JSON: &str = r#"{"id":"s","object":"realtime.transcription_session","type":"transcription","audio":{"input":{"format":{"type":"audio/pcm","rate":16000},"transcription":{"model":"m"},"turn_detection":null}}}"#;
+const STARTED_JSON: &str = r#"{"type":"input_audio_buffer.speech_started","event_id":"event_00000000000000000000000000000002","item_id":"i"}"#;
+const STOPPED_JSON: &str = r#"{"type":"input_audio_buffer.speech_stopped","event_id":"event_00000000000000000000000000000003","item_id":"i"}"#;
+const DELTA_JSON: &str = r#"{"type":"conversation.item.input_audio_transcription.delta","event_id":"event_00000000000000000000000000000004","item_id":"i","content_index":0,"delta":"he"}"#;
+const SILENT_JSON: &str = r#"{"type":"conversation.item.input_audio_transcription.completed","event_id":"event_00000000000000000000000000000005","item_id":"i","content_index":0,"transcript":"hello"}"#;
+const TIMED_JSON: &str = r#"{"type":"conversation.item.input_audio_transcription.completed","event_id":"event_00000000000000000000000000000006","item_id":"i","content_index":0,"transcript":"hello","usage":{"type":"duration","seconds":1.25}}"#;
+const BILLED_JSON: &str = r#"{"type":"conversation.item.input_audio_transcription.completed","event_id":"event_00000000000000000000000000000007","item_id":"i","content_index":0,"transcript":"hello","usage":{"type":"tokens","input_tokens":3,"output_tokens":4,"total_tokens":7,"input_token_details":{"text_tokens":2,"audio_tokens":1}}}"#;
+const ERROR_JSON: &str = r#"{"type":"error","error":{"type":"server_error","message":"denied"}}"#;
+
 #[test]
 fn transcription_event_shapes() {
     let mut ids = FixedIds {
@@ -383,18 +403,40 @@ fn transcription_event_shapes() {
         next: 0,
     };
     let session = transcription_session("s", "m", 16000, Some("en"), true);
-    let bare = transcription_session("s", "m", 16000, None, false);
+    assert_eq!(serde_json::to_string(&session).unwrap(), SESSION_JSON);
     let created = transcription_session_created_event(ids.next_event_id(), &session);
-    let started = speech_event(ids.next_event_id(), SpeechEventType::Started, "i");
-    let stopped = speech_event(ids.next_event_id(), SpeechEventType::Stopped, "i");
-    let delta = delta_event(ids.next_event_id(), "i", "he");
-    let silent = completed_event(ids.next_event_id(), "i", "hello", None);
+    let created_json = serde_json::to_value(&created).unwrap();
+    assert_eq!(created_json["type"], "session.created");
+    assert_eq!(created_json["event_id"], EVENT_IDS[0]);
+    assert_eq!(
+        created_json["session"],
+        serde_json::to_value(serde_json::from_str::<Json>(SESSION_JSON).unwrap()).unwrap()
+    );
+    let bare = transcription_session("s", "m", 16000, None, false);
+    assert_eq!(serde_json::to_string(&bare).unwrap(), BARE_SESSION_JSON);
+}
+
+#[test]
+fn transcription_speech_and_delta_events() {
+    let started = speech_event(EVENT_IDS[1].to_owned(), SpeechEventType::Started, "i");
+    assert_eq!(serde_json::to_string(&started).unwrap(), STARTED_JSON);
+    let stopped = speech_event(EVENT_IDS[2].to_owned(), SpeechEventType::Stopped, "i");
+    assert_eq!(serde_json::to_string(&stopped).unwrap(), STOPPED_JSON);
+    let delta = delta_event(EVENT_IDS[3].to_owned(), "i", "he");
+    assert_eq!(serde_json::to_string(&delta).unwrap(), DELTA_JSON);
+}
+
+#[test]
+fn transcription_completed_events_keep_their_usage() {
+    let silent = completed_event(EVENT_IDS[4].to_owned(), "i", "hello", None);
+    assert_eq!(serde_json::to_string(&silent).unwrap(), SILENT_JSON);
     let timed = completed_event(
-        ids.next_event_id(),
+        EVENT_IDS[5].to_owned(),
         "i",
         "hello",
         Some(duration_usage(1.25)),
     );
+    assert_eq!(serde_json::to_string(&timed).unwrap(), TIMED_JSON);
     let tokens = TranscriptionUsage::Tokens(Box::new(TokenUsage {
         input_tokens: 3,
         output_tokens: 4,
@@ -404,105 +446,15 @@ fn transcription_event_shapes() {
             audio_tokens: 1,
         },
     }));
-    let billed = completed_event(ids.next_event_id(), "i", "hello", Some(tokens));
-    let denied = error_event("denied");
+    let billed = completed_event(EVENT_IDS[6].to_owned(), "i", "hello", Some(tokens));
+    assert_eq!(serde_json::to_string(&billed).unwrap(), BILLED_JSON);
+}
 
-    let session_json = serde_json::json!({
-        "id": "s",
-        "object": "realtime.transcription_session",
-        "type": "transcription",
-        "audio": {
-            "input": {
-                "format": {"type": "audio/pcm", "rate": 16000},
-                "transcription": {"model": "m", "language": "en"},
-                "turn_detection": {"type": "server_vad"},
-            }
-        },
-    });
-    assert_eq!(serde_json::to_value(&session).unwrap(), session_json);
+#[test]
+fn transcription_error_event_shape() {
     assert_eq!(
-        serde_json::to_value(&created).unwrap(),
-        serde_json::json!({
-            "type": "session.created",
-            "event_id": EVENT_IDS[0],
-            "session": session_json,
-        })
-    );
-    assert_eq!(
-        serde_json::to_value(&started).unwrap(),
-        serde_json::json!({
-            "type": "input_audio_buffer.speech_started",
-            "event_id": EVENT_IDS[1],
-            "item_id": "i",
-        })
-    );
-    assert_eq!(
-        serde_json::to_value(&stopped).unwrap(),
-        serde_json::json!({
-            "type": "input_audio_buffer.speech_stopped",
-            "event_id": EVENT_IDS[2],
-            "item_id": "i",
-        })
-    );
-    assert_eq!(
-        serde_json::to_value(&delta).unwrap(),
-        serde_json::json!({
-            "type": "conversation.item.input_audio_transcription.delta",
-            "event_id": EVENT_IDS[3],
-            "item_id": "i",
-            "content_index": 0,
-            "delta": "he",
-        })
-    );
-    assert_eq!(
-        serde_json::to_value(&silent).unwrap(),
-        serde_json::json!({
-            "type": "conversation.item.input_audio_transcription.completed",
-            "event_id": EVENT_IDS[4],
-            "item_id": "i",
-            "content_index": 0,
-            "transcript": "hello",
-        })
-    );
-    assert_eq!(
-        serde_json::to_value(&timed).unwrap(),
-        serde_json::json!({
-            "type": "conversation.item.input_audio_transcription.completed",
-            "event_id": EVENT_IDS[5],
-            "item_id": "i",
-            "content_index": 0,
-            "transcript": "hello",
-            "usage": {"type": "duration", "seconds": 1.25},
-        })
-    );
-    assert_eq!(
-        serde_json::to_value(&billed).unwrap(),
-        serde_json::json!({
-            "type": "conversation.item.input_audio_transcription.completed",
-            "event_id": EVENT_IDS[6],
-            "item_id": "i",
-            "content_index": 0,
-            "transcript": "hello",
-            "usage": {
-                "type": "tokens",
-                "input_tokens": 3,
-                "output_tokens": 4,
-                "total_tokens": 7,
-                "input_token_details": {"text_tokens": 2, "audio_tokens": 1},
-            },
-        })
-    );
-    assert_eq!(
-        serde_json::to_value(&denied).unwrap(),
-        serde_json::json!({"type": "error", "error": {"type": "server_error", "message": "denied"}})
-    );
-    assert_eq!(
-        serde_json::to_value(&bare).unwrap()["audio"]["input"]["turn_detection"].clone(),
-        serde_json::json!(null)
-    );
-    assert_eq!(
-        serde_json::to_value(&bare).unwrap()["audio"]["input"]["transcription"].clone(),
-        serde_json::json!({"model": "m"})
+        serde_json::to_string(&error_event("denied")).unwrap(),
+        ERROR_JSON
     );
 }
 

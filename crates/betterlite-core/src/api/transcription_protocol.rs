@@ -128,7 +128,7 @@ where
     };
     let audio = field::<&JsonObject, E>(session.get("audio"), "session.audio")?;
     let audio_input = field::<&JsonObject, E>(
-        audio.and_then(|audio| audio.get("input")),
+        audio.and_then(|fields| fields.get("input")),
         "session.audio.input",
     )?;
     let beta = present(session.get("input_audio_transcription"));
@@ -156,7 +156,7 @@ where
     let value = present(
         session
             .get("turn_detection")
-            .or_else(|| audio_input.and_then(|input| input.get("turn_detection"))),
+            .or_else(|| audio_input?.get("turn_detection")),
     );
     let detection = field::<&JsonObject, E>(value, "turn_detection")?;
     Ok((detection.cloned(), given && detection.is_none()))
@@ -234,13 +234,10 @@ where
             channels: None,
         });
     }
-    let fields = match format {
-        Json::Object(fields) => fields,
-        _ => {
-            return Err(E::from(ProtocolError::FieldNotObject {
-                name: "session.audio.input.format",
-            }));
-        }
+    let Json::Object(fields) = format else {
+        return Err(E::from(ProtocolError::FieldNotObject {
+            name: "session.audio.input.format",
+        }));
     };
     Ok(TranscriptionAudioFormat {
         layout: TranscriptionLayout::Ga,

@@ -1,14 +1,9 @@
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::transcription_protocol::audio::decode_pcm16_append;
 use betterlite_core::api::transcription_protocol::events::{
-    CompletedEvent,
-    DeltaEvent,
-    ErrorEvent,
     EventIdSource,
-    SpeechEvent,
     SpeechEventType,
     TranscriptionSession,
-    TranscriptionSessionCreated,
     UuidEventIds,
     completed_event,
     delta_event,
@@ -30,7 +25,7 @@ use betterlite_core::api::transcription_protocol::{
     parse_transcription_session_update as parse_update,
 };
 use betterlite_models::decisions::Json;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::helpers::{Helper, HelperResult};
@@ -77,21 +72,6 @@ struct EventInput {
     duration_seconds: f64,
     token_usage: TokenUsageDocument,
     error_message: String,
-}
-
-#[derive(Debug, Serialize)]
-struct EventDocuments {
-    generated_id_matches: bool,
-    created: TranscriptionSessionCreated,
-    speech_started: SpeechEvent,
-    speech_stopped: SpeechEvent,
-    delta: DeltaEvent,
-    completed_none: CompletedEvent,
-    completed_duration: CompletedEvent,
-    completed_tokens: CompletedEvent,
-    error: ErrorEvent,
-    session: TranscriptionSession,
-    session_without_language: TranscriptionSession,
 }
 
 pub(crate) struct Op;
@@ -157,43 +137,19 @@ fn event(fields: &EventInput) -> Value {
         next: 0,
     };
     let (session, without_language) = sessions(fields);
-    let documents = EventDocuments {
-        generated_id_matches: generated_id_matches(),
-        created: created_event(ids.next_event_id(), &session),
-        speech_started: speech_event(
-            ids.next_event_id(),
-            SpeechEventType::Started,
-            &fields.item_id,
-        ),
-        speech_stopped: speech_event(
-            ids.next_event_id(),
-            SpeechEventType::Stopped,
-            &fields.item_id,
-        ),
-        delta: delta_event(ids.next_event_id(), &fields.item_id, &fields.delta),
-        completed_none: completed_event(
-            ids.next_event_id(),
-            &fields.item_id,
-            &fields.transcript,
-            None,
-        ),
-        completed_duration: completed_event(
-            ids.next_event_id(),
-            &fields.item_id,
-            &fields.transcript,
-            Some(duration_usage(fields.duration_seconds)),
-        ),
-        completed_tokens: completed_event(
-            ids.next_event_id(),
-            &fields.item_id,
-            &fields.transcript,
-            Some(token_usage(&fields.token_usage)),
-        ),
-        error: error_event(&fields.error_message),
-        session,
-        session_without_language: without_language,
-    };
-    json!(documents)
+    json!({
+        "generated_id_matches": generated_id_matches(),
+        "created": created_event(ids.next_event_id(), &session),
+        "speech_started": speech_event(ids.next_event_id(), SpeechEventType::Started, &fields.item_id),
+        "speech_stopped": speech_event(ids.next_event_id(), SpeechEventType::Stopped, &fields.item_id),
+        "delta": delta_event(ids.next_event_id(), &fields.item_id, &fields.delta),
+        "completed_none": completed_event(ids.next_event_id(), &fields.item_id, &fields.transcript, None),
+        "completed_duration": completed_event(ids.next_event_id(), &fields.item_id, &fields.transcript, Some(duration_usage(fields.duration_seconds))),
+        "completed_tokens": completed_event(ids.next_event_id(), &fields.item_id, &fields.transcript, Some(token_usage(&fields.token_usage))),
+        "error": error_event(&fields.error_message),
+        "session": session,
+        "session_without_language": without_language,
+    })
 }
 
 fn sessions(fields: &EventInput) -> (TranscriptionSession, TranscriptionSession) {

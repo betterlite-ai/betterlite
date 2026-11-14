@@ -28,7 +28,7 @@ where
     }
     let decoded = STRICT_BASE64
         .decode(text.as_bytes())
-        .map_err(|_| ProtocolError::InvalidBase64)?;
+        .map_err(|_error| ProtocolError::InvalidBase64)?;
     if !decoded.len().is_multiple_of(2) {
         return Err(E::from(ProtocolError::IncompleteSamples));
     }
