@@ -12,10 +12,10 @@ on:
 permissions: {}
 
 env:
-  # three runners take main's whole suite from 13.5 to 10 minutes
-  TEST_SHARDS: 3
-  # cargo mutants tests one mutant at a time, so a task pull request splits them over three runners
-  MUTANTS_SHARDS: 3
+  # cargo gate affected --shard packs whole packages onto the shards by their test seconds; six took 9.6 to 17.1 minutes on 11-13 (run 43471939068) against 20 to 28 for three hash shards
+  TEST_SHARDS: 6
+  # cargo mutants tests one mutant at a time, so a task pull request splits them over six runners; three took a median 20 and a p90 38 minutes on 11-13
+  MUTANTS_SHARDS: 6
 
 concurrency:
   group: gate-${{ github.event.pull_request.number || github.event.merge_group.head_ref || github.ref }}
@@ -37,7 +37,6 @@ jobs:
       base: ${{ steps.find.outputs.base }}
       task: ${{ steps.find.outputs.task }}
       parts: ${{ steps.find.outputs.parts }}
-      rest: ${{ steps.find.outputs.rest }}
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -89,16 +88,16 @@ jobs:
               parts='["lint"]'
             fi
           fi
-          # on a pull request lint runs first in a job of its own, so a compile error stops the round before the long parts start (stage 3)
-          rest=$parts
-          if [[ $EVENT == pull_request ]]; then rest=$(jq -c 'map(select(. != "lint"))' <<<"$parts"); fi
+          # a tests part builds only its own packages, so on main one part builds every test target for the cache
+          if [[ $EVENT == push ]]; then
+            parts=$(jq -c '. + ["cache"]' <<<"$parts")
+          fi
           echo "branch $branch, base $base, task ${task:-none}, parts $parts"
-          printf 'base=%s\ntask=%s\nparts=%s\nrest=%s\n' "$base" "$task" "$parts" "$rest" >> "$GITHUB_OUTPUT"
+          printf 'base=%s\ntask=%s\nparts=%s\n' "$base" "$task" "$parts" >> "$GITHUB_OUTPUT"
 
   checks:
     name: ${{ matrix.part }}
-    needs: [find, lint]
-    if: ${{ !cancelled() && needs.find.result == 'success' && needs.find.outputs.rest != '[]' && (needs.lint.result == 'success' || needs.lint.result == 'skipped') }}
+    needs: find
     runs-on: ubuntu-24.04
     # the longest local mutants run took 130 minutes
     timeout-minutes: ${{ startsWith(matrix.part, 'mutants-') && 300 || 120 }}
@@ -108,12 +107,12 @@ jobs:
       # one red part must not cancel the others, or their failures only show in the next fix round
       fail-fast: false
       matrix:
-        part: ${{ fromJSON(needs.find.outputs.rest) }}
-    container: &container
+        part: ${{ fromJSON(needs.find.outputs.parts) }}
+    container:
       image: rust:1.98.0-slim-trixie@sha256:17d1ba895198f9934c6314ec5346a0d5115372f3243390c3d731e242f35c2f27
       volumes:
         - /usr/local/lib/android:/runner-android
-    services: &services
+    services:
       postgres:
         image: postgres:16.6@sha256:557fea37a744d5f4c8faab304b0a90858b53ab119735a88c131fd19dab802f36
         env:
@@ -125,7 +124,7 @@ jobs:
           --health-interval 1s
           --health-timeout 5s
           --health-retries 60
-    env: &part-env
+    env:
       CARGO_TERM_COLOR: never
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
       CARGO_PROFILE_TEST_DEBUG: line-tables-only
@@ -154,7 +153,7 @@ jobs:
       TOOLS_KEY: tools-layout2-nextest-0.9.140-deny-0.20.2-llvm-cov-0.8.7-mutants-27.1.0-typos-1.48.0-prek-0.4.9-zizmor-1.26.1-shellcheck-0.11.0-shfmt-3.14.1-actionlint-1.7.12-uv-0.11.14-shear-1.13.1-ast-grep-0.45.3-similarity-rs-0.5.0-similarity-py-0.5.0
       POSTGRES_TEST_URL: postgresql://betterlite:betterlite@postgres:5432/betterlite
       BETTERLITE_ORACLE_CACHE: ${{ github.event_name == 'push' && 'shared' || 'own' }}
-    steps: &part-steps
+    steps:
       # a test build filled the disk on runner image 20261018.96; emptying the 14 GiB Android SDK takes 30 to 270 s, so it waits for a runner with less than 60 GiB free
       - name: Free the runner's disk
         if: matrix.part != 'lint'
@@ -181,12 +180,12 @@ jobs:
       - name: Add Rust components
         run: rustup component add clippy rustfmt llvm-tools-preview
 
-      # clippy keeps check builds and the tests keep full builds, so each kind has its own cache, and only the first test shard saves it
+      # clippy keeps check builds and the tests keep full builds, so each kind has its own cache, and main's cache part saves the test one
       - name: Restore the cargo cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: gate-${{ matrix.part == 'lint' && 'lint' || 'tests' }}
-          save-if: ${{ github.ref == 'refs/heads/main' && (matrix.part == 'lint' || matrix.part == 'tests-1') }}
+          save-if: ${{ github.ref == 'refs/heads/main' && (matrix.part == 'lint' || matrix.part == 'cache') }}
           workspaces: |
             .development/gate -> target
             . -> target
@@ -270,6 +269,14 @@ jobs:
           key: oracle-answers-${{ github.sha }}
           restore-keys: oracle-answers-
 
+      # a task's own checks may run node (B9090's do), and the image has none; 24.19.0 is what LiteLLM's ui/litellm-dashboard/.nvmrc pins
+      - name: Set up Node
+        if: matrix.part == 'task'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.19.0
+          package-manager-cache: false
+
       # lint and task split every check between them, so a check added to checks.yaml runs in task
       - name: Run the gate's ${{ matrix.part }} checks on the merged result
         if: github.event_name != 'pull_request' || needs.find.outputs.task != ''
@@ -303,14 +310,17 @@ jobs:
                 if [[ -n $affected ]]; then echo "the change affects $affected, but find started no tests part"; exit 1; fi
               fi ;;
             tests-*)
-              affected=$(cargo gate affected) || exit 1
-              if [[ -z $affected ]]; then echo "the change affects no package"; exit 0; fi
+              affected=$(cargo gate affected --shard "${PART#tests-}" --shards "$TEST_SHARDS") || exit 1
+              if [[ -z $affected ]]; then echo "no package the change affects falls in this shard"; exit 0; fi
               read -r -a packages <<< "$affected"
               # the oracle library and its unit-test build need about 8 GB each, so they take turns on a 16 GB runner
               export RUSTC_WRAPPER="$GITHUB_WORKSPACE/.github/scripts/oracle-rustc-turns.sh"
               # the tests use LiteLLM but not its dev tools, about 330 MB
               # a shard that stops at its first failure hides the rest: on 11-13 shard 3 ran 30 of 22702 tests in run 43451345497
-              UV_NO_DEV=1 exec cargo nextest run --locked --no-tests=warn --max-fail 20 --partition "hash:${PART#tests-}/$TEST_SHARDS" "${packages[@]}" ;;
+              UV_NO_DEV=1 exec cargo nextest run --locked --no-tests=warn --max-fail 20 "${packages[@]}" ;;
+            cache)
+              export RUSTC_WRAPPER="$GITHUB_WORKSPACE/.github/scripts/oracle-rustc-turns.sh"
+              exec cargo test --locked --no-run --workspace ;;
             task)
               export NEXTEST_PROFILE=task
               for id in "${lint[@]}" "${later[@]}"; do selection+=(--skip "$id"); done ;;
@@ -352,25 +362,9 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  lint:
-    name: ${{ matrix.part }}
-    needs: find
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    permissions:
-      contents: read
-    strategy:
-      matrix:
-        part: [lint]
-    container: *container
-    services: *services
-    env: *part-env
-    steps: *part-steps
-
   gate:
     name: gate
-    needs: [find, lint, checks]
+    needs: [find, checks]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -378,13 +372,8 @@ jobs:
     steps:
       - name: Require every part to pass
         env:
-          EVENT: ${{ github.event_name }}
           FIND: ${{ needs.find.result }}
-          LINT: ${{ needs.lint.result }}
           CHECKS: ${{ needs.checks.result }}
-          REST: ${{ needs.find.outputs.rest }}
         run: |
-          echo "find $FIND, lint $LINT, checks $CHECKS, other parts $REST"
-          [[ $FIND == success ]]
-          [[ $LINT == success || ($LINT == skipped && $EVENT != pull_request) ]]
-          [[ $CHECKS == success || ($CHECKS == skipped && $REST == "[]") ]]
+          echo "find $FIND, checks $CHECKS"
+          [[ $FIND == success && $CHECKS == success ]]
