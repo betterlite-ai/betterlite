@@ -1,0 +1,5 @@
+task: B9956
+deviations:
+  - what: A request or response with more than 128 tool calls that carry something to scan is blocked before any Prisma AIRS scan.
+    why: LiteLLM sends one sequential scan per tool call with no limit, so one body can send thousands of scans and hold the request for hours.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L1481-L1505

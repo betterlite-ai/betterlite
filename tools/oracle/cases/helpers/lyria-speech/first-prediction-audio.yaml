@@ -1,0 +1,24 @@
+kind: helper
+name: lyria-first-prediction-audio
+call:
+  vertex_lyria_speech:
+    function: decoded
+    cases:
+      - {model: lyria-002, status: 200, body: '{"predictions": [{"audioContent": "QUJD", "mimeType": "audio/wav"}]}'}
+      - {model: lyria-002, status: 500, body: '{"predictions": [{"audioContent": "QUJD"}, {"audioContent": "WFk=", "mimeType": "audio/mpeg"}]}'}
+      - {model: lyria-002, status: 200, body: '{"predictions": [{"bytesBase64Encoded": "ZkxhQwA="}]}'}
+      - {model: lyria-002, status: 200, body: '{"predictions": [{"audioContent": "", "bytesBase64Encoded": "QUJD"}]}'}
+      - {model: lyria-002, status: 200, body: '{}'}
+      - {model: lyria-002, status: 200, body: '{"predictions": []}'}
+      - {model: lyria-002, status: 200, body: '{"predictions": null}'}
+      - {model: lyria-002, status: 200, body: '{"predictions": [{"audioContent": "QUJD", "mimeType": ""}]}'}
+      - {model: lyria-002, status: 200, body: '{not json'}
+      - {model: lyria-002, status: 200, body: '[]'}
+      - {model: lyria-9, status: 200, body: '{"predictions": [{"audioContent": "QUJD"}]}'}
+      - {model: lyria-002, status: 200, body: '{"predictions": [{"audioContent": "QUJD", "mimeType": "audio/ogg"}]}'}
+      - {model: lyria-002, status: 200, body: '{"predictions": [{"audioContent": "ZkxhQwA=", "mimeType": "audio/wav"}]}'}
+      - {model: lyria-002, status: 201, body: '{"predictions": [{"audioContent": "WFk="}]}'}
+      - {model: vertex_ai/lyria-002, status: 200, body: '{"predictions": [{"audioContent": "QUJD"}]}'}
+      - {model: lyria-002, status: 200, body: '{"predictions": [{"audioContent": "QQ=="}]}'}
+env: {}
+compare: {ignore: []}

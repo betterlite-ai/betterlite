@@ -1,0 +1,14 @@
+kind: helper
+name: fresh-login-interactive-non-tty
+call:
+  b4577:
+    operation: fresh_login
+    stored:
+      base_url: http://gateway.test:4000
+      key: sk-pkce
+      timestamp: 1000.0
+      expires_at: 1000.0
+      refresh_token: rt-old
+    tty: false
+env: {}
+compare: {ignore: []}
