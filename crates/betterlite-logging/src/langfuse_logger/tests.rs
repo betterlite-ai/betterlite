@@ -29,6 +29,10 @@ mod initialization_tests {
             .await
             .expect("the logger builds");
         assert_eq!(logger.project_id.as_deref(), Some("mock-project-id"));
+        assert_eq!(
+            format!("{logger:?}"),
+            r#"LangFuseLogger { project_id: Some("mock-project-id"), stopped: false, .. }"#
+        );
         let output = log.contents();
         assert!(output.contains("Langfuse Mock: Using mock project ID"));
         assert!(output.contains("Created langfuse client number 1"));
