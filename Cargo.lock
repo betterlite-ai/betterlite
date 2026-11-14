@@ -1138,6 +1138,7 @@ dependencies = [
  "betterlite-secrets",
  "chrono",
  "hex",
+ "indexmap 2.14.2",
  "lru",
  "pcre2",
  "regex",
