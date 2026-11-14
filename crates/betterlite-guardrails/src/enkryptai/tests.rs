@@ -20,7 +20,7 @@ use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
 use super::EnkryptAiGuardrail;
-use super::process::{Processed, process};
+use super::process::process;
 use super::wire::{DetectPayload, DetectionResponse};
 
 use crate::guardrail_base::failure::GuardrailFailure;
@@ -41,6 +41,7 @@ struct Reply {
     body: String,
 }
 
+#[derive(Clone)]
 struct Captured {
     path: String,
     headers: HeaderMap,
@@ -64,7 +65,8 @@ async fn handle(
         headers,
         body,
     });
-    match state.replies.lock().unwrap().pop_front() {
+    let next = state.replies.lock().unwrap().pop_front();
+    match next {
         Some(reply) => (reply.status, reply.body),
         None => (StatusCode::INTERNAL_SERVER_ERROR, "{}".to_owned()),
     }
@@ -84,7 +86,9 @@ async fn serve(replies: Vec<Reply>) -> (String, TestState, JoinSet<io::Result<()
 }
 
 fn clock() -> SystemTime {
-    UNIX_EPOCH + Duration::from_secs(1_700_000_000)
+    UNIX_EPOCH
+        .checked_add(Duration::from_secs(1_700_000_000))
+        .expect("clock")
 }
 
 fn settings_for(api_base: &str) -> Configured {
@@ -163,6 +167,18 @@ fn parse_value(body: &str) -> GuardrailValue {
     serde_json::from_str(body).expect("json value")
 }
 
+fn raised_message(error: GuardrailFailure) -> String {
+    let GuardrailFailure::GuardrailRaised {
+        message,
+        status_code: 400,
+        ..
+    } = error
+    else {
+        panic!("unexpected failure: {error:?}");
+    };
+    message
+}
+
 fn parsed_response(body: &str) -> DetectionResponse {
     serde_json::from_str(body).expect("response")
 }
@@ -180,14 +196,13 @@ async fn enkryptai_guardrail_sends_the_detection_request() {
         .await
         .expect("apply");
     assert_eq!(returned.texts, Some(vec!["hello".to_owned()]));
-    let captured = state.captured.lock().unwrap();
+    let captured = state.captured.lock().unwrap().clone();
     assert_eq!(captured.len(), 1);
     assert_eq!(captured[0].path, "/guardrails/policy/detect");
     assert_eq!(payload(&captured[0]).text, "hello");
     assert_eq!(captured[0].headers["content-type"], "application/json");
     assert_eq!(captured[0].headers["apikey"], "secret-key");
     assert!(!captured[0].headers.contains_key("x-enkrypt-policy"));
-    drop(captured);
     server.shutdown().await;
 }
 
@@ -204,9 +219,8 @@ async fn enkryptai_guardrail_sends_the_policy_header_when_configured() {
         .apply(inputs(&["hello"]), &mut BTreeMap::new(), None)
         .await
         .expect("apply");
-    let captured = state.captured.lock().unwrap();
+    let captured = state.captured.lock().unwrap().clone();
     assert_eq!(captured[0].headers["x-enkrypt-policy"], "policy-a");
-    drop(captured);
     server.shutdown().await;
 }
 
@@ -232,9 +246,8 @@ async fn enkryptai_guardrail_preserves_the_configured_api_base() {
         .apply(inputs(&["hello"]), &mut BTreeMap::new(), None)
         .await
         .expect("apply");
-    let captured = state.captured.lock().unwrap();
+    let captured = state.captured.lock().unwrap().clone();
     assert_eq!(captured[0].path, "//guardrails/policy/detect");
-    drop(captured);
     server.shutdown().await;
 }
 
@@ -316,14 +329,7 @@ async fn enkryptai_guardrail_detects_policy_violation() {
         .apply(inputs(&["bad"]), &mut request_data, None)
         .await
         .expect_err("detected");
-    let message = match error {
-        GuardrailFailure::GuardrailRaised {
-            message,
-            status_code: 400,
-            ..
-        } => message,
-        other => panic!("unexpected failure: {other:?}"),
-    };
+    let message = raised_message(error);
     assert_eq!(
         message,
         "EnkryptAI guardrail detected 1 violation(s):\n- POLICY_VIOLATION: policy \"no-illegal\", explanation \"illegal content\""
@@ -349,14 +355,7 @@ async fn enkryptai_guardrail_defaults_null_attack_details() {
         .apply(inputs(&["bad"]), &mut request_data, None)
         .await
         .expect_err("detected");
-    let message = match error {
-        GuardrailFailure::GuardrailRaised {
-            message,
-            status_code: 400,
-            ..
-        } => message,
-        other => panic!("unexpected failure: {other:?}"),
-    };
+    let message = raised_message(error);
     assert_eq!(
         message,
         "EnkryptAI guardrail detected 1 violation(s):\n- POLICY_VIOLATION: policy \"N/A\", explanation \"N/A\""
@@ -380,14 +379,7 @@ async fn enkryptai_guardrail_detects_pii() {
         .apply(inputs(&["bad"]), &mut BTreeMap::new(), None)
         .await
         .expect_err("detected");
-    let message = match error {
-        GuardrailFailure::GuardrailRaised {
-            message,
-            status_code: 400,
-            ..
-        } => message,
-        other => panic!("unexpected failure: {other:?}"),
-    };
+    let message = raised_message(error);
     assert_eq!(
         message,
         "EnkryptAI guardrail detected 1 violation(s):\n- PII: pii detected: {\"email\":1,\"phone\":2}"
@@ -406,14 +398,7 @@ async fn enkryptai_guardrail_reports_only_toxicity_scores_above_half() {
         .apply(inputs(&["bad"]), &mut BTreeMap::new(), None)
         .await
         .expect_err("detected");
-    let message = match error {
-        GuardrailFailure::GuardrailRaised {
-            message,
-            status_code: 400,
-            ..
-        } => message,
-        other => panic!("unexpected failure: {other:?}"),
-    };
+    let message = raised_message(error);
     assert_eq!(
         message,
         "EnkryptAI guardrail detected 1 violation(s):\n- TOXICITY: toxicity scores above 0.5: toxic, insult"
@@ -432,14 +417,7 @@ async fn enkryptai_guardrail_detects_keywords_and_bias() {
         .apply(inputs(&["bad"]), &mut BTreeMap::new(), None)
         .await
         .expect_err("detected");
-    let message = match error {
-        GuardrailFailure::GuardrailRaised {
-            message,
-            status_code: 400,
-            ..
-        } => message,
-        other => panic!("unexpected failure: {other:?}"),
-    };
+    let message = raised_message(error);
     assert_eq!(
         message,
         "EnkryptAI guardrail detected 2 violation(s):\n- KEYWORD_DETECTED: detected keywords: [\"secret\",\"weapon\"]\n- BIAS: bias detected: true"
@@ -458,14 +436,7 @@ async fn enkryptai_guardrail_detects_prompt_injection_and_jailbreak() {
         .apply(inputs(&["bad"]), &mut BTreeMap::new(), None)
         .await
         .expect_err("detected");
-    let message = match error {
-        GuardrailFailure::GuardrailRaised {
-            message,
-            status_code: 400,
-            ..
-        } => message,
-        other => panic!("unexpected failure: {other:?}"),
-    };
+    let message = raised_message(error);
     assert_eq!(
         message,
         "EnkryptAI guardrail detected 2 violation(s):\n- PROMPT_INJECTION: details: {\"score\":0.8}\n- JAILBREAK: details: {\"score\":0.9}"
@@ -484,14 +455,7 @@ async fn enkryptai_guardrail_reports_unknown_detector_details() {
         .apply(inputs(&["bad"]), &mut BTreeMap::new(), None)
         .await
         .expect_err("detected");
-    let message = match error {
-        GuardrailFailure::GuardrailRaised {
-            message,
-            status_code: 400,
-            ..
-        } => message,
-        other => panic!("unexpected failure: {other:?}"),
-    };
+    let message = raised_message(error);
     assert_eq!(
         message,
         "EnkryptAI guardrail detected 2 violation(s):\n- NSFW: details: {\"score\":0.7}\n- SPAM: details: {}"
@@ -521,10 +485,9 @@ async fn enkryptai_guardrail_batch_evaluates_each_text() {
         returned.texts,
         Some(vec!["first".to_owned(), "second".to_owned()])
     );
-    let captured = state.captured.lock().unwrap();
+    let captured = state.captured.lock().unwrap().clone();
     assert_eq!(captured.len(), 2);
     assert_eq!(payload(&captured[1]).text, "second");
-    drop(captured);
     let records = record_objects(&request_data);
     assert_eq!(records.len(), 2);
     assert_eq!(field(&records[1], "guardrail_status"), text("success"));
@@ -558,9 +521,8 @@ async fn enkryptai_guardrail_batch_stops_at_the_first_detected_text() {
             ..
         })
     ));
-    let captured = state.captured.lock().unwrap();
+    let captured = state.captured.lock().unwrap().clone();
     assert_eq!(captured.len(), 2);
-    drop(captured);
     let records = record_objects(&request_data);
     assert_eq!(records.len(), 2);
     assert_eq!(field(&records[0], "guardrail_status"), text("success"));
@@ -739,10 +701,10 @@ async fn enkryptai_guardrail_rejects_an_invalid_policy_header() {
 #[case::unknown_float_one(r#"{"summary":{"nsfw":1.0}}"#, true)]
 #[case::boolean_true(r#"{"summary":{"pii":true}}"#, false)]
 #[case::string_toxicity(r#"{"summary":{"toxicity":"toxic"}}"#, false)]
-#[case::missing_fields(r#"{}"#, false)]
+#[case::missing_fields("{}", false)]
 fn enkryptai_guardrail_processes_the_summary(#[case] body: &str, #[case] detected: bool) {
     let response = parsed_response(body);
-    let processed: Processed = process(&response);
+    let processed = process(&response);
     assert_eq!(!processed.attacks.is_empty(), detected);
 }
 

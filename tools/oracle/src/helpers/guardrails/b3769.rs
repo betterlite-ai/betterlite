@@ -11,7 +11,7 @@ use betterlite_guardrails::enkryptai::{
     API_PATH, EnkryptAiGuardrail, GUARDRAIL_PROVIDER, SUPPORTED_EVENT_HOOKS,
 };
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
-use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
+use betterlite_guardrails::guardrail_base::contract::GuardrailContract as _;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
 use betterlite_guardrails::guardrail_records::error::GuardrailSpanError;
@@ -91,7 +91,7 @@ fn configure(settings: &Settings) -> Result<Configured, Box<HelperError>> {
         lookup: BTreeMap::<String, String>::new(),
     }
     .load(&document.to_string())
-    .map_err(config_failure)?;
+    .map_err(|error| config_failure(&error))?;
     config
         .sections
         .enkryptai_detection
@@ -101,8 +101,8 @@ fn configure(settings: &Settings) -> Result<Configured, Box<HelperError>> {
         .ok_or_else(|| helper_error("ConfigError", "no EnkryptAI guardrail".to_owned()))
 }
 
-fn config_failure(error: ConfigError) -> Box<HelperError> {
-    let class = match &error {
+fn config_failure(error: &ConfigError) -> Box<HelperError> {
+    let class = match error {
         ConfigError::MissingEnvironment { .. } => "EnkryptAIGuardrailMissingSecrets",
         ConfigError::Yaml { .. }
         | ConfigError::Unsupported { .. }
@@ -144,7 +144,7 @@ fn prepare(args: &DetectArgs<'_>) -> Result<Prepared, Box<HelperError>> {
         .map_err(|error| helper_error("MockError", error.to_string()))?;
     let mock = MockProvider::start(script)
         .map_err(|error| helper_error("MockError", error.to_string()))?;
-    configured.api_base = mock.base_url.clone();
+    configured.api_base.clone_from(&mock.base_url);
     let client = base_builder()
         .build()
         .map_err(|error| helper_error("OSError", error.to_string()))?;
@@ -209,11 +209,10 @@ fn detect(args: DetectArgs<'_>) -> HelperResult {
 fn result_value(
     outcome: &Result<GuardrailApiInputs, GuardrailFailure>,
 ) -> Result<serde_json::Value, Box<HelperError>> {
-    match outcome {
-        Ok(returned) => serde_json::to_value(returned)
-            .map_err(|error| helper_error("ValidationError", error.to_string())),
-        Err(_) => Ok(json!(null)),
-    }
+    outcome.as_ref().map_or(Ok(json!(null)), |returned| {
+        serde_json::to_value(returned)
+            .map_err(|error| helper_error("ValidationError", error.to_string()))
+    })
 }
 
 fn request_views(calls: &[ProviderCall]) -> Result<Vec<serde_json::Value>, Box<HelperError>> {
