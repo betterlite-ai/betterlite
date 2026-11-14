@@ -1,0 +1,22 @@
+kind: helper
+name: vertex-batch-rows-numeric-suffix-order
+call:
+  vertex_batch_rows:
+    operation: rows
+    rows:
+      - request:
+          labels:
+            litellm_custom_id_raw: b32_mn2xg5dpnuwwszbnmn2xg5dpnuwwszbnmn2xg5dpnuwwszbnmn2xg5dpnuw
+            litellm_custom_id_raw_2: b32_wszbnmn2xg5dpnuwwszbnmn2xg5dpnuwwszbnmn2xg5dpnuwwszbnmn2xg5
+            litellm_custom_id_raw_10: b32_dpnuwwszbn
+      - request:
+          labels:
+            litellm_custom_id_raw: b32_mn2xg5dpnuwwszbnmn2xg5dpnuwwszbnmn2xg5dpnuwwszbnmn2xg5dpnuw
+            litellm_custom_id_raw_10: b32_dpnuwwszbn
+            litellm_custom_id_raw_2: b32_wszbnmn2xg5dpnuwwszbnmn2xg5dpnuwwszbnmn2xg5dpnuwwszbnmn2xg5
+      - request:
+          labels:
+            litellm_custom_id_raw: b32_
+            litellm_custom_id_raw_0: b32_mzxw6ztf
+env: {}
+compare: {ignore: []}
