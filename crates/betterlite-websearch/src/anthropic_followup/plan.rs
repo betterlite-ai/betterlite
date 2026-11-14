@@ -111,7 +111,7 @@ fn anthropic_metadata() -> Result<JsonMap, AnthropicFollowupError> {
     Ok(metadata)
 }
 
-fn running_plan(patch: AgenticLoopRequestPatch, metadata: JsonMap) -> AgenticLoopPlan {
+const fn running_plan(patch: AgenticLoopRequestPatch, metadata: JsonMap) -> AgenticLoopPlan {
     AgenticLoopPlan {
         run_agentic_loop: true,
         request_patch: Some(patch),

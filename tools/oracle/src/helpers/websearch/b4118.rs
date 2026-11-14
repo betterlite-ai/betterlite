@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::mem::take;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -108,13 +109,6 @@ impl ScriptedSearch {
             queries: Mutex::new(Vec::new()),
         }
     }
-
-    fn recorded(&self) -> Vec<String> {
-        match self.queries.lock() {
-            Ok(mut queries) => std::mem::take(&mut *queries),
-            Err(poisoned) => std::mem::take(&mut poisoned.into_inner()),
-        }
-    }
 }
 
 #[async_trait]
@@ -188,14 +182,24 @@ impl crate::helpers::Helper for Op {
 fn run_case(case: &Case) -> Result<Value, Box<crate::helpers::HelperError>> {
     let (executor, logging) = searches(case);
     let tools = tools_dict(case);
-    let search: Arc<dyn SearchExecutor> = Arc::clone(&executor);
+    let search: Arc<dyn SearchExecutor> = Arc::<ScriptedSearch>::clone(&executor);
     let followup = AnthropicFollowup {
         followup: ChatResponsesFollowup { search },
     };
-    let request = plan_request(case, logging.as_ref());
+    let request = AnthropicPlanRequest {
+        model: &case.model,
+        messages: &case.messages,
+        optional_params: &case.optional_params,
+        logging: logging.as_ref(),
+        kwargs: &case.kwargs,
+    };
     let plan = block_on(followup.build_agentic_loop_plan(&tools, &request))?.map_err(failure)?;
     let value = serde_json::to_value(plan).map_err(failure)?;
-    Ok(json!({"plan": value, "searches": executor.recorded()}))
+    let mut queries = executor
+        .queries
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    Ok(json!({"plan": value, "searches": take(&mut *queries)}))
 }
 
 fn tools_dict(case: &Case) -> ToolsDict {
@@ -205,19 +209,6 @@ fn tools_dict(case: &Case) -> ToolsDict {
         provider: "anthropic".to_owned(),
         response_format: "anthropic",
         thinking_blocks: Some(case.thinking_blocks.clone()),
-    }
-}
-
-fn plan_request<'request>(
-    case: &'request Case,
-    logging: Option<&'request FollowupLogging<'request>>,
-) -> AnthropicPlanRequest<'request> {
-    AnthropicPlanRequest {
-        model: &case.model,
-        messages: &case.messages,
-        optional_params: &case.optional_params,
-        logging,
-        kwargs: &case.kwargs,
     }
 }
 
@@ -234,10 +225,10 @@ fn block_on<Future>(future: Future) -> Result<Future::Output, Box<crate::helpers
 where
     Future: std::future::Future,
 {
-    Builder::new_current_thread()
+    Ok(Builder::new_current_thread()
         .build()
         .map_err(failure)?
-        .block_on(future)
+        .block_on(future))
 }
 
 fn rate_limit(message: &str) -> SearchFailure {

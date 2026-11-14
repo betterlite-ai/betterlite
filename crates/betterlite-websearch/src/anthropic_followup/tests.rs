@@ -131,7 +131,7 @@ fn call_list(text: &str) -> Vec<Call> {
 }
 
 fn followup(searcher: &Arc<ScriptedSearches>) -> AnthropicFollowup {
-    let search: Arc<dyn SearchExecutor> = Arc::clone(searcher);
+    let search: Arc<dyn SearchExecutor> = Arc::<ScriptedSearches>::clone(searcher);
     AnthropicFollowup {
         followup: ChatResponsesFollowup { search },
     }

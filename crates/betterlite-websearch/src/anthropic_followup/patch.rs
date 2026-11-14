@@ -99,7 +99,7 @@ fn patch_model(
     logging: Option<&FollowupLogging<'_>>,
     model: &str,
 ) -> Result<String, AnthropicFollowupError> {
-    let Some(details) = logging.map(|logging| logging.model_call_details) else {
+    let Some(details) = logging.map(|found| found.model_call_details) else {
         return Ok(model.to_owned());
     };
     let Some(raw) = details.get(AGENTIC_LOOP_KEY) else {
@@ -112,7 +112,7 @@ fn patch_model(
 
 fn call_id(logging: Option<&FollowupLogging<'_>>, kwargs: &JsonMap) -> String {
     let logged = logging
-        .and_then(|logging| logging.call_id)
+        .and_then(|found| found.call_id)
         .filter(|id| !id.is_empty());
     logged.map_or_else(
         || {
