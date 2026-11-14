@@ -12,7 +12,7 @@ maintenance() {
   fi
 }
 maintenance
-# Dispatches one task and lands it. The gate keeps the task's progress in its journal until it merges, so this flow only pauses and reruns: a run that ends with every runner at its usage limit waits 30 minutes and reruns (uncapped, since a rerun against a marked vendor costs seconds), a run whose agent ended without an answer waits 20 minutes and reruns up to 4 times, and a stale branch gets main merged and one rerun. Any other error is a cap the architect handles. An existing branch gets main merged first; a ready branch gets main merged and its early draft PR's branch (early-pr.sh) merged back, then is pushed, gets its PR with auto-merge and its done mark (a push or PR that GitHub refuses lands again after 5 minutes, three times at most), and is watched until it merges; a red CI run on the PR goes back to the worker as a fix round with its FAIL lines, eight rounds at most (stage 3, since CI is the only place that builds); once it merged, its checkout (target included) and temp folder are removed right away, since refs/betterlite/completed keeps its head, and the flow then waits for main's run on it to log the result. Usage: [GRANT=N] bash dispatch-flow.sh <id> <run> [note], where GRANT goes to the first dispatch only; LAND_ONLY=1 skips the dispatch for a branch that is already ready. Copied over dispatch-flow.sh once PR 388 is on main, so the feeder and the respawn scripts keep their names.
+# Dispatches one task and lands it. The gate keeps the task's progress in its journal until it merges, so this flow only pauses and reruns: a run that ends with every runner at its usage limit reruns once `gate availability <id>` finds a runner left on its own ladder, and says once that it waits, since a grant moves it to another vendor (uncapped, since a rerun against a marked vendor costs seconds), a run whose agent ended without an answer waits 20 minutes and reruns up to 4 times, and a stale branch gets main merged and one rerun. Any other error is a cap the architect handles. An existing branch gets main merged first; a ready branch gets main merged and its early draft PR's branch (early-pr.sh) merged back, then is pushed, gets its PR with auto-merge and its done mark (a push or PR that GitHub refuses lands again after 5 minutes, three times at most), and is watched until it merges; a red CI run on the PR goes back to the worker as a fix round with its FAIL lines, eight rounds at most (stage 3, since CI is the only place that builds); once it merged, its checkout (target included) and temp folder are removed right away, since refs/betterlite/completed keeps its head, and the flow then waits for main's run on it to log the result. Usage: [GRANT=N] bash dispatch-flow.sh <id> <run> [note], where GRANT goes to the first dispatch only; LAND_ONLY=1 skips the dispatch for a branch that is already ready. Copied over dispatch-flow.sh once PR 388 is on main, so the feeder and the respawn scripts keep their names.
 GH_TOKEN=$(gh auth token --user HardMax71)
 export GH_TOKEN
 id=$1
@@ -70,7 +70,12 @@ land_again() {
   LANDS=$((${LANDS:-0} + 1)) LAND_ONLY=1 exec bash "${P}/dispatch-flow.sh" "${id}" "${run}" ""
 }
 if [[ -z "${LAND_ONLY}" ]]; then
-  while ! (cd "${main}" && cargo gate availability) > "${L}/availability-${id}.log" 2>&1; do
+  waiting=
+  while ! (cd "${main}" && cargo gate availability "${id}") > "${L}/availability-${id}.log" 2>&1; do
+    if [[ -z "${waiting}" ]] && grep -q 'worker ladder is unavailable' "${L}/availability-${id}.log"; then
+      say "waiting: every runner left on its worker ladder is unavailable; a grant moves its next start to another vendor"
+      waiting=1
+    fi
     maintenance
     sleep 60
   done
