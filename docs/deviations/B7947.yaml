@@ -71,10 +71,12 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/team_endpoints.py#L172-L178
   - what: >-
       camelCase wire fields are snake_case attributes carrying pydantic aliases with
-      serialize_by_alias, so model_fields keys and attribute access use the snake_case names.
-      model_dump(by_alias=False) still emits the wire names; SCIMUser's by-name dump emits the
-      enterprise URN where LiteLLM emits enterprise_user and ref. Validation also accepts the
-      snake_case name for a field, which LiteLLM's extra="ignore" drops as an unknown key.
+      serialize_by_alias, so model_fields keys and attribute access use the snake_case names and
+      the default model_dump() emits the wire names. An explicit model_dump(by_alias=False) emits
+      the snake_case field names where LiteLLM emits the camelCase ones, and SCIMUser's default
+      dump emits the enterprise URN and $ref where LiteLLM's plain dump emits enterprise_user and
+      ref. Validation also accepts the snake_case name for a field, which LiteLLM's extra="ignore"
+      drops as an unknown key.
     why: >-
       The Python rules reject mixed-case class attributes, so LiteLLM's spelling cannot be kept as
       the attribute name. Validation accepts LiteLLM's wire keys, and the JSON a FastAPI response
@@ -89,3 +91,20 @@ deviations:
       exclude_if instead of a wrap serializer, whose return type is Any and would need a cast under
       strict typing. The validation schema, required keys, defaults and every dump match LiteLLM.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L123-L133
+  - what: >-
+      The class LiteLLM names LiteLLM_UserScimMetadata is declared as UserScimMetadata, and the
+      module binds the LiteLLM name to it.
+    why: >-
+      Ruff N801 rejects a class name with underscores and this task's expect budget is zero, so
+      the class cannot carry a noqa for it. The alias keeps the LiteLLM name importable; the class
+      name a schema title or repr reports is the short one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L25
+  - what: >-
+      The classes LiteLLM names LiteLLM_UpperboundKeyGenerateParams and
+      AccessControl_UI_AccessMode are declared as UpperboundKeyGenerateParams and UIAccessMode,
+      and the module binds each LiteLLM name to its class.
+    why: >-
+      Ruff N801 rejects a class name with underscores and this task's expect budget is zero, so
+      neither class can carry a noqa for it. The aliases keep both LiteLLM names importable; the
+      class names a schema title or repr reports are the short ones.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/ui_sso.py#L10
