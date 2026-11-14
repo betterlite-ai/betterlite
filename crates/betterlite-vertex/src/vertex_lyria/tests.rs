@@ -583,15 +583,40 @@ fn interactions_do_not_encode_the_project() {
     );
 }
 
-#[test]
-fn mints_once_and_reuses_the_token() {
+#[rstest]
+#[case::predict("lyria-002")]
+#[case::interactions("lyria-3-pro-preview")]
+fn mints_once_and_reuses_the_token(#[case] model: &str) {
     let mint = FixedMint::new();
-    let request = prepare_with(&mint, "lyria-002", &Object::new(), &IndexMap::new()).unwrap();
+    let request = prepare_with(&mint, model, &Object::new(), &IndexMap::new()).unwrap();
     assert_eq!(mint.calls(), vec![(None, None)]);
     assert_eq!(
         request.headers["Authorization"].expose_secret(),
         "Bearer test-token"
     );
+}
+
+#[test]
+fn interactions_mint_once_with_a_configured_project() {
+    let input = "draw a river";
+    let call = LyriaCall {
+        model: "lyria-3-pro-preview",
+        api_base: None,
+        project: Some("team-project"),
+        location: None,
+        credentials: None,
+        input,
+        optional_params: &Object::new(),
+    };
+    let mint = FixedMint::new();
+    let request =
+        with_catalog!(|overlay| block_on(prepare_request(&mint, overlay, &call, &IndexMap::new())))
+            .unwrap();
+    assert_eq!(
+        request.url,
+        "https://aiplatform.googleapis.com/v1beta1/projects/team-project/locations/global/interactions"
+    );
+    assert_eq!(mint.calls(), vec![(None, Some("team-project".to_owned()))]);
 }
 
 #[test]
