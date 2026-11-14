@@ -826,6 +826,16 @@ fn async_invoke_without_a_submit_time_uses_the_clock() {
 }
 
 #[test]
+fn async_invoke_reads_only_rfc_3339_timestamps() {
+    let mut status = status_response("Completed");
+    status.submit_time = Some("2024-01-01T00:00:00".to_owned());
+    status.end_time = Some("2024-01-01T00:02:00".to_owned());
+    let batch = async_result(&status).batch;
+    assert_eq!(batch.created_at, SECOND);
+    assert_eq!(batch.completed_at, None);
+}
+
+#[test]
 fn async_invoke_rejects_an_oversized_failure_message() {
     let mut status = status_response("Failed");
     status.failure_message =

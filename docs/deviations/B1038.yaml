@@ -11,8 +11,8 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L1154-L1170
   - what: >-
       Async-invoke timestamps are read as RFC 3339 date-time strings, while LiteLLM parses them with
-      datetime.fromisoformat, which also takes other ISO 8601 spellings such as a date without an
-      offset.
+      datetime.fromisoformat, which also takes other ISO 8601 spellings such as a date-time without
+      an offset.
     why: >-
       AWS GetAsyncInvoke returns RFC 3339 with a trailing Z, which both readers take. A spelling only
       Python's parser accepts is unreadable here, so created_at falls back to the injected clock and
