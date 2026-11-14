@@ -2,6 +2,7 @@
 
 use betterlite_config::sections::openai_credentials::{DEFAULT_API_BASE, Settings};
 use betterlite_models::decisions::Json;
+use http::HeaderMap;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
@@ -464,7 +465,7 @@ fn openai_image_edits_credential_identity_isolation() {
         .expect("headers");
     let second = validate_environment(&Headers::new(), &credentials(Some("sk-identity-b")))
         .expect("headers");
-    let shown = |headers: &http::HeaderMap| {
+    let shown = |headers: &HeaderMap| {
         headers
             .get("authorization")
             .map(|value| value.to_str().expect("text").to_owned())
@@ -549,6 +550,6 @@ fn validate_environment_keeps_supplied_headers_and_overwrites_authorization() {
     assert!(
         headers
             .get("authorization")
-            .is_some_and(http::HeaderValue::is_sensitive)
+            .is_some_and(|value| value.is_sensitive())
     );
 }

@@ -160,53 +160,60 @@ pub(crate) fn values(input: &Input) -> HelperResult {
     let values = match input {
         Input::Transform(probes) => probes
             .iter()
-            .map(|probe| {
-                let resolved = credentials(probe)?;
-                let url = complete_url(&resolved.api_base).map_err(|error| failure(&error))?;
-                let headers = validate_environment(&Headers::new(), &resolved)
-                    .map_err(|error| failure(&error))?;
-                let family = select_image_edit_family(&probe.model);
-                let (url, headers, data, files, error) =
-                    match transform_image_edit_request(family, &request_of(probe)?) {
-                        Ok(form) => {
-                            let data = serde_json::to_value(&form.data)
-                                .map_err(|error| invalid(error.to_string()))?;
-                            let url = Value::String(url.as_str().to_owned());
-                            let files = files_value(&form.files);
-                            (url, header_values(&headers), data, files, Value::Null)
-                        }
-                        Err(error) => (
-                            Value::Null,
-                            Value::Null,
-                            Value::Null,
-                            Value::Null,
-                            error_value(&error),
-                        ),
-                    };
-                Ok(json!({
-                    "family": family.name(),
-                    "supported": SUPPORTED_OPENAI_PARAMS,
-                    "url": url,
-                    "headers": headers,
-                    "data": data,
-                    "files": files,
-                    "error": error,
-                }))
-            })
+            .map(transform_value)
             .collect::<Result<Vec<_>, Box<HelperError>>>()?,
         Input::Reply(probes) => probes
             .iter()
-            .map(|probe| {
-                let reply = probe
-                    .reply
-                    .as_ref()
-                    .ok_or_else(|| invalid(String::from("a probe needs a reply")))?;
-                let transformed =
-                    transform_image_edit_response(reply.status, reply.body.as_bytes(), NOW)
-                        .map_err(|error| failure(&error))?;
-                serde_json::to_value(&transformed).map_err(|error| invalid(error.to_string()))
-            })
+            .map(reply_value)
             .collect::<Result<Vec<_>, Box<HelperError>>>()?,
     };
     Ok(Value::Array(values))
+}
+
+fn transform_value(probe: &Probe) -> Result<Value, Box<HelperError>> {
+    let resolved = credentials(probe)?;
+    let call_url = complete_url(&resolved.api_base).map_err(|error| failure(&error))?;
+    let call_headers =
+        validate_environment(&Headers::new(), &resolved).map_err(|error| failure(&error))?;
+    let family = select_image_edit_family(&probe.model);
+    let (url, headers, data, files, error) =
+        match transform_image_edit_request(family, &request_of(probe)?) {
+            Ok(form) => {
+                let data =
+                    serde_json::to_value(&form.data).map_err(|error| invalid(error.to_string()))?;
+                (
+                    Value::String(call_url.as_str().to_owned()),
+                    header_values(&call_headers),
+                    data,
+                    files_value(&form.files),
+                    Value::Null,
+                )
+            }
+            Err(error) => (
+                Value::Null,
+                Value::Null,
+                Value::Null,
+                Value::Null,
+                error_value(&error),
+            ),
+        };
+    Ok(json!({
+        "family": family.name(),
+        "supported": SUPPORTED_OPENAI_PARAMS,
+        "url": url,
+        "headers": headers,
+        "data": data,
+        "files": files,
+        "error": error,
+    }))
+}
+
+fn reply_value(probe: &Probe) -> Result<Value, Box<HelperError>> {
+    let reply = probe
+        .reply
+        .as_ref()
+        .ok_or_else(|| invalid(String::from("a probe needs a reply")))?;
+    let transformed = transform_image_edit_response(reply.status, reply.body.as_bytes(), NOW)
+        .map_err(|error| failure(&error))?;
+    serde_json::to_value(&transformed).map_err(|error| invalid(error.to_string()))
 }
