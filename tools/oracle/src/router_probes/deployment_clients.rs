@@ -1,18 +1,16 @@
+pub mod cached;
+
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::{Duration, UNIX_EPOCH};
 
-use betterlite_config::sections::deployment_clients::Settings;
 use betterlite_error::rate_limit::{RateLimitCategory, RateLimitDimension};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use betterlite_router::deployment_clients::clients::CachedClients;
 use betterlite_router::deployment_clients::credentials::{
     ClientsideCredentials, dynamic_litellm_params, is_clientside_credential,
 };
 use betterlite_router::deployment_clients::guard::{
-    DeploymentSlot, LimitSource, MaxParallelRequestsExceeded, MaxParallelRequestsLimit,
-    calculate_parallel_limit,
+    DeploymentSlot, MaxParallelRequestsExceeded, MaxParallelRequestsLimit, calculate_parallel_limit,
 };
 use betterlite_router::deployment_identity::stable_id::generate_model_id;
 use secrecy::SecretString;
@@ -23,7 +21,7 @@ use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
 
-const MAX_LOOKUPS: u32 = 64;
+use self::cached::{CachedInput, CachedObservation, cached_outcome};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -61,18 +59,6 @@ pub enum LimitStep {
         #[serde(default)]
         fail: bool,
     },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CachedInput {
-    pub model_id: String,
-    pub model_group: String,
-    pub max_parallel_requests: Option<i64>,
-    pub rpm: Option<i64>,
-    pub tpm: Option<i64>,
-    pub default_max_parallel_requests: Option<i64>,
-    pub lookups: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -117,21 +103,6 @@ pub struct LimitError {
     pub category: RateLimitCategory,
     pub rate_limit_type: RateLimitDimension,
     pub message: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CachedObservation {
-    pub installed: bool,
-    pub limit: CachedLimit,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CachedLimit {
-    Absent,
-    New,
-    Reused,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -207,7 +178,6 @@ fn limit_outcome(input: &LimitInput) -> Vec<LimitObservation> {
     observations
 }
 
-// the first acquisition decides the step, so the probe acquires once and keeps that guard
 fn acquire_once(
     limit: &Arc<MaxParallelRequestsLimit>,
     held: &mut Vec<DeploymentSlot>,
@@ -230,40 +200,6 @@ fn limit_error(error: &MaxParallelRequestsExceeded) -> LimitError {
         rate_limit_type: MaxParallelRequestsExceeded::DIMENSION,
         message: error.to_string(),
     }
-}
-
-fn cached_outcome(input: &CachedInput) -> Result<Vec<CachedObservation>, OperationError> {
-    if input.lookups > MAX_LOOKUPS {
-        return Err(OperationError::InvalidRequest {
-            message: format!("lookups must be at most {MAX_LOOKUPS}"),
-        });
-    }
-    let clients = CachedClients::new(
-        Duration::from_secs(Settings::default().client_ttl_seconds),
-        Arc::new(|| UNIX_EPOCH),
-    );
-    let source = LimitSource {
-        max_parallel_requests: input.max_parallel_requests,
-        rpm: input.rpm,
-        tpm: input.tpm,
-        default_max_parallel_requests: input.default_max_parallel_requests,
-    };
-    let mut previous: Option<Arc<MaxParallelRequestsLimit>> = None;
-    let mut observations = Vec::new();
-    for _ in 0..input.lookups {
-        let lookup = clients.max_parallel_requests(&input.model_id, &input.model_group, source);
-        let limit = match (previous.as_ref(), lookup.limit.as_ref()) {
-            (_, None) => CachedLimit::Absent,
-            (Some(before), Some(now)) if Arc::ptr_eq(before, now) => CachedLimit::Reused,
-            _ => CachedLimit::New,
-        };
-        previous = lookup.limit;
-        observations.push(CachedObservation {
-            installed: lookup.initialized,
-            limit,
-        });
-    }
-    Ok(observations)
 }
 
 fn credential_outcome(input: &CredentialInput) -> CredentialObservation {

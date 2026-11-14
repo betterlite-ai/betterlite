@@ -131,7 +131,6 @@ fn wildcard_model_id(
     usable.model_id
 }
 
-// get_deployment_credentials: the credentials of an exact deployment id, and nothing for a paused one.
 pub fn deployment_credentials(
     catalog: &DeploymentCatalog,
     model_id: &str,
@@ -149,7 +148,6 @@ pub fn deployment_credentials(
     credential_params(&deployment.litellm_params).map(Some)
 }
 
-// get_deployment_credentials_with_provider: the credentials plus the model and provider a passthrough call needs.
 pub fn provider_credentials(
     catalog: &DeploymentCatalog,
     model_id: &str,
@@ -191,7 +189,6 @@ pub fn provider_credentials(
     Ok(Some(credentials))
 }
 
-// get_litellm_params_sensitive_credential_hash: a stable digest of the credential fields, never the values.
 pub fn sensitive_credential_hash(litellm_params: &JsonObject) -> Result<String, CredentialError> {
     let credentials = credential_params(litellm_params)?;
     let encoded = serde_json::to_vec(&Json::Object(credentials))

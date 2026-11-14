@@ -16,7 +16,6 @@ pub struct ClientsideCredentials {
     pub base_url: Option<String>,
 }
 
-// is_clientside_credential: presence alone, so an explicit null still counts the request as clientside
 #[must_use]
 pub fn is_clientside_credential(request: &JsonObject) -> bool {
     CLIENTSIDE_CREDENTIAL_KEYS
@@ -46,7 +45,6 @@ pub struct ClientsideDeployment {
     pub api_key: Option<SecretString>,
 }
 
-// a per-request deployment under an id hashed from the dynamic params; the caller registers its pricing (B9710)
 pub fn clientside_deployment(
     deployment: &DeploymentSpec,
     model_group: &str,

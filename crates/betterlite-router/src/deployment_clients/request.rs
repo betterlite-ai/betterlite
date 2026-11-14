@@ -24,7 +24,6 @@ pub struct DeploymentView<'view> {
     pub tool_choice: Option<&'view Json>,
 }
 
-// The parts of a call's kwargs this update owns: the metadata bucket, the top-level model_info, tags and tools.
 #[derive(Clone, Debug, Default)]
 pub struct RequestContext {
     pub metadata: JsonObject,
