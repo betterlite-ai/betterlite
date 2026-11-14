@@ -36,6 +36,8 @@ fn expected(text: &str) -> Json {
     r#"{"content":[{"type":"text","text":"hi"}],"stop_reason":"stop_sequence"}"#,
     "stop"
 )]
+#[case::end_turn_without_text(r#"{"content":[],"stop_reason":"end_turn"}"#, "stop")]
+#[case::stop_sequence_without_text(r#"{"content":[],"stop_reason":"stop_sequence"}"#, "stop")]
 #[case::max_tokens(
     r#"{"content":[{"type":"text","text":"hi"}],"stop_reason":"max_tokens"}"#,
     "length"
