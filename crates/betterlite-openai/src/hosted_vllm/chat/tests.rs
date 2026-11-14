@@ -531,6 +531,18 @@ fn assistant_text_blocks_join_into_a_string() {
 }
 
 #[test]
+fn assistant_null_text_contributes_an_empty_string() {
+    let output = transformed(json!([{
+        "role": "assistant",
+        "content": [{"type": "text", "text": "a"}, {"type": "text", "text": null}],
+    }]));
+    assert_eq!(
+        output.get(0).and_then(|message| message.get("content")),
+        Some(&json!("a\n"))
+    );
+}
+
+#[test]
 fn assistant_tool_use_blocks_become_tool_calls() {
     let output = transformed(json!([{
         "role": "assistant",
