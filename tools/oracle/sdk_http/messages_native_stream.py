@@ -96,13 +96,15 @@ class Dispatcher(Recorder):
     def bind(self, logging_obj: RecordedLogging, recorder: RelayRecorder) -> None:
         self.by_logging[id(logging_obj)] = recorder
 
-    def _route_streaming_logging_to_handler(self, **call: Unpack[RouteCall]) -> Work:
+    def _route_streaming_logging_to_handler(  # ast-grep-ignore: no-long-names
+        self, **call: Unpack[RouteCall]
+    ) -> Work:
         recorder = self.by_logging[id(call["litellm_logging_obj"])]
         recorder.routed.append(call)
         recorder.recorded.set()
         return recorder.counted()
 
-    async def schedule_stream_failure_logging(
+    async def schedule_stream_failure_logging(  # ast-grep-ignore: no-long-names
         self, **call: Unpack[FailureSeamCall]
     ) -> None:
         recorder = self.by_logging[id(call["litellm_logging_obj"])]
