@@ -228,6 +228,7 @@ async fn deliver_event(
     let event = LoggerEvent {
         payload: Arc::new(payload.clone()),
         dynamic_params: Arc::new(Json::Object(IndexMap::new())),
+        litellm_metadata: Arc::new(IndexMap::new()),
         stream: false,
         guardrail_snapshot: None,
     };
