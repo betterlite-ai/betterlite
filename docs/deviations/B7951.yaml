@@ -1,0 +1,27 @@
+task: B7951
+deviations:
+  - what: >-
+      betterlite.types.search does not re-export SearchProvider and SearchProviders.
+    why: >-
+      LiteLLM's search.py imports the SearchProviders Enum from litellm.types.utils
+      (B048) and aliases it as SearchProvider; betterlite.types.utils does not
+      declare that Enum yet, and declaring a second copy here would give the same
+      type two homes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/search.py#L9-L14
+  - what: >-
+      The four string Enums derive from enum.StrEnum, where LiteLLM declares them as
+      class X(str, Enum).
+    why: >-
+      The repository's ruff rules require StrEnum over a str mixin. Members, values
+      and compare-by-value behavior are identical; str() and repr() return the value
+      rather than Class.MEMBER, and Python runtime formatting is outside the
+      compatibility policy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L11
+  - what: >-
+      Open JSON positions are declared as dict[str, JsonValue] or
+      Mapping[str, JsonValue] where LiteLLM writes a bare dict or Dict[str, Any].
+    why: >-
+      The repository's ast-grep rules reject Any and bare dict in type positions.
+      JsonValue names the same open JSON, and pydantic validates the same values
+      into the same objects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/search.py#L50
