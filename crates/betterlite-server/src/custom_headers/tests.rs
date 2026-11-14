@@ -266,43 +266,20 @@ fn breakdown_headers_read_every_part_with_the_uncached_input_cost() {
             }
         }
     }));
-    assert_eq!(
-        header(&headers, "x-litellm-response-cost-original").as_deref(),
-        Some("2")
-    );
-    assert_eq!(
-        header(&headers, "x-litellm-response-cost-discount-amount").as_deref(),
-        Some("0.5")
-    );
-    assert_eq!(
-        header(&headers, "x-litellm-response-cost-margin-amount").as_deref(),
-        Some("0.25")
-    );
-    assert_eq!(
-        header(&headers, "x-litellm-response-cost-margin-percent").as_deref(),
-        Some("0.2")
-    );
-    assert_eq!(
-        header(&headers, "x-litellm-response-cost-input").as_deref(),
-        Some("0.25")
-    );
-    assert_eq!(
-        header(&headers, "x-litellm-response-cost-output").as_deref(),
-        Some("0.75")
-    );
-    assert_eq!(
-        header(&headers, "x-litellm-response-cost-cache-read").as_deref(),
-        Some("0.25")
-    );
-    assert_eq!(
-        header(&headers, "x-litellm-response-cost-cache-creation").as_deref(),
-        Some("0.5")
-    );
-    assert_eq!(header(&headers, "x-litellm-response-cost-reasoning"), None);
-    assert_eq!(
-        header(&headers, "x-litellm-response-cost-tool-usage").as_deref(),
-        Some("0.125")
-    );
+    for (name, expected) in [
+        ("x-litellm-response-cost-original", Some("2")),
+        ("x-litellm-response-cost-discount-amount", Some("0.5")),
+        ("x-litellm-response-cost-margin-amount", Some("0.25")),
+        ("x-litellm-response-cost-margin-percent", Some("0.2")),
+        ("x-litellm-response-cost-input", Some("0.25")),
+        ("x-litellm-response-cost-output", Some("0.75")),
+        ("x-litellm-response-cost-cache-read", Some("0.25")),
+        ("x-litellm-response-cost-cache-creation", Some("0.5")),
+        ("x-litellm-response-cost-reasoning", None),
+        ("x-litellm-response-cost-tool-usage", Some("0.125")),
+    ] {
+        assert_eq!(header(&headers, name).as_deref(), expected, "{name}");
+    }
 }
 
 #[test]
