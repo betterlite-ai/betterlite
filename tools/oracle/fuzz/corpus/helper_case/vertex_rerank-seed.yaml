@@ -1,0 +1,22 @@
+kind: helper
+name: vertex-rerank-seed
+call:
+  vertex_rerank:
+    model: semantic-ranker-512@latest
+    api_base: null
+    vertex_project: param-project
+    vertex_credentials: null
+    access_project: access-project
+    headers: {X-Trace: "1"}
+    query: which one
+    documents: ["first document", {text: "second", title: "two"}]
+    top_n: 1
+    return_documents: false
+    non_default_params: {top_n: 1}
+    litellm_params: null
+    response:
+      records:
+        - {id: "1", score: 0.5}
+        - {id: "0"}
+env: {}
+compare: {ignore: []}

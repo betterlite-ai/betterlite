@@ -1,0 +1,25 @@
+kind: helper
+name: passthrough-guardrail-extract-full-payload-filtered
+call:
+  b3573:
+    scenarios:
+      - function: extract
+        data:
+          b: 2
+          a: x
+        field_expressions: null
+      - function: extract
+        data:
+          items:
+            - a: 1
+            - 2
+          flag: true
+          nothing: null
+        field_expressions: null
+      - function: extract
+        data:
+          model: m1
+          query: hello
+        field_expressions: []
+env: {}
+compare: {ignore: []}

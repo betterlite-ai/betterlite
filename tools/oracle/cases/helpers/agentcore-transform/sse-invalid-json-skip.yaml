@@ -1,0 +1,13 @@
+kind: helper
+name: agentcore-transform-sse-invalid-json-skip
+call:
+  b4804:
+    {
+      "function": "parse_sse",
+      "lines": [
+        "data: not-json",
+        "data: {\"ok\": true}"
+      ]
+    }
+env: {}
+compare: {ignore: []}
