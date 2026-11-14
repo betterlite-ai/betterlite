@@ -483,6 +483,10 @@ fn assert_no_io(harness: &Harness) {
     r#"{"temperature":null}"#,
     r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}"#
 )]
+#[case::json_schema_wins_over_schema(
+    r#"{"extra_body":{"generationConfig":{"response_mime_type":"application/json","response_json_schema":{"type":"object","title":"json"},"response_schema":{"type":"object","title":"schema"}},"tools":[{"googleMaps":{}}]}}"#,
+    r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"tools":[{"googleMaps":{}}],"generationConfig":{"response_schema":{"type":"object","title":"schema"},"responseFormat":{"text":{"mimeType":"APPLICATION_JSON","schema":{"type":"object","title":"json"}}}}}"#
+)]
 fn body_cases(#[case] optional_params: &str, #[case] expected: &str) {
     let (harness, result) = run_vertex(optional_params);
     assert_body(&result.expect("the body builds"), expected);
@@ -791,4 +795,30 @@ fn references_do_not_name_the_param() {
     );
     let error = remote_media_error(&harness, &input);
     assert_eq!(error.param(), Some("image_url"));
+}
+
+// A tool result's remote media is only fetched by the history conversion, so this is the shape the refusal owns
+#[test]
+fn tool_media_is_refused_before_the_fetch() {
+    let harness = Harness::new();
+    let input = media_input(
+        VertexCapabilityProvider::VertexAi,
+        r#"[{"role":"tool","name":"f","content":[{"type":"image_url","image_url":{"url":"http://example.com/cat"}},{"type":"file","file":{"file_id":"http://example.com/report.pdf","format":"application/pdf"}}]}]"#,
+    );
+    let error = remote_media_error(&harness, &input);
+    assert_eq!(
+        (
+            error.status(),
+            error.error_type(),
+            error.param(),
+            error.code(),
+        ),
+        (
+            400,
+            Some("invalid_request_error"),
+            Some("image_url"),
+            Some("unsupported_remote_media")
+        )
+    );
+    assert_eq!(harness.fetcher.calls(), 0);
 }

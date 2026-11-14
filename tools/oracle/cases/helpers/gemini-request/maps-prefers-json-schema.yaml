@@ -1,0 +1,26 @@
+kind: helper
+name: gemini-request-maps-prefers-json-schema
+call:
+  gemini_request:
+    model: gemini-2.5-pro
+    provider: vertex_ai
+    supports: {system_message: true, response_schema: true}
+    modify_params: false
+    messages:
+      - {role: user, content: "weather in Paris?"}
+    optional_params:
+      extra_body:
+        generationConfig:
+          response_mime_type: application/json
+          response_json_schema:
+            type: object
+            properties:
+              json: {type: string}
+          response_schema:
+            type: object
+            properties:
+              schema: {type: string}
+        tools: [{googleMaps: {}}]
+    litellm_params: {}
+env: {}
+compare: {ignore: []}
