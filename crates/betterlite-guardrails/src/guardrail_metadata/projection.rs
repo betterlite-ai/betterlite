@@ -8,6 +8,9 @@ use super::{
     TRUSTED_PILLAR_HEADERS_KEY, serialize_scan_metadata_header,
 };
 
+// serde_json's arbitrary_precision feature hands a JSON decimal to an untagged enum as this one-key map
+const NUMBER_KEY: &str = "$serde_json::private::Number";
+
 pub(super) type Metadata<'data> = BTreeMap<&'data str, &'data GuardrailValue>;
 pub(super) type Header = (String, String);
 pub(super) type MetadataResult<T> = Result<T, GuardrailMetadataError>;
@@ -141,19 +144,31 @@ fn similarity_text(merged: &Metadata<'_>) -> MetadataResult<Option<String>> {
     let Some(value) = merged.get(SEMANTIC_SIMILARITY_KEY) else {
         return Ok(None);
     };
-    match value {
-        GuardrailValue::Null => Ok(None),
-        GuardrailValue::Decimal(number) => Ok(Some(number_text(*number, SEMANTIC_SIMILARITY_KEY)?)),
-        GuardrailValue::SignedInteger(number) => Ok(Some(number.to_string())),
-        GuardrailValue::UnsignedInteger(number) => Ok(Some(number.to_string())),
+    let literal = match value {
+        GuardrailValue::Null => return Ok(None),
+        GuardrailValue::Decimal(number) => {
+            return Ok(Some(number_text(*number, SEMANTIC_SIMILARITY_KEY)?));
+        }
+        GuardrailValue::SignedInteger(number) => return Ok(Some(number.to_string())),
+        GuardrailValue::UnsignedInteger(number) => return Ok(Some(number.to_string())),
+        GuardrailValue::Object(fields) if fields.len() == 1 => fields.get(NUMBER_KEY),
         GuardrailValue::Boolean(_)
         | GuardrailValue::Text(_)
         | GuardrailValue::Array(_)
-        | GuardrailValue::Object(_) => Err(GuardrailMetadataError::NotTyped {
+        | GuardrailValue::Object(_) => None,
+    };
+    let parsed = if let Some(GuardrailValue::Text(text)) = literal {
+        text.parse::<f64>().ok()
+    } else {
+        None
+    };
+    let Some(number) = parsed else {
+        return Err(GuardrailMetadataError::NotTyped {
             field: SEMANTIC_SIMILARITY_KEY,
             expected: "a number",
-        }),
-    }
+        });
+    };
+    Ok(Some(number_text(number, SEMANTIC_SIMILARITY_KEY)?))
 }
 
 pub(super) fn semantic_similarity_header(merged: &Metadata<'_>) -> MetadataResult<Option<Header>> {

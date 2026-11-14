@@ -16,7 +16,7 @@ use crate::helpers::{Helper, HelperResult, OrHelperError as _};
 type Fields = BTreeMap<String, GuardrailValue>;
 
 #[derive(Debug, Deserialize)]
-struct RecordScanArgs {
+pub(crate) struct RecordScanArgs {
     request_data: Fields,
     scan_id: Option<String>,
     guardrail_name: Option<String>,
@@ -25,7 +25,7 @@ struct RecordScanArgs {
 }
 
 #[derive(Debug, Deserialize)]
-struct HeadersArgs {
+pub(crate) struct HeadersArgs {
     request_data: Fields,
 }
 
@@ -43,7 +43,7 @@ struct RecordArgs {
 }
 
 #[derive(Debug, Deserialize)]
-struct AppendArgs {
+pub(crate) struct AppendArgs {
     model_call_details: Option<Fields>,
     record: RecordArgs,
 }
