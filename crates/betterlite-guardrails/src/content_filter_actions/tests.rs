@@ -817,7 +817,7 @@ mod content_filter_actions_behavior {
     #[test]
     fn filter_updates_the_lowercased_text_after_each_masked_blocked_word() {
         let categories = CategoryLoadResult::default();
-        let words = vec![
+        let words = [
             blocked("foo", ContentFilterAction::Mask, None),
             blocked("redacted", ContentFilterAction::Mask, None),
         ];
@@ -852,12 +852,12 @@ mod content_filter_actions_behavior {
                 &["romantic"],
             ),
         );
-        let patterns = vec![regex_pattern(
+        let patterns = [regex_pattern(
             "romantic",
             "romantic",
             ContentFilterAction::Mask,
         )];
-        let words = vec![blocked("romantic", ContentFilterAction::Mask, None)];
+        let words = [blocked("romantic", ContentFilterAction::Mask, None)];
         let mut detections = Vec::new();
         let error = filter_single_text(
             &filter_source(&categories, &patterns, &words),
@@ -878,7 +878,7 @@ mod content_filter_actions_behavior {
     fn filter_masks_category_keywords_before_it_searches_patterns() {
         let categories =
             keyword_categories(&[("danger", "risk", "high", ContentFilterAction::Mask)]);
-        let patterns = vec![regex_pattern("leak", "danger", ContentFilterAction::Mask)];
+        let patterns = [regex_pattern("leak", "danger", ContentFilterAction::Mask)];
         let mut detections = Vec::new();
         let filtered = filter_single_text(
             &filter_source(&categories, &patterns, &[]),
@@ -896,8 +896,8 @@ mod content_filter_actions_behavior {
     #[test]
     fn filter_returns_the_text_when_nothing_matches() {
         let categories = CategoryLoadResult::default();
-        let patterns = vec![regex_pattern("leak", "danger", ContentFilterAction::Block)];
-        let words = vec![blocked("absent", ContentFilterAction::Block, None)];
+        let patterns = [regex_pattern("leak", "danger", ContentFilterAction::Block)];
+        let words = [blocked("absent", ContentFilterAction::Block, None)];
         let mut detections = Vec::new();
         assert_eq!(
             filter_single_text(
