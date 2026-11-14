@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod auth;
 pub mod binding;
+pub mod call;
 pub mod error;
 pub mod params;
 pub mod reply;

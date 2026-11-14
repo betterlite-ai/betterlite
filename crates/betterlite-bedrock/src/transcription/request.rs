@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use serde::Serialize;
 
 use super::error::TranscriptionError;
-use super::params::{Params, text_param};
+use super::params::{Params, json_type_name, text_param};
 
 pub const SUPPORTED_PARAMS: [&str; 4] = ["language", "prompt", "temperature", "response_format"];
 
@@ -53,22 +53,11 @@ struct InferenceConfig<'body> {
     temperature: Option<&'body Json>,
 }
 
-const fn type_name(value: &Json) -> &'static str {
-    match value {
-        Json::Null => "null",
-        Json::Bool(_) => "boolean",
-        Json::Number(_) => "number",
-        Json::Text(_) => "string",
-        Json::List(_) => "array",
-        Json::Object(_) => "object",
-    }
-}
-
 fn audio_fields(audio: &Json) -> Result<(&str, &str), TranscriptionError> {
     let Json::Object(fields) = audio else {
         return Err(TranscriptionError::InvalidType {
             expected: "object",
-            actual: type_name(audio),
+            actual: json_type_name(audio),
         });
     };
     let Some(data) = text_param(fields, "data").filter(|data| !data.is_empty()) else {

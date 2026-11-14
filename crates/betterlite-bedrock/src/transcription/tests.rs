@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod call;
 mod cases;
 mod corpus;
 mod identity;

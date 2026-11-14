@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::fmt::{self, Debug, Formatter};
+use std::future::Future;
 use std::time::SystemTime;
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
@@ -8,6 +10,8 @@ use super::error::TranscriptionError;
 use super::params::{Params, text_param};
 use super::url::{bedrock_model_id_and_region, resolve_region};
 use crate::aws_settings::sources::Credentials;
+use crate::credentials::AwsCredentialResolver;
+use crate::credentials::error::CredentialError;
 use crate::signing::json_post::{JsonPost, sign_aws_json_post};
 use crate::signing::request::AwsSignedRequest;
 
@@ -31,11 +35,37 @@ pub enum CredentialSource {
     Chain(Box<AwsSettings>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ValidatedEnvironment {
     pub headers: Vec<(String, String)>,
     pub region: String,
     pub credentials: CredentialSource,
+}
+
+// supplied headers carry AWS secrets, so only their names are printed
+impl Debug for ValidatedEnvironment {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let names: Vec<&str> = self.headers.iter().map(|(name, _)| name.as_str()).collect();
+        f.debug_struct("ValidatedEnvironment")
+            .field("header_names", &names)
+            .field("region", &self.region)
+            .field("credentials", &self.credentials)
+            .finish()
+    }
+}
+
+pub trait ChainCredentials: Send + Sync {
+    fn resolve(
+        &self,
+        settings: &AwsSettings,
+    ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send;
+}
+
+impl ChainCredentials for AwsCredentialResolver<'_> {
+    async fn resolve(&self, settings: &AwsSettings) -> Result<Credentials, CredentialError> {
+        self.resolve_credentials(settings, settings.region_name.as_deref())
+            .await
+    }
 }
 
 fn host_supplied(params: &Params) -> Option<Credentials> {
@@ -105,6 +135,22 @@ pub fn validate_environment(
         headers,
         region: resolve_region(model_region, params, env),
         credentials: credential_source(params, env),
+    }
+}
+
+pub async fn resolve_credentials<C>(
+    source: &CredentialSource,
+    chain: &C,
+) -> Result<Credentials, TranscriptionError>
+where
+    C: ChainCredentials,
+{
+    match source {
+        CredentialSource::HostSupplied(credentials) => Ok(Credentials::clone(credentials)),
+        CredentialSource::Chain(settings) => chain
+            .resolve(settings)
+            .await
+            .map_err(TranscriptionError::Credentials),
     }
 }
 

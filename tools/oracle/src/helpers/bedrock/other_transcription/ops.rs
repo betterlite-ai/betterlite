@@ -8,6 +8,7 @@ use betterlite_bedrock::transcription::binding::{
     BindingArguments, TranscriptionBinding, TranscriptionCall, async_audio_transcriptions,
     audio_transcriptions, prepare_arguments,
 };
+use betterlite_bedrock::transcription::error::TranscriptionError;
 use betterlite_bedrock::transcription::params::Params;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::{
@@ -133,7 +134,8 @@ pub(super) fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
     };
     let outcome = match prepare_arguments(audio_of(&call.file), &NoFiles, &source) {
         Ok(arguments) => Ok(reply_text(call.mode, &recorder, &arguments)?),
-        Err(error) => Err(error.to_string()),
+        Err(TranscriptionError::UnsupportedFormat { .. }) => Err("unsupported_format"),
+        Err(error) => return Err(error).or_value_error(),
     };
     let seen = recorder
         .seen
@@ -141,6 +143,6 @@ pub(super) fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
         .unwrap_or_else(PoisonError::into_inner);
     Ok(match outcome {
         Ok(text) => json!({"ok": true, "text": text, "seen": seen}),
-        Err(error) => json!({"ok": false, "error": error, "seen": seen}),
+        Err(kind) => json!({"ok": false, "kind": kind, "seen": seen}),
     })
 }

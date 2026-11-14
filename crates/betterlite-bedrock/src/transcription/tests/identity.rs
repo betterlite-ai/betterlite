@@ -32,6 +32,14 @@ fn environment(source: &str) -> ValidatedEnvironment {
     validate_environment(vec![], "bedrock/us-east-1/m", &params(source), &ambient())
 }
 
+fn environment_with_header(source: &str) -> ValidatedEnvironment {
+    let headers = vec![(
+        "x-amz-security-token".to_owned(),
+        "header-secret-value".to_owned(),
+    )];
+    validate_environment(headers, "bedrock/us-east-1/m", &params(source), &ambient())
+}
+
 fn signed_headers(source: &str) -> Vec<(String, String)> {
     let validated = environment(source);
     let CredentialSource::HostSupplied(credentials) = &validated.credentials else {
@@ -88,7 +96,7 @@ fn transcription_credential_identity_isolation() {
 
 #[test]
 fn transcription_secret_safe_failure() {
-    let validated = environment(HOSTED_ONE);
+    let validated = environment_with_header(HOSTED_ONE);
     let CredentialSource::HostSupplied(credentials) = &validated.credentials else {
         panic!("host supplied credentials expected");
     };
@@ -118,6 +126,14 @@ fn transcription_secret_safe_failure() {
         "session token leaked"
     );
     assert!(!rendered.contains("api-key-value"), "api key leaked");
+    assert!(
+        !rendered.contains("header-secret-value"),
+        "header value leaked"
+    );
+    assert!(
+        format!("{validated:?}").contains("x-amz-security-token"),
+        "header names stay visible"
+    );
     assert!(
         !rendered.contains("ambient-secret"),
         "ambient secret leaked"

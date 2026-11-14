@@ -1,2 +1,5 @@
 task: B642
-deviations: []
+deviations:
+  - what: The native transcription binding runs only the async call, and its synchronous transcribe returns an error instead of sending.
+    why: The shared HTTP client is async, and blocking a runtime thread on it would stall other requests.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/audio_transcription/__init__.py#L42

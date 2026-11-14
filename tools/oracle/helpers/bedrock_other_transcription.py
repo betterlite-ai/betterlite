@@ -10,6 +10,7 @@ from litellm.types.utils import FileTypes, TranscriptionResponse
 from pydantic import JsonValue
 
 NATIVE_MODULE: Final = "litellm.rust_bridge._native"
+UNSUPPORTED_PREFIX: Final = "Unsupported Bedrock audio format"
 
 
 class BytesFile(TypedDict):
@@ -117,7 +118,9 @@ def one_call(call: Call) -> dict[str, JsonValue]:
     try:
         response = sync_call(call) if call["mode"] == "sync" else asyncio.run(async_call(call))
     except ValueError as error:
-        return {"ok": False, "error": str(error), "seen": native.seen}
+        if not str(error).startswith(UNSUPPORTED_PREFIX):
+            raise
+        return {"ok": False, "kind": "unsupported_format", "seen": native.seen}
     finally:
         del sys.modules[NATIVE_MODULE]
         reset_native_bridge_cache()
