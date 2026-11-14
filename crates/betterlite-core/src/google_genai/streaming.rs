@@ -43,11 +43,10 @@ pub struct GoogleGenAiStream {
 impl GoogleGenAiStream {
     // LiteLLM's GoogleGenAIGenerateContentStreamingIterator, fed the lines response.iter_lines() yields
     #[must_use]
-    pub fn new(
-        source: impl Iterator<Item = Result<Vec<u8>, HttpError>> + Send + 'static,
-        metadata: GenAiStreamMetadata,
-        line_limit: usize,
-    ) -> Self {
+    pub fn new<Source>(source: Source, metadata: GenAiStreamMetadata, line_limit: usize) -> Self
+    where
+        Source: Iterator<Item = Result<Vec<u8>, HttpError>> + Send + 'static,
+    {
         Self {
             collected_chunks: Vec::new(),
             metadata,

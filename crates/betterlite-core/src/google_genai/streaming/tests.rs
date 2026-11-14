@@ -250,13 +250,11 @@ fn sync_stream_emits_events_verbatim_without_a_done_marker() {
             b"data: {\"text\":\" world\"}\n\n".to_vec(),
         ]
     );
-    for event in &events {
-        assert!(
-            !event
-                .windows(6)
-                .any(|window| window == b"[DONE]".as_slice())
-        );
-    }
+    assert!(events.iter().all(|event| {
+        !event
+            .windows(6)
+            .any(|window| window == b"[DONE]".as_slice())
+    }));
     assert_eq!(stream.collected_chunks, events);
 }
 
@@ -550,6 +548,12 @@ fn provider_spelling_maps_only_gemini_to_the_gemini_endpoint() {
 
 #[tokio::test]
 async fn replays_the_genai_sse_corpus() {
+    let seeds = corpus_seeds();
+    assert_eq!(seeds.len(), CORPUS_SEEDS);
+    replay_all(seeds).await;
+}
+
+fn corpus_seeds() -> Vec<(String, Vec<u8>)> {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/genai_sse");
     let mut seeds: Vec<(String, Vec<u8>)> = Vec::new();
     for entry in fs::read_dir(corpus).expect("the corpus folder") {
@@ -563,7 +567,10 @@ async fn replays_the_genai_sse_corpus() {
         seeds.push((name, bytes));
     }
     seeds.sort();
-    assert_eq!(seeds.len(), CORPUS_SEEDS);
+    seeds
+}
+
+async fn replay_all(seeds: Vec<(String, Vec<u8>)>) {
     for (name, bytes) in seeds {
         let whole = replay(vec![bytes.clone()]);
         let byte_wise: Vec<Vec<u8>> = bytes.chunks(1).map(<[u8]>::to_vec).collect();
@@ -578,12 +585,10 @@ async fn replays_the_genai_sse_corpus() {
             whole,
             "{name} parses the same asynchronously"
         );
-        for event in &whole {
-            assert!(
-                event.ends_with(b"\n\n"),
-                "{name} ends every event with a blank line"
-            );
-        }
+        assert!(
+            whole.iter().all(|event| event.ends_with(b"\n\n")),
+            "{name} ends every event with a blank line"
+        );
         check_corpus_expectation(&name, &bytes, &whole);
     }
 }
