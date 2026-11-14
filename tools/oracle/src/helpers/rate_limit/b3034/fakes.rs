@@ -62,7 +62,7 @@ pub(super) struct PlannedScript {
 }
 
 impl PlannedScript {
-    pub(super) fn new(plan: Vec<ReplyInput>) -> Self {
+    pub(super) const fn new(plan: Vec<ReplyInput>) -> Self {
         Self {
             plan,
             calls: Mutex::new(Vec::new()),
@@ -110,7 +110,7 @@ pub(super) struct PlannedBatch {
 }
 
 impl PlannedBatch {
-    pub(super) fn new(plan: Vec<ReplyInput>) -> Self {
+    pub(super) const fn new(plan: Vec<ReplyInput>) -> Self {
         Self {
             plan,
             calls: Mutex::new(Vec::new()),
@@ -148,13 +148,7 @@ impl ScriptBatch for PlannedBatch {
 }
 
 pub(super) struct PlannedBatchSource {
-    batch: Arc<PlannedBatch>,
-}
-
-impl PlannedBatchSource {
-    pub(super) fn new(batch: Arc<PlannedBatch>) -> Self {
-        Self { batch }
-    }
+    pub(super) batch: Arc<PlannedBatch>,
 }
 
 impl RequestBatchSource for PlannedBatchSource {

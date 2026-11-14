@@ -73,9 +73,11 @@ impl crate::helpers::Helper for Op {
         let batch = input
             .pipelined
             .then(|| Arc::new(PlannedBatch::new(input.replies.clone())));
-        let request_batch: Option<Arc<dyn RequestBatchSource>> = batch
-            .as_ref()
-            .map(|batch| Arc::new(PlannedBatchSource::new(Arc::clone(batch))));
+        let request_batch: Option<Arc<dyn RequestBatchSource>> = batch.as_ref().map(|batch| {
+            Arc::new(PlannedBatchSource {
+                batch: Arc::clone(batch),
+            })
+        });
         let store = WindowStore {
             cache: Arc::clone(&cache),
             rate_limiter_script: None,
