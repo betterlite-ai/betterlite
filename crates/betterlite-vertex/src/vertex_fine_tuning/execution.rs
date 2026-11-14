@@ -50,7 +50,6 @@ impl TuningExecutionError {
     }
 }
 
-// B173's pooled client in production and a scripted reply in tests
 pub trait TuningTransport: Send + Sync {
     fn send(
         &self,

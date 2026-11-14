@@ -40,7 +40,6 @@ pub struct TuningCreateRequest<'request> {
     pub location: Option<&'request str>,
     pub api_base: Option<&'request str>,
     pub local: &'request LocalTimeContext,
-    // LiteLLM ignores the caller's timeout for tuning jobs; the field keeps the call site uniform
     pub timeout: Option<Duration>,
 }
 
@@ -54,7 +53,6 @@ where
     Make: FnOnce(Option<&ConfiguredCredentials>, Option<&str>) -> Lookup,
     Lookup: Future<Output = Result<AccessToken, CredentialCacheError>> + Send,
 {
-    // B1302 resolves the credentials before anything is prepared or sent
     let access = ensure_access_token(
         VertexCapabilityProvider::VertexAiBeta,
         make_lookup(request.credentials, request.project),
@@ -83,16 +81,13 @@ where
     post_tuning_job(transport, request, &prepared, &access.project, body).await
 }
 
-async fn post_tuning_job<T>(
+async fn post_tuning_job<T: TuningTransport>(
     transport: &T,
     request: &TuningCreateRequest<'_>,
     prepared: &EndpointTarget,
     project: &str,
     body: Vec<u8>,
-) -> Result<FineTuneJob, TuningExecutionError>
-where
-    T: TuningTransport,
-{
+) -> Result<FineTuneJob, TuningExecutionError> {
     let Some(location) = request.location else {
         return Err(TuningExecutionError::VertexUrl(
             VertexUrlError::LocationRequired,
@@ -100,12 +95,11 @@ where
     };
     let base = get_vertex_base_url(Some(location))?;
     let text = format!("{base}/v1/projects/{project}/locations/{location}/tuningJobs");
-    let headers = cache_headers(prepared, &BTreeMap::new())?;
     let outbound = OutboundRequest {
         method: Method::POST,
         url: Url::parse(&text).map_err(TuningExecutionError::Url)?,
         query: Vec::new(),
-        headers,
+        headers: cache_headers(prepared, &BTreeMap::new())?,
         body: RequestBody::Json(body),
         deadline: TUNING_TIMEOUT,
     };

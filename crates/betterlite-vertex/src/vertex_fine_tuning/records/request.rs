@@ -85,14 +85,11 @@ struct Given {
     is_text: bool,
 }
 
-fn hyperparameter<T>(
+fn hyperparameter<T: Default + PartialEq>(
     candidate: Option<Given>,
     field: &'static str,
     parse: fn(&str) -> Option<T>,
-) -> Result<Option<T>, TuningRecordError>
-where
-    T: Default + PartialEq,
-{
+) -> Result<Option<T>, TuningRecordError> {
     let Some(entry) = candidate.filter(|present| !present.text.is_empty()) else {
         return Ok(None);
     };

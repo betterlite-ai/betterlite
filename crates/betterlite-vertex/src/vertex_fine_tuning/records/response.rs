@@ -7,7 +7,6 @@ use super::TuningRecordError;
 use super::timestamp::created_at;
 use crate::provider_metadata::timestamp::LocalTimeContext;
 
-// absent, null and a value are three states, and clippy refuses Option<Option<T>> for them
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(untagged)]
 enum Nullable<T> {
