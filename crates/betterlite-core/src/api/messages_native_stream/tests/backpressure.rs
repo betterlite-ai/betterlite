@@ -39,10 +39,11 @@ async fn two_queued_chunks_hold_the_third_pull() {
     yield_now().await;
     assert_eq!(harness.script.pulls(), 3);
     drain_four_chunks(&harness, &mut relay).await;
+    harness.script.finish().await;
     let incomplete = String::from_utf8(incomplete_error_sse_event()).expect("the event is UTF-8");
     assert_eq!(read(&mut relay).await, Frame::Chunk(incomplete));
     assert_eq!(read(&mut relay).await, Frame::End);
-    finish_and_assert_billing(&harness).await;
+    assert_billing(&harness).await;
     settle(&harness, relay).await;
     assert_eq!(registry.sizes().live_pumps, 0);
 }
@@ -64,8 +65,7 @@ async fn drain_four_chunks(harness: &Harness, relay: &mut ClientRelay<Recorder, 
     assert_eq!(read(relay).await, Frame::Chunk("four".to_owned()));
 }
 
-async fn finish_and_assert_billing(harness: &Harness) {
-    harness.script.finish().await;
+async fn assert_billing(harness: &Harness) {
     harness.worker.flush().await;
     assert_eq!(harness.ran(), 1);
     assert_eq!(
