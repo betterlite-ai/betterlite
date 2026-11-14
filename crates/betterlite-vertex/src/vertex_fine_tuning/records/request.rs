@@ -7,8 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::TuningRecordError;
 
 // LiteLLM reads adapter_size from the caller's original hyperparameters dict, not the coerced model
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct OriginalHyperparameters {
     pub adapter_size: Option<String>,
 }
@@ -18,7 +17,6 @@ pub struct VertexHyperparameters {
     #[serde(rename = "epoch_count", skip_serializing_if = "Option::is_none")]
     pub epoch_count: Option<i64>,
     #[serde(
-        rename = "learning_rate_multiplier",
         skip_serializing_if = "Option::is_none",
         with = "rust_decimal::serde::arbitrary_precision_option"
     )]
@@ -29,7 +27,6 @@ pub struct VertexHyperparameters {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct SupervisedTuningSpec {
-    #[serde(rename = "training_dataset_uri")]
     pub training_dataset_uri: String,
     #[serde(rename = "validation_dataset", skip_serializing_if = "Option::is_none")]
     pub validation_dataset: Option<String>,

@@ -32,9 +32,6 @@ class ResponseInput(TypedDict):
     calls: list[ResponseCall]
 
 
-Input = RequestInput | ResponseInput
-
-
 class Job(TypedDict):
     id: str
     created_at: int
@@ -77,7 +74,7 @@ def response_outcome(call: ResponseCall) -> JsonValue:
     return {"ok": True, "job": JSON.validate_python(fields)}
 
 
-def run(input_value: Input) -> JsonValue:
+def run(input_value: RequestInput | ResponseInput) -> JsonValue:
     if input_value["operation"] == "request":
         return {"calls": [request_outcome(call) for call in input_value["calls"]]}
     return {"calls": [response_outcome(call) for call in input_value["calls"]]}

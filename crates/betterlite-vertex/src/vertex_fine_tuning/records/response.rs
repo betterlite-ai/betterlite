@@ -12,7 +12,6 @@ use crate::provider_metadata::timestamp::LocalTimeContext;
 struct ResponseHyperparameters {
     #[serde(rename = "epoch_count", with = "serde_with::rust::double_option")]
     epoch_count: Option<Option<i64>>,
-    #[serde(rename = "learning_rate_multiplier")]
     learning_rate_multiplier: Option<f64>,
     #[serde(rename = "adapter_size", with = "serde_with::rust::double_option")]
     adapter_size: Option<Option<String>>,
