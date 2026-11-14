@@ -1,0 +1,5 @@
+task: B1633
+deviations:
+  - what: The team existence check returns the team row validated into the stored team type, so a row that does not fit the type is an error.
+    why: LiteLLM hands back the raw Prisma row and fails later, inside the group conversion. Validating once at the lookup keeps one typed row for the rest of the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L293-L302

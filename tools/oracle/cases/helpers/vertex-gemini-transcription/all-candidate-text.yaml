@@ -1,0 +1,16 @@
+kind: helper
+name: all-candidate-text
+call:
+  vertex_gemini_transcription:
+    steps:
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"candidates":[{"content":{"parts":[{"text":"hello"},{"text":""},{"text":null}]},"finishReason":"STOP"},{"content":{"parts":[{"text":"there"},{"text":"world"}]}},{"content":null},{"finishReason":"MAX_TOKENS"}]}'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"candidates":[{"content":{"parts":[{"text":"   "},{"text":"a b"}]}}]}'
+      - {step: reply, status: 200, headers: [], body: '200 OK'}
+env: {}
+compare: {ignore: []}

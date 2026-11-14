@@ -1,0 +1,15 @@
+kind: helper
+name: genai-setup-gemini-native-setup
+call:
+  b3483:
+    setups:
+      - model: gemini/gemini-2.5-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        config: {temperature: 0.2, topP: 0.9}
+        custom_llm_provider: null
+        tools: null
+        kwargs: {}
+        extra_body: null
+        with_logging: true
+env: {}
+compare: {ignore: []}

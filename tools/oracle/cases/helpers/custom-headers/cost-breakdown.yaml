@@ -1,0 +1,47 @@
+kind: helper
+name: cost-breakdown
+call:
+  b9802:
+    key:
+      tpm_limit: null
+      rpm_limit: null
+      max_budget: null
+      spend: 0.0
+      allowed_model_region: null
+    call_id: null
+    model_id: null
+    cache_key: null
+    api_base: null
+    version: null
+    model_region: null
+    response_cost: "0.25"
+    hidden_params:
+      litellm_call_id: hidden-call
+    fastest_response_batch_completion: null
+    request_data:
+      litellm_metadata:
+        routing_decision:
+          classifier_cost: 0.0012
+    timeout: null
+    logging:
+      cost_breakdown:
+        original_cost: 2
+        discount_amount: 0.5
+        margin_total_amount: 0.25
+        margin_percent: 0.2
+        input_cost: 1.0
+        cache_read_cost: 0.25
+        cache_creation_cost: 0.5
+        output_cost: 0.75
+        tool_usage_cost: 0.125
+      call_type: completion
+      litellm_params:
+        metadata:
+          deployment: openai/gpt-4o
+      response_timing_metrics:
+        _response_ms: 12.5
+        litellm_overhead_time_ms: 2.5
+    read_timing_from_logging: true
+    extra: []
+env: {}
+compare: {ignore: []}

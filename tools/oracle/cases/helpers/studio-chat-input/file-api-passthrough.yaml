@@ -1,0 +1,15 @@
+kind: helper
+name: studio-chat-input-file-api-passthrough
+call:
+  studio_chat_input:
+    steps:
+      - op: messages
+        model: gemini-2.5-flash
+        messages:
+          - role: user
+            content:
+              - {type: text, text: read this}
+              - type: file
+                file: {file_id: "https://generativelanguage.googleapis.com/v1beta/files/abc123"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,15 @@
+kind: helper
+name: elevenlabs-transcription-filtered-words
+call:
+  elevenlabs_transcription:
+    calls:
+    - function: transcript
+      body: '{"text": "hello world", "language_code": "eng", "language_probability": 0.98, "words": [{"text": "hello", "start": 0.0, "end": 0.5, "type": "word", "logprob": -0.1}, {"text": " ", "start": 0.5, "end": 0.6, "type": "spacing"}, {"text": "(laughs)", "start": 0.6, "end": 0.7, "type": "audio_event"}, {"text": "world", "start": 0.7, "end": 1.2, "type": "word"}]}'
+    - function: transcript
+      body: '{"text": "hi", "words": [{"type": "word"}, {"type": "word", "text": "hi"}, {"type": "word", "start": 1}]}'
+    - function: transcript
+      body: '{"words": [{"type": 5}, {"type": null}, {"type": "WORD"}, {"type": "spacing", "text": " "}]}'
+    - function: transcript
+      body: '{"words": [{"type": "spacing", "text": 5, "start": "x"}]}'
+compare: {ignore: []}
+env: {}

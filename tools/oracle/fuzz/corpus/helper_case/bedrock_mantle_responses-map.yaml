@@ -1,0 +1,15 @@
+kind: helper
+name: bedrock-mantle-responses-map
+call:
+  bedrock_mantle_responses:
+    mantle_response_options:
+      cases:
+        - model: openai.gpt-oss-120b
+          params: {service_tier: flex, temperature: 0.5}
+          drop_params: true
+        - model: openai.gpt-oss-120b
+          params: {service_tier: flex}
+        - model: us-east-1/openai.gpt-5.5-quux
+          params: {temperature: 0.5, reasoning: {effort: high}}
+env: {}
+compare: {ignore: []}
