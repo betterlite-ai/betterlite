@@ -1,0 +1,15 @@
+kind: helper
+name: oauth-token-and-base
+call:
+  xai_responses:
+    env: {XAI_OAUTH_API_BASE: "https://oauth.example/v1/"}
+    xai_key: null
+    generic_key: null
+    steps:
+      - {step: auth, api_key: null, use_xai_oauth: true, headers: {}, oauth: oauth-token}
+      - {step: auth, api_key: null, use_xai_oauth: false, headers: {}, oauth: oauth-token}
+      - {step: url, api_base: null, litellm_api_base: null, api_key: null, use_xai_oauth: true}
+      - {step: url, api_base: null, litellm_api_base: null, api_key: null, use_xai_oauth: false}
+      - {step: url, api_base: "https://explicit.example/v1", litellm_api_base: null, api_key: oauth-token, use_xai_oauth: true}
+env: {}
+compare: {ignore: []}

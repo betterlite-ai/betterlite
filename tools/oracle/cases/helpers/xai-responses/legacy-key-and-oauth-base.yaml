@@ -1,0 +1,17 @@
+kind: helper
+name: legacy-key-and-oauth-base
+call:
+  xai_responses:
+    env:
+      XAI_API_KEY: environment-key
+      XAI_OAUTH_API_BASE: "https://oauth.example/v1/"
+    xai_key: null
+    generic_key: generic-key
+    steps:
+      - {step: auth, api_key: explicit-key, use_xai_oauth: false, headers: {Authorization: "Bearer stale", X-Keep: "yes"}, oauth: null}
+      - {step: auth, api_key: null, use_xai_oauth: false, headers: {}, oauth: null}
+      - {step: url, api_base: null, litellm_api_base: null, api_key: null, use_xai_oauth: true}
+      - {step: url, api_base: null, litellm_api_base: null, api_key: explicit-key, use_xai_oauth: true}
+      - {step: url, api_base: "https://explicit.example/v1///", litellm_api_base: "https://global.example/v1", api_key: null, use_xai_oauth: false}
+env: {}
+compare: {ignore: []}
