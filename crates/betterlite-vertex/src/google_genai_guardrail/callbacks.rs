@@ -67,19 +67,22 @@ pub fn merged_request_data(
 }
 
 fn model_value(object: &Object) -> Option<String> {
-    if let Some(Json::Text(model)) = object.get("model") {
-        return Some(model.clone());
-    }
-    None
+    object
+        .get("model")
+        .and_then(Json::as_str)
+        .map(str::to_owned)
 }
 
-async fn apply<Guardrail: GenaiGuardrail>(
+async fn apply<Guardrail>(
     guardrail: &mut Guardrail,
     texts: Vec<String>,
     model: Option<String>,
     request_data: &Object,
     input_type: InputType,
-) -> Result<Option<Vec<String>>, Guardrail::Failure> {
+) -> Result<Option<Vec<String>>, Guardrail::Failure>
+where
+    Guardrail: GenaiGuardrail,
+{
     guardrail
         .apply_guardrail(
             GuardrailInputs { texts, model },
@@ -91,29 +94,34 @@ async fn apply<Guardrail: GenaiGuardrail>(
         .await
 }
 
-pub async fn process_request<Guardrail: GenaiGuardrail>(
+pub async fn process_request<Guardrail>(
     data: &mut Object,
     guardrail: &mut Guardrail,
-) -> Result<(), Guardrail::Failure> {
+) -> Result<(), Guardrail::Failure>
+where
+    Guardrail: GenaiGuardrail,
+{
     let (locations, texts) = request_texts(data);
     if texts.is_empty() {
         tracing::debug!("Google GenAI guardrail: no request text found, skipping");
         return Ok(());
     }
     let model = model_value(data);
-    let returned = apply(guardrail, texts, model, data, InputType::Request).await?;
-    if let Some(returned) = returned {
-        write_texts(data, &locations, &returned);
+    if let Some(replacements) = apply(guardrail, texts, model, data, InputType::Request).await? {
+        write_texts(data, &locations, &replacements);
     }
     Ok(())
 }
 
-pub async fn process_output<Guardrail: GenaiGuardrail>(
+pub async fn process_output<Guardrail>(
     output: GuardedOutput<'_>,
     request_data: Option<&Object>,
     user_metadata: &Object,
     guardrail: &mut Guardrail,
-) -> Result<(), Guardrail::Failure> {
+) -> Result<(), Guardrail::Failure>
+where
+    Guardrail: GenaiGuardrail,
+{
     match output {
         GuardedOutput::Response(response) => {
             let (locations, texts) = response_texts(response);
@@ -124,9 +132,10 @@ pub async fn process_output<Guardrail: GenaiGuardrail>(
             let context = Json::Object(response.clone());
             let merged = merged_request_data(request_data, user_metadata, "response", context);
             let model = model_value(&merged);
-            let returned = apply(guardrail, texts, model, &merged, InputType::Response).await?;
-            if let Some(returned) = returned {
-                write_texts(response, &locations, &returned);
+            if let Some(replacements) =
+                apply(guardrail, texts, model, &merged, InputType::Response).await?
+            {
+                write_texts(response, &locations, &replacements);
             }
         }
         GuardedOutput::Frames(frames) => {
