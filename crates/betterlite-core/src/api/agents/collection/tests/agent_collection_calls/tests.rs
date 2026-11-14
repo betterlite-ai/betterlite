@@ -19,11 +19,14 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 
-use super::super::{
+use super::creation::{acreate, create};
+use super::listing::{alist, list};
+use super::{
     AgentCollection, AgentCollectionFailure, AgentCollectionHandled, AgentCreation, AgentFailure,
-    AgentListing, acreate, alist, create, list,
+    AgentListing,
 };
-use super::support::{self, FixtureConfig, Provider, ProviderRefusal, Recorder};
+
+use self::support::{FixtureConfig, Provider, ProviderRefusal, Recorder};
 
 mod support;
 
