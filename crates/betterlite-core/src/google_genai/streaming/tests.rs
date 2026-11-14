@@ -462,6 +462,46 @@ fn sync_stream_refuses_a_long_line_inside_one_read() {
 }
 
 #[test]
+fn sync_stream_refuses_a_line_exactly_at_the_limit_as_an_event() {
+    let mut stream = GoogleGenAiStream::new(
+        vec![Ok(body(&["data: 012", ""]))].into_iter(),
+        metadata(GenAiProvider::Gemini),
+        SMALL_LINE_LIMIT,
+    );
+    let failure = stream
+        .next()
+        .expect("the limit error")
+        .expect_err("the event is refused");
+    assert!(matches!(
+        failure,
+        GenAiStreamError::EventTooLong {
+            limit: SMALL_LINE_LIMIT
+        }
+    ));
+    assert!(stream.next().is_none());
+}
+
+#[test]
+fn sync_stream_refuses_an_event_one_byte_past_the_limit() {
+    let mut stream = GoogleGenAiStream::new(
+        vec![Ok(body(&["data: ab", ""]))].into_iter(),
+        metadata(GenAiProvider::Gemini),
+        SMALL_LINE_LIMIT,
+    );
+    let failure = stream
+        .next()
+        .expect("the limit error")
+        .expect_err("the event is refused");
+    assert!(matches!(
+        failure,
+        GenAiStreamError::EventTooLong {
+            limit: SMALL_LINE_LIMIT
+        }
+    ));
+    assert!(stream.next().is_none());
+}
+
+#[test]
 fn sync_stream_refuses_an_event_that_grows_past_the_limit() {
     let input = body(&["data: a", "data: b"]);
     let mut stream = GoogleGenAiStream::new(
@@ -542,7 +582,9 @@ async fn async_stream_routes_the_collected_events_to_the_gemini_handler_at_eof()
         Some(logging),
     );
     let events = drain(&mut stream).await;
-    logged.notified().await;
+    timeout(Duration::from_secs(5), logged.notified())
+        .await
+        .expect("the completion log runs");
     assert_eq!(events.len(), 2);
     let calls_recorded = recorded_calls(&calls);
     assert_eq!(calls_recorded.len(), 1);
