@@ -1,0 +1,14 @@
+task: B4809
+deviations:
+  - what: The completion entry point is an injected CompletionPort, not the name litellm.acompletion looked up in the litellm module at call time. The bridge builds the same kwargs and reads the same response fields, but the caller supplies the implementation.
+    why: litellm.acompletion is the gateway's, owned by B142; the A2A bridge sits below it and cannot name the completion pipeline. The port delays that dependency to dispatch time the way vars(litellm)["acompletion"] delays the import in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/litellm_completion_bridge/handler.py#L113-L118
+  - what: There is no _skip_a2a_provider_routing flag. The LangFlow config calls handle_non_streaming_direct and handle_streaming_direct, entry points that never consult the provider selector, so a LangFlow request cannot route back into LangFlow.
+    why: A boolean that every caller must remember to set has no place in the Rust entry points; two entry points make the skip part of the signature instead. The visible behavior is the same as passing the flag.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/langflow/config.py#L16-L61
+  - what: A stream key inside litellm_params is dropped instead of forwarded, and the entry point decides stream=true or stream=false. LiteLLM copies it into the completion kwargs, where it overrides the bridge's own choice.
+    why: A configured stream=true under handle_non_streaming makes acompletion return a stream that the non-streaming path then reads as a ModelResponse, and stream=false under handle_streaming does the reverse; no working configuration can set it, so listening to the entry point is the behavior every reachable configuration already has.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/litellm_completion_bridge/handler.py#L51-L111
+  - what: A failure inside the streaming completion is the stream's next Err item; LiteLLM raises an exception out of the async generator at the same point, after the task and working events and before the completed status.
+    why: Rust streams carry failures in their item type, and the bridge's stream item is Result<AgentJson, BridgeError<...>>; an error item ends the stream exactly where the exception ends LiteLLM's generator, with no artifact or completed status after it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/litellm_completion_bridge/handler.py#L183-L298
