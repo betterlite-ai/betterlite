@@ -1,4 +1,5 @@
 use std::io;
+use std::time::Duration;
 
 use secrecy::{ExposeSecret, SecretString};
 
@@ -15,6 +16,7 @@ const ARC_DEFAULT_ENDPOINT: &str = "http://localhost:40342/metadata/identity/oau
 const REFRESH_THRESHOLD_SECONDS: i64 = 7200;
 const REDACTED: &str = "[redacted]";
 const API_VERSION: &str = "2020-06-01";
+const ARC_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ArcPlatform {
@@ -39,22 +41,23 @@ pub trait ArcHost {
     fn now_unix_seconds(&self) -> i64;
 }
 
-#[derive(Debug)]
-pub struct ArcRequest {
+#[derive(Debug, Clone)]
+pub struct MetadataRequest {
     pub url: String,
-    pub query: [(&'static str, String); 2],
-    pub headers: Vec<(&'static str, SecretString)>,
+    pub query: Vec<(String, String)>,
+    pub headers: Vec<(String, SecretString)>,
+    pub timeout: Duration,
 }
 
 #[derive(Debug)]
-pub struct ArcResponse {
+pub struct MetadataResponse {
     pub status: u16,
     pub headers: Vec<(String, String)>,
     pub body: SecretString,
 }
 
 pub trait ArcTransport {
-    fn get(&self, request: &ArcRequest) -> io::Result<ArcResponse>;
+    fn get(&self, request: &MetadataRequest) -> io::Result<MetadataResponse>;
 }
 
 #[derive(Debug)]
@@ -85,21 +88,26 @@ where
         .then(|| ARC_DEFAULT_ENDPOINT.to_owned())
 }
 
-fn arc_request(endpoint: &str, resource: &str, key_secret: Option<&SecretString>) -> ArcRequest {
-    let mut headers = vec![("Metadata", SecretString::from("true"))];
+fn arc_request(
+    endpoint: &str,
+    resource: &str,
+    key_secret: Option<&SecretString>,
+) -> MetadataRequest {
+    let mut headers = vec![("Metadata".to_owned(), SecretString::from("true"))];
     if let Some(secret) = key_secret {
         headers.push((
-            "Authorization",
+            "Authorization".to_owned(),
             SecretString::from(format!("Basic {}", secret.expose_secret())),
         ));
     }
-    ArcRequest {
+    MetadataRequest {
         url: endpoint.to_owned(),
-        query: [
-            ("api-version", API_VERSION.to_owned()),
-            ("resource", resource.to_owned()),
+        query: vec![
+            ("api-version".to_owned(), API_VERSION.to_owned()),
+            ("resource".to_owned(), resource.to_owned()),
         ],
         headers,
+        timeout: ARC_TIMEOUT,
     }
 }
 
