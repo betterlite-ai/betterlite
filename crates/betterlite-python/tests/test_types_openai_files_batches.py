@@ -2,7 +2,7 @@ import operator
 from os import PathLike
 from typing import ClassVar, Literal, Protocol, get_args, get_origin, get_type_hints
 
-import litellm.types.llms.openai as litellm_openai
+import litellm.types.llms.openai as litellm_openai  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1
 import pytest
 from pydantic import BaseModel, JsonValue, ValidationError
 from typing_extensions import ReadOnly, TypeForm
@@ -239,20 +239,44 @@ def check_file_content_forms(
     ours_bytes_origin: TypeForm[JsonValue] | None = get_origin(ours[3])
     ours_bytes_parameters: tuple[TypeForm[JsonValue], ...] = get_args(ours[3])
     assert operator.is_(ours_text_origin, PathLike)
-    assert ours_text_parameters == (str,)
+    assert len(ours_text_parameters) == 1
+    assert operator.is_(ours_text_parameters[0], str)
     assert operator.is_(ours_bytes_origin, PathLike)
-    assert ours_bytes_parameters == (bytes,)
+    assert len(ours_bytes_parameters) == 1
+    assert operator.is_(ours_bytes_parameters[0], bytes)
     assert operator.is_(theirs[2], PathLike)
 
 
+def check_hint_maps(
+    ours: dict[str, TypeForm[JsonValue]], theirs: dict[str, TypeForm[JsonValue]]
+) -> None:
+    assert ours.keys() == theirs.keys()
+    for key in ours.keys() & theirs.keys():
+        ours_origin: TypeForm[JsonValue] | None = get_origin(ours[key])
+        theirs_origin: TypeForm[JsonValue] | None = get_origin(theirs[key])
+        assert operator.is_(ours_origin, ReadOnly) == operator.is_(theirs_origin, ReadOnly)
+        assert literal_values(ours[key]) == literal_values(theirs[key])
+
+
+def model_hints(model: type[BaseModel]) -> dict[str, TypeForm[JsonValue]]:
+    hints: dict[str, TypeForm[JsonValue]] = {}
+    for key, field in model.model_fields.items():
+        annotation: TypeForm[JsonValue] | None = field.annotation
+        hints[key] = annotation
+    return hints
+
+
 def check_model_literals(ours: type[BaseModel], theirs: type[BaseModel]) -> None:
-    ours_fields = ours.model_fields
-    theirs_fields = theirs.model_fields
-    assert ours_fields.keys() == theirs_fields.keys()
-    for key in ours_fields.keys() & theirs_fields.keys():
-        ours_annotation: TypeForm[JsonValue] | None = ours_fields[key].annotation
-        theirs_annotation: TypeForm[JsonValue] | None = theirs_fields[key].annotation
-        assert literal_values(ours_annotation) == literal_values(theirs_annotation)
+    assert ours.model_fields.keys() == theirs.model_fields.keys()
+    check_hint_maps(model_hints(ours), model_hints(theirs))
+
+
+def check_typed_dict(ours: type[TypedDictClass], theirs: type[TypedDictClass]) -> None:
+    assert ours.__required_keys__ == theirs.__required_keys__
+    assert ours.__optional_keys__ == theirs.__optional_keys__
+    ours_hints: dict[str, TypeForm[JsonValue]] = get_type_hints(ours, include_extras=True)
+    theirs_hints: dict[str, TypeForm[JsonValue]] = get_type_hints(theirs, include_extras=True)
+    check_hint_maps(ours_hints, theirs_hints)
 
 
 def test_names_typed_dicts() -> None:
@@ -260,22 +284,7 @@ def test_names_typed_dicts() -> None:
     theirs: dict[str, type[TypedDictClass]] = get_type_hints(LiteLLMTypedDicts)
     assert ours.keys() == theirs.keys()
     for name in ours.keys() & theirs.keys():
-        ours_handle = ours[name]
-        theirs_handle = theirs[name]
-        assert ours_handle.__required_keys__ == theirs_handle.__required_keys__
-        assert ours_handle.__optional_keys__ == theirs_handle.__optional_keys__
-        ours_hints: dict[str, TypeForm[JsonValue]] = get_type_hints(
-            ours_handle, include_extras=True
-        )
-        theirs_hints: dict[str, TypeForm[JsonValue]] = get_type_hints(
-            theirs_handle, include_extras=True
-        )
-        assert ours_hints.keys() == theirs_hints.keys()
-        for key in ours_hints.keys() & theirs_hints.keys():
-            assert operator.is_(get_origin(ours_hints[key]), ReadOnly) == operator.is_(
-                get_origin(theirs_hints[key]), ReadOnly
-            )
-            assert literal_values(ours_hints[key]) == literal_values(theirs_hints[key])
+        check_typed_dict(ours[name], theirs[name])
 
 
 def test_names_literal_aliases() -> None:
