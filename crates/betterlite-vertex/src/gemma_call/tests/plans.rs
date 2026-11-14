@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_prompts::arguments::json::Object;
 use rstest::rstest;
 
 use super::support::{ENDPOINT, Fixture, MODEL, STRIPPED_MODEL};
@@ -113,8 +114,7 @@ fn false_stream_default() {
     assert!(!planned.stream);
     assert!(!planned.url.contains("alt=sse"));
     // the normalized field decides, not a stream the raw options still carry
-    let raw: betterlite_prompts::arguments::json::Object =
-        serde_json::from_str(r#"{"stream":true}"#).unwrap();
+    let raw: Object = serde_json::from_str(r#"{"stream":true}"#).unwrap();
     let mut carried = fixture.call(MODEL, Some(ENDPOINT), false);
     carried.optional_params = &raw;
     assert!(!for_call(&carried, None).unwrap().stream);

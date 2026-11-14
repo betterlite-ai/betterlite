@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::time::Duration;
+
 use betterlite_prompts::arguments::json::Json;
 
 use super::support::{
@@ -7,9 +9,13 @@ use super::support::{
 };
 use crate::gemma_call::error::GemmaCallError;
 use crate::gemma_call::plan::{SuppliedClientKind, for_call};
+use crate::gemma_envelope::post::Timeout;
 use crate::gemma_envelope::response::GemmaReply;
 
 const VALID_REPLY: &str = r#"{"predictions":{"id":"chatcmpl-provider","object":"chat.completion","created":1730000000,"model":"provider-gemma","choices":[{"index":0,"message":{"role":"assistant","content":"hello there"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}}"#;
+const CONTAINER_429: &str =
+    r#"{"predictions":{"object":"error","message":"rate limited","code":429}}"#;
+const FILE_WITHOUT_FILE: &str = r#"[{"role":"user","content":[{"type":"file"}]}]"#;
 const PREDICT_URL: &str = "https://ep.example/custom:predict";
 
 #[test]
@@ -17,7 +23,7 @@ fn single_nonstreaming_post() {
     let fixture = Fixture::new();
     let call = fixture.call(MODEL, Some(ENDPOINT), false);
     let run = run(
-        call,
+        &call,
         Reply::Ok(VALID_REPLY),
         Some(SuppliedClientKind::AsyncHandler),
     );
@@ -59,7 +65,7 @@ fn header_secrecy() {
     assert!(debug.contains("Authorization"));
     assert!(!debug.contains(TOKEN));
     let run = run(
-        call,
+        &call,
         Reply::Status(201, VALID_REPLY),
         Some(SuppliedClientKind::AsyncHandler),
     );
@@ -78,7 +84,7 @@ fn synthetic_stream_order() {
     let fixture = Fixture::new();
     let call = fixture.call(MODEL, Some(ENDPOINT), true);
     let run = run(
-        call,
+        &call,
         Reply::Ok(VALID_REPLY),
         Some(SuppliedClientKind::AsyncHandler),
     );
@@ -116,7 +122,7 @@ fn raw_client_serves_the_call() {
     let fixture = Fixture::new();
     let call = fixture.call(MODEL, Some(ENDPOINT), false);
     let run = run(
-        call,
+        &call,
         Reply::Ok(VALID_REPLY),
         Some(SuppliedClientKind::AsyncRaw),
     );
@@ -132,7 +138,11 @@ fn raw_client_serves_the_call() {
 fn transport_failure_is_a_vertex_500() {
     let fixture = Fixture::new();
     let call = fixture.call(MODEL, Some(ENDPOINT), false);
-    let run = run(call, Reply::Failure, Some(SuppliedClientKind::AsyncHandler));
+    let run = run(
+        &call,
+        Reply::Failure,
+        Some(SuppliedClientKind::AsyncHandler),
+    );
     let Err(error) = run.result else {
         panic!("a transport failure is an error");
     };
@@ -146,7 +156,7 @@ fn mismatched_client_falls_back_to_the_pooled_client() {
     let fixture = Fixture::new();
     let call = fixture.call(MODEL, Some(ENDPOINT), false);
     let run = run(
-        call,
+        &call,
         Reply::Ok(VALID_REPLY),
         Some(SuppliedClientKind::SyncHandler),
     );
@@ -164,7 +174,7 @@ fn a_rejected_body_that_is_not_utf8_names_its_length() {
     let fixture = Fixture::new();
     let call = fixture.call(MODEL, Some(ENDPOINT), false);
     let run = run(
-        call,
+        &call,
         Reply::Raw(500, &[0xff, 0xfe, 0x00]),
         Some(SuppliedClientKind::AsyncHandler),
     );
@@ -183,7 +193,7 @@ fn upstream_201_rejection() {
     let fixture = Fixture::new();
     let call = fixture.call(MODEL, Some(ENDPOINT), false);
     let run = run(
-        call,
+        &call,
         Reply::Status(201, VALID_REPLY),
         Some(SuppliedClientKind::AsyncHandler),
     );
@@ -194,4 +204,86 @@ fn upstream_201_rejection() {
     assert_eq!(error.to_string(), format!("Request failed: {VALID_REPLY}"));
     assert!(run.wrapped.is_empty());
     assert_eq!(run.events, [Event::Posted(String::from(PREDICT_URL))]);
+}
+
+#[test]
+fn container_error_keeps_its_status() {
+    let fixture = Fixture::new();
+    let call = fixture.call(MODEL, Some(ENDPOINT), true);
+    let run = run(
+        &call,
+        Reply::Ok(CONTAINER_429),
+        Some(SuppliedClientKind::AsyncHandler),
+    );
+    let Err(error) = run.result else {
+        panic!("an embedded error record is an error even under a streaming call");
+    };
+    assert_eq!(error.status_code(), 429);
+    assert!(matches!(&error, GemmaCallError::Reply(_)));
+    assert!(run.wrapped.is_empty());
+    assert_eq!(
+        run.events,
+        [Event::Posted(String::from(
+            "https://ep.example/custom:predict?alt=sse"
+        ))]
+    );
+}
+
+#[test]
+fn missing_base_fails_before_posting() {
+    let fixture = Fixture::new();
+    let call = fixture.call(MODEL, None, false);
+    let run = run(
+        &call,
+        Reply::Ok(VALID_REPLY),
+        Some(SuppliedClientKind::AsyncHandler),
+    );
+    let Err(error) = run.result else {
+        panic!("a call without api_base fails in the plan");
+    };
+    assert_eq!(error.status_code(), 400);
+    assert!(matches!(&error, GemmaCallError::Plan(_)));
+    assert!(run.caller_requests.is_empty());
+    assert!(run.pooled_requests.is_empty());
+}
+
+#[test]
+fn a_file_block_without_a_file_is_a_400() {
+    let mut fixture = Fixture::new();
+    fixture.messages = serde_json::from_str(FILE_WITHOUT_FILE).unwrap();
+    let call = fixture.call(MODEL, Some(ENDPOINT), false);
+    let run = run(
+        &call,
+        Reply::Ok(VALID_REPLY),
+        Some(SuppliedClientKind::AsyncHandler),
+    );
+    let Err(error) = run.result else {
+        panic!("a request body that cannot be built fails before posting");
+    };
+    assert_eq!(error.status_code(), 400);
+    assert!(matches!(&error, GemmaCallError::Envelope(_)));
+    assert!(run.caller_requests.is_empty());
+}
+
+#[test]
+fn timeout_reaches_the_transport() {
+    let fixture = Fixture::new();
+    let mut explicit = fixture.call(MODEL, Some(ENDPOINT), false);
+    explicit.timeout = Some(Duration::from_secs(5));
+    let handler_run = run(
+        &explicit,
+        Reply::Ok(VALID_REPLY),
+        Some(SuppliedClientKind::AsyncHandler),
+    );
+    assert_eq!(
+        handler_run.caller_requests[0].timeout,
+        Timeout::Explicit(Some(Duration::from_secs(5)))
+    );
+    let defaulted = fixture.call(MODEL, Some(ENDPOINT), false);
+    let raw_run = run(
+        &defaulted,
+        Reply::Ok(VALID_REPLY),
+        Some(SuppliedClientKind::AsyncRaw),
+    );
+    assert_eq!(raw_run.caller_requests[0].timeout, Timeout::ClientDefault);
 }

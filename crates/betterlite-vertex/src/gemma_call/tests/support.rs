@@ -43,6 +43,7 @@ pub(super) struct SentRequest {
     pub(super) url: String,
     pub(super) headers: BTreeMap<String, String>,
     pub(super) body: Vec<u8>,
+    pub(super) timeout: Timeout,
 }
 
 #[derive(Debug, Error)]
@@ -63,12 +64,13 @@ impl GemmaPost for FixtureClient {
     fn post<'request>(
         &'request self,
         request: PostRequest<'request>,
-        _timeout: Timeout,
+        timeout: Timeout,
     ) -> PostFuture<'request, Self::Failure> {
         self.sent.lock().unwrap().push(SentRequest {
             url: request.url.to_owned(),
             headers: request.headers.clone(),
             body: request.body.to_vec(),
+            timeout,
         });
         self.events
             .lock()
@@ -149,7 +151,7 @@ pub(super) struct Run {
     pub(super) wrapped: Vec<ChatResponse>,
 }
 
-pub(super) fn run(call: GemmaCall<'_>, reply: Reply, supplied: Option<SuppliedClientKind>) -> Run {
+pub(super) fn run(call: &GemmaCall<'_>, reply: Reply, supplied: Option<SuppliedClientKind>) -> Run {
     let events = Arc::new(Mutex::new(Vec::new()));
     let caller_sent = Arc::new(Mutex::new(Vec::new()));
     let pooled_sent = Arc::new(Mutex::new(Vec::new()));
@@ -168,12 +170,12 @@ pub(super) fn run(call: GemmaCall<'_>, reply: Reply, supplied: Option<SuppliedCl
         events: Arc::clone(&events),
         wrapped: Arc::clone(&wrapped),
     };
-    let supplied = supplied.map(|kind| SuppliedClient {
+    let supplied_client = supplied.map(|kind| SuppliedClient {
         kind,
         client: &caller,
     });
     let runtime = Builder::new_current_thread().build().unwrap();
-    let result = runtime.block_on(completion(&call, supplied, &pooled, &factory));
+    let result = runtime.block_on(completion(call, supplied_client, &pooled, &factory));
     Run {
         result,
         caller_requests: caller_sent.lock().unwrap().clone(),
