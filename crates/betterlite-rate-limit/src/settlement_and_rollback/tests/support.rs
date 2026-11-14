@@ -345,7 +345,7 @@ pub(crate) struct FakeBatchSource {
 
 impl RequestBatchSource for FakeBatchSource {
     fn active_batch(&self) -> Option<Arc<dyn ScriptBatch>> {
-        let shared: Arc<dyn ScriptBatch> = Arc::clone(&self.batch);
+        let shared: Arc<dyn ScriptBatch> = Arc::<FakeBatch>::clone(&self.batch);
         Some(shared)
     }
 }
