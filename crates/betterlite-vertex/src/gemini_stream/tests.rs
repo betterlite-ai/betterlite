@@ -177,10 +177,10 @@ fn chunks_tool_calls_continue_and_a_later_stop_becomes_tool_calls() {
         .push(br#"{"responseId":"r1","candidates":[{"content":{"parts":[{"functionCall":{"id":"call_2","name":"forecast","args":{}}}]}}]}"#)
         .unwrap()
         .unwrap();
-    let Choice::Projected(choice) = &second.choices[0] else {
+    let Choice::Projected(next_call) = &second.choices[0] else {
         panic!("a function call is a projected choice");
     };
-    assert_eq!(choice.delta.tool_calls.as_ref().unwrap()[0].index, 1);
+    assert_eq!(next_call.delta.tool_calls.as_ref().unwrap()[0].index, 1);
     let stop = decoder
         .push(br#"{"responseId":"r1","candidates":[{"content":{"parts":[{"text":""}]},"finishReason":"STOP"}]}"#)
         .unwrap()
@@ -433,10 +433,11 @@ fn ownership_the_retained_buffer_accepts_exactly_the_limit() {
 #[test]
 fn ownership_the_retained_buffer_counts_the_unparsed_fragments() {
     let mut decoder = decoder();
-    let half = "x".repeat(MAX_RETAINED_BYTES / 2 + 1);
+    let half = "x".repeat(MAX_RETAINED_BYTES.div_ceil(2));
+    assert!(decoder.push(half.as_bytes()).unwrap().is_none());
     assert!(decoder.push(half.as_bytes()).unwrap().is_none());
     assert!(matches!(
-        decoder.push(half.as_bytes()),
+        decoder.push(b"y"),
         Err(StreamError::TooLarge { .. })
     ));
 }
@@ -454,9 +455,10 @@ fn ownership_the_retained_buffer_stops_at_the_limit() {
 #[test]
 fn ownership_cursor_keeps_the_copy_cost_linear() {
     let mut decoder = decoder();
-    let payload: String = (0..50)
+    let payload: String = (0_u32..50_u32)
         .map(|position| format!(r#"{{"responseId":"r{position}"}}"#))
-        .collect();
+        .collect::<Vec<String>>()
+        .concat();
     let first = decoder.push(payload.as_bytes()).unwrap().unwrap();
     assert_eq!(first.id, "r0");
     let mut drained = 0_usize;
@@ -547,17 +549,17 @@ struct CountingFixture {
     response_closed: Arc<AtomicUsize>,
 }
 
-fn counting_stream(fragments: &[&str], reader_fail: bool, response_fail: bool) -> CountingFixture {
+fn counting_stream(fragments: &[&str], failing: bool) -> CountingFixture {
     let reader_closed = Arc::new(AtomicUsize::new(0));
     let response_closed = Arc::new(AtomicUsize::new(0));
     let reader = CountingReader {
         fragments: fragments.iter().map(|value| (*value).to_owned()).collect(),
         closed: Arc::clone(&reader_closed),
-        fail: reader_fail,
+        fail: failing,
     };
     let response = CountingResponse {
         closed: Arc::clone(&response_closed),
-        fail: response_fail,
+        fail: failing,
     };
     CountingFixture {
         stream: GeminiStream::new(
@@ -574,7 +576,7 @@ fn counting_stream(fragments: &[&str], reader_fail: bool, response_fail: bool) -
 
 #[test]
 fn ownership_close_shuts_the_reader_and_the_response() {
-    let fixture = counting_stream(&[r#"{"responseId":"r1"}"#], false, false);
+    let fixture = counting_stream(&[r#"{"responseId":"r1"}"#], false);
     let CountingFixture {
         mut stream,
         reader_closed,
@@ -588,7 +590,7 @@ fn ownership_close_shuts_the_reader_and_the_response() {
 
 #[test]
 fn ownership_a_failed_close_is_diagnostic_only() {
-    let fixture = counting_stream(&[r#"{"responseId":"r1"}"#], true, true);
+    let fixture = counting_stream(&[r#"{"responseId":"r1"}"#], true);
     let CountingFixture {
         mut stream,
         reader_closed,
@@ -611,7 +613,7 @@ fn ownership_a_failed_close_is_logged_for_each_owner() {
         .with_max_level(tracing::Level::DEBUG)
         .with_writer(Arc::new(log.reopen().unwrap()))
         .finish();
-    let mut stream = counting_stream(&[], true, true).stream;
+    let mut stream = counting_stream(&[], true).stream;
     with_default(subscriber, || stream.close());
     let logged = fs::read_to_string(log.path()).unwrap();
     assert!(logged.contains("owner=\"reader\""));
@@ -626,14 +628,14 @@ fn ownership_a_clean_close_logs_nothing() {
         .with_max_level(tracing::Level::DEBUG)
         .with_writer(Arc::new(log.reopen().unwrap()))
         .finish();
-    let mut stream = counting_stream(&[], false, false).stream;
+    let mut stream = counting_stream(&[], false).stream;
     with_default(subscriber, || stream.close());
     assert!(fs::read_to_string(log.path()).unwrap().is_empty());
 }
 
 #[test]
 fn ownership_the_adapter_ends_after_a_stream_error() {
-    let fixture = counting_stream(&[r#"{"error":{"code":429}}"#], false, false);
+    let fixture = counting_stream(&[r#"{"error":{"code":429}}"#], false);
     let mut stream = fixture.stream;
     assert!(matches!(
         stream.next(),
@@ -644,7 +646,7 @@ fn ownership_the_adapter_ends_after_a_stream_error() {
 
 #[test]
 fn ownership_the_sync_adapter_drains_the_buffer_at_eof() {
-    let fixture = counting_stream(&[r#"{"responseId":"r1"}{"responseId":"r2"}"#], false, false);
+    let fixture = counting_stream(&[r#"{"responseId":"r1"}{"responseId":"r2"}"#], false);
     let mut stream = fixture.stream;
     let first = stream.next().unwrap().unwrap().unwrap();
     assert_eq!(first.id, "r1");
@@ -670,11 +672,11 @@ async fn ownership_the_async_adapter_yields_chunks_and_drains_at_eof() {
         &HeaderMap::new(),
         fixed_ids(),
     );
-    let first = stream.next_chunk().await.unwrap().unwrap().unwrap();
+    let first = stream.next_chunk_async().await.unwrap().unwrap().unwrap();
     assert_eq!(first.id, "r1");
-    let second = stream.next_chunk().await.unwrap().unwrap().unwrap();
+    let second = stream.next_chunk_async().await.unwrap().unwrap().unwrap();
     assert_eq!(second.id, "r2");
-    assert!(stream.next_chunk().await.is_none());
+    assert!(stream.next_chunk_async().await.is_none());
 }
 
 #[tokio::test]
@@ -695,7 +697,7 @@ async fn ownership_async_close_shuts_the_reader_and_the_response() {
         &HeaderMap::new(),
         fixed_ids(),
     );
-    assert!(stream.next_chunk().await.unwrap().unwrap().is_some());
+    assert!(stream.next_chunk_async().await.unwrap().unwrap().is_some());
     stream.aclose().await;
     assert_eq!(reader_closed.load(Ordering::SeqCst), 1);
     assert_eq!(response_closed.load(Ordering::SeqCst), 1);
@@ -704,11 +706,10 @@ async fn ownership_async_close_shuts_the_reader_and_the_response() {
 #[test]
 fn ownership_a_utf8_fragment_decodes_before_parsing() {
     let mut decoder = decoder();
-    let chunk = decoder
-        .push(r#"{"responseId":"héllo"}"#.as_bytes())
-        .unwrap()
-        .unwrap();
-    assert_eq!(chunk.id, "héllo");
+    let id = "h\u{e9}llo";
+    let fragment = format!(r#"{{"responseId":"{id}"}}"#);
+    let chunk = decoder.push(fragment.as_bytes()).unwrap().unwrap();
+    assert_eq!(chunk.id, id);
 }
 
 #[test]

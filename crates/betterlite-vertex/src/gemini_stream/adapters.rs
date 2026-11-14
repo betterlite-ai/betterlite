@@ -50,7 +50,7 @@ impl<Reader, Response> GeminiStream<Reader, Response> {
             return Advance::Done;
         }
         match fragment {
-            Ok(Some(fragment)) => match self.decoder.push(fragment.as_bytes()) {
+            Ok(Some(text)) => match self.decoder.push(text.as_bytes()) {
                 Ok(None) => Advance::Again,
                 Ok(Some(chunk)) => Advance::Chunk(Box::new(chunk)),
                 Err(error) => self.failed(error),
@@ -90,7 +90,7 @@ impl<Reader: FragmentReader, Response: ResponseClose> Iterator for GeminiStream<
     }
 }
 impl<Reader: AsyncFragmentReader, Response: ResponseClose> GeminiStream<Reader, Response> {
-    pub async fn next_chunk(&mut self) -> Option<Result<Option<StreamChunk>, StreamError>> {
+    pub async fn next_chunk_async(&mut self) -> Option<Result<Option<StreamChunk>, StreamError>> {
         let fragment = self.reader.next_fragment().await;
         match self.advance(fragment) {
             Advance::Again => Some(Ok(None)),

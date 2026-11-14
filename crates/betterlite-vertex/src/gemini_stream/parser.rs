@@ -1,7 +1,8 @@
-use super::GeminiStreamDecoder;
+use super::buffer::FragmentBuffer;
 use super::chunk::{Choice, StreamChunk};
 use super::embedded::check_embedded_error;
 use super::error::StreamError;
+use super::{GeminiStreamDecoder, StreamOptions, stream_service_tier, strip_sse_data};
 use crate::gemini_candidates::blocked::stream_block;
 use crate::gemini_candidates::candidate::Candidate;
 use crate::gemini_candidates::choice::Choices;
@@ -15,8 +16,75 @@ use betterlite_context::provider_message_primitives::CHAT_COMPLETION_ID_PREFIX;
 use betterlite_models::call_helpers::finish_reason::FinishReason;
 use betterlite_models::decisions::Json;
 use betterlite_models::usage_sum::Usage;
+use http::header::HeaderMap;
+use serde_json::value::RawValue;
+use std::str::from_utf8;
+use uuid::Uuid;
 impl GeminiStreamDecoder {
-    pub(super) fn chunk_parser(&mut self, value: &[u8]) -> Result<StreamChunk, StreamError> {
+    #[must_use]
+    pub fn new(
+        options: StreamOptions,
+        headers: &HeaderMap,
+        ids: Box<dyn FnMut() -> Uuid + Send>,
+    ) -> Self {
+        Self {
+            options,
+            ids,
+            service_tier: stream_service_tier(headers),
+            accumulated: false,
+            buffer: FragmentBuffer::default(),
+            cumulative_tool_call_index: 0,
+            has_seen_tool_calls: false,
+        }
+    }
+    pub fn push(&mut self, fragment: &[u8]) -> Result<Option<StreamChunk>, StreamError> {
+        let text = from_utf8(fragment).map_err(|source| StreamError::Utf8 { source })?;
+        if text.is_empty() {
+            return Ok(None);
+        }
+        self.parse_fragment(text)
+    }
+    pub fn finish(&mut self) -> Result<Option<StreamChunk>, StreamError> {
+        if !self.accumulated {
+            return Ok(None);
+        }
+        self.accumulated_chunk("", true)
+    }
+    fn parse_fragment(&mut self, fragment: &str) -> Result<Option<StreamChunk>, StreamError> {
+        let chunk = strip_sse_data(fragment);
+        if chunk.is_empty() {
+            return Ok(None);
+        }
+        if self.accumulated {
+            return self.accumulated_chunk(chunk, false);
+        }
+        let trimmed = chunk.trim();
+        if let Ok(value) = serde_json::from_str::<Box<RawValue>>(trimmed) {
+            return self.chunk_parser(value.get().as_bytes()).map(Some);
+        }
+        self.accumulated = true;
+        self.accumulated_chunk(trimmed, false)
+    }
+    fn accumulated_chunk(
+        &mut self,
+        chunk: &str,
+        is_final: bool,
+    ) -> Result<Option<StreamChunk>, StreamError> {
+        let message = strip_sse_data(chunk).replace("\n\n", "");
+        self.buffer.append(&message)?;
+        if !is_final && !self.buffer.could_close {
+            return Ok(None);
+        }
+        loop {
+            let Some(value) = self.buffer.pop_next_value() else {
+                return Ok(None);
+            };
+            if value.get().trim_start().starts_with('{') {
+                return self.chunk_parser(value.get().as_bytes()).map(Some);
+            }
+        }
+    }
+    fn chunk_parser(&mut self, value: &[u8]) -> Result<StreamChunk, StreamError> {
         if value.trim_ascii_start().first() != Some(&b'{') {
             return Err(StreamError::NotAnObject);
         }
@@ -49,7 +117,7 @@ impl GeminiStreamDecoder {
         decoded: &GenerateContentResponse,
     ) -> Result<(Vec<Choice>, MetadataExtension), StreamError> {
         let mut choices: Vec<Choice> = stream_block(decoded.prompt_feedback.as_ref())
-            .map(Choice::Projected)
+            .map(|choice| Choice::Projected(Box::new(choice)))
             .into_iter()
             .collect();
         let candidates = decoded.candidates.as_deref().unwrap_or_default();
@@ -93,15 +161,17 @@ impl GeminiStreamDecoder {
                 .iter()
                 .any(|choice| choice.delta.tool_calls.is_some());
         }
-        if self.has_seen_tool_calls {
-            for choice in &mut projected {
-                if choice.finish_reason == FinishReason::Stop.as_str() {
-                    choice.finish_reason = FinishReason::ToolCalls.as_str();
-                }
+        let rewrite_stop = self.has_seen_tool_calls;
+        for choice in &mut projected {
+            if rewrite_stop && choice.finish_reason == FinishReason::Stop.as_str() {
+                choice.finish_reason = FinishReason::ToolCalls.as_str();
             }
         }
         Ok((
-            projected.into_iter().map(Choice::Projected).collect(),
+            projected
+                .into_iter()
+                .map(|choice| Choice::Projected(Box::new(choice)))
+                .collect(),
             metadata,
         ))
     }

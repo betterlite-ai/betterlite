@@ -17,7 +17,10 @@ impl FragmentBuffer {
             return Ok(());
         }
         let retained = self.fragments.iter().fold(
-            self.text.len().saturating_sub(self.offset) + fragment.len(),
+            self.text
+                .len()
+                .saturating_sub(self.offset)
+                .saturating_add(fragment.len()),
             |total, pending| total.saturating_add(pending.len()),
         );
         if retained > MAX_RETAINED_BYTES {

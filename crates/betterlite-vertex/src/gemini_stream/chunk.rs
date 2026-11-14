@@ -16,7 +16,7 @@ pub struct StreamChunk {
 }
 #[derive(Debug)]
 pub enum Choice {
-    Projected(StreamChoice),
+    Projected(Box<StreamChoice>),
     // every candidate reaching this variant was skipped for lacking finishReason, so its mapped reason is none
     EmptyDelta { index: u32 },
 }

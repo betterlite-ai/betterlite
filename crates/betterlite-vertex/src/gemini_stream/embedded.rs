@@ -4,18 +4,17 @@ pub(super) fn check_embedded_error(value: &[u8]) -> Result<(), StreamError> {
     let Ok(Json::Object(fields)) = serde_json::from_slice::<Json>(value) else {
         return Ok(());
     };
-    match fields.get("error") {
-        Some(error) => Err(embedded(error.clone())),
-        None => Ok(()),
-    }
+    fields
+        .get("error")
+        .map_or(Ok(()), |error| Err(embedded(error)))
 }
-fn embedded(error: Json) -> StreamError {
-    let Json::Object(fields) = &error else {
+fn embedded(error: &Json) -> StreamError {
+    let Json::Object(fields) = error else {
         return StreamError::Embedded {
             status: 500,
             message: format!(
                 "Unexpected error format in mid-stream chunk: {}",
-                text_field(Some(&error), "null")
+                text_field(Some(error), "null")
             ),
         };
     };
@@ -34,10 +33,7 @@ fn coercible_status(value: &Json) -> u16 {
         Json::Bool(flag) => Some(i64::from(*flag)),
         Json::Null | Json::List(_) | Json::Object(_) => None,
     };
-    match code {
-        Some(code) => u16::try_from(code).unwrap_or(500),
-        None => 500,
-    }
+    code.map_or(500, |raw| u16::try_from(raw).unwrap_or(500))
 }
 fn text_field(value: Option<&Json>, fallback: &str) -> String {
     match value {

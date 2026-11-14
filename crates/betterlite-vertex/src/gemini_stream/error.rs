@@ -1,13 +1,14 @@
 use crate::gemini_candidates::error::CandidatesError;
 use crate::gemini_response::error::GenerateContentError;
 use crate::gemini_usage::error::UsageError;
+use std::str::Utf8Error;
 use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum StreamError {
     #[error("the Gemini stream fragment is not UTF-8: {source}")]
     Utf8 {
         #[source]
-        source: std::str::Utf8Error,
+        source: Utf8Error,
     },
     #[error("the Gemini stream chunk is not a JSON object")]
     NotAnObject,
