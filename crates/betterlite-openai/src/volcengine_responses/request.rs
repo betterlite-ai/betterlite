@@ -9,6 +9,7 @@ const RESPONSES_SUFFIX: &str = "/responses";
 const VERSION_SUFFIX: &str = "/api/v3";
 
 // the four places LiteLLM reads a key from, in the order it tries them
+#[derive(Clone, Copy)]
 pub struct KeySources<'sources> {
     pub litellm_params: Option<&'sources SecretString>,
     pub global: Option<&'sources SecretString>,
@@ -17,6 +18,7 @@ pub struct KeySources<'sources> {
 }
 
 // the four places LiteLLM reads a base from, in the order it tries them
+#[derive(Clone, Copy)]
 pub struct BaseSources<'sources> {
     pub api_base: Option<&'sources str>,
     pub global: Option<&'sources str>,
@@ -26,7 +28,7 @@ pub struct BaseSources<'sources> {
 
 // a missing key is LiteLLM's ValueError, and an empty string counts as unset
 pub fn validate_environment(
-    headers: Headers,
+    headers: &Headers,
     sources: KeySources<'_>,
 ) -> Result<Headers, VolcengineResponsesError> {
     let key = [
@@ -39,7 +41,7 @@ pub fn validate_environment(
     .flatten()
     .find(|key| !key.expose_secret().is_empty())
     .ok_or(VolcengineResponsesError::MissingApiKey)?;
-    Ok(volcengine_headers(key, &headers))
+    Ok(volcengine_headers(key, headers))
 }
 
 // the first nonempty base wins, its trailing slashes go, then the version and resource path

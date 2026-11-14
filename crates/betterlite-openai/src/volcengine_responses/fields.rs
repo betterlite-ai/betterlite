@@ -215,7 +215,7 @@ fn fill_nested(value: &mut Json, nested: Option<Record>) {
     }
 }
 
-fn event_table(known: KnownClass) -> &'static [Field] {
+const fn event_table(known: KnownClass) -> &'static [Field] {
     match known {
         KnownClass::ResponseCreated
         | KnownClass::ResponseInProgress

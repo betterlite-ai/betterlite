@@ -145,7 +145,7 @@ fn key_lookup_takes_the_first_nonempty_source_in_order() {
         ark: Some(&ark),
         volcengine: Some(&volcengine),
     };
-    let headers = validate_environment(Headers::new(), sources).unwrap();
+    let headers = validate_environment(&Headers::new(), sources).unwrap();
     assert_eq!(headers.get("Authorization").unwrap(), "Bearer params-key");
 }
 
@@ -158,7 +158,7 @@ fn key_lookup_falls_back_to_the_volcengine_key() {
         ark: None,
         volcengine: Some(&volcengine),
     };
-    let headers = validate_environment(Headers::new(), sources).unwrap();
+    let headers = validate_environment(&Headers::new(), sources).unwrap();
     assert_eq!(headers.get("Authorization").unwrap(), "Bearer volc-key");
 }
 
@@ -172,7 +172,7 @@ fn key_lookup_fails_without_a_key() {
         volcengine: None,
     };
     assert!(matches!(
-        validate_environment(Headers::new(), sources),
+        validate_environment(&Headers::new(), sources),
         Err(VolcengineResponsesError::MissingApiKey)
     ));
 }
@@ -187,7 +187,7 @@ fn environment_headers_put_the_volcengine_defaults_first() {
         ark: None,
         volcengine: None,
     };
-    let headers = validate_environment(extra, sources).unwrap();
+    let headers = validate_environment(&extra, sources).unwrap();
     assert_eq!(headers.get("Content-Type").unwrap(), "application/json");
     assert_eq!(headers.get("Authorization").unwrap(), "Custom");
 }
@@ -426,7 +426,9 @@ fn reply_keeps_a_reply_that_does_not_validate() {
 
 #[test]
 fn reply_reports_a_malformed_body_as_its_status() {
-    let error = transformed("not-json", 503).unwrap_err();
+    let Err(error) = transformed("not-json", 503) else {
+        panic!("a body that is not JSON must fail");
+    };
     assert_eq!(error.status_code, 503);
     assert_eq!(error.message, "not-json");
 }
