@@ -57,36 +57,41 @@ const fn target_provider(provider: VertexCapabilityProvider) -> TargetProvider {
     }
 }
 
-// VertexBase.set_headers writes its own headers first and the caller's after, so a caller header wins
+pub(super) enum HeaderMode {
+    // VertexBase.set_headers writes its own headers first and the caller's after, so a caller header wins
+    Text,
+    // The multimodal validate_environment updates the caller's dict, so the forced content type and auth win
+    Multimodal,
+}
+
 #[must_use]
-pub(super) fn text_headers(
+pub(super) fn embedding_headers(
     auth: Option<&AuthHeader>,
     caller: &BTreeMap<String, String>,
+    mode: HeaderMode,
 ) -> BTreeMap<String, SecretString> {
-    let mut headers = forced_headers(auth, TEXT_CONTENT_TYPE);
+    let content_type = match mode {
+        HeaderMode::Text => TEXT_CONTENT_TYPE,
+        HeaderMode::Multimodal => MULTIMODAL_CONTENT_TYPE,
+    };
+    let forced = forced_headers(auth, content_type);
+    if matches!(mode, HeaderMode::Multimodal) {
+        let mut kept: BTreeMap<String, SecretString> = caller
+            .iter()
+            .filter(|(name, _)| {
+                !forced
+                    .keys()
+                    .any(|forced_name| forced_name.eq_ignore_ascii_case(name.as_str()))
+            })
+            .map(|(name, value)| (name.clone(), SecretString::from(value.clone())))
+            .collect();
+        kept.extend(forced);
+        return kept;
+    }
+    let mut headers = forced;
     for (name, value) in caller {
         headers.insert(name.clone(), SecretString::from(value.clone()));
     }
-    headers
-}
-
-// The multimodal validate_environment updates the caller's headers, so its content type and auth win in any case
-#[must_use]
-pub(super) fn multimodal_headers(
-    auth: Option<&AuthHeader>,
-    caller: &BTreeMap<String, String>,
-) -> BTreeMap<String, SecretString> {
-    let forced = forced_headers(auth, MULTIMODAL_CONTENT_TYPE);
-    let mut headers: BTreeMap<String, SecretString> = caller
-        .iter()
-        .filter(|(name, _)| {
-            !forced
-                .keys()
-                .any(|forced_name| forced_name.eq_ignore_ascii_case(name.as_str()))
-        })
-        .map(|(name, value)| (name.clone(), SecretString::from(value.clone())))
-        .collect();
-    headers.extend(forced);
     headers
 }
 

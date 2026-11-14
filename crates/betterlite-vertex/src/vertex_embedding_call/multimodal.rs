@@ -16,7 +16,7 @@ use crate::token_refresh::ensure_access_token;
 use super::error::VertexEmbeddingCallError;
 use super::logging;
 use super::post::{ClientTimeout, EmbeddingPost, HANDLER_DEFAULT_TIMEOUT, PostRequest, Timeout};
-use super::target::{self, TargetRequest};
+use super::target::{self, HeaderMode, TargetRequest};
 
 // multimodal_embedding's signature defaults timeout to 300 seconds, and main.py passes none
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
@@ -114,7 +114,8 @@ async fn prepare(
         },
     )
     .map_err(|source| VertexEmbeddingCallError::Target { source })?;
-    let headers = target::multimodal_headers(target.auth.as_ref(), call.headers);
+    let headers =
+        target::embedding_headers(target.auth.as_ref(), call.headers, HeaderMode::Multimodal);
     let payload = transform_request(call.input, call.optional_params)?;
     let body = serde_json::to_vec(&payload)
         .map_err(|source| VertexEmbeddingCallError::Encode { source })?;
@@ -132,15 +133,11 @@ async fn sync_embedding(
     timeout: Option<Duration>,
     clients: &MultimodalClients<'_>,
 ) -> Result<MultimodalEmbeddingAnswer, VertexEmbeddingCallError> {
-    // A supplied client keeps its own timeouts; the call's timeout only reaches a client LiteLLM builds
-    let (post, client_timeout) = clients.caller.map_or_else(
-        || {
-            (
-                clients.pooled,
-                multimodal_timeout(timeout, ClientTimeout::Explicit(HANDLER_DEFAULT_TIMEOUT)),
-            )
-        },
-        |supplied| (supplied, ClientTimeout::HandlerDefault),
+    let (post, client_timeout) = multimodal_post(
+        timeout,
+        ClientTimeout::Explicit(HANDLER_DEFAULT_TIMEOUT),
+        clients.pooled,
+        clients.caller,
     );
     post_prepared(request, model, post, client_timeout).await
 }
@@ -152,16 +149,22 @@ pub async fn async_multimodal_embedding(
     caller: Option<&dyn EmbeddingPost>,
     pooled: &dyn EmbeddingPost,
 ) -> Result<MultimodalEmbeddingAnswer, VertexEmbeddingCallError> {
-    let (post, client_timeout) = caller.map_or_else(
-        || {
-            (
-                pooled,
-                multimodal_timeout(timeout, ClientTimeout::HandlerDefault),
-            )
-        },
-        |supplied| (supplied, ClientTimeout::HandlerDefault),
-    );
+    let (post, client_timeout) =
+        multimodal_post(timeout, ClientTimeout::HandlerDefault, pooled, caller);
     post_prepared(request, model, post, client_timeout).await
+}
+
+// A supplied client keeps its own timeouts; the call's timeout only reaches a client LiteLLM builds
+fn multimodal_post<'client>(
+    timeout: Option<Duration>,
+    default: ClientTimeout,
+    pooled: &'client dyn EmbeddingPost,
+    caller: Option<&'client dyn EmbeddingPost>,
+) -> (&'client dyn EmbeddingPost, ClientTimeout) {
+    caller.map_or_else(
+        || (pooled, multimodal_timeout(timeout, default)),
+        |supplied| (supplied, ClientTimeout::HandlerDefault),
+    )
 }
 
 // Both branches post the same request, and httpx's raise_for_status keeps the status a sync reply carries too

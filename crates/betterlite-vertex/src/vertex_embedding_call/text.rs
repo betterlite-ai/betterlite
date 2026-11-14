@@ -22,7 +22,7 @@ use super::decode::decode_vertex_embedding;
 use super::error::VertexEmbeddingCallError;
 use super::logging;
 use super::post::{ClientTimeout, EmbeddingPost, PostReply, PostRequest, Timeout};
-use super::target::{self, TargetRequest};
+use super::target::{self, HeaderMode, TargetRequest};
 
 pub struct TextCall<'call> {
     pub provider: VertexCapabilityProvider,
@@ -93,14 +93,8 @@ pub async fn text_embedding(
         // LiteLLM's outer handoff never passes the client it was given, so the caller's handler cannot be posted through
         return async_text_embedding(call, catalog, auth.refresh, clients.pooled, None).await;
     }
-    // A supplied client keeps its own timeouts; the call's timeout only reaches a client LiteLLM builds
-    let (post, client_timeout) = clients.caller.map_or_else(
-        || (clients.pooled, text_client_timeout(call.timeout)),
-        |supplied| (supplied, ClientTimeout::HandlerDefault),
-    );
     let lookup = auth.cache.get_access_token(call.credentials, call.project);
-    let prepared = prepare(call, catalog, lookup).await?;
-    send(&prepared, call.model, client_timeout, post).await
+    run_text(call, catalog, lookup, clients.pooled, clients.caller).await
 }
 
 pub async fn async_text_embedding(
@@ -110,13 +104,41 @@ pub async fn async_text_embedding(
     pooled: &dyn EmbeddingPost,
     caller: Option<&dyn EmbeddingPost>,
 ) -> Result<EmbeddingResponse, VertexEmbeddingCallError> {
-    let (post, client_timeout) = caller.map_or_else(
-        || (pooled, text_client_timeout(call.timeout)),
-        |supplied| (supplied, ClientTimeout::HandlerDefault),
-    );
-    let lookup = refresh.get_access_token_async(call.credentials, call.project);
+    run_text(
+        call,
+        catalog,
+        refresh.get_access_token_async(call.credentials, call.project),
+        pooled,
+        caller,
+    )
+    .await
+}
+
+async fn run_text<Lookup>(
+    call: &TextCall<'_>,
+    catalog: &ModelCatalog,
+    lookup: Lookup,
+    pooled: &dyn EmbeddingPost,
+    caller: Option<&dyn EmbeddingPost>,
+) -> Result<EmbeddingResponse, VertexEmbeddingCallError>
+where
+    Lookup: Future<Output = Result<AccessToken, CredentialCacheError>> + Send,
+{
+    let (post, client_timeout) = text_post(call, pooled, caller);
     let prepared = prepare(call, catalog, lookup).await?;
     send(&prepared, call.model, client_timeout, post).await
+}
+
+// A supplied client keeps its own timeouts; the call's timeout only reaches a client LiteLLM builds
+fn text_post<'client>(
+    call: &TextCall<'_>,
+    pooled: &'client dyn EmbeddingPost,
+    caller: Option<&'client dyn EmbeddingPost>,
+) -> (&'client dyn EmbeddingPost, ClientTimeout) {
+    caller.map_or_else(
+        || (pooled, text_client_timeout(call.timeout)),
+        |supplied| (supplied, ClientTimeout::HandlerDefault),
+    )
 }
 
 async fn prepare<Lookup>(
@@ -144,7 +166,8 @@ where
         },
     )
     .map_err(|source| VertexEmbeddingCallError::Target { source })?;
-    let headers = target::text_headers(target.auth.as_ref(), call.extra_headers);
+    let headers =
+        target::embedding_headers(target.auth.as_ref(), call.extra_headers, HeaderMode::Text);
     let request = transform_request(
         call.input,
         call.optional_params,
