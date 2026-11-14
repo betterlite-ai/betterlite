@@ -2527,6 +2527,7 @@ dependencies = [
  "betterlite-transcribe",
  "betterlite-vertex",
  "chrono",
+ "futures-util",
  "hex",
  "indexmap 2.14.2",
  "jiff",
