@@ -1,7 +1,7 @@
 id: B3793
 milestone: M6 guardrails
 title: Repello inspection content
-status: todo
+status: done
 depends_on: [B3664]
 file: tasks/B3793-repello-content.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py"
 parent: B108
 split_from: B108
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1585
