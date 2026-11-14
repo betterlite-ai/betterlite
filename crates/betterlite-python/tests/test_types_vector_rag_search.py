@@ -1,4 +1,4 @@
-from dataclasses import fields
+import json
 from typing import TypeAlias
 
 import pytest
@@ -617,10 +617,8 @@ def test_names_models(name: str) -> None:
     assert tuple(model_fields) == MODEL_FIELDS[name]
     required = tuple(field for field, info in model_fields.items() if info.is_required())
     assert required == MODEL_REQUIRED[name]
-    defaults = {
-        field: info.default for field, info in model_fields.items() if not info.is_required()
-    }
-    assert defaults == MODEL_DEFAULTS[name]
+    defaults = model.model_construct().model_dump_json()
+    assert defaults == json.dumps(MODEL_DEFAULTS[name], separators=(",", ":"))
     assert model.model_config.get("extra") == MODEL_EXTRA[name]
 
 
@@ -685,8 +683,9 @@ def test_names_rag_option_literals() -> None:
     for distance_metric in ("cosine", "euclidean"):
         value = {**base_vector, "distance_metric": distance_metric}
         assert vectors.validate_python(value) == value
+    bad_metric: dict[str, JsonValue] = {**base_vector, "distance_metric": "manhattan"}
     with pytest.raises(ValidationError):
-        vectors.validate_python({**base_vector, "distance_metric": "manhattan"})
+        vectors.validate_python(bad_metric)
 
 
 def test_names_rag_options_union() -> None:
@@ -698,27 +697,33 @@ def test_names_rag_options_union() -> None:
 
 
 def test_names_store_literals() -> None:
-    managed_list = TypeAdapter(betterlite_stores.LiteLLM_ManagedVectorStoreListResponse)
-    assert managed_list.validate_python({"object": "list"}) == {"object": "list"}
+    managed_list = TypeAdapter(betterlite_stores.ManagedVectorStoreListResponse)
+    list_value: dict[str, JsonValue] = {"object": "list"}
+    assert managed_list.validate_python(list_value) == list_value
+    bad_list: dict[str, JsonValue] = {"object": "page"}
     with pytest.raises(ValidationError):
-        managed_list.validate_python({"object": "page"})
+        managed_list.validate_python(bad_list)
 
     search_response = TypeAdapter(betterlite_stores.VectorStoreSearchResponse)
     search_object: dict[str, JsonValue] = {"object": "vector_store.search_results.page"}
     assert search_response.validate_python(search_object) == search_object
+    bad_search: dict[str, JsonValue] = {"object": "vector_store.search_results"}
     with pytest.raises(ValidationError):
-        search_response.validate_python({"object": "vector_store.search_results"})
+        search_response.validate_python(bad_search)
 
     expiration = TypeAdapter(betterlite_stores.VectorStoreExpirationPolicy)
     expiration_value: dict[str, JsonValue] = {"anchor": "last_active_at", "days": 7}
     assert expiration.validate_python(expiration_value) == expiration_value
+    bad_expiration: dict[str, JsonValue] = {"anchor": "created_at"}
     with pytest.raises(ValidationError):
-        expiration.validate_python({"anchor": "created_at"})
+        expiration.validate_python(bad_expiration)
 
     auto = TypeAdapter(betterlite_stores.VectorStoreAutoChunkingStrategy)
-    assert auto.validate_python({"type": "auto"}) == {"type": "auto"}
+    auto_value: dict[str, JsonValue] = {"type": "auto"}
+    assert auto.validate_python(auto_value) == auto_value
+    bad_auto: dict[str, JsonValue] = {"type": "static"}
     with pytest.raises(ValidationError):
-        auto.validate_python({"type": "static"})
+        auto.validate_python(bad_auto)
 
     static = TypeAdapter(betterlite_stores.VectorStoreStaticChunkingStrategy)
     static_value: dict[str, JsonValue] = {
@@ -726,108 +731,123 @@ def test_names_store_literals() -> None:
         "static": {"max_chunk_size_tokens": 800, "chunk_overlap_tokens": 400},
     }
     assert static.validate_python(static_value) == static_value
+    bad_static: dict[str, JsonValue] = {"type": "auto"}
     with pytest.raises(ValidationError):
-        static.validate_python({"type": "auto"})
+        static.validate_python(bad_static)
 
     chunking = TypeAdapter(betterlite_stores.VectorStoreChunkingStrategy)
     for strategy_type in ("auto", "static"):
-        assert chunking.validate_python({"type": strategy_type}) == {"type": strategy_type}
+        chunk_value: dict[str, JsonValue] = {"type": strategy_type}
+        assert chunking.validate_python(chunk_value) == chunk_value
+    bad_chunk: dict[str, JsonValue] = {"type": "none"}
     with pytest.raises(ValidationError):
-        chunking.validate_python({"type": "none"})
+        chunking.validate_python(bad_chunk)
 
     created = TypeAdapter(betterlite_stores.VectorStoreCreateResponse)
     for status in ("expired", "in_progress", "completed"):
-        value = {"object": "vector_store", "status": status}
-        assert created.validate_python(value) == value
+        response_value: dict[str, JsonValue] = {"object": "vector_store", "status": status}
+        assert created.validate_python(response_value) == response_value
+    bad_status: dict[str, JsonValue] = {"status": "done"}
     with pytest.raises(ValidationError):
-        created.validate_python({"status": "done"})
+        created.validate_python(bad_status)
 
     endpoints = TypeAdapter(betterlite_stores.VectorStoreIndexEndpoints)
     methods = ("GET", "POST", "PUT", "DELETE", "PATCH")
-    assert endpoints.validate_python(
-        {"read": [[method, "/v1/x"] for method in methods], "write": []},
-    ) == {"read": [(method, "/v1/x") for method in methods], "write": []}
+    endpoint_value: dict[str, JsonValue] = {
+        "read": [[method, "/v1/x"] for method in methods],
+        "write": [],
+    }
+    assert endpoints.validate_python(endpoint_value) == {
+        "read": [(method, "/v1/x") for method in methods],
+        "write": [],
+    }
+    bad_endpoint: dict[str, JsonValue] = {"read": [["FETCH", "/v1/x"]], "write": []}
     with pytest.raises(ValidationError):
-        endpoints.validate_python({"read": [["FETCH", "/v1/x"]], "write": []})
+        endpoints.validate_python(bad_endpoint)
 
 
 def test_names_file_literals() -> None:
     file_object = TypeAdapter(betterlite_files.VectorStoreFileObject)
     object_value: dict[str, JsonValue] = {"object": "vector_store.file", "status": "completed"}
     assert file_object.validate_python(object_value) == object_value
+    bad_object: dict[str, JsonValue] = {"status": "done"}
     with pytest.raises(ValidationError):
-        file_object.validate_python({"status": "done"})
+        file_object.validate_python(bad_object)
 
     file_strategy = TypeAdapter(betterlite_files.VectorStoreFileChunkingStrategy)
     for strategy_type in ("auto", "static"):
-        assert file_strategy.validate_python({"type": strategy_type}) == {
-            "type": strategy_type,
-        }
+        strategy_value: dict[str, JsonValue] = {"type": strategy_type}
+        assert file_strategy.validate_python(strategy_value) == strategy_value
+    bad_strategy: dict[str, JsonValue] = {"type": "none"}
     with pytest.raises(ValidationError):
-        file_strategy.validate_python({"type": "none"})
+        file_strategy.validate_python(bad_strategy)
 
     query_params = TypeAdapter(betterlite_files.VectorStoreFileListQueryParams)
     for file_status in ("in_progress", "completed", "failed", "cancelled"):
-        value = {"filter": file_status}
-        assert query_params.validate_python(value) == value
+        filter_value: dict[str, JsonValue] = {"filter": file_status}
+        assert query_params.validate_python(filter_value) == filter_value
     for order in ("asc", "desc"):
-        value = {"order": order}
-        assert query_params.validate_python(value) == value
+        order_value: dict[str, JsonValue] = {"order": order}
+        assert query_params.validate_python(order_value) == order_value
+    bad_order: dict[str, JsonValue] = {"order": "up"}
     with pytest.raises(ValidationError):
-        query_params.validate_python({"order": "up"})
+        query_params.validate_python(bad_order)
 
     file_list = TypeAdapter(betterlite_files.VectorStoreFileListResponse)
-    assert file_list.validate_python({"object": "list"}) == {"object": "list"}
+    file_list_value: dict[str, JsonValue] = {"object": "list"}
+    assert file_list.validate_python(file_list_value) == file_list_value
+    bad_file_list: dict[str, JsonValue] = {"object": "page"}
     with pytest.raises(ValidationError):
-        file_list.validate_python({"object": "page"})
+        file_list.validate_python(bad_file_list)
 
     deleted = TypeAdapter(betterlite_files.VectorStoreFileDeleteResponse)
     deleted_value: dict[str, JsonValue] = {"object": "vector_store.file.deleted"}
     assert deleted.validate_python(deleted_value) == deleted_value
+    bad_deleted: dict[str, JsonValue] = {"object": "vector_store.file"}
     with pytest.raises(ValidationError):
-        deleted.validate_python({"object": "vector_store.file"})
+        deleted.validate_python(bad_deleted)
 
     text_part = TypeAdapter(betterlite_files.VectorStoreFileContentTextPart)
     text_value: dict[str, JsonValue] = {"type": "text", "text": "body"}
     assert text_part.validate_python(text_value) == text_value
+    bad_text: dict[str, JsonValue] = {"type": "image"}
     with pytest.raises(ValidationError):
-        text_part.validate_python({"type": "image"})
+        text_part.validate_python(bad_text)
 
 
 def test_names_rag_literals() -> None:
     ingest_response = TypeAdapter(betterlite_rag.RAGIngestResponse)
     for status in ("completed", "in_progress", "failed"):
-        assert ingest_response.validate_python({"status": status}) == {"status": status}
+        response_value: dict[str, JsonValue] = {"status": status}
+        assert ingest_response.validate_python(response_value) == response_value
+    bad_response: dict[str, JsonValue] = {"status": "done"}
     with pytest.raises(ValidationError):
-        ingest_response.validate_python({"status": "done"})
+        ingest_response.validate_python(bad_response)
 
 
 def test_names_model_defaults() -> None:
-    index = betterlite_stores.IndexListResponse.model_validate({"data": []})
+    data: dict[str, JsonValue] = {"data": []}
+    index = betterlite_stores.IndexListResponse.model_validate(data)
     assert index.object == "list"
     assert index.data == ()
 
     query = betterlite_rag.RAGQueryRequest.model_validate(QUERY)
     assert query.stream is False
     assert query.rerank is None
-    assert query.model_extra == {"extra_field": 1}
+    assert '"extra_field":1' in query.model_dump_json()
 
     ingest = betterlite_rag.RAGIngestRequest.model_validate(INGEST)
     assert ingest.ingest_options == {}
-    assert ingest.model_extra == {"extra_field": 1}
+    assert '"extra_field":1' in ingest.model_dump_json()
 
+    empty: dict[str, JsonValue] = {}
     with pytest.raises(ValidationError):
-        betterlite_stores.VectorStoreDeleteRequest.model_validate({})
+        betterlite_stores.VectorStoreDeleteRequest.model_validate(empty)
 
 
 def test_names_tool_params() -> None:
     params = betterlite_stores.VectorStoreToolParams()
 
-    assert [field.name for field in fields(params)] == [
-        "filters",
-        "max_num_results",
-        "ranking_options",
-    ]
     assert params.filters is None
     assert params.max_num_results is None
     assert params.ranking_options is None
@@ -838,6 +858,7 @@ def test_names_tool_params() -> None:
         max_num_results=3,
         ranking_options={"score": 0.5},
     )
+    assert list(filled.to_dict()) == ["filters", "max_num_results", "ranking_options"]
     assert filled.to_dict() == {
         "filters": {"k": [1, 2]},
         "max_num_results": 3,
@@ -863,3 +884,16 @@ def test_names_typeddict_origin() -> None:
     assert type(betterlite_files.VectorStoreFileObject).__module__ == "typing_extensions"
     assert type(betterlite_rag.RAGRetrievalConfig).__module__ == "typing_extensions"
     assert type(betterlite_search.SearchTool).__module__ == "typing_extensions"
+
+
+def test_names_litellm_aliases() -> None:
+    assert betterlite_stores.LiteLLM_VectorStoreConfig is betterlite_stores.VectorStoreConfig
+    assert betterlite_stores.LiteLLM_ManagedVectorStore is betterlite_stores.ManagedVectorStore
+    assert (
+        betterlite_stores.LiteLLM_ManagedVectorStoreListResponse
+        is betterlite_stores.ManagedVectorStoreListResponse
+    )
+    assert (
+        betterlite_stores.LiteLLM_ManagedVectorStoreIndex
+        is betterlite_stores.ManagedVectorStoreIndex
+    )

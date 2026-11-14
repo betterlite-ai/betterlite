@@ -14,12 +14,15 @@ class SupportedVectorStoreIntegrations(StrEnum):
     RAGFLOW = "ragflow"
 
 
-class LiteLLM_VectorStoreConfig(TypedDict, total=False):
+class VectorStoreConfig(TypedDict, total=False):
     vector_store_name: str
     litellm_params: dict[str, JsonValue] | None
 
 
-class LiteLLM_ManagedVectorStore(TypedDict, total=False):
+LiteLLM_VectorStoreConfig = VectorStoreConfig
+
+
+class ManagedVectorStore(TypedDict, total=False):
     vector_store_id: str
     custom_llm_provider: str
 
@@ -39,13 +42,19 @@ class LiteLLM_ManagedVectorStore(TypedDict, total=False):
     is_config: ReadOnly[bool]
 
 
-# ast-grep-ignore: no-long-names
-class LiteLLM_ManagedVectorStoreListResponse(TypedDict, total=False):
+LiteLLM_ManagedVectorStore = ManagedVectorStore
+
+
+class ManagedVectorStoreListResponse(TypedDict, total=False):
     object: Literal["list"]
-    data: list[LiteLLM_ManagedVectorStore]
+    data: list[ManagedVectorStore]
     total_count: int | None
     current_page: int | None
     total_pages: int | None
+
+
+# ast-grep-ignore: no-long-names
+LiteLLM_ManagedVectorStoreListResponse = ManagedVectorStoreListResponse
 
 
 class VectorStoreUpdateRequest(BaseModel):
@@ -223,8 +232,7 @@ class BaseVectorStoreAuthCredentials(TypedDict, total=False):
     query_params: dict[str, JsonValue]
 
 
-# ast-grep-ignore: no-long-names
-class LiteLLM_ManagedVectorStoreIndex(BaseModel):
+class ManagedVectorStoreIndex(BaseModel):
     id: str
     index_name: str
     litellm_params: IndexCreateLiteLLMParams
@@ -235,9 +243,13 @@ class LiteLLM_ManagedVectorStoreIndex(BaseModel):
     updated_by: str | None = None
 
 
+# ast-grep-ignore: no-long-names
+LiteLLM_ManagedVectorStoreIndex = ManagedVectorStoreIndex
+
+
 class IndexListResponse(BaseModel):
     object: Literal["list"] = "list"
-    data: tuple[LiteLLM_ManagedVectorStoreIndex, ...]  # ast-grep-ignore: no-long-names
+    data: tuple[ManagedVectorStoreIndex, ...]
 
 
 class VectorStoreIndexType(StrEnum):

@@ -25,3 +25,22 @@ deviations:
       JsonValue names the same open JSON, and pydantic validates the same values
       into the same objects.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/search.py#L50
+  - what: >-
+      The classes LiteLLM names LiteLLM_VectorStoreConfig, LiteLLM_ManagedVectorStore,
+      LiteLLM_ManagedVectorStoreListResponse and LiteLLM_ManagedVectorStoreIndex are
+      declared as VectorStoreConfig, ManagedVectorStore,
+      ManagedVectorStoreListResponse and ManagedVectorStoreIndex, and the module
+      binds each LiteLLM name to its class.
+    why: >-
+      Ruff N801 rejects a class name with underscores, and the aliases keep every
+      LiteLLM name importable and identical to the class it names.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L18
+  - what: >-
+      betterlite.types.search imports Required from typing, where LiteLLM imports
+      Required and TypedDict from typing_extensions.
+    why: >-
+      Ruff UP035 at the repository's py311 target requires Required from typing,
+      and typing.Required is the same object as typing_extensions.Required from
+      Python 3.11 on. TypedDict stays on typing_extensions because pydantic
+      rejects typing.TypedDict below Python 3.12.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/search.py#L7
