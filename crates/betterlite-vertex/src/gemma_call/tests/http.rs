@@ -146,9 +146,64 @@ fn transport_failure_is_a_vertex_500() {
     let Err(error) = run.result else {
         panic!("a transport failure is an error");
     };
-    assert!(matches!(&error, GemmaCallError::Transport(_)));
+    assert!(matches!(&error, GemmaCallError::Transport { .. }));
     assert_eq!(error.status_code(), 500);
     assert!(run.wrapped.is_empty());
+}
+
+#[test]
+fn timeout_status_follows_the_caller() {
+    let fixture = Fixture::new();
+    let handler_call = fixture.call(MODEL, Some(ENDPOINT), false);
+    let handler = run(
+        &handler_call,
+        Reply::Timeout,
+        Some(SuppliedClientKind::AsyncHandler),
+    );
+    let Err(handler_error) = handler.result else {
+        panic!("a handler timeout is an error");
+    };
+    assert_eq!(handler_error.status_code(), 408);
+    assert_eq!(handler.caller_requests.len(), 1);
+    assert!(handler.wrapped.is_empty());
+    let pooled_call = fixture.call(MODEL, Some(ENDPOINT), false);
+    let pooled = run(
+        &pooled_call,
+        Reply::Timeout,
+        Some(SuppliedClientKind::SyncHandler),
+    );
+    let Err(pooled_error) = pooled.result else {
+        panic!("a pooled timeout is an error");
+    };
+    assert_eq!(pooled_error.status_code(), 408);
+    assert_eq!(pooled.pooled_requests.len(), 1);
+    let raw_call = fixture.call(MODEL, Some(ENDPOINT), false);
+    let raw = run(
+        &raw_call,
+        Reply::Timeout,
+        Some(SuppliedClientKind::AsyncRaw),
+    );
+    let Err(raw_error) = raw.result else {
+        panic!("a raw client timeout is an error");
+    };
+    assert_eq!(raw_error.status_code(), 500);
+    assert_eq!(raw.caller_requests.len(), 1);
+    assert!(raw.wrapped.is_empty());
+}
+
+#[test]
+fn a_connect_timeout_answers_408() {
+    let fixture = Fixture::new();
+    let call = fixture.call(MODEL, Some(ENDPOINT), false);
+    let run = run(
+        &call,
+        Reply::ConnectTimeout,
+        Some(SuppliedClientKind::AsyncHandler),
+    );
+    let Err(error) = run.result else {
+        panic!("a connect timeout is an error");
+    };
+    assert_eq!(error.status_code(), 408);
 }
 
 #[test]

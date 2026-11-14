@@ -4,11 +4,11 @@ use std::collections::BTreeMap;
 use std::future::ready;
 use std::sync::{Arc, Mutex};
 
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat::response::ChatResponse;
 use betterlite_prompts::arguments::json::Object;
 use secrecy::SecretString;
-use thiserror::Error;
 use tokio::runtime::Builder;
 use uuid::Uuid;
 
@@ -36,6 +36,8 @@ pub(super) enum Reply {
     Status(u16, &'static str),
     Raw(u16, &'static [u8]),
     Failure,
+    Timeout,
+    ConnectTimeout,
 }
 
 #[derive(Clone, Debug)]
@@ -46,11 +48,7 @@ pub(super) struct SentRequest {
     pub(super) timeout: Timeout,
 }
 
-#[derive(Debug, Error)]
-#[error("the fixture transport never fails")]
-pub(super) struct PostNever;
-
-pub(super) type FixtureError = GemmaCallError<PostNever, PostNever>;
+pub(super) type FixtureError = GemmaCallError<TransportError, TransportError>;
 
 pub(super) struct FixtureClient {
     pub(super) reply: Reply,
@@ -59,7 +57,7 @@ pub(super) struct FixtureClient {
 }
 
 impl GemmaPost for FixtureClient {
-    type Failure = PostNever;
+    type Failure = TransportError;
 
     fn post<'request>(
         &'request self,
@@ -76,13 +74,28 @@ impl GemmaPost for FixtureClient {
             .lock()
             .unwrap()
             .push(Event::Posted(request.url.to_owned()));
-        let (status, body) = match self.reply {
-            Reply::Ok(body) => (200, body.as_bytes().to_vec()),
-            Reply::Status(status, body) => (status, body.as_bytes().to_vec()),
-            Reply::Raw(status, body) => (status, body.to_vec()),
-            Reply::Failure => return Box::pin(ready(Err::<PostReply, _>(PostNever))),
+        let reply = match self.reply {
+            Reply::Ok(body) => Ok(PostReply {
+                status: 200,
+                body: body.as_bytes().to_vec(),
+            }),
+            Reply::Status(status, body) => Ok(PostReply {
+                status,
+                body: body.as_bytes().to_vec(),
+            }),
+            Reply::Raw(status, body) => Ok(PostReply {
+                status,
+                body: body.to_vec(),
+            }),
+            Reply::Failure => Err(TransportError::Closed),
+            Reply::Timeout => Err(TransportError::Deadline(
+                reqwest::Client::new().get("x").build().unwrap_err(),
+            )),
+            Reply::ConnectTimeout => Err(TransportError::ConnectTimeout(
+                reqwest::Client::new().get("x").build().unwrap_err(),
+            )),
         };
-        Box::pin(ready(Ok(PostReply { status, body })))
+        Box::pin(ready(reply))
     }
 }
 

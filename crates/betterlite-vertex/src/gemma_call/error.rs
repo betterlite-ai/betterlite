@@ -1,5 +1,6 @@
 use std::error::Error as StdError;
 
+use betterlite_http::proxy::transport_error::TransportError;
 use thiserror::Error;
 
 use crate::endpoint_target::error::EndpointTargetError;
@@ -7,6 +8,17 @@ use crate::gemma_envelope::error::GemmaEnvelopeError;
 use crate::gemma_envelope::post::PostFailure;
 
 use super::reply::GemmaReplyError;
+
+// a handler or the pooled client raise a timeout as litellm.Timeout, which carries 408; a raw httpx client raises one without a status
+pub trait FailureStatus: StdError + 'static {
+    fn status_code(&self) -> Option<u16>;
+}
+
+impl FailureStatus for TransportError {
+    fn status_code(&self) -> Option<u16> {
+        matches!(self, Self::Deadline(_) | Self::ConnectTimeout(_)).then_some(408)
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum GemmaPlanError {
@@ -46,8 +58,12 @@ where
     // the outer handler re-raises a status-bearing failure and turns every other one into a Vertex 500
     #[error("Request failed: {body}")]
     Status { status: u16, body: String },
-    #[error(transparent)]
-    Transport(#[from] PostFailure<ClientFailure, PooledFailure>),
+    #[error("{source}")]
+    Transport {
+        status: Option<u16>,
+        #[source]
+        source: PostFailure<ClientFailure, PooledFailure>,
+    },
 }
 
 impl<ClientFailure, PooledFailure> GemmaCallError<ClientFailure, PooledFailure>
@@ -61,8 +77,12 @@ where
             Self::Plan(source) => source.status_code(),
             Self::Envelope(source) => source.status_code(),
             Self::Reply(source) => source.status_code(),
-            Self::Encode { .. } | Self::Transport(_) => 500,
+            Self::Encode { .. } => 500,
             Self::Status { status, .. } => *status,
+            Self::Transport { status, .. } => match status {
+                Some(value) => *value,
+                None => 500,
+            },
         }
     }
 }

@@ -5,13 +5,13 @@ use std::str;
 use betterlite_openai::chat_content::{ChatContent, RefuseDownloads};
 use secrecy::ExposeSecret as _;
 
-use crate::gemma_envelope::post::{CallerClient, GemmaPost, PostRequest, post};
+use crate::gemma_envelope::post::{CallerClient, GemmaPost, PostFailure, PostRequest, post};
 use crate::gemma_envelope::request::transform_request;
 use crate::gemma_envelope::response::{
     GemmaReply, SingleResponseStreamFactory, handle_fake_stream_response,
 };
 
-use super::error::GemmaCallError;
+use super::error::{FailureStatus, GemmaCallError};
 use super::plan::{CallerStyle, GemmaCall, GemmaPlan, SuppliedClient, for_call};
 use super::reply::decode_gemma_reply;
 
@@ -26,7 +26,9 @@ pub async fn completion<Client, Pooled, Factory>(
 ) -> Result<GemmaReply<Factory::Stream>, GemmaCallError<Client::Failure, Pooled::Failure>>
 where
     Client: GemmaPost,
+    Client::Failure: FailureStatus,
     Pooled: GemmaPost,
+    Pooled::Failure: FailureStatus,
     Factory: SingleResponseStreamFactory + Sync,
 {
     let planned = for_call(call, supplied.as_ref().map(|client| client.kind))?;
@@ -43,7 +45,14 @@ where
         },
         call.timeout,
     )
-    .await?;
+    .await
+    .map_err(|failure| {
+        let reported = failure_status(&failure, planned.caller);
+        GemmaCallError::Transport {
+            status: reported,
+            source: failure,
+        }
+    })?;
     if reply.status != ACCEPTED_STATUS {
         return Err(GemmaCallError::Status {
             status: reply.status,
@@ -103,4 +112,22 @@ fn header_values(planned: &GemmaPlan) -> BTreeMap<String, String> {
         .iter()
         .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
         .collect()
+}
+
+// a supplied raw httpx client raises its timeout without a status, so only a handler or the pooled client keeps the 408
+fn failure_status<ClientFailure, PooledFailure>(
+    failure: &PostFailure<ClientFailure, PooledFailure>,
+    caller: Option<CallerStyle>,
+) -> Option<u16>
+where
+    ClientFailure: FailureStatus,
+    PooledFailure: FailureStatus,
+{
+    if matches!(caller, Some(CallerStyle::Raw)) {
+        return None;
+    }
+    match failure {
+        PostFailure::Client(source) => source.status_code(),
+        PostFailure::Pooled(source) => source.status_code(),
+    }
 }
