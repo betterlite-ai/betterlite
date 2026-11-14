@@ -149,6 +149,26 @@ fn resolve_api_key_reads_the_key_the_login_stored_in_a_token_file_session() {
 }
 
 #[test]
+fn up_help_matches_the_litellm_docstring() {
+    assert_eq!(
+        crate::up::UP_ABOUT,
+        "Route every Claude Code session through your LiteLLM proxy until stopped"
+    );
+    assert_eq!(
+        crate::up::UP_LONG_ABOUT,
+        concat!(
+            "Route every Claude Code session through your LiteLLM proxy until stopped.\n\n",
+            "Patches ~/.claude/settings.json so Claude Code picks up the proxy on its own next startup, ",
+            "from any terminal -- no need to launch it through `lite`. The key written is the one this ",
+            "command resolved (your fresh `lite login`, or an explicit --api-key), copied in as a static ",
+            "token for as long as `up` runs. Press Ctrl-C to stop and restore your original settings. ",
+            "Assumes the proxy is already running (this does not start one for you). Cursor is not ",
+            "supported: it has no equivalent file-based config to patch."
+        )
+    );
+}
+
+#[test]
 fn up_verifies_the_key_with_the_proxy_before_patching() {
     let mut world = World::new(false);
     world.seed_token(record("sk-live", 1_000.0, Some(FRESH)));
