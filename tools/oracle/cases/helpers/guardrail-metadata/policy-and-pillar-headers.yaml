@@ -1,0 +1,6 @@
+kind: helper
+name: policy-and-pillar-headers
+call:
+  b8994: {"function": "headers", "request_data": {"metadata": {"applied_policies": ["alpha", "beta"], "policy_sources": {"alpha": "rule,one", "beta": "rule two"}, "_pillar_response_headers_trusted": true, "pillar_response_headers": {"X-Pillar-Scanners": "[\"a\"]", "x-other": "dropped", "x-pillar-flagged": "false"}}}}
+env: {}
+compare: {ignore: []}
