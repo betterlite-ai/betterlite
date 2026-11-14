@@ -316,6 +316,10 @@ fn jina_requires_results(#[case] body: &str) {
 #[case::missing_score(r#"{"results":[{"index":0}]}"#, "decode")]
 #[case::score_out_of_range(r#"{"results":[{"index":0,"relevance_score":1e999}]}"#, "contract")]
 #[case::fractional_counter(r#"{"usage":{"total_tokens":1.5},"results":[]}"#, "counter")]
+#[case::counter_beyond_64_bits(
+    r#"{"usage":{"total_tokens":9223372036854775808},"results":[]}"#,
+    "counter"
+)]
 #[case::text_counter(r#"{"usage":{"input_tokens":"1"},"results":[]}"#, "counter")]
 #[case::not_an_object("[]", "decode")]
 fn jina_refuses_shapes_it_cannot_hold(#[case] body: &str, #[case] marker: &str) {
@@ -378,6 +382,7 @@ fn infinity_bad_json_carries_the_upstream_status(#[case] status: u16, #[case] se
     "document"
 )]
 #[case::missing_index(r#"{"results":[{"relevance_score":1}]}"#, "decode")]
+#[case::counter_beyond_64_bits(r#"{"usage":{"prompt_tokens":9223372036854775808}}"#, "counter")]
 #[case::overflowing_difference(
     r#"{"usage":{"total_tokens":-9223372036854775808,"prompt_tokens":1}}"#,
     "counter overflow"
