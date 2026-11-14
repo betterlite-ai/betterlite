@@ -11,6 +11,8 @@ pub enum RecordsError {
     },
     #[error("the {field} timings cannot be divided into seconds")]
     Timing { field: &'static str },
+    #[error("the {field} text is not a string")]
+    Text { field: &'static str },
 }
 
 #[derive(Debug, Error)]

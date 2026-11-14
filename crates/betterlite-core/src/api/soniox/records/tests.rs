@@ -431,6 +431,12 @@ fn a_first_language_tag_strips_the_token() {
 }
 
 #[test]
+fn a_non_string_token_text_renders_empty() {
+    let rendered = render_soniox_tokens(&tokens(r#"[{"text": 7, "language": "en"}]"#));
+    assert_eq!(rendered, "\n[en] ");
+}
+
+#[test]
 fn equal_boolean_speakers_keep_one_tag() {
     assert_eq!(
         render_soniox_tokens(&tokens(
@@ -732,6 +738,12 @@ fn verbose_json_accumulates_metadata_with_the_text() {
 #[case::zero("0", Some("0.0"))]
 #[case::true_value("true", Some("0.001"))]
 #[case::false_value("false", Some("0.0"))]
+#[case::fraction("1500.5", Some("1.5005"))]
+#[case::numeric_text(r#""1500""#, Some("1.5"))]
+#[case::separated(r#""1_500""#, Some("1.5"))]
+#[case::bad_separator(r#""1_""#, None)]
+#[case::exponent_separator(r#""1_e5""#, None)]
+#[case::infinite(r#""inf""#, Some("null"))]
 #[case::text(r#""abc""#, None)]
 #[case::list("[]", None)]
 #[case::map("{}", None)]
@@ -779,7 +791,8 @@ fn verbose_words_keep_every_token_and_its_timings() {
     let payload = r#"{"transcript": {"tokens": [
         {"text": "Hello", "start_ms": 0, "end_ms": 500},
         {"text": "Hola", "start_ms": 500, "end_ms": 1000, "translation_status": "translation"},
-        {"text": "Rest"}
+        {"text": "Rest"},
+        {"start_ms": 1500}
     ]}}"#;
     assert_eq!(
         built_object(payload, Some(VERBOSE_JSON)),
@@ -791,7 +804,8 @@ fn verbose_words_keep_every_token_and_its_timings() {
             "words": [
                 {"word": "Hello", "start": 0.0, "end": 0.5},
                 {"word": "Hola", "start": 0.5, "end": 1.0},
-                {"word": "Rest"}
+                {"word": "Rest"},
+                {"word": "", "start": 1.5}
             ]
         }"#
         )
@@ -813,6 +827,73 @@ fn verbose_words_accept_boolean_timings() {
         }"#
         )
     );
+}
+
+#[test]
+fn float_timings_are_ignored_by_subtitles_and_converted_for_words() {
+    let payload = r#"{"transcript": {"tokens": [{"text": "a", "start_ms": 1.5, "end_ms": 2.5}]}}"#;
+    assert_eq!(
+        response_from(payload, Some("json")).text.as_deref(),
+        Some("a")
+    );
+    assert_eq!(
+        response_from(payload, Some("srt")).text.as_deref(),
+        Some("")
+    );
+    assert_eq!(
+        built_object(payload, Some(VERBOSE_JSON)),
+        object(
+            r#"{"text": "a", "usage": null, "task": "transcribe", "words": [{"word": "a", "start": 0.0015, "end": 0.0025}]}"#
+        )
+    );
+}
+
+#[test]
+fn verbose_words_carry_a_null_text() {
+    let payload = r#"{"transcript": {"text": "T", "tokens": [{"text": null, "start_ms": 0, "end_ms": 500}]}}"#;
+    assert_eq!(
+        built_object(payload, Some(VERBOSE_JSON)),
+        object(
+            r#"{"text": "T", "usage": null, "task": "transcribe", "words": [{"word": null, "start": 0.0, "end": 0.5}]}"#
+        )
+    );
+}
+
+#[test]
+fn verbose_words_convert_numeric_text_and_non_finite_timings() {
+    let payload = r#"{"transcript": {"text": "T", "tokens": [{"text": "a", "start_ms": "1.5", "end_ms": "inf"}, {"text": 7, "start_ms": 2, "end_ms": 2500}]}}"#;
+    assert_eq!(
+        built_object(payload, Some(VERBOSE_JSON)),
+        object(
+            r#"{"text": "T", "usage": null, "task": "transcribe", "words": [{"word": "a", "start": 0.0015, "end": null}, {"word": 7, "start": 0.002, "end": 2.5}]}"#
+        )
+    );
+}
+
+#[test]
+fn unreadable_timings_and_token_texts_fail_the_response() {
+    let timing = SonioxTranscriptPayload::try_from(object(
+        r#"{"transcript": {"text": "T", "tokens": [{"text": "a", "start_ms": "abc"}]}}"#,
+    ))
+    .expect("a payload");
+    let timing_error =
+        build_response_from_payload(&timing, None, Some(VERBOSE_JSON)).expect_err("a timing error");
+    assert!(matches!(
+        timing_error,
+        RecordsError::Timing { field: "words" }
+    ));
+
+    let text = SonioxTranscriptPayload::try_from(object(
+        r#"{"transcript": {"tokens": [{"text": null}]}}"#,
+    ))
+    .expect("a payload");
+    let text_error = build_response_from_payload(&text, None, None).expect_err("a text error");
+    assert!(matches!(
+        text_error,
+        RecordsError::Text {
+            field: "transcript"
+        }
+    ));
 }
 
 #[test]

@@ -1,23 +1,18 @@
+use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::api::audio_subtitles::{Speaker, SubtitleToken};
+use rust_decimal::Decimal;
+use rust_decimal::prelude::{FromPrimitive as _, ToPrimitive as _};
 use serde::Deserialize;
+use serde_json::Number;
+
+use super::error::RecordsError;
 
 pub const TRANSLATION_STATUS: &str = "translation";
 
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(untagged)]
-pub enum Milliseconds {
-    Flag(bool),
-    Number(i64),
-}
-
-impl Milliseconds {
-    #[must_use]
-    pub const fn value(self) -> i64 {
-        match self {
-            Self::Flag(flag) => i64::from(flag),
-            Self::Number(number) => number,
-        }
-    }
+#[derive(Debug, Clone, Copy)]
+pub(super) enum FloatMilliseconds {
+    Exact(Decimal),
+    NotFinite,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -73,12 +68,16 @@ impl Eq for SpeakerValue {}
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct SonioxToken {
+    // the outer Option is a missing key, the inner one a null that a word entry writes as null
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
+    pub text: Option<Option<JsonValue>>,
     #[serde(default)]
-    pub text: Option<String>,
+    pub start_ms: Option<JsonValue>,
     #[serde(default)]
-    pub start_ms: Option<Milliseconds>,
-    #[serde(default)]
-    pub end_ms: Option<Milliseconds>,
+    pub end_ms: Option<JsonValue>,
     #[serde(default)]
     pub speaker: Option<SpeakerValue>,
     #[serde(default)]
@@ -92,6 +91,33 @@ impl SonioxToken {
     pub fn is_translation(&self) -> bool {
         self.translation_status.as_deref() == Some(TRANSLATION_STATUS)
     }
+
+    #[must_use]
+    pub fn text_string(&self) -> String {
+        match self.text.as_ref() {
+            Some(Some(JsonValue::Text(text))) => text.clone(),
+            _ => String::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn text_value(&self) -> JsonValue {
+        match self.text.as_ref() {
+            Some(Some(value)) => value.clone(),
+            Some(None) => JsonValue::Null,
+            None => JsonValue::Text(String::new()),
+        }
+    }
+
+    pub fn joined_text(&self) -> Result<&str, RecordsError> {
+        match self.text.as_ref() {
+            None => Ok(""),
+            Some(Some(JsonValue::Text(text))) => Ok(text.as_str()),
+            Some(_) => Err(RecordsError::Text {
+                field: "transcript",
+            }),
+        }
+    }
 }
 
 #[must_use]
@@ -100,7 +126,7 @@ pub fn render_soniox_tokens(tokens: &[SonioxToken]) -> String {
     let mut current_speaker: Option<&SpeakerValue> = None;
     let mut current_language: Option<&str> = None;
     for token in tokens {
-        let mut text = token.text.clone().unwrap_or_default();
+        let mut text = token.text_string();
         let speaker = token
             .speaker
             .as_ref()
@@ -146,11 +172,67 @@ pub(super) fn subtitle_tokens(tokens: &[SonioxToken]) -> Vec<SubtitleToken> {
             continue;
         }
         kept.push(SubtitleToken {
-            text: token.text.clone().unwrap_or_default(),
-            start_ms: token.start_ms.map(Milliseconds::value),
-            end_ms: token.end_ms.map(Milliseconds::value),
+            text: token.text_string(),
+            start_ms: subtitle_milliseconds(token.start_ms.as_ref()),
+            end_ms: subtitle_milliseconds(token.end_ms.as_ref()),
             speaker: token.speaker.as_ref().map(SpeakerValue::subtitle),
         });
     }
     kept
+}
+
+// the source keeps a subtitle timing only when it is a Python int, and a bool is one
+fn subtitle_milliseconds(value: Option<&JsonValue>) -> Option<i64> {
+    match value? {
+        JsonValue::Bool(flag) => Some(i64::from(*flag)),
+        JsonValue::Number(number) => number.as_i64(),
+        JsonValue::Null | JsonValue::Text(_) | JsonValue::Array(_) | JsonValue::Object(_) => None,
+    }
+}
+
+#[must_use]
+pub(super) fn float_milliseconds(value: &JsonValue) -> Option<FloatMilliseconds> {
+    match value {
+        JsonValue::Bool(flag) => Some(FloatMilliseconds::Exact(Decimal::from(i64::from(*flag)))),
+        JsonValue::Number(number) => milliseconds_from_text(&number.to_string()),
+        JsonValue::Text(text) => milliseconds_from_text(text),
+        JsonValue::Null | JsonValue::Array(_) | JsonValue::Object(_) => None,
+    }
+}
+
+#[must_use]
+pub(super) fn seconds_value(milliseconds: Decimal) -> Option<JsonValue> {
+    let seconds = milliseconds
+        .checked_div(Decimal::from(1_000_u32))?
+        .to_f64()?;
+    Number::from_f64(seconds).map(JsonValue::Number)
+}
+
+fn milliseconds_from_text(text: &str) -> Option<FloatMilliseconds> {
+    let trimmed = text.trim_matches(is_python_whitespace);
+    if !underscores_join_digits(trimmed) {
+        return None;
+    }
+    let cleaned = trimmed.replace('_', "");
+    if let Ok(number) = cleaned.parse::<Decimal>() {
+        return Some(FloatMilliseconds::Exact(number));
+    }
+    let parsed = cleaned.parse::<f64>().ok()?;
+    if parsed.is_finite() {
+        return Decimal::from_f64(parsed).map(FloatMilliseconds::Exact);
+    }
+    Some(FloatMilliseconds::NotFinite)
+}
+
+// float() takes an underscore only between two digits
+fn underscores_join_digits(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    bytes.iter().enumerate().all(|(index, byte)| {
+        if *byte != b'_' {
+            return true;
+        }
+        let before = index.checked_sub(1).and_then(|before| bytes.get(before));
+        let after = bytes.get(index + 1);
+        before.is_some_and(u8::is_ascii_digit) && after.is_some_and(u8::is_ascii_digit)
+    })
 }

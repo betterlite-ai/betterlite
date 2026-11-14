@@ -17,6 +17,14 @@ call:
         transcript: {text: hi}
     - function: response
       payload:
+        transcription: {audio_duration_ms: 1500.5}
+        transcript: {text: hi}
+    - function: response
+      payload:
+        transcription: {audio_duration_ms: "1500"}
+        transcript: {text: hi}
+    - function: response
+      payload:
         transcription: {audio_duration_ms: fast}
         transcript: {text: hi}
     - function: response
@@ -57,5 +65,35 @@ call:
         text: chosen
         tokens:
         - {start_ms: 0}
+    - function: response
+      payload:
+        tokens:
+        - {text: a, start_ms: 1.5, end_ms: 2.5}
+      response_format: json
+    - function: response
+      payload:
+        tokens:
+        - {text: a, start_ms: 1.5, end_ms: 2.5}
+      response_format: srt
+    - function: response
+      payload:
+        transcript: {text: T, tokens: [{text: null, start_ms: 0, end_ms: 500}]}
+      response_format: verbose_json
+    - function: response
+      payload:
+        transcript: {text: T, tokens: [{start_ms: 1500}]}
+      response_format: verbose_json
+    - function: response
+      payload:
+        transcript: {text: T, tokens: [{text: 7, start_ms: "1.5", end_ms: "inf"}]}
+      response_format: verbose_json
+    - function: response
+      payload:
+        transcript: {text: T, tokens: [{text: a, start_ms: abc}]}
+      response_format: verbose_json
+    - function: response
+      payload:
+        tokens:
+        - {text: null, start_ms: 0, end_ms: 500}
 compare: {ignore: []}
 env: {}

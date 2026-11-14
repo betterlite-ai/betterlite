@@ -1,15 +1,17 @@
+use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::api::audio_subtitles::render::{
     render_subtitle_tokens_as_srt, render_subtitle_tokens_as_vtt,
 };
 use betterlite_openai::api::audio_subtitles::{SRT_RESPONSE_FORMAT, VTT_RESPONSE_FORMAT};
 use betterlite_openai::openai_base_config::Object;
-use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive as _;
 use serde::{Deserialize, Serialize};
 use serde_json::{from_value, to_value};
 
 use super::error::RecordsError;
-use super::tokens::{Milliseconds, SonioxToken, render_soniox_tokens, subtitle_tokens};
+use super::tokens::{
+    FloatMilliseconds, SonioxToken, float_milliseconds, render_soniox_tokens, seconds_value,
+    subtitle_tokens,
+};
 
 pub const TRANSCRIBE_TASK: &str = "transcribe";
 pub const VERBOSE_JSON: &str = "verbose_json";
@@ -100,7 +102,7 @@ pub fn build_response_from_payload(
 ) -> Result<SonioxTranscriptionResponse, RecordsError> {
     let translated = TranscriptView::from_transcript(&payload.transcript)?;
     let mut response = model_response.unwrap_or_default();
-    response.text = Some(response_text(&translated, response_format));
+    response.text = Some(response_text(&translated, response_format)?);
     response.extra.insert(
         "task".to_owned(),
         to_value(TRANSCRIBE_TASK).map_err(|source| RecordsError::Value {
@@ -115,33 +117,41 @@ pub fn build_response_from_payload(
     Ok(response)
 }
 
-fn response_text(translated: &TranscriptView, response_format: Option<&str>) -> String {
+fn response_text(
+    translated: &TranscriptView,
+    response_format: Option<&str>,
+) -> Result<String, RecordsError> {
     if response_format == Some(SRT_RESPONSE_FORMAT) && !translated.tokens.is_empty() {
-        return render_subtitle_tokens_as_srt(&subtitle_tokens(&translated.tokens));
+        return Ok(render_subtitle_tokens_as_srt(&subtitle_tokens(
+            &translated.tokens,
+        )));
     }
     if response_format == Some(VTT_RESPONSE_FORMAT) && !translated.tokens.is_empty() {
-        return render_subtitle_tokens_as_vtt(&subtitle_tokens(&translated.tokens));
+        return Ok(render_subtitle_tokens_as_vtt(&subtitle_tokens(
+            &translated.tokens,
+        )));
     }
     plain_text(translated)
 }
 
-fn plain_text(translated: &TranscriptView) -> String {
+fn plain_text(translated: &TranscriptView) -> Result<String, RecordsError> {
     let tokens = &translated.tokens;
     let has_speaker = tokens.iter().any(|token| token.speaker.is_some());
     let has_language = tokens.iter().any(|token| token.language.is_some());
     if (has_speaker || has_language) && !tokens.is_empty() {
-        return render_soniox_tokens(tokens);
+        return Ok(render_soniox_tokens(tokens));
     }
     if let Some(text) = translated.text.as_deref().filter(|text| !text.is_empty()) {
-        return text.to_owned();
+        return Ok(text.to_owned());
     }
-    if !tokens.is_empty() {
-        return tokens
-            .iter()
-            .filter_map(|token| token.text.as_deref())
-            .collect();
+    if tokens.is_empty() {
+        return Ok(String::new());
     }
-    String::new()
+    let mut joined = String::new();
+    for token in tokens {
+        joined.push_str(token.joined_text()?);
+    }
+    Ok(joined)
 }
 
 fn set_duration(
@@ -151,13 +161,17 @@ fn set_duration(
     let Some(value) = transcription.get("audio_duration_ms") else {
         return Ok(());
     };
-    if value.is_null() {
-        return Ok(());
-    }
-    let Ok(milliseconds) = from_value::<Milliseconds>(value.clone()) else {
+    let Ok(value) = from_value::<JsonValue>(value.clone()) else {
         return Ok(());
     };
-    let Some(shown) = seconds_from_millis(milliseconds.value()) else {
+    let Some(quantity) = float_milliseconds(&value) else {
+        return Ok(());
+    };
+    let shown = match quantity {
+        FloatMilliseconds::Exact(milliseconds) => seconds_value(milliseconds),
+        FloatMilliseconds::NotFinite => Some(JsonValue::Null),
+    };
+    let Some(shown) = shown else {
         return Ok(());
     };
     let encoded = to_value(shown).map_err(|source| RecordsError::Value {
@@ -202,11 +216,11 @@ fn set_language(
 
 #[derive(Debug, Serialize)]
 struct WordEntry {
-    word: String,
+    word: JsonValue,
     #[serde(skip_serializing_if = "Option::is_none")]
-    start: Option<f64>,
+    start: Option<JsonValue>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    end: Option<f64>,
+    end: Option<JsonValue>,
 }
 
 fn set_words(
@@ -220,9 +234,9 @@ fn set_words(
     let mut words: Vec<WordEntry> = Vec::new();
     for token in tokens {
         words.push(WordEntry {
-            word: token.text.clone().unwrap_or_default(),
-            start: word_seconds(token.start_ms)?,
-            end: word_seconds(token.end_ms)?,
+            word: token.text_value(),
+            start: word_seconds(token.start_ms.as_ref())?,
+            end: word_seconds(token.end_ms.as_ref())?,
         });
     }
     let encoded = to_value(words).map_err(|source| RecordsError::Value {
@@ -233,21 +247,22 @@ fn set_words(
     Ok(())
 }
 
-fn word_seconds(timing: Option<Milliseconds>) -> Result<Option<f64>, RecordsError> {
-    match timing {
-        Some(timing) => Ok(Some(
-            seconds_from_millis(timing.value())
-                .ok_or(RecordsError::Timing { field: WORDS_FIELD })?,
-        )),
-        None => Ok(None),
+fn word_seconds(timing: Option<&JsonValue>) -> Result<Option<JsonValue>, RecordsError> {
+    let Some(timing) = timing else {
+        return Ok(None);
+    };
+    let Some(quantity) = float_milliseconds(timing) else {
+        return Err(RecordsError::Timing { field: WORDS_FIELD });
+    };
+    match quantity {
+        FloatMilliseconds::Exact(milliseconds) => {
+            let Some(seconds) = seconds_value(milliseconds) else {
+                return Err(RecordsError::Timing { field: WORDS_FIELD });
+            };
+            Ok(Some(seconds))
+        }
+        FloatMilliseconds::NotFinite => Ok(Some(JsonValue::Null)),
     }
-}
-
-fn seconds_from_millis(milliseconds: i64) -> Option<f64> {
-    // the source divides by 1000.0; Decimal keeps the intermediate exact
-    Decimal::from(milliseconds)
-        .checked_div(Decimal::from(1_000_u32))
-        .and_then(|value| value.to_f64())
 }
 
 fn set_hidden(
