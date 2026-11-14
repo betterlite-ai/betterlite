@@ -1,18 +1,17 @@
 import datetime as dt
+from collections.abc import Awaitable
 from typing import Literal, NotRequired, TypeAlias, TypedDict
 
 import httpx
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
-from litellm.llms.oci.chat.cohere import handle_cohere_response
-from litellm.llms.oci.chat.generic import handle_generic_response
 from litellm.llms.oci.chat.transformation import (
     OCIChatConfig,
     OCIStreamWrapper,
     get_vendor_from_model,
 )
-from litellm.types.llms.oci import OCIVendors
 from litellm.types.utils import ModelResponse
 from openai import APIStatusError
 from pydantic import JsonValue, TypeAdapter
@@ -24,7 +23,7 @@ DATA_PREFIX = "data:"
 STREAM_MODEL = "meta.llama"
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
-OBJECT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
+MODEL_RESPONSE: TypeAdapter[ModelResponse] = TypeAdapter(ModelResponse)
 
 
 class ExchangeCall(TypedDict):
@@ -147,16 +146,25 @@ def exchange_call(
     return {"body": recorder.bodies[-1]}
 
 
-def response_result(call: ResponseCall) -> JsonValue:
-    raw_response = httpx.Response(call["status"], json=call["body"])
-    if raw_response.is_error:
-        return {"status": raw_response.status_code}
-    body = OBJECT.validate_python(call["body"])
-    if get_vendor_from_model(call["model"]) == OCIVendors.COHERE:
-        response = handle_cohere_response(body, call["model"], ModelResponse(), raw_response)
-    else:
-        response = handle_generic_response(body, call["model"], ModelResponse(), raw_response)
-    dumped = RESPONSE_DUMP.validate_json(response.model_dump_json())
+def response_result(credentials: dict[str, JsonValue], call: ResponseCall) -> JsonValue:
+    if httpx.Response(call["status"]).is_error:
+        return {"status": call["status"]}
+    recorder = Recorder(call["status"], call["body"])
+    client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(recorder)))
+    messages: list[dict[str, str]] = [{"role": "user", "content": "ping"}]
+    # litellm.completion's decorated return is Any to mypy, so its type is named here.
+    response: (
+        ModelResponse | CustomStreamWrapper | Awaitable[ModelResponse | CustomStreamWrapper]
+    ) = litellm.completion(
+        model=call["model"],
+        messages=messages,
+        api_base=API_BASE,
+        custom_llm_provider="oci",
+        client=client,
+        **credentials,
+    )
+    parsed = MODEL_RESPONSE.validate_python(response)
+    dumped = RESPONSE_DUMP.validate_json(parsed.model_dump_json())
     choice = dumped["choices"][0]
     return {
         "model": dumped["model"],
@@ -166,12 +174,13 @@ def response_result(call: ResponseCall) -> JsonValue:
 
 
 def stream_items(reads: list[str]) -> list[JsonValue]:
+    no_messages: list[dict[str, str]] = []
     wrapper = OCIStreamWrapper(
         completion_stream=iter(()),
         model=STREAM_MODEL,
         logging_obj=Logging(
             model=STREAM_MODEL,
-            messages=[],
+            messages=no_messages,
             stream=True,
             call_type="completion",
             start_time=dt.datetime.now(tz=dt.UTC),
@@ -220,6 +229,11 @@ def run(input_value: Call) -> JsonValue:
                 ]
             }
         case "response":
-            return {"calls": [response_result(call) for call in input_value["responses"]]}
+            return {
+                "calls": [
+                    response_result(input_value["credentials"], call)
+                    for call in input_value["responses"]
+                ]
+            }
         case "stream":
             return {"items": stream_items(input_value["reads"])}
