@@ -6,14 +6,12 @@ use betterlite_models::cost_usage::transcription::{
     TranscriptionTokenDetails, TranscriptionTokens, TranscriptionUsage,
 };
 use betterlite_models::decisions::Json;
-use betterlite_models::ocr_pricing::{OcrBilling, OcrResponseKind, OcrUsage};
 use betterlite_models::protocol_cost::{A2aCall, A2aUsage, ProtocolCall};
 use betterlite_models::tool_fees::billing::BuiltInToolParams;
 use betterlite_models::tool_signals::kwargs::WebSearchOptions;
 use betterlite_models::tool_signals::response::{
     Annotation, ChatChoice, ChatMessage, ChatView, OtherView, ToolBillingResponse,
 };
-use betterlite_models::usage_sum::Usage as PricingUsage;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde_json::Number;
@@ -37,19 +35,6 @@ pub(crate) fn usage_block(fields: &UsageInput) -> Usage {
         server_tool_use: None,
         cost: None,
         extras: IndexMap::new(),
-    }
-}
-
-pub(crate) fn pricing_usage(fields: &UsageInput) -> PricingUsage {
-    PricingUsage {
-        prompt_tokens: fields.prompt_tokens,
-        completion_tokens: fields.completion_tokens,
-        total_tokens: fields
-            .prompt_tokens
-            .saturating_add(fields.completion_tokens),
-        prompt_tokens_details: None,
-        completion_tokens_details: None,
-        numeric_extras: BTreeMap::new(),
     }
 }
 
@@ -127,21 +112,6 @@ pub(crate) fn transcription_duration(input: &Input) -> Option<Decimal> {
         .transcription_seconds
         .as_ref()
         .and_then(|number| number.to_string().parse().ok())
-}
-
-pub(crate) fn ocr_billing(input: &Input) -> Option<OcrBilling> {
-    let usage = input.ocr.as_ref()?;
-    Some(OcrBilling {
-        kind: OcrResponseKind::Ocr,
-        usage: Some(OcrUsage {
-            credits: usage
-                .credits
-                .as_ref()
-                .and_then(|number| number.to_string().parse().ok()),
-            pages_processed: usage.pages_processed,
-            pages_processed_annotation: usage.pages_processed_annotation.unwrap_or(0),
-        }),
-    })
 }
 
 pub(crate) fn protocol(input: &Input) -> Option<ProtocolCall> {

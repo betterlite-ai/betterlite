@@ -7,14 +7,16 @@ use rust_decimal::prelude::ToPrimitive as _;
 use serde_json::json;
 
 use self::adapters::{Breakdown, failure};
-use self::args::{build_parts, completion_args, response_view};
+use self::args::{build_parts, completion_args};
 use self::frame::{build_adapters, build_calculator, build_stage};
 use self::input::{Function, Input};
+use self::views::response_view;
 
 mod adapters;
 mod args;
 mod frame;
 mod input;
+mod views;
 
 async fn charge(
     input: &Input,

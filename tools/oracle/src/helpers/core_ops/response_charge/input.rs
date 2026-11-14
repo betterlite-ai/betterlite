@@ -7,6 +7,8 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
+pub(super) mod ocr;
+pub(super) mod realtime;
 pub(super) mod values;
 
 #[derive(Deserialize)]
