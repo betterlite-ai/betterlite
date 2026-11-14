@@ -10,16 +10,6 @@ use serde_json::{Value, json};
 use super::{Input, Op};
 use crate::helpers::Helper as _;
 
-const NAMES: [&str; 7] = [
-    "system_role_switch",
-    "parent_headers_win",
-    "vision_key_without_type",
-    "claude_capability",
-    "tool_only_reply",
-    "empty_probe",
-    "usage_already_normalized",
-];
-
 #[derive(Deserialize)]
 struct Call {
     copilot_chat: Input,
@@ -44,12 +34,34 @@ fn answer(name: &str) -> Value {
 
 #[test]
 fn every_copilot_chat_seed_is_a_valid_helper_case() {
-    for name in NAMES {
-        let source = fs::read_to_string(seed_path(name)).expect("seed should be readable");
-        let case: HelperCase = serde_saphyr::from_str(&source).expect("seed should parse");
-        validate_helper(Path::new("<helper>"), &case).expect("seed should validate");
-        assert_eq!(case.call.operation, "copilot_chat");
-    }
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../fuzz/corpus/helper_case");
+    let seeds: Vec<(String, String)> = fs::read_dir(corpus)
+        .expect("the helper corpus should exist")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("copilot_chat_"))
+        })
+        .map(|path| {
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("a seed has a name")
+                .to_owned();
+            let source = fs::read_to_string(path).expect("a seed is readable");
+            (name, source)
+        })
+        .collect();
+    assert!(!seeds.is_empty(), "no copilot_chat seed exists");
+    assert!(seeds.iter().all(|(name, source)| {
+        let case: HelperCase =
+            serde_saphyr::from_str(source).expect("a seed parses as a helper case");
+        let _: Seed = serde_saphyr::from_str(source)
+            .unwrap_or_else(|error| panic!("{name} must call copilot_chat: {error}"));
+        validate_helper(Path::new("<helper>"), &case).is_ok()
+    }));
 }
 
 #[test]
