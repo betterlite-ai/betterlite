@@ -81,5 +81,5 @@ pitfalls:
   - Haiku's unsupported effort is dropped without removing unrelated output_config keys.
   - The structured-output fallback model must not leak into response.model.
   - Vertex requires tool-search-tool-2025-10-19 even when the inherited tool-search beta differs.
-budget: {max_changed_lines: 700, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: standard

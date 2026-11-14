@@ -108,6 +108,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "studio_file_search"
+path = "fuzz_targets/studio_file_search.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "studio_interaction"
 path = "fuzz_targets/studio_interaction.rs"
 test = false
@@ -117,6 +124,13 @@ bench = false
 [[bin]]
 name = "studio_models"
 path = "fuzz_targets/studio_models.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "studio_transcription"
+path = "fuzz_targets/studio_transcription.rs"
 test = false
 doc = false
 bench = false
@@ -152,6 +166,13 @@ bench = false
 [[bin]]
 name = "vertex_gemini_transcription"
 path = "fuzz_targets/vertex_gemini_transcription.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_rag_payload"
+path = "fuzz_targets/vertex_rag_payload.rs"
 test = false
 doc = false
 bench = false

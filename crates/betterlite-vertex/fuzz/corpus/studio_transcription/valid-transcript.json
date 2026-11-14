@@ -1,0 +1,1 @@
+{"id":"i1","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"hello","annotations":[{"type":"word_info","text":"hello","speaker":"1","start_offset":"0s","end_offset":"0.5s"}]}]}],"usage":{"total_tokens":7,"total_input_tokens":5,"total_output_tokens":2,"input_tokens_by_modality":[{"modality":"audio","tokens":4},{"modality":"text","tokens":1}]}}
