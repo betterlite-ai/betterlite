@@ -24,15 +24,6 @@ pub struct GeminiStreamDecoder {
     cumulative_tool_call_index: u32,
     has_seen_tool_calls: bool,
 }
-fn strip_sse_data(chunk: &str) -> &str {
-    if let Some(stripped) = chunk.strip_prefix("data: ") {
-        return stripped;
-    }
-    if let Some(stripped) = chunk.strip_prefix("data:") {
-        return stripped;
-    }
-    chunk
-}
 fn stream_service_tier(headers: &HeaderMap) -> Option<String> {
     let mut tier = String::new();
     for value in headers.get_all(SERVICE_TIER_HEADER) {

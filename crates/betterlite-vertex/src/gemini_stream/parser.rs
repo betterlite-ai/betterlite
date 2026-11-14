@@ -2,7 +2,7 @@ use super::buffer::FragmentBuffer;
 use super::chunk::{Choice, StreamChunk};
 use super::embedded::check_embedded_error;
 use super::error::StreamError;
-use super::{GeminiStreamDecoder, StreamOptions, stream_service_tier, strip_sse_data};
+use super::{GeminiStreamDecoder, StreamOptions, stream_service_tier};
 use crate::gemini_candidates::blocked::stream_block;
 use crate::gemini_candidates::candidate::Candidate;
 use crate::gemini_candidates::choice::Choices;
@@ -16,6 +16,7 @@ use betterlite_context::provider_message_primitives::CHAT_COMPLETION_ID_PREFIX;
 use betterlite_models::call_helpers::finish_reason::FinishReason;
 use betterlite_models::decisions::Json;
 use betterlite_models::usage_sum::Usage;
+use betterlite_streaming::stream_chunk_shaping::extras::strip_sse_data_from_chunk;
 use http::header::HeaderMap;
 use serde_json::value::RawValue;
 use std::str::from_utf8;
@@ -51,7 +52,7 @@ impl GeminiStreamDecoder {
         self.accumulated_chunk("", true)
     }
     fn parse_fragment(&mut self, fragment: &str) -> Result<Option<StreamChunk>, StreamError> {
-        let chunk = strip_sse_data(fragment);
+        let chunk = strip_sse_data_from_chunk(Some(fragment)).unwrap_or(fragment);
         if chunk.is_empty() {
             return Ok(None);
         }
@@ -70,7 +71,9 @@ impl GeminiStreamDecoder {
         chunk: &str,
         is_final: bool,
     ) -> Result<Option<StreamChunk>, StreamError> {
-        let message = strip_sse_data(chunk).replace("\n\n", "");
+        let message = strip_sse_data_from_chunk(Some(chunk))
+            .unwrap_or(chunk)
+            .replace("\n\n", "");
         self.buffer.append(&message)?;
         if !is_final && !self.buffer.could_close {
             return Ok(None);
