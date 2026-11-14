@@ -54,10 +54,7 @@ impl AgenticCallback for ForcedCallback {
             to_raw_value(call.custom_llm_provider).unwrap(),
         );
         tools.insert("stream".to_owned(), to_raw_value(&call.stream).unwrap());
-        tools.insert(
-            "response".to_owned(),
-            to_raw_value(call.response.get()).unwrap(),
-        );
+        tools.insert("response".to_owned(), to_raw_value(call.response).unwrap());
         tools.insert(
             "request_tools".to_owned(),
             to_raw_value(&call.tools).unwrap(),
@@ -66,6 +63,7 @@ impl AgenticCallback for ForcedCallback {
             "message_count".to_owned(),
             to_raw_value(&call.messages.len()).unwrap(),
         );
+        tools.insert("kwargs".to_owned(), to_raw_value(call.kwargs).unwrap());
         Ok(AgenticGate {
             run: call.stream,
             tools,
@@ -77,6 +75,15 @@ impl AgenticCallback for ForcedCallback {
         call: &AgenticLoopCall<'_>,
     ) -> Result<AgenticLoopPlan, AgenticHookError> {
         let logging = call.logging;
+        let mut metadata = call.tools.clone();
+        metadata.insert("stream".to_owned(), to_raw_value(&call.stream).unwrap());
+        let loop_params = logging
+            .and_then(|logging| logging.agentic_loop_params.as_ref())
+            .unwrap();
+        metadata.insert(
+            "loop_params_model".to_owned(),
+            loop_params.get("model").unwrap().clone(),
+        );
         Ok(AgenticLoopPlan {
             run_agentic_loop: true,
             request_patch: Some(AgenticLoopRequestPatch {
@@ -90,7 +97,7 @@ impl AgenticCallback for ForcedCallback {
             response_override: Some(RawValue::from_string(call.response.get().to_owned()).unwrap()),
             terminate: false,
             stop_reason: logging.and_then(|logging| logging.call_id.clone()),
-            metadata: call.tools.clone(),
+            metadata,
         })
     }
 }
@@ -234,7 +241,7 @@ async fn overrides_results_reach_the_trait_object() {
         .await
         .unwrap();
     assert!(gate.run);
-    assert_eq!(gate.tools.len(), 7);
+    assert_eq!(gate.tools.len(), 8);
     assert_eq!(
         gate.tools.get("model").map(|raw| raw.get()),
         Some("\"anthropic/claude-sonnet-4-5\"")
@@ -247,6 +254,18 @@ async fn overrides_results_reach_the_trait_object() {
     assert_eq!(
         gate.tools.get("message_count").map(|raw| raw.get()),
         Some("1")
+    );
+    assert_eq!(
+        gate.tools.get("response").map(|raw| raw.get()),
+        Some("{\"id\":\"msg_1\"}")
+    );
+    assert_eq!(
+        gate.tools.get("request_tools").map(|raw| raw.get()),
+        Some("[{\"name\":\"web_search\"}]")
+    );
+    assert_eq!(
+        gate.tools.get("kwargs").map(|raw| raw.get()),
+        Some("{\"max_tokens\":512}")
     );
 
     let plan = callback
@@ -262,6 +281,14 @@ async fn overrides_results_reach_the_trait_object() {
     assert_eq!(
         plan.metadata.get("tool_type").map(|raw| raw.get()),
         Some("\"websearch\"")
+    );
+    assert_eq!(
+        plan.metadata.get("stream").map(|raw| raw.get()),
+        Some("true")
+    );
+    assert_eq!(
+        plan.metadata.get("loop_params_model").map(|raw| raw.get()),
+        Some("\"bedrock/claude\"")
     );
     let patch = plan.request_patch.unwrap();
     assert_eq!(patch.model.as_deref(), Some("anthropic/claude-sonnet-4-5"));
