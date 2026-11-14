@@ -10,6 +10,7 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
 use crate::azure_storage_logging::filename::IdSource;
@@ -101,6 +102,8 @@ impl Call {
 pub(crate) struct ScriptedTransport {
     pub(crate) replies: Mutex<VecDeque<Reply>>,
     pub(crate) calls: Mutex<Vec<Call>>,
+    // the first send reports itself and waits, so a test can queue an event while a flush runs
+    pub(crate) during_send: Mutex<Option<oneshot::Sender<oneshot::Sender<()>>>>,
 }
 
 impl ScriptedTransport {
@@ -108,6 +111,7 @@ impl ScriptedTransport {
         Arc::new(Self {
             replies: Mutex::new(replies.iter().copied().collect()),
             calls: Mutex::new(Vec::new()),
+            during_send: Mutex::new(None),
         })
     }
 
@@ -134,6 +138,16 @@ impl StorageTransport for ScriptedTransport {
                 headers: request.headers,
                 body: request.body,
             });
+        let hook = self
+            .during_send
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some(report) = hook {
+            let (released, release) = oneshot::channel();
+            let _reported = report.send(released);
+            let _finished = release.await;
+        }
         let reply = self
             .replies
             .lock()
