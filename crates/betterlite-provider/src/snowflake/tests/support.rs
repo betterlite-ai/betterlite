@@ -1,0 +1,113 @@
+use std::collections::BTreeMap;
+use std::convert::Infallible;
+use std::future::{Future, ready};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use betterlite_anthropic::stream_state::state::IdSource;
+use betterlite_anthropic::usage::ReasoningTokenCounter;
+use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::media::inline::RemoteMediaFetcher;
+use betterlite_prompts::media_fetch::error::ImageFetchError;
+use betterlite_prompts::message_content::Message;
+use uuid::Uuid;
+
+#[derive(Default)]
+pub struct MediaSource {
+    pub conversions: Mutex<Vec<String>>,
+    pub mapping: BTreeMap<String, String>,
+}
+
+impl MediaSource {
+    #[must_use]
+    pub fn with(pairs: &[(&str, &str)]) -> Self {
+        Self {
+            conversions: Mutex::new(Vec::new()),
+            mapping: pairs
+                .iter()
+                .map(|(url, data_url)| ((*url).to_owned(), (*data_url).to_owned()))
+                .collect(),
+        }
+    }
+
+    pub fn converted(&self) -> Vec<String> {
+        self.conversions.lock().unwrap().clone()
+    }
+}
+
+impl RemoteMediaFetcher for MediaSource {
+    fn convert_url(&self, url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
+        self.conversions.lock().unwrap().push(url.to_owned());
+        ready(self.result_for(url))
+    }
+
+    fn convert_urls(
+        &self,
+        urls: &[String],
+    ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
+        self.conversions
+            .lock()
+            .unwrap()
+            .extend(urls.iter().cloned());
+        let results = urls.iter().map(|url| self.result_for(url)).collect();
+        ready(results)
+    }
+}
+
+impl MediaSource {
+    fn result_for(&self, url: &str) -> Result<String, ImageFetchError> {
+        self.mapping
+            .get(url)
+            .cloned()
+            .ok_or_else(|| ImageFetchError::Rejected {
+                url: url.to_owned(),
+            })
+    }
+}
+
+pub struct WordCounter;
+
+impl ReasoningTokenCounter for WordCounter {
+    type Failure = Infallible;
+
+    fn count_reasoning_tokens(&self, text: &str) -> Result<usize, Infallible> {
+        Ok(text.split_whitespace().count())
+    }
+}
+
+pub struct SequenceIds {
+    next: AtomicU64,
+}
+
+impl Default for SequenceIds {
+    fn default() -> Self {
+        Self {
+            next: AtomicU64::new(0),
+        }
+    }
+}
+
+impl IdSource for SequenceIds {
+    fn next_id(&self) -> Uuid {
+        Uuid::from_u128(u128::from(self.next.fetch_add(1, Ordering::SeqCst)))
+    }
+}
+
+pub fn parsed(source: &str) -> Json {
+    serde_json::from_str(source).unwrap()
+}
+
+pub fn messages(source: &str) -> Vec<Message> {
+    serde_json::from_str(source).unwrap()
+}
+
+pub fn message(source: &str) -> Message {
+    serde_json::from_str(source).unwrap()
+}
+
+pub fn as_json<Value>(value: &Value) -> Json
+where
+    Value: serde::Serialize,
+{
+    serde_json::from_value(serde_json::to_value(value).unwrap()).unwrap()
+}
