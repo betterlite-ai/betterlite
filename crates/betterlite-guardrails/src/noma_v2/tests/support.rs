@@ -336,11 +336,10 @@ impl CapturedLog {
 
 impl io::Write for CapturedLog {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut log = self
-            .0
+        self.0
             .lock()
-            .map_err(|_poisoned| io::Error::other("the captured log lock is poisoned"))?;
-        log.extend_from_slice(buf);
+            .map_err(|_poisoned| io::Error::other("the captured log lock is poisoned"))?
+            .extend_from_slice(buf);
         Ok(buf.len())
     }
 
