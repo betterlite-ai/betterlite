@@ -132,6 +132,6 @@ pub(super) fn native_transcription_url() {
     }
     let (model, region) = bedrock_model_id_and_region("bedrock/us-east-1/m");
     assert_eq!((model, region), ("m", Some("us-east-1")));
-    let unicode = complete_url(None, "a b/ü", &params("{}"), &env(&[]));
-    assert_eq!(unicode, expected_url("@us-west-2|a b/ü"));
+    let unicode = complete_url(None, "a b/\u{fc}", &params("{}"), &env(&[]));
+    assert_eq!(unicode, expected_url("@us-west-2|a b/\u{fc}"));
 }

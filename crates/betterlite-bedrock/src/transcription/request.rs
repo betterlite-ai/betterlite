@@ -53,7 +53,7 @@ struct InferenceConfig<'body> {
     temperature: Option<&'body Json>,
 }
 
-fn type_name(value: &Json) -> &'static str {
+const fn type_name(value: &Json) -> &'static str {
     match value {
         Json::Null => "null",
         Json::Bool(_) => "boolean",

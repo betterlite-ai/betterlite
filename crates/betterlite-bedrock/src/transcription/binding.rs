@@ -1,3 +1,4 @@
+use std::error::Error as StdError;
 use std::fmt::{self, Debug, Formatter};
 
 use async_trait::async_trait;
@@ -22,12 +23,11 @@ pub struct TranscriptionCall<'call> {
 
 // optional_params and extra_headers carry AWS secrets, so only their names are printed
 impl Debug for TranscriptionCall<'_> {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let header_names = self
             .extra_headers
             .map(|headers| headers.keys().collect::<Vec<_>>());
-        formatter
-            .debug_struct("TranscriptionCall")
+        f.debug_struct("TranscriptionCall")
             .field("model", &self.model)
             .field("api_key", &self.api_key)
             .field("api_base", &self.api_base)
@@ -56,7 +56,10 @@ pub struct TranscriptionResponse {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum BindingError<E: std::error::Error + 'static> {
+pub enum BindingError<E>
+where
+    E: StdError + 'static,
+{
     #[error("the native transcription binding failed")]
     Binding(#[source] E),
     #[error("the binding reply is not a TranscriptionResponse")]
@@ -65,55 +68,63 @@ pub enum BindingError<E: std::error::Error + 'static> {
 
 #[async_trait]
 pub trait TranscriptionBinding {
-    type Error: std::error::Error + Send + 'static;
+    type Error: StdError + Send + 'static;
 
     fn transcribe(&self, arguments: &BindingArguments<'_>) -> Result<Params, Self::Error>;
 
     async fn atranscribe(&self, arguments: &BindingArguments<'_>) -> Result<Params, Self::Error>;
 }
 
+pub type Reply<E> = Result<TranscriptionResponse, BindingError<E>>;
+
 pub fn prepare_arguments<'call>(
     audio: AudioFile<'_>,
     files: &dyn AuthorizedAudioFiles,
     call: &'call TranscriptionCall<'call>,
 ) -> Result<BindingArguments<'call>, TranscriptionError> {
-    let audio = audio_payload(audio, files)?;
+    let payload = audio_payload(audio, files)?;
     let timeout_seconds = match call.timeout {
         None => None,
         Some(Timeout::Seconds(seconds)) => Some(*seconds),
         Some(Timeout::Phases(phases)) => phases.read,
     };
     Ok(BindingArguments {
-        audio,
+        audio: payload,
         call,
         timeout_seconds,
     })
 }
 
-fn wrap_response<E: std::error::Error + 'static>(
-    mapping: &Params,
-) -> Result<TranscriptionResponse, BindingError<E>> {
-    let encoded = serde_json::to_string(mapping).map_err(BindingError::Response)?;
-    serde_json::from_str(&encoded).map_err(BindingError::Response)
+fn wrap_response<E>(mapping: &Params) -> Reply<E>
+where
+    E: StdError + 'static,
+{
+    serde_json::from_str(&serde_json::to_string(mapping).map_err(BindingError::Response)?)
+        .map_err(BindingError::Response)
 }
 
-pub fn audio_transcriptions<B: TranscriptionBinding>(
-    binding: &B,
-    arguments: &BindingArguments<'_>,
-) -> Result<TranscriptionResponse, BindingError<B::Error>> {
-    let mapping = binding
-        .transcribe(arguments)
-        .map_err(BindingError::Binding)?;
-    wrap_response(&mapping)
+pub fn audio_transcriptions<B>(binding: &B, arguments: &BindingArguments<'_>) -> Reply<B::Error>
+where
+    B: TranscriptionBinding,
+{
+    wrap_response(
+        &binding
+            .transcribe(arguments)
+            .map_err(BindingError::Binding)?,
+    )
 }
 
-pub async fn async_audio_transcriptions<B: TranscriptionBinding + Sync>(
+// E names the binding's error so the reply carries it without repeating the projection
+pub async fn async_audio_transcriptions<B, E>(
     binding: &B,
     arguments: &BindingArguments<'_>,
-) -> Result<TranscriptionResponse, BindingError<B::Error>> {
-    let mapping = binding
-        .atranscribe(arguments)
-        .await
-        .map_err(BindingError::Binding)?;
-    wrap_response(&mapping)
+) -> Reply<E>
+where
+    B: TranscriptionBinding<Error = E> + Sync,
+    E: StdError + Send + 'static,
+{
+    match binding.atranscribe(arguments).await {
+        Ok(mapping) => wrap_response(&mapping),
+        Err(error) => Err(BindingError::Binding(error)),
+    }
 }

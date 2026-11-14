@@ -1,5 +1,5 @@
 use betterlite_models::decisions::Json;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 
 use super::error::TranscriptionError;
 
@@ -19,7 +19,7 @@ pub struct Output {
 
 #[derive(Debug, Deserialize)]
 pub struct Message {
-    pub content: Vec<Block>,
+    pub content: Vec<Json>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -35,24 +35,21 @@ pub struct Usage {
 }
 
 #[derive(Debug)]
-pub enum Block {
+enum ContentBlock {
     Text(String),
     Other,
 }
 
-impl<'de> Deserialize<'de> for Block {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        match Json::deserialize(deserializer)? {
-            Json::Object(fields) => match fields.get("text") {
-                Some(Json::Text(text)) => Ok(Self::Text(text.clone())),
-                Some(_) => Err(serde::de::Error::custom(
-                    "invalid type for `text`, expected a string",
-                )),
-                None => Ok(Self::Other),
-            },
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-                Ok(Self::Other)
-            }
+// a text key of the wrong type fails the whole reply before a non-text block is reported
+fn content_block(block: Json) -> Result<ContentBlock, TranscriptionError> {
+    match block {
+        Json::Object(fields) => match fields.get("text") {
+            Some(Json::Text(text)) => Ok(ContentBlock::Text(text.clone())),
+            Some(_) => Err(TranscriptionError::InvalidTextType),
+            None => Ok(ContentBlock::Other),
+        },
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            Ok(ContentBlock::Other)
         }
     }
 }
@@ -65,11 +62,18 @@ pub struct TranscriptionText {
 pub fn decode_transcription_reply(bytes: &[u8]) -> Result<TranscriptionText, TranscriptionError> {
     let reply: ConverseReply =
         serde_json::from_slice(bytes).map_err(TranscriptionError::InvalidResponse)?;
+    let blocks = reply
+        .output
+        .message
+        .content
+        .into_iter()
+        .map(content_block)
+        .collect::<Result<Vec<_>, _>>()?;
     let mut text = String::new();
-    for block in reply.output.message.content {
+    for block in blocks {
         match block {
-            Block::Text(part) => text.push_str(&part),
-            Block::Other => return Err(TranscriptionError::NonTextContent),
+            ContentBlock::Text(part) => text.push_str(&part),
+            ContentBlock::Other => return Err(TranscriptionError::NonTextContent),
         }
     }
     Ok(TranscriptionText { text })

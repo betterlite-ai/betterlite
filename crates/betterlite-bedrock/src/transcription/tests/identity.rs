@@ -19,13 +19,6 @@ const HOSTED_ONE: &str = r#"{"aws_access_key_id":"AKIDONE","aws_secret_access_ke
 const HOSTED_TWO: &str =
     r#"{"aws_access_key_id":"AKIDTWO","aws_secret_access_key":"secret-two-value"}"#;
 const CHAIN_ONE: &str = r#"{"aws_access_key_id":"AKIDONE","aws_session_token":"token-one-value"}"#;
-const SECRETS: [&str; 5] = [
-    "AKIDONE",
-    "secret-one-value",
-    "token-one-value",
-    "api-key-value",
-    "ambient-secret",
-];
 
 fn ambient() -> BTreeMap<String, String> {
     env(&[
@@ -44,7 +37,9 @@ fn signed_headers(source: &str) -> Vec<(String, String)> {
     let CredentialSource::HostSupplied(credentials) = &validated.credentials else {
         panic!("host supplied credentials expected: {source}");
     };
-    let now = UNIX_EPOCH + Duration::from_secs(1_440_000_000);
+    let now = UNIX_EPOCH
+        .checked_add(Duration::from_hours(400_000))
+        .unwrap();
     sign_transcription(&validated, URL, BODY, credentials, now)
         .unwrap()
         .headers
@@ -116,9 +111,17 @@ fn transcription_secret_safe_failure() {
         "{failure} {failure:?} {validated:?} {call:?} {arguments:?} {:?}",
         chain(CHAIN_ONE)
     );
-    for secret in SECRETS {
-        assert!(!rendered.contains(secret), "{secret}");
-    }
+    assert!(!rendered.contains("AKIDONE"), "access key id leaked");
+    assert!(!rendered.contains("secret-one-value"), "secret key leaked");
+    assert!(
+        !rendered.contains("token-one-value"),
+        "session token leaked"
+    );
+    assert!(!rendered.contains("api-key-value"), "api key leaked");
+    assert!(
+        !rendered.contains("ambient-secret"),
+        "ambient secret leaked"
+    );
     let call_text = format!("{call:?}");
     assert!(call_text.contains("TranscriptionCall"), "{call_text}");
     assert!(call_text.contains("aws_access_key_id"), "{call_text}");

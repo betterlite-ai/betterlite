@@ -19,6 +19,8 @@ pub enum TranscriptionError {
     InvalidRequest(&'static str),
     #[error("invalid Converse response: {0}")]
     InvalidResponse(#[source] serde_json::Error),
+    #[error("invalid Converse response: invalid type for `text`, expected a string")]
+    InvalidTextType,
     #[error("Bedrock response contains non-text transcript content")]
     NonTextContent,
     #[error("the Converse request does not encode")]

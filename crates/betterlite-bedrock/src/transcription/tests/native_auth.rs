@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 
 use super::support::{env, params};
 use crate::aws_settings::sources::Credentials;
@@ -51,20 +51,28 @@ fn chain_settings(source: &str, variables: &BTreeMap<String, String>) -> AwsSett
     }
 }
 
-fn exposed(value: Option<&SecretString>) -> Option<String> {
-    value.map(|secret| secret.expose_secret().to_owned())
-}
-
 fn chain_fields(settings: &AwsSettings) -> [Option<String>; 10] {
     [
-        exposed(settings.access_key_id.as_ref()),
-        exposed(settings.secret_access_key.as_ref()),
-        exposed(settings.session_token.as_ref()),
+        settings
+            .access_key_id
+            .as_ref()
+            .map(|secret| secret.expose_secret().to_owned()),
+        settings
+            .secret_access_key
+            .as_ref()
+            .map(|secret| secret.expose_secret().to_owned()),
+        settings
+            .session_token
+            .as_ref()
+            .map(|secret| secret.expose_secret().to_owned()),
         settings.region_name.clone(),
         settings.session_name.clone(),
         settings.profile_name.clone(),
         settings.role_name.clone(),
-        exposed(settings.web_identity_token.as_ref()),
+        settings
+            .web_identity_token
+            .as_ref()
+            .map(|secret| secret.expose_secret().to_owned()),
         settings.sts_endpoint.clone(),
         settings.external_id.clone(),
     ]
@@ -98,7 +106,11 @@ fn host_supplied() {
     assert_eq!(credentials.access_key_id.expose_secret(), "AK");
     assert_eq!(credentials.secret_access_key.expose_secret(), "SK");
     assert_eq!(
-        exposed(credentials.session_token.as_ref()).as_deref(),
+        credentials
+            .session_token
+            .as_ref()
+            .map(|secret| secret.expose_secret().to_owned())
+            .as_deref(),
         Some("ST")
     );
     let blank =

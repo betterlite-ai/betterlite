@@ -10,11 +10,11 @@ pub(super) struct NoFiles;
 
 impl AuthorizedAudioFiles for NoFiles {
     fn read(&self, _path: &Path) -> io::Result<Vec<u8>> {
-        Err(io::ErrorKind::NotFound.into())
+        Err(io::Error::from(io::ErrorKind::NotFound))
     }
 
     fn open(&self, _path: &Path) -> io::Result<Box<dyn Read + Send>> {
-        Err(io::ErrorKind::NotFound.into())
+        Err(io::Error::from(io::ErrorKind::NotFound))
     }
 }
 

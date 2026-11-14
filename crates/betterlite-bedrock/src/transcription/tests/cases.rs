@@ -3,6 +3,7 @@ use betterlite_openai::api::audio_file_input::{
 };
 use betterlite_openai::batches::sdk::{Timeout, TimeoutPhases};
 use rstest::rstest;
+use tokio::runtime::Builder;
 
 use super::support::{NoFiles, params};
 use crate::transcription::audio::{AudioFormat, AudioPayload, audio_format, audio_payload};
@@ -129,7 +130,7 @@ impl TranscriptionBinding for Fake {
 
 type Outcome = Result<Option<String>, &'static str>;
 
-fn label(error: BindingError<Down>) -> &'static str {
+fn label(error: &BindingError<Down>) -> &'static str {
     match error {
         BindingError::Binding(Down) => "binding",
         BindingError::Response(_) => "response",
@@ -140,12 +141,13 @@ fn both_paths(reply: Option<&str>, arguments: &BindingArguments<'_>) -> [Outcome
     let binding = Fake {
         reply: reply.map(params),
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap();
+    let runtime = Builder::new_current_thread().build().unwrap();
     let asynchronous = runtime.block_on(async_audio_transcriptions(&binding, arguments));
-    [audio_transcriptions(&binding, arguments), asynchronous]
-        .map(|result| result.map(|response| response.text).map_err(label))
+    [audio_transcriptions(&binding, arguments), asynchronous].map(|result| {
+        result
+            .map(|response| response.text)
+            .map_err(|error| label(&error))
+    })
 }
 
 fn phases(read: Option<f64>) -> Timeout {
@@ -200,9 +202,9 @@ fn transcription_binding_arguments() {
     let options = params(r#"{"language":"en"}"#);
     let timeouts = [
         (None, None),
-        (Some(Timeout::Seconds(3.5)), Some(3.5)),
-        (Some(Timeout::Seconds(0.0)), Some(0.0)),
-        (Some(phases(Some(2.0))), Some(2.0)),
+        (Some(Timeout::Seconds(3.5)), Some(3.5_f64)),
+        (Some(Timeout::Seconds(0.0)), Some(0.0_f64)),
+        (Some(phases(Some(2.0_f64))), Some(2.0_f64)),
         (Some(phases(None)), None),
     ];
     for (timeout, seconds) in &timeouts {

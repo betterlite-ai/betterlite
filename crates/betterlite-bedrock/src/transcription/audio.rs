@@ -23,6 +23,7 @@ pub struct AudioPayload {
     pub filename: String,
 }
 
+#[must_use]
 pub fn audio_format(content_type: &str, filename: &str) -> Option<AudioFormat> {
     let suffix = filename
         .rsplit_once('.')

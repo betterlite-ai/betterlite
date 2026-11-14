@@ -3,6 +3,7 @@ use indexmap::IndexMap;
 
 pub type Params = IndexMap<String, Json>;
 
+#[must_use]
 pub fn text_param<'params>(params: &'params Params, key: &str) -> Option<&'params str> {
     match params.get(key) {
         Some(Json::Text(text)) => Some(text.as_str()),

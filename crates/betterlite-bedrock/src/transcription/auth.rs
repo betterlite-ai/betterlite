@@ -79,6 +79,7 @@ fn chain_settings(params: &Params, env: &BTreeMap<String, String>) -> AwsSetting
     }
 }
 
+#[must_use]
 pub fn credential_source(params: &Params, env: &BTreeMap<String, String>) -> CredentialSource {
     host_supplied(params).map_or_else(
         || CredentialSource::Chain(Box::new(chain_settings(params, env))),
@@ -86,6 +87,7 @@ pub fn credential_source(params: &Params, env: &BTreeMap<String, String>) -> Cre
     )
 }
 
+#[must_use]
 pub fn validate_environment(
     mut headers: Vec<(String, String)>,
     model: &str,
