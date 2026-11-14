@@ -1,0 +1,21 @@
+[package]
+name = "betterlite-rag-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+metadata.cargo-fuzz = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+betterlite-rag = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "s3_vectors_search"
+path = "fuzz_targets/s3_vectors_search.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,20 @@
+kind: helper
+name: snowflake-url-and-account
+call:
+  b5844:
+    steps:
+      - {kind: url, model: llama3.1-70b, embedding: false, api_base: null, account_env: myorg-acct, params: {}}
+      - {kind: url, model: snowflake/Claude-3-5-sonnet, embedding: false, api_base: 'https://custom.example.com/', account_env: null, params: {}}
+      - {kind: url, model: mistral-large2, embedding: false, api_base: 'https://x.example/api/v2///', account_env: null, params: {}}
+      - {kind: url, model: mistral-large2, embedding: false, api_base: null, account_env: env-acct, params: {account_id: param_acct, temperature: 0.5}}
+      - {kind: url, model: claude_3, embedding: false, api_base: 'https://given.example', account_env: env-acct, params: {account_id: ignored_acct, temperature: 0.5}}
+      - {kind: url, model: mistral-large2, embedding: false, api_base: null, account_env: null, params: {}}
+      - {kind: url, model: mistral-large2, embedding: false, api_base: null, account_env: null, params: {account_id: null}}
+      - {kind: url, model: mistral-large2, embedding: false, api_base: null, account_env: bad.acct, params: {}}
+      - {kind: url, model: mistral-large2, embedding: false, api_base: null, account_env: null, params: {account_id: has space}}
+      - {kind: url, model: mistral-large2, embedding: false, api_base: null, account_env: null, params: {account_id: "acct\n"}}
+      - {kind: url, model: snowflake-arctic-embed-m, embedding: true, api_base: null, account_env: myorg-acct, params: {}}
+      - {kind: url, model: snowflake-arctic-embed-m, embedding: true, api_base: 'https://emb.example/', account_env: null, params: {account_id: kept_acct}}
+      - {kind: url, model: snowflake-arctic-embed-m, embedding: true, api_base: null, account_env: null, params: {}}
+env: {}
+compare: {ignore: []}

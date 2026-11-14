@@ -77,7 +77,7 @@ sample_machine() {
   cargo_count=$(pgrep -xc cargo)
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${EPOCHSECONDS}" "${btime}" "${disk}" "${cpu}" "${mem}" "${psi}" "${df}" "${flows}" "${rustc_count}" "${cargo_count}" "${clippy}" >> "${samples}"
 }
-# stage 3 runs up to 128 DeepSeek agents at once, so the day's spend stops at 300 USD (Max, 11-13): the limit mark holds the vendor until midnight, as a usage limit with a reset time does
+# stage 3 runs up to 64 DeepSeek agents at once, so the day's spend stops at 300 USD (Max, 11-13): the limit mark holds the vendor until midnight, as a usage limit with a reset time does
 check_deepseek_spend() {
   mark=${main}/.git/betterlite/limits/deepseek
   [[ -f "${mark}" ]] && grep -q 'daily ceiling' "${mark}" && return

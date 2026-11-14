@@ -1,0 +1,21 @@
+kind: helper
+name: genai-generate-content-request-dict-sdk-construction
+call:
+  b3480:
+    constructs:
+      - record: request
+        fields:
+          model: gemini-2.5-flash
+          contents:
+            - role: user
+              parts: [{text: "Hi"}]
+          tools:
+            - functionDeclarations:
+                - name: lookup
+                  description: Look something up
+                  parameters: {type: object, properties: {city: {type: string}}}
+          generationConfig: {temperature: 0.5, maxOutputTokens: 64}
+    top_level: []
+    errors: []
+env: {}
+compare: {ignore: []}
