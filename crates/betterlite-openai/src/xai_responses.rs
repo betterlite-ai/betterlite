@@ -165,7 +165,7 @@ pub async fn validate_environment<A>(
     environment: Environment<'_, A>,
 ) -> Result<Headers, XaiResponsesError>
 where
-    A: OauthAccess + ?Sized,
+    A: OauthAccess,
 {
     let mut resolved = get_api_key(
         environment.api_key,
