@@ -2,12 +2,15 @@ import typing
 from collections.abc import Mapping
 from datetime import datetime
 from types import MappingProxyType
+from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
 
 class _BudgetSnapshot(BaseModel):
-    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="ignore")
+    model_config: ClassVar[ConfigDict] = ConfigDict(
+        frozen=True, populate_by_name=True, extra="ignore"
+    )
 
     def metadata_entries(self) -> Mapping[str, JsonValue]:
         entries: dict[str, JsonValue] = self.model_dump(by_alias=True, mode="json")

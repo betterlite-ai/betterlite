@@ -1,4 +1,4 @@
-from typing import Final, Literal
+from typing import ClassVar, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -8,7 +8,7 @@ SpendCaptureProvider = Literal["openai"]
 
 
 class SpendCaptureRateCheckSettings(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
 
     providers: tuple[SpendCaptureProvider, ...] = Field(("openai",), min_length=1)
     threshold: float = Field(0.9, gt=0, le=1)
@@ -24,7 +24,7 @@ class SpendCaptureRateCheckSettings(BaseModel):
 
 
 class CaptureRateDay(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     date: str
     captured_spend: float
@@ -33,7 +33,7 @@ class CaptureRateDay(BaseModel):
 
 
 class CaptureRateReport(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     provider: SpendCaptureProvider
     start_date: str

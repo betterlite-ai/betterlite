@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal, TypeAlias
+from typing import ClassVar, Literal, TypeAlias
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -8,7 +8,7 @@ AgentExecutionMode: TypeAlias = Literal["autonomous", "delegated", "both"]
 
 
 class EntraIdentityConfig(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
 
     provider: Literal["microsoft_entra"]
     tenant_id: str
@@ -34,7 +34,7 @@ class EntraIdentityConfig(BaseModel):
 
 
 class AgentIdentityBinding(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     agent_id: str
     active: bool = True
@@ -50,7 +50,7 @@ class AgentIdentityBinding(BaseModel):
 
 
 class AgentSubject(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     kind: Literal["application", "delegated_subject"]
     oid: str
@@ -58,14 +58,14 @@ class AgentSubject(BaseModel):
 
 
 class AgentIdentityFailure(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     code: Literal["identity_denied", "policy_unavailable"] = "identity_denied"
     message: str
 
 
 class ManagedAgentContext(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     agent_id: str
     binding_revision: str | None = None
@@ -75,7 +75,7 @@ class ManagedAgentContext(BaseModel):
 
 
 class VerifiedHumanSubject(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     issuer: str
     tenant_id: str
@@ -84,7 +84,7 @@ class VerifiedHumanSubject(BaseModel):
 
 
 class MicrosoftInteractiveSubject(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     issuer: str
     tenant_id: str

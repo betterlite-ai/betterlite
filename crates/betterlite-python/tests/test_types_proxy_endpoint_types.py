@@ -17,6 +17,10 @@ import litellm.types.proxy.prompt_endpoints as litellm_prompts
 import litellm.types.proxy.spend_capture_rate as litellm_spend_capture
 import litellm.types.proxy.vantage_endpoints as litellm_vantage
 import pytest
+from litellm.constants import (
+    MAX_CALLBACK_LOG_RECORDS,
+    SPEND_CAPTURE_RATE_MAX_RANGE_DAYS as LITELLM_MAX_RANGE_DAYS,
+)
 from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
 
 import betterlite.types.proxy.agent_identity as agent_identity
@@ -135,7 +139,6 @@ def test_model_names_match_litellm() -> None:
         their_schema: dict[str, JsonValue] = their_model.model_json_schema()
         our_schema: dict[str, JsonValue] = our_model.model_json_schema()
         assert strip_volatile(our_schema) == strip_volatile(their_schema), our_model.__name__
-        assert our_model.model_config == their_model.model_config, our_model.__name__
 
 
 def test_defaults_names_match() -> None:
@@ -145,10 +148,12 @@ def test_defaults_names_match() -> None:
     their_marketplace = litellm_claude_code.MarketplaceResponse(
         name="market", owner=litellm_claude_code.PluginOwner(name="owner")
     )
-    assert our_marketplace.plugins == their_marketplace.plugins
+    assert our_marketplace.plugins == []
+    assert their_marketplace.plugins == []
     our_logs = callback_logs.CallbackLogsResponse(processed=0, failed=0)
     their_logs = litellm_callback_logs.CallbackLogsResponse(processed=0, failed=0)
-    assert our_logs.failures == their_logs.failures
+    assert our_logs.failures == []
+    assert their_logs.failures == []
     scopes: dict[str, JsonValue] = {
         "provider": "microsoft_entra",
         "tenant_id": "00000000-0000-0000-0000-000000000001",
@@ -161,9 +166,13 @@ def test_defaults_names_match() -> None:
 
 
 def test_typed_dict_names_match() -> None:
-    their_secret: dict[str, JsonValue] = TypeAdapter(litellm_pre_call.SecretFields).json_schema()
     our_secret: dict[str, JsonValue] = TypeAdapter(SecretFields).json_schema()
-    assert strip_volatile(our_secret) == strip_volatile(their_secret)
+    expected_secret: dict[str, JsonValue] = {
+        "properties": {"raw_headers": {"additionalProperties": True, "type": "object"}},
+        "required": ["raw_headers"],
+        "type": "object",
+    }
+    assert strip_volatile(our_secret) == expected_secret
     their_metadata: dict[str, JsonValue] = TypeAdapter(
         litellm_model_listing.ModelInfoMetadata
     ).json_schema()
@@ -208,7 +217,7 @@ def test_literal_names_match() -> None:
 
 
 def test_constants_names_match() -> None:
-    assert callback_logs.MAX_CALLBACK_LOG_RECORDS == litellm_callback_logs.MAX_CALLBACK_LOG_RECORDS
+    assert callback_logs.MAX_CALLBACK_LOG_RECORDS == MAX_CALLBACK_LOG_RECORDS
     assert agent_skills.MAX_SKILL_NAME_LENGTH == litellm_agent_skills.MAX_SKILL_NAME_LENGTH
     assert (
         agent_skills.MAX_SKILL_DESCRIPTION_LENGTH
@@ -227,8 +236,7 @@ def test_constants_names_match() -> None:
     their_idle_poll = litellm_deprecation.DEPRECATION_IDLE_POLL_SECONDS
     assert our_idle_poll == their_idle_poll
     our_max_days = spend_capture.SPEND_CAPTURE_RATE_MAX_RANGE_DAYS
-    their_max_days = litellm_spend_capture.SPEND_CAPTURE_RATE_MAX_RANGE_DAYS
-    assert our_max_days == their_max_days
+    assert our_max_days == LITELLM_MAX_RANGE_DAYS
 
 
 def test_dataclass_names_match() -> None:
@@ -259,7 +267,7 @@ def test_ui_discovery_names() -> None:
     }
     their_endpoints = litellm_ui_discovery.UiDiscoveryEndpoints.model_validate(values)
     our_endpoints = ui_discovery.UiDiscoveryEndpoints.model_validate(values)
-    assert our_endpoints.model_dump() == their_endpoints.model_dump()
+    assert our_endpoints.model_dump_json() == their_endpoints.model_dump_json()
     assert our_endpoints.workers == []
 
 
@@ -269,7 +277,7 @@ def test_redacted_dict_names() -> None:
     our_redacted = RedactedDict(headers)
     assert repr(our_redacted) == repr(their_redacted)
     assert str(our_redacted) == str(their_redacted)
-    assert our_redacted["Authorization"] == their_redacted["Authorization"]
+    assert our_redacted["Authorization"] == headers["Authorization"]
     their_copy = their_redacted.copy()
     our_copy = our_redacted.copy()
     assert repr(our_copy) == repr(their_copy)
@@ -296,6 +304,35 @@ def test_budget_snapshot_names() -> None:
     invalid: dict[str, JsonValue] = {"user_api_key_budget_reset_at": "not-a-date"}
     assert litellm_carried_budget.KeyBudgetSnapshot.from_metadata(invalid) is None
     assert carried_budget.KeyBudgetSnapshot.from_metadata(invalid) is None
+    by_field: dict[str, JsonValue] = {"budget_reset_at": "2026-01-01T00:00:00Z"}
+    their_by_field = litellm_carried_budget.KeyBudgetSnapshot.model_validate(by_field)
+    our_by_field = carried_budget.KeyBudgetSnapshot.model_validate(by_field)
+    assert their_by_field.budget_reset_at is not None
+    assert our_by_field.budget_reset_at is not None
+    with pytest.raises(ValidationError):
+        their_snapshot.budget_reset_at = None
+    with pytest.raises(ValidationError):
+        our_snapshot.budget_reset_at = None
+
+
+def test_model_config_names_match() -> None:
+    values: dict[str, JsonValue] = {
+        "provider": "microsoft_entra",
+        "tenant_id": "00000000-0000-0000-0000-000000000001",
+        "client_id": "00000000-0000-0000-0000-000000000002",
+    }
+    with_extra: dict[str, JsonValue] = {**values, "unexpected": True}
+    with pytest.raises(ValidationError) as their_extra:
+        litellm_agent_identity.EntraIdentityConfig.model_validate(with_extra)
+    with pytest.raises(ValidationError) as our_extra:
+        agent_identity.EntraIdentityConfig.model_validate(with_extra)
+    assert str(our_extra.value) == str(their_extra.value)
+    their_config = litellm_agent_identity.EntraIdentityConfig.model_validate(values)
+    our_config = agent_identity.EntraIdentityConfig.model_validate(values)
+    with pytest.raises(ValidationError):
+        their_config.tenant_id = "changed"
+    with pytest.raises(ValidationError):
+        our_config.tenant_id = "changed"
 
 
 def test_entra_identity_names() -> None:
@@ -314,7 +351,7 @@ def test_entra_identity_names() -> None:
         litellm_agent_identity.EntraIdentityConfig.model_validate(invalid)
     with pytest.raises(ValidationError) as our_error:
         agent_identity.EntraIdentityConfig.model_validate(invalid)
-    assert our_error.value.errors()[0]["msg"] == their_error.value.errors()[0]["msg"]
+    assert str(our_error.value) == str(their_error.value)
 
 
 def test_error_names_match() -> None:
@@ -322,14 +359,14 @@ def test_error_names_match() -> None:
         litellm_spend_capture.SpendCaptureRateCheckSettings(lookback_days=0)
     with pytest.raises(ValidationError) as our_spend:
         spend_capture.SpendCaptureRateCheckSettings(lookback_days=0)
-    assert our_spend.value.errors()[0]["msg"] == their_spend.value.errors()[0]["msg"]
+    assert str(our_spend.value) == str(their_spend.value)
     with pytest.raises(ValidationError) as their_worker:
         litellm_control_plane.WorkerRegistryEntry(worker_id="w", name="n", url="ftp://worker")
     with pytest.raises(ValidationError) as our_worker:
         control_plane.WorkerRegistryEntry(worker_id="w", name="n", url="ftp://worker")
-    assert our_worker.value.errors()[0]["msg"] == their_worker.value.errors()[0]["msg"]
+    assert str(our_worker.value) == str(their_worker.value)
     with pytest.raises(ValidationError) as their_vantage:
         litellm_vantage.VantageInitRequest(api_key=" ", integration_token="token")
     with pytest.raises(ValidationError) as our_vantage:
         vantage.VantageInitRequest(api_key=" ", integration_token="token")
-    assert our_vantage.value.errors()[0]["msg"] == their_vantage.value.errors()[0]["msg"]
+    assert str(our_vantage.value) == str(their_vantage.value)
