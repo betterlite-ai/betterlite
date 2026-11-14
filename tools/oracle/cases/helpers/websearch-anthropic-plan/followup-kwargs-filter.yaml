@@ -1,0 +1,21 @@
+kind: helper
+name: followup-kwargs-filter
+call:
+  b4118:
+    cases:
+      - model: claude-sonnet-4-5
+        messages:
+          - role: user
+            content: hi
+        tool_calls: []
+        optional_params: {}
+        kwargs:
+          _websearch_interception_emit_native_blocks: true
+          _websearch_interception_converted_stream: false
+          litellm_logging_obj: {x: 1}
+          _compression_interception_x: 1
+          litellm_call_id: call-1
+          metadata: {team: t}
+        searches: []
+env: {}
+compare: {ignore: []}
