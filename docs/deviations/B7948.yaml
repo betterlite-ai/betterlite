@@ -1,0 +1,5 @@
+task: B7948
+deviations:
+  - what: "The policy engine models inherit ResponseObject's mapping access, so get, [], in, item assignment and deletion work on them and dict() and json() answer without pydantic's deprecation warning, where LiteLLM's classes subclass pydantic.BaseModel and have no such methods."
+    why: "Every ported model under betterlite.types uses ResponseObject, the base B5657 and B5658 ported for LiteLLM's objects, and B5657 records the same base behavior; the fields, required keys, validation, defaults and model_dump_json output match LiteLLM."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/policy_types.py#L41

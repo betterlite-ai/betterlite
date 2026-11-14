@@ -1,0 +1,18 @@
+kind: helper
+name: dynamoai-missing-api-key
+call:
+  b3768:
+    mode: constructor
+    env: {}
+    api_key: null
+    api_base: null
+    policy_ids: null
+    model_id: null
+    messages: []
+    choices: []
+    answer:
+      status: 200
+      headers: {}
+      body: {finalAction: NONE}
+env: {}
+compare: {ignore: []}

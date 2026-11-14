@@ -1,0 +1,9 @@
+kind: helper
+name: studio-chat-input-plain-chat-parameters
+call:
+  studio_chat_input:
+    steps:
+      - op: params
+        model: gemini-2.0-flash
+env: {}
+compare: {ignore: []}

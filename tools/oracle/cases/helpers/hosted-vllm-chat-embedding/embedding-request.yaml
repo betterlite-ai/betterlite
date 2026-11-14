@@ -1,0 +1,13 @@
+kind: helper
+name: hosted-vllm-embedding-request
+call:
+  b8150:
+    function: "embedding_request"
+    calls:
+      - {model: "my-model", input: "hi", optional_params: {}}
+      - {model: "hosted_vllm/my-model", input: ["a", "b"], optional_params: {dimensions: 2}}
+      - {model: "my-model", input: [1, 2], optional_params: {}}
+      - {model: "my-model", input: [[1], [2, 3]], optional_params: {encoding_format: "base64"}}
+      - {model: "my-model", input: "hi", optional_params: {input: "overridden", dimensions: 3}}
+env: {}
+compare: {ignore: []}
