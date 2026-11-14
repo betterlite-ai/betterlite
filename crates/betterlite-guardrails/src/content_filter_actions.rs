@@ -19,12 +19,12 @@ use self::handlers::{
 };
 
 #[derive(Debug)]
-pub struct ContentFilterSource<'a> {
-    pub categories: &'a CategoryLoadResult,
-    pub patterns: &'a [CompiledPattern],
-    pub blocked_words: &'a [BlockedWord],
-    pub pattern_redaction_format: &'a str,
-    pub keyword_redaction_tag: &'a str,
+pub struct ContentFilterSource<'source> {
+    pub categories: &'source CategoryLoadResult,
+    pub patterns: &'source [CompiledPattern],
+    pub blocked_words: &'source [BlockedWord],
+    pub pattern_redaction_format: &'source str,
+    pub keyword_redaction_tag: &'source str,
 }
 
 pub fn filter_single_text(
@@ -48,7 +48,7 @@ pub fn filter_single_text(
             detections.as_deref_mut(),
         )?;
     }
-    let filtered = mask_patterns(source, &filtered, detections.as_deref_mut())?;
+    filtered = mask_patterns(source, &filtered, detections.as_deref_mut())?;
     mask_blocked_words(source, &filtered, detections)
 }
 

@@ -22,12 +22,12 @@ const fn action_value(action: ContentFilterAction) -> &'static str {
     }
 }
 
-pub fn handle_conditional_match(
+fn append_category_keyword(
     matched: &CategoryMatch,
     detections: Option<&mut Vec<ContentFilterDetection>>,
-) -> Result<(), ContentFilterActionError> {
-    if let Some(detections) = detections {
-        detections.push(ContentFilterDetection::CategoryKeyword(
+) {
+    if let Some(list) = detections {
+        list.push(ContentFilterDetection::CategoryKeyword(
             CategoryKeywordDetection {
                 r#type: "category_keyword".to_owned(),
                 category: matched.category.clone(),
@@ -37,6 +37,13 @@ pub fn handle_conditional_match(
             },
         ));
     }
+}
+
+pub fn handle_conditional_match(
+    matched: &CategoryMatch,
+    detections: Option<&mut Vec<ContentFilterDetection>>,
+) -> Result<(), ContentFilterActionError> {
+    append_category_keyword(matched, detections);
     match matched.action {
         ContentFilterAction::Block => Err(block_conditional_match(matched)),
         ContentFilterAction::Mask => {
@@ -56,17 +63,7 @@ pub fn handle_category_keyword_match(
     keyword_redaction_tag: &str,
     detections: Option<&mut Vec<ContentFilterDetection>>,
 ) -> Result<String, ContentFilterActionError> {
-    if let Some(detections) = detections {
-        detections.push(ContentFilterDetection::CategoryKeyword(
-            CategoryKeywordDetection {
-                r#type: "category_keyword".to_owned(),
-                category: matched.category.clone(),
-                keyword: matched.matched.clone(),
-                severity: matched.severity.clone(),
-                action: action_value(matched.action).to_owned(),
-            },
-        ));
-    }
+    append_category_keyword(matched, detections);
     match matched.action {
         ContentFilterAction::Block => Err(block_category_keyword(matched)),
         ContentFilterAction::Mask => mask_category_keyword(matched, text, keyword_redaction_tag),
@@ -80,8 +77,8 @@ pub fn handle_pattern_match(
     pattern_redaction_format: &str,
     detections: Option<&mut Vec<ContentFilterDetection>>,
 ) -> Result<String, ContentFilterActionError> {
-    if let Some(detections) = detections {
-        detections.push(ContentFilterDetection::Pattern(PatternDetection {
+    if let Some(list) = detections {
+        list.push(ContentFilterDetection::Pattern(PatternDetection {
             r#type: "pattern".to_owned(),
             pattern_name: pattern.pattern_name.clone(),
             action: action_value(pattern.action).to_owned(),
@@ -106,8 +103,8 @@ pub fn handle_blocked_word_match(
         action = %action_value(word.action),
         "blocked word found"
     );
-    if let Some(detections) = detections {
-        detections.push(ContentFilterDetection::BlockedWord(BlockedWordDetection {
+    if let Some(list) = detections {
+        list.push(ContentFilterDetection::BlockedWord(BlockedWordDetection {
             r#type: "blocked_word".to_owned(),
             keyword: word.keyword.clone(),
             action: action_value(word.action).to_owned(),
@@ -122,7 +119,7 @@ pub fn handle_blocked_word_match(
 
 fn block_conditional_match(matched: &CategoryMatch) -> ContentFilterActionError {
     let error = format!(
-        "content blocked: {} conditional match '{}' detected (severity: {})",
+        "Content blocked: {} conditional match '{}' detected (severity: {})",
         matched.category, matched.matched, matched.severity
     );
     tracing::warn!(%error, "content filter blocked a conditional match");
@@ -138,7 +135,7 @@ fn block_conditional_match(matched: &CategoryMatch) -> ContentFilterActionError 
 
 fn block_category_keyword(matched: &CategoryMatch) -> ContentFilterActionError {
     let error = format!(
-        "content blocked: {} keyword '{}' detected (severity: {})",
+        "Content blocked: {} category keyword '{}' detected (severity: {})",
         matched.category, matched.matched, matched.severity
     );
     tracing::warn!(%error, "content filter blocked a category keyword");
@@ -157,22 +154,23 @@ fn mask_category_keyword(
     text: &str,
     keyword_redaction_tag: &str,
 ) -> Result<String, ContentFilterActionError> {
+    let masked = replace_all(
+        text,
+        &keyword_pattern(&matched.matched),
+        keyword_redaction_tag,
+        IGNORECASE,
+    )?;
     tracing::info!(
         category = %matched.category,
         keyword = %matched.matched,
         severity = %matched.severity,
         "masked category keyword"
     );
-    Ok(replace_all(
-        text,
-        &keyword_pattern(&matched.matched),
-        keyword_redaction_tag,
-        IGNORECASE,
-    )?)
+    Ok(masked)
 }
 
 fn block_pattern_match(pattern: &CompiledPattern) -> ContentFilterActionError {
-    let error = format!("content blocked: {} pattern detected", pattern.pattern_name);
+    let error = format!("Content blocked: {} pattern detected", pattern.pattern_name);
     tracing::warn!(%error, "content filter blocked a pattern match");
     ContentFilterActionError::Blocked {
         detail: ContentFilterBlockDetail::Pattern {
@@ -189,17 +187,18 @@ fn mask_pattern_match(
     pattern_redaction_format: &str,
 ) -> Result<String, ContentFilterActionError> {
     let tag = redaction_tag(pattern_redaction_format, &pattern.pattern_name)?;
+    let masked = mask_spans(text, spans, &tag)?;
     tracing::info!(pattern = %pattern.pattern_name, "masked every pattern match");
-    Ok(mask_spans(text, spans, &tag)?)
+    Ok(masked)
 }
 
 fn block_blocked_word(word: &BlockedWord) -> ContentFilterActionError {
     let error = match &word.description {
         Some(description) => format!(
-            "content blocked: keyword '{}' detected ({description})",
+            "Content blocked: keyword '{}' detected ({description})",
             word.keyword
         ),
-        None => format!("content blocked: keyword '{}' detected", word.keyword),
+        None => format!("Content blocked: keyword '{}' detected", word.keyword),
     };
     tracing::warn!(%error, "content filter blocked a word");
     ContentFilterActionError::Blocked {
@@ -216,11 +215,12 @@ fn mask_blocked_word(
     text: &str,
     keyword_redaction_tag: &str,
 ) -> Result<String, ContentFilterActionError> {
-    tracing::info!(keyword = %word.keyword, "masked blocked word");
-    Ok(replace_all(
+    let masked = replace_all(
         text,
         &keyword_pattern(&word.keyword),
         keyword_redaction_tag,
         IGNORECASE,
-    )?)
+    )?;
+    tracing::info!(keyword = %word.keyword, "masked blocked word");
+    Ok(masked)
 }
