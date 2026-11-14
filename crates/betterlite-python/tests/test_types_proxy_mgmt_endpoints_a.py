@@ -21,6 +21,17 @@ EXPECTED_MAX_BULK_DELETE_USERS = 500
 
 EXPECTED_MAX_BULK_NEW_USERS = 500
 
+MODEL_GROUP_BOOL_FIELDS = (
+    "supports_parallel_function_calling",
+    "supports_vision",
+    "supports_web_search",
+    "supports_url_context",
+    "supports_reasoning",
+    "supports_function_calling",
+    "supports_fast_mode",
+    "is_public_model_group",
+)
+
 SPEND_AMOUNT = 1.5
 
 SPEND_METRICS: dict[str, JsonValue] = {
@@ -559,6 +570,14 @@ def test_internal_user_names_rules() -> None:
         user_updates={"max_budget": 1.0},
     )
     assert valid.all_users is True
+    empty_updates = internal_user_endpoints.BulkUpdateUserRequest(
+        all_users=True,
+        user_updates={},
+    )
+    assert empty_updates.all_users is True
+    assert empty_updates.user_updates == {}
+    with pytest.raises(ValidationError, match="Must specify either"):
+        _ = internal_user_endpoints.BulkUpdateUserRequest(user_updates={})
     with pytest.raises(ValidationError, match="Cannot specify both"):
         _ = internal_user_endpoints.BulkUpdateUserRequest(
             users=[{"user_id": "u"}],
@@ -762,6 +781,11 @@ def test_key_mgmt_names_rules() -> None:
         request={},
     )
     assert policy.operation == "generate"
+    with pytest.raises(ValidationError, match="frozen"):
+        policy.operation = "update"
+    with pytest.raises(ValidationError, match="frozen"):
+        policy["operation"] = "update"
+    assert policy.operation == "generate"
     regenerated = keys.CustomKeyPolicyRequest(
         operation="regenerate",
         existing_key=None,
@@ -943,16 +967,17 @@ def test_model_mgmt_names_rules() -> None:
     models = model_management_endpoints
     proxy = models.ModelGroupInfoProxy(model_group="g", providers=["p"])
     assert proxy.mode == "chat"
-    assert proxy.supports_vision is False
-    assert "supports_vision" in proxy.model_fields_set
-    coerced = models.ModelGroupInfoProxy(
-        model_group="g",
-        providers=["p"],
-        supports_vision=None,
-        is_public_model_group=None,
-    )
-    assert coerced.supports_vision is False
-    assert coerced.is_public_model_group is False
+    for name in MODEL_GROUP_BOOL_FIELDS:
+        assert proxy[name] is False
+        assert name in proxy.model_fields_set
+        fields: dict[str, JsonValue] = {
+            "model_group": "g",
+            "providers": ["p"],
+            name: None,
+        }
+        coerced = models.ModelGroupInfoProxy(**fields)
+        assert coerced[name] is False
+        assert name in coerced.model_fields_set
     assert models.ModelGroupInfoProxy(
         model_group="g",
         providers=["p"],
