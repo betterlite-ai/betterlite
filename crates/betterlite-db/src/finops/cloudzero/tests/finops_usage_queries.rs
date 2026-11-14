@@ -220,7 +220,7 @@ async fn insert_full_graph(store: &PostgresStore) {
 
 async fn database() -> (PostgresFixture, PostgresStore) {
     use clap::Parser as _;
-    use secrecy::SecretString;
+    use secrecy::{ExposeSecret as _, SecretString};
 
     #[derive(clap::Parser)]
     struct Environment {
@@ -235,7 +235,13 @@ async fn database() -> (PostgresFixture, PostgresStore) {
         .resolve()
         .await
         .unwrap();
-    let mut config = fixture.options.config.clone();
+    // options.config re-encodes the schema option's leading space as '+', which Postgres rejects
+    let mut config: tokio_postgres::Config = fixture
+        .options
+        .url
+        .expose_secret()
+        .parse()
+        .expect("the fixture URL parses");
     let current = config.get_options().unwrap_or_default().to_owned();
     config.options(format!("{current} -ctimezone=UTC"));
     let manager = deadpool_postgres::Manager::new(config, tokio_postgres::NoTls);
