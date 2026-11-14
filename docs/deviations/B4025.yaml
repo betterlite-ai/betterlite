@@ -1,0 +1,20 @@
+task: B4025
+deviations:
+  - what: The budget alert type contract is a Rust enum implementing a BaseBudgetAlertType trait, with a factory that maps the type name literals to variants, instead of an abstract Python class and eight subclasses.
+    why: Rules closed-sets-are-enums and no-one-line-functions ask for one closed set with explicit variants; the trait keeps LiteLLM's get_event_message and get_id contract, and the factory keeps the name literals and the unknown-name fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/budget_alert_types.py#L7-L24
+  - what: Budgets, spend and the percent left are rust_decimal::Decimal instead of floats, so a threshold comparison at an exact boundary can land on the other side of 5% or 15% than float arithmetic would.
+    why: Rules money-is-decimal types every amount as Decimal, and only the boundary values whose float rounding would move them differ.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L673-L685
+  - what: The send guard's "user_info.event_group is not None" half cannot be built, so a budget alert is sent whenever the event is set.
+    why: CallInfo.event_group is a non-optional EntityType that defaults to Key (rule non-nullable-by-default), so every CallInfo carries a group and the second condition is always true. A caller that omits the group gets the Key group instead of no alert.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L587
+  - what: Amounts in the alert text render with the Decimal's text, so 100 prints as 100 where LiteLLM's f-string prints the float 100.0.
+    why: Money is a rust_decimal::Decimal from the moment it is read, and only the trailing .0 of a whole number differs. Applies to the soft and max budget text and to the customer spend message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L652
+  - what: The alert_emails list and the max_budget_alert_emails map render with Rust's Debug text, so the addresses carry double quotes and the map reads {"50": ["a@example.com"]}, where LiteLLM writes Python's list and dict repr with single quotes.
+    why: docs/compatibility.md keeps Python's repr and str text out of the port; both fields are optional extras that only appear in the user info block when they are set.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L691-L697
+  - what: A team member key alert id renders a missing user id or team id as an empty slot (team_member::team-1), where LiteLLM's f-string writes Python's None (team_member:None:team-1).
+    why: docs/compatibility.md keeps Python's str(None) text out of the port. LiteLLM sets the TEAM_MEMBER group only for an event that carries both ids, so a working setup never reaches the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/budget_alert_types.py#L66-L68
