@@ -39,7 +39,6 @@ pub struct AgentEngineTarget<'call> {
     pub location: Option<&'call str>,
 }
 
-#[must_use]
 pub fn complete_url(target: &AgentEngineTarget<'_>) -> Result<String, AgentEngineError> {
     let location = target
         .location
