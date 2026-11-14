@@ -386,6 +386,8 @@ fn float_text_matches_python_str(#[case] value: f64, #[case] expected: &str) {
 #[rstest]
 #[case::number(json!(1.5), Some("3.5"))]
 #[case::string(json!("0.25"), Some("2.25"))]
+#[case::padded_string(json!(" 0.25 "), Some("2.25"))]
+#[case::non_ascii_digits(json!("\u{0661}\u{0660}"), Some("2.0"))]
 #[case::bad_string(json!("oops"), Some("2.0"))]
 #[case::underscore_string(json!("1_0"), Some("12.0"))]
 #[case::underscore_fraction(json!("1_0.5"), Some("12.5"))]
