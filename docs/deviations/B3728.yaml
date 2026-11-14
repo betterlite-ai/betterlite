@@ -1,0 +1,68 @@
+task: B3728
+deviations:
+  - what: >-
+      betterlite implements the Azure SDK's analyze_text contract in-tree, so the legacy constructor never raises the
+      "Azure Content-Safety not installed" error LiteLLM raises when azure-ai-contentsafety cannot be imported.
+    why: >-
+      Rust has no optional runtime SDK import; the analyze_text request and response types ship with the guardrails
+      crate, so a build either has the legacy hook or does not. No setup that installs the SDK can observe the
+      difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/azure_content_safety.py#L24-L47
+  - what: >-
+      The modern transport attempts each POST once: a connection that fails before an answer is not retried, where
+      LiteLLM's AsyncHTTPHandler creates a second client and repeats the request once on ConnectError or
+      RemoteProtocolError.
+    why: >-
+      The pooled client is injected by the caller and the shared outbound client attempts each request once, so a
+      guardrail never delivers the same scan twice. B3976 records the same policy for the shared client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L836-L851
+  - what: >-
+      The modern transport reports a 3xx answer as an error status instead of following it, where LiteLLM's
+      AsyncHTTPHandler follows redirects by default.
+    why: >-
+      The shared outbound client never follows redirects, so the subscription key is not replayed to a redirect
+      target, and a healthy Content Safety endpoint answers 2xx.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L618
+  - what: >-
+      The modern transport and the legacy analyze_text call reject a response body larger than 1 MiB, while LiteLLM
+      reads whatever size the endpoint returns.
+    why: >-
+      bounded-inputs in .development/rules.yaml caps every inbound read; a real Content Safety answer is a few hundred
+      bytes, so only a broken or hostile endpoint reaches the cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/base.py#L87-L89
+  - what: >-
+      split_text_by_words with a max_length of zero splits the text into single-character chunks; LiteLLM's loop never
+      terminates for the same input.
+    why: >-
+      The Python code appends token[:0] and keeps token unchanged forever, which hangs the request. A hang is fixed
+      without asking per rule owned-behavior-is-built, and no working setup passes a zero limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/base.py#L125-L130
+  - what: >-
+      A configured guardrail timeout bounds the whole request (600 seconds by default), not httpx's separate 5 second
+      connect timeout.
+    why: >-
+      The pooled client is built by the caller and injected, so a per-request timeout is the only knob the transport
+      owns; the total bound is what stops a hung endpoint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L164-L167
+  - what: >-
+      A legacy thresholds map with a key that is not one of Hate, SelfHarm, Sexual or Violence fails construction with
+      an error that names the key; LiteLLM keeps the unknown key in the dict and never reads it.
+    why: >-
+      no-silent-drops in .development/rules.yaml makes an unhandled config key an error that names it, so a typo stops
+      startup instead of silently falling back to the default threshold.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/azure_content_safety.py#L49-L64
+  - what: >-
+      The legacy analyze_text retry reads Retry-After as whole seconds or an HTTP date. A fractional value such as 0.5,
+      an infinite one or text that is neither waits the exponential backoff instead.
+    why: >-
+      The shared Retry-After parser in betterlite-core reads whole seconds and dates. azure-core sleeps a fraction,
+      sleeps forever on inf and raises on unreadable text; Azure Content Safety sends whole seconds, so no working setup
+      relies on the other forms.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-core_1.41.0/sdk/core/azure-core/azure/core/pipeline/policies/_utils.py#L62-L76
+  - what: >-
+      Each legacy analyze_text attempt is bounded at 300 seconds in total, where azure-core's aiohttp transport waits up
+      to 300 seconds to connect and up to 300 seconds for each socket read.
+    why: >-
+      The injected pooled client takes one per-request timeout, and a total bound is what stops an endpoint that
+      trickles bytes forever. A timeout still answers 500, as azure-core's does.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-core_1.41.0/sdk/core/azure-core/azure/core/configuration.py#L137-L145
