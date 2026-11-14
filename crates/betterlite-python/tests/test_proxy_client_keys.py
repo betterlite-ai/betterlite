@@ -405,6 +405,31 @@ def test_keys_error_not_object(server: RecordingServer) -> None:
     assert str(credential_list.value) == "the credential reply is not a JSON object"
 
 
+def test_keys_error_passthrough(server: RecordingServer) -> None:
+    lite = LiteKeysClient(server.url, api_key="sk-test", timeout=TIMEOUT)
+    ours = KeysManagementClient(server.url, api_key="sk-test", timeout=TIMEOUT)
+    for operation in ["generate", "delete", "list"]:
+        server.reply(BROKEN, BOOM_BODY)
+        with pytest.raises(requests.exceptions.HTTPError) as expected:
+            key_call(lite, operation)
+        server.reply(BROKEN, BOOM_BODY)
+        with pytest.raises(HTTPError) as actual:
+            key_call(ours, operation)
+        assert str(actual.value) == str(expected.value)
+    lite_credentials = LiteCredentialsClient(server.url, api_key="sk-test", timeout=TIMEOUT)
+    our_credentials = CredentialsManagementClient(server.url, api_key="sk-test", timeout=TIMEOUT)
+    info: Mapping[str, JsonValue] = {"type": "openai"}
+    values: Mapping[str, JsonValue] = {"api_key": "sk-credential-value-123456"}
+    for operation in ["list", "create", "delete", "get"]:
+        server.reply(BROKEN, BOOM_BODY)
+        with pytest.raises(requests.exceptions.HTTPError) as expected:
+            credential_call(lite_credentials, operation, info, values)
+        server.reply(BROKEN, BOOM_BODY)
+        with pytest.raises(HTTPError) as actual:
+            credential_call(our_credentials, operation, info, values)
+        assert str(actual.value) == str(expected.value)
+
+
 def test_credentials_collection(server: RecordingServer) -> None:
     lite = LiteCredentialsClient(server.url + "/", api_key="sk-test", timeout=TIMEOUT)
     ours = CredentialsManagementClient(server.url + "/", api_key="sk-test", timeout=TIMEOUT)
