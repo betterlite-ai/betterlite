@@ -1,7 +1,10 @@
 from datetime import UTC, datetime
 from typing import TypedDict
 
-from litellm.google_genai.main import GenerateContentHelper
+from litellm.google_genai.main import (
+    GenerateContentHelper,
+    _merge_native_request_fields,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L218-L231
+)
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.google_genai.transformation import (
     BaseGoogleGenAIGenerateContentConfig,
@@ -19,7 +22,7 @@ class SetupCall(TypedDict):
     custom_llm_provider: str | None
     tools: JsonValue | None
     kwargs: dict[str, JsonValue]
-    extra_body: dict[str, JsonValue] | None
+    extra_body: dict[str, object] | None
     with_logging: bool
 
 
@@ -42,6 +45,24 @@ class RecordedLogging(BaseModel):
 
 INPUT: TypeAdapter[Input] = TypeAdapter(Input)
 OBJECT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
+MERGED: TypeAdapter[dict[str, JsonValue] | None] = TypeAdapter(
+    dict[str, JsonValue] | None
+)
+MODELED_PARAMS: frozenset[str] = frozenset(
+    {
+        "api_base",
+        "api_key",
+        "api_version",
+        "custom_llm_provider",
+        "max_retries",
+        "organization",
+        "mock_response",
+        "vertex_project",
+        "vertex_location",
+        "vertex_credentials",
+        "ssl_verify",
+    }
+)
 
 
 def make_logging() -> Logging:
@@ -56,6 +77,16 @@ def make_logging() -> Logging:
     )
 
 
+def extra_params(params: GenericLiteLLMParams) -> dict[str, JsonValue]:
+    # extra="allow" keeps every kwarg the setup does not model; the logging object is not JSON and the setup passes it separately
+    dumped = OBJECT.validate_json(
+        params.model_dump_json(exclude_unset=True, exclude={"litellm_logging_obj"})
+    )
+    return {
+        name: value for name, value in dumped.items() if name not in MODELED_PARAMS
+    }
+
+
 def params_view(params: GenericLiteLLMParams) -> dict[str, JsonValue]:
     return {
         "api_base": params.api_base,
@@ -64,6 +95,9 @@ def params_view(params: GenericLiteLLMParams) -> dict[str, JsonValue]:
         "max_retries": params.max_retries,
         "organization": params.organization,
         "api_key_set": params.api_key is not None,
+        "vertex_project": params.vertex_project,
+        "vertex_location": params.vertex_location,
+        "extra": extra_params(params),
     }
 
 
@@ -89,16 +123,6 @@ def logging_view(logging_obj: Logging) -> JsonValue:
     }
 
 
-def merge_native(native: dict[str, JsonValue], extra_body: dict[str, JsonValue] | None) -> JsonValue:
-    # LiteLLM keeps _merge_native_request_fields private, so the case repeats the precedence its callers apply
-    if not native and extra_body is None:
-        return None
-    merged = dict(native)
-    if extra_body is not None:
-        merged.update(extra_body)
-    return merged
-
-
 def setup_answer(call: SetupCall) -> JsonValue:
     logging_obj = make_logging() if call["with_logging"] else None
     result = GenerateContentHelper.setup_generate_content_call(
@@ -119,7 +143,11 @@ def setup_answer(call: SetupCall) -> JsonValue:
         "native_request_fields": native,
         "request_body": OBJECT.validate_python(result.request_body),
         "litellm_params": params_view(result.litellm_params),
-        "merged_extra_body": merge_native(native, call["extra_body"]),
+        "merged_extra_body": MERGED.validate_python(
+            _merge_native_request_fields(
+                result.native_request_fields, call["extra_body"]
+            )
+        ),
         "logging": logging_view(result.litellm_logging_obj),
     }
 
