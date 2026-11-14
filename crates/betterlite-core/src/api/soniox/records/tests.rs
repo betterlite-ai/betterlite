@@ -409,12 +409,28 @@ fn a_text_speaker_keeps_its_text() {
 }
 
 #[test]
-fn a_first_language_tag_keeps_the_token_leading_space() {
+fn a_first_language_tag_strips_the_token() {
     assert_eq!(
         render_soniox_tokens(&tokens(r#"[{"text": " hi", "language": "en"}]"#)),
-        "\n[en]  hi"
+        "\n[en] hi"
     );
     assert_eq!(render_soniox_tokens(&tokens(r#"[{"text": " hi"}]"#)), " hi");
+}
+
+#[test]
+fn equal_boolean_speakers_keep_one_tag() {
+    assert_eq!(
+        render_soniox_tokens(&tokens(
+            r#"[{"text": "A", "speaker": true}, {"text": "B", "speaker": true}]"#
+        )),
+        "Speaker True:AB"
+    );
+    assert_eq!(
+        render_soniox_tokens(&tokens(
+            r#"[{"text": "A", "speaker": false}, {"text": "B", "speaker": true}]"#
+        )),
+        "Speaker False:A\n\nSpeaker True:B"
+    );
 }
 
 #[test]
