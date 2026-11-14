@@ -1,0 +1,37 @@
+{
+  "repository": "https://github.com/BerriAI/litellm.git",
+  "commit": "d665dc1a6315847fcad6cc2c1264ceb47c06abce",
+  "dashboardPath": "ui/litellm-dashboard",
+  "dashboardTree": "dead15ffe851217ccee431b92bf956f7da1476c5",
+  "archivePaths": [
+    "LICENSE",
+    "ui",
+    "litellm/proxy/cached_logo.jpg",
+    "litellm/proxy/logo.png",
+    "litellm/proxy/logo_dark.png",
+    "litellm/proxy/logo_monogram.png",
+    "litellm/proxy/logo_monogram_dark.png"
+  ],
+  "archiveSha256": "4ae985fb9e429a7c9b1b1d4dd5880a4a58417316020628c5a00a140219f2b9f5",
+  "excludedPrefixes": [
+    "ui/litellm-dashboard/_experimental/out"
+  ],
+  "protectedFiles": [
+    {
+      "path": "LICENSE",
+      "sha256": "b170d6bf8e8835dd357e011681db028f4d51e2fb0ea892058f56e01fb39b8273"
+    },
+    {
+      "path": "ui/litellm-dashboard/package.json",
+      "sha256": "177e5ab6eab0bb701aa3683b71b86990b035889b1252c187815199a89693ff8e"
+    },
+    {
+      "path": "ui/litellm-dashboard/package-lock.json",
+      "sha256": "9e5c81c0efa13d1648706e11719f907686d09ecc23804e9782eef34cafe13ad3"
+    },
+    {
+      "path": "ui/litellm-dashboard/.npmrc",
+      "sha256": "577aaa2222073f7e8c574899b5390a4d5caafe1c7eff6e2cff7f4c156ebcf22d"
+    }
+  ]
+}
