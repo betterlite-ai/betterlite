@@ -19,7 +19,11 @@ where
     let Some(extra_body) = optional_params.get("extra_body").and_then(Value::as_object) else {
         return optional_params.clone();
     };
-    log_stripped(extra_body, model);
+    let stripped = NIM_VLLM_STRIP_PARAMS
+        .iter()
+        .copied()
+        .filter(|name| extra_body.contains_key(*name));
+    log_dropped(stripped, model, "NIM/vLLM params");
     let promoted = promoted_params(capabilities, extra_body, optional_params, model).await;
     if extra_body.contains_key("response_format") && optional_params.contains_key("response_format")
     {
@@ -36,21 +40,6 @@ where
         result.insert(String::from("extra_body"), Value::Object(remaining));
     }
     result
-}
-
-fn log_stripped(extra_body: &Object, model: &str) {
-    let stripped: Vec<&str> = NIM_VLLM_STRIP_PARAMS
-        .iter()
-        .copied()
-        .filter(|name| extra_body.contains_key(*name))
-        .collect();
-    if !stripped.is_empty() {
-        tracing::debug!(
-            ?stripped,
-            model,
-            "fireworks_ai does not support NIM/vLLM params; dropping them from the request"
-        );
-    }
 }
 
 async fn promoted_params<P>(
@@ -93,19 +82,37 @@ fn translate_truncate_tokens(extra_body: &Object, optional_params: &Object) -> O
     Some(value.clone())
 }
 
-fn log_unknown_kwargs(kwargs: &Object, model: &str) {
-    let other_keys: Vec<&str> = kwargs
-        .keys()
-        .filter(|key| !EFFORT_KWARG_KEYS.contains(&key.as_str()))
-        .map(String::as_str)
-        .collect();
-    if !other_keys.is_empty() {
+fn log_dropped<'a, I>(keys: I, model: &str, what: &str)
+where
+    I: Iterator<Item = &'a str>,
+{
+    let dropped: Vec<&str> = keys.collect();
+    if !dropped.is_empty() {
         tracing::debug!(
-            ?other_keys,
+            ?dropped,
             model,
-            "fireworks_ai does not support chat_template_kwargs keys; dropping them"
+            "fireworks_ai does not support {what}; dropping them"
         );
     }
+}
+
+fn template_kwargs<'a>(extra_body: &'a Object, model: &str) -> Option<&'a Object> {
+    let raw = extra_body
+        .get("chat_template_kwargs")
+        .filter(|value| !value.is_null())?;
+    let Value::Object(kwargs) = raw else {
+        tracing::debug!(
+            model,
+            "fireworks_ai dropping chat_template_kwargs; expected an object"
+        );
+        return None;
+    };
+    let unknown = kwargs
+        .keys()
+        .map(String::as_str)
+        .filter(|key| !EFFORT_KWARG_KEYS.contains(key));
+    log_dropped(unknown, model, "chat_template_kwargs keys");
+    Some(kwargs)
 }
 
 async fn translate_template_kwargs<P>(
@@ -117,17 +124,7 @@ async fn translate_template_kwargs<P>(
 where
     P: FireworksCapabilities,
 {
-    let raw = extra_body
-        .get("chat_template_kwargs")
-        .filter(|value| !value.is_null())?;
-    let Value::Object(kwargs) = raw else {
-        tracing::debug!(
-            model,
-            "fireworks_ai dropping chat_template_kwargs; expected an object"
-        );
-        return None;
-    };
-    log_unknown_kwargs(kwargs, model);
+    let kwargs = template_kwargs(extra_body, model)?;
     let explicit = ["reasoning_effort", "thinking"]
         .iter()
         .any(|key| optional_params.contains_key(*key) || extra_body.contains_key(*key));

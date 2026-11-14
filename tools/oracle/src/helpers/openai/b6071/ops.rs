@@ -55,7 +55,7 @@ async fn step_value(step: &Step, fixture: &mut Fixture) -> Result<Value, Box<Hel
             let mut optional = optional_params.clone();
             map_openai_params(fixture, &catalog, model, &pairs, &mut optional)
                 .await
-                .map_err(helper_error)?;
+                .map_err(|error| helper_error(&error))?;
             Ok(Value::Object(optional))
         }
         Step::MapExtraBody {
@@ -66,8 +66,8 @@ async fn step_value(step: &Step, fixture: &mut Fixture) -> Result<Value, Box<Hel
             Ok(Value::Object(mapped))
         }
         Step::Config { settings } => {
-            let config =
-                FireworksChatSettings::with_settings(settings.clone()).map_err(helper_error)?;
+            let config = FireworksChatSettings::with_settings(settings.clone())
+                .map_err(|error| helper_error(&error))?;
             Ok(Value::Object(config.get_config()))
         }
     }
@@ -93,7 +93,7 @@ fn insert_pair(pairs: &mut Vec<(String, Value)>, name: &str, value: &Value) {
     }
 }
 
-fn helper_error(error: FireworksChatParamsError) -> Box<HelperError> {
+fn helper_error(error: &FireworksChatParamsError) -> Box<HelperError> {
     Box::new(HelperError {
         class: String::from("FireworksChatParamsError"),
         status: error.status_code(),
