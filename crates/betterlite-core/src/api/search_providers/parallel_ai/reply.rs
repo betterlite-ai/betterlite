@@ -27,6 +27,9 @@ struct ParallelReply {
     usage: Option<Vec<Object>>,
     #[serde(default)]
     warnings: Option<Vec<Object>>,
+    // a flattened map keeps serde from accepting a JSON array in place of this object
+    #[serde(flatten)]
+    _extra: Object,
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,6 +42,9 @@ struct ParallelResult {
     publish_date: Option<String>,
     #[serde(default)]
     excerpts: Option<Vec<String>>,
+    // a flattened map keeps serde from accepting a JSON array in place of this object
+    #[serde(flatten)]
+    _extra: Object,
 }
 
 pub fn decode_parallel_ai_reply(bytes: &[u8]) -> Result<SearchResponse, ParallelAiReplyError> {

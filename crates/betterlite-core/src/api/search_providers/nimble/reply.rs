@@ -16,6 +16,9 @@ pub enum NimbleReplyError {
 #[derive(Debug, Deserialize)]
 struct NimbleReply {
     results: Vec<NimbleResult>,
+    // a flattened map keeps serde from accepting a JSON array in place of this object
+    #[serde(flatten)]
+    _extra: Object,
 }
 
 // every field is optional so one degraded result empties its fields instead of failing the call
@@ -31,6 +34,9 @@ struct NimbleResult {
     description: Option<String>,
     #[serde(default)]
     additional_data: Option<JsonValue>,
+    // a flattened map keeps serde from accepting a JSON array in place of this object
+    #[serde(flatten)]
+    _extra: Object,
 }
 
 pub fn decode_nimble_reply(bytes: &[u8]) -> Result<SearchResponse, NimbleReplyError> {
