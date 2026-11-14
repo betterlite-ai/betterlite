@@ -1,0 +1,8 @@
+kind: helper
+name: gateway-blocked-unrelated-prefix
+call:
+  b4471:
+    component: gateway
+    paths: [/v1/access_group, /key/generate, /user/new, "/{mcp_server_name}/authorize"]
+env: {}
+compare: {ignore: []}
