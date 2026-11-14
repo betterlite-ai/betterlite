@@ -386,6 +386,7 @@ fn python_float_matches_str(#[case] value: f64, #[case] expected: &str) {
 #[case::number(json!(1.5), Some("3.5"))]
 #[case::string(json!("0.25"), Some("2.25"))]
 #[case::bad_string(json!("oops"), Some("2.0"))]
+#[case::underscore_string(json!("1_0"), Some("2.0"))]
 #[case::negative(json!(-1.0), Some("2.0"))]
 #[case::zero(json!(0), Some("2.0"))]
 #[case::absent(json!(null), Some("2.0"))]
@@ -665,6 +666,7 @@ fn null_empty_and_none_text_values_are_left_out() {
         "model_id": "model-1",
         "cache_key": "",
         "version": "None",
+        "response_cost": null,
         "logging": {"cost_breakdown": {"original_cost": null}}
     }));
     assert_eq!(
@@ -673,6 +675,7 @@ fn null_empty_and_none_text_values_are_left_out() {
     );
     assert_eq!(header(&headers, "x-litellm-cache-key"), None);
     assert_eq!(header(&headers, "x-litellm-version"), None);
+    assert_eq!(header(&headers, "x-litellm-response-cost"), None);
     assert_eq!(header(&headers, "x-litellm-response-cost-original"), None);
 }
 
