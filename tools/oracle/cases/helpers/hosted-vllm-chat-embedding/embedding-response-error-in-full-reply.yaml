@@ -1,0 +1,9 @@
+kind: helper
+name: hosted-vllm-embedding-response-error-in-full-reply
+call:
+  b8150:
+    function: "embedding_response"
+    calls:
+      - body: '{"object": "list", "model": "m", "data": [{"object": "embedding", "embedding": [0.5, 0.25], "index": 0}], "usage": {"prompt_tokens": 2, "completion_tokens": 0, "total_tokens": 2}, "error": {"message": "boom", "code": 400}}'
+env: {}
+compare: {ignore: []}

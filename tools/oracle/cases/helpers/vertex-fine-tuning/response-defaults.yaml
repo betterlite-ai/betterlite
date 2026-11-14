@@ -1,0 +1,24 @@
+kind: helper
+name: vertex-fine-tuning-response-defaults
+call:
+  vertex_fine_tuning:
+    operation: response
+    calls:
+      - zone: UTC
+        response: {state: JOB_STATE_RUNNING}
+      - zone: UTC
+        response: {state: JOB_STATE_PENDING, name: null, tunedModelDisplayName: null, baseModel: null, supervisedTuningSpec: null, createTime: null}
+      - zone: UTC
+        response:
+          state: JOB_STATE_RUNNING
+          supervisedTuningSpec: {trainingDatasetUri: gs://b/train.jsonl, hyperParameters: {epoch_count: 3}}
+      - zone: UTC
+        response:
+          state: JOB_STATE_FAILED
+          supervisedTuningSpec: {hyperParameters: {epoch_count: null, adapter_size: null}}
+      - zone: UTC
+        response:
+          state: JOB_STATE_SUCCEEDED
+          supervisedTuningSpec: {hyperParameters: {learning_rate_multiplier: 0.5, adapter_size: ADAPTER_SIZE_FOUR}}
+env: {}
+compare: {ignore: []}
