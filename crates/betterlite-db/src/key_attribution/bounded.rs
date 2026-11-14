@@ -9,7 +9,6 @@ use crate::postgres_store::session::PostgresStore;
 
 pub const STATEMENT_TIMEOUT_MILLIS: u64 = 5_000;
 pub const TRANSACTION_TIMEOUT_MILLIS: u64 = 10_000;
-const STATEMENT_TIMEOUT_SQL: &str = "SET LOCAL statement_timeout = 5000";
 
 #[derive(Debug, thiserror::Error)]
 pub enum BoundedReadError {
@@ -45,8 +44,9 @@ async fn read_rows(
 ) -> Result<Vec<Row>, DbError> {
     let mut client = store.session().await?;
     let transaction = client.transaction().await.map_err(backend)?;
+    let statement_timeout = format!("SET LOCAL statement_timeout = {STATEMENT_TIMEOUT_MILLIS}");
     transaction
-        .execute(STATEMENT_TIMEOUT_SQL, &[])
+        .execute(&statement_timeout, &[])
         .await
         .map_err(backend)?;
     for setting in planner_settings {
