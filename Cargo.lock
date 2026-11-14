@@ -1681,6 +1681,7 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
+ "csv",
  "deadpool-postgres",
  "futures-util",
  "hex",
@@ -1725,6 +1726,7 @@ dependencies = [
  "rstest",
  "rust_decimal",
  "secrecy",
+ "strum",
  "tempfile",
  "thiserror",
  "tokio",
@@ -2833,9 +2835,11 @@ dependencies = [
 name = "betterlite-provider-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-anthropic",
  "betterlite-openai",
  "betterlite-provider",
  "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]
