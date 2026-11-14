@@ -119,7 +119,8 @@ fn fal_image_reply_keeps_only_positive_exact_dimension_integers() {
             {"width": 1.5, "height": 5},
             {"width": "10", "height": 5},
             {"width": 12, "height": 7.0},
-            {"width": 18446744073709551615, "height": 7}
+            {"width": 18446744073709551615, "height": 7},
+            {"width": 18446744073709551616, "height": 7}
         ]}"#,
     );
     let dimensions: Vec<(Option<u64>, Option<u64>)> = images
@@ -141,6 +142,7 @@ fn fal_image_reply_keeps_only_positive_exact_dimension_integers() {
             (None, Some(5)),
             (Some(12), None),
             (Some(u64::MAX), Some(7)),
+            (None, Some(7)),
         ]
     );
 }

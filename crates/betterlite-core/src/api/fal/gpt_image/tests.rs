@@ -107,6 +107,11 @@ fn gpt_url_trims_the_base_and_prefers_an_explicit_one() {
 #[case::words("abcxdef", text("abcxdef"))]
 #[case::empty("", text(""))]
 #[case::two_spellings("1__0x20", text("1__0x20"))]
+#[case::past_i64("99999999999999999999x20", text("99999999999999999999x20"))]
+#[case::non_ascii(
+    "\u{0661}\u{0660}x\u{0662}\u{0660}",
+    text("\u{0661}\u{0660}x\u{0662}\u{0660}")
+)]
 fn gpt_size_maps_only_two_plain_integer_dimensions(#[case] value: &str, #[case] expected: Json) {
     assert_eq!(map_gpt_image_size(&text(value)), expected);
 }
