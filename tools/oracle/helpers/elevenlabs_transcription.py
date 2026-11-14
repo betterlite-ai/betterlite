@@ -15,6 +15,7 @@ from pydantic import JsonValue, TypeAdapter
 MODEL = "eleven_multilingual_v2"
 ENVIRONMENT_NAMES = ("ELEVENLABS_API_KEY", "ELEVENLABS_API_BASE")
 EMPTY: Final[dict[str, JsonValue]] = {}
+SENTINEL = "global-openai-key"
 
 # LiteLLM leaves these two dicts bare, so the typed view carries the shapes the calls read and write
 Authenticate: TypeAlias = Callable[
@@ -205,8 +206,8 @@ def url_answer(call: UrlCall) -> Located:
 
 def headers_answer(call: HeadersCall) -> Authenticated:
     apply_environment(call["environment"])
-    litellm.api_key = "global-openai-key"
-    litellm.openai_key = "global-openai-key"
+    litellm.api_key = SENTINEL
+    litellm.openai_key = SENTINEL
     headers = CONFIG.validate_environment(call["headers"], MODEL, [], EMPTY, EMPTY, call["api_key"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/elevenlabs/audio_transcription/transformation.py#L173
     return {"ok": True, "headers": headers}
 
