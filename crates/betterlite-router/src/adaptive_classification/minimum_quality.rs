@@ -57,7 +57,11 @@ fn whole_float(value: f64) -> Option<i64> {
     let text = format!("{:.0}", value.trunc());
     match text.parse::<i64>() {
         Ok(integer) => Some(integer),
-        Err(_source) => Some(if value < 0.0_f64 { i64::MIN } else { i64::MAX }),
+        Err(_source) => Some(if value.is_sign_negative() {
+            i64::MIN
+        } else {
+            i64::MAX
+        }),
     }
 }
 

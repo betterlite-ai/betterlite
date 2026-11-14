@@ -15,13 +15,3 @@ pub const MIN_QUALITY_TIER_HEADER: &str = "x-litellm-min-quality-tier";
 pub const MIN_QUALITY_TIER_METADATA_KEY: &str = "min_quality_tier";
 pub const CHOSEN_MODEL_KEY: &str = "adaptive_router_chosen_model";
 pub const ADAPTIVE_MODEL_HEADER: &str = "x-litellm-adaptive-router-model";
-
-#[must_use]
-pub const fn base_tier_weight(tier: u8) -> Option<f64> {
-    match tier {
-        1 => Some(0.3_f64),
-        2 => Some(0.5_f64),
-        3 => Some(0.7_f64),
-        _ => None,
-    }
-}

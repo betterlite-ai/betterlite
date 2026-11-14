@@ -234,6 +234,8 @@ fn classifier_keeps_the_first_two_thousand_characters() {
 #[case::metadata_fraction(None, Some(r#"{"min_quality_tier":2.7}"#), Some(2))]
 #[case::metadata_text_fraction(None, Some(r#"{"min_quality_tier":"2.7"}"#), None)]
 #[case::metadata_bool(None, Some(r#"{"min_quality_tier":true}"#), None)]
+#[case::metadata_huge_float(None, Some(r#"{"min_quality_tier":1e20}"#), Some(i64::MAX))]
+#[case::metadata_huge_negative(None, Some(r#"{"min_quality_tier":-1e20}"#), Some(i64::MIN))]
 fn minimum_quality_tier_reads_headers_before_metadata(
     #[case] headers: Option<&str>,
     #[case] metadata: Option<&str>,
