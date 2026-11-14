@@ -119,18 +119,18 @@ impl Sandbox for MemorySandbox {
 }
 
 fn context(workdir: &str) -> SessionContext<MemorySandbox> {
-    let mut settings = SessionSettings::default();
-    settings.model = Some("openai/gpt-4o".to_owned());
-    SessionContext {
+    let mut context = SessionContext {
         harness: Harness::DeepAgents,
         sandbox: MemorySandbox {
             workdir: workdir.to_owned(),
             writes: Arc::new(Mutex::new(BTreeMap::new())),
         },
         session_id: "session-1".to_owned(),
-        settings,
+        settings: SessionSettings::default(),
         outcome: TurnOutcome::default(),
-    }
+    };
+    context.settings.model = Some("openai/gpt-4o".to_owned());
+    context
 }
 
 #[derive(Default)]
@@ -284,15 +284,15 @@ fn human(text: &str) -> Message {
     plain_message(MessageKind::Human, text)
 }
 
-fn text_part(text: &str, node: &str) -> Result<StreamPart, HarnessError> {
-    Ok(StreamPart::Message {
-        message: ai(text),
+fn text_part(text: &str, node: &str) -> StreamPart {
+    StreamPart::Message {
+        message: Box::new(ai(text)),
         node: node.to_owned(),
-    })
+    }
 }
 
-fn update_part(update: Update) -> Result<StreamPart, HarnessError> {
-    Ok(StreamPart::Update(update))
+fn update_part(update: Update) -> StreamPart {
+    StreamPart::Update(update)
 }
 
 fn update_with(entries: Vec<(&str, UpdateEntry)>) -> Update {
@@ -333,13 +333,13 @@ fn deltas(events: &[Event]) -> Vec<String> {
 }
 
 fn approvals(events: &[Event]) -> Vec<&Approval> {
-    events
-        .iter()
-        .filter_map(|event| match event {
-            Event::Approval(approval) => Some(approval),
-            _ => None,
-        })
-        .collect()
+    let mut asked = Vec::new();
+    for event in events {
+        if let Event::Approval(approval) = event {
+            asked.push(approval);
+        }
+    }
+    asked
 }
 
 async fn run_turn<A, S>(

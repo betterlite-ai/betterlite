@@ -22,7 +22,7 @@ use betterlite_harness::sandbox::Sandbox;
 use betterlite_harness::transformation::BaseHarnessConfig;
 
 use super::DeepAgentsHandler;
-use super::graph::{AgentRuntime, GraphInput, GraphState, StreamPart};
+use super::graph::{AgentRuntime, Graph as _, GraphInput, GraphState, StreamPart};
 
 // async-stream's ? desugaring always calls Into::into to build the stream's error item
 #[expect(
@@ -43,7 +43,7 @@ where
         let graph = handler.graph.as_ref().ok_or(HarnessError::SessionClosed)?;
         let usage_callback = handler.runtime.usage_callback(context.settings.model.clone());
         let run_config = handler.run_config(context, usage_callback.clone());
-        let mut input = GraphInput::Messages(Message {
+        let mut input = GraphInput::Messages(Box::new(Message {
             kind: MessageKind::Human,
             content: Content::Text(prompt.to_owned()),
             reasoning_content: String::new(),
@@ -53,7 +53,7 @@ where
             is_error: false,
             usage: MessageUsage::default(),
             reported_cost: None,
-        });
+        }));
         loop {
             let mut state = TurnState::default();
             let mut parts = graph.stream(input, run_config.clone());

@@ -64,25 +64,38 @@ async fn build_the_tool_filter_lists_the_blocked_tools() {
 }
 
 #[rstest]
-#[case::ask(PermissionMode::Ask, true)]
-#[case::full(PermissionMode::Full, false)]
+#[case::ask(
+    PermissionMode::Ask,
+    &[],
+    true,
+    &["delete", "edit_file", "execute", "write_file"]
+)]
+#[case::ask_with_bash_disabled(
+    PermissionMode::Ask,
+    &["bash"],
+    true,
+    &["delete", "edit_file", "write_file"]
+)]
+#[case::full(PermissionMode::Full, &[], false, &[])]
 #[tokio::test]
 async fn build_interrupts_only_sessions_that_ask(
     #[case] permissions: PermissionMode,
+    #[case] disabled: &[&str],
     #[case] has_policy: bool,
+    #[case] expected: &[&str],
 ) {
     let (runtime, plan) = FakeRuntime::new();
     let mut handler = handler(runtime);
     let mut ctx = context("/work");
     ctx.settings.permissions = permissions;
+    ctx.settings.disable_tools = disabled.iter().map(|name| (*name).to_owned()).collect();
     handler.start(&mut ctx).await.unwrap();
     let spec = built_spec(&plan);
-    let policy = spec.interrupt_on.as_ref();
-    assert_eq!(policy.is_some(), has_policy);
-    if let Some(policy) = policy {
-        let tools: Vec<&str> = policy.keys().map(String::as_str).collect();
-        assert_eq!(tools, ["delete", "edit_file", "execute", "write_file"]);
-    }
+    assert_eq!(spec.interrupt_on.is_some(), has_policy);
+    let tools: Vec<&str> = spec.interrupt_on.as_ref().map_or_else(Vec::new, |entries| {
+        entries.keys().map(String::as_str).collect()
+    });
+    assert_eq!(tools, expected);
 }
 
 #[tokio::test]

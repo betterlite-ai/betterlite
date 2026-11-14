@@ -20,13 +20,15 @@ pub type GraphStream = Pin<Box<dyn Stream<Item = Result<StreamPart, HarnessError
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum GraphInput {
-    Messages(Message),
+    // boxed to stay within 3x of Resume, the limit variant_size_differences enforces
+    Messages(Box<Message>),
     Resume(BTreeMap<String, Vec<HitlDecision>>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StreamPart {
-    Message { message: Message, node: String },
+    // boxed for the same reason as GraphInput::Messages
+    Message { message: Box<Message>, node: String },
     Update(Update),
 }
 

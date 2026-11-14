@@ -2,8 +2,8 @@
 async fn turn_yields_only_model_node_messages() {
     let (runtime, plan) = FakeRuntime::new();
     plan.passes.lock().unwrap().push_back(vec![
-        text_part("hello", "model"),
-        text_part("echo", "tools"),
+        Ok(text_part("hello", "model")),
+        Ok(text_part("echo", "tools")),
     ]);
     let mut handler = handler(runtime);
     let mut ctx = context("/work");
@@ -30,10 +30,10 @@ fn answer_and_read_pass() -> Vec<Result<StreamPart, HarnessError>> {
     result.kind = MessageKind::Tool;
     result.name = Some("Answer".to_owned());
     result.tool_call_id = "1".to_owned();
-    vec![update_part(update_with(vec![
+    vec![Ok(update_part(update_with(vec![
         ("model", UpdateEntry::Messages(vec![called])),
         ("tools", UpdateEntry::Messages(vec![result])),
-    ]))]
+    ])))]
 }
 
 #[tokio::test]
@@ -66,7 +66,7 @@ async fn turn_passes_thread_id_recursion_limit_and_usage_callback() {
     plan.passes
         .lock()
         .unwrap()
-        .push_back(vec![text_part("done", "model")]);
+        .push_back(vec![Ok(text_part("done", "model"))]);
     let mut handler = handler(runtime);
     let mut ctx = context("/work");
     ctx.settings.max_turns = Some(2);
@@ -96,7 +96,7 @@ async fn turn_uses_the_resumed_thread_id() {
     plan.passes
         .lock()
         .unwrap()
-        .push_back(vec![text_part("done", "model")]);
+        .push_back(vec![Ok(text_part("done", "model"))]);
     let mut handler = handler(runtime);
     let mut ctx = context("/work");
     handler.start(&mut ctx).await.unwrap();
@@ -114,7 +114,7 @@ async fn turn_sets_final_text_and_structured_output() {
     plan.passes
         .lock()
         .unwrap()
-        .push_back(vec![text_part("the answer", "model")]);
+        .push_back(vec![Ok(text_part("draft", "model"))]);
     {
         let mut state = plan.state.lock().unwrap();
         state.messages = vec![human("hi"), ai("the answer")];
@@ -124,7 +124,8 @@ async fn turn_sets_final_text_and_structured_output() {
     let mut ctx = context("/work");
     ctx.settings.output_schema = Some(json_object(r#"{"title":"Answer","type":"object"}"#));
     handler.start(&mut ctx).await.unwrap();
-    run_turn(&mut handler, &mut ctx, "hi", |_| Decision::Allow).await;
+    let events = run_turn(&mut handler, &mut ctx, "hi", |_| Decision::Allow).await;
+    assert_eq!(deltas(&events), ["draft"]);
     assert_eq!(ctx.outcome.final_text, "the answer");
     assert_eq!(ctx.outcome.output_json, Some(r#"{"result":7}"#.to_owned()));
 }
@@ -135,14 +136,37 @@ async fn turn_leaves_output_json_empty_without_an_output_schema() {
     plan.passes
         .lock()
         .unwrap()
-        .push_back(vec![text_part("the answer", "model")]);
-    plan.state.lock().unwrap().structured_response = Some(json_object(r#"{"result":7}"#));
+        .push_back(vec![Ok(text_part("draft", "model"))]);
+    {
+        let mut state = plan.state.lock().unwrap();
+        state.messages = vec![human("hi"), ai("the answer")];
+        state.structured_response = Some(json_object(r#"{"result":7}"#));
+    }
     let mut handler = handler(runtime);
     let mut ctx = context("/work");
     handler.start(&mut ctx).await.unwrap();
     run_turn(&mut handler, &mut ctx, "hi", |_| Decision::Allow).await;
     assert_eq!(ctx.outcome.final_text, "the answer");
     assert!(ctx.outcome.output_json.is_none());
+}
+
+#[tokio::test]
+async fn turn_ends_with_the_error_a_graph_pass_fails_with() {
+    let (runtime, plan) = FakeRuntime::new();
+    plan.passes.lock().unwrap().push_back(vec![
+        Ok(text_part("before", "model")),
+        Err(HarnessError::SessionClosed),
+    ]);
+    let mut handler = handler(runtime);
+    let mut ctx = context("/work");
+    handler.start(&mut ctx).await.unwrap();
+    let mut stream = Box::pin(handler.turn(&mut ctx, "hi"));
+    let first = stream.next().await.unwrap().unwrap();
+    assert!(matches!(first, Event::Text { delta } if delta == "before"));
+    let second = stream.next().await.unwrap();
+    assert!(matches!(second, Err(HarnessError::SessionClosed)));
+    assert!(stream.next().await.is_none());
+    assert!(plan.state_configs.lock().unwrap().is_empty());
 }
 
 async fn run_write_then_bash_turn() -> (Arc<Plan>, Vec<Event>) {
@@ -163,11 +187,11 @@ async fn run_write_then_bash_turn() -> (Arc<Plan>, Vec<Event>) {
     plan.passes
         .lock()
         .unwrap()
-        .push_back(vec![update_part(interrupted)]);
+        .push_back(vec![Ok(update_part(interrupted))]);
     plan.passes
         .lock()
         .unwrap()
-        .push_back(vec![text_part("finished", "model")]);
+        .push_back(vec![Ok(text_part("finished", "model"))]);
     let answers = Arc::new(Mutex::new(VecDeque::from([
         Decision::Allow,
         Decision::Deny {
@@ -230,10 +254,10 @@ async fn turn_denies_with_the_default_message_when_the_reason_is_empty() {
     plan.passes
         .lock()
         .unwrap()
-        .push_back(vec![update_part(interrupt_update(
+        .push_back(vec![Ok(update_part(interrupt_update(
             "int-1",
             &[("write_file", "{}")],
-        ))]);
+        )))]);
     let mut handler = handler(runtime);
     let mut ctx = context("/work");
     handler.start(&mut ctx).await.unwrap();
@@ -259,21 +283,21 @@ async fn turn_repeats_until_a_pass_has_no_interrupts() {
     plan.passes
         .lock()
         .unwrap()
-        .push_back(vec![update_part(interrupt_update(
+        .push_back(vec![Ok(update_part(interrupt_update(
             "int-1",
             &[("write_file", "{}")],
-        ))]);
+        )))]);
     plan.passes
         .lock()
         .unwrap()
-        .push_back(vec![update_part(interrupt_update(
+        .push_back(vec![Ok(update_part(interrupt_update(
             "int-2",
             &[("execute", "{}")],
-        ))]);
+        )))]);
     plan.passes
         .lock()
         .unwrap()
-        .push_back(vec![text_part("done", "model")]);
+        .push_back(vec![Ok(text_part("done", "model"))]);
     let mut handler = handler(runtime);
     let mut ctx = context("/work");
     handler.start(&mut ctx).await.unwrap();
@@ -302,14 +326,17 @@ async fn turn_repeats_until_a_pass_has_no_interrupts() {
 async fn turn_collects_every_interrupt_of_a_pass_before_asking() {
     let (runtime, plan) = FakeRuntime::new();
     plan.passes.lock().unwrap().push_back(vec![
-        update_part(interrupt_update("int-1", &[("write_file", "{}")])),
-        text_part("after", "model"),
-        update_part(interrupt_update("int-2", &[("execute", "{}")])),
+        Ok(update_part(interrupt_update(
+            "int-1",
+            &[("write_file", "{}")],
+        ))),
+        Ok(text_part("after", "model")),
+        Ok(update_part(interrupt_update("int-2", &[("execute", "{}")]))),
     ]);
     plan.passes
         .lock()
         .unwrap()
-        .push_back(vec![text_part("done", "model")]);
+        .push_back(vec![Ok(text_part("done", "model"))]);
     let mut handler = handler(runtime);
     let mut ctx = context("/work");
     handler.start(&mut ctx).await.unwrap();
@@ -346,7 +373,7 @@ async fn turn_never_yields_done() {
     plan.passes
         .lock()
         .unwrap()
-        .push_back(vec![text_part("done", "model")]);
+        .push_back(vec![Ok(text_part("done", "model"))]);
     let mut handler = handler(runtime);
     let mut ctx = context("/work");
     handler.start(&mut ctx).await.unwrap();
@@ -394,7 +421,7 @@ async fn turn_adds_the_run_usage_to_the_outcome() {
     plan.passes
         .lock()
         .unwrap()
-        .push_back(vec![text_part("done", "model")]);
+        .push_back(vec![Ok(text_part("done", "model"))]);
     *plan.usage_per_call.lock().unwrap() = Some(one_generation(10, 5));
     let mut handler = handler(runtime);
     let mut ctx = context("/work");
@@ -417,11 +444,11 @@ async fn turn_adds_each_turns_usage_to_the_outcome() {
     plan.passes
         .lock()
         .unwrap()
-        .push_back(vec![text_part("done", "model")]);
+        .push_back(vec![Ok(text_part("done", "model"))]);
     plan.passes
         .lock()
         .unwrap()
-        .push_back(vec![text_part("done", "model")]);
+        .push_back(vec![Ok(text_part("done", "model"))]);
     *plan.usage_per_call.lock().unwrap() = Some(one_generation(10, 5));
     let mut handler = handler(runtime);
     let mut ctx = context("/work");
