@@ -16,7 +16,7 @@ use super::support::{
 };
 use super::synchronous::delete_agent;
 use crate::interactions::base::tests::support as server;
-use crate::interactions::base::{Logging, RequestFailure};
+use crate::interactions::base::{ClientError, Logging, RequestFailure};
 
 fn fixture() -> Fixture {
     let mut fixture = Fixture::default();
@@ -91,6 +91,38 @@ fn delete_agent_takes_the_api_base_from_litellm_params() {
         pre.api_base,
         format!("http://{}/base/v1beta/agents/agent-1", serving.address)
     );
+}
+
+#[test]
+fn delete_agent_reports_a_non_string_api_base() {
+    let fixture = fixture();
+    let mut clients = clients();
+    let mut logging = Logging::default();
+    let mut call = Call::new(dead_address());
+    call.params
+        .insert("api_base".to_owned(), JsonValue::Bool(true));
+
+    let error = delete_agent(
+        &fixture,
+        &mut clients,
+        &mut logging,
+        None,
+        &call.agent_request(),
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(
+            error,
+            AgentsDeleteVersionsError::Parameters(ClientError::FieldType {
+                field: "api_base",
+                ..
+            })
+        ),
+        "{error:?}"
+    );
+    assert_eq!(fixture.calls(), vec!["environment|0|1".to_owned()]);
+    assert!(logging.pre_call.is_none());
 }
 
 #[test]
