@@ -23,6 +23,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "stream_line"
+path = "fuzz_targets/stream_line.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "wire_responses"
 path = "fuzz_targets/wire_responses.rs"
 test = false

@@ -1803,6 +1803,7 @@ dependencies = [
  "betterlite-env",
  "betterlite-http",
  "betterlite-models",
+ "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
  "chrono",
