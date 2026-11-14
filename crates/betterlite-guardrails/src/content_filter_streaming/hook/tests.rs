@@ -76,7 +76,8 @@ async fn run_stream(case: &StreamCase) -> StreamRun {
     let (input, response) = mpsc::channel(case.items.len().max(1));
     let (output, mut relayed) = mpsc::channel(1);
     let user_api_key_dict = case.user_api_key_dict.as_ref();
-    let feed = async {
+    // the sender moves into the feeder, so the input channel closes when the last item is sent
+    let feed = async move {
         for item in &case.items {
             if input.send(item.clone()).await.is_err() {
                 break;
