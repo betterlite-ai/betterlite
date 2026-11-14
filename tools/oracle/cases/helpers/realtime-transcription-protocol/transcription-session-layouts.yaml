@@ -20,5 +20,7 @@ call:
       - '{"type":"session.update","session":{"audio":{"input":{"format":{"channels":1}}}}}'
       - '{"type":"session.update","session":{"audio":{"input":{"transcription":{"model":"m","language":"en","prompt":"p"}}}}}'
       - '{"type":"session.update","session":{"audio":{"input":{"turn_detection":null}}}}'
+      - '{"type":"session.update","session":{"turn_detection":{"type":null}}}'
+      - '{"type":"session.update","session":{"turn_detection":{}}}'
 env: {}
 compare: {ignore: []}

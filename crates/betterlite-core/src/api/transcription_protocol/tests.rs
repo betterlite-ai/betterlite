@@ -169,6 +169,18 @@ fn transcription_session_turn_detection(
     assert_eq!(text(update.turn_detection_type()), detection_type);
 }
 
+#[test]
+fn turn_detection_type_ignores_a_null_or_absent_type() {
+    let null_type =
+        parse(r#"{"type":"session.update","session":{"turn_detection":{"type":null}}}"#).unwrap();
+    assert_eq!(null_type.turn_detection_type(), None);
+    assert!(!null_type.turn_detection_disabled);
+    let without_type =
+        parse(r#"{"type":"session.update","session":{"turn_detection":{}}}"#).unwrap();
+    assert_eq!(without_type.turn_detection_type(), None);
+    assert!(!without_type.turn_detection_disabled);
+}
+
 #[rstest]
 #[case::malformed("{", "invalid JSON object")]
 #[case::empty("", "invalid JSON object")]
@@ -266,6 +278,18 @@ fn transcription_session_turn_detection(
 #[case::both_audio_format_layouts(
     r#"{"type":"session.update","session":{"input_audio_format":"pcm16","audio":{"input":{"format":"audio/pcm"}}}}"#,
     "input audio format must use either beta or GA layout"
+)]
+#[case::missing_type(
+    r#"{"session":{"input_audio_format":"pcm16"}}"#,
+    "expected session.update"
+)]
+#[case::rate_exponent(
+    r#"{"type":"session.update","session":{"audio":{"input":{"format":{"rate":1e5}}}}}"#,
+    "session.audio.input.format.rate must be an integer"
+)]
+#[case::rate_exponent_upper(
+    r#"{"type":"session.update","session":{"audio":{"input":{"format":{"rate":1E5}}}}}"#,
+    "session.audio.input.format.rate must be an integer"
 )]
 fn transcription_protocol_errors(#[case] payload: &str, #[case] message: &str) {
     assert_eq!(rejection(payload), message);

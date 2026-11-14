@@ -35,5 +35,8 @@ call:
       - '{"type":"session.update","session":{"input_audio_transcription":{},"audio":{"input":{"transcription":{}}}}}'
       - '{"type":"session.update","session":{"input_audio_format":"pcm16","audio":{"input":{"format":"audio/pcm"}}}}'
       - '{"type":"session.update","session":{"type":"transcription"}}'
+      - '{"session":{"input_audio_format":"pcm16"}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"rate":1e5}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"rate":1E5}}}}}'
 env: {}
 compare: {ignore: []}
