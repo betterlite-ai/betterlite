@@ -1,0 +1,13 @@
+kind: helper
+name: chunk-predicates
+call:
+  b3679:
+    function: chunk_predicates
+    items:
+      - {id: chunk-1, created: 7, model: gpt-4o, object: chat.completion.chunk, choices: []}
+      - "data: {}"
+      - {id: chunk-2, created: 7, model: gpt-4o, object: chat.completion.chunk, usage: {total_tokens: 3}, choices: []}
+      - {id: chunk-3, created: 7, model: gpt-4o, object: chat.completion.chunk, choices: [{index: 0, delta: {content: hi}, finish_reason: null}]}
+      - {id: chunk-4, created: 7, model: gpt-4o, object: chat.completion.chunk, choices: [{index: 0, delta: {tool_calls: [{id: t, type: function, function: {name: f, arguments: "{}"}, index: 0}]}, finish_reason: tool_calls}]}
+env: {}
+compare: {ignore: []}
