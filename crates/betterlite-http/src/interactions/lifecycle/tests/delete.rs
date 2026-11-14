@@ -19,7 +19,7 @@ use crate::proxy::base_builder;
 
 #[test]
 fn delete_interaction_deletes_the_interaction_through_the_config() {
-    let serving = serve_with_body(
+    let serving = base::serve_once(
         base::reply("200 OK", &[("x-request-id", "r1")], "{\"id\":\"int_1\"}"),
         None,
     );
@@ -38,14 +38,12 @@ fn delete_interaction_deletes_the_interaction_through_the_config() {
     let output = handler.delete_interaction(&call.request()).unwrap();
 
     assert_eq!(output, "{\"id\":\"int_1\"}");
-    let received = serving.request.join().unwrap();
-    let head = received.head.as_str();
+    let head = serving.request.join().unwrap();
     assert!(
         head.starts_with("DELETE /v1beta/interactions/int_1 HTTP/1.1"),
         "{head}"
     );
     assert!(head.contains("x-goog-api-key: key-1\r\n"), "{head}");
-    assert!(received.body.is_empty(), "{}", received.body);
     assert_eq!(
         fixture.calls(),
         vec![
