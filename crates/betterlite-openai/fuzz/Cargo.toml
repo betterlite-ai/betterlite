@@ -494,3 +494,10 @@ path = "fuzz_targets/xai_chat_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "hosted_vllm_embedding_reply"
+path = "fuzz_targets/hosted_vllm_embedding_reply.rs"
+test = false
+doc = false
+bench = false
