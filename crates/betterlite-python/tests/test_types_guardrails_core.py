@@ -237,6 +237,11 @@ def rejection(model, kwargs):
 
 REJECTIONS = [
     ("checks_empty", "BedrockChecksConfigModel", {}),
+    (
+        "checks_bad_category",
+        "BedrockChecksConfigModel",
+        {"contentFilter": {"categories": [{"category": "NOPE"}]}},
+    ),
     ("threshold_high", "BedrockGuardrailConfigModel", {"content_filter_threshold": 1.5}),
     ("threshold_low", "BedrockGuardrailConfigModel", {"prompt_attack_threshold": -0.1}),
     ("threshold_edge_high", "BedrockGuardrailConfigModel", {"content_filter_threshold": 1.0}),
@@ -495,6 +500,14 @@ def test_bedrock_alias_names() -> None:
     assert dumped["guardrailIdentifier"] == "gr-1"
     assert dumped["guardrailVersion"] is None
     assert dumped["checks"] == expected
+
+
+def test_extra_field_names() -> None:
+    config = vendor_configs.BedrockGuardrailConfigModel(
+        guardrailIdentifier="gr-1",
+        unknown_knob=True,
+    )
+    assert "unknown_knob" in config.model_dump()
 
 
 def test_streaming_extra_names() -> None:
