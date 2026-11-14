@@ -219,6 +219,7 @@ fn a_restarted_dispatch_goes_on_from_the_saved_rung() {
         git_common_dir: folder.path(),
         home: folder.path(),
         writable: &[],
+        net: folder.path(),
     };
     let mut saved = progress();
     saved.feedback = vec!["the saved findings".to_owned()];
@@ -358,6 +359,7 @@ fn a_rung_pauses_without_a_run_while_every_vendor_it_can_use_is_at_its_limit() {
         git_common_dir: folder.path(),
         home: folder.path(),
         writable: &[],
+        net: folder.path(),
     };
     let mut progress = progress();
     let error = run_ladder(&agents, &brief, &places, &mut progress, 0).unwrap_err();
@@ -489,6 +491,7 @@ fn a_dispatch_stopped_by_a_usage_limit_keeps_its_place() {
         git_common_dir: folder.path(),
         home: folder.path(),
         writable: &[],
+        net: folder.path(),
     };
     let mut saved = progress();
     saved.feedback = vec!["the saved findings".to_owned()];
@@ -523,6 +526,7 @@ fn no_rung_runs_once_the_worker_attempts_are_used_up() {
         git_common_dir: folder.path(),
         home: folder.path(),
         writable: &[],
+        net: folder.path(),
     };
     let mut progress = progress();
     progress.used = agents.policy.max_worker_attempts;
@@ -669,6 +673,7 @@ fn places(folder: &Path) -> Places<'_> {
         git_common_dir: folder,
         home: folder,
         writable: &[],
+        net: folder,
     }
 }
 

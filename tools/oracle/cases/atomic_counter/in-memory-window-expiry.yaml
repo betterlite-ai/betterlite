@@ -1,0 +1,24 @@
+kind: helper
+name: in-memory-window-expiry
+call:
+  b3033:
+    descriptor:
+      key: model
+      value: gpt-4
+      rate_limit:
+        requests_per_unit: 10
+        tokens_per_unit: null
+        window_size: null
+    increment:
+      requests: 1
+      tokens: 0
+    default_window_size: 60
+    now: 1700000300
+    cache:
+      "{model:gpt-4}:window": "1700000240"
+      "{model:gpt-4}:requests": 12
+    reply: null
+env:
+  LITELLM_RATE_LIMIT_WINDOW_SIZE: "60"
+compare:
+  ignore: []

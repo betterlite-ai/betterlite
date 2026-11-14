@@ -1,0 +1,25 @@
+kind: helper
+name: window-reset-sibling-keys
+call:
+  b3033:
+    descriptor:
+      key: model
+      value: gpt-4
+      rate_limit:
+        requests_per_unit: 10
+        tokens_per_unit: 200
+        window_size: 30
+    increment:
+      requests: 1
+      tokens: 5
+    default_window_size: 60
+    now: 1700000300
+    cache:
+      "{model:gpt-4}:window": 1700000270
+      "{model:gpt-4}:requests": 7
+      "{model:gpt-4}:tokens": 150
+    reply: null
+env:
+  LITELLM_RATE_LIMIT_WINDOW_SIZE: "60"
+compare:
+  ignore: []
