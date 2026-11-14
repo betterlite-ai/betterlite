@@ -9,3 +9,10 @@ deviations:
   - what: A non-string detail.error in an error body keeps the original message instead of being stored in the typed message field.
     why: LiteLLM's BaseLLMException.message is declared str, so the selection failure is swallowed.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepinfra/rerank/transformation.py#L252-L270
+  - what: A rerank body or error message past max_body_bytes is left unparsed, so the response keeps the supplied model_response and the error keeps the original message, while LiteLLM parses any length.
+    why: The bounded-inputs rule caps untrusted JSON parsing, and both decoders take the limit from their caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepinfra/rerank/transformation.py#L183-L184
+kept_bugs:
+  - what: A malformed rerank body, or a post_call hook that raises, returns the supplied model_response with null id, results and meta instead of an error.
+    why: LiteLLM swallows every exception in that block and falls back, and a working setup relies on a provider body quirk never failing the call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepinfra/rerank/transformation.py#L227-L241
