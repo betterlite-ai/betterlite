@@ -14,6 +14,7 @@ use http::StatusCode;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
+use tracing::subscriber::set_default;
 use tracing_subscriber::fmt::MakeWriter;
 
 use super::classified::{
@@ -598,7 +599,7 @@ async fn scim_member_identity_classification_events_name_the_value_and_account()
         .finish();
     let store = store(&pool);
     let resolver = MemberResolver { store: &store };
-    let guard = tracing::subscriber::set_default(subscriber);
+    let guard = set_default(subscriber);
     let matched = resolver.classify_group_member(&member("sub-2", None)).await;
     let collided = resolver
         .classify_group_member(&member("shared", None))
