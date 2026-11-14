@@ -172,3 +172,5 @@ pub fn logging_usage(usage: &PricingUsage) -> Result<Usage, UsageConversionError
         extras,
     })
 }
+
+mod tests;

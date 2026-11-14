@@ -142,3 +142,5 @@ pub(super) fn price_input<'input>(
         server_tool_projection: charge.server_tool_projection,
     }
 }
+
+mod tests;

@@ -2,6 +2,7 @@
 
 use betterlite_config::cost_adjustments::{AdjustmentEntry, MarginFieldEntry};
 use betterlite_models::decisions::Json;
+use betterlite_models::ocr_pricing::{OcrBilling, OcrResponseKind, OcrUsage};
 use betterlite_models::protocol_cost::{A2aCall, A2aUsage, ProtocolCall};
 use betterlite_models::tool_signals::response::{
     Annotation, ChatChoice, ChatMessage, ChatView, ToolBillingResponse,
@@ -80,7 +81,9 @@ async fn the_last_candidates_error_is_the_one_raised() {
         .await
         .unwrap_err();
     assert!(matches!(error, CompletionCostError::Price(_)), "{error}");
-    let nothing = rig(&[]).charge(&args(None), None::<&mut Stored>).await;
+    let mut unnamed = args(None);
+    unnamed.billing.model = None;
+    let nothing = rig(&[]).charge(&unnamed, None::<&mut Stored>).await;
     assert!(matches!(
         nothing,
         Err(CompletionCostError::Prepare(PrepareError::ModelMissing))
@@ -194,6 +197,11 @@ const ROUTED: &[(&str, &str)] = &[("input_cost_per_token", "0.0001")];
 )]
 #[case::plain_hidden_model("azure_ai", r#"{"model":"gpt-4o"}"#, "0.02")]
 #[case::empty_hidden_model("azure_ai", r#"{"model":""}"#, "0.02")]
+#[case::empty_hidden_model_falls_back_to_the_other_name(
+    "azure_ai",
+    r#"{"model":"","litellm_model_name":"azure_ai/model-router-x"}"#,
+    "0.021"
+)]
 #[case::another_provider("openai", r#"{"model":"azure_ai/model-router-x"}"#, "0.02")]
 #[tokio::test]
 async fn the_router_fee_needs_azure_ai_and_a_router_shaped_hidden_model(
@@ -264,6 +272,47 @@ async fn a_router_shaped_priced_model_owes_no_extra_fee() {
     .await
     .unwrap();
     assert_eq!(charge, dec("0.02"));
+}
+
+#[tokio::test]
+async fn a_call_without_a_response_records_no_token_type_costs() {
+    let mut stored = Stored::default();
+    let charge = rig(&[("gpt-4o", GPT)])
+        .charge(&args(None), Some(&mut stored))
+        .await
+        .unwrap();
+    assert_eq!(charge, dec("0"));
+    assert_eq!(stored.0.unwrap().token_costs, [None, None, None]);
+}
+
+#[tokio::test]
+async fn an_ocr_page_is_priced_at_the_deployments_own_rate_when_one_is_given() {
+    let view = ResponseView::Other;
+    let billing = OcrBilling {
+        kind: OcrResponseKind::Ocr,
+        usage: Some(OcrUsage {
+            credits: None,
+            pages_processed: Some(10),
+            pages_processed_annotation: 0,
+        }),
+    };
+    let catalog: &[(&str, &str)] = &[
+        ("input_cost_per_token", "0"),
+        ("output_cost_per_token", "0"),
+        ("ocr_cost_per_page", "4"),
+    ];
+    let own = map(r#"{"ocr_cost_per_page":2}"#);
+    let priced = rig(&[("oracle-ocr", catalog)]);
+    let mut call = args(Some(&view));
+    call.billing.model = Some("oracle-ocr");
+    call.billing.call_type = Some(CallType::Ocr);
+    call.charge.ocr_billing = Some(&billing);
+    let plain = priced.charge(&call, None::<&mut Stored>).await.unwrap();
+    assert_eq!(plain, dec("40"));
+    call.billing.custom_pricing = Some(true);
+    call.charge.logging.params = Some(&own);
+    let overridden = priced.charge(&call, None::<&mut Stored>).await.unwrap();
+    assert_eq!(overridden, dec("20"));
 }
 
 #[tokio::test]

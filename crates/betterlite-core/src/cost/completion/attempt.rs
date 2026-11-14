@@ -95,26 +95,28 @@ where
     ImagePolicy: ImagePricePolicy,
     Target: CostBreakdownTarget,
 {
-    let breakdown =
-        if target.is_some() && attempt.prepared.cost_usage.is_some() && !attempt.model.is_empty() {
-            let request = BreakdownRequest {
-                model: attempt.model,
-                provider: attempt.provider,
-                moment: attempt.moment,
-            };
-            Some(token_type_breakdown(
-                &request,
-                &price_input(attempt, owned),
-                services.special.lookup,
-                services.special.database,
-            )?)
-        } else {
-            None
+    let Some(target) = target else {
+        return Ok(());
+    };
+    let breakdown = if attempt.prepared.cost_usage.is_some() && !attempt.model.is_empty() {
+        let request = BreakdownRequest {
+            model: attempt.model,
+            provider: attempt.provider,
+            moment: attempt.moment,
         };
+        Some(token_type_breakdown(
+            &request,
+            &price_input(attempt, owned),
+            services.special.lookup,
+            services.special.database,
+        )?)
+    } else {
+        None
+    };
     let inputs = &attempt.args.charge;
     let adjusted = charge.adjusted;
     store_cost_breakdown(
-        target,
+        Some(target),
         &CostBreakdownInput {
             input_cost: charge.input_cost,
             output_cost: charge.output_cost,
