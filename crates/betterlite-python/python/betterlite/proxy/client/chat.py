@@ -5,7 +5,8 @@ from typing import Literal, Unpack, overload
 from pydantic import JsonValue
 from typing_extensions import TypedDict
 
-from ._transport import UNAUTHORIZED_STATUS, HTTPError, Request, Response, send, stream
+from . import _transport
+from ._transport import UNAUTHORIZED_STATUS, HTTPError, Request, Response
 from .exceptions import UnauthorizedError
 
 DATA_PREFIX = "data: "
@@ -156,7 +157,7 @@ class ChatClient:
         request = self._completion_request(model, messages, streaming=False, options=options)
         if return_request:
             return request
-        response = send(request, self._timeout)
+        response = _transport.send(request, self._timeout)
         _raise_failure(response)
         return response.json()
 
@@ -168,7 +169,7 @@ class ChatClient:
     ) -> Iterator[JsonValue]:
         _check_options("completions_stream", options)
         request = self._completion_request(model, messages, streaming=True, options=options)
-        response = stream(request, self._timeout)
+        response = _transport.stream(request, self._timeout)
         _raise_failure(response)
         for raw_line in response.iter_lines():
             if not raw_line:

@@ -3,7 +3,8 @@ from typing import Unpack
 from pydantic import JsonValue
 from typing_extensions import TypedDict
 
-from ._transport import UNAUTHORIZED_STATUS, Request, send
+from . import _transport
+from ._transport import UNAUTHORIZED_STATUS, Request
 from .exceptions import UnauthorizedError
 
 AUTHENTICATION_FAILED = "Authentication failed. Check your API key."
@@ -55,7 +56,7 @@ class TeamsManagementClient:
             headers=self._get_headers(),
             params=params,
         )
-        response = send(request, self._timeout)
+        response = _transport.send(request, self._timeout)
         if response.status_code == UNAUTHORIZED_STATUS:
             raise UnauthorizedError(AUTHENTICATION_FAILED)
         response.raise_for_status()
@@ -85,9 +86,7 @@ class TeamsManagementClient:
             "team_alias": options.get("team_alias"),
             "sort_by": options.get("sort_by"),
         }
-        for name, value in filters.items():
-            if value:
-                params[name] = value
+        params.update({name: value for name, value in filters.items() if value})
         return self._get("/v2/team/list", params)
 
     def get_available(self) -> JsonValue:

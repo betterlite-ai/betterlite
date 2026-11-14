@@ -4,6 +4,7 @@ from typing import Literal, overload
 
 from pydantic import JsonValue
 
+from . import _transport
 from ._transport import (
     NOT_FOUND_STATUS,
     UNAUTHORIZED_STATUS,
@@ -11,7 +12,6 @@ from ._transport import (
     Request,
     RequestError,
     Response,
-    send,
 )
 from .exceptions import NotFoundError, UnauthorizedError
 
@@ -71,7 +71,7 @@ class ModelsManagementClient:
         return self._reply(request, not_found_is_missing=not_found_is_missing)
 
     def _reply(self, request: Request, *, not_found_is_missing: bool = False) -> JsonValue:
-        response = send(request, self._timeout)
+        response = _transport.send(request, self._timeout)
         try:
             response.raise_for_status()
         except HTTPError as error:
@@ -183,11 +183,15 @@ class ModelsManagementClient:
         models = self.info()
         for model in models:
             match model:
-                case {"model_name": str(name)} if model_name and name == model_name:
-                    return model
-                case {"model_info": {"id": str(identifier)}} if model_id and identifier == model_id:
-                    return model
-                case dict() | list() | str() | bool() | int() | float() | None:
+                case dict() as entry:
+                    match entry.get("model_info"):
+                        case {"id": str() as identifier} if model_id and identifier == model_id:
+                            return entry
+                        case dict() | list() | str() | bool() | int() | float() | None:
+                            pass
+                    if model_name and entry.get("model_name") == model_name:
+                        return entry
+                case list() | str() | bool() | int() | float() | None:
                     continue
         if model_id:
             message = f"Model with id={model_id} not found"

@@ -10,13 +10,11 @@ from litellm.proxy.client.exceptions import NotFoundError as LiteLLMNotFoundErro
 from litellm.proxy.client.exceptions import UnauthorizedError as LiteLLMUnauthorizedError
 from litellm.proxy.client.models import ModelsManagementClient as LiteLLMModelsClient
 from litellm.proxy.client.teams import TeamsManagementClient as LiteLLMTeamsClient
-from pydantic import JsonValue
 from proxy_client_support import RecordingServer
+from pydantic import JsonValue
 from test_proxy_client_base import OK, TIMEOUT, Reply, compare_call, compare_error
 
-from betterlite.proxy.client import chat as chat_module
-from betterlite.proxy.client import models as models_module
-from betterlite.proxy.client import teams as teams_module
+import betterlite.proxy.client._transport as transport_module
 from betterlite.proxy.client._transport import HTTPError, Request, RequestError, Response
 from betterlite.proxy.client.chat import ChatClient, CompletionOptions
 from betterlite.proxy.client.exceptions import NotFoundError, UnauthorizedError
@@ -113,13 +111,13 @@ def server() -> Iterator[RecordingServer]:
 @pytest.fixture(autouse=False)
 def probe() -> Iterator[TimeoutProbe]:
     recording = TimeoutProbe()
-    saved = (models_module.send, teams_module.send, chat_module.send, chat_module.stream)
-    models_module.send = recording
-    teams_module.send = recording
-    chat_module.send = recording
-    chat_module.stream = recording
+    saved_send = transport_module.send
+    saved_stream = transport_module.stream
+    transport_module.send = recording
+    transport_module.stream = recording
     yield recording
-    models_module.send, teams_module.send, chat_module.send, chat_module.stream = saved
+    transport_module.send = saved_send
+    transport_module.stream = saved_stream
 
 
 def models_clients(server: RecordingServer) -> tuple[LiteModels, ModelsManagementClient]:
@@ -140,31 +138,30 @@ def teams_clients(server: RecordingServer) -> tuple[LiteTeams, TeamsManagementCl
     return lite, ours
 
 
-def test_client_timeouts(probe: TimeoutProbe) -> None:
-    models_client = ModelsManagementClient("http://proxy:4000", api_key=KEY)
-    teams_client = TeamsManagementClient("http://proxy:4000")
-    chat_client = ChatClient("http://proxy:4000")
-    assert models_client.list() == []
-    assert teams_client.get_available() == {"data": []}
-    assert chat_client.completions(MODEL, MESSAGES) == {"data": []}
-    assert builtins.list(chat_client.completions_stream(MODEL, MESSAGES)) == []
+def test_models_timeout(probe: TimeoutProbe) -> None:
+    assert ModelsManagementClient("http://proxy:4000", api_key=KEY).list() == []
+    assert probe.calls == [("http://proxy:4000/models", 30)]
+    assert ModelsManagementClient("http://other:4000", timeout=7).info() == []
+    assert probe.calls[1] == ("http://other:4000/v1/model/info", 7)
+
+
+def test_chat_timeout(probe: TimeoutProbe) -> None:
+    client = ChatClient("http://proxy:4000")
+    assert client.completions(MODEL, MESSAGES) == {"data": []}
+    assert builtins.list(client.completions_stream(MODEL, MESSAGES)) == []
     assert probe.calls == [
-        ("http://proxy:4000/models", 30),
-        ("http://proxy:4000/team/available", 30),
         ("http://proxy:4000/chat/completions", 600),
         ("http://proxy:4000/chat/completions", 600),
     ]
-    custom = "http://other:4000"
-    assert ModelsManagementClient(custom, timeout=7).info() == []
-    assert TeamsManagementClient(custom, timeout=7).list() == {"data": []}
-    assert ChatClient(custom, timeout=7).completions(MODEL, MESSAGES) == {"data": []}
-    assert builtins.list(ChatClient(custom, timeout=7).completions_stream(MODEL, MESSAGES)) == []
-    assert probe.calls[4:] == [
-        (f"{custom}/v1/model/info", 7),
-        (f"{custom}/team/list", 7),
-        (f"{custom}/chat/completions", 7),
-        (f"{custom}/chat/completions", 7),
-    ]
+    assert ChatClient("http://other:4000", timeout=7).completions(MODEL, MESSAGES) == {"data": []}
+    assert probe.calls[2] == ("http://other:4000/chat/completions", 7)
+
+
+def test_teams_timeout(probe: TimeoutProbe) -> None:
+    assert TeamsManagementClient("http://proxy:4000").get_available() == {"data": []}
+    assert probe.calls == [("http://proxy:4000/team/available", 30)]
+    assert TeamsManagementClient("http://other:4000", timeout=7).list() == {"data": []}
+    assert probe.calls[1] == ("http://other:4000/team/list", 7)
 
 
 def test_models_list(server: RecordingServer) -> None:
@@ -377,12 +374,12 @@ def test_models_missing(server: RecordingServer) -> None:
         ours.delete("m9")
     assert str(actual.value) == str(expected.value)
     server.reply(500, "boom")
-    with pytest.raises(requests.exceptions.HTTPError) as expected:
+    with pytest.raises(requests.exceptions.HTTPError) as expected_http:
         lite.update("m9", PARAMS)
     server.reply(500, "boom")
-    with pytest.raises(HTTPError) as actual:
+    with pytest.raises(HTTPError) as actual_http:
         ours.update("m9", PARAMS)
-    assert str(actual.value) == str(expected.value)
+    assert str(actual_http.value) == str(expected_http.value)
     server.reply(404, "no such model")
     with pytest.raises(requests.exceptions.HTTPError):
         lite.new("gpt-4", PARAMS)
@@ -573,19 +570,19 @@ def test_chat_failures(server: RecordingServer) -> None:
         builtins.list(ours.completions_stream(MODEL, MESSAGES))
     assert str(actual.value) == str(expected.value)
     server.reply(500, "boom")
-    with pytest.raises(requests.exceptions.HTTPError) as expected:
+    with pytest.raises(requests.exceptions.HTTPError) as expected_http:
         lite.completions(MODEL, MESSAGES)
     server.reply(500, "boom")
-    with pytest.raises(HTTPError) as actual:
+    with pytest.raises(HTTPError) as actual_http:
         ours.completions(MODEL, MESSAGES)
-    assert str(actual.value) == str(expected.value)
+    assert str(actual_http.value) == str(expected_http.value)
     server.reply(500, "boom")
-    with pytest.raises(requests.exceptions.HTTPError) as expected:
+    with pytest.raises(requests.exceptions.HTTPError) as expected_http:
         builtins.list(lite.completions_stream(MODEL, MESSAGES))
     server.reply(500, "boom")
-    with pytest.raises(HTTPError) as actual:
+    with pytest.raises(HTTPError) as actual_http:
         builtins.list(ours.completions_stream(MODEL, MESSAGES))
-    assert str(actual.value) == str(expected.value)
+    assert str(actual_http.value) == str(expected_http.value)
 
 
 def test_teams_list(server: RecordingServer) -> None:
