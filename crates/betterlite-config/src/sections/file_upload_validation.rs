@@ -1,5 +1,6 @@
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
+use crate::sections::admission_control::parse_integer;
 use crate::sections::settings::JsonValue;
 use serde::Deserialize;
 const MAX_FILE_SIZE_PATH: &str = "general_settings.max_file_size_mb";
@@ -65,31 +66,10 @@ fn lax_integer(raw: Option<&JsonValue>, path: &str) -> Result<Option<i64>, Confi
                 float.to_string().parse::<i64>().ok()
             })
             .map(Some),
-        JsonValue::String(text) => lax_string_integer(text).map(Some),
+        JsonValue::String(text) => parse_integer(text).map(Some),
         JsonValue::Array(_) | JsonValue::Object(_) => None,
     };
     coerced.ok_or_else(|| invalid(path, value))
-}
-fn lax_string_integer(text: &str) -> Option<i64> {
-    let trimmed = text.trim();
-    let (integral, fraction) = match trimmed.split_once('.') {
-        Some((integral, fraction)) => (integral, Some(fraction)),
-        None => (trimmed, None),
-    };
-    if fraction.is_some_and(|rest| rest.is_empty() || rest.bytes().any(|byte| byte != b'0')) {
-        return None;
-    }
-    let digits = integral.strip_prefix(['+', '-']).unwrap_or(integral);
-    if digits.starts_with('_')
-        || digits.ends_with('_')
-        || digits.contains("__")
-        || !digits
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || byte == b'_')
-    {
-        return None;
-    }
-    integral.replace('_', "").parse::<i64>().ok()
 }
 fn strings_of(value: &JsonValue) -> Option<Vec<String>> {
     value
