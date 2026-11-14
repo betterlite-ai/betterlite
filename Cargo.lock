@@ -2868,6 +2868,7 @@ dependencies = [
  "betterlite-core",
  "betterlite-redis",
  "crc16",
+ "num-traits",
  "rstest",
  "serde",
  "serde_json",
