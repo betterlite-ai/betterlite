@@ -219,6 +219,11 @@ async fn a_legacy_callback_returns_its_result_as_is() {
     assert!(records.plan_calls.is_empty());
     let legacy = &records.legacy_calls[0];
     assert_eq!(legacy.model, "gpt-4o");
+    assert_eq!(legacy.response, fixture.response.get());
+    assert_eq!(
+        legacy.messages,
+        [r#"{"role":"user","content":"what is the weather"}"#.to_owned()]
+    );
     assert!(!legacy.stream);
     assert_eq!(legacy.log_call_id.as_deref(), Some("call-1"));
     assert_eq!(
@@ -285,8 +290,14 @@ async fn a_plan_that_stops_moves_to_the_next_callback() {
         .await
         .unwrap();
     assert_eq!(optional_text(result), r#"{"second":true}"#);
-    assert_eq!(stopping.records().plan_calls.len(), 1);
-    assert!(stopping.records().legacy_calls.is_empty());
+    let records = stopping.records();
+    assert_eq!(records.plan_calls.len(), 1);
+    assert_eq!(records.plan_calls[0].response, fixture.response.get());
+    assert_eq!(
+        records.plan_calls[0].messages,
+        [r#"{"role":"user","content":"what is the weather"}"#.to_owned()]
+    );
+    assert!(records.legacy_calls.is_empty());
     assert_eq!(harness.continuation.call_count(), 0);
 }
 

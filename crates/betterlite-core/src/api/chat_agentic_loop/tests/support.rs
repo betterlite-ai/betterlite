@@ -294,6 +294,8 @@ pub(crate) struct GateRecord {
 pub(crate) struct LoopRecord {
     pub tools: JsonMap,
     pub model: String,
+    pub messages: Vec<String>,
+    pub response: String,
     pub log_call_id: Option<String>,
     pub stream: bool,
     pub optional_params: JsonMap,
@@ -407,6 +409,12 @@ impl ScriptedCallback {
         let record = LoopRecord {
             tools: call.tools.clone(),
             model: call.model.to_owned(),
+            messages: call
+                .messages
+                .iter()
+                .map(|message| message.0.get().to_owned())
+                .collect(),
+            response: call.response.get().to_owned(),
             log_call_id: call.logging.and_then(|logging| logging.call_id.clone()),
             stream: call.stream,
             optional_params: call.optional_params.clone(),
