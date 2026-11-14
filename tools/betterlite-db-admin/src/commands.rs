@@ -293,5 +293,8 @@ pub enum MigrationError {
 
 // LiteLLM's extras str_to_bool: case-insensitive true/1/t/y/yes only, no stripping, no "on"
 fn str_to_bool(value: Option<&str>) -> bool {
-    value.is_some_and(|text| ["true", "1", "t", "y", "yes"].contains(&text.to_lowercase().as_str()))
+    let Some(text) = value else {
+        return false;
+    };
+    ["true", "1", "t", "y", "yes"].contains(&text.to_lowercase().as_str())
 }
