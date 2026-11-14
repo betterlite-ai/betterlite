@@ -1,0 +1,14 @@
+task: B3154
+deviations:
+  - what: Estimate failures return a module-local EstimatorError whose message is LiteLLM's fixed text, where LiteLLM raises github.SourceError with that message.
+    why: SourceError (B3152) is a closed enum of GitHub transport and pagination failures with no message variant, and roi_github/error.rs is outside this task's scope; the message and the set of inputs that fail are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/estimator.py#L153-L155
+  - what: The failure keeps its typed cause on EstimatorError as a source where LiteLLM raises from None and drops the cause.
+    why: Rule typed-errors keeps every cause; Display, which is what callers read, is still LiteLLM's exact message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/estimator.py#L153-L155
+  - what: A completion reply over 1 MiB, or one whose failed object starts use up a 16 MiB scan budget, fails the estimate where LiteLLM scans any length.
+    why: LiteLLM re-decodes the whole remaining reply from every opening brace, so a long reply of braces costs quadratic time; the estimator's own max_tokens of 1200 keeps real replies far below both limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/capability_classifier.py#L216-L222
+  - what: The estimator finds the first complete JSON object with its own scan in crates/betterlite-roi/src/estimator/extraction.rs instead of calling B394's extractor, which mirrors the same MAX_REPLY_BYTES, SCAN_BUDGET, NaN/Infinity masking and per-start charge.
+    why: B394's first_object is pub(super) at crates/betterlite-router/src/capability_forecast/reply.rs:33, so it is not nameable from betterlite-roi or betterlite-server, and reply.rs is outside this task's scope. The reply module's only public entry, parse_cap_reply at reply.rs:19, deserializes the object into the capability Verdict (verdict.rs:73 denies unknown fields and requires crux, primary_rule, capability_boundary and p_solve), so it cannot return the raw object for ROIEstimatorResult. The local scan keeps B394's bounds and masking so both callers accept and reject the same replies; a shared public extractor would remove the duplication.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/capability_classifier.py#L216-L222

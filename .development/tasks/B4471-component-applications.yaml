@@ -35,6 +35,14 @@ scope:
   paths:
     - crates/betterlite-gateway/**
     - crates/betterlite-backend/**
+    - crates/betterlite-server/src/server.rs
+    - crates/betterlite-server/src/server/component.rs
+    - crates/betterlite-server/src/server/filter.rs
+    - crates/betterlite/src/main.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/loader/startup.rs
+    - crates/betterlite-lens-worker/src/main.rs
+    - deny.toml
     - tools/oracle/helpers/b4471.py
     - tools/oracle/helpers/b4471/**
     - tools/oracle/src/helpers/server/b4471.rs
@@ -74,7 +82,7 @@ dod:
     proof: [component-route-filtering]
   - text: Gateway and backend list their paths in the same order as the LiteLLM source, with every template like "/{provider}/" and "/{mcp_server_name}/" preserved.
     proof: [component-route-filtering]
-  - text: Both binaries exit with status 2 on database startup failure and status 0 on successful SIGTERM or Ctrl-C shutdown.
+  - text: Both binaries exit with status 2 when server startup fails (the test binds a port that is already taken) and status 0 on successful SIGTERM or Ctrl-C shutdown. The database startup case belongs to B051.
     proof: [component-route-filtering, component-shutdown]
   - text: Every stderr line from both binaries is JSON with at least timestamp, level and message, exactly as from betterlite in B003.
     proof: [component-logging]
@@ -92,7 +100,7 @@ checks:
       why: Request path filtering does not match the allowlists or HTTP status/auth behavior differs
       run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/gateway tools/oracle/cases/backend
     - id: component-shutdown
-      why: Database startup failure or SIGTERM does not exit with the correct status code
+      why: Startup failure or SIGTERM does not exit with the correct status code
       run: |
         cargo nextest run --locked -p betterlite-gateway -p betterlite-backend --no-tests=fail -E 'test(shutdown)' &&
         cargo nextest run --locked -p betterlite-gateway -p betterlite-backend --no-tests=fail -E 'test(startup_failure)'
@@ -129,7 +137,9 @@ pitfalls:
   - Mount paths (e.g., /metrics, /swagger, /mcp) are matched exactly, not as prefixes. /metrics/foo returns 404 on the gateway because /metrics is in GATEWAY_MOUNT_PATHS but /metrics/foo is not.
   - Both binaries share the same CLI signature as betterlite (same flags, same defaults, same env vars). Changing one changes both.
   - The gateway defaults to port 4000, the backend to 4001. These are wired in the binary targets, not configuration.
+  - The serve code (startup, route filter install, exit status) lives once in crates/betterlite-server/src/server.rs and its server/component.rs and server/filter.rs beside run_with; each binary keeps only its CLI defaults, its path lists and main.
+  - Reading the process environment and loading the config with its categorized error logs live once in crates/betterlite-config/src/loader/startup.rs, declared from loader.rs, and carries the one clippy::disallowed_methods expect. crates/betterlite/src/main.rs, crates/betterlite-lens-worker/src/main.rs and server/component.rs call it and keep no copy. betterlite-config depends on no binary and not on betterlite-server, so no crate cycle forms.
 review_level: security
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 1

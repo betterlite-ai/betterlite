@@ -1,0 +1,17 @@
+kind: helper
+name: gemini-request-cache-modify-false
+call:
+  gemini_request:
+    model: gemini-2.5-pro
+    provider: vertex_ai
+    supports: {system_message: true, response_schema: true}
+    modify_params: false
+    messages:
+      - {role: system, content: rules}
+      - {role: user, content: hi}
+    optional_params:
+      cached_content: cached-1
+      tools: [{googleSearch: {}}]
+    litellm_params: {}
+env: {}
+compare: {ignore: []}
