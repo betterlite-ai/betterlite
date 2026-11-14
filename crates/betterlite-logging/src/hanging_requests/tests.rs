@@ -305,6 +305,15 @@ async fn detect_removes_a_completed_request(#[case] status: &str) {
 }
 
 #[tokio::test]
+async fn detect_skips_a_request_that_left_the_cache() {
+    let fixture = support::fixture();
+    fixture.cache.vanish("call-1");
+    fixture.check.send_hanging_alerts().await;
+    assert!(fixture.sink.take().is_empty());
+    assert!(fixture.status.reads().is_empty());
+}
+
+#[tokio::test]
 async fn detect_treats_a_null_status_as_in_flight() {
     let fixture = support::fixture();
     fixture.cache.seed(support::hanging_record(

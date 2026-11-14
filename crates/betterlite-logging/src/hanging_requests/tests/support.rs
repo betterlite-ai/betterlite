@@ -164,10 +164,15 @@ struct Stored {
 #[derive(Default)]
 pub(crate) struct FakeHangingCache {
     entries: Mutex<IndexMap<String, Stored>>,
+    vanished: Mutex<Vec<String>>,
     oldest_calls: AtomicUsize,
 }
 
 impl FakeHangingCache {
+    pub(crate) fn vanish(&self, key: &str) {
+        self.vanished.lock().unwrap().push(key.to_owned());
+    }
+
     pub(crate) fn seed(&self, data: HangingRequestData) {
         let key = data.request_id.clone();
         self.entries.lock().unwrap().insert(
@@ -226,13 +231,16 @@ impl HangingRequestCache for FakeHangingCache {
 
     async fn oldest_keys(&self, limit: usize) -> Vec<String> {
         let _previous = self.oldest_calls.fetch_add(1, Ordering::SeqCst);
-        self.entries
+        let mut keys: Vec<String> = self
+            .entries
             .lock()
             .unwrap()
             .keys()
             .take(limit)
             .cloned()
-            .collect()
+            .collect();
+        keys.extend(self.vanished.lock().unwrap().iter().cloned());
+        keys
     }
 
     fn remove(&self, key: &str) {
