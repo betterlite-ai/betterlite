@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::convert::Infallible;
 use std::future::{Future, ready};
 use std::sync::Mutex;
 
@@ -12,6 +13,7 @@ use betterlite_guardrails::guardrail_translation::{
 };
 use futures_util::StreamExt as _;
 use futures_util::stream;
+use thiserror::Error;
 
 use crate::guardrails::unified_stream::error::StreamLoopError;
 use crate::guardrails::unified_stream::run::incremental_transform_stream;
@@ -447,9 +449,24 @@ pub(crate) fn params<'run>(
     }
 }
 
+// The failure a test source raises where the provider would have dropped the stream
+#[derive(Debug, Error)]
+#[error("the provider dropped the stream")]
+pub(crate) struct SourceFailure;
+
 pub(crate) async fn collect_outputs(
     params: StreamLoopParams<'_, FakeTranslation, FakeGuardrail>,
     source: Vec<GuardrailValue>,
+) -> Vec<Result<StreamOutput, StreamLoopError>> {
+    let items = source.into_iter().map(Ok::<_, Infallible>);
+    incremental_transform_stream(params, stream::iter(items))
+        .collect()
+        .await
+}
+
+pub(crate) async fn collect_results(
+    params: StreamLoopParams<'_, FakeTranslation, FakeGuardrail>,
+    source: Vec<Result<GuardrailValue, SourceFailure>>,
 ) -> Vec<Result<StreamOutput, StreamLoopError>> {
     incremental_transform_stream(params, stream::iter(source))
         .collect()

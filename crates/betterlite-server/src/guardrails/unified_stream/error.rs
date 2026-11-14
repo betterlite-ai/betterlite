@@ -20,6 +20,8 @@ pub enum StreamLoopError {
         #[source]
         source: StreamHttpError,
     },
+    #[error("the upstream response stream failed: {detail}")]
+    Source { detail: String },
 }
 
 // The terminal chunks of a block or an in-stream error were already queued when this is raised

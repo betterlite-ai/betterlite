@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::fmt::Display;
 use std::pin::Pin;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -40,7 +41,7 @@ pub(crate) struct LoopState<'run, T, G, S> {
 
 // LiteLLM's _run_incremental_transform_stream: withhold the raw chunks, send the transformed diffs
 #[must_use]
-pub fn incremental_transform_stream<'run, T, G, S>(
+pub fn incremental_transform_stream<'run, T, G, S, E>(
     params: StreamLoopParams<'run, T, G>,
     source: S,
 ) -> impl Stream<Item = Result<StreamOutput, StreamLoopError>> + Send + 'run
@@ -49,7 +50,8 @@ where
         + Sync
         + 'run,
     G: GuardrailContract + 'run,
-    S: Stream<Item = GuardrailValue> + Send + 'run,
+    S: Stream<Item = Result<GuardrailValue, E>> + Send + 'run,
+    E: Display + Send + 'run,
 {
     let start = LoopState {
         params,
@@ -77,7 +79,8 @@ where
             }
             let pulled = state.source.next().await;
             match pulled {
-                Some(item) => state.consume_item(item).await,
+                Some(Ok(item)) => state.consume_item(item).await,
+                Some(Err(error)) => state.fail_source(error.to_string()),
                 None => {
                     state.finish_stream().await;
                     state.finished = true;
@@ -92,7 +95,7 @@ where
     T: BaseTranslation<Guardrail = G, LogTarget = GuardrailLogTarget, Failure = GuardrailFailure>
         + Sync,
     G: GuardrailContract,
-    S: Stream<Item = GuardrailValue> + Send,
+    S: Stream + Send,
 {
     async fn consume_item(&mut self, item: GuardrailValue) {
         if chunk_has_tool_calls(&item) {
@@ -169,6 +172,12 @@ where
         if let RoundFailure::Loop(error) = failure {
             self.failure = Some(error);
         }
+        self.finished = true;
+    }
+
+    // LiteLLM lets an exception from the source leave before the inspection and the tail
+    fn fail_source(&mut self, detail: String) {
+        self.failure = Some(StreamLoopError::Source { detail });
         self.finished = true;
     }
 

@@ -4,10 +4,11 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
+use crate::guardrails::unified_stream::error::StreamLoopError;
 use crate::guardrails::unified_stream::tests::support::{
-    FakeGuardrail, FakeTranslation, Plan, SinkUse, block_texts, collect_outputs, item,
-    mixed_tool_chunk, modify_response, params, synthetic, terminator, text_chunk,
-    text_chunk_finishing, tool_chunk,
+    FakeGuardrail, FakeTranslation, Plan, SinkUse, SourceFailure, block_texts, collect_outputs,
+    collect_results, item, mixed_tool_chunk, modify_response, params, synthetic, terminator,
+    text_chunk, text_chunk_finishing, tool_chunk,
 };
 
 #[tokio::test]
@@ -292,6 +293,40 @@ async fn tool_call_inspection_gets_a_deep_clone() {
 }
 
 #[tokio::test]
+async fn tool_call_inspection_waits_for_the_end_of_the_source() {
+    let translation = FakeTranslation::planned(vec![
+        Plan::Pass,
+        Plan::Rewrite {
+            index: 0,
+            text: "x",
+            holdback: 0,
+        },
+    ]);
+    let guardrail = FakeGuardrail;
+    let mut data = BTreeMap::new();
+    let keys = BTreeMap::new();
+    let source = vec![tool_chunk(), text_chunk("x")];
+    let outputs = collect_outputs(
+        params(&translation, &guardrail, &mut data, &keys),
+        source.clone(),
+    )
+    .await;
+    assert_eq!(
+        outputs,
+        vec![
+            Ok(item(tool_chunk())),
+            Ok(item(synthetic("x", Some("assistant"), None))),
+        ]
+    );
+    let calls = translation.calls();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0].sink, SinkUse::Absent);
+    assert_eq!(calls[0].items, source);
+    assert_eq!(calls[1].sink, SinkUse::Empty);
+    assert_eq!(calls[1].items, source);
+}
+
+#[tokio::test]
 async fn tool_call_passthrough_defers_a_finish_reason_to_the_terminator() {
     let translation = FakeTranslation::planned(vec![Plan::Pass, Plan::Pass]);
     let guardrail = FakeGuardrail;
@@ -306,4 +341,49 @@ async fn tool_call_passthrough_defers_a_finish_reason_to_the_terminator() {
         outputs,
         vec![Ok(item(tool_chunk())), Ok(item(terminator("stop")))]
     );
+}
+
+#[tokio::test]
+async fn source_failure_after_a_chunk_is_the_only_output() {
+    let translation = FakeTranslation::planned(vec![Plan::Pass]);
+    let guardrail = FakeGuardrail;
+    let mut data = BTreeMap::new();
+    let keys = BTreeMap::new();
+    let outputs = collect_results(
+        params(&translation, &guardrail, &mut data, &keys),
+        vec![Ok(text_chunk("a")), Err(SourceFailure)],
+    )
+    .await;
+    assert_eq!(
+        outputs,
+        vec![Err(StreamLoopError::Source {
+            detail: SourceFailure.to_string(),
+        })]
+    );
+    assert!(translation.calls().is_empty());
+}
+
+#[tokio::test]
+async fn source_failure_keeps_the_queued_output_before_the_error() {
+    let translation = FakeTranslation::planned(vec![Plan::Rewrite {
+        index: 0,
+        text: "ab",
+        holdback: 0,
+    }]);
+    let guardrail = FakeGuardrail;
+    let mut data = BTreeMap::new();
+    let keys = BTreeMap::new();
+    let mut loop_params = params(&translation, &guardrail, &mut data, &keys);
+    loop_params.sampling_rate = 1;
+    let outputs = collect_results(loop_params, vec![Ok(text_chunk("a")), Err(SourceFailure)]).await;
+    assert_eq!(
+        outputs,
+        vec![
+            Ok(item(synthetic("ab", Some("assistant"), None))),
+            Err(StreamLoopError::Source {
+                detail: SourceFailure.to_string(),
+            }),
+        ]
+    );
+    assert_eq!(translation.calls().len(), 1);
 }
