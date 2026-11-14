@@ -841,11 +841,12 @@ mod content_filter_actions_behavior {
     #[test]
     fn filter_returns_the_text_when_nothing_matches() {
         let categories = CategoryLoadResult::default();
-        let words = vec![blocked("absent", ContentFilterAction::Mask, None)];
+        let patterns = vec![regex_pattern("leak", "danger", ContentFilterAction::Block)];
+        let words = vec![blocked("absent", ContentFilterAction::Block, None)];
         let mut detections = Vec::new();
         assert_eq!(
             filter_single_text(
-                &filter_source(&categories, &[], &words),
+                &filter_source(&categories, &patterns, &words),
                 "plain text",
                 Some(&mut detections),
             )
