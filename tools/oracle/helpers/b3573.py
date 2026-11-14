@@ -14,6 +14,7 @@ from pydantic import JsonValue, TypeAdapter, ValidationError
 JSON: Final = TypeAdapter(JsonValue)
 USER_ID: Final = TypeAdapter(str | None)
 GUARDRAIL_CLASS: Final = TypeAdapter(type[CustomGuardrail])
+GUARDRAIL_BASE: Final = type(CustomGuardrail(guardrail_name=None))
 
 Result_co = TypeVar("Result_co", covariant=True, default=object)
 
@@ -88,7 +89,7 @@ def recording_guardrail(name: str | None, calls: list[JsonValue]) -> CustomGuard
         "calls": calls,
         "records_own_guardrail_information": True,
     }
-    recording_class = type("Recording", (CustomGuardrail,), members)
+    recording_class = type("Recording", (GUARDRAIL_BASE,), members)
     guardrail_class = GUARDRAIL_CLASS.validate_python(recording_class)
     return guardrail_class(guardrail_name=name)
 
@@ -123,14 +124,6 @@ class OutputCall(TypedDict):
     response: JsonValue
     request_data: dict[str, JsonValue] | None
     user_api_key: dict[str, JsonValue] | None
-
-
-class OutputArgs(TypedDict):
-    response: JsonValue
-    guardrail: CustomGuardrail
-    logging_obj: Logging | None
-    user_api_key_dict: UserAPIKeyAuth | None
-    request_data: dict[str, JsonValue] | None
 
 
 Call = SettingsCall | ExtractCall | InputCall | OutputCall
@@ -187,17 +180,6 @@ async def call_input(
     )
 
 
-async def call_output(handler: OutputView, args: OutputArgs) -> JsonValue:
-    returned = await handler.process_output_response(
-        response=args["response"],
-        guardrail_to_apply=args["guardrail"],
-        litellm_logging_obj=args["logging_obj"],
-        user_api_key_dict=args["user_api_key_dict"],
-        request_data=args["request_data"],
-    )
-    return JSON.validate_python(returned)
-
-
 async def input_answer(call: InputCall) -> JsonValue:
     calls: list[JsonValue] = []
     returned = await call_input(
@@ -212,17 +194,15 @@ async def input_answer(call: InputCall) -> JsonValue:
 async def output_answer(call: OutputCall) -> JsonValue:
     request_data = call["request_data"]
     calls: list[JsonValue] = []
-    returned = await call_output(
-        PassThroughEndpointHandler(),
-        {
-            "response": call["response"],
-            "guardrail": recording_guardrail(call["guardrail_name"], calls),
-            "logging_obj": build_logging(call["logging"]),
-            "user_api_key_dict": build_user_key(call["user_api_key"]),
-            "request_data": request_data,
-        },
+    handler: OutputView = PassThroughEndpointHandler()
+    returned = await handler.process_output_response(
+        response=call["response"],
+        guardrail_to_apply=recording_guardrail(call["guardrail_name"], calls),
+        litellm_logging_obj=build_logging(call["logging"]),
+        user_api_key_dict=build_user_key(call["user_api_key"]),
+        request_data=request_data,
     )
-    answer: dict[str, JsonValue] = {"returned": returned, "calls": calls}
+    answer: dict[str, JsonValue] = {"returned": JSON.validate_python(returned), "calls": calls}
     if request_data is not None:
         answer["request_data"] = request_data
     return answer

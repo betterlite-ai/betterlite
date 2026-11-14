@@ -78,7 +78,7 @@ impl FakePolicy {
     fn extracting(extracted: &str) -> Self {
         Self {
             extracted: extracted.to_owned(),
-            ..Self::resolving(None)
+            ..Self::resolving(Some(settings(Some(&["query"]), Some(&["output"]))))
         }
     }
 
@@ -187,7 +187,7 @@ impl PassthroughGuardrail for FakeGuardrail {
         _logging_obj: Option<&mut FakeLogging>,
     ) -> impl Future<Output = Result<PassthroughGuardrailInputs, Refusal>> + Send {
         self.calls.lock().unwrap().push(Recorded {
-            inputs: inputs.clone(),
+            inputs,
             input_type,
             request_data: request_data.clone(),
         });
@@ -414,9 +414,10 @@ fn extract_text_for_guardrail_renders_nested_values_as_json() {
 #[test]
 fn extract_text_for_guardrail_passes_every_value_kind_to_the_policy() {
     let policy = FakePolicy::resolving(None);
-    let payload = data(
-        r#"{"flag": true, "count": 2, "negative": -3, "score": 0.5, "nothing": null, "items": [1, "two"], "nested": {"deep": false}}"#,
+    let mut payload = data(
+        r#"{"flag": true, "count": 2, "negative": -3, "nothing": null, "items": [1, "two"], "nested": {"deep": false}}"#,
     );
+    payload.insert("score".to_owned(), GuardrailValue::Decimal(0.5));
     let expressions = names(&[
         "flag", "count", "negative", "score", "nothing", "items", "nested",
     ]);
@@ -619,9 +620,7 @@ async fn process_output_response_checks_the_extracted_text_and_keeps_the_respons
                 model: Some("m2".to_owned()),
             },
             input_type: PassthroughInputType::Response,
-            request_data: data(
-                r#"{"output": "answer", "model": "m2", "response": {"output": "answer", "model": "m2"}}"#
-            ),
+            request_data: data(r#"{"output": "answer", "model": "m2"}"#),
         }]
     );
 }
