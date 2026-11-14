@@ -131,25 +131,26 @@ impl MockConfig {
 }
 
 #[cfg(test)]
+fn record_call<T>(calls: &Arc<Mutex<Vec<T>>>, call: T) {
+    calls.lock().unwrap().push(call);
+}
+
+#[cfg(test)]
 impl SandboxConfig for MockConfig {
     type Error = MockError;
 
     fn create(&self) -> impl Future<Output = Result<Value, MockError>> {
-        self.calls.create.lock().unwrap().push(());
+        record_call(&self.calls.create, ());
         ready(self.create.clone())
     }
 
     fn run(&self, container: &Value, code: &str) -> impl Future<Output = Result<Value, MockError>> {
-        self.calls
-            .run
-            .lock()
-            .unwrap()
-            .push((container.clone(), code.to_owned()));
+        record_call(&self.calls.run, (container.clone(), code.to_owned()));
         ready(self.run.clone())
     }
 
     fn delete(&self, container: &Value) -> impl Future<Output = Result<(), MockError>> {
-        self.calls.delete.lock().unwrap().push(container.clone());
+        record_call(&self.calls.delete, container.clone());
         ready(Ok(()))
     }
 }
