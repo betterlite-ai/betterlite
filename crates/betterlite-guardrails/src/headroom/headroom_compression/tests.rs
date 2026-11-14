@@ -483,21 +483,17 @@ async fn the_record_is_synced_into_the_logging_object() {
         )
         .await
         .unwrap();
-    let synced = serde_json::to_value(&target).unwrap();
-    for pointer in [
-        "/litellm_params/metadata/standard_logging_guardrail_information",
-        "/model_call_params/metadata/standard_logging_guardrail_information",
-    ] {
-        let entries = synced
-            .pointer(pointer)
-            .and_then(serde_json::Value::as_array)
-            .unwrap_or_else(|| panic!("records under {pointer}"));
-        assert_eq!(entries.len(), 1);
-        assert_eq!(
-            entries[0].get("guardrail_name"),
-            Some(&serde_json::Value::String("headroom".to_owned()))
-        );
-    }
+    assert_one_headroom_record(target.litellm_params.as_ref());
+    assert_one_headroom_record(target.model_call_params.as_ref());
+}
+
+fn assert_one_headroom_record(params: Option<&BTreeMap<String, GuardrailValue>>) {
+    let entries = records(params.expect("the params dict stays present"));
+    assert_eq!(entries.len(), 1);
+    assert_eq!(
+        entries[0].get("guardrail_name"),
+        Some(&serde_json::Value::String("headroom".to_owned()))
+    );
 }
 
 #[tokio::test]

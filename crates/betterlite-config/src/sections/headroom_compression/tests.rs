@@ -102,12 +102,32 @@ fn headroom_config_treats_an_empty_environment_reference_as_unset() {
     lookup.insert("HEADROOM_BASE".to_owned(), String::new());
     lookup.insert("HEADROOM_MODEL".to_owned(), String::new());
     lookup.insert("HEADROOM_FALLBACK".to_owned(), String::new());
-    let source = "guardrails:\n  - guardrail_name: headroom\n    litellm_params:\n      guardrail: headroom\n      api_base: os.environ/HEADROOM_BASE\n      model: os.environ/HEADROOM_MODEL\n      unreachable_fallback: os.environ/HEADROOM_FALLBACK\n";
+    lookup.insert("HEADROOM_CCR".to_owned(), String::new());
+    let source = "guardrails:\n  - guardrail_name: headroom\n    litellm_params:\n      guardrail: headroom\n      api_base: os.environ/HEADROOM_BASE\n      model: os.environ/HEADROOM_MODEL\n      unreachable_fallback: os.environ/HEADROOM_FALLBACK\n      ccr_retrieval: os.environ/HEADROOM_CCR\n";
     let settings = resolve(source, &lookup).unwrap();
     let headroom = configured(&settings);
     assert!(headroom.api_base.is_none());
     assert!(headroom.model.is_none());
     assert!(headroom.unreachable_fallback.is_none());
+    assert!(headroom.ccr_retrieval.is_none());
+}
+
+#[test]
+fn headroom_config_reads_a_false_flag_from_an_environment_reference() {
+    let mut lookup = BTreeMap::new();
+    lookup.insert("HEADROOM_CCR".to_owned(), "off".to_owned());
+    let source = "guardrails:\n  - guardrail_name: headroom\n    litellm_params:\n      guardrail: headroom\n      ccr_retrieval: os.environ/HEADROOM_CCR\n";
+    let settings = resolve(source, &lookup).unwrap();
+    assert_eq!(configured(&settings).ccr_retrieval, Some(false));
+}
+
+#[test]
+fn headroom_config_rejects_a_flag_that_is_not_a_bool() {
+    let mut lookup = BTreeMap::new();
+    lookup.insert("HEADROOM_CCR".to_owned(), "maybe".to_owned());
+    let source = "guardrails:\n  - guardrail_name: headroom\n    litellm_params:\n      guardrail: headroom\n      ccr_retrieval: os.environ/HEADROOM_CCR\n";
+    let error = resolve(source, &lookup).unwrap_err();
+    assert!(error.to_string().contains("HEADROOM_CCR"), "{error}");
 }
 
 #[test]

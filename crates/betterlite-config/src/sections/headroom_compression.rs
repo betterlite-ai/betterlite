@@ -34,7 +34,14 @@ struct Parameters {
     model: Option<String>,
     unreachable_fallback: Option<String>,
     timeout: Option<RawNumber>,
-    ccr_retrieval: Option<bool>,
+    ccr_retrieval: Option<RawFlag>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum RawFlag {
+    Boolean(bool),
+    Text(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,6 +104,11 @@ impl Entry {
             lookup,
             parse_float,
         )?;
+        let ccr_retrieval = optional_flag(
+            parameters.ccr_retrieval,
+            &format!("{prefix}.ccr_retrieval"),
+            lookup,
+        )?;
         Ok(Configured {
             guardrail_name: self.guardrail_name,
             api_base,
@@ -104,8 +116,27 @@ impl Entry {
             model,
             unreachable_fallback,
             timeout,
-            ccr_retrieval: parameters.ccr_retrieval,
+            ccr_retrieval,
         })
+    }
+}
+
+fn optional_flag<L>(
+    value: Option<RawFlag>,
+    path: &str,
+    lookup: &L,
+) -> Result<Option<bool>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    match value {
+        None => Ok(None),
+        Some(RawFlag::Boolean(flag)) => Ok(Some(flag)),
+        Some(RawFlag::Text(text)) => {
+            let name = text.strip_prefix("os.environ/").unwrap_or(path).to_owned();
+            let resolved = resolve_string(text, path, lookup)?;
+            Ok(betterlite_env::flag(&name, &resolved)?)
+        }
     }
 }
 
@@ -136,17 +167,17 @@ fn optional_fallback<L>(
 where
     L: EnvironmentLookup,
 {
-    match optional_value(value, path, lookup)? {
-        None => Ok(None),
-        Some(resolved) => match resolved.as_str() {
-            FAIL_CLOSED => Ok(Some(UnreachableFallback::FailClosed)),
-            FAIL_OPEN => Ok(Some(UnreachableFallback::FailOpen)),
-            other => {
-                let source = <serde_saphyr::Error as DeserializeError>::custom(format!(
-                    "{path}: invalid unreachable_fallback `{other}`; expected `fail_closed` or `fail_open`"
-                ));
-                Err(ConfigError::Yaml { source })
-            }
-        },
+    let Some(resolved) = optional_value(value, path, lookup)? else {
+        return Ok(None);
+    };
+    match resolved.as_str() {
+        FAIL_CLOSED => Ok(Some(UnreachableFallback::FailClosed)),
+        FAIL_OPEN => Ok(Some(UnreachableFallback::FailOpen)),
+        other => {
+            let source = <serde_saphyr::Error as DeserializeError>::custom(format!(
+                "{path}: invalid unreachable_fallback `{other}`; expected `fail_closed` or `fail_open`"
+            ));
+            Err(ConfigError::Yaml { source })
+        }
     }
 }

@@ -70,3 +70,4 @@ compare:
     - {pointer: "/value/request_data/metadata/standard_logging_guardrail_information/0/start_time", why: "The record time is the wall clock at the call"}
     - {pointer: "/value/request_data/metadata/standard_logging_guardrail_information/0/end_time", why: "The record time is the wall clock at the call"}
     - {pointer: "/value/request_data/metadata/standard_logging_guardrail_information/0/duration", why: "The duration is measured around the wall clock"}
+    - {pointer: "/value/request_data/litellm_call_id", why: "The generated call id is a fresh UUID on every run"}
