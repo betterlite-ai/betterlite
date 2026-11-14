@@ -1,0 +1,22 @@
+kind: helper
+name: studio-agents-absent-versus-null-identity
+call:
+  studio_agents:
+    calls:
+      - function: reply
+        operation: create
+        name: request-name
+        status: 200
+        body: '{"base_agent":"waverunner"}'
+      - function: reply
+        operation: get
+        name: request-name
+        status: 200
+        body: '{"id":null,"name":null,"base_agent":"waverunner"}'
+      - function: reply
+        operation: create
+        name: request-name
+        status: 200
+        body: '{"id":"provider-id","extra":{"k":[1]}}'
+env: {}
+compare: {ignore: []}
