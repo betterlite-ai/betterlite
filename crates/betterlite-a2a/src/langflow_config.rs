@@ -51,12 +51,7 @@ where
     S: EventSource,
 {
     let merged = merged_params(call)?;
-    let scoped = BridgeCall {
-        litellm_params: &merged,
-        agent_extra_headers: None,
-        ..*call
-    };
-    handle_non_streaming_direct(&scoped, completion, source)
+    handle_non_streaming_direct(&scoped_call(call, &merged), completion, source)
         .await
         .map_err(LangFlowError::Completion)
 }
@@ -75,14 +70,20 @@ where
         Ok(merged) => merged,
         Err(error) => return iter(Some(Err(LangFlowError::Config(error)))).boxed(),
     };
-    let scoped = BridgeCall {
-        litellm_params: &merged,
-        agent_extra_headers: None,
-        ..*call
-    };
-    handle_streaming_direct(&scoped, completion, source)
+    handle_streaming_direct(&scoped_call(call, &merged), completion, source)
         .map(|event| event.map_err(LangFlowError::Completion))
         .boxed()
+}
+
+fn scoped_call<'call>(
+    call: &'call BridgeCall<'_>,
+    merged: &'call BTreeMap<String, AgentJson>,
+) -> BridgeCall<'call> {
+    BridgeCall {
+        litellm_params: merged,
+        agent_extra_headers: None,
+        ..*call
+    }
 }
 
 fn merged_params(

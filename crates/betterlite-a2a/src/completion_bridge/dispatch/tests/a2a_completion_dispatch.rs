@@ -4,12 +4,12 @@ use betterlite_core::agents::json::AgentJson;
 use rstest::rstest;
 
 use crate::completion_bridge::A2A_USER_API_KEY_HASH_PARAM;
-use crate::completion_bridge::completion::CompletionChunk;
+use crate::completion_bridge::completion::{CompletionChunk, CompletionPort};
 use crate::completion_bridge::dispatch::{
-    BridgeError, CompletionError, handle_non_streaming, handle_non_streaming_direct,
-    handle_streaming, handle_streaming_direct,
+    A2AProviderDispatch, BridgeError, Buffered, CompletionError, Streamed, dispatch,
+    handle_non_streaming_direct, handle_streaming_direct,
 };
-use crate::completion_bridge::params::ParamsError;
+use crate::completion_bridge::params::{BridgeCall, ParamsError};
 use crate::completion_bridge::tests::Source;
 use crate::completion_bridge::tests::support::{
     TestFailure, bridge_call, chunk, collect_events, litellm_params, model_response, parsed,
@@ -49,7 +49,7 @@ async fn routes_non_streaming_to_the_selected_config(
     let completion = recorder();
     let providers = provider();
     let mut source = Source::default();
-    let result = handle_non_streaming(&call, &completion, &providers, &mut source)
+    let result = dispatch::<Buffered, _, _, _>(&call, &completion, &providers, &mut source)
         .await
         .expect("the fixture dispatch succeeds");
     assert_eq!(Some(&result), providers.answer.as_ref().ok());
@@ -72,7 +72,7 @@ async fn unrouted_requests_fall_back_to_completion(
     let completion = recorder();
     let providers = provider();
     let mut source = Source::default();
-    let result = handle_non_streaming(&call, &completion, &providers, &mut source)
+    let result = dispatch::<Buffered, _, _, _>(&call, &completion, &providers, &mut source)
         .await
         .expect("the fixture dispatch succeeds");
     assert_eq!(
@@ -97,7 +97,7 @@ async fn non_streaming_completion_converts_the_model_response() {
     completion.answer = Ok(model_response("Hello"));
     let providers = provider();
     let mut source = Source::default();
-    let result = handle_non_streaming(&call, &completion, &providers, &mut source)
+    let result = dispatch::<Buffered, _, _, _>(&call, &completion, &providers, &mut source)
         .await
         .expect("the fixture dispatch succeeds");
     assert_eq!(
@@ -129,7 +129,7 @@ async fn non_streaming_completion_failures_keep_their_source() {
     completion.answer = Err(TestFailure("completion-boom"));
     let providers = provider();
     let mut source = Source::default();
-    let failure = handle_non_streaming(&call, &completion, &providers, &mut source)
+    let failure = dispatch::<Buffered, _, _, _>(&call, &completion, &providers, &mut source)
         .await
         .expect_err("the fixture completion fails");
     assert!(matches!(
@@ -147,7 +147,7 @@ async fn non_streaming_provider_failures_keep_their_source() {
     let mut providers = provider();
     providers.answer = Err(TestFailure("provider-boom"));
     let mut source = Source::default();
-    let failure = handle_non_streaming(&call, &completion, &providers, &mut source)
+    let failure = dispatch::<Buffered, _, _, _>(&call, &completion, &providers, &mut source)
         .await
         .expect_err("the fixture provider fails");
     assert!(matches!(
@@ -173,7 +173,7 @@ async fn invalid_params_fail_before_any_dispatch(
     let completion = recorder();
     let providers = provider();
     let mut source = Source::default();
-    let failure = handle_non_streaming(&call, &completion, &providers, &mut source)
+    let failure = dispatch::<Buffered, _, _, _>(&call, &completion, &providers, &mut source)
         .await
         .expect_err("the fixture params are invalid");
     assert!(matches!(
@@ -192,9 +192,7 @@ async fn streaming_invalid_params_yield_a_single_error() {
     let call = bridge_call("req-1", &message, &params);
     let completion = recorder();
     let providers = provider();
-    let events =
-        collect_events(handle_streaming(&call, &completion, &providers, Source::default()).await)
-            .await;
+    let events = streaming_events(&call, &completion, &providers).await;
     assert_eq!(events.len(), 1);
     assert!(matches!(
         &events[0],
@@ -255,20 +253,18 @@ async fn streaming_accumulates_choice_zero_text() {
     let call = bridge_call("req-1", &message, &params);
     let mut completion = recorder();
     completion.chunks = Ok(vec![
-        Ok(chunk("Hel")),
+        Ok(chunk("abc")),
         Ok(chunk("")),
         Ok(parsed_chunk(
-            r#"{"choices":[{"delta":{"content":"lo"}},{"delta":{"content":" ignored"}}]}"#,
+            r#"{"choices":[{"delta":{"content":"def"}},{"delta":{"content":" ignored"}}]}"#,
         )),
         Ok(parsed_chunk(r#"{"choices":[{"delta":null}]}"#)),
     ]);
     let providers = provider();
-    let events =
-        collect_events(handle_streaming(&call, &completion, &providers, Source::default()).await)
-            .await;
+    let events = streaming_events(&call, &completion, &providers).await;
     assert_eq!(
         summaries(&events).join("|"),
-        "task:submitted|status:working:false|artifact:Hello|status:completed:true"
+        "task:submitted|status:working:false|artifact:abcdef|status:completed:true"
     );
     let working = events[1].as_ref().expect("the working event is an event");
     assert_eq!(
@@ -304,9 +300,7 @@ async fn streaming_skips_an_empty_artifact(#[case] chunks: Vec<CompletionChunk>)
     let mut completion = recorder();
     completion.chunks = Ok(chunks.into_iter().map(Ok).collect());
     let providers = provider();
-    let events =
-        collect_events(handle_streaming(&call, &completion, &providers, Source::default()).await)
-            .await;
+    let events = streaming_events(&call, &completion, &providers).await;
     assert_eq!(
         summaries(&events).join("|"),
         "task:submitted|status:working:false|status:completed:true"
@@ -321,8 +315,7 @@ async fn streaming_completion_errors_follow_the_working_status() {
     let providers = provider();
     let mut eager = recorder();
     eager.chunks = Err(TestFailure("stream-boom"));
-    let events =
-        collect_events(handle_streaming(&call, &eager, &providers, Source::default()).await).await;
+    let events = streaming_events(&call, &eager, &providers).await;
     assert_eq!(
         summaries(&events[..2]).join("|"),
         "task:submitted|status:working:false"
@@ -335,10 +328,8 @@ async fn streaming_completion_errors_follow_the_working_status() {
         )))
     ));
     let mut streamed = recorder();
-    streamed.chunks = Ok(vec![Ok(chunk("Hel")), Err(TestFailure("chunk-boom"))]);
-    let streamed_events =
-        collect_events(handle_streaming(&call, &streamed, &providers, Source::default()).await)
-            .await;
+    streamed.chunks = Ok(vec![Ok(chunk("abc")), Err(TestFailure("chunk-boom"))]);
+    let streamed_events = streaming_events(&call, &streamed, &providers).await;
     assert_eq!(
         summaries(&streamed_events[..2]).join("|"),
         "task:submitted|status:working:false"
@@ -367,9 +358,7 @@ async fn streaming_routes_to_the_selected_config() {
             r#"{"result":{"kind":"status-update","status":{"state":"working"},"final":false}}"#,
         )),
     ]);
-    let events =
-        collect_events(handle_streaming(&call, &completion, &providers, Source::default()).await)
-            .await;
+    let events = streaming_events(&call, &completion, &providers).await;
     assert_eq!(
         summaries(&events).join("|"),
         "task:submitted|status:working:false"
@@ -389,9 +378,7 @@ async fn streaming_provider_failures_are_a_single_error() {
     let completion = recorder();
     let mut providers = provider();
     providers.events = Err(TestFailure("provider-boom"));
-    let events =
-        collect_events(handle_streaming(&call, &completion, &providers, Source::default()).await)
-            .await;
+    let events = streaming_events(&call, &completion, &providers).await;
     assert_eq!(events.len(), 1);
     assert!(matches!(
         &events[0],
@@ -411,12 +398,10 @@ async fn provider_configs_receive_the_original_call() {
     let completion = recorder();
     let providers = provider();
     let mut source = Source::default();
-    handle_non_streaming(&call, &completion, &providers, &mut source)
+    dispatch::<Buffered, _, _, _>(&call, &completion, &providers, &mut source)
         .await
         .expect("the fixture dispatch succeeds");
-    let events =
-        collect_events(handle_streaming(&call, &completion, &providers, Source::default()).await)
-            .await;
+    let events = streaming_events(&call, &completion, &providers).await;
     assert!(events.is_empty());
     let received = provider_calls(&providers);
     assert_eq!(received.len(), 2);
@@ -443,9 +428,7 @@ async fn streaming_stops_after_the_text_cap() {
     let full = "x".repeat(MAX_TEXT_BYTES);
     completion.chunks = Ok(vec![Ok(chunk(&full)), Ok(chunk("y"))]);
     let providers = provider();
-    let events =
-        collect_events(handle_streaming(&call, &completion, &providers, Source::default()).await)
-            .await;
+    let events = streaming_events(&call, &completion, &providers).await;
     assert_eq!(
         summaries(&events[..2]).join("|"),
         "task:submitted|status:working:false"
@@ -468,9 +451,7 @@ async fn streaming_accepts_text_exactly_at_the_cap() {
     let full = "x".repeat(MAX_TEXT_BYTES);
     completion.chunks = Ok(vec![Ok(chunk(&full))]);
     let providers = provider();
-    let events =
-        collect_events(handle_streaming(&call, &completion, &providers, Source::default()).await)
-            .await;
+    let events = streaming_events(&call, &completion, &providers).await;
     assert_eq!(events.len(), 4);
     let artifact = events[2].as_ref().expect("the artifact is an event");
     assert_eq!(artifact["result"]["kind"], "artifact-update");
@@ -480,6 +461,20 @@ async fn streaming_accepts_text_exactly_at_the_cap() {
             .map(str::len),
         Some(MAX_TEXT_BYTES)
     );
+}
+
+async fn streaming_events<C, P>(
+    call: &BridgeCall<'_>,
+    completion: &C,
+    providers: &P,
+) -> Vec<Result<AgentJson, BridgeError<C::Error, P::Error>>>
+where
+    C: CompletionPort,
+    P: A2AProviderDispatch,
+{
+    let mut source = Source::default();
+    collect_events(dispatch::<Streamed, _, _, _>(call, completion, providers, &mut source).await)
+        .await
 }
 
 fn parsed_chunk(text: &str) -> CompletionChunk {

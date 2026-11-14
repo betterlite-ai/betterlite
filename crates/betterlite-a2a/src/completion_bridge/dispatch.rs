@@ -6,13 +6,15 @@ use futures_util::StreamExt as _;
 use futures_util::stream::{BoxStream, iter};
 use thiserror::Error;
 
-use super::completion::{CompletionCall, CompletionPort};
+use super::completion::{CompletionChunk, CompletionPort};
 use super::params::{BridgeCall, ParamsError, build_completion_params, optional_text};
 use super::streaming::{EventContent, stream_event};
 use super::{A2AStreamingContext, EventSource, response_to_a2a};
 use crate::provider_selector::{A2AProviderConfig, get_provider_config};
 use crate::watsonx_run::accumulator::MAX_TEXT_BYTES;
 
+mod buffered;
+mod streamed;
 mod tests;
 
 pub type BridgeEvents<'stream, E> = BoxStream<'stream, Result<AgentJson, E>>;
@@ -61,6 +63,35 @@ pub trait A2AProviderDispatch: Send + Sync {
     ) -> impl Future<Output = Result<BridgeEvents<'static, Self::Error>, Self::Error>> + Send;
 }
 
+// LiteLLM's handle_non_streaming and handle_streaming differ only in how the answer is delivered
+pub struct Buffered;
+
+pub struct Streamed;
+
+pub trait Mode<'call, C, P>
+where
+    C: CompletionPort,
+    P: A2AProviderDispatch,
+{
+    type Output;
+
+    fn provider(
+        providers: &'call P,
+        config: A2AProviderConfig,
+        call: &'call BridgeCall<'_>,
+    ) -> impl Future<Output = Self::Output> + Send + 'call;
+
+    fn direct<S>(
+        call: &'call BridgeCall<'_>,
+        completion: &'call C,
+        source: &'call mut S,
+    ) -> impl Future<Output = Self::Output> + Send + 'call
+    where
+        S: EventSource + Send + 'call;
+
+    fn failed(error: CompletionError<C::Error>) -> Self::Output;
+}
+
 const WORKING_STATUS: EventContent<'static> = EventContent::Status {
     state: "working",
     final_event: false,
@@ -73,29 +104,27 @@ const COMPLETED_STATUS: EventContent<'static> = EventContent::Status {
     message: None,
 };
 
-pub async fn handle_non_streaming<C, P, S>(
-    call: &BridgeCall<'_>,
-    completion: &C,
-    providers: &P,
-    source: &mut S,
-) -> Result<AgentJson, BridgeError<C::Error, P::Error>>
+// LiteLLM's A2ACompletionBridgeHandler: select the provider config, or run the completion itself
+pub async fn dispatch<'call, M, C, P, S>(
+    call: &'call BridgeCall<'_>,
+    completion: &'call C,
+    providers: &'call P,
+    source: &'call mut S,
+) -> M::Output
 where
+    M: Mode<'call, C, P>,
     C: CompletionPort,
     P: A2AProviderDispatch,
-    S: EventSource,
+    S: EventSource + Send + 'call,
 {
-    let selected = select_config(call)
-        .map_err(CompletionError::Params)
-        .map_err(BridgeError::Completion)?;
-    let Some(config) = selected else {
-        return handle_non_streaming_direct(call, completion, source)
-            .await
-            .map_err(BridgeError::Completion);
+    let config = match select_config(call) {
+        Ok(config) => config,
+        Err(error) => return M::failed(CompletionError::Params(error)),
     };
-    providers
-        .handle_non_streaming(config, call)
-        .await
-        .map_err(BridgeError::Provider)
+    match config {
+        Some(config) => M::provider(providers, config, call).await,
+        None => M::direct(call, completion, source).await,
+    }
 }
 
 pub async fn handle_non_streaming_direct<C, S>(
@@ -116,37 +145,6 @@ where
     serde_json::to_value(converted).map_err(CompletionError::Encode)
 }
 
-pub async fn handle_streaming<'call, C, P, S>(
-    call: &BridgeCall<'_>,
-    completion: &'call C,
-    providers: &P,
-    source: S,
-) -> BridgeEvents<'call, BridgeError<C::Error, P::Error>>
-where
-    C: CompletionPort,
-    P: A2AProviderDispatch,
-    S: EventSource + Send + 'static,
-{
-    let selected = select_config(call)
-        .map_err(CompletionError::Params)
-        .map_err(BridgeError::Completion);
-    let config = match selected {
-        Ok(None) => {
-            return handle_streaming_direct(call, completion, source)
-                .map(|event| event.map_err(BridgeError::Completion))
-                .boxed();
-        }
-        Ok(Some(config)) => config,
-        Err(error) => return iter(Some(Err(error))).boxed(),
-    };
-    match providers.handle_streaming(config, call).await {
-        Ok(events) => events
-            .map(|event| event.map_err(BridgeError::Provider))
-            .boxed(),
-        Err(error) => iter(Some(Err(BridgeError::Provider(error)))).boxed(),
-    }
-}
-
 #[must_use]
 pub fn handle_streaming_direct<'call, C, S>(
     call: &BridgeCall<'_>,
@@ -155,7 +153,7 @@ pub fn handle_streaming_direct<'call, C, S>(
 ) -> BridgeEvents<'call, CompletionError<C::Error>>
 where
     C: CompletionPort,
-    S: EventSource + Send + 'static,
+    S: EventSource + Send + 'call,
 {
     let built = match build_completion_params(call, true) {
         Ok(built) => built,
@@ -166,19 +164,6 @@ where
         call.params.message.clone(),
         &mut source,
     );
-    events(built, completion, source, ctx)
-}
-
-fn events<C, S>(
-    built: CompletionCall,
-    completion: &C,
-    mut source: S,
-    ctx: A2AStreamingContext,
-) -> BridgeEvents<'_, CompletionError<C::Error>>
-where
-    C: CompletionPort,
-    S: EventSource + Send + 'static,
-{
     async_stream::stream! {
         yield Ok(stream_event(&ctx, EventContent::Task, &mut source));
         yield Ok(stream_event(&ctx, WORKING_STATUS, &mut source));
@@ -191,21 +176,9 @@ where
         };
         let mut text = String::new();
         while let Some(next) = chunks.next().await {
-            match next {
-                Ok(chunk) => {
-                    let content = chunk.first_content().unwrap_or_default();
-                    if text.len().saturating_add(content.len()) > MAX_TEXT_BYTES {
-                        yield Err(CompletionError::TextTooLong {
-                            max: MAX_TEXT_BYTES,
-                        });
-                        return;
-                    }
-                    text.push_str(content);
-                }
-                Err(error) => {
-                    yield Err(CompletionError::Completion(error));
-                    return;
-                }
+            if let Err(error) = accumulate(&mut text, next) {
+                yield Err(error);
+                return;
             }
         }
         if !text.is_empty() {
@@ -213,8 +186,29 @@ where
         }
         yield Ok(stream_event(&ctx, COMPLETED_STATUS, &mut source));
     }
-    .map(|event| event.and_then(|item| serde_json::to_value(item).map_err(CompletionError::Encode)))
+    .map(|event| {
+        let event = event?;
+        serde_json::to_value(event).map_err(CompletionError::Encode)
+    })
     .boxed()
+}
+
+fn accumulate<C>(
+    text: &mut String,
+    next: Result<CompletionChunk, C>,
+) -> Result<(), CompletionError<C>>
+where
+    C: Error + 'static,
+{
+    let chunk = next.map_err(CompletionError::Completion)?;
+    let content = chunk.first_content().unwrap_or_default();
+    if text.len().saturating_add(content.len()) > MAX_TEXT_BYTES {
+        return Err(CompletionError::TextTooLong {
+            max: MAX_TEXT_BYTES,
+        });
+    }
+    text.push_str(content);
+    Ok(())
 }
 
 fn select_config(call: &BridgeCall<'_>) -> Result<Option<A2AProviderConfig>, ParamsError> {

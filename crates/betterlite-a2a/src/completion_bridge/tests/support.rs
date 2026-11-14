@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 use std::future::{Future, ready};
 use std::sync::Mutex;
 
@@ -32,6 +33,15 @@ pub(crate) fn recorder() -> RecordingCompletion {
     }
 }
 
+impl RecordingCompletion {
+    fn record(&self, call: CompletionCall) {
+        self.calls
+            .lock()
+            .expect("the fixture lock is not poisoned")
+            .push(call);
+    }
+}
+
 impl CompletionPort for RecordingCompletion {
     type Error = TestFailure;
 
@@ -39,10 +49,7 @@ impl CompletionPort for RecordingCompletion {
         &self,
         call: CompletionCall,
     ) -> impl Future<Output = Result<ModelResponse, Self::Error>> + Send {
-        self.calls
-            .lock()
-            .expect("the fixture lock is not poisoned")
-            .push(call);
+        self.record(call);
         ready(self.answer.clone())
     }
 
@@ -50,10 +57,7 @@ impl CompletionPort for RecordingCompletion {
         &self,
         call: CompletionCall,
     ) -> impl Future<Output = Result<StreamedChunks<Self::Error>, Self::Error>> + Send {
-        self.calls
-            .lock()
-            .expect("the fixture lock is not poisoned")
-            .push(call);
+        self.record(call);
         ready(
             self.chunks
                 .clone()
@@ -95,6 +99,30 @@ fn provider_call(call: &BridgeCall<'_>) -> ProviderCall {
     }
 }
 
+impl RecordingProvider {
+    fn record(&self, config: A2AProviderConfig, call: &BridgeCall<'_>) {
+        self.configs
+            .lock()
+            .expect("the fixture lock is not poisoned")
+            .push(config);
+        self.calls
+            .lock()
+            .expect("the fixture lock is not poisoned")
+            .push(provider_call(call));
+    }
+
+    fn recorded_events(
+        &self,
+        config: A2AProviderConfig,
+        call: &BridgeCall<'_>,
+    ) -> Result<BridgeEvents<'static, TestFailure>, TestFailure> {
+        self.record(config, call);
+        self.events
+            .clone()
+            .map(|events| stream::iter(events).boxed())
+    }
+}
+
 impl A2AProviderDispatch for RecordingProvider {
     type Error = TestFailure;
 
@@ -103,14 +131,7 @@ impl A2AProviderDispatch for RecordingProvider {
         config: A2AProviderConfig,
         call: &BridgeCall<'_>,
     ) -> impl Future<Output = Result<AgentJson, Self::Error>> + Send {
-        self.configs
-            .lock()
-            .expect("the fixture lock is not poisoned")
-            .push(config);
-        self.calls
-            .lock()
-            .expect("the fixture lock is not poisoned")
-            .push(provider_call(call));
+        self.record(config, call);
         ready(self.answer.clone())
     }
 
@@ -119,19 +140,7 @@ impl A2AProviderDispatch for RecordingProvider {
         config: A2AProviderConfig,
         call: &BridgeCall<'_>,
     ) -> impl Future<Output = Result<BridgeEvents<'static, Self::Error>, Self::Error>> + Send {
-        self.configs
-            .lock()
-            .expect("the fixture lock is not poisoned")
-            .push(config);
-        self.calls
-            .lock()
-            .expect("the fixture lock is not poisoned")
-            .push(provider_call(call));
-        ready(
-            self.events
-                .clone()
-                .map(|events| stream::iter(events).boxed()),
-        )
+        ready(self.recorded_events(config, call))
     }
 }
 
@@ -204,7 +213,15 @@ pub(crate) fn provider_calls(providers: &RecordingProvider) -> Vec<ProviderCall>
 }
 
 pub(crate) fn send_params() -> MessageSendParams {
-    MessageSendParams {
+    message_params(None)
+}
+
+pub(crate) fn send_params_with_context(context_id: &str) -> MessageSendParams {
+    message_params(Some(context_id))
+}
+
+fn message_params(context_id: Option<&str>) -> MessageSendParams {
+    let mut params = MessageSendParams {
         message: A2AMessage {
             role: Role("user".to_owned()),
             parts: vec![parsed(r#"{"kind":"text","text":"hello"}"#)],
@@ -214,15 +231,13 @@ pub(crate) fn send_params() -> MessageSendParams {
         },
         metadata: None,
         extra: BTreeMap::new(),
+    };
+    if let Some(context_id) = context_id {
+        params.message.extra.insert(
+            "contextId".to_owned(),
+            AgentJson::String(context_id.to_owned()),
+        );
     }
-}
-
-pub(crate) fn send_params_with_context(context_id: &str) -> MessageSendParams {
-    let mut params = send_params();
-    params.message.extra.insert(
-        "contextId".to_owned(),
-        AgentJson::String(context_id.to_owned()),
-    );
     params
 }
 
@@ -264,7 +279,7 @@ where
 
 pub(crate) fn summaries<E>(events: &[Result<AgentJson, E>]) -> Vec<String>
 where
-    E: std::fmt::Debug,
+    E: Debug,
 {
     events
         .iter()
