@@ -17,6 +17,7 @@ const NONE: &str = "NONE";
 const END: &str = "END";
 
 // the shared Cohere mapping: top_k from top_n goes in before the request overlay, which then wins
+#[must_use]
 pub fn cohere_rerank_params(
     query: &str,
     documents: &[RerankDocument],
