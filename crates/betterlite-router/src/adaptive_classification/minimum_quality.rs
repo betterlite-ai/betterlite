@@ -15,11 +15,7 @@ pub fn minimum_quality_tier(headers: Option<&Json>, metadata: Option<&Json>) -> 
     }
     let raw = match metadata {
         Some(Json::Object(fields)) => fields.get(MIN_QUALITY_TIER_METADATA_KEY),
-        Some(Json::Null)
-        | Some(Json::Bool(_))
-        | Some(Json::Number(_))
-        | Some(Json::Text(_))
-        | Some(Json::List(_))
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
         | None => None,
     };
     raw.and_then(json_integer)
