@@ -61,6 +61,8 @@ DUMP_COUNT: Final = 37
 REJECTION_COUNT: Final = 23
 UI_COUNT: Final = 15
 ABSTRACT_COUNT: Final = 20
+HIDDENLAYER_VERSION: Final = 2
+STREAMING_SAMPLING_RATE: Final = 5
 DESCRIBE_SCRIPT = """
 import importlib
 import inspect
@@ -799,7 +801,7 @@ def test_typeddict_names() -> None:
 
 
 def test_default_names() -> None:
-    assert hiddenlayer.HiddenlayerGuardrailConfigModel().version == 2
+    assert hiddenlayer.HiddenlayerGuardrailConfigModel().version == HIDDENLAYER_VERSION
     assert onyx.OnyxGuardrailConfigModel().timeout is None
     config = litellm_content_filter.ContentFilterCategoryConfig(
         category="harmful_self_harm",
@@ -835,7 +837,7 @@ def test_model_config_names() -> None:
     assert config.model == "omni-moderation-latest"
     assert config.api_base == "https://api.openai.com/v1"
     assert config.streaming_end_of_stream_only is False
-    assert config.streaming_sampling_rate == 5
+    assert config.streaming_sampling_rate == STREAMING_SAMPLING_RATE
     payload: dict[str, JsonValue] = {"model": "text-moderation-stable"}
     with pytest.raises(ValidationError):
         openai_moderation.OpenAIModerationGuardrailConfigModel.model_validate(payload)
