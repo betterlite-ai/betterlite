@@ -55,6 +55,36 @@ fn an_empty_sanitized_object_logs_the_serialization_warning() {
 }
 
 #[test]
+fn sanitize_payload_keeps_an_empty_object_quiet_without_content() {
+    let log = CapturedLog::default();
+    let fields = with_default(log.subscriber(Level::WARN), || {
+        payload::sanitize_payload("{}", false)
+    });
+    assert!(fields.is_empty());
+    assert!(!log.text().contains("serialization"));
+}
+
+#[test]
+fn the_request_payload_serialization_stays_quiet_when_nothing_remains() {
+    let log = CapturedLog::default();
+    let scanned = inputs();
+    let sent_data = data(r#"{"messages": [{"role": "user", "content": "hello"}]}"#);
+    let request: payload::ScanRequest<'_> = payload::ScanRequest {
+        inputs: &scanned,
+        request_data: &sent_data,
+        input_type: GuardrailInputType::Request,
+        log_target: None,
+        application_id: None,
+    };
+    let config = settings("https://noma.example");
+    let built = with_default(log.subscriber(Level::WARN), || {
+        payload::build(&request, &config)
+    });
+    assert!(built.request_data.is_empty());
+    assert!(!log.text().contains("serialization"));
+}
+
+#[test]
 fn the_wire_payload_serialization_keeps_every_scan_field() {
     let scanned = inputs();
     let sent_data = data(r#"{"model": "gpt-4o", "messages": [], "input": "x"}"#);
