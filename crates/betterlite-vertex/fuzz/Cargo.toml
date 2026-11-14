@@ -56,6 +56,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "google_guardrail_sse"
+path = "fuzz_targets/google_guardrail_sse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "google_native_content"
 path = "fuzz_targets/google_native_content.rs"
 test = false

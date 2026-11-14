@@ -1,0 +1,26 @@
+kind: helper
+name: google-guardrail-text-dictionary-contents
+call:
+  google_guardrail_text:
+    calls:
+      - function: request
+        data:
+          contents: {parts: [{text: only}]}
+      - function: request
+        data:
+          contents:
+            - {parts: [{text: a}]}
+            - ignored
+            - {parts: [{text: b}]}
+      - function: request
+        data:
+          contents:
+            - parts:
+                - {text: keep}
+                - {inlineData: {mimeType: image/png, data: x}}
+                - {text: ""}
+                - {text: 7}
+      - function: request
+        data: {model: gemini-2.5-flash}
+env: {}
+compare: {ignore: []}

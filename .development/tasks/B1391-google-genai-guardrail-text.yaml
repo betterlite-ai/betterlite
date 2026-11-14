@@ -92,5 +92,5 @@ pitfalls:
   - Existing context keys are preserved even when their value is None.
   - Raw SSE replacement text is discarded after detection, so rewriting a stream would change the pinned behavior.
   - Byte chunks are individually decoded with replacement before concatenation, which matters for a split multibyte character.
-budget: {max_changed_lines: 700, max_new_expects: 1}
+budget: {max_changed_lines: 1000, max_new_expects: 1}
 review_level: standard

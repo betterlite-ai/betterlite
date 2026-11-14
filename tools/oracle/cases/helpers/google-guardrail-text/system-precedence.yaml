@@ -1,0 +1,28 @@
+kind: helper
+name: google-guardrail-text-system-precedence
+call:
+  google_guardrail_text:
+    calls:
+      - function: request
+        data:
+          systemInstruction: {parts: [{text: camel}]}
+          system_instruction: {parts: [{text: snake}]}
+          contents: [{parts: [{text: body}]}]
+      - function: request
+        data:
+          systemInstruction: null
+          system_instruction: {parts: [{text: snake}]}
+      - function: request
+        data:
+          systemInstruction: ""
+          config: {systemInstruction: {parts: [{text: config}]}}
+      - function: request
+        data:
+          config:
+            systemInstruction: {parts: [{text: camel}]}
+            system_instruction: {parts: [{text: snake}]}
+      - function: request
+        data:
+          config: {system_instruction: {parts: [{text: config-snake}]}}
+env: {}
+compare: {ignore: []}

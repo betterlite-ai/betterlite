@@ -1,0 +1,6 @@
+data: {"candidates":[{"content":{"parts":[{"text":"one"}]}}]}
+
+data: {"candidates":[{"content":{"parts":[{"text":"two"}]}}]}
+
+data: [DONE]
+
