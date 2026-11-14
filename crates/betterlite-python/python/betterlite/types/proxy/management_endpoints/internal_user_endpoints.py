@@ -1,5 +1,6 @@
 from collections.abc import Mapping, Sequence
-from typing import Annotated, Final, Literal, Self, TypedDict
+from datetime import datetime
+from typing import Annotated, ClassVar, Final, Literal, Self, TypedDict
 
 from pydantic import ConfigDict, Field
 from typing_extensions import ReadOnly
@@ -11,6 +12,7 @@ from betterlite.types.utils import (
     field_validator,
     model_validator,
 )
+from betterlite.types.utils.base import DictJsonObject
 
 MAX_BULK_DELETE_USERS: Final = 500
 
@@ -29,6 +31,8 @@ class UserSearchWhere(TypedDict):
 
 
 class UserListResponse(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     users: list[dict[str, JsonValue]]
     total: int
     page: int
@@ -37,6 +41,8 @@ class UserListResponse(ResponseObject):
 
 
 class BulkUpdateUserRequest(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     users: list[dict[str, JsonValue]] | None = None
     all_users: bool | None = False
     user_updates: dict[str, JsonValue] | None = None
@@ -60,6 +66,8 @@ class BulkUpdateUserRequest(ResponseObject):
 
 
 class UserUpdateResult(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     user_id: str | None = None
     user_email: str | None = None
     success: bool
@@ -68,6 +76,8 @@ class UserUpdateResult(ResponseObject):
 
 
 class BulkUpdateUserResponse(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     results: list[UserUpdateResult]
     total_requested: int
     successful_updates: int
@@ -84,6 +94,8 @@ class BulkDeleteUserRequest(ResponseObject):
 
 
 class UserDeleteResult(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     user_id: str
     user_email: str | None = None
     success: bool
@@ -92,10 +104,43 @@ class UserDeleteResult(ResponseObject):
 
 
 class BulkDeleteUsersResponse(ResourceResponse[tuple[UserDeleteResult, ...]]):
-    pass
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
 
 
-class BulkNewUserItem(ResponseObject):
+class _NewUserRequestTeam(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
+    team_id: str
+    max_budget_in_team: float | None = None
+    user_role: Literal["user", "admin"] = "user"
+
+
+class _BudgetLimitEntry(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
+    budget_duration: str
+    max_budget: float
+    reset_at: datetime | None = None
+
+
+class _ObjectPermission(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
+    mcp_servers: list[str] | None = None
+    mcp_access_groups: list[str] | None = None
+    mcp_tool_permissions: dict[str, list[str]] | None = None
+    mcp_toolsets: list[str] | None = None
+    blocked_tools: list[str] | None = None
+    vector_stores: list[str] | None = None
+    agents: list[str] | None = None
+    agent_access_groups: list[str] | None = None
+    models: list[str] | None = None
+    search_tools: list[str] | None = None
+    mcp_tool_search_enabled: bool | None = None
+    skills: list[str] | None = None
+
+
+class BulkNewUserItem(DictJsonObject):
     model_config = ConfigDict(extra="forbid", protected_namespaces=())
 
     key_alias: str | None = None
@@ -111,7 +156,7 @@ class BulkNewUserItem(ResponseObject):
     tpm_limit: int | None = None
     rpm_limit: int | None = None
     budget_duration: str | None = None
-    budget_limits: list[dict[str, JsonValue]] | None = None
+    budget_limits: list[_BudgetLimitEntry] | None = None
     allowed_cache_controls: list[JsonValue] | None = Field(default_factory=list)
     config: dict[str, JsonValue] | None = Field(default_factory=dict)
     permissions: dict[str, JsonValue] | None = Field(default_factory=dict)
@@ -126,7 +171,7 @@ class BulkNewUserItem(ResponseObject):
     prompts: list[str] | None = None
     blocked: bool | None = None
     aliases: dict[str, JsonValue] | None = Field(default_factory=dict)
-    object_permission: dict[str, JsonValue] | None = None
+    object_permission: _ObjectPermission | None = None
     user_email: str | None = None
     user_alias: str | None = None
     user_role: (
@@ -138,12 +183,19 @@ class BulkNewUserItem(ResponseObject):
         ]
         | None
     ) = None
-    teams: list[str] | list[dict[str, JsonValue]] | None = None
+    teams: list[str] | list[_NewUserRequestTeam] | None = None
     auto_create_key: bool = False
     send_invite_email: bool | None = None
     sso_user_id: str | None = None
     organizations: list[str] | None = None
     password: str | None = None
+
+    @field_validator("max_budget", mode="before")
+    @classmethod
+    def check_max_budget(cls, value: JsonValue) -> JsonValue:
+        if value == "":
+            return None
+        return value
 
     @field_validator("send_invite_email")
     @classmethod
@@ -165,6 +217,9 @@ class BulkNewUserItem(ResponseObject):
             )
         return value
 
+    def fields_set(self) -> set[str]:
+        return self.model_fields_set
+
 
 class BulkNewUserRequest(ResponseObject):
     model_config = ConfigDict(extra="forbid")
@@ -176,6 +231,8 @@ class BulkNewUserRequest(ResponseObject):
 
 
 class UserCreateResult(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     user_id: str | None = None
     user_email: str | None = None
     success: bool
@@ -185,11 +242,15 @@ class UserCreateResult(ResponseObject):
 
 
 class BulkNewUserMeta(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     total_requested: int
     created: int
     failed: int
 
 
 class BulkNewUserResponse(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     data: tuple[UserCreateResult, ...]
     meta: BulkNewUserMeta

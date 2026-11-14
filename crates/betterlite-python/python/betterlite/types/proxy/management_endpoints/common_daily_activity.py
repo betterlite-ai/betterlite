@@ -1,8 +1,8 @@
 from datetime import date
 from enum import StrEnum
-from typing import TypedDict
+from typing import ClassVar, TypedDict
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from betterlite.types.utils import JsonValue, ResponseObject
 
@@ -18,6 +18,8 @@ class GroupByDimension(StrEnum):
 
 
 class SpendMetrics(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     spend: float = 0.0
     flat_cost: float = 0.0
     prompt_tokens: int = 0
@@ -39,10 +41,14 @@ class SpendMetrics(ResponseObject):
 
 
 class MetricBase(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     metrics: SpendMetrics
 
 
 class KeyMetadata(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     key_alias: str | None = None
     team_id: str | None = None
     user_id: str | None = None
@@ -51,15 +57,21 @@ class KeyMetadata(ResponseObject):
 
 
 class KeyMetricWithMetadata(MetricBase):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     metadata: KeyMetadata = Field(default_factory=KeyMetadata)
 
 
 class MetricWithMetadata(MetricBase):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
     api_key_breakdown: dict[str, KeyMetricWithMetadata] = Field(default_factory=dict)
 
 
 class BreakdownMetrics(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     mcp_servers: dict[str, MetricWithMetadata] = Field(default_factory=dict)
     models: dict[str, MetricWithMetadata] = Field(default_factory=dict)
     model_groups: dict[str, MetricWithMetadata] = Field(default_factory=dict)
@@ -70,12 +82,16 @@ class BreakdownMetrics(ResponseObject):
 
 
 class DailySpendData(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     date: date
     metrics: SpendMetrics
     breakdown: BreakdownMetrics = Field(default_factory=BreakdownMetrics)
 
 
 class DailySpendMetadata(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     total_spend: float = 0.0
     total_flat_cost: float = 0.0
     total_prompt_tokens: int = 0
@@ -107,17 +123,23 @@ class DailySpendMetadata(ResponseObject):
 
 # ast-grep-ignore: no-long-names
 class SpendAnalyticsPaginatedResponse(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     results: list[DailySpendData]
     metadata: DailySpendMetadata = Field(default_factory=DailySpendMetadata)
 
 
 class KeyActivityRow(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     api_key: str
     metrics: SpendMetrics
     metadata: KeyMetadata
 
 
 class KeySpendMetrics(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     spend: float = 0.0
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -130,16 +152,22 @@ class KeySpendMetrics(ResponseObject):
 
 
 class KeySpendActivityRow(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     api_key: str
     metrics: KeySpendMetrics
     metadata: KeyMetadata
 
 
 class DailyActivityKeySearchResponse(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     api_keys: list[KeyActivityRow]
 
 
 class DailyActivityKeyPageResponse(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     api_keys: list[KeySpendActivityRow]
     total_api_keys: int
     offset: int
@@ -147,16 +175,22 @@ class DailyActivityKeyPageResponse(ResponseObject):
 
 
 class ModelTopKeysResponse(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     model: str
     by_model_group: bool
     api_keys: list[KeySpendActivityRow]
 
 
 class CacheLeakageKeysResponse(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     api_keys: list[KeySpendActivityRow]
 
 
 class DailyUserSpend(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     id: str
     user_id: str
     date: str

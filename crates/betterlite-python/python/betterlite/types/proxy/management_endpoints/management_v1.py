@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Annotated, Generic, TypeVar
+from typing import Annotated, ClassVar, Generic, TypeVar
 
 from pydantic import ConfigDict, Field
 from typing_extensions import override
@@ -11,6 +11,8 @@ TOut = TypeVar("TOut")
 
 
 class ProblemDetail(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     type: str
     title: str
     status: int
@@ -28,7 +30,9 @@ class _SelfLinkModel(ResponseObject):
 
 
 class PageLinks(_SelfLinkModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(
+        populate_by_name=True, extra="ignore"
+    )
 
     self_link: Annotated[str, Field(alias="self")]
     prev: str | None = None
@@ -36,18 +40,24 @@ class PageLinks(_SelfLinkModel):
 
 
 class PageMeta(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     page: int
     page_size: int
     has_more: bool
 
 
 class FacetListResponse(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     data: Sequence[str]
     meta: PageMeta
     links: PageLinks
 
 
 class ListMeta(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     total_count: int
     page: int
     page_size: int
@@ -55,7 +65,9 @@ class ListMeta(ResponseObject):
 
 
 class ListLinks(_SelfLinkModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(
+        populate_by_name=True, extra="ignore"
+    )
 
     self_link: Annotated[str, Field(alias="self")]
     first: str
@@ -65,10 +77,14 @@ class ListLinks(_SelfLinkModel):
 
 
 class ResourceResponse(ResponseObject, Generic[TOut]):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     data: TOut
 
 
 class ListResponse(ResponseObject, Generic[TOut]):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     data: list[TOut]
     meta: ListMeta
     links: ListLinks

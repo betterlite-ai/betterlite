@@ -1,7 +1,13 @@
+from typing import ClassVar
+
+from pydantic import ConfigDict
+
 from betterlite.types.utils import JsonValue, ResponseObject
 
 
 class HashicorpVaultConfig(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     vault_addr: str | None = None
     vault_token: str | None = None
     approle_role_id: str | None = None
@@ -18,6 +24,8 @@ class HashicorpVaultConfig(ResponseObject):
 
 
 class CyberArkConfig(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     cyberark_api_base: str | None = None
     cyberark_account: str | None = None
     cyberark_username: str | None = None
@@ -29,6 +37,8 @@ class CyberArkConfig(ResponseObject):
 
 
 class ConfigOverrideSettingsResponse(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     config_type: str
     values: dict[str, JsonValue]
     field_schema: dict[str, JsonValue]

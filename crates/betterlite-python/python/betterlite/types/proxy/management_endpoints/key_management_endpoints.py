@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal, Self, TypeAlias, TypedDict
+from typing import ClassVar, Literal, Self, TypeAlias, TypedDict
 
 from pydantic import ConfigDict
 from typing_extensions import ReadOnly
@@ -8,6 +8,7 @@ from betterlite.types.proxy.management_endpoints.internal_user_endpoints import 
     InsensitiveContains,
 )
 from betterlite.types.utils import JsonValue, ResponseObject, model_validator
+from betterlite.types.utils.base import DictJsonObject
 
 
 class KeyTokenWhere(TypedDict):
@@ -23,6 +24,8 @@ class KeySearchWhere(TypedDict):
 
 
 class BulkUpdateKeyRequestItem(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     key: str
     budget_id: str | None = None
     max_budget: float | None = None
@@ -32,21 +35,29 @@ class BulkUpdateKeyRequestItem(ResponseObject):
 
 
 class BulkUpdateKeyRequest(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     keys: list[BulkUpdateKeyRequestItem]
 
 
 class SuccessfulKeyUpdate(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     key: str
     key_info: dict[str, JsonValue]
 
 
 class FailedKeyUpdate(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     key: str
     key_info: dict[str, JsonValue] | None = None
     failed_reason: str
 
 
 class BulkUpdateKeyResponse(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     total_requested: int
     successful_updates: list[SuccessfulKeyUpdate]
     failed_updates: list[FailedKeyUpdate]
@@ -95,6 +106,8 @@ class KeyUpdateFields(ResponseObject):
 
 
 class BulkUpdateTeamKeysRequest(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     team_id: str
     key_ids: list[str] | None = None
     all_keys_in_team: bool = False
@@ -115,10 +128,13 @@ class BulkUpdateTeamKeysRequest(ResponseObject):
 CustomKeyPolicyOperation: TypeAlias = Literal["generate", "update", "regenerate"]
 
 
-class CustomKeyPolicyRequest(ResponseObject):
-    model_config = ConfigDict(protected_namespaces=(), frozen=True)
+class CustomKeyPolicyRequest(DictJsonObject):
+    model_config = ConfigDict(protected_namespaces=(), frozen=True, extra="ignore")
 
     operation: CustomKeyPolicyOperation
     existing_key: dict[str, JsonValue] | None
     effective_key: dict[str, JsonValue]
     request: dict[str, JsonValue]
+
+    def fields_set(self) -> set[str]:
+        return self.model_fields_set

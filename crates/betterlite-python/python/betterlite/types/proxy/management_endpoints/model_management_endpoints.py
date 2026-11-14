@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Final, Literal, TypeAlias
+from typing import ClassVar, Final, Literal, TypeAlias
 
 from pydantic import ConfigDict, Field
 from typing_extensions import override
@@ -30,6 +30,8 @@ _BOOL_FIELDS: Final[tuple[str, ...]] = (
 
 
 class ModelGroupInfoProxy(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     model_group: str
     providers: list[str]
     max_input_tokens: float | None = None
@@ -68,21 +70,29 @@ class ModelGroupInfoProxy(ResponseObject):
 
 
 class UpdateUsefulLinksRequest(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     useful_links: dict[str, str | dict[str, JsonValue]]
 
 
 # ast-grep-ignore: no-long-names
 class AutoRouterClassifierDefaultPromptResponse(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     system_prompt: str
 
 
 class NewModelGroupRequest(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     access_group: str
     model_names: list[str] | None = None
     model_ids: list[str] | None = None
 
 
 class NewModelGroupResponse(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     access_group: str
     model_names: list[str] | None = None
     model_ids: list[str] | None = None
@@ -90,18 +100,24 @@ class NewModelGroupResponse(ResponseObject):
 
 
 class UpdateModelGroupRequest(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     model_names: list[str] | None = None
     model_ids: list[str] | None = None
 
 
 # ast-grep-ignore: no-long-names
 class DeleteAccessGroupBudgetResponse(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     access_group: str
     budget_deleted: bool
     message: str
 
 
 class AccessGroupBudget(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     budget_id: str
     max_budget: float | None = None
     soft_budget: float | None = None
@@ -119,18 +135,24 @@ class AccessGroupBudgetRequest(ResponseObject):
 
 
 class AccessGroupBudgetResponse(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     access_group: str
     spend: float
     budget: AccessGroupBudget | None = None
 
 
 class DeleteModelGroupResponse(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     access_group: str
     models_updated: int
     message: str
 
 
 class AccessGroupInfo(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     access_group: str
     model_names: list[str]
     deployment_count: int
@@ -139,4 +161,6 @@ class AccessGroupInfo(ResponseObject):
 
 
 class ListAccessGroupsResponse(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
     access_groups: list[AccessGroupInfo]
