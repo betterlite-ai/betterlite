@@ -24,9 +24,12 @@ mod content_filter_actions_behavior {
         handle_pattern_match,
     };
     use crate::content_filter_actions::{ContentFilterSource, filter_single_text};
-    use crate::content_filter_matching::CategoryMatch;
+    use crate::content_filter_matching::{CategoryMatch, ContentFilterMatchingError};
     use crate::pattern_matching::CompiledPattern;
+    use crate::pattern_matching::PatternError as ProcessPatternError;
     use crate::pattern_matching::compile;
+    use crate::pattern_matching::masking::MaskError;
+    use crate::primitives::pattern_matching::error::PatternError as ReplacementError;
 
     const KEYWORD_TAG: &str = "[KEYWORD_REDACTED]";
     const PATTERN_FORMAT: &str = "[{pattern_name}_REDACTED]";
@@ -232,6 +235,22 @@ mod content_filter_actions_behavior {
         assert_eq!(matched_phrase, "minor + romantic");
         assert_eq!(severity, "high");
         assert!(error.contains("minor + romantic"));
+    }
+
+    #[test]
+    fn only_a_block_is_a_bad_request() {
+        let matching = ContentFilterActionError::Matching(ContentFilterMatchingError::Keyword(
+            regex::Error::Syntax("invalid".to_owned()),
+        ));
+        assert_eq!(matching.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        let redaction = ContentFilterActionError::Redaction(MaskError::TooLarge);
+        assert_eq!(redaction.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        let pattern = ContentFilterActionError::Pattern(ProcessPatternError::TooLarge);
+        assert_eq!(pattern.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        let replacement = ContentFilterActionError::Replacement(ReplacementError::Template);
+        assert_eq!(replacement.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        let keyword = ContentFilterActionError::Keyword(regex::Error::Syntax("invalid".to_owned()));
+        assert_eq!(keyword.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 
     #[test]
