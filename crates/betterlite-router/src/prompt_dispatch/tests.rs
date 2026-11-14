@@ -471,7 +471,11 @@ fn assert_reference_arguments(observed: &Observation) {
     assert_eq!(observed.compile_label, Some(Some(text("production"))));
     assert_eq!(
         observed.compile_non_default,
-        Some(object(&[("custom_provider_param", text("kept"))]))
+        Some(object(&[
+            ("custom_provider_param", text("kept")),
+            ("original_function", text("acompletion")),
+            ("deployment_marker", Json::Bool(true)),
+        ]))
     );
     assert_eq!(observed.compile_prompt_id, Some(Some(text("greeting"))));
     assert_eq!(observed.compile_injected, Some(true));
