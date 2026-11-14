@@ -1,0 +1,24 @@
+kind: helper
+name: gemini-options-sampling-once
+call:
+  gemini_options:
+    safety_settings: null
+    steps:
+      - op: options
+        model: gemini-3-pro-preview
+        non_default_params: {temperature: 0.5, top_p: 0.9, top_k: 5}
+        optional_params: {}
+      - op: options
+        model: gemini-3-pro-preview
+        non_default_params: {top_p: 0.9}
+        optional_params: {}
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params: {temperature: 0.5, top_p: 0.9, top_k: 5}
+        optional_params: {}
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params: {}
+        optional_params: {safety_settings: [{category: REQUEST}]}
+env: {}
+compare: {ignore: []}
