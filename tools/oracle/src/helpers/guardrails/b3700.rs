@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
@@ -16,7 +17,9 @@ use betterlite_guardrails::content_filter_streaming::hook::{
 };
 use betterlite_guardrails::pattern_matching::{CompiledPattern, compile};
 use serde::Deserialize;
+use tokio::runtime::Builder;
 use tokio::sync::mpsc;
+use tokio::time::timeout;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 
@@ -68,7 +71,7 @@ impl Helper for Op {
             pattern_redaction_format: &settings.pattern_redaction_format,
             keyword_redaction_tag: &settings.keyword_redaction_tag,
         };
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|source| failure("RuntimeError", source.to_string()))?;
@@ -84,7 +87,7 @@ fn load_input_categories(
     let mut configs = Vec::with_capacity(inputs.len());
     for (position, category) in inputs.iter().enumerate() {
         let path = directory.join(format!("category_{position}.yaml"));
-        std::fs::write(&path, &category.file_text)
+        fs::write(&path, &category.file_text)
             .map_err(|source| failure("CategoryFileError", source.to_string()))?;
         configs.push(ContentFilterCategoryConfig {
             category: category.category.clone(),
@@ -151,7 +154,7 @@ async fn stream_output(
             log_target: None,
         };
         let hook = stream_filter_hook(response, output, settings, source, &mut call);
-        tokio::time::timeout(
+        timeout(
             HOOK_TIMEOUT,
             async move { tokio::join!(hook, feeder, consumer) },
         )
