@@ -92,7 +92,7 @@ fn entry_path(name: &str) -> EntryPath {
 }
 
 // posixpath.normpath, including its reading of "..notes" as a parent reference
-fn normalize_path(path: &str) -> String {
+pub(super) fn normalize_path(path: &str) -> String {
     let absolute = path.starts_with('/');
     let mut components: Vec<&str> = Vec::new();
     for component in path.split('/') {

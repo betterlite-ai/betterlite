@@ -20,7 +20,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use super::decode::{DecodeError, MAX_ARCHIVE_ENTRIES, decode_skill_zip};
-use super::files::extract_all_files;
+use super::files::{extract_all_files, normalize_path};
 use super::inject::{SkillContentError, inject_skill_content_to_messages};
 use super::prompt::extract_skill_content;
 use super::tools::{
@@ -264,6 +264,12 @@ fn files_drop_parent_and_absolute_paths(#[case] name: &str) {
     let entries = write_archive(&[(name, b"data")], CompressionMethod::Stored);
     let files = extract_all_files(&archive_row(&entries, Some("fallback")));
     assert!(files.is_empty());
+}
+
+#[test]
+fn normalize_drops_a_parent_at_the_root() {
+    assert_eq!(normalize_path("/../x"), "/x");
+    assert_eq!(normalize_path("/a/../../x"), "/x");
 }
 
 #[test]
