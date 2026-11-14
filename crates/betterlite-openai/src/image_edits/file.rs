@@ -1,7 +1,7 @@
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_tokenizer::image::header::image_type;
 
-use crate::api::file_type_records::mime_from_type;
+use crate::api::file_type_records::{find_type, mime_from_type};
 use crate::api::image_contracts::records::{ImageFile, ImageFiles};
 
 pub const DEFAULT_IMAGE_NAME: &str = "image.png";
@@ -23,7 +23,10 @@ pub fn file_record(field: &str, file: &ImageEditFile, default_name: &str) -> (St
         .content
         .get(..CONTENT_TYPE_BYTES)
         .unwrap_or(file.content.as_slice());
-    let content_type = image_type(head).map_or(DEFAULT_CONTENT_TYPE, mime_from_type);
+    // LiteLLM looks the detected image name up in its FileType table, then reads that type's MIME string
+    let content_type = image_type(head)
+        .and_then(|kind| find_type(kind.as_str()))
+        .map_or(DEFAULT_CONTENT_TYPE, mime_from_type);
     (
         field.to_owned(),
         ImageFile {
