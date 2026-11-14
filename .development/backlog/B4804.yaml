@@ -1,14 +1,14 @@
 id: B4804
 milestone: M9 agents and mcp
 title: Signed AgentCore A2A requests and response streams
-status: todo
+status: done
 depends_on: [B173, B184, B595, B653, B4802, B4803]
 file: tasks/B4804-agentcore-a2a-transport.yaml
 covers:
   - "litellm/a2a_protocol/providers/bedrock_agentcore/**"
 parent: B142
 split_from: B142
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1745
