@@ -577,7 +577,7 @@ def described() -> dict[str, dict[str, JsonValue]]:
     return {
         "theirs": OBJECT.validate_json(run_probe(LITELLM, "describe", spec)),
         "ours": OBJECT.validate_json(run_probe(BETTERLITE, "describe", spec)),
-        "defined": OBJECT.validate_json(run_probe(LITELLM, "defined", json.dumps(list(MODULES)))),
+        "defined": OBJECT.validate_json(run_probe(LITELLM, "defined", spec)),
     }
 
 
