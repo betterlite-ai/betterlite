@@ -104,6 +104,6 @@ fn the_adapter_converts_safe_messages_and_reports_the_rejection() {
     );
     assert_eq!(
         output["results"][1]["error"],
-        json!({"status": 400, "type": null, "param": null, "code": "400"})
+        json!({"status": 400_i32, "type": null, "param": null, "code": "400"})
     );
 }

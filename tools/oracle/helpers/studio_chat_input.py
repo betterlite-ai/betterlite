@@ -1,15 +1,19 @@
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Literal, NotRequired, TypeAlias, TypedDict
 
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.gemini.chat.transformation import GoogleAIStudioGeminiConfig
-from litellm.llms.vertex_ai.gemini.transformation import sync_transform_request_body
-from litellm.types.llms.openai import AllMessageValues
+from litellm.llms.vertex_ai.gemini import transformation
 from openai import BadRequestError
-from pydantic import JsonValue as Json, TypeAdapter
+from pydantic import JsonValue as Json
+from pydantic import TypeAdapter
 
 JsonObject: TypeAlias = dict[str, Json]
+Transform: TypeAlias = Callable[..., Mapping[str, Json]]
+# LiteLLM leaves the request body's dict arguments bare and its RequestBody nested TypedDicts carry Any
+TRANSFORM: Transform = transformation.sync_transform_request_body  # type: ignore[misc, assignment]  # pyright: ignore[reportUnknownMemberType, reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1262-L1277
 START_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 JSON = TypeAdapter(Json)
 
@@ -19,7 +23,7 @@ litellm.suppress_debug_info = True
 class Step(TypedDict):
     op: Literal["params", "messages"]
     model: str
-    messages: list[AllMessageValues]
+    messages: list[JsonObject]
 
 
 class Input(TypedDict):
@@ -47,7 +51,7 @@ def answer(step: Step) -> Json:
     optional_params: JsonObject = {}
     litellm_params: JsonObject = {}
     try:
-        request = sync_transform_request_body(
+        request = TRANSFORM(
             gemini_api_key=None,
             messages=step["messages"],
             api_base=None,
