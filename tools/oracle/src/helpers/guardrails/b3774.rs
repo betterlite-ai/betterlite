@@ -74,11 +74,11 @@ impl Helper for Op {
             .as_deref()
             .and_then(|call_id| guardrail.has_issued_hashes(call_id))
             .map(|hashes| hashes.into_iter().collect::<Vec<_>>());
-        let request_data = serde_json::to_value(&request_data).or_value_error()?;
+        let request_data_json = serde_json::to_value(&request_data).or_value_error()?;
         Ok(json!({
             "inputs": inputs,
             "raised": raised,
-            "request_data": request_data,
+            "request_data": request_data_json,
             "calls": requests,
             "call_id_is_uuid": call_id_is_uuid,
             "issued": issued,

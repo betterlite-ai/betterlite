@@ -126,12 +126,12 @@ fn fail_open_input(base: &str) -> HeadroomInput {
 }
 
 fn build(
-    input: HeadroomInput,
+    input: &HeadroomInput,
     now: &Arc<Mutex<Duration>>,
     wall: fn() -> SystemTime,
 ) -> HeadroomGuardrail {
     let env: BTreeMap<String, String> = BTreeMap::new();
-    let settings = HeadroomSettings::new(&input, &env).unwrap();
+    let settings = HeadroomSettings::new(input, &env).unwrap();
     let shared = Arc::clone(now);
     let clock: Clock = Box::new(move || *shared.lock().unwrap());
     HeadroomGuardrail::new(
@@ -160,13 +160,13 @@ fn next_wall() -> SystemTime {
 
 fn guardrail(base: &str) -> HeadroomGuardrail {
     build(
-        default_input(base),
+        &default_input(base),
         &Arc::new(Mutex::new(Duration::ZERO)),
         fixed_wall,
     )
 }
 
-fn clocked(input: HeadroomInput) -> (HeadroomGuardrail, Arc<Mutex<Duration>>) {
+fn clocked(input: &HeadroomInput) -> (HeadroomGuardrail, Arc<Mutex<Duration>>) {
     let now = Arc::new(Mutex::new(Duration::ZERO));
     let built = build(input, &now, fixed_wall);
     (built, now)
@@ -238,9 +238,11 @@ fn records(data: &BTreeMap<String, GuardrailValue>) -> Vec<BTreeMap<String, Guar
     };
     entries
         .into_iter()
-        .filter_map(|entry| match entry {
-            GuardrailValue::Object(fields) => Some(fields),
-            _ => None,
+        .map(|entry| {
+            let GuardrailValue::Object(fields) = entry else {
+                panic!("a record object");
+            };
+            fields
         })
         .collect()
 }
@@ -260,10 +262,10 @@ fn applied_names(data: &BTreeMap<String, GuardrailValue>) -> Vec<String> {
 }
 
 fn as_text(value: GuardrailValue) -> Option<String> {
-    match value {
-        GuardrailValue::Text(text) => Some(text),
-        _ => None,
-    }
+    let GuardrailValue::Text(text) = value else {
+        return None;
+    };
+    Some(text)
 }
 
 fn record_response(data: &BTreeMap<String, GuardrailValue>) -> GuardrailValue {
@@ -276,6 +278,63 @@ fn record_status(data: &BTreeMap<String, GuardrailValue>) -> GuardrailValue {
     first_record(data)
         .remove("guardrail_status")
         .expect("a guardrail_status")
+}
+
+fn compression_statistics(tokens_saved: i64) -> BTreeMap<String, GuardrailValue> {
+    BTreeMap::from([
+        (
+            "tokens_before".to_owned(),
+            GuardrailValue::SignedInteger(100),
+        ),
+        ("tokens_after".to_owned(), GuardrailValue::SignedInteger(25)),
+        (
+            "tokens_saved".to_owned(),
+            GuardrailValue::SignedInteger(tokens_saved),
+        ),
+        ("compression_ratio".to_owned(), GuardrailValue::Decimal(4.0)),
+        (
+            "transforms_applied".to_owned(),
+            GuardrailValue::Array(vec![GuardrailValue::Text("dedupe".to_owned())]),
+        ),
+    ])
+}
+
+fn assert_record_identity(record: &BTreeMap<String, GuardrailValue>) {
+    assert_eq!(
+        record.get("guardrail_name"),
+        Some(&GuardrailValue::Text("headroom".to_owned()))
+    );
+    assert_eq!(
+        record.get("guardrail_provider"),
+        Some(&GuardrailValue::Text("headroom".to_owned()))
+    );
+    assert_eq!(
+        record.get("guardrail_status"),
+        Some(&GuardrailValue::Text("success".to_owned()))
+    );
+    assert_eq!(
+        record.get("guardrail_mode"),
+        Some(&GuardrailValue::Text("pre_call".to_owned()))
+    );
+    assert_eq!(
+        record.get("masked_entity_count"),
+        Some(&GuardrailValue::Null)
+    );
+}
+
+fn assert_record_times_are_decimal(record: &BTreeMap<String, GuardrailValue>) {
+    assert!(matches!(
+        record.get("start_time"),
+        Some(GuardrailValue::Decimal(_))
+    ));
+    assert!(matches!(
+        record.get("end_time"),
+        Some(GuardrailValue::Decimal(_))
+    ));
+    assert!(matches!(
+        record.get("duration"),
+        Some(GuardrailValue::Decimal(_))
+    ));
 }
 
 fn structure(returned: &GuardrailApiInputs) -> GuardrailValue {
@@ -595,7 +654,7 @@ async fn ccr_retrieval_disabled_records_no_hashes_and_adds_no_tool() {
         ccr_retrieval: Some(false),
         ..default_input(&server.base)
     };
-    let guardrail = guardrail_with_clock(input);
+    let guardrail = guardrail_with_clock(&input);
     let mut target = logging_target("call-1");
     let mut request = data("{}");
     let returned = guardrail
@@ -617,7 +676,7 @@ async fn ccr_retrieval_disabled_records_no_hashes_and_adds_no_tool() {
     );
 }
 
-fn guardrail_with_clock(input: HeadroomInput) -> HeadroomGuardrail {
+fn guardrail_with_clock(input: &HeadroomInput) -> HeadroomGuardrail {
     let (built, _now) = clocked(input);
     built
 }
@@ -625,7 +684,7 @@ fn guardrail_with_clock(input: HeadroomInput) -> HeadroomGuardrail {
 #[tokio::test]
 async fn hashes_are_pruned_once_the_ttl_has_passed() {
     let server = mock(StatusCode::OK, SERVICE_HASHES.to_owned()).await;
-    let (guardrail, now) = clocked(default_input(&server.base));
+    let (guardrail, now) = clocked(&default_input(&server.base));
     let mut target = logging_target("first");
     let mut request = data("{}");
     guardrail
@@ -668,7 +727,7 @@ async fn hashes_are_pruned_once_the_ttl_has_passed() {
 #[tokio::test]
 async fn a_response_without_hashes_does_not_prune() {
     let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
-    let (guardrail, now) = clocked(default_input(&server.base));
+    let (guardrail, now) = clocked(&default_input(&server.base));
     guardrail.issued.record(
         "first",
         [SENT_HASH.to_owned()].into_iter().collect(),
@@ -739,52 +798,12 @@ async fn success_records_statistics_and_the_applied_guardrail() {
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
     let record = first_record(&request);
     assert_eq!(record.len(), 9);
+    assert_record_identity(&record);
+    assert_record_times_are_decimal(&record);
     assert_eq!(
-        record.get("guardrail_name"),
-        Some(&GuardrailValue::Text("headroom".to_owned()))
+        record_response(&request),
+        GuardrailValue::Object(compression_statistics(75))
     );
-    assert_eq!(
-        record.get("guardrail_provider"),
-        Some(&GuardrailValue::Text("headroom".to_owned()))
-    );
-    assert_eq!(
-        record.get("guardrail_status"),
-        Some(&GuardrailValue::Text("success".to_owned()))
-    );
-    assert_eq!(
-        record.get("guardrail_mode"),
-        Some(&GuardrailValue::Text("pre_call".to_owned()))
-    );
-    assert_eq!(
-        record.get("masked_entity_count"),
-        Some(&GuardrailValue::Null)
-    );
-    assert!(matches!(
-        record.get("start_time"),
-        Some(GuardrailValue::Decimal(_))
-    ));
-    assert!(matches!(
-        record.get("end_time"),
-        Some(GuardrailValue::Decimal(_))
-    ));
-    assert!(matches!(
-        record.get("duration"),
-        Some(GuardrailValue::Decimal(_))
-    ));
-    let expected = BTreeMap::from([
-        (
-            "tokens_before".to_owned(),
-            GuardrailValue::SignedInteger(100),
-        ),
-        ("tokens_after".to_owned(), GuardrailValue::SignedInteger(25)),
-        ("tokens_saved".to_owned(), GuardrailValue::SignedInteger(75)),
-        ("compression_ratio".to_owned(), GuardrailValue::Decimal(4.0)),
-        (
-            "transforms_applied".to_owned(),
-            GuardrailValue::Array(vec![GuardrailValue::Text("dedupe".to_owned())]),
-        ),
-    ]);
-    assert_eq!(record_response(&request), GuardrailValue::Object(expected));
     assert_eq!(applied_names(&request), ["headroom"]);
 }
 
@@ -792,7 +811,7 @@ async fn success_records_statistics_and_the_applied_guardrail() {
 async fn a_failed_compression_records_the_unavailable_error() {
     let server = mock(StatusCode::INTERNAL_SERVER_ERROR, "boom".to_owned()).await;
     let input = fail_open_input(&server.base);
-    let guardrail = guardrail_with_clock(input);
+    let guardrail = guardrail_with_clock(&input);
     let original = inputs(FOUR);
     let mut request = data("{}");
     let returned = apply(&guardrail, original.clone(), &mut request)
@@ -889,7 +908,7 @@ async fn an_empty_request_call_id_is_replaced_with_a_generated_one() {
         panic!("a generated call id");
     };
     assert!(!generated.is_empty());
-    assert!(Uuid::parse_str(generated).is_ok());
+    Uuid::parse_str(generated).expect("the generated call id is a UUID");
     assert!(guardrail.has_issued_hashes(generated).is_some());
 }
 
@@ -901,7 +920,7 @@ async fn records_carry_the_injected_wall_clock_times_and_their_difference() {
     WALL_TIMES.lock().unwrap().clear();
     WALL_TIMES.lock().unwrap().extend([start, end]);
     let guardrail = build(
-        default_input(&server.base),
+        &default_input(&server.base),
         &Arc::new(Mutex::new(Duration::ZERO)),
         next_wall,
     );

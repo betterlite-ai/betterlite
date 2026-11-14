@@ -12,9 +12,9 @@ use tokio::net::TcpListener;
 use uuid::Uuid;
 
 use super::{
-    FOUR, SERVICE_ONE, THREE_USERS, apply, call_count, data, default_input, fail_open_input,
-    guardrail, guardrail_with_clock, inputs, mock, only_call, record_response, record_status,
-    unavailable,
+    FOUR, SERVICE_ONE, THREE_USERS, apply, call_count, compression_statistics, data, default_input,
+    fail_open_input, guardrail, guardrail_with_clock, inputs, mock, only_call, record_response,
+    record_status, unavailable,
 };
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::headroom_failure::NOT_FOUND_HINT;
@@ -68,7 +68,7 @@ async fn the_compression_request_sends_the_configured_model() {
         model: Some("compressor".to_owned()),
         ..default_input(&server.base)
     };
-    let guardrail = guardrail_with_clock(input);
+    let guardrail = guardrail_with_clock(&input);
     let mut request = data(r#"{"model":"gpt-4o"}"#);
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
     let body = data(&only_call(&server).body);
@@ -85,7 +85,7 @@ async fn an_empty_configured_model_falls_back_to_the_request_model() {
         model: Some(String::new()),
         ..default_input(&server.base)
     };
-    let guardrail = guardrail_with_clock(input);
+    let guardrail = guardrail_with_clock(&input);
     let mut request = data(r#"{"model":"gpt-4o"}"#);
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
     let body = data(&only_call(&server).body);
@@ -135,7 +135,7 @@ async fn the_compression_request_omits_authorization_without_a_key() {
         api_key: None,
         ..default_input(&server.base)
     };
-    let guardrail = guardrail_with_clock(input);
+    let guardrail = guardrail_with_clock(&input);
     let mut request = data("{}");
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
     assert!(only_call(&server).authorization.is_none());
@@ -148,7 +148,7 @@ async fn an_unusable_api_key_fails_before_the_request() {
         api_key: Some(SecretString::from("bad\nkey")),
         ..default_input(&server.base)
     };
-    let guardrail = guardrail_with_clock(input);
+    let guardrail = guardrail_with_clock(&input);
     let mut request = data("{}");
     let error = apply(&guardrail, inputs(FOUR), &mut request)
         .await
@@ -166,20 +166,7 @@ async fn statistics_copy_the_five_keys_and_drop_the_rest() {
         r#"{"messages":[{"role":"user","content":"short"}],"tokens_before":100,"tokens_after":25,"tokens_saved":50,"compression_ratio":4.0,"transforms_applied":["dedupe"],"unused":1}"#,
     )
     .await;
-    let expected = BTreeMap::from([
-        (
-            "tokens_before".to_owned(),
-            GuardrailValue::SignedInteger(100),
-        ),
-        ("tokens_after".to_owned(), GuardrailValue::SignedInteger(25)),
-        ("tokens_saved".to_owned(), GuardrailValue::SignedInteger(50)),
-        ("compression_ratio".to_owned(), GuardrailValue::Decimal(4.0)),
-        (
-            "transforms_applied".to_owned(),
-            GuardrailValue::Array(vec![GuardrailValue::Text("dedupe".to_owned())]),
-        ),
-    ]);
-    assert_eq!(response, expected);
+    assert_eq!(response, compression_statistics(50));
 }
 
 #[rstest]
@@ -254,14 +241,16 @@ async fn malformed_responses_fail_closed_with_the_reason_and_fall_open_with_the_
         detail.get("error"),
         Some(&GuardrailValue::Text(reason.to_owned()))
     );
-    let open = guardrail_with_clock(fail_open_input(&server.base));
+    let open = guardrail_with_clock(&fail_open_input(&server.base));
     let original = inputs(FOUR);
-    let mut request = data("{}");
-    let returned = apply(&open, original.clone(), &mut request).await.unwrap();
+    let mut open_request = data("{}");
+    let returned = apply(&open, original.clone(), &mut open_request)
+        .await
+        .unwrap();
     assert_eq!(returned, original);
-    assert_eq!(record_response(&request), unavailable());
+    assert_eq!(record_response(&open_request), unavailable());
     assert_eq!(
-        record_status(&request),
+        record_status(&open_request),
         GuardrailValue::Text("guardrail_failed_to_respond".to_owned())
     );
 }
@@ -448,7 +437,7 @@ async fn an_unreachable_service_fails_closed() {
 
 #[tokio::test]
 async fn an_unreachable_service_falls_open() {
-    let guardrail = guardrail_with_clock(fail_open_input("http://127.0.0.1:1"));
+    let guardrail = guardrail_with_clock(&fail_open_input("http://127.0.0.1:1"));
     let original = inputs(FOUR);
     let mut request = data("{}");
     let returned = apply(&guardrail, original.clone(), &mut request)
@@ -466,7 +455,7 @@ async fn a_timeout_fails_open() {
         timeout: Some(0.1),
         ..fail_open_input(&base)
     };
-    let guardrail = guardrail_with_clock(input);
+    let guardrail = guardrail_with_clock(&input);
     let original = inputs(FOUR);
     let mut request = data("{}");
     let returned = apply(&guardrail, original.clone(), &mut request)
@@ -484,7 +473,7 @@ async fn a_timeout_fails_closed() {
         timeout: Some(0.1),
         ..default_input(&base)
     };
-    let guardrail = guardrail_with_clock(input);
+    let guardrail = guardrail_with_clock(&input);
     let mut request = data("{}");
     let error = apply(&guardrail, inputs(FOUR), &mut request)
         .await
