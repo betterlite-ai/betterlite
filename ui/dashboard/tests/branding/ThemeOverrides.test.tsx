@@ -101,7 +101,7 @@ describe("operator theme overrides", () => {
   });
 
   it("starts on the fallback logo before theme settings answer", () => {
-    transport.mockReturnValue(new Promise(() => {}));
+    transport.mockReturnValue(new Promise<Response>(() => {}));
 
     renderThemed();
 
