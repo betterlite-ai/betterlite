@@ -1,0 +1,8 @@
+task: B3774
+deviations:
+  - what: A transport failure reports the reqwest error text in the fail_closed detail, where LiteLLM reports the httpx exception text.
+    why: The HTTP client is a different library; the code and shape of the detail object are the same, and no working setup matches on the free-form text. The oracle cases compare that field through one marker.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L609-L618
+  - what: A compression response that parses only with Python's JSON extensions (NaN, Infinity) is rejected as a non-JSON response.
+    why: serde_json accepts JSON numbers only, while Python's json.loads takes the non-standard literals; a service sending them cannot be read as standard JSON by any strict parser, and betterlite records the documented non-JSON failure instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L638-L646
