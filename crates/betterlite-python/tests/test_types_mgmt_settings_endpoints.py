@@ -12,20 +12,31 @@ import betterlite.types.management_endpoints.coordination_redis_endpoints as bet
 import betterlite.types.management_endpoints.router_settings_endpoints as betterlite_router
 from betterlite.types.utils import JsonValue
 
+CACHE_MODEL: type[pydantic.BaseModel] = betterlite_cache.CacheSettingsField
+CACHE_REFERENCE: type[pydantic.BaseModel] = litellm_cache.CacheSettingsField
+COORDINATION_MODEL: type[pydantic.BaseModel] = (
+    betterlite_coordination.CoordinationRedisSettingsField
+)
+COORDINATION_REFERENCE: type[pydantic.BaseModel] = (
+    litellm_coordination.CoordinationRedisSettingsField
+)
+CREATE_MODEL: type[pydantic.BaseModel] = betterlite_router.FallbackCreateRequest
+CREATE_REFERENCE: type[pydantic.BaseModel] = litellm_router.FallbackCreateRequest
+FIELD_MODEL: type[pydantic.BaseModel] = betterlite_router.RouterSettingsField
+FIELD_REFERENCE: type[pydantic.BaseModel] = litellm_router.RouterSettingsField
 
-def required_map(model: type[pydantic.BaseModel]) -> dict[str, bool]:
+
+def model_names(
+    model: type[pydantic.BaseModel],
+) -> tuple[list[str], dict[str, bool], dict[str, JsonValue]]:
+    fields = model.model_fields
     required: dict[str, bool] = {}
-    for name, field in model.model_fields.items():
-        required[name] = field.is_required()
-    return required
-
-
-def default_map(model: type[pydantic.BaseModel]) -> dict[str, JsonValue]:
     defaults: dict[str, JsonValue] = {}
-    for name, field in model.model_fields.items():
+    for name, field in fields.items():
+        required[name] = field.is_required()
         default: JsonValue = field.default
         defaults[name] = default
-    return defaults
+    return list(fields), required, defaults
 
 
 def model_dumps(entries: Sequence[pydantic.BaseModel]) -> list[dict[str, JsonValue]]:
@@ -36,20 +47,23 @@ def model_dumps(entries: Sequence[pydantic.BaseModel]) -> list[dict[str, JsonVal
     return dumped
 
 
+def assert_entries_match(
+    ours: Sequence[pydantic.BaseModel], reference: Sequence[pydantic.BaseModel]
+) -> None:
+    assert len(ours) == len(reference)
+    assert model_dumps(ours) == model_dumps(reference)
+
+
 def test_cache_model_names() -> None:
-    ours = betterlite_cache.CacheSettingsField
-    reference = litellm_cache.CacheSettingsField
-    assert list(ours.model_fields) == list(reference.model_fields)
-    assert required_map(ours) == required_map(reference)
-    assert default_map(ours) == default_map(reference)
+    ours = model_names(CACHE_MODEL)
+    reference = model_names(CACHE_REFERENCE)
+    assert ours == reference
 
 
 def test_cache_field_names() -> None:
     ours = betterlite_cache.CACHE_SETTINGS_FIELDS
     reference = litellm_cache.CACHE_SETTINGS_FIELDS
-    assert len(ours) == len(reference)
-    assert [entry.field_name for entry in ours] == [entry.field_name for entry in reference]
-    assert model_dumps(ours) == model_dumps(reference)
+    assert_entries_match(ours, reference)
 
 
 def test_cache_description_names() -> None:
@@ -71,50 +85,40 @@ def test_json_narrowing_names() -> None:
 
 
 def test_coordination_model_names() -> None:
-    ours = betterlite_coordination.CoordinationRedisSettingsField
-    reference = litellm_coordination.CoordinationRedisSettingsField
-    assert list(ours.model_fields) == list(reference.model_fields)
-    assert required_map(ours) == required_map(reference)
-    assert default_map(ours) == default_map(reference)
-    ours_hints: dict[str, JsonValue] = ours.__annotations__
-    reference_hints: dict[str, JsonValue] = reference.__annotations__
-    ours_section: tuple[JsonValue, ...] = get_args(ours_hints["section"])
-    reference_section: tuple[JsonValue, ...] = get_args(reference_hints["section"])
-    assert ours_section == reference_section
+    ours = model_names(COORDINATION_MODEL)
+    reference = model_names(COORDINATION_REFERENCE)
+    assert ours == reference
+    hints: dict[str, JsonValue] = COORDINATION_MODEL.__annotations__
+    reference_hints: dict[str, JsonValue] = COORDINATION_REFERENCE.__annotations__
+    assert hints["section"] == reference_hints["section"]
 
 
 def test_literal_alias_names() -> None:
-    ours_section_alias = betterlite_coordination.CoordinationRedisSection
-    reference_section_alias = litellm_coordination.CoordinationRedisSection
-    ours_section: tuple[JsonValue, ...] = get_args(ours_section_alias)
-    reference_section: tuple[JsonValue, ...] = get_args(reference_section_alias)
-    assert ours_section == reference_section
-    ours_source_alias = betterlite_coordination.CoordinationRedisSource
-    reference_source_alias = litellm_coordination.CoordinationRedisSource
-    ours_source: tuple[JsonValue, ...] = get_args(ours_source_alias)
-    reference_source: tuple[JsonValue, ...] = get_args(reference_source_alias)
-    assert ours_source == reference_source
+    section = betterlite_coordination.CoordinationRedisSection
+    reference_section = litellm_coordination.CoordinationRedisSection
+    section_values: tuple[JsonValue, ...] = get_args(section)
+    reference_values: tuple[JsonValue, ...] = get_args(reference_section)
+    assert section_values == reference_values
+    source = betterlite_coordination.CoordinationRedisSource
+    reference_source = litellm_coordination.CoordinationRedisSource
+    source_values: tuple[JsonValue, ...] = get_args(source)
+    reference_source_values: tuple[JsonValue, ...] = get_args(reference_source)
+    assert source_values == reference_source_values
 
 
 def test_coordination_field_names() -> None:
     ours = betterlite_coordination.COORDINATION_REDIS_SETTINGS_FIELDS
     reference = litellm_coordination.COORDINATION_REDIS_SETTINGS_FIELDS
-    assert len(ours) == len(reference)
-    assert [entry.field_name for entry in ours] == [entry.field_name for entry in reference]
-    assert model_dumps(ours) == model_dumps(reference)
+    assert_entries_match(ours, reference)
 
 
 def test_router_create_names() -> None:
-    ours = betterlite_router.FallbackCreateRequest
-    reference = litellm_router.FallbackCreateRequest
-    assert list(ours.model_fields) == list(reference.model_fields)
-    assert required_map(ours) == required_map(reference)
-    assert default_map(ours) == default_map(reference)
-    ours_hints: dict[str, JsonValue] = ours.__annotations__
-    reference_hints: dict[str, JsonValue] = reference.__annotations__
-    ours_types: tuple[JsonValue, ...] = get_args(ours_hints["fallback_type"])
-    reference_types: tuple[JsonValue, ...] = get_args(reference_hints["fallback_type"])
-    assert ours_types == reference_types
+    ours = model_names(CREATE_MODEL)
+    reference = model_names(CREATE_REFERENCE)
+    assert ours == reference
+    hints: dict[str, JsonValue] = CREATE_MODEL.__annotations__
+    reference_hints: dict[str, JsonValue] = CREATE_REFERENCE.__annotations__
+    assert hints["fallback_type"] == reference_hints["fallback_type"]
 
 
 def test_router_response_names() -> None:
@@ -124,22 +128,16 @@ def test_router_response_names() -> None:
         (betterlite_router.FallbackDeleteResponse, litellm_router.FallbackDeleteResponse),
     )
     for ours, reference in pairs:
-        assert list(ours.model_fields) == list(reference.model_fields)
-        assert required_map(ours) == required_map(reference)
-        assert default_map(ours) == default_map(reference)
+        assert model_names(ours) == model_names(reference)
 
 
 def test_router_field_names() -> None:
-    ours_model = betterlite_router.RouterSettingsField
-    reference_model = litellm_router.RouterSettingsField
-    assert list(ours_model.model_fields) == list(reference_model.model_fields)
-    assert required_map(ours_model) == required_map(reference_model)
-    assert default_map(ours_model) == default_map(reference_model)
-    ours = betterlite_router.ROUTER_SETTINGS_FIELDS
-    reference = litellm_router.ROUTER_SETTINGS_FIELDS
-    assert len(ours) == len(reference)
-    assert [entry.field_name for entry in ours] == [entry.field_name for entry in reference]
-    assert model_dumps(ours) == model_dumps(reference)
+    ours = model_names(FIELD_MODEL)
+    reference = model_names(FIELD_REFERENCE)
+    assert ours == reference
+    assert_entries_match(
+        betterlite_router.ROUTER_SETTINGS_FIELDS, litellm_router.ROUTER_SETTINGS_FIELDS
+    )
 
 
 def test_router_description_names() -> None:
