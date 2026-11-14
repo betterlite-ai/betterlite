@@ -80,5 +80,5 @@ pitfalls:
   - contents=[] is supplied content and must not trigger message conversion on Vertex.
   - Studio count_tokens ignores messages even when contents is None.
   - A successful Vertex JSON reply without totalTokens produces None instead of a zero-count response.
-budget: {max_changed_lines: 550, max_new_expects: 0}
+budget: {max_changed_lines: 1500, max_new_expects: 0}
 review_level: standard

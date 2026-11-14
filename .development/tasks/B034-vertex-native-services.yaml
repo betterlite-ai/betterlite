@@ -113,5 +113,5 @@ pitfalls:
   - Native GCS output conversion must not be mistaken for the unavailable enterprise-managed output-ID hook.
   - A batch cancel performs a second GET after its POST; returning the cancel body loses the observed job state.
   - RAG ingestion writes its upload before import; an import failure must not be described as an atomic rollback.
-budget: {max_changed_lines: 800, max_new_expects: 0}
+budget: {max_changed_lines: 1500, max_new_expects: 0}
 review_level: security
