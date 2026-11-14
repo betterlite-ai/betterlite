@@ -40,8 +40,12 @@ pub(super) struct Script {
 
 impl Script {
     pub(super) fn answering(status: u16, body: &str) -> Self {
+        Self::answering_bytes(status, body.as_bytes().to_vec())
+    }
+
+    pub(super) fn answering_bytes(status: u16, body: Vec<u8>) -> Self {
         Self {
-            reply: Some((status, body.as_bytes().to_vec())),
+            reply: Some((status, body)),
             sent: Arc::default(),
         }
     }

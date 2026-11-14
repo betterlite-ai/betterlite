@@ -249,6 +249,31 @@ async fn only_a_200_reply_becomes_a_token_count(#[case] status: u16) {
     );
 }
 
+#[tokio::test]
+async fn a_non_utf8_error_body_is_left_out_of_the_message() {
+    let transport = Script::answering_bytes(500, vec![0xff, 0xfe]);
+    let body = body(Some(CLAUDE), Some(Vec::new()));
+    let options = options(None);
+    let settings = settings(None);
+    let call = PartnerCountCall {
+        model: CLAUDE,
+        body: &body,
+        api_base: None,
+        params: params(Some("proj"), None, None),
+        options: &options,
+        settings: &settings,
+    };
+
+    let error = handle_count_tokens_request(&transport, &call, &FixedMint)
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Token counting request failed with status 500: "
+    );
+}
+
 #[rstest]
 #[case::missing("{}", 0)]
 #[case::null(r#"{"input_tokens": null}"#, 0)]
