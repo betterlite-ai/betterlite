@@ -169,13 +169,16 @@ async fn execution_multimodal_posts_the_transformed_request() {
         caller: None,
     };
     let mut call = multimodal_call(MULTIMODAL_MODEL, &input, &optional, &NO_HEADERS);
-    multimodal_embedding(&call, &catalog(), &fixture.cache, &clients)
+    let sync = multimodal_embedding(&call, &catalog(), &fixture.cache, &clients)
         .await
         .unwrap();
     call.aembedding = true;
-    multimodal_embedding(&call, &catalog(), &fixture.cache, &clients)
+    let handoff = multimodal_embedding(&call, &catalog(), &fixture.cache, &clients)
         .await
         .unwrap();
+    // Both branches hand the request payload to the transformation, which counts "hello" as five characters
+    assert_eq!(sync.details.character_count, Some(5));
+    assert_eq!(handoff.details, sync.details);
     let calls = recorder.recorded();
     let sync_body = str::from_utf8(&calls[0].body).unwrap();
     assert_eq!(sync_body, r#"{"instances":[{"text":"hello"}]}"#);
