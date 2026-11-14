@@ -166,7 +166,7 @@ fn request_records(mock: MockProvider) -> Result<Vec<RequestRecord>, Box<HelperE
         .collect())
 }
 
-fn decision(
+const fn decision(
     result: &Result<Option<GuardrailStatus>, DynamoAiError>,
     sent_a_request: bool,
 ) -> (Option<&'static str>, bool) {

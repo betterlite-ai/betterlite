@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
 use std::io;
+use std::slice;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -287,7 +288,7 @@ async fn dynamoai_guardrail_call_sends_the_path_and_the_raw_messages() {
     ]);
     let (base, captured, _server) = capturing(r#"{"finalAction":"NONE"}"#.to_owned()).await;
     guardrail(&base)
-        .call_moderation(std::slice::from_ref(&extra))
+        .call_moderation(slice::from_ref(&extra))
         .await
         .unwrap();
     assert_eq!(captured_body(&captured).messages, vec![extra]);
