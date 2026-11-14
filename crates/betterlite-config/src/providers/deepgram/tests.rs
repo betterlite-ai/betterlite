@@ -17,7 +17,7 @@ fn lookup(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
 
 #[test]
 fn deepgram_transcription_settings_default_to_the_hosted_base_and_no_key() {
-    let (api_key, api_base) = Sections::deepgram_transcription_settings(&lookup(&[]));
+    let (api_key, api_base) = Sections::deepgram_transcript_settings(&lookup(&[]));
 
     assert!(api_key.is_none());
     assert_eq!(api_base, DEFAULT_API_BASE);
@@ -25,7 +25,7 @@ fn deepgram_transcription_settings_default_to_the_hosted_base_and_no_key() {
 
 #[test]
 fn deepgram_transcription_settings_read_the_environment() {
-    let (api_key, api_base) = Sections::deepgram_transcription_settings(&lookup(&[
+    let (api_key, api_base) = Sections::deepgram_transcript_settings(&lookup(&[
         ("DEEPGRAM_API_KEY", "server-key"),
         ("DEEPGRAM_API_BASE", "https://proxy.test/v1"),
     ]));
@@ -39,7 +39,7 @@ fn deepgram_transcription_settings_read_the_environment() {
 
 #[test]
 fn deepgram_transcription_settings_treat_empty_variables_as_unset() {
-    let (api_key, api_base) = Sections::deepgram_transcription_settings(&lookup(&[
+    let (api_key, api_base) = Sections::deepgram_transcript_settings(&lookup(&[
         ("DEEPGRAM_API_KEY", ""),
         ("DEEPGRAM_API_BASE", ""),
     ]));
@@ -51,8 +51,8 @@ fn deepgram_transcription_settings_treat_empty_variables_as_unset() {
 #[test]
 fn deepgram_transcription_settings_read_each_variable_alone() {
     let (key_only, base_beside_key) =
-        Sections::deepgram_transcription_settings(&lookup(&[("DEEPGRAM_API_KEY", "k")]));
-    let (key_beside_base, base_only) = Sections::deepgram_transcription_settings(&lookup(&[(
+        Sections::deepgram_transcript_settings(&lookup(&[("DEEPGRAM_API_KEY", "k")]));
+    let (key_beside_base, base_only) = Sections::deepgram_transcript_settings(&lookup(&[(
         "DEEPGRAM_API_BASE",
         "https://eu.test/v1",
     )]));
