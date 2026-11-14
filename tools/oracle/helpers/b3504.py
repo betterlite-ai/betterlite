@@ -3,9 +3,9 @@ import datetime as dt
 import inspect
 import json
 import threading
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import ClassVar, Final, Literal, NotRequired, Protocol, TypedDict
+from typing import ClassVar, Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict
 from urllib.parse import urlsplit
 
 import litellm
@@ -24,19 +24,28 @@ CALL_TYPES: Final[dict[str, str]] = {
 }
 
 
+Argument: TypeAlias = JsonValue | Logging
+Created: TypeAlias = AgentCreateResponse | Awaitable[AgentCreateResponse]
+Listed: TypeAlias = AgentListResponse | Awaitable[AgentListResponse]
+CreateArgs: TypeAlias = tuple[
+    str,
+    str | None,
+    str | None,
+    str | dict[str, JsonValue] | None,
+    str | None,
+    dict[str, str] | None,
+    dict[str, JsonValue] | None,
+    float | None,
+]
+ListArgs: TypeAlias = tuple[str | None, dict[str, str] | None, float | None]
+
+
 class AgentsApi(Protocol):
-    # LiteLLM annotates no **kwargs on these entry points, so the view fixes only the return type
-    @property
-    def create(self) -> Callable[..., AgentCreateResponse | Awaitable[AgentCreateResponse]]: ...
-
-    @property
-    def acreate(self) -> Callable[..., Awaitable[AgentCreateResponse]]: ...
-
-    @property
-    def list(self) -> Callable[..., AgentListResponse | Awaitable[AgentListResponse]]: ...
-
-    @property
-    def alist(self) -> Callable[..., Awaitable[AgentListResponse]]: ...
+    # LiteLLM leaves **kwargs unannotated, so the view pins the positional arguments and their types
+    def create(self, *args: *CreateArgs, **kwargs: Argument) -> Created: ...
+    def acreate(self, *args: *CreateArgs, **kwargs: Argument) -> Created: ...
+    def list(self, *args: *ListArgs, **kwargs: Argument) -> Listed: ...
+    def alist(self, *args: *ListArgs, **kwargs: Argument) -> Listed: ...
 
 
 AGENTS_API: AgentsApi = agents_api
@@ -150,49 +159,28 @@ def answer(call: Call, logging_obj: Logging, kwargs: dict[str, JsonValue]) -> Js
         name = call.get("name")
         if name is None:
             raise ValueError("a create call carries the name of the agent to create")
-        if call["function"] == "create":
-            created: AgentCreateResponse | Awaitable[AgentCreateResponse] = AGENTS_API.create(
-                name=name,
-                base_agent=call.get("base_agent"),
-                instructions=call.get("instructions"),
-                base_environment=call.get("base_environment"),
-                custom_llm_provider=call.get("custom_llm_provider"),
-                extra_headers=call.get("extra_headers"),
-                extra_body=call.get("extra_body"),
-                timeout=None,
-                litellm_logging_obj=logging_obj,
-                **kwargs,
-            )
-        else:
-            created = AGENTS_API.acreate(
-                name=name,
-                base_agent=call.get("base_agent"),
-                instructions=call.get("instructions"),
-                base_environment=call.get("base_environment"),
-                custom_llm_provider=call.get("custom_llm_provider"),
-                extra_headers=call.get("extra_headers"),
-                extra_body=call.get("extra_body"),
-                timeout=None,
-                litellm_logging_obj=logging_obj,
-                **kwargs,
-            )
+        creator = AGENTS_API.acreate if call["function"] == "acreate" else AGENTS_API.create
+        created = creator(
+            name,
+            call.get("base_agent"),
+            call.get("instructions"),
+            call.get("base_environment"),
+            call.get("custom_llm_provider"),
+            call.get("extra_headers"),
+            call.get("extra_body"),
+            None,
+            litellm_logging_obj=logging_obj,
+            **kwargs,
+        )
         return JSON.validate_json(asyncio.run(resolve_created(created)).model_dump_json())
-    if call["function"] == "list":
-        listed: AgentListResponse | Awaitable[AgentListResponse] = AGENTS_API.list(
-            custom_llm_provider=call.get("custom_llm_provider"),
-            extra_headers=call.get("extra_headers"),
-            timeout=None,
-            litellm_logging_obj=logging_obj,
-            **kwargs,
-        )
-    else:
-        listed = AGENTS_API.alist(
-            custom_llm_provider=call.get("custom_llm_provider"),
-            extra_headers=call.get("extra_headers"),
-            timeout=None,
-            litellm_logging_obj=logging_obj,
-            **kwargs,
-        )
+    lister = AGENTS_API.alist if call["function"] == "alist" else AGENTS_API.list
+    listed = lister(
+        call.get("custom_llm_provider"),
+        call.get("extra_headers"),
+        None,
+        litellm_logging_obj=logging_obj,
+        **kwargs,
+    )
     return JSON.validate_json(asyncio.run(resolve_listed(listed)).model_dump_json())
 
 
