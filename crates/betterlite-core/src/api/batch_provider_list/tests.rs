@@ -2,12 +2,13 @@
 
 use betterlite_config::sections::batch_provider_list::Settings as ConfiguredSettings;
 use betterlite_openai::batches::sdk::{Timeout, TimeoutPhases};
+use betterlite_prompts::arguments::json::Json;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::api::batch_provider_list::call::{
     AzureBatchListCall, BatchListProviderCall, OpenAiBatchListCall, VertexBatchListCall,
-    XaiBatchListCall,
+    VertexCredentials, XaiBatchListCall,
 };
 use crate::api::batch_provider_list::error::BatchProviderListError;
 use crate::api::batch_provider_list::{
@@ -178,12 +179,12 @@ fn openai_call_falls_back_through_the_global_and_environment_settings() {
     assert_eq!(call.api_base, "https://global.example");
     assert_eq!(call.organization.as_deref(), Some("env-org"));
 
-    let call = openai_call(
+    let vllm_call = openai_call(
         service
             .run(&input(BatchListProvider::HostedVllm))
             .expect("prepares"),
     );
-    assert_eq!(call.api_base, "https://global.example");
+    assert_eq!(vllm_call.api_base, "https://global.example");
 }
 
 #[test]
@@ -265,10 +266,50 @@ fn vertex_call_resolves_the_vertex_precedence() {
     assert_eq!(call.vertex_project.as_deref(), Some("global-project"));
     assert_eq!(call.vertex_location.as_deref(), Some("env-location"));
     assert_eq!(
-        exposed(call.vertex_credentials.as_ref()),
-        Some("env-credentials")
+        call.vertex_credentials,
+        Some(VertexCredentials::Path("env-credentials".to_owned()))
     );
     assert_eq!(call.max_retries, Some(3));
+}
+
+#[test]
+fn vertex_call_prefers_a_request_credentials_path_over_the_environment() {
+    let mut settings = configured();
+    settings.vertexai_credentials = Some(SecretString::from("env-credentials"));
+    let service = service_with(settings);
+    let mut request = input(BatchListProvider::VertexAi);
+    request.vertex_credentials = Some(VertexCredentials::Path(
+        "request-credentials.json".to_owned(),
+    ));
+    let call = vertex_call(service.run(&request).expect("prepares"));
+    assert_eq!(
+        call.vertex_credentials,
+        Some(VertexCredentials::Path(
+            "request-credentials.json".to_owned()
+        ))
+    );
+}
+
+#[test]
+fn vertex_call_carries_a_service_account_credentials_object() {
+    let source = r#"{
+        "provider": "vertex_ai",
+        "vertex_credentials": {"type": "service_account", "project_id": "example"}
+    }"#;
+    let request: BatchProviderListInput =
+        serde_json::from_str(source).expect("the object form parses");
+    let call = vertex_call(prepared(&request));
+    let Some(VertexCredentials::ServiceAccount(account)) = call.vertex_credentials else {
+        panic!("expected a service-account credentials object");
+    };
+    assert_eq!(
+        account.get("type").and_then(Json::as_str),
+        Some("service_account")
+    );
+    assert_eq!(
+        account.get("project_id").and_then(Json::as_str),
+        Some("example")
+    );
 }
 
 #[test]
@@ -277,7 +318,7 @@ fn vertex_call_uses_an_empty_base_without_one_configured() {
     assert_eq!(call.api_base, "");
     assert_eq!(call.vertex_project, None);
     assert_eq!(call.vertex_location, None);
-    assert_eq!(exposed(call.vertex_credentials.as_ref()), None);
+    assert!(call.vertex_credentials.is_none());
 }
 
 #[test]
@@ -296,13 +337,13 @@ fn xai_call_uses_only_the_request_parameters() {
 }
 
 #[rstest]
-#[case::absent(None, None, 600.0)]
-#[case::request_timeout(None, Some(30.0), 30.0)]
-#[case::explicit_timeout(Some(BatchListTimeoutValue::Seconds(12.5)), None, 12.5)]
-#[case::timeout_wins(Some(BatchListTimeoutValue::Seconds(12.5)), Some(30.0), 12.5)]
-#[case::explicit_zero(Some(BatchListTimeoutValue::Seconds(0.0)), None, 0.0)]
-#[case::text(Some(BatchListTimeoutValue::Text("7.5".to_owned())), None, 7.5)]
-#[case::text_with_spaces(Some(BatchListTimeoutValue::Text(" 7.5 ".to_owned())), None, 7.5)]
+#[case::absent(None, None, 600.0_f64)]
+#[case::request_timeout(None, Some(30.0_f64), 30.0_f64)]
+#[case::explicit_timeout(Some(BatchListTimeoutValue::Seconds(12.5)), None, 12.5_f64)]
+#[case::timeout_wins(Some(BatchListTimeoutValue::Seconds(12.5)), Some(30.0_f64), 12.5_f64)]
+#[case::explicit_zero(Some(BatchListTimeoutValue::Seconds(0.0)), None, 0.0_f64)]
+#[case::text(Some(BatchListTimeoutValue::Text("7.5".to_owned())), None, 7.5_f64)]
+#[case::text_with_spaces(Some(BatchListTimeoutValue::Text(" 7.5 ".to_owned())), None, 7.5_f64)]
 fn timeout_resolution(
     #[case] timeout: Option<BatchListTimeoutValue>,
     #[case] request_timeout: Option<f64>,
@@ -318,10 +359,10 @@ fn timeout_resolution(
 #[test]
 fn a_structured_timeout_passes_through_for_openai_and_azure() {
     let phases = TimeoutPhases {
-        connect: Some(1.0),
-        read: Some(2.0),
-        write: Some(3.0),
-        pool: Some(4.0),
+        connect: Some(1.0_f64),
+        read: Some(2.0_f64),
+        write: Some(3.0_f64),
+        pool: Some(4.0_f64),
     };
     let mut request = input(BatchListProvider::OpenAi);
     request.timeout = Some(BatchListTimeoutValue::Phases(phases.clone()));
@@ -329,10 +370,10 @@ fn a_structured_timeout_passes_through_for_openai_and_azure() {
         prepared(&request).call.window.timeout,
         Timeout::Phases(phases.clone())
     );
-    let mut request = input(BatchListProvider::Azure);
-    request.timeout = Some(BatchListTimeoutValue::Phases(phases.clone()));
+    let mut azure_request = input(BatchListProvider::Azure);
+    azure_request.timeout = Some(BatchListTimeoutValue::Phases(phases.clone()));
     assert_eq!(
-        prepared(&request).call.window.timeout,
+        prepared(&azure_request).call.window.timeout,
         Timeout::Phases(phases)
     );
 }
@@ -345,10 +386,10 @@ fn a_structured_timeout_passes_through_for_openai_and_azure() {
 fn a_structured_timeout_uses_its_read_value_elsewhere(#[case] provider: BatchListProvider) {
     let mut request = input(provider);
     request.timeout = Some(BatchListTimeoutValue::Phases(TimeoutPhases {
-        connect: Some(1.0),
-        read: Some(9.0),
-        write: Some(3.0),
-        pool: Some(4.0),
+        connect: Some(1.0_f64),
+        read: Some(9.0_f64),
+        write: Some(3.0_f64),
+        pool: Some(4.0_f64),
     }));
     let result = prepared(&request);
     assert_eq!(result.call.window.timeout, Timeout::Seconds(9.0));
@@ -358,10 +399,10 @@ fn a_structured_timeout_uses_its_read_value_elsewhere(#[case] provider: BatchLis
 fn a_structured_timeout_without_a_read_value_uses_the_default() {
     let mut request = input(BatchListProvider::VertexAi);
     request.timeout = Some(BatchListTimeoutValue::Phases(TimeoutPhases {
-        connect: Some(1.0),
+        connect: Some(1.0_f64),
         read: None,
-        write: Some(3.0),
-        pool: Some(4.0),
+        write: Some(3.0_f64),
+        pool: Some(4.0_f64),
     }));
     assert_eq!(
         prepared(&request).call.window.timeout,
@@ -401,7 +442,7 @@ fn non_finite_phases_are_rejected_for_supporting_providers() {
     let mut request = input(BatchListProvider::OpenAi);
     request.timeout = Some(BatchListTimeoutValue::Phases(TimeoutPhases {
         connect: Some(f64::INFINITY),
-        read: Some(2.0),
+        read: Some(2.0_f64),
         write: None,
         pool: None,
     }));
@@ -429,9 +470,9 @@ fn alist_batches_marks_the_prepared_call_async() {
     request.alist_batches = true;
     let result = prepared(&request);
     assert!(result.is_async);
-    let mut request = input(BatchListProvider::OpenAi);
-    request.alist_batches = false;
-    assert!(!prepared(&request).is_async);
+    let mut sync_request = input(BatchListProvider::OpenAi);
+    sync_request.alist_batches = false;
+    assert!(!prepared(&sync_request).is_async);
 }
 
 #[test]
@@ -460,14 +501,13 @@ fn provider_names_deserialize_to_their_variant(
     #[case] name: &str,
     #[case] expected: BatchListProvider,
 ) {
-    let request: BatchProviderListInput =
-        serde_json::from_value(serde_json::json!({ "provider": name })).expect("input parses");
+    let source = format!(r#"{{"provider": "{name}"}}"#);
+    let request: BatchProviderListInput = serde_json::from_str(&source).expect("input parses");
     assert_eq!(request.provider, expected);
 }
 
 #[test]
 fn an_absent_provider_defaults_to_openai() {
-    let request: BatchProviderListInput =
-        serde_json::from_value(serde_json::json!({})).expect("input parses");
+    let request: BatchProviderListInput = serde_json::from_str("{}").expect("input parses");
     assert_eq!(request.provider, BatchListProvider::OpenAi);
 }

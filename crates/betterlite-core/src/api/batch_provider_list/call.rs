@@ -1,5 +1,7 @@
 use betterlite_openai::batches::sdk::Timeout;
+use betterlite_prompts::arguments::json::Object;
 use secrecy::SecretString;
+use serde::Deserialize;
 
 use super::BatchListTimeoutValue;
 
@@ -27,13 +29,21 @@ pub struct OpenAiBatchListCall {
     pub max_retries: Option<i64>,
 }
 
+// LiteLLM declares vertex_credentials as a path string or an inline service-account object
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+pub enum VertexCredentials {
+    Path(String),
+    ServiceAccount(Object),
+}
+
 // the keyword arguments LiteLLM passes to VertexAIBatchPrediction.list_batches
 #[derive(Debug, Clone)]
 pub struct VertexBatchListCall {
     pub api_base: String,
     pub vertex_project: Option<String>,
     pub vertex_location: Option<String>,
-    pub vertex_credentials: Option<SecretString>,
+    pub vertex_credentials: Option<VertexCredentials>,
     pub max_retries: Option<i64>,
 }
 
