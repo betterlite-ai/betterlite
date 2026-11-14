@@ -40,6 +40,17 @@ async fn fixture() -> PostgresFixture {
     task.resolve().await.expect("a Postgres database fixture")
 }
 
+async fn fixture_database_name(url: &SecretString) -> String {
+    let pool = build_pool(url.expose_secret()).expect("the fixture pool builds");
+    let client = pool.get().await.expect("a fixture connection");
+    let row = client
+        .query_one("SELECT current_database()", &[])
+        .await
+        .expect("the database name is readable");
+    pool.close();
+    row.get::<_, String>(0)
+}
+
 #[derive(Debug, thiserror::Error)]
 enum NativeError {
     #[error("the database URL is invalid")]
@@ -237,16 +248,7 @@ async fn close_backends(url: &SecretString) {
 async fn postgres_writer_read_only_probe() {
     let fixture = fixture().await;
     let url = fixture.options.url.clone();
-    let database = {
-        let pool = build_pool(url.expose_secret()).expect("the fixture pool builds");
-        let client = pool.get().await.expect("a fixture connection");
-        let row = client
-            .query_one("SELECT current_database()", &[])
-            .await
-            .expect("the database name is readable");
-        pool.close();
-        row.get::<_, String>(0)
-    };
+    let database = fixture_database_name(&url).await;
     let writer = build_pool(url.expose_secret()).expect("the writer pool builds");
     assert!(
         !writer_is_read_only(&writer)

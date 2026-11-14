@@ -1,15 +1,13 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use secrecy::SecretString;
 use tokio::sync::Notify;
 use tracing::field::{Field, Visit};
-use tracing::subscriber::with_default;
 use tracing::{Event, Subscriber};
-use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
+use tracing_subscriber::layer::{Context, Layer};
 
 use crate::auth_reconnect::clock::ReconnectClock;
 use crate::auth_reconnect::engine::{EngineState, ReconnectEngine};
@@ -77,11 +75,16 @@ pub(super) enum StepOutcome {
     Pending,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ReadRoute {
+    Writer,
+    Reader,
+}
+
 pub(super) struct EngineScript {
     pub(super) writer_generation: u64,
     pub(super) reader_generation: u64,
-    pub(super) reader_unavailable: bool,
-    pub(super) routing: bool,
+    pub(super) read_route: ReadRoute,
     pub(super) engine_state: EngineState,
     pub(super) probes: VecDeque<ProbeOutcome>,
     pub(super) recreates: VecDeque<RecreateOutcome>,
@@ -96,8 +99,7 @@ impl Default for EngineScript {
         Self {
             writer_generation: 0,
             reader_generation: 0,
-            reader_unavailable: false,
-            routing: false,
+            read_route: ReadRoute::Writer,
             engine_state: EngineState::Alive,
             probes: VecDeque::new(),
             recreates: VecDeque::new(),
@@ -166,14 +168,6 @@ impl FakeEngine {
             connected: true,
         }
     }
-
-    pub(super) fn set_engine_state(&self, state: EngineState) {
-        self.shared
-            .script
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .engine_state = state;
-    }
 }
 
 async fn step_outcome(outcome: StepOutcome) -> Result<(), FakeError> {
@@ -198,7 +192,7 @@ impl ReconnectEngine for FakeEngine {
             .script
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        if script.routing && !script.reader_unavailable {
+        if script.read_route == ReadRoute::Reader {
             Observation {
                 generation: script.reader_generation,
                 handle: Some(Arc::clone(&self.shared.reader)),
@@ -300,13 +294,13 @@ impl ReconnectEngine for FakeEngine {
     }
 
     fn mark_writer_recovered(&self) {
-        let routing = self
+        let read_route = self
             .shared
             .script
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .routing;
-        if routing {
+            .read_route;
+        if read_route == ReadRoute::Reader {
             record(&self.shared.effects, Effect::MarkWriterRecovered);
         }
     }
@@ -350,7 +344,10 @@ impl ScriptedClock {
     pub(super) fn from_seconds(values: &[f64]) -> Self {
         let mut offsets: VecDeque<Duration> = values
             .iter()
-            .map(|value| Duration::from_secs_f64(*value))
+            .map(|value| {
+                Duration::try_from_secs_f64(*value)
+                    .expect("scripted clock values are nonnegative seconds")
+            })
             .collect();
         let fallback = offsets.back().copied().unwrap_or_default();
         Self {
@@ -364,7 +361,8 @@ impl ReconnectClock for ScriptedClock {
     fn now(&self) -> Instant {
         let mut script = self.script.lock().unwrap_or_else(PoisonError::into_inner);
         let fallback = script.fallback;
-        self.base + script.offsets.pop_front().unwrap_or(fallback)
+        let offset = script.offsets.pop_front().unwrap_or(fallback);
+        self.base.checked_add(offset).unwrap_or(self.base)
     }
 }
 
@@ -377,7 +375,6 @@ pub(super) enum LockMode {
 
 struct LockShared {
     mode: LockMode,
-    held: AtomicBool,
     effects: Effects,
 }
 
@@ -389,16 +386,8 @@ pub(super) struct FakeLock {
 impl FakeLock {
     pub(super) fn new(mode: LockMode, effects: Effects) -> Self {
         Self {
-            shared: Arc::new(LockShared {
-                mode,
-                held: AtomicBool::new(false),
-                effects,
-            }),
+            shared: Arc::new(LockShared { mode, effects }),
         }
-    }
-
-    pub(super) fn held(&self) -> bool {
-        self.shared.held.load(Ordering::SeqCst)
     }
 }
 
@@ -408,7 +397,6 @@ pub(super) struct FakeHold {
 
 impl Drop for FakeHold {
     fn drop(&mut self) {
-        self.shared.held.store(false, Ordering::SeqCst);
         record(&self.shared.effects, Effect::LockRelease);
     }
 }
@@ -421,12 +409,9 @@ impl ReconnectLock for FakeLock {
         Box::pin(async move {
             record(&self.shared.effects, Effect::LockAcquire);
             match self.shared.mode {
-                LockMode::Free => {
-                    self.shared.held.store(true, Ordering::SeqCst);
-                    Ok(Some(FakeHold {
-                        shared: Arc::clone(&self.shared),
-                    }))
-                }
+                LockMode::Free => Ok(Some(FakeHold {
+                    shared: Arc::clone(&self.shared),
+                })),
                 LockMode::Timeout => Ok(None),
                 LockMode::Error => Err(FakeError("the reconnect lock is unavailable".to_owned())),
             }
@@ -480,14 +465,4 @@ impl<Inner: Subscriber> Layer<Inner> for CapturedLogs {
                 fields: fields.0,
             });
     }
-}
-
-pub(super) fn capture<T, F>(run: F) -> (T, Vec<LogEntry>)
-where
-    F: FnOnce() -> T,
-{
-    let logs = CapturedLogs::default();
-    let subscriber = tracing_subscriber::registry().with(logs.clone());
-    let value = with_default(subscriber, run);
-    (value, logs.entries())
 }
