@@ -1,21 +1,7 @@
 #![cfg(test)]
 
-use std::sync::Arc;
-
-use betterlite_models::decisions::Json;
-
-use super::support::{ENTRA, fixture, payload};
-use crate::callback_logger::CallbackLogger;
-use crate::callback_logger::event::LoggerEvent;
-
-fn event(id: &str) -> Arc<LoggerEvent> {
-    Arc::new(LoggerEvent {
-        payload: Arc::new(payload(id)),
-        dynamic_params: Arc::new(Json::Null),
-        stream: false,
-        guardrail_snapshot: None,
-    })
-}
+use super::support::{ENTRA, event, fixture};
+use crate::callback_logger::CallbackLogger as _;
 
 #[test]
 fn callback_logger_reports_the_azure_storage_name() {

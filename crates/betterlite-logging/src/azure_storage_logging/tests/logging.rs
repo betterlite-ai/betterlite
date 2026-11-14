@@ -1,23 +1,7 @@
 #![cfg(test)]
 
-use std::sync::Arc;
-
-use betterlite_models::decisions::Json;
-use betterlite_models::prompt_contracts::StandardCallbackDynamicParams;
-
-use super::support::{ENTRA, fixture, payload};
-use crate::callback_logger::CallbackLogger;
-use crate::callback_logger::event::LoggerEvent;
-
-fn event(id: &str) -> Arc<LoggerEvent> {
-    let dynamic: StandardCallbackDynamicParams = Json::Null;
-    Arc::new(LoggerEvent {
-        payload: Arc::new(payload(id)),
-        dynamic_params: Arc::new(dynamic),
-        stream: false,
-        guardrail_snapshot: None,
-    })
-}
+use super::support::{ENTRA, event, fixture};
+use crate::callback_logger::CallbackLogger as _;
 
 #[tokio::test]
 async fn a_success_event_queues_the_standard_logging_object() {

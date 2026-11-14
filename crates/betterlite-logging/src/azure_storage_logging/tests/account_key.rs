@@ -1,8 +1,12 @@
 #![cfg(test)]
 
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
-use super::support::{ACCOUNT, Reply, fixture, payload};
+use secrecy::SecretString;
+
+use super::support::{ACCOUNT, Reply, START_SECONDS, fixture, payload};
+use crate::azure_storage_logging::http_ops::{StorageAuthorization, append_request};
 use crate::azure_storage_logging::logger::SERVICE_CLIENT_TTL;
 
 const DIRECTORY_URL: &str = "https://acct.dfs.core.windows.net/logs/2023-11-14";
@@ -22,6 +26,7 @@ async fn the_account_key_path_creates_the_dated_directory_and_the_file() {
     let exists = calls.first().expect("the directory probe");
     assert_eq!(exists.method, "HEAD");
     assert_eq!(exists.url, EXISTS_URL);
+    assert_eq!(exists.header("Content-Length"), None);
     let create_directory = calls.get(1).expect("the directory create");
     assert_eq!(create_directory.method, "PUT");
     assert_eq!(
@@ -96,6 +101,64 @@ async fn the_client_is_closed_and_recreated_after_its_ttl() {
         .expect("third upload rebuilds the client");
     assert_eq!(fixture.logger.created_clients.load(Ordering::SeqCst), 2);
     assert_eq!(fixture.logger.closed_clients.load(Ordering::SeqCst), 1);
+}
+
+// the expected value is Python's hmac over the documented string to sign, with base64 "a2V5" as the key
+#[test]
+fn the_shared_key_signature_matches_an_independent_hmac() {
+    let key = SecretString::from("a2V5");
+    let auth = StorageAuthorization::SharedKey {
+        account: "acct",
+        key: &key,
+    };
+    let request = append_request(
+        &format!("{DIRECTORY_URL}/id-1.json"),
+        &auth,
+        Duration::from_secs(START_SECONDS),
+        b"{}",
+    )
+    .expect("the request signs");
+    let expected = [
+        ("x-ms-version", "2019-07-07"),
+        ("Content-Type", "application/json"),
+        ("x-ms-date", "Tue, 14 Nov 2023 22:13:20 GMT"),
+        (
+            "Authorization",
+            "SharedKey acct:u5B7KqcJR/sfUZRolDqpee7V3TFE4DMZ05eL6RHNesc=",
+        ),
+    ]
+    .map(|(name, value)| (name.to_owned(), value.to_owned()));
+    assert_eq!(request.headers, expected);
+}
+
+#[test]
+fn a_key_that_is_not_base64_does_not_sign() {
+    let key = SecretString::from("not base64!");
+    let auth = StorageAuthorization::SharedKey {
+        account: "acct",
+        key: &key,
+    };
+    let error = append_request(DIRECTORY_URL, &auth, Duration::ZERO, b"{}")
+        .expect_err("the key must decode");
+    assert!(error.to_string().contains("base64"));
+}
+
+#[tokio::test]
+async fn a_failed_directory_probe_stops_the_upload() {
+    let fixture = fixture(
+        &ACCOUNT,
+        &[Reply {
+            status: 400,
+            body: "",
+        }],
+    );
+    let error = fixture
+        .logger
+        .upload_payload(&payload("id-1"))
+        .await
+        .expect_err("a 400 from exists() fails the upload");
+    assert!(error.to_string().contains("400 for exists"));
+    assert_eq!(fixture.transport.calls().len(), 1);
 }
 
 #[tokio::test]

@@ -1,8 +1,18 @@
 #![cfg(test)]
 
+use std::sync::Arc;
 use std::time::Duration;
 
-use super::support::{ENTRA, environment, fixture};
+use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
+
+use super::support::{
+    ENTRA, FixedIds, ManualClock, Reply, START_SECONDS, ScriptedTransport, environment, fixture,
+    payload,
+};
+use crate::azure_storage_logging::chain::UnwiredChainFactory;
+use crate::azure_storage_logging::logger::{AzureBlobStorageLogger, AzureStorageDeps};
 use crate::azure_storage_logging::settings::{
     AzureStorageSettings, DEFAULT_ENDPOINT_SUFFIX, SettingsError,
 };
@@ -14,6 +24,41 @@ fn the_logger_initializes_from_the_required_environment() {
     assert_eq!(fixture.logger.settings.file_system, "logs");
     assert_eq!(fixture.logger.deps.ids.next_id(), "generated-id");
     assert_eq!(fixture.logger.last_flush_time().as_secs(), 1_700_000_000);
+}
+
+// CustomBatchLogger.periodic_flush sleeps the interval first, flushes, and stops when the server shuts down
+#[tokio::test(start_paused = true)]
+async fn the_flush_timer_sends_the_queue_until_shutdown() {
+    let mut variables = ENTRA.to_vec();
+    variables.push(("DEFAULT_FLUSH_INTERVAL_SECONDS", "1"));
+    let lookup = environment(&variables);
+    let settings = AzureStorageSettings::from_environment(&lookup).expect("valid settings");
+    let transport = ScriptedTransport::new(&[Reply::TOKEN]);
+    let tracker = TaskTracker::new();
+    let shutdown = CancellationToken::new();
+    let logger = AzureBlobStorageLogger::new(
+        settings,
+        AzureStorageDeps {
+            transport: Arc::<ScriptedTransport>::clone(&transport),
+            clock: ManualClock::new(START_SECONDS),
+            environment: Arc::new(lookup),
+            ids: Arc::new(FixedIds),
+            chain_factory: Arc::new(UnwiredChainFactory {
+                environment: Arc::new(environment(&[])),
+            }),
+            shutdown: shutdown.clone(),
+            tasks: Some(tracker.clone()),
+        },
+    );
+    let _queued = logger.queue.enqueue(payload("id-1"));
+    sleep(Duration::from_millis(500)).await;
+    assert!(transport.calls().is_empty());
+    sleep(Duration::from_secs(1)).await;
+    assert!(logger.queue.pending().is_empty());
+    assert_eq!(transport.calls().len(), 4);
+    shutdown.cancel();
+    tracker.close();
+    tracker.wait().await;
 }
 
 #[test]

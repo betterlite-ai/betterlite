@@ -1,39 +1,53 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
+use rstest::rstest;
+use secrecy::ExposeSecret as _;
+use tokio::runtime::Builder;
 use url::form_urlencoded;
 
-use super::support::{ACCOUNT, ENTRA, ManualClock, Reply, ScriptedTransport, fixture};
-use crate::azure_storage_logging::token::{REFRESH_MARGIN, STORAGE_SCOPE, TOKEN_LIFETIME};
+use super::support::{ACCOUNT, ENTRA, Reply, environment, fixture};
+use crate::azure_storage_logging::chain::UnwiredChainFactory;
+use crate::azure_storage_logging::token::{
+    ChainProviderFactory as _, REFRESH_MARGIN, STORAGE_SCOPE, TOKEN_LIFETIME,
+};
 
 const TOKEN_ROUTE: &str = "https://login.microsoftonline.com/tenant-1/oauth2/v2.0/token";
 
-fn token_reply() -> Reply {
-    Reply {
-        status: 200,
-        body: r#"{"access_token": "tok-1"}"#,
-    }
-}
-
-fn form(call: &super::support::Call) -> BTreeMap<String, String> {
-    form_urlencoded::parse(&call.body).into_owned().collect()
+#[rstest]
+#[case::nothing_configured(&[], "no available credential")]
+#[case::an_empty_value_is_unset(&[("AZURE_CLIENT_ID", "")], "no available credential")]
+#[case::a_workload_identity_file(&[("AZURE_FEDERATED_TOKEN_FILE", "/token")], "not wired")]
+fn the_unwired_chain_says_why_it_has_no_token(
+    #[case] variables: &[(&str, &str)],
+    #[case] expected: &str,
+) {
+    let factory = UnwiredChainFactory {
+        environment: Arc::new(environment(variables)),
+    };
+    let error = factory.provider().err().expect("the chain is not wired");
+    assert!(error.to_string().contains(expected));
 }
 
 #[tokio::test]
 async fn the_client_secret_path_posts_the_entra_form_once_and_caches_the_token() {
-    let fixture = fixture(&ENTRA, &[token_reply(), token_reply()]);
+    let fixture = fixture(&ENTRA, &[Reply::TOKEN, Reply::TOKEN]);
     let first = fixture
         .logger
         .set_valid_azure_ad_token()
         .await
         .expect("a scripted token is returned");
-    assert_eq!(secrecy::ExposeSecret::expose_secret(&first), "tok-1");
+    assert_eq!(first.expose_secret(), "tok-1");
     let calls = fixture.transport.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].method, "POST");
     assert_eq!(calls[0].url, TOKEN_ROUTE);
-    let fields = form(&calls[0]);
+    let fields: BTreeMap<String, String> = form_urlencoded::parse(&calls[0].body)
+        .into_owned()
+        .collect();
     assert_eq!(
         fields.get("grant_type").map(String::as_str),
         Some("client_credentials")
@@ -52,13 +66,13 @@ async fn the_client_secret_path_posts_the_entra_form_once_and_caches_the_token()
         .set_valid_azure_ad_token()
         .await
         .expect("the cached token is returned");
-    assert_eq!(secrecy::ExposeSecret::expose_secret(&second), "tok-1");
+    assert_eq!(second.expose_secret(), "tok-1");
     assert_eq!(fixture.transport.calls().len(), 1);
 }
 
 #[tokio::test]
 async fn a_token_refreshes_exactly_five_minutes_before_it_expires() {
-    let fixture = fixture(&ENTRA, &[token_reply(), token_reply()]);
+    let fixture = fixture(&ENTRA, &[Reply::TOKEN, Reply::TOKEN]);
     fixture
         .logger
         .set_valid_azure_ad_token()
@@ -105,18 +119,19 @@ async fn a_failed_token_response_is_an_error() {
 #[tokio::test]
 async fn the_credential_chain_factory_is_cached_and_its_provider_runs_per_upload() {
     let fixture = fixture(&ACCOUNT[..2], &[]);
+    let first = fixture
+        .logger
+        .set_valid_azure_ad_token()
+        .await
+        .expect("chain token");
+    assert_eq!(first.expose_secret(), "chain-token");
     fixture
         .logger
         .set_valid_azure_ad_token()
         .await
         .expect("chain token");
-    fixture
-        .logger
-        .set_valid_azure_ad_token()
-        .await
-        .expect("chain token");
-    assert_eq!(*fixture.factory.built.lock().expect("factory count"), 1);
-    assert_eq!(*fixture.chain.calls.lock().expect("provider count"), 2);
+    assert_eq!(fixture.factory.built.load(Ordering::SeqCst), 1);
+    assert_eq!(fixture.chain.calls.load(Ordering::SeqCst), 2);
     assert!(fixture.transport.calls().is_empty());
 }
 
@@ -128,7 +143,7 @@ fn a_missing_service_principal_value_keeps_litellms_error() {
         ("AZURE_STORAGE_TENANT_ID", "tenant-1"),
     ];
     let fixture = fixture(&variables, &[]);
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("runtime");
@@ -140,14 +155,4 @@ fn a_missing_service_principal_value_keeps_litellms_error() {
         "Missing required environment variable: AZURE_STORAGE_CLIENT_ID"
     );
     assert!(fixture.transport.calls().is_empty());
-}
-
-#[test]
-fn the_payload_fixture_round_trips_through_json() {
-    let payload = super::support::payload("id-1");
-    let encoded = serde_json::to_value(&payload).expect("serializes");
-    assert_eq!(
-        encoded.get("status").and_then(serde_json::Value::as_str),
-        Some("success")
-    );
 }

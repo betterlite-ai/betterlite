@@ -1,11 +1,14 @@
 #![cfg(test)]
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_config::loader::EnvironmentLookup;
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
 
@@ -16,6 +19,7 @@ use crate::azure_storage_logging::token::{ChainError, ChainProviderFactory, Chai
 use crate::azure_storage_logging::transport::{
     StorageRequest, StorageResponse, StorageTransport, StorageTransportError,
 };
+use crate::callback_logger::event::LoggerEvent;
 use crate::datadog_logging::clock::Clock;
 use crate::fields::payload::StandardLoggingPayload;
 
@@ -25,6 +29,16 @@ pub(crate) const START_SECONDS: u64 = 1_700_000_000;
 pub(crate) fn payload(id: &str) -> StandardLoggingPayload {
     let text = PAYLOAD.replace("\"id-1\"", &format!("\"{id}\""));
     serde_json::from_str(&text).expect("the payload fixture matches StandardLoggingPayload")
+}
+
+pub(crate) fn event(id: &str) -> Arc<LoggerEvent> {
+    Arc::new(LoggerEvent {
+        payload: Arc::new(payload(id)),
+        dynamic_params: Arc::new(Json::Null),
+        litellm_metadata: Arc::new(IndexMap::new()),
+        stream: false,
+        guardrail_snapshot: None,
+    })
 }
 
 pub(crate) struct ManualClock(pub(crate) Mutex<Duration>);
@@ -37,10 +51,6 @@ impl ManualClock {
     pub(crate) fn advance(&self, seconds: u64) {
         let mut now = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         *now = now.saturating_add(Duration::from_secs(seconds));
-    }
-
-    pub(crate) fn set(&self, seconds: u64) {
-        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = Duration::from_secs(seconds);
     }
 }
 
@@ -65,13 +75,16 @@ impl Reply {
         status: 404,
         body: "",
     };
+    pub(crate) const TOKEN: Self = Self {
+        status: 200,
+        body: r#"{"access_token": "tok-1"}"#,
+    };
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct Call {
     pub(crate) method: String,
     pub(crate) url: String,
-    pub(crate) query: Vec<(String, String)>,
     pub(crate) headers: Vec<(String, String)>,
     pub(crate) body: Vec<u8>,
 }
@@ -117,10 +130,9 @@ impl StorageTransport for ScriptedTransport {
             .unwrap_or_else(PoisonError::into_inner)
             .push(Call {
                 method: request.method.as_str().to_owned(),
-                url: request.url.clone(),
-                query: request.query.clone(),
-                headers: request.headers.clone(),
-                body: request.body.clone(),
+                url: request.url,
+                headers: request.headers,
+                body: request.body,
             });
         let reply = self
             .replies
@@ -145,25 +157,25 @@ impl IdSource for FixedIds {
 
 pub(crate) struct FixedChain {
     pub(crate) token: SecretString,
-    pub(crate) calls: Mutex<usize>,
+    pub(crate) calls: AtomicUsize,
 }
 
 impl ChainTokenProvider for FixedChain {
     fn token(&self) -> Result<SecretString, ChainError> {
-        *self.calls.lock().unwrap_or_else(PoisonError::into_inner) += 1;
+        let _previous = self.calls.fetch_add(1, Ordering::SeqCst);
         Ok(self.token.clone())
     }
 }
 
 pub(crate) struct FixedChainFactory {
     pub(crate) provider: Arc<FixedChain>,
-    pub(crate) built: Mutex<usize>,
+    pub(crate) built: AtomicUsize,
 }
 
 impl ChainProviderFactory for FixedChainFactory {
     fn provider(&self) -> Result<Arc<dyn ChainTokenProvider>, ChainError> {
-        *self.built.lock().unwrap_or_else(PoisonError::into_inner) += 1;
-        Ok(self.provider.clone())
+        let _previous = self.built.fetch_add(1, Ordering::SeqCst);
+        Ok(Arc::<FixedChain>::clone(&self.provider))
     }
 }
 
@@ -174,7 +186,6 @@ pub(crate) struct Fixture {
     pub(crate) chain: Arc<FixedChain>,
     pub(crate) factory: Arc<FixedChainFactory>,
     pub(crate) logger: Arc<AzureBlobStorageLogger>,
-    pub(crate) shutdown: CancellationToken,
 }
 
 pub(crate) fn environment(variables: &[(&str, &str)]) -> BTreeEnvironment {
@@ -186,7 +197,7 @@ pub(crate) fn environment(variables: &[(&str, &str)]) -> BTreeEnvironment {
     )
 }
 
-pub(crate) struct BTreeEnvironment(pub(crate) std::collections::BTreeMap<String, String>);
+pub(crate) struct BTreeEnvironment(pub(crate) BTreeMap<String, String>);
 
 impl EnvironmentLookup for BTreeEnvironment {
     fn lookup(&self, name: &str) -> Option<String> {
@@ -202,22 +213,21 @@ pub(crate) fn fixture(variables: &[(&str, &str)], replies: &[Reply]) -> Fixture 
     let clock = ManualClock::new(START_SECONDS);
     let chain = Arc::new(FixedChain {
         token: SecretString::from("chain-token"),
-        calls: Mutex::new(0),
+        calls: AtomicUsize::new(0),
     });
     let factory = Arc::new(FixedChainFactory {
         provider: Arc::clone(&chain),
-        built: Mutex::new(0),
+        built: AtomicUsize::new(0),
     });
-    let shutdown = CancellationToken::new();
     let logger = AzureBlobStorageLogger::new(
         settings.clone(),
         AzureStorageDeps {
-            transport: Arc::clone(&transport) as Arc<dyn StorageTransport>,
-            clock: Arc::clone(&clock) as Arc<dyn Clock>,
+            transport: Arc::<ScriptedTransport>::clone(&transport),
+            clock: Arc::<ManualClock>::clone(&clock),
             environment: Arc::new(environment),
             ids: Arc::new(FixedIds),
-            chain_factory: factory.clone(),
-            shutdown: shutdown.clone(),
+            chain_factory: Arc::<FixedChainFactory>::clone(&factory),
+            shutdown: CancellationToken::new(),
             tasks: None,
         },
     );
@@ -228,7 +238,6 @@ pub(crate) fn fixture(variables: &[(&str, &str)], replies: &[Reply]) -> Fixture 
         chain,
         factory,
         logger,
-        shutdown,
     }
 }
 

@@ -1,20 +1,13 @@
 #![cfg(test)]
 
-use super::support::{ENTRA, Reply, fixture, payload};
-
-fn token_reply() -> Reply {
-    Reply {
-        status: 200,
-        body: r#"{"access_token": "tok-1"}"#,
-    }
-}
+use super::support::{ENTRA, Reply, START_SECONDS, fixture, payload};
 
 #[tokio::test]
 async fn a_first_failure_stops_the_batch_and_keeps_every_event() {
     let fixture = fixture(
         &ENTRA,
         &[
-            token_reply(),
+            Reply::TOKEN,
             Reply {
                 status: 500,
                 body: "",
@@ -42,7 +35,7 @@ async fn a_middle_failure_keeps_the_failed_event_and_the_rest() {
     let fixture = fixture(
         &ENTRA,
         &[
-            token_reply(),
+            Reply::TOKEN,
             Reply::OK,
             Reply::OK,
             Reply::OK,
@@ -74,7 +67,7 @@ async fn the_next_flush_retries_only_the_unfinished_events() {
     let fixture = fixture(
         &ENTRA,
         &[
-            token_reply(),
+            Reply::TOKEN,
             Reply::OK,
             Reply::OK,
             Reply::OK,
@@ -89,11 +82,17 @@ async fn the_next_flush_retries_only_the_unfinished_events() {
     );
     let _first = fixture.logger.queue.enqueue(payload("id-1"));
     let _second = fixture.logger.queue.enqueue(payload("id-2"));
-    let _first_report = fixture.logger.flush_queue().await;
-    assert_eq!(_first_report.requeued, 1);
-    let _second_report = fixture.logger.flush_queue().await;
-    assert_eq!(_second_report.batch, 1);
-    assert_eq!(_second_report.delivered, 1);
+    let first = fixture.logger.flush_queue().await;
+    assert_eq!(first.requeued, 1);
+    assert_eq!(fixture.logger.last_flush_time().as_secs(), START_SECONDS);
+    fixture.clock.advance(10);
+    let second = fixture.logger.flush_queue().await;
+    assert_eq!(second.batch, 1);
+    assert_eq!(second.delivered, 1);
+    assert_eq!(
+        fixture.logger.last_flush_time().as_secs(),
+        START_SECONDS.saturating_add(10)
+    );
     assert!(fixture.logger.queue.pending().is_empty());
     assert_eq!(fixture.transport.calls().len(), 8);
 }

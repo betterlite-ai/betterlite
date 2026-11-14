@@ -1,7 +1,5 @@
 #![cfg(test)]
 
-use secrecy::ExposeSecret as _;
-
 use super::support::{ACCOUNT, ENTRA, environment};
 use crate::azure_storage_logging::settings::AzureStorageSettings;
 
@@ -31,8 +29,9 @@ fn an_empty_optional_variable_counts_as_unset() {
     ];
     let settings = settings(&variables);
     assert!(settings.tenant_id.is_none());
+    assert!(settings.client_id.is_none());
+    assert!(settings.client_secret.is_none());
     assert!(settings.account_key.is_none());
-    assert!(settings.tenant_id.is_none());
     assert_eq!(settings.endpoint_suffix, "core.windows.net");
 }
 
@@ -45,10 +44,7 @@ fn the_endpoint_suffix_builds_both_endpoints() {
     ];
     let settings = settings(&variables);
     assert_eq!(
-        format!(
-            "https://{}.dfs.{}",
-            settings.account_name, settings.endpoint_suffix
-        ),
+        settings.dfs_endpoint(),
         "https://acct.dfs.core.chinacloudapi.cn"
     );
     assert_eq!(
@@ -70,7 +66,6 @@ fn the_service_principal_values_are_read_and_kept_secret() {
         Some("secret-1")
     );
     assert!(settings.account_key.is_none());
-    assert!(settings.client_secret.is_some());
 }
 
 #[test]

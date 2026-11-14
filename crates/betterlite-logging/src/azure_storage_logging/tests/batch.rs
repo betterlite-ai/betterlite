@@ -2,19 +2,12 @@
 
 use super::support::{ENTRA, Reply, fixture, payload};
 
-fn token_reply() -> Reply {
-    Reply {
-        status: 200,
-        body: r#"{"access_token": "tok-1"}"#,
-    }
-}
-
 #[tokio::test]
 async fn a_flush_sends_every_queued_event_and_clears_it() {
     let fixture = fixture(
         &ENTRA,
         &[
-            token_reply(),
+            Reply::TOKEN,
             Reply::OK,
             Reply::OK,
             Reply::OK,
@@ -32,6 +25,15 @@ async fn a_flush_sends_every_queued_event_and_clears_it() {
     assert!(fixture.logger.queue.pending().is_empty());
     assert_eq!(fixture.transport.calls().len(), 7);
     assert!(fixture.logger.last_flush_time().as_secs() >= 1_700_000_000);
+}
+
+#[tokio::test]
+async fn async_send_batch_uploads_each_queued_event_once() {
+    let fixture = fixture(&ENTRA, &[Reply::TOKEN]);
+    let _first = fixture.logger.queue.enqueue(payload("id-1"));
+    let _second = fixture.logger.queue.enqueue(payload("id-2"));
+    assert_eq!(fixture.logger.async_send_batch().await, 2);
+    assert_eq!(fixture.transport.calls().len(), 7);
 }
 
 #[tokio::test]
