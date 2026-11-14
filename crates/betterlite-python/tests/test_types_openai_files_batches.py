@@ -1,6 +1,6 @@
 import operator
 from os import PathLike
-from typing import ClassVar, Literal, Protocol, get_args, get_origin, get_type_hints
+from typing import ClassVar, Literal, Protocol, TypeAlias, get_args, get_origin, get_type_hints
 
 import litellm.types.llms.openai as litellm_openai  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1
 import pytest
@@ -26,6 +26,9 @@ from betterlite.types.llms.openai.core.chat_blocks import (
 )
 from betterlite.types.llms.openai.core.messages import AllMessageValues, ToolMessageContentPart
 from betterlite.types.llms.openai.core.threads import AttachmentTool
+
+
+HintMap: TypeAlias = dict[str, TypeForm[JsonValue] | None]
 
 
 class TypedDictClass(Protocol):
@@ -256,16 +259,14 @@ def check_annotations_equal(
     assert literal_values(ours) == literal_values(theirs)
 
 
-def check_hint_maps(
-    ours: dict[str, TypeForm[JsonValue]], theirs: dict[str, TypeForm[JsonValue]]
-) -> None:
+def check_hint_maps(ours: HintMap, theirs: HintMap) -> None:
     assert ours.keys() == theirs.keys()
     for key in ours.keys() & theirs.keys():
         check_annotations_equal(ours[key], theirs[key])
 
 
-def model_hints(model: type[BaseModel]) -> dict[str, TypeForm[JsonValue]]:
-    hints: dict[str, TypeForm[JsonValue]] = {}
+def model_hints(model: type[BaseModel]) -> HintMap:
+    hints: HintMap = {}
     for key, field in model.model_fields.items():
         annotation: TypeForm[JsonValue] | None = field.annotation
         hints[key] = annotation
@@ -280,8 +281,8 @@ def check_model_literals(ours: type[BaseModel], theirs: type[BaseModel]) -> None
 def check_typed_dict(ours: type[TypedDictClass], theirs: type[TypedDictClass]) -> None:
     assert ours.__required_keys__ == theirs.__required_keys__
     assert ours.__optional_keys__ == theirs.__optional_keys__
-    ours_hints: dict[str, TypeForm[JsonValue]] = get_type_hints(ours, include_extras=True)
-    theirs_hints: dict[str, TypeForm[JsonValue]] = get_type_hints(theirs, include_extras=True)
+    ours_hints: HintMap = get_type_hints(ours, include_extras=True)
+    theirs_hints: HintMap = get_type_hints(theirs, include_extras=True)
     check_hint_maps(ours_hints, theirs_hints)
 
 
@@ -355,8 +356,8 @@ def test_names_shared_aliases() -> None:
     _message: AllMessageValues = user_message
     assert EmbeddingInput == litellm_openai.EmbeddingInput
     assert AllPromptValues == litellm_openai.AllPromptValues
-    ours_hints: dict[str, TypeForm[JsonValue]] = get_type_hints(OurFileTypes)
-    theirs_hints: dict[str, TypeForm[JsonValue]] = get_type_hints(LiteLLMFileTypes)
+    ours_hints: HintMap = get_type_hints(OurFileTypes)
+    theirs_hints: HintMap = get_type_hints(LiteLLMFileTypes)
     ours_members: tuple[TypeForm[JsonValue], ...] = get_args(ours_hints["file_types"])
     theirs_members: tuple[TypeForm[JsonValue], ...] = get_args(theirs_hints["file_types"])
     assert len(ours_members) == len(theirs_members) + 1
