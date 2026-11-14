@@ -384,6 +384,10 @@ fn rejected_ceilings() {
             text("inf"),
             "litellm_params.max_agentic_loops must be an integer, got 'inf'",
         ),
+        (
+            integer(4_294_967_296),
+            "litellm_params.max_agentic_loops must be an integer, got 4294967296",
+        ),
     ];
     for (value, message) in not_integers {
         let error = get_agentic_loop_settings(&ceiling_kwargs(Some(value))).unwrap_err();
@@ -485,6 +489,15 @@ fn depth_cases() {
         wrong.to_string(),
         "int() argument must be a string, a bytes-like object or a real number, not 'list'"
     );
+    let beyond_i64 =
+        get_agentic_loop_settings(&depth_kwargs(Json::Number(Number::from(u64::MAX)))).unwrap_err();
+    assert_eq!(beyond_i64.error_class(), "ValueError");
+    assert_eq!(
+        beyond_i64.to_string(),
+        "_agentic_loop_depth is outside the supported 64-bit range"
+    );
+    let non_ascii = get_agentic_loop_settings(&depth_kwargs(text("٣"))).unwrap_err();
+    assert_eq!(non_ascii.error_class(), "ValueError");
 }
 
 fn fingerprint_cases() {
@@ -586,6 +599,8 @@ fn block_matching() {
     let text_block = object(vec![("type", text("text")), ("name", text("lookup"))]);
     assert!(!is_refused_tool_use_block(&text_block, &ids, &names));
     assert!(!is_refused_tool_use_block(&text("x"), &ids, &names));
+    let unhashable_name = object(vec![("type", text("tool_use")), ("name", list(Vec::new()))]);
+    assert!(!is_refused_tool_use_block(&unhashable_name, &ids, &names));
 }
 
 fn fingerprint(tools: &Json) -> String {
