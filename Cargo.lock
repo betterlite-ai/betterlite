@@ -1970,6 +1970,7 @@ dependencies = [
  "hex",
  "http 1.5.0",
  "idna",
+ "indexmap 2.14.2",
  "ipnet",
  "libc",
  "opentelemetry-http",
