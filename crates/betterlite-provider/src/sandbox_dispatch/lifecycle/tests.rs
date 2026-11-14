@@ -539,6 +539,31 @@ async fn run_logs_the_run_code_operation() {
 }
 
 #[tokio::test]
+async fn delete_logs_the_delete_sandbox_operation() {
+    let http = FakeHttp::new(&[(200, "")]);
+    let sandbox = build_dispatch(&http, Environment::new());
+    let api_key = secret("e2b-key");
+    let kwargs = empty_kwargs();
+    let mut logging = RecordingLogging::default();
+    let mut request = DeleteSandbox {
+        call: SandboxCall {
+            provider: "e2b",
+            api_key: None,
+            kwargs: &kwargs,
+            logging: None,
+        },
+        container: SandboxContainerRef::Id("sbx_1"),
+        api_base: None,
+    };
+    request.call.api_key = Some(&api_key);
+    request.call.logging = Some(&mut logging);
+    sandbox.adelete_sandbox(&mut request).await.unwrap();
+    assert_eq!(logging.updates.len(), 1_usize);
+    assert_eq!(logging.updates[0].model, "e2b/delete_sandbox");
+    assert_eq!(logging.updates[0].provider, "e2b");
+}
+
+#[tokio::test]
 async fn logging_runs_before_an_unsupported_provider_is_reported() {
     let http = FakeHttp::new(&[]);
     let sandbox = build_dispatch(&http, Environment::new());
