@@ -1,0 +1,8 @@
+task: B3695
+deviations:
+  - what: Conditional category matches with the MASK action log a warning and leave the text unchanged; no redaction tag is applied.
+    why: Conditional matches pair an identifier word with a block word found in the same sentence, so there is no single span to mask; the source handles conditional MASK separately from the other MASK actions.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1242-L1247
+  - what: Blocked words are evaluated in sorted keyword order instead of the order the configuration lists them, so when two blocked words match the same text a different word can be reported or blocked first.
+    why: B3693's blocked-word loader returns the words sorted by lowercased keyword, and filter_single_text iterates the list it is given.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1421-L1428
