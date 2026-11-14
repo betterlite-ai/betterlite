@@ -1,0 +1,9 @@
+sandbox_tools:
+  - sandbox_tool_name: [not, text]
+    litellm_params:
+      sandbox_provider: e2b
+  - sandbox_tool_name: not-a-mapping-params
+    litellm_params: e2b
+  - sandbox_tool_name: not-a-knob
+    litellm_params:
+      sandbox_provider: 7

@@ -1,0 +1,18 @@
+kind: helper
+name: sandbox-run-code
+call:
+  b3519:
+    operation: create_and_run
+    provider: e2b
+    api_key: e2b-test-key
+    env_vars:
+      MODE: test
+    code: 'print("hello")'
+    replies:
+      - body: '{"sandboxID":"sbx_run","envdAccessToken":"envd-secret","trafficAccessToken":"traffic-secret"}'
+      - body: |-
+          {"type":"stdout","text":"hello"}
+          {"type":"number_of_executions","execution_count":1}
+env: {}
+compare:
+  ignore: []

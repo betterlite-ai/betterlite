@@ -1,0 +1,14 @@
+task: B3519
+deviations:
+  - what: acode_interpreter_tool is not implemented; callers split into separate create, run and delete calls.
+    why: No production caller at the pin; the interception handler composes the operations explicitly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/main.py#L119-L146
+  - what: clear_sandbox_tools is not exported; registering an empty list replaces the registry instead.
+    why: No production caller at the pin; only test fixtures invoke it, and register_sandbox_tools([]) replaces the registry identically.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/sandbox_tools.py#L58-L59
+  - what: arun_code with a bare sandbox id for E2B returns a typed container-handle-required error, whereas LiteLLM accepts the string and fails on the missing access token.
+    why: betterlite's E2B adapter takes a ContainerHandle, the deviation B3516 records for the adapter this dispatch forwards to.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/e2b/sandbox/transformation.py#L100-L111
+  - what: a sandbox_tools entry whose litellm_params is not a mapping fails the config load naming the field, whereas LiteLLM calls params.get on it and the proxy crashes at startup.
+    why: A crash on malformed config is a bug no working setup relies on; betterlite names the field path instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/sandbox_tools.py#L34-L37

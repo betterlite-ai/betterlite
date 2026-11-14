@@ -28,11 +28,14 @@ betterlite-policy = { path = "../../../../../crates/betterlite-policy" }
 betterlite-prompts = { path = "../../../../../crates/betterlite-prompts" }
 betterlite-provider = { path = "../../../../../crates/betterlite-provider" }
 betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
+betterlite-secret-managers = { path = "../../../../../crates/betterlite-secret-managers" }
 betterlite-streaming = { path = "../../../../../crates/betterlite-streaming" }
 betterlite-tokenizer = { path = "../../../../../crates/betterlite-tokenizer" }
 betterlite-transcribe = { path = "../../../../../crates/betterlite-transcribe" }
 chrono.workspace = true
+futures-util = { version = "0.3.34", default-features = false, features = ["async-await", "std"] }
 hex = "0.4.3"
+http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng", "sys_rng"] }
