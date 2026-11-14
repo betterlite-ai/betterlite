@@ -12,6 +12,9 @@ deviations:
   - what: 'A litellm_metadata or metadata value that is not an object is skipped when the application_id falls back to user_api_key_alias. LiteLLM calls .get on it and raises AttributeError before the scan and before any record is written.'
     why: 'A non-object metadata is outside the shape the request data declares, and skipping it keeps a malformed metadata from turning a request into a 500 with no observability record.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma_v2.py#L298-L303
+  - what: 'A Noma v2 response body larger than 1 MiB fails the scan as a guardrail_failed_to_respond error instead of being read whole. LiteLLM reads whatever size the Noma endpoint sends.'
+    why: 'Betterlite reads every guardrail response through its shared capped-body helper, so an endpoint that answers with an unbounded body cannot exhaust memory; block_failures decides whether the request then fails.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma_v2.py#L216-L223
   - what: 'A Noma v2 scan writes its standard_logging_guardrail_information record but emits no OTEL guardrail span from here.'
     why: 'The shared record writer takes the span sink from its caller, and the sink belongs to the hook dispatcher that runs the guardrail, so the scan writes its record with a no-op sink until that caller passes one.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1296-L1308
