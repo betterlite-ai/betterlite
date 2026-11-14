@@ -82,6 +82,8 @@ fn trim_returns_the_state_unchanged_while_the_buffer_fits_twice_the_context() {
         committed_detections: Vec::new(),
         latest_detections: Vec::new(),
         next_trim_len: 0,
+        seen_exception_phrases: Vec::new(),
+        open_sentence_words: Vec::new(),
     };
     let trimmed = trim_streamed_choice_buffer(&source, state, &buffered, &plan());
     assert_eq!(trimmed.buffered_text, buffered);
@@ -100,6 +102,8 @@ fn trim_cuts_once_the_buffer_passes_twice_the_context() {
         committed_detections: Vec::new(),
         latest_detections: Vec::new(),
         next_trim_len: 0,
+        seen_exception_phrases: Vec::new(),
+        open_sentence_words: Vec::new(),
     };
     let trimmed = trim_streamed_choice_buffer(&source, state, &buffered, &plan());
     assert_eq!(trimmed.buffered_text, "x".repeat(512));
@@ -118,6 +122,8 @@ fn trim_trims_when_the_masked_prefix_is_exactly_the_yielded_length() {
         committed_detections: Vec::new(),
         latest_detections: Vec::new(),
         next_trim_len: 0,
+        seen_exception_phrases: Vec::new(),
+        open_sentence_words: Vec::new(),
     };
     let trimmed = trim_streamed_choice_buffer(&source, state, &buffered, &plan());
     assert_eq!(trimmed.buffered_text, "x".repeat(512));
@@ -136,6 +142,8 @@ fn trim_defers_while_the_buffer_stays_under_next_trim_len() {
         committed_detections: Vec::new(),
         latest_detections: Vec::new(),
         next_trim_len: 2000,
+        seen_exception_phrases: Vec::new(),
+        open_sentence_words: Vec::new(),
     };
     let trimmed = trim_streamed_choice_buffer(&source, state, &buffered, &plan());
     assert_eq!(trimmed.buffered_text.len(), 1100);
@@ -155,13 +163,15 @@ fn trim_sets_next_trim_len_to_the_buffer_plus_the_context() {
         committed_detections: Vec::new(),
         latest_detections: Vec::new(),
         next_trim_len: 1000,
+        seen_exception_phrases: Vec::new(),
+        open_sentence_words: Vec::new(),
     };
     let trimmed = trim_streamed_choice_buffer(&source, state, &masked, &plan());
     assert_eq!(trimmed.next_trim_len, 1100 + 512);
 }
 
 #[test]
-fn trim_defers_when_an_exception_phrase_leaves_the_buffer() {
+fn trim_drops_the_prefix_and_remembers_the_exception_phrase() {
     let mut categories = CategoryLoadResult::default();
     categories
         .loaded_categories
@@ -174,6 +184,8 @@ fn trim_defers_when_an_exception_phrase_leaves_the_buffer() {
         committed_detections: Vec::new(),
         latest_detections: Vec::new(),
         next_trim_len: 0,
+        seen_exception_phrases: Vec::new(),
+        open_sentence_words: Vec::new(),
     };
     let scan_plan = StreamedScanPlan {
         context_chars: 512,
@@ -181,8 +193,61 @@ fn trim_defers_when_an_exception_phrase_leaves_the_buffer() {
         conditional_words: Vec::new(),
     };
     let trimmed = trim_streamed_choice_buffer(&source, state, &buffered, &scan_plan);
-    assert_eq!(trimmed.buffered_text, buffered);
-    assert_eq!(trimmed.next_trim_len, 1099 + 512);
+    assert_eq!(trimmed.buffered_text.len(), 512);
+    assert_eq!(trimmed.yielded_masked_text_len, 462);
+    assert_eq!(trimmed.next_trim_len, 0);
+    assert_eq!(
+        trimmed.seen_exception_phrases,
+        vec!["allowed phrase".to_owned()]
+    );
+}
+
+#[test]
+fn trim_scans_the_halves_as_the_suppressed_whole_scan_did() {
+    let mut categories = CategoryLoadResult::default();
+    categories
+        .loaded_categories
+        .insert("stream".to_owned(), category(&["allowed phrase"]));
+    categories.category_keywords.insert(
+        "target".to_owned(),
+        (
+            "stream".to_owned(),
+            "high".to_owned(),
+            ContentFilterAction::Mask,
+        ),
+    );
+    let source = source(&categories, &[], &[]);
+    let buffered = format!(
+        "{} target {}{}allowed phrase{}",
+        "x".repeat(10),
+        "x".repeat(600),
+        "x".repeat(400),
+        "x".repeat(6)
+    );
+    let state = StreamedChoiceState {
+        buffered_text: buffered.clone(),
+        yielded_masked_text_len: 988,
+        committed_detections: Vec::new(),
+        latest_detections: Vec::new(),
+        next_trim_len: 0,
+        seen_exception_phrases: Vec::new(),
+        open_sentence_words: Vec::new(),
+    };
+    let scan_plan = StreamedScanPlan {
+        context_chars: 512,
+        exception_phrases: vec!["allowed phrase".to_owned()],
+        conditional_words: Vec::new(),
+    };
+    let trimmed = trim_streamed_choice_buffer(&source, state, &buffered, &scan_plan);
+    // the whole buffer holds the phrase, so its scan masks nothing, and the halves must match
+    assert_eq!(trimmed.buffered_text.len(), 512);
+    assert_eq!(trimmed.yielded_masked_text_len, 988 - 526);
+    assert_eq!(trimmed.next_trim_len, 0);
+    assert_eq!(
+        trimmed.seen_exception_phrases,
+        vec!["allowed phrase".to_owned()]
+    );
+    assert!(trimmed.committed_detections.is_empty());
 }
 
 #[test]
@@ -199,6 +264,8 @@ fn trim_trims_when_the_exception_phrase_stays_in_the_tail() {
         committed_detections: Vec::new(),
         latest_detections: Vec::new(),
         next_trim_len: 0,
+        seen_exception_phrases: Vec::new(),
+        open_sentence_words: Vec::new(),
     };
     let scan_plan = StreamedScanPlan {
         context_chars: 512,
@@ -209,10 +276,14 @@ fn trim_trims_when_the_exception_phrase_stays_in_the_tail() {
     assert_eq!(trimmed.buffered_text.len(), 512);
     assert_eq!(trimmed.yielded_masked_text_len, 462);
     assert_eq!(trimmed.next_trim_len, 0);
+    assert_eq!(
+        trimmed.seen_exception_phrases,
+        vec!["allowed phrase".to_owned()]
+    );
 }
 
 #[test]
-fn trim_defers_when_a_conditional_sentence_crosses_the_cut() {
+fn trim_drops_the_prefix_and_remembers_the_open_sentence_words() {
     let mut categories = CategoryLoadResult::default();
     categories.conditional_categories.insert(
         "stream".to_owned(),
@@ -231,6 +302,8 @@ fn trim_defers_when_a_conditional_sentence_crosses_the_cut() {
         committed_detections: Vec::new(),
         latest_detections: Vec::new(),
         next_trim_len: 0,
+        seen_exception_phrases: Vec::new(),
+        open_sentence_words: Vec::new(),
     };
     let scan_plan = StreamedScanPlan {
         context_chars: 512,
@@ -238,8 +311,10 @@ fn trim_defers_when_a_conditional_sentence_crosses_the_cut() {
         conditional_words: vec!["child".to_owned(), "harm".to_owned()],
     };
     let trimmed = trim_streamed_choice_buffer(&source, state, &buffered, &scan_plan);
-    assert_eq!(trimmed.buffered_text, buffered);
-    assert_eq!(trimmed.next_trim_len, 1100 + 512);
+    assert_eq!(trimmed.buffered_text.len(), 512);
+    assert_eq!(trimmed.yielded_masked_text_len, 1050 - 588);
+    assert_eq!(trimmed.next_trim_len, 0);
+    assert_eq!(trimmed.open_sentence_words, vec!["child".to_owned()]);
 }
 
 #[test]
@@ -255,6 +330,8 @@ fn trim_defers_when_a_masked_match_straddles_the_cut() {
         committed_detections: Vec::new(),
         latest_detections: Vec::new(),
         next_trim_len: 0,
+        seen_exception_phrases: Vec::new(),
+        open_sentence_words: Vec::new(),
     };
     let trimmed = trim_streamed_choice_buffer(&source, state, &masked, &plan());
     assert_eq!(trimmed.buffered_text, buffered);
@@ -281,6 +358,8 @@ fn trim_defers_when_the_masked_prefix_is_not_yet_yielded() {
         committed_detections: Vec::new(),
         latest_detections: Vec::new(),
         next_trim_len: 0,
+        seen_exception_phrases: Vec::new(),
+        open_sentence_words: Vec::new(),
     };
     let trimmed = trim_streamed_choice_buffer(&source, state, &masked, &plan());
     assert_eq!(trimmed.buffered_text, buffered);
@@ -299,6 +378,8 @@ fn trim_defers_when_the_head_scan_fails() {
         committed_detections: Vec::new(),
         latest_detections: Vec::new(),
         next_trim_len: 0,
+        seen_exception_phrases: Vec::new(),
+        open_sentence_words: Vec::new(),
     };
     let trimmed = trim_streamed_choice_buffer(&source, state, &buffered, &plan());
     assert_eq!(trimmed.buffered_text, buffered);
@@ -318,6 +399,8 @@ fn trim_keeps_the_tail_and_commits_the_head_detections() {
         committed_detections: Vec::new(),
         latest_detections: vec![detection("secret")],
         next_trim_len: 0,
+        seen_exception_phrases: Vec::new(),
+        open_sentence_words: Vec::new(),
     };
     let trimmed = trim_streamed_choice_buffer(&source, state, &masked, &plan());
     assert_eq!(trimmed.buffered_text, "x".repeat(512));

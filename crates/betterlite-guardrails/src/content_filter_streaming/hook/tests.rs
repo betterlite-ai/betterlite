@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+mod bounded;
+
 use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
@@ -66,14 +68,18 @@ fn stream_case(items: Vec<GuardrailValue>) -> StreamCase {
     }
 }
 
-async fn run_stream(case: &StreamCase) -> StreamRun {
-    let source = ContentFilterSource {
+fn stream_source(case: &StreamCase) -> ContentFilterSource<'_> {
+    ContentFilterSource {
         categories: &case.categories,
         patterns: &case.patterns,
         blocked_words: &case.blocked_words,
         pattern_redaction_format: &case.settings.pattern_redaction_format,
         keyword_redaction_tag: &case.settings.keyword_redaction_tag,
-    };
+    }
+}
+
+async fn run_stream(case: &StreamCase) -> StreamRun {
+    let source = stream_source(case);
     let (input, response) = mpsc::channel(case.items.len().max(1));
     let (output, mut relayed) = mpsc::channel(1);
     let user_api_key_dict = case.user_api_key_dict.as_ref();
@@ -199,6 +205,8 @@ fn pending(buffer: &str, yielded: usize) -> PendingChoice {
             committed_detections: Vec::new(),
             latest_detections: Vec::new(),
             next_trim_len: 0,
+            seen_exception_phrases: Vec::new(),
+            open_sentence_words: Vec::new(),
         },
     }
 }

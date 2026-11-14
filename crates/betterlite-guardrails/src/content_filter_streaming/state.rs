@@ -10,4 +10,7 @@ pub struct StreamedChoiceState {
     pub committed_detections: Vec<ContentFilterDetection>,
     pub latest_detections: Vec<ContentFilterDetection>,
     pub next_trim_len: usize,
+    // Python's buffer still holds what the dropped prefix had; these flags stand in for it
+    pub seen_exception_phrases: Vec<String>,
+    pub open_sentence_words: Vec<String>,
 }

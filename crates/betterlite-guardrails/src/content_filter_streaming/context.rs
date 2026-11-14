@@ -9,16 +9,29 @@ pub fn cut_breaks_wider_context(
     tail: &str,
     plan: &StreamedScanPlan,
 ) -> bool {
-    let buffered_lower = buffered_text.to_lowercase();
     let tail_lower = tail.to_lowercase();
-    let phrase_leaves = plan.exception_phrases.iter().any(|phrase| {
-        buffered_lower.contains(phrase.as_str()) && !tail_lower.contains(phrase.as_str())
-    });
-    if phrase_leaves {
-        return true;
-    }
+    let phrase_leaves = exception_phrases_in(buffered_text, plan)
+        .iter()
+        .any(|phrase| !tail_lower.contains(phrase.as_str()));
+    phrase_leaves || !conditional_words_at_cut(head, tail, plan).is_empty()
+}
+
+// The exception phrases Python's unchanged buffer holds, which suppress every category match
+#[must_use]
+pub fn exception_phrases_in(text: &str, plan: &StreamedScanPlan) -> Vec<String> {
+    let text_lower = text.to_lowercase();
+    plan.exception_phrases
+        .iter()
+        .filter(|phrase| text_lower.contains(phrase.as_str()))
+        .cloned()
+        .collect()
+}
+
+// The conditional words in the sentence the cut splits, as re.split gives its two halves
+#[must_use]
+pub fn conditional_words_at_cut(head: &str, tail: &str, plan: &StreamedScanPlan) -> Vec<String> {
     let head_lower = head.to_lowercase();
-    // only the last part before the cut and the first part after it meet, as re.split gives them
+    let tail_lower = tail.to_lowercase();
     let cut_head = head_lower
         .split(['.', '!', '?'])
         .next_back()
@@ -27,5 +40,7 @@ pub fn cut_breaks_wider_context(
     let cut_sentence = format!("{cut_head}{cut_tail}");
     plan.conditional_words
         .iter()
-        .any(|word| cut_sentence.contains(word.as_str()))
+        .filter(|word| cut_sentence.contains(word.as_str()))
+        .cloned()
+        .collect()
 }

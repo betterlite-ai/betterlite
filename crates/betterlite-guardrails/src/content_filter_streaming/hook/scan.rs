@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 use std::time::Instant;
 
+use betterlite_config::sections::content_category::loading::CategoryLoadResult;
 use betterlite_config::sections::content_filter_records::ContentFilterDetection;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::StreamScan;
 use crate::content_filter_actions::error::ContentFilterActionError;
-use crate::content_filter_actions::filter_single_text;
+use crate::content_filter_actions::{ContentFilterSource, filter_single_text_with_open_sentence};
 use crate::content_filter_streaming::STREAM_HOLDBACK_CHARS;
 use crate::content_filter_streaming::error::StreamFilterError;
 use crate::content_filter_streaming::state::StreamedChoiceState;
@@ -102,6 +103,12 @@ fn scan_choice(
         is_final,
     )?;
     let yielded_len = write_yielded_content(delta, &masked_text, &buffer.previous, is_final);
+    // a sentence end inside the buffer closes the one the previous trim left open
+    let open_sentence_words = if buffer.buffered_text.contains(['.', '!', '?']) {
+        Vec::new()
+    } else {
+        buffer.previous.open_sentence_words
+    };
     Ok(Some(PendingChoice {
         masked_text,
         state: StreamedChoiceState {
@@ -110,6 +117,8 @@ fn scan_choice(
             committed_detections: buffer.previous.committed_detections,
             latest_detections,
             next_trim_len: buffer.previous.next_trim_len,
+            seen_exception_phrases: buffer.previous.seen_exception_phrases,
+            open_sentence_words,
         },
     }))
 }
@@ -148,7 +157,33 @@ fn scan_text(
 ) -> Result<(String, Vec<ContentFilterDetection>), StreamFilterError> {
     let mut choice_detections = Vec::new();
     let started = Instant::now();
-    let outcome = filter_single_text(scan.source, text_to_scan, Some(&mut choice_detections));
+    // Python's buffer still holds the phrases and the open sentence a trim dropped, so its scan
+    // suppresses every category match and joins them to this text
+    let empty_categories = CategoryLoadResult::default();
+    let categories = if previous.seen_exception_phrases.is_empty() {
+        scan.source.categories
+    } else {
+        &empty_categories
+    };
+    let filter_source = ContentFilterSource {
+        categories,
+        patterns: scan.source.patterns,
+        blocked_words: scan.source.blocked_words,
+        pattern_redaction_format: scan.source.pattern_redaction_format,
+        keyword_redaction_tag: scan.source.keyword_redaction_tag,
+    };
+    let open_sentence = previous.open_sentence_words.join(" ");
+    let carried = if open_sentence.is_empty() {
+        None
+    } else {
+        Some(open_sentence.as_str())
+    };
+    let outcome = filter_single_text_with_open_sentence(
+        &filter_source,
+        text_to_scan,
+        carried,
+        Some(&mut choice_detections),
+    );
     scan.scan_time = scan.scan_time.saturating_add(started.elapsed());
     match outcome {
         Ok(mut masked) => {
@@ -166,6 +201,8 @@ fn scan_text(
                     committed_detections: previous.committed_detections.clone(),
                     latest_detections: choice_detections,
                     next_trim_len: previous.next_trim_len,
+                    seen_exception_phrases: previous.seen_exception_phrases.clone(),
+                    open_sentence_words: previous.open_sentence_words.clone(),
                 },
             );
             Err(StreamFilterError::Blocked { detail })

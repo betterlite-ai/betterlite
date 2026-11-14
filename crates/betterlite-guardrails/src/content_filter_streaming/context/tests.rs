@@ -1,6 +1,8 @@
 #![cfg(test)]
 
-use crate::content_filter_streaming::context::cut_breaks_wider_context;
+use crate::content_filter_streaming::context::{
+    conditional_words_at_cut, cut_breaks_wider_context, exception_phrases_in,
+};
 use crate::content_filter_streaming::plan::StreamedScanPlan;
 
 fn plan(exceptions: &[&str], conditionals: &[&str]) -> StreamedScanPlan {
@@ -102,4 +104,49 @@ fn plain_text_without_phrases_or_words_never_breaks_the_context() {
     let plan = plan(&[], &[]);
     let (buffered, head, tail) = head_tail("x".repeat(588), "y".repeat(516));
     assert!(!cut_breaks_wider_context(&buffered, &head, &tail, &plan));
+}
+
+#[test]
+fn exception_phrases_in_reports_the_phrases_the_text_holds() {
+    let plan = plan(&["allowed phrase", "other phrase"], &[]);
+    assert_eq!(
+        exception_phrases_in("ALLOWED PHRASE inside", &plan),
+        vec!["allowed phrase".to_owned()]
+    );
+}
+
+#[test]
+fn exception_phrases_in_reports_nothing_for_plain_text() {
+    let plan = plan(&["allowed phrase"], &[]);
+    assert!(exception_phrases_in("plain text", &plan).is_empty());
+}
+
+#[test]
+fn conditional_words_at_cut_reports_the_words_in_the_joined_sentence() {
+    let plan = plan(&[], &["child", "harm"]);
+    let head = format!("{}child", "x".repeat(580));
+    let tail = "y".repeat(516);
+    assert_eq!(
+        conditional_words_at_cut(&head, &tail, &plan),
+        vec!["child".to_owned()]
+    );
+}
+
+#[test]
+fn conditional_words_at_cut_reports_a_word_split_across_the_cut() {
+    let plan = plan(&[], &["child"]);
+    let head = format!("{}chi", "x".repeat(580));
+    let tail = format!("ld{}", "y".repeat(516));
+    assert_eq!(
+        conditional_words_at_cut(&head, &tail, &plan),
+        vec!["child".to_owned()]
+    );
+}
+
+#[test]
+fn conditional_words_at_cut_skips_a_word_away_from_the_cut() {
+    let plan = plan(&[], &["child"]);
+    let head = format!("child. {}", "x".repeat(582));
+    let tail = "y".repeat(516);
+    assert!(conditional_words_at_cut(&head, &tail, &plan).is_empty());
 }
