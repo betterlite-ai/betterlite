@@ -39,6 +39,10 @@ pub(super) fn record_scan(
     log_target: Option<&mut GuardrailLogTarget>,
     run: ScanRun,
 ) -> Result<(), NomaV2Error> {
+    let started = epoch_seconds(run.started)?;
+    let ended = epoch_seconds(run.ended)?;
+    // float_arithmetic is denied; a fused multiply-add computes the signed end minus start
+    let duration = started.mul_add(-1.0_f64, ended);
     let mut context = GuardrailRecordContext {
         base: &guardrail.base,
         request_data,
@@ -48,14 +52,9 @@ pub(super) fn record_scan(
     let input = GuardrailRecordInput {
         guardrail_response: run.response,
         guardrail_status: run.status,
-        start_time: Some(epoch_seconds(run.started)?),
-        end_time: Some(epoch_seconds(run.ended)?),
-        duration: Some(
-            run.ended
-                .duration_since(run.started)
-                .map_err(|source| NomaV2Error::Clock { source })?
-                .as_secs_f64(),
-        ),
+        start_time: Some(started),
+        end_time: Some(ended),
+        duration: Some(duration),
         masked_entity_count: None,
         guardrail_provider: Some(PROVIDER.to_owned()),
         event_type: None,

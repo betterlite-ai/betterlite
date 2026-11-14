@@ -3,11 +3,12 @@ use std::collections::BTreeMap;
 use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
+use betterlite_guardrails::guardrail_base::contract::GuardrailContract as _;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
 
 use crate::support::{
-    NONE_REPLY, captured_body, data, guardrail, inputs, mock_noma, request_data, scan, scan_with,
-    settings, value,
+    NONE_REPLY, captured_body, data, guardrail, inputs, mock_noma, request_data, scan, settings,
+    value,
 };
 
 #[tokio::test]
@@ -126,7 +127,7 @@ async fn the_payload_omits_an_unresolved_application_id() {
 #[tokio::test]
 async fn the_payload_logging_object_drops_the_duplicate_keys() {
     let mock = mock_noma(StatusCode::OK, NONE_REPLY).await;
-    let target = GuardrailLogTarget {
+    let mut target = GuardrailLogTarget {
         litellm_params: Some(BTreeMap::new()),
         model_call_params: Some(data(
             r#"{
@@ -139,15 +140,16 @@ async fn the_payload_logging_object_drops_the_duplicate_keys() {
             }"#,
         )),
     };
-    let outcome = scan_with(
-        &guardrail(settings(&mock.base)),
-        inputs(),
-        request_data(),
-        GuardrailInputType::Request,
-        target,
-    )
-    .await;
-    assert!(outcome.result.is_ok());
+    let mut sent_data = request_data();
+    let outcome = guardrail(settings(&mock.base))
+        .apply_guardrail(
+            inputs(),
+            &mut sent_data,
+            GuardrailInputType::Request,
+            Some(&mut target),
+        )
+        .await;
+    assert!(outcome.is_ok());
     let body = captured_body(&mock);
     let Some(GuardrailValue::Object(sent)) = body.get("request_data") else {
         panic!("the payload has no request_data object");
@@ -166,19 +168,20 @@ async fn the_payload_logging_object_drops_the_duplicate_keys() {
 #[tokio::test]
 async fn the_payload_logging_object_is_null_without_model_call_details() {
     let mock = mock_noma(StatusCode::OK, NONE_REPLY).await;
-    let target = GuardrailLogTarget {
+    let mut target = GuardrailLogTarget {
         litellm_params: None,
         model_call_params: None,
     };
-    let outcome = scan_with(
-        &guardrail(settings(&mock.base)),
-        inputs(),
-        request_data(),
-        GuardrailInputType::Request,
-        target,
-    )
-    .await;
-    assert!(outcome.result.is_ok());
+    let mut sent_data = request_data();
+    let outcome = guardrail(settings(&mock.base))
+        .apply_guardrail(
+            inputs(),
+            &mut sent_data,
+            GuardrailInputType::Request,
+            Some(&mut target),
+        )
+        .await;
+    assert!(outcome.is_ok());
     let body = captured_body(&mock);
     let Some(GuardrailValue::Object(sent)) = body.get("request_data") else {
         panic!("the payload has no request_data object");

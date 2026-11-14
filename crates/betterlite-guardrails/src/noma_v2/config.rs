@@ -20,7 +20,7 @@ pub const MONITOR_MODE_ENV: &str = "NOMA_MONITOR_MODE";
 pub const BLOCK_FAILURES_ENV: &str = "NOMA_BLOCK_FAILURES";
 
 // What LiteLLM's constructor receives: the configured values, before the environment fills the gaps
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct NomaV2Params {
     pub guardrail_name: Option<String>,
     pub api_key: Option<SecretString>,
@@ -120,21 +120,25 @@ where
         .api_key
         .as_ref()
         .and_then(|key| trimmed(key.expose_secret()));
-    let text = configured.or_else(|| env.lookup(API_KEY_ENV).and_then(|text| trimmed(&text)))?;
-    Some(SecretString::from(text))
+    if let Some(text) = configured {
+        return Some(SecretString::from(text));
+    }
+    let text = env.lookup(API_KEY_ENV)?;
+    trimmed(&text).map(SecretString::from)
 }
 
 fn resolved_api_base<E>(params: &NomaV2Params, env: &E) -> String
 where
     E: EnvironmentLookup,
 {
-    let base = match params.api_base.as_deref() {
-        Some(base) => base.to_owned(),
-        None => env
-            .lookup(API_BASE_ENV)
-            .filter(|base| !base.is_empty())
-            .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()),
-    };
+    let base = params.api_base.as_deref().map_or_else(
+        || {
+            env.lookup(API_BASE_ENV)
+                .filter(|base| !base.is_empty())
+                .unwrap_or_else(|| DEFAULT_API_BASE.to_owned())
+        },
+        str::to_owned,
+    );
     base.trim_end_matches('/').to_owned()
 }
 
@@ -142,9 +146,10 @@ fn resolved_text<E>(configured: Option<&str>, env: &E, name: &str) -> Option<Str
 where
     E: EnvironmentLookup,
 {
-    configured
-        .and_then(trimmed)
-        .or_else(|| env.lookup(name).and_then(|text| trimmed(&text)))
+    configured.and_then(trimmed).or_else(|| {
+        let text = env.lookup(name)?;
+        trimmed(&text)
+    })
 }
 
 fn text_param(extra: &OpaqueParams, field: &'static str) -> Result<Option<String>, NomaV2Error> {

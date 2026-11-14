@@ -110,10 +110,10 @@ fn finish_outcome(
     block_failures: bool,
 ) -> ScanFinish {
     match outcome {
-        Ok(outcome) => ScanFinish {
-            status: outcome.status,
-            response: outcome.response,
-            result: match outcome.effect {
+        Ok(scanned) => ScanFinish {
+            status: scanned.status,
+            response: scanned.response,
+            result: match scanned.effect {
                 Effect::Unchanged => Ok(inputs),
                 Effect::Modified(updated) => Ok(*updated),
                 Effect::Blocked(message) => Err(blocked_failure(&message)),

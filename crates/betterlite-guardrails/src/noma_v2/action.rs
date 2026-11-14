@@ -13,7 +13,6 @@ pub enum Action {
     GuardrailIntervened,
 }
 
-#[must_use]
 pub fn parse(response: &GuardrailValue) -> Result<Action, NomaV2Error> {
     let GuardrailValue::Object(fields) = response else {
         return Err(NomaV2Error::InvalidAction);
@@ -38,13 +37,13 @@ pub fn intervene(
         return Ok(inputs);
     };
     if let Some(GuardrailValue::Array(items)) = fields.get("texts") {
-        inputs.texts = Some(text_items("texts", items)?);
+        inputs.texts = Some(converted("texts", items, text_value)?);
     }
     if let Some(GuardrailValue::Array(items)) = fields.get("images") {
-        inputs.images = Some(text_items("images", items)?);
+        inputs.images = Some(converted("images", items, text_value)?);
     }
     if let Some(GuardrailValue::Array(items)) = fields.get("tools") {
-        inputs.tools = Some(tool_items("tools", items)?);
+        inputs.tools = Some(converted("tools", items, tool_value)?);
     }
     if let Some(GuardrailValue::Array(items)) = fields.get("tool_calls") {
         inputs.tool_calls = Some(items.clone());
@@ -52,28 +51,29 @@ pub fn intervene(
     Ok(inputs)
 }
 
-fn text_items(field: &'static str, items: &[GuardrailValue]) -> Result<Vec<String>, NomaV2Error> {
-    let mut texts = Vec::with_capacity(items.len());
-    for item in items {
-        let GuardrailValue::Text(text) = item else {
-            return Err(NomaV2Error::Intervention { field });
-        };
-        texts.push(text.clone());
-    }
-    Ok(texts)
-}
-
-fn tool_items(
+fn converted<T>(
     field: &'static str,
     items: &[GuardrailValue],
-) -> Result<Vec<GuardrailToolParam>, NomaV2Error> {
-    let mut tools = Vec::with_capacity(items.len());
+    convert: fn(&GuardrailValue) -> Option<T>,
+) -> Result<Vec<T>, NomaV2Error> {
+    let mut values = Vec::with_capacity(items.len());
     for item in items {
-        let encoded =
-            serde_json::to_value(item).map_err(|_not_json| NomaV2Error::Intervention { field })?;
-        let tool = serde_json::from_value(encoded)
-            .map_err(|_wrong_shape| NomaV2Error::Intervention { field })?;
-        tools.push(tool);
+        let Some(value) = convert(item) else {
+            return Err(NomaV2Error::Intervention { field });
+        };
+        values.push(value);
     }
-    Ok(tools)
+    Ok(values)
+}
+
+fn text_value(item: &GuardrailValue) -> Option<String> {
+    if let GuardrailValue::Text(text) = item {
+        return Some(text.clone());
+    }
+    None
+}
+
+fn tool_value(item: &GuardrailValue) -> Option<GuardrailToolParam> {
+    let encoded = serde_json::to_value(item).ok()?;
+    serde_json::from_value(encoded).ok()
 }

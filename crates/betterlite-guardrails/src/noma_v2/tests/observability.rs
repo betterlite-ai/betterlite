@@ -5,9 +5,9 @@ use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 
 use crate::support::{
-    NONE_REPLY, backwards_now, data, field, guardrail, guardrail_with, guardrail_with_clock,
-    inputs, mock_noma, params, records, request_data, scan, settings, text_field, ticking_now,
-    value,
+    NONE_REPLY, backwards_now, before_epoch_now, data, field, guardrail, guardrail_with,
+    guardrail_with_clock, inputs, mock_noma, params, records, request_data, scan, settings,
+    text_field, ticking_now, value,
 };
 
 #[tokio::test]
@@ -71,7 +71,7 @@ async fn the_observability_record_carries_the_scan_response_and_duration() {
 }
 
 #[tokio::test]
-async fn a_backwards_clock_fails_the_record() {
+async fn a_backwards_clock_records_a_negative_duration() {
     let mock = mock_noma(StatusCode::OK, NONE_REPLY).await;
     let outcome = scan(
         &guardrail_with_clock(settings(&mock.base), backwards_now),
@@ -80,8 +80,30 @@ async fn a_backwards_clock_fails_the_record() {
         GuardrailInputType::Request,
     )
     .await;
+    assert_eq!(outcome.result.unwrap(), inputs());
+    let record = &records(&outcome.request_data)[0];
+    assert_eq!(
+        text_field(record, "guardrail_status").as_deref(),
+        Some("success")
+    );
+    assert_eq!(
+        field(record, "duration"),
+        Some(&GuardrailValue::Decimal(-100.0))
+    );
+}
+
+#[tokio::test]
+async fn a_clock_before_the_epoch_fails_the_record() {
+    let mock = mock_noma(StatusCode::OK, NONE_REPLY).await;
+    let outcome = scan(
+        &guardrail_with_clock(settings(&mock.base), before_epoch_now),
+        inputs(),
+        request_data(),
+        GuardrailInputType::Request,
+    )
+    .await;
     let Err(GuardrailFailure::Other(message)) = outcome.result else {
-        panic!("the backwards clock was not refused");
+        panic!("the pre-epoch clock was not refused");
     };
     assert_eq!(message, "the system clock is set before the Unix epoch");
     assert!(records(&outcome.request_data).is_empty());

@@ -11,7 +11,7 @@ use axum::body::Bytes;
 use axum::http::{HeaderMap, StatusCode, Uri};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
-use betterlite_guardrails::generic_guardrail_contracts::{GuardrailInputType, GuardrailToolParam};
+use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::GuardrailBase;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract as _;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
@@ -131,16 +131,9 @@ pub(crate) fn lookup(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
 pub(crate) fn params() -> NomaV2Params {
     NomaV2Params {
         guardrail_name: Some(String::from("noma-v2-test")),
-        api_key: None,
-        api_base: None,
-        application_id: None,
-        gateway_name: None,
-        monitor_mode: None,
-        block_failures: None,
-        timeout: None,
         mode: Some(LitellmParamsMode::One(String::from("pre_call"))),
-        default_on: false,
         strict_modes: true,
+        ..NomaV2Params::default()
     }
 }
 
@@ -177,12 +170,9 @@ pub(crate) fn guardrail_with_clock(
     settings: NomaV2Settings,
     clock: fn() -> SystemTime,
 ) -> NomaV2Guardrail {
-    NomaV2Guardrail {
-        base: GuardrailBase::new(guardrail_settings(&params()), true).unwrap(),
-        settings,
-        client: base_builder().build().unwrap(),
-        clock,
-    }
+    let mut guardrail = guardrail_with(&params(), settings);
+    guardrail.clock = clock;
+    guardrail
 }
 
 pub(crate) fn fixed_now() -> SystemTime {
@@ -215,19 +205,22 @@ pub(crate) fn backwards_now() -> SystemTime {
         .unwrap()
 }
 
+// A time before the Unix epoch has no epoch-seconds reading, so the record cannot be written
+pub(crate) fn before_epoch_now() -> SystemTime {
+    UNIX_EPOCH.checked_sub(Duration::from_secs(1)).unwrap()
+}
+
 pub(crate) fn inputs() -> GuardrailApiInputs {
-    GuardrailApiInputs {
-        texts: Some(vec![String::from("hello")]),
-        images: Some(vec![String::from("aW1hZ2U=")]),
-        tools: Some(vec![GuardrailToolParam {
-            tool_type: String::from("function"),
-            extra: data(r#"{"function": {"name": "lookup"}}"#),
-        }]),
-        tool_calls: Some(vec![value(r#"{"id": "call-1", "type": "function"}"#)]),
-        structured_messages: None,
-        model: Some(String::from("gpt-4o")),
-        stream_holdback_chars: None,
-    }
+    serde_json::from_str(
+        r#"{
+            "texts": ["hello"],
+            "images": ["aW1hZ2U="],
+            "tools": [{"type": "function", "function": {"name": "lookup"}}],
+            "tool_calls": [{"id": "call-1", "type": "function"}],
+            "model": "gpt-4o"
+        }"#,
+    )
+    .unwrap()
 }
 
 pub(crate) fn request_data() -> BTreeMap<String, GuardrailValue> {
@@ -257,19 +250,10 @@ pub(crate) struct Scan {
 pub(crate) async fn scan(
     guardrail: &NomaV2Guardrail,
     inputs: GuardrailApiInputs,
-    request_data: BTreeMap<String, GuardrailValue>,
-    input_type: GuardrailInputType,
-) -> Scan {
-    scan_with(guardrail, inputs, request_data, input_type, log_target()).await
-}
-
-pub(crate) async fn scan_with(
-    guardrail: &NomaV2Guardrail,
-    inputs: GuardrailApiInputs,
     mut request_data: BTreeMap<String, GuardrailValue>,
     input_type: GuardrailInputType,
-    mut log_target: GuardrailLogTarget,
 ) -> Scan {
+    let mut log_target = log_target();
     let result = guardrail
         .apply_guardrail(inputs, &mut request_data, input_type, Some(&mut log_target))
         .await;
