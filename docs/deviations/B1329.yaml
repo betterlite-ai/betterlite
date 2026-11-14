@@ -1,0 +1,5 @@
+task: B1329
+deviations:
+  - what: "A functionResponse's nested parts pass through as the caller sent them; LiteLLM rebuilds them through google-genai's FunctionResponsePart records, so camelCase keys become snake_case and an inline blob's data fails the count request outright."
+    why: "Google's JSON API takes either spelling, and no working LiteLLM setup can count contents carrying inline media, so copying that failure would refuse input LiteLLM itself cannot carry."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/count_tokens/handler.py#L42-L47

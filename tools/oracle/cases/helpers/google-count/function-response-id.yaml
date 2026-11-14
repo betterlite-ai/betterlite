@@ -1,0 +1,19 @@
+kind: helper
+name: google-count-function-response-id
+call:
+  google_count:
+    calls:
+      - model: gemini-2.0-flash
+        contents:
+          - role: user
+            parts:
+              - text: Hello world
+          - role: user
+            parts:
+              - functionResponse:
+                  id: read_many_files-1757526647518-730a691aac11c
+                  name: read_many_files
+                  response:
+                    output: No files matching the criteria were found.
+env: {}
+compare: {ignore: []}
