@@ -35,9 +35,17 @@ impl RemoteMediaFetcher for CountingFetch {
     }
 }
 
+fn parse(source: &str) -> Vec<Message> {
+    serde_json::from_str(source).unwrap()
+}
+
+fn current_thread_runtime() -> Runtime {
+    Builder::new_current_thread().build().unwrap()
+}
+
 fn convert(fetcher: &CountingFetch, source: &str, model: &str) -> Result<History, HistoryError> {
-    let messages: Vec<Message> = serde_json::from_str(source).unwrap();
-    let runtime: Runtime = Builder::new_current_thread().build().unwrap();
+    let messages = parse(source);
+    let runtime = current_thread_runtime();
     runtime.block_on(transform_messages(&messages, model, fetcher))
 }
 

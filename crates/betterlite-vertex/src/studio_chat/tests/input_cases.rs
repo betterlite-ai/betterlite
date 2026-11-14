@@ -232,3 +232,29 @@ fn class_defaults_stay_absent_from_get_config() {
 
     assert!(config.is_empty(), "{config:?}");
 }
+
+#[test]
+fn get_config_returns_only_the_configured_values() {
+    let settings = StudioSettings {
+        temperature: Some(0.5),
+        max_output_tokens: None,
+        top_p: None,
+        top_k: Some(40),
+        response_mime_type: Some("application/json".to_owned()),
+        response_schema: None,
+        candidate_count: None,
+        stop_sequences: Some(vec!["END".to_owned()]),
+    };
+
+    let config = serde_json::to_value(settings.get_config().unwrap()).unwrap();
+
+    assert_eq!(
+        config,
+        serde_json::json!({
+            "temperature": 0.5,
+            "top_k": 40,
+            "response_mime_type": "application/json",
+            "stop_sequences": ["END"],
+        })
+    );
+}

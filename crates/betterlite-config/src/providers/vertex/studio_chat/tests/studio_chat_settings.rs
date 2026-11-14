@@ -132,8 +132,14 @@ fn a_non_numeric_generation_value_names_itself() {
 #[test]
 fn a_non_finite_generation_value_names_itself() {
     let settings = StudioSettings {
+        temperature: None,
+        max_output_tokens: None,
         top_p: Some(f64::INFINITY),
-        ..StudioSettings::default()
+        top_k: None,
+        response_mime_type: None,
+        response_schema: None,
+        candidate_count: None,
+        stop_sequences: None,
     };
 
     let error = settings
