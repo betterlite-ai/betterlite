@@ -176,13 +176,13 @@ fn limit_outcome(input: &LimitInput) -> Vec<LimitObservation> {
                 drop(held.pop());
                 ("release", None, false)
             }
-            LimitStep::EnterExit { fail } => {
-                let outcome = limit.with_slot(|| if *fail { Err(()) } else { Ok(()) });
-                match outcome {
-                    Ok(inner) => ("enter_exit", None, inner.is_err()),
-                    Err(exceeded) => ("enter_exit", Some(limit_error(exceeded)), false),
+            LimitStep::EnterExit { fail } => match limit.acquire() {
+                Ok(slot) => {
+                    drop(slot);
+                    ("enter_exit", None, *fail)
                 }
-            }
+                Err(exceeded) => ("enter_exit", Some(limit_error(exceeded)), false),
+            },
         };
         observations.push(LimitObservation {
             kind: kind.to_owned(),

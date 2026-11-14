@@ -83,8 +83,11 @@ fn a_free_slot_is_granted_and_released_on_drop() {
 #[test]
 fn enter_and_exit_release_after_a_failure() {
     let limit = limit(1);
-    let outcome = limit.with_slot(|| Err::<(), &str>("the provider failed"));
-    assert_eq!(outcome, Ok(Err("the provider failed")));
+    let outcome: Result<(), &str> = {
+        let _held = limit.acquire().expect("a free slot");
+        Err("the provider failed")
+    };
+    assert_eq!(outcome, Err("the provider failed"));
     assert_eq!(limit.in_flight.load(Ordering::SeqCst), 0);
     assert!(limit.acquire().is_ok());
 }

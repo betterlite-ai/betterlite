@@ -141,24 +141,17 @@ def limit_steps(spec: LimitInput) -> list[LimitObservation]:
     )
     observations: list[LimitObservation] = []
     for step in spec.steps:
+        error: LimitError | None = None
+        failed = False
         match step.kind:
             case "acquire":
-                error: LimitError | None = None
                 try:
                     limit.acquire()
                 except RateLimitError as raised:
                     error = error_fields(raised)
-                observations.append(
-                    LimitObservation(kind="acquire", in_flight=limit.in_flight, error=error, failed=False)
-                )
             case "release":
                 limit.release()
-                observations.append(
-                    LimitObservation(kind="release", in_flight=limit.in_flight, error=None, failed=False)
-                )
             case "enter_exit":
-                error = None
-                failed = False
                 try:
                     with limit:
                         if step.fail:
@@ -167,9 +160,9 @@ def limit_steps(spec: LimitInput) -> list[LimitObservation]:
                     error = error_fields(raised)
                 except RuntimeError:
                     failed = True
-                observations.append(
-                    LimitObservation(kind="enter_exit", in_flight=limit.in_flight, error=error, failed=failed)
-                )
+        observations.append(
+            LimitObservation(kind=step.kind, in_flight=limit.in_flight, error=error, failed=failed)
+        )
     return observations
 
 

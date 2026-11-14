@@ -78,17 +78,6 @@ impl MaxParallelRequestsLimit {
                 max_parallel_requests: self.max_parallel_requests,
             })
     }
-
-    // the synchronous facade of __enter__/__exit__: the slot is held for the whole body
-    pub fn with_slot<F, T>(self: &Arc<Self>, work: F) -> Result<T, MaxParallelRequestsExceeded>
-    where
-        F: FnOnce() -> T,
-    {
-        let slot = self.acquire()?;
-        let output = work();
-        drop(slot);
-        Ok(output)
-    }
 }
 
 // max_parallel_requests > rpm > tpm / 1000 * 6 (at least one) > default_max_parallel_requests
