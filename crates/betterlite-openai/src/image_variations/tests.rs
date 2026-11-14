@@ -88,17 +88,16 @@ fn empty_request() -> ImageVariationRequest {
 }
 
 fn request(image: ImageFile) -> ImageVariationRequest {
-    ImageVariationRequest {
-        model: Some(String::from("dall-e-2")),
-        image,
-        api_key: Some(SecretString::from("sk-test")),
-        api_base: Some(String::from(API_BASE)),
-        timeout: Some(Duration::from_secs(30)),
-        shared_session: Some(SharedSession),
-        config: Some(OpenAiImageVariationConfig),
-        boundary: String::from(BOUNDARY),
-        ..empty_request()
-    }
+    let mut call = empty_request();
+    call.model = Some(String::from("dall-e-2"));
+    call.image = image;
+    call.api_key = Some(SecretString::from("sk-test"));
+    call.api_base = Some(String::from(API_BASE));
+    call.timeout = Some(Duration::from_secs(30));
+    call.shared_session = Some(SharedSession);
+    call.config = Some(OpenAiImageVariationConfig);
+    call.boundary = String::from(BOUNDARY);
+    call
 }
 
 fn supplied(kind: ClientKind) -> ImageVariationClient {
@@ -469,15 +468,15 @@ async fn omitted_default_fields() {
     built_client_fields().await;
     let mut defaulted = request(image(None, "PNGDATA"));
     defaulted.timeout = None;
-    let prepared = prepared(defaulted).unwrap();
-    assert_eq!(prepared.client.max_retries, 2);
-    assert_eq!(prepared.client.timeout, None);
-    assert_eq!(prepared.deadline, DEFAULT_TIMEOUT);
+    let defaulted_prepared = prepared(defaulted).unwrap();
+    assert_eq!(defaulted_prepared.client.max_retries, 2);
+    assert_eq!(defaulted_prepared.client.timeout, None);
+    assert_eq!(defaulted_prepared.deadline, DEFAULT_TIMEOUT);
     let mut delegated = request(image(None, "PNGDATA"));
     delegated.params = ImageVariationParams { async_call: true };
-    let prepared = prepared(delegated).unwrap();
-    assert_eq!(prepared.client.kind, ClientKind::Async);
-    assert!(prepared.async_mode);
+    let delegated_prepared = prepared(delegated).unwrap();
+    assert_eq!(delegated_prepared.client.kind, ClientKind::Async);
+    assert!(delegated_prepared.async_mode);
     let sync = request(image(None, "PNGDATA"));
     assert!(!prepared(sync).unwrap().async_mode);
     let mut unkeyed = empty_request();
@@ -618,10 +617,11 @@ async fn variation_reply_identity() {
     assert_eq!(recorder.pre.len(), 1);
     assert_eq!(recorder.post.len(), 1);
     let bodyless = FakeTransport::answering(200, &[], r#"{"data":[]}"#);
-    let failure = run(request(image(None, "PNGDATA")), &bodyless, &mut recorder)
+    let outcome = run(request(image(None, "PNGDATA")), &bodyless, &mut recorder)
         .await
-        .unwrap_err();
-    assert_eq!(failure.status_code, 500);
+        .unwrap();
+    assert_eq!(outcome.reply.created, NOW);
+    assert!(outcome.reply.data.is_empty());
 }
 
 fn reply_fields(reply: &ImageGenerationReply) {
@@ -665,7 +665,7 @@ fn logging() -> (Redactor, LoggingState, Sink) {
         },
         &redactor,
         || String::from("trace"),
-        Duration::default(),
+        || Duration::default(),
     )
     .unwrap();
     (redactor, state, Sink::default())
@@ -856,7 +856,7 @@ fn image_variation_params_default_to_the_sync_call() {
         options: options(r#"{"n":2}"#),
     };
     let view = data_view(&data);
-    let inner = object(object(&view).get("data").unwrap());
+    let inner = object(view.get("data").unwrap());
     assert_eq!(inner.get("n"), Some(&number(2)));
     assert_eq!(
         object(inner.get("image").unwrap()).get("size"),

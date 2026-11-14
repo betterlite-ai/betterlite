@@ -72,11 +72,11 @@ fn checked_reply(
     created_seconds: i64,
 ) -> Result<ImageVariationOutcome, ImageVariationSource> {
     if !(200..=299).contains(&response.status) {
-        let text = String::from_utf8(response.body.clone()).map_err(|_| {
-            ImageVariationSource::Reply(ImageReplyError::Text {
+        let Ok(text) = String::from_utf8(response.body.clone()) else {
+            return Err(ImageVariationSource::Reply(ImageReplyError::Text {
                 field: "status body",
-            })
-        })?;
+            }));
+        };
         return Err(ImageVariationSource::Status {
             status: response.status,
             message: text,
@@ -99,11 +99,11 @@ fn checked_reply(
 fn response_headers(headers: &http::HeaderMap) -> Result<ImageHeaders, ImageVariationSource> {
     let mut found = ImageHeaders::new();
     for (name, value) in headers {
-        let text = value.to_str().map_err(|_| {
-            ImageVariationSource::Reply(ImageReplyError::Text {
+        let Ok(text) = value.to_str() else {
+            return Err(ImageVariationSource::Reply(ImageReplyError::Text {
                 field: "status headers",
-            })
-        })?;
+            }));
+        };
         found.insert(name.as_str().to_owned(), text.to_owned());
     }
     Ok(found)

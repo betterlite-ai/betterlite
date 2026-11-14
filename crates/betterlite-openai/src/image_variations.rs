@@ -64,6 +64,7 @@ impl OpenAiImageVariationConfig {
     }
 
     // transform_request_image_variation: {"image": supplied image, **options}; the model is never added
+    #[must_use]
     pub fn request_data(
         image: ImageFile,
         optional_params: ImageParams,

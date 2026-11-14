@@ -29,10 +29,8 @@ pub fn prepare_image_variation(
         ));
     }
     let mut optional_params = request.optional_params;
-    let max_retries = match super::take_max_retries(&mut optional_params) {
-        Ok(value) => value,
-        Err(source) => return Err(OpenAiImageVariationError::wrapped(source)),
-    };
+    let max_retries = super::take_max_retries(&mut optional_params)
+        .map_err(OpenAiImageVariationError::wrapped)?;
     let Some(data) = OpenAiImageVariationConfig::request_data(request.image, optional_params)
     else {
         return Err(OpenAiImageVariationError::wrapped(
@@ -54,10 +52,7 @@ pub fn prepare_image_variation(
         supplied: request.client.as_ref(),
         shared_session: request.shared_session.is_some(),
     };
-    let client = match select_client(&settings) {
-        Ok(client) => client,
-        Err(source) => return Err(OpenAiImageVariationError::wrapped(source)),
-    };
+    let client = select_client(&settings).map_err(OpenAiImageVariationError::wrapped)?;
     let deadline = client.timeout.unwrap_or(DEFAULT_TIMEOUT);
     Ok(PreparedImageVariation {
         data,
