@@ -254,14 +254,13 @@ fn reasoning_text_is_empty_for_plain_text_messages() {
     assert_eq!(reasoning_text(&message), "");
 }
 
-#[test]
-fn stream_events_yields_reasoning_before_text() {
-    let mut chunk = plain_message(
-        MessageKind::AiMessageChunk,
-        Content::Text("hello".to_owned()),
-    );
-    chunk.reasoning_content = "think".to_owned();
-    let events = stream_events(&chunk);
+#[rstest]
+#[case::chunk(MessageKind::AiMessageChunk)]
+#[case::message(MessageKind::Ai)]
+fn stream_events_yields_reasoning_before_text(#[case] kind: MessageKind) {
+    let mut message = plain_message(kind, Content::Text("hello".to_owned()));
+    message.reasoning_content = "think".to_owned();
+    let events = stream_events(&message);
     assert_eq!(events.len(), 2);
     let Event::Reasoning { delta } = &events[0] else {
         panic!("expected a reasoning event");
@@ -325,15 +324,14 @@ fn tool_call_event_passes_unmapped_names_through() {
 fn final_ai_text_takes_the_last_non_empty_ai_message() {
     let messages = vec![
         plain_message(MessageKind::Human, Content::Text("question".to_owned())),
-        plain_message(MessageKind::Ai, Content::Text("first".to_owned())),
-        plain_message(MessageKind::Ai, Content::Empty),
+        plain_message(MessageKind::Ai, Content::Text("answer".to_owned())),
         plain_message(
             MessageKind::AiMessageChunk,
             Content::Text("chunk".to_owned()),
         ),
-        plain_message(MessageKind::Ai, Content::Text("last".to_owned())),
+        plain_message(MessageKind::Ai, Content::Empty),
     ];
-    assert_eq!(final_ai_text(&messages), "last");
+    assert_eq!(final_ai_text(&messages), "answer");
 }
 
 #[test]
