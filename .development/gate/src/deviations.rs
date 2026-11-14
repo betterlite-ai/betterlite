@@ -45,6 +45,16 @@ pub(crate) fn file_problems(path: &Path, backlog: &Backlog) -> Vec<String> {
             "{shown}: every deviation needs what, why, and an https link or an empty one"
         ));
     }
+    let unlinked = log.kept_bugs.iter().any(|entry| {
+        entry.what.trim().is_empty()
+            || entry.why.trim().is_empty()
+            || !entry.link.starts_with("https://")
+    });
+    if unlinked {
+        problems.push(format!(
+            "{shown}: every kept bug needs what, why, and an https link to the LiteLLM line"
+        ));
+    }
     problems
 }
 

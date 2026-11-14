@@ -1491,6 +1491,7 @@ dependencies = [
  "betterlite-db",
  "betterlite-env",
  "betterlite-models",
+ "betterlite-prompts",
  "betterlite-secret-managers",
  "betterlite-secrets",
  "betterlite-vertex",
@@ -1516,6 +1517,7 @@ dependencies = [
  "strum",
  "tempfile",
  "thiserror",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "unicode-general-category",
@@ -1681,6 +1683,7 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
+ "csv",
  "deadpool-postgres",
  "futures-util",
  "hex",
@@ -1725,6 +1728,7 @@ dependencies = [
  "rstest",
  "rust_decimal",
  "secrecy",
+ "strum",
  "tempfile",
  "thiserror",
  "tokio",
@@ -2833,9 +2837,11 @@ dependencies = [
 name = "betterlite-provider-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-anthropic",
  "betterlite-openai",
  "betterlite-provider",
  "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]

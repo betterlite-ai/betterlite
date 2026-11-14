@@ -1,0 +1,28 @@
+kind: helper
+name: agentic-safety-and-tool-identity
+call:
+  responses_hook_policy:
+    operation: safety
+    tool_calls:
+      - name: lookup
+        id: call-a
+        call_id: legacy-a
+      - name: search
+      - name: 7
+      - not-a-call
+    fingerprints:
+      - '[{"call_id": "legacy-a", "id": "call-a", "name": "lookup"}, {"name": "search"}, {"name": 7}, "not-a-call"]'
+    depth: 1
+    max_loops: 3
+    model: gpt-4o
+    blocks:
+      - {type: tool_use, id: call-a, name: other}
+      - {type: tool_use, id: call-b, name: lookup}
+      - {type: tool_use, name: lookup}
+      - {type: tool_use, name: missing}
+      - {type: text, name: lookup}
+      - not-a-block
+    stream: false
+    api_surface: anthropic_messages
+env: {}
+compare: {ignore: []}

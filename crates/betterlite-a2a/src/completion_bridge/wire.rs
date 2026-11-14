@@ -51,12 +51,6 @@ pub struct CompletionParams {
     pub extra: BTreeMap<String, AgentJson>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct OpenAIMessage {
-    pub role: String,
-    pub content: String,
-}
-
 #[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 pub struct ModelResponse {
