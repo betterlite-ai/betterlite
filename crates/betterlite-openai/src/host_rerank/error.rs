@@ -16,7 +16,7 @@ pub enum HostRerankError {
     InvalidApiBase { base: String },
     #[error("{message}")]
     Status { status_code: u16, message: String },
-    #[error("the rerank answer with status {status_code} is not JSON: {source}")]
+    #[error("{body}")]
     Json {
         status_code: u16,
         body: String,

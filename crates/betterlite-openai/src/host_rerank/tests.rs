@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use std::cell::RefCell;
 use std::fs;
 use std::path::PathBuf;
 
@@ -8,7 +7,7 @@ use betterlite_config::sections::jina_infinity_rerank::Settings;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
-use serde_json::{Value, json};
+use serde_json::Value;
 use uuid::Uuid;
 
 use super::error::HostRerankError;
@@ -21,14 +20,34 @@ use crate::api::responses_shapes::wire::ShapeDecodeError;
 use crate::cohere_rerank::RerankParams;
 use crate::openai_base_config::Headers;
 
-const GENERATED: &str = "00000000-0000-4000-8000-000000000001";
-
 fn secret(value: &str) -> SecretString {
     SecretString::from(value.to_owned())
 }
 
-fn params(value: &Value) -> RerankParams {
-    serde_json::from_value(value.clone()).unwrap()
+fn params(source: &str) -> RerankParams {
+    serde_json::from_str(source).unwrap()
+}
+
+fn value(source: &str) -> Value {
+    serde_json::from_str(source).unwrap()
+}
+
+fn refusal(error: &HostRerankError) -> &'static str {
+    match error {
+        HostRerankError::MissingApiKey => "missing key",
+        HostRerankError::MissingApiBase => "missing base",
+        HostRerankError::InvalidApiBase { .. } => "invalid base",
+        HostRerankError::Status { .. } => "status",
+        HostRerankError::Json { .. } => "json",
+        HostRerankError::Decode { .. } => "decode",
+        HostRerankError::NoResults => "no results",
+        HostRerankError::Document => "document",
+        HostRerankError::Counter { .. } => "counter",
+        HostRerankError::CounterOverflow => "counter overflow",
+        HostRerankError::CostOverflow => "cost overflow",
+        HostRerankError::Contract(_) => "contract",
+        HostRerankError::Request(_) => "request",
+    }
 }
 
 fn decode(
@@ -36,20 +55,35 @@ fn decode(
     status: u16,
     body: &[u8],
 ) -> (Result<Value, HostRerankError>, Vec<String>) {
-    let logged = RefCell::new(Vec::new());
+    let mut logged = Vec::new();
     let reply = decode_host_rerank(
         provider,
         status,
         body,
         || Uuid::from_u128(0x0000_0000_0000_4000_8000_0000_0000_0001),
-        |text| logged.borrow_mut().push(text.to_owned()),
+        |text| logged.push(text.to_owned()),
     );
-    let encoded = reply.map(|response| {
-        let mut value = serde_json::to_value(&response).unwrap();
-        value["hidden"] = serde_json::to_value(&response.hidden_params).unwrap();
-        value
+    let answer = reply.map(|response| {
+        let mut serialized = serde_json::to_value(&response).unwrap();
+        serialized["hidden"] = serde_json::to_value(&response.hidden_params).unwrap();
+        serialized
     });
-    (encoded, logged.into_inner())
+    (answer, logged)
+}
+
+fn at_the_byte_limit() -> Vec<u8> {
+    let mut body = b"[]".to_vec();
+    body.resize(0x0080_0000, b' ');
+    body
+}
+
+fn over_the_byte_limit() -> Vec<u8> {
+    let limit = 0x0080_0000;
+    vec![b' '; limit + 1]
+}
+
+fn results_of(count: usize) -> Vec<u8> {
+    format!("{{\"results\":[{}]}}", vec!["null"; count].join(",")).into_bytes()
 }
 
 #[rstest]
@@ -77,10 +111,11 @@ fn jina_url_replaces_the_path(#[case] base: Option<&str>, #[case] expected: Opti
 #[case::empty("", "Bearer ")]
 fn jina_headers_are_lowercase_and_replace_the_caller(#[case] key: &str, #[case] bearer: &str) {
     let headers = jina_request_headers(Some(&secret(key))).unwrap();
-    let expected: Headers = serde_json::from_value(json!({
-        "accept": "application/json", "content-type": "application/json", "authorization": bearer,
-    }))
-    .unwrap();
+    let expected = Headers::from([
+        ("accept".to_owned(), "application/json".to_owned()),
+        ("content-type".to_owned(), "application/json".to_owned()),
+        ("authorization".to_owned(), bearer.to_owned()),
+    ]);
     assert_eq!(headers, expected);
     assert!(matches!(
         jina_request_headers(None),
@@ -129,10 +164,12 @@ fn infinity_key_resolves_in_order(
 
 #[test]
 fn infinity_caller_headers_overwrite_every_default() {
-    let caller: Headers = serde_json::from_value(
-        json!({"Authorization": "mine", "accept": "text/plain", "authorization": "low", "x": "1"}),
-    )
-    .unwrap();
+    let caller = Headers::from([
+        ("Authorization".to_owned(), "mine".to_owned()),
+        ("accept".to_owned(), "text/plain".to_owned()),
+        ("authorization".to_owned(), "low".to_owned()),
+        ("x".to_owned(), "1".to_owned()),
+    ]);
     let headers = infinity_request_headers(&caller, None, &Settings::default());
     assert_eq!(headers.len(), 5);
     assert_eq!(headers["Authorization"], "mine");
@@ -142,12 +179,12 @@ fn infinity_caller_headers_overwrite_every_default() {
 
 #[test]
 fn jina_options_come_only_from_the_dictionary() {
-    let options = params(&json!({"query": "q", "top_n": 3, "documents": ["a"]}));
-    let dictionary = params(&json!({"top_n": 9, "rank_fields": ["f"], "return_documents": false}));
+    let options = params(r#"{"query":"q","top_n":3,"documents":["a"]}"#);
+    let dictionary = params(r#"{"top_n":9,"rank_fields":["f"],"return_documents":false}"#);
     let mapped = map_params(HostProvider::Jina, &options, &dictionary);
     assert_eq!(
         serde_json::to_value(mapped).unwrap(),
-        json!({"top_n": 9, "return_documents": false})
+        value(r#"{"top_n":9,"return_documents":false}"#)
     );
     let empty = map_params(HostProvider::Jina, &options, &RerankParams::new());
     assert!(empty.is_empty());
@@ -155,12 +192,14 @@ fn jina_options_come_only_from_the_dictionary() {
 
 #[test]
 fn infinity_keeps_the_cohere_v1_projection() {
-    let options = params(&json!({"query": "q", "documents": ["a"], "max_chunks_per_doc": 2}));
+    let options = params(r#"{"query":"q","documents":["a"],"max_chunks_per_doc":2}"#);
     let mapped = map_params(HostProvider::Infinity, &options, &RerankParams::new());
     let body = transform_request(HostProvider::Infinity, "m", &mapped).unwrap();
     assert_eq!(
         serde_json::to_value(body).unwrap(),
-        json!({"model": "m", "query": "q", "documents": ["a"], "max_chunks_per_doc": 2, "return_documents": true})
+        value(
+            r#"{"model":"m","query":"q","documents":["a"],"max_chunks_per_doc":2,"return_documents":true}"#
+        )
     );
     let missing = transform_request(HostProvider::Infinity, "m", &RerankParams::new());
     assert!(matches!(missing, Err(HostRerankError::Request(_))));
@@ -168,10 +207,10 @@ fn infinity_keeps_the_cohere_v1_projection() {
 
 #[test]
 fn jina_request_is_the_model_over_the_options() {
-    let body = transform_request(HostProvider::Jina, "m", &params(&json!({"query": "q"})));
+    let body = transform_request(HostProvider::Jina, "m", &params(r#"{"query":"q"}"#)).unwrap();
     assert_eq!(
-        serde_json::to_value(body.unwrap()).unwrap(),
-        json!({"model": "m", "query": "q"})
+        serde_json::to_value(body).unwrap(),
+        value(r#"{"model":"m","query":"q"}"#)
     );
 }
 
@@ -208,9 +247,11 @@ fn an_unrepresentable_cost_is_refused() {
 #[case::informational(199)]
 fn jina_requires_status_200_before_it_logs(#[case] status: u16) {
     let (reply, logged) = decode(HostProvider::Jina, status, b"{\"results\":[]}");
-    assert!(
-        matches!(reply, Err(HostRerankError::Status { status_code, ref message }) if status_code == status && message == "{\"results\":[]}")
-    );
+    assert!(matches!(
+        reply,
+        Err(HostRerankError::Status { status_code, message })
+            if status_code == status && message == "{\"results\":[]}"
+    ));
     assert!(logged.is_empty());
 }
 
@@ -230,26 +271,23 @@ fn jina_logs_the_text_then_fails_on_bad_json() {
 #[rstest]
 #[case::copied_usage(
     r#"{"id":"r","usage":{"total_tokens":7,"prompt_tokens":3,"input_tokens":1,"output_tokens":2,"search_units":4},"results":[]}"#,
-    json!({"id": "r", "results": [], "meta": {"billed_units": {"search_units": 4, "total_tokens": 7}, "tokens": {"input_tokens": 1, "output_tokens": 2}}, "hidden": {"usage": {"prompt_tokens": 3}}})
+    r#"{"id":"r","results":[],"meta":{"billed_units":{"search_units":4,"total_tokens":7},"tokens":{"input_tokens":1,"output_tokens":2}},"hidden":{"usage":{"prompt_tokens":3}}}"#
 )]
 #[case::null_and_absent_usage(
     r#"{"id":"","usage":null,"results":[]}"#,
-    json!({"id": GENERATED, "results": [], "meta": {"billed_units": {}, "tokens": {}}, "hidden": {}})
+    r#"{"id":"00000000-0000-4000-8000-000000000001","results":[],"meta":{"billed_units":{},"tokens":{}},"hidden":{}}"#
 )]
 #[case::null_counter(
     r#"{"usage":{"total_tokens":null},"results":[]}"#,
-    json!({"id": GENERATED, "results": [], "meta": {"billed_units": {"total_tokens": null}, "tokens": {}}, "hidden": {}})
+    r#"{"id":"00000000-0000-4000-8000-000000000001","results":[],"meta":{"billed_units":{"total_tokens":null},"tokens":{}},"hidden":{}}"#
 )]
 #[case::documents(
     r#"{"id":"r","results":[{"index":1,"relevance_score":0.5,"document":"hi"},{"index":0,"relevance_score":1,"document":{"text":"a","x":1}},{"index":2,"relevance_score":0.25}]}"#,
-    json!({"id": "r", "results": [
-        {"index": 1, "relevance_score": 0.5, "document": {"text": "hi"}},
-        {"index": 0, "relevance_score": 1, "document": {"text": "a"}},
-        {"index": 2, "relevance_score": 0.25}], "meta": {"billed_units": {}, "tokens": {}}, "hidden": {}})
+    r#"{"id":"r","results":[{"index":1,"relevance_score":0.5,"document":{"text":"hi"}},{"index":0,"relevance_score":1,"document":{"text":"a"}},{"index":2,"relevance_score":0.25}],"meta":{"billed_units":{},"tokens":{}},"hidden":{}}"#
 )]
-fn jina_decodes_its_answer(#[case] body: &str, #[case] expected: Value) {
+fn jina_decodes_its_answer(#[case] body: &str, #[case] expected: &str) {
     let (reply, logged) = decode(HostProvider::Jina, 200, body.as_bytes());
-    assert_eq!(reply.unwrap(), expected);
+    assert_eq!(reply.unwrap(), value(expected));
     assert_eq!(logged, [body]);
 }
 
@@ -262,54 +300,59 @@ fn jina_requires_results(#[case] body: &str) {
 }
 
 #[rstest]
-#[case::null_document(r#"{"results":[{"index":0,"relevance_score":1,"document":null}]}"#)]
-#[case::object_without_text(r#"{"results":[{"index":0,"relevance_score":1,"document":{"a":1}}]}"#)]
-#[case::number_document(r#"{"results":[{"index":0,"relevance_score":1,"document":5}]}"#)]
-#[case::missing_index(r#"{"results":[{"relevance_score":1}]}"#)]
-#[case::missing_score(r#"{"results":[{"index":0}]}"#)]
-#[case::score_out_of_range(r#"{"results":[{"index":0,"relevance_score":1e999}]}"#)]
-#[case::fractional_counter(r#"{"usage":{"total_tokens":1.5},"results":[]}"#)]
-#[case::text_counter(r#"{"usage":{"input_tokens":"1"},"results":[]}"#)]
-#[case::not_an_object("[]")]
-fn jina_refuses_shapes_it_cannot_hold(#[case] body: &str) {
+#[case::null_document(
+    r#"{"results":[{"index":0,"relevance_score":1,"document":null}]}"#,
+    "contract"
+)]
+#[case::object_without_text(
+    r#"{"results":[{"index":0,"relevance_score":1,"document":{"a":1}}]}"#,
+    "document"
+)]
+#[case::number_document(
+    r#"{"results":[{"index":0,"relevance_score":1,"document":5}]}"#,
+    "document"
+)]
+#[case::missing_index(r#"{"results":[{"relevance_score":1}]}"#, "decode")]
+#[case::missing_score(r#"{"results":[{"index":0}]}"#, "decode")]
+#[case::score_out_of_range(r#"{"results":[{"index":0,"relevance_score":1e999}]}"#, "contract")]
+#[case::fractional_counter(r#"{"usage":{"total_tokens":1.5},"results":[]}"#, "counter")]
+#[case::text_counter(r#"{"usage":{"input_tokens":"1"},"results":[]}"#, "counter")]
+#[case::not_an_object("[]", "decode")]
+fn jina_refuses_shapes_it_cannot_hold(#[case] body: &str, #[case] marker: &str) {
     let (reply, _) = decode(HostProvider::Jina, 200, body.as_bytes());
-    assert!(reply.is_err());
+    let error = reply.expect_err("the shape must be refused");
+    assert_eq!(refusal(&error), marker);
 }
 
 #[rstest]
 #[case::status_is_not_checked(
     500,
     r#"{"id":"i","usage":{"total_tokens":7,"prompt_tokens":3,"completion_tokens":4},"results":[{"index":0,"relevance_score":0.5,"document":"hi"}]}"#,
-    json!({"id": "i", "results": [{"index": 0, "relevance_score": 0.5, "document": {"text": "hi"}}],
-        "meta": {"billed_units": {"total_tokens": 7}, "tokens": {"input_tokens": 3, "output_tokens": 4}},
-        "hidden": {"usage": {"completion_tokens": 4}}})
+    r#"{"id":"i","results":[{"index":0,"relevance_score":0.5,"document":{"text":"hi"}}],"meta":{"billed_units":{"total_tokens":7},"tokens":{"input_tokens":3,"output_tokens":4}},"hidden":{"usage":{"completion_tokens":4}}}"#
 )]
 #[case::missing_everything(
     200,
     "{}",
-    json!({"id": GENERATED, "results": [], "meta": {"billed_units": {}, "tokens": {"input_tokens": 0, "output_tokens": 0}}, "hidden": {}})
+    r#"{"id":"00000000-0000-4000-8000-000000000001","results":[],"meta":{"billed_units":{},"tokens":{"input_tokens":0,"output_tokens":0}},"hidden":{}}"#
 )]
 #[case::signed_difference(
     200,
     r#"{"usage":{"total_tokens":1,"prompt_tokens":3},"results":null}"#,
-    json!({"id": GENERATED, "results": [], "meta": {"billed_units": {"total_tokens": 1}, "tokens": {"input_tokens": 3, "output_tokens": -2}}, "hidden": {}})
+    r#"{"id":"00000000-0000-4000-8000-000000000001","results":[],"meta":{"billed_units":{"total_tokens":1},"tokens":{"input_tokens":3,"output_tokens":-2}},"hidden":{}}"#
 )]
 #[case::null_prompt_counts_as_absent(
     200,
     r#"{"usage":{"total_tokens":5,"prompt_tokens":null},"results":[]}"#,
-    json!({"id": GENERATED, "results": [], "meta": {"billed_units": {"total_tokens": 5}, "tokens": {"input_tokens": 0, "output_tokens": 5}}, "hidden": {}})
+    r#"{"id":"00000000-0000-4000-8000-000000000001","results":[],"meta":{"billed_units":{"total_tokens":5},"tokens":{"input_tokens":0,"output_tokens":5}},"hidden":{}}"#
 )]
 #[case::only_truthy_documents_are_wrapped(
     200,
     r#"{"id":"","results":[{"index":0,"relevance_score":1,"document":""},{"index":1,"relevance_score":1,"document":null},{"index":2,"relevance_score":1,"document":"x"}]}"#,
-    json!({"id": GENERATED, "results": [
-        {"index": 0, "relevance_score": 1}, {"index": 1, "relevance_score": 1},
-        {"index": 2, "relevance_score": 1, "document": {"text": "x"}}],
-        "meta": {"billed_units": {}, "tokens": {"input_tokens": 0, "output_tokens": 0}}, "hidden": {}})
+    r#"{"id":"00000000-0000-4000-8000-000000000001","results":[{"index":0,"relevance_score":1},{"index":1,"relevance_score":1},{"index":2,"relevance_score":1,"document":{"text":"x"}}],"meta":{"billed_units":{},"tokens":{"input_tokens":0,"output_tokens":0}},"hidden":{}}"#
 )]
-fn infinity_decodes_its_answer(#[case] status: u16, #[case] body: &str, #[case] expected: Value) {
+fn infinity_decodes_its_answer(#[case] status: u16, #[case] body: &str, #[case] expected: &str) {
     let (reply, logged) = decode(HostProvider::Infinity, status, body.as_bytes());
-    assert_eq!(reply.unwrap(), expected);
+    assert_eq!(reply.unwrap(), value(expected));
     assert!(logged.is_empty());
 }
 
@@ -318,21 +361,32 @@ fn infinity_decodes_its_answer(#[case] status: u16, #[case] body: &str, #[case] 
 #[case::empty(200, "")]
 fn infinity_bad_json_carries_the_upstream_status(#[case] status: u16, #[case] sent: &str) {
     let (reply, _) = decode(HostProvider::Infinity, status, sent.as_bytes());
-    assert!(
-        matches!(reply, Err(HostRerankError::Json { status_code, ref body, .. }) if status_code == status && body == sent)
-    );
+    assert!(matches!(
+        reply,
+        Err(HostRerankError::Json { status_code, body, .. })
+            if status_code == status && body == sent
+    ));
 }
 
 #[rstest]
-#[case::object_document(r#"{"results":[{"index":0,"relevance_score":1,"document":{"text":"a"}}]}"#)]
-#[case::missing_index(r#"{"results":[{"relevance_score":1}]}"#)]
-#[case::overflowing_difference(
-    r#"{"usage":{"total_tokens":-9223372036854775808,"prompt_tokens":1}}"#
+#[case::object_document(
+    r#"{"results":[{"index":0,"relevance_score":1,"document":{"text":"a"}}]}"#,
+    "document"
 )]
-#[case::not_an_object("[]")]
-fn infinity_refuses_shapes_it_cannot_hold(#[case] body: &str) {
+#[case::falsy_object_document(
+    r#"{"results":[{"index":0,"relevance_score":1,"document":{}}]}"#,
+    "document"
+)]
+#[case::missing_index(r#"{"results":[{"relevance_score":1}]}"#, "decode")]
+#[case::overflowing_difference(
+    r#"{"usage":{"total_tokens":-9223372036854775808,"prompt_tokens":1}}"#,
+    "counter overflow"
+)]
+#[case::not_an_object("[]", "decode")]
+fn infinity_refuses_shapes_it_cannot_hold(#[case] body: &str, #[case] marker: &str) {
     let (reply, _) = decode(HostProvider::Infinity, 200, body.as_bytes());
-    assert!(reply.is_err());
+    let error = reply.expect_err("the shape must be refused");
+    assert_eq!(refusal(&error), marker);
 }
 
 #[rstest]
@@ -350,20 +404,53 @@ fn a_wrong_shape_is_a_decode_error_and_not_a_json_failure(#[case] provider: Host
     assert!(matches!(syntax, Err(HostRerankError::Json { .. })));
 }
 
-#[rstest]
-#[case::bytes(vec![b' '; 0x0080_0001], true)]
-#[case::bytes_at_the_limit([b"[]".as_slice(), &[b' '; 0x0080_0000 - 2]].concat(), false)]
-#[case::items_at_the_limit(format!("{{\"results\":[{}]}}", vec!["null"; 199_999].join(",")).into_bytes(), false)]
-#[case::items(format!("{{\"results\":[{}]}}", vec!["null"; 200_001].join(",")).into_bytes(), true)]
-fn the_decoder_limits_hold(#[case] body: Vec<u8>, #[case] refused: bool) {
-    let (reply, _) = decode(HostProvider::Infinity, 200, &body);
-    let over = matches!(
+fn over_limit(body: &[u8]) -> bool {
+    let (reply, _) = decode(HostProvider::Infinity, 200, body);
+    matches!(
         reply,
         Err(HostRerankError::Decode {
             source: ShapeDecodeError::JsonTooLarge | ShapeDecodeError::TooManyItems
         })
-    );
-    assert_eq!(over, refused);
+    )
+}
+
+#[rstest]
+#[case::bytes(over_the_byte_limit(), true)]
+#[case::bytes_at_the_limit(at_the_byte_limit(), false)]
+#[case::items_at_the_limit(results_of(199_999), false)]
+#[case::items(results_of(200_001), true)]
+fn the_decoder_limits_hold(#[case] body: Vec<u8>, #[case] expected: bool) {
+    assert_eq!(over_limit(&body), expected);
+}
+
+#[test]
+fn bytes_that_are_not_utf8_are_refused_with_their_length() {
+    let (infinity, infinity_logged) = decode(HostProvider::Infinity, 200, &[0xff, 0xfe]);
+    let infinity_error = infinity.expect_err("bytes that are not UTF-8 are refused");
+    assert!(matches!(
+        infinity_error,
+        HostRerankError::Json {
+            status_code: 200,
+            ..
+        }
+    ));
+    assert_eq!(infinity_error.to_string(), "2 bytes that are not UTF-8");
+    assert!(infinity_logged.is_empty());
+    let (jina, jina_logged) = decode(HostProvider::Jina, 200, &[0xff, 0xfe]);
+    let jina_error = jina.expect_err("Jina refuses the same bytes");
+    assert!(matches!(jina_error, HostRerankError::Json { .. }));
+    assert_eq!(jina_logged, ["2 bytes that are not UTF-8"]);
+    let (refused, refused_logged) = decode(HostProvider::Jina, 502, &[0xff]);
+    let status_error = refused.expect_err("the status is refused before the text is logged");
+    assert!(matches!(
+        status_error,
+        HostRerankError::Status {
+            status_code: 502,
+            ..
+        }
+    ));
+    assert_eq!(status_error.to_string(), "1 bytes that are not UTF-8");
+    assert!(refused_logged.is_empty());
 }
 
 #[rstest]
