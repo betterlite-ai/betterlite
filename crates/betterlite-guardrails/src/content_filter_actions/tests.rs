@@ -841,6 +841,28 @@ mod content_filter_actions_behavior {
     }
 
     #[test]
+    fn filter_searches_blocked_words_in_the_pattern_masked_text() {
+        let categories = CategoryLoadResult::default();
+        let patterns = [regex_pattern("leak", "secret", ContentFilterAction::Mask)];
+        let words = [blocked("redacted", ContentFilterAction::Mask, None)];
+        let mut detections = Vec::new();
+        let filtered = filter_single_text(
+            &filter_source(&categories, &patterns, &words),
+            "a secret",
+            Some(&mut detections),
+        )
+        .unwrap();
+        assert_eq!(filtered, "a [LEAK_[KEYWORD_REDACTED]]");
+        assert_eq!(
+            detection_kinds(&detections),
+            vec![
+                ("pattern", "leak", "MASK"),
+                ("blocked_word", "redacted", "MASK"),
+            ]
+        );
+    }
+
+    #[test]
     fn filter_stops_after_a_blocking_conditional_match() {
         let mut categories = CategoryLoadResult::default();
         categories.conditional_categories.insert(
