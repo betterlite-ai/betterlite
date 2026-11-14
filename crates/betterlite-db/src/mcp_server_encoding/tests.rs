@@ -720,6 +720,17 @@ fn prepare_create_serializes_mcp_info_and_tool_maps_as_json_text() {
 }
 
 #[test]
+fn prepare_create_keeps_a_nul_byte_that_safe_dumps_would_strip() {
+    let prepared = create(&request(
+        r#"{"server_name":"srv","mcp_info":{"note":"a\u0000b"}}"#,
+    ));
+    assert_eq!(
+        env_text(&prepared, "mcp_info"),
+        json(r#"{"note":"a\u0000b"}"#)
+    );
+}
+
+#[test]
 fn prepare_create_drops_null_json_map_fields_and_allowed_tools() {
     let prepared = create(&request(
         r#"{"server_name":"srv","tool_name_to_display_name":null,"tool_name_to_description":null,"mcp_info":null,"allowed_tools":null}"#,
