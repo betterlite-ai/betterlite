@@ -1,12 +1,9 @@
-use betterlite_redis::cache_primitives::protocol::RedisScalar;
-
 use crate::limiter_records::{AtomicCounterMeta, CacheCounterValue, CounterRefund};
 use crate::rate_limit_window_store::CounterValues;
 use crate::rate_limit_window_store::counter_value::counter_as_int;
 
-use super::{AtomicSettlement, SettlementError};
+use super::SettlementError;
 
-#[must_use]
 // ast-grep-ignore: no-long-names
 pub fn counter_refunds_from_atomic_response(
     raw: &[CacheCounterValue],
@@ -29,7 +26,6 @@ pub fn counter_refunds_from_atomic_response(
     Ok(refunds)
 }
 
-#[must_use]
 // ast-grep-ignore: no-long-names
 pub fn counter_refunds_from_batch_values(
     applied_keys: &[String],
@@ -63,37 +59,4 @@ pub fn counter_refunds_from_batch_values(
         });
     }
     Ok(refunds)
-}
-
-impl AtomicSettlement<'_> {
-    // ast-grep-ignore: no-long-names
-    pub(super) async fn refund_applied_descriptor_groups(&self, applied: &[Vec<CounterRefund>]) {
-        let mut flattened: Vec<CounterRefund> = Vec::new();
-        for group in applied {
-            flattened.extend(group.iter().cloned());
-        }
-        self.refund_counter_increments(&flattened).await;
-    }
-
-    pub async fn refund_counter_increments(&self, refunds: &[CounterRefund]) {
-        let Some(script) = self.refund_script.as_deref() else {
-            return;
-        };
-        for refund in refunds {
-            let keys = vec![refund.window_key.clone(), refund.counter_key.clone()];
-            let args = vec![
-                RedisScalar::Text(refund.window_start.clone()),
-                RedisScalar::Text(i128::from(refund.increment).saturating_neg().to_string()),
-                RedisScalar::Text("0".to_owned()),
-            ];
-            let Err(error) = script.run(&keys, &args).await else {
-                continue;
-            };
-            tracing::warn!(
-                %error,
-                counter_key = %refund.counter_key,
-                "failed to refund a counter on rollback"
-            );
-        }
-    }
 }

@@ -10,49 +10,48 @@ use crate::limiter_records::{
 };
 use crate::rate_limit_window_store::CounterCache;
 
+use super::lua_per_descriptor::lua_per_descriptor;
 use super::{AtomicSettlement, SettlementError};
 
 mod tests;
 
-impl AtomicSettlement<'_> {
-    pub(super) async fn dispatch(
-        &self,
-        groups: &[DescriptorAtomicGroup],
-    ) -> Result<RateLimitResponse, SettlementError> {
-        if let Some(script) = self.script.as_ref() {
-            return self.lua_per_descriptor(groups, script).await;
-        }
-        self.settle_in_memory(groups).await
+pub(super) async fn dispatch(
+    settlement: &AtomicSettlement<'_>,
+    groups: &[DescriptorAtomicGroup],
+) -> Result<RateLimitResponse, SettlementError> {
+    if let Some(script) = settlement.script.as_ref() {
+        return lua_per_descriptor(settlement, groups, script).await;
     }
+    settle_in_memory(settlement, groups).await
+}
 
-    pub(super) async fn settle_in_memory(
-        &self,
-        groups: &[DescriptorAtomicGroup],
-    ) -> Result<RateLimitResponse, SettlementError> {
-        let _guard = self.windows.check_and_increment_lock.lock().await;
-        let now = self.settlement_seconds()?;
-        let flat_meta: Vec<AtomicCounterMeta> = groups
-            .iter()
-            .flat_map(|(_keys, _args, meta)| meta.iter().cloned())
-            .collect();
-        let cache = WindowCacheAdapter {
-            cache: self.windows.cache.as_ref(),
-        };
-        Ok(check_in_memory(&cache, &flat_meta, now).await?)
-    }
+pub(super) async fn settle_in_memory(
+    settlement: &AtomicSettlement<'_>,
+    groups: &[DescriptorAtomicGroup],
+) -> Result<RateLimitResponse, SettlementError> {
+    let _guard = settlement.windows.check_and_increment_lock.lock().await;
+    let now = settlement_seconds(settlement)?;
+    let flat_meta: Vec<AtomicCounterMeta> = groups
+        .iter()
+        .flat_map(|(_keys, _args, meta)| meta.iter().cloned())
+        .collect();
+    let cache = WindowCacheAdapter {
+        cache: settlement.windows.cache.as_ref(),
+    };
+    Ok(check_in_memory(&cache, &flat_meta, now).await?)
+}
 
-    fn settlement_seconds(&self) -> Result<i64, SettlementError> {
-        let elapsed = self
-            .clock
-            .current_time()
-            .duration_since(UNIX_EPOCH)
-            .map_err(SettlementError::ClockBeforeEpoch)?;
-        let seconds = elapsed.as_secs();
-        i64::try_from(seconds).map_err(|source| SettlementError::ClockOverflow {
-            value: seconds,
-            source,
-        })
-    }
+fn settlement_seconds(settlement: &AtomicSettlement<'_>) -> Result<i64, SettlementError> {
+    let elapsed = settlement
+        .clock
+        .current_time()
+        .duration_since(UNIX_EPOCH)
+        .map_err(SettlementError::ClockBeforeEpoch)?;
+    let seconds = elapsed.as_secs();
+    i64::try_from(seconds).map_err(|source| SettlementError::ClockOverflow {
+        value: seconds,
+        source,
+    })
 }
 
 // LiteLLM's in-memory helpers read its internal usage cache, the same store this crate reads counters from

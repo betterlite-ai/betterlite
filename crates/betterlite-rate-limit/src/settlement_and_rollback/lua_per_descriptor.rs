@@ -7,56 +7,57 @@ use crate::limiter_records::{CounterRefund, DescriptorAtomicGroup, RateLimitResp
 use crate::rate_limit_window_store::pipeline_scripts::pipeline_scripts;
 use crate::rate_limit_window_store::{CounterScript, ScriptCall, ScriptHandle};
 
+use super::dispatch::settle_in_memory;
+use super::pipelined_settlement::settle_pipelined;
+use super::sequential_loop::settle_sequentially;
 use super::{AtomicSettlement, SettlementError};
 
-impl AtomicSettlement<'_> {
-    pub(super) async fn lua_per_descriptor(
-        &self,
-        groups: &[DescriptorAtomicGroup],
-        script: &Arc<dyn CounterScript>,
-    ) -> Result<RateLimitResponse, SettlementError> {
-        let calls: Vec<ScriptCall> = groups
-            .iter()
-            .map(|(keys, args, _meta)| {
-                let scalars: Vec<RedisScalar> = args
-                    .iter()
-                    .map(|value| RedisScalar::Text(value.to_string()))
-                    .collect();
-                (keys.clone(), scalars)
-            })
-            .collect();
-        let pipelined = pipeline_scripts(self.windows, script, &calls);
-        let mut handles: Vec<ScriptHandle> = Vec::with_capacity(pipelined.len());
-        for handle in pipelined {
-            let Some(handle) = handle else {
-                return self
-                    .settle_sequentially(groups, &calls, script.as_ref())
-                    .await;
-            };
-            handles.push(handle);
-        }
-        self.settle_pipelined(groups, handles).await
+pub(super) async fn lua_per_descriptor(
+    settlement: &AtomicSettlement<'_>,
+    groups: &[DescriptorAtomicGroup],
+    script: &Arc<dyn CounterScript>,
+) -> Result<RateLimitResponse, SettlementError> {
+    let calls: Vec<ScriptCall> = groups
+        .iter()
+        .map(|(keys, args, _meta)| {
+            let scalars: Vec<RedisScalar> = args
+                .iter()
+                .map(|value| RedisScalar::Text(value.to_string()))
+                .collect();
+            (keys.clone(), scalars)
+        })
+        .collect();
+    let pipelined = pipeline_scripts(settlement.windows, script, &calls);
+    let mut handles: Vec<ScriptHandle> = Vec::with_capacity(pipelined.len());
+    for enqueued in pipelined {
+        let Some(handle) = enqueued else {
+            return settle_sequentially(settlement, groups, &calls, script.as_ref()).await;
+        };
+        handles.push(handle);
     }
+    settle_pipelined(settlement, groups, handles).await
+}
 
-    pub(super) async fn lua_failure_fallback<E>(
-        &self,
-        groups: &[DescriptorAtomicGroup],
-        applied: &[Vec<CounterRefund>],
-        error: &E,
-    ) -> Result<RateLimitResponse, SettlementError>
-    where
-        E: Display + ?Sized,
-    {
-        self.refund_applied_descriptor_groups(applied).await;
-        self.fail_closed
-            .reject_if_unverifiable("check_and_increment_by_n_script", error)?;
-        tracing::error!(
-            %error,
-            script = "check_and_increment_by_n_script",
-            applied = applied.len(),
-            window_size = self.default_window_size,
-            "the Redis Lua check-and-increment failed, the applied increments were refunded and the descriptors fall back to in-memory enforcement"
-        );
-        self.settle_in_memory(groups).await
-    }
+pub(super) async fn lua_failure_fallback<E>(
+    settlement: &AtomicSettlement<'_>,
+    groups: &[DescriptorAtomicGroup],
+    applied: &[Vec<CounterRefund>],
+    error: &E,
+) -> Result<RateLimitResponse, SettlementError>
+where
+    E: Display + ?Sized,
+{
+    let message = error.to_string();
+    settlement.refund_applied_descriptor_groups(applied).await;
+    settlement
+        .fail_closed
+        .reject_if_unverifiable("check_and_increment_by_n_script", &message)?;
+    tracing::error!(
+        error = %message,
+        script = "check_and_increment_by_n_script",
+        applied = applied.len(),
+        window_size = settlement.default_window_size,
+        "the Redis Lua check-and-increment failed, the applied increments were refunded and the descriptors fall back to in-memory enforcement"
+    );
+    settle_in_memory(settlement, groups).await
 }

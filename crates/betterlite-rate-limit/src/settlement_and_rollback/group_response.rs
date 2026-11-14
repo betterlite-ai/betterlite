@@ -38,7 +38,7 @@ impl GroupResponse {
         }
     }
 
-    pub(super) fn failure(&self) -> Option<&GroupFailure> {
+    pub(super) const fn failure(&self) -> Option<&GroupFailure> {
         match self {
             Self::Failure(failure) => Some(failure),
             Self::Response { .. } => None,
@@ -47,10 +47,10 @@ impl GroupResponse {
 }
 
 pub(super) fn pipelined_group_response(
-    reply: Result<ScriptReply, Arc<BatchError>>,
+    outcome: Result<ScriptReply, Arc<BatchError>>,
     meta: &[AtomicCounterMeta],
 ) -> GroupResponse {
-    let reply = match reply {
+    let reply = match outcome {
         Ok(reply) => reply,
         Err(error) => return GroupResponse::Failure(GroupFailure::Batch(error)),
     };

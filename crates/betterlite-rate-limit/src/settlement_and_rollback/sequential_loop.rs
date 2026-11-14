@@ -7,44 +7,44 @@ use crate::limiter_records::{
 };
 use crate::rate_limit_window_store::{CounterScript, ScriptCall};
 
+use super::lua_per_descriptor::lua_failure_fallback;
 // ast-grep-ignore: no-long-names
 use super::refunds::counter_refunds_from_atomic_response as atomic_response_refunds;
+use super::single_descriptor::settle_single_descriptor;
 use super::{AtomicSettlement, SettlementError};
 
 mod tests;
 
-impl AtomicSettlement<'_> {
-    pub(super) async fn settle_sequentially(
-        &self,
-        groups: &[DescriptorAtomicGroup],
-        calls: &[ScriptCall],
-        script: &dyn CounterScript,
-    ) -> Result<RateLimitResponse, SettlementError> {
-        if let ([group], [call]) = (groups, calls) {
-            return self.settle_single_descriptor(group, call, script).await;
-        }
-        let mut applied: Vec<Vec<CounterRefund>> = Vec::new();
-        let mut statuses: Vec<RateLimitStatus> = Vec::new();
-        let mut windows: BTreeSet<ReservationWindowIdentity> = BTreeSet::new();
-        for ((_keys, _args, meta), call) in groups.iter().zip(calls) {
-            let reply = match script.run(&call.0, &call.1).await {
-                Ok(reply) => reply,
-                Err(error) => return self.lua_failure_fallback(groups, &applied, &error).await,
-            };
-            let values = counter_values_from_reply(&reply)?;
-            let response = build_atomic_response(&values, meta)?;
-            if response.overall_code == "OVER_LIMIT" {
-                self.refund_applied_descriptor_groups(&applied).await;
-                return Ok(response);
-            }
-            applied.push(atomic_response_refunds(&values, meta)?);
-            statuses.extend(response.statuses);
-            windows.extend(response.reservation_windows.into_iter().flatten());
-        }
-        Ok(RateLimitResponse {
-            overall_code: "OK".to_owned(),
-            statuses,
-            reservation_windows: Some(windows),
-        })
+pub(super) async fn settle_sequentially(
+    settlement: &AtomicSettlement<'_>,
+    groups: &[DescriptorAtomicGroup],
+    calls: &[ScriptCall],
+    script: &dyn CounterScript,
+) -> Result<RateLimitResponse, SettlementError> {
+    if let ([group], [call]) = (groups, calls) {
+        return settle_single_descriptor(settlement, group, call, script).await;
     }
+    let mut applied: Vec<Vec<CounterRefund>> = Vec::new();
+    let mut statuses: Vec<RateLimitStatus> = Vec::new();
+    let mut windows: BTreeSet<ReservationWindowIdentity> = BTreeSet::new();
+    for ((_keys, _args, meta), call) in groups.iter().zip(calls) {
+        let reply = match script.run(&call.0, &call.1).await {
+            Ok(reply) => reply,
+            Err(error) => return lua_failure_fallback(settlement, groups, &applied, &error).await,
+        };
+        let values = counter_values_from_reply(&reply)?;
+        let response = build_atomic_response(&values, meta)?;
+        if response.overall_code == "OVER_LIMIT" {
+            settlement.refund_applied_descriptor_groups(&applied).await;
+            return Ok(response);
+        }
+        applied.push(atomic_response_refunds(&values, meta)?);
+        statuses.extend(response.statuses);
+        windows.extend(response.reservation_windows.into_iter().flatten());
+    }
+    Ok(RateLimitResponse {
+        overall_code: "OK".to_owned(),
+        statuses,
+        reservation_windows: Some(windows),
+    })
 }
