@@ -63,11 +63,6 @@ fn convert_entries(
         .collect()
 }
 
-fn is_integer_literal(text: &str) -> bool {
-    let digits = text.strip_prefix('-').unwrap_or(text);
-    !digits.is_empty() && digits.chars().all(|digit| digit.is_ascii_digit())
-}
-
 // a lone private key is a number; with siblings or text that is no number it is the caller's own object
 fn private_number(private: PrivateNumber) -> Result<GuardrailValue, PassthroughPayloadError> {
     let PrivateNumber {
@@ -81,7 +76,8 @@ fn private_number(private: PrivateNumber) -> Result<GuardrailValue, PassthroughP
         if let Ok(number) = text.parse::<u64>() {
             return Ok(GuardrailValue::UnsignedInteger(number));
         }
-        if is_integer_literal(&text) {
+        let digits = text.strip_prefix('-').unwrap_or(&text);
+        if !digits.is_empty() && digits.chars().all(|digit| digit.is_ascii_digit()) {
             return Err(PassthroughPayloadError::IntegerOutOfRange { text });
         }
         if let Ok(number) = text.parse::<f64>() {

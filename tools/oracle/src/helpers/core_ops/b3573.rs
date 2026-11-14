@@ -99,8 +99,8 @@ async fn answer(scenario: &Scenario) -> HelperResult {
                 guardrail_name.as_deref(),
                 logging.as_ref(),
                 response,
-                request_data,
-                user_api_key,
+                request_data.as_ref(),
+                user_api_key.as_ref(),
             )
             .await
         }
@@ -158,8 +158,8 @@ async fn output_answer(
     guardrail_name: Option<&str>,
     logging: Option<&LoggingSpec>,
     response: &GuardrailValue,
-    request_data: &Option<RequestData>,
-    user_api_key: &Option<RequestData>,
+    request_data: Option<&RequestData>,
+    user_api_key: Option<&RequestData>,
 ) -> HelperResult {
     let guardrail = RecordingGuardrail {
         name: guardrail_name.map(str::to_owned),
@@ -168,13 +168,13 @@ async fn output_answer(
     let mut logging_obj = logging.map(|spec| ScenarioLogging {
         config: spec.config.clone(),
     });
-    let mut owned_request_data = request_data.clone();
+    let mut owned_request_data = request_data.cloned();
     let returned = PassThroughEndpointHandler::process_output_response(
         response.clone(),
         &guardrail,
         ResponseCall {
             logging_obj: logging_obj.as_mut(),
-            user_api_key_dict: user_api_key.as_ref(),
+            user_api_key_dict: user_api_key,
             request_data: owned_request_data.as_mut(),
         },
         &Policy,
@@ -182,8 +182,8 @@ async fn output_answer(
     .await
     .map_err(failure)?;
     let mut reply = json!({ "returned": returned, "calls": guardrail.recorded() });
-    if let Some(request_data) = &owned_request_data {
-        reply["request_data"] = json!(request_data);
+    if let (Some(fields), Some(updated)) = (reply.as_object_mut(), &owned_request_data) {
+        fields.insert("request_data".to_owned(), json!(updated));
     }
     Ok(reply)
 }
