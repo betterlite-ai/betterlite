@@ -1,0 +1,43 @@
+kind: helper
+name: provider-info
+call:
+  b8170:
+    steps:
+      - kind: provider_info
+        policy: {default_base: https://dashscope.aliyuncs.com/compatible-mode/v1, env_in_complete_url: false}
+      - kind: provider_info
+        policy:
+          default_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+          env_base: https://env.example/v1
+          env_in_complete_url: false
+        env_api_key: env-key
+      - kind: provider_info
+        policy:
+          default_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+          env_base: https://env.example/v1
+          env_in_complete_url: false
+        api_base: https://given.example/v1
+        api_key: given-key
+        env_api_key: env-key
+      - kind: provider_info
+        policy:
+          default_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+          env_base: https://env.example/v1
+          env_in_complete_url: false
+        api_base: ""
+        api_key: ""
+        env_api_key: env-key
+      - kind: provider_info
+        policy:
+          default_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+          env_base: ""
+          env_in_complete_url: false
+        env_api_key: env-key
+      - kind: provider_info
+        policy:
+          default_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+          env_base: https://env.example/v1
+          env_in_complete_url: false
+        api_key: given-key
+env: {}
+compare: {ignore: []}
