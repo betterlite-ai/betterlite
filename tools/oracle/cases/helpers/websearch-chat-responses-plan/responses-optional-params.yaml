@@ -1,0 +1,28 @@
+kind: helper
+name: responses-optional-params
+call:
+  b4119:
+    operation: build_responses_plan
+    model: gpt-4o
+    input: []
+    tool_calls:
+      - type: function_call
+        call_id: call_1
+        name: litellm_web_search
+        arguments: '{"query":"weather"}'
+        input: {query: weather}
+    searches:
+      - kind: success
+        text: result
+    optional_params:
+      tools: [{type: function}]
+      tool_choice: auto
+      stream: true
+      model_alias_map: {}
+      stream_response: {}
+      custom_prompt_dict: {}
+      extra_body: {trace: true}
+      temperature: 0.2
+    kwargs: {}
+env: {}
+compare: {ignore: []}
