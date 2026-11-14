@@ -151,6 +151,7 @@ enum BodyCase {
     ProviderConfigCarriesExtraHeaders,
     LimitsBoundTheCreateMaps,
     VertexCredentialsAcceptFields,
+    CustomEndpointReachesTheAdapter,
     AsyncFlagReachesTheAdapter,
 }
 
@@ -162,6 +163,7 @@ enum BodyCase {
 #[case::provider_config_carries_extra_headers(BodyCase::ProviderConfigCarriesExtraHeaders)]
 #[case::limits_bound_the_create_maps(BodyCase::LimitsBoundTheCreateMaps)]
 #[case::vertex_credentials_accept_fields(BodyCase::VertexCredentialsAcceptFields)]
+#[case::custom_endpoint_reaches_the_adapter(BodyCase::CustomEndpointReachesTheAdapter)]
 #[case::async_flag_reaches_the_adapter(BodyCase::AsyncFlagReachesTheAdapter)]
 fn batch_create_body(#[case] case: BodyCase) {
     match case {
@@ -172,6 +174,7 @@ fn batch_create_body(#[case] case: BodyCase) {
         BodyCase::ProviderConfigCarriesExtraHeaders => provider_config_carries_extra_headers(),
         BodyCase::LimitsBoundTheCreateMaps => limits_bound_the_create_maps(),
         BodyCase::VertexCredentialsAcceptFields => vertex_credentials_accept_fields(),
+        BodyCase::CustomEndpointReachesTheAdapter => custom_endpoint_reaches_the_adapter(),
         BodyCase::AsyncFlagReachesTheAdapter => async_flag_reaches_the_adapter(),
     }
 }
@@ -353,6 +356,16 @@ fn vertex_credentials_accept_fields() {
         fields.get("client_email").map(String::as_str),
         Some("svc@example.com")
     );
+}
+
+fn custom_endpoint_reaches_the_adapter() {
+    let mut request = input(BatchProvider::VertexAi);
+    request.optional_params.custom_endpoint = Some(true);
+    let result = created(&request, &Settings::default());
+    let BatchProviderCreateCall::VertexAi(call) = &result.call else {
+        panic!("vertex owns its own branch");
+    };
+    assert_eq!(call.custom_endpoint, Some(true));
 }
 
 fn async_flag_reaches_the_adapter() {
