@@ -301,7 +301,7 @@ def build_logging(input_value: Input) -> Logging | None:
     if model is None and agent is None:
         return None
     log = Logging(
-        model=model if model is not None else "",
+        model=model if model is not None else input_value["model"],
         messages=None,
         stream=False,
         call_type="completion",
