@@ -3,9 +3,10 @@ use std::time::Duration;
 
 use betterlite_openai::chat::ChatMessage;
 use betterlite_prompts::arguments::json::Object;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use uuid::Uuid;
 
+use crate::endpoint_target::headers::set_headers;
 use crate::endpoint_target::target::{CustomProxyInput, TargetProvider, check_custom_proxy};
 use crate::model_urls::model_name::get_vertex_base_model_name;
 use crate::model_urls::{ApiVersion, Endpoint};
@@ -13,10 +14,6 @@ use crate::token_cache::probe::AccessToken;
 
 use super::error::GemmaPlanError;
 
-pub const AUTHORIZATION_HEADER: &str = "Authorization";
-pub const CONTENT_TYPE_HEADER: &str = "Content-Type";
-pub const JSON_CONTENT_TYPE: &str = "application/json";
-pub const BEARER_PREFIX: &str = "Bearer ";
 pub const PREDICT_SUFFIX: &str = ":predict";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,23 +74,11 @@ pub fn for_call(
         .api_base
         .filter(|base| !base.is_empty())
         .ok_or(GemmaPlanError::MissingApiBase)?;
-    let mut headers = BTreeMap::new();
-    headers.insert(
-        AUTHORIZATION_HEADER.to_owned(),
-        SecretString::from(format!(
-            "{BEARER_PREFIX}{}",
-            call.credentials.token.expose_secret()
-        )),
-    );
-    headers.insert(
-        CONTENT_TYPE_HEADER.to_owned(),
-        SecretString::from(JSON_CONTENT_TYPE),
-    );
     Ok(GemmaPlan {
         model: get_vertex_base_model_name(call.model).to_owned(),
         url: predict_url(api_base, call.stream)?,
         stream: call.stream,
-        headers,
+        headers: set_headers(Some(&call.credentials.token), &BTreeMap::new()),
         caller: caller_style(call.invocation, supplied),
     })
 }
