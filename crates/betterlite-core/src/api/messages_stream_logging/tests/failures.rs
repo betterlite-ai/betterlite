@@ -69,13 +69,21 @@ async fn upstream_close_failures_are_warned_not_raised(
     let (captured, _guard) = capture_warnings();
     abort_upstream(&mut ClosingStream { close }).await;
     let text = captured.text();
-    assert_eq!(text.contains(warning), !warning.is_empty());
-    assert_eq!(text.is_empty(), warning.is_empty());
+    assert_warning(&text, warning);
+}
+
+// An empty expected warning means the call must stay quiet; otherwise the text must carry it
+fn assert_warning(text: &str, warning: &str) {
+    assert_eq!(text.is_empty(), warning.is_empty(), "captured {text}");
+    assert!(
+        warning.is_empty() || text.contains(warning),
+        "captured {text}"
+    );
 }
 
 struct ScriptedHook {
     outcome: Result<(), ReportedFailure>,
-    seen: Mutex<Vec<ReportedFailure>>,
+    recorded: Mutex<Vec<ReportedFailure>>,
 }
 
 #[async_trait]
@@ -84,7 +92,7 @@ impl DetachedFailureHook for ScriptedHook {
         &self,
         exception: &ReportedFailure,
     ) -> Result<(), ReportedFailure> {
-        self.seen
+        self.recorded
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(exception.clone());
@@ -108,10 +116,10 @@ async fn detached_failure_hook_gets_the_original_exception(
 ) {
     let harness = Harness::new(None);
     let original = failure("RuntimeError", "upstream");
-    let hook = outcome.map(|outcome| {
+    let hook = outcome.map(|scripted| {
         Arc::new(ScriptedHook {
-            outcome,
-            seen: Mutex::new(Vec::new()),
+            outcome: scripted,
+            recorded: Mutex::new(Vec::new()),
         })
     });
     harness
@@ -126,14 +134,14 @@ async fn detached_failure_hook_gets_the_original_exception(
     harness.stream.fire_detached_failure_hook(&original).await;
     let seen = hook.map_or_else(Vec::new, |armed| {
         armed
-            .seen
+            .recorded
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     });
     assert_eq!(seen, vec![original; expected_calls]);
-    assert_eq!(captured.text().contains(warning), !warning.is_empty());
-    assert_eq!(captured.text().is_empty(), warning.is_empty());
+    let text = captured.text();
+    assert_warning(&text, warning);
 }
 
 struct ScriptedPostCall {
@@ -143,11 +151,14 @@ struct ScriptedPostCall {
 
 #[async_trait]
 impl PostCallFailureHook for ScriptedPostCall {
-    async fn post_call_failure(&self, original: &ReportedFailure) -> Result<(), HookFailure> {
+    async fn post_call_failure(
+        &self,
+        original_exception: &ReportedFailure,
+    ) -> Result<(), HookFailure> {
         self.seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(original.clone());
+            .extend([original_exception.clone()]);
         self.outcome.clone()
     }
 }
@@ -180,6 +191,6 @@ async fn armed_hook_reaches_post_call_failure_hook(
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
     assert_eq!(*seen, vec![original]);
-    assert_eq!(captured.text().contains(warning), !warning.is_empty());
-    assert_eq!(captured.text().is_empty(), warning.is_empty());
+    let text = captured.text();
+    assert_warning(&text, warning);
 }

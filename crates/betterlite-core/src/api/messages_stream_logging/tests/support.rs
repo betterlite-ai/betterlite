@@ -200,13 +200,28 @@ impl Harness {
     pub(super) fn ran(&self) -> usize {
         self.seams.ran.load(Ordering::SeqCst)
     }
+
+    // Arms both deferred fields in one lock, so a half-armed slot never leaks between steps
+    pub(super) fn arm_deferred(
+        &self,
+        callback: Option<DeferredCallback>,
+        args: Option<Vec<LoggingFuture>>,
+    ) {
+        let mut fields = self
+            .slots
+            .fields
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        fields.deferred_callback = callback;
+        fields.deferred_args = args;
+    }
 }
 
 // Python's callback: it records how many arguments it got, then runs the parked logging itself
 pub(super) fn deferred_callback(calls: &Arc<Mutex<Vec<usize>>>) -> DeferredCallback {
-    let calls = Arc::clone(calls);
+    let recorded = Arc::clone(calls);
     Box::new(move |args: Vec<LoggingFuture>| -> LoggingFuture {
-        calls
+        recorded
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(args.len());

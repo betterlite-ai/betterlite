@@ -135,6 +135,7 @@ impl<S: StreamSeams> MessagesStreamLogging<S> {
         }
     }
 
+    #[must_use]
     pub fn dispatch_pending_logging(&self) -> Option<Admission> {
         let (callback, args) = self.deps.slots.take_pending()?;
         let logging = callback(args);
@@ -142,15 +143,15 @@ impl<S: StreamSeams> MessagesStreamLogging<S> {
     }
 
     pub async fn fire_detached_failure_hook(&self, exception: &ReportedFailure) {
-        let hook = self
+        let Some(hook) = self
             .deps
             .slots
             .fields
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .detached_failure_hook
-            .clone();
-        let Some(hook) = hook else {
+            .clone()
+        else {
             return;
         };
         if let Err(failure) = hook.on_detached_failure(exception).await {

@@ -3,7 +3,7 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_logging::passthrough_stream_logging::types::EndpointType;
-use betterlite_logging::worker::{Admission, Callback};
+use betterlite_logging::worker::{Admission, Callback as _};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -93,12 +93,7 @@ async fn deferred_billing_and_teardown(
 ) {
     let harness = Harness::new(None);
     let calls = Arc::new(Mutex::new(Vec::new()));
-    harness
-        .slots
-        .fields
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .deferred_callback = Some(deferred_callback(&calls));
+    harness.arm_deferred(Some(deferred_callback(&calls)), None);
     let logged = harness
         .stream
         .handle_streaming_logging(vec![b"a".to_vec()], teardown)
@@ -107,20 +102,25 @@ async fn deferred_billing_and_teardown(
     harness.worker.flush().await;
     assert_eq!(harness.ran(), ran);
     assert_eq!(harness.worker.stats().accepted, ran);
-    let fields = harness
-        .slots
-        .fields
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    assert_eq!(fields.deferred_args.is_some(), parked);
-    assert!(fields.deferred_callback.is_some());
+    let (args_parked, callback_present) = {
+        let fields = harness
+            .slots
+            .fields
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        (
+            fields.deferred_args.is_some(),
+            fields.deferred_callback.is_some(),
+        )
+    };
+    assert_eq!(args_parked, parked);
+    assert!(callback_present);
     assert!(
         calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .is_empty()
     );
-    drop(fields);
     // The parked future is the routed logging itself, so dispatching it runs that future
     assert_eq!(
         harness.stream.dispatch_pending_logging(),
@@ -135,36 +135,25 @@ async fn deferred_billing_and_teardown(
 }
 
 #[rstest]
-#[case::callback_and_args(true, Some(1), Some(Admission::Accepted), vec![1], false, false)]
-#[case::empty_args(true, Some(0), Some(Admission::Accepted), vec![0], false, false)]
-#[case::missing_callback(false, Some(1), None, vec![], false, true)]
-#[case::missing_args(true, None, None, vec![], true, false)]
+#[case::callback_and_args(true, Some(1), Some(Admission::Accepted), vec![1])]
+#[case::empty_args(true, Some(0), Some(Admission::Accepted), vec![0])]
+#[case::missing_callback(false, Some(1), None, vec![])]
+#[case::missing_args(true, None, None, vec![])]
 #[tokio::test]
 async fn deferred_dispatch_clears_both_fields(
     #[case] armed: bool,
     #[case] args: Option<usize>,
     #[case] dispatched: Option<Admission>,
     #[case] expected_calls: Vec<usize>,
-    #[case] callback_left: bool,
-    #[case] args_left: bool,
 ) {
     let harness = Harness::new(None);
     let calls = Arc::new(Mutex::new(Vec::new()));
-    {
-        let mut fields = harness
-            .slots
-            .fields
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if armed {
-            fields.deferred_callback = Some(deferred_callback(&calls));
-        }
-        fields.deferred_args = args.map(|count| {
-            (0..count)
-                .map(|_| -> LoggingFuture { Box::pin(async { Ok(()) }) })
-                .collect()
-        });
-    }
+    let parked: Option<Vec<LoggingFuture>> = args.map(|count| {
+        std::iter::repeat_with(|| -> LoggingFuture { Box::pin(async { Ok(()) }) })
+            .take(count)
+            .collect()
+    });
+    harness.arm_deferred(armed.then_some(deferred_callback(&calls)), parked);
     assert_eq!(harness.stream.dispatch_pending_logging(), dispatched);
     assert_eq!(harness.stream.dispatch_pending_logging(), None);
     harness.worker.flush().await;
@@ -176,13 +165,19 @@ async fn deferred_dispatch_clears_both_fields(
         harness.worker.stats().completed,
         usize::from(dispatched.is_some())
     );
-    let fields = harness
-        .slots
-        .fields
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    assert_eq!(fields.deferred_callback.is_some(), callback_left);
-    assert_eq!(fields.deferred_args.is_some(), args_left);
+    let (callback_left, args_left) = {
+        let fields = harness
+            .slots
+            .fields
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        (
+            fields.deferred_callback.is_some(),
+            fields.deferred_args.is_some(),
+        )
+    };
+    assert_eq!(callback_left, armed && args.is_none());
+    assert_eq!(args_left, !armed && args.is_some());
 }
 
 #[rstest]
@@ -190,8 +185,8 @@ async fn deferred_dispatch_clears_both_fields(
 #[case::ping(r#"{"type": "ping"}"#, "event: ping\ndata: {\"type\": \"ping\"}\n\n")]
 #[case::null_type(r#"{"type": null}"#, "event: None\ndata: {\"type\": null}\n\n")]
 #[case::ascii_escapes(
-    r#"{"type": "é", "n": [1, 2]}"#,
-    "event: é\ndata: {\"type\": \"\\u00e9\", \"n\": [1, 2]}\n\n"
+    r#"{"type": "\u00e9", "n": [1, 2]}"#,
+    "event: \u{e9}\ndata: {\"type\": \"\\u00e9\", \"n\": [1, 2]}\n\n"
 )]
 fn native_chunk_format(#[case] chunk: &str, #[case] frame: &str) {
     let sse = convert_chunk_to_sse_format(SseChunk::Mapping(mapping(chunk)));

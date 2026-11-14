@@ -28,7 +28,7 @@ pub struct LoggingJob {
 impl Callback for LoggingJob {
     type Error = ReportedFailure;
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "messages_stream_logging"
     }
 
