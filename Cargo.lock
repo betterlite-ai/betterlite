@@ -1488,6 +1488,7 @@ dependencies = [
 name = "betterlite-context"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-config",
  "betterlite-models",
  "betterlite-redact",
@@ -1502,6 +1503,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "thiserror",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "uuid",
