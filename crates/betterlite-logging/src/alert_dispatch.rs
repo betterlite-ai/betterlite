@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::slice;
-use std::sync::Arc;
-use std::sync::PoisonError;
+use std::sync::{Arc, PoisonError};
 
 use betterlite_config::sections::alert_settings::types::AlertType;
 use betterlite_config::sections::alert_settings::webhooks::WebhookUrl;
