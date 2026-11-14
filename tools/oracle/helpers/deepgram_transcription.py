@@ -53,11 +53,13 @@ class Config(Protocol):
 
     def validate_environment(
         self,
-        headers: dict[str, JsonValue],
-        model: str,
-        messages: list[JsonValue],
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
+        _headers: dict[str, JsonValue],
+        _model: str,
+        _messages: list[JsonValue],
+        _optional_params: dict[str, JsonValue],
+        _litellm_params: dict[str, JsonValue],
+        /,
+        *,
         api_key: str | None = None,
     ) -> dict[str, JsonValue]: ...
 
@@ -194,12 +196,7 @@ def outcome(step: Step) -> JsonValue:
             )
         case "auth":
             headers = CONFIG.validate_environment(
-                headers={},
-                model="",
-                messages=[],
-                optional_params={},
-                litellm_params={},
-                api_key=step["api_key"],
+                {}, "", [], {}, {}, api_key=step["api_key"]
             )
             return JSON.validate_python(headers)
         case "reply":
