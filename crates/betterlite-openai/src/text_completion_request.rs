@@ -55,11 +55,20 @@ pub enum CompletionPrompt {
     Texts(Vec<String>),
     Tokens(Vec<i64>),
     TokenLists(Vec<Vec<i64>>),
-    // a shape the declared prompt union reaches but main.py's dispatch refuses
+    // a shape main.py's dispatch or its file-id pass refuses before any provider call
     Unmapped(Value),
+    // a token-branch content that is not token ids, which the provider transform cannot read
+    Unreadable(Value),
 }
 
-// main.py 7623-7692 checks the first element only, so an empty or mixed list is the Unmapped shape
+// How LiteLLM fails a prompt it cannot send: the APIConnectionError shape or the InternalServerError shape
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptRefusal {
+    Unmapped,
+    Unreadable,
+}
+
+// main.py 7623-7692 dispatches on the first element only, so a later element it cannot convert decides the failure shape
 fn classify(items: Vec<Value>) -> CompletionPrompt {
     let Some(first) = items.first() else {
         return CompletionPrompt::Unmapped(Value::Array(items));
@@ -74,13 +83,14 @@ fn classify(items: Vec<Value>) -> CompletionPrompt {
                 CompletionPrompt::Texts,
             );
     }
-    if first.is_number() {
+    // Python's int test accepts no bool or float, so only a JSON integer starts the token branch
+    if matches!(first, Value::Number(number) if number.is_i64() || number.is_u64()) {
         return items
             .iter()
             .map(Value::as_i64)
             .collect::<Option<Vec<i64>>>()
             .map_or_else(
-                || CompletionPrompt::Unmapped(Value::Array(items)),
+                || CompletionPrompt::Unreadable(Value::Array(items)),
                 CompletionPrompt::Tokens,
             );
     }
@@ -93,7 +103,7 @@ fn classify(items: Vec<Value>) -> CompletionPrompt {
             })
             .collect::<Option<Vec<Vec<i64>>>>()
             .map_or_else(
-                || CompletionPrompt::Unmapped(Value::Array(items)),
+                || CompletionPrompt::Unreadable(Value::Array(items)),
                 CompletionPrompt::TokenLists,
             );
     }
@@ -112,7 +122,17 @@ impl CompletionPrompt {
                     .collect()
             });
         }
-        (!matches!(self, Self::Unmapped(_))).then(|| vec![user_message(Value::from(self.clone()))])
+        (!matches!(self, Self::Unmapped(_) | Self::Unreadable(_)))
+            .then(|| vec![user_message(Value::from(self.clone()))])
+    }
+
+    #[must_use]
+    pub const fn refusal(&self) -> Option<PromptRefusal> {
+        match self {
+            Self::Unmapped(_) => Some(PromptRefusal::Unmapped),
+            Self::Unreadable(_) => Some(PromptRefusal::Unreadable),
+            Self::Text(_) | Self::Texts(_) | Self::Tokens(_) | Self::TokenLists(_) => None,
+        }
     }
 }
 
@@ -133,7 +153,7 @@ impl From<CompletionPrompt> for Value {
             CompletionPrompt::Texts(texts) => Self::from(texts),
             CompletionPrompt::Tokens(tokens) => Self::from(tokens),
             CompletionPrompt::TokenLists(lists) => Self::from(lists),
-            CompletionPrompt::Unmapped(value) => value,
+            CompletionPrompt::Unmapped(value) | CompletionPrompt::Unreadable(value) => value,
         }
     }
 }

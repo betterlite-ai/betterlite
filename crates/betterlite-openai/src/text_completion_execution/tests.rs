@@ -89,6 +89,7 @@ enum Scenario {
     EmptyListRejected,
     MixedPromptRejected,
     ChatCatalogSelection,
+    BundledCatalog,
     ProviderErrorFacts,
     ConfiguredDestination,
     UnsupportedProvider,
@@ -103,6 +104,7 @@ enum Scenario {
 #[case::empty_list_rejected(Scenario::EmptyListRejected)]
 #[case::mixed_prompt_rejected(Scenario::MixedPromptRejected)]
 #[case::chat_catalog_selection(Scenario::ChatCatalogSelection)]
+#[case::bundled_catalog(Scenario::BundledCatalog)]
 #[case::provider_error_facts(Scenario::ProviderErrorFacts)]
 #[case::configured_destination(Scenario::ConfiguredDestination)]
 #[case::unsupported_provider(Scenario::UnsupportedProvider)]
@@ -119,12 +121,12 @@ fn text_completions_text_completion_tests_behavior(#[case] scenario: Scenario) {
             assert_eq!(messages.len(), 2);
         }
         Scenario::TokensPrompt => {
-            let request = completion(r#"[1,2]"#);
+            let request = completion("[1,2]");
             let messages = request.prompt.messages().expect("messages");
             assert_eq!(messages.len(), 1);
         }
         Scenario::TokenListsPrompt => {
-            let request = completion(r#"[[1,2],[3]]"#);
+            let request = completion("[[1,2],[3]]");
             let messages = request.prompt.messages().expect("messages");
             assert_eq!(messages.len(), 1);
         }
@@ -166,15 +168,22 @@ fn text_completions_text_completion_tests_behavior(#[case] scenario: Scenario) {
                 }
             );
         }
+        Scenario::BundledCatalog => {
+            let bundled = CompletionCatalog::bundled();
+            assert!(bundled.chat_models.contains("gpt-4o"));
+            assert!(bundled.text_models.contains("gpt-3.5-turbo-instruct"));
+            assert!(!bundled.text_models.contains("gpt-4o"));
+        }
         Scenario::ProviderErrorFacts => {
             let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor");
             let failure = wrapped_failure(&provider_error(429), &redactor);
             assert_eq!(failure.status, 429);
-            assert_eq!(failure.error_type, "rate_limit_error");
+            assert_eq!(failure.error_type.as_deref(), Some("throttling_error"));
             assert_eq!(failure.param, None);
             assert!(!failure.message.is_empty());
             let refused = wrapped_failure(&provider_error(400), &redactor);
-            assert_eq!(refused.error_type, "invalid_request_error");
+            assert_eq!(refused.status, 400);
+            assert_eq!(refused.error_type, None);
         }
         Scenario::ConfiguredDestination => {
             let request = completion(r#""hi""#);
@@ -198,9 +207,21 @@ fn text_completions_text_completion_tests_behavior(#[case] scenario: Scenario) {
 fn an_unmapped_prompt_fails_before_any_provider_call() {
     let request = completion("[]");
     let failure = transport_request(&deployment("openai/gpt-3.5-turbo-instruct"), &request, "m")
-        .expect_err("unmapped prompt");
+        .err()
+        .expect("unmapped prompt");
     assert_eq!(failure.status, 500);
-    assert_eq!(failure.error_type, "internal_server_error");
+    assert_eq!(failure.error_type, None);
+
+    let unreadable = completion(r#"[["a"]]"#);
+    let failure = transport_request(
+        &deployment("openai/gpt-3.5-turbo-instruct"),
+        &unreadable,
+        "m",
+    )
+    .err()
+    .expect("unreadable prompt");
+    assert_eq!(failure.status, 500);
+    assert_eq!(failure.error_type.as_deref(), Some("internal_server_error"));
 }
 
 #[test]

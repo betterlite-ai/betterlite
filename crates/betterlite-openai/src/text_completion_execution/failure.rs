@@ -1,8 +1,8 @@
-use betterlite_http::proxy::UpstreamResponse;
+use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
+use betterlite_error::envelope::WireField;
 use betterlite_redact::secret::Redactor;
 use http::{HeaderMap, HeaderName, HeaderValue};
 
-use crate::chat::provider_error::{ErrorBodyKind, provider_failure};
 use crate::text_completion_request::CompletionRequestError;
 use crate::text_completion_transport::error::{
     ErrorStatus, TextCompletionError, TextCompletionFailure,
@@ -11,11 +11,11 @@ use crate::text_completion_transport::logging::SecretHeaders;
 
 use super::catalog::CompletionRoute;
 
-// The status, type, param and message the route answers with; the message is betterlite's own
+// The status, type, param and message the route answers with; a null type is how LiteLLM serializes it
 #[derive(Debug)]
 pub struct CompletionFailure {
     pub status: u16,
-    pub error_type: String,
+    pub error_type: Option<String>,
     pub param: Option<String>,
     pub message: String,
     pub upstream_headers: HeaderMap,
@@ -25,7 +25,18 @@ impl CompletionFailure {
     pub(super) fn internal(message: String) -> Self {
         Self {
             status: 500,
-            error_type: String::from("internal_server_error"),
+            error_type: Some(String::from("internal_server_error")),
+            param: None,
+            message,
+            upstream_headers: HeaderMap::new(),
+        }
+    }
+
+    // main.py's own "Unmapped prompt format" Exception reaches the client as an APIConnectionError, whose type is null
+    pub(super) fn unmapped(message: String) -> Self {
+        Self {
+            status: 500,
+            error_type: None,
             param: None,
             message,
             upstream_headers: HeaderMap::new(),
@@ -39,14 +50,14 @@ impl CompletionFailure {
             )),
             CompletionRoute::Chat { .. } => Self {
                 status: 500,
-                error_type: String::from("internal_server_error"),
+                error_type: Some(String::from("internal_server_error")),
                 param: None,
                 message: String::from("betterlite does not serve chat-model text completions yet"),
                 upstream_headers: HeaderMap::new(),
             },
             CompletionRoute::Unsupported { provider } => Self {
                 status: 501,
-                error_type: String::from("internal_server_error"),
+                error_type: Some(String::from("internal_server_error")),
                 param: None,
                 message: format!("betterlite does not serve text completions for {provider}"),
                 upstream_headers: HeaderMap::new(),
@@ -58,14 +69,14 @@ impl CompletionFailure {
 pub(super) fn request_failure(error: CompletionRequestError) -> CompletionFailure {
     CompletionFailure {
         status: 400,
-        error_type: String::from("invalid_request_error"),
+        error_type: Some(String::from("invalid_request_error")),
         param: None,
         message: error.to_string(),
         upstream_headers: HeaderMap::new(),
     }
 }
 
-// LiteLLM's OpenAIError carries only the status and headers, so the proxy's type and param follow the status
+// The unwrapped SDK exception fails the way the route's own except does, with no type of its own
 pub(super) fn transport_failure(
     failure: TextCompletionFailure,
     redactor: &Redactor,
@@ -74,7 +85,7 @@ pub(super) fn transport_failure(
         TextCompletionFailure::Wrapped(error) => wrapped_failure(&error, redactor),
         TextCompletionFailure::Raw(error) => CompletionFailure {
             status: 500,
-            error_type: String::from("internal_server_error"),
+            error_type: None,
             param: None,
             message: error.to_string(),
             upstream_headers: HeaderMap::new(),
@@ -96,29 +107,46 @@ fn response_headers(headers: &SecretHeaders) -> HeaderMap {
     map
 }
 
-fn wrapped_failure(error: &TextCompletionError, redactor: &Redactor) -> CompletionFailure {
-    let status = match error.status {
-        ErrorStatus::Missing | ErrorStatus::Null => 500,
-        ErrorStatus::Code(code) => code,
-    };
+// getattr(e, "type", "None") in proxy_server.py's completion except: a null field stays null, a missing one is the literal "None"
+fn exception_text(field: WireField) -> Option<String> {
+    match field {
+        WireField::Text(text) => Some(text),
+        WireField::Null => None,
+        WireField::Missing(_) => Some(String::from("None")),
+    }
+}
+
+// The route reads type and param off the litellm exception itself, so the class metadata decides both
+pub(super) fn wrapped_failure(
+    error: &TextCompletionError,
+    redactor: &Redactor,
+) -> CompletionFailure {
+    let class = dispatch(
+        &DispatchInput::Raw(Box::new(RawException {
+            model: String::new(),
+            custom_llm_provider: String::from("openai"),
+            error_str: error.message.clone(),
+            status_code: match error.status {
+                ErrorStatus::Missing | ErrorStatus::Null => None,
+                ErrorStatus::Code(code) => Some(code),
+            },
+            status_code_is_synthesized: false,
+            message: None,
+            body: None,
+            exception_type: String::new(),
+        })),
+        redactor,
+    );
+    let metadata = class.metadata();
     let upstream_headers = error
         .headers
         .as_ref()
         .map(response_headers)
         .unwrap_or_default();
-    let failure = provider_failure(
-        &UpstreamResponse {
-            status,
-            headers: upstream_headers.clone(),
-            body: Vec::new(),
-        },
-        redactor,
-        ErrorBodyKind::MessageOnly,
-    );
     CompletionFailure {
-        status: failure.status,
-        error_type: failure.error_type,
-        param: failure.param,
+        status: metadata.status_code,
+        error_type: exception_text(metadata.error_type),
+        param: exception_text(metadata.param),
         message: error.message.clone(),
         upstream_headers,
     }

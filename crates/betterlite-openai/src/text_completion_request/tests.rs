@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use rstest::rstest;
 use serde_json::Value;
 
-use super::{CompletionPrompt, CompletionRequest, CompletionRequestError};
+use super::{CompletionPrompt, CompletionRequest, CompletionRequestError, PromptRefusal};
 
 fn parsed(body: &str) -> CompletionRequest {
     CompletionRequest::parse(body.as_bytes()).expect("completion request")
@@ -18,8 +18,8 @@ fn parsed(body: &str) -> CompletionRequest {
     r#"["a","b"]"#,
     r#"[{"role":"user","content":"a"},{"role":"user","content":"b"}]"#
 )]
-#[case::tokens(r#"[1,2]"#, r#"[{"role":"user","content":[1,2]}]"#)]
-#[case::token_lists(r#"[[1,2],[3]]"#, r#"[{"role":"user","content":[[1,2],[3]]}]"#)]
+#[case::tokens("[1,2]", r#"[{"role":"user","content":[1,2]}]"#)]
+#[case::token_lists("[[1,2],[3]]", r#"[{"role":"user","content":[[1,2],[3]]}]"#)]
 #[case::empty_string(r#""""#, r#"[{"role":"user","content":""}]"#)]
 fn prompt_shapes_become_messages(#[case] prompt: &str, #[case] expected: &str) {
     let body = format!(r#"{{"model":"m","prompt":{prompt}}}"#);
@@ -31,15 +31,28 @@ fn prompt_shapes_become_messages(#[case] prompt: &str, #[case] expected: &str) {
 
 #[rstest]
 #[case::empty_list("[]")]
-#[case::mixed_string_and_number(r#"["a",1]"#)]
-#[case::nested_non_tokens(r#"[["a"]]"#)]
-#[case::number(r#"5"#)]
+#[case::number("5")]
+#[case::float(r#"[1.5]"#)]
 #[case::null("null")]
 #[case::object(r#"{"a":1}"#)]
+#[case::mixed_string_and_number(r#"["a",1]"#)]
 fn unmapped_prompts_keep_their_shape_and_build_no_messages(#[case] prompt: &str) {
     let body = format!(r#"{{"model":"m","prompt":{prompt}}}"#);
     let request = parsed(&body);
     assert!(matches!(&request.prompt, CompletionPrompt::Unmapped(_)));
+    assert_eq!(request.prompt.refusal(), Some(PromptRefusal::Unmapped));
+    assert!(request.prompt.messages().is_none());
+}
+
+#[rstest]
+#[case::nested_non_tokens(r#"[["a"]]"#)]
+#[case::tokens_then_string(r#"[1,"a"]"#)]
+#[case::tokens_then_float("[1,2.5]")]
+fn prompts_with_unreadable_content_build_no_messages(#[case] prompt: &str) {
+    let body = format!(r#"{{"model":"m","prompt":{prompt}}}"#);
+    let request = parsed(&body);
+    assert!(matches!(&request.prompt, CompletionPrompt::Unreadable(_)));
+    assert_eq!(request.prompt.refusal(), Some(PromptRefusal::Unreadable));
     assert!(request.prompt.messages().is_none());
 }
 

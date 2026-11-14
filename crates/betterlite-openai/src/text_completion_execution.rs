@@ -1,26 +1,26 @@
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use ::http::HeaderMap;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_redact::secret::Redactor;
 use betterlite_streaming::stream_chunk_shaping::creation::system_instant;
-use http::HeaderMap;
 use uuid::Uuid;
 
 use crate::chat::deployment::ChatDeployment;
-use crate::text_completion_policy::{TextCompletionConfigs, transform_completion_request};
-use crate::text_completion_request::CompletionRequest;
+use crate::text_completion_policy::transform_completion_request;
+use crate::text_completion_request::{CompletionRequest, PromptRefusal};
 use crate::text_completion_response::CompletionResponse;
-use crate::text_completion_transport::TextCompletionTransport;
 use crate::text_completion_transport::call::{
     TextCompletionOutcome, TextCompletionRequest as TransportRequest,
 };
 use crate::text_completion_transport::logging::CompletionLogger;
+use crate::text_completion_transport::{TextCompletionConfigs, TextCompletionTransport};
 
 use self::catalog::{CompletionCatalog, CompletionRoute, route_for};
 use self::failure::{CompletionFailure, request_failure, transport_failure};
-use self::http::{HttpCompletionConstructor, UpstreamFacts};
+use self::http::HttpCompletionConstructor;
 
 pub mod catalog;
 pub mod failure;
@@ -49,7 +49,7 @@ impl CompletionExecutor {
         deployment: &ChatDeployment,
         request: &CompletionRequest,
         redactor: &Redactor,
-        logger: &mut dyn CompletionLogger,
+        logger: &mut (dyn CompletionLogger + Send),
     ) -> Result<CompletionAnswer, CompletionFailure> {
         let route = route_for(deployment, &self.catalog);
         let CompletionRoute::Text { model } = &route else {
@@ -99,7 +99,11 @@ fn transport_request(
     model: &str,
 ) -> Result<TransportRequest, CompletionFailure> {
     let Some(messages) = request.prompt.messages() else {
-        return Err(CompletionFailure::internal(String::from(MISSING_PROMPT)));
+        let message = String::from(MISSING_PROMPT);
+        return Err(match request.prompt.refusal() {
+            Some(PromptRefusal::Unreadable) => CompletionFailure::internal(message),
+            Some(PromptRefusal::Unmapped) | None => CompletionFailure::unmapped(message),
+        });
     };
     Ok(TransportRequest {
         model: Some(model.to_owned()),
@@ -118,22 +122,22 @@ async fn drive(
     transport: &TextCompletionTransport<HttpCompletionConstructor>,
     request: TransportRequest,
     redactor: &Redactor,
-    logger: &mut dyn CompletionLogger,
+    logger: &mut (dyn CompletionLogger + Send),
 ) -> Result<TextCompletionOutcome, CompletionFailure> {
     let begun = transport
-        .begin(request, ProviderId::TextCompletionOpenai, logger)
+        .begin(request, ProviderId::TextCompletionOpenai, &mut *logger)
         .map_err(|failure| transport_failure(failure, redactor))?;
     let sent = transport
         .send(&begun, None)
         .await
         .map_err(|failure| transport_failure(failure, redactor))?;
     transport
-        .finish(&begun, sent, logger)
+        .finish(&begun, sent, &mut *logger)
         .map_err(|failure| transport_failure(failure, redactor))
 }
 
 #[must_use]
-pub fn completion_configs() -> TextCompletionConfigs {
+pub const fn completion_configs() -> TextCompletionConfigs {
     TextCompletionConfigs {
         open_ai: transform_completion_request,
         fireworks_ai: transform_completion_request,

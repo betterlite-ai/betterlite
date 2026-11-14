@@ -119,19 +119,18 @@ impl HttpCompletionSdk {
                 header_value("openai-organization", organization)?,
             );
         }
-        if let Some(Value::Object(fields)) = extra {
-            for (name, value) in fields {
-                let Some(text) = value.as_str() else {
-                    return Err(SdkError::Other {
-                        message: format!("the extra header {name} is not a string"),
-                    });
-                };
-                let header_name =
-                    HeaderName::try_from(name.as_str()).map_err(|source| SdkError::Other {
-                        message: format!("the extra header name {name} is not valid: {source}"),
-                    })?;
-                headers.insert(header_name, header_value(&name, text)?);
-            }
+        let Some(Value::Object(fields)) = extra else {
+            return Ok(headers);
+        };
+        for (name, value) in fields {
+            let text = value.as_str().ok_or_else(|| SdkError::Other {
+                message: format!("the extra header {name} is not a string"),
+            })?;
+            let header_name =
+                HeaderName::try_from(name.as_str()).map_err(|source| SdkError::Other {
+                    message: format!("the extra header name {name} is not valid: {source}"),
+                })?;
+            headers.insert(header_name, header_value(&name, text)?);
         }
         Ok(headers)
     }
