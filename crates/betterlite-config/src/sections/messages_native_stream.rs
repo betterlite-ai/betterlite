@@ -8,7 +8,7 @@ mod tests;
 pub const QUEUE_MAXSIZE_ENV: &str = "ANTHROPIC_MESSAGES_STREAM_RELAY_QUEUE_MAXSIZE";
 pub const MAX_DETACHED_STREAM_DRAINS_ENV: &str = "ANTHROPIC_MESSAGES_MAX_DETACHED_STREAM_DRAINS";
 pub const DEFAULT_QUEUE_MAXSIZE: i64 = 1024;
-pub const DEFAULT_MAX_DETACHED_STREAM_DRAINS: i64 = 100;
+pub const DEFAULT_MAX_DRAINS: i64 = 100;
 
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Raw {
@@ -17,8 +17,7 @@ pub struct Raw {
     _environment: (),
 }
 
-// Both values keep LiteLLM's any-integer range; the relay rejects a non-positive queue and reads
-// zero or negative detached-drain caps as "no draining".
+// Both values keep LiteLLM's integer range; a non-positive queue stops startup, a non-positive drain cap disables draining
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Settings {
     pub queue_maxsize: i64,
@@ -29,7 +28,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             queue_maxsize: DEFAULT_QUEUE_MAXSIZE,
-            max_detached_stream_drains: DEFAULT_MAX_DETACHED_STREAM_DRAINS,
+            max_detached_stream_drains: DEFAULT_MAX_DRAINS,
         }
     }
 }
@@ -48,7 +47,7 @@ impl Section for Raw {
                 lookup,
                 MAX_DETACHED_STREAM_DRAINS_ENV,
             )?
-            .unwrap_or(DEFAULT_MAX_DETACHED_STREAM_DRAINS),
+            .unwrap_or(DEFAULT_MAX_DRAINS),
         })
     }
 }
@@ -60,7 +59,7 @@ where
     let Some(text) = lookup.lookup(name).filter(|value| !value.trim().is_empty()) else {
         return Ok(None);
     };
-    match python_integer(&text) {
+    match parsed_integer(&text) {
         Some(value) => Ok(Some(value)),
         None => Err(ConfigError::Environment {
             source: betterlite_env::EnvError::Number {
@@ -71,7 +70,7 @@ where
 }
 
 // Python's int() takes surrounding whitespace, one sign and single underscores between digits
-fn python_integer(text: &str) -> Option<i64> {
+fn parsed_integer(text: &str) -> Option<i64> {
     let trimmed = text.trim();
     let digits = trimmed.strip_prefix(['+', '-']).unwrap_or(trimmed);
     if digits.is_empty()

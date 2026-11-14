@@ -3,8 +3,8 @@
 use std::collections::BTreeMap;
 
 use super::{
-    DEFAULT_MAX_DETACHED_STREAM_DRAINS, DEFAULT_QUEUE_MAXSIZE, MAX_DETACHED_STREAM_DRAINS_ENV,
-    QUEUE_MAXSIZE_ENV, Raw, Settings,
+    DEFAULT_MAX_DRAINS, DEFAULT_QUEUE_MAXSIZE, MAX_DETACHED_STREAM_DRAINS_ENV, QUEUE_MAXSIZE_ENV,
+    Raw, Settings,
 };
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::Section as _;
@@ -39,7 +39,7 @@ fn assert_defaults_and_parsing() {
     let unset = settings(&[]);
     assert_eq!(
         (unset.queue_maxsize, unset.max_detached_stream_drains),
-        (DEFAULT_QUEUE_MAXSIZE, DEFAULT_MAX_DETACHED_STREAM_DRAINS)
+        (DEFAULT_QUEUE_MAXSIZE, DEFAULT_MAX_DRAINS)
     );
     assert_eq!(
         (unset.queue_maxsize, unset.max_detached_stream_drains),
