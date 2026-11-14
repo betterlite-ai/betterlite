@@ -88,7 +88,8 @@ fn remote_media_is_rejected_with_the_studio_envelope_before_any_fetch(
 #[rstest]
 #[case(r#"[{"role": "user", "content": [{"type": "file"}]}]"#)]
 #[case(r#"[{"role": "user", "content": [{"type": "file", "file": null}]}]"#)]
-fn a_file_block_without_the_file_field_is_a_bodyless_bad_request(#[case] source: &str) {
+#[case(r#"[{"role": "user", "content": [{"type": "file", "file": "not-an-object"}]}]"#)]
+fn a_file_block_without_an_object_file_field_is_a_bodyless_bad_request(#[case] source: &str) {
     let fetcher = CountingFetch::default();
 
     let error = convert(&fetcher, source, "gemini-2.5-flash").unwrap_err();

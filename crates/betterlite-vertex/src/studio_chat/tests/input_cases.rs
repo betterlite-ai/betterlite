@@ -160,6 +160,10 @@ fn the_tts_check_is_case_sensitive_and_a_substring() {
     r#"{"type": "image_url", "image_url": null}"#,
     ImageUrlFields::default()
 )]
+#[case(
+    r#"{"type": "image_url", "image_url": ["https://example.com/cat.png"]}"#,
+    ImageUrlFields::default()
+)]
 fn image_url_fields_reads_the_part_the_way_the_studio_prepass_does(
     #[case] source: &str,
     #[case] expected: ImageUrlFields,
