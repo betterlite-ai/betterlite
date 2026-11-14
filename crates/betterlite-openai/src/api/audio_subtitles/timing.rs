@@ -1,5 +1,6 @@
 use num_traits::ToPrimitive as _;
-use serde::Deserialize;
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use thiserror::Error;
 
@@ -15,55 +16,36 @@ pub enum SubtitleTimingError {
     OutOfRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct TranscriptionWordTiming {
+    #[serde(default)]
     pub word: String,
+    #[serde(default, deserialize_with = "lax_seconds")]
     pub start: Option<f64>,
+    #[serde(default, deserialize_with = "lax_seconds")]
     pub end: Option<f64>,
+    #[serde(default)]
     pub speaker: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum Seconds {
-    Number(f64),
-    Flag(bool),
-    Text(String),
-}
-
-impl Seconds {
-    fn value(&self) -> Result<f64, SubtitleTimingError> {
-        match self {
-            Self::Number(number) => Ok(*number),
-            Self::Flag(flag) => Ok(if *flag { 1.0 } else { 0.0 }),
-            Self::Text(text) => text
-                .trim()
-                .parse::<f64>()
-                .map_err(|_| SubtitleTimingError::NotANumber),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct WordTimingRecord {
-    #[serde(default)]
-    word: String,
-    #[serde(default)]
-    start: Option<Seconds>,
-    #[serde(default)]
-    end: Option<Seconds>,
-    #[serde(default)]
-    speaker: Option<String>,
-}
-
-impl WordTimingRecord {
-    fn timing(&self) -> Result<TranscriptionWordTiming, SubtitleTimingError> {
-        Ok(TranscriptionWordTiming {
-            word: self.word.clone(),
-            start: self.start.as_ref().map(Seconds::value).transpose()?,
-            end: self.end.as_ref().map(Seconds::value).transpose()?,
-            speaker: self.speaker.clone(),
-        })
+fn lax_seconds<'de, Source: Deserializer<'de>>(
+    deserializer: Source,
+) -> Result<Option<f64>, Source::Error> {
+    match Option::<Value>::deserialize(deserializer)? {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Number(number)) => number
+            .as_f64()
+            .map(Some)
+            .ok_or_else(|| Source::Error::custom("a timing is outside the float range")),
+        Some(Value::Bool(flag)) => Ok(Some(if flag { 1.0 } else { 0.0 })),
+        Some(Value::String(text)) => text
+            .trim()
+            .parse::<f64>()
+            .map(Some)
+            .map_err(Source::Error::custom),
+        Some(Value::Array(_) | Value::Object(_)) => Err(Source::Error::custom(
+            "a timing is a number, a bool or a string",
+        )),
     }
 }
 
@@ -99,14 +81,7 @@ pub fn word_to_subtitle_token(
 
 #[must_use]
 pub fn parse_word_timings(words: &Value) -> Vec<TranscriptionWordTiming> {
-    let Ok(records) = serde_json::from_value::<Vec<WordTimingRecord>>(words.clone()) else {
-        return Vec::new();
-    };
-    records
-        .iter()
-        .map(WordTimingRecord::timing)
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap_or_default()
+    serde_json::from_value(words.clone()).unwrap_or_default()
 }
 
 pub fn synthesize_subtitle_document(

@@ -568,6 +568,16 @@ fn subtitle_word_timing_input_coerces_numeric_strings() {
     );
 }
 
+#[test]
+fn subtitle_word_timing_input_reads_numbers_written_with_extra_digits() {
+    let words =
+        serde_json::from_str(r#"[{"word": "Hi", "start": 1.50, "end": 2e0}]"#).expect("valid JSON");
+    assert_eq!(
+        synthesize_subtitle_document(&words, "srt").expect("a valid timing"),
+        Some("1\n00:00:01,500 --> 00:00:02,000\nHi\n".to_owned())
+    );
+}
+
 #[rstest]
 #[case::unparsable_start(json!([{"word": "Hi", "start": "bad", "end": 1}]))]
 #[case::numeric_speaker(json!([{"word": "Hi", "start": 0, "speaker": 7}]))]

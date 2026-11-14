@@ -1,6 +1,6 @@
 task: B1002
 deviations:
-  - what: A word timing whose milliseconds fall outside the signed 64-bit range fails with OverflowError, and an integer record above u64 discards the whole timing list, where LiteLLM's arbitrary-precision ints carry both into the rendered timestamps.
+  - what: A word timing whose milliseconds fall outside the signed 64-bit range fails with OverflowError, where LiteLLM's arbitrary-precision ints carry any hour count into the rendered timestamps.
     why: betterlite stores subsecond timings as f64 and millisecond timestamps as i64, so a value no subtitle can use is refused instead of rendered as an unbounded hour count.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/audio_utils/subtitle_utils.py#L245-L248
   - what: A numeric string is parsed with Rust's float grammar, so Python's digit separators such as "1_0" are rejected with the rest of the timing list.
