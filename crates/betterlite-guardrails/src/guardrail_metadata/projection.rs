@@ -32,7 +32,7 @@ pub(super) fn merged_metadata(request_data: &BTreeMap<String, GuardrailValue>) -
 }
 
 // LiteLLM's isinstance guard on the values a header can hold: a null is the field's default
-fn absent_or(
+const fn absent_or(
     value: &GuardrailValue,
     field: &'static str,
     expected: &'static str,
@@ -47,11 +47,11 @@ fn text_list(
     value: Option<&GuardrailValue>,
     field: &'static str,
 ) -> MetadataResult<Option<Vec<String>>> {
-    let Some(value) = value else {
+    let Some(found) = value else {
         return Ok(None);
     };
-    let GuardrailValue::Array(items) = value else {
-        absent_or(value, field, "a list of strings")?;
+    let GuardrailValue::Array(items) = found else {
+        absent_or(found, field, "a list of strings")?;
         return Ok(None);
     };
     let mut names = Vec::with_capacity(items.len());

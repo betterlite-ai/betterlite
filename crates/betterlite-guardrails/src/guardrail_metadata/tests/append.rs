@@ -20,6 +20,6 @@ fn guardrail_metadata_cases(#[case] start: Option<&str>, #[case] expected: Optio
     assert!(outcome.is_ok());
     match expected {
         None => assert!(details.is_none()),
-        Some(expected) => assert_json(&details.unwrap(), &expected),
+        Some(text) => assert_json(&details.unwrap(), &text),
     }
 }

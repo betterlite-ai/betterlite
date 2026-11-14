@@ -76,7 +76,7 @@ pub fn record_scan_id(
     provider: &str,
     stage: GuardrailEventHooks,
 ) {
-    let Some(scan_id) = scan_id.filter(|found| !found.is_empty()) else {
+    let Some(id) = scan_id.filter(|found| !found.is_empty()) else {
         return;
     };
     // LiteLLM's get_or_create_metadata_bucket: a bucket that is absent or not an object becomes one
@@ -101,12 +101,12 @@ pub fn record_scan_id(
     append_unique(
         &mut bucket,
         SCAN_IDS_KEY,
-        GuardrailValue::Text(scan_id.to_owned()),
+        GuardrailValue::Text(id.to_owned()),
     );
     append_unique(
         &mut bucket,
         SCAN_METADATA_KEY,
-        scan_entry_value(guardrail, provider, stage, scan_id),
+        scan_entry_value(guardrail, provider, stage, id),
     );
     request_data.insert(key.to_owned(), GuardrailValue::Object(bucket));
 }

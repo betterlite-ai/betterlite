@@ -17,14 +17,14 @@ fn guardrail_metadata_cases(#[case] id_length: usize, #[case] metadata_header: b
         "panw_prisma_airs",
         GuardrailEventHooks::PreCall,
     );
-    let headers = headers(&request_data);
+    let found = headers(&request_data);
     assert_eq!(
-        header(&headers, "x-litellm-guardrail-scan-id"),
+        header(&found, "x-litellm-guardrail-scan-id"),
         Some(long_id.as_str())
     );
     let expected = metadata_header.then(|| format!("[{}]", scan_entry_text(&long_id)));
     assert_eq!(
-        header(&headers, "x-litellm-guardrail-scan-metadata"),
+        header(&found, "x-litellm-guardrail-scan-metadata"),
         expected.as_deref()
     );
 }

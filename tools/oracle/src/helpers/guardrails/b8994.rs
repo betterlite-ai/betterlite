@@ -6,7 +6,7 @@ use betterlite_guardrails::guardrail_metadata::{
     append_guardrail_response, logging_caching_headers, record_scan_id,
 };
 use betterlite_guardrails::guardrail_records::record::{
-    GuardrailInvocationRecord, GuardrailStatus, GuardrailTracingDetail,
+    GuardrailInvocationRecord, GuardrailRecordMode, GuardrailStatus, GuardrailTracingDetail,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -33,6 +33,7 @@ struct HeadersArgs {
 struct RecordArgs {
     guardrail_name: Option<String>,
     guardrail_provider: Option<String>,
+    guardrail_mode: Option<GuardrailEventHooks>,
     guardrail_response: GuardrailValue,
     guardrail_status: GuardrailStatus,
     start_time: Option<f64>,
@@ -81,7 +82,7 @@ fn invocation_record(args: &RecordArgs) -> GuardrailInvocationRecord {
     GuardrailInvocationRecord {
         guardrail_name: args.guardrail_name.clone(),
         guardrail_provider: args.guardrail_provider.clone(),
-        guardrail_mode: None,
+        guardrail_mode: args.guardrail_mode.map(GuardrailRecordMode::Event),
         guardrail_response: args.guardrail_response.clone(),
         guardrail_status: args.guardrail_status,
         start_time: args.start_time,

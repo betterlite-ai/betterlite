@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
-use std::fmt::Debug;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
+use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::content_filter::risk_scoring::GuardrailStatus;
@@ -22,12 +22,15 @@ pub(super) fn value(source: &str) -> GuardrailValue {
     serde_json::from_str(source).unwrap()
 }
 
-pub(super) fn assert_json<T>(actual: &T, expected: &str)
+pub(super) fn assert_json<T>(actual: &T, expected_json: &str)
 where
-    T: DeserializeOwned + Debug + PartialEq,
+    T: DeserializeOwned + Serialize,
 {
-    let expected: T = serde_json::from_str(expected).unwrap();
-    assert_eq!(*actual, expected);
+    let expected: T = serde_json::from_str(expected_json).unwrap();
+    assert_eq!(
+        serde_json::to_value(actual).unwrap(),
+        serde_json::to_value(expected).unwrap()
+    );
 }
 
 pub(super) fn headers(request_data: &RequestData) -> Vec<(String, String)> {
@@ -106,10 +109,10 @@ pub(super) fn audit(script: &str) -> GuardrailAudit {
     let mut scan_metadata = Vec::new();
     for call in script.split(',').filter(|part| !part.is_empty()) {
         let mut parts = call.split('|');
-        let stage = parts.next().unwrap();
+        let stage_text = parts.next().unwrap();
         let scan_id = parts.next().unwrap();
         let guardrail = parts.next().unwrap();
-        let stage = match stage {
+        let stage = match stage_text {
             "pre" => Stage::PreCall,
             _ => Stage::PostCall,
         };
@@ -146,17 +149,17 @@ pub(super) fn moderation_records(script: &str) -> Vec<GuardrailLogRecord> {
 pub(super) fn apply_calls(request_data: &mut RequestData, script: &str) {
     for call in script.split(';') {
         let mut parts = call.split('|');
-        let stage = parts.next().unwrap();
+        let stage_text = parts.next().unwrap();
         let scan_id = parts.next().unwrap();
-        let guardrail = parts.next().unwrap();
-        let stage = match stage {
+        let guardrail_text = parts.next().unwrap();
+        let stage = match stage_text {
             "pre" => GuardrailEventHooks::PreCall,
             _ => GuardrailEventHooks::PostCall,
         };
-        let guardrail = if guardrail == "-" {
+        let guardrail = if guardrail_text == "-" {
             None
         } else {
-            Some(guardrail)
+            Some(guardrail_text)
         };
         record_scan_id(
             request_data,
