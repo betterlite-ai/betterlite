@@ -47,14 +47,16 @@ pub struct ArcRequest {
 }
 
 #[derive(Debug)]
-pub struct ArcResponse {
+pub struct MetadataResponse {
     pub status: u16,
     pub headers: Vec<(String, String)>,
     pub body: SecretString,
 }
 
+pub type ArcResponse = MetadataResponse;
+
 pub trait ArcTransport {
-    fn get(&self, request: &ArcRequest) -> io::Result<ArcResponse>;
+    fn get(&self, request: &ArcRequest) -> io::Result<MetadataResponse>;
 }
 
 #[derive(Debug)]

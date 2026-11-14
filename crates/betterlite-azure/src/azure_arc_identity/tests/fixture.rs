@@ -8,7 +8,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::azure_arc_identity::error::ArcIdentityError;
 use crate::azure_arc_identity::{
-    ArcAccessToken, ArcHost, ArcIdentity, ArcPlatform, ArcRequest, ArcResponse, ArcTransport,
+    ArcAccessToken, ArcHost, ArcIdentity, ArcPlatform, ArcRequest, ArcTransport, MetadataResponse,
     acquire_arc_token,
 };
 
@@ -114,12 +114,12 @@ impl Recorded {
 }
 
 pub(super) struct FixtureTransport {
-    replies: Mutex<VecDeque<ArcResponse>>,
+    replies: Mutex<VecDeque<MetadataResponse>>,
     requests: Mutex<Vec<Recorded>>,
 }
 
 impl FixtureTransport {
-    pub(super) fn new(replies: Vec<ArcResponse>) -> Self {
+    pub(super) fn new(replies: Vec<MetadataResponse>) -> Self {
         Self {
             replies: Mutex::new(VecDeque::from(replies)),
             requests: Mutex::new(Vec::new()),
@@ -139,7 +139,7 @@ impl FixtureTransport {
 }
 
 impl ArcTransport for FixtureTransport {
-    fn get(&self, request: &ArcRequest) -> io::Result<ArcResponse> {
+    fn get(&self, request: &ArcRequest) -> io::Result<MetadataResponse> {
         self.requests
             .lock()
             .map_err(|error| io::Error::other(error.to_string()))?
@@ -164,8 +164,8 @@ impl ArcTransport for FixtureTransport {
     }
 }
 
-pub(super) fn response(status: u16, headers: &[(&str, &str)], body: &str) -> ArcResponse {
-    ArcResponse {
+pub(super) fn response(status: u16, headers: &[(&str, &str)], body: &str) -> MetadataResponse {
+    MetadataResponse {
         status,
         headers: headers
             .iter()

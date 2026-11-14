@@ -1,14 +1,14 @@
 use std::io;
 use std::time::Duration;
 
-use betterlite_azure::azure_arc_identity::{ArcRequest, ArcResponse, ArcTransport};
+use betterlite_azure::azure_arc_identity::{ArcRequest, ArcTransport, MetadataResponse};
 use betterlite_azure::azure_client_secret::transport::{
     HttpMethod, HttpReply, HttpRequest, Transport as ClientSecretTransport,
 };
 use betterlite_azure::azure_hosted_identity::request::{
     HostedRequest, HostedResponse, HostedTransport,
 };
-use betterlite_azure::azure_managed_identity::imds::{ImdsRequest, ImdsResponse, ImdsTransport};
+use betterlite_azure::azure_managed_identity::imds::{ImdsRequest, ImdsTransport};
 use betterlite_azure::azure_username_password::transport::{
     HttpRequest as PasswordRequest, Transport as PasswordTransport,
 };
@@ -91,7 +91,7 @@ impl AzureHttp {
         query: Vec<(String, String)>,
         headers: HeaderMap,
         deadline: Duration,
-    ) -> io::Result<MetadataReply> {
+    ) -> io::Result<MetadataResponse> {
         let response = self.exchange(Exchange {
             method: Method::GET,
             url,
@@ -101,7 +101,7 @@ impl AzureHttp {
             deadline,
         })?;
         let (status, body) = text_reply(response.status, response.body)?;
-        Ok(MetadataReply {
+        Ok(MetadataResponse {
             status,
             headers: header_pairs(&response.headers),
             body,
@@ -113,12 +113,6 @@ impl AzureHttp {
         let (status, body) = text_reply(response.status, response.body)?;
         Ok(HttpReply { status, body })
     }
-}
-
-struct MetadataReply {
-    status: u16,
-    headers: Vec<(String, String)>,
-    body: SecretString,
 }
 
 fn header_map(headers: Vec<(String, String)>) -> io::Result<HeaderMap> {
@@ -234,28 +228,19 @@ impl OidcTransport for AzureHttp {
 }
 
 impl ImdsTransport for AzureHttp {
-    fn get(&self, request: &ImdsRequest) -> io::Result<ImdsResponse> {
-        let reply = self.metadata_get(
+    fn get(&self, request: &ImdsRequest) -> io::Result<MetadataResponse> {
+        self.metadata_get(
             &request.url,
             request.query.clone(),
             header_map(request.headers.clone())?,
             Duration::from_secs(request.timeout_seconds),
-        )?;
-        Ok(ImdsResponse {
-            status: reply.status,
-            headers: reply.headers,
-            body: reply.body,
-        })
+        )
     }
 }
 
 impl ArcTransport for AzureHttp {
-    fn get(&self, request: &ArcRequest) -> io::Result<ArcResponse> {
-        let MetadataReply {
-            status,
-            headers,
-            body,
-        } = self.metadata_get(
+    fn get(&self, request: &ArcRequest) -> io::Result<MetadataResponse> {
+        self.metadata_get(
             &request.url,
             request
                 .query
@@ -264,12 +249,7 @@ impl ArcTransport for AzureHttp {
                 .collect(),
             header_map(secret_headers(request.headers.clone()))?,
             METADATA_TIMEOUT,
-        )?;
-        Ok(ArcResponse {
-            status,
-            headers,
-            body,
-        })
+        )
     }
 }
 

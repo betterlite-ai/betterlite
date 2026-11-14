@@ -1,7 +1,8 @@
 use std::io;
 
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 
+use crate::azure_arc_identity::MetadataResponse;
 use crate::azure_client_secret::token::AccessToken;
 
 use super::decode::{ImdsReply, ImdsTokenError, decode_imds_token};
@@ -32,15 +33,10 @@ pub struct ImdsRequest {
     pub timeout_seconds: u64,
 }
 
-#[derive(Debug)]
-pub struct ImdsResponse {
-    pub status: u16,
-    pub headers: Vec<(String, String)>,
-    pub body: SecretString,
-}
+pub type ImdsResponse = MetadataResponse;
 
 pub trait ImdsTransport: Send + Sync {
-    fn get(&self, request: &ImdsRequest) -> io::Result<ImdsResponse>;
+    fn get(&self, request: &ImdsRequest) -> io::Result<MetadataResponse>;
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -107,7 +103,7 @@ fn request(
     }
 }
 
-fn content_type(response: &ImdsResponse) -> Option<&str> {
+fn content_type(response: &MetadataResponse) -> Option<&str> {
     response
         .headers
         .iter()
@@ -138,7 +134,7 @@ fn check_probe(
     Ok(())
 }
 
-fn reply_failure(response: &ImdsResponse, error: &ImdsTokenError) -> ManagedIdentityError {
+fn reply_failure(response: &MetadataResponse, error: &ImdsTokenError) -> ManagedIdentityError {
     let ImdsTokenError::Json(_) = error else {
         return ManagedIdentityError::ImdsUnavailable;
     };
@@ -160,7 +156,7 @@ fn reply_failure(response: &ImdsResponse, error: &ImdsTokenError) -> ManagedIden
 }
 
 fn reply(
-    response: &ImdsResponse,
+    response: &MetadataResponse,
     started: i64,
     finished: i64,
 ) -> Result<AccessToken, ManagedIdentityError> {

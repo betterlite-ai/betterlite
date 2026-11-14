@@ -9,7 +9,7 @@ use axum::extract::State;
 use axum::http::{HeaderMap, Method, StatusCode, Uri};
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
-use betterlite_azure::azure_arc_identity::{ArcRequest, ArcResponse, ArcTransport};
+use betterlite_azure::azure_arc_identity::{ArcRequest, ArcTransport, MetadataResponse};
 use betterlite_azure::azure_client_secret::transport::{
     HttpReply as ClientSecretReply, HttpRequest as ClientSecretRequest,
     Transport as ClientSecretTransport,
@@ -17,7 +17,7 @@ use betterlite_azure::azure_client_secret::transport::{
 use betterlite_azure::azure_hosted_identity::request::{
     HostedRequest, HostedResponse, HostedTransport,
 };
-use betterlite_azure::azure_managed_identity::imds::{ImdsRequest, ImdsResponse, ImdsTransport};
+use betterlite_azure::azure_managed_identity::imds::{ImdsRequest, ImdsTransport};
 use betterlite_azure::azure_username_password::transport::{
     HttpRequest as PasswordRequest, Transport as PasswordTransport,
 };
@@ -392,7 +392,7 @@ impl OidcTransport for FakeIo {
 }
 
 impl ImdsTransport for FakeIo {
-    fn get(&self, request: &ImdsRequest) -> io::Result<ImdsResponse> {
+    fn get(&self, request: &ImdsRequest) -> io::Result<MetadataResponse> {
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -403,7 +403,7 @@ impl ImdsTransport for FakeIo {
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
             .ok_or_else(|| io::Error::other("the fixture has no IMDS endpoint"))?;
-        Ok(ImdsResponse {
+        Ok(MetadataResponse {
             status: 200,
             headers: Vec::new(),
             body: SecretString::from(body),
@@ -418,7 +418,7 @@ impl HostedTransport for FakeIo {
 }
 
 impl ArcTransport for FakeIo {
-    fn get(&self, _request: &ArcRequest) -> io::Result<ArcResponse> {
+    fn get(&self, _request: &ArcRequest) -> io::Result<MetadataResponse> {
         Err(io::Error::other("the fixture has no Arc endpoint"))
     }
 }
