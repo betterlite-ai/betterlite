@@ -106,13 +106,13 @@ fn response_values(calls: &[ResponseCall]) -> HelperResult {
 
 fn stream_values(reads: &[String]) -> HelperResult {
     let mut decoder = SseDecoder::default();
-    let mut decoded = Vec::new();
+    let mut events = Vec::new();
     for read in reads {
-        decoded.extend(decoder.push(read).or_value_error()?);
+        events.extend(decoder.push(read).or_value_error()?);
     }
-    decoded.extend(decoder.finish().or_value_error()?);
-    let mut items = Vec::with_capacity(decoded.len());
-    for item in &decoded {
+    events.extend(decoder.finish().or_value_error()?);
+    let mut items = Vec::with_capacity(events.len());
+    for item in &events {
         items.push(match item {
             StreamItem::Done => json!({"done": true}),
             StreamItem::Chunk(chunk) => json!({
