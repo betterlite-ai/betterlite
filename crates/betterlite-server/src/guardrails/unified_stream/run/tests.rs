@@ -2,9 +2,12 @@
 
 use std::collections::BTreeMap;
 
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+
 use crate::guardrails::unified_stream::tests::support::{
-    FakeGuardrail, FakeTranslation, Plan, SinkUse, collect_outputs, item, mixed_tool_chunk, params,
-    synthetic, terminator, text_chunk, text_chunk_finishing, tool_chunk,
+    FakeGuardrail, FakeTranslation, Plan, SinkUse, block_texts, collect_outputs, item,
+    mixed_tool_chunk, modify_response, params, synthetic, terminator, text_chunk,
+    text_chunk_finishing, tool_chunk,
 };
 
 #[tokio::test]
@@ -187,6 +190,26 @@ async fn tool_call_flushes_text_before_the_passthrough() {
     assert_eq!(calls[1].sink, SinkUse::Absent);
     assert_eq!(calls[1].items.len(), 2);
     assert_eq!(calls[2].sink, SinkUse::Empty);
+}
+
+#[tokio::test]
+async fn tool_call_flush_block_ends_the_stream_before_the_passthrough() {
+    let translation = FakeTranslation::planned(vec![Plan::Fail(modify_response(None))]);
+    let guardrail = FakeGuardrail;
+    let mut data = BTreeMap::new();
+    let keys = BTreeMap::new();
+    let outputs = collect_outputs(
+        params(&translation, &guardrail, &mut data, &keys),
+        vec![text_chunk("a"), tool_chunk()],
+    )
+    .await;
+    let original =
+        serde_json::to_string(&GuardrailValue::Array(vec![text_chunk("a"), tool_chunk()])).unwrap();
+    assert_eq!(outputs.len(), 1);
+    assert_eq!(
+        block_texts(&outputs),
+        vec![format!("started=false;items=0;texts=;original={original}")]
+    );
 }
 
 #[tokio::test]
