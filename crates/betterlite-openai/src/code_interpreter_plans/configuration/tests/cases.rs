@@ -24,11 +24,13 @@ fn from_yaml_reads_the_enabled_flag_providers_and_sandbox_tool_name() {
         "enabled_providers": ["openai"],
         "sandbox_tool_name": "my-e2b"
     }));
-    let logger = from_config_yaml::<()>(&parsed, catalog());
+    let catalog = catalog();
+    let logger = from_config_yaml::<()>(&parsed, Arc::clone(&catalog));
     assert!(!logger.enabled);
     assert_eq!(logger.enabled_providers, Some(vec!["openai".to_owned()]));
     assert_eq!(logger.sandbox_tool_name.as_deref(), Some("my-e2b"));
     assert!(logger.sandbox_config.is_none());
+    assert!(Arc::ptr_eq(&logger.catalog, &catalog));
     assert!(logger.cache.entries.is_empty());
 }
 
