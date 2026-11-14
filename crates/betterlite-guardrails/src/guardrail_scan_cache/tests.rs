@@ -72,6 +72,26 @@ impl Store {
         store
     }
 
+    fn failing_reads() -> Self {
+        Self {
+            entries: Mutex::default(),
+            reads: Mutex::default(),
+            writes: Mutex::default(),
+            fail_reads: true,
+            fail_writes: false,
+        }
+    }
+
+    fn failing_writes() -> Self {
+        Self {
+            entries: Mutex::default(),
+            reads: Mutex::default(),
+            writes: Mutex::default(),
+            fail_reads: false,
+            fail_writes: true,
+        }
+    }
+
     fn reads(&self) -> Vec<String> {
         self.reads.lock().unwrap().clone()
     }
@@ -106,14 +126,13 @@ impl ScanCacheStore for Store {
 }
 
 fn scanning(name: Option<&str>) -> GuardrailBase {
-    GuardrailBase {
-        settings: GuardrailSettings {
-            guardrail_name: name.map(str::to_owned),
-            only_scan_new_messages: true,
-            ..GuardrailSettings::default()
-        },
+    let mut base = GuardrailBase {
+        settings: GuardrailSettings::default(),
         mode: None,
-    }
+    };
+    base.settings.guardrail_name = name.map(str::to_owned);
+    base.settings.only_scan_new_messages = true;
+    base
 }
 
 fn session(id: &str) -> Body {
@@ -268,10 +287,7 @@ async fn filter_scans_everything_when_the_request_has_no_session_id() {
 
 #[tokio::test]
 async fn filter_warns_and_scans_everything_when_the_read_fails() {
-    let store = Store {
-        fail_reads: true,
-        ..Store::default()
-    };
+    let store = Store::failing_reads();
     let (_guard, logs) = capture();
     let result = scanning(Some("g"))
         .filter_new_texts_for_session(Some(&texts(&["hello"])), &session("s1"), &store)
@@ -408,10 +424,7 @@ async fn mark_does_nothing_without_a_session_id() {
 
 #[tokio::test]
 async fn mark_warns_and_writes_nothing_when_the_read_fails() {
-    let store = Store {
-        fail_reads: true,
-        ..Store::default()
-    };
+    let store = Store::failing_reads();
     let (_guard, logs) = capture();
     scanning(Some("g"))
         .mark_texts_scanned(Some(&texts(&["hello"])), &session("s1"), &store, 60)
@@ -426,10 +439,7 @@ async fn mark_warns_and_writes_nothing_when_the_read_fails() {
 
 #[tokio::test]
 async fn mark_warns_once_when_the_write_fails() {
-    let store = Store {
-        fail_writes: true,
-        ..Store::default()
-    };
+    let store = Store::failing_writes();
     let (_guard, logs) = capture();
     scanning(Some("g"))
         .mark_texts_scanned(Some(&texts(&["hello"])), &session("s1"), &store, 60)
