@@ -56,6 +56,7 @@ pub(super) fn run(
     )
 }
 
+#[derive(Clone, Copy)]
 pub(super) enum Flags {
     None,
     Check,

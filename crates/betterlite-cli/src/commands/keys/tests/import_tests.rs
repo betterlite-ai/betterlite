@@ -4,7 +4,7 @@ use crate::commands::tests::support::{Answer, TestServer};
 
 use super::super::{KeysCommand, KeysError};
 use super::support;
-use super::support::{Fixture, api_key, body_json, keys_page, pretty, query_pairs, table, value};
+use super::support::{Fixture, api_key, body_json, keys_page, pretty, table, value};
 
 #[test]
 fn import_pages_the_source_at_one_hundred_and_stops_on_a_short_page() {
@@ -22,27 +22,24 @@ fn import_pages_the_source_at_one_hundred_and_stops_on_a_short_page() {
     assert!(stderr.is_empty(), "{stderr}");
     let header = format!("Fetching keys from source server: {}\n", source.base_url);
     assert!(stdout.starts_with(&header), "{stdout}");
-    for fragment in [
-        "Fetched page 1: 100 keys",
-        "Fetched page 2: 1 keys",
-        "Found 101 keys in source instance.",
-        "\n--- DRY RUN MODE ---\n",
-        "Keys that would be imported",
-    ] {
-        assert!(stdout.contains(fragment), "{stdout}");
-    }
+    assert!(stdout.contains("Fetched page 1: 100 keys"), "{stdout}");
+    assert!(stdout.contains("Fetched page 2: 1 keys"), "{stdout}");
+    assert!(
+        stdout.contains("Found 101 keys in source instance."),
+        "{stdout}"
+    );
+    assert!(stdout.contains("\n--- DRY RUN MODE ---\n"), "{stdout}");
+    assert!(stdout.contains("Keys that would be imported"), "{stdout}");
     let requests = source.finish();
     assert_eq!(requests.len(), 2);
-    for (request, page) in requests.iter().zip(["1", "2"]) {
-        assert_eq!(
-            query_pairs(request),
-            vec![
-                (String::from("page"), String::from(page)),
-                (String::from("size"), String::from("100")),
-                (String::from("return_full_object"), String::from("true")),
-            ]
-        );
-    }
+    assert_eq!(
+        requests[0].path(),
+        "/key/list?page=1&size=100&return_full_object=true"
+    );
+    assert_eq!(
+        requests[1].path(),
+        "/key/list?page=2&size=100&return_full_object=true"
+    );
     assert!(destination.finish().is_empty());
 }
 
