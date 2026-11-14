@@ -15,67 +15,81 @@ const NAME: &str = "name";
 const PARAMETERS: &str = "parameters";
 const TOOL_TYPE: &str = "type";
 
-fn tool_name_value(sources: &[&Object], index: usize) -> Result<String, HostedVllmChatError> {
-    for source in sources {
-        let Some(given) = source.get(NAME) else {
-            continue;
-        };
-        let Value::String(name) = given else {
-            if given.is_null() {
-                continue;
-            }
-            return Err(HostedVllmChatError::CustomToolString { field: NAME });
-        };
-        if name.is_empty() {
-            continue;
-        }
-        return Ok(name.clone());
-    }
-    Ok(format!("custom_tool_{index}"))
+#[derive(Clone, Copy)]
+enum ToolField {
+    Name,
+    Description,
+    InputSchema,
 }
 
-fn tool_description_value(sources: &[&Object]) -> Result<Option<String>, HostedVllmChatError> {
-    for (index, source) in sources.iter().enumerate() {
-        let Some(given) = source.get(DESCRIPTION) else {
+impl ToolField {
+    const fn key(self) -> &'static str {
+        match self {
+            Self::Name => NAME,
+            Self::Description => DESCRIPTION,
+            Self::InputSchema => INPUT_SCHEMA,
+        }
+    }
+
+    const fn type_error(self) -> HostedVllmChatError {
+        match self {
+            Self::Name => HostedVllmChatError::CustomToolString { field: NAME },
+            Self::Description => HostedVllmChatError::CustomToolString { field: DESCRIPTION },
+            Self::InputSchema => HostedVllmChatError::CustomToolSchema,
+        }
+    }
+
+    fn accepts(self, given: &Value) -> bool {
+        match self {
+            Self::Name | Self::Description => given.is_string(),
+            Self::InputSchema => given.is_object(),
+        }
+    }
+
+    fn is_empty(self, given: &Value) -> bool {
+        match self {
+            Self::Name => given.as_str().is_some_and(str::is_empty),
+            Self::Description => given.as_str() == Some(""),
+            Self::InputSchema => given.as_object().is_some_and(Object::is_empty),
+        }
+    }
+}
+
+// the last source is the fallback's final operand, so its empty description or schema is used as given
+fn tool_field_value<'source>(
+    sources: &[&'source Object],
+    field: ToolField,
+) -> Result<Option<&'source Value>, HostedVllmChatError> {
+    for (position, source) in sources.iter().enumerate() {
+        let Some(given) = source.get(field.key()) else {
             continue;
         };
-        let Value::String(text) = given else {
-            if given.is_null() {
-                continue;
-            }
-            return Err(HostedVllmChatError::CustomToolString { field: DESCRIPTION });
-        };
-        // the last source is the fallback's final operand, so its empty string is used as given
-        if text.is_empty() && index + 1 < sources.len() {
+        if given.is_null() {
             continue;
         }
-        return Ok(Some(text.clone()));
+        if !field.accepts(given) {
+            return Err(field.type_error());
+        }
+        let skipped = field.is_empty(given)
+            && (position + 1 < sources.len() || matches!(field, ToolField::Name));
+        if skipped {
+            continue;
+        }
+        return Ok(Some(given));
     }
     Ok(None)
 }
 
-fn tool_parameters_value(sources: &[&Object]) -> Result<Value, HostedVllmChatError> {
-    for (index, source) in sources.iter().enumerate() {
-        let Some(given) = source.get(INPUT_SCHEMA) else {
-            continue;
-        };
-        let Value::Object(schema) = given else {
-            if given.is_null() {
-                continue;
-            }
-            return Err(HostedVllmChatError::CustomToolSchema);
-        };
-        // the last source is the fallback's final operand, so its empty object is used as given
-        if schema.is_empty() && index + 1 < sources.len() {
-            continue;
-        }
-        return Ok(given.clone());
-    }
-    Ok(json!({
-        "type": "object",
-        "properties": {"input": {"type": "string", "description": "Raw tool input payload."}},
-        "required": ["input"],
-    }))
+fn tool_name_value(sources: &[&Object], index: usize) -> Result<String, HostedVllmChatError> {
+    Ok(tool_field_value(sources, ToolField::Name)?
+        .and_then(Value::as_str)
+        .map_or_else(|| format!("custom_tool_{index}"), str::to_owned))
+}
+
+fn tool_description_value(sources: &[&Object]) -> Result<Option<String>, HostedVllmChatError> {
+    Ok(tool_field_value(sources, ToolField::Description)?
+        .and_then(Value::as_str)
+        .map(str::to_owned))
 }
 
 fn convert_custom_tool(fields: &Object, index: usize) -> Result<Value, HostedVllmChatError> {
@@ -91,7 +105,16 @@ fn convert_custom_tool(fields: &Object, index: usize) -> Result<Value, HostedVll
     sources.push(fields);
     let name = tool_name_value(&sources, index)?;
     let description = tool_description_value(&sources)?;
-    let parameters = tool_parameters_value(&sources)?;
+    let parameters = tool_field_value(&sources, ToolField::InputSchema)?.map_or_else(
+        || {
+            json!({
+                "type": "object",
+                "properties": {"input": {"type": "string", "description": "Raw tool input payload."}},
+                "required": ["input"],
+            })
+        },
+        Clone::clone,
+    );
     let mut function = Object::new();
     function.insert(String::from(NAME), Value::String(name));
     function.insert(String::from(PARAMETERS), parameters);
