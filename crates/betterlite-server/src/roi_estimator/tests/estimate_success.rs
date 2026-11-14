@@ -1,14 +1,13 @@
 #![cfg(test)]
 
 use betterlite_roi::estimator::models::REASONING_MAX_CHARS;
-use betterlite_roi::records::ROIEstimateStatus;
-use serde_json::json;
+use betterlite_roi::records::{ROIEstimate, ROIEstimateStatus};
 
 use crate::roi_estimator::Estimator;
 
-use super::support::{ModelSupport, caller, ok_response, pull, settings};
+use super::support::{ModelSupport, assert_hours, caller, ok_response, pull, settings};
 
-async fn run_estimate(content: &str) -> betterlite_roi::records::ROIEstimate {
+async fn run_estimate(content: &str) -> ROIEstimate {
     let (complete, _requests) = caller(Ok(ok_response(content)));
     let estimator = Estimator::new(settings("gpt-5.2", "Estimate this."), complete, Some(&[]));
     estimator
@@ -17,42 +16,41 @@ async fn run_estimate(content: &str) -> betterlite_roi::records::ROIEstimate {
         .unwrap()
 }
 
+fn content_with_reasoning(reasoning: &str) -> String {
+    let quoted = serde_json::to_string(reasoning).unwrap();
+    format!(r#"{{"hours": 1, "reasoning": {quoted}}}"#)
+}
+
 #[tokio::test]
 async fn estimate_returns_the_full_litellm_estimate_record() {
     let estimate = run_estimate(r#"{"hours": 3.5, "reasoning": "Small change."}"#).await;
-    assert_eq!(
-        serde_json::to_value(&estimate).unwrap(),
-        json!({
-            "status": "estimated",
-            "hours": 3.5,
-            "reasoning": "Small change.",
-            "model": "gpt-5.2",
-            "evidence_source": "pr_metadata",
-            "effort_basis": "without_ai",
-            "cached": false,
-        })
-    );
     assert_eq!(estimate.status, ROIEstimateStatus::Estimated);
+    assert_hours(&estimate, 3.5_f64);
+    assert_eq!(estimate.reasoning, "Small change.");
+    assert_eq!(estimate.model.as_deref(), Some("gpt-5.2"));
+    assert_eq!(estimate.evidence_source.as_deref(), Some("pr_metadata"));
+    assert_eq!(estimate.effort_basis.as_deref(), Some("without_ai"));
+    assert_eq!(estimate.cached, Some(false));
 }
 
 #[tokio::test]
 async fn estimate_truncates_reasoning_to_twelve_thousand_characters() {
-    let content = json!({"hours": 1, "reasoning": "é".repeat(REASONING_MAX_CHARS + 1)}).to_string();
+    let content = content_with_reasoning(&"\u{e9}".repeat(REASONING_MAX_CHARS + 1));
     let estimate = run_estimate(&content).await;
-    assert_eq!(estimate.reasoning, "é".repeat(REASONING_MAX_CHARS));
+    assert_eq!(estimate.reasoning, "\u{e9}".repeat(REASONING_MAX_CHARS));
 }
 
 #[tokio::test]
 async fn estimate_keeps_reasoning_at_exactly_twelve_thousand_characters() {
-    let content = json!({"hours": 1, "reasoning": "é".repeat(REASONING_MAX_CHARS)}).to_string();
+    let content = content_with_reasoning(&"\u{e9}".repeat(REASONING_MAX_CHARS));
     let estimate = run_estimate(&content).await;
-    assert_eq!(estimate.reasoning, "é".repeat(REASONING_MAX_CHARS));
+    assert_eq!(estimate.reasoning, "\u{e9}".repeat(REASONING_MAX_CHARS));
 }
 
 #[tokio::test]
 async fn estimate_renders_integer_hours_as_a_float() {
     let estimate = run_estimate(r#"{"hours": 3, "reasoning": "Small change."}"#).await;
-    assert_eq!(estimate.hours, Some(3.0));
+    assert_hours(&estimate, 3.0_f64);
     assert!(
         serde_json::to_string(&estimate)
             .unwrap()

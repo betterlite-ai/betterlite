@@ -3,14 +3,17 @@
 use betterlite_roi::estimator::extraction::MAX_REPLY_BYTES;
 use betterlite_roi::records::{ROIEstimate, ROIEstimateStatus};
 use rstest::rstest;
-use serde_json::{Value, json};
 
-use crate::roi_estimator::Estimator;
 use crate::roi_estimator::error::EstimatorError;
+use crate::roi_estimator::{CompletionObject, Estimator};
 
-use super::support::{ModelSupport, caller, ok_response, pull, settings};
+use super::support::{
+    ModelSupport, assert_hours, caller, completion, envelope, ok_response, pull, settings,
+};
 
-async fn run_estimate(response: Value) -> Result<ROIEstimate, EstimatorError> {
+const VALID: &str = r#"{"hours": 1, "reasoning": "x"}"#;
+
+async fn run_estimate(response: CompletionObject) -> Result<ROIEstimate, EstimatorError> {
     let (complete, _requests) = caller(Ok(response));
     let estimator = Estimator::new(settings("gpt-5.2", "Estimate this."), complete, Some(&[]));
     estimator.estimate(&pull(), &mut ModelSupport::none()).await
@@ -24,7 +27,7 @@ async fn run_estimate(response: Value) -> Result<ROIEstimate, EstimatorError> {
 async fn estimate_parses_the_json_object_out_of_the_reply(#[case] content: &str) {
     let estimate = run_estimate(ok_response(content)).await.unwrap();
     assert_eq!(estimate.status, ROIEstimateStatus::Estimated);
-    assert_eq!(estimate.hours, Some(3.5));
+    assert_hours(&estimate, 3.5_f64);
     assert_eq!(estimate.reasoning, "Small change.");
 }
 
@@ -35,7 +38,7 @@ async fn estimate_uses_the_first_complete_object_in_the_reply() {
     ))
     .await
     .unwrap();
-    assert_eq!(estimate.hours, Some(1.0));
+    assert_hours(&estimate, 1.0_f64);
     assert_eq!(estimate.reasoning, "first");
 }
 
@@ -47,7 +50,7 @@ async fn estimate_keeps_the_last_value_of_a_repeated_hours_key() {
     .await
     .unwrap();
     assert_eq!(estimate.status, ROIEstimateStatus::Estimated);
-    assert_eq!(estimate.hours, Some(2.0));
+    assert_hours(&estimate, 2.0_f64);
 }
 
 #[rstest]
@@ -58,7 +61,7 @@ async fn estimate_keeps_the_last_value_of_a_repeated_hours_key() {
 async fn estimate_keeps_the_last_value_past_a_python_constant(#[case] content: &str) {
     let estimate = run_estimate(ok_response(content)).await.unwrap();
     assert_eq!(estimate.status, ROIEstimateStatus::Estimated);
-    assert_eq!(estimate.hours, Some(2.0));
+    assert_hours(&estimate, 2.0_f64);
     assert_eq!(estimate.reasoning, "x");
 }
 
@@ -68,45 +71,32 @@ async fn estimate_keeps_the_last_value_past_a_python_constant(#[case] content: &
 #[case::negative_infinity(r#"{"hours": 2, "hours": -Infinity, "reasoning": "x"}"#)]
 #[tokio::test]
 async fn estimate_rejects_a_reply_whose_last_hours_is_a_python_constant(#[case] content: &str) {
-    assert!(run_estimate(ok_response(content)).await.is_err());
+    let _error = run_estimate(ok_response(content)).await.unwrap_err();
 }
 
 #[rstest]
-#[case::null(json!({
-    "choices": [{"finish_reason": null, "message": {"content": r#"{"hours": 1, "reasoning": "x"}"#}}],
-}))]
-#[case::missing(json!({
-    "choices": [{"message": {"content": r#"{"hours": 1, "reasoning": "x"}"#}}],
-}))]
+#[case::null(envelope(None, Some(VALID)))]
+#[case::missing(completion(
+    r#"{"choices": [{"message": {"content": "{\"hours\": 1, \"reasoning\": \"x\"}"}}]}"#
+))]
 #[tokio::test]
-async fn estimate_accepts_a_choice_whose_finish_reason_is_null_or_missing(#[case] response: Value) {
+async fn estimate_accepts_a_choice_whose_finish_reason_is_null_or_missing(
+    #[case] response: CompletionObject,
+) {
     let estimate = run_estimate(response).await.unwrap();
     assert_eq!(estimate.status, ROIEstimateStatus::Estimated);
-    assert_eq!(estimate.hours, Some(1.0));
+    assert_hours(&estimate, 1.0_f64);
 }
 
 #[tokio::test]
 async fn estimate_ignores_the_extra_keys_of_a_gateway_response() {
-    let estimate = run_estimate(json!({
-        "id": "chatcmpl-9",
-        "object": "chat.completion",
-        "created": 1_760_000_000,
-        "model": "gpt-5.2",
-        "choices": [{
-            "index": 0,
-            "finish_reason": "stop",
-            "message": {
-                "role": "assistant",
-                "content": r#"{"hours": 1, "reasoning": "x"}"#,
-                "tool_calls": null,
-            },
-        }],
-        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-    }))
+    let estimate = run_estimate(completion(
+        r#"{"id": "chatcmpl-9", "object": "chat.completion", "created": 1760000000, "model": "gpt-5.2", "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": "{\"hours\": 1, \"reasoning\": \"x\"}", "tool_calls": null}}], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}"#,
+    ))
     .await
     .unwrap();
     assert_eq!(estimate.status, ROIEstimateStatus::Estimated);
-    assert_eq!(estimate.hours, Some(1.0));
+    assert_hours(&estimate, 1.0_f64);
 }
 
 #[rstest]
@@ -115,27 +105,28 @@ async fn estimate_ignores_the_extra_keys_of_a_gateway_response() {
 #[case::negative_hours(ok_response(r#"{"hours": -1, "reasoning": "x"}"#))]
 #[case::empty_reasoning(ok_response(r#"{"hours": 1, "reasoning": "  "}"#))]
 #[case::length_finish(ok_response_with_finish("length"))]
-#[case::null_content(json!({"choices": [{"finish_reason": "stop", "message": {"content": null}}]}))]
-#[case::no_choices(json!({"choices": []}))]
-#[case::no_content_key(json!({"choices": [{"finish_reason": "stop", "message": {}}]}))]
-#[case::wrong_schema(json!({"choices": "nope"}))]
+#[case::null_content(envelope(Some("stop"), None))]
+#[case::no_choices(completion(r#"{"choices": []}"#))]
+#[case::no_content_key(completion(r#"{"choices": [{"finish_reason": "stop", "message": {}}]}"#))]
+#[case::wrong_schema(completion(r#"{"choices": "nope"}"#))]
 #[case::nan_object_before_a_valid_one(ok_response(
     r#"{"hours": NaN, "reasoning": "x"} {"hours": 1, "reasoning": "y"}"#
 ))]
-#[case::reply_over_the_byte_limit(ok_response(&format!(
-    r#"{{"hours": 1, "reasoning": "x"}}{}"#,
-    " ".repeat(MAX_REPLY_BYTES)
-)))]
+#[case::reply_over_the_byte_limit(over_limit_response())]
 #[tokio::test]
-async fn estimate_rejects_replies_that_do_not_carry_a_valid_estimate(#[case] response: Value) {
-    assert!(run_estimate(response).await.is_err());
+async fn estimate_rejects_replies_that_do_not_carry_a_valid_estimate(
+    #[case] response: CompletionObject,
+) {
+    let _error = run_estimate(response).await.unwrap_err();
 }
 
-fn ok_response_with_finish(finish_reason: &str) -> Value {
-    json!({
-        "choices": [{
-            "finish_reason": finish_reason,
-            "message": {"content": "{\"hours\": 1, \"reasoning\": \"x\"}"},
-        }],
-    })
+fn ok_response_with_finish(finish_reason: &str) -> CompletionObject {
+    envelope(Some(finish_reason), Some(VALID))
+}
+
+fn over_limit_response() -> CompletionObject {
+    ok_response(&format!(
+        r#"{{"hours": 1, "reasoning": "x"}}{}"#,
+        " ".repeat(MAX_REPLY_BYTES)
+    ))
 }

@@ -8,12 +8,13 @@ use std::sync::Arc;
 use betterlite_roi::estimator::models::{EstimatorModel, ROICompletionRequest};
 use betterlite_roi::estimator::options::configured_models;
 use betterlite_roi::settings::ROISettings;
-use serde_json::Value;
+use serde_json::value::RawValue;
 
 use crate::roi_github::error::SourceError;
 
+pub type CompletionObject = Box<RawValue>;
 pub type CompletionFuture =
-    Pin<Box<dyn Future<Output = Result<Value, SourceError>> + Send + 'static>>;
+    Pin<Box<dyn Future<Output = Result<CompletionObject, SourceError>> + Send + 'static>>;
 pub type CompletionCaller = Arc<dyn Fn(ROICompletionRequest) -> CompletionFuture + Send + Sync>;
 
 pub struct Estimator {

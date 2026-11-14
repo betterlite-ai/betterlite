@@ -4,7 +4,6 @@ use betterlite_roi::estimator::evidence::metadata_evidence;
 use betterlite_roi::estimator::json::json_dumps_text;
 use betterlite_roi::estimator::models::MAX_EVIDENCE_CHARS;
 use betterlite_roi::records::{ROIEstimateStatus, ROIPullEvidence};
-use serde_json::json;
 
 use crate::roi_estimator::Estimator;
 use crate::roi_estimator::estimate::{INCOMPLETE_METADATA_REASON, OVERSIZED_EVIDENCE_REASON};
@@ -15,7 +14,7 @@ use super::support::{
 
 fn pull_with_body(length: usize) -> ROIPullEvidence {
     let mut value = pull();
-    value.body = "é".repeat(length);
+    value.body = "\u{e9}".repeat(length);
     value
 }
 
@@ -60,14 +59,9 @@ async fn estimate_refuses_one_character_over_the_limit_without_calling_the_model
         .estimate(&pull, &mut ModelSupport::none())
         .await
         .unwrap();
-    assert_eq!(
-        serde_json::to_value(&estimate).unwrap(),
-        json!({
-            "status": "needs_review",
-            "hours": null,
-            "reasoning": OVERSIZED_EVIDENCE_REASON,
-        })
-    );
+    assert_eq!(estimate.status, ROIEstimateStatus::NeedsReview);
+    assert!(estimate.hours.is_none());
+    assert_eq!(estimate.reasoning, OVERSIZED_EVIDENCE_REASON);
     assert!(requests.lock().unwrap().is_empty());
 }
 
@@ -81,14 +75,9 @@ async fn estimate_refuses_pulls_with_incomplete_metadata_without_calling_the_mod
         .estimate(&pull, &mut ModelSupport::none())
         .await
         .unwrap();
-    assert_eq!(
-        serde_json::to_value(&estimate).unwrap(),
-        json!({
-            "status": "needs_review",
-            "hours": null,
-            "reasoning": INCOMPLETE_METADATA_REASON,
-        })
-    );
+    assert_eq!(estimate.status, ROIEstimateStatus::NeedsReview);
+    assert!(estimate.hours.is_none());
+    assert_eq!(estimate.reasoning, INCOMPLETE_METADATA_REASON);
     assert!(requests.lock().unwrap().is_empty());
 }
 

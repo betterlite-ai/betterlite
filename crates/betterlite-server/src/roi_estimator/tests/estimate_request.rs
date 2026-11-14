@@ -1,7 +1,8 @@
 #![cfg(test)]
 
-use betterlite_roi::estimator::models::{RESPONSE_CONTRACT, ROICompletionRole, ReasoningEffort};
-use serde_json::json;
+use betterlite_roi::estimator::models::{
+    RESPONSE_CONTRACT, ROICompletionRole, ROIResponseFormatType, ReasoningEffort,
+};
 
 use crate::roi_estimator::Estimator;
 
@@ -23,8 +24,8 @@ async fn estimate_request_carries_the_exact_prompt_messages_and_sampling() {
         .unwrap();
     let request = recorded_request(&requests);
     assert_eq!(request.model, "gpt-5.2");
-    assert_eq!(request.temperature, 0);
-    assert_eq!(request.max_tokens, 1200);
+    assert_eq!(request.temperature, 0_u32);
+    assert_eq!(request.max_tokens, 1200_u32);
     assert_eq!(request.messages[0].role, ROICompletionRole::System);
     assert_eq!(
         request.messages[0].content,
@@ -33,16 +34,12 @@ async fn estimate_request_carries_the_exact_prompt_messages_and_sampling() {
     assert_eq!(request.messages[1].role, ROICompletionRole::User);
     assert_eq!(request.messages[1].content, EVIDENCE);
     assert_eq!(
-        serde_json::to_value(request.response_format).unwrap(),
-        json!({"type": "json_object"})
+        request.response_format.r#type,
+        ROIResponseFormatType::JsonObject
     );
     assert_eq!(request.reasoning_effort, None);
-    assert_eq!(
-        serde_json::to_value(&request)
-            .unwrap()
-            .get("reasoning_effort"),
-        Some(&serde_json::Value::Null)
-    );
+    let wire = serde_json::to_string(&request).unwrap();
+    assert!(wire.contains("\"reasoning_effort\":null"));
 }
 
 #[tokio::test]
@@ -53,10 +50,6 @@ async fn estimate_request_sends_reasoning_effort_none_when_every_model_supports_
     estimator.estimate(&pull(), &mut predicates).await.unwrap();
     let request = recorded_request(&requests);
     assert_eq!(request.reasoning_effort, Some(ReasoningEffort::None));
-    assert_eq!(
-        serde_json::to_value(&request)
-            .unwrap()
-            .get("reasoning_effort"),
-        Some(&json!("none"))
-    );
+    let wire = serde_json::to_string(&request).unwrap();
+    assert!(wire.contains("\"reasoning_effort\":\"none\""));
 }

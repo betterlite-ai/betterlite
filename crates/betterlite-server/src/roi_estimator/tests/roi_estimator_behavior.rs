@@ -1,29 +1,31 @@
 #![cfg(test)]
 
+use betterlite_roi::estimator::models::ReasoningEffort;
 use betterlite_roi::records::ROIEstimateStatus;
 use rstest::rstest;
-use serde_json::json;
 
 use crate::roi_estimator::Estimator;
 use crate::roi_estimator::estimate::{INCOMPLETE_METADATA_REASON, OVERSIZED_EVIDENCE_REASON};
 
 use super::support::{
-    ModelSupport, OK_CONTENT, caller, ok_response, pull, recorded_request, settings,
+    ModelSupport, OK_CONTENT, assert_hours, caller, ok_response, pull, recorded_request, settings,
 };
 
 #[rstest]
-#[case::supported_models(&["gpt-5.2"], Some("none"))]
+#[case::supported_models(&["gpt-5.2"], Some(ReasoningEffort::None))]
 #[case::unsupported_models(&[], None)]
 #[tokio::test]
-async fn roi_estimator_behavior(#[case] supported: &[&str], #[case] effort: Option<&str>) {
+async fn roi_estimator_behavior(
+    #[case] supported: &[&str],
+    #[case] effort: Option<ReasoningEffort>,
+) {
     let (complete, requests) = caller(Ok(ok_response(OK_CONTENT)));
     let estimator = Estimator::new(settings("gpt-5.2", "Estimate this."), complete, None);
     let mut predicates = ModelSupport::supporting(supported);
     let estimate = estimator.estimate(&pull(), &mut predicates).await.unwrap();
     assert_eq!(estimate.status, ROIEstimateStatus::Estimated);
-    assert_eq!(estimate.hours, Some(3.5));
-    let request = serde_json::to_value(recorded_request(&requests)).unwrap();
-    assert_eq!(request["reasoning_effort"], json!(effort));
+    assert_hours(&estimate, 3.5_f64);
+    assert_eq!(recorded_request(&requests).reasoning_effort, effort);
 }
 
 #[rstest]
@@ -46,9 +48,8 @@ async fn roi_estimator_behavior_needs_review(
         .estimate(&pull, &mut ModelSupport::none())
         .await
         .unwrap();
-    assert_eq!(
-        serde_json::to_value(&estimate).unwrap(),
-        json!({"status": "needs_review", "hours": null, "reasoning": reasoning})
-    );
+    assert_eq!(estimate.status, ROIEstimateStatus::NeedsReview);
+    assert!(estimate.hours.is_none());
+    assert_eq!(estimate.reasoning, reasoning);
     assert!(requests.lock().unwrap().is_empty());
 }

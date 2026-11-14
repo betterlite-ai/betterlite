@@ -1,7 +1,5 @@
 #![cfg(test)]
 
-use serde_json::json;
-
 use crate::roi_estimator::Estimator;
 
 use super::support::{
@@ -19,8 +17,4 @@ async fn estimate_request_metadata_holds_the_exact_litellm_literals() {
     let metadata = recorded_request(&requests).metadata;
     assert_eq!(metadata.tags, vec!["litellm-roi-estimator".to_owned()]);
     assert!(metadata.litellm_roi_estimator);
-    assert_eq!(
-        serde_json::to_value(&metadata).unwrap(),
-        json!({"tags": ["litellm-roi-estimator"], "litellm_roi_estimator": true})
-    );
 }

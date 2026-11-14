@@ -15,7 +15,10 @@ use betterlite_roi::records::ROIPullEvidence;
 use betterlite_roi::settings::ROISettings;
 use betterlite_server::roi_estimator::{CompletionCaller, CompletionFuture, Estimator};
 use betterlite_server::roi_github::error::SourceError;
+use indexmap::IndexMap;
+use secrecy::SecretString;
 use serde::Deserialize;
+use serde_json::value::to_raw_value;
 use serde_json::{Value, json};
 
 use crate::helpers::{Helper, HelperError, HelperResult};
@@ -152,10 +155,17 @@ fn settings_of(input: &Input) -> Result<ROISettings, Box<HelperError>> {
         .settings
         .as_ref()
         .ok_or_else(|| helper_error("ValueError", "the operation needs settings".to_owned()))?;
-    let mut resolved = ROISettings::default();
-    resolved.estimator_model = settings.estimator_model.clone();
-    resolved.estimator_prompt = settings.estimator_prompt.clone();
-    Ok(resolved)
+    Ok(ROISettings {
+        github_api_url: "https://api.github.com".to_owned(),
+        github_token: SecretString::default(),
+        estimator_key: SecretString::default(),
+        repos: Vec::new(),
+        estimator_model: settings.estimator_model.clone(),
+        estimator_prompt: settings.estimator_prompt.clone(),
+        backfill_days: 7,
+        update_interval_minutes: 1440.0_f64,
+        identity_map: IndexMap::new(),
+    })
 }
 
 fn support_of(input: &Input) -> ModelSupport {
@@ -183,6 +193,8 @@ async fn estimate(input: &Input) -> HelperResult {
     let settings = settings_of(input)?;
     let pull = pull_of(input)?.clone();
     let response = input.response.clone().unwrap_or(Value::Null);
+    let raw_response =
+        to_raw_value(&response).map_err(|error| helper_error("ValueError", error.to_string()))?;
     let response_is_error = input.response_is_error;
     let requests = Arc::new(Mutex::new(Vec::new()));
     let seen = Arc::clone(&requests);
@@ -196,7 +208,7 @@ async fn estimate(input: &Input) -> HelperResult {
                 status: 502,
             })
         } else {
-            Ok(response.clone())
+            Ok(raw_response.clone())
         };
         let future: CompletionFuture = Box::pin(ready(reply));
         future
