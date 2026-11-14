@@ -1,0 +1,40 @@
+kind: helper
+name: response-format-verdicts
+call:
+  b5831:
+    model_cost:
+      together_ai/together-b5831-schema-true: {litellm_provider: together_ai, mode: chat, supports_response_schema: true}
+      together_ai/together-b5831-schema-unknown: {litellm_provider: together_ai, mode: chat}
+      together_ai/together-b5831-schema-false: {litellm_provider: together_ai, mode: chat, supports_response_schema: false}
+    chat_supported: []
+    chat_map:
+    - model: together-b5831-schema-true
+      params:
+        response_format: {type: json_object}
+      optional_params: {}
+    - model: together-b5831-schema-unknown
+      params:
+        response_format: {type: json_object}
+      optional_params: {}
+    - model: together-b5831-schema-false
+      params:
+        response_format: {type: json_object}
+        temperature: 0.5
+      drop_params: true
+      optional_params: {}
+    - model: together-b5831-schema-false
+      params:
+        response_format: {type: json_object}
+      optional_params: {}
+    - model: together-b5831-schema-false
+      params: {temperature: 0.5}
+      optional_params: {}
+    chat_messages: []
+    completion: []
+    rerank_requests: []
+    rerank_responses: []
+    cost_categories: []
+    cost_registry: []
+env: {}
+compare:
+  ignore: []

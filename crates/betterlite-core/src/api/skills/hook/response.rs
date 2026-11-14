@@ -9,6 +9,7 @@ pub struct ContentBlock {
     pub id: Option<String>,
     pub name: Option<String>,
     pub input: Value,
+    pub text: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,6 +31,7 @@ pub enum GeneratedFilesAttribute {
 pub struct ObjectResponse {
     pub content: Vec<ContentBlock>,
     pub choices: Vec<ChatChoice>,
+    pub stop_reason: Option<String>,
     pub generated_files: GeneratedFilesAttribute,
     // None is a response without a model_extra attribute, and LiteLLM's hasattr check then skips the write
     pub model_extra: Option<Map<String, Value>>,

@@ -702,6 +702,7 @@ checksum = "3296253d3a91b3f938a3f2bcce4daebadcb4aa4228153fcec90f9d23532b4484"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-http",
+ "aws-smithy-http-client",
  "aws-smithy-observability",
  "aws-smithy-runtime-api",
  "aws-smithy-schema",
@@ -1044,6 +1045,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "url",
  "uuid",
 ]
@@ -1054,6 +1056,8 @@ version = "0.0.0"
 dependencies = [
  "betterlite-a2a",
  "betterlite-core",
+ "futures-executor",
+ "futures-util",
  "libfuzzer-sys",
  "serde_json",
 ]
@@ -1249,6 +1253,7 @@ dependencies = [
  "betterlite-anthropic",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-core",
  "betterlite-env",
  "betterlite-http",
  "betterlite-logging",
@@ -1293,6 +1298,35 @@ version = "0.0.0"
 dependencies = [
  "betterlite-bedrock",
  "bytes",
+ "libfuzzer-sys",
+]
+
+[[package]]
+name = "betterlite-bedrock-guardrails"
+version = "0.1.0"
+dependencies = [
+ "betterlite-bedrock",
+ "betterlite-config",
+ "betterlite-http",
+ "betterlite-models",
+ "http 1.5.0",
+ "indexmap 2.14.2",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "betterlite-bedrock-guardrails-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-bedrock-guardrails",
  "libfuzzer-sys",
 ]
 
@@ -1430,7 +1464,14 @@ name = "betterlite-compression"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "betterlite-anthropic",
+ "betterlite-config",
+ "betterlite-http",
+ "betterlite-models",
+ "betterlite-prompts",
  "betterlite-semantic",
+ "betterlite-tokenizer",
+ "indexmap 2.14.2",
  "regex",
  "rstest",
  "serde_json",
@@ -1459,6 +1500,7 @@ dependencies = [
  "insta",
  "netrc-rs",
  "percent-encoding",
+ "regex",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -1470,6 +1512,7 @@ dependencies = [
  "serde_path_to_error",
  "serde_with",
  "shellexpand",
+ "soft-canonicalize",
  "strum",
  "tempfile",
  "thiserror",
@@ -1629,6 +1672,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-env",
  "betterlite-lens",
+ "betterlite-models",
  "betterlite-openai",
  "betterlite-postgres-fixture",
  "betterlite-roi",
@@ -1703,13 +1747,18 @@ dependencies = [
 name = "betterlite-deepagents-harness"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "base64 0.23.1",
  "betterlite-harness",
  "brace-expansion",
+ "futures-core",
  "futures-util",
  "glob",
  "regex",
  "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tokio",
@@ -1935,6 +1984,7 @@ dependencies = [
  "hex",
  "http 1.5.0",
  "idna",
+ "indexmap 2.14.2",
  "ipnet",
  "libc",
  "opentelemetry-http",
@@ -2474,6 +2524,7 @@ dependencies = [
  "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-transcribe",
+ "betterlite-vertex",
  "chrono",
  "hex",
  "indexmap 2.14.2",
@@ -2839,11 +2890,15 @@ dependencies = [
  "betterlite-guardrails",
  "betterlite-models",
  "betterlite-redact",
+ "betterlite-secrets",
  "pyo3",
  "rstest",
  "rust_decimal",
+ "secrecy",
  "serde",
  "serde_json",
+ "temp-env",
+ "tempfile",
  "thiserror",
 ]
 
@@ -2865,6 +2920,7 @@ dependencies = [
  "betterlite-redis",
  "betterlite-secret-managers",
  "hex",
+ "indexmap 2.14.2",
  "percent-encoding",
  "redis",
  "rstest",
@@ -2875,7 +2931,16 @@ dependencies = [
  "sha2 0.11.1",
  "thiserror",
  "tokio",
+ "tracing",
  "uuid",
+]
+
+[[package]]
+name = "betterlite-rag-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-rag",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -2895,6 +2960,7 @@ dependencies = [
  "betterlite-tokenizer",
  "crc16",
  "indexmap 2.14.2",
+ "num-traits",
  "rstest",
  "rust_decimal",
  "serde",
@@ -2984,8 +3050,10 @@ dependencies = [
 name = "betterlite-roi"
 version = "0.1.0"
 dependencies = [
+ "betterlite-models",
  "caseless",
  "chrono",
+ "hex",
  "indexmap 2.14.2",
  "rstest",
  "rust_decimal",
@@ -2993,7 +3061,9 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "sha2 0.11.1",
  "thiserror",
+ "tokio",
  "unicode-normalization",
 ]
 
@@ -3487,9 +3557,11 @@ name = "betterlite-vertex-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-bedrock",
+ "betterlite-http",
  "betterlite-models",
  "betterlite-tokenizer",
  "betterlite-vertex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
  "libfuzzer-sys",
@@ -3508,6 +3580,7 @@ dependencies = [
  "betterlite-prompts",
  "futures-util",
  "indexmap 2.14.2",
+ "num-traits",
  "rstest",
  "serde",
  "serde_json",
