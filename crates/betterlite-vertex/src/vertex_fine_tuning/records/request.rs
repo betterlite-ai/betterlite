@@ -52,10 +52,20 @@ pub fn to_vertex_request(
     let mut hyperparameters = VertexHyperparameters::default();
     // LiteLLM tests each hyperparameter for truthiness: null, the number 0 and "" never reach Vertex
     if let Some(raw) = create.hyperparameters.as_ref() {
+        let given = |key: &str| {
+            raw.get(key)
+                .filter(|value| !value.is_null())
+                .map(|value| Given {
+                    text: value
+                        .as_str()
+                        .map_or_else(|| value.to_string(), str::to_owned),
+                    is_text: value.is_string(),
+                })
+        };
         hyperparameters.epoch_count =
-            hyperparameter(raw.get("n_epochs"), "n_epochs", |text| text.parse().ok())?;
+            hyperparameter(given("n_epochs"), "n_epochs", |text| text.parse().ok())?;
         hyperparameters.learning_rate_multiplier = hyperparameter(
-            raw.get("learning_rate_multiplier"),
+            given("learning_rate_multiplier"),
             "learning_rate_multiplier",
             // Python's float() reads 2e-05, which Decimal's plain parser refuses
             |text| {
@@ -72,29 +82,24 @@ pub fn to_vertex_request(
     Ok(vertex_job(create, hyperparameters))
 }
 
-#[expect(
-    clippy::disallowed_types,
-    reason = "the caller's hyperparameters are an untyped passthrough map"
-)]
+struct Given {
+    text: String,
+    is_text: bool,
+}
+
 fn hyperparameter<T>(
-    value: Option<&serde_json::Value>,
+    given: Option<Given>,
     field: &'static str,
     parse: fn(&str) -> Option<T>,
 ) -> Result<Option<T>, TuningRecordError>
 where
     T: Default + PartialEq,
 {
-    let Some(value) = value.filter(|value| !value.is_null()) else {
+    let Some(given) = given.filter(|given| !given.text.is_empty()) else {
         return Ok(None);
     };
-    let text = value
-        .as_str()
-        .map_or_else(|| value.to_string(), str::to_owned);
-    if text.is_empty() {
-        return Ok(None);
-    }
-    let parsed = parse(text.trim()).ok_or(TuningRecordError::Hyperparameter { field })?;
-    Ok((value.is_string() || parsed != T::default()).then_some(parsed))
+    let parsed = parse(given.text.trim()).ok_or(TuningRecordError::Hyperparameter { field })?;
+    Ok((given.is_text || parsed != T::default()).then_some(parsed))
 }
 
 fn vertex_job(
