@@ -1,0 +1,14 @@
+task: B3505
+deviations:
+  - what: Each operation is a blocking function plus an async function, and neither return type changes with a flag; a caller-supplied aget_agent, adelete_agent or alist_agent_versions is popped from the params and nothing else happens.
+    why: LiteLLM's sync get, delete and list_versions pop the flag into _is_async and are annotated to return either the model or a coroutine, which aget then awaits; Rust cannot return either type, so the async entry point is a separate function.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/main.py#L292-L304
+  - what: aget runs the async transport directly instead of executing the sync get in the loop's default executor under contextvars.copy_context.
+    why: the request, the transforms and the result are the same, and Rust has neither the GIL nor contextvars; both forms exist only because LiteLLM reuses the sync function from its async wrapper.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/main.py#L299-L304
+  - what: All six functions resolve the provider from the argument or kwargs.custom_llm_provider; aget, adelete and alist_versions read the kwargs entry too.
+    why: LiteLLM's async wrappers substitute gemini for an absent argument before calling the sync function, so the sync function's kwargs lookup can never see the key through its typed signature; betterlite's kwargs map can carry it, and the task text asks for the argument-or-kwargs rule on all six.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/main.py#L292-L297
+  - what: The logging object records the operation as its call_type and as model_call_details.call_type (get_agent, delete_agent, list_agent_versions), where LiteLLM leaves both empty.
+    why: B3501's _make_logging_obj assigns the call_type it receives, while LiteLLM's _make_logging_obj takes a call_type argument and never assigns it; the difference belongs to B3501's setup, and the oracle projection leaves call_type out of its logging object until that is settled.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/main.py#L73-L89
