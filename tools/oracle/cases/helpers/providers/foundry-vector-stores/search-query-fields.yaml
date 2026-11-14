@@ -1,0 +1,41 @@
+kind: helper
+name: search-query-fields
+call:
+  foundry_vector_stores:
+    search_query_fields:
+      searches:
+        - vector_store_id: store-1
+          query: hello
+          api_base: https://foundry-search.example
+          optional_params: {}
+          litellm_params: {litellm_embedding_model: openai/text-embedding-3-small}
+          extra_body: null
+          embedding: null
+        - vector_store_id: store-2
+          query: [first, "", third]
+          api_base: https://foundry-search.example
+          optional_params: {top_k: 3, filters: {genre: fiction}, max_num_results: 1}
+          litellm_params:
+            litellm_embedding_model: openai/text-embedding-3-small
+            azure_search_vector_field: customVector
+            litellm_embedding_config: {dimensions: 2}
+          extra_body: {top_k: 99}
+          embedding: [0.5, 0.25]
+        - vector_store_id: store/with?literal
+          query: q
+          api_base: https://foundry-search.example
+          optional_params: {top_k: null}
+          litellm_params:
+            litellm_embedding_model: openai/text-embedding-3-small
+            azure_search_vector_field: ""
+          extra_body: null
+          embedding: [0.125]
+        - vector_store_id: store-missing
+          query: q
+          api_base: https://foundry-search.example
+          optional_params: {}
+          litellm_params: {}
+          extra_body: null
+          embedding: null
+env: {}
+compare: {ignore: []}

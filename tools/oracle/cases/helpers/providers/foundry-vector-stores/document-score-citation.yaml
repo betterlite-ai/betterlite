@@ -1,0 +1,40 @@
+kind: helper
+name: document-score-citation
+call:
+  foundry_vector_stores:
+    document_score_citation:
+      responses:
+        - status: 200
+          headers: []
+          body: '{"value":[{"id":"doc-1","content":"first text","@search.score":0.95,"title":"a","contentVector":[1]},{"id":"doc-2","content":"second"}]}'
+          before_search: null
+        - status: 200
+          headers: []
+          body: '{"value":[{"id":"doc-1","content":"text","@search.score":0.5,"contentVector":[1],"custom_vector":[2],"title":"a","document_id":"old"}]}'
+          before_search: null
+        - status: 200
+          headers: []
+          body: '{"value":[{}]}'
+          before_search: null
+        - status: 200
+          headers: []
+          body: '{}'
+          before_search: null
+        - status: 200
+          headers: [[x-test, present]]
+          body: '{"value":'
+          before_search: null
+        - status: 503
+          headers: []
+          body: '{"value":null}'
+          before_search: null
+        - status: 200
+          headers: []
+          body: '{"value":[{"id":"seed-doc","content":"seed text","@search.score":0.25}]}'
+          before_search:
+            vector_store_id: store-3
+            query: cited query
+            api_base: https://foundry-search.example
+            litellm_params: {litellm_embedding_model: openai/text-embedding-3-small}
+env: {}
+compare: {ignore: []}

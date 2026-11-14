@@ -1,0 +1,20 @@
+kind: helper
+name: azure-search-endpoint
+call:
+  foundry_vector_stores:
+    azure_search_endpoint:
+      scenarios:
+        - api_base: https://custom.example///
+          litellm_params: {}
+        - api_base: ""
+          litellm_params: {azure_search_service_name: foundry-service}
+        - api_base: null
+          litellm_params: {azure_search_service_name: foundry-service}
+        - api_base: null
+          litellm_params: {}
+        - api_base: null
+          litellm_params: {azure_search_service_name: null}
+        - api_base: null
+          litellm_params: {azure_search_service_name: ""}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,1 @@
+{"value":[{"id":"doc-1","content":"hello","@search.score":0.5,"title":"one","contentVector":[0.1,0.2]},{"id":"doc-2","content":"world","@search.score":1}]}

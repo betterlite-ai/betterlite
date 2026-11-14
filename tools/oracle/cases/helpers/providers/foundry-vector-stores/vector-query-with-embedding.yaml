@@ -1,0 +1,22 @@
+kind: helper
+name: vector-query-with-embedding
+call:
+  foundry_vector_stores:
+    vector_query_with_embedding:
+      scenarios:
+        - vector_store_id: store-2
+          query: ordered
+          api_base: https://foundry-search.example
+          optional_params: {}
+          litellm_params: {litellm_embedding_model: openai/text-embedding-3-small}
+          embedding: [0.5, 0.25, 0.125]
+          asynchronous: false
+        - vector_store_id: async-store
+          query: [async, query]
+          api_base: https://foundry-search.example
+          optional_params: {}
+          litellm_params: {litellm_embedding_model: openai/text-embedding-3-small}
+          embedding: [0.125, 0.5]
+          asynchronous: true
+env: {}
+compare: {ignore: []}
