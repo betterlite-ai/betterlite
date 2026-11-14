@@ -1,0 +1,20 @@
+kind: helper
+name: deepgram-transcription-first-word-detection
+call:
+  deepgram_transcription:
+    env: {}
+    steps:
+      - step: reply
+        body: '{"metadata": {"duration": 2}, "results": {"channels": [{"alternatives": [{"transcript": "flat text", "words": [{"word": "flat", "start": 0, "end": 1}, {"word": "text", "start": 1, "end": 2, "speaker": 0}]}]}]}}'
+      - step: reply
+        body: '{"metadata": {"duration": 2}, "results": {"channels": [{"alternatives": [{"words": [{"word": "flat", "start": 0, "end": 1, "speaker": null}, {"word": "text", "start": 1, "end": 2, "speaker": null}]}]}]}}'
+      - step: reply
+        body: '{"metadata": {"duration": 2}, "results": {"channels": [{"alternatives": [{"transcript": "flat text", "words": []}]}]}}'
+      - step: reply
+        body: '{"metadata": {"duration": 2}, "results": {"channels": [{"alternatives": [{"transcript": "flat text", "words": null}]}]}}'
+      - step: reply
+        body: '{"metadata": {"duration": 2}, "results": {"channels": [{"alternatives": [{"transcript": "flat text"}]}]}}'
+      - step: reply
+        body: '{"metadata": {"duration": 2}, "results": {"channels": [{"alternatives": [{"words": [{"word": "flat", "start": 0, "end": 1, "speaker": 3}]}]}]}}'
+env: {}
+compare: {ignore: []}

@@ -1,6 +1,10 @@
+pub mod admission;
 mod auth_wire;
 pub mod caller;
+pub mod inference;
+pub mod invocation;
 pub mod kill_switch_url;
+pub mod routes;
 mod tests;
 
 use auth_wire::ExposedSecret;

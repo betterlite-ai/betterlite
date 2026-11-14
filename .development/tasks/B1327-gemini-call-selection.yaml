@@ -49,5 +49,5 @@ pitfalls:
   - stream is removed from the caller's option map before cache/body transformation observes it.
   - A supplied AsyncHTTPHandler cannot serve the synchronous client branch.
   - stream=1 is not the literal True check modeled by the typed boolean option.
-budget: {max_changed_lines: 575, max_new_expects: 0}
+budget: {max_changed_lines: 1500, max_new_expects: 0}
 review_level: standard

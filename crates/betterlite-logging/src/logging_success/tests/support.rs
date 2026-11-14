@@ -67,6 +67,7 @@ pub(super) struct LoggedCall {
     pub model: String,
     pub messages: Option<Json>,
     pub response: Option<Json>,
+    pub litellm_metadata: IndexMap<String, Json>,
 }
 
 #[derive(Default)]
@@ -118,6 +119,7 @@ impl FakeLogger {
             model: event.payload.model.clone(),
             messages: event.payload.messages.clone(),
             response: event.payload.response.clone(),
+            litellm_metadata: event.litellm_metadata.as_ref().clone(),
         });
         if self.fail {
             return Err(LoggerError::Delivery {
