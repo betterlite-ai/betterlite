@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::slice;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -228,7 +229,7 @@ fn init_flags() {
     assert!(should_init_budget_limiter(
         None,
         None,
-        Some(std::slice::from_ref(&zero))
+        Some(slice::from_ref(&zero))
     ));
     let timed = DeploymentLimits {
         model_id: None,
@@ -238,7 +239,7 @@ fn init_flags() {
     assert!(should_init_budget_limiter(
         None,
         None,
-        Some(std::slice::from_ref(&timed))
+        Some(slice::from_ref(&timed))
     ));
 }
 
@@ -328,18 +329,18 @@ async fn start_window() {
     let cache = window_cache(0.0, None);
     let key = provider_keys("openai", &None).start_time;
     let start = get_or_set_budget_start_time(&cache, &key, 100.0, Duration::from_mins(1)).await;
-    assert!(start.total_cmp(&100.0).is_eq());
+    assert!(start.total_cmp(&100.0_f64).is_eq());
     assert_eq!(stored(&cache, &key), Some(CacheValue::Float(100.0)));
     assert_eq!(
         cache.memory.lock().unwrap().ttl_entries(),
         vec![(key.clone(), 60.0_f64)]
     );
     let cached = get_or_set_budget_start_time(&cache, &key, 500.0, Duration::from_mins(1)).await;
-    assert!(cached.total_cmp(&100.0).is_eq());
+    assert!(cached.total_cmp(&100.0_f64).is_eq());
     assert_eq!(stored(&cache, &key), Some(CacheValue::Float(100.0)));
     let pushed = window_cache(0.0, Some(redis_with(&key, 0.0)));
     let zero = get_or_set_budget_start_time(&pushed, &key, 500.0, Duration::from_mins(1)).await;
-    assert!(zero.total_cmp(&0.0).is_eq());
+    assert!(zero.total_cmp(&0.0_f64).is_eq());
     cache
         .memory
         .lock()
@@ -347,7 +348,7 @@ async fn start_window() {
         .set(&key, CacheValue::Text("broken".to_owned()), None)
         .unwrap();
     let restarted = get_or_set_budget_start_time(&cache, &key, 7.0, Duration::from_mins(1)).await;
-    assert!(restarted.total_cmp(&7.0).is_eq());
+    assert!(restarted.total_cmp(&7.0_f64).is_eq());
     assert_eq!(stored(&cache, &key), Some(CacheValue::Float(7.0)));
 }
 
@@ -584,7 +585,7 @@ async fn zero_budgets() {
     );
     let cache = window_cache(0.0, None);
     let start = get_or_set_budget_start_time(&cache, "start", 5.0, Duration::ZERO).await;
-    assert!(start.total_cmp(&5.0).is_eq());
+    assert!(start.total_cmp(&5.0_f64).is_eq());
     assert_eq!(
         cache.memory.lock().unwrap().ttl_entries(),
         vec![("start".to_owned(), 0.0_f64)]
@@ -594,12 +595,7 @@ async fn zero_budgets() {
 fn empty_and_missing() {
     let windows = BudgetWindows::new(None, Some(IndexMap::new()), &[]);
     assert!(windows.provider.as_ref().is_none());
-    assert!(
-        windows
-            .tag
-            .as_ref()
-            .is_some_and(|configs| configs.is_empty())
-    );
+    assert!(windows.tag.as_ref().is_some_and(IndexMap::is_empty));
     assert!(windows.deployment.as_ref().is_none());
     let output = windows.cache_keys(
         &[BudgetDeployment {
@@ -614,7 +610,7 @@ fn empty_and_missing() {
     assert!(!should_init_budget_limiter(
         None,
         None,
-        Some(std::slice::from_ref(&plain))
+        Some(slice::from_ref(&plain))
     ));
     assert!(!should_init_budget_limiter(None, None, None));
     assert!(!should_init_budget_limiter(None, None, Some(&[])));
@@ -628,11 +624,11 @@ async fn spend_reads() {
     let pushed = window_cache(0.0, Some(redis_with("spend", 0.0)));
     assert!(has_spend(&pushed, "spend").await.unwrap());
     let failing = window_cache(0.0, Some(failing_redis()));
-    assert!(has_spend(&failing, "spend").await.is_err());
+    has_spend(&failing, "spend").await.unwrap_err();
     let broken = window_cache(f64::NAN, None);
-    assert!(has_spend(&broken, "spend").await.is_err());
+    has_spend(&broken, "spend").await.unwrap_err();
     let start = get_or_set_budget_start_time(&broken, "start", 3.0, Duration::from_secs(1)).await;
-    assert!(start.total_cmp(&3.0).is_eq());
+    assert!(start.total_cmp(&3.0_f64).is_eq());
     init_provider_budget_in_cache(&broken, "openai", &provider_config()["openai"], 3.0).await;
     assert!(broken.memory.lock().unwrap().ttl_entries().is_empty());
 }
