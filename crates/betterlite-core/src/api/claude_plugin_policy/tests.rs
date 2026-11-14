@@ -297,7 +297,7 @@ fn a_nonadmin_caller_is_refused_before_the_database_is_consulted() {
         Some(403)
     );
     let admin = caller(Some(ADMIN), None, None);
-    assert!(require_proxy_admin(Some(&admin)).is_ok());
+    require_proxy_admin(Some(&admin)).unwrap();
     let database_down = require_database(false).err().map(|error| error.fields());
     assert_eq!(
         database_down.as_ref().map(|fields| fields.status_code),
@@ -307,7 +307,7 @@ fn a_nonadmin_caller_is_refused_before_the_database_is_consulted() {
         database_down.map(|fields| fields.detail.error),
         Some(DB_NOT_CONNECTED.to_owned())
     );
-    assert!(require_database(true).is_ok());
+    require_database(true).unwrap();
 }
 
 #[test]
@@ -435,7 +435,7 @@ fn evaluate_keeps_only_the_plugins_the_caller_may_see() {
     );
     assert_eq!(
         result.visibility.granted,
-        ["private".to_owned()].into_iter().collect()
+        BTreeSet::from(["private".to_owned()])
     );
 }
 
