@@ -1,0 +1,47 @@
+kind: helper
+name: agentic-ceiling-and-depth
+call:
+  responses_hook_policy:
+    operation: settings
+    probes:
+      - {}
+      - _agentic_loop_depth: 2
+      - max_agentic_loops: 5
+      - max_agentic_loops: 5.0
+      - max_agentic_loops: ' 5 '
+      - max_agentic_loops: '+5'
+      - max_agentic_loops: '1_000'
+      - max_agentic_loops: null
+      - max_agentic_loops: true
+      - max_agentic_loops: 0
+      - max_agentic_loops: -2
+      - max_agentic_loops: 2.5
+      - max_agentic_loops: 'many'
+      - max_agentic_loops: [1, 2]
+      - _agentic_loop_depth: '3'
+      - _agentic_loop_depth: true
+      - _agentic_loop_depth: false
+      - _agentic_loop_depth: 1.9
+      - _agentic_loop_depth: 2.0
+      - _agentic_loop_depth: -0.0
+      - _agentic_loop_depth: ''
+      - _agentic_loop_depth: ' 5 '
+      - _agentic_loop_depth: '1_000'
+      - _agentic_loop_depth: '0'
+      - _agentic_loop_depth: 'abc'
+      - _agentic_loop_depth: '5.0'
+      - _agentic_loop_depth: [1]
+      - _agentic_loop_depth: {a: 1}
+      - _agentic_loop_fingerprints: ['a', 'b']
+      - _agentic_loop_fingerprints: 'ab'
+      - _agentic_loop_fingerprints: {k: 1, j: 2}
+      - _agentic_loop_fingerprints: 5
+      - _agentic_loop_fingerprints: 5.5
+      - _agentic_loop_fingerprints: true
+      - _agentic_loop_fingerprints: null
+      - _agentic_loop_fingerprints: ''
+      - _agentic_loop_depth: 2
+        max_agentic_loops: 4
+        _agentic_loop_fingerprints: ['x']
+env: {}
+compare: {ignore: []}

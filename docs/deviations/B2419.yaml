@@ -1,0 +1,23 @@
+task: B2419
+deviations:
+  - what: An invalid per-deployment max_agentic_loops is rejected when the config loads, while LiteLLM validates it per request and only once the agentic path runs.
+    why: Betterlite decodes model_list into typed settings at boot, so a bad ceiling fails the load instead of letting every request to that model fail later.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5211-L5219
+  - what: An explicit max_agentic_loops ceiling is stored as u32 and must be at least 1; values above u32::MAX are rejected as not a whole number.
+    why: Betterlite's ceiling feeds a bounded loop counter, so Python's arbitrary-precision integer has no Rust counterpart.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/agentic_loop_settings.py#L20-L50
+  - what: A trusted _agentic_loop_depth outside the 64-bit range fails with a ValueError naming the range; Python's int() keeps every magnitude.
+    why: The depth is an i64 in the typed request, and Python's unbounded integer cannot be represented.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5212-L5219
+  - what: Integer conversion accepts ASCII digits, spaces and underscores only; Python's int() also accepts non-ASCII decimal digits and other whitespace.
+    why: Python's Unicode digit tables are not part of the parity surface, so the Rust parser reads the ASCII form the declared int type carries.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5213
+  - what: A tool_use block whose name is a list or object is not refused; Python raises TypeError because an unhashable name cannot be tested against the name set.
+    why: Betterlite's block carries a typed name and a working LiteLLM setup cannot send an unhashable tool name, so the refusal settles as a miss.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5327-L5341
+  - what: A follow-up whose trusted depth is i64::MAX fails with a typed overflow error; Python computes depth+1 at arbitrary precision.
+    why: The bumped depth is stored as an i64, so the next call's trusted depth would not fit its type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/agentic_followup_kwargs.py#L26
+  - what: The fingerprint's json.dumps(default=str) and except-return str(tools) fallbacks are not modeled; trusted tool values are serialized as JSON.
+    why: Betterlite's trusted tool-call values are Json by construction, so the non-JSON branches of the source cannot be reached.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5300-L5304
