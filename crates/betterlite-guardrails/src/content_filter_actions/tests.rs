@@ -400,6 +400,32 @@ mod content_filter_actions_behavior {
     }
 
     #[test]
+    fn filter_blocks_on_a_phrase_pattern() {
+        let mut categories = CategoryLoadResult::default();
+        categories.loaded_categories.insert(
+            "financial_advice".to_owned(),
+            phrase_category(
+                "financial_advice",
+                ContentFilterAction::Block,
+                "put my money to make it grow",
+            ),
+        );
+        let mut detections = Vec::new();
+        let error = filter_single_text(
+            &filter_source(&categories, &[], &[]),
+            "please put my money to make it grow",
+            Some(&mut detections),
+        )
+        .unwrap_err();
+        assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
+        let ContentFilterDetection::CategoryKeyword(record) = &detections[0] else {
+            panic!("expected a category keyword record");
+        };
+        assert_eq!(record.keyword, "phrase: put my money to make it grow");
+        assert_eq!(record.action, "BLOCK");
+    }
+
+    #[test]
     fn category_keyword_appends_a_detection_before_the_action() {
         let matched = matched("alert", "operational", "medium", ContentFilterAction::Mask);
         let mut detections = Vec::new();
