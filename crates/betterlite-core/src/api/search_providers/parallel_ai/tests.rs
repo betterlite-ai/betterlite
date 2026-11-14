@@ -71,6 +71,15 @@ fn display_name_rich_input_and_method_match_the_source() {
     None,
     "https://proxy.test"
 )]
+#[case::empty_variables(
+    &[
+        ("PARALLEL_AI_API_KEY", ""),
+        ("PARALLEL_API_KEY", ""),
+        ("PARALLEL_AI_API_BASE", ""),
+    ],
+    None,
+    PARALLEL_AI_API_BASE
+)]
 fn settings_load_from_the_environment(
     #[case] environment: &[(&str, &str)],
     #[case] api_key: Option<&str>,
@@ -494,6 +503,28 @@ fn reply_keeps_empty_warnings_and_a_null_usage_absent() {
     );
 }
 
+#[test]
+fn reply_treats_explicit_nulls_like_missing_members() {
+    let response = decode_parallel_ai_reply(
+        r#"{"search_id":null,"session_id":null,"usage":null,"warnings":null,"results":[{"title":null,"url":null,"publish_date":null,"excerpts":null}]}"#
+            .as_bytes(),
+    )
+    .unwrap();
+    assert!(response.extra.is_empty());
+    assert_eq!(
+        response.hidden_params,
+        serde_json::from_str::<Object>(r#"{"_parallel_ai_usage":null}"#).unwrap()
+    );
+    assert_eq!(response.results[0].title, "");
+    assert_eq!(response.results[0].url, "");
+    assert_eq!(response.results[0].snippet, "");
+    assert_eq!(response.results[0].date, None);
+    assert_eq!(
+        response.results[0].extra,
+        serde_json::from_str::<Object>(r#"{"excerpts":[]}"#).unwrap()
+    );
+}
+
 #[rstest]
 #[case::empty_excerpts(r#"{"excerpts":[]}"#)]
 #[case::null_excerpts(r#"{"excerpts":null}"#)]
@@ -513,6 +544,7 @@ fn reply_projects_empty_excerpts(#[case] result: &str) {
 #[case::top_level_text(r#""x""#)]
 #[case::results_is_an_object(r#"{"results":{}}"#)]
 #[case::results_is_text(r#"{"results":"x"}"#)]
+#[case::null_results(r#"{"results":null}"#)]
 #[case::null_result(r#"{"results":[null]}"#)]
 #[case::list_result(r#"{"results":[[]]}"#)]
 #[case::numeric_title(r#"{"results":[{"title":7}]}"#)]

@@ -66,7 +66,7 @@ fn parallel_ai_search_settings_prefer_the_ai_key() {
 fn parallel_ai_search_settings_treat_an_empty_variable_as_unset() {
     let (api_key, api_base) = Sections::parallel_ai_search_settings(&lookup(&[
         ("PARALLEL_AI_API_KEY", ""),
-        ("PARALLEL_API_BASE", ""),
+        ("PARALLEL_AI_API_BASE", ""),
         ("PARALLEL_API_KEY", ""),
     ]));
 
