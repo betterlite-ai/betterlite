@@ -1,5 +1,6 @@
 use betterlite_core::agents::json::AgentJson;
 use betterlite_core::agents::provider::a2a::LiteLLMSendMessageResponse;
+use futures_util::FutureExt as _;
 use futures_util::StreamExt as _;
 use futures_util::stream::BoxStream;
 
@@ -72,8 +73,15 @@ where
             api_base: call.api_base.as_deref(),
             agent_extra_headers: call.agent_extra_headers.as_ref(),
         };
-        let mut events =
-            dispatch::<Streamed, C, P, _>(&bridge_call, completion, providers, &mut source).await;
+        // the boxed future keeps dispatch's Mode bound out of the stream's Send check (rust-lang/rust#100013)
+        let mut events = dispatch::<Streamed, C, P, _>(
+            &bridge_call,
+            completion,
+            providers,
+            &mut source,
+        )
+        .boxed()
+        .await;
         while let Some(event) = events.next().await {
             yield event.map_err(SendEntryError::<C::Error, P::Error>::Bridge);
         }

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_core::agents::json::AgentJson;
 use betterlite_core::agents::provider::a2a::JsonRpcId;
 
-use crate::completion_bridge::dispatch::BridgeError;
+use crate::completion_bridge::dispatch::{BridgeError, CompletionError};
 use crate::completion_bridge::tests::support::{
     TestFailure, chunk, parsed, provider_calls, recorded_calls, selected_configs, summaries,
 };
@@ -48,6 +48,28 @@ async fn bridge_passes_api_base_and_agent_headers_to_the_provider() {
         .and_then(|part| part.get("text"))
         .and_then(AgentJson::as_str);
     assert_eq!(text, Some("from the provider"));
+}
+
+#[tokio::test]
+async fn send_routing_reports_a_completion_failure() {
+    let mut fixture = SendFixture::new();
+    fixture.completion.answer = Err(TestFailure("boom"));
+    let call = send_call(
+        "hello",
+        None,
+        params_with_provider(Some(AgentJson::String("langgraph".to_owned()))),
+    );
+
+    let result = fixture.send(call, None).await;
+
+    assert_eq!(recorded_calls(&fixture.completion).len(), 1);
+    assert!(selected_configs(&fixture.providers).is_empty());
+    assert!(matches!(
+        result,
+        Err(SendEntryError::Bridge(BridgeError::Completion(
+            CompletionError::Completion(TestFailure("boom"))
+        )))
+    ));
 }
 
 #[tokio::test]

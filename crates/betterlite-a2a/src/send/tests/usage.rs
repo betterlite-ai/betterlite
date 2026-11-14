@@ -18,7 +18,7 @@ async fn send_usage_sets_the_token_counts_and_pricing_params() {
     .await;
 
     let result = outcome.0.expect("the native send answers");
-    assert_eq!(result.id, Some(JsonRpcId::String("rpc-1".to_owned())));
+    assert_eq!(result.id, Some(JsonRpcId::String("request-1".to_owned())));
     let logging = outcome.1;
     assert_eq!(
         logging.model_call_details.get("usage"),
@@ -76,5 +76,5 @@ async fn send_usage_without_a_logging_object_still_answers() {
     .await;
 
     let result = outcome.expect("the send answers");
-    assert_eq!(result.id, Some(JsonRpcId::String("rpc-1".to_owned())));
+    assert_eq!(result.id, Some(JsonRpcId::String("request-1".to_owned())));
 }
