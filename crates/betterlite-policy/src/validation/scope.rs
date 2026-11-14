@@ -1,3 +1,6 @@
+use std::fmt::Display;
+use std::future::Future;
+
 use super::PolicyValidator;
 use super::lookup::{AliasDatabase, ModelRouter};
 use super::types::{PolicyValidationError, PolicyValidationErrorType};
@@ -43,6 +46,20 @@ impl ScopeKind {
     }
 }
 
+async fn assume_exists<Lookup, Error>(lookup: Lookup, label: &str, alias: &str) -> bool
+where
+    Lookup: Future<Output = Result<bool, Error>>,
+    Error: Display,
+{
+    match lookup.await {
+        Ok(exists) => exists,
+        Err(error) => {
+            tracing::warn!("Could not check {label} '{alias}': {error}");
+            true
+        }
+    }
+}
+
 impl<Guardrails: Sync, Database: AliasDatabase + Sync, Router: ModelRouter + Sync>
     PolicyValidator<Guardrails, Database, Router>
 {
@@ -50,26 +67,19 @@ impl<Guardrails: Sync, Database: AliasDatabase + Sync, Router: ModelRouter + Syn
         let Some(database) = &self.database else {
             return true;
         };
-        match database.team_alias_exists(team_alias).await {
-            Ok(exists) => exists,
-            Err(error) => {
-                tracing::warn!("Could not check team alias '{team_alias}': {error}");
-                true
-            }
-        }
+        assume_exists(
+            database.team_alias_exists(team_alias),
+            "team alias",
+            team_alias,
+        )
+        .await
     }
 
     pub async fn check_key_alias_exists(&self, key_alias: &str) -> bool {
         let Some(database) = &self.database else {
             return true;
         };
-        match database.key_alias_exists(key_alias).await {
-            Ok(exists) => exists,
-            Err(error) => {
-                tracing::warn!("Could not check key alias '{key_alias}': {error}");
-                true
-            }
-        }
+        assume_exists(database.key_alias_exists(key_alias), "key alias", key_alias).await
     }
 
     #[must_use]

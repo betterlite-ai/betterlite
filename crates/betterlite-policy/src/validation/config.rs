@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 
-use super::PolicyValidator;
 use super::error::PolicyParseError;
-use super::lookup::GuardrailRegistry;
-use super::types::{PolicyValidationError, PolicyValidationErrorType, PolicyValidationResponse};
+use super::types::{PolicyValidationError, PolicyValidationErrorType};
 use crate::pipeline::json_value::JsonValue;
 use crate::registry::{RawPolicy, parse_policy};
 use crate::values::Policy;
@@ -14,38 +12,27 @@ fn parse_policy_value(policy_name: &str, data: &JsonValue) -> Result<Policy, Pol
     Ok(parse_policy(policy_name, raw)?)
 }
 
-impl<Guardrails: GuardrailRegistry, Database, Router>
-    PolicyValidator<Guardrails, Database, Router>
-{
-    #[must_use]
-    pub fn validate_policy_config(
-        &self,
-        policy_config: &BTreeMap<String, JsonValue>,
-        validate_db: bool,
-    ) -> PolicyValidationResponse {
-        let mut errors = Vec::new();
-        let mut policies = BTreeMap::new();
-        for (policy_name, data) in policy_config {
-            match parse_policy_value(policy_name, data) {
-                Ok(policy) => {
-                    policies.insert(policy_name.clone(), policy);
-                }
-                Err(error) => errors.push(PolicyValidationError {
-                    policy_name: policy_name.clone(),
-                    error_type: PolicyValidationErrorType::InvalidSyntax,
-                    message: format!("Failed to parse policy: {error}"),
-                    field: None,
-                    value: None,
-                }),
+pub(super) fn parse_policies(
+    policy_config: &BTreeMap<String, JsonValue>,
+) -> Result<BTreeMap<String, Policy>, Vec<PolicyValidationError>> {
+    let mut errors = Vec::new();
+    let mut policies = BTreeMap::new();
+    for (policy_name, data) in policy_config {
+        match parse_policy_value(policy_name, data) {
+            Ok(policy) => {
+                policies.insert(policy_name.clone(), policy);
             }
+            Err(error) => errors.push(PolicyValidationError {
+                policy_name: policy_name.clone(),
+                error_type: PolicyValidationErrorType::InvalidSyntax,
+                message: format!("Failed to parse policy: {error}"),
+                field: None,
+                value: None,
+            }),
         }
-        if !errors.is_empty() {
-            return PolicyValidationResponse {
-                valid: false,
-                errors,
-                warnings: Vec::new(),
-            };
-        }
-        self.validate_policies(&policies, validate_db)
     }
+    if errors.is_empty() {
+        return Ok(policies);
+    }
+    Err(errors)
 }
