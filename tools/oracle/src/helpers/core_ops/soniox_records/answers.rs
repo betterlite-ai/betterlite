@@ -79,9 +79,8 @@ fn error_answer(message: &str, status_code: i64) -> Value {
 }
 
 fn response_answer(payload: &Object, response_format: Option<&str>) -> HelperResult {
-    let parsed = match SonioxTranscriptPayload::try_from(payload.clone()) {
-        Ok(parsed) => parsed,
-        Err(_) => return Ok(json!({ "ok": false, "error": { "status": null } })),
+    let Ok(parsed) = SonioxTranscriptPayload::try_from(payload.clone()) else {
+        return Ok(json!({ "ok": false, "error": { "status": null } }));
     };
     match build_response_from_payload(&parsed, None, response_format) {
         Ok(response) => {
