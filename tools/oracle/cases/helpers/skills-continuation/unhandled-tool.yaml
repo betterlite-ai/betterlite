@@ -1,0 +1,17 @@
+kind: helper
+name: skills-continuation-unhandled-tool
+call:
+  b3395:
+    max_iterations: 10
+    enabled: true
+    model: claude-sonnet
+    messages: [{role: user, content: make a chart}]
+    tools: [{name: litellm_code_execution}, {name: other_tool}]
+    skill_files: {litellm_skill_one: {core/gif_builder.py: "class GifBuilder: pass"}}
+    response: {id: msg_1, type: message, role: assistant, model: claude-sonnet, stop_reason: tool_use, content: [{type: tool_use, id: t1, name: other_tool, input: {}}, {type: tool_use, id: t2, name: litellm_code_execution, input: {code: print(2)}}]}
+    replies:
+      - kind: response
+        response: {id: msg_2, type: message, role: assistant, model: claude-sonnet, stop_reason: end_turn, content: [{type: text, text: done}]}
+env: {}
+compare:
+  ignore: []
