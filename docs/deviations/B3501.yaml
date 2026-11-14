@@ -3,3 +3,6 @@ deviations:
   - what: "make_logging_obj applies its call_type argument to the logging state, so the logged call_type reads create_agent, list_agents, get_agent, delete_agent or list_agent_versions."
     why: "LiteLLM passes the same argument to _make_logging_obj and never reads it, so its logging object keeps the call_type the @client decorator gave the sync function (create, list, get, delete, list_versions). betterlite records the agent operation the caller names, as the task's logging contract requires."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/main.py#L73-L89
+  - what: "make_logging_obj takes the logging state as a required argument, where LiteLLM reads kwargs[\"litellm_logging_obj\"] and calls update_from_kwargs on None when a caller bypasses the @client decorator."
+    why: "A missing logging object raises AttributeError, and no working setup can rely on that, since the decorator always sets the key. betterlite's signature makes the state a parameter, so the crash cannot happen."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/main.py#L80-L82
