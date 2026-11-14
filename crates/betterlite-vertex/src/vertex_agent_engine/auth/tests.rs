@@ -34,11 +34,11 @@ fn text<'headers>(headers: &'headers BTreeMap<String, SecretString>, name: &str)
         .unwrap_or_default()
 }
 
-fn token(value: &str) -> Result<AccessToken, CredentialCacheError> {
-    Ok(AccessToken {
+fn token(value: &str) -> AccessToken {
+    AccessToken {
         token: SecretString::from(value),
         project: String::new(),
-    })
+    }
 }
 
 struct RecordingMint {
@@ -59,20 +59,25 @@ impl RecordingMint {
     }
 }
 
-fn lookup<'mint>(
-    mint: &'mint RecordingMint,
+fn lookup(
+    mint: &RecordingMint,
     credentials: Option<&ConfiguredCredentials>,
     project: Option<&str>,
 ) -> Ready<Result<AccessToken, CredentialCacheError>> {
-    let mut calls = mint.calls.lock().unwrap();
-    let index = calls.len();
-    calls.push((
-        credentials
-            .and_then(ConfiguredCredentials::as_text)
-            .map(str::to_owned),
-        project.map(str::to_owned),
-    ));
-    ready(token(mint.tokens.get(index).copied().unwrap_or_default()))
+    let index = {
+        let mut calls = mint.calls.lock().unwrap();
+        let recorded = calls.len();
+        calls.push((
+            credentials
+                .and_then(ConfiguredCredentials::as_text)
+                .map(str::to_owned),
+            project.map(str::to_owned),
+        ));
+        recorded
+    };
+    ready(Ok(token(
+        mint.tokens.get(index).copied().unwrap_or_default(),
+    )))
 }
 
 #[tokio::test]
@@ -87,7 +92,7 @@ async fn caller_header_replacement() {
         ("Content-Type".to_owned(), "text/plain".to_owned()),
         ("x-goog-user-project".to_owned(), "kept".to_owned()),
     ]);
-    let headers = auth_headers(&auth, &caller, |_, _| ready(token("minted")))
+    let headers = auth_headers(&auth, &caller, |_, _| ready(Ok(token("minted"))))
         .await
         .unwrap();
     assert_eq!(text(&headers, "Authorization"), "Bearer minted");
