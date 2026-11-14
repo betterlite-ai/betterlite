@@ -26,3 +26,10 @@ rstest = "=0.27.0"
 
 [lints]
 workspace = true
+
+# typos reads the nearest config carrier, and this manifest is the one above python/
+[package.metadata.typos.default.extend-words]
+ACN = "ACN"
+NIN = "NIN"
+initalization = "initalization"
+asend = "asend"
