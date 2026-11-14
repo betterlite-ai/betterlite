@@ -1,14 +1,14 @@
 id: B3666
 milestone: M6 guardrails
 title: Guardrail session deduplication and deployment hooks
-status: todo
+status: done
 depends_on: [B207, B3661, B3664, B3665, B3679, B5471]
 file: tasks/B3666-guardrail-session-hooks.yaml
 covers:
   - "litellm/integrations/custom_guardrail.py"
 parent: B104
 split_from: B104
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1742
