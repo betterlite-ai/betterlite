@@ -1,13 +1,14 @@
 use secrecy::SecretString;
 
 use crate::loader::EnvironmentLookup;
-use crate::sections::Sections;
+use crate::types::ModelDeployment;
 
 const DEFAULT_API_BASE: &str = "https://sdk.nimbleway.com/v2";
 const API_KEY_VAR: &str = "NIMBLE_API_KEY";
 const API_BASE_VAR: &str = "NIMBLE_API_BASE";
 
-impl Sections {
+// clippy's multiple_inherent_impl gives each provider's resolver a config type of its own
+impl ModelDeployment {
     #[must_use]
     pub fn nimble_search_settings(
         lookup: &dyn EnvironmentLookup,

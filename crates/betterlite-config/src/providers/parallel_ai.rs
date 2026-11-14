@@ -1,13 +1,14 @@
 use secrecy::SecretString;
 
 use crate::loader::EnvironmentLookup;
-use crate::sections::Sections;
+use crate::types::ModelInfo;
 
 const DEFAULT_API_BASE: &str = "https://api.parallel.ai";
 const API_KEY_VARS: [&str; 2] = ["PARALLEL_AI_API_KEY", "PARALLEL_API_KEY"];
 const API_BASE_VAR: &str = "PARALLEL_AI_API_BASE";
 
-impl Sections {
+// clippy's multiple_inherent_impl gives each provider's resolver a config type of its own
+impl ModelInfo {
     #[must_use]
     pub fn parallel_ai_search_settings(
         lookup: &dyn EnvironmentLookup,
