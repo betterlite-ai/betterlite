@@ -105,8 +105,9 @@ fn init_logs_the_rule_count_and_default_action_once() {
         "unexpected log output {output}"
     );
     assert!(output.contains("rules=2"), "missing rule count in {output}");
+    // the fmt subscriber renders a string field through Debug, so the value is quoted
     assert!(
-        output.contains("default_action=deny"),
+        output.contains(r#"default_action="deny""#),
         "missing default action in {output}"
     );
 }
