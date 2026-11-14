@@ -1,0 +1,35 @@
+kind: helper
+name: snowflake-openai-request
+call:
+  b5844:
+    steps:
+      - kind: request
+        model: snowflake/mistral-large2
+        messages: [{role: system, content: be brief}, {role: user, content: hi}]
+        options: {temperature: 0.5, max_tokens: 100, stream: true}
+      - kind: request
+        model: mistral-large2
+        messages: [{role: user, content: hi}]
+        options: {max_completion_tokens: 200, max_tokens: 100}
+      - kind: request
+        model: mistral-large2
+        messages: [{role: user, content: hi}]
+        options: {max_completion_tokens: 0, max_tokens: 50}
+      - kind: request
+        model: mistral-large2
+        messages: [{role: user, content: hi}]
+        options: {max_tokens: 0}
+      - kind: request
+        model: mistral-large2
+        messages: [{role: user, content: hi}]
+        options: {temperature: 0.1, top_p: 0.9, extra_body: {foo: bar, temperature: 0.9}}
+      - kind: request
+        model: mistral-large2
+        messages: [{role: user, content: hi}]
+        options: {}
+      - kind: request
+        model: Snowflake/llama3
+        messages: [{role: user, content: hi}, {role: assistant, content: hello}, {role: user, content: bye}]
+        options: {stream: false}
+env: {}
+compare: {ignore: []}
