@@ -46,11 +46,15 @@ where
             fetched
                 .buffered(self.client.limits.body_bytes)
                 .await
-                .map_err(|source| match source {
-                    TransportError::ConnectTimeout(_) | TransportError::Deadline(_) => {
+                .map_err(|source| {
+                    if matches!(
+                        &source,
+                        TransportError::ConnectTimeout(_) | TransportError::Deadline(_)
+                    ) {
                         VertexBatchCreateError::LookupTimeout
+                    } else {
+                        VertexBatchCreateError::Transport { source }
                     }
-                    other => VertexBatchCreateError::Transport { source: other },
                 })
         };
         // safe_get returns at the response head, so the deadline has to cover the body read too

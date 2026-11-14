@@ -121,8 +121,8 @@ impl CacheTransport for Scripted {
             deadline: request.deadline,
         });
         async move {
-            if let Some(release) = release {
-                assert!(release.await.is_ok(), "the test opened the gate");
+            if let Some(open_gate) = release {
+                assert!(open_gate.await.is_ok(), "the test opened the gate");
             }
             reply.answer()
         }
@@ -163,8 +163,8 @@ pub(super) const STALLED_BODY_HEAD: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length:
 pub(super) async fn stalled_server(head: Option<&'static [u8]>) -> Stalling {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
-    let held: Arc<Mutex<Vec<TcpStream>>> = Arc::default();
-    let keeper = Arc::clone(&held);
+    let accepted: Arc<Mutex<Vec<TcpStream>>> = Arc::default();
+    let keeper = Arc::clone(&accepted);
     let mut tasks = JoinSet::new();
     tasks.spawn(async move {
         while let Ok((mut stream, _peer)) = listener.accept().await {
@@ -176,7 +176,7 @@ pub(super) async fn stalled_server(head: Option<&'static [u8]>) -> Stalling {
     });
     Stalling {
         base,
-        _held: held,
+        _held: accepted,
         _tasks: tasks,
     }
 }
