@@ -9,10 +9,17 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_http::error::HttpError;
+use betterlite_logging::logging_state::correlation::{
+    CorrelationContext, CorrelationSettings, CorrelationSetup,
+};
+use betterlite_logging::logging_state::types::{
+    CallbackPolicy, DynamicCallbacks, RequestLoggingFlags,
+};
+use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_logging::logging_success::ports::SuccessClock;
 use betterlite_logging::passthrough_logging_state::logger::PassThroughEndpointLogging;
 use betterlite_logging::passthrough_stream_logging::object::{
-    StreamLoggingObject, StreamSuccessCall, StreamSuccessDispatch,
+    StreamLoggingObject, StreamLoggingState, StreamSuccessCall, StreamSuccessDispatch,
 };
 use betterlite_logging::passthrough_stream_logging::router::{
     AnthropicFrameProbe, StreamLoggingRouter,
@@ -26,6 +33,7 @@ use betterlite_logging::passthrough_stream_logging::types::{
 };
 use betterlite_models::decisions::Json;
 use betterlite_openai::aleph_alpha::error::AlephAlphaError;
+use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
 use futures_util::Stream;
 use futures_util::stream::{BoxStream, iter};
@@ -34,10 +42,10 @@ use tokio::sync::{Notify, oneshot};
 use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 
-use super::logging::GenAiStreamLogging;
-use super::metadata::GenAiStreamMetadata;
-use super::provider::GenAiProvider;
 use super::{AsyncGoogleGenAiStream, GenAiStreamError, GoogleGenAiStream};
+use crate::google_genai::logging::GenAiStreamLogging;
+use crate::google_genai::metadata::GenAiStreamMetadata;
+use crate::google_genai::provider::GenAiProvider;
 
 const LINE_LIMIT: usize = 0x0010_0000;
 const SMALL_LINE_LIMIT: usize = 9;
@@ -245,13 +253,57 @@ fn logging_with_gemini(
     GenAiStreamLogging {
         router: Arc::new(router),
         logging_obj: Arc::new(StreamLoggingObject {
-            slot: Mutex::new(None),
+            slot: Mutex::new(Some(stream_logging_state())),
             dispatch: Arc::new(RecordingDispatch { done }),
         }),
         passthrough: Arc::new(PassThroughEndpointLogging {
             injected_log_dispatch: None,
         }),
         tasks: TaskTracker::new(),
+    }
+}
+
+// the success dispatch only runs while the logging object still holds its state
+fn stream_logging_state() -> StreamLoggingState {
+    let mut correlation = CorrelationContext::default();
+    let setup = CorrelationSetup {
+        context: &mut correlation,
+        settings: CorrelationSettings::default(),
+    };
+    let redactor = Redactor::new(16).expect("the redactor builds");
+    let logging = LoggingState::new(
+        logging_init(),
+        setup,
+        &redactor,
+        || "trace-1".to_owned(),
+        || Duration::ZERO,
+    )
+    .expect("the logging state builds");
+    StreamLoggingState {
+        logging,
+        correlation,
+    }
+}
+
+fn logging_init() -> LoggingInit {
+    LoggingInit {
+        model: "gemini-2.5-flash".to_owned(),
+        call_type: "pass_through_endpoint".to_owned(),
+        start_time: FixedClock.now(),
+        litellm_call_id: "call-1".to_owned(),
+        function_id: "function-1".to_owned(),
+        messages: None,
+        stream: Some(true),
+        litellm_trace_id: Some("trace-1".to_owned()),
+        kwargs: IndexMap::new(),
+        litellm_params: IndexMap::new(),
+        callback_dynamic_params: IndexMap::new(),
+        trusted_callback_vars: Vec::new(),
+        standard_built_in_tools_params: IndexMap::new(),
+        dynamic_callbacks: DynamicCallbacks::default(),
+        applied_guardrails: None,
+        request_logging: RequestLoggingFlags::default(),
+        callback_policy: CallbackPolicy::default(),
     }
 }
 
