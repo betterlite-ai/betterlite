@@ -1,6 +1,7 @@
 use http::header::InvalidHeaderValue;
 use thiserror::Error;
 
+use crate::gemini_response::decode::MAX_RESPONSE_BYTES;
 use crate::model_urls::error::VertexUrlError;
 
 #[derive(Debug, Error)]
@@ -28,6 +29,10 @@ pub enum VertexRecognitionError {
         #[source]
         source: serde_json::Error,
     },
+    #[error(
+        "the Google Speech-to-Text reply is {size} bytes, over the {MAX_RESPONSE_BYTES} byte limit"
+    )]
+    TooLarge { size: usize },
     #[error("the authorization header cannot carry the access token")]
     Authorization {
         #[source]
@@ -50,7 +55,10 @@ impl VertexRecognitionError {
             | Self::Project { .. }
             | Self::ResponseFormat { .. } => Some(400),
             Self::NotJson { status, .. } => Some(*status),
-            Self::Shape { .. } | Self::Authorization { .. } | Self::UserProject { .. } => None,
+            Self::Shape { .. }
+            | Self::TooLarge { .. }
+            | Self::Authorization { .. }
+            | Self::UserProject { .. } => None,
         }
     }
 }

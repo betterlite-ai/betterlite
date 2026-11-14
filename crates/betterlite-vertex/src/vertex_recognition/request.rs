@@ -1,18 +1,16 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_openai::api::audio_file_input::language::normalize_language_to_bcp47;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::reasoning_models::DropParams;
 use http::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::Value;
 
 use crate::model_urls::base_url::validate_vertex_location;
 use crate::vertex_recognition::error::VertexRecognitionError;
-use crate::vertex_recognition::types::{
-    AutoDecodingConfig, RecognitionConfig, RecognitionFeatures, RecognizeRequest,
-};
+use crate::vertex_recognition::types::{RecognitionConfig, RecognitionFeatures, RecognizeRequest};
 
 pub const DEFAULT_LOCATION: &str = "us";
 pub const AUTO_LANGUAGE_CODE: &str = "auto";
@@ -22,13 +20,8 @@ pub const SUPPORTED_RESPONSE_FORMATS: [&str; 2] = ["json", "text"];
 const URL_UNSAFE_PROJECT_CHARS: [char; 9] = ['/', '?', '#', '\\', ':', ' ', '\t', '\n', '\r'];
 const VERTEX_AI_PREFIX: &str = "vertex_ai/";
 
-pub fn validate_vertex_transcription_location(
-    location: Option<&str>,
-) -> Result<&str, VertexRecognitionError> {
-    let Some(location) = location else {
-        return Ok(DEFAULT_LOCATION);
-    };
-    validate_vertex_location(Some(location))
+pub fn validate_speech_location(location: Option<&str>) -> Result<&str, VertexRecognitionError> {
+    validate_vertex_location(Some(location.unwrap_or(DEFAULT_LOCATION)))
         .map_err(|source| VertexRecognitionError::Location { source })
 }
 
@@ -41,9 +34,7 @@ pub fn speech_to_text_host(location: &str) -> String {
     }
 }
 
-pub fn validate_vertex_transcription_project_id(
-    project: &str,
-) -> Result<&str, VertexRecognitionError> {
+pub fn validate_speech_project(project: &str) -> Result<&str, VertexRecognitionError> {
     // an empty id, a parent path or any of these characters would move the request to another resource
     let unsafe_project = project.is_empty()
         || project.contains("..")
@@ -109,18 +100,18 @@ pub fn complete_url(
     project: Option<&str>,
     credential_project: Option<&str>,
 ) -> Result<String, VertexRecognitionError> {
-    let location = validate_vertex_transcription_location(location)?;
-    let Some(project) = project.or(credential_project) else {
+    let checked_location = validate_speech_location(location)?;
+    let Some(requested) = project.or(credential_project) else {
         return Err(VertexRecognitionError::ProjectRequired);
     };
-    let project = validate_vertex_transcription_project_id(project)?;
+    let project_id = validate_speech_project(requested)?;
     let base = api_base.map_or_else(
-        || format!("https://{}", speech_to_text_host(location)),
+        || format!("https://{}", speech_to_text_host(checked_location)),
         str::to_owned,
     );
-    let base = base.trim_end_matches('/');
+    let trimmed_base = base.trim_end_matches('/');
     Ok(format!(
-        "{base}/v2/projects/{project}/locations/{location}/recognizers/_:recognize"
+        "{trimmed_base}/v2/projects/{project_id}/locations/{checked_location}/recognizers/_:recognize"
     ))
 }
 
@@ -128,13 +119,11 @@ pub fn complete_url(
 pub fn recognize_request(
     model: &str,
     audio: &ProcessedAudioFile,
-    language: Option<&Value>,
+    language: Option<&Json>,
 ) -> RecognizeRequest {
-    let language_codes = match language {
-        Some(Value::String(text)) if !text.is_empty() => {
-            vec![normalize_language_to_bcp47(text)]
-        }
-        _ => vec![AUTO_LANGUAGE_CODE.to_owned()],
+    let language_code = match language {
+        Some(Json::Text(text)) if !text.is_empty() => normalize_language_to_bcp47(text),
+        _ => AUTO_LANGUAGE_CODE.to_owned(),
     };
     RecognizeRequest {
         config: RecognitionConfig {
@@ -142,11 +131,11 @@ pub fn recognize_request(
                 .strip_prefix(VERTEX_AI_PREFIX)
                 .unwrap_or(model)
                 .to_owned(),
-            language_codes,
+            language_codes: vec![language_code],
             features: RecognitionFeatures {
                 enable_automatic_punctuation: true,
             },
-            auto_decoding_config: AutoDecodingConfig {},
+            auto_decoding_config: Object::new(),
         },
         content: STANDARD.encode(&audio.file_content),
     }

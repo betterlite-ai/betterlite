@@ -7,6 +7,7 @@ use rust_decimal::Decimal;
 use serde::Serialize;
 use serde_json::Deserializer;
 
+use crate::gemini_response::decode::MAX_RESPONSE_BYTES;
 use crate::vertex_recognition::error::VertexRecognitionError;
 use crate::vertex_recognition::types::RecognizeResponse;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -38,6 +39,11 @@ pub fn parse_duration_seconds(duration: Option<&str>) -> Option<Decimal> {
 pub fn decode_vertex_recognition(
     reply: &UpstreamResponse,
 ) -> Result<RecognitionResponse, VertexRecognitionError> {
+    if reply.body.len() > MAX_RESPONSE_BYTES {
+        return Err(VertexRecognitionError::TooLarge {
+            size: reply.body.len(),
+        });
+    }
     let mut decoder = Deserializer::from_slice(&reply.body);
     let parsed: RecognizeResponse = serde_path_to_error::deserialize(&mut decoder)
         .map_err(|error| decode_error(reply.status, error))?;
@@ -62,23 +68,12 @@ fn decode_error(
     VertexRecognitionError::NotJson { status, source }
 }
 fn project(parsed: RecognizeResponse) -> RecognitionResponse {
-    let text = {
-        let mut transcripts = Vec::new();
-        for result in &parsed.results {
-            let Some(alternative) = result.alternatives.first() else {
-                continue;
-            };
-            let Some(transcript) = alternative
-                .transcript
-                .as_deref()
-                .filter(|transcript| !transcript.is_empty())
-            else {
-                continue;
-            };
-            transcripts.push(transcript);
-        }
-        transcripts.join(" ")
-    };
+    let transcripts: Vec<&str> = parsed
+        .results
+        .iter()
+        .filter_map(|result| result.alternatives.first()?.transcript.as_deref())
+        .filter(|transcript| !transcript.is_empty())
+        .collect();
     let language = parsed
         .results
         .iter()
@@ -98,7 +93,7 @@ fn project(parsed: RecognizeResponse) -> RecognitionResponse {
     )
     .and_then(|seconds| duration_number(Some(seconds)).ok());
     RecognitionResponse {
-        text,
+        text: transcripts.join(" "),
         task: TranscriptionTask::Transcribe,
         language,
         duration,

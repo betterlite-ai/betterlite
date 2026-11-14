@@ -4,18 +4,20 @@ use std::fs;
 use std::path::PathBuf;
 
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::reasoning_models::DropParams;
 use http::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use rstest::rstest;
 use secrecy::SecretString;
-use serde_json::{Value, json};
+use serde_json::json;
 
+use crate::gemini_response::decode::MAX_RESPONSE_BYTES;
 use crate::vertex_recognition::error::VertexRecognitionError;
 use crate::vertex_recognition::request::{
     complete_url, map_openai_params, recognize_request, validate_environment,
-    validate_vertex_transcription_project_id,
+    validate_speech_project,
 };
 use crate::vertex_recognition::response::{
     TranscriptionTask, decode_vertex_recognition, parse_duration_seconds,
@@ -30,10 +32,7 @@ fn audio() -> ProcessedAudioFile {
 }
 
 fn object(source: &str) -> Object {
-    match serde_json::from_str(source).unwrap() {
-        Value::Object(fields) => fields,
-        other => panic!("expected an object, got {other}"),
-    }
+    serde_json::from_str(source).unwrap()
 }
 
 fn reply(status: u16, body: &str) -> UpstreamResponse {
@@ -44,8 +43,9 @@ fn reply(status: u16, body: &str) -> UpstreamResponse {
     }
 }
 
-fn answer(status: u16, body: &str) -> Value {
-    serde_json::to_value(decode_vertex_recognition(&reply(status, body)).unwrap()).unwrap()
+fn answer(status: u16, body: &str) -> Object {
+    let decoded = decode_vertex_recognition(&reply(status, body)).unwrap();
+    serde_json::from_value(serde_json::to_value(decoded).unwrap()).unwrap()
 }
 
 fn drops(global: bool, request: bool) -> DropParams {
@@ -118,7 +118,7 @@ fn a_missing_project_is_required() {
 #[case::newline("bad\nproject")]
 #[case::carriage_return("bad\rproject")]
 fn unsafe_projects_are_rejected(#[case] project: &str) {
-    let error = validate_vertex_transcription_project_id(project).unwrap_err();
+    let error = validate_speech_project(project).unwrap_err();
     assert!(matches!(error, VertexRecognitionError::Project { .. }));
     assert_eq!(error.status_code(), Some(400));
 }
@@ -234,19 +234,15 @@ fn header_overrides_replace_caller_values() {
 }
 
 #[rstest]
-#[case::absent(None, r#"["auto"]"#)]
-#[case::empty(Some(json!("")), r#"["auto"]"#)]
-#[case::number(Some(json!(5)), r#"["auto"]"#)]
-#[case::bare(Some(json!("en")), r#"["en-US"]"#)]
-#[case::qualified(Some(json!("en-gb")), r#"["en-gb"]"#)]
-#[case::unknown(Some(json!("zz")), r#"["zz"]"#)]
-fn recognize_request_languages(#[case] language: Option<Value>, #[case] expected: &str) {
+#[case::absent(None, "auto")]
+#[case::empty(Some(Json::Text(String::new())), "auto")]
+#[case::not_text(Some(Json::Bool(true)), "auto")]
+#[case::bare(Some(Json::Text("en".to_owned())), "en-US")]
+#[case::qualified(Some(Json::Text("en-gb".to_owned())), "en-gb")]
+#[case::unknown(Some(Json::Text("zz".to_owned())), "zz")]
+fn recognize_request_languages(#[case] language: Option<Json>, #[case] expected: &str) {
     let request = recognize_request("gemini-2.0-flash", &audio(), language.as_ref());
-    let value = serde_json::to_value(request).unwrap();
-    assert_eq!(
-        value["config"]["languageCodes"],
-        serde_json::from_str::<Value>(expected).unwrap()
-    );
+    assert_eq!(request.config.language_codes, [expected]);
 }
 
 #[test]
@@ -315,12 +311,17 @@ fn extra_provider_fields_are_ignored_and_stored() {
         decoded.metadata.native_fields.get("requestId"),
         Some(&json!("r1"))
     );
+    let result = &decoded.metadata.results[0];
     assert_eq!(
-        decoded.metadata.results[0]
-            .native_fields
-            .get("resultEndTime"),
+        result.native_fields.get("resultEndTime"),
         Some(&json!("1.5s"))
     );
+    assert_eq!(
+        result.alternatives[0].native_fields.get("confidence"),
+        Some(&json!(0.5))
+    );
+    let metadata = decoded.metadata.metadata.unwrap();
+    assert_eq!(metadata.native_fields.get("model"), Some(&json!("m")));
 }
 
 #[test]
@@ -331,6 +332,19 @@ fn a_null_results_field_is_a_shape_error() {
     let nested = decode_vertex_recognition(&reply(200, r#"{"results":[{"alternatives":null}]}"#))
         .unwrap_err();
     assert!(matches!(nested, VertexRecognitionError::Shape { .. }));
+}
+
+#[test]
+fn a_reply_over_the_size_limit_is_refused() {
+    let at_limit = format!("{{}}{}", " ".repeat(MAX_RESPONSE_BYTES - 2));
+    assert_eq!(at_limit.len(), MAX_RESPONSE_BYTES);
+    assert!(decode_vertex_recognition(&reply(200, &at_limit)).is_ok());
+    let error = decode_vertex_recognition(&reply(200, &format!("{at_limit} "))).unwrap_err();
+    assert!(matches!(
+        error,
+        VertexRecognitionError::TooLarge { size } if size == MAX_RESPONSE_BYTES + 1
+    ));
+    assert_eq!(error.status_code(), None);
 }
 
 #[test]

@@ -1,6 +1,7 @@
 mod tests;
 
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::reasoning_models::DropParams;
@@ -37,7 +38,7 @@ pub(crate) enum Step {
     Request {
         model: String,
         content: String,
-        language: Option<Value>,
+        language: Option<Json>,
     },
     Reply {
         status: u16,
@@ -79,7 +80,7 @@ where
 fn request_step(
     model: &str,
     content: &str,
-    language: Option<&Value>,
+    language: Option<&Json>,
 ) -> Result<Value, Box<HelperError>> {
     let audio = ProcessedAudioFile {
         file_content: content.as_bytes().to_vec(),

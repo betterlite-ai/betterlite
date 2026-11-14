@@ -1,9 +1,6 @@
 use betterlite_openai::openai_base_config::Object;
 use serde::{Deserialize, Serialize};
 
-// LiteLLM's VertexSpeechToTextAutoDecodingConfig is an empty TypedDict, so it reaches the wire as {}
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
-pub struct AutoDecodingConfig {}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecognitionFeatures {
@@ -15,7 +12,7 @@ pub struct RecognitionConfig {
     pub model: String,
     pub language_codes: Vec<String>,
     pub features: RecognitionFeatures,
-    pub auto_decoding_config: AutoDecodingConfig,
+    pub auto_decoding_config: Object, // LiteLLM's empty TypedDict, so {} on the wire
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct RecognizeRequest {
@@ -27,6 +24,8 @@ pub struct RecognizeRequest {
 #[serde(default, rename_all = "camelCase")]
 pub struct Alternative {
     pub transcript: Option<String>,
+    #[serde(flatten)]
+    pub native_fields: Object,
 }
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -40,6 +39,8 @@ pub struct RecognitionResult {
 #[serde(default, rename_all = "camelCase")]
 pub struct ResponseMetadata {
     pub total_billed_duration: Option<String>,
+    #[serde(flatten)]
+    pub native_fields: Object,
 }
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
