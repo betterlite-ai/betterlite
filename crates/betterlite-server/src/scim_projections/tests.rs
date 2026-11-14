@@ -51,10 +51,10 @@ fn field<'a>(value: &'a JsonData, name: &str) -> &'a JsonData {
     let JsonData::Object(fields) = value else {
         panic!("{name} read from a non-object");
     };
-    match fields.get(name) {
-        Some(found) => found,
-        None => panic!("{name} is missing"),
-    }
+    let Some(found) = fields.get(name) else {
+        panic!("{name} is missing");
+    };
+    found
 }
 
 fn element<'a>(value: &'a JsonData, index: usize) -> &'a JsonData {
