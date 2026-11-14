@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::future::IntoFuture as _;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::Router;
 use axum::extract::{Request, State};
@@ -205,6 +206,38 @@ async fn akto_guardrail_send_request_parses_the_verdict_after_sending() {
         recorded.query.as_deref(),
         Some("akto_connector=litellm&ingest_data=true")
     );
+}
+
+#[tokio::test]
+async fn akto_guardrail_send_request_times_out_at_the_guardrail_timeout() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let base = format!("http://{}", listener.local_addr().expect("address"));
+    let router = Router::new().route(
+        "/api/http-proxy",
+        post(|| async {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            (AxumStatus::OK, "{}")
+        }),
+    );
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, router).into_future());
+    let mut guardrail = guardrail();
+    guardrail.base_url = base;
+    guardrail.timeout = Duration::from_millis(100);
+    let payload = guardrail
+        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
+        .expect("payload");
+    let error = guardrail
+        .send_request(
+            AktoCallFlags {
+                guardrails: true,
+                ingest_data: false,
+            },
+            &payload,
+        )
+        .await
+        .expect_err("timeout");
+    assert!(matches!(error, AktoError::Transport { .. }));
 }
 
 #[tokio::test]
