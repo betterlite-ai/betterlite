@@ -1671,6 +1671,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-env",
  "betterlite-lens",
+ "betterlite-models",
  "betterlite-openai",
  "betterlite-postgres-fixture",
  "betterlite-roi",
