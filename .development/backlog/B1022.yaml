@@ -1,7 +1,7 @@
 id: B1022
 milestone: M5 api families
 title: File upload validation
-status: todo
+status: done
 depends_on: [B002, B171, B1087, B2460]
 file: tasks/B1022-file-upload-validation.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/openai_files_endpoints/batch_file_validation.py"
 parent: B087
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1718
