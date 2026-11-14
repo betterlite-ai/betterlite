@@ -184,7 +184,7 @@ fn detect_loop(history: &[String], calls: &[ToolCall]) -> bool {
 }
 
 fn detect_exhaustion(status: Option<i64>, tool_results: &[ToolResult]) -> bool {
-    if status.is_some_and(|status| EXHAUSTION_STATUSES.contains(&status)) {
+    if status.is_some_and(|status_code| EXHAUSTION_STATUSES.contains(&status_code)) {
         return true;
     }
     for result in tool_results {

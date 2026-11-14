@@ -36,7 +36,7 @@ pub fn jaccard(left: &BTreeSet<String>, right: &BTreeSet<String>) -> f64 {
 }
 
 fn ratio(part: usize, whole: usize) -> f64 {
-    let part = f64::from(u32::try_from(part).unwrap_or(u32::MAX));
-    let whole = f64::from(u32::try_from(whole).unwrap_or(u32::MAX));
-    part / whole
+    let part_as_f64 = f64::from(u32::try_from(part).unwrap_or(u32::MAX));
+    let whole_as_f64 = f64::from(u32::try_from(whole).unwrap_or(u32::MAX));
+    part_as_f64 / whole_as_f64
 }
