@@ -127,10 +127,12 @@ fn openai_call_resolves_the_legacy_parameter_precedence() {
     request.api_key = Some(SecretString::from("request-key"));
     request.api_base = Some("https://request.example".to_owned());
     request.organization = Some("request-org".to_owned());
+    request.max_retries = Some(5);
     let call = openai_call(service.run(&request).expect("the call prepares"));
     assert_eq!(exposed(call.api_key.as_ref()), Some("request-key"));
     assert_eq!(call.api_base, "https://request.example");
     assert_eq!(call.organization.as_deref(), Some("request-org"));
+    assert_eq!(call.max_retries, Some(5));
 }
 
 #[test]
@@ -232,6 +234,7 @@ fn vertex_call_resolves_the_vertex_precedence() {
     let service = service_with(settings);
     let mut request = input(BatchListProvider::VertexAi);
     request.api_base = Some("https://vertex.example".to_owned());
+    request.max_retries = Some(3);
     let call = vertex_call(service.run(&request).expect("prepares"));
     assert_eq!(call.api_base, "https://vertex.example");
     assert_eq!(call.vertex_project.as_deref(), Some("global-project"));
@@ -240,6 +243,7 @@ fn vertex_call_resolves_the_vertex_precedence() {
         exposed(call.vertex_credentials.as_ref()),
         Some("env-credentials")
     );
+    assert_eq!(call.max_retries, Some(3));
 }
 
 #[test]
