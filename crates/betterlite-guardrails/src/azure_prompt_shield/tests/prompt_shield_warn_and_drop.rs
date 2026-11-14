@@ -30,7 +30,10 @@ impl Write for Captured {
     }
 }
 
-fn capture<T>(run: impl FnOnce() -> T) -> (T, String) {
+fn capture<T, Run>(run: Run) -> (T, String)
+where
+    Run: FnOnce() -> T,
+{
     let captured = Captured::default();
     let writer = captured.clone();
     let subscriber = tracing_subscriber::fmt()

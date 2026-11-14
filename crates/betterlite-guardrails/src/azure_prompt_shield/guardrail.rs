@@ -76,6 +76,8 @@ impl AzurePromptShieldGuardrail {
             cost_tier,
             lookup,
         )?;
+        let api_key = resolved_reference(params.api_key.expose_secret(), lookup)?;
+        let api_base = resolved_reference(&params.api_base, lookup)?;
         let mut settings = params.settings;
         if settings.supported_event_hooks.is_none() {
             settings.supported_event_hooks = Some(SUPPORTED_EVENT_HOOKS.to_vec());
@@ -89,8 +91,8 @@ impl AzurePromptShieldGuardrail {
             base,
             transport: AzureGuardrailBase {
                 async_handler: params.async_handler,
-                api_key: params.api_key,
-                api_base: params.api_base,
+                api_key: SecretString::from(api_key),
+                api_base,
                 api_version: resolved_api_version(params.api_version.as_deref()),
                 timeout: params.timeout.unwrap_or(DEFAULT_TIMEOUT),
             },

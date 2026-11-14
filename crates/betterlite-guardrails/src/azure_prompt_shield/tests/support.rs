@@ -21,7 +21,9 @@ use crate::azure_prompt_shield::process::RecordTiming;
 use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::settings::GuardrailSettings;
 use crate::guardrail_records::error::GuardrailSpanError;
-use crate::guardrail_records::record::{GuardrailRecordContext, GuardrailSpanSink};
+use crate::guardrail_records::record::{
+    GuardrailInvocationRecord, GuardrailRecordContext, GuardrailSpanSink,
+};
 use crate::hook_initializers::secret_lookup::SecretLookup;
 
 pub(crate) const CLEAN: &str =
@@ -152,10 +154,7 @@ impl Log {
 pub(crate) struct DiscardSink;
 
 impl GuardrailSpanSink for DiscardSink {
-    fn emit(
-        &self,
-        _record: &crate::guardrail_records::record::GuardrailInvocationRecord,
-    ) -> Result<(), GuardrailSpanError> {
+    fn emit(&self, _record: &GuardrailInvocationRecord) -> Result<(), GuardrailSpanError> {
         Ok(())
     }
 }

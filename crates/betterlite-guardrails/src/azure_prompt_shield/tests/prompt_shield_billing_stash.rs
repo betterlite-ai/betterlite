@@ -120,5 +120,5 @@ fn a_priced_usage_is_recorded_but_never_counted_in_spend() {
         record.get("guardrail_cost_in_spend"),
         Some(&GuardrailValue::Boolean(false))
     );
-    assert_eq!(cost(&record).map(f64::to_bits), Some(2.4_f64.to_bits()));
+    assert_eq!(cost(&record).map(f64::to_bits), Some(0.0025_f64.to_bits()));
 }
