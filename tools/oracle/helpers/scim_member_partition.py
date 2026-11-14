@@ -63,16 +63,13 @@ def member_answers(members: list[MemberInput]) -> list[JsonValue]:
 
 
 def metadata_answers(metadata: list[JsonValue]) -> list[JsonValue]:
-    answers: list[JsonValue] = []
-    for raw in metadata:
-        fields = _json_object_fields(raw)
-        answers.append(
-            {
-                "is_object": fields is not None,
-                "provenance": _team_metadata_has_scim_provenance(raw),
-            }
-        )
-    return answers
+    return [
+        {
+            "is_object": _json_object_fields(raw) is not None,
+            "provenance": _team_metadata_has_scim_provenance(raw),
+        }
+        for raw in metadata
+    ]
 
 
 def classified_entry(entry: Entry) -> _ClassifiedGroupMember:
@@ -91,16 +88,18 @@ def classified_entries(entries: list[Entry]) -> list[_ClassifiedGroupMember]:
     return classified
 
 
-def partition_answer(partition: _PartitionedMembers) -> dict[str, JsonValue]:
-    skipped = _JSON.validate_python(
-        [{"value": member.value, "reason": member.reason} for member in partition.skipped]
+def partition_answer(partition: _PartitionedMembers) -> JsonValue:
+    return _JSON.validate_python(
+        {
+            "resolved_ids": list(partition.resolved_ids),
+            "skipped": [
+                {"value": member.value, "reason": member.reason}
+                for member in partition.skipped
+            ],
+            "unknown_ids": list(partition.unknown_ids),
+            "ambiguous_values": list(partition.ambiguous_values),
+        }
     )
-    return {
-        "resolved_ids": _JSON.validate_python(list(partition.resolved_ids)),
-        "skipped": skipped,
-        "unknown_ids": _JSON.validate_python(list(partition.unknown_ids)),
-        "ambiguous_values": _JSON.validate_python(list(partition.ambiguous_values)),
-    }
 
 
 def roster_answers(removals: list[RemovalInput]) -> list[JsonValue]:
