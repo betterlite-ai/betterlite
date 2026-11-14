@@ -8,10 +8,8 @@ use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
-use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::response_events::event_decode::decode_response_event;
 use betterlite_openai::response_events::{RawResponse, transform_response};
-use betterlite_openai::xai_responses::error::XaiResponsesError;
 use betterlite_openai::xai_responses::{
     Environment, SUPPORTS_NATIVE_WEBSOCKET, UrlInput, get_complete_url, map_openai_params,
     restate_event_usage, restate_reply_usage, validate_environment,
@@ -96,15 +94,14 @@ fn auth_step(
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
         .map_err(|error| failure(error.to_string(), None))?;
-    let validated: Result<Headers, XaiResponsesError> =
-        runtime.block_on(validate_environment(Environment {
-            headers: headers.clone(),
-            api_key: key.as_ref(),
-            model: "grok-4",
-            use_xai_oauth,
-            settings,
-            oauth: &mut fixture,
-        }));
+    let validated = runtime.block_on(validate_environment(Environment {
+        headers: headers.clone(),
+        api_key: key.as_ref(),
+        model: "grok-4",
+        use_xai_oauth,
+        settings,
+        oauth: &mut fixture,
+    }));
     match validated {
         Ok(resolved) => {
             serde_json::to_value(resolved).map_err(|error| failure(error.to_string(), None))
