@@ -3,7 +3,6 @@
 use betterlite_config::sections::alert_settings::types::AlertType;
 use betterlite_models::api_base_lookup::ApiBaseError;
 use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
 use rstest::rstest;
 
 use crate::alert_dispatch::AlertLevel;
@@ -21,7 +20,7 @@ use super::wrapper::response_taking_too_long;
 const SLOW_MESSAGE: &str =
     "`Responses are slow - 300.25s response time > Alerting threshold: 300.0s`";
 
-fn default_request<'request>(model: &'request str) -> SlowResponseRequest<'request> {
+fn default_request(model: &str) -> SlowResponseRequest<'_> {
     SlowResponseRequest {
         model,
         litellm_params: None,
@@ -68,7 +67,7 @@ fn the_helper_queries_the_resolver_with_an_empty_map_without_params() {
     slow_response_parameters(&resolver, &request).expect("the helper works");
     assert_eq!(
         resolver.calls(),
-        vec![("gpt-4".to_owned(), IndexMap::new())]
+        vec![("gpt-4".to_owned(), support::object(&[]))]
     );
 }
 
@@ -118,12 +117,12 @@ fn the_helper_renders_a_structured_message_as_compact_json() {
 #[case::far_past_the_preview(200)]
 fn the_helper_truncates_the_preview(#[case] size: usize) {
     let resolver = support::FixedResolver::new(None);
-    let messages = Json::Text("é".repeat(size));
+    let messages = Json::Text("\u{e9}".repeat(size));
     let mut request = default_request("gpt-4");
     request.messages = Some(&messages);
     let parameters = slow_response_parameters(&resolver, &request).expect("the helper works");
     assert_eq!(parameters.messages.chars().count(), MESSAGE_PREVIEW_CHARS);
-    assert_eq!(parameters.messages, "é".repeat(MESSAGE_PREVIEW_CHARS));
+    assert_eq!(parameters.messages, "\u{e9}".repeat(MESSAGE_PREVIEW_CHARS));
 }
 
 #[rstest]
@@ -156,7 +155,7 @@ fn the_helper_hides_the_preview(#[case] privacy: MessagePrivacy, #[case] expecte
 #[test]
 fn the_helper_redacts_a_long_preview() {
     let resolver = support::FixedResolver::new(None);
-    let messages = Json::Text("é".repeat(150));
+    let messages = Json::Text("\u{e9}".repeat(150));
     let mut request = default_request("gpt-4");
     request.messages = Some(&messages);
     request.privacy = MessagePrivacy {
