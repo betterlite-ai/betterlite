@@ -6,31 +6,21 @@ from betterlite.types.proxy.guardrails.guardrail_hooks.azure.base import (
 )
 from betterlite.types.proxy.guardrails.guardrail_hooks.base import GuardrailConfigModel
 
-# ast-grep-ignore: no-long-names
-AzurePromptShieldGuardrailRequestBody = TypedDict(
-    "AzurePromptShieldGuardrailRequestBody",
-    {
-        "userPrompt": str,
-        "documents": list[str],
-    },
-)
-
-UserPromptAnalysis = TypedDict(
-    "UserPromptAnalysis",
-    {
-        "attackDetected": bool,
-    },
-    total=False,
-)
 
 # ast-grep-ignore: no-long-names
-AzurePromptShieldGuardrailResponse = TypedDict(
-    "AzurePromptShieldGuardrailResponse",
-    {
-        "userPromptAnalysis": UserPromptAnalysis,
-        "documentsAnalysis": list[dict[str, JsonValue]],
-    },
-)
+class AzurePromptShieldGuardrailRequestBody(TypedDict):
+    userPrompt: str
+    documents: list[str]
+
+
+class UserPromptAnalysis(TypedDict, total=False):
+    attackDetected: bool
+
+
+# ast-grep-ignore: no-long-names
+class AzurePromptShieldGuardrailResponse(TypedDict):
+    userPromptAnalysis: UserPromptAnalysis
+    documentsAnalysis: list[dict[str, JsonValue]]
 
 
 # ast-grep-ignore: no-long-names

@@ -19,21 +19,18 @@ class BedrockRequest(TypedDict, total=False):
     content: list[BedrockContentItem]
 
 
-BedrockGuardrailUsage = TypedDict(
-    "BedrockGuardrailUsage",
-    {
-        "topicPolicyUnits": int | None,
-        "contentPolicyUnits": int | None,
-        "wordPolicyUnits": int | None,
-        "sensitiveInformationPolicyUnits": int | None,
-        "sensitiveInformationPolicyFreeUnits": int | None,
-        "contextualGroundingPolicyUnits": int | None,
-        "contentPolicyImageUnits": int | None,
-        "automatedReasoningPolicyUnits": int | None,
-        "automatedReasoningPolicies": int | None,
-    },
-    total=False,
-)
+class BedrockGuardrailUsage(TypedDict, total=False):
+    topicPolicyUnits: int | None
+    contentPolicyUnits: int | None
+    wordPolicyUnits: int | None
+    # ast-grep-ignore: no-long-names
+    sensitiveInformationPolicyUnits: int | None
+    # ast-grep-ignore: no-long-names
+    sensitiveInformationPolicyFreeUnits: int | None
+    contextualGroundingPolicyUnits: int | None
+    contentPolicyImageUnits: int | None
+    automatedReasoningPolicyUnits: int | None
+    automatedReasoningPolicies: int | None
 
 
 class BedrockGuardrailOutput(TypedDict, total=False):
@@ -53,16 +50,11 @@ class BedrockGuardrailTopicPolicy(TypedDict, total=False):
 
 
 # ast-grep-ignore: no-long-names
-BedrockGuardrailContentPolicyFilter = TypedDict(
-    "BedrockGuardrailContentPolicyFilter",
-    {
-        "type": str | None,
-        "confidence": str | None,
-        "filterStrength": str | None,
-        "action": str | None,
-    },
-    total=False,
-)
+class BedrockGuardrailContentPolicyFilter(TypedDict, total=False):
+    type: str | None
+    confidence: str | None
+    filterStrength: str | None
+    action: str | None
 
 
 class BedrockGuardrailContentPolicy(TypedDict, total=False):
@@ -83,16 +75,11 @@ class BedrockGuardrailWordPolicyManagedWord(TypedDict, total=False):
     action: str | None
 
 
-BedrockGuardrailWordPolicy = TypedDict(
-    "BedrockGuardrailWordPolicy",
-    {
-        # ast-grep-ignore: no-long-names
-        "customWords": list[BedrockGuardrailWordPolicyCustomWord],
-        # ast-grep-ignore: no-long-names
-        "managedWordLists": list[BedrockGuardrailWordPolicyManagedWord],
-    },
-    total=False,
-)
+class BedrockGuardrailWordPolicy(TypedDict, total=False):
+    # ast-grep-ignore: no-long-names
+    customWords: list[BedrockGuardrailWordPolicyCustomWord]
+    # ast-grep-ignore: no-long-names
+    managedWordLists: list[BedrockGuardrailWordPolicyManagedWord]
 
 
 class BedrockGuardrailPiiEntity(TypedDict, total=False):
@@ -109,14 +96,9 @@ class BedrockGuardrailRegex(TypedDict, total=False):
 
 
 # ast-grep-ignore: no-long-names
-BedrockGuardrailSensitiveInformationPolicy = TypedDict(
-    "BedrockGuardrailSensitiveInformationPolicy",
-    {
-        "piiEntities": list[BedrockGuardrailPiiEntity] | None,
-        "regexes": list[BedrockGuardrailRegex] | None,
-    },
-    total=False,
-)
+class BedrockGuardrailSensitiveInformationPolicy(TypedDict, total=False):
+    piiEntities: list[BedrockGuardrailPiiEntity] | None
+    regexes: list[BedrockGuardrailRegex] | None
 
 
 # ast-grep-ignore: no-long-names
@@ -133,43 +115,28 @@ class BedrockGuardrailContextualGroundingPolicy(TypedDict, total=False):
     filters: list[BedrockGuardrailContextualGroundingFilter]
 
 
-BedrockGuardrailCoverage = TypedDict(
-    "BedrockGuardrailCoverage",
-    {
-        "textCharacters": dict[str, int],
-    },
-    total=False,
-)
+class BedrockGuardrailCoverage(TypedDict, total=False):
+    textCharacters: dict[str, int]
 
 
 # ast-grep-ignore: no-long-names
-BedrockGuardrailInvocationMetrics = TypedDict(
-    "BedrockGuardrailInvocationMetrics",
-    {
-        "guardrailProcessingLatency": int,
-        "usage": BedrockGuardrailUsage,
-        "guardrailCoverage": BedrockGuardrailCoverage,
-    },
-    total=False,
-)
+class BedrockGuardrailInvocationMetrics(TypedDict, total=False):
+    guardrailProcessingLatency: int
+    usage: BedrockGuardrailUsage
+    guardrailCoverage: BedrockGuardrailCoverage
 
 
-BedrockGuardrailAssessment = TypedDict(
-    "BedrockGuardrailAssessment",
-    {
-        "topicPolicy": BedrockGuardrailTopicPolicy | None,
-        "contentPolicy": BedrockGuardrailContentPolicy | None,
-        "wordPolicy": BedrockGuardrailWordPolicy | None,
-        # ast-grep-ignore: no-long-names
-        "sensitiveInformationPolicy": BedrockGuardrailSensitiveInformationPolicy | None,
-        # ast-grep-ignore: no-long-names
-        "contextualGroundingPolicy": BedrockGuardrailContextualGroundingPolicy | None,
-        # ast-grep-ignore: no-long-names
-        "invocationMetrics": BedrockGuardrailInvocationMetrics,
-        "guardrailCoverage": BedrockGuardrailCoverage,
-    },
-    total=False,
-)
+class BedrockGuardrailAssessment(TypedDict, total=False):
+    topicPolicy: BedrockGuardrailTopicPolicy | None
+    contentPolicy: BedrockGuardrailContentPolicy | None
+    wordPolicy: BedrockGuardrailWordPolicy | None
+    # ast-grep-ignore: no-long-names
+    sensitiveInformationPolicy: BedrockGuardrailSensitiveInformationPolicy | None
+    # ast-grep-ignore: no-long-names
+    contextualGroundingPolicy: BedrockGuardrailContextualGroundingPolicy | None
+    # ast-grep-ignore: no-long-names
+    invocationMetrics: BedrockGuardrailInvocationMetrics
+    guardrailCoverage: BedrockGuardrailCoverage
 
 
 class BedrockGuardrailResponse(TypedDict, total=False):
@@ -189,28 +156,18 @@ class BedrockChecksMessage(TypedDict, total=False):
     content: list[BedrockChecksTextContent]
 
 
-BedrockChecksScoreEntry = TypedDict(
-    "BedrockChecksScoreEntry",
-    {
-        "category": str | None,
-        "severityScore": float | None,
-    },
-    total=False,
-)
+class BedrockChecksScoreEntry(TypedDict, total=False):
+    category: str | None
+    severityScore: float | None
 
 
-BedrockChecksPiiEntry = TypedDict(
-    "BedrockChecksPiiEntry",
-    {
-        "type": str | None,
-        "confidenceScore": float | None,
-        "messageIndex": int | None,
-        "contentIndex": int | None,
-        "beginOffset": int | None,
-        "endOffset": int | None,
-    },
-    total=False,
-)
+class BedrockChecksPiiEntry(TypedDict, total=False):
+    type: str | None
+    confidenceScore: float | None
+    messageIndex: int | None
+    contentIndex: int | None
+    beginOffset: int | None
+    endOffset: int | None
 
 
 class BedrockChecksScoreResult(TypedDict, total=False):
@@ -223,50 +180,30 @@ class BedrockChecksSensitiveInformationResult(TypedDict, total=False):
     truncated: bool | None
 
 
-BedrockChecksResults = TypedDict(
-    "BedrockChecksResults",
-    {
-        "contentFilter": BedrockChecksScoreResult | None,
-        "promptAttack": BedrockChecksScoreResult | None,
-        # ast-grep-ignore: no-long-names
-        "sensitiveInformation": BedrockChecksSensitiveInformationResult | None,
-    },
-    total=False,
-)
+class BedrockChecksResults(TypedDict, total=False):
+    contentFilter: BedrockChecksScoreResult | None
+    promptAttack: BedrockChecksScoreResult | None
+    # ast-grep-ignore: no-long-names
+    sensitiveInformation: BedrockChecksSensitiveInformationResult | None
 
 
-BedrockChecksViolation = TypedDict(
-    "BedrockChecksViolation",
-    {
-        "check": str,
-        "category": str | None,
-        "type": str | None,
-        "severityScore": float,
-        "confidenceScore": float,
-        "truncated": bool,
-    },
-    total=False,
-)
+class BedrockChecksViolation(TypedDict, total=False):
+    check: str
+    category: str | None
+    type: str | None
+    severityScore: float
+    confidenceScore: float
+    truncated: bool
 
 
-BedrockChecksTextUnits = TypedDict(
-    "BedrockChecksTextUnits",
-    {
-        "textUnits": int | None,
-    },
-    total=False,
-)
+class BedrockChecksTextUnits(TypedDict, total=False):
+    textUnits: int | None
 
 
-BedrockChecksUsage = TypedDict(
-    "BedrockChecksUsage",
-    {
-        "contentFilter": BedrockChecksTextUnits | None,
-        "promptAttack": BedrockChecksTextUnits | None,
-        "sensitiveInformation": BedrockChecksTextUnits | None,
-    },
-    total=False,
-)
+class BedrockChecksUsage(TypedDict, total=False):
+    contentFilter: BedrockChecksTextUnits | None
+    promptAttack: BedrockChecksTextUnits | None
+    sensitiveInformation: BedrockChecksTextUnits | None
 
 
 class BedrockGuardrailChecksResponse(TypedDict, total=False):

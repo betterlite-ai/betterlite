@@ -1,7 +1,7 @@
-from typing import ClassVar, Final, Literal, TypeAlias
+from typing import ClassVar, Final, Literal, Required, TypeAlias
 
 from pydantic import ConfigDict, Field, JsonValue
-from typing_extensions import Required, TypedDict, override
+from typing_extensions import TypedDict, override
 
 from betterlite.types.proxy.guardrails.guardrail_hooks.azure.base import (
     AzureContentSafetyConfigModel,
@@ -12,17 +12,13 @@ from betterlite.types.utils.base import ResponseObject
 # ast-grep-ignore: no-long-names
 AZURE_CONTENT_SAFETY_CATEGORIES: Final = ["Hate", "SelfHarm", "Sexual", "Violence"]
 
+
 # ast-grep-ignore: no-long-names
-AzureTextModerationRequestBodyOptionalParams = TypedDict(
-    "AzureTextModerationRequestBodyOptionalParams",
-    {
-        "categories": list[str] | None,
-        "blocklistNames": list[str] | None,
-        "haltOnBlocklistHit": bool | None,
-        "outputType": Literal["FourSeverityLevels", "EightSeverityLevels"],
-    },
-    total=False,
-)
+class AzureTextModerationRequestBodyOptionalParams(TypedDict, total=False):
+    categories: list[str] | None
+    blocklistNames: list[str] | None
+    haltOnBlocklistHit: bool | None
+    outputType: Literal["FourSeverityLevels", "EightSeverityLevels"]
 
 
 # ast-grep-ignore: no-long-names
@@ -37,16 +33,11 @@ class AzureTextModerationGuardrailResponseCategoriesAnalysis(TypedDict):
 
 
 # ast-grep-ignore: no-long-names
-AzureTextModerationGuardrailResponse = TypedDict(
-    "AzureTextModerationGuardrailResponse",
-    {
-        "blocklistsMatch": list[dict[str, JsonValue]],
-        "categoriesAnalysis": list[
-            # ast-grep-ignore: no-long-names
-            AzureTextModerationGuardrailResponseCategoriesAnalysis
-        ],
-    },
-)
+class AzureTextModerationGuardrailResponse(TypedDict):
+    blocklistsMatch: list[dict[str, JsonValue]]
+    # ast-grep-ignore: no-long-names
+    categoriesAnalysis: list[AzureTextModerationGuardrailResponseCategoriesAnalysis]
+
 
 AzureHarmCategories: TypeAlias = Literal["Hate", "SelfHarm", "Sexual", "Violence"]
 
