@@ -2948,6 +2948,7 @@ dependencies = [
  "betterlite-tokenizer",
  "crc16",
  "indexmap 2.14.2",
+ "num-traits",
  "rstest",
  "rust_decimal",
  "serde",
