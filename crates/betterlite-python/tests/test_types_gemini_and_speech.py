@@ -77,6 +77,9 @@ ref_speech_types: TypeViews = importlib.import_module(
 ours_speech_types: TypeViews = importlib.import_module(
     "betterlite.types.llms.vertex_ai_audio.vertex_ai_speech_to_text",
 )
+ours_speech_tagged: ModelViews = importlib.import_module(
+    "betterlite.types.llms.vertex_ai_audio.vertex_ai_speech_to_text",
+)
 ref_credentials: TypeViews = importlib.import_module("litellm.types.llms.vertex_ai")
 ours_credentials: TypeViews = importlib.import_module(
     "betterlite.types.passthrough_endpoints.vertex_ai",
@@ -495,12 +498,15 @@ MODELS: dict[str, ModelPair] = {
 }
 
 
-UNIONS: dict[str, tuple[type, type, type, type, list[str]]] = {
+UNIONS: dict[
+    str,
+    tuple[type, type, type[pydantic.BaseModel], type[pydantic.BaseModel], list[str]],
+] = {
     "command": (
         ref_speech_types.VertexSpeechStreamingCommandUnion,
         ours_speech_types.VertexSpeechStreamingCommandUnion,
-        ref_speech_types.VertexSpeechStreamingCommand,
-        ours_speech_types.VertexSpeechStreamingCommand,
+        ref_speech.VertexSpeechStreamingCommand,
+        ours_speech_tagged.VertexSpeechStreamingCommand,
         [
             "VertexSpeechStreamingConfigure",
             "VertexSpeechStreamingFinishTurn",
@@ -510,8 +516,8 @@ UNIONS: dict[str, tuple[type, type, type, type, list[str]]] = {
     "event": (
         ref_speech_types.VertexSpeechStreamingEventUnion,
         ours_speech_types.VertexSpeechStreamingEventUnion,
-        ref_speech_types.VertexSpeechStreamingEvent,
-        ours_speech_types.VertexSpeechStreamingEvent,
+        ref_speech.VertexSpeechStreamingEvent,
+        ours_speech_tagged.VertexSpeechStreamingEvent,
         [
             "VertexSpeechStreamingResponse",
             "VertexSpeechStreamingConfigured",
