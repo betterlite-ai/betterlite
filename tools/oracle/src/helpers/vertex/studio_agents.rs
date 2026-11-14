@@ -138,7 +138,10 @@ fn reply_value(call: &Call) -> HelperResult {
 fn fail(error: StudioAgentError) -> Box<HelperError> {
     let status = match &error {
         StudioAgentError::Gemini { status, .. } => Some(*status),
-        _ => None,
+        StudioAgentError::CustomBaseWithoutKey
+        | StudioAgentError::MissingApiKey
+        | StudioAgentError::ResponseTooLarge { .. }
+        | StudioAgentError::Shape { .. } => None,
     };
     Box::new(HelperError {
         class: "ValueError".to_owned(),

@@ -10,7 +10,6 @@ use crate::studio_files::resolve_key;
 
 pub type AgentHeaders = IndexMap<String, SecretString>;
 
-// A custom base refuses the process-wide keys before get_api_key would read them.
 pub fn validate_environment(
     caller: &BTreeMap<String, String>,
     params: &AgentParams,

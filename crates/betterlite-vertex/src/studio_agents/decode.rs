@@ -80,7 +80,6 @@ pub fn decode_studio_agent_payload(
     Ok(DecodedPayload { payload, warnings })
 }
 
-// Gemini answers a delete with an empty body; the requested name is the result either way.
 pub fn decode_studio_agent_delete(
     response: &RawResponse<'_>,
     request_name: &str,
@@ -152,7 +151,9 @@ fn page(
             .into_iter()
             .map(|entry| match entry {
                 Json::Object(item) => Ok(item),
-                _ => Err(StudioAgentError::Shape { field }),
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+                    Err(StudioAgentError::Shape { field })
+                }
             })
             .collect::<Result<Vec<_>, _>>()?,
         Some(_) => return Err(StudioAgentError::Shape { field }),

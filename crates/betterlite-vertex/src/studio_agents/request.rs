@@ -31,6 +31,7 @@ pub struct CreateAgentRequest {
     pub base_environment: Option<BaseEnvironment>,
 }
 
+#[must_use]
 pub fn create_agent_body(name: &str, params: &AgentParams) -> CreateAgentRequest {
     CreateAgentRequest {
         name: name.to_owned(),

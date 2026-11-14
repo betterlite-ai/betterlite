@@ -151,9 +151,15 @@ fn oracle_versions_and_deletes_project_native_fields() {
         })
     );
     let deleted = run_case("successful-empty-delete.yaml");
-    let calls = deleted["calls"].as_array().unwrap();
-    assert_eq!(calls[0], json!({"name": "my-agent", "deleted": true}));
-    assert_eq!(calls[1], json!({"name": "my-agent", "deleted": true}));
+    let delete_calls = deleted["calls"].as_array().unwrap();
+    assert_eq!(
+        delete_calls[0],
+        json!({"name": "my-agent", "deleted": true})
+    );
+    assert_eq!(
+        delete_calls[1],
+        json!({"name": "my-agent", "deleted": true})
+    );
 }
 
 #[test]

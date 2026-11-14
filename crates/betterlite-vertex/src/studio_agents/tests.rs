@@ -285,7 +285,7 @@ fn create_body_forwards_only_the_three_native_values() {
         )
     );
     assert_eq!(
-        dumped(&create_agent_body("my-agent", &params())),
+        dumped(&create_agent_body("my-agent", &base_params())),
         parse(r#"{"name":"my-agent"}"#)
     );
 }
@@ -445,7 +445,7 @@ fn list_and_versions_map_the_native_page_fields() {
     assert_eq!(agents.len(), 1);
     assert_eq!(agents[0]["z"], Json::Number(Number::from(1_i64)));
     assert_eq!(token.as_deref(), Some("t"));
-    let (versions, token) = page_of(
+    let (versions, versions_token) = page_of(
         AgentOperation::Versions,
         r#"{"agentVersions":[{"name":"agents/a/versions/1"}]}"#,
     );
@@ -454,7 +454,7 @@ fn list_and_versions_map_the_native_page_fields() {
         versions[0]["name"],
         Json::Text("agents/a/versions/1".to_owned())
     );
-    assert_eq!(token, None);
+    assert_eq!(versions_token, None);
 }
 
 #[rstest]
@@ -464,9 +464,9 @@ fn malformed_list_replies_are_empty_pages(#[case] body: &str) {
     let (agents, token) = page_of(AgentOperation::List, body);
     assert!(agents.is_empty());
     assert_eq!(token, None);
-    let (versions, token) = page_of(AgentOperation::Versions, body);
+    let (versions, versions_token) = page_of(AgentOperation::Versions, body);
     assert!(versions.is_empty());
-    assert_eq!(token, None);
+    assert_eq!(versions_token, None);
 }
 
 #[rstest]
@@ -557,9 +557,8 @@ fn an_oversized_reply_is_refused() {
             if size == RESPONSE_BODY_LIMIT.saturating_add(1) && limit == RESPONSE_BODY_LIMIT
     ));
     let exact = "x".repeat(RESPONSE_BODY_LIMIT);
-    let decoded =
-        decode_studio_agent_payload(&reply(200, &headers, &exact), AgentOperation::Get, "req");
-    assert!(decoded.is_ok());
+    decode_studio_agent_payload(&reply(200, &headers, &exact), AgentOperation::Get, "req")
+        .expect("a body at the limit decodes");
 }
 
 #[rstest]
@@ -593,7 +592,7 @@ fn replays_the_studio_agent_payload_corpus(
     if name.starts_with("wrong-shape") {
         assert!(outcomes.iter().all(|ok| !*ok), "{name} fails");
     }
-    assert!(decode_studio_agent_delete(&response, "req").is_ok());
+    decode_studio_agent_delete(&response, "req").expect("a delete ignores the body");
     if name.starts_with("valid-create") {
         assert!(outcomes[0] && outcomes[1], "{name} is an agent record");
     }

@@ -10,6 +10,7 @@ pub struct AgentTarget {
     pub query: Vec<(String, String)>,
 }
 
+#[must_use]
 pub fn collection_target(params: &AgentParams, settings: &Settings) -> AgentTarget {
     let base = resolve_base(params.api_base.as_deref(), settings);
     AgentTarget {
@@ -18,6 +19,7 @@ pub fn collection_target(params: &AgentParams, settings: &Settings) -> AgentTarg
     }
 }
 
+#[must_use]
 pub fn item_target(name: &str, params: &AgentParams, settings: &Settings) -> AgentTarget {
     let base = resolve_base(params.api_base.as_deref(), settings);
     AgentTarget {
@@ -26,6 +28,7 @@ pub fn item_target(name: &str, params: &AgentParams, settings: &Settings) -> Age
     }
 }
 
+#[must_use]
 pub fn versions_target(name: &str, params: &AgentParams, settings: &Settings) -> AgentTarget {
     let item = item_target(name, params, settings);
     AgentTarget {
