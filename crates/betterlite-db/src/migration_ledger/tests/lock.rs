@@ -122,7 +122,15 @@ async fn lock_connection_error() {
             .unwrap()
             .get(0);
         assert!(terminated);
-        sleep(Duration::from_millis(200)).await;
+        // the client sees the end of the session only once its connection task reads the close
+        let started = Instant::now();
+        while !doomed.is_closed() {
+            assert!(
+                started.elapsed() < Duration::from_secs(30),
+                "the terminated session stayed open"
+            );
+            sleep(Duration::from_millis(10)).await;
+        }
         let jitter = DrawingJitter(0);
         let error = MigrationCoordinator::acquire(doomed, Duration::from_secs(10), &jitter)
             .await
