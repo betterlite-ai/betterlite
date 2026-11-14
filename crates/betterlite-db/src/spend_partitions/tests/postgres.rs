@@ -323,50 +323,46 @@ pub(super) async fn defaults_generated_columns() {
 pub(super) async fn canonical_index_definitions() {
     let case = SpendPartitionCase::provision().await;
     case.run_ok(SpendPartitionOperation::Partition).await;
-    let canonical = indexes(&case, "LiteLLM_SpendLogs").await;
+    assert_canonical_indexes(&indexes(&case, "LiteLLM_SpendLogs").await);
+    assert_propagated_indexes(&case).await;
+    assert_legacy_indexes(&case).await;
+    case.close().await;
+}
+
+fn assert_canonical_indexes(canonical: &[Index]) {
     assert_eq!(canonical.len(), 6);
     assert!(
         canonical
             .iter()
             .all(|index| index.owner == "LiteLLM_SpendLogs")
     );
-    assert_index(
-        &canonical,
-        "LiteLLM_SpendLogs_pkey",
-        r#"(request_id, "startTime")"#,
-        true,
-    );
-    assert_index(
-        &canonical,
-        "LiteLLM_SpendLogs_startTime_idx",
-        r#"("startTime")"#,
-        false,
-    );
-    assert_index(
-        &canonical,
-        "LiteLLM_SpendLogs_startTime_request_id_idx",
-        r#"("startTime", request_id)"#,
-        false,
-    );
-    assert_index(
-        &canonical,
-        "LiteLLM_SpendLogs_end_user_idx",
-        "(end_user)",
-        false,
-    );
-    assert_index(
-        &canonical,
-        "LiteLLM_SpendLogs_session_id_idx",
-        "(session_id)",
-        false,
-    );
-    assert_index(
-        &canonical,
-        "LiteLLM_SpendLogs_api_key_startTime_idx",
-        r#"(api_key, "startTime")"#,
-        false,
-    );
-    let mut propagated: Vec<String> = child_indexes(&case, "LiteLLM_SpendLogs_pdefault").await;
+    let expected = [
+        (
+            "LiteLLM_SpendLogs_pkey",
+            r#"(request_id, "startTime")"#,
+            true,
+        ),
+        ("LiteLLM_SpendLogs_startTime_idx", r#"("startTime")"#, false),
+        (
+            "LiteLLM_SpendLogs_startTime_request_id_idx",
+            r#"("startTime", request_id)"#,
+            false,
+        ),
+        ("LiteLLM_SpendLogs_end_user_idx", "(end_user)", false),
+        ("LiteLLM_SpendLogs_session_id_idx", "(session_id)", false),
+        (
+            "LiteLLM_SpendLogs_api_key_startTime_idx",
+            r#"(api_key, "startTime")"#,
+            false,
+        ),
+    ];
+    for (name, columns, primary) in expected {
+        assert_index(canonical, name, columns, primary);
+    }
+}
+
+async fn assert_propagated_indexes(case: &SpendPartitionCase) {
+    let mut propagated: Vec<String> = child_indexes(case, "LiteLLM_SpendLogs_pdefault").await;
     propagated.sort();
     propagated.dedup();
     let mut expected: Vec<String> = [
@@ -382,7 +378,10 @@ pub(super) async fn canonical_index_definitions() {
     .collect();
     expected.sort();
     assert_eq!(propagated, expected);
-    let legacy = indexes(&case, "LiteLLM_SpendLogs_legacy").await;
+}
+
+async fn assert_legacy_indexes(case: &SpendPartitionCase) {
+    let legacy = indexes(case, "LiteLLM_SpendLogs_legacy").await;
     assert_eq!(legacy.len(), 6);
     assert!(
         legacy
@@ -394,7 +393,6 @@ pub(super) async fn canonical_index_definitions() {
             .iter()
             .all(|index| index.name.starts_with("LiteLLM_SpendLogs_legacy_"))
     );
-    case.close().await;
 }
 
 pub(super) async fn missing_old_indexes() {
@@ -596,11 +594,12 @@ pub(super) async fn drop_removes_children() {
 pub(super) async fn destination_collision_rollback() {
     let case = SpendPartitionCase::provision().await;
     case.seed_log("kept", at(1, 1)).await;
-    case.client
-        .batch_execute(r#"CREATE TABLE "LiteLLM_SpendLogs_legacy" (marker INTEGER)"#)
-        .await
-        .expect("the collision table");
-    let error = case.run_error(SpendPartitionOperation::Partition).await;
+    let error = collide(
+        &case,
+        SpendPartitionOperation::Partition,
+        "LiteLLM_SpendLogs_legacy",
+    )
+    .await;
     assert!(matches!(error, SpendPartitionError::Statement { .. }));
     assert!(error.to_string().contains("LiteLLM_SpendLogs_legacy"));
     assert_canonical(&case, Canonical::Plain, 1).await;
@@ -615,24 +614,41 @@ pub(super) async fn destination_collision_rollback() {
         .expect("the collision is removed");
     case.run_ok(SpendPartitionOperation::Partition).await;
     case.seed_log("live", at(2, 1)).await;
+    let error = collide(
+        &case,
+        SpendPartitionOperation::Unpartition,
+        "LiteLLM_SpendLogs_partitioned",
+    )
+    .await;
+    assert!(error.to_string().contains("LiteLLM_SpendLogs_partitioned"));
+    assert_partitioned_after_failed_unpartition(&case).await;
+    case.close().await;
+}
+
+async fn collide(
+    case: &SpendPartitionCase,
+    operation: SpendPartitionOperation,
+    table: &str,
+) -> SpendPartitionError {
+    let statement = format!(r#"CREATE TABLE "{table}" (marker INTEGER)"#);
     case.client
-        .batch_execute(r#"CREATE TABLE "LiteLLM_SpendLogs_partitioned" (marker INTEGER)"#)
+        .batch_execute(&statement)
         .await
         .expect("the collision table");
-    let error = case.run_error(SpendPartitionOperation::Unpartition).await;
-    assert!(matches!(error, SpendPartitionError::Statement { .. }));
-    assert!(error.to_string().contains("LiteLLM_SpendLogs_partitioned"));
-    assert_eq!(relkind(&case, "LiteLLM_SpendLogs").await, "p");
-    assert_eq!(row_count(&case, CANONICAL_COUNT_SQL).await, 1);
-    let primary = primary_key(&case, "LiteLLM_SpendLogs").await;
+    case.run_error(operation).await
+}
+
+async fn assert_partitioned_after_failed_unpartition(case: &SpendPartitionCase) {
+    assert_eq!(relkind(case, "LiteLLM_SpendLogs").await, "p");
+    assert_eq!(row_count(case, CANONICAL_COUNT_SQL).await, 1);
+    let primary = primary_key(case, "LiteLLM_SpendLogs").await;
     assert_eq!(primary.0, "LiteLLM_SpendLogs_pkey");
     assert!(primary.1.contains(r#"(request_id, "startTime")"#));
     assert!(
-        table_name(&case, "LiteLLM_SpendLogs_partitioned")
+        table_name(case, "LiteLLM_SpendLogs_partitioned")
             .await
             .is_some()
     );
-    case.close().await;
 }
 
 async fn lock_default_partition(

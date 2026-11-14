@@ -252,6 +252,10 @@ async fn assert_restored(postgres: &Postgres) {
     let ids: Vec<String> = rows.iter().map(|row| row.get("request_id")).collect();
     assert_eq!(ids, vec!["admin-after".to_owned()]);
     assert_eq!(row_count(postgres, "LiteLLM_SpendLogs_legacy").await, 1);
+    assert_restored_primary_key(postgres).await;
+}
+
+async fn assert_restored_primary_key(postgres: &Postgres) {
     let primary = postgres
         .client
         .query_one(
