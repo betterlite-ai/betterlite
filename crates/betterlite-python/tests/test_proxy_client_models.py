@@ -14,7 +14,7 @@ from pydantic import JsonValue
 from proxy_client_support import RecordingServer
 from test_proxy_client_base import OK, TIMEOUT, Reply, compare_call, compare_error
 
-from betterlite.proxy.client._transport import HTTPError
+from betterlite.proxy.client._transport import HTTPError, RequestError
 from betterlite.proxy.client.chat import ChatClient, CompletionOptions
 from betterlite.proxy.client.exceptions import NotFoundError, UnauthorizedError
 from betterlite.proxy.client.models import ModelsManagementClient
@@ -228,6 +228,18 @@ def test_models_list_missing(server: RecordingServer) -> None:
         ours.list()
 
 
+def test_models_list_bad_reply(server: RecordingServer) -> None:
+    _, ours = models_clients(server)
+    for body in ('{"data": 3}', "[]"):
+        server.reply(OK, body)
+        with pytest.raises(RequestError) as caught:
+            ours.list()
+        server.reply(OK, body)
+        with pytest.raises(RequestError):
+            ours.info()
+        assert str(caught.value) == "the models reply has no data list"
+
+
 def test_models_unauthorized(server: RecordingServer) -> None:
     lite, ours = models_clients(server)
     errors = (LiteLLMUnauthorizedError, UnauthorizedError)
@@ -353,6 +365,12 @@ def test_models_get_missing(server: RecordingServer) -> None:
         ours.get(model_name="missing")
     assert str(actual.value) == str(expected.value)
     assert str(actual.value) == "Model with model_name=missing not found"
+
+
+def test_models_get_bad_entry(server: RecordingServer) -> None:
+    _, ours = models_clients(server)
+    server.reply(OK, '{"data": ["no", {"model_name": "gpt-4"}, 3]}')
+    assert ours.get(model_name="gpt-4") == {"model_name": "gpt-4"}
 
 
 def test_chat_completions(server: RecordingServer) -> None:
