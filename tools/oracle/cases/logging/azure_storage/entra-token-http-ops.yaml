@@ -1,4 +1,5 @@
 # the token path create file call uses x-ms-version and Content-Length 0, append data uses PATCH action=append position 0 with JSON, and flush data uses the byte count
+# the base64 padding and / in resp_YWJj/ZA== are dropped and mapped to _, so the created file is resp_YWJj_ZA.json
 kind: helper
 name: entra-token-http-ops
 call:
