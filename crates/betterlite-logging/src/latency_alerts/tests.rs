@@ -196,14 +196,14 @@ fn deployment_latencies_are_absent_for_each_missing_shape(#[case] text: &str) {
 }
 
 #[rstest]
-#[case::below_the_threshold(299.5, 0)]
-#[case::at_the_threshold(300.0, 0)]
-#[case::above_the_threshold(300.5, 1)]
+#[case::below_the_threshold(299.5_f64, 0)]
+#[case::at_the_threshold(300.0_f64, 0)]
+#[case::above_the_threshold(300.5_f64, 1)]
 #[tokio::test]
 async fn the_callback_sends_only_above_the_threshold(#[case] end_time: f64, #[case] sent: usize) {
     let fixture = support::fixture();
     let mut request = default_request("gpt-4");
-    request.start_time = 0.0;
+    request.start_time = 0.0_f64;
     request.end_time = end_time;
     slow_response_callback(&fixture.check, &request)
         .await

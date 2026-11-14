@@ -20,10 +20,10 @@ use super::error::HangingRequestError;
 use super::interval::poll_interval;
 
 #[rstest]
-#[case::default_threshold(300.0, 510)]
-#[case::fractional_threshold(300.9, 511)]
-#[case::zero_threshold(0.0, 60)]
-#[case::negative_threshold(-100.0, 0)]
+#[case::default_threshold(300.0_f64, 510)]
+#[case::fractional_threshold(300.9_f64, 511)]
+#[case::zero_threshold(0.0_f64, 60)]
+#[case::negative_threshold(-100.0_f64, 0)]
 #[case::infinite_threshold(f64::INFINITY, 0)]
 fn init_caches_with_the_alerting_ttl(#[case] threshold: f64, #[case] seconds: u64) {
     let fixture = support::fixture_with(
@@ -374,8 +374,8 @@ async fn detect_alerts_an_old_request_once() {
 }
 
 #[rstest]
-#[case::just_below(299.5)]
-#[case::just_added(0.0)]
+#[case::just_below(299.5_f64)]
+#[case::just_added(0.0_f64)]
 #[tokio::test]
 async fn detect_skips_a_request_below_the_threshold(#[case] age: f64) {
     let fixture = support::fixture();
@@ -456,7 +456,7 @@ async fn detect_treats_a_null_status_as_in_flight() {
 #[tokio::test]
 async fn detect_checks_only_the_oldest_twenty_requests() {
     let fixture = support::fixture();
-    (0..21).for_each(|index| {
+    (0_u32..21_u32).for_each(|index| {
         fixture.cache.seed(support::hanging_record(
             &format!("call-{index}"),
             "gpt-4",
@@ -547,9 +547,9 @@ async fn send_passes_the_alerting_metadata() {
 }
 
 #[rstest]
-#[case::whole(300.0, "300.0")]
-#[case::fractional(0.5, "0.5")]
-#[case::another_whole(60.0, "60.0")]
+#[case::whole(300.0_f64, "300.0")]
+#[case::fractional(0.5_f64, "0.5")]
+#[case::another_whole(60.0_f64, "60.0")]
 #[tokio::test]
 async fn send_renders_the_threshold_as_a_python_float(#[case] threshold: f64, #[case] text: &str) {
     let fixture = support::fixture();
@@ -569,11 +569,11 @@ async fn send_renders_the_threshold_as_a_python_float(#[case] threshold: f64, #[
 }
 
 #[rstest]
-#[case::five_minutes(300.0, 150)]
-#[case::two_seconds(2.0, 1)]
-#[case::below_the_floor(1.0, 1)]
-#[case::zero_threshold(0.0, 1)]
-#[case::negative_threshold(-10.0, 1)]
+#[case::five_minutes(300.0_f64, 150)]
+#[case::two_seconds(2.0_f64, 1)]
+#[case::below_the_floor(1.0_f64, 1)]
+#[case::zero_threshold(0.0_f64, 1)]
+#[case::negative_threshold(-10.0_f64, 1)]
 fn loop_polls_every_half_the_threshold(#[case] threshold: f64, #[case] seconds: u64) {
     assert_eq!(poll_interval(threshold), Duration::from_secs(seconds));
 }
