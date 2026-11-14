@@ -35,7 +35,7 @@ pub(crate) struct MessagesCall {
     messages: Vec<ChatMessage>,
 }
 
-fn catalog() -> CatalogCapabilities {
+const fn catalog() -> CatalogCapabilities {
     CatalogCapabilities {
         chat_models: BTreeSet::new(),
         text_models: BTreeSet::new(),
