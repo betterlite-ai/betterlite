@@ -57,16 +57,16 @@ fn evidence_equal(
     kept: &[CompetitorIntentEvidenceEntry],
 ) -> bool {
     candidate.len() == kept.len()
-        && candidate.iter().zip(kept).all(|(candidate, kept)| {
-            candidate.r#type == kept.r#type
-                && candidate.key == kept.key
-                && candidate.value == kept.value
-                && candidate.r#match == kept.r#match
+        && candidate.iter().zip(kept).all(|(entry, held)| {
+            entry.r#type == held.r#type
+                && entry.key == held.key
+                && entry.value == held.value
+                && entry.r#match == held.r#match
         })
 }
 
-fn detections_equal(left: &ContentFilterDetection, right: &ContentFilterDetection) -> bool {
-    match (left, right) {
+fn detections_equal(first: &ContentFilterDetection, second: &ContentFilterDetection) -> bool {
+    match (first, second) {
         (ContentFilterDetection::Pattern(left), ContentFilterDetection::Pattern(right)) => {
             pattern_detections_equal(left, right)
         }

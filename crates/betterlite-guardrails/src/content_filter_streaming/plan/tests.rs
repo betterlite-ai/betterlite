@@ -59,21 +59,24 @@ fn source<'source>(
 #[test]
 fn context_defaults_to_512_when_no_keyword_is_longer() {
     let categories = CategoryLoadResult::default();
-    let source = source(&categories, &[word("secret")]);
+    let words = [word("secret")];
+    let source = source(&categories, &words);
     assert_eq!(streamed_scan_plan(&source).context_chars, 512);
 }
 
 #[test]
 fn context_keeps_512_for_a_keyword_of_exactly_512_characters() {
     let categories = CategoryLoadResult::default();
-    let source = source(&categories, &[word(&"k".repeat(512))]);
+    let words = [word(&"k".repeat(512))];
+    let source = source(&categories, &words);
     assert_eq!(streamed_scan_plan(&source).context_chars, 512);
 }
 
 #[test]
 fn context_widens_to_the_longest_blocked_word() {
     let categories = CategoryLoadResult::default();
-    let source = source(&categories, &[word(&"k".repeat(513))]);
+    let words = [word(&"k".repeat(513))];
+    let source = source(&categories, &words);
     assert_eq!(streamed_scan_plan(&source).context_chars, 513);
 }
 
@@ -126,7 +129,8 @@ fn context_takes_the_longest_across_every_keyword_source() {
             ContentFilterAction::Block,
         ),
     );
-    let source = source(&categories, &[word(&"b".repeat(700))]);
+    let words = [word(&"b".repeat(700))];
+    let source = source(&categories, &words);
     assert_eq!(streamed_scan_plan(&source).context_chars, 700);
 }
 
