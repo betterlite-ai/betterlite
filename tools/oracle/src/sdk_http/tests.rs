@@ -543,11 +543,19 @@ fn assert_rejected_environment() {
 }
 
 fn assert_python_has_no_proxy_server() {
+    // the pinned SDK's Anthropic messages stream imports these two route-free proxy modules itself
+    let sdk_proxy_modules = [
+        "litellm.proxy.pass_through_endpoints.success_handler",
+        "litellm.proxy.pass_through_endpoints.streaming_handler",
+    ];
     let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("sdk_http");
     for entry in fs::read_dir(folder).unwrap() {
         let path = entry.unwrap().path();
         if path.extension().is_some_and(|extension| extension == "py") {
-            let source = fs::read_to_string(&path).unwrap().to_lowercase();
+            let mut source = fs::read_to_string(&path).unwrap().to_lowercase();
+            for module in sdk_proxy_modules {
+                source = source.replace(module, "");
+            }
             assert!(
                 !source.contains("fastapi") && !source.contains("litellm.proxy"),
                 "{path:?}"
