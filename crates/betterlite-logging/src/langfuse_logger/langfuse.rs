@@ -1,5 +1,6 @@
-use std::sync::Arc;
+use std::fmt::{self, Formatter};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::loader::EnvironmentLookup;
@@ -31,7 +32,7 @@ use crate::langfuse_settings::{
 };
 
 use self::event::{EventFragments, event_fragments, generation_trace};
-use super::budget::LangfuseClientBudget;
+use super::budget::LangfuseClientReservation;
 use super::{
     AssemblyDefaults, LangfuseLoggerError, LangfuseLoggerRequest, LangfuseServices,
     channel_request, client_config,
@@ -80,14 +81,25 @@ pub struct LangfuseCall<'call> {
 pub struct LangFuseLogger {
     tracing: LangfuseTracing,
     api_client: LangfuseApiClient,
-    pub project_id: Option<String>,
-    budget: LangfuseClientBudget,
+    pub(crate) project_id: Option<String>,
+    slot: Mutex<Option<LangfuseClientReservation>>,
     tasks: TaskTracker,
     runtime: Handle,
     environment: Arc<dyn EnvironmentLookup + Send + Sync>,
     assembly: AssemblyDefaults,
     id_generator: Arc<dyn IdGenerator>,
     stopped: AtomicBool,
+}
+
+// the logger holds trait objects, so Debug prints the project link and the lifecycle flag
+impl fmt::Debug for LangFuseLogger {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LangFuseLogger")
+            .field("project_id", &self.project_id)
+            .field("stopped", &self.stopped)
+            .finish_non_exhaustive()
+    }
 }
 
 impl LangFuseLogger {
@@ -100,7 +112,7 @@ impl LangFuseLogger {
         let environment = resolve_environment(&services.settings, request.environment)?;
         let mock = mock_mode(&services.settings)?;
         let flush_interval = export::flush_interval(&services.settings, request.flush_interval);
-        let reservation = services.budget.reserve()?;
+        let mut reservation = services.budget.reserve()?;
         let channel = channel_request(
             &services.settings,
             &credentials,
@@ -116,7 +128,7 @@ impl LangFuseLogger {
             tracing,
             api_client,
             project_id,
-            budget: services.budget.clone(),
+            slot: Mutex::new(Some(reservation)),
             tasks: services.tasks.clone(),
             runtime: services.runtime.clone(),
             environment: Arc::clone(&services.environment),
@@ -140,7 +152,12 @@ impl LangFuseLogger {
         if self.stopped.swap(true, Ordering::AcqRel) {
             return;
         }
-        self.budget.release();
+        let slot = self
+            .slot
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        drop(slot);
         let tracing = self.tracing.clone();
         let _release = self.tasks.spawn_on(
             async move { release_langfuse_tracing(&tracing, CHANNEL_RETIRE_GRACE).await },

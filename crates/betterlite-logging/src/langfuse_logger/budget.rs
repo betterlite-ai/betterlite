@@ -22,7 +22,7 @@ pub enum LangfuseBudgetError {
 // litellm.initialized_langfuse_clients plus the slots of the loggers being built right now
 #[derive(Clone)]
 pub struct LangfuseClientBudget {
-    pub limit: usize,
+    pub(crate) limit: usize,
     counters: Arc<Mutex<Counters>>,
 }
 
@@ -61,11 +61,6 @@ impl LangfuseClientBudget {
         })
     }
 
-    pub fn release(&self) {
-        let mut counters = self.counters.lock().unwrap_or_else(PoisonError::into_inner);
-        counters.initialized = counters.initialized.saturating_sub(1);
-    }
-
     fn commit(&self) {
         let mut counters = self.counters.lock().unwrap_or_else(PoisonError::into_inner);
         counters.pending = counters.pending.saturating_sub(1);
@@ -73,11 +68,6 @@ impl LangfuseClientBudget {
         let created = counters.initialized;
         drop(counters);
         tracing::debug!("Created langfuse client number {created}");
-    }
-
-    fn abandon(&self) {
-        let mut counters = self.counters.lock().unwrap_or_else(PoisonError::into_inner);
-        counters.pending = counters.pending.saturating_sub(1);
     }
 }
 
@@ -88,7 +78,7 @@ pub struct LangfuseClientReservation {
 }
 
 impl LangfuseClientReservation {
-    pub fn commit(mut self) {
+    pub fn commit(&mut self) {
         self.budget.commit();
         self.committed = true;
     }
@@ -96,9 +86,15 @@ impl LangfuseClientReservation {
 
 impl Drop for LangfuseClientReservation {
     fn drop(&mut self) {
+        let mut counters = self
+            .budget
+            .counters
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         if self.committed {
-            return;
+            counters.initialized = counters.initialized.saturating_sub(1);
+        } else {
+            counters.pending = counters.pending.saturating_sub(1);
         }
-        self.budget.abandon();
     }
 }
