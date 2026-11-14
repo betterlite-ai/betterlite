@@ -18,6 +18,7 @@ betterlite-redis = { path = "../betterlite-redis" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 hex.workspace = true
+indexmap = "2.14.2"
 lru = "0.18.4"
 pcre2 = "0.2.11"
 regex.workspace = true
