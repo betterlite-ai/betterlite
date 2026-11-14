@@ -488,7 +488,8 @@ fn stream_prints_one_newline_after_a_reply() {
          You: Assistant:\n\
          Hello\n\
          \n\
-         You: Chat session ended.\n"
+         You: \n\
+         Chat session ended.\n"
     );
 }
 

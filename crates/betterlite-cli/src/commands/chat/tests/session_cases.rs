@@ -72,7 +72,7 @@ fn session_end_of_input_prints_chat_session_ended() {
 
     result.unwrap();
     assert!(
-        terminal.stdout.ends_with("You: Chat session ended.\n"),
+        terminal.stdout.ends_with("You: \nChat session ended.\n"),
         "{}",
         terminal.stdout
     );

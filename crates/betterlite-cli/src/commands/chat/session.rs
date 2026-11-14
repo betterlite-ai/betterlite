@@ -67,7 +67,7 @@ impl Session<'_> {
     fn turn(&mut self) -> Result<Flow, ChatError> {
         self.terminal.write_fragment("\nYou: ")?;
         let Some(line) = self.terminal.read_line()? else {
-            self.terminal.write_line("Chat session ended.")?;
+            self.terminal.write_line("\nChat session ended.")?;
             return Ok(Flow::Exit);
         };
         let input = line.trim();
