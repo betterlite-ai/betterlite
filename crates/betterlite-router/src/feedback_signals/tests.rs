@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeSet;
+use std::iter::repeat_with;
 
 use betterlite_openai::chat::{FunctionCall, ToolCall};
 use rstest::rstest;
@@ -357,36 +358,36 @@ enum Case {
 impl Case {
     fn run(self) {
         match self {
-            Case::Feedback(previous, current, tool, allow, expected) => {
+            Self::Feedback(previous, current, tool, allow, expected) => {
                 assert_feedback(previous, current, tool, allow, expected);
             }
-            Case::Response(previous, assistant, status, expected) => {
+            Self::Response(previous, assistant, status, expected) => {
                 assert_response(previous, Some(assistant), Vec::new(), status, expected);
             }
-            Case::Loop(history, calls, expected) => assert_loop(history, calls, expected),
-            Case::Exhaustion(content, is_error, status, expected) => {
+            Self::Loop(history, calls, expected) => assert_loop(history, calls, expected),
+            Self::Exhaustion(content, is_error, status, expected) => {
                 assert_exhaustion(content, is_error, status, expected);
             }
-            Case::Results(results, expected) => assert_results(results, expected),
-            Case::Tokens(text, expected) => assert_tokens(text, expected),
-            Case::Jaccard(left, right, expected) => assert_jaccard(left, right, expected),
-            Case::Counted => assert_counted(),
-            Case::CreditOnce => assert_credit_once(),
-            Case::Threaded => assert_threaded(),
-            Case::AdvanceBounds => assert_advance_bounds(),
-            Case::BoundaryThreshold(misalignment, stagnation, rejected) => {
+            Self::Results(results, expected) => assert_results(results, expected),
+            Self::Tokens(text, expected) => assert_tokens(text, expected),
+            Self::Jaccard(left, right, expected) => assert_jaccard(left, right, expected),
+            Self::Counted => assert_counted(),
+            Self::CreditOnce => assert_credit_once(),
+            Self::Threaded => assert_threaded(),
+            Self::AdvanceBounds => assert_advance_bounds(),
+            Self::BoundaryThreshold(misalignment, stagnation, rejected) => {
                 assert_threshold(misalignment, stagnation, rejected);
             }
-            Case::BoundaryMisalignment(previous, current, fires) => {
+            Self::BoundaryMisalignment(previous, current, fires) => {
                 assert_misalignment(previous, current, fires);
             }
-            Case::BoundaryStagnation(previous, current, fires) => {
+            Self::BoundaryStagnation(previous, current, fires) => {
                 assert_stagnation(previous, current, fires);
             }
-            Case::BoundaryLoop(repeats, fires) => assert_loop_boundary(repeats, fires),
-            Case::BoundaryHistory(calls, kept, first) => assert_history(calls, kept, first),
-            Case::BoundaryGate(text, phase) => assert_gate(text, phase),
-            Case::BoundaryStatus(status, fires) => {
+            Self::BoundaryLoop(repeats, fires) => assert_loop_boundary(repeats, fires),
+            Self::BoundaryHistory(calls, kept, first) => assert_history(calls, kept, first),
+            Self::BoundaryGate(text, phase) => assert_gate(text, phase),
+            Self::BoundaryStatus(status, fires) => {
                 let turn = make_turn(None, None, Vec::new(), status);
                 let delta = detect_response_signals(&detector(), None, &[], &turn);
                 assert_eq!(delta.exhaustion != 0, fires);
@@ -669,7 +670,7 @@ fn assert_stagnation(previous: &str, current: &str, fires: bool) {
 }
 
 fn assert_loop_boundary(repeats: usize, fires: bool) {
-    let history: Vec<String> = std::iter::repeat_with(|| "shell({})".to_owned())
+    let history: Vec<String> = repeat_with(|| "shell({})".to_owned())
         .take(repeats)
         .collect();
     let turn = Turn {
