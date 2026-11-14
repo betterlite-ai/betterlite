@@ -28,7 +28,7 @@ async fn counts_the_original_and_compressed_messages() {
             },
             CountCall::Messages {
                 model: MODEL.to_owned(),
-                messages: result.messages.clone(),
+                messages: result.messages,
             },
         ]
     );

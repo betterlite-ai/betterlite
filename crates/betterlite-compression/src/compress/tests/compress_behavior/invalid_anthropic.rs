@@ -10,7 +10,7 @@ fn broken_messages() -> Vec<Value> {
     ]
 }
 
-fn anthropic_request<'request>(messages: &'request [Value]) -> CompressRequest<'request> {
+fn anthropic_request(messages: &[Value]) -> CompressRequest<'_> {
     CompressRequest {
         messages,
         model: MODEL,
@@ -49,10 +49,10 @@ async fn embeddings_are_scored_before_the_sequence_is_checked() {
     let counter = fixture_counter(vec![50]);
     let executor = RecordingExecutor {
         embeddings: vec![
-            vec![1.0_f64, 0.0],
-            vec![1.0, 0.0],
-            vec![0.0, 1.0],
-            vec![0.5, 0.5],
+            vec![1.0_f64, 0.0_f64],
+            vec![1.0_f64, 0.0_f64],
+            vec![0.0_f64, 1.0_f64],
+            vec![0.5_f64, 0.5_f64],
         ],
         calls: Mutex::new(Vec::new()),
     };

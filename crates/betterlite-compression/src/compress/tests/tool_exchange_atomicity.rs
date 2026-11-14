@@ -7,7 +7,7 @@ async fn keeps_both_messages_of_a_fitting_span() {
         json!({"content": "b b"}),
         json!({"content": words(7)}),
     ];
-    let scores = vec![0.1_f64, 0.9, 0.5];
+    let scores = vec![0.1_f64, 0.9_f64, 0.5_f64];
     let spans = vec![vec![0_usize, 1]];
     let selection = select_budget(&normalized, &scores, 6, &[], &spans).await;
     assert_eq!(selection.kept_indices, BTreeSet::from([0, 1]));
@@ -20,7 +20,7 @@ async fn never_truncates_a_span_that_does_not_fit() {
         json!({"content": words(60)}),
         json!({"content": "c"}),
     ];
-    let scores = vec![0.9_f64, 0.9, 0.5];
+    let scores = vec![0.9_f64, 0.9_f64, 0.5_f64];
     let spans = vec![vec![0_usize, 1]];
     let selection = select_budget(&normalized, &scores, 100, &[], &spans).await;
     assert_eq!(selection.kept_indices, BTreeSet::from([2]));
@@ -34,7 +34,7 @@ async fn scores_a_span_by_its_best_member() {
         json!({"content": "b"}),
         json!({"content": "c c c"}),
     ];
-    let scores = vec![0.1_f64, 0.95, 0.5];
+    let scores = vec![0.1_f64, 0.95_f64, 0.5_f64];
     let spans = vec![vec![0_usize, 1]];
     let selection = select_budget(&normalized, &scores, 3, &[], &spans).await;
     assert_eq!(selection.kept_indices, BTreeSet::from([0, 1]));

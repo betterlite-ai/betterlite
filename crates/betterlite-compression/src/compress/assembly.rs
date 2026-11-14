@@ -10,6 +10,7 @@ use crate::retrieval_tool::build_retrieval_tools;
 
 use super::CompressError;
 use super::CompressedResult;
+use super::CompressionSkippedReason;
 use super::PreparedCompression;
 use super::budget::BudgetSelection;
 use super::counting::TokenCounter;
@@ -58,6 +59,22 @@ where
     })
 }
 
+pub(super) fn skipped_result(
+    messages: Vec<Value>,
+    original_tokens: usize,
+    reason: CompressionSkippedReason,
+) -> CompressedResult {
+    CompressedResult {
+        messages,
+        original_tokens,
+        compressed_tokens: original_tokens,
+        compression_ratio: 0.0,
+        cache: IndexMap::new(),
+        tools: Vec::new(),
+        compression_skipped_reason: Some(reason),
+    }
+}
+
 fn compression_ratio(
     original_tokens: usize,
     compressed_tokens: usize,
@@ -70,7 +87,7 @@ fn compression_ratio(
     let original = u32::try_from(original_tokens).map_or_else(|_| f64::from(u32::MAX), f64::from);
     let reduced = Sub::sub(1.0_f64, Div::div(compressed, original));
     // Python rounds the double's exact value, ties to even: 0.03125 stays 0.0312
-    format!("{:.4}", reduced)
+    format!("{reduced:.4}")
         .parse()
         .map_err(CompressError::Ratio)
 }

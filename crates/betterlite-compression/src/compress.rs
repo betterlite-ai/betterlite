@@ -23,7 +23,7 @@ mod assembly;
 pub mod budget;
 pub mod counting;
 
-use assembly::assemble_result;
+use assembly::{assemble_result, skipped_result};
 use budget::{BudgetSelectionRequest, select_kept_indices_for_budget};
 use counting::TokenCounter;
 
@@ -225,7 +225,27 @@ where
             CompressionSkippedReason::InvalidAnthropicToolSequence,
         ));
     }
-    let kept_indices = protected_kept_indices(&prepared.original_messages, &tool_exchange_spans);
+    select_and_assemble(
+        &prepared,
+        combined_scores,
+        request,
+        counter,
+        &tool_exchange_spans,
+    )
+    .await
+}
+
+async fn select_and_assemble<Tokenizer>(
+    prepared: &PreparedCompression,
+    combined_scores: &[f64],
+    request: &CompressRequest<'_>,
+    counter: &Tokenizer,
+    tool_exchange_spans: &[Vec<usize>],
+) -> Result<CompressedResult, CompressError>
+where
+    Tokenizer: TokenCounter,
+{
+    let kept_indices = protected_kept_indices(&prepared.original_messages, tool_exchange_spans);
     let default_target = prepared
         .compression_trigger
         .saturating_mul(7)
@@ -240,36 +260,19 @@ where
             compression_target,
             model: request.model,
             initial_kept_indices: &kept_indices,
-            tool_exchange_spans: &tool_exchange_spans,
+            tool_exchange_spans,
         },
         counter,
     )
     .await?;
-    let result = assemble_result(
-        &prepared,
+    assemble_result(
+        prepared,
         &selection,
-        &tool_exchange_spans,
+        tool_exchange_spans,
         request.model,
         counter,
     )
-    .await?;
-    Ok(result)
-}
-
-fn skipped_result(
-    messages: Vec<Value>,
-    original_tokens: usize,
-    reason: CompressionSkippedReason,
-) -> CompressedResult {
-    CompressedResult {
-        messages,
-        original_tokens,
-        compressed_tokens: original_tokens,
-        compression_ratio: 0.0,
-        cache: IndexMap::new(),
-        tools: Vec::new(),
-        compression_skipped_reason: Some(reason),
-    }
+    .await
 }
 
 fn protected_kept_indices(

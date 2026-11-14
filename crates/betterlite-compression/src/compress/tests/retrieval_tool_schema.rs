@@ -1,4 +1,5 @@
 use super::*;
+use crate::retrieval_tool::RETRIEVAL_TOOL_NAME;
 
 #[tokio::test]
 async fn lists_every_cache_key_in_message_order() {
@@ -14,10 +15,7 @@ async fn lists_every_cache_key_in_message_order() {
         .expect("compressed");
     assert_eq!(result.tools.len(), 1);
     assert_eq!(result.tools[0]["type"], "function");
-    assert_eq!(
-        result.tools[0]["function"]["name"],
-        crate::retrieval_tool::RETRIEVAL_TOOL_NAME
-    );
+    assert_eq!(result.tools[0]["function"]["name"], RETRIEVAL_TOOL_NAME);
     let keys = &result.tools[0]["function"]["parameters"]["properties"]["key"]["enum"];
     assert_eq!(keys, &json!(["message_1", "message_2"]));
 }

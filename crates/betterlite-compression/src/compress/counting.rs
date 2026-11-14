@@ -15,31 +15,29 @@ pub trait TokenCounter: Send + Sync {
 impl TokenCounter for Counter {
     async fn count_text(&self, model: &str, text: &str) -> Result<usize, CountError> {
         let input = TextInput::One(text.to_owned());
-        let request = TokenRequest {
-            model,
-            custom_tokenizer: None,
-            text: Some(&input),
-            messages: None,
-            count_response_tokens: Some(false),
-            tools: None,
-            tool_choice: None,
-        };
-        self.count(&request).await
+        self.count(&token_request(model, Some(&input), None)).await
     }
 
     async fn count_messages(&self, model: &str, messages: &[Value]) -> Result<usize, CountError> {
         let parsed: Vec<Message> = serde_json::from_value(Value::Array(messages.to_vec()))
             .map_err(|source| CountError::Json { source })?;
-        let request = TokenRequest {
-            model,
-            custom_tokenizer: None,
-            text: None,
-            messages: Some(&parsed),
-            count_response_tokens: Some(false),
-            tools: None,
-            tool_choice: None,
-        };
-        self.count(&request).await
+        self.count(&token_request(model, None, Some(&parsed))).await
+    }
+}
+
+const fn token_request<'request>(
+    model: &'request str,
+    text: Option<&'request TextInput>,
+    messages: Option<&'request [Message]>,
+) -> TokenRequest<'request> {
+    TokenRequest {
+        model,
+        custom_tokenizer: None,
+        text,
+        messages,
+        count_response_tokens: Some(false),
+        tools: None,
+        tool_choice: None,
     }
 }
 

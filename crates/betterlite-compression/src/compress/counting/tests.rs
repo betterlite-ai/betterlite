@@ -28,7 +28,7 @@ use betterlite_tokenizer::engine::selection::Selector;
 use serde_json::json;
 use tokio::time::Instant;
 
-use super::TokenCounter;
+use super::TokenCounter as _;
 
 struct InlineCounter;
 

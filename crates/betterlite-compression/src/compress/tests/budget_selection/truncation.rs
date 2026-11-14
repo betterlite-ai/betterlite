@@ -1,16 +1,18 @@
+use std::iter::repeat_with;
+
 use super::super::*;
 use rstest::rstest;
 
 fn long_message() -> Value {
-    let lines = (0_usize..20_usize)
-        .map(|_line| {
-            (0_usize..10_usize)
-                .map(|word| format!("w{word}"))
-                .collect::<Vec<String>>()
-                .join(" ")
-        })
-        .collect::<Vec<String>>()
-        .join("\n");
+    let lines = repeat_with(|| {
+        (0_usize..10_usize)
+            .map(|word| format!("w{word}"))
+            .collect::<Vec<String>>()
+            .join(" ")
+    })
+    .take(20)
+    .collect::<Vec<String>>()
+    .join("\n");
     json!({"role": "user", "content": lines})
 }
 
@@ -36,7 +38,7 @@ async fn truncates_only_with_enough_budget_left(#[case] target: usize, #[case] t
 #[tokio::test]
 async fn never_truncates_a_tool_exchange() {
     let normalized = vec![json!({"content": words(60)}), json!({"content": words(60)})];
-    let scores = vec![0.9_f64, 0.9];
+    let scores = vec![0.9_f64, 0.9_f64];
     let spans = vec![vec![0_usize, 1]];
     let selection = select_budget(&normalized, &scores, 100, &[], &spans).await;
     assert!(selection.kept_indices.is_empty());
@@ -93,7 +95,7 @@ async fn select_with_counter(
 #[tokio::test]
 async fn counts_the_truncated_message_against_the_budget() {
     let normalized = vec![long_message(), json!({"content": words(5)})];
-    let scores = vec![0.9_f64, 0.1];
+    let scores = vec![0.9_f64, 0.1_f64];
     let expected = truncate_message(&normalized[0], 120);
     let expected_text = expected["content"].as_str().expect("truncated text");
     // the fake word count puts the truncated text over the target, so the next message cannot fit

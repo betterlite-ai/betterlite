@@ -64,12 +64,12 @@ impl TokenCounter for FakeCounter {
                 model: model.to_owned(),
                 messages: messages.to_vec(),
             });
-        if let Some(total) = self
+        let next_total = self
             .message_totals
             .lock()
             .expect("message totals")
-            .pop_front()
-        {
+            .pop_front();
+        if let Some(total) = next_total {
             return Ok(total);
         }
         let mut total = 4_usize.saturating_mul(messages.len());
@@ -113,11 +113,7 @@ fn words(count: usize) -> String {
         .join(" ")
 }
 
-fn request<'request>(
-    messages: &'request [Value],
-    trigger: usize,
-    target: Option<usize>,
-) -> CompressRequest<'request> {
+fn request(messages: &[Value], trigger: usize, target: Option<usize>) -> CompressRequest<'_> {
     CompressRequest {
         messages,
         model: MODEL,
