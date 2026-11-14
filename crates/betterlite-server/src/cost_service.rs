@@ -104,6 +104,7 @@ where
         settings: LookupSettings,
         adjustments: &AdjustmentSettings,
         policies: Policies<Formulas>,
+        database: TimeZoneDatabase,
     ) -> Result<Self, CostServiceError> {
         let lookup = CatalogLookup::new(model_cost, settings)?;
         let mut models = ProviderModelSets::default();
@@ -113,7 +114,7 @@ where
             policies,
             pattern: SizePattern::new()?,
             models,
-            database: TimeZoneDatabase::from_env(),
+            database,
             discount: adjustments.cost_discount_config.clone(),
             margin: adjustments.cost_margin_config.clone(),
         })

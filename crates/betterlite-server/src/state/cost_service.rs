@@ -9,6 +9,7 @@ use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_provider::pricing::grounding::ProviderFormulas;
+use jiff::tz::TimeZoneDatabase;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SlotError {
@@ -27,12 +28,15 @@ impl Slot {
     #[must_use]
     pub fn new(config: &Config, _shared: &Shared) -> Self {
         Self {
-            service: build(config),
+            service: build(config, TimeZoneDatabase::from_env()),
         }
     }
 }
 
-fn build(config: &Config) -> Result<CostService<ProviderFormulas>, SlotError> {
+fn build(
+    config: &Config,
+    database: TimeZoneDatabase,
+) -> Result<CostService<ProviderFormulas>, SlotError> {
     let bytes = (BundledCatalog::default().asset)()?;
     let known_model_names: BTreeSet<String> = config
         .model_list
@@ -53,5 +57,6 @@ fn build(config: &Config) -> Result<CostService<ProviderFormulas>, SlotError> {
         settings,
         &config.sections.cost_adjustments,
         Policies::native(),
+        database,
     )?)
 }

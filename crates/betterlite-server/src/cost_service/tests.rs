@@ -29,6 +29,7 @@ use betterlite_models::tool_signals::response::{OtherView, ToolBillingResponse};
 use betterlite_provider::pricing::grounding::ProviderFormulas;
 use betterlite_tokenizer::count::error::CountError;
 use indexmap::IndexMap;
+use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
 
 use super::{Call, CostService, Policies, name_normalizers};
@@ -65,6 +66,7 @@ fn service(adjustments: &AdjustmentSettings) -> CostService<ProviderFormulas> {
         settings,
         adjustments,
         Policies::native(),
+        TimeZoneDatabase::from_env(),
     )
     .expect("the fixture catalog parses")
 }
