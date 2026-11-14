@@ -200,7 +200,7 @@ class BulkNewUserItem(DictJsonObject):
     @field_validator("send_invite_email", "password")
     @classmethod
     def reject_unsupported_field(
-        cls, value: JsonValue, info: ValidationInfo
+        cls, value: JsonValue, info: ValidationInfo[None]
     ) -> JsonValue:
         if info.field_name == "send_invite_email" and value is True:
             raise ValueError(
