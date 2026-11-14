@@ -4,8 +4,10 @@ use super::support::{
     FakeDatabase, FakeFailure, FakeReads, capture_logs, deleted_row, moment, repository,
     tags_metadata, token_row,
 };
+use crate::budget_permission_rows::JsonData;
 use crate::daily_activity_contracts::{DailyActivityProxyReads, KeyMetadataRow, SpendLogsWindow};
 use crate::daily_activity_repository::DailyActivityRepository;
+use crate::daily_activity_repository::metadata::{metadata_row, metadata_tags};
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::time::{Duration, SystemTime};
@@ -240,6 +242,68 @@ async fn recovery_error_propagates() {
 fn tags_metadata_text_is_not_decoded() {
     let mut row = token_row("key");
     row.metadata = Some(tags_metadata(&["a", "b"]));
-    let built = crate::daily_activity_repository::metadata::metadata_row(&row, true);
+    let built = metadata_row(&row, true);
     assert_eq!(built.tags, vec!["a".to_owned(), "b".to_owned()]);
+}
+
+#[test]
+fn tags_nonlist_empty() {
+    let object = JsonData::Object(tags_metadata(&["a"]));
+    assert!(metadata_tags(Some(&object)).is_empty());
+    assert!(metadata_tags(Some(&JsonData::String("a".to_owned()))).is_empty());
+    assert!(metadata_tags(None).is_empty());
+}
+
+#[test]
+fn tags_mixed_list_drops_all() {
+    let mixed = JsonData::Array(vec![
+        JsonData::String("kept".to_owned()),
+        JsonData::Bool(true),
+        JsonData::String("also kept".to_owned()),
+    ]);
+    assert!(metadata_tags(Some(&mixed)).is_empty());
+}
+
+#[test]
+fn tags_order_duplicates_empty() {
+    let metadata = tags_metadata(&["second", "", "first", "second", ""]);
+    assert_eq!(
+        metadata_tags(metadata.get("tags")),
+        ["second", "", "first", "second", ""]
+    );
+}
+
+#[test]
+fn metadata_fields_and_exists_flag() {
+    let mut row = token_row("key");
+    row.key_alias = Some("alias".to_owned());
+    row.team_id = Some("team".to_owned());
+    row.user_id = Some("user".to_owned());
+    row.metadata = Some(tags_metadata(&["z", "a"]));
+    let expected = KeyMetadataRow {
+        api_key: "key".to_owned(),
+        key_alias: Some("alias".to_owned()),
+        team_id: Some("team".to_owned()),
+        user_id: Some("user".to_owned()),
+        user_email: None,
+        key_exists: true,
+        tags: vec!["z".to_owned(), "a".to_owned()],
+    };
+    assert_eq!(metadata_row(&row, true), expected);
+    assert!(!metadata_row(&row, false).key_exists);
+}
+
+#[test]
+fn metadata_email_initially_null() {
+    let built = metadata_row(&token_row("deleted"), false);
+    let expected = KeyMetadataRow {
+        api_key: "deleted".to_owned(),
+        key_alias: None,
+        team_id: None,
+        user_id: None,
+        user_email: None,
+        key_exists: false,
+        tags: Vec::new(),
+    };
+    assert_eq!(built, expected);
 }
