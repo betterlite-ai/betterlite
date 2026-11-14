@@ -21,6 +21,7 @@ use secrecy::SecretString;
 use serde_json::Number;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use tracing::subscriber::set_default;
 
 use super::{FileScanSettings, ScanError, scan_request_files};
 use crate::model_armor::file_scanning::MAX_FILE_SIZE_BYTES;
@@ -58,12 +59,12 @@ async fn serve(replies: Vec<(StatusCode, String)>) -> (String, Arc<Mutex<usize>>
     let router = Router::new()
         .fallback(move |_headers: HeaderMap, _uri: Uri, _body: Bytes| {
             let request_count = Arc::clone(&handler_requests);
-            let replies = Arc::clone(&handler_queue);
+            let reply_queue = Arc::clone(&handler_queue);
             async move {
                 let mut total = request_count.lock().expect("requests");
                 *total = (*total).saturating_add(1);
                 drop(total);
-                let reply = replies.lock().expect("replies").pop_front();
+                let reply = reply_queue.lock().expect("replies").pop_front();
                 let (status, body) = reply.unwrap_or_else(|| {
                     (
                         StatusCode::INTERNAL_SERVER_ERROR,
@@ -114,18 +115,20 @@ fn slots() -> MetadataSlots {
     }
 }
 
-fn settings(name: Option<&str>, fail_on_error: bool, skip: bool) -> FileScanSettings {
+fn settings(name: Option<&str>, fail_on_error: bool) -> FileScanSettings {
     FileScanSettings {
         guardrail_name: name.map(str::to_owned),
         fail_on_error,
-        skip_unscannable_attachments: skip,
+        skip_unscannable_attachments: false,
     }
 }
 
 fn blocked(error: ScanError<ArmorTokenError>) -> (u16, IndexMap<String, GuardrailValue>) {
     match error {
         ScanError::Blocked { status, detail } => (status, detail),
-        other => panic!("expected a block, got {other:?}"),
+        other @ (ScanError::Api(_) | ScanError::Transport(_)) => {
+            panic!("expected a block, got {other:?}")
+        }
     }
 }
 
@@ -137,12 +140,12 @@ fn metadata(request_data: &MetadataSlots) -> &MetadataMap {
 struct LogSink(Arc<Mutex<Vec<u8>>>);
 
 impl io::Write for LogSink {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .map_err(|_poisoned| io::Error::other("poisoned"))?
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -161,7 +164,7 @@ where
         .with_max_level(tracing::Level::DEBUG)
         .with_writer(move || writer.clone())
         .finish();
-    let guard = tracing::subscriber::set_default(subscriber);
+    let guard = set_default(subscriber);
     run.await;
     drop(guard);
     String::from_utf8(sink.0.lock().expect("log").clone()).expect("utf8 log")
@@ -179,10 +182,10 @@ async fn request_files_returns_before_touching_the_request_data() {
         &messages(r#"{"type":"text","text":"hi"}"#),
         &mut request_data,
         &transport,
-        &settings(Some("armor"), true, false),
+        &settings(Some("armor"), true),
     )
     .await;
-    assert!(result.is_ok());
+    result.expect("the scan passes");
     assert!(request_data.metadata.is_none());
     assert!(request_data.litellm_metadata.is_none());
     assert_eq!(*requests.lock().expect("requests"), 0);
@@ -201,10 +204,10 @@ async fn request_files_records_the_guardrail_name_once() {
         &messages(&pdf_attachment()),
         &mut request_data,
         &transport,
-        &settings(Some("armor"), true, false),
+        &settings(Some("armor"), true),
     )
     .await;
-    assert!(result.is_ok());
+    result.expect("the scan passes");
     assert_eq!(
         metadata(&request_data).get("applied_guardrails"),
         Some(&Json::List(vec![Json::Text("armor".to_owned())]))
@@ -231,10 +234,10 @@ async fn request_files_replaces_a_non_list_applied_guardrails_value() {
             &messages(&pdf_attachment()),
             &mut request_data,
             &transport,
-            &settings(Some("armor"), true, false),
+            &settings(Some("armor"), true),
         )
         .await;
-        assert!(result.is_ok());
+        result.expect("the scan passes");
     })
     .await;
     assert_eq!(
@@ -255,10 +258,10 @@ async fn request_files_without_a_guardrail_name_still_creates_the_bucket() {
         &messages(&pdf_attachment()),
         &mut request_data,
         &transport,
-        &settings(None, true, false),
+        &settings(None, true),
     )
     .await;
-    assert!(result.is_ok());
+    result.expect("the scan passes");
     assert!(!metadata(&request_data).contains_key("applied_guardrails"));
     assert_eq!(
         metadata(&request_data).get(STATUS_KEY),
@@ -281,10 +284,10 @@ async fn request_files_writes_to_the_litellm_metadata_bucket_when_present() {
         &messages(&pdf_attachment()),
         &mut request_data,
         &transport,
-        &settings(Some("armor"), true, false),
+        &settings(Some("armor"), true),
     )
     .await;
-    assert!(result.is_ok());
+    result.expect("the scan passes");
     assert_eq!(
         request_data
             .litellm_metadata
@@ -307,7 +310,7 @@ async fn request_files_unscannable_references_block_with_the_400_detail() {
         ),
         &mut request_data,
         &transport,
-        &settings(Some("armor"), true, false),
+        &settings(Some("armor"), true),
     )
     .await;
     let (status, detail) = blocked(result.expect_err("blocked"));
@@ -336,10 +339,10 @@ async fn request_files_unscannable_references_do_not_block_when_fail_open() {
         &messages(r#"{"type":"file","file":{"file_data":"https://example.test/a.pdf"}}"#),
         &mut request_data,
         &transport,
-        &settings(Some("armor"), false, false),
+        &settings(Some("armor"), false),
     )
     .await;
-    assert!(result.is_ok());
+    result.expect("the scan passes");
     assert!(!metadata(&request_data).contains_key(STATUS_KEY));
 }
 
@@ -355,10 +358,14 @@ async fn request_files_skip_unscannable_attachments_returns_without_touching_met
         &messages(r#"{"type":"document","source":{"media_type":"application/pdf"}}"#),
         &mut request_data,
         &transport,
-        &settings(Some("armor"), true, true),
+        &FileScanSettings {
+            guardrail_name: Some("armor".to_owned()),
+            fail_on_error: true,
+            skip_unscannable_attachments: true,
+        },
     )
     .await;
-    assert!(result.is_ok());
+    result.expect("the scan passes");
     assert!(request_data.metadata.is_none());
     assert_eq!(*requests.lock().expect("requests"), 0);
 }
@@ -376,7 +383,7 @@ async fn request_files_oversize_attachments_block_before_the_request() {
         &messages(&block),
         &mut request_data,
         &transport,
-        &settings(Some("armor"), true, false),
+        &settings(Some("armor"), true),
     )
     .await;
     let (status, detail) = blocked(result.expect_err("blocked"));
@@ -407,10 +414,10 @@ async fn request_files_oversize_attachments_are_skipped_when_fail_open() {
         &messages(&block),
         &mut request_data,
         &transport,
-        &settings(Some("armor"), false, false),
+        &settings(Some("armor"), false),
     )
     .await;
-    assert!(result.is_ok());
+    result.expect("the scan passes");
     assert!(!metadata(&request_data).contains_key(STATUS_KEY));
     assert_eq!(*requests.lock().expect("requests"), 0);
 }
@@ -428,7 +435,7 @@ async fn request_files_api_errors_follow_fail_on_error() {
         &messages(&pdf_attachment()),
         &mut request_data,
         &transport,
-        &settings(Some("armor"), true, false),
+        &settings(Some("armor"), true),
     )
     .await;
     match result {
@@ -456,10 +463,10 @@ async fn request_files_api_errors_are_skipped_when_fail_open() {
         ),
         &mut request_data,
         &transport,
-        &settings(Some("armor"), false, false),
+        &settings(Some("armor"), false),
     )
     .await;
-    assert!(result.is_ok());
+    result.expect("the scan passes");
     assert_eq!(
         metadata(&request_data).get(STATUS_KEY),
         Some(&Json::Text("success".to_owned()))
@@ -470,26 +477,26 @@ async fn request_files_api_errors_are_skipped_when_fail_open() {
 async fn request_files_transport_errors_follow_fail_on_error() {
     let transport = transport("http://127.0.0.1:1", true);
     let mut closed = slots();
-    let result = scan_request_files(
+    let closed_result = scan_request_files(
         &messages(&pdf_attachment()),
         &mut closed,
         &transport,
-        &settings(Some("armor"), true, false),
+        &settings(Some("armor"), true),
     )
     .await;
     assert!(matches!(
-        result,
+        closed_result,
         Err(ScanError::Transport(TransportError::Request(_)))
     ));
     let mut open = slots();
-    let result = scan_request_files(
+    let open_result = scan_request_files(
         &messages(&pdf_attachment()),
         &mut open,
         &transport,
-        &settings(Some("armor"), false, false),
+        &settings(Some("armor"), false),
     )
     .await;
-    assert!(result.is_ok());
+    open_result.expect("the scan passes");
 }
 
 #[tokio::test]
@@ -502,7 +509,7 @@ async fn request_files_a_deidentify_match_blocks_with_400() {
         &messages(&pdf_attachment()),
         &mut request_data,
         &transport,
-        &settings(Some("armor"), true, false),
+        &settings(Some("armor"), true),
     )
     .await;
     let (status, detail) = blocked(result.expect_err("blocked"));
@@ -531,7 +538,7 @@ async fn request_files_block_detail_carries_the_response_when_not_sanitized() {
         &messages(&pdf_attachment()),
         &mut request_data,
         &transport,
-        &settings(Some("armor"), true, false),
+        &settings(Some("armor"), true),
     )
     .await;
     let (_, detail) = blocked(result.expect_err("blocked"));
@@ -557,10 +564,10 @@ async fn request_files_status_stays_blocked_and_the_response_appends() {
         &messages(&pdf_attachment()),
         &mut request_data,
         &transport,
-        &settings(Some("armor"), true, false),
+        &settings(Some("armor"), true),
     )
     .await;
-    assert!(result.is_ok());
+    result.expect("the scan passes");
     assert_eq!(
         metadata(&request_data).get(STATUS_KEY),
         Some(&Json::Text("blocked".to_owned()))
@@ -584,7 +591,7 @@ async fn request_files_keeps_every_metadata_response_shape() {
             Json::List(vec![Json::Null, Json::Bool(false)]),
         ),
         ("big".to_owned(), Json::Number(Number::from(u64::MAX))),
-        ("negative".to_owned(), Json::Number(Number::from(-7))),
+        ("negative".to_owned(), Json::Number(Number::from(-7_i32))),
         (
             "fraction".to_owned(),
             Json::Number(Number::from_f64(1.5).expect("a finite number")),
@@ -599,10 +606,10 @@ async fn request_files_keeps_every_metadata_response_shape() {
         &messages(&pdf_attachment()),
         &mut request_data,
         &transport,
-        &settings(Some("armor"), true, false),
+        &settings(Some("armor"), true),
     )
     .await;
-    assert!(result.is_ok());
+    result.expect("the scan passes");
     match metadata(&request_data).get(RESPONSE_KEY) {
         Some(Json::List(responses)) => {
             assert_eq!(responses.len(), 2);
@@ -626,16 +633,16 @@ async fn request_files_keeps_an_unrepresentable_metadata_number_as_text() {
         &messages(&pdf_attachment()),
         &mut request_data,
         &transport,
-        &settings(Some("armor"), true, false),
+        &settings(Some("armor"), true),
     )
     .await;
-    assert!(result.is_ok());
+    result.expect("the scan passes");
     match metadata(&request_data).get(RESPONSE_KEY) {
         Some(Json::List(responses)) => assert_eq!(
             responses.first(),
             Some(&Json::Object(MetadataMap::from([(
                 "big".to_owned(),
-                Json::Text("1e400".to_owned()),
+                Json::Text("1e+400".to_owned()),
             )])))
         ),
         other => panic!("expected two scan responses, got {other:?}"),
@@ -658,7 +665,7 @@ async fn request_files_continues_after_a_failed_attachment_when_fail_open() {
         ),
         &mut request_data,
         &transport,
-        &settings(Some("armor"), false, false),
+        &settings(Some("armor"), false),
     )
     .await;
     blocked(result.expect_err("the second attachment blocks"));
@@ -685,7 +692,7 @@ async fn request_files_a_block_wins_over_a_later_clean_attachment() {
         ),
         &mut request_data,
         &transport,
-        &settings(Some("armor"), true, false),
+        &settings(Some("armor"), true),
     )
     .await;
     blocked(result.expect_err("the first attachment blocks"));
@@ -705,10 +712,10 @@ async fn request_files_exactly_four_mib_is_scanned() {
         &messages(&block),
         &mut request_data,
         &transport,
-        &settings(Some("armor"), true, false),
+        &settings(Some("armor"), true),
     )
     .await;
-    assert!(result.is_ok());
+    result.expect("the scan passes");
     assert_eq!(*requests.lock().expect("requests"), 1);
 }
 
@@ -722,10 +729,14 @@ async fn request_files_warns_when_unscannable_attachments_are_skipped() {
             &messages(r#"{"type":"document","source":{"media_type":"application/pdf"}}"#),
             &mut request_data,
             &transport,
-            &settings(Some("armor"), true, true),
+            &FileScanSettings {
+                guardrail_name: Some("armor".to_owned()),
+                fail_on_error: true,
+                skip_unscannable_attachments: true,
+            },
         )
         .await;
-        assert!(result.is_ok());
+        result.expect("the scan passes");
     })
     .await;
     assert!(log.contains("skip_unscannable_attachments"));
@@ -741,10 +752,14 @@ async fn request_files_does_not_warn_about_skipping_an_empty_count() {
             &messages(&pdf_attachment()),
             &mut request_data,
             &transport,
-            &settings(Some("armor"), true, true),
+            &FileScanSettings {
+                guardrail_name: Some("armor".to_owned()),
+                fail_on_error: true,
+                skip_unscannable_attachments: true,
+            },
         )
         .await;
-        assert!(result.is_ok());
+        result.expect("the scan passes");
     })
     .await;
     assert!(!log.contains("skip_unscannable_attachments"));

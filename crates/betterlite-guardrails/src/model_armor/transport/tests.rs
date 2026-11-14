@@ -15,6 +15,7 @@ use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
+use tracing::subscriber::set_default;
 
 use super::error::{ArmorCallError, ArmorTokenError, TransportError};
 use super::project::ResolvedProject;
@@ -77,6 +78,7 @@ impl ArmorTokens for StubTokens {
     async fn access_token(&self) -> Result<(SecretString, Option<String>), ArmorTokenError> {
         let mut calls = self.calls.lock().expect("token calls");
         *calls = (*calls).saturating_add(1);
+        drop(calls);
         Ok((SecretString::from("secret-token"), self.project.clone()))
     }
 }
@@ -88,7 +90,7 @@ async fn serve(reply: Reply) -> (String, Arc<Mutex<Captured>>, Server) {
     let handler_captured = Arc::clone(&captured);
     let router = Router::new().fallback(move |headers: HeaderMap, uri: Uri, body: Bytes| {
         let request_capture = Arc::clone(&handler_captured);
-        let reply = reply.clone();
+        let canned = reply.clone();
         async move {
             let mut request = request_capture.lock().expect("captured request");
             request.requests = request.requests.saturating_add(1);
@@ -97,7 +99,7 @@ async fn serve(reply: Reply) -> (String, Arc<Mutex<Captured>>, Server) {
             request.content_type = header(&headers, CONTENT_TYPE.as_str());
             request.body = body.to_vec();
             drop(request);
-            (reply.status, Body::from(reply.body))
+            (canned.status, Body::from(canned.body))
         }
     });
     let mut server = JoinSet::new();
@@ -147,12 +149,12 @@ fn offline(tokens: StubTokens) -> ModelArmorTransport<StubTokens> {
 struct LogSink(Arc<Mutex<Vec<u8>>>);
 
 impl io::Write for LogSink {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .map_err(|_poisoned| io::Error::other("poisoned"))?
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -171,7 +173,7 @@ where
         .with_max_level(tracing::Level::DEBUG)
         .with_writer(move || writer.clone())
         .finish();
-    let guard = tracing::subscriber::set_default(subscriber);
+    let guard = set_default(subscriber);
     run.await;
     drop(guard);
     String::from_utf8(sink.0.lock().expect("log").clone()).expect("utf8 log")
@@ -231,7 +233,7 @@ async fn url_resolved_project_fills_in_only_when_none_is_configured() {
     let result = transport
         .make_model_armor_request(Some("hello"), Source::UserPrompt, None)
         .await;
-    assert!(result.is_ok());
+    let _response = result.expect("request");
     assert!(
         captured
             .lock()
@@ -253,7 +255,7 @@ async fn url_configured_project_is_never_replaced() {
     let result = transport
         .make_model_armor_request(Some("hello"), Source::UserPrompt, None)
         .await;
-    assert!(result.is_ok());
+    let _response = result.expect("request");
     let path = captured.lock().expect("captured").path.clone();
     assert!(path.contains("/projects/proj/"));
     assert!(!path.contains("resolved-project"));
@@ -267,7 +269,7 @@ async fn url_empty_configured_project_takes_the_resolved_one() {
     let result = transport
         .make_model_armor_request(Some("hello"), Source::UserPrompt, None)
         .await;
-    assert!(result.is_ok());
+    let _response = result.expect("request");
     assert!(
         captured
             .lock()
@@ -351,15 +353,16 @@ async fn request_posts_json_with_the_bearer_token_and_content_type() {
         .await
         .expect("request");
     assert_eq!(tokens.calls(), 1);
-    let captured = captured.lock().expect("captured");
-    assert_eq!(captured.requests, 1);
+    let seen = captured.lock().expect("captured");
+    assert_eq!(seen.requests, 1);
     assert_eq!(
-        captured.path,
+        seen.path,
         "/v1/projects/proj/locations/europe-west4/templates/tmpl:sanitizeUserPrompt"
     );
-    assert_eq!(captured.authorization, "Bearer secret-token");
-    assert_eq!(captured.content_type, "application/json");
-    let sent: SanitizeBody = serde_json::from_slice(&captured.body).expect("body");
+    assert_eq!(seen.authorization, "Bearer secret-token");
+    assert_eq!(seen.content_type, "application/json");
+    let sent: SanitizeBody = serde_json::from_slice(&seen.body).expect("body");
+    drop(seen);
     assert_eq!(sent, text_body("hello", Source::UserPrompt));
 }
 
@@ -388,7 +391,7 @@ async fn request_reads_a_body_above_two_kib() {
     let result = transport
         .make_model_armor_request(Some("hello"), Source::UserPrompt, None)
         .await;
-    assert!(result.is_ok());
+    let _response = result.expect("request");
 }
 
 #[tokio::test]
@@ -403,7 +406,7 @@ async fn request_uses_the_file_body_over_the_content() {
             Some((file_bytes.as_slice(), ByteDataType::Pdf)),
         )
         .await;
-    assert!(result.is_ok());
+    let _response = result.expect("request");
     let sent: SanitizeBody =
         serde_json::from_slice(&captured.lock().expect("captured").body).expect("body");
     assert_eq!(
@@ -419,7 +422,7 @@ async fn request_model_response_source_uses_the_model_response_method() {
     let result = transport
         .make_model_armor_request(Some("hello"), Source::ModelResponse, None)
         .await;
-    assert!(result.is_ok());
+    let _response = result.expect("request");
     assert!(
         captured
             .lock()
@@ -602,7 +605,7 @@ async fn log_file_request_never_prints_the_bytes_or_the_token() {
                 Some((&file_bytes, ByteDataType::Pdf)),
             )
             .await;
-        assert!(result.is_ok());
+        let _response = result.expect("request");
     })
     .await;
     assert!(log.contains(&endpoint));
@@ -620,7 +623,7 @@ async fn log_text_request_shows_only_the_url_when_sanitized() {
         let result = transport
             .make_model_armor_request(Some("top-secret-prompt"), Source::UserPrompt, None)
             .await;
-        assert!(result.is_ok());
+        let _response = result.expect("request");
     })
     .await;
     assert!(log.contains(&endpoint));
@@ -637,7 +640,7 @@ async fn log_text_request_shows_the_body_when_not_sanitized() {
         let result = transport
             .make_model_armor_request(Some("top-secret-prompt"), Source::UserPrompt, None)
             .await;
-        assert!(result.is_ok());
+        let _response = result.expect("request");
     })
     .await;
     assert!(log.contains("top-secret-prompt"));
@@ -654,7 +657,7 @@ async fn log_response_shows_only_the_status_when_sanitized() {
         let result = transport
             .make_model_armor_request(Some("hello"), Source::UserPrompt, None)
             .await;
-        assert!(result.is_ok());
+        let _response = result.expect("request");
     })
     .await;
     assert!(log.contains("200"));
@@ -673,7 +676,7 @@ async fn log_response_shows_the_body_when_not_sanitized() {
         let result = transport
             .make_model_armor_request(Some("hello"), Source::UserPrompt, None)
             .await;
-        assert!(result.is_ok());
+        let _response = result.expect("request");
     })
     .await;
     assert!(log.contains("response-marker"));

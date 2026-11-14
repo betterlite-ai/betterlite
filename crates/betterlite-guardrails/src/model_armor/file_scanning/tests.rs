@@ -30,9 +30,12 @@ fn attachment(byte_data_type: ByteDataType, bytes: &[u8]) -> FileAttachment {
 struct LogSink(Arc<Mutex<Vec<u8>>>);
 
 impl io::Write for LogSink {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        self.0.lock().expect("log").extend_from_slice(buffer);
-        Ok(buffer.len())
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|_| io::Error::other("log lock poisoned"))?
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -344,8 +347,8 @@ fn plan_counts_a_reference_as_unscannable(#[case] block: &str) {
 #[case::excess_padding(
     r#"{"type":"file","file":{"file_data":"aGVsbG8==","format":"application/pdf"}}"#
 )]
-#[case::missing_padding(
-    "{\"type\":\"file\",\"file\":{\"file_data\":\"data:application/pdf,abc\"}}"
+#[case::data_uri_missing_padding(
+    r#"{"type":"file","file":{"file_data":"data:application/pdf;base64,abc"}}"#
 )]
 fn plan_counts_undecodable_base64_as_unscannable(#[case] block: &str) {
     let plan = plan_of(block);
