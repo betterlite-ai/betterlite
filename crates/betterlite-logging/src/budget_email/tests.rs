@@ -477,6 +477,7 @@ async fn seed(pool: &Pool, sql: &str) {
 
 #[tokio::test]
 async fn team_member_emails_returns_every_member_email() {
+    let (logs, guard) = capture_logs();
     let (fixture, pool) = database().await;
     seed(
         &pool,
@@ -497,6 +498,9 @@ async fn team_member_emails_returns_every_member_email() {
         .unwrap();
     emails.sort_unstable();
     assert_eq!(emails, vec!["one@example.com", "two@example.com"]);
+    let output = logs.contents();
+    assert!(output.contains("Getting all team members for team_id=team-1"));
+    drop(guard);
     pool.close();
     fixture.close_async().await.unwrap();
 }
