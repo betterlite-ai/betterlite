@@ -43,6 +43,7 @@ use crate::cost::image_dispatch::policy::{ImagePricePolicy, ImageResponseView, I
 use crate::cost::prepare::{
     BillingTokenCounter, CompletionBillingInput, DictionaryResponse, ResponseView, TypedResponse,
 };
+use crate::cost::response::response_cost_calculator;
 use crate::cost::special::policy::{ModelResolver, SpecialPricePolicy};
 use crate::cost::special::replicate::ReplicateStamps;
 use crate::cost::special::request::{
@@ -389,6 +390,26 @@ impl Rig {
     {
         let context = self.context();
         completion_cost(&self.services(&context), args, &mut clock, target).await
+    }
+
+    pub async fn respond<Target>(
+        &self,
+        args: &CompletionArgs<'_>,
+        cache_hit: Option<bool>,
+        target: Option<&mut Target>,
+    ) -> Result<Decimal, CompletionCostError<Infallible>>
+    where
+        Target: CostBreakdownTarget,
+    {
+        let context = self.context();
+        response_cost_calculator(
+            &self.services(&context),
+            args,
+            cache_hit,
+            &mut clock,
+            target,
+        )
+        .await
     }
 }
 
