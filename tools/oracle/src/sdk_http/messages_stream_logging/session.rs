@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use betterlite_core::api::messages_stream_logging::seams::{LoggingFuture, LoggingJob};
@@ -19,7 +19,7 @@ use super::call::{ChunkSpec, Hook, LoggingStep};
 use super::doubles::{RecordingHook, Upstream};
 use super::outcome::{Processed, Routed, StepOutcome};
 use super::recording::{
-    Recorder, StepClock, Warnings, counted_future, logging_object, value_error,
+    Recorder, StepClock, Warnings, counted_future, drain, logging_object, value_error,
 };
 use crate::sdk_http::error::SdkHttpError;
 
@@ -42,12 +42,7 @@ impl Session {
         body: IndexMap<String, Json>,
         warnings: Warnings,
     ) -> Result<Self, SdkHttpError> {
-        let recorder = Arc::new(Recorder {
-            routed: Mutex::new(Vec::new()),
-            processed: Mutex::new(Vec::new()),
-            route_failure: Mutex::new(None),
-            ran: Arc::new(AtomicUsize::new(0)),
-        });
+        let recorder = Arc::new(Recorder::default());
         let worker = LoggingWorker::start(WorkerSettings::default())
             .map_err(|error| SdkHttpError::Logging(error.to_string()))?;
         let worker = Arc::new(worker);
@@ -61,7 +56,7 @@ impl Session {
                 seams: Arc::clone(&recorder),
                 worker: Arc::clone(&worker),
                 slots: Arc::clone(&slots),
-                clock: Arc::new(StepClock::new()),
+                clock: Arc::new(StepClock::default()),
                 success_handler: Arc::clone(&handler),
             },
             Arc::clone(&logging_obj),
@@ -95,12 +90,6 @@ impl Session {
                     self.stream.record_first_chunk();
                 }
             }
-            LoggingStep::Log { teardown } => {
-                let frames = self.frames.clone();
-                self.stream
-                    .handle_streaming_logging(frames, *teardown)
-                    .map_err(|failure| SdkHttpError::Logging(failure.to_string()))?;
-            }
             LoggingStep::Bill {
                 teardown,
                 route_failure,
@@ -128,17 +117,14 @@ impl Session {
                 abort_upstream(&mut Upstream { close: *close }).await;
             }
             LoggingStep::DetachedFailure { hook } => {
-                let calls = Arc::clone(&self.hook_calls);
-                self.fields().detached_failure_hook = match hook {
-                    Hook::Missing => None,
-                    Hook::Records => Some(Arc::new(RecordingHook {
-                        calls,
-                        raises: false,
-                    })),
-                    Hook::Raises => Some(Arc::new(RecordingHook {
-                        calls,
-                        raises: true,
-                    })),
+                let recording = RecordingHook {
+                    calls: Arc::clone(&self.hook_calls),
+                    raises: *hook == Hook::Raises,
+                };
+                self.fields().detached_failure_hook = if *hook == Hook::Missing {
+                    None
+                } else {
+                    Some(Arc::new(recording))
                 };
                 let original = value_error("original");
                 self.stream.fire_detached_failure_hook(&original).await;
@@ -150,7 +136,7 @@ impl Session {
                 };
                 let frame = convert_chunk_to_sse_format(chunk)
                     .map_err(|error| SdkHttpError::Logging(error.to_string()))?;
-                outcome.frame = Some(String::from_utf8_lossy(&frame).into_owned());
+                outcome.text = Some(String::from_utf8_lossy(&frame).into_owned());
             }
             LoggingStep::Delegate => self.delegate(http, &mut outcome).await?,
         }
@@ -191,15 +177,8 @@ impl Session {
             self.stream
                 .streaming_response_iterator(response, supplied_body, Arc::clone(&supplied));
         let relayed_bytes = Http::read(relayed).await?;
-        outcome.provider_text = Some(String::from_utf8_lossy(&relayed_bytes).into_owned());
-        let calls = std::mem::take(
-            &mut *self
-                .recorder
-                .processed
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner),
-        );
-        outcome.processed = calls
+        outcome.text = Some(String::from_utf8_lossy(&relayed_bytes).into_owned());
+        outcome.processed = drain(&self.recorder.processed)
             .into_iter()
             .map(|call| Processed {
                 response_status: call.response,
@@ -215,21 +194,10 @@ impl Session {
     }
 
     fn observe(&self, outcome: &mut StepOutcome) {
-        outcome.collected = self.frames.len();
         outcome.ran = self.recorder.ran.swap(0, Ordering::SeqCst);
         outcome.warnings = self.warnings.take();
-        outcome.callback_args = std::mem::take(
-            &mut *self
-                .callback_args
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner),
-        );
-        outcome.hook_calls = std::mem::take(
-            &mut *self
-                .hook_calls
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner),
-        );
+        outcome.callback_args = drain(&self.callback_args);
+        outcome.hook_calls = drain(&self.hook_calls);
         let (first, recorded) = self
             .logging_obj
             .read(&mut |state| {
@@ -247,14 +215,7 @@ impl Session {
         outcome.callback_armed = fields.deferred_callback.is_some();
         outcome.args_present = fields.deferred_args.is_some();
         drop(fields);
-        let calls = std::mem::take(
-            &mut *self
-                .recorder
-                .routed
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner),
-        );
-        outcome.routed = calls
+        outcome.routed = drain(&self.recorder.routed)
             .into_iter()
             .map(|call| Routed {
                 raw_frames: call
@@ -268,7 +229,6 @@ impl Session {
                 iterator_logging_obj: Arc::ptr_eq(&call.logging_obj, &self.logging_obj),
                 shared_success_handler: Arc::ptr_eq(&call.success_handler, &self.handler),
                 start_is_construction: call.start_time == DateTime::UNIX_EPOCH.fixed_offset(),
-                end_not_before_start: call.end_time >= call.start_time,
                 first_within_run: first
                     .map(|first| call.start_time <= first && first <= call.end_time),
             })

@@ -1,7 +1,6 @@
 use std::future::Future;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use betterlite_logging::passthrough_logging_state::logger::PassThroughEndpointLogging;
 use betterlite_logging::passthrough_stream_logging::object::StreamLoggingObject;
 use betterlite_logging::passthrough_stream_logging::types::EndpointType;
@@ -61,16 +60,6 @@ pub struct ChunkProcessorCall<Response> {
     pub url_route: &'static str,
 }
 
-// B3609's schedule_failure_logging arguments, called by B979's pump
-pub struct StreamFailureLogging {
-    pub logging_obj: Arc<StreamLoggingObject>,
-    pub endpoint_type: EndpointType,
-    pub request_body: IndexMap<String, Json>,
-    pub raw_bytes: Vec<Vec<u8>>,
-    pub exception: ReportedFailure,
-}
-
-#[async_trait]
 pub trait StreamSeams: Send + Sync {
     type Response: Send;
     type Stream;
@@ -81,6 +70,4 @@ pub trait StreamSeams: Send + Sync {
     ) -> Result<LoggingFuture, ReportedFailure>;
 
     fn chunk_processor(&self, call: ChunkProcessorCall<Self::Response>) -> Self::Stream;
-
-    async fn schedule_failure_logging(&self, call: StreamFailureLogging);
 }

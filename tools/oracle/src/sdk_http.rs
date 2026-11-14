@@ -9,7 +9,7 @@ use betterlite_provider::api::vector_store_contracts::config::Params;
 
 use crate::case::{Compare, UpstreamAnswer};
 use error::SdkHttpError;
-use messages_stream_logging::call::{LoggingStep, MessagesStreamLoggingCall};
+use messages_stream_logging::call::MessagesStreamLoggingCall;
 use result::SdkResult;
 
 pub(crate) mod anthropic_beta_config;
@@ -114,9 +114,6 @@ pub struct MessagesHeaderStreamCall {
     #[serde(default)]
     pub(crate) buffered_provider_output: Option<Json>,
 }
-
-const MAX_STEPS: usize = 32;
-const MAX_PARKED: usize = 16;
 
 // the call names no address: the harness points the endpoint at its own mock, or leaves it empty
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -240,18 +237,9 @@ fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHtt
                 ));
             }
         }
-        SdkHttpCall::MessagesStreamLogging(logging) => {
-            let parked = logging
-                .steps
-                .iter()
-                .any(|step| matches!(step, LoggingStep::ParkArgs { count } if *count > MAX_PARKED));
-            if logging.steps.len() > MAX_STEPS || parked {
-                return Err(SdkHttpError::Invalid(
-                    "the stream logging call has too many steps or parked callbacks".to_owned(),
-                ));
-            }
-        }
-        SdkHttpCall::VectorQueryEmbedding(_) | SdkHttpCall::AnthropicBetaConfig(_) => {}
+        SdkHttpCall::VectorQueryEmbedding(_)
+        | SdkHttpCall::AnthropicBetaConfig(_)
+        | SdkHttpCall::MessagesStreamLogging(_) => {}
     }
     Ok(())
 }

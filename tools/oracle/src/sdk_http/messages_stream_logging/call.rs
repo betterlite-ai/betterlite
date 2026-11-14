@@ -9,16 +9,11 @@ pub struct MessagesStreamLoggingCall {
     pub(crate) steps: Vec<LoggingStep>,
 }
 
-// One call into the wrapper methods; the collected frames and parked callbacks carry over between steps
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LoggingStep {
-    // POST the body to the mock and split its answer into frames
     Collect {
         first_chunk: bool,
-    },
-    Log {
-        teardown: bool,
     },
     Bill {
         teardown: bool,
@@ -39,7 +34,6 @@ pub enum LoggingStep {
     Convert {
         chunk: ChunkSpec,
     },
-    // the live mock response goes to the chunk processor and what it returns is read back
     Delegate,
 }
 

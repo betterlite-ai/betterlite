@@ -10,9 +10,9 @@ call:
         - {role: user, content: hi}
     steps:
       - {op: collect, first_chunk: false}
-      - {op: log, teardown: false}
+      - {op: bill, teardown: false}
       - {op: collect, first_chunk: true}
-      - {op: log, teardown: false}
+      - {op: bill, teardown: false}
 upstream:
   - status: 200
     headers:

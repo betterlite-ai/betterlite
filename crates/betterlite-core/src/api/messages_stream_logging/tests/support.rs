@@ -27,7 +27,7 @@ use tracing::subscriber::{DefaultGuard, set_default};
 
 use super::super::seams::{
     ChunkProcessorCall, LoggingFuture, LoggingJob, ReportedFailure, RouteStreamingLogging,
-    StreamFailureLogging, StreamSeams,
+    StreamSeams,
 };
 use super::super::slots::{DeferredCallback, StreamSlots};
 use super::super::{MessagesStreamLogging, StreamDeps};
@@ -117,7 +117,6 @@ pub(super) struct Recorder {
     pub(super) route_failure: Option<ReportedFailure>,
 }
 
-#[async_trait]
 impl StreamSeams for Recorder {
     type Response = String;
     type Stream = String;
@@ -148,8 +147,6 @@ impl StreamSeams for Recorder {
             .push(call);
         relayed
     }
-
-    async fn schedule_failure_logging(&self, _call: StreamFailureLogging) {}
 }
 
 pub(super) struct Harness {

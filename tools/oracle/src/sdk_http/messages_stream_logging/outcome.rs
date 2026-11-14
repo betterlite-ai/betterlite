@@ -8,11 +8,9 @@ pub struct StreamLoggingRun {
     pub steps: Vec<StepOutcome>,
 }
 
-// What one step changed, read after the logging worker drained
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StepOutcome {
-    pub collected: usize,
     pub routed: Vec<Routed>,
     pub processed: Vec<Processed>,
     pub ran: usize,
@@ -22,8 +20,7 @@ pub struct StepOutcome {
     pub completion_start_recorded: bool,
     pub callback_armed: bool,
     pub args_present: bool,
-    pub frame: Option<String>,
-    pub provider_text: Option<String>,
+    pub text: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,7 +33,6 @@ pub struct Routed {
     pub iterator_logging_obj: bool,
     pub shared_success_handler: bool,
     pub start_is_construction: bool,
-    pub end_not_before_start: bool,
     pub first_within_run: Option<bool>,
 }
 

@@ -8,7 +8,6 @@ use betterlite_core::api::messages_stream_logging::slots::DetachedFailureHook;
 use super::call::Close;
 use super::recording::value_error;
 
-// A close that is missing, works or raises, like the three upstream iterators the Python side builds
 pub(super) struct Upstream {
     pub(super) close: Close,
 }

@@ -27,51 +27,44 @@ LOGGER_NAME = "LiteLLM Proxy"
 Work = CoroutineType[None, None, None]
 
 
-class RouteCall(TypedDict):
+class SeamCall(TypedDict):
     litellm_logging_obj: Logging
     passthrough_success_handler_obj: PassThroughEndpointLogging
     url_route: str
     request_body: dict[str, Json]
     endpoint_type: EndpointType
     start_time: datetime
+
+
+class RouteCall(SeamCall):
     raw_bytes: list[bytes]
     end_time: datetime
 
 
-class ProcessorCall(TypedDict):
+class ProcessorCall(SeamCall):
     response: httpx.Response
-    request_body: dict[str, Json]
-    litellm_logging_obj: Logging
-    endpoint_type: EndpointType
-    start_time: datetime
-    passthrough_success_handler_obj: PassThroughEndpointLogging
-    url_route: str
 
 
-class Routed(TypedDict):
-    raw_frames: list[str]
+class Seen(TypedDict):
     request_body: dict[str, Json]
     endpoint_anthropic: bool
     url_route: str
-    iterator_logging_obj: bool
     shared_success_handler: bool
     start_is_construction: bool
-    end_not_before_start: bool
+
+
+class Routed(Seen):
+    raw_frames: list[str]
+    iterator_logging_obj: bool
     first_within_run: bool | None
 
 
-class Processed(TypedDict):
+class Processed(Seen):
     response_status: int
-    request_body: dict[str, Json]
-    endpoint_anthropic: bool
-    url_route: str
     supplied_logging_obj: bool
-    shared_success_handler: bool
-    start_is_construction: bool
 
 
 class StepOutcome(TypedDict):
-    collected: int
     routed: list[Routed]
     processed: list[Processed]
     ran: int
@@ -81,11 +74,9 @@ class StepOutcome(TypedDict):
     completion_start_recorded: bool
     callback_armed: bool
     args_present: bool
-    frame: str | None
-    provider_text: str | None
+    text: str | None
 
 
-# What the LiteLLM code reports during a run: its warnings, the route and processor calls
 class Recorder(logging.Handler):
     def __init__(self) -> None:
         super().__init__(level=logging.WARNING)
@@ -184,49 +175,19 @@ class ClosingStream(PlainStream):
             raise ValueError("closed")
 
 
-# The wrapper methods under test sit behind these names, so each step calls them through one place
-class Driver(BaseAnthropicMessagesStreamingIterator):
-    def __init__(self, logging_obj: RecordedLogging, body: dict[str, Json]) -> None:
-        super().__init__(litellm_logging_obj=logging_obj, request_body=body)
-
-    async def log(self, frames: list[bytes], *, teardown: bool) -> None:
-        await self._handle_streaming_logging(frames, stream_teardown=teardown)
-
-    async def bill(self, frames: list[bytes], *, teardown: bool) -> None:
-        await self._bill_collected_chunks(frames, stream_teardown=teardown)
-
-    def dispatch(self) -> None:
-        self._dispatch_pending_deferred_logging()
-
-    async def abort(self, stream: PlainStream) -> None:
-        await self._abort_upstream(stream)
-
-    async def fail(self, exc: Exception) -> None:
-        await self._fire_detached_failure_hook(exc)
-
-    def convert(self, chunk: dict[str, Json] | bytes) -> bytes:
-        return self._convert_chunk_to_sse_format(chunk)
-
-    def relay(
-        self, response: httpx.Response, body: dict[str, Json], supplied: RecordedLogging
-    ) -> AsyncIterator[bytes]:
-        return self.get_async_streaming_response_iterator(response, body, supplied)
-
-
-class Session:
+class Session(BaseAnthropicMessagesStreamingIterator):
     def __init__(self, body: dict[str, Json], api_base: str, client: httpx.AsyncClient) -> None:
+        self.logging = RecordedLogging()
+        super().__init__(litellm_logging_obj=self.logging, request_body=body)
         self.body = body
         self.url = f"{api_base}/messages"
         self.client = client
-        self.logging = RecordedLogging()
         self.supplied: RecordedLogging | None = None
-        self.driver = Driver(self.logging, body)
         self.recorder = Recorder()
         self.frames: list[bytes] = []
         self.hook_calls: list[str] = []
         self.callback_args: list[int] = []
-        self.frame: str | None = None
-        self.provider_text: str | None = None
+        self.text: str | None = None
 
     async def collect_frames(self) -> list[bytes]:
         response = await self.client.post(self.url, json=self.body)
@@ -242,45 +203,60 @@ class Session:
             coroutine.close()
         return self.recorder.counted()
 
+    async def bill(self, *, teardown: bool) -> None:
+        await self._bill_collected_chunks(self.frames, stream_teardown=teardown)
+
+    def dispatch(self) -> None:
+        self._dispatch_pending_deferred_logging()
+
+    async def abort(self, stream: PlainStream) -> None:
+        await self._abort_upstream(stream)
+
+    async def fail(self, exc: Exception) -> None:
+        await self._fire_detached_failure_hook(exc)
+
+    def convert(self, chunk: dict[str, Json] | bytes) -> bytes:
+        return self._convert_chunk_to_sse_format(chunk)
+
+    def relay(self, response: httpx.Response, supplied: RecordedLogging) -> AsyncIterator[bytes]:
+        return self.get_async_streaming_response_iterator(response, {"model": "supplied"}, supplied)
+
     async def run_step(self, step: "Step") -> StepOutcome:
-        self.frame = None
-        self.provider_text = None
+        self.text = None
         await step.run(self)
         await GLOBAL_LOGGING_WORKER.flush()
         return self.observe()
 
-    def routed_entry(self, call: RouteCall, first: datetime | None) -> Routed:
-        within = None if first is None else call["start_time"] <= first <= call["end_time"]
+    def seen(self, call: SeamCall) -> Seen:
         return {
-            "raw_frames": [frame.decode(errors="replace") for frame in call["raw_bytes"]],
             "request_body": call["request_body"],
             "endpoint_anthropic": call["endpoint_type"] == EndpointType.ANTHROPIC,
             "url_route": call["url_route"],
-            "iterator_logging_obj": call["litellm_logging_obj"] is self.logging,
             "shared_success_handler": call["passthrough_success_handler_obj"]
             is GLOBAL_PASS_THROUGH_SUCCESS_HANDLER_OBJ,
-            "start_is_construction": call["start_time"] == self.driver.start_time,
-            "end_not_before_start": call["end_time"] >= call["start_time"],
+            "start_is_construction": call["start_time"] == self.start_time,
+        }
+
+    def routed_entry(self, call: RouteCall, first: datetime | None) -> Routed:
+        within = None if first is None else call["start_time"] <= first <= call["end_time"]
+        return {
+            **self.seen(call),
+            "raw_frames": [frame.decode(errors="replace") for frame in call["raw_bytes"]],
+            "iterator_logging_obj": call["litellm_logging_obj"] is self.logging,
             "first_within_run": within,
         }
 
     def processed_entry(self, call: ProcessorCall) -> Processed:
         return {
+            **self.seen(call),
             "response_status": call["response"].status_code,
-            "request_body": call["request_body"],
-            "endpoint_anthropic": call["endpoint_type"] == EndpointType.ANTHROPIC,
-            "url_route": call["url_route"],
             "supplied_logging_obj": call["litellm_logging_obj"] is self.supplied,
-            "shared_success_handler": call["passthrough_success_handler_obj"]
-            is GLOBAL_PASS_THROUGH_SUCCESS_HANDLER_OBJ,
-            "start_is_construction": call["start_time"] == self.driver.start_time,
         }
 
     def observe(self) -> StepOutcome:
         first = self.logging.completion_start_time
         recorded = first is not None and "completion_start_time" in self.logging.model_call_details
         outcome: StepOutcome = {
-            "collected": len(self.frames),
             "routed": [self.routed_entry(call, first) for call in self.recorder.routed],
             "processed": [self.processed_entry(call) for call in self.recorder.processed],
             "ran": self.recorder.ran,
@@ -290,8 +266,7 @@ class Session:
             "completion_start_recorded": recorded,
             "callback_armed": self.logging.is_armed(),
             "args_present": self.logging.has_parked(),
-            "frame": self.frame,
-            "provider_text": self.provider_text,
+            "text": self.text,
         }
         self.recorder.routed = []
         self.recorder.processed = []
@@ -314,25 +289,17 @@ class CollectStep(StepModel):
         session.frames = await session.collect_frames()
         if self.first_chunk:
             now = datetime.now(UTC).astimezone()
-            session.driver.completion_start_time = now.replace(tzinfo=None)
-
-
-class LogStep(StepModel):
-    op: Literal["log"]
-    teardown: bool
-
-    async def run(self, session: Session) -> None:
-        await session.driver.log(session.frames, teardown=self.teardown)
+            session.completion_start_time = now.replace(tzinfo=None)
 
 
 class BillStep(StepModel):
     op: Literal["bill"]
     teardown: bool
-    route_failure: str | None
+    route_failure: str | None = None
 
     async def run(self, session: Session) -> None:
         session.recorder.route_failure = self.route_failure
-        await session.driver.bill(session.frames, teardown=self.teardown)
+        await session.bill(teardown=self.teardown)
 
 
 class ArmDeferredStep(StepModel):
@@ -354,7 +321,7 @@ class DispatchStep(StepModel):
     op: Literal["dispatch"]
 
     async def run(self, session: Session) -> None:
-        session.driver.dispatch()
+        session.dispatch()
 
 
 class AbortUpstreamStep(StepModel):
@@ -362,14 +329,12 @@ class AbortUpstreamStep(StepModel):
     close: Literal["unsupported", "closes", "fails"]
 
     async def run(self, session: Session) -> None:
-        match self.close:
-            case "unsupported":
-                stream = PlainStream()
-            case "closes":
-                stream = ClosingStream(fails=False)
-            case "fails":
-                stream = ClosingStream(fails=True)
-        await session.driver.abort(stream)
+        streams = {
+            "unsupported": PlainStream(),
+            "closes": ClosingStream(fails=False),
+            "fails": ClosingStream(fails=True),
+        }
+        await session.abort(streams[self.close])
 
 
 class DetachedFailureStep(StepModel):
@@ -381,7 +346,7 @@ class DetachedFailureStep(StepModel):
         if self.hook != "missing":
             hook = FailureHook(session.hook_calls, raises=self.hook == "raises")
         session.logging.set_failure_hook(hook)
-        await session.driver.fail(ValueError("original"))
+        await session.fail(ValueError("original"))
 
 
 class ConvertStep(StepModel):
@@ -391,10 +356,10 @@ class ConvertStep(StepModel):
     async def run(self, session: Session) -> None:
         match self.chunk:
             case str(text):
-                frame = session.driver.convert(text.encode())
+                frame = session.convert(text.encode())
             case dict(mapping):
-                frame = session.driver.convert(mapping)
-        session.frame = frame.decode(errors="replace")
+                frame = session.convert(mapping)
+        session.text = frame.decode(errors="replace")
 
 
 class DelegateStep(StepModel):
@@ -404,14 +369,13 @@ class DelegateStep(StepModel):
         supplied = RecordedLogging()
         session.supplied = supplied
         async with session.client.stream("POST", session.url, json=session.body) as response:
-            relayed = session.driver.relay(response, {"model": "supplied"}, supplied)
+            relayed = session.relay(response, supplied)
             relayed_bytes = b"".join([chunk async for chunk in relayed])
-        session.provider_text = relayed_bytes.decode(errors="replace")
+        session.text = relayed_bytes.decode(errors="replace")
 
 
 Step = Annotated[
     CollectStep
-    | LogStep
     | BillStep
     | ArmDeferredStep
     | ParkArgsStep

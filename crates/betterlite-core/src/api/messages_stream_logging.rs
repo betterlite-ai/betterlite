@@ -24,7 +24,6 @@ mod tests;
 // Bedrock streams log under the same literal route and endpoint type
 const MESSAGES_ROUTE: &str = "/v1/messages";
 
-// The collaborators LiteLLM reaches through module globals, handed in instead
 pub struct StreamDeps<S> {
     pub seams: Arc<S>,
     pub worker: Arc<LoggingWorker<LoggingJob>>,
@@ -33,7 +32,6 @@ pub struct StreamDeps<S> {
     pub success_handler: Arc<PassThroughEndpointLogging>,
 }
 
-// BaseAnthropicMessagesStreamingIterator's per-stream state
 pub struct MessagesStreamLogging<S> {
     deps: StreamDeps<S>,
     logging_obj: Arc<StreamLoggingObject>,
@@ -44,7 +42,6 @@ pub struct MessagesStreamLogging<S> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Logged {
-    // stored for the proxy to fire once the response completes
     Parked,
     Enqueued(Admission),
 }
@@ -122,7 +119,6 @@ impl<S: StreamSeams> MessagesStreamLogging<S> {
         ))
     }
 
-    // Billing is best-effort: a failure is warned about and the pump carries on
     pub fn bill_collected_chunks(
         &self,
         collected_chunks: Vec<Vec<u8>>,
@@ -138,7 +134,6 @@ impl<S: StreamSeams> MessagesStreamLogging<S> {
         }
     }
 
-    // Fires billing that a torn-down response would otherwise drop
     pub fn dispatch_pending_logging(&self) -> Option<Admission> {
         let (callback, args) = self.deps.slots.take_pending()?;
         let logging = callback(args);
@@ -181,7 +176,6 @@ impl<S: StreamSeams> MessagesStreamLogging<S> {
     }
 }
 
-// Closes the upstream stream so it stops generating; a failing close is warned about, never raised
 pub async fn abort_upstream<P>(completion_stream: &mut P)
 where
     P: MessagesProviderStream + Send,
@@ -193,7 +187,6 @@ where
     }
 }
 
-// A mapping becomes an SSE frame named by its type; bytes pass through untouched
 pub fn convert_chunk_to_sse_format(chunk: SseChunk) -> Result<Vec<u8>, ChunkError> {
     match chunk {
         SseChunk::Bytes(bytes) => Ok(bytes),

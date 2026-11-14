@@ -47,7 +47,6 @@ impl Http<'_> {
         Ok(bytes.to_vec())
     }
 
-    // The mock's answer cut after every blank line, the way an SSE reader hands the pump its frames
     async fn frames(&self, body: &IndexMap<String, Json>) -> Result<Vec<Vec<u8>>, SdkHttpError> {
         let (response, _lease) = self.post(body).await?;
         let text = String::from_utf8(Self::read(response).await?)

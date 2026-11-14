@@ -10,12 +10,12 @@ call:
         - {role: user, content: hi}
     steps:
       - {op: collect, first_chunk: false}
-      - {op: log, teardown: false}
+      - {op: bill, teardown: false}
       - {op: arm_deferred}
-      - {op: log, teardown: false}
+      - {op: bill, teardown: false}
       - {op: dispatch}
       - {op: arm_deferred}
-      - {op: log, teardown: true}
+      - {op: bill, teardown: true}
       - {op: park_args, count: 0}
       - {op: dispatch}
       - {op: arm_deferred}

@@ -5,8 +5,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_core::api::messages_stream_logging::seams::{
-    ChunkProcessorCall, LoggingFuture, ReportedFailure, RouteStreamingLogging,
-    StreamFailureLogging, StreamSeams,
+    ChunkProcessorCall, LoggingFuture, ReportedFailure, RouteStreamingLogging, StreamSeams,
 };
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
@@ -27,16 +26,9 @@ use reqwest::Response;
 use crate::sdk_http::error::SdkHttpError;
 
 // Each reading is one second after the one before, so the construction reading is the Unix epoch
+#[derive(Default)]
 pub(super) struct StepClock {
     reads: AtomicI64,
-}
-
-impl StepClock {
-    pub(super) const fn new() -> Self {
-        Self {
-            reads: AtomicI64::new(0),
-        }
-    }
 }
 
 impl SuccessClock for StepClock {
@@ -46,15 +38,20 @@ impl SuccessClock for StepClock {
     }
 }
 
-// The warnings the module logs, one per line
+pub(super) fn drain<T>(recorded: &Mutex<Vec<T>>) -> Vec<T> {
+    recorded
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .drain(..)
+        .collect()
+}
+
 #[derive(Clone, Default)]
 pub(super) struct Warnings(Arc<Mutex<Vec<u8>>>);
 
 impl Warnings {
     pub(super) fn take(&self) -> Vec<String> {
-        let mut bytes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        let text = String::from_utf8_lossy(&bytes).into_owned();
-        bytes.clear();
+        let text = String::from_utf8_lossy(&drain(&self.0)).into_owned();
         text.lines()
             .map(str::trim)
             .filter(|line| !line.is_empty())
@@ -141,7 +138,7 @@ pub(super) fn counted_future(ran: &Arc<AtomicUsize>) -> LoggingFuture {
     })
 }
 
-// Python's recording stand-ins for B3608 and B3609, which log what they were called with
+#[derive(Default)]
 pub(super) struct Recorder {
     pub(super) routed: Mutex<Vec<RouteStreamingLogging>>,
     pub(super) processed: Mutex<Vec<ChunkProcessorCall<u16>>>,
@@ -149,7 +146,6 @@ pub(super) struct Recorder {
     pub(super) ran: Arc<AtomicUsize>,
 }
 
-#[async_trait]
 impl StreamSeams for Recorder {
     type Response = Response;
     type Stream = Response;
@@ -188,6 +184,4 @@ impl StreamSeams for Recorder {
             });
         call.response
     }
-
-    async fn schedule_failure_logging(&self, _call: StreamFailureLogging) {}
 }
