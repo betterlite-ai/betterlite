@@ -400,9 +400,15 @@ def test_keys_error_not_object(server: RecordingServer) -> None:
     server.reply(OK, "[]")
     with pytest.raises(RequestError) as credential_list:
         our_credentials.list()
+    server.reply(OK, "[]")
+    lite.update("sk-updated-key")
+    server.reply(OK, "[]")
+    with pytest.raises(KeyUpdateError) as updated:
+        ours.update("sk-updated-key")
     assert str(listed.value) == "the key reply is not a JSON object"
     assert str(informed.value) == "the key reply is not a JSON object"
     assert str(credential_list.value) == "the credential reply is not a JSON object"
+    assert str(updated.value) == "Error updating key: []"
 
 
 def test_keys_error_passthrough(server: RecordingServer) -> None:
