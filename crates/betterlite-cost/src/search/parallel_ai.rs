@@ -8,7 +8,7 @@ use super::error::SearchCostError;
 use super::params::{ProviderUsage, SearchOptionalParams, UsageField};
 
 const DEFAULT_RESULTS: u64 = 10;
-const ADDITIONAL_RESULT_COST: Decimal = Decimal::new(1, 3);
+const ADDITIONAL_RESULT_COST: Decimal = Decimal::from_parts(1, 0, 0, false, 3);
 const STANDARD_SEARCH_MODEL: &str = "parallel_ai/search";
 const FAST_SEARCH_MODEL: &str = "parallel_ai/search-fast";
 const TURBO_SEARCH_MODEL: &str = "parallel_ai/search-turbo";
