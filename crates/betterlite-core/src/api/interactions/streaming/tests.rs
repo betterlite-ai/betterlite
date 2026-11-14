@@ -180,12 +180,26 @@ async fn async_iterator_construction_without_metadata_leaves_model_id_empty() {
 fn sync_iterator_construction_calls_iter_lines_once() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(litellm_params("https://sync.test"));
+    let model_metadata = metadata("model-2");
     let response = FakeSyncResponse::new(&[r#"data: {"id":"int_1"}"#]);
     let calls = Arc::clone(&response.calls);
-    let mut iterator =
-        SyncInteractionsStreamIterator::new(response, setup(&mut logging, &config, &NO_API_BASE))
-            .expect("the fixture iterator builds");
+    let mut iterator = SyncInteractionsStreamIterator::new(
+        response,
+        InteractionsStreamSetup {
+            model: Some("gemini-2.5-flash"),
+            config: &config,
+            logging: &mut logging,
+            litellm_metadata: Some(&model_metadata),
+            custom_llm_provider: None,
+            api_base: &NO_API_BASE,
+        },
+    )
+    .expect("the fixture iterator builds");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        iterator.base.hidden_params.model_id.as_deref(),
+        Some("model-2")
+    );
     assert_eq!(
         iterator.base.hidden_params.api_base.as_deref(),
         Some("https://sync.test")

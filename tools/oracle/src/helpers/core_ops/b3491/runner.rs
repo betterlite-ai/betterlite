@@ -71,7 +71,7 @@ pub(crate) fn run(input: &Input) -> crate::helpers::HelperResult {
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(failure)?;
             let finished = iterator.base.finished;
-            let completed = iterator.base.completed_response.clone();
+            let completed = iterator.base.completed_response;
             output(events, finished, completed, logging.records())
         }
     };
@@ -101,7 +101,7 @@ async fn collect_async(
         events.push(item.map_err(failure)?);
     }
     let finished = iterator.base.finished;
-    let completed = iterator.base.completed_response.clone();
+    let completed = iterator.base.completed_response;
     Ok(output(events, finished, completed, logging.records()))
 }
 
@@ -120,16 +120,13 @@ fn output(
 }
 
 fn call_details(input: &Input) -> Params {
-    match &input.litellm_params {
-        None => Params::new(),
-        Some(params) => {
-            let fields: IndexMap<String, JsonValue> = params
-                .iter()
-                .map(|(name, value)| (name.clone(), value.clone()))
-                .collect();
-            Params::from([(String::from("litellm_params"), JsonValue::Object(fields))])
-        }
-    }
+    let fields: IndexMap<String, JsonValue> = input
+        .litellm_params
+        .iter()
+        .flatten()
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect();
+    Params::from([(String::from("litellm_params"), JsonValue::Object(fields))])
 }
 
 fn failure<SourceError, ConfigError>(
