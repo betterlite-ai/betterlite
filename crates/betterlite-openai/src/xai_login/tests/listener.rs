@@ -1,14 +1,14 @@
 use std::future::Future;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::pin::Pin;
+use std::pin::{Pin, pin};
 use std::sync::Mutex;
 use std::time::Duration;
 
+use futures_util::future::{Either, select};
 use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::ExposeSecret;
 use tokio::net::TcpListener;
-use tokio::select;
 
 use crate::xai_login::callback::CallbackRequest;
 use crate::xai_login::error::XaiLoginError;
@@ -90,7 +90,7 @@ async fn reproduces_the_pinned_python_callback_transcript(#[case] name: &str) {
     let port = server_port(&server);
     let wait = server.wait(&clock);
     tokio::pin!(wait);
-    let (response, request) = if case.callback.is_some() {
+    let (response, delivered) = if case.callback.is_some() {
         let (response, outcome) =
             bounded(async { tokio::join!(get(port, &case.target), wait) }).await;
         (response, Some(outcome.unwrap()))
@@ -103,7 +103,7 @@ async fn reproduces_the_pinned_python_callback_transcript(#[case] name: &str) {
     assert_eq!(response.status, case.status);
     assert_eq!(response.content_type, case.content_type);
     assert_eq!(response.body, case.body);
-    let (Some(expected), Some(request)) = (&case.callback, request) else {
+    let (Some(expected), Some(request)) = (&case.callback, delivered) else {
         return;
     };
     assert_eq!(
@@ -330,8 +330,8 @@ where
     W: Future<Output = Result<CallbackRequest, XaiLoginError>>,
     C: Future,
 {
-    select! {
-        answer = client => answer,
-        outcome = wait => panic!("the wait ended with {outcome:?}"),
+    match select(pin!(client), wait).await {
+        Either::Left((answer, _wait)) => answer,
+        Either::Right((outcome, _client)) => panic!("the wait ended with {outcome:?}"),
     }
 }
