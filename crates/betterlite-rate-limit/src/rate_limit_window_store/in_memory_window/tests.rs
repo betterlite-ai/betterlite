@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::future::Future;
+use std::future::Future as _;
 use std::pin::pin;
 use std::sync::Arc;
 use std::task::{Context, Waker};

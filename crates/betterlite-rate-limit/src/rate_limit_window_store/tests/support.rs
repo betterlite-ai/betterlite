@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_redis::batch::error::BatchError;
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
@@ -98,11 +98,11 @@ impl CounterCache for FakeCache {
     async fn get_cache(&self, key: &str, local_only: bool) -> Option<CacheCounterValue> {
         self.gets
             .lock()
-            .expect("the cache lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .push((key.to_owned(), local_only));
         self.stored
             .lock()
-            .expect("the cache lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .get(key)
             .cloned()
     }
@@ -126,16 +126,20 @@ impl CounterCache for FakeCache {
     async fn batch_get_cache(&self, keys: &[String], local_only: bool) -> Option<CounterValues> {
         self.batch_reads
             .lock()
-            .expect("the cache lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .push((keys.to_vec(), local_only));
         if self.batch_fails.load(Ordering::SeqCst) {
             return None;
         }
-        let canned = self.batch_reply.lock().expect("the cache lock").clone();
+        let canned = self
+            .batch_reply
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
         if let Some(values) = canned {
             return Some(values);
         }
-        let stored = self.stored.lock().expect("the cache lock");
+        let stored = self.stored.lock().unwrap_or_else(PoisonError::into_inner);
         Some(keys.iter().map(|key| stored.get(key).cloned()).collect())
     }
 
@@ -186,7 +190,7 @@ impl CounterScript for FakeScript {
         keys: &[String],
         args: &[RedisScalar],
     ) -> Result<ScriptReply, RedisCountersError> {
-        let mut calls = self.calls.lock().expect("the script lock");
+        let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
         calls.push((keys.to_vec(), args.to_vec()));
         let call = calls.len();
         drop(calls);
@@ -258,7 +262,7 @@ impl io::Write for Captured {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
-            .expect("the capture lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .extend_from_slice(buf);
         Ok(buf.len())
     }

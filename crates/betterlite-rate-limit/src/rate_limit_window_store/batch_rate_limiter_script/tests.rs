@@ -144,3 +144,19 @@ async fn a_reply_with_a_nil_element_is_an_error() {
     .expect_err("a nil reply element");
     assert!(matches!(error, WindowStoreError::Reply(_)));
 }
+
+#[tokio::test]
+async fn a_failed_script_run_is_returned_and_not_retried() {
+    let script = FakeScript::new(BATCH_RATE_LIMITER_SCRIPT, Vec::new()).failing_after(1);
+    let mut store = store_with(FakeCache::new(Some(RedisCacheKind::Standalone)));
+    register(&mut store, &script);
+    let error = run_batch_rate_limiter_script(
+        &store,
+        &key_list(&["{key:value}:window", "{key:value}:requests"]),
+        &window_script_args(100, 60),
+    )
+    .await
+    .expect_err("the script run fails");
+    assert!(matches!(error, WindowStoreError::Script(_)));
+    assert_eq!(script.calls().len(), 1);
+}
