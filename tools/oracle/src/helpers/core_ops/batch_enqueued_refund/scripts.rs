@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_core::api::batch_enqueued_refund::store::ReservationRecordScripts;
@@ -39,10 +40,10 @@ impl ScriptedScripts {
 
     fn take_step(&self, queue: &Mutex<VecDeque<Step>>, event: Value) -> Result<(), ScriptFailure> {
         self.push_event(event);
-        self.take_reply(queue)
+        Self::take_reply(queue)
     }
 
-    fn take_reply(&self, queue: &Mutex<VecDeque<Step>>) -> Result<(), ScriptFailure> {
+    fn take_reply(queue: &Mutex<VecDeque<Step>>) -> Result<(), ScriptFailure> {
         let step = queue
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -60,50 +61,53 @@ impl ScriptedScripts {
 impl ReservationScripts for ScriptedScripts {
     type Error = ScriptFailure;
 
-    async fn reserve(
+    fn reserve(
         &self,
         _counter_key: &str,
         _tokens: i64,
         _ttl_seconds: i64,
         _limit: i64,
-    ) -> Result<ReserveScriptReply, ScriptFailure> {
-        Err(ScriptFailure {
-            message: "the refund helper never reserves".to_owned(),
-        })
+    ) -> impl Future<Output = Result<ReserveScriptReply, ScriptFailure>> + Send {
+        let message = "the refund helper never reserves".to_owned();
+        ready(Err(ScriptFailure { message }))
     }
 
-    async fn refund(&self, counter_key: &str, tokens: i64) -> Result<(), ScriptFailure> {
+    fn refund(
+        &self,
+        counter_key: &str,
+        tokens: i64,
+    ) -> impl Future<Output = Result<(), ScriptFailure>> + Send {
         let event = json!({"event": "refund", "key": counter_key, "args": [tokens]});
-        self.take_step(&self.refunds, event)
+        ready(self.take_step(&self.refunds, event))
     }
 }
 
 impl ReservationRecordScripts for ScriptedScripts {
-    async fn save(
+    fn save(
         &self,
         record_key: &str,
         record: &str,
         ttl_seconds: i64,
-    ) -> Result<(), ScriptFailure> {
+    ) -> impl Future<Output = Result<(), ScriptFailure>> + Send {
         let stored = serde_json::from_str::<Value>(record).unwrap_or(Value::Null);
         self.push_event(
             json!({"event": "save", "key": record_key, "record": stored, "args": [ttl_seconds]}),
         );
-        self.take_reply(&self.saves)
+        ready(Self::take_reply(&self.saves))
     }
 
-    async fn pop(
+    fn pop(
         &self,
         record_key: &str,
         ttl_seconds: i64,
-    ) -> Result<Option<Vec<u8>>, ScriptFailure> {
+    ) -> impl Future<Output = Result<Option<Vec<u8>>, ScriptFailure>> + Send {
         self.push_event(json!({"event": "pop", "key": record_key, "args": [ttl_seconds]}));
         let step = self
             .pops
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front();
-        match step {
+        let reply = match step {
             Some(PopStep::Record { record }) => {
                 serde_json::to_vec(&record)
                     .map(Some)
@@ -117,6 +121,7 @@ impl ReservationRecordScripts for ScriptedScripts {
             None => Err(ScriptFailure {
                 message: "the scripted pop queue is empty".to_owned(),
             }),
-        }
+        };
+        ready(reply)
     }
 }

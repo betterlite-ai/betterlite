@@ -21,7 +21,7 @@ impl RecordingStore {
     fn finish_local_set(
         &self,
         key: &str,
-        value: Value,
+        value: &Value,
         ttl_seconds: i64,
         outcome: Result<(), BatchEnqueuedRefundError>,
     ) -> Result<(), BatchEnqueuedRefundError> {
@@ -47,7 +47,7 @@ impl EnqueuedLocalStore for RecordingStore {
     ) -> Result<(), BatchEnqueuedRefundError> {
         let outcome =
             EnqueuedLocalStore::set_counter(&mut self.counters, counter_key, value, ttl_seconds);
-        self.finish_local_set(counter_key, json!(value), ttl_seconds, outcome)
+        self.finish_local_set(counter_key, &json!(value), ttl_seconds, outcome)
     }
 
     fn delete(&mut self, key: &str) {
@@ -67,7 +67,7 @@ impl EnqueuedLocalStore for RecordingStore {
     ) -> Result<(), BatchEnqueuedRefundError> {
         let outcome =
             EnqueuedLocalStore::set_record(&mut self.counters, record_key, record, ttl_seconds);
-        let stored: Value = serde_json::from_str(record).unwrap_or_else(|_error| Value::Null);
-        self.finish_local_set(record_key, stored, ttl_seconds, outcome)
+        let stored: Value = serde_json::from_str(record).unwrap_or(Value::Null);
+        self.finish_local_set(record_key, &stored, ttl_seconds, outcome)
     }
 }

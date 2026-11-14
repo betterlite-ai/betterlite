@@ -11,13 +11,10 @@ use super::local_store::RecordingStore;
 use crate::helpers::HelperError;
 
 fn cached_value(value: CacheValue) -> Value {
-    match value {
-        CacheValue::Text(text) => match serde_json::from_str::<Value>(&text) {
-            Ok(parsed) => parsed,
-            Err(_error) => Value::String(text),
-        },
-        other => serde_json::to_value(other).unwrap_or_else(|_error| Value::Null),
+    if let CacheValue::Text(text) = value {
+        return serde_json::from_str::<Value>(&text).unwrap_or(Value::String(text));
     }
+    serde_json::to_value(value).unwrap_or(Value::Null)
 }
 
 pub(super) fn read_memory(
@@ -34,6 +31,7 @@ pub(super) fn read_memory(
             .map_err(|error| failure(error.to_string()))?;
         memory.insert(key.clone(), stored.map_or(Value::Null, cached_value));
     }
+    drop(held);
     Ok(memory)
 }
 

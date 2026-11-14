@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
 
-use betterlite_context::local_ttl_cache::{CacheValue, LocalTtlCache};
+use betterlite_context::local_ttl_cache::LocalTtlCache;
 use betterlite_core::api::api_boundaries::ApiLimits;
+use betterlite_core::api::batch_enqueued_refund::store::EnqueuedLocalStore as _;
 use betterlite_core::api::batch_enqueued_refund::{BatchEnqueuedRefundInput, EnqueuedTokenRefund};
 use betterlite_core::api::batch_enqueued_reserve::store::{
     EnqueuedTokenCounters, LocalTokenCounters,
@@ -78,17 +78,13 @@ fn seeded_counters(memory: &MemoryInput) -> Result<LocalTokenCounters, Box<Helpe
     let cache = LocalTtlCache::with_clock(None, None, None, 1024, Arc::new(|| 0.0_f64))
         .map_err(|error| failure(error.to_string()))?;
     let mut counters = LocalTokenCounters { cache };
-    let seconds =
-        u64::try_from(BATCH_ENQUEUED_TTL_SECONDS).map_err(|error| failure(error.to_string()))?;
-    let ttl = Duration::from_secs(seconds).as_secs_f64();
     for (key, value) in &memory.counters {
         EnqueuedTokenCounters::set(&mut counters, key, *value, BATCH_ENQUEUED_TTL_SECONDS)
             .map_err(|error| failure(error.to_string()))?;
     }
     for (key, text) in &memory.records {
         counters
-            .cache
-            .set(key, CacheValue::Text(text.clone()), Some(ttl))
+            .set_record(key, text, BATCH_ENQUEUED_TTL_SECONDS)
             .map_err(|error| failure(error.to_string()))?;
     }
     Ok(counters)
@@ -109,9 +105,8 @@ impl Helper for Op {
             .redis
             .clone()
             .map(|spec| scripts::ScriptedScripts::new(Arc::clone(&events), spec));
-        let counters = seeded_counters(&input.memory)?;
         let store = Arc::new(Mutex::new(local_store::RecordingStore {
-            counters,
+            counters: seeded_counters(&input.memory)?,
             events: Arc::clone(&events),
         }));
         let now = input.now;
@@ -136,10 +131,6 @@ impl Helper for Op {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        Ok(json!({
-            "outcome": outcome,
-            "events": captured,
-            "memory": memory,
-        }))
+        Ok(json!({"outcome": outcome, "events": captured, "memory": memory}))
     }
 }
