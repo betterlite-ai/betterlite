@@ -173,7 +173,8 @@ def dataclass_report(value):
                 "factory": field.default_factory.__name__,
             }
         found.append(entry)
-    return {"fields": found, "slots": hasattr(value, "__slots__")}
+    params = value.__dataclass_params__
+    return {"fields": found, "frozen": params.frozen, "slots": params.slots}
 
 
 def alias_report(module, name):
@@ -238,7 +239,9 @@ print(json.dumps(report, sort_keys=True))
 
 FREQUENCY_SCRIPT: Final = (
     "import betterlite.types.integrations.slack_alerting as slack;"
-    " print(slack.SlackAlertingArgs().daily_report_frequency)"
+    " fields = slack.SlackAlertingArgs.model_fields;"
+    " print(repr(fields['daily_report_frequency'].default),"
+    " slack.SlackAlertingArgs().daily_report_frequency)"
 )
 
 
@@ -461,7 +464,7 @@ def test_names_daily_report_frequency_env() -> None:
         text=True,
         env=configured,
     )
-    assert overridden.stdout.strip() == "120"
+    assert overridden.stdout.strip() == "120 120"
 
     emptied = {**os.environ, "SLACK_DAILY_REPORT_FREQUENCY": ""}
     defaulted = subprocess.run(
@@ -471,7 +474,7 @@ def test_names_daily_report_frequency_env() -> None:
         text=True,
         env=emptied,
     )
-    assert defaulted.stdout.strip() == "43200"
+    assert defaulted.stdout.strip() == "43200 43200"
 
     broken = {**os.environ, "SLACK_DAILY_REPORT_FREQUENCY": "not-a-number"}
     failed = subprocess.run(
