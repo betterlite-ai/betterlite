@@ -1,0 +1,36 @@
+kind: helper
+name: response-count-mismatch
+call:
+  b3774: {
+      "inputs": {
+        "structured_messages": [
+          {
+            "role": "user",
+            "content": "one"
+          },
+          {
+            "role": "user",
+            "content": "two"
+          },
+          {
+            "role": "user",
+            "content": "three"
+          }
+        ]
+      },
+      "input_type": "request",
+      "answer": {
+        "status": 200,
+        "headers": {},
+        "body": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "a"
+            }
+          ]
+        }
+      }
+    }
+env: {}
+compare: {ignore: []}

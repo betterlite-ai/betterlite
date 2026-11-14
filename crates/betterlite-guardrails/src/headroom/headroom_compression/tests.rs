@@ -1,0 +1,942 @@
+#![cfg(test)]
+
+use std::collections::BTreeMap;
+use std::future::IntoFuture as _;
+use std::io;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use axum::Router;
+use axum::body::Bytes;
+use axum::http::{HeaderMap, Method, Uri};
+use axum::response::IntoResponse;
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
+use betterlite_http::proxy::base_builder;
+use reqwest::StatusCode;
+use rstest::rstest;
+use secrecy::SecretString;
+use serde::Serialize;
+use tokio::net::TcpListener;
+use tokio::task::JoinSet;
+use uuid::Uuid;
+
+use super::apply::UNAVAILABLE_MESSAGE;
+use super::{Clock, HeadroomGuardrail, HeadroomRuntime};
+use crate::generic_guardrail_contracts::GuardrailInputType;
+use crate::guardrail_base::contract::GuardrailContract as _;
+use crate::guardrail_base::failure::GuardrailFailure;
+use crate::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
+use crate::headroom_settings::{HeadroomInput, HeadroomSettings, SUPPORTED_EVENT_HOOKS};
+
+mod compress;
+
+const FOUR: &str = r#"{"structured_messages":[{"role":"system","content":"sys"},{"role":"user","content":"long text"},{"role":"assistant","content":"answer"},{"role":"user","content":"now"}]}"#;
+const SHORTENED: &str = r#"[{"role":"system","content":"sys"},{"role":"user","content":"short"},{"role":"assistant","content":"answer"},{"role":"user","content":"now"}]"#;
+const THREE_USERS: &str = r#"{"structured_messages":[{"role":"user","content":"one"},{"role":"user","content":"two"},{"role":"user","content":"three"}]}"#;
+const SINGLE_USER: &str = r#"{"structured_messages":[{"role":"user","content":"only"}]}"#;
+const SERVICE_ONE: &str = r#"{"messages":[{"role":"user","content":"short"}]}"#;
+const SERVICE_HASHES: &str =
+    r#"{"messages":[{"role":"user","content":"short"}],"ccr_hashes":["ABCDEF123456"]}"#;
+const SENT_HASH: &str = "abcdef123456";
+const RETRIEVE_TOOL: &str = r#"{"type":"function","function":{"name":"headroom_retrieve","description":"Retrieve original content that was compressed by Headroom. Call this when you encounter a compression marker containing a hash.","parameters":{"type":"object","properties":{"hash":{"type":"string","description":"The hex hash from the compression marker."},"query":{"type":"string","description":"Optional search query for BM25-ranked retrieval."}},"required":["hash"]}}}"#;
+
+#[derive(Clone)]
+struct Seen {
+    method: String,
+    path: String,
+    authorization: Option<String>,
+    content_type: Option<String>,
+    body: String,
+}
+
+struct Mock {
+    base: String,
+    seen: Arc<Mutex<Vec<Seen>>>,
+    _server: JoinSet<io::Result<()>>,
+}
+
+async fn mock<P>(status: StatusCode, payload: P) -> Mock
+where
+    P: Clone + IntoResponse + Send + Sync + 'static,
+{
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let seen_by_handler = Arc::clone(&seen);
+    let answer = move |method: Method, uri: Uri, headers: HeaderMap, bytes: Bytes| {
+        let recorder = Arc::clone(&seen_by_handler);
+        let reply = payload.clone();
+        async move {
+            let header = |name: &str| {
+                headers
+                    .get(name)
+                    .and_then(|value| value.to_str().ok())
+                    .map(str::to_owned)
+            };
+            recorder.lock().unwrap().push(Seen {
+                method: method.to_string(),
+                path: uri.path().to_owned(),
+                authorization: header("authorization"),
+                content_type: header("content-type"),
+                body: String::from_utf8(bytes.to_vec()).unwrap(),
+            });
+            (status, [("content-type", "application/json")], reply)
+        }
+    };
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, Router::new().fallback(answer)).into_future());
+    Mock {
+        base,
+        seen,
+        _server: server,
+    }
+}
+
+fn call_count(server: &Mock) -> usize {
+    server.seen.lock().unwrap().len()
+}
+
+fn only_call(server: &Mock) -> Seen {
+    server
+        .seen
+        .lock()
+        .unwrap()
+        .first()
+        .cloned()
+        .expect("the compression service was called")
+}
+
+fn default_input(base: &str) -> HeadroomInput {
+    HeadroomInput {
+        api_base: Some(base.to_owned()),
+        api_key: Some(SecretString::from("sk-test")),
+        model: None,
+        unreachable_fallback: None,
+        timeout: None,
+        ccr_retrieval: None,
+    }
+}
+
+fn fail_open_input(base: &str) -> HeadroomInput {
+    HeadroomInput {
+        unreachable_fallback: Some("fail_open".to_owned()),
+        ..default_input(base)
+    }
+}
+
+fn build(
+    input: &HeadroomInput,
+    now: &Arc<Mutex<Duration>>,
+    wall: fn() -> SystemTime,
+) -> HeadroomGuardrail {
+    let env: BTreeMap<String, String> = BTreeMap::new();
+    let settings = HeadroomSettings::new(input, &env).unwrap();
+    let shared = Arc::clone(now);
+    let clock: Clock = Box::new(move || *shared.lock().unwrap());
+    HeadroomGuardrail::new(
+        Some("headroom".to_owned()),
+        settings,
+        Box::new(|connect: Duration| base_builder().connect_timeout(connect).build()),
+        HeadroomRuntime {
+            clock,
+            wall,
+            new_id: Uuid::new_v4,
+            event_hook: Some(LitellmParamsMode::One("pre_call".to_owned())),
+        },
+    )
+    .unwrap()
+}
+
+fn fixed_wall() -> SystemTime {
+    UNIX_EPOCH
+}
+
+static WALL_TIMES: Mutex<Vec<SystemTime>> = Mutex::new(Vec::new());
+
+fn next_wall() -> SystemTime {
+    WALL_TIMES.lock().unwrap().remove(0)
+}
+
+fn guardrail(base: &str) -> HeadroomGuardrail {
+    build(
+        &default_input(base),
+        &Arc::new(Mutex::new(Duration::ZERO)),
+        fixed_wall,
+    )
+}
+
+fn clocked(input: &HeadroomInput) -> (HeadroomGuardrail, Arc<Mutex<Duration>>) {
+    let now = Arc::new(Mutex::new(Duration::ZERO));
+    let built = build(input, &now, fixed_wall);
+    (built, now)
+}
+
+async fn apply(
+    guardrail: &HeadroomGuardrail,
+    given: GuardrailApiInputs,
+    data: &mut BTreeMap<String, GuardrailValue>,
+) -> Result<GuardrailApiInputs, GuardrailFailure> {
+    guardrail
+        .apply(given, data, GuardrailInputType::Request, None)
+        .await
+}
+
+fn inputs(text: &str) -> GuardrailApiInputs {
+    serde_json::from_str(text).unwrap()
+}
+
+fn data(pairs: &str) -> BTreeMap<String, GuardrailValue> {
+    serde_json::from_str(pairs).unwrap()
+}
+
+fn gv(text: &str) -> GuardrailValue {
+    serde_json::from_str(text).unwrap()
+}
+
+fn encoded<T: Serialize>(value: &T) -> GuardrailValue {
+    gv(&serde_json::to_string(value).unwrap())
+}
+
+fn unavailable() -> GuardrailValue {
+    GuardrailValue::Object(BTreeMap::from([(
+        "error".to_owned(),
+        GuardrailValue::Text(UNAVAILABLE_MESSAGE.to_owned()),
+    )]))
+}
+
+fn logging_target(call_id: &str) -> GuardrailLogTarget {
+    GuardrailLogTarget {
+        litellm_params: None,
+        model_call_params: Some(BTreeMap::from([(
+            "litellm_call_id".to_owned(),
+            GuardrailValue::Text(call_id.to_owned()),
+        )])),
+    }
+}
+
+fn metadata_key(data: &BTreeMap<String, GuardrailValue>) -> &'static str {
+    if data.contains_key("litellm_metadata") {
+        "litellm_metadata"
+    } else {
+        "metadata"
+    }
+}
+
+fn metadata(data: &BTreeMap<String, GuardrailValue>) -> BTreeMap<String, GuardrailValue> {
+    match data.get(metadata_key(data)) {
+        Some(GuardrailValue::Object(fields)) => fields.clone(),
+        _ => BTreeMap::new(),
+    }
+}
+
+fn records(data: &BTreeMap<String, GuardrailValue>) -> Vec<BTreeMap<String, GuardrailValue>> {
+    let Some(GuardrailValue::Array(entries)) =
+        metadata(data).remove("standard_logging_guardrail_information")
+    else {
+        return Vec::new();
+    };
+    entries
+        .into_iter()
+        .map(|entry| {
+            let GuardrailValue::Object(fields) = entry else {
+                panic!("a record object");
+            };
+            fields
+        })
+        .collect()
+}
+
+fn first_record(data: &BTreeMap<String, GuardrailValue>) -> BTreeMap<String, GuardrailValue> {
+    records(data)
+        .into_iter()
+        .next()
+        .expect("a guardrail record")
+}
+
+fn applied_names(data: &BTreeMap<String, GuardrailValue>) -> Vec<String> {
+    let Some(GuardrailValue::Array(names)) = metadata(data).remove("applied_guardrails") else {
+        return Vec::new();
+    };
+    names.into_iter().filter_map(as_text).collect()
+}
+
+fn as_text(value: GuardrailValue) -> Option<String> {
+    let GuardrailValue::Text(text) = value else {
+        return None;
+    };
+    Some(text)
+}
+
+fn record_response(data: &BTreeMap<String, GuardrailValue>) -> GuardrailValue {
+    first_record(data)
+        .remove("guardrail_response")
+        .expect("a guardrail_response")
+}
+
+fn record_status(data: &BTreeMap<String, GuardrailValue>) -> GuardrailValue {
+    first_record(data)
+        .remove("guardrail_status")
+        .expect("a guardrail_status")
+}
+
+fn compression_statistics(tokens_saved: i64) -> BTreeMap<String, GuardrailValue> {
+    BTreeMap::from([
+        (
+            "tokens_before".to_owned(),
+            GuardrailValue::SignedInteger(100),
+        ),
+        ("tokens_after".to_owned(), GuardrailValue::SignedInteger(25)),
+        (
+            "tokens_saved".to_owned(),
+            GuardrailValue::SignedInteger(tokens_saved),
+        ),
+        ("compression_ratio".to_owned(), GuardrailValue::Decimal(4.0)),
+        (
+            "transforms_applied".to_owned(),
+            GuardrailValue::Array(vec![GuardrailValue::Text("dedupe".to_owned())]),
+        ),
+    ])
+}
+
+fn assert_record_identity(record: &BTreeMap<String, GuardrailValue>) {
+    assert_eq!(
+        record.get("guardrail_name"),
+        Some(&GuardrailValue::Text("headroom".to_owned()))
+    );
+    assert_eq!(
+        record.get("guardrail_provider"),
+        Some(&GuardrailValue::Text("headroom".to_owned()))
+    );
+    assert_eq!(
+        record.get("guardrail_status"),
+        Some(&GuardrailValue::Text("success".to_owned()))
+    );
+    assert_eq!(
+        record.get("guardrail_mode"),
+        Some(&GuardrailValue::Text("pre_call".to_owned()))
+    );
+    assert_eq!(
+        record.get("masked_entity_count"),
+        Some(&GuardrailValue::Null)
+    );
+}
+
+fn assert_record_times_are_decimal(record: &BTreeMap<String, GuardrailValue>) {
+    assert!(matches!(
+        record.get("start_time"),
+        Some(GuardrailValue::Decimal(_))
+    ));
+    assert!(matches!(
+        record.get("end_time"),
+        Some(GuardrailValue::Decimal(_))
+    ));
+    assert!(matches!(
+        record.get("duration"),
+        Some(GuardrailValue::Decimal(_))
+    ));
+}
+
+fn structure(returned: &GuardrailApiInputs) -> GuardrailValue {
+    encoded(returned.structured_messages.as_ref().unwrap())
+}
+
+#[rstest]
+#[case::lowercase(
+    r#"{"proxy_server_request":{"headers":{"x-headroom-bypass":"true"}}}"#,
+    true
+)]
+#[case::uppercase(
+    r#"{"proxy_server_request":{"headers":{"x-headroom-bypass":"TRUE"}}}"#,
+    true
+)]
+#[case::mixed(
+    r#"{"proxy_server_request":{"headers":{"x-headroom-bypass":"True"}}}"#,
+    true
+)]
+#[case::false_text(
+    r#"{"proxy_server_request":{"headers":{"x-headroom-bypass":"false"}}}"#,
+    false
+)]
+#[case::empty(
+    r#"{"proxy_server_request":{"headers":{"x-headroom-bypass":""}}}"#,
+    false
+)]
+#[case::other_text(
+    r#"{"proxy_server_request":{"headers":{"x-headroom-bypass":"yes"}}}"#,
+    false
+)]
+#[case::boolean_json(
+    r#"{"proxy_server_request":{"headers":{"x-headroom-bypass":true}}}"#,
+    false
+)]
+#[case::request_not_an_object(r#"{"proxy_server_request":"text"}"#, false)]
+#[case::headers_not_an_object(r#"{"proxy_server_request":{"headers":"text"}}"#, false)]
+#[case::missing(r#"{"model":"gpt-4o"}"#, false)]
+#[tokio::test]
+async fn the_bypass_header_skips_compression_only_for_true(
+    #[case] given: &str,
+    #[case] bypasses: bool,
+) {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let original = inputs(FOUR);
+    let mut request = data(given);
+    let returned = apply(&guardrail, original.clone(), &mut request)
+        .await
+        .unwrap();
+    if bypasses {
+        assert_eq!(returned, original);
+        assert_eq!(call_count(&server), 0);
+        assert!(records(&request).is_empty());
+    } else {
+        assert_eq!(structure(&returned), gv(SHORTENED));
+        assert_eq!(call_count(&server), 1);
+    }
+}
+
+#[rstest]
+#[case::enabled(r#"{"background":true}"#, true)]
+#[case::disabled(r#"{"background":false}"#, false)]
+#[case::string_value(r#"{"background":"true"}"#, false)]
+#[case::missing(r#"{"model":"gpt-4o"}"#, false)]
+#[tokio::test]
+async fn background_requests_skip_compression(#[case] given: &str, #[case] skipped: bool) {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let original = inputs(FOUR);
+    let mut request = data(given);
+    let returned = apply(&guardrail, original.clone(), &mut request)
+        .await
+        .unwrap();
+    if skipped {
+        assert_eq!(returned, original);
+        assert_eq!(call_count(&server), 0);
+    } else {
+        assert_eq!(structure(&returned), gv(SHORTENED));
+        assert_eq!(call_count(&server), 1);
+    }
+}
+
+#[tokio::test]
+async fn response_inputs_are_left_unchanged() {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let original = inputs(FOUR);
+    let mut request = data("{}");
+    let returned = guardrail
+        .apply(
+            original.clone(),
+            &mut request,
+            GuardrailInputType::Response,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(returned, original);
+    assert_eq!(call_count(&server), 0);
+}
+
+#[rstest]
+#[case::absent(r#"{"model":"gpt-4o"}"#)]
+#[case::empty_list(r#"{"structured_messages":[]}"#)]
+#[tokio::test]
+async fn requests_without_messages_are_left_unchanged(#[case] given: &str) {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let original = inputs(given);
+    let mut request = data("{}");
+    let returned = apply(&guardrail, original.clone(), &mut request)
+        .await
+        .unwrap();
+    assert_eq!(returned, original);
+    assert_eq!(call_count(&server), 0);
+}
+
+#[tokio::test]
+async fn requests_with_nothing_compressible_are_left_unchanged() {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let original = inputs(SINGLE_USER);
+    let mut request = data("{}");
+    let returned = apply(&guardrail, original.clone(), &mut request)
+        .await
+        .unwrap();
+    assert_eq!(returned, original);
+    assert_eq!(call_count(&server), 0);
+}
+
+#[tokio::test]
+async fn a_non_list_request_messages_field_contributes_no_ids() {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let mut request = data(r#"{"messages":{"role":"user"}}"#);
+    let returned = apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
+    assert_eq!(
+        structure(&returned),
+        gv(
+            r#"[{"role":"system","content":"sys"},{"role":"user","content":"short"},{"role":"assistant","content":"answer"},{"role":"user","content":"now"}]"#
+        )
+    );
+    assert_eq!(call_count(&server), 1);
+}
+
+#[tokio::test]
+async fn protected_rows_are_restored_in_their_positions() {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let mut request = data("{}");
+    let returned = apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
+    assert_eq!(
+        structure(&returned),
+        gv(
+            r#"[{"role":"system","content":"sys"},{"role":"user","content":"short"},{"role":"assistant","content":"answer"},{"role":"user","content":"now"}]"#
+        )
+    );
+    let sent = data(&only_call(&server).body);
+    assert_eq!(
+        sent,
+        data(r#"{"messages":[{"role":"user","content":"long text"}]}"#)
+    );
+}
+
+#[tokio::test]
+async fn untranslated_tool_results_are_protected_from_compression() {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let given = inputs(
+        r#"{"structured_messages":[{"role":"user","content":"one"},{"role":"tool","tool_call_id":"t1","content":"retrieved secret"},{"role":"user","content":"final"}]}"#,
+    );
+    let mut request = data(
+        r#"{"messages":[{"role":"assistant","content":"","tool_calls":[{"id":"t1","type":"function","function":{"name":"mcp__headroom__headroom_retrieve","arguments":"{}"}}]},{"role":"tool","tool_call_id":"t1","content":"retrieved secret"}]}"#,
+    );
+    let returned = apply(&guardrail, given, &mut request).await.unwrap();
+    assert_eq!(
+        structure(&returned),
+        gv(
+            r#"[{"role":"user","content":"short"},{"role":"tool","tool_call_id":"t1","content":"retrieved secret"},{"role":"user","content":"final"}]"#
+        )
+    );
+    let sent = data(&only_call(&server).body);
+    let Some(GuardrailValue::Array(sent_messages)) = sent.get("messages") else {
+        panic!("sent messages");
+    };
+    assert_eq!(sent_messages.len(), 1);
+}
+
+#[tokio::test]
+async fn call_id_comes_from_the_logging_object() {
+    let server = mock(StatusCode::OK, SERVICE_HASHES.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let mut target = logging_target("call-1");
+    let mut request = data(r#"{"litellm_call_id":"request-id"}"#);
+    guardrail
+        .apply(
+            inputs(FOUR),
+            &mut request,
+            GuardrailInputType::Request,
+            Some(&mut target),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        guardrail.has_issued_hashes("call-1"),
+        Some([SENT_HASH.to_owned()].into_iter().collect())
+    );
+    assert_eq!(guardrail.has_issued_hashes("request-id"), None);
+}
+
+#[tokio::test]
+async fn the_record_is_synced_into_the_logging_object() {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let mut target = GuardrailLogTarget {
+        litellm_params: Some(BTreeMap::new()),
+        model_call_params: Some(BTreeMap::new()),
+    };
+    let mut request = data("{}");
+    guardrail
+        .apply(
+            inputs(FOUR),
+            &mut request,
+            GuardrailInputType::Request,
+            Some(&mut target),
+        )
+        .await
+        .unwrap();
+    assert_one_headroom_record(target.litellm_params.as_ref());
+    assert_one_headroom_record(target.model_call_params.as_ref());
+}
+
+fn assert_one_headroom_record(params: Option<&BTreeMap<String, GuardrailValue>>) {
+    let entries = records(params.expect("the params dict stays present"));
+    assert_eq!(entries.len(), 1);
+    assert_eq!(
+        entries[0].get("guardrail_name"),
+        Some(&GuardrailValue::Text("headroom".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn call_id_comes_from_the_request_state() {
+    let server = mock(StatusCode::OK, SERVICE_HASHES.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let mut request = data(r#"{"litellm_call_id":"req-1"}"#);
+    apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
+    assert!(guardrail.has_issued_hashes("req-1").is_some());
+    assert_eq!(
+        request.get("litellm_call_id"),
+        Some(&GuardrailValue::Text("req-1".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn an_empty_logging_call_id_falls_to_the_request_state() {
+    let server = mock(StatusCode::OK, SERVICE_HASHES.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let mut target = logging_target("");
+    let mut request = data(r#"{"litellm_call_id":"req-1"}"#);
+    guardrail
+        .apply(
+            inputs(FOUR),
+            &mut request,
+            GuardrailInputType::Request,
+            Some(&mut target),
+        )
+        .await
+        .unwrap();
+    assert!(guardrail.has_issued_hashes("req-1").is_some());
+    assert_eq!(guardrail.has_issued_hashes(""), None);
+}
+
+#[tokio::test]
+async fn a_missing_call_id_is_generated_and_written_to_the_request() {
+    let server = mock(StatusCode::OK, SERVICE_HASHES.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let mut request = data("{}");
+    apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
+    let Some(GuardrailValue::Text(generated)) = request.get("litellm_call_id") else {
+        panic!("a generated call id");
+    };
+    let parsed = Uuid::parse_str(generated).expect("a UUID");
+    assert_eq!(
+        guardrail.has_issued_hashes(generated),
+        Some([SENT_HASH.to_owned()].into_iter().collect())
+    );
+    assert_ne!(parsed, Uuid::nil());
+}
+
+#[tokio::test]
+async fn hashes_are_lowercased_from_the_service_response() {
+    let server = mock(StatusCode::OK, SERVICE_HASHES.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let mut target = logging_target("call-1");
+    let mut request = data("{}");
+    guardrail
+        .apply(
+            inputs(FOUR),
+            &mut request,
+            GuardrailInputType::Request,
+            Some(&mut target),
+        )
+        .await
+        .unwrap();
+    let issued = guardrail
+        .has_issued_hashes("call-1")
+        .expect("issued hashes");
+    assert_eq!(issued, [SENT_HASH.to_owned()].into_iter().collect());
+}
+
+#[tokio::test]
+async fn ccr_retrieval_disabled_records_no_hashes_and_adds_no_tool() {
+    let server = mock(StatusCode::OK, SERVICE_HASHES.to_owned()).await;
+    let input = HeadroomInput {
+        ccr_retrieval: Some(false),
+        ..default_input(&server.base)
+    };
+    let guardrail = guardrail_with_clock(&input);
+    let mut target = logging_target("call-1");
+    let mut request = data("{}");
+    let returned = guardrail
+        .apply(
+            inputs(FOUR),
+            &mut request,
+            GuardrailInputType::Request,
+            Some(&mut target),
+        )
+        .await
+        .unwrap();
+    assert_eq!(guardrail.has_issued_hashes("call-1"), None);
+    assert!(returned.tools.is_none());
+    assert_eq!(
+        structure(&returned),
+        gv(
+            r#"[{"role":"system","content":"sys"},{"role":"user","content":"short"},{"role":"assistant","content":"answer"},{"role":"user","content":"now"}]"#
+        )
+    );
+}
+
+fn guardrail_with_clock(input: &HeadroomInput) -> HeadroomGuardrail {
+    let (built, _now) = clocked(input);
+    built
+}
+
+#[tokio::test]
+async fn hashes_are_pruned_once_the_ttl_has_passed() {
+    let server = mock(StatusCode::OK, SERVICE_HASHES.to_owned()).await;
+    let (guardrail, now) = clocked(&default_input(&server.base));
+    let mut target = logging_target("first");
+    let mut request = data("{}");
+    guardrail
+        .apply(
+            inputs(FOUR),
+            &mut request,
+            GuardrailInputType::Request,
+            Some(&mut target),
+        )
+        .await
+        .unwrap();
+    assert!(guardrail.has_issued_hashes("first").is_some());
+    *now.lock().unwrap() = Duration::from_secs(899);
+    let mut later = logging_target("second");
+    guardrail
+        .apply(
+            inputs(FOUR),
+            &mut request,
+            GuardrailInputType::Request,
+            Some(&mut later),
+        )
+        .await
+        .unwrap();
+    assert!(guardrail.has_issued_hashes("first").is_some());
+    *now.lock().unwrap() = Duration::from_mins(15);
+    let mut expired = logging_target("third");
+    guardrail
+        .apply(
+            inputs(FOUR),
+            &mut request,
+            GuardrailInputType::Request,
+            Some(&mut expired),
+        )
+        .await
+        .unwrap();
+    assert_eq!(guardrail.has_issued_hashes("first"), None);
+    assert!(guardrail.has_issued_hashes("second").is_some());
+}
+
+#[tokio::test]
+async fn a_response_without_hashes_does_not_prune() {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let (guardrail, now) = clocked(&default_input(&server.base));
+    guardrail.issued.record(
+        "first",
+        [SENT_HASH.to_owned()].into_iter().collect(),
+        Duration::ZERO,
+    );
+    *now.lock().unwrap() = Duration::from_hours(1);
+    let mut request = data("{}");
+    apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
+    assert!(guardrail.has_issued_hashes("first").is_some());
+}
+
+#[tokio::test]
+async fn the_retrieve_tool_is_added_when_hashes_are_recorded() {
+    let server = mock(StatusCode::OK, SERVICE_HASHES.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let mut request = data("{}");
+    let returned = apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
+    let tools = encoded(returned.tools.as_ref().unwrap());
+    assert_eq!(tools, gv(&format!("[{RETRIEVE_TOOL}]")));
+}
+
+#[tokio::test]
+async fn the_retrieve_tool_is_not_duplicated() {
+    let server = mock(StatusCode::OK, SERVICE_HASHES.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let given = inputs(
+        r#"{"structured_messages":[{"role":"system","content":"sys"},{"role":"user","content":"long text"},{"role":"assistant","content":"answer"},{"role":"user","content":"now"}],"tools":[{"type":"function","function":{"name":"headroom_retrieve","parameters":{}}}]}"#,
+    );
+    let mut request = data("{}");
+    let returned = apply(&guardrail, given, &mut request).await.unwrap();
+    let tools = returned.tools.expect("tools");
+    assert_eq!(tools.len(), 1);
+}
+
+#[tokio::test]
+async fn existing_tools_are_kept_and_the_retrieve_tool_is_appended() {
+    let server = mock(StatusCode::OK, SERVICE_HASHES.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let given = inputs(
+        r#"{"structured_messages":[{"role":"system","content":"sys"},{"role":"user","content":"long text"},{"role":"assistant","content":"answer"},{"role":"user","content":"now"}],"tools":[{"type":"function","function":{"name":"weather"}}]}"#,
+    );
+    let mut request = data("{}");
+    let returned = apply(&guardrail, given, &mut request).await.unwrap();
+    let weather = r#"{"type":"function","function":{"name":"weather"}}"#;
+    let tools = encoded(returned.tools.as_ref().unwrap());
+    assert_eq!(tools, gv(&format!("[{weather},{RETRIEVE_TOOL}]")));
+}
+
+#[tokio::test]
+async fn no_tool_is_added_without_hashes() {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let mut request = data("{}");
+    let returned = apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
+    assert!(returned.tools.is_none());
+}
+
+#[tokio::test]
+async fn success_records_statistics_and_the_applied_guardrail() {
+    let server = mock(
+        StatusCode::OK,
+        r#"{"messages":[{"role":"user","content":"short"}],"tokens_before":100,"tokens_after":25,"compression_ratio":4.0,"transforms_applied":["dedupe"],"unused":1}"#
+            .to_owned(),
+    )
+    .await;
+    let guardrail = guardrail(&server.base);
+    let mut request = data("{}");
+    apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
+    let record = first_record(&request);
+    assert_eq!(record.len(), 9);
+    assert_record_identity(&record);
+    assert_record_times_are_decimal(&record);
+    assert_eq!(
+        record_response(&request),
+        GuardrailValue::Object(compression_statistics(75))
+    );
+    assert_eq!(applied_names(&request), ["headroom"]);
+}
+
+#[tokio::test]
+async fn a_failed_compression_records_the_unavailable_error() {
+    let server = mock(StatusCode::INTERNAL_SERVER_ERROR, "boom".to_owned()).await;
+    let input = fail_open_input(&server.base);
+    let guardrail = guardrail_with_clock(&input);
+    let original = inputs(FOUR);
+    let mut request = data("{}");
+    let returned = apply(&guardrail, original.clone(), &mut request)
+        .await
+        .unwrap();
+    assert_eq!(returned, original);
+    assert_eq!(
+        record_status(&request),
+        GuardrailValue::Text("guardrail_failed_to_respond".to_owned())
+    );
+    assert_eq!(record_response(&request), unavailable());
+    assert_eq!(applied_names(&request), ["headroom"]);
+}
+
+#[tokio::test]
+async fn records_and_applied_names_go_into_litellm_metadata() {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let mut request = data(r#"{"litellm_metadata":{"keep":true}}"#);
+    apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
+    assert_eq!(
+        metadata(&request).get("keep"),
+        Some(&GuardrailValue::Boolean(true))
+    );
+    assert_eq!(records(&request).len(), 1);
+    assert!(request.contains_key("litellm_metadata"));
+    assert!(!request.contains_key("metadata"));
+}
+
+#[tokio::test]
+async fn existing_records_and_applied_names_are_kept() {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let mut request = data(
+        r#"{"metadata":{"standard_logging_guardrail_information":[{"guardrail_name":"other"}],"applied_guardrails":["other"],"keep":true}}"#,
+    );
+    apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
+    assert_eq!(records(&request).len(), 2);
+    assert_eq!(
+        records(&request)
+            .first()
+            .and_then(|entry| entry.get("guardrail_name")),
+        Some(&GuardrailValue::Text("other".to_owned()))
+    );
+    assert_eq!(applied_names(&request), ["other", "headroom"]);
+    assert_eq!(
+        metadata(&request).get("keep"),
+        Some(&GuardrailValue::Boolean(true))
+    );
+}
+
+#[tokio::test]
+async fn a_duplicate_applied_name_is_not_repeated() {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let mut request = data(r#"{"metadata":{"applied_guardrails":["headroom"]}}"#);
+    apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
+    assert_eq!(applied_names(&request), ["headroom"]);
+}
+
+#[test]
+fn supported_event_hooks_are_pre_and_post_call() {
+    let guardrail = guardrail("http://127.0.0.1:1");
+    assert_eq!(
+        guardrail.get_supported_event_hooks(),
+        Some(SUPPORTED_EVENT_HOOKS.to_vec())
+    );
+}
+
+#[tokio::test]
+async fn the_contract_entry_point_compresses_request_messages() {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let mut request = data("{}");
+    let returned = guardrail
+        .apply_guardrail(
+            inputs(FOUR),
+            &mut request,
+            GuardrailInputType::Request,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(structure(&returned), gv(SHORTENED));
+}
+
+#[tokio::test]
+async fn an_empty_request_call_id_is_replaced_with_a_generated_one() {
+    let server = mock(StatusCode::OK, SERVICE_HASHES.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let mut request = data(r#"{"litellm_call_id":""}"#);
+    apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
+    let Some(GuardrailValue::Text(generated)) = request.get("litellm_call_id") else {
+        panic!("a generated call id");
+    };
+    assert!(!generated.is_empty());
+    Uuid::parse_str(generated).expect("the generated call id is a UUID");
+    assert!(guardrail.has_issued_hashes(generated).is_some());
+}
+
+#[tokio::test]
+async fn records_carry_the_injected_wall_clock_times_and_their_difference() {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let start = UNIX_EPOCH + Duration::from_millis(1_000_500);
+    let end = UNIX_EPOCH + Duration::from_millis(1_002_750);
+    WALL_TIMES.lock().unwrap().clear();
+    WALL_TIMES.lock().unwrap().extend([start, end]);
+    let guardrail = build(
+        &default_input(&server.base),
+        &Arc::new(Mutex::new(Duration::ZERO)),
+        next_wall,
+    );
+    let mut request = data("{}");
+    apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
+    let record = first_record(&request);
+    assert_eq!(
+        record.get("start_time"),
+        Some(&GuardrailValue::Decimal(1_000.5_f64))
+    );
+    assert_eq!(
+        record.get("end_time"),
+        Some(&GuardrailValue::Decimal(1_002.75_f64))
+    );
+    assert_eq!(
+        record.get("duration"),
+        Some(&GuardrailValue::Decimal(2.25_f64))
+    );
+}
