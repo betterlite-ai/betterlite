@@ -18,6 +18,7 @@ use super::callbacks::{
 };
 use super::error::{AgenticFollowupKwargsError, AgenticLoopSafetyError, DeploymentHookError};
 use super::followup::{AgenticFollowupInput, build_agentic_followup_kwargs};
+use super::python_value::text_repr;
 use super::safety::{
     RefusedToolIdentifiers, can_replace_turn_with_terminal_response, check_agentic_loop_safety,
     fingerprint_agentic_tools, is_refused_tool_use_block, refused_agentic_tool_identifiers,
@@ -346,6 +347,14 @@ fn agentic_ceiling_and_depth() {
     rejected_ceilings();
     depth_cases();
     fingerprint_cases();
+    repr_cases();
+}
+
+fn repr_cases() {
+    assert_eq!(text_repr("it's"), "\"it's\"");
+    assert_eq!(text_repr("a \"b\""), "'a \"b\"'");
+    assert_eq!(text_repr("it's \"x\""), "'it\\'s \"x\"'");
+    assert_eq!(text_repr("\u{1}"), "'\\x01'");
 }
 
 fn depth_cases() {
@@ -368,6 +377,36 @@ fn depth_cases() {
             .unwrap()
             .depth,
         2
+    );
+    assert_eq!(
+        get_agentic_loop_settings(&depth_kwargs(integer(7)))
+            .unwrap()
+            .depth,
+        7
+    );
+    assert_eq!(
+        get_agentic_loop_settings(&depth_kwargs(float(2.5)))
+            .unwrap()
+            .depth,
+        2
+    );
+    assert_eq!(
+        get_agentic_loop_settings(&depth_kwargs(float(-2.9)))
+            .unwrap()
+            .depth,
+        -2
+    );
+    assert_eq!(
+        get_agentic_loop_settings(&depth_kwargs(Json::Bool(true)))
+            .unwrap()
+            .depth,
+        1
+    );
+    assert_eq!(
+        get_agentic_loop_settings(&depth_kwargs(text("")))
+            .unwrap()
+            .depth,
+        0
     );
     let malformed = get_agentic_loop_settings(&depth_kwargs(text("three"))).unwrap_err();
     assert_eq!(malformed.python_class(), "ValueError");
@@ -405,6 +444,34 @@ fn fingerprint_cases() {
             .fingerprints
             .is_empty()
     );
+    kwargs.insert(
+        "_agentic_loop_fingerprints".to_owned(),
+        list(vec![text("a")]),
+    );
+    assert_eq!(
+        get_agentic_loop_settings(&kwargs).unwrap().fingerprints,
+        vec![text("a")]
+    );
+    kwargs.insert("_agentic_loop_fingerprints".to_owned(), integer(0));
+    assert!(
+        get_agentic_loop_settings(&kwargs)
+            .unwrap()
+            .fingerprints
+            .is_empty()
+    );
+    kwargs.insert("_agentic_loop_fingerprints".to_owned(), float(0.0));
+    assert!(
+        get_agentic_loop_settings(&kwargs)
+            .unwrap()
+            .fingerprints
+            .is_empty()
+    );
+    kwargs.insert("_agentic_loop_fingerprints".to_owned(), float(1.5));
+    let float_history = get_agentic_loop_settings(&kwargs).unwrap_err();
+    assert_eq!(float_history.to_string(), "'float' object is not iterable");
+    kwargs.insert("_agentic_loop_fingerprints".to_owned(), integer(2));
+    let integer_history = get_agentic_loop_settings(&kwargs).unwrap_err();
+    assert_eq!(integer_history.to_string(), "'int' object is not iterable");
 }
 
 fn refused_identity() {
@@ -469,6 +536,7 @@ fn fingerprints_and_safety() {
     let repeated =
         check_agentic_loop_safety(&tool, &[text(&fingerprint)], 3, 3, "gpt-4o").unwrap_err();
     assert_eq!(repeated, AgenticLoopSafetyError::RepeatedFingerprint);
+    assert_eq!(repeated.python_class(), "AgenticLoopSafetyError");
     let exhausted = check_agentic_loop_safety(&tool, &[], 3, 3, "gpt-4o").unwrap_err();
     assert_eq!(
         exhausted,
