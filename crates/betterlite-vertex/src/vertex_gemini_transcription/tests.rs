@@ -442,8 +442,8 @@ fn unknown_response_fields_are_ignored() {
     let body = r#"{"candidates":[{"content":{"parts":[{"text":"kept","thought":true}],"role":"model"},"safetyRatings":[]}],"usageMetadata":{"promptTokenCount":3,"trafficType":"ON_DEMAND"},"responseId":"r1"}"#;
     let value = answer(200, body);
     assert_eq!(value["text"], "kept");
-    assert_eq!(value["usage"]["input_tokens"], 3);
-    assert_eq!(value["usage"]["input_token_details"]["audio_tokens"], 0);
+    assert_eq!(value["usage"]["input_tokens"], 3_i64);
+    assert_eq!(value["usage"]["input_token_details"]["audio_tokens"], 0_i64);
     let encoded =
         serde_json::to_string(&decode_vertex_gemini_transcription(&reply(200, body)).unwrap())
             .unwrap();
@@ -465,36 +465,36 @@ fn usage_is_absent_without_usage_metadata() {
 fn an_empty_usage_object_yields_zero_counts() {
     let value = answer(200, r#"{"candidates":[],"usageMetadata":{}}"#);
     assert_eq!(value["usage"]["type"], "tokens");
-    assert_eq!(value["usage"]["input_tokens"], 0);
-    assert_eq!(value["usage"]["output_tokens"], 0);
-    assert_eq!(value["usage"]["total_tokens"], 0);
-    assert_eq!(value["usage"]["input_token_details"]["audio_tokens"], 0);
-    assert_eq!(value["usage"]["input_token_details"]["text_tokens"], 0);
+    assert_eq!(value["usage"]["input_tokens"], 0_i64);
+    assert_eq!(value["usage"]["output_tokens"], 0_i64);
+    assert_eq!(value["usage"]["total_tokens"], 0_i64);
+    assert_eq!(value["usage"]["input_token_details"]["audio_tokens"], 0_i64);
+    assert_eq!(value["usage"]["input_token_details"]["text_tokens"], 0_i64);
 }
 
 #[test]
 fn audio_tokens_count_only_the_exact_audio_modality() {
     let body = r#"{"candidates":[],"usageMetadata":{"promptTokenCount":10,"promptTokensDetails":[{"modality":"AUDIO","tokenCount":6},{"modality":"audio","tokenCount":3},{"modality":"TEXT","tokenCount":2},{"tokenCount":5}]}}"#;
     let value = answer(200, body);
-    assert_eq!(value["usage"]["input_token_details"]["audio_tokens"], 6);
-    assert_eq!(value["usage"]["input_token_details"]["text_tokens"], 4);
+    assert_eq!(value["usage"]["input_token_details"]["audio_tokens"], 6_i64);
+    assert_eq!(value["usage"]["input_token_details"]["text_tokens"], 4_i64);
 }
 
 #[test]
 fn text_tokens_subtract_audio_without_clamping() {
     let body = r#"{"candidates":[],"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":5,"totalTokenCount":9,"promptTokensDetails":[{"modality":"AUDIO","tokenCount":7}]}}"#;
     let value = answer(200, body);
-    assert_eq!(value["usage"]["input_token_details"]["audio_tokens"], 7);
-    assert_eq!(value["usage"]["input_token_details"]["text_tokens"], -5);
+    assert_eq!(value["usage"]["input_token_details"]["audio_tokens"], 7_i64);
+    assert_eq!(value["usage"]["input_token_details"]["text_tokens"], -5_i64);
 }
 
 #[test]
 fn provider_total_and_candidate_counts_are_preserved() {
     let body = r#"{"candidates":[],"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":5,"totalTokenCount":9}}"#;
     let value = answer(200, body);
-    assert_eq!(value["usage"]["input_tokens"], 2);
-    assert_eq!(value["usage"]["output_tokens"], 5);
-    assert_eq!(value["usage"]["total_tokens"], 9);
+    assert_eq!(value["usage"]["input_tokens"], 2_i64);
+    assert_eq!(value["usage"]["output_tokens"], 5_i64);
+    assert_eq!(value["usage"]["total_tokens"], 9_i64);
 }
 
 #[test]
