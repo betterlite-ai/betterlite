@@ -73,9 +73,9 @@ pub(super) fn projection_services(encoder: &FakeEncoding) -> ProjectionServices<
     }
 }
 
-pub(super) fn legacy_context<'a, 'b>(
-    services: &'a ProjectionServices<'b>,
-) -> LegacyContext<'a, 'b> {
+pub(super) fn legacy_context<'config, 'encoding>(
+    services: &'config ProjectionServices<'encoding>,
+) -> LegacyContext<'config, 'encoding> {
     LegacyContext {
         project: Some("proj"),
         location: Some("us-central1"),
@@ -92,13 +92,17 @@ pub(super) fn usage_metadata() -> UsageMetadata {
     }
 }
 
+fn usage_meta() -> ReplyMeta {
+    ReplyMeta {
+        candidates: None,
+        usage_metadata: Some(usage_metadata()),
+    }
+}
+
 pub(super) fn text_reply(text: &str) -> TextReply {
     TextReply {
         text: text.to_owned(),
-        meta: ReplyMeta {
-            candidates: None,
-            usage_metadata: Some(usage_metadata()),
-        },
+        meta: usage_meta(),
     }
 }
 
@@ -108,10 +112,7 @@ pub(super) fn predictions_reply(values: &[&str]) -> PredictionsReply {
             .iter()
             .map(|value| Prediction::Value(Json::Text((*value).to_owned())))
             .collect(),
-        meta: ReplyMeta {
-            candidates: None,
-            usage_metadata: Some(usage_metadata()),
-        },
+        meta: usage_meta(),
     }
 }
 
@@ -146,16 +147,6 @@ pub(super) fn custom_invocation(instances: Vec<Json>) -> LegacyInvocation {
     LegacyInvocation::CustomEndpoint {
         model: "model-garden".to_owned(),
         prompt: "hello".to_owned(),
-        instances,
-        options: Extra::new(),
-    }
-}
-
-pub(super) fn private_invocation(instances: Vec<Json>) -> LegacyInvocation {
-    LegacyInvocation::PrivateEndpoint {
-        model: "1234".to_owned(),
-        prompt: "hello".to_owned(),
-        endpoint: "projects/proj/locations/us-central1/endpoints/1234".to_owned(),
         instances,
         options: Extra::new(),
     }
@@ -196,6 +187,24 @@ impl FixtureClient {
 
     pub(super) fn calls(&self) -> Vec<Call> {
         self.calls.lock().expect("calls").clone()
+    }
+
+    fn text_reply_of(&self, call: Call) -> Result<TextReply, PredictionError> {
+        self.record(call);
+        let mut slot = self.text.lock().expect("text");
+        slot.take().expect("a fixture text reply")
+    }
+
+    fn predictions_of(&self, call: Call) -> Result<PredictionsReply, PredictionError> {
+        self.record(call);
+        let mut slot = self.predictions.lock().expect("predictions");
+        slot.take().expect("a fixture reply")
+    }
+
+    fn stream_of(&self, call: Call) -> Result<PredictionStream, PredictionError> {
+        self.record(call);
+        let mut slot = self.stream.lock().expect("stream");
+        slot.take().expect("a fixture stream")
     }
 
     pub(super) fn with_text(reply: TextReply) -> Self {
@@ -240,13 +249,7 @@ impl PredictionClient for FixtureClient {
         &self,
         request: &PublisherPredictRequest,
     ) -> impl Future<Output = Result<TextReply, PredictionError>> + Send {
-        self.record(Call::Message(request.clone()));
-        let reply = self
-            .text
-            .lock()
-            .expect("text")
-            .take()
-            .expect("a fixture text reply");
+        let reply = self.text_reply_of(Call::Message(request.clone()));
         async move { reply }
     }
 
@@ -254,13 +257,7 @@ impl PredictionClient for FixtureClient {
         &self,
         request: &PublisherPredictRequest,
     ) -> impl Future<Output = Result<TextReply, PredictionError>> + Send {
-        self.record(Call::Text(request.clone()));
-        let reply = self
-            .text
-            .lock()
-            .expect("text")
-            .take()
-            .expect("a fixture text reply");
+        let reply = self.text_reply_of(Call::Text(request.clone()));
         async move { reply }
     }
 
@@ -268,13 +265,7 @@ impl PredictionClient for FixtureClient {
         &self,
         request: &EndpointPredictRequest,
     ) -> impl Future<Output = Result<PredictionsReply, PredictionError>> + Send {
-        self.record(Call::Endpoint(request.clone()));
-        let reply = self
-            .predictions
-            .lock()
-            .expect("predictions")
-            .take()
-            .expect("a fixture prediction reply");
+        let reply = self.predictions_of(Call::Endpoint(request.clone()));
         async move { reply }
     }
 
@@ -282,13 +273,7 @@ impl PredictionClient for FixtureClient {
         &self,
         request: &PublisherPredictRequest,
     ) -> impl Future<Output = Result<PredictionStream, PredictionError>> + Send {
-        self.record(Call::MessageStream(request.clone()));
-        let stream = self
-            .stream
-            .lock()
-            .expect("stream")
-            .take()
-            .expect("a fixture stream");
+        let stream = self.stream_of(Call::MessageStream(request.clone()));
         async move { stream }
     }
 
@@ -296,13 +281,7 @@ impl PredictionClient for FixtureClient {
         &self,
         request: &PublisherPredictRequest,
     ) -> impl Future<Output = Result<PredictionStream, PredictionError>> + Send {
-        self.record(Call::TextStream(request.clone()));
-        let stream = self
-            .stream
-            .lock()
-            .expect("stream")
-            .take()
-            .expect("a fixture stream");
+        let stream = self.stream_of(Call::TextStream(request.clone()));
         async move { stream }
     }
 }

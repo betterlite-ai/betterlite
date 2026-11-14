@@ -9,6 +9,7 @@ use betterlite_http::proxy::outbound::RequestBody;
 use futures_util::{StreamExt as _, stream};
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use http::{HeaderMap, Method};
+use rstest::rstest;
 use secrecy::SecretString;
 
 use super::{PredictionChunks, auth_headers, message_of, rpc_request, rpc_url, success_body};
@@ -78,21 +79,23 @@ fn google_rpc_request_carries_the_bearer_token() {
     ));
 }
 
-#[test]
-fn google_success_body_passes_only_2xx() {
+#[rstest]
+#[case(199)]
+#[case(300)]
+#[case(404)]
+#[case(500)]
+fn google_success_body_passes_only_2xx(#[case] status: u16) {
     assert_eq!(success_body(response(200, b"ok")).expect("200"), b"ok");
     assert_eq!(success_body(response(299, b"ok")).expect("299"), b"ok");
-    for status in [199, 300, 404, 500] {
-        let Err(PredictionError::Http {
-            status: seen,
-            message,
-        }) = success_body(response(status, b"nope"))
-        else {
-            panic!("status {status} is an error");
-        };
-        assert_eq!(seen, status);
-        assert_eq!(message, "nope");
-    }
+    let Err(PredictionError::Http {
+        status: seen,
+        message,
+    }) = success_body(response(status, b"nope"))
+    else {
+        panic!("status {status} is an error");
+    };
+    assert_eq!(seen, status);
+    assert_eq!(message, "nope");
 }
 
 #[test]

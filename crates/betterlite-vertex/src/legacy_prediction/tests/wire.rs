@@ -1,5 +1,6 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use rstest::rstest;
 use serde_json::Number;
 
 use crate::legacy_prediction::error::PredictionError;
@@ -9,7 +10,7 @@ use crate::legacy_prediction::records::{
 };
 use crate::legacy_prediction::tensor::{Tensor, chunk_of};
 
-const FRAME_LIMIT: usize = 4_194_304;
+const FRAME_LIMIT: usize = 0x40_0000;
 
 fn number(value: i64) -> Json {
     Json::Number(Number::from(value))
@@ -58,36 +59,36 @@ fn legacy_prediction_tensor_encodes_values() {
     ));
 }
 
+#[rstest]
+#[case::bool_value(r#"{"boolVal":[true]}"#, Json::Bool(true))]
+#[case::bool_list(
+    r#"{"boolVal":[true,false]}"#,
+    Json::List(vec![Json::Bool(true), Json::Bool(false)])
+)]
+#[case::float_value(r#"{"floatVal":[1.5]}"#, float(1.5))]
+#[case::double_value(r#"{"doubleVal":[2.5]}"#, float(2.5))]
+#[case::int_value(r#"{"intVal":[3]}"#, number(3))]
+#[case::int64_value(r#"{"int64Val":["4"]}"#, number(4))]
+#[case::uint_value(r#"{"uintVal":[5]}"#, number(5))]
+#[case::uint64_value(r#"{"uint64Val":["6"]}"#, number(6))]
+#[case::string_value(r#"{"stringVal":["s"]}"#, Json::Text(String::from("s")))]
+#[case::bytes_value(r#"{"bytesVal":["b"]}"#, Json::Text(String::from("b")))]
+#[case::list_value(
+    r#"{"listVal":[{"intVal":[1]},{"intVal":[2]}]}"#,
+    Json::List(vec![number(1), number(2)])
+)]
+#[case::struct_value(
+    r#"{"structVal":{"k":{"intVal":[1]}}}"#,
+    Json::Object(IndexMap::from([(String::from("k"), number(1))]))
+)]
+#[case::tensor_value(r#"{"tensorVal":"t"}"#, Json::Text(String::from("t")))]
+#[case::empty("{}", Json::Null)]
+fn legacy_prediction_tensor_decodes_each_field(#[case] text: &str, #[case] expected: Json) {
+    assert_eq!(tensor(text).to_json().expect(text), expected, "{text}");
+}
+
 #[test]
-fn legacy_prediction_tensor_decodes_each_field() {
-    let cases = [
-        (r#"{"boolVal":[true]}"#, Json::Bool(true)),
-        (
-            r#"{"boolVal":[true,false]}"#,
-            Json::List(vec![Json::Bool(true), Json::Bool(false)]),
-        ),
-        (r#"{"floatVal":[1.5]}"#, float(1.5)),
-        (r#"{"doubleVal":[2.5]}"#, float(2.5)),
-        (r#"{"intVal":[3]}"#, number(3)),
-        (r#"{"int64Val":["4"]}"#, number(4)),
-        (r#"{"uintVal":[5]}"#, number(5)),
-        (r#"{"uint64Val":["6"]}"#, number(6)),
-        (r#"{"stringVal":["s"]}"#, Json::Text(String::from("s"))),
-        (r#"{"bytesVal":["b"]}"#, Json::Text(String::from("b"))),
-        (
-            r#"{"listVal":[{"intVal":[1]},{"intVal":[2]}]}"#,
-            Json::List(vec![number(1), number(2)]),
-        ),
-        (
-            r#"{"structVal":{"k":{"intVal":[1]}}}"#,
-            Json::Object(IndexMap::from([(String::from("k"), number(1))])),
-        ),
-        (r#"{"tensorVal":"t"}"#, Json::Text(String::from("t"))),
-        ("{}", Json::Null),
-    ];
-    for (text, expected) in cases {
-        assert_eq!(tensor(text).to_json().expect(text), expected, "{text}");
-    }
+fn legacy_prediction_tensor_rejects_bad_64_bit_strings() {
     assert!(matches!(
         tensor(r#"{"int64Val":["x"]}"#).to_json(),
         Err(PredictionError::WrongFieldType { field: "int64Val" })

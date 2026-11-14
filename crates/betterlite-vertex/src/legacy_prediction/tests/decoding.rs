@@ -59,7 +59,7 @@ fn legacy_prediction_chat_reads_candidates() {
 
 #[test]
 fn legacy_prediction_rejects_a_large_body() {
-    let too_large = vec![b' '; super::records::PREDICTION_BODY_LIMIT.saturating_add(1)];
+    let too_large = vec![b' '; PREDICTION_BODY_LIMIT.saturating_add(1)];
     assert!(matches!(
         decode_legacy_prediction(&too_large),
         Err(PredictionError::TooLarge { .. })

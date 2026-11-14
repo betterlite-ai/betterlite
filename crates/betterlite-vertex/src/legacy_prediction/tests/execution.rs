@@ -14,12 +14,12 @@ use crate::legacy_prediction::client::{
 };
 use crate::legacy_prediction::error::{LegacyPredictionError, PredictionError};
 use crate::legacy_prediction::execution::{LegacyContext, complete, stream as execute_stream};
+use crate::legacy_prediction::invocation::LegacyInvocation;
 
 use super::support::{
-    Call, CancellingStream, FakeEncoding, FixtureClient, access_lookup, chat_invocation, counts,
-    custom_invocation, empty_stream, float_number, json, legacy_context, number, options,
-    predictions_reply, private_invocation, projection_services, text_invocation, text_reply,
-    vision_invocation,
+    Call, CancellingStream, FakeEncoding, FixtureClient, access, access_lookup, chat_invocation,
+    counts, custom_invocation, empty_stream, float_number, json, legacy_context, number, options,
+    predictions_reply, projection_services, text_invocation, text_reply, vision_invocation,
 };
 
 #[tokio::test]
@@ -77,6 +77,34 @@ async fn execution_completion_failure_is_vertex_500() {
 }
 
 #[tokio::test]
+async fn execution_endpoint_failure_is_vertex_500() {
+    let encoding = FakeEncoding {
+        counts: IndexMap::new(),
+    };
+    let services = projection_services(&encoding);
+    let context = legacy_context(&services);
+    let client = FixtureClient::with_endpoint_failure(PredictionError::Http {
+        status: 404,
+        message: String::from("missing"),
+    });
+    let error = complete(
+        &client,
+        custom_invocation(vec![json("{\"prompt\":\"hello\"}")]),
+        &context,
+        access_lookup(),
+    )
+    .await
+    .expect_err("a failed endpoint completion");
+    assert_eq!(error.status_code(), 500);
+    assert!(matches!(
+        error,
+        LegacyPredictionError::Completion {
+            source: PredictionError::Http { status: 404, .. }
+        }
+    ));
+}
+
+#[tokio::test]
 async fn execution_streaming_failure_keeps_status() {
     let encoding = FakeEncoding {
         counts: IndexMap::new(),
@@ -87,14 +115,16 @@ async fn execution_streaming_failure_keeps_status() {
         status: 404,
         message: String::from("missing"),
     });
-    let error = execute_stream(
+    let Err(error) = execute_stream(
         &client,
         chat_invocation(Extra::new()),
         &context,
         access_lookup(),
     )
     .await
-    .expect_err("a failed stream");
+    else {
+        panic!("a failed stream");
+    };
     assert_eq!(error.status_code(), 404);
     assert!(matches!(
         error,
@@ -112,9 +142,10 @@ async fn execution_unhandled_mode_cannot_generate() {
     let services = projection_services(&encoding);
     let context = legacy_context(&services);
     let client = FixtureClient::default();
-    let error = execute_stream(&client, vision_invocation(), &context, access_lookup())
-        .await
-        .expect_err("the vision route has no stream");
+    let Err(error) = execute_stream(&client, vision_invocation(), &context, access_lookup()).await
+    else {
+        panic!("the vision route has no stream");
+    };
     assert!(matches!(error, LegacyPredictionError::UnableToGenerate));
     assert_eq!(error.to_string(), "Unable to generate response");
     assert_eq!(error.status_code(), 500);
@@ -159,14 +190,16 @@ async fn execution_private_requires_instances() {
     let services = projection_services(&encoding);
     let context = legacy_context(&services);
     let client = FixtureClient::with_stream(empty_stream());
-    let error = execute_stream(
+    let Err(error) = execute_stream(
         &client,
         private_invocation(Vec::new()),
         &context,
         access_lookup(),
     )
     .await
-    .expect_err("no private instance");
+    else {
+        panic!("no private instance");
+    };
     assert!(matches!(
         error,
         LegacyPredictionError::Streaming {
@@ -287,7 +320,7 @@ async fn execution_private_instance_mutation() {
 }
 
 #[tokio::test]
-async fn execution_operation_selection() {
+async fn execution_publisher_completion_selection() {
     let encoding = FakeEncoding {
         counts: counts(&[("hello", 1), ("None", 1)]),
     };
@@ -315,6 +348,15 @@ async fn execution_operation_selection() {
     .await
     .expect("the text completion");
     assert!(matches!(text.calls().as_slice(), [Call::Text(_)]));
+}
+
+#[tokio::test]
+async fn execution_endpoint_completion_selection() {
+    let encoding = FakeEncoding {
+        counts: counts(&[("hello", 1), ("None", 1)]),
+    };
+    let services = projection_services(&encoding);
+    let context = legacy_context(&services);
 
     let custom = FixtureClient::with_endpoint(predictions_reply(&["first"]));
     complete(
@@ -343,6 +385,15 @@ async fn execution_operation_selection() {
         .await
         .expect("the vision completion");
     assert!(vision.calls().is_empty());
+}
+
+#[tokio::test]
+async fn execution_publisher_stream_selection() {
+    let encoding = FakeEncoding {
+        counts: counts(&[("hello", 1), ("None", 1)]),
+    };
+    let services = projection_services(&encoding);
+    let context = legacy_context(&services);
 
     let chat = FixtureClient::with_stream(empty_stream());
     drop(
@@ -369,6 +420,15 @@ async fn execution_operation_selection() {
         .expect("the text stream"),
     );
     assert!(matches!(text.calls().as_slice(), [Call::TextStream(_)]));
+}
+
+#[tokio::test]
+async fn execution_endpoint_stream_selection() {
+    let encoding = FakeEncoding {
+        counts: counts(&[("hello", 1), ("None", 1)]),
+    };
+    let services = projection_services(&encoding);
+    let context = legacy_context(&services);
 
     let custom = FixtureClient::with_stream(empty_stream());
     drop(
@@ -397,7 +457,7 @@ async fn execution_operation_selection() {
     assert!(matches!(private.calls().as_slice(), [Call::Endpoint(_)]));
 }
 
-fn case<'a>(cases: &'a IndexMap<String, Json>, name: &str) -> &'a Json {
+fn case<'fixture>(cases: &'fixture IndexMap<String, Json>, name: &str) -> &'fixture Json {
     cases.get(name).expect("a fixture case")
 }
 
@@ -405,8 +465,18 @@ fn body_json(bytes: &[u8]) -> Json {
     serde_json::from_slice(bytes).expect("a JSON body")
 }
 
+fn private_invocation(instances: Vec<Json>) -> LegacyInvocation {
+    LegacyInvocation::PrivateEndpoint {
+        model: "1234".to_owned(),
+        prompt: "hello".to_owned(),
+        endpoint: "projects/proj/locations/us-central1/endpoints/1234".to_owned(),
+        instances,
+        options: Extra::new(),
+    }
+}
+
 #[test]
-fn execution_bodies_match_sdk_fixture() {
+fn execution_chat_predict_bodies_match_sdk_fixture() {
     let Json::Object(cases) = json(include_str!("../fixtures/sdk-requests.json")) else {
         panic!("a fixture object");
     };
@@ -431,6 +501,13 @@ fn execution_bodies_match_sdk_fixture() {
         ),
         case(&cases, "chat_predict_options")
     );
+}
+
+#[test]
+fn execution_text_predict_bodies_match_sdk_fixture() {
+    let Json::Object(cases) = json(include_str!("../fixtures/sdk-requests.json")) else {
+        panic!("a fixture object");
+    };
     assert_eq!(
         &body_json(&text_predict_body("Hello", &Extra::new()).expect("text")),
         case(&cases, "text_predict_defaults")
@@ -457,6 +534,13 @@ fn execution_bodies_match_sdk_fixture() {
         ),
         case(&cases, "text_predict_options")
     );
+}
+
+#[test]
+fn execution_endpoint_and_streaming_bodies_match_sdk_fixture() {
+    let Json::Object(cases) = json(include_str!("../fixtures/sdk-requests.json")) else {
+        panic!("a fixture object");
+    };
     assert_eq!(
         &body_json(
             &endpoint_predict_body(&[json("{\"prompt\":\"Hello\",\"temperature\":0}")])

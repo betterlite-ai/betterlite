@@ -1,12 +1,12 @@
 use betterlite_models::call_helpers::finish_reason::{FinishReason, FinishReasonMapping};
-use betterlite_models::decisions::Json;
+use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::chat::{ChatMessage, MessageContent, Role};
 use futures_util::StreamExt;
 use indexmap::IndexMap;
 
-use crate::legacy_prediction::execution::LegacyContext;
+use crate::legacy_prediction::execution::complete;
 use crate::legacy_prediction::projection::{
-    LegacyMessage, LegacyUsage, LocalEncoding, ProjectionInput, ProjectionServices, project,
+    LegacyMessage, LegacyUsage, ProjectionInput, ProjectionServices, project,
 };
 use crate::legacy_prediction::records::{
     Candidate, Prediction, PredictionsReply, ReplyMeta, TextReply, UsageMetadata,
@@ -179,18 +179,13 @@ async fn projection_language_finish_mapping() {
     let encoding = FakeEncoding {
         counts: IndexMap::new(),
     };
-    let encoder: &dyn LocalEncoding = &encoding;
     let services = ProjectionServices {
         now: 1_700_000_000,
-        encoding: encoder,
+        encoding: &encoding,
         finish_reason: finish_as_content_filter,
     };
-    let context = LegacyContext {
-        project: Some("proj"),
-        location: Some("us-central1"),
-        model_is_language: true,
-        services: &services,
-    };
+    let mut context = legacy_context(&services);
+    context.model_is_language = true;
     let reply = TextReply {
         text: String::from("ok"),
         meta: ReplyMeta {
@@ -295,6 +290,12 @@ fn projection_whitespace_only() {
 fn projection_unicode_whitespace() {
     let words = Iterator::collect::<Vec<String>>(TextStreamer::new("a\u{a0}b\u{2003}c\u{3000}d"));
     assert_eq!(words, vec!["a", "b", "c", "d"]);
+}
+
+#[test]
+fn projection_ascii_separators() {
+    let words = Iterator::collect::<Vec<String>>(TextStreamer::new("a\u{1c}b\u{1f}c\u{1e}"));
+    assert_eq!(words, vec!["a", "b", "c"]);
 }
 
 #[tokio::test]
