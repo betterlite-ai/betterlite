@@ -141,13 +141,13 @@ fn an_invalid_location_cannot_choose_the_host() {
 #[case::settings_next(None, None, Some("us-central1"), "us-central1")]
 #[case::default_for_every_model(None, None, None, DEFAULT_COUNT_TOKENS_LOCATION)]
 fn the_count_tokens_location_is_chosen_in_order(
-    #[case] count_tokens_location: Option<&str>,
+    #[case] configured_location: Option<&str>,
     #[case] deployment_location: Option<&str>,
     #[case] settings_location: Option<&str>,
     #[case] expected: &str,
 ) {
     let options = PartnerCountOptions {
-        vertex_count_tokens_location: count_tokens_location.map(str::to_owned),
+        vertex_count_tokens_location: configured_location.map(str::to_owned),
     };
     let settings = VertexSettings {
         project: None,

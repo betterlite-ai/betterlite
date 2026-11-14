@@ -5,7 +5,7 @@ from litellm.llms.vertex_ai.vertex_ai_partner_models.count_tokens.handler import
 )
 
 COUNTER: Final = VertexAIPartnerModelsTokenCounter()
-GET_PUBLISHER, BUILD_ENDPOINT, STRIP_SUFFIX = COUNTER._get_publisher_for_model, COUNTER._build_count_tokens_endpoint, VertexAIPartnerModelsTokenCounter._strip_version_suffix  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/count_tokens/handler.py#L24-L93
+GET_PUBLISHER, BUILD_ENDPOINT, STRIP_SUFFIX = COUNTER._get_publisher_for_model, COUNTER._build_count_tokens_endpoint, COUNTER._strip_version_suffix  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/count_tokens/handler.py#L24-L93
 
 
 class PlanCase(TypedDict):

@@ -13,8 +13,7 @@ pub struct PartnerCount {
 }
 
 pub fn decode_partner_count(bytes: &[u8]) -> Result<PartnerCount, PartnerCountError> {
-    let value: Json =
-        serde_json::from_slice(bytes).map_err(|source| PartnerCountError::Decode { source })?;
+    let value: Json = serde_json::from_slice(bytes).map_err(PartnerCountError::Decode)?;
     let Json::Object(mut fields) = value else {
         return Err(PartnerCountError::NotAnObject);
     };
