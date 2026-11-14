@@ -1,0 +1,8 @@
+task: B3034
+deviations:
+  - what: A Lua reply too short to hold every counter's window start is a SettlementError::RefundPosition naming the position and the reply length, and a batch key list that is not window/counter pairs is SettlementError::UnpairedRefundKeys naming the key count.
+    why: LiteLLM indexes the raw reply with raw[2 + index * 2] and lets a short reply raise IndexError from inside the rollback; no reply CHECK_AND_INCREMENT_BY_N_SCRIPT or the batch read can produce is malformed that way, so the failure is named instead of surfacing a Python list error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2350-L2362
+  - what: A settlement clock that reads a time before the Unix epoch is SettlementError::ClockBeforeEpoch instead of a negative window start.
+    why: LiteLLM takes int(self._get_current_time().timestamp()), which is negative before 1970 and flows into the window start as one; a window start that predates every real timestamp is a broken clock, and this settlement reports it rather than writing it into Redis.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2431-L2432

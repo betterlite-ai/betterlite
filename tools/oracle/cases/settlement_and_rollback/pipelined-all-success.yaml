@@ -1,0 +1,35 @@
+kind: helper
+name: pipelined-all-success
+call:
+  b3034:
+    descriptors:
+      - key: model
+        value: gpt-4
+        rate_limit:
+          requests_per_unit: 10
+          tokens_per_unit: null
+          window_size: null
+      - key: model
+        value: gpt-3.5
+        rate_limit:
+          requests_per_unit: 10
+          tokens_per_unit: null
+          window_size: null
+    increments:
+      - requests: 1
+        tokens: 0
+      - requests: 1
+        tokens: 0
+    window_size: 30
+    now: 1700000000
+    pipelined: true
+    fail_closed: false
+    cache: {}
+    replies:
+      - values: [0, 4, 1700000000]
+      - values: [0, 5, 1700000100]
+    refund_replies: []
+env:
+  LITELLM_RATE_LIMIT_WINDOW_SIZE: "30"
+compare:
+  ignore: []
