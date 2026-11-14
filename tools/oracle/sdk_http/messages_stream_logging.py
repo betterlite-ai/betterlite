@@ -19,7 +19,8 @@ from typing_extensions import override
 
 Work = Coroutine[object, object, None]
 Hook = Callable[[Exception], Awaitable[None]]
-DeferredCallback = Callable[..., Work]
+class DeferredCallback(Protocol):
+    def __call__(self, *parked: Work) -> Work: ...
 HANDLER_MODULE = "litellm.proxy.pass_through_endpoints.streaming_handler"
 # route logging receives the raw chunks, direct delegation receives the live response
 class SeamCall(TypedDict):
@@ -67,9 +68,11 @@ def install(recorder: Recorder) -> None:
     sys.modules[HANDLER_MODULE] = module
 class IteratorFactory(Protocol):
     def get_async_streaming_response_iterator(  # ast-grep-ignore: no-long-names
-        self, httpx_response: httpx.Response, request_body: dict[str, Json],
-        litellm_logging_obj: Logging, /
+        self, httpx_response: httpx.Response, request_body: dict[str, Json], litellm_logging_obj: Logging, /
     ) -> AsyncIterator[bytes]: ...
+def relay_stream(factory: IteratorFactory, response: httpx.Response, supplied: Logging) -> AsyncIterator[bytes]:
+    body: dict[str, Json] = {"model": "supplied"}
+    return factory.get_async_streaming_response_iterator(response, body, supplied)
 class RecordedLogging(Logging):
     def __init__(self) -> None:
         details: dict[str, Json] = {}
@@ -119,8 +122,12 @@ class SingleChunk(AsyncIterator[bytes | dict[str, Json]]):
 class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
     def __init__(self, body: dict[str, Json], api_base: str, client: httpx.AsyncClient) -> None:
         logging_obj = RecordedLogging()
-        super().__init__(logging_obj, body)
+        seeded = streaming_iterator.BaseAnthropicMessagesStreamingIterator(logging_obj, body)
+        self.litellm_logging_obj = seeded.litellm_logging_obj
+        self.request_body: dict[str, Json] = body
+        self.start_time, self.completion_start_time = seeded.start_time, seeded.completion_start_time
         self.logging = logging_obj
+        self.body = body
         self.url = f"{api_base}/messages"
         self.client = client
         self.supplied: RecordedLogging | None = None
@@ -141,10 +148,6 @@ class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
         await self._abort_upstream(stream)
     async def fail(self, exc: Exception) -> None:
         await self._fire_detached_failure_hook(exc)
-    def relay(self, response: httpx.Response, supplied: RecordedLogging) -> AsyncIterator[bytes]:
-        body: dict[str, Json] = {"model": "supplied"}
-        factory: IteratorFactory = self
-        return factory.get_async_streaming_response_iterator(response, body, supplied)
     async def run_step(self, step: "Step") -> Json:
         self.text = None
         await step.run(self)
@@ -199,7 +202,7 @@ class CollectStep(StepModel):
     op: Literal["collect"]
     first_chunk: bool
     async def run(self, session: Session) -> None:
-        response = await session.client.post(session.url, json=session.request_body)
+        response = await session.client.post(session.url, json=session.body)
         parts = response.content.split(b"\n\n")
         session.frames = [part + b"\n\n" for part in parts[:-1]]
         if parts[-1]:
@@ -265,8 +268,8 @@ class DelegateStep(StepModel):
     async def run(self, session: Session) -> None:
         supplied = RecordedLogging()
         session.supplied = supplied
-        async with session.client.stream("POST", session.url, json=session.request_body) as reply:
-            relayed = session.relay(reply, supplied)
+        async with session.client.stream("POST", session.url, json=session.body) as reply:
+            relayed = relay_stream(session, reply, supplied)
             relayed_bytes = b"".join([chunk async for chunk in relayed])
         session.text = relayed_bytes.decode(errors="replace")
 Step = Annotated[
