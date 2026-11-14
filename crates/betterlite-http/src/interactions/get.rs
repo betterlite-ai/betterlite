@@ -2,11 +2,12 @@ use std::error::Error as StdError;
 use std::time::Duration;
 
 use betterlite_models::identity::provider_id::ProviderId;
+use secrecy::SecretString;
 use thiserror::Error;
 
 use crate::interactions::base::{
     CallFailure, ClientError, ErrorClasses, Logging, Params, PreCallArguments, PreparedRequest,
-    RequestFailure, RequestHeaders, UpstreamResponse, handle_error,
+    RequestFailure, RequestHeaders, UpstreamResponse, api_base, handle_error,
 };
 
 pub mod asynchronous;
@@ -30,10 +31,9 @@ pub struct InteractionIdRequest<'request> {
 
 pub struct GetInteractionRequest<'request> {
     pub interaction_id: &'request str,
-    pub api_base: &'request str,
     pub litellm_params: &'request Params,
     pub provider: ProviderId,
-    pub extra_headers: Option<RequestHeaders>,
+    pub extra_headers: RequestHeaders,
     // LiteLLM's GET sends no deadline of its own, so this never reaches the request
     pub timeout: Option<Duration>,
 }
@@ -65,6 +65,8 @@ where
 {
     #[error("the HTTP client could not be built")]
     Client(#[source] ClientError),
+    #[error("the interaction parameters are not usable")]
+    Parameters(#[source] ClientError),
     #[error("{0}")]
     Provider(#[source] ProviderError),
     #[error(transparent)]
@@ -76,25 +78,31 @@ pub(crate) fn prepare<C>(
     config: &C,
     logging: &mut Logging,
     request: &GetInteractionRequest<'_>,
-) -> Result<(RequestHeaders, PreparedRequest), C::Error>
+) -> Result<(RequestHeaders, PreparedRequest), GetInteractionError<C::Error>>
 where
     C: GetInteractionConfig,
 {
-    let caller_headers = request.extra_headers.clone().unwrap_or_default();
-    let headers = config.validate_environment(&EnvironmentRequest {
-        headers: &caller_headers,
-        model: "",
-        litellm_params: Some(request.litellm_params),
-    })?;
-    let prepared = config.transform_get_request(&InteractionIdRequest {
-        interaction_id: request.interaction_id,
-        api_base: request.api_base,
-        litellm_params: request.litellm_params,
-        headers: &headers,
-    })?;
+    let base = api_base(request.litellm_params).map_err(GetInteractionError::Parameters)?;
+    let headers = config
+        .validate_environment(&EnvironmentRequest {
+            headers: &request.extra_headers,
+            model: "",
+            litellm_params: Some(request.litellm_params),
+        })
+        .map_err(GetInteractionError::Provider)?;
+    let prepared = config
+        .transform_get_request(&InteractionIdRequest {
+            interaction_id: request.interaction_id,
+            api_base: base,
+            litellm_params: request.litellm_params,
+            headers: &headers,
+        })
+        .map_err(GetInteractionError::Provider)?;
+    // LiteLLM logs an empty api key here, since the provider key travels in the headers
+    let api_key = SecretString::from("");
     logging.record_pre_call(
         request.interaction_id,
-        "",
+        &api_key,
         PreCallArguments {
             api_base: &prepared.url,
             headers: &headers,

@@ -1,14 +1,18 @@
 use std::collections::BTreeMap;
 use std::str::FromStr as _;
+use std::sync::Arc;
 use std::time::Duration;
 
+use betterlite_config::proxy::{ProxyPolicy, ProxyRoute, ProxyServer};
 use betterlite_config::tls::{TlsPolicy, Verification};
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::identity::provider_id::ProviderId;
+use reqwest::Proxy;
 use reqwest::blocking::{Client as BlockingClient, ClientBuilder as BlockingClientBuilder};
 use reqwest::redirect::Policy;
 use reqwest::retry::never;
 use reqwest::{Client, ClientBuilder};
+use secrecy::ExposeSecret as _;
 
 use super::{ClientError, DEFAULT_PROVIDER, Params};
 use crate::proxy::base_builder;
@@ -29,15 +33,17 @@ pub(crate) struct ClientKey {
 // _get_httpx_client and get_async_httpx_client: one client per TLS setting, and per provider for the async form
 pub struct HttpClients {
     tls: TlsPolicy,
+    proxy: Arc<ProxyPolicy>,
     pub(crate) async_clients: BTreeMap<ClientKey, Client>,
     pub(crate) sync_clients: BTreeMap<Option<bool>, BlockingClient>,
 }
 
 impl HttpClients {
     #[must_use]
-    pub fn new(tls: TlsPolicy) -> Self {
+    pub fn new(tls: TlsPolicy, proxy: Arc<ProxyPolicy>) -> Self {
         Self {
             tls,
+            proxy,
             async_clients: BTreeMap::new(),
             sync_clients: BTreeMap::new(),
         }
@@ -52,14 +58,13 @@ impl HttpClients {
         if let Some(client) = supplied {
             return Ok(client);
         }
-        let key = ssl_verify(litellm_params)?;
         let tls = &self.tls;
-        let build = |key: Option<bool>| {
-            BlockingClientBuilder::from(client_builder(tls, key)?)
+        let proxy = &self.proxy;
+        cached(&mut self.sync_clients, ssl_verify(litellm_params)?, |key| {
+            BlockingClientBuilder::from(client_builder(tls, proxy, key)?)
                 .build()
                 .map_err(ClientError::Build)
-        };
-        cached(&mut self.sync_clients, key, build)
+        })
     }
 }
 
@@ -124,15 +129,52 @@ fn provider(litellm_params: &Params) -> Result<ProviderId, ClientError> {
     })
 }
 
-fn client_builder(tls: &TlsPolicy, ssl_verify: Option<bool>) -> Result<ClientBuilder, ClientError> {
+fn client_builder(
+    tls: &TlsPolicy,
+    proxy: &Arc<ProxyPolicy>,
+    ssl_verify: Option<bool>,
+) -> Result<ClientBuilder, ClientError> {
     let policy = client_policy(tls, ssl_verify);
-    let builder = apply_policy(base_builder(), &policy)?;
-    Ok(builder
+    let builder = apply_policy(base_builder(), &policy)?
         .no_proxy()
         .redirect(Policy::none())
         .retry(never())
         .connect_timeout(CLIENT_CONNECT_TIMEOUT)
-        .timeout(CLIENT_TIMEOUT))
+        .timeout(CLIENT_TIMEOUT);
+    Ok(proxied(builder, proxy))
+}
+
+// the policy's forward routes become reqwest proxies, so a configured proxy reaches this path too
+fn proxied(builder: ClientBuilder, policy: &Arc<ProxyPolicy>) -> ClientBuilder {
+    for warning in &policy.warnings {
+        tracing::warn!(?warning, "proxy setting ignored");
+    }
+    let mut configured = builder;
+    for route in policy.primary.values().chain(policy.fallback.values()) {
+        if let ProxyRoute::Forward(server) = route {
+            configured = configured.proxy(forward_proxy(policy, server));
+        }
+    }
+    configured
+}
+
+fn forward_proxy(policy: &Arc<ProxyPolicy>, server: &Arc<ProxyServer>) -> Proxy {
+    let target = format!("http://{}:{}", server.host, server.port);
+    let routing = Arc::clone(policy);
+    let chosen = Arc::clone(server);
+    let proxy = Proxy::custom(move |url| match routing.route(url) {
+        Some(ProxyRoute::Forward(found)) if Arc::ptr_eq(found, &chosen) => Some(target.clone()),
+        Some(
+            ProxyRoute::Forward(_) | ProxyRoute::Unsupported { .. } | ProxyRoute::Invalid { .. },
+        )
+        | None => None,
+    });
+    match &server.credentials {
+        Some(credentials) => {
+            proxy.basic_auth(&credentials.username, credentials.password.expose_secret())
+        }
+        None => proxy,
+    }
 }
 
 // the ssl_verify litellm_params carries overrides the resolved policy the way a deployment setting does

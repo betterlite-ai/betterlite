@@ -26,8 +26,7 @@ where
 {
     let client = async_client_for(clients, request.provider, request.litellm_params, supplied)
         .map_err(GetInteractionError::Client)?;
-    let (headers, prepared) =
-        prepare(config, logging, &request).map_err(GetInteractionError::Provider)?;
+    let (headers, prepared) = prepare(config, logging, &request)?;
     let response = send_async(&client, &prepared, &headers)
         .await
         .map_err(|failure| handle_failure(config, failure))?;
@@ -47,7 +46,7 @@ async fn send_async(
         .await
         .map_err(RequestFailure::Transport)?;
     let status_code = sent.status().as_u16();
-    let received = response_headers(sent.headers())?;
+    let received = response_headers(sent.headers());
     let body = read_bounded(&mut sent, MAX_RESPONSE_BYTES)
         .await
         .map_err(RequestFailure::from)?;

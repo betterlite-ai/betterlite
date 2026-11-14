@@ -1,10 +1,13 @@
+use std::collections::BTreeMap;
 use std::io::{Error as IoError, ErrorKind, Read as _, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::{TlsPolicy, Verification};
+use betterlite_config::types::ProxyTrust;
 use rcgen::{BasicConstraints, CertificateParams, IsCa, Issuer, KeyPair, KeyUsagePurpose};
 use rustls::crypto::aws_lc_rs;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
@@ -47,8 +50,16 @@ pub(crate) fn reply(status: &str, headers: &[(&str, &str)], body: &str) -> Vec<u
     .into_bytes()
 }
 
+pub(crate) fn listener() -> TcpListener {
+    TcpListener::bind("127.0.0.1:0").unwrap()
+}
+
 pub(crate) fn serve_once(answer: Vec<u8>, pause: Option<Duration>) -> Serving {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    serve_on(listener(), answer, pause)
+}
+
+// a caller binds first when it needs the address before the fixture answers, such as a proxy
+pub(crate) fn serve_on(listener: TcpListener, answer: Vec<u8>, pause: Option<Duration>) -> Serving {
     let address = listener.local_addr().unwrap();
     let request = thread::Builder::new()
         .spawn(move || {
@@ -63,6 +74,15 @@ pub(crate) fn serve_once(answer: Vec<u8>, pause: Option<Duration>) -> Serving {
         })
         .unwrap();
     Serving { address, request }
+}
+
+// the policy the config crate resolves from an environment, built here instead of read from this process
+pub(crate) fn proxy_policy(variables: &[(&str, &str)]) -> Arc<ProxyPolicy> {
+    let environment: BTreeMap<String, String> = variables
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect();
+    Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &environment).unwrap())
 }
 
 pub(crate) fn tls_authority() -> Authority {

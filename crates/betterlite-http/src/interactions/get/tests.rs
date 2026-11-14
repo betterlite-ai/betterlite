@@ -91,9 +91,10 @@ impl GetInteractionConfig for Fixture {
         request: &InteractionIdRequest<'_>,
     ) -> Result<PreparedRequest, FixtureError> {
         self.record(format!(
-            "request|{}|{}",
+            "request|{}|{}|{}",
             request.interaction_id,
-            request.headers.len()
+            request.headers.len(),
+            request.litellm_params.len()
         ));
         Ok(PreparedRequest {
             url: format!(
@@ -134,18 +135,23 @@ impl GetInteractionConfig for Fixture {
 }
 
 struct Call {
-    api_base: String,
     params: Params,
-    extra_headers: Option<RequestHeaders>,
+    provider: ProviderId,
+    extra_headers: RequestHeaders,
     timeout: Option<Duration>,
 }
 
 impl Call {
     fn new(address: SocketAddr) -> Self {
+        let mut params = Params::new();
+        params.insert(
+            "api_base".to_owned(),
+            JsonValue::Text(format!("http://{address}")),
+        );
         Self {
-            api_base: format!("http://{address}"),
-            params: Params::new(),
-            extra_headers: None,
+            params,
+            provider: ProviderId::Gemini,
+            extra_headers: RequestHeaders::new(),
             timeout: None,
         }
     }
@@ -153,13 +159,19 @@ impl Call {
     fn request(&self) -> GetInteractionRequest<'_> {
         GetInteractionRequest {
             interaction_id: "int_1",
-            api_base: &self.api_base,
             litellm_params: &self.params,
-            provider: ProviderId::Gemini,
+            provider: self.provider,
             extra_headers: self.extra_headers.clone(),
             timeout: self.timeout,
         }
     }
+}
+
+fn clients() -> HttpClients {
+    HttpClients::new(
+        support::policy(Verification::Enabled, None),
+        support::proxy_policy(&[]),
+    )
 }
 
 fn dead_address() -> SocketAddr {
@@ -169,13 +181,11 @@ fn dead_address() -> SocketAddr {
     address
 }
 
-fn caller_headers(entries: Option<Vec<(&str, &str)>>) -> Option<RequestHeaders> {
-    entries.map(|pairs| {
-        pairs
-            .into_iter()
-            .map(|(name, value)| (name.to_owned(), SecretString::from(value)))
-            .collect()
-    })
+fn caller_headers(entries: &[(&str, &str)]) -> RequestHeaders {
+    entries
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), SecretString::from(*value)))
+        .collect()
 }
 
 #[test]
@@ -184,18 +194,21 @@ fn get_interaction_retrieves_the_interaction_through_the_config() {
         support::reply("200 OK", &[("x-request-id", "r1")], "{\"id\":\"int_1\"}"),
         None,
     );
-    let fixture = Fixture::default();
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut fixture = Fixture::default();
+    fixture
+        .headers
+        .insert("x-goog-api-key".to_owned(), SecretString::from("key-1"));
+    let mut clients = clients();
     let mut logging = Logging::default();
+    let mut call = Call::new(serving.address);
+    call.params.insert(
+        "custom_llm_provider".to_owned(),
+        JsonValue::Text("gemini".to_owned()),
+    );
+    call.extra_headers = caller_headers(&[("x-caller", "c1")]);
 
-    let output = get_interaction(
-        &fixture,
-        &mut clients,
-        &mut logging,
-        None,
-        Call::new(serving.address).request(),
-    )
-    .unwrap();
+    let output =
+        get_interaction(&fixture, &mut clients, &mut logging, None, call.request()).unwrap();
 
     assert_eq!(output, "{\"id\":\"int_1\"}");
     let sent = serving.request.join().unwrap();
@@ -203,11 +216,12 @@ fn get_interaction_retrieves_the_interaction_through_the_config() {
         sent.starts_with("GET /v1beta/interactions/int_1 HTTP/1.1"),
         "{sent}"
     );
+    assert!(sent.contains("x-goog-api-key: key-1\r\n"), "{sent}");
     assert_eq!(
         fixture.calls(),
         vec![
-            "environment||0|0".to_owned(),
-            "request|int_1|0".to_owned(),
+            "environment||1|2".to_owned(),
+            "request|int_1|1|2".to_owned(),
             "response|200|int_1|r1".to_owned(),
         ]
     );
@@ -224,7 +238,7 @@ fn get_interaction_records_the_pre_call_with_the_interaction_id() {
     fixture
         .headers
         .insert("x-goog-api-key".to_owned(), SecretString::from("key-1"));
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let mut logging = Logging::default();
 
     get_interaction(
@@ -256,13 +270,39 @@ fn get_interaction_records_the_pre_call_with_the_interaction_id() {
 }
 
 #[test]
+fn get_interaction_takes_the_api_base_from_litellm_params() {
+    let serving = support::serve_once(support::reply("200 OK", &[], "{}"), None);
+    let fixture = Fixture::default();
+    let mut clients = clients();
+    let mut logging = Logging::default();
+    let mut call = Call::new(serving.address);
+    call.params.insert(
+        "api_base".to_owned(),
+        JsonValue::Text(format!("http://{}/base", serving.address)),
+    );
+
+    get_interaction(&fixture, &mut clients, &mut logging, None, call.request()).unwrap();
+
+    let sent = serving.request.join().unwrap();
+    assert!(
+        sent.starts_with("GET /base/v1beta/interactions/int_1 HTTP/1.1"),
+        "{sent}"
+    );
+    let recorded = logging.pre_call.as_ref().unwrap();
+    assert_eq!(
+        recorded.api_base,
+        format!("http://{}/base/v1beta/interactions/int_1", serving.address)
+    );
+}
+
+#[test]
 fn get_interaction_sends_no_deadline_of_its_own() {
     let serving = support::serve_once(
         support::reply("200 OK", &[], "{}"),
         Some(Duration::from_millis(100)),
     );
     let fixture = Fixture::default();
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let mut logging = Logging::default();
     let mut call = Call::new(serving.address);
     call.timeout = Some(Duration::from_millis(1));
@@ -279,7 +319,7 @@ fn get_interaction_sends_the_transformed_query_params() {
     let serving = support::serve_once(support::reply("200 OK", &[], "{}"), None);
     let mut fixture = Fixture::default();
     fixture.params = support::params(r#"{"alt": "sse"}"#);
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let mut logging = Logging::default();
 
     get_interaction(
@@ -299,15 +339,15 @@ fn get_interaction_sends_the_transformed_query_params() {
 }
 
 #[rstest]
-#[case::absent(None, "environment||0|0")]
-#[case::given(Some(vec![("x-caller", "c1")]), "environment||1|0")]
+#[case::absent(&[], "environment||0|1")]
+#[case::given(&[("x-caller", "c1")], "environment||1|1")]
 fn get_interaction_sends_the_caller_headers_to_validate_environment(
-    #[case] extra: Option<Vec<(&str, &str)>>,
+    #[case] extra: &[(&str, &str)],
     #[case] expected: &str,
 ) {
     let serving = support::serve_once(support::reply("200 OK", &[], "{}"), None);
     let fixture = Fixture::default();
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let mut logging = Logging::default();
     let mut call = Call::new(serving.address);
     call.extra_headers = caller_headers(extra);
@@ -324,7 +364,7 @@ fn get_interaction_passes_a_failing_status_to_the_response_transform() {
     let serving = support::serve_once(support::reply("404 Not Found", &[], "missing"), None);
     let mut fixture = Fixture::default();
     fixture.refuse_status = Some(404);
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let mut logging = Logging::default();
 
     let error = get_interaction(
@@ -360,7 +400,7 @@ fn get_interaction_does_not_follow_a_redirect() {
         None,
     );
     let fixture = Fixture::default();
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let mut logging = Logging::default();
 
     let output = get_interaction(
@@ -384,7 +424,7 @@ fn get_interaction_does_not_follow_a_redirect() {
 #[test]
 fn get_interaction_passes_a_transport_failure_through_the_error_handler() {
     let fixture = Fixture::default();
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let mut logging = Logging::default();
 
     let error = get_interaction(
@@ -411,10 +451,13 @@ fn get_interaction_passes_a_transport_failure_through_the_error_handler() {
 #[test]
 fn get_interaction_passes_an_invalid_url_through_the_error_handler() {
     let fixture = Fixture::default();
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let mut logging = Logging::default();
     let mut call = Call::new(dead_address());
-    call.api_base = "not a url".to_owned();
+    call.params.insert(
+        "api_base".to_owned(),
+        JsonValue::Text("not a url".to_owned()),
+    );
 
     let error =
         get_interaction(&fixture, &mut clients, &mut logging, None, call.request()).unwrap_err();
@@ -432,7 +475,7 @@ fn get_interaction_uses_a_supplied_client() {
         Some(Duration::from_millis(200)),
     );
     let fixture = Fixture::default();
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let mut logging = Logging::default();
     let supplied = BlockingClientBuilder::new()
         .timeout(Duration::from_millis(20))
@@ -459,8 +502,12 @@ fn get_interaction_uses_a_supplied_client() {
 #[tokio::test]
 async fn async_get_interaction_retrieves_the_interaction_through_the_config() {
     let serving = support::serve_once(support::reply("200 OK", &[], "{}"), None);
-    let fixture = Fixture::default();
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut fixture = Fixture::default();
+    fixture
+        .headers
+        .insert("x-goog-api-key".to_owned(), SecretString::from("key-1"));
+    fixture.params = support::params(r#"{"alt": "sse"}"#);
+    let mut clients = clients();
     let mut logging = Logging::default();
 
     let output = async_get_interaction(
@@ -476,9 +523,10 @@ async fn async_get_interaction_retrieves_the_interaction_through_the_config() {
     assert_eq!(output, "{}");
     let sent = serving.request.join().unwrap();
     assert!(
-        sent.starts_with("GET /v1beta/interactions/int_1 HTTP/1.1"),
+        sent.starts_with("GET /v1beta/interactions/int_1?alt=sse HTTP/1.1"),
         "{sent}"
     );
+    assert!(sent.contains("x-goog-api-key: key-1\r\n"), "{sent}");
     let recorded = logging.pre_call.as_ref().unwrap();
     assert_eq!(recorded.input, "int_1");
 }
@@ -490,7 +538,7 @@ async fn async_get_interaction_uses_a_supplied_client() {
         Some(Duration::from_millis(200)),
     );
     let fixture = Fixture::default();
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let mut logging = Logging::default();
     let supplied = base_builder()
         .timeout(Duration::from_millis(20))
@@ -519,22 +567,23 @@ async fn async_get_interaction_uses_a_supplied_client() {
 async fn async_get_interaction_builds_for_the_provider_its_caller_names() {
     let serving = support::serve_once(support::reply("200 OK", &[], "{}"), None);
     let fixture = Fixture::default();
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let mut logging = Logging::default();
     let mut call = Call::new(serving.address);
-    call.params = support::params(r#"{"custom_llm_provider": "nope"}"#);
+    call.provider = ProviderId::Openai;
 
     let output = async_get_interaction(&fixture, &mut clients, &mut logging, None, call.request())
         .await
         .unwrap();
 
     assert_eq!(output, "{}");
-    assert!(
-        clients
-            .async_clients
-            .keys()
-            .any(|key| key.provider == ProviderId::Gemini)
-    );
+    let providers: Vec<ProviderId> = clients
+        .async_clients
+        .keys()
+        .map(|key| key.provider)
+        .collect();
+    assert!(providers.contains(&ProviderId::Openai));
+    assert!(!providers.contains(&ProviderId::Gemini));
     serving.request.join().unwrap();
 }
 
@@ -546,7 +595,7 @@ async fn async_get_interaction_passes_a_failing_status_to_the_response_transform
     );
     let mut fixture = Fixture::default();
     fixture.refuse_status = Some(500);
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let mut logging = Logging::default();
 
     let error = async_get_interaction(

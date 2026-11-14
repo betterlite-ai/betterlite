@@ -1,29 +1,39 @@
 use std::collections::btree_map::Entry;
 use std::io::Read as _;
 
-use reqwest::header::HeaderMap;
+use reqwest::header::{HeaderMap, HeaderValue};
 
 use crate::interactions::base::{RequestFailure, ResponseHeaders};
 
 // a repeated response header joins with ", ", the way HTTP spells the same value twice
-pub(crate) fn response_headers(headers: &HeaderMap) -> Result<ResponseHeaders, RequestFailure> {
+pub(crate) fn response_headers(headers: &HeaderMap) -> ResponseHeaders {
     let mut map = ResponseHeaders::new();
     for (name, value) in headers {
-        let text = value.to_str().map_err(|_| RequestFailure::ResponseHeader {
-            name: name.as_str().to_owned(),
-        })?;
+        let text = header_text(value);
         match map.entry(name.as_str().to_owned()) {
             Entry::Occupied(mut entry) => {
                 let joined = entry.get_mut();
                 joined.push_str(", ");
-                joined.push_str(text);
+                joined.push_str(&text);
             }
             Entry::Vacant(entry) => {
-                entry.insert(text.to_owned());
+                entry.insert(text);
             }
         }
     }
-    Ok(map)
+    map
+}
+
+// httpx reads header bytes as ascii then utf-8, and falls back to iso-8859-1, so none of them fails
+fn header_text(value: &HeaderValue) -> String {
+    match std::str::from_utf8(value.as_bytes()) {
+        Ok(text) => text.to_owned(),
+        Err(_) => value
+            .as_bytes()
+            .iter()
+            .map(|byte| char::from(*byte))
+            .collect(),
+    }
 }
 
 // the response body, read up to the limit so a provider answer cannot grow without bound

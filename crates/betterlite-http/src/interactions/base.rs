@@ -59,13 +59,30 @@ pub struct Logging {
 
 impl Logging {
     // LiteLLM's Logging.pre_call: the call input and the arguments the request is about to use
-    pub fn record_pre_call(&mut self, input: &str, api_key: &str, arguments: PreCallArguments<'_>) {
+    pub fn record_pre_call(
+        &mut self,
+        input: &str,
+        api_key: &SecretString,
+        arguments: PreCallArguments<'_>,
+    ) {
         self.pre_call = Some(PreCall {
             input: input.to_owned(),
-            api_key: SecretString::from(api_key),
+            api_key: api_key.clone(),
             api_base: arguments.api_base.to_owned(),
             headers: arguments.headers.clone(),
         });
+    }
+}
+
+// LiteLLM reads api_base with `or ""`, so an absent, null or empty value means no base at all
+pub(crate) fn api_base(litellm_params: &Params) -> Result<&str, ClientError> {
+    match litellm_params.get("api_base") {
+        None | Some(JsonValue::Null) => Ok(""),
+        Some(JsonValue::Text(value)) => Ok(value),
+        Some(_) => Err(ClientError::FieldType {
+            field: "api_base",
+            expected: "a string",
+        }),
     }
 }
 
@@ -98,8 +115,6 @@ pub enum RequestFailure {
     HeaderName(#[source] reqwest::header::InvalidHeaderName),
     #[error("the request header value is not valid")]
     HeaderValue(#[source] reqwest::header::InvalidHeaderValue),
-    #[error("the {name} response header is not valid UTF-8")]
-    ResponseHeader { name: String },
     #[error("litellm_params.{field} cannot be a query parameter")]
     QueryValue { field: String },
     #[error("the request to the provider failed")]

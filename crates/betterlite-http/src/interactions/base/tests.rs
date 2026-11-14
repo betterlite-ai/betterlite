@@ -16,7 +16,7 @@ use super::transport::response::{read_body, response_headers};
 use super::transport::{query_pairs, request_headers, request_url};
 use super::{
     CallFailure, ClientError, DEFAULT_PROVIDER, ErrorClasses, Params, PreparedRequest,
-    RequestFailure, RequestHeaders, ResponseHeaders, handle_error,
+    RequestFailure, RequestHeaders, ResponseHeaders, api_base, handle_error,
 };
 use crate::proxy::base_builder;
 use crate::proxy::limits::ReadError;
@@ -41,6 +41,13 @@ impl Fixture {
             Err(_poisoned) => Vec::new(),
         }
     }
+}
+
+fn clients() -> HttpClients {
+    HttpClients::new(
+        support::policy(Verification::Enabled, None),
+        support::proxy_policy(&[]),
+    )
 }
 
 impl ErrorClasses for Fixture {
@@ -117,7 +124,7 @@ fn sync_client_returns_the_supplied_client() {
         support::reply("200 OK", &[], "{}"),
         Some(Duration::from_millis(200)),
     );
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let supplied = BlockingClientBuilder::new()
         .timeout(Duration::from_millis(20))
         .build()
@@ -139,7 +146,7 @@ fn sync_client_honors_ssl_verify_from_litellm_params() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let server = support::spawn_tls_server(authority, listener);
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let params = support::params(r#"{"ssl_verify": false}"#);
 
     let client = clients.sync_client(&params, None).unwrap();
@@ -157,7 +164,7 @@ fn sync_client_verifies_a_certificate_without_an_override() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let server = support::spawn_tls_server(authority, listener);
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
 
     let client = clients.sync_client(&support::params("{}"), None).unwrap();
     let outcome = client
@@ -174,7 +181,7 @@ async fn async_client_honors_ssl_verify_from_litellm_params() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let server = support::spawn_tls_server(authority, listener);
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let params = support::params(r#"{"ssl_verify": false}"#);
 
     let client = async_client(&mut clients, &params, None).unwrap();
@@ -189,7 +196,7 @@ async fn async_client_honors_ssl_verify_from_litellm_params() {
 
 #[test]
 fn async_client_keys_its_cache_by_the_provider_from_litellm_params() {
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let named_nothing = support::params("{}");
     let openai = support::params(r#"{"custom_llm_provider": "openai"}"#);
 
@@ -211,7 +218,7 @@ fn async_client_keys_its_cache_by_the_provider_from_litellm_params() {
 
 #[test]
 fn async_client_falls_back_to_gemini_for_an_empty_provider() {
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let empty = support::params(r#"{"custom_llm_provider": ""}"#);
 
     async_client(&mut clients, &empty, None).unwrap();
@@ -226,7 +233,7 @@ fn async_client_falls_back_to_gemini_for_an_empty_provider() {
 
 #[test]
 fn async_client_refuses_a_provider_it_does_not_know() {
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let unknown = support::params(r#"{"custom_llm_provider": "nope"}"#);
 
     let outcome = async_client(&mut clients, &unknown, None);
@@ -239,7 +246,7 @@ fn async_client_refuses_a_provider_it_does_not_know() {
 
 #[test]
 fn a_supplied_async_client_is_returned_before_the_provider_is_read() {
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let unknown = support::params(r#"{"custom_llm_provider": "nope"}"#);
     let supplied = base_builder().build().unwrap();
 
@@ -249,11 +256,104 @@ fn a_supplied_async_client_is_returned_before_the_provider_is_read() {
     assert!(clients.async_clients.is_empty());
 }
 
+#[test]
+fn sync_client_sends_the_request_through_the_configured_proxy() {
+    let listener = support::listener();
+    let proxy = format!("http://user:secret@{}", listener.local_addr().unwrap());
+    let serving = support::serve_on(listener, support::reply("200 OK", &[], "{}"), None);
+    let mut clients = HttpClients::new(
+        support::policy(Verification::Enabled, None),
+        support::proxy_policy(&[("HTTP_PROXY", proxy.as_str())]),
+    );
+
+    let client = clients.sync_client(&support::params("{}"), None).unwrap();
+    let answer = client.get("http://127.0.0.1:1/x").send().unwrap();
+
+    assert_eq!(answer.status().as_u16(), 200);
+    let sent = serving.request.join().unwrap();
+    assert!(
+        sent.starts_with("GET http://127.0.0.1:1/x HTTP/1.1"),
+        "{sent}"
+    );
+    assert!(
+        sent.contains("proxy-authorization: Basic dXNlcjpzZWNyZXQ="),
+        "{sent}"
+    );
+}
+
+#[tokio::test]
+async fn async_client_sends_the_request_through_the_configured_proxy() {
+    let listener = support::listener();
+    let proxy = format!("http://{}", listener.local_addr().unwrap());
+    let serving = support::serve_on(listener, support::reply("200 OK", &[], "{}"), None);
+    let mut clients = HttpClients::new(
+        support::policy(Verification::Enabled, None),
+        support::proxy_policy(&[("HTTP_PROXY", proxy.as_str())]),
+    );
+
+    let client = async_client(&mut clients, &support::params("{}"), None).unwrap();
+    let answer = client.get("http://127.0.0.1:1/x").send().await.unwrap();
+
+    assert_eq!(answer.status().as_u16(), 200);
+    let sent = serving.request.join().unwrap();
+    assert!(
+        sent.starts_with("GET http://127.0.0.1:1/x HTTP/1.1"),
+        "{sent}"
+    );
+}
+
+#[test]
+fn a_host_the_policy_bypasses_skips_the_proxy() {
+    let serving = support::serve_once(support::reply("200 OK", &[], "{}"), None);
+    let mut clients = HttpClients::new(
+        support::policy(Verification::Enabled, None),
+        support::proxy_policy(&[
+            ("HTTP_PROXY", "http://127.0.0.1:1"),
+            ("NO_PROXY", "127.0.0.1"),
+        ]),
+    );
+
+    let client = clients.sync_client(&support::params("{}"), None).unwrap();
+    let answer = client
+        .get(format!("http://{}/x", serving.address))
+        .send()
+        .unwrap();
+
+    assert_eq!(answer.status().as_u16(), 200);
+    let sent = serving.request.join().unwrap();
+    assert_eq!(sent.lines().next(), Some("GET /x HTTP/1.1"));
+}
+
+#[rstest]
+#[case::absent("{}", "")]
+#[case::null(r#"{"api_base": null}"#, "")]
+#[case::text(r#"{"api_base": "http://host/v1"}"#, "http://host/v1")]
+fn api_base_reads_the_base_or_yields_an_empty_string(#[case] text: &str, #[case] expected: &str) {
+    let params = support::params(text);
+
+    assert_eq!(api_base(&params).unwrap(), expected);
+}
+
+#[test]
+fn api_base_refuses_a_value_that_is_not_a_string() {
+    let params = support::params(r#"{"api_base": 3}"#);
+
+    let failure = api_base(&params).unwrap_err();
+
+    assert!(matches!(
+        failure,
+        ClientError::FieldType {
+            field: "api_base",
+            expected: "a string"
+        }
+    ));
+}
+
 #[rstest]
 #[case::ssl_verify(r#"{"ssl_verify": "yes"}"#, "ssl_verify")]
 #[case::provider(r#"{"custom_llm_provider": 3}"#, "custom_llm_provider")]
 fn a_param_of_the_wrong_type_names_the_field(#[case] text: &str, #[case] field: &str) {
-    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut clients = clients();
     let params = support::params(text);
 
     let outcome = async_client(&mut clients, &params, None);
@@ -287,7 +387,8 @@ fn the_ssl_verify_setting_overrides_the_policy(
 #[case::number(r#"{"count": 3}"#, vec![("count", "3")])]
 #[case::boolean(r#"{"flag": true}"#, vec![("flag", "true")])]
 #[case::repeated(r#"{"tag": ["a", "b"]}"#, vec![("tag", "a"), ("tag", "b")])]
-#[case::null_omitted(r#"{"gone": null}"#, vec![])]
+#[case::null_empty(r#"{"gone": null}"#, vec![("gone", "")])]
+#[case::null_in_a_list(r#"{"tag": ["a", null]}"#, vec![("tag", "a"), ("tag", "")])]
 fn query_pairs_carry_the_transformed_params(
     #[case] text: &str,
     #[case] expected: Vec<(&str, &str)>,
@@ -370,7 +471,7 @@ fn response_headers_carry_the_values() {
         HeaderValue::from_static("r1"),
     );
 
-    let map = response_headers(&headers).unwrap();
+    let map = response_headers(&headers);
 
     assert_eq!(map.get("x-request-id").map(String::as_str), Some("r1"));
 }
@@ -387,22 +488,22 @@ fn repeated_response_headers_join_with_a_comma() {
         HeaderValue::from_static("b"),
     );
 
-    let map = response_headers(&headers).unwrap();
+    let map = response_headers(&headers);
 
     assert_eq!(map.get("x-many").map(String::as_str), Some("a, b"));
 }
 
 #[test]
-fn a_response_header_that_is_not_utf8_is_refused() {
+fn a_response_header_that_is_not_utf8_decodes_as_iso_8859_1() {
     let mut headers = HeaderMap::new();
     headers.insert(
         HeaderName::from_static("x-raw"),
         HeaderValue::from_bytes(b"\xff").unwrap(),
     );
 
-    let failure = response_headers(&headers).unwrap_err();
+    let map = response_headers(&headers);
 
-    assert!(matches!(failure, RequestFailure::ResponseHeader { name } if name == "x-raw"));
+    assert_eq!(map.get("x-raw").map(String::as_str), Some("ÿ"));
 }
 
 #[rstest]

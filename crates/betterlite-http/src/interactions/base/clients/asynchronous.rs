@@ -18,10 +18,10 @@ pub(crate) fn async_client_for(
         ssl_verify: ssl_verify(litellm_params)?,
     };
     let tls = &clients.tls;
-    let build = |key: ClientKey| {
-        client_builder(tls, key.ssl_verify)?
+    let proxy = &clients.proxy;
+    cached(&mut clients.async_clients, key, |client_key| {
+        client_builder(tls, proxy, client_key.ssl_verify)?
             .build()
             .map_err(ClientError::Build)
-    };
-    cached(&mut clients.async_clients, key, build)
+    })
 }
