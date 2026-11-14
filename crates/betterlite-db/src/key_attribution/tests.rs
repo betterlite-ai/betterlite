@@ -537,6 +537,19 @@ fn custom_field_names_change_only_the_projection() {
     );
 }
 
+#[tokio::test]
+async fn filling_returns_rows_unchanged_when_nothing_is_recovered() {
+    let rows = vec![row(&[
+        ("api_key", JsonData::String("sk-plain".to_owned())),
+        ("api_key_alias", JsonData::String(String::new())),
+    ])];
+    let store = PostgresStore { pool: None };
+    let filled = fill_missing_api_key_aliases(&store, &rows, &ExportFields::default())
+        .await
+        .unwrap();
+    assert_eq!(filled, rows);
+}
+
 #[test]
 fn unrecovered_rows_keep_every_field_and_their_order() {
     let rows = vec![
