@@ -167,7 +167,7 @@ impl ChirpBackend {
             ) {
                 return Ok(stream);
             }
-            stream.half_close().await?;
+            half_close_turn_stream(&stream).await?;
         }
         let stream = self.open_stream().await?;
         self.turn.push(Arc::clone(&stream));
@@ -196,7 +196,7 @@ impl ChirpBackend {
         let turn = std::mem::take(&mut self.turn);
         self.turn_index = self.turn_index.saturating_add(1);
         if let Some(last) = turn.last() {
-            last.half_close().await?;
+            half_close_turn_stream(last).await?;
         }
         let event =
             serde_json::to_string(&ChirpEvent::TurnFinished).map_err(ChirpBackendError::Encode)?;
@@ -267,5 +267,13 @@ impl ChirpBackend {
             code: frame.code,
             reason: frame.reason,
         })
+    }
+}
+
+async fn half_close_turn_stream(stream: &RecognizeStream) -> Result<(), ChirpBackendError> {
+    // a stream whose relay already ended dropped its request queue, and LiteLLM's queue put does nothing then
+    match stream.half_close().await {
+        Ok(()) | Err(ChirpStreamError::QueueClosed) => Ok(()),
+        Err(error) => Err(ChirpBackendError::Stream(error)),
     }
 }
