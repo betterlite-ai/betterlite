@@ -95,21 +95,10 @@ impl Cells<'_> {
     }
 
     fn value(&self, name: &'static str) -> Result<Option<&str>, RowError> {
-        let Some(position) = self.columns.positions.get(name) else {
+        if !self.columns.positions.contains_key(name) {
             return Err(RowError::MissingColumn { name });
-        };
-        let cell = self
-            .record
-            .get(*position)
-            .filter(|text| !text.is_empty() && *text != NULL_CELL);
-        Ok(cell)
-    }
-
-    fn boolean(&self, name: &'static str) -> Result<Option<bool>, RowError> {
-        if let Some(text) = self.value(name)? {
-            return Ok(Some(text.to_lowercase() == "true"));
         }
-        Ok(None)
+        Ok(self.optional_value(name))
     }
 
     fn optional_value(&self, name: &str) -> Option<&str> {
@@ -119,18 +108,21 @@ impl Cells<'_> {
             .filter(|text| !text.is_empty() && *text != NULL_CELL)
     }
 
+    fn boolean(&self, name: &'static str) -> Result<Option<bool>, RowError> {
+        let Some(text) = self.value(name)? else {
+            return Ok(None);
+        };
+        Ok(Some(text.to_lowercase() == "true"))
+    }
+
     fn decimal(&self, name: &'static str) -> Result<Option<Decimal>, RowError> {
         let Some(text) = self.value(name)? else {
             return Ok(None);
         };
-        let Ok(value) = Decimal::from_str(text.trim()) else {
-            return Err(RowError::InvalidValue {
-                name,
-                value: text.to_owned().into_boxed_str(),
-                kind: "decimal",
-            });
-        };
-        Ok(Some(value))
+        let value = Decimal::from_str(text.trim()).ok();
+        value
+            .map(Some)
+            .ok_or_else(|| invalid(name, text, "decimal"))
     }
 
     fn integer(&self, name: &'static str) -> Result<Option<i64>, RowError> {
@@ -140,63 +132,67 @@ impl Cells<'_> {
         if !text.chars().all(|digit| digit.is_ascii_digit()) {
             return Ok(None);
         }
-        let Ok(value) = text.parse::<i64>() else {
-            return Err(RowError::InvalidValue {
-                name,
-                value: text.to_owned().into_boxed_str(),
-                kind: "integer",
-            });
-        };
-        Ok(Some(value))
+        let value = text.parse::<i64>().ok();
+        value
+            .map(Some)
+            .ok_or_else(|| invalid(name, text, "integer"))
     }
 
     fn timestamp(&self, name: &'static str) -> Result<Option<NaiveDateTime>, RowError> {
         let Some(text) = self.value(name)? else {
             return Ok(None);
         };
-        let Some(decoded) = decode_billed_at(text) else {
-            return Ok(None);
-        };
-        Ok(Some(decoded.naive_utc()))
+        Ok(decode_billed_at(text).map(|decoded| decoded.naive_utc()))
     }
 
     fn json(&self, name: &'static str) -> Result<Option<JsonData>, RowError> {
         let Some(text) = self.value(name)? else {
             return Ok(None);
         };
-        // the shared scanner reports only TooDeep, before serde walks the document
-        if check_depth(text).is_err() {
-            return Err(RowError::TooDeep { name });
-        }
-        let Ok(value) = serde_json::from_str::<JsonData>(text) else {
-            return Err(RowError::InvalidValue {
-                name,
-                value: text.to_owned().into_boxed_str(),
-                kind: "JSON",
-            });
-        };
-        Ok(Some(value))
+        parse_json(name, text).map(Some)
     }
 
     fn strings(&self, name: &'static str) -> Result<Option<Vec<String>>, RowError> {
         let Some(text) = self.value(name)? else {
             return Ok(None);
         };
-        let Some(content) = text
-            .strip_prefix('{')
-            .and_then(|rest| rest.strip_suffix('}'))
-        else {
-            return Ok(Some(Vec::new()));
-        };
-        if content.is_empty() {
-            return Ok(Some(Vec::new()));
-        }
-        let items: Vec<String> = content
-            .split(',')
-            .map(|item| item.trim().to_owned())
-            .collect();
-        Ok(Some(items))
+        Ok(Some(parse_list(text)))
     }
+}
+
+fn invalid(name: &'static str, text: &str, kind: &'static str) -> RowError {
+    RowError::InvalidValue {
+        name,
+        value: text.to_owned().into_boxed_str(),
+        kind,
+    }
+}
+
+fn parse_json(name: &'static str, text: &str) -> Result<JsonData, RowError> {
+    // the shared scanner reports only TooDeep, before serde walks the document
+    if check_depth(text).is_err() {
+        return Err(RowError::TooDeep { name });
+    }
+    let Ok(value) = serde_json::from_str(text) else {
+        return Err(invalid(name, text, "JSON"));
+    };
+    Ok(value)
+}
+
+fn parse_list(text: &str) -> Vec<String> {
+    let Some(content) = text
+        .strip_prefix('{')
+        .and_then(|rest| rest.strip_suffix('}'))
+    else {
+        return Vec::new();
+    };
+    if content.is_empty() {
+        return Vec::new();
+    }
+    content
+        .split(',')
+        .map(|item| item.trim().to_owned())
+        .collect()
 }
 
 #[must_use]
