@@ -11,7 +11,7 @@ from litellm.a2a_protocol.providers.bedrock_agentcore import transformation as a
 from litellm.caching.llm_caching_handler import LLMClientCache
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.types.llms.custom_http import httpxSpecialProvider
-from pydantic import JsonValue, TypeAdapter
+from pydantic import ConfigDict, JsonValue, TypeAdapter
 
 DECODER: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 CLIENT_KEY = "async_httpx_client"
@@ -60,6 +60,11 @@ class AgentHandler(Protocol):
 @runtime_checkable
 class ClientCache(Protocol):
     def set_cache(self, key: str, value: AsyncHTTPHandler, *, ttl: int) -> None: ...
+
+
+CLIENT_CACHE: TypeAdapter[ClientCache] = TypeAdapter(
+    ClientCache, config=ConfigDict(arbitrary_types_allowed=True)
+)
 
 
 @runtime_checkable
@@ -170,7 +175,7 @@ class Reply:
 def install_client(reply: Reply) -> None:
     holder = LLMClientCache()
     litellm.in_memory_llm_clients_cache = holder
-    cache = TypeAdapter(ClientCache).validate_python(holder)
+    cache = CLIENT_CACHE.validate_python(holder)
     client = AsyncHTTPHandler(transport=httpx.MockTransport(reply))
     cache.set_cache(key=CLIENT_KEY + httpxSpecialProvider.A2AProvider, value=client, ttl=600)
 

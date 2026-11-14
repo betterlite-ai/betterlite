@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::future::ready;
 use std::sync::Mutex;
+use std::vec::IntoIter;
 
 use betterlite_core::agents::json::AgentJson;
 use chrono::{DateTime, Utc};
@@ -109,7 +110,7 @@ type Params = BTreeMap<String, AgentJson>;
 
 impl AgentCoreRuntime for FixtureRuntime {
     type Error = FixtureError;
-    type Lines = stream::Iter<std::vec::IntoIter<Result<String, FixtureError>>>;
+    type Lines = stream::Iter<IntoIter<Result<String, FixtureError>>>;
 
     fn complete_url(&self, model: &str, _optional_params: &Params) -> Result<String, Self::Error> {
         self.url_error.map_or_else(
