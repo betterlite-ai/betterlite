@@ -112,6 +112,20 @@ impl CollectedChunksHandler for BlockingHandler {
 }
 
 impl BlockingHandler {
+    fn new(
+        calls: &Arc<Mutex<Vec<RecordedCall>>>,
+        gate: &Arc<Gate>,
+        started: oneshot::Sender<()>,
+        done: oneshot::Sender<()>,
+    ) -> Self {
+        Self {
+            calls: Arc::clone(calls),
+            gate: Arc::clone(gate),
+            started: Mutex::new(Some(started)),
+            done: Mutex::new(Some(done)),
+        }
+    }
+
     fn block_until_released(&self, call: &CollectedChunksCall<'_>) {
         let mut calls = self.calls.lock().expect("the call log lock");
         calls.push(recorded("gemini", call));
@@ -867,12 +881,7 @@ async fn async_stream_returns_the_end_before_the_completion_log_finishes() {
     let gate = Arc::new(Gate::default());
     let (started_tx, started_rx) = oneshot::channel();
     let (done_tx, mut done_rx) = oneshot::channel();
-    let handler = Arc::new(BlockingHandler {
-        calls: Arc::clone(&calls),
-        gate: Arc::clone(&gate),
-        started: Mutex::new(Some(started_tx)),
-        done: Mutex::new(Some(done_tx)),
-    });
+    let handler = Arc::new(BlockingHandler::new(&calls, &gate, started_tx, done_tx));
     let dispatched = Arc::new(Notify::new());
     let logging = logging_with_gemini(handler, Arc::clone(&calls), Arc::clone(&dispatched));
     let mut stream = async_stream(
