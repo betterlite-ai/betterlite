@@ -32,3 +32,15 @@ deviations:
       Ruff UP042 requires StrEnum for a str-mixin Enum. Member names, values, comparisons to str and
       JSON serialization are unchanged; str() and repr text is not part of parity.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/watsonx.py#L51
+  - what: >-
+      The four Cohere message subclasses declare role as str with a default, a pattern and a
+      JSON-schema const, instead of LiteLLM's role: Literal["USER"], Literal["CHATBOT"],
+      Literal["SYSTEM"] and Literal["TOOL"] overrides of the base role: str.
+    why: >-
+      Strict basedpyright rejects a mutable field whose type narrows the field of its base class
+      (reportIncompatibleVariableOverride), and mypy's mutable-override error code rejects the same
+      override, so the subclass field cannot carry the Literal type. The default and const keep the
+      wire schema and the pattern keeps the accepted values to the one LiteLLM's Literal accepts;
+      each role schema carries a redundant pattern key, and a rejected value fails with
+      string_pattern_mismatch instead of literal_error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/oci.py#L229-L233

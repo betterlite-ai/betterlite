@@ -115,19 +115,19 @@ class CohereMessage(_OCIModel):
 
 
 class CohereUserMessage(CohereMessage):
-    role: Literal["USER"] = "USER"
+    role: str = Field("USER", pattern="^USER$", json_schema_extra={"const": "USER"})
 
 
 class CohereChatBotMessage(CohereMessage):
-    role: Literal["CHATBOT"] = "CHATBOT"
+    role: str = Field("CHATBOT", pattern="^CHATBOT$", json_schema_extra={"const": "CHATBOT"})
 
 
 class CohereSystemMessage(CohereMessage):
-    role: Literal["SYSTEM"] = "SYSTEM"
+    role: str = Field("SYSTEM", pattern="^SYSTEM$", json_schema_extra={"const": "SYSTEM"})
 
 
 class CohereToolMessage(CohereMessage):
-    role: Literal["TOOL"] = "TOOL"
+    role: str = Field("TOOL", pattern="^TOOL$", json_schema_extra={"const": "TOOL"})
     tool_results: list[CohereToolResult] = Field(alias="toolResults")
 
 

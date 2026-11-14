@@ -3,7 +3,9 @@ import sys
 from typing import TypedDict
 
 import pytest
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
+
+import betterlite.types.llms.oci as oci
 
 DESCRIBE_SCRIPT = """
 import json
@@ -252,3 +254,15 @@ def test_watsonx_names(report: NamesReport) -> None:
     assert not expected["models"]
     assert not expected["aliases"]
     assert report["betterlite"]["watsonx"] == expected
+
+
+def test_role_names_are_enforced() -> None:
+    assert oci.CohereUserMessage(role="USER").role == "USER"
+    with pytest.raises(ValidationError):
+        oci.CohereUserMessage(role="SYSTEM")
+    with pytest.raises(ValidationError):
+        oci.CohereChatBotMessage(role="USER")
+    with pytest.raises(ValidationError):
+        oci.CohereSystemMessage(role="USER")
+    with pytest.raises(ValidationError):
+        oci.CohereToolMessage(role="USER", tool_results=[])
