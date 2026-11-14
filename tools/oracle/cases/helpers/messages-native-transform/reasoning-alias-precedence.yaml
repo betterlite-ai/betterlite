@@ -1,0 +1,62 @@
+kind: helper
+name: messages-native-transform-reasoning-alias-precedence
+call:
+  messages_native_transform:
+    model_cost:
+      claude-sonnet-4-5: {litellm_provider: anthropic, supports_reasoning: true, supports_adaptive_thinking: false, supports_output_config: false, supports_legacy_thinking: false, supports_xhigh_reasoning_effort: false, supports_max_reasoning_effort: false, thinking_always_on: false}
+      claude-opus-4-5: {litellm_provider: anthropic, supports_reasoning: true, supports_adaptive_thinking: false, supports_output_config: true, supports_legacy_thinking: false, supports_xhigh_reasoning_effort: false, supports_max_reasoning_effort: false, thinking_always_on: false}
+      claude-opus-4-6: {litellm_provider: anthropic, supports_reasoning: true, supports_adaptive_thinking: true, supports_output_config: true, supports_legacy_thinking: true, supports_xhigh_reasoning_effort: false, supports_max_reasoning_effort: true, thinking_always_on: false}
+    packaged: {}
+    calls:
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 4096, reasoning_effort: medium}
+        strips_billing_metadata: false
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 32768, reasoning_effort: minimal}
+        strips_billing_metadata: false
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 32768, reasoning_effort: low}
+        strips_billing_metadata: false
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 32768, reasoning_effort: high}
+        strips_billing_metadata: false
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 32768, reasoning_effort: xhigh}
+        strips_billing_metadata: false
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 32768, reasoning_effort: max}
+        strips_billing_metadata: false
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 32768, reasoning_effort: medium, thinking: {type: enabled, budget_tokens: 1500}}
+        strips_billing_metadata: false
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 4096, reasoning_effort: 3}
+        strips_billing_metadata: false
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 4096, reasoning_effort: none, thinking: {type: enabled, budget_tokens: 2000}, output_config: {format: {type: json_schema}}}
+        strips_billing_metadata: false
+      - model: claude-opus-4-6
+        custom_llm_provider: anthropic
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 32768, reasoning_effort: medium, output_config: {effort: low, format: {type: json_schema}}}
+        strips_billing_metadata: false
+env: {}
+compare: {ignore: []}
