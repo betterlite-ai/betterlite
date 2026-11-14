@@ -300,6 +300,34 @@ fn batch_cancel_prefers_call_parameters_over_settings() {
 }
 
 #[test]
+fn batch_cancel_forwards_the_extra_headers_body_and_retries() {
+    let mut params = base_params();
+    params.max_retries = Some(2);
+    let input = BatchProviderCancelInput::Cancel(Box::new(CancelBatchCall {
+        batch_id: "batch_1".to_owned(),
+        model: None,
+        provider: CancelProvider::Openai,
+        extra_headers: Some(IndexMap::from([("x-key".to_owned(), "v".to_owned())])),
+        extra_body: Some(IndexMap::from([("custom".to_owned(), "value".to_owned())])),
+        params,
+        call: CancelCall::Sync,
+    }));
+    let (dispatch, calls) = scripted(BatchStatus::Cancelling);
+    let service = service(base_settings(), dispatch);
+    drive(&service, &input).expect("answered");
+    let entries = recorded(&calls);
+    assert_eq!(
+        entries[0]["request"]["extra_headers"],
+        json!({"x-key": "v"})
+    );
+    assert_eq!(
+        entries[0]["request"]["extra_body"],
+        json!({"custom": "value"})
+    );
+    assert_eq!(entries[0]["max_retries"], json!(2));
+}
+
+#[test]
 fn batch_cancel_reads_the_organization_setting() {
     let mut settings = base_settings();
     settings.openai_organization = Some("org-env".to_owned());
