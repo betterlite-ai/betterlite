@@ -1,5 +1,5 @@
 import asyncio
-from typing import Literal
+from typing import Literal, Protocol
 
 from litellm.router_strategy.adaptive_router.adaptive_router import AdaptiveRouter
 from litellm.router_strategy.adaptive_router.classifier import classify_prompt
@@ -130,6 +130,15 @@ def classify_all(prompts: list[str]) -> Output:
     return Output(types=[classify_prompt(prompt) for prompt in prompts])
 
 
+class PreRoutingHook(Protocol):
+    async def async_pre_routing_hook(
+        self,
+        model: str,
+        request_kwargs: dict[str, JsonValue],
+        messages: list[dict[str, str]],
+    ) -> object: ...
+
+
 class RecordingRouter(AdaptiveRouter):
     recorded: list[tuple[RequestType, int | None]]
 
@@ -169,8 +178,9 @@ class AdaptiveClassification(Operation):
 
     async def minimum_quality(self) -> Output:
         router = RecordingRouter(AdaptiveRouterConfig(available_models=["fast"]))
+        hook: PreRoutingHook = router
         for request in self.requests:
-            _ = await router.async_pre_routing_hook(
+            _ = await hook.async_pre_routing_hook(
                 model="probe",
                 request_kwargs={"headers": request.headers, "metadata": request.metadata},
                 messages=[{"role": "user", "content": request.prompt}],

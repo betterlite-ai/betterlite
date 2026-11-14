@@ -31,8 +31,8 @@ pub(crate) fn run(
     let fields = match payload.check {
         Check::Classify => classify_fields(&payload.prompts)?,
         Check::MinimumQuality => minimum_quality_fields(&payload.requests)?,
-        Check::RouterConfigs => router_fields(payload)?,
-        Check::Preferences => preference_fields(payload)?,
+        Check::RouterConfigs => selected_fields(payload, Kind::Routers)?,
+        Check::Preferences => selected_fields(payload, Kind::Preferences)?,
     };
     Ok(ProbeOutput::AdaptiveClassification(Output(Box::new(
         fields,
@@ -80,63 +80,67 @@ fn minimum_quality_fields(requests: &[RequestInput]) -> Result<Fields, Operation
     })
 }
 
-fn router_fields(payload: &Payload) -> Result<Fields, OperationError> {
-    let Some(resolved) = resolve_settings(payload)? else {
-        return Ok(Fields {
-            types: None,
-            tiers: None,
-            routers: None,
-            preferences: None,
-            invalid: Some(true),
-        });
-    };
-    let mut routers = Vec::new();
-    for deployment in resolved.iter().flatten() {
-        if let Some(config) = &deployment.config {
-            routers.push(wire::RouterOutput {
-                model_name: deployment.model_name.clone(),
-                available_models: config.available_models.clone(),
-                quality: format!("{:.6}", config.weights.quality),
-                cost: format!("{:.6}", config.weights.economy),
-            });
-        }
-    }
-    Ok(Fields {
-        types: None,
-        tiers: None,
-        routers: Some(routers),
-        preferences: None,
-        invalid: None,
-    })
+#[derive(Clone, Copy)]
+enum Kind {
+    Routers,
+    Preferences,
 }
 
-fn preference_fields(payload: &Payload) -> Result<Fields, OperationError> {
-    let Some(resolved) = resolve_settings(payload)? else {
-        return Ok(Fields {
-            types: None,
-            tiers: None,
-            routers: None,
-            preferences: None,
-            invalid: Some(true),
-        });
-    };
-    let mut preferences = Vec::new();
-    for deployment in resolved.iter().flatten() {
-        if let Some(configured) = &deployment.preferences {
-            preferences.push(wire::PreferenceOutput {
-                model_name: deployment.model_name.clone(),
-                quality_tier: i64::from(configured.quality_tier),
-                strengths: configured.strengths.clone(),
-            });
-        }
-    }
-    Ok(Fields {
+fn invalid_fields() -> Fields {
+    Fields {
         types: None,
         tiers: None,
         routers: None,
-        preferences: Some(preferences),
-        invalid: None,
-    })
+        preferences: None,
+        invalid: Some(true),
+    }
+}
+
+fn selected_fields(payload: &Payload, kind: Kind) -> Result<Fields, OperationError> {
+    let Some(resolved) = resolve_settings(payload)? else {
+        return Ok(invalid_fields());
+    };
+    match kind {
+        Kind::Routers => {
+            let mut routers = Vec::new();
+            for deployment in resolved.iter().flatten() {
+                if let Some(config) = &deployment.config {
+                    routers.push(wire::RouterOutput {
+                        model_name: deployment.model_name.clone(),
+                        available_models: config.available_models.clone(),
+                        quality: format!("{:.6}", config.weights.quality),
+                        cost: format!("{:.6}", config.weights.economy),
+                    });
+                }
+            }
+            Ok(Fields {
+                types: None,
+                tiers: None,
+                routers: Some(routers),
+                preferences: None,
+                invalid: None,
+            })
+        }
+        Kind::Preferences => {
+            let mut preferences = Vec::new();
+            for deployment in resolved.iter().flatten() {
+                if let Some(configured) = &deployment.preferences {
+                    preferences.push(wire::PreferenceOutput {
+                        model_name: deployment.model_name.clone(),
+                        quality_tier: i64::from(configured.quality_tier),
+                        strengths: configured.strengths.clone(),
+                    });
+                }
+            }
+            Ok(Fields {
+                types: None,
+                tiers: None,
+                routers: None,
+                preferences: Some(preferences),
+                invalid: None,
+            })
+        }
+    }
 }
 
 fn resolve_settings(
