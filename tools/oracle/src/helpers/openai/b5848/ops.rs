@@ -17,7 +17,7 @@ use thiserror::Error;
 
 use crate::helpers::{HelperError, HelperResult};
 
-use super::input::{Input, ResponseStep, Step, UrlStep, ValidateEnvironmentStep};
+use super::input::{Input, ResponseStep, Step, UrlStep};
 
 #[derive(Debug, Error)]
 enum B5848Error {
