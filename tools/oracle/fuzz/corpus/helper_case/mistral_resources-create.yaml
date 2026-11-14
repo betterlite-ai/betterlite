@@ -1,0 +1,12 @@
+kind: helper
+name: mistral-resources-create-seed
+call:
+  mistral_resources:
+    env: {}
+    files: null
+    creates:
+      - {model: mistral-small-latest, api_base: null, api_key: explicit, data: {input_file_id: file-1, endpoint: /v1/chat/completions}}
+    jobs: []
+    retrieve: []
+env: {}
+compare: {ignore: []}

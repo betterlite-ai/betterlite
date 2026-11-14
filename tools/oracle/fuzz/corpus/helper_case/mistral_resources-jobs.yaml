@@ -1,0 +1,12 @@
+kind: helper
+name: mistral-resources-jobs-seed
+call:
+  mistral_resources:
+    env: {}
+    files: null
+    creates: []
+    jobs:
+      - {id: job-1, endpoint: /v1/chat/completions, status: QUEUED, created_at: 1}
+    retrieve: []
+env: {}
+compare: {ignore: []}

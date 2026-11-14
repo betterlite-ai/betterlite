@@ -480,3 +480,10 @@ path = "fuzz_targets/openai_response_resources.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "mistral_resource"
+path = "fuzz_targets/mistral_resource.rs"
+test = false
+doc = false
+bench = false

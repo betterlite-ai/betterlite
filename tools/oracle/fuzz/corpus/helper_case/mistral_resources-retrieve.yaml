@@ -1,0 +1,12 @@
+kind: helper
+name: mistral-resources-retrieve-seed
+call:
+  mistral_resources:
+    env: {MISTRAL_API_KEY: environment}
+    files: null
+    creates: []
+    jobs: []
+    retrieve:
+      - {batch_id: job-1, api_base: null, api_key: explicit}
+env: {}
+compare: {ignore: []}

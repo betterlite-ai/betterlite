@@ -1,0 +1,19 @@
+kind: helper
+name: unsupported-purpose-400
+call:
+  mistral_resources:
+    env: {}
+    files:
+      api_base: null
+      api_key: Key
+      now: 1704153600
+      uploads:
+        - {filename: null, content_type: null, content: [1], purpose: assistants}
+        - {filename: null, content_type: null, content: [2], purpose: messages}
+      list_purposes: [assistants, vision, evals]
+      bodies: []
+    creates: []
+    jobs: []
+    retrieve: []
+env: {}
+compare: {ignore: []}

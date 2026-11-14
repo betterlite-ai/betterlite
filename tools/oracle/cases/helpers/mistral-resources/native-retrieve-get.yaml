@@ -1,0 +1,15 @@
+kind: helper
+name: native-retrieve-get
+call:
+  mistral_resources:
+    env: {MISTRAL_API_KEY: EnvKey}
+    files: null
+    creates: []
+    jobs: []
+    retrieve:
+      - {batch_id: job-1, api_base: null, api_key: Key}
+      - {batch_id: "a b/c", api_base: "https://proxy.example/v1/", api_key: null}
+      - {batch_id: "..", api_base: null, api_key: Key}
+      - {batch_id: job-4, api_base: null, api_key: null}
+env: {}
+compare: {ignore: []}

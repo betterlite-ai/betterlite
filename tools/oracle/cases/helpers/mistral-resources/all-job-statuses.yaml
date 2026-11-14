@@ -1,0 +1,18 @@
+kind: helper
+name: all-job-statuses
+call:
+  mistral_resources:
+    env: {}
+    files: null
+    creates: []
+    jobs:
+      - {id: job-queued, input_files: [file-in], endpoint: /v1/chat/completions, status: QUEUED, created_at: 100, total_requests: 3, started_at: 110}
+      - {id: job-running, input_files: [], endpoint: /v1/chat/completions, status: RUNNING, created_at: 100, started_at: 150, total_requests: 9, succeeded_requests: 4, failed_requests: 1}
+      - {id: job-success, endpoint: /v1/chat/completions, status: SUCCESS, created_at: 100, completed_at: 200, output_file: out-1}
+      - {id: job-failed, endpoint: /v1/chat/completions, status: FAILED, created_at: 100, completed_at: 300, failed_requests: 2}
+      - {id: job-timeout, endpoint: /v1/chat/completions, status: TIMEOUT_EXCEEDED, created_at: 100, completed_at: 400}
+      - {id: job-cancelling, endpoint: /v1/chat/completions, status: CANCELLATION_REQUESTED, created_at: 100, completed_at: 500}
+      - {id: job-cancelled, endpoint: /v1/chat/completions, status: CANCELLED, created_at: 100, completed_at: 600}
+    retrieve: []
+env: {}
+compare: {ignore: []}
