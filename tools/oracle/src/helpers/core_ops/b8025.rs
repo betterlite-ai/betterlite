@@ -132,7 +132,7 @@ fn outcome(provider: Provider, call: &Call) -> Outcome {
             message,
             status,
             headers,
-        } => error_class(provider, message, *status, headers),
+        } => Ok(error_class(provider, message, *status, headers)),
     };
     Outcome::settled(settled)
 }
@@ -179,8 +179,8 @@ fn reply(
             let parsed = NimbleSearch::load(environment)
                 .transform_search_response(&response)
                 .map_err(|error| match error {
-                    NimbleSearchError::Provider(error) => Some(error.status_code),
-                    _ => None,
+                    NimbleSearchError::Provider(provider_error) => Some(provider_error.status_code),
+                    NimbleSearchError::Credential(_) | NimbleSearchError::MissingApiKey => None,
                 })?;
             serde_json::to_value(parsed).map_err(|_error| None)
         }
@@ -191,21 +191,16 @@ fn reply(
             let usage = parsed.hidden_params.get(PARALLEL_AI_USAGE_PARAM).cloned();
             let encoded = serde_json::to_value(parsed).map_err(|_error| None)?;
             // LiteLLM always writes the key, so an absent one must read as a different answer, not as null
-            let answer = match usage {
-                Some(present) => serde_json::json!({"reply": encoded, "usage": present}),
-                None => serde_json::json!({"reply": encoded}),
-            };
+            let answer = usage.map_or_else(
+                || serde_json::json!({"reply": encoded}),
+                |present| serde_json::json!({"reply": encoded, "usage": present}),
+            );
             Ok(answer)
         }
     }
 }
 
-fn error_class(
-    provider: Provider,
-    message: &str,
-    status: u16,
-    headers: &Headers,
-) -> Result<Value, Option<u16>> {
+fn error_class(provider: Provider, message: &str, status: u16, headers: &Headers) -> Value {
     let empty: BTreeMap<String, String> = BTreeMap::new();
     let error = match provider {
         Provider::Nimble => NimbleSearch::load(&empty).error_class(message, status, headers),
@@ -213,10 +208,10 @@ fn error_class(
             ParallelAiSearch::load(&empty).error_class(message, status, headers)
         }
     };
-    Ok(serde_json::json!({
+    serde_json::json!({
         "status_code": error.status_code,
         "message": error.message,
-    }))
+    })
 }
 
 fn failure<Error>(error: Error) -> Box<HelperError>
