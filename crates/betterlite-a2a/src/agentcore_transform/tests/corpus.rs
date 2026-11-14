@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use futures_util::{StreamExt as _, stream};
 use rstest::rstest;
 
-use crate::agentcore_transform::sse::parse_sse_events;
+use crate::agentcore_transform::parse_sse_events;
 
 #[rstest]
 #[tokio::test]

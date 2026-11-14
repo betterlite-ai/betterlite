@@ -3,6 +3,8 @@ use std::error::Error;
 
 use betterlite_core::agents::json::AgentJson;
 use betterlite_models::decisions::Json;
+use futures_core::Stream;
+use futures_util::StreamExt as _;
 use indexmap::IndexMap;
 use thiserror::Error;
 
@@ -11,17 +13,17 @@ use crate::completion_bridge::wire::MessageSendParams;
 use crate::utils::session_scoping::{get_session_id_from_a2a_params, scope_session_to_principal};
 use call::{AgentCoreHandler, HandlerCall, SignedRequestCall, StreamedEvents};
 use headers::filter_reserved_headers;
+use reply::{decode_body, replies};
 use runtime::{
     AgentCoreRuntime, HttpRequest, HttpResponse, RpcMethod, SigningRequest, StreamedResponse,
 };
-use sse::{decode_body, replies};
 
 pub mod call;
 pub mod config;
 mod headers;
 pub mod params;
+mod reply;
 pub mod runtime;
-pub mod sse;
 mod tests;
 
 // LiteLLM's _filter_reserved_headers, _request_scoped_runtime_session_id and _validate_runtime_session_id (which raises BadRequestError) are the three helpers below.
@@ -30,6 +32,7 @@ const RUNTIME_SESSION_ID_MAX_LENGTH: usize = 256;
 const SESSION_HEADER: &str = "X-Amzn-Bedrock-AgentCore-Runtime-Session-Id";
 const USER_HEADER: &str = "X-Amzn-Bedrock-AgentCore-Runtime-User-Id";
 const RESERVED_EXACT_HEADERS: [&str; 2] = ["authorization", "host"];
+const JSON_CONTENT_TYPE: &str = "application/json";
 const RESERVED_PREFIX_HEADERS: [&str; 2] = ["x-amzn-bedrock-agentcore-runtime-", "x-amz-"];
 
 #[derive(Debug, Error)]
@@ -165,6 +168,41 @@ where
         .map_err(AgentCoreError::Runtime)
 }
 
+#[must_use]
+pub fn parse_sse_events<L, E>(lines: L) -> impl Stream<Item = Result<AgentJson, AgentCoreError<E>>>
+where
+    L: Stream<Item = Result<String, E>>,
+    E: Error + 'static,
+{
+    async_stream::stream! {
+        let mut pinned = std::pin::pin!(lines);
+        while let Some(next) = pinned.next().await {
+            let raw = match next {
+                Ok(raw) => raw,
+                Err(source) => {
+                    yield Err(AgentCoreError::Runtime(source));
+                    return;
+                }
+            };
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let Some(rest) = trimmed.strip_prefix("data:") else {
+                continue;
+            };
+            let payload = rest.trim();
+            if payload.is_empty() {
+                continue;
+            }
+            match serde_json::from_str::<AgentJson>(payload) {
+                Ok(event) => yield Ok(event),
+                Err(_) => tracing::debug!("BedrockAgentCore A2A: skipping a non-JSON SSE line"),
+            }
+        }
+    }
+}
+
 fn check_status<E>(status: u16) -> Result<(), AgentCoreError<E>>
 where
     E: Error + 'static,
@@ -176,7 +214,7 @@ where
 }
 
 impl SignedRequest {
-    const fn request(&self) -> HttpRequest<'_> {
+    fn request(&self) -> HttpRequest<'_> {
         HttpRequest {
             url: &self.url,
             headers: &self.headers,

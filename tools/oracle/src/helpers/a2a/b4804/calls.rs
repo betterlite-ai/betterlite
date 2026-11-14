@@ -4,9 +4,8 @@ use betterlite_a2a::agentcore_transform::call::{HandlerCall, SignedRequestCall};
 use betterlite_a2a::agentcore_transform::config::{BedrockAgentCoreConfig, ConfigCall};
 use betterlite_a2a::agentcore_transform::params::LitellmParams;
 use betterlite_a2a::agentcore_transform::runtime::RpcMethod;
-use betterlite_a2a::agentcore_transform::sse::parse_sse_events;
 use betterlite_a2a::agentcore_transform::{
-    AgentCoreError, SignedRequest, TransformError, get_url_and_signed_request,
+    AgentCoreError, SignedRequest, TransformError, get_url_and_signed_request, parse_sse_events,
 };
 use betterlite_a2a::completion_bridge::wire::MessageSendParams;
 use betterlite_core::agents::json::AgentJson;

@@ -11,13 +11,12 @@ use crate::agentcore_transform::call::{AgentCoreHandler, HandlerCall, SignedRequ
 use crate::agentcore_transform::config::{BedrockAgentCoreConfig, ConfigCall};
 use crate::agentcore_transform::params::LitellmParams;
 use crate::agentcore_transform::runtime::{MAX_RESPONSE_BYTES, RpcMethod, collect_body};
-use crate::agentcore_transform::sse::parse_sse_events;
 use crate::agentcore_transform::tests::support::{
     CONTEXT_ID, FixtureError, FixtureRuntime, GENERATED, SESSION_PREFIX, Source, URL,
     bearer_params, fixture, litellm_params, params,
 };
 use crate::agentcore_transform::{
-    AgentCoreError, SignedRequest, TransformError, get_url_and_signed_request,
+    AgentCoreError, SignedRequest, TransformError, get_url_and_signed_request, parse_sse_events,
 };
 use crate::completion_bridge::wire::MessageSendParams;
 
