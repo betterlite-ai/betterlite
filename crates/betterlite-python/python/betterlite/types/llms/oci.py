@@ -54,8 +54,8 @@ class OCIToolDefinition(_OCIModel):
 class OCIMessage(_OCIModel):
     role: OCIRoles
     content: list[OCIContentPartUnion] | None = None
-    tool_calls: list[OCIToolCall] | None = Field(None, alias="toolCalls")
-    tool_call_id: str | None = Field(None, alias="toolCallId")
+    tool_calls: list[OCIToolCall] | None = Field(default=None, alias="toolCalls")
+    tool_call_id: str | None = Field(default=None, alias="toolCallId")
 
 
 class OCIChatRequestPayload(_OCIModel):
@@ -63,26 +63,26 @@ class OCIChatRequestPayload(_OCIModel):
     messages: list[OCIMessage]
     tools: list[OCIToolDefinition] | None = None
     is_stream: bool = Field(default=False, alias="isStream")
-    num_generations: int | None = Field(None, alias="numGenerations")
-    max_tokens: int | None = Field(None, alias="maxTokens")
-    max_completion_tokens: int | None = Field(None, alias="maxCompletionTokens")
+    num_generations: int | None = Field(default=None, alias="numGenerations")
+    max_tokens: int | None = Field(default=None, alias="maxTokens")
+    max_completion_tokens: int | None = Field(default=None, alias="maxCompletionTokens")
     temperature: float | None = None
-    top_p: float | None = Field(None, alias="topP")
+    top_p: float | None = Field(default=None, alias="topP")
     stop: list[str] | None = None
     seed: int | None = None
-    frequency_penalty: float | None = Field(None, alias="frequencyPenalty")
-    presence_penalty: float | None = Field(None, alias="presencePenalty")
-    reasoning_effort: str | None = Field(None, alias="reasoningEffort")
-    response_format: dict[str, JsonValue] | None = Field(None, alias="responseFormat")
-    tool_choice: str | dict[str, JsonValue] | None = Field(None, alias="toolChoice")
-    logit_bias: dict[str, JsonValue] | None = Field(None, alias="logitBias")
-    log_probs: int | None = Field(None, alias="logProbs")
+    frequency_penalty: float | None = Field(default=None, alias="frequencyPenalty")
+    presence_penalty: float | None = Field(default=None, alias="presencePenalty")
+    reasoning_effort: str | None = Field(default=None, alias="reasoningEffort")
+    response_format: dict[str, JsonValue] | None = Field(default=None, alias="responseFormat")
+    tool_choice: str | dict[str, JsonValue] | None = Field(default=None, alias="toolChoice")
+    logit_bias: dict[str, JsonValue] | None = Field(default=None, alias="logitBias")
+    log_probs: int | None = Field(default=None, alias="logProbs")
 
 
 class OCIServingMode(_OCIModel):
     serving_type: str = Field(alias="servingType")
-    endpoint_id: str | None = Field(None, alias="endpointId")
-    model_id: str | None = Field(None, alias="modelId")
+    endpoint_id: str | None = Field(default=None, alias="endpointId")
+    model_id: str | None = Field(default=None, alias="modelId")
 
 
 class CohereToolCall(_OCIModel):
@@ -111,55 +111,57 @@ class CohereToolResult(_OCIModel):
 class CohereMessage(_OCIModel):
     role: str
     message: str | None = None
-    tool_calls: list[CohereToolCall] | None = Field(None, alias="toolCalls")
+    tool_calls: list[CohereToolCall] | None = Field(default=None, alias="toolCalls")
 
 
 class CohereUserMessage(CohereMessage):
-    role: str = Field("USER", pattern="^USER$", json_schema_extra={"const": "USER"})
+    role: str = Field(default="USER", pattern="^USER$", json_schema_extra={"const": "USER"})
 
 
 class CohereChatBotMessage(CohereMessage):
-    role: str = Field("CHATBOT", pattern="^CHATBOT$", json_schema_extra={"const": "CHATBOT"})
+    role: str = Field(
+        default="CHATBOT", pattern="^CHATBOT$", json_schema_extra={"const": "CHATBOT"})
 
 
 class CohereSystemMessage(CohereMessage):
-    role: str = Field("SYSTEM", pattern="^SYSTEM$", json_schema_extra={"const": "SYSTEM"})
+    role: str = Field(default="SYSTEM", pattern="^SYSTEM$", json_schema_extra={"const": "SYSTEM"})
 
 
 class CohereToolMessage(CohereMessage):
-    role: str = Field("TOOL", pattern="^TOOL$", json_schema_extra={"const": "TOOL"})
+    role: str = Field(default="TOOL", pattern="^TOOL$", json_schema_extra={"const": "TOOL"})
     tool_results: list[CohereToolResult] = Field(alias="toolResults")
 
 
 class CohereChatRequest(_OCIModel):
     message: str
     api_format: Literal["COHERE"] = Field(default="COHERE", alias="apiFormat")
-    chat_history: list[SerializeAsAny[CohereMessage]] | None = Field(None, alias="chatHistory")
-    max_tokens: int | None = Field(None, alias="maxTokens")
+    chat_history: list[SerializeAsAny[CohereMessage]] | None = Field(
+        default=None, alias="chatHistory")
+    max_tokens: int | None = Field(default=None, alias="maxTokens")
     temperature: float | None = None
-    top_p: float | None = Field(None, alias="topP")
-    top_k: int | None = Field(None, alias="topK")
-    frequency_penalty: float | None = Field(None, alias="frequencyPenalty")
-    presence_penalty: float | None = Field(None, alias="presencePenalty")
-    stop_sequences: list[str] | None = Field(None, alias="stopSequences")
+    top_p: float | None = Field(default=None, alias="topP")
+    top_k: int | None = Field(default=None, alias="topK")
+    frequency_penalty: float | None = Field(default=None, alias="frequencyPenalty")
+    presence_penalty: float | None = Field(default=None, alias="presencePenalty")
+    stop_sequences: list[str] | None = Field(default=None, alias="stopSequences")
     seed: int | None = None
     tools: list[CohereTool] | None = None
-    response_format: dict[str, JsonValue] | None = Field(None, alias="responseFormat")
-    preamble_override: str | None = Field(None, alias="preambleOverride")
+    response_format: dict[str, JsonValue] | None = Field(default=None, alias="responseFormat")
+    preamble_override: str | None = Field(default=None, alias="preambleOverride")
     documents: list[dict[str, JsonValue]] | None = None
-    search_queries_only: bool | None = Field(None, alias="searchQueriesOnly")
-    search_entry_point: str | None = Field(None, alias="searchEntryPoint")
+    search_queries_only: bool | None = Field(default=None, alias="searchQueriesOnly")
+    search_entry_point: str | None = Field(default=None, alias="searchEntryPoint")
     grounding: dict[str, JsonValue] | None = None
-    is_echo: bool | None = Field(None, alias="isEcho")
-    is_search_queries_only: bool | None = Field(None, alias="isSearchQueriesOnly")
-    is_raw_prompting: bool | None = Field(None, alias="isRawPrompting")
-    is_force_single_step: bool | None = Field(None, alias="isForceSingleStep")
-    prompt_truncation: str | None = Field(None, alias="promptTruncation")
-    safety_mode: str | None = Field(None, alias="safetyMode")
-    citation_quality: str | None = Field(None, alias="citationQuality")
-    max_input_tokens: int | None = Field(None, alias="maxInputTokens")
-    is_stream: bool | None = Field(None, alias="isStream")
-    stream_options: dict[str, JsonValue] | None = Field(None, alias="streamOptions")
+    is_echo: bool | None = Field(default=None, alias="isEcho")
+    is_search_queries_only: bool | None = Field(default=None, alias="isSearchQueriesOnly")
+    is_raw_prompting: bool | None = Field(default=None, alias="isRawPrompting")
+    is_force_single_step: bool | None = Field(default=None, alias="isForceSingleStep")
+    prompt_truncation: str | None = Field(default=None, alias="promptTruncation")
+    safety_mode: str | None = Field(default=None, alias="safetyMode")
+    citation_quality: str | None = Field(default=None, alias="citationQuality")
+    max_input_tokens: int | None = Field(default=None, alias="maxInputTokens")
+    is_stream: bool | None = Field(default=None, alias="isStream")
+    stream_options: dict[str, JsonValue] | None = Field(default=None, alias="streamOptions")
 
 
 class OCICompletionPayload(_OCIModel):
@@ -169,27 +171,28 @@ class OCICompletionPayload(_OCIModel):
 
 
 class OCICompletionTokenDetails(_OCIModel):
-    accepted_prediction_tokens: int | None = Field(None, alias="acceptedPredictionTokens")
-    reasoning_tokens: int | None = Field(None, alias="reasoningTokens")
+    accepted_prediction_tokens: int | None = Field(default=None, alias="acceptedPredictionTokens")
+    reasoning_tokens: int | None = Field(default=None, alias="reasoningTokens")
 
 
 class OCIPromptTokensDetails(_OCIModel):
-    cached_tokens: int | None = Field(None, alias="cachedTokens")
+    cached_tokens: int | None = Field(default=None, alias="cachedTokens")
 
 
 class OCIResponseUsage(_OCIModel):
     prompt_tokens: int = Field(alias="promptTokens")
-    completion_tokens: int | None = Field(None, alias="completionTokens")
+    completion_tokens: int | None = Field(default=None, alias="completionTokens")
     total_tokens: int = Field(alias="totalTokens")
     completion_tokens_details: OCICompletionTokenDetails | None = Field(
-        None, alias="completionTokensDetails")
-    prompt_tokens_details: OCIPromptTokensDetails | None = Field(None, alias="promptTokensDetails")
+        default=None, alias="completionTokensDetails")
+    prompt_tokens_details: OCIPromptTokensDetails | None = Field(
+        default=None, alias="promptTokensDetails")
 
 
 class OCIResponseChoice(_OCIModel):
     index: int
     message: OCIMessage | None = None
-    finish_reason: str | None = Field(None, alias="finishReason")
+    finish_reason: str | None = Field(default=None, alias="finishReason")
     logprobs: dict[str, JsonValue] | None = None
 
 
@@ -209,11 +212,11 @@ class OCICompletionResponse(_OCIModel):
 class OCIStreamDelta(_OCIModel):
     content: list[OCIContentPartUnion] | None = None
     role: str | None = None
-    tool_calls: list[OCIToolCall] | None = Field(None, alias="toolCalls")
+    tool_calls: list[OCIToolCall] | None = Field(default=None, alias="toolCalls")
 
 
 class OCIStreamChunk(_OCIModel):
-    finish_reason: str | None = Field(None, alias="finishReason")
+    finish_reason: str | None = Field(default=None, alias="finishReason")
     message: OCIStreamDelta | None = None
     pad: str | None = None
     index: int | None = None
@@ -222,9 +225,9 @@ class OCIStreamChunk(_OCIModel):
 class CohereStreamChunk(_OCIModel):
     api_format: str = Field(alias="apiFormat")
     text: str | None = None
-    chat_history: list[CohereMessage] | None = Field(None, alias="chatHistory")
-    finish_reason: str | None = Field(None, alias="finishReason")
-    tool_calls: list[CohereToolCall] | None = Field(None, alias="toolCalls")
+    chat_history: list[CohereMessage] | None = Field(default=None, alias="chatHistory")
+    finish_reason: str | None = Field(default=None, alias="finishReason")
+    tool_calls: list[CohereToolCall] | None = Field(default=None, alias="toolCalls")
     pad: str | None = None
     index: int | None = None
 
@@ -233,9 +236,10 @@ class CohereUsage(_OCIModel):
     prompt_tokens: int = Field(alias="promptTokens")
     completion_tokens: int = Field(alias="completionTokens")
     total_tokens: int = Field(alias="totalTokens")
-    prompt_tokens_details: dict[str, JsonValue] | None = Field(None, alias="promptTokensDetails")
+    prompt_tokens_details: dict[str, JsonValue] | None = Field(
+        default=None, alias="promptTokensDetails")
     completion_tokens_details: dict[str, JsonValue] | None = Field(
-        None, alias="completionTokensDetails")
+        default=None, alias="completionTokensDetails")
 
 
 class CohereCitation(_OCIModel):
@@ -253,15 +257,15 @@ class CohereSearchQuery(_OCIModel):
 class CohereChatResponse(_OCIModel):
     text: str
     api_format: Literal["COHERE"] = Field(default="COHERE", alias="apiFormat")
-    finish_reason: str | None = Field(None, alias="finishReason")
-    chat_history: list[CohereMessage] | None = Field(None, alias="chatHistory")
+    finish_reason: str | None = Field(default=None, alias="finishReason")
+    chat_history: list[CohereMessage] | None = Field(default=None, alias="chatHistory")
     citations: list[CohereCitation] | None = None
     documents: list[dict[str, JsonValue]] | None = None
-    error_message: str | None = Field(None, alias="errorMessage")
-    is_search_required: bool | None = Field(None, alias="isSearchRequired")
+    error_message: str | None = Field(default=None, alias="errorMessage")
+    is_search_required: bool | None = Field(default=None, alias="isSearchRequired")
     prompt: str | None = None
-    search_queries: list[CohereSearchQuery] | None = Field(None, alias="searchQueries")
-    tool_calls: list[CohereToolCall] | None = Field(None, alias="toolCalls")
+    search_queries: list[CohereSearchQuery] | None = Field(default=None, alias="searchQueries")
+    tool_calls: list[CohereToolCall] | None = Field(default=None, alias="toolCalls")
     usage: CohereUsage | None = None
 
 
@@ -281,9 +285,9 @@ class OCIEmbedRequest(_OCIModel):
     compartment_id: str = Field(alias="compartmentId")
     serving_mode: OCIServingMode = Field(alias="servingMode")
     inputs: list[str]
-    input_type: str | None = Field(None, alias="inputType")
+    input_type: str | None = Field(default=None, alias="inputType")
     truncate: str | None = "END"
-    output_dimensions: int | None = Field(None, alias="outputDimensions")
+    output_dimensions: int | None = Field(default=None, alias="outputDimensions")
 
 
 class OCIEmbedUsage(_OCIModel):
@@ -296,5 +300,5 @@ class OCIEmbedResponse(_OCIModel):
     embeddings: list[list[float]]
     model_id: str = Field(alias="modelId")
     model_version: str = Field(alias="modelVersion")
-    input_text_token_counts: list[int] | None = Field(None, alias="inputTextTokenCounts")
+    input_text_token_counts: list[int] | None = Field(default=None, alias="inputTextTokenCounts")
     usage: OCIEmbedUsage | None = None
