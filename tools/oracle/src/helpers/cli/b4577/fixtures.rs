@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, PoisonError};
 
 use betterlite_cli::cli_context::CliContext;
@@ -21,7 +22,7 @@ use super::fakes::{
 
 pub(crate) const BASE_URL: &str = "http://gateway.test:4000";
 
-fn ignore_message(_message: &str) {}
+const fn ignore_message(_message: &str) {}
 
 pub(crate) struct World {
     pub(crate) context: CliContext,
@@ -36,7 +37,6 @@ pub(crate) struct World {
     pub(crate) selection: SelectionTerminal,
     pub(crate) interrupt: NeverInterrupted,
     pub(crate) token_path: PathBuf,
-    pub(crate) binary_path: PathBuf,
     pub(crate) home: TempDir,
     pub(crate) probe: RecordingProbe,
     pub(crate) terminal: FakeTerminal,
@@ -47,26 +47,8 @@ pub(crate) struct World {
 impl World {
     pub(crate) fn new(input: &Input) -> Result<Self, Box<HelperError>> {
         let home = tempfile::tempdir().map_err(|source| helper_failure(&source))?;
-        let root = home.path().to_path_buf();
         let state = Arc::new(State::default());
-        if let Some(record) = &input.stored {
-            let bytes = serde_json::to_vec(record).map_err(|source| helper_failure(&source))?;
-            *state.record.lock().unwrap_or_else(PoisonError::into_inner) = Some(record.clone());
-            write_seed(&root.join(".litellm").join("token.json"), &bytes)?;
-        }
-        if let Some(settings) = &input.settings {
-            write_seed(
-                &root.join(".claude").join("settings.json"),
-                settings.as_bytes(),
-            )?;
-        }
-        if let Some(backup) = &input.backup {
-            write_seed(
-                &root.join(".litellm").join("claude_settings_backup.json"),
-                backup.as_bytes(),
-            )?;
-        }
-        let token_path = root.join(".litellm").join("token.json");
+        seed_files(input, home.path(), &state)?;
         Ok(Self {
             context: CliContext {
                 base_url: BASE_URL.to_owned(),
@@ -77,11 +59,10 @@ impl World {
                     .map(|key| SecretString::from(key.clone())),
                 api_key_from_token_file: input.api_key_from_token_file,
             },
-            environment: FakeEnvironment { home: root.clone() },
-            files: ScriptedFiles {
-                state: Arc::clone(&state),
-                path: token_path.clone(),
+            environment: FakeEnvironment {
+                home: home.path().to_path_buf(),
             },
+            files: ScriptedFiles(Arc::clone(&state)),
             vault: DisabledVault,
             private_files: PrivateFiles::default(),
             http: Arc::new(UnusedHttp),
@@ -90,8 +71,7 @@ impl World {
             sleeper: NoSleeper,
             selection: SelectionTerminal::default(),
             interrupt: NeverInterrupted,
-            token_path,
-            binary_path: PathBuf::from("/opt/betterlite"),
+            token_path: home.path().join(".litellm").join("token.json"),
             home,
             probe: RecordingProbe {
                 status: input.verify_status.unwrap_or(200),
@@ -146,7 +126,7 @@ impl World {
             browser: &ignore_message,
             interrupt: &self.interrupt,
             token_path: &self.token_path,
-            binary_path: Some(&self.binary_path),
+            binary_path: Some(Path::new("/opt/betterlite")),
             home: Some(self.home.path()),
             expiration_hours: 24,
             warn: &ignore_message,
@@ -159,13 +139,13 @@ impl World {
         }
     }
 
-    pub(crate) fn answer(&self, stdout: &[u8], error: Option<Value>) -> Value {
+    pub(crate) fn answer(&self, stdout: &[u8], error: Option<&Value>) -> Value {
         let root = self.home.path().display().to_string();
         let text = String::from_utf8_lossy(stdout).replace(&root, "<tmp>");
         json!({
             "stdout": text,
             "error": error,
-            "login_calls": *self.state.logins.lock().unwrap_or_else(PoisonError::into_inner),
+            "login_calls": self.state.logins.load(Ordering::SeqCst),
             "probe": self.state.probe.lock().unwrap_or_else(PoisonError::into_inner).clone(),
             "stopped_by": self.stop_kind,
             "settings": json_file(&self.home.path().join(".claude").join("settings.json")),
@@ -174,6 +154,27 @@ impl World {
             "snapshot": self.state.snapshot.lock().unwrap_or_else(PoisonError::into_inner).clone(),
         })
     }
+}
+
+fn seed_files(input: &Input, root: &Path, state: &State) -> Result<(), Box<HelperError>> {
+    if let Some(record) = &input.stored {
+        let bytes = serde_json::to_vec(record).map_err(|source| helper_failure(&source))?;
+        *state.record.lock().unwrap_or_else(PoisonError::into_inner) = Some(record.clone());
+        write_seed(&root.join(".litellm").join("token.json"), &bytes)?;
+    }
+    if let Some(settings) = &input.settings {
+        write_seed(
+            &root.join(".claude").join("settings.json"),
+            settings.as_bytes(),
+        )?;
+    }
+    if let Some(backup) = &input.backup {
+        write_seed(
+            &root.join(".litellm").join("claude_settings_backup.json"),
+            backup.as_bytes(),
+        )?;
+    }
+    Ok(())
 }
 
 fn write_seed(path: &Path, bytes: &[u8]) -> Result<(), Box<HelperError>> {

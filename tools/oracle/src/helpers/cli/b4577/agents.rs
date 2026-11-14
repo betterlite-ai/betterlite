@@ -61,16 +61,12 @@ pub(crate) struct ScriptedLogin {
 
 impl<H, E, W> LoginLauncher<H, E, W> for ScriptedLogin {
     fn start(&mut self, _attempt: LoginAttempt<'_, H, E, W>) -> Result<(), LoginError> {
-        *self
-            .state
+        self.state
             .record
             .lock()
-            .unwrap_or_else(PoisonError::into_inner) = self.token.clone();
-        *self
-            .state
-            .logins
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) += 1;
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone_from(&self.token);
+        self.state.logins.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 }

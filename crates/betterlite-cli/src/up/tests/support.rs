@@ -249,11 +249,11 @@ where
         if self.real {
             return FlowLogin.start(attempt);
         }
-        *self
-            .state
+        self.state
             .record
             .lock()
-            .unwrap_or_else(PoisonError::into_inner) = self.token.clone();
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone_from(&self.token);
         self.state.logins.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
@@ -317,7 +317,7 @@ impl StopSource for ScriptedStop {
     }
 }
 
-fn ignore_message(_message: &str) {}
+const fn ignore_message(_message: &str) {}
 
 pub(crate) fn json_file(path: &Path) -> Option<SettingsDocument> {
     let text = fs::read_to_string(path).ok()?;
@@ -529,21 +529,7 @@ pub(crate) fn record(key: &str, timestamp: f64, expires_at: Option<f64>) -> CliT
 }
 
 pub(crate) fn pkce_record(key: &str, expires_at: f64) -> CliTokenRecord {
-    CliTokenRecord {
-        base_url: SERVER.to_owned(),
-        key: Some(SecretString::from(key.to_owned())),
-        user_id: String::new(),
-        user_email: String::new(),
-        user_role: String::new(),
-        auth_header_name: "Authorization".to_owned(),
-        jwt_token: SecretString::default(),
-        timestamp: 1_000.0,
-        expires_at: Some(expires_at),
-        refresh_token: Some(SecretString::from("rt-old".to_owned())),
-        client_id: None,
-        token_endpoint: None,
-        revocation_endpoint: None,
-        resource: None,
-        team_id: None,
-    }
+    let mut token = record(key, 1_000.0, Some(expires_at));
+    token.refresh_token = Some(SecretString::from("rt-old".to_owned()));
+    token
 }

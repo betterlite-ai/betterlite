@@ -1,7 +1,7 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_cli::credential_lifecycle::files::CredentialFiles;
@@ -35,21 +35,18 @@ pub(crate) struct Snapshot {
 #[derive(Default)]
 pub(crate) struct State {
     pub(crate) record: Mutex<Option<CliTokenRecord>>,
-    pub(crate) logins: Mutex<usize>,
+    pub(crate) logins: AtomicUsize,
     pub(crate) probe: Mutex<Option<Probe>>,
     pub(crate) snapshot: Mutex<Option<Snapshot>>,
     pub(crate) stopped: AtomicBool,
 }
 
-pub(crate) struct ScriptedFiles {
-    pub(crate) state: Arc<State>,
-    pub(crate) path: PathBuf,
-}
+pub(crate) struct ScriptedFiles(pub(crate) Arc<State>);
 
 #[async_trait::async_trait]
 impl CredentialFiles for ScriptedFiles {
     fn read(&self) -> Option<CliTokenRecord> {
-        self.state
+        self.0
             .record
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -58,7 +55,7 @@ impl CredentialFiles for ScriptedFiles {
 
     async fn stage(&self, _record: &CliTokenRecord) -> Result<StagedFile, TokenRecordError> {
         Ok(StagedFile {
-            path: self.path.clone(),
+            path: PathBuf::from("token.json"),
         })
     }
 

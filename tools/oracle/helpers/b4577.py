@@ -114,18 +114,17 @@ def failure(exception: BaseException, name: str, root: str) -> dict[str, JsonVal
 
 
 class ScriptedGet:
-    def __init__(self, status: int) -> None:
-        self.status = status
-        self.probe: dict[str, JsonValue] | None = None
+    def __init__(self, script: "Script") -> None:
+        self.script = script
 
     def __call__(self, url: str, headers: Mapping[str, str], timeout: float) -> requests.Response:
-        self.probe = {
+        self.script.probe = {
             "url": url,
             "timeout": timeout,
             "authorization": headers.get("Authorization"),
         }
         response = requests.Response()
-        response.status_code = self.status
+        response.status_code = self.script.verify_status
         return response
 
 
@@ -154,9 +153,7 @@ class Script:
 
     def verify(self, base_url: str, api_key: str, *, get: JsonValue | None = None) -> None:
         del get
-        scripted = ScriptedGet(self.verify_status)
-        verify_proxy_key(base_url, api_key, get=scripted)
-        self.probe = scripted.probe
+        verify_proxy_key(base_url, api_key, get=ScriptedGet(self))
 
     def signal(self, signalnum: int, handler: Handler) -> Handler:
         self.handler = handler

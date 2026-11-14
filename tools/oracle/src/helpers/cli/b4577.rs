@@ -55,7 +55,7 @@ pub(crate) enum StopKind {
     Atexit,
 }
 
-fn finish<M>(world: &World, stdout: &[u8], outcome: Result<(), M>, click: bool) -> HelperResult
+fn finish<M>(world: &World, stdout: &[u8], outcome: Result<(), M>, click: bool) -> serde_json::Value
 where
     M: std::fmt::Display,
 {
@@ -64,7 +64,7 @@ where
         let root = world.home.path().display().to_string();
         json!({"class": class, "message": failure.to_string().replace(&root, "<tmp>")})
     });
-    Ok(world.answer(stdout, error))
+    world.answer(stdout, error.as_ref())
 }
 
 fn drive(input: &Input) -> HelperResult {
@@ -82,7 +82,7 @@ fn drive(input: &Input) -> HelperResult {
             run_up(&mut ports)
         }
     };
-    finish(&world, &stdout, outcome, !fresh)
+    Ok(finish(&world, &stdout, outcome, !fresh))
 }
 
 fn report(input: &Input) -> HelperResult {
@@ -99,7 +99,7 @@ fn report(input: &Input) -> HelperResult {
             .join("claude_settings_backup.json");
         read_backup_file(&backup).map(|_record| ())
     };
-    finish(&world, &stdout, outcome, down)
+    Ok(finish(&world, &stdout, outcome, down))
 }
 
 impl Helper for Op {
