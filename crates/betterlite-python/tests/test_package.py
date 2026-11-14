@@ -5,7 +5,7 @@ import re
 import tomllib
 from importlib import metadata
 from pathlib import Path
-from typing import TypeAlias, TypedDict
+from typing import TypedDict
 
 import litellm
 import pytest
@@ -16,11 +16,11 @@ from pydantic import TypeAdapter
 import betterlite
 from betterlite import _native
 from betterlite._version import installed_version
+from betterlite.types.utils import JsonValue as Json
 
 CRATE = Path(__file__).resolve().parents[1]
 ROOT = CRATE.parents[1]
 PACKAGE = Path(inspect.getfile(betterlite)).parent
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 MIN_COST_ENTRIES = 1000
 MIN_SET_COUNT = 60
@@ -146,7 +146,7 @@ def test_requires_match_lock() -> None:
     }
     expected = {
         canonicalize_name(name): f"=={locked[canonicalize_name(name)]}"
-        for name in ("python-dotenv", "typing-extensions")
+        for name in ("pydantic", "python-dotenv", "typing-extensions")
     }
     assert declared == expected
 
