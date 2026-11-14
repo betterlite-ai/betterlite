@@ -35,6 +35,7 @@ async fn normal_terminal_and_incomplete() {
     an_error_body_suppresses_the_incomplete_event().await;
     eof_emits_the_incomplete_event_without_billing_it().await;
     the_first_chunk_stamps_the_completion_time_once().await;
+    a_chunk_that_cannot_be_encoded_is_logged_and_not_billed().await;
 }
 
 async fn forwards_raw_bytes_and_encodes_dicts() {
@@ -158,4 +159,21 @@ async fn the_first_chunk_stamps_the_completion_time_once() {
     harness.worker.flush().await;
     // the teardown and pump copies read the clock first, so the first chunk stamps at(2)
     assert_eq!(harness.completion_start_time(), Some(at(2)));
+}
+
+// B2436 refuses the chunk rather than stringifying its type, so no frame exists to forward
+async fn a_chunk_that_cannot_be_encoded_is_logged_and_not_billed() {
+    let (harness, mut relay) = Harness::start(limits(), Arc::new(StreamRegistry::default()));
+    harness
+        .script
+        .release(mapping(vec![("type", Json::Bool(true))]))
+        .await;
+    assert_eq!(read(&mut relay).await, Frame::End);
+    harness.worker.flush().await;
+    assert_eq!(harness.billed(), 0);
+    let failures = harness.failures();
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].failure.kind, "ChunkError");
+    assert_eq!(failures[0].raw_bytes.len(), 0);
+    settle(relay).await;
 }
