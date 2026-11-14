@@ -1,0 +1,72 @@
+kind: helper
+name: snowflake-claude-messages
+call:
+  b5844:
+    steps:
+      - kind: request
+        model: claude-3-5-sonnet
+        messages:
+          - {role: system, content: rules}
+          - {role: system, content: ''}
+          - {role: system, content: [{type: text, text: more, cache_control: {type: ephemeral}}, {type: text, text: plain}]}
+          - {role: user, content: hello}
+          - {role: assistant, content: hi there}
+          - {role: user, content: [{type: text, text: again}]}
+        options: {}
+      - kind: request
+        model: claude-3-5-sonnet
+        messages:
+          - {role: user, content: weather?}
+          - role: assistant
+            content: calling
+            tool_calls:
+              - {id: call_1, type: function, function: {name: get_weather, arguments: '{"city": "Paris"}'}}
+              - {id: call_2, type: function, function: {name: get_weather, arguments: 'not json'}}
+              - {id: call_3, type: function, function: {name: get_time, arguments: ''}}
+          - {role: tool, tool_call_id: call_1, content: sunny}
+          - {role: tool, tool_call_id: call_2, content: rainy}
+          - {role: user, content: thanks}
+        options: {}
+      - kind: request
+        model: claude-3-5-sonnet
+        messages:
+          - {role: user, content: weather?}
+          - role: assistant
+            content: null
+            tool_calls:
+              - {id: call_9, type: function, function: {name: lookup, arguments: '{}'}}
+          - {role: tool, tool_call_id: call_9, content: done, cache_control: {type: ephemeral}}
+        options: {}
+      - kind: request
+        model: claude-3-5-sonnet
+        messages:
+          - {role: user, content: think}
+          - role: assistant
+            content: answer
+            thinking_blocks:
+              - {type: thinking, thinking: hm, signature: sig1}
+              - {type: thinking, thinking: unsigned}
+              - {type: redacted_thinking, data: opaque}
+          - {role: user, content: more}
+        options: {}
+      - kind: request
+        model: claude-3-5-sonnet
+        messages:
+          - {role: user, content: think}
+          - role: assistant
+            content: ''
+            thinking_blocks:
+              - {type: thinking, thinking: hm, signature: sig2}
+          - role: assistant
+            content: [{type: text, text: listed}]
+            thinking_blocks:
+              - {type: thinking, thinking: hm, signature: sig3}
+        options: {}
+      - kind: request
+        model: claude-3-5-sonnet
+        messages:
+          - {role: tool, tool_call_id: call_5, content: orphan}
+          - {role: user, content: [{type: text, text: after}]}
+        options: {}
+env: {}
+compare: {ignore: []}
