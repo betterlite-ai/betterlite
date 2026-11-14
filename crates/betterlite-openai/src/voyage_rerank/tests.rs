@@ -118,7 +118,11 @@ fn documents() -> Vec<RerankDocument> {
 fn top_n_becomes_top_k_and_documents_are_kept() {
     let controls = VoyageRerankControls {
         top_n: Some(3),
-        ..VoyageRerankControls::default()
+        return_documents: None,
+        rank_fields: None,
+        max_chunks_per_doc: None,
+        max_tokens_per_doc: None,
+        instruction: None,
     };
     let body = request("m", "q", &documents(), &controls);
     assert_eq!(
@@ -132,8 +136,12 @@ fn top_n_becomes_top_k_and_documents_are_kept() {
 #[case::no(Some(false), json!(false))]
 fn return_documents_is_kept_when_present(#[case] value: Option<bool>, #[case] expected: Value) {
     let controls = VoyageRerankControls {
+        top_n: None,
         return_documents: value,
-        ..VoyageRerankControls::default()
+        rank_fields: None,
+        max_chunks_per_doc: None,
+        max_tokens_per_doc: None,
+        instruction: None,
     };
     let body = request("m", "q", &documents(), &controls);
     assert_eq!(
@@ -153,11 +161,12 @@ fn none_controls_are_omitted() {
 #[test]
 fn other_declared_controls_are_ignored() {
     let controls = VoyageRerankControls {
+        top_n: None,
+        return_documents: None,
         rank_fields: Some(vec!["title".to_owned()]),
         max_chunks_per_doc: Some(4),
         max_tokens_per_doc: Some(8),
         instruction: Some("rank".to_owned()),
-        ..VoyageRerankControls::default()
     };
     let body = request("m", "q", &documents(), &controls);
     let value = serde_json::to_value(&body).expect("body");
@@ -233,7 +242,9 @@ fn nonstring_documents_are_preserved() {
     let body = r#"{"data":[
         {"index":0,"relevance_score":0.25,"document":{"text":"x","extra":1}},
         {"index":1,"relevance_score":0.5,"document":null},
-        {"index":2,"relevance_score":0.75,"document":4}
+        {"index":2,"relevance_score":0.75,"document":4},
+        {"index":3,"relevance_score":1,"document":{"extra":1}},
+        {"index":4,"relevance_score":1,"document":{"text":7}}
     ]}"#;
     let response = decode(body, 200).0.expect("response");
     let encoded = serde_json::to_value(&response).expect("reply");
@@ -243,11 +254,18 @@ fn nonstring_documents_are_preserved() {
     );
     assert_eq!(encoded["results"][1]["document"], Value::Null);
     assert_eq!(encoded["results"][2]["document"], json!(4));
+    assert_eq!(encoded["results"][3]["document"], json!({"extra": 1}));
+    assert_eq!(encoded["results"][4]["document"], json!({"text": 7}));
 }
 
 #[rstest::rstest]
 #[case::missing(r#"{"data":[{"index":0}]}"#, "relevance_score")]
 #[case::wrong_index(r#"{"data":[{"index":"0","relevance_score":1}]}"#, "index")]
+#[case::fractional_index(r#"{"data":[{"index":1.5,"relevance_score":1}]}"#, "index")]
+#[case::wrong_score(
+    r#"{"data":[{"index":0,"relevance_score":"high"}]}"#,
+    "relevance_score"
+)]
 #[case::wrong_data(r#"{"data":{}}"#, "data")]
 #[case::wrong_item(r#"{"data":[7]}"#, "data[]")]
 #[case::wrong_usage(r#"{"data":[],"usage":[]}"#, "usage")]
