@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::batch_provider_create::Settings;
 use betterlite_openai::api::batch_records::CreateBatchRequest;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::api::batch_provider_create::error::BatchProviderCreateError;
 use crate::api::batch_provider_create::{
@@ -131,8 +131,8 @@ fn resolve(
             vertex_credentials: request.vertex_credentials.clone().or_else(|| {
                 settings
                     .vertexai_credentials
-                    .clone()
-                    .map(VertexCredentials::Path)
+                    .as_ref()
+                    .map(|secret| VertexCredentials::Path(secret.expose_secret().to_owned()))
             }),
             ..Resolved::empty()
         },
