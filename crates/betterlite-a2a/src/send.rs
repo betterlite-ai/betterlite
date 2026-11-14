@@ -62,7 +62,12 @@ where
 {
     if let Some(provider) = routing::completion_provider(&call.litellm_params)? {
         tracing::info!(provider = %provider, "A2A streaming using completion bridge");
-        return Ok(bridge::stream_via_completion_bridge(call, bridge));
+        return Ok(bridge::stream_via_completion_bridge(
+            call,
+            bridge.completion,
+            bridge.providers,
+            &mut *bridge.source,
+        ));
     }
     let events = streaming::stream_native(call, logging, deps).await?;
     Ok(events

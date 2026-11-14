@@ -47,7 +47,9 @@ where
 
 pub(super) fn stream_via_completion_bridge<'deps, C, P, S>(
     call: StreamCall,
-    bridge: &'deps mut BridgeDeps<'deps, C, P, S>,
+    completion: &'deps C,
+    providers: &'deps P,
+    source: &'deps mut S,
 ) -> BoxStream<'deps, Result<AgentJson, SendEntryError<C::Error, P::Error>>>
 where
     C: CompletionPort,
@@ -72,9 +74,9 @@ where
         };
         let mut events = dispatch::<Streamed, C, P, S>(
             &bridge_call,
-            bridge.completion,
-            bridge.providers,
-            &mut *bridge.source,
+            completion,
+            providers,
+            source,
         )
         .await;
         while let Some(event) = events.next().await {
