@@ -15,17 +15,17 @@ pub async fn get_all_team_member_emails(
         "Email Alerting: Getting all team members for team_id={}",
         team_id.unwrap_or_default()
     );
-    let Some(team_id) = team_id else {
+    let Some(found_team_id) = team_id else {
         return Ok(Vec::new());
     };
     let Some(store) = database else {
         return Err(BudgetEmailError::NoDatabase);
     };
-    let Some(user_ids) = team_member_ids(store, team_id).await? else {
+    let Some(user_ids) = team_member_ids(store, found_team_id).await? else {
         return Ok(Vec::new());
     };
     tracing::debug!(
-        "Email Alerting: Got {} team members for team_id={team_id}",
+        "Email Alerting: Got {} team members for team_id={found_team_id}",
         user_ids.len()
     );
     emails_for_user_ids(store, &user_ids).await
