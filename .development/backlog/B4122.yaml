@@ -1,7 +1,7 @@
 id: B4122
 milestone: M7 observability
 title: Code interpreter interception hooks and rerun plans
-status: todo
+status: done
 depends_on: [B4120, B4121, B4119, B174]
 file: tasks/B4122-code-interpreter-plans.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/integrations/code_interpreter_interception.py"
 parent: B119
 split_from: B119
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1802

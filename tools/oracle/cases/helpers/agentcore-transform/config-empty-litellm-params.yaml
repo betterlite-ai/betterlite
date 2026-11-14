@@ -1,0 +1,38 @@
+kind: helper
+name: agentcore-transform-config-empty-litellm-params
+call:
+  b4804:
+    {
+      "function": "config",
+      "request_id": "req-1",
+      "params": {
+        "message": {
+          "kind": "message",
+          "role": "user",
+          "parts": [
+            {
+              "kind": "text",
+              "text": "hello"
+            }
+          ],
+          "messageId": "msg-1"
+        }
+      },
+      "litellm_params": {},
+      "answer": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": "req-1"
+        }
+      },
+      "stream_answer": {
+        "status": 200,
+        "content_type": "text/event-stream",
+        "lines": [
+          "data: {\"ok\": true}"
+        ]
+      }
+    }
+env: {}
+compare: {ignore: []}

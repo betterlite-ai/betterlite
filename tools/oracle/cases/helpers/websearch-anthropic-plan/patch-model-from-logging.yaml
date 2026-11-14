@@ -1,0 +1,25 @@
+kind: helper
+name: patch-model-from-logging
+call:
+  b4118:
+    cases:
+      - model: claude-sonnet-4-5
+        messages:
+          - role: user
+            content: hi
+        tool_calls:
+          - id: toolu_1
+            type: tool_use
+            name: web_search
+            input: {query: first}
+        logging:
+          model_call_details:
+            agentic_loop_params:
+              model: claude-unprefixed
+        optional_params: {}
+        kwargs: {}
+        searches:
+          - kind: success
+            text: one
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+router_settings:
+  client_ttl: soon
+  default_max_parallel_requests: [not, a, number]
+model_list:
+  - model_name: gpt
+    litellm_params:
+      model: openai/gpt-4o
+      max_parallel_requests: {nested: true}

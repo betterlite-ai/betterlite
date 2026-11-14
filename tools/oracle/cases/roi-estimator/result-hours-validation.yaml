@@ -1,0 +1,5 @@
+kind: helper
+name: result-hours-validation
+call: {"b3154": {"operation": "validate_result", "raw": "{\"hours\": 0, \"reasoning\": \"zero hours is allowed\"}"}}
+env: {}
+compare: {ignore: []}
