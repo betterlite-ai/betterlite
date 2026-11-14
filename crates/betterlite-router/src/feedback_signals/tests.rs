@@ -371,6 +371,45 @@ enum Behavior {
 #[case::satisfaction_not_matched(Behavior::Feedback(None, Some("run it"), None, true, NONE))]
 #[case::absent_user_content(Behavior::Feedback(Some("hello there"), None, None, true, NONE))]
 #[case::exhaustion_absent_content(Behavior::Exhaustion(None, false, None, NONE))]
+#[case::disengagement_cancel(Behavior::Feedback(
+    None,
+    Some("cancel this run"),
+    None,
+    false,
+    DISENGAGED
+))]
+#[case::disengagement_manual(Behavior::Feedback(
+    None,
+    Some("I'll do it manually"),
+    None,
+    false,
+    DISENGAGED
+))]
+#[case::exhaustion_status_504(Behavior::Response(None, "busy", Some(504), EXHAUSTED))]
+#[case::exhaustion_keyword_token_limit(Behavior::Exhaustion(
+    Some("token limit reached"),
+    false,
+    Some(200),
+    EXHAUSTED
+))]
+#[case::exhaustion_keyword_rate_limit(Behavior::Exhaustion(
+    Some("rate limit exceeded"),
+    false,
+    Some(200),
+    EXHAUSTED
+))]
+#[case::exhaustion_keyword_too_many_requests(Behavior::Exhaustion(
+    Some("Too Many Requests"),
+    false,
+    Some(200),
+    EXHAUSTED
+))]
+#[case::exhaustion_keyword_timeout(Behavior::Exhaustion(
+    Some("timeout calling the provider"),
+    false,
+    Some(200),
+    EXHAUSTED
+))]
 fn feedback_signals_behaviors(#[case] behavior: Behavior) {
     match behavior {
         Behavior::Feedback(previous, current, tool, allow, expected) => {
