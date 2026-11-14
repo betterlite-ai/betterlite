@@ -1,0 +1,40 @@
+kind: helper
+name: cache-point-unknown-model
+call:
+  bedrock_model_capabilities:
+    function: cache_point_unknown_model
+    model_cost:
+      cached: {supports_prompt_caching: true}
+      uncached: {supports_prompt_caching: false}
+      flag_one: {supports_prompt_caching: 1}
+      empty: {}
+      null_entry: null
+      zero_entry: 0
+      malformed: 5
+      openai.gpt-5: {supports_prompt_caching: true}
+      us.openai.gpt-5: {supports_prompt_caching: true}
+      myopenai.gpt-5: {supports_prompt_caching: true}
+      anthropic.claude-regional-v1:0: {supports_prompt_caching: true}
+      us.anthropic.claude-short: {supports_prompt_caching: true}
+      anthropic.claude-short: 5
+      us.anthropic.claude-bad: 5
+      anthropic.claude-bad: {supports_prompt_caching: true}
+    models:
+      - cached
+      - uncached
+      - flag_one
+      - empty
+      - null_entry
+      - zero_entry
+      - malformed
+      - openai.gpt-5
+      - us.openai.gpt-5
+      - myopenai.gpt-5
+      - us.anthropic.claude-regional-v1:0
+      - us.anthropic.claude-short
+      - us.anthropic.claude-bad
+      - missing
+      - null
+      - ''
+env: {}
+compare: {ignore: []}

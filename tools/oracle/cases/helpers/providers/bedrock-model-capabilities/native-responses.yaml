@@ -1,0 +1,40 @@
+kind: helper
+name: native-responses
+call:
+  bedrock_model_capabilities:
+    function: native_responses
+    model_cost:
+      listed: {supported_endpoints: [/v1/chat/completions, /v1/responses]}
+      string: {supported_endpoints: /v1/responses}
+      substring: {supported_endpoints: /prefix/v1/responses/suffix}
+      absent: {}
+      empty: {supported_endpoints: []}
+      null: {supported_endpoints: null}
+      zero: {supported_endpoints: 0}
+      false: {supported_endpoints: false}
+      object: {supported_endpoints: {/v1/responses: 1}}
+      object_miss: {supported_endpoints: {other: 1}}
+      number: {supported_endpoints: 5}
+      flag: {supported_endpoints: true}
+      not_object: 5
+      bedrock/prefixed: {supported_endpoints: [/v1/responses]}
+    models:
+      - listed
+      - string
+      - substring
+      - absent
+      - empty
+      - null
+      - zero
+      - 'false'
+      - object
+      - object_miss
+      - number
+      - flag
+      - not_object
+      - prefixed
+      - missing
+      - null
+      - ''
+env: {}
+compare: {ignore: []}

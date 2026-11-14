@@ -1,0 +1,26 @@
+kind: helper
+name: effort-ceiling
+call:
+  bedrock_model_capabilities:
+    function: effort_ceiling
+    model_cost:
+      anthropic.claude-opus-4-6-v1: {litellm_provider: bedrock, bedrock_output_config_effort_ceiling: high}
+      anthropic.claude-ceiling-low: {litellm_provider: bedrock, bedrock_output_config_effort_ceiling: low}
+      anthropic.claude-opus-4-5-20251101-v1:0: {litellm_provider: bedrock}
+    cases:
+      - {model: anthropic.claude-opus-4-6-v1, output_config: {effort: xhigh, format: x}}
+      - {model: anthropic.claude-opus-4-6-v1, output_config: {effort: low}}
+      - {model: anthropic.claude-opus-4-6-v1, output_config: {effort: high}}
+      - {model: anthropic.claude-ceiling-low, output_config: {effort: xhigh}}
+      - {model: anthropic.claude-opus-4-5-20251101-v1:0, output_config: {effort: xhigh}}
+      - {model: anthropic.claude-opus-4-5-20251101-v1:0, output_config: {effort: high}}
+      - {model: anthropic.claude-opus-4-6-v1, output_config: {effort: null}}
+      - {model: anthropic.claude-opus-4-6-v1, output_config: {effort: ultra}}
+      - {model: anthropic.claude-opus-4-6-v1, output_config: {effort: 5}}
+      - {model: anthropic.claude-opus-4-6-v1, output_config: {}}
+      - {model: anthropic.claude-opus-4-6-v1, output_config: plain}
+      - {model: anthropic.claude-opus-4-6-v1, output_config: {effort: [xhigh]}}
+      - {model: anthropic.claude-made-up-99, output_config: {effort: xhigh}}
+      - {model: mystery-model, output_config: {effort: xhigh}}
+env: {}
+compare: {ignore: []}

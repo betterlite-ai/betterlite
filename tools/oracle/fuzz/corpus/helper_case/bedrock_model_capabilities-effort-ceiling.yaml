@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-model-capabilities-effort-ceiling
+call:
+  bedrock_model_capabilities:
+    function: effort_ceiling
+    model_cost:
+      anthropic.claude-opus-4-6-v1: {litellm_provider: bedrock, bedrock_output_config_effort_ceiling: high}
+    cases:
+      - {model: anthropic.claude-opus-4-6-v1, output_config: {effort: xhigh}}
+      - {model: anthropic.claude-opus-4-6-v1, output_config: {effort: [xhigh]}}
+      - {model: mystery-model, output_config: plain}
+env: {}
+compare: {ignore: []}

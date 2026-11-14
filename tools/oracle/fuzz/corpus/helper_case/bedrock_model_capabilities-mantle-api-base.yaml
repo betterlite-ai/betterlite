@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-model-capabilities-mantle-api-base
+call:
+  bedrock_model_capabilities:
+    function: mantle_api_base
+    region: us-east-1
+    cases:
+      - {environment: {}}
+      - {api_base: 'https://api.example/v1', environment: {BEDROCK_MANTLE_API_BASE: 'https://env.example/openai/v1'}}
+env: {}
+compare: {ignore: []}
