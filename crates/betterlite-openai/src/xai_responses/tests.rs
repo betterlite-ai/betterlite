@@ -481,14 +481,14 @@ fn the_normal_base_order_prefers_the_closest_setting(
 
 #[test]
 fn oauth_selects_its_own_base_only_without_a_key() {
-    let unconfigured = settings(None, None, None, None);
+    let without_key = settings(None, None, None, None);
     assert_eq!(
         get_complete_url(&UrlInput {
             api_base: Some("https://explicit.example/v1"),
             litellm_api_base: None,
             api_key: None,
             use_xai_oauth: true,
-            settings: &unconfigured,
+            settings: &without_key,
             oauth_base: "https://oauth.example/v1/",
         }),
         "https://oauth.example/v1/responses"
@@ -499,7 +499,7 @@ fn oauth_selects_its_own_base_only_without_a_key() {
             litellm_api_base: None,
             api_key: None,
             use_xai_oauth: false,
-            settings: &unconfigured,
+            settings: &without_key,
             oauth_base: "https://oauth.example/v1",
         }),
         "https://explicit.example/v1/responses"
