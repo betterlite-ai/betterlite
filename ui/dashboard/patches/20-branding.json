@@ -26,6 +26,11 @@
       "postimage": null
     },
     {
+      "path": "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_garden_data.test.ts",
+      "preimage": "d14cd0d868670ef8fb9762e85ee8e96307daf31eccdd1bf1e5ecf306288898b7",
+      "postimage": "117d37fbc50b6135d1b96e7b8988f0b051b3ce202fe32a46428323f9b5e58fda"
+    },
+    {
       "path": "ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info_helpers.tsx",
       "preimage": "81a8ab0150ced79e3e2d0d3d9e9fea527057f6434f100ec255c0a549171e5f1f",
       "postimage": "f1fcff4544f744037d99caa55009bcfb47f7fb8f9adf1a03d7d585537f5a395f"
@@ -129,6 +134,11 @@
       "path": "ui/litellm-dashboard/src/components/navbar.tsx",
       "preimage": "53c14142772db7f16363cbfeb81d0a505cc2fd004cea2203dea3cb6833e576ca",
       "postimage": "34087297694d3c1bf26970fd211595d632357039422f3c148e16bb4dda1c2bbe"
+    },
+    {
+      "path": "ui/litellm-dashboard/src/lib/logoTreatments.test.ts",
+      "preimage": "ea72cac4d5008425e7dc56f716baaf8f777b1f216d91edad51121def5247b51f",
+      "postimage": "b732c94123f0465337cd4e0519c7a16864319f26aab7bfcc10c721765371ae81"
     },
     {
       "path": "ui/litellm-dashboard/src/lib/logoTreatments.ts",

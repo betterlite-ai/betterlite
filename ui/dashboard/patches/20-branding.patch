@@ -58,6 +58,28 @@ index bc3771b7330010a0460b27f4ecdaddec6cca1c70..00000000000000000000000000000000
 -  <path class="cls-1" d="M159.06,253.3c-20.19.1-40.38.04-60.58.04v.26s-42.72.07-42.72.07c-.83.12-1.69.18-2.17,0l-53.25.08v9.76s166.32-.25,166.32-.25c-1.47-1.7-5.76-9.61-7.6-9.96Z"/>
 -</svg>
 \ No newline at end of file
+diff --git a/ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_garden_data.test.ts b/ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_garden_data.test.ts
+index dc6e1078af3ca62489844084df3b7718806b6792..d1be8aacd3d8e8d4b1ccac0d5f250a3670f0197f 100644
+--- a/ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_garden_data.test.ts
++++ b/ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_garden_data.test.ts
+@@ -1,4 +1,5 @@
+ import { describe, expect, it } from "vitest";
++import { BRAND_WORDMARK_SRC } from "@/components/branding/BrandWordmark";
+ import { GUARDRAIL_PRESETS } from "./guardrail_garden_configs";
+ import {
+   ALL_CARDS,
+@@ -48,9 +49,9 @@ describe("guardrail_garden_data logos", () => {
+     }
+   });
+ 
+-  it("uses the LiteLLM logo for every content filter card", () => {
++  it("uses the betterlite wordmark for every content filter card", () => {
+     for (const card of LITELLM_CONTENT_FILTER_CARDS) {
+-      expect(card.logo, `card ${card.id}`).toContain("litellm_monogram.svg");
++      expect(card.logo, `card ${card.id}`).toBe(BRAND_WORDMARK_SRC);
+     }
+   });
+ 
 diff --git a/ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info_helpers.tsx b/ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info_helpers.tsx
 index 3c6d9e17642cb923be9e458a18ed91aab1d5a632..91c8e1a360de5589df8d04d764995d5a85107c4f 100644
 --- a/ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info_helpers.tsx
@@ -987,6 +1009,25 @@ index 8bc9b06969efc21efb57fd65f6a218927e212266..d509c181097d8a3c8a7b3e69e3f1ebc8
              </nav>
  
              {!hideCommunityLinks && (
+diff --git a/ui/litellm-dashboard/src/lib/logoTreatments.test.ts b/ui/litellm-dashboard/src/lib/logoTreatments.test.ts
+index 828ea72a57f74059b793e95f2ca10835db017a1a..20db2e3fd27e23ca78714692a2b751c93d56e471 100644
+--- a/ui/litellm-dashboard/src/lib/logoTreatments.test.ts
++++ b/ui/litellm-dashboard/src/lib/logoTreatments.test.ts
+@@ -6,10 +6,10 @@ describe("logoTreatmentFor", () => {
+     expect(logoTreatmentFor("/ui/assets/logos/github.svg")).toBe("invert");
+   });
+ 
+-  it("inverts the bundled LiteLLM monogram into the white brand mark on dark", () => {
+-    expect(logoTreatmentFor("/litellm-asset-prefix/_next/static/media/litellm_monogram.16r2_rdj4dq8r.svg")).toBe(
+-      "invert",
+-    );
++  it("leaves the removed LiteLLM monogram path untreated", () => {
++    expect(
++      logoTreatmentFor("/litellm-asset-prefix/_next/static/media/litellm_monogram.16r2_rdj4dq8r.svg"),
++    ).toBeUndefined();
+   });
+ 
+   it("marks a multicolor dark mark for a plate instead of inversion", () => {
 diff --git a/ui/litellm-dashboard/src/lib/logoTreatments.ts b/ui/litellm-dashboard/src/lib/logoTreatments.ts
 index fc19c5c364d36603ab775009771627365e991d10..1448dfa686d493f8e35ed761cc1e9d3d46d2ace6 100644
 --- a/ui/litellm-dashboard/src/lib/logoTreatments.ts
