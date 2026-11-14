@@ -77,9 +77,9 @@ pub enum AgentCollectionHandled<Output, Pending> {
 pub type AgentCollectionResult<Output, ProviderError> =
     Result<Output, AgentCollectionFailure<ProviderError>>;
 
-// the call a sync entry point leaves pending: the boxed future the async flag asked it to start
+// the call a sync entry point leaves pending: the boxed future the async flag asked it to start; Send because acreate and alist await it
 pub type AgentPending<'call, Output, Error> =
-    Pin<Box<dyn Future<Output = AgentCollectionResult<Output, Error>> + 'call>>;
+    Pin<Box<dyn Future<Output = AgentCollectionResult<Output, Error>> + Send + 'call>>;
 
 // a sync entry point's answer: the result, or the pending call the async flag asked for
 pub type AgentAnswer<'call, Output, Error> = Result<

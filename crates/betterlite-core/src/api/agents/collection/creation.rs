@@ -62,6 +62,7 @@ pub async fn acreate<Config>(
 ) -> AgentCollectionResult<Config::CreateOutput, Config::Error>
 where
     Config: AgentsApiConfig,
+    Config::CreateOutput: Send,
     Config::Error: AgentFailure,
 {
     let mut kwargs = call.kwargs.clone();

@@ -61,6 +61,7 @@ pub async fn alist<Config>(
 ) -> AgentCollectionResult<Config::ListOutput, Config::Error>
 where
     Config: AgentsApiConfig,
+    Config::ListOutput: Send,
     Config::Error: AgentFailure,
 {
     let mut kwargs = call.kwargs.clone();
