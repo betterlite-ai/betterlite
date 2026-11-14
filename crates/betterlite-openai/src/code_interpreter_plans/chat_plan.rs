@@ -107,38 +107,28 @@ where
     let mut tool_messages = Vec::with_capacity(request.tool_calls.len());
     let mut code_interpreter_calls = Vec::with_capacity(request.tool_calls.len());
     for tool_call in request.tool_calls {
-        let outcome =
-            build_chat_tool_result(provider, params, container, tool_call, container_id.clone())
-                .await;
-        match outcome {
-            Ok((message, call)) => {
-                tool_messages.push(message);
-                code_interpreter_calls.push(call);
-            }
-            Err(failure) => {
+        let stdout = match run_tool_call(provider, params, container, &tool_call.arguments).await {
+            Ok(stdout) => stdout,
+            Err(error) => {
                 let sandbox_key = container_extraction::sandbox_key(request.kwargs);
+                let failure = PlanError::from(error);
                 return Err(
                     delete_after_failure(provider, cache, sandbox_key.as_deref(), failure).await,
                 );
             }
-        }
+        };
+        let (message, call) = build_chat_tool_result(tool_call, container_id.clone(), stdout);
+        tool_messages.push(message);
+        code_interpreter_calls.push(call);
     }
     Ok((tool_messages, code_interpreter_calls))
 }
 
-async fn build_chat_tool_result<C, R, T>(
-    provider: &SandboxProvider<'_, C, R, T>,
-    params: Option<&SandboxToolParams>,
-    container: &Value,
+fn build_chat_tool_result(
     tool_call: &CodeExecutionToolCall,
     container_id: Option<String>,
-) -> Result<(ChatMessage, CodeInterpreterCall), PlanError<C::Error>>
-where
-    C: SandboxConfig,
-    R: SandboxRegistry<Error = C::Error>,
-    T: SandboxToolRegistry,
-{
-    let stdout = run_tool_call(provider, params, container, &tool_call.arguments).await?;
+    stdout: String,
+) -> (ChatMessage, CodeInterpreterCall) {
     let message = ChatMessage {
         role: Role::Tool,
         content: Some(MessageContent::Text(stdout.clone())),
@@ -152,7 +142,7 @@ where
         container_id,
         stdout,
     );
-    Ok((message, call))
+    (message, call)
 }
 
 fn tool_call_identity(tool_call: &CodeExecutionToolCall) -> String {

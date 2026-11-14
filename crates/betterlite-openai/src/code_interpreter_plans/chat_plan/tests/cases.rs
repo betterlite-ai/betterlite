@@ -53,24 +53,7 @@ fn plan_with_one_chat_call() -> AgenticLoopPlan {
 
 #[cfg(test)]
 fn tool_result(tool_call: &CodeExecutionToolCall) -> (ChatMessage, CodeInterpreterCall) {
-    let config = MockConfig::succeeding(json!({"id": "cnt-1"}), "4");
-    let registry = UnusedRegistry;
-    let tool_registry = UnusedToolRegistry;
-    let provider = SandboxProvider {
-        sandbox_config: Some(&config),
-        registry: &registry,
-        tool_registry: &tool_registry,
-        sandbox_tool_name: None,
-    };
-    let container = json!({"id": "cnt-1"});
-    block_on(build_chat_tool_result(
-        &provider,
-        None,
-        &container,
-        tool_call,
-        Some("cnt-1".to_owned()),
-    ))
-    .unwrap()
+    build_chat_tool_result(tool_call, Some("cnt-1".to_owned()), "4".to_owned())
 }
 
 #[cfg(test)]
