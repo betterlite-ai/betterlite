@@ -594,10 +594,10 @@ async fn internal_kwargs_do_not_reach_the_delete_request() {
     let api_key = secret("e2b-key");
     let mut plain = delete_request("e2b", SandboxContainerRef::Id("sbx_1"), &kwargs);
     plain.call.api_key = Some(&api_key);
-    sandbox.adelete_sandbox(&mut plain).await.unwrap();
+    assert!(sandbox.adelete_sandbox(&mut plain).await.unwrap());
     let mut internal = delete_request("e2b", SandboxContainerRef::Id("sbx_1"), &with_kwargs);
     internal.call.api_key = Some(&api_key);
-    sandbox.adelete_sandbox(&mut internal).await.unwrap();
+    assert!(sandbox.adelete_sandbox(&mut internal).await.unwrap());
     let recorded = http.requests();
     assert_eq!(recorded.len(), 2_usize);
     assert_eq!(recorded[0], recorded[1]);
@@ -720,6 +720,21 @@ async fn delete_forwards_an_opensandbox_id_and_returns_true() {
     assert_eq!(sent.method, "DELETE");
     assert_eq!(sent.url, "https://open.test/sandboxes/sbx_9");
     assert_eq!(header(&sent, "open-sandbox-api-key"), "open-key");
+}
+
+#[tokio::test]
+async fn delete_returns_false_when_opensandbox_answers_404() {
+    let http = FakeHttp::new(&[(404, "")]);
+    let sandbox = build_dispatch(&http, Environment::new());
+    let api_key = secret("open-key");
+    let kwargs = empty_kwargs();
+    let mut request = delete_request("opensandbox", SandboxContainerRef::Id("sbx_9"), &kwargs);
+    request.call.api_key = Some(&api_key);
+    request.api_base = Some("https://open.test");
+    assert!(!sandbox.adelete_sandbox(&mut request).await.unwrap());
+    let sent = http.only_request();
+    assert_eq!(sent.method, "DELETE");
+    assert_eq!(sent.url, "https://open.test/sandboxes/sbx_9");
 }
 
 #[tokio::test]
