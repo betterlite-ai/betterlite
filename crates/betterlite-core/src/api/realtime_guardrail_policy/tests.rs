@@ -1,20 +1,24 @@
 #![cfg(test)]
 
 use std::convert::Infallible;
-use std::fmt::Debug;
+use std::error::Error;
+use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
+use std::mem::take;
+use std::ptr::from_ref;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 use tracing::field::{Field, Visit};
+use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 use super::error::RealtimeGuardrailPolicyError;
 use super::{
-    RealtimeGuardrailCallback, disable_auto_response_message, guardrails_run_for_hooks,
-    has_transcription_guardrails, inject_auto_response_disable,
+    RealtimeGuardrailCallback, TRANSCRIPTION_EVENT_HOOKS, disable_auto_response_message,
+    guardrails_run_for_hooks, inject_auto_response_disable,
 };
 use crate::api::request_destination::RequestData;
 
@@ -49,7 +53,7 @@ impl RealtimeGuardrailCallback for Scripted {
             .push(CallAnswer {
                 native_lifecycle: self.native_lifecycle,
                 event,
-                data_address: std::ptr::from_ref(data).addr(),
+                data_address: from_ref(data).addr(),
             });
         Ok(self.runs_for.contains(&event))
     }
@@ -69,8 +73,8 @@ struct Captured(Arc<Mutex<Vec<String>>>);
 impl Captured {
     fn take(&self) -> Vec<String> {
         match self.0.lock() {
-            Ok(mut messages) => std::mem::take(&mut messages),
-            Err(poisoned) => std::mem::take(&mut poisoned.into_inner()),
+            Ok(mut messages) => take(&mut messages),
+            Err(poisoned) => take(&mut poisoned.into_inner()),
         }
     }
 }
@@ -106,10 +110,13 @@ impl<Inner: Subscriber> Layer<Inner> for Captured {
     }
 }
 
-fn captured<T, Call: FnOnce() -> T>(call: Call) -> (T, Vec<String>) {
+fn captured<T, Call>(call: Call) -> (T, Vec<String>)
+where
+    Call: FnOnce() -> T,
+{
     let logs = Captured::default();
     let subscriber = tracing_subscriber::registry().with(logs.clone());
-    let value = tracing::subscriber::with_default(subscriber, call);
+    let value = with_default(subscriber, call);
     (value, logs.take())
 }
 
@@ -137,7 +144,11 @@ fn transcription_predicate_counts_only_the_transcription_hook(
         runs_for,
         answers: Mutex::new(Vec::new()),
     };
-    let detected = has_transcription_guardrails(&[&callback], &RequestData::default());
+    let detected = guardrails_run_for_hooks(
+        &[&callback],
+        &RequestData::default(),
+        &TRANSCRIPTION_EVENT_HOOKS,
+    );
     assert_eq!(detected.unwrap(), expected);
 }
 
@@ -149,7 +160,14 @@ fn non_guardrail_callbacks_never_answer_the_predicate() {
         runs_for: vec![GuardrailEventHooks::RealtimeInputTranscription],
         answers: Mutex::new(Vec::new()),
     };
-    assert!(!has_transcription_guardrails(&[&plain], &RequestData::default()).unwrap());
+    assert!(
+        !guardrails_run_for_hooks(
+            &[&plain],
+            &RequestData::default(),
+            &TRANSCRIPTION_EVENT_HOOKS
+        )
+        .unwrap()
+    );
     assert!(plain.answers.lock().unwrap().is_empty());
 }
 
@@ -161,10 +179,16 @@ fn native_lifecycle_guardrails_still_enable_detection() {
         runs_for: vec![GuardrailEventHooks::RealtimeInputTranscription],
         answers: Mutex::new(Vec::new()),
     };
-    assert!(has_transcription_guardrails(&[&native], &RequestData::default()).unwrap());
-    let answers = native.answers.lock().unwrap();
-    assert_eq!(answers.len(), 1);
-    assert!(answers[0].native_lifecycle);
+    assert!(
+        guardrails_run_for_hooks(
+            &[&native],
+            &RequestData::default(),
+            &TRANSCRIPTION_EVENT_HOOKS
+        )
+        .unwrap()
+    );
+    assert_eq!(native.answers.lock().unwrap().len(), 1);
+    assert!(native.answers.lock().unwrap()[0].native_lifecycle);
 }
 
 #[test]
@@ -175,7 +199,14 @@ fn a_false_predicate_disables_the_audio_gate() {
         runs_for: Vec::new(),
         answers: Mutex::new(Vec::new()),
     };
-    assert!(!has_transcription_guardrails(&[&silent], &RequestData::default()).unwrap());
+    assert!(
+        !guardrails_run_for_hooks(
+            &[&silent],
+            &RequestData::default(),
+            &TRANSCRIPTION_EVENT_HOOKS
+        )
+        .unwrap()
+    );
     assert_eq!(silent.answers.lock().unwrap().len(), 1);
 }
 
@@ -203,9 +234,11 @@ fn event_hooks_stop_at_the_first_match() {
         GuardrailEventHooks::RealtimeInputTranscription,
     ];
     assert!(guardrails_run_for_hooks(&[&first, &later], &RequestData::default(), &hooks).unwrap());
-    let answers = first.answers.lock().unwrap();
-    assert_eq!(answers.len(), 1);
-    assert_eq!(answers[0].event, GuardrailEventHooks::PreCall);
+    assert_eq!(first.answers.lock().unwrap().len(), 1);
+    assert_eq!(
+        first.answers.lock().unwrap()[0].event,
+        GuardrailEventHooks::PreCall
+    );
     assert!(later.answers.lock().unwrap().is_empty());
 }
 
@@ -230,9 +263,11 @@ fn the_predicate_receives_the_request_data_unchanged() {
         answers: Mutex::new(Vec::new()),
     };
     let data = request_data(r#"{"model": "gpt-4", "metadata": {"tags": ["release"]}}"#);
-    assert!(has_transcription_guardrails(&[&callback], &data).unwrap());
-    let answers = callback.answers.lock().unwrap();
-    assert_eq!(answers[0].data_address, std::ptr::from_ref(&data).addr());
+    assert!(guardrails_run_for_hooks(&[&callback], &data, &TRANSCRIPTION_EVENT_HOOKS).unwrap());
+    assert_eq!(
+        callback.answers.lock().unwrap()[0].data_address,
+        from_ref(&data).addr()
+    );
     assert_eq!(
         data,
         request_data(r#"{"model": "gpt-4", "metadata": {"tags": ["release"]}}"#)
@@ -490,4 +525,59 @@ fn setup_injection_marks_the_session_before_the_caller_sends() {
     let delivery: Result<(), &str> = Err("the backend closed before the setup arrived");
     assert!(delivery.is_err());
     assert!(sent);
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct GateFailure;
+
+impl Display for GateFailure {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
+        formatter.write_str("the guardrail gate failed")
+    }
+}
+
+impl Error for GateFailure {}
+
+struct Failing;
+
+impl RealtimeGuardrailCallback for Failing {
+    type Error = GateFailure;
+
+    fn is_custom_guardrail(&self) -> bool {
+        true
+    }
+
+    fn should_run_guardrail(
+        &self,
+        _data: &RequestData,
+        _event: GuardrailEventHooks,
+    ) -> Result<bool, GateFailure> {
+        Err(GateFailure)
+    }
+}
+
+#[test]
+fn a_failing_predicate_error_is_returned_not_read_as_false() {
+    let detected = guardrails_run_for_hooks(
+        &[&Failing],
+        &RequestData::default(),
+        &TRANSCRIPTION_EVENT_HOOKS,
+    );
+    assert_eq!(detected, Err(GateFailure));
+}
+
+#[test]
+fn setup_injection_surfaces_a_failing_predicate_and_leaves_the_flag_unset() {
+    let mut sent = false;
+    let injected = inject_auto_response_disable(
+        r#"{"setup": {}}"#,
+        &mut sent,
+        &[&Failing],
+        &RequestData::default(),
+    );
+    assert!(matches!(
+        injected,
+        Err(RealtimeGuardrailPolicyError::Callback(GateFailure))
+    ));
+    assert!(!sent);
 }

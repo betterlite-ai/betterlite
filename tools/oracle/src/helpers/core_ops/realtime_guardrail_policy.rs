@@ -1,9 +1,10 @@
 use std::convert::Infallible;
+use std::fmt::Display;
 
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_core::api::realtime_guardrail_policy::{
-    RealtimeGuardrailCallback, disable_auto_response_message, guardrails_run_for_hooks,
-    has_transcription_guardrails, inject_auto_response_disable,
+    RealtimeGuardrailCallback, TRANSCRIPTION_EVENT_HOOKS, disable_auto_response_message,
+    guardrails_run_for_hooks, inject_auto_response_disable,
 };
 use betterlite_core::api::request_destination::RequestData;
 use betterlite_oracle_helper_api::error::HelperError;
@@ -35,7 +36,7 @@ impl RealtimeGuardrailCallback for CallbackSpec {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Scenario {
+pub(crate) struct Scenario {
     callbacks: Vec<CallbackSpec>,
     request_data: RequestData,
     event_hooks: Vec<GuardrailEventHooks>,
@@ -43,7 +44,7 @@ struct Scenario {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Session {
+pub(crate) struct Session {
     sent: bool,
     callbacks: Vec<CallbackSpec>,
     request_data: RequestData,
@@ -53,7 +54,8 @@ struct Session {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
-    TranscriptionGuardrailSelection {
+    #[serde(rename = "transcription_guardrail_selection")]
+    TranscriptionSelection {
         scenarios: Vec<Scenario>,
     },
     DisableAutoResponseShapes {
@@ -71,12 +73,15 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input {
-            Input::TranscriptionGuardrailSelection { scenarios } => {
+            Input::TranscriptionSelection { scenarios } => {
                 let mut answers = Vec::with_capacity(scenarios.len());
                 for scenario in scenarios {
                     let callbacks: Vec<&CallbackSpec> = scenario.callbacks.iter().collect();
-                    let Ok(audio) =
-                        has_transcription_guardrails(&callbacks, &scenario.request_data);
+                    let Ok(audio) = guardrails_run_for_hooks(
+                        &callbacks,
+                        &scenario.request_data,
+                        &TRANSCRIPTION_EVENT_HOOKS,
+                    );
                     let Ok(hooks) = guardrails_run_for_hooks(
                         &callbacks,
                         &scenario.request_data,
@@ -125,7 +130,10 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn failure(error: impl std::error::Error) -> Box<HelperError> {
+fn failure<Failed>(error: Failed) -> Box<HelperError>
+where
+    Failed: Display,
+{
     Box::new(HelperError {
         class: "RealtimeGuardrailPolicyError".to_owned(),
         status: None,

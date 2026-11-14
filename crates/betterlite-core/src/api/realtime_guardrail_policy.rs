@@ -2,6 +2,8 @@ pub mod error;
 
 mod tests;
 
+use std::error::Error;
+
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -22,6 +24,10 @@ pub trait RealtimeGuardrailCallback {
     ) -> Result<bool, Self::Error>;
 }
 
+// Only this hook turns off provider VAD auto-response; pre_call and post_call guardrails must not.
+pub const TRANSCRIPTION_EVENT_HOOKS: [GuardrailEventHooks; 1] =
+    [GuardrailEventHooks::RealtimeInputTranscription];
+
 pub fn guardrails_run_for_hooks<Callback>(
     callbacks: &[&Callback],
     request_data: &RequestData,
@@ -41,20 +47,6 @@ where
         }
     }
     Ok(false)
-}
-
-pub fn has_transcription_guardrails<Callback>(
-    callbacks: &[&Callback],
-    request_data: &RequestData,
-) -> Result<bool, Callback::Error>
-where
-    Callback: RealtimeGuardrailCallback + ?Sized,
-{
-    guardrails_run_for_hooks(
-        callbacks,
-        request_data,
-        &[GuardrailEventHooks::RealtimeInputTranscription],
-    )
 }
 
 pub fn disable_auto_response_message(
@@ -100,9 +92,9 @@ pub fn inject_auto_response_disable<Callback>(
 ) -> Result<Option<String>, RealtimeGuardrailPolicyError<Callback::Error>>
 where
     Callback: RealtimeGuardrailCallback + ?Sized,
-    Callback::Error: std::error::Error + 'static,
+    Callback::Error: Error + 'static,
 {
-    if *sent || !has_transcription_guardrails(callbacks, request_data)? {
+    if *sent || !guardrails_run_for_hooks(callbacks, request_data, &TRANSCRIPTION_EVENT_HOOKS)? {
         return Ok(None);
     }
     let Ok(mut message) = serde_json::from_str::<Json>(setup_message) else {
@@ -114,18 +106,18 @@ where
     let Some(Json::Object(setup)) = root.get_mut("setup") else {
         return Ok(None);
     };
-    let config = setup
+    let config_value = setup
         .entry("realtimeInputConfig".to_owned())
         .or_insert_with(|| Json::Object(IndexMap::new()));
-    let Json::Object(config) = config else {
+    let Json::Object(config) = config_value else {
         return Err(RealtimeGuardrailPolicyError::SetupFieldNotObject {
             field: "realtimeInputConfig",
         });
     };
-    let automatic = config
+    let detection_value = config
         .entry("automaticActivityDetection".to_owned())
         .or_insert_with(|| Json::Object(IndexMap::new()));
-    let Json::Object(automatic) = automatic else {
+    let Json::Object(automatic) = detection_value else {
         return Err(RealtimeGuardrailPolicyError::SetupFieldNotObject {
             field: "automaticActivityDetection",
         });
