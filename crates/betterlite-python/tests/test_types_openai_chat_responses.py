@@ -1,11 +1,12 @@
 import subprocess
 import sys
-from typing import Final, TypedDict
+from typing import Final, TypedDict, get_args, get_origin
 
 import pytest
 from pydantic import JsonValue, TypeAdapter
 
 from betterlite.types.llms.openai.chat import ResponsesAPIStreamEvents
+from betterlite.types.llms.openai.chat.responses_request import ALL_RESPONSES_API_TOOL_PARAMS
 
 NAMES: Final = frozenset({
     "ALL_RESPONSES_API_TOOL_PARAMS", "AllEmbeddingInputValues",
@@ -163,6 +164,7 @@ import litellm.types.llms.openai as theirs
 
 MAPPED_NAMES = {"ToolParam", "ResponseInputParam", "ResponseIncludable"}
 MAPPED_FIELDS = {"OpenAIChatCompletionChunk": ("service_tier",)}
+BARE_ALIASES = ["AllEmbeddingInputValues"]
 
 TAGGED = [
     "ResponseCreatedEvent",
@@ -532,6 +534,10 @@ def alias_shape(value):
     return {"kind": "literal", "values": literal_members(value)}
 
 
+def member_reprs(module):
+    return {n: [repr(m) for m in get_args(getattr(module, n))] for n in BARE_ALIASES}
+
+
 def shape_of(value):
     if is_typeddict(value):
         return typeddict_shape(value)
@@ -686,6 +692,10 @@ print(
                 "litellm": describe(theirs, names),
                 "betterlite": describe(ours, names),
             },
+            "aliases": {
+                "litellm": member_reprs(theirs),
+                "betterlite": member_reprs(ours),
+            },
             "union": {
                 "litellm": union_shape(theirs.ResponsesAPIStreamingResponse),
                 "betterlite": union_shape(ours.ResponsesAPIStreamingResponse),
@@ -778,6 +788,7 @@ class ModelsBySide(TypedDict):
 
 class Report(TypedDict):
     names: Names
+    aliases: dict[str, dict[str, list[str]]]
     union: Unions
     adapter: Adapters
     events: Events
@@ -805,6 +816,10 @@ def test_openai_chat_names(report: Report) -> None:
     assert None not in betterlite_shapes.values()
     assert None not in litellm_shapes.values()
     assert betterlite_shapes == litellm_shapes
+    aliases = report["aliases"]
+    assert aliases["betterlite"] == aliases["litellm"]
+    ours = aliases["betterlite"]["AllEmbeddingInputValues"]
+    assert ours == ["<class 'str'>", "list[str]", "list[int]", "list[list[int]]"]
     for name, expected in OPTION_LITERALS.items():
         shape = betterlite_shapes[name]
         assert shape is not None
@@ -820,6 +835,9 @@ def test_openai_chat_names(report: Report) -> None:
     tools = betterlite_shapes["ALL_RESPONSES_API_TOOL_PARAMS"]
     assert tools is not None
     assert tools["members"] == ["json", "ComputerToolParam", "ShellToolParam"]
+    tool_members: tuple[JsonValue, ...] = get_args(ALL_RESPONSES_API_TOOL_PARAMS)
+    tool_origin: type | None = get_origin(tool_members[0])
+    assert tool_origin is dict
     terminal = betterlite_shapes["ResponsesTerminalEvent"]
     assert terminal is not None
     assert terminal["members"] == [
