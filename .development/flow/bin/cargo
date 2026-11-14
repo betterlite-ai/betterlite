@@ -4,10 +4,15 @@ real=${CARGO_HOME:-${HOME}/.cargo}/bin/cargo
 # stage 3: a dispatched agent builds nothing on this machine, since CI builds, lints and tests the pushed branch
 if [[ ${GATE_DISPATCHED:-} == 1 ]]; then
   command=
+  subcommand=
   for word in "$@"; do
     [[ ${word} == [-+]* ]] && continue
-    command=${word}
-    break
+    if [[ -z ${command} ]]; then
+      command=${word}
+    else
+      subcommand=${word}
+      break
+    fi
   done
   listing=0
   asking=0
@@ -20,7 +25,20 @@ if [[ ${GATE_DISPATCHED:-} == 1 ]]; then
   case ${command} in
     build | b | check | c | clippy | test | t | nextest | run | r | bench | doc | d | llvm-cov | rustc | rustdoc | fix | mutants)
       if [[ ${asking} == 0 ]] && [[ ${command} != mutants || ${listing} == 0 ]]; then
-        printf 'cargo %s: a dispatched run builds nothing on this machine (stage 3). Run cargo fmt and the checks that cargo gate list <ID> --local prints; CI runs clippy, the tests and mutants on the pull request. This refusal is final: never unset GATE_DISPATCHED or call cargo by its full path.\n' "${command}" >&2
+        printf 'cargo %s: a dispatched run builds nothing on this machine (stage 3). CI runs every check, clippy, the tests and mutants on the pull request, so commit your work and give your report. This refusal is final: never unset GATE_DISPATCHED or call cargo by its full path.\n' "${command}" >&2
+        exit 1
+      fi
+      ;;
+    # a gate check runs with GATE_BASE set, and the stop hook of a checkout older than #1574 still runs the fmt check
+    fmt)
+      if [[ ${asking} == 0 && -z ${GATE_BASE:-} ]]; then
+        printf 'cargo fmt: a dispatched run checks nothing on this machine (stage 3). Format only the Rust files you changed with rustfmt --edition 2024 <files>, then commit your work and give your report. CI runs fmt on the pull request.\n' >&2
+        exit 1
+      fi
+      ;;
+    gate)
+      if [[ ${subcommand} == run || ${subcommand} == preflight ]] && [[ ${asking} == 0 && -z ${GATE_BASE:-} ]]; then
+        printf 'cargo gate %s: a dispatched run checks nothing on this machine (stage 3). CI runs every check of the task on the pull request, so commit your work and give your report. Your stop hook validates the report.\n' "${subcommand}" >&2
         exit 1
       fi
       ;;
