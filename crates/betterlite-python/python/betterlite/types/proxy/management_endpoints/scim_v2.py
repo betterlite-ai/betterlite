@@ -1,3 +1,4 @@
+# ruff: noqa: N801 - LiteLLM's class names, kept for parity
 from typing import ClassVar, Final, Unpack
 
 from pydantic import (
@@ -35,7 +36,7 @@ class _SCIMBase(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(serialize_by_alias=True)
 
 
-class LiteLLM_UserScimMetadata(_SCIMBase):  # noqa: N801  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L25
+class LiteLLM_UserScimMetadata(_SCIMBase):  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L25
     given_name: str | None = Field(default=None, alias="givenName")
     family_name: str | None = Field(default=None, alias="familyName")
 

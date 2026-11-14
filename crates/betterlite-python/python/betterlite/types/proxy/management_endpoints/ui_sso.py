@@ -1,3 +1,4 @@
+# ruff: noqa: N801 - LiteLLM's class names, kept for parity
 from typing import Literal, TypedDict
 
 from pydantic import Field
@@ -6,7 +7,7 @@ from betterlite.types.llms.base import LiteLLMPydanticObjectBase
 
 
 # ast-grep-ignore: no-long-names
-class LiteLLM_UpperboundKeyGenerateParams(LiteLLMPydanticObjectBase):  # noqa: N801  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/ui_sso.py#L10
+class LiteLLM_UpperboundKeyGenerateParams(LiteLLMPydanticObjectBase):  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/ui_sso.py#L10
     max_budget: float | None = None
     budget_duration: str | None = None
     duration: str | None = None
@@ -39,7 +40,7 @@ class MicrosoftServicePrincipalTeam(TypedDict, total=False):
     principalId: str | None
 
 
-class AccessControl_UI_AccessMode(LiteLLMPydanticObjectBase):  # noqa: N801  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/ui_sso.py#L57
+class AccessControl_UI_AccessMode(LiteLLMPydanticObjectBase):  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/ui_sso.py#L57
     type: Literal["restricted_sso_group"]
     restricted_sso_group: str
     sso_group_jwt_field: str
