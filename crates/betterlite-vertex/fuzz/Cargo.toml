@@ -134,6 +134,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vertex_speech_audio"
+path = "fuzz_targets/vertex_speech_audio.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vertex_timestamp"
 path = "fuzz_targets/vertex_timestamp.rs"
 test = false
