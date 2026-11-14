@@ -90,9 +90,15 @@ impl From<GuardrailBaseError> for NomaV2Error {
 }
 
 impl NomaV2Error {
-    // LiteLLM's AsyncHTTPHandler turns httpx.TimeoutException into litellm.Timeout, which carries status 408; every other scan error answers 500.
+    // LiteLLM's AsyncHTTPHandler re-raises a non-2xx answer as MaskedHTTPStatusError, so the Noma status reaches the client; a timeout answers 408 like litellm.Timeout, and every other scan error answers 500.
     #[must_use]
     pub fn into_failure(self) -> GuardrailFailure {
+        if let Self::HttpStatus { status } = &self {
+            return GuardrailFailure::Http {
+                status: status.as_u16(),
+                detail: self.to_string(),
+            };
+        }
         if matches!(self, Self::RequestTimeout { .. }) {
             return GuardrailFailure::Http {
                 status: StatusCode::REQUEST_TIMEOUT.as_u16(),

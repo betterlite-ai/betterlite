@@ -16,7 +16,7 @@ const SPEC_MAX_RESPONSE_BYTES: usize = 0x0010_0000;
 
 #[tokio::test]
 async fn error_handling() {
-    let mock = mock_noma(StatusCode::INTERNAL_SERVER_ERROR, "boom").await;
+    let mock = mock_noma(StatusCode::TOO_MANY_REQUESTS, "slow down").await;
     let outcome = scan(
         &guardrail(settings(&mock.base)),
         inputs(),
@@ -24,13 +24,11 @@ async fn error_handling() {
         GuardrailInputType::Request,
     )
     .await;
-    let Err(GuardrailFailure::Other(message)) = outcome.result else {
-        panic!("the scan failure was not raised");
+    let Err(GuardrailFailure::Http { status, detail }) = outcome.result else {
+        panic!("the scan failure was not raised with the Noma status");
     };
-    assert_eq!(
-        message,
-        "the Noma API returned status 500 Internal Server Error"
-    );
+    assert_eq!(status, 429);
+    assert_eq!(detail, "the Noma API returned status 429 Too Many Requests");
     let record = &records(&outcome.request_data)[0];
     assert_eq!(
         text_field(record, "guardrail_status").as_deref(),
@@ -38,7 +36,7 @@ async fn error_handling() {
     );
     assert_eq!(
         field(record, "guardrail_response"),
-        Some(&GuardrailValue::Text(message))
+        Some(&GuardrailValue::Text(detail))
     );
 }
 
