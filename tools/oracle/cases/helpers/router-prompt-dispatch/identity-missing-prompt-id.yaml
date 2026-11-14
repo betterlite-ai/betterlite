@@ -1,0 +1,21 @@
+kind: helper
+name: prompt-dispatch-identity-missing-prompt-id
+call:
+  b8466:
+    check: prompt_factory
+    model: langfuse/my-prompt
+    messages: []
+    model_list:
+    - model_name: langfuse/my-prompt
+      litellm_params:
+        model: langfuse/my-prompt
+    request: {}
+    compiled:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: compiled
+      optional_params: {}
+env: {}
+compare:
+  ignore: []

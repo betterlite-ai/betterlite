@@ -1,0 +1,11 @@
+task: B8466
+deviations:
+  - what: A prompt management deployment whose litellm_params.model is missing or not a string fails with the typed DeploymentModel error instead of passing None into the prompt backend.
+    why: LiteLLM raises an unhandled AttributeError from model.replace() later in the call, which is the 500 the owned-behavior rule asks betterlite to turn into a named failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4558-L4583
+  - what: The final request carries the logging handle the request already holds; when it holds none, prompt_factory does not build a logging object.
+    why: LiteLLM calls function_setup to create a LiteLLMLoggingObj when litellm_logging_obj is absent. betterlite's logging state is built by the call path (B6020 and B8560) and is not JSON, so this module stamps the handle it is given and leaves creation to its owner.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4536-L4546
+  - what: is_prompt_model treats a litellm_params.model that is not a string as not a prompt management model, where LiteLLM raises TypeError from the "/" membership test.
+    why: A model of the wrong type is a config error; LiteLLM's unhandled TypeError is a 500 no working setup relies on, and returning false keeps the model on the ordinary routing path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4523-L4525
