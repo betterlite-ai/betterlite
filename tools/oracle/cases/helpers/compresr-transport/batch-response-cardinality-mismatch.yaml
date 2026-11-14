@@ -1,0 +1,6 @@
+kind: helper
+name: batch-response-cardinality-mismatch
+call:
+  compresr_transport: {"function": "compress", "settings": {"api_base": "http://compresr.test", "model": "latte_v2", "target_compression_ratio": 0.5, "coarse": false, "dynamic": false, "dynamic_min_ratio": null, "dynamic_max_ratio": null, "compression_params": {}, "timeout": null, "fallback": "fail_closed"}, "goals": [{"context": "first context", "query": "q"}, {"context": "second context", "query": "q"}], "reply": {"status": 200, "body": "{\"data\": {\"results\": [{\"compressed_context\": \"x\", \"original_tokens\": 4, \"compressed_tokens\": 1}]}}"}}
+env: {}
+compare: {ignore: []}

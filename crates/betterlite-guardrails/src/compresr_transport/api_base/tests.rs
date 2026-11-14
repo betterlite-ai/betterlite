@@ -37,6 +37,9 @@ fn metadata_ip() -> Option<IpAddr> {
 #[case::double_underscore("1__0", None)]
 #[case::trailing_underscore("1_", None)]
 #[case::negative("-1", None)]
+#[case::explicit_plus("+5", v4(0, 0, 0, 5))]
+#[case::doubled_plus("++5", None)]
+#[case::hex_with_leading_zero("0x00ff", v4(0, 0, 0, 255))]
 #[case::node_style("0x10.0x10.0x10.0x10", None)]
 #[case::hostname("metadata.google.internal", None)]
 #[case::empty("", None)]
@@ -58,6 +61,8 @@ fn ip_literals_parse_like_python(#[case] host: &str, #[case] expected: Option<Ip
 #[case::alibaba_metadata("http://100.100.100.200")]
 #[case::azure_metadata("http://168.63.129.16")]
 #[case::uppercase_host("http://METADATA.GOOGLE.INTERNAL")]
+#[case::dotted_octal_parts("http://0251.0376.0251.0376")]
+#[case::dotted_hex_parts("http://0xa9.0xfe.0xa9.0xfe")]
 fn api_base_rejects_cloud_metadata_targets(#[case] url: &str) {
     assert!(matches!(
         validate_api_base(url),

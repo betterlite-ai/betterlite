@@ -1,6 +1,7 @@
 import asyncio
+import logging
 from collections.abc import Callable
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict, override
 
 import httpx
 from fastapi import HTTPException
@@ -38,7 +39,6 @@ class Goal(TypedDict):
 class Reply(TypedDict):
     status: int
     body: str
-    corrupt_encoding: NotRequired[bool]
 
 
 class Settings(TypedDict):
@@ -89,11 +89,33 @@ class Recorder:
                 "api_key": "" if api_key is None else api_key,
             }
         )
-        corrupt = self.reply.get("corrupt_encoding")
-        headers = {"content-encoding": "gzip"} if corrupt is True else {}
-        return httpx.Response(
-            self.reply["status"], headers=headers, content=self.reply["body"].encode()
-        )
+        return httpx.Response(self.reply["status"], content=self.reply["body"].encode())
+
+
+class Logs(logging.Filter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.records: list[JsonValue] = []
+
+    @override
+    def filter(self, record: logging.LogRecord) -> bool:
+        text = record.getMessage().split(" detail=")[0].rstrip(". ")
+        self.records.append({"level": record.levelname, "text": text})
+        return True
+
+
+def project(result: Fields) -> JsonValue:
+    compressed = result.get("compressed_context")
+    match compressed:
+        case str():
+            text: str | None = compressed
+        case _:
+            text = None
+    return {
+        "compressed_context": text,
+        "original_tokens": _safe_int(result.get("original_tokens")),
+        "compressed_tokens": _safe_int(result.get("compressed_tokens")),
+    }
 
 
 class Probe(CompresrGuardrail):
@@ -104,33 +126,32 @@ class Probe(CompresrGuardrail):
         )
         contexts = [goal["context"] for goal in goals]
         queries = [goal["query"] for goal in goals]
+        logs = Logs()
+        logger = logging.getLogger("LiteLLM Proxy")
+        logger.addFilter(logs)
+        answer: dict[str, JsonValue] = {}
         try:
             results = asyncio.run(self._call_compress(contexts=contexts, queries=queries))
+            if results is None:
+                answer["outcome"] = "uncompressed"
+            else:
+                answer["outcome"] = "results"
+                answer["results"] = [project(result) for result in results]
         except HTTPException as error:
-            return {
-                "path": recorder.paths,
-                "body": recorder.bodies,
-                "headers": recorder.headers,
-                "outcome": "raised",
-                "status": error.status_code,
-            }
-        if results is None:
-            return {
-                "path": recorder.paths,
-                "body": recorder.bodies,
-                "headers": recorder.headers,
-                "outcome": "uncompressed",
-            }
-        return {
-            "path": recorder.paths,
-            "body": recorder.bodies,
-            "headers": recorder.headers,
-            "outcome": "results",
-            "results": JSON.validate_python(results),
-        }
+            answer["outcome"] = "raised"
+            answer["status"] = error.status_code
+            answer["detail"] = JSON.validate_python(error.detail)
+        finally:
+            logger.removeFilter(logs)
+        answer["path"] = recorder.paths
+        answer["body"] = recorder.bodies
+        answer["headers"] = recorder.headers
+        answer["logs"] = logs.records
+        return answer
 
-    def fallback_of(self, messages: Messages) -> JsonValue:
-        text, index = self._extract_fallback_query(messages)
+    @staticmethod
+    def fallback_of(messages: Messages) -> JsonValue:
+        text, index = Probe._extract_fallback_query(messages)
         return {"query": text, "index": index}
 
 
@@ -182,11 +203,19 @@ def token_stat(input_value: Input) -> JsonValue:
     return {"value": stat}
 
 
+class Undecodable(httpx.Response):
+    @property
+    @override
+    def text(self) -> str:
+        raise httpx.DecodingError("corrupt content-encoding")
+
+
 def safe_text(input_value: Input) -> JsonValue:
     text = input_value["text"]
-    corrupt = input_value["corrupt"]
-    headers = {"content-encoding": "gzip"} if corrupt else {}
-    response = httpx.Response(200, headers=headers, content=text.encode())
+    if input_value["corrupt"]:
+        response: httpx.Response = Undecodable(200)
+    else:
+        response = httpx.Response(200, content=text.encode())
     return {"text": _safe_response_text(response, input_value["limit"])}
 
 
@@ -196,8 +225,7 @@ def compress(input_value: Input) -> JsonValue:
 
 
 def fallback(input_value: Input) -> JsonValue:
-    guardrail = build(input_value["settings"])
-    return guardrail.fallback_of(input_value["messages"])
+    return Probe.fallback_of(input_value["messages"])
 
 
 HANDLERS: dict[Function, Callable[[Input], JsonValue]] = {

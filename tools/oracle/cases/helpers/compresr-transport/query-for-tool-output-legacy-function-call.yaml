@@ -1,0 +1,6 @@
+kind: helper
+name: query-for-tool-output-legacy-function-call
+call:
+  compresr_transport: {"function": "query_for_target", "messages": [{"role": "user", "content": "Look it up"}, {"role": "assistant", "content": null, "function_call": {"name": "lookup", "arguments": {"id": 7}}}, {"role": "function", "name": "lookup", "content": "found"}], "target_idx": 2, "fallback": "Look it up"}
+env: {}
+compare: {ignore: []}

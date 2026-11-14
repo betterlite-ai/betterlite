@@ -1,0 +1,6 @@
+kind: helper
+name: safe-response-text-undecodable-encoding
+call:
+  compresr_transport: {"function": "safe_response_text", "text": "not a gzip stream", "limit": 500, "corrupt": true}
+env: {}
+compare: {ignore: []}

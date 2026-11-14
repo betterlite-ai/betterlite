@@ -1,0 +1,6 @@
+kind: helper
+name: compress-unexpected-shape-fail-open
+call:
+  compresr_transport: {"function": "compress", "settings": {"api_base": "http://compresr.test", "model": "latte_v2", "target_compression_ratio": 0.5, "coarse": false, "dynamic": false, "dynamic_min_ratio": null, "dynamic_max_ratio": null, "compression_params": {}, "timeout": null, "fallback": "fail_open"}, "goals": [{"context": "tool output", "query": "q"}], "reply": {"status": 200, "body": "[\"not\", \"an\", \"object\"]"}}
+env: {}
+compare: {ignore: []}

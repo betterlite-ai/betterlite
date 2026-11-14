@@ -1,0 +1,6 @@
+kind: helper
+name: content-shape-string-preservation
+call:
+  compresr_transport: {"function": "replace_text_in_content", "content": "a long original tool output", "new_text": "short"}
+env: {}
+compare: {ignore: []}

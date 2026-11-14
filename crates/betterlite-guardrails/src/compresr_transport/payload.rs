@@ -6,6 +6,13 @@ use serde::Serialize;
 use super::{CompressTarget, TransportSettings};
 
 const SOURCE_TAG: &str = "integration:litellm";
+const NAMED_KEYS: [&str; 5] = [
+    "compression_model_name",
+    "target_compression_ratio",
+    "coarse",
+    "dynamic",
+    "source",
+];
 
 #[derive(Debug, Serialize)]
 pub(super) struct CompressRequest {
@@ -92,6 +99,20 @@ fn common_params(settings: &TransportSettings) -> CommonParams {
         source: SOURCE_TAG,
         dynamic_min_ratio: settings.dynamic_min_ratio,
         dynamic_max_ratio: settings.dynamic_max_ratio,
-        extra: settings.compression_params.clone(),
+        extra: passthrough(settings),
     }
+}
+
+// LiteLLM spreads the passthrough first, so a key it also names is replaced by the named value
+fn passthrough(settings: &TransportSettings) -> BTreeMap<String, GuardrailValue> {
+    settings
+        .compression_params
+        .iter()
+        .filter(|(key, _)| {
+            !NAMED_KEYS.contains(&key.as_str())
+                && !(key.as_str() == "dynamic_min_ratio" && settings.dynamic_min_ratio.is_some())
+                && !(key.as_str() == "dynamic_max_ratio" && settings.dynamic_max_ratio.is_some())
+        })
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
 }

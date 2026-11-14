@@ -124,6 +124,20 @@ fn a_user_message_uses_the_fallback_query() {
 }
 
 #[test]
+fn a_named_user_message_never_takes_a_function_call_intent() {
+    let conversation = messages(
+        r#"[
+            {"role":"assistant","content":null,"function_call":{"name":"lookup","arguments":"{}"}},
+            {"role":"user","name":"lookup","content":"compress me"}
+        ]"#,
+    );
+    assert_eq!(
+        query_for_target(&conversation, 1, "the fallback"),
+        "the fallback"
+    );
+}
+
+#[test]
 fn a_target_outside_the_conversation_uses_the_fallback_query() {
     let conversation = messages(r#"[{"role":"user","content":"hello"}]"#);
     assert_eq!(query_for_target(&conversation, 4, "hello"), "hello");

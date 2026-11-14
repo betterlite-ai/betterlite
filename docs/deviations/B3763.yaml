@@ -1,0 +1,8 @@
+task: B3763
+deviations:
+  - what: An api_base whose host the URL parser reads as a blocked cloud-metadata IPv4 address in a form Python's int(host, 0) rejects, such as dotted octal or hex parts (0251.0376.0251.0376, 0xa9.0xfe.0xa9.0xfe), is refused. LiteLLM accepts it.
+    why: The WHATWG host parser that reqwest uses connects to 169.254.169.254 for those spellings, so accepting them would let the blocked address through the very check that is meant to stop it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L109-L124
+  - what: A Compresr response body over 1 MiB is treated as unreadable and goes through the fail_open or fail_closed policy. LiteLLM reads the whole body.
+    why: An api_base the operator points at a hostile server could otherwise make the gateway buffer an unbounded body in memory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L770-L783

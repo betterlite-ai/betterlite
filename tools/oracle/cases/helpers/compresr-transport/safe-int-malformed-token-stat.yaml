@@ -1,0 +1,6 @@
+kind: helper
+name: safe-int-malformed-token-stat
+call:
+  compresr_transport: {"function": "safe_int", "value": "not a number"}
+env: {}
+compare: {ignore: []}

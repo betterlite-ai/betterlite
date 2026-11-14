@@ -277,6 +277,130 @@ async fn passthrough_params_are_sent_but_never_replace_the_request_content() {
 }
 
 #[tokio::test]
+async fn a_passthrough_key_the_request_names_is_replaced_by_the_named_value() {
+    let (base, recorded, _server) = serve(200, r#"{"data":{}}"#).await;
+    let mut built = settings(&base);
+    built.dynamic_min_ratio = Some(0.25);
+    built.compression_params = BTreeMap::from([
+        ("coarse".to_owned(), GuardrailValue::Boolean(false)),
+        ("source".to_owned(), text("hijacked source")),
+        ("compression_model_name".to_owned(), text("other_model")),
+        (
+            "target_compression_ratio".to_owned(),
+            GuardrailValue::Decimal(0.9),
+        ),
+        ("dynamic".to_owned(), GuardrailValue::Boolean(false)),
+        (
+            "dynamic_min_ratio".to_owned(),
+            GuardrailValue::Decimal(0.75),
+        ),
+        ("dynamic_max_ratio".to_owned(), GuardrailValue::Decimal(0.8)),
+    ]);
+    let transport = CompresrTransport::new(
+        built,
+        SecretString::from("test-key"),
+        reqwest::Client::default(),
+    )
+    .expect("transport");
+    transport
+        .compress(&[target("the context", "the query")])
+        .await
+        .expect("outcome");
+    let calls = calls(&recorded);
+    let body = calls[0].body.as_ref().expect("request body");
+    assert_eq!(field(body, "coarse"), GuardrailValue::Boolean(true));
+    assert_eq!(field(body, "source"), text("integration:litellm"));
+    assert_eq!(field(body, "compression_model_name"), text("latte_v2"));
+    assert_eq!(
+        field(body, "target_compression_ratio"),
+        GuardrailValue::Decimal(0.5)
+    );
+    assert_eq!(field(body, "dynamic"), GuardrailValue::Boolean(true));
+    assert_eq!(
+        field(body, "dynamic_min_ratio"),
+        GuardrailValue::Decimal(0.25)
+    );
+    assert_eq!(
+        field(body, "dynamic_max_ratio"),
+        GuardrailValue::Decimal(0.8)
+    );
+}
+
+#[tokio::test]
+async fn a_passthrough_ratio_bound_survives_when_the_other_bound_is_the_one_set() {
+    let (base, recorded, _server) = serve(200, r#"{"data":{}}"#).await;
+    let mut built = settings(&base);
+    built.dynamic_max_ratio = Some(0.9);
+    built.compression_params = BTreeMap::from([
+        (
+            "dynamic_min_ratio".to_owned(),
+            GuardrailValue::Decimal(0.75),
+        ),
+        ("dynamic_max_ratio".to_owned(), GuardrailValue::Decimal(0.8)),
+    ]);
+    let transport = CompresrTransport::new(
+        built,
+        SecretString::from("test-key"),
+        reqwest::Client::default(),
+    )
+    .expect("transport");
+    transport
+        .compress(&[target("the context", "the query")])
+        .await
+        .expect("outcome");
+    let calls = calls(&recorded);
+    let body = calls[0].body.as_ref().expect("request body");
+    assert_eq!(
+        field(body, "dynamic_min_ratio"),
+        GuardrailValue::Decimal(0.75)
+    );
+    assert_eq!(
+        field(body, "dynamic_max_ratio"),
+        GuardrailValue::Decimal(0.9)
+    );
+}
+
+const ONE_MIB: usize = 1024 * 1024;
+
+fn reply_of_length(total: usize) -> String {
+    let prefix = r#"{"data":{"compressed_context":""#;
+    let suffix = r#""}}"#;
+    let padding = "a".repeat(total - prefix.len() - suffix.len());
+    format!("{prefix}{padding}{suffix}")
+}
+
+#[tokio::test]
+async fn a_reply_of_exactly_the_size_limit_is_read() {
+    let (base, _recorded, _server) = serve(200, &reply_of_length(ONE_MIB)).await;
+    let outcome = transport(&base)
+        .compress(&[target("context", "query")])
+        .await
+        .expect("outcome");
+    let CompressOutcome::Results(results) = outcome else {
+        panic!("the reply at the limit was not read");
+    };
+    assert_eq!(results.len(), 1);
+}
+
+#[tokio::test]
+async fn a_reply_over_the_size_limit_goes_through_the_fail_policy() {
+    let (base, _recorded, _server) = serve(200, &reply_of_length(ONE_MIB + 1)).await;
+    let mut built = settings(&base);
+    built.fallback = UnreachableFallback::FailOpen;
+    let transport = CompresrTransport::new(
+        built,
+        SecretString::from("test-key"),
+        reqwest::Client::default(),
+    )
+    .expect("transport");
+    let outcome = transport
+        .compress(&[target("context", "query")])
+        .await
+        .expect("outcome");
+    assert_eq!(outcome, CompressOutcome::Uncompressed);
+}
+
+#[tokio::test]
 async fn a_trailing_slash_on_the_api_base_does_not_double_the_path() {
     let (base, recorded, _server) = serve(200, r#"{"data":{}}"#).await;
     transport(&format!("{base}/"))

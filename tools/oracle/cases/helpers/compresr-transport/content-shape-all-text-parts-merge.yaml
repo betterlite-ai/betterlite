@@ -1,0 +1,6 @@
+kind: helper
+name: content-shape-all-text-parts-merge
+call:
+  compresr_transport: {"function": "replace_text_in_content", "content": [{"type": "text", "text": "first part"}, {"type": "text", "text": "last part", "cache_control": {"type": "ephemeral"}}], "new_text": "short"}
+env: {}
+compare: {ignore: []}
