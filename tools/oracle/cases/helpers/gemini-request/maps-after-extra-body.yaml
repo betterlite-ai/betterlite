@@ -14,6 +14,10 @@ call:
         type: object
         properties:
           temp: {type: number}
+      response_schema:
+        type: object
+        properties:
+          legacy: {type: string}
       extra_body:
         tools: [{googleMaps: {}}]
     litellm_params: {}
