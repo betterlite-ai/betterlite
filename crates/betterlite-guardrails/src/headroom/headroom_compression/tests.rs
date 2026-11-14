@@ -9,7 +9,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use axum::Router;
 use axum::body::Bytes;
 use axum::http::{HeaderMap, Method, Uri};
+use axum::response::IntoResponse;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_http::proxy::base_builder;
 use reqwest::StatusCode;
 use rstest::rstest;
@@ -19,7 +21,7 @@ use tokio::task::JoinSet;
 use uuid::Uuid;
 
 use super::apply::UNAVAILABLE_MESSAGE;
-use super::{Clock, HeadroomGuardrail};
+use super::{Clock, HeadroomGuardrail, HeadroomRuntime};
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::contract::GuardrailContract as _;
 use crate::guardrail_base::failure::GuardrailFailure;
@@ -29,6 +31,7 @@ use crate::headroom_settings::{HeadroomInput, HeadroomSettings, SUPPORTED_EVENT_
 mod compress;
 
 const FOUR: &str = r#"{"structured_messages":[{"role":"system","content":"sys"},{"role":"user","content":"long text"},{"role":"assistant","content":"answer"},{"role":"user","content":"now"}]}"#;
+const SHORTENED: &str = r#"[{"role":"system","content":"sys"},{"role":"user","content":"short"},{"role":"assistant","content":"answer"},{"role":"user","content":"now"}]"#;
 const THREE_USERS: &str = r#"{"structured_messages":[{"role":"user","content":"one"},{"role":"user","content":"two"},{"role":"user","content":"three"}]}"#;
 const SINGLE_USER: &str = r#"{"structured_messages":[{"role":"user","content":"only"}]}"#;
 const SERVICE_ONE: &str = r#"{"messages":[{"role":"user","content":"short"}]}"#;
@@ -53,7 +56,10 @@ struct Mock {
     _server: JoinSet<io::Result<()>>,
 }
 
-async fn mock(status: StatusCode, payload: String) -> Mock {
+async fn mock<P>(status: StatusCode, payload: P) -> Mock
+where
+    P: Clone + IntoResponse + Send + Sync + 'static,
+{
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let seen = Arc::new(Mutex::new(Vec::new()));
@@ -119,7 +125,11 @@ fn fail_open_input(base: &str) -> HeadroomInput {
     }
 }
 
-fn build(input: HeadroomInput, now: &Arc<Mutex<Duration>>) -> HeadroomGuardrail {
+fn build(
+    input: HeadroomInput,
+    now: &Arc<Mutex<Duration>>,
+    wall: fn() -> SystemTime,
+) -> HeadroomGuardrail {
     let env: BTreeMap<String, String> = BTreeMap::new();
     let settings = HeadroomSettings::new(&input, &env).unwrap();
     let shared = Arc::clone(now);
@@ -127,20 +137,38 @@ fn build(input: HeadroomInput, now: &Arc<Mutex<Duration>>) -> HeadroomGuardrail 
     HeadroomGuardrail::new(
         Some("headroom".to_owned()),
         settings,
-        base_builder(),
-        clock,
-        Uuid::new_v4,
+        Box::new(|connect: Duration| base_builder().connect_timeout(connect).build()),
+        HeadroomRuntime {
+            clock,
+            wall,
+            new_id: Uuid::new_v4,
+            event_hook: Some(LitellmParamsMode::One("pre_call".to_owned())),
+        },
     )
     .unwrap()
 }
 
+fn fixed_wall() -> SystemTime {
+    UNIX_EPOCH
+}
+
+static WALL_TIMES: Mutex<Vec<SystemTime>> = Mutex::new(Vec::new());
+
+fn next_wall() -> SystemTime {
+    WALL_TIMES.lock().unwrap().remove(0)
+}
+
 fn guardrail(base: &str) -> HeadroomGuardrail {
-    build(default_input(base), &Arc::new(Mutex::new(Duration::ZERO)))
+    build(
+        default_input(base),
+        &Arc::new(Mutex::new(Duration::ZERO)),
+        fixed_wall,
+    )
 }
 
 fn clocked(input: HeadroomInput) -> (HeadroomGuardrail, Arc<Mutex<Duration>>) {
     let now = Arc::new(Mutex::new(Duration::ZERO));
-    let built = build(input, &now);
+    let built = build(input, &now, fixed_wall);
     (built, now)
 }
 
@@ -274,11 +302,12 @@ async fn the_bypass_header_skips_compression_only_for_true(
     let returned = apply(&guardrail, original.clone(), &mut request)
         .await
         .unwrap();
-    assert_eq!(returned, original);
     if bypasses {
+        assert_eq!(returned, original);
         assert_eq!(call_count(&server), 0);
         assert!(records(&request).is_empty());
     } else {
+        assert_eq!(structure(&returned), json(SHORTENED));
         assert_eq!(call_count(&server), 1);
     }
 }
@@ -297,10 +326,11 @@ async fn background_requests_skip_compression(#[case] given: &str, #[case] skipp
     let returned = apply(&guardrail, original.clone(), &mut request)
         .await
         .unwrap();
-    assert_eq!(returned, original);
     if skipped {
+        assert_eq!(returned, original);
         assert_eq!(call_count(&server), 0);
     } else {
+        assert_eq!(structure(&returned), json(SHORTENED));
         assert_eq!(call_count(&server), 1);
     }
 }
@@ -417,14 +447,14 @@ async fn untranslated_tool_results_are_protected_from_compression() {
 async fn call_id_comes_from_the_logging_object() {
     let server = mock(StatusCode::OK, SERVICE_HASHES.to_owned()).await;
     let guardrail = guardrail(&server.base);
-    let target = logging_target("call-1");
+    let mut target = logging_target("call-1");
     let mut request = data(r#"{"litellm_call_id":"request-id"}"#);
     guardrail
         .apply(
             inputs(FOUR),
             &mut request,
             GuardrailInputType::Request,
-            Some(&target),
+            Some(&mut target),
         )
         .await
         .unwrap();
@@ -433,6 +463,41 @@ async fn call_id_comes_from_the_logging_object() {
         Some([SENT_HASH.to_owned()].into_iter().collect())
     );
     assert_eq!(guardrail.has_issued_hashes("request-id"), None);
+}
+
+#[tokio::test]
+async fn the_record_is_synced_into_the_logging_object() {
+    let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
+    let guardrail = guardrail(&server.base);
+    let mut target = GuardrailLogTarget {
+        litellm_params: Some(BTreeMap::new()),
+        model_call_params: Some(BTreeMap::new()),
+    };
+    let mut request = data("{}");
+    guardrail
+        .apply(
+            inputs(FOUR),
+            &mut request,
+            GuardrailInputType::Request,
+            Some(&mut target),
+        )
+        .await
+        .unwrap();
+    let synced = serde_json::to_value(&target).unwrap();
+    for pointer in [
+        "/litellm_params/metadata/standard_logging_guardrail_information",
+        "/model_call_params/metadata/standard_logging_guardrail_information",
+    ] {
+        let entries = synced
+            .pointer(pointer)
+            .and_then(serde_json::Value::as_array)
+            .unwrap_or_else(|| panic!("records under {pointer}"));
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].get("guardrail_name"),
+            Some(&serde_json::Value::String("headroom".to_owned()))
+        );
+    }
 }
 
 #[tokio::test]
@@ -452,14 +517,14 @@ async fn call_id_comes_from_the_request_state() {
 async fn an_empty_logging_call_id_falls_to_the_request_state() {
     let server = mock(StatusCode::OK, SERVICE_HASHES.to_owned()).await;
     let guardrail = guardrail(&server.base);
-    let target = logging_target("");
+    let mut target = logging_target("");
     let mut request = data(r#"{"litellm_call_id":"req-1"}"#);
     guardrail
         .apply(
             inputs(FOUR),
             &mut request,
             GuardrailInputType::Request,
-            Some(&target),
+            Some(&mut target),
         )
         .await
         .unwrap();
@@ -488,14 +553,14 @@ async fn a_missing_call_id_is_generated_and_written_to_the_request() {
 async fn hashes_are_lowercased_from_the_service_response() {
     let server = mock(StatusCode::OK, SERVICE_HASHES.to_owned()).await;
     let guardrail = guardrail(&server.base);
-    let target = logging_target("call-1");
+    let mut target = logging_target("call-1");
     let mut request = data("{}");
     guardrail
         .apply(
             inputs(FOUR),
             &mut request,
             GuardrailInputType::Request,
-            Some(&target),
+            Some(&mut target),
         )
         .await
         .unwrap();
@@ -513,14 +578,14 @@ async fn ccr_retrieval_disabled_records_no_hashes_and_adds_no_tool() {
         ..default_input(&server.base)
     };
     let guardrail = guardrail_with_clock(input);
-    let target = logging_target("call-1");
+    let mut target = logging_target("call-1");
     let mut request = data("{}");
     let returned = guardrail
         .apply(
             inputs(FOUR),
             &mut request,
             GuardrailInputType::Request,
-            Some(&target),
+            Some(&mut target),
         )
         .await
         .unwrap();
@@ -546,38 +611,38 @@ async fn hashes_are_pruned_once_the_ttl_has_passed() {
         ..default_input(&server.base)
     };
     let (guardrail, now) = clocked(input);
-    let target = logging_target("first");
+    let mut target = logging_target("first");
     let mut request = data("{}");
     guardrail
         .apply(
             inputs(FOUR),
             &mut request,
             GuardrailInputType::Request,
-            Some(&target),
+            Some(&mut target),
         )
         .await
         .unwrap();
     assert!(guardrail.has_issued_hashes("first").is_some());
     *now.lock().unwrap() = Duration::from_secs(899);
-    let later = logging_target("second");
+    let mut later = logging_target("second");
     guardrail
         .apply(
             inputs(FOUR),
             &mut request,
             GuardrailInputType::Request,
-            Some(&later),
+            Some(&mut later),
         )
         .await
         .unwrap();
     assert!(guardrail.has_issued_hashes("first").is_some());
     *now.lock().unwrap() = Duration::from_secs(900);
-    let expired = logging_target("third");
+    let mut expired = logging_target("third");
     guardrail
         .apply(
             inputs(FOUR),
             &mut request,
             GuardrailInputType::Request,
-            Some(&expired),
+            Some(&mut expired),
         )
         .await
         .unwrap();
@@ -686,7 +751,10 @@ async fn success_records_statistics_and_the_applied_guardrail() {
         record.get("guardrail_status"),
         Some(&serde_json::Value::String("success".to_owned()))
     );
-    assert_eq!(record.get("guardrail_mode"), Some(&serde_json::Value::Null));
+    assert_eq!(
+        record.get("guardrail_mode"),
+        Some(&serde_json::Value::String("pre_call".to_owned()))
+    );
     assert_eq!(
         record.get("masked_entity_count"),
         Some(&serde_json::Value::Null)
@@ -814,33 +882,21 @@ async fn an_empty_request_call_id_is_replaced_with_a_generated_one() {
 }
 
 #[tokio::test]
-async fn records_carry_wall_clock_times_and_their_difference() {
+async fn records_carry_the_injected_wall_clock_times_and_their_difference() {
     let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
-    let guardrail = guardrail(&server.base);
-    let before = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs_f64();
+    let start = UNIX_EPOCH + Duration::from_millis(1_000_500);
+    let end = UNIX_EPOCH + Duration::from_millis(1_002_750);
+    WALL_TIMES.lock().unwrap().clear();
+    WALL_TIMES.lock().unwrap().extend([start, end]);
+    let guardrail = build(
+        default_input(&server.base),
+        &Arc::new(Mutex::new(Duration::ZERO)),
+        next_wall,
+    );
     let mut request = data("{}");
     apply(&guardrail, inputs(FOUR), &mut request).await.unwrap();
-    let after = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs_f64();
     let record = first_record(&request);
-    let start = record
-        .get("start_time")
-        .and_then(serde_json::Value::as_f64)
-        .expect("a numeric start_time");
-    let end = record
-        .get("end_time")
-        .and_then(serde_json::Value::as_f64)
-        .expect("a numeric end_time");
-    let duration = record
-        .get("duration")
-        .and_then(serde_json::Value::as_f64)
-        .expect("a numeric duration");
-    assert!(start >= before && start <= after);
-    assert!(end >= start && end <= after);
-    assert_eq!(duration, end - start);
+    assert_eq!(record.get("start_time"), Some(&serde_json::json!(1_000.5)));
+    assert_eq!(record.get("end_time"), Some(&serde_json::json!(1_002.75)));
+    assert_eq!(record.get("duration"), Some(&serde_json::json!(2.25)));
 }

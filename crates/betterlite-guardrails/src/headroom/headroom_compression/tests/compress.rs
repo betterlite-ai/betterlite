@@ -1,10 +1,14 @@
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_http::proxy::base_builder;
+use betterlite_http::proxy::limits::TransportLimits;
 use reqwest::StatusCode;
 use rstest::rstest;
 use tokio::net::TcpListener;
+use uuid::Uuid;
 
 use super::{
     FOUR, SERVICE_ONE, THREE_USERS, apply, data, default_input, fail_open_input, guardrail,
@@ -12,13 +16,14 @@ use super::{
 };
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::headroom_failure::NOT_FOUND_HINT;
-use crate::headroom_settings::HeadroomInput;
+use crate::headroom_settings::{HeadroomInput, HeadroomSettings};
 
 use super::super::apply::UNAVAILABLE_MESSAGE;
 use super::super::compress::{
     BODY_PREVIEW_CHARS, COUNT_ERROR, EMPTY_MESSAGES_ERROR, MISSING_MESSAGES_ERROR, NON_JSON_ERROR,
     SERVICE_ERROR, SHAPE_ERROR, UNREACHABLE_ERROR,
 };
+use super::super::{HeadroomGuardrail, HeadroomRuntime};
 
 async fn recorded_response(payload: &str) -> serde_json::Value {
     let server = mock(StatusCode::OK, payload.to_owned()).await;
@@ -309,6 +314,23 @@ async fn a_non_json_body_is_previewed_in_the_failure_detail() {
     assert_eq!(body.chars().count(), BODY_PREVIEW_CHARS);
 }
 
+#[tokio::test]
+async fn a_non_utf8_body_is_refused_without_a_preview() {
+    let server = mock(StatusCode::OK, vec![0xff_u8, 0xfe, 0xfd]).await;
+    let guardrail = guardrail(&server.base);
+    let mut request = data("{}");
+    let error = apply(&guardrail, inputs(FOUR), &mut request)
+        .await
+        .unwrap_err();
+    let (status, detail) = detail_of(error);
+    assert_eq!(status, 502);
+    assert_eq!(
+        detail.get("error"),
+        Some(&GuardrailValue::Text(NON_JSON_ERROR.to_owned()))
+    );
+    assert_eq!(detail.get("body"), None);
+}
+
 #[rstest]
 #[case::nan("NaN")]
 #[case::infinity("Infinity")]
@@ -419,6 +441,29 @@ async fn a_timeout_fails_closed() {
     );
 }
 
+#[tokio::test]
+async fn an_oversized_reply_fails_closed_with_the_size_limit() {
+    let limit = TransportLimits::DEFAULT.body_bytes;
+    let server = mock(StatusCode::OK, "x".repeat(limit + 1)).await;
+    let guardrail = guardrail(&server.base);
+    let mut request = data("{}");
+    let error = apply(&guardrail, inputs(FOUR), &mut request)
+        .await
+        .unwrap_err();
+    let (status, detail) = detail_of(error);
+    assert_eq!(status, 502);
+    assert_eq!(
+        detail.get("error"),
+        Some(&GuardrailValue::Text(UNREACHABLE_ERROR.to_owned()))
+    );
+    assert_eq!(
+        detail.get("detail"),
+        Some(&GuardrailValue::Text(format!(
+            "the response body is larger than {limit} bytes"
+        )))
+    );
+}
+
 fn records_are_absent(request: &BTreeMap<String, GuardrailValue>) -> bool {
     super::records(request).is_empty()
 }
@@ -428,15 +473,51 @@ fn updating_params_re_resolves_and_re_clamps_the_timeout() {
     let mut guardrail = guardrail("http://127.0.0.1:1");
     assert_eq!(guardrail.settings.timeout.total, Duration::from_secs(60));
     assert_eq!(guardrail.settings.timeout.connect, Duration::from_secs(5));
-    guardrail.update_in_memory_params(Some(2.0));
+    guardrail.update_in_memory_params(Some(2.0)).unwrap();
     assert_eq!(guardrail.settings.timeout.total, Duration::from_secs(2));
     assert_eq!(guardrail.settings.timeout.connect, Duration::from_secs(2));
-    guardrail.update_in_memory_params(Some(10.0));
+    guardrail.update_in_memory_params(Some(10.0)).unwrap();
     assert_eq!(guardrail.settings.timeout.total, Duration::from_secs(10));
     assert_eq!(guardrail.settings.timeout.connect, Duration::from_secs(5));
-    guardrail.update_in_memory_params(Some(0.0));
+    guardrail.update_in_memory_params(Some(0.0)).unwrap();
     assert_eq!(guardrail.settings.timeout.total, Duration::from_secs(60));
     assert_eq!(guardrail.settings.timeout.connect, Duration::from_secs(5));
-    guardrail.update_in_memory_params(None);
+    guardrail.update_in_memory_params(None).unwrap();
     assert_eq!(guardrail.settings.timeout.total, Duration::from_secs(60));
+}
+
+#[test]
+fn updating_params_rebuilds_the_client_for_the_new_connect_deadline() {
+    let seen: Arc<Mutex<Vec<Duration>>> = Arc::new(Mutex::new(Vec::new()));
+    let recorder = Arc::clone(&seen);
+    let env: BTreeMap<String, String> = BTreeMap::new();
+    let settings = HeadroomSettings::new(&default_input("http://127.0.0.1:1"), &env).unwrap();
+    let mut guardrail = HeadroomGuardrail::new(
+        Some("headroom".to_owned()),
+        settings,
+        Box::new(move |connect: Duration| {
+            recorder.lock().unwrap().push(connect);
+            base_builder().connect_timeout(connect).build()
+        }),
+        HeadroomRuntime {
+            clock: Box::new(|| Duration::ZERO),
+            wall: super::fixed_wall,
+            new_id: Uuid::new_v4,
+            event_hook: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(*seen.lock().unwrap(), [Duration::from_secs(5)]);
+    guardrail.update_in_memory_params(Some(2.0)).unwrap();
+    assert_eq!(
+        *seen.lock().unwrap(),
+        [Duration::from_secs(5), Duration::from_secs(2)]
+    );
+    guardrail.update_in_memory_params(Some(10.0)).unwrap();
+    guardrail.update_in_memory_params(Some(0.0)).unwrap();
+    guardrail.update_in_memory_params(None).unwrap();
+    assert_eq!(
+        *seen.lock().unwrap(),
+        [5, 2, 5, 5, 5].map(Duration::from_secs)
+    );
 }
