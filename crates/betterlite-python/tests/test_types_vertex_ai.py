@@ -450,6 +450,16 @@ def test_names_provider_metadata_fields() -> None:
     assert VERTEX_AI_PROVIDER_METADATA_FIELDS == theirs
 
 
+def test_names_json_fields() -> None:
+    tool_hints: dict[str, type] = get_type_hints(TOOLS.Tools)
+    members: tuple[type, ...] = get_args(tool_hints["googleSearch"])
+    assert members[0] is str
+    assert members[1].__name__ == "JsonValue"
+    schema_hints: dict[str, type] = get_type_hints(SCHEMA.Schema)
+    assert schema_hints["default"].__name__ == "JsonValue"
+    assert schema_hints["example"].__name__ == "JsonValue"
+
+
 def test_protocol_resolver_signature() -> None:
     assert signature_text(VertexAccessTokenResolver) == signature_text(
         THEIR_RESOLVERS.VertexAccessTokenResolver,
