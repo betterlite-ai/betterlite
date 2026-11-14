@@ -1,7 +1,5 @@
 mod tests;
 
-use std::fmt::Display;
-
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_vertex::google_genai_guardrail::callbacks::merged_request_data;
 use betterlite_vertex::google_genai_guardrail::records::{
@@ -13,7 +11,7 @@ use betterlite_vertex::google_genai_guardrail::sse::{
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use crate::helpers::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -94,17 +92,6 @@ impl Helper for Op {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(json!({ "calls": calls }))
     }
-}
-
-fn failure<Error: Display>(error: Error) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "ValueError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
 }
 
 fn resolve(call: &Call) -> HelperResult {
