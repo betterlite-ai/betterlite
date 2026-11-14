@@ -318,6 +318,29 @@ async fn an_empty_token_is_not_sent_but_still_refreshes() {
 }
 
 #[tokio::test]
+async fn an_empty_refreshed_token_is_not_sent_on_the_retry() {
+    let server = support::start(vec![
+        support::reply(401, "expired"),
+        support::reply(401, "again"),
+    ]);
+    let script = support::tokens(&["token-1", ""]);
+    let auth = saas(server.port, &server.base, &script);
+    let body = payload();
+    let error = failure(
+        auth.post_detection(&request("detection/v1/interactions", &body))
+            .await,
+    );
+    assert!(matches!(
+        error,
+        HiddenlayerError::Status { status: 401, .. }
+    ));
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].authorization.as_deref(), Some("Bearer token-1"));
+    assert_eq!(requests[1].authorization, None);
+}
+
+#[tokio::test]
 async fn a_failed_refresh_fails_the_detection_request() {
     let server = support::start(vec![support::reply(401, "expired")]);
     let script = support::tokens(&["token-1"]);
