@@ -1,11 +1,11 @@
 from collections.abc import Sequence
 from typing import get_args
 
-import litellm.types.management_endpoints.cache_settings_endpoints as litellm_cache
-import litellm.types.management_endpoints.coordination_redis_endpoints as litellm_coordination
-import litellm.types.management_endpoints.router_settings_endpoints as litellm_router
 import pydantic
 import pytest
+from litellm.types.management_endpoints import cache_settings_endpoints as litellm_cache
+from litellm.types.management_endpoints import coordination_redis_endpoints as litellm_coordination
+from litellm.types.management_endpoints import router_settings_endpoints as litellm_router
 
 import betterlite.types.management_endpoints.cache_settings_endpoints as betterlite_cache
 import betterlite.types.management_endpoints.coordination_redis_endpoints as betterlite_coordination
