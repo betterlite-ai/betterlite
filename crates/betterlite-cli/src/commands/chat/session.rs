@@ -199,15 +199,12 @@ impl Session<'_> {
     }
 
     fn switch_model(&mut self) -> Result<(), ChatError> {
-        let Some(model) = models::pick(self.client, self.terminal)? else {
-            return Ok(());
-        };
-        if model.is_empty() {
-            return Ok(());
+        let picked = models::pick(self.client, self.terminal)?;
+        if let Some(model) = picked.filter(|model| !model.is_empty()) {
+            self.terminal
+                .write_line(&format!("Switched to model: {model}"))?;
+            self.model = model;
         }
-        self.model = model;
-        self.terminal
-            .write_line(&format!("Switched to model: {}", self.model))?;
         Ok(())
     }
 }
