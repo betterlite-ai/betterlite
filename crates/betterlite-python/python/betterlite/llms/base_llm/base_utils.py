@@ -1,10 +1,13 @@
 from copy import deepcopy
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from pydantic import JsonValue
 
 
+@runtime_checkable
 class ResponseFormatModel(Protocol):
+    __name__: str
+
     @classmethod
     def model_json_schema(
         cls, *, ref_template: str = "#/$defs/{model}",
@@ -198,7 +201,7 @@ def _ensure_strict_json_schema(
 
 
 def type_to_response_format_param(
-    response_format: type[ResponseFormatModel] | JsonValue,
+    response_format: ResponseFormatModel | JsonValue,
     ref_template: str | None = None,
 ) -> dict[str, JsonValue] | None:
     if response_format is None:
@@ -208,6 +211,8 @@ def type_to_response_format_param(
             return _dict_to_response_format_helper(response_format, ref_template)
         case int() | float() | str() | list():
             raise TypeError(f"Unsupported response_format type - {response_format}")
+        case ResponseFormatModel():
+            pass
     if not callable(response_format):
         raise TypeError(f"Unsupported response_format type - {response_format}")
     try:
