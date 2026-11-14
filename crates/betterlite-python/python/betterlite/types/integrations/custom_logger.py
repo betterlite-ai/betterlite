@@ -28,6 +28,7 @@ INTERCEPTION_INTERNAL_PREFIXES: Final = frozenset(
 )
 
 
+# ast-grep-ignore: no-one-line-functions
 def is_interception_internal_key(
     key: str, prefixes: frozenset[str] = INTERCEPTION_INTERNAL_PREFIXES
 ) -> bool:
@@ -39,6 +40,7 @@ CONVERTED_STREAM_KEYS: Final = frozenset(
 )
 
 
+# ast-grep-ignore: no-one-line-functions
 def converted_stream_requested(params: Mapping[str, JsonValue]) -> bool:
     return any(bool(params.get(key)) for key in CONVERTED_STREAM_KEYS)
 
