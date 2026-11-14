@@ -1,0 +1,29 @@
+task: B3502
+deviations:
+  - what: Each operation is a blocking function plus an async function, with no _is_async flag and no function that returns either a value or a coroutine.
+    why: Rust has no dynamic return type of that kind; B3504 picks the form from the caller's acreate_agent, alist_agents or aget_agent flag.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L46-L56
+  - what: The async functions accept an optional async client, which LiteLLM's dispatcher never forwards.
+    why: LiteLLM's async_* methods already have a client parameter, and the dispatcher drops it only by omission; no caller at the pin supplies one, so a direct async call keeps the parameter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L47-L55
+  - what: The create timeout and the fallback request_timeout arrive as resolved Durations from the caller; this module never reads REQUEST_TIMEOUT and never applies the 6000 second default itself.
+    why: betterlite reads the environment once into its config crate, so the REQUEST_TIMEOUT value and the 6000 second default are parsed and defaulted by B198's routing timeouts and passed through B3504, while LiteLLM builds the module-level request_timeout constant at import time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L561-L577
+  - what: An absent or null litellm_params.api_base reaches get_complete_url and the transform_*_request methods as an empty string, not as None.
+    why: B3492's api_base helper reads the field once and passes a plain &str to a config trait that has no optional string, and docs/compatibility.md has an absent value take the default, so an empty base means no base at all.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L62-L65
+  - what: The response text a stage records is the body decoded as UTF-8, or byte for byte as Latin-1 when that fails; a declared charset other than UTF-8 or Latin-1 is not honoured.
+    why: httpx's response.text decodes with the charset from the content-type and replaces the bytes it cannot decode, and betterlite's transports keep the raw bytes so no charset table is consulted; UTF-8 bodies, the usual answer, decode the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L47-L52
+  - what: pre_call and post_call reach a typed AgentLogging trait carrying the input, the empty api key, the api base, the validated headers and the complete input dict; they are not written into the logging object's model_call_details.
+    why: betterlite's logging pipeline owns the model_call_details keys and masks secret headers there, the same split B3492 records, and the header values stay SecretString so they never enter a serialized params bag.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L70-L77
+  - what: Create's POST uses the same shared clients as B3492's interactions, so it follows no redirect, a 3xx answer becomes a provider error instead of the redirect target, and the response body is capped at the transport's 16 MiB.
+    why: both clients come from one HTTP client crate so TLS, proxy, timeout and no-retry settings apply everywhere, and B3492 records the same two limits for the same clients; LiteLLM's httpx handlers follow redirects and read an unbounded body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1404-L1424
+  - what: A connection or protocol error on create's async POST returns the transport error; it is not retried on a fresh single-connection client the way LiteLLM's AsyncHTTPHandler.post retries, and its timeout returns the transport error instead of litellm.Timeout.
+    why: the async client comes from B3492's base module, which builds one client per provider with reqwest's automatic retries off, so a POST goes out at most once and a retry cannot submit the same agent twice; the timeout is carried by the same reqwest error for the caller to classify.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L834-L866
+  - what: A timeout on create's blocking POST returns the transport error instead of litellm.Timeout.
+    why: reqwest reports its deadline as the request's own error, and the shared transport passes it through handle_error unchanged for the caller to classify, as B3492's blocking interactions already do.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1516-L1521

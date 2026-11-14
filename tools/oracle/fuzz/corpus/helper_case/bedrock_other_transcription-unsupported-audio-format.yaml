@@ -1,0 +1,31 @@
+kind: helper
+name: bedrock-other-transcription-unsupported-audio-format
+call:
+  bedrock_other_transcription:
+    calls:
+      - mode: sync
+        model: bedrock/voxtral
+        file: {kind: tuple, filename: a.aac, content: x}
+        custom_llm_provider: bedrock
+        optional_params: {}
+        reply_text: hello
+      - mode: async
+        model: bedrock/voxtral
+        file: {kind: tuple, filename: voice.opus, content: x}
+        custom_llm_provider: bedrock
+        optional_params: {}
+        reply_text: hello
+      - mode: sync
+        model: bedrock/voxtral
+        file: {kind: tuple, filename: memo.m4a, content: x}
+        custom_llm_provider: bedrock
+        optional_params: {}
+        reply_text: hello
+      - mode: async
+        model: bedrock/voxtral
+        file: {kind: tuple, filename: movie.mpeg, content: x}
+        custom_llm_provider: bedrock
+        optional_params: {}
+        reply_text: hello
+env: {}
+compare: {ignore: []}
