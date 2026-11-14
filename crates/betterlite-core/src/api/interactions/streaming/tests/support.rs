@@ -286,11 +286,8 @@ impl InteractionsStreamLogging for RecordingLogging {
     }
 
     fn dispatch_success_handlers(&self, call: InteractionsSuccessCall) {
-        self.record(
-            "dispatch_success_handlers",
-            call,
-            Some(call.prefer_async_handlers),
-        );
+        let prefer_async_handlers = Some(call.prefer_async_handlers);
+        self.record("dispatch_success_handlers", call, prefer_async_handlers);
     }
 
     fn run_async_success_handler(&self, call: InteractionsSuccessCall) {

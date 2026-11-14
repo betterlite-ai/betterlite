@@ -37,6 +37,7 @@ use betterlite_models::api_base_lookup::{
 };
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
@@ -104,7 +105,7 @@ async fn async_iterator_construction_builds_hidden_params_from_the_setup() {
             .hidden_params
             .additional_headers
             .get("x-ratelimit-remaining-requests"),
-        Some(&JsonValue::Text(String::from("9")))
+        Some(&Json::Text(String::from("9")))
     );
     assert_eq!(
         iterator
@@ -112,7 +113,7 @@ async fn async_iterator_construction_builds_hidden_params_from_the_setup() {
             .hidden_params
             .additional_headers
             .get("llm_provider-x-ratelimit-remaining-requests"),
-        Some(&JsonValue::Text(String::from("9")))
+        Some(&Json::Text(String::from("9")))
     );
     assert_eq!(iterator.base.model.as_deref(), Some("gemini-2.5-flash"));
     assert_eq!(iterator.base.custom_llm_provider.as_deref(), Some("gemini"));
@@ -202,7 +203,7 @@ fn sync_iterator_construction_rejects_a_wrongly_typed_api_base() {
             JsonValue::Bool(true),
         )])),
     )]));
-    let error = SyncInteractionsStreamIterator::new(
+    let Err(error) = SyncInteractionsStreamIterator::new(
         FakeSyncResponse::new(&[]),
         InteractionsStreamSetup {
             model: None,
@@ -212,8 +213,9 @@ fn sync_iterator_construction_rejects_a_wrongly_typed_api_base() {
             custom_llm_provider: None,
             api_base: &NO_API_BASE,
         },
-    )
-    .expect_err("a boolean api base is refused");
+    ) else {
+        panic!("a boolean api base is refused");
+    };
     assert!(matches!(error, InteractionStreamError::FieldType(_)));
 }
 
@@ -476,7 +478,7 @@ async fn async_iteration_reads_a_streamed_http_response() {
         deadline: Duration::from_secs(30),
     };
     let answer = format!("data: {COMPLETED_STATUS}\n\ndata: [DONE]\n");
-    let (response, ()) = tokio::join!(client.send(request), serve_stream(listener, &answer));
+    let (response, _) = tokio::join!(client.send(request), serve_stream(listener, &answer));
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
     let mut iterator = InteractionsStreamIterator::new(
@@ -490,7 +492,7 @@ async fn async_iteration_reads_a_streamed_http_response() {
             .hidden_params
             .additional_headers
             .get("x-ratelimit-remaining-requests"),
-        Some(&JsonValue::Text(String::from("9")))
+        Some(&Json::Text(String::from("9")))
     );
     let first = iterator
         .next_chunk()
@@ -522,7 +524,7 @@ fn sync_iteration_reads_a_buffered_response() {
             .hidden_params
             .additional_headers
             .get("x-ratelimit-remaining-requests"),
-        Some(&JsonValue::Text(String::from("9")))
+        Some(&Json::Text(String::from("9")))
     );
     let first = iterator
         .next_chunk()
