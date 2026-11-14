@@ -9,8 +9,9 @@ use rstest::rstest;
 
 use crate::guardrail_records::record::GuardrailStatus;
 use crate::noma_scan_policy::error::NomaError;
+use crate::noma_scan_policy::verdict::determine_guardrail_status;
 use crate::noma_scan_policy::wire::ScanResponse;
-use crate::noma_scan_policy::{DEFAULT_APPLICATION_ID, NomaScanPolicy, ScanCallContext};
+use crate::noma_scan_policy::{DEFAULT_APPLICATION_ID, ScanCallContext};
 
 use super::support::{
     SAFE_REPLY, USER_MESSAGES, captured, captured_headers, captured_path, context, corpus_answer,
@@ -92,18 +93,18 @@ async fn application_id_follows_litellms_precedence(
     settings.application_id = configured.map(str::to_owned);
     let policy = policy_with(settings);
     let mut request_data = data(USER_MESSAGES);
-    if let Some(header) = header {
-        let metadata = format!(r#"{{"headers": {{"x-noma-application-id": "{header}"}}}}"#);
+    if let Some(sent) = header {
+        let metadata = format!(r#"{{"headers": {{"x-noma-application-id": "{sent}"}}}}"#);
         request_data.insert(
             "metadata".to_owned(),
             GuardrailValue::Object(data(&metadata)),
         );
     }
     let mut user_auth: BTreeMap<String, GuardrailValue> = BTreeMap::new();
-    if let Some(alias) = alias {
+    if let Some(name) = alias {
         user_auth.insert(
             "key_alias".to_owned(),
-            GuardrailValue::Text(alias.to_owned()),
+            GuardrailValue::Text(name.to_owned()),
         );
     }
     let extra_data = data(extra);
@@ -142,10 +143,10 @@ async fn headers_follow_the_configured_key_and_call_id(
     settings.api_key = api_key.map(|key| secrecy::SecretString::from(key.to_owned()));
     let policy = policy_with(settings);
     let mut request_data = data(USER_MESSAGES);
-    if let Some(call_id) = call_id {
+    if let Some(sent) = call_id {
         request_data.insert(
             "litellm_call_id".to_owned(),
-            GuardrailValue::Text(call_id.to_owned()),
+            GuardrailValue::Text(sent.to_owned()),
         );
     }
     let user_auth = data("{}");
@@ -179,7 +180,7 @@ async fn endpoint_is_joined_like_urljoin(#[case] suffix: &str) {
 }
 
 #[rstest]
-#[case::absent(r#"{}"#)]
+#[case::absent("{}")]
 #[case::null(r#"{"messages": null}"#)]
 #[case::empty(r#"{"messages": []}"#)]
 #[case::null_contents(r#"{"messages": [{"role": "user", "content": null}]}"#)]
@@ -310,7 +311,7 @@ fn the_corpus_repeated_key_keeps_the_last_value() {
         Some(Some(GuardrailValue::Boolean(false)))
     );
     assert_eq!(
-        NomaScanPolicy::determine_guardrail_status(&answer),
+        determine_guardrail_status(&answer),
         GuardrailStatus::Success
     );
 }
@@ -530,7 +531,7 @@ async fn a_large_scan_answer_within_one_mebibyte_is_read() {
 
 #[tokio::test]
 async fn a_scan_answer_over_one_mebibyte_is_refused() {
-    let padding = "a".repeat(1_048_577);
+    let padding = "a".repeat(0x0010_0001);
     let reply = format!("{{\"aggregatedScanResult\": false, \"padding\": \"{padding}\"}}");
     let mock = mock_noma(StatusCode::OK, &reply, None).await;
     let policy = policy(&mock.base);
@@ -543,7 +544,7 @@ async fn a_scan_answer_over_one_mebibyte_is_refused() {
         .unwrap_err();
     assert!(matches!(
         error,
-        NomaError::ResponseTooLarge { limit: 1_048_576 }
+        NomaError::ResponseTooLarge { limit: 0x0010_0000 }
     ));
     assert!(records(&request_data).is_empty());
 }

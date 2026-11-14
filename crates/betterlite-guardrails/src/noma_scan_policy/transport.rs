@@ -4,6 +4,7 @@ use std::time::Duration;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_http::proxy::limits::{ReadError, read_bounded};
 use betterlite_http::user_url::join::urljoin;
+use reqwest::Response;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::value::RawValue;
@@ -24,54 +25,48 @@ pub(super) struct ScanTarget<'target> {
     pub(super) llm_request_id: Option<&'target str>,
 }
 
-impl NomaScanPolicy {
-    pub(super) async fn call_noma_api(
-        &self,
-        input_items: &[Box<RawValue>],
-        request_data: &BTreeMap<String, GuardrailValue>,
-        target: &ScanTarget<'_>,
-    ) -> Result<ScanResponse, NomaError> {
-        let request_call_id = text(request_data, "litellm_call_id")?;
-        let headers = request_headers(self.settings.api_key.as_ref(), request_call_id)?;
-        let noma_context = context(
-            request_data,
-            target,
-            self.settings.application_id.as_deref(),
-        )?;
-        let payload = ScanPayload {
-            input: input_items,
-            context: noma_context,
-        };
-        let base = self
-            .settings
-            .api_base
-            .as_deref()
-            .unwrap_or(DEFAULT_API_BASE);
-        let endpoint = urljoin(base, AIDR_ENDPOINT).map_err(|source| NomaError::Endpoint {
-            api_base: base.to_owned(),
-            source,
-        })?;
-        let mut response = self
-            .client
-            .post(endpoint)
-            .headers(headers)
-            .json(&payload)
-            .timeout(self.settings.timeout.unwrap_or(DEFAULT_SCAN_TIMEOUT))
-            .send()
-            .await
-            .map_err(|source| NomaError::Transport { source })?;
-        let status = response.status();
-        if status.is_client_error() || status.is_server_error() {
-            return Err(NomaError::HttpStatus { status });
-        }
-        let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
-            .await
-            .map_err(|error| match error {
-                ReadError::TooLarge { limit } => NomaError::ResponseTooLarge { limit },
-                ReadError::Failed(source) => NomaError::Transport { source },
-            })?;
-        ScanResponse::from_body(&body)
+pub(super) async fn call_noma_api(
+    policy: &NomaScanPolicy,
+    input_items: &[Box<RawValue>],
+    request_data: &BTreeMap<String, GuardrailValue>,
+    target: &ScanTarget<'_>,
+) -> Result<ScanResponse, NomaError> {
+    let settings = &policy.settings;
+    let request_call_id = text(request_data, "litellm_call_id")?;
+    let headers = request_headers(settings.api_key.as_ref(), request_call_id)?;
+    let payload = ScanPayload {
+        input: input_items,
+        context: context(request_data, target, settings.application_id.as_deref())?,
+    };
+    let base = settings.api_base.as_deref().unwrap_or(DEFAULT_API_BASE);
+    let endpoint = urljoin(base, AIDR_ENDPOINT).map_err(|source| NomaError::Endpoint {
+        api_base: base.to_owned(),
+        source,
+    })?;
+    let mut response = policy
+        .client
+        .post(endpoint)
+        .headers(headers)
+        .json(&payload)
+        .timeout(settings.timeout.unwrap_or(DEFAULT_SCAN_TIMEOUT))
+        .send()
+        .await
+        .map_err(|source| NomaError::Transport { source })?;
+    let status = response.status();
+    if status.is_client_error() || status.is_server_error() {
+        return Err(NomaError::HttpStatus { status });
     }
+    read_scan_response(&mut response).await
+}
+
+async fn read_scan_response(response: &mut Response) -> Result<ScanResponse, NomaError> {
+    let body = read_bounded(response, MAX_RESPONSE_BYTES)
+        .await
+        .map_err(|error| match error {
+            ReadError::TooLarge { limit } => NomaError::ResponseTooLarge { limit },
+            ReadError::Failed(source) => NomaError::Transport { source },
+        })?;
+    ScanResponse::from_body(&body)
 }
 
 fn request_headers(

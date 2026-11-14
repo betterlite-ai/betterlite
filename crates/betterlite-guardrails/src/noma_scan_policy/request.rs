@@ -13,7 +13,7 @@ pub(super) const fn as_object(value: &GuardrailValue) -> Option<&BTreeMap<String
     }
 }
 
-pub(super) fn as_object_mut(
+pub(super) const fn as_object_mut(
     value: &mut GuardrailValue,
 ) -> Option<&mut BTreeMap<String, GuardrailValue>> {
     if let GuardrailValue::Object(fields) = value {
@@ -33,7 +33,12 @@ pub(super) fn text<'data>(
     match value {
         GuardrailValue::Text(found) => Ok(Some(found)),
         GuardrailValue::Null => Ok(None),
-        _ => Err(NomaError::Field { field: name }),
+        GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Array(_)
+        | GuardrailValue::Object(_) => Err(NomaError::Field { field: name }),
     }
 }
 
@@ -42,7 +47,7 @@ pub(super) fn metadata(
 ) -> Result<Option<&BTreeMap<String, GuardrailValue>>, NomaError> {
     let Some(value) = request_data
         .get("metadata")
-        .filter(|value| !matches!(value, GuardrailValue::Null))
+        .filter(|candidate| !matches!(candidate, GuardrailValue::Null))
     else {
         return Ok(None);
     };
@@ -59,7 +64,7 @@ pub(super) fn application_id<'data>(
 ) -> Result<GuardrailValue, NomaError> {
     if let Some(value) = extra_data
         .get("application_id")
-        .filter(|value| !matches!(value, GuardrailValue::Null))
+        .filter(|candidate| !matches!(candidate, GuardrailValue::Null))
     {
         return Ok(value.clone());
     }
@@ -72,15 +77,15 @@ pub(super) fn application_id<'data>(
                 })?;
                 if let Some(header) = headers
                     .get("x-noma-application-id")
-                    .filter(|value| !matches!(value, GuardrailValue::Null))
+                    .filter(|candidate| !matches!(candidate, GuardrailValue::Null))
                 {
                     return Ok(header.clone());
                 }
             }
         }
     }
-    if let Some(configured) = configured {
-        return Ok(GuardrailValue::Text(configured.to_owned()));
+    if let Some(application) = configured {
+        return Ok(GuardrailValue::Text(application.to_owned()));
     }
     if let Some(alias) = text(user_auth, "key_alias")? {
         return Ok(GuardrailValue::Text(alias.to_owned()));

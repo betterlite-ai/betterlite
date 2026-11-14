@@ -6,13 +6,42 @@ use serde_json::value::{RawValue, to_raw_value};
 
 use super::error::NomaError;
 use super::request::{as_object, as_object_mut};
+use super::wire::{InputMessage, TextPart};
 
-pub(super) struct ConvertedInput {
-    pub(super) items: Vec<Box<RawValue>>,
-    pub(super) instructions: Option<String>,
+struct ConvertedInput {
+    items: Vec<Box<RawValue>>,
+    instructions: Option<String>,
 }
 
-pub(super) fn messages_from_request(
+// The Responses API items to scan, system instructions first; None when there is nothing to scan
+pub(super) fn scan_items(
+    request_data: &BTreeMap<String, GuardrailValue>,
+) -> Result<Option<Vec<Box<RawValue>>>, NomaError> {
+    let Some(messages) = messages_from_request(request_data)? else {
+        return Ok(None);
+    };
+    let converted = converted_input(&messages)?;
+    let mut items = converted.items;
+    if let Some(instructions) = converted
+        .instructions
+        .as_deref()
+        .filter(|text| !text.is_empty())
+    {
+        let system = InputMessage {
+            kind: "message",
+            role: "system",
+            content: [TextPart {
+                kind: "input_text",
+                text: instructions,
+            }],
+        };
+        let raw = to_raw_value(&system).map_err(|source| NomaError::PayloadJson { source })?;
+        items.insert(0, raw);
+    }
+    Ok((!items.is_empty()).then_some(items))
+}
+
+fn messages_from_request(
     request_data: &BTreeMap<String, GuardrailValue>,
 ) -> Result<Option<Vec<HistoryMessage>>, NomaError> {
     let messages = match request_data.get("messages") {
@@ -36,7 +65,7 @@ pub(super) fn messages_from_request(
     Ok(Some(parsed))
 }
 
-pub(super) fn converted_input(messages: &[HistoryMessage]) -> Result<ConvertedInput, NomaError> {
+fn converted_input(messages: &[HistoryMessage]) -> Result<ConvertedInput, NomaError> {
     let converted = convert_history(messages).map_err(|source| NomaError::History { source })?;
     let mut items = Vec::with_capacity(converted.input.len());
     for item in &converted.input {
@@ -80,10 +109,9 @@ pub(super) fn replace_last_user_message(
 
 // The first chat choice whose message carries a non-empty string content, as LiteLLM scans
 pub(super) fn message_content(response: &GuardrailValue) -> Result<Option<&str>, NomaError> {
-    let Some(fields) = as_object(response) else {
-        return Ok(None);
-    };
-    let Some(GuardrailValue::Array(choices)) = fields.get("choices") else {
+    let Some(GuardrailValue::Array(choices)) =
+        as_object(response).and_then(|fields| fields.get("choices"))
+    else {
         return Ok(None);
     };
     for choice in choices {
@@ -94,16 +122,9 @@ pub(super) fn message_content(response: &GuardrailValue) -> Result<Option<&str>,
         else {
             continue;
         };
-        let content = match message.get("content") {
-            None | Some(GuardrailValue::Null) => continue,
-            Some(GuardrailValue::Text(text)) => text,
-            Some(_) => {
-                return Err(NomaError::ResponseField {
-                    field: "choices.message.content",
-                });
-            }
-        };
-        if !content.is_empty() {
+        if let Some(content) = string_field(message, "content", "choices.message.content")?
+            .filter(|text| !text.is_empty())
+        {
             return Ok(Some(content));
         }
     }
@@ -142,9 +163,17 @@ pub(super) fn response_id(response: &GuardrailValue) -> Result<Option<&str>, Nom
     let Some(fields) = as_object(response) else {
         return Ok(None);
     };
-    match fields.get("id") {
+    string_field(fields, "id", "id")
+}
+
+fn string_field<'data>(
+    fields: &'data BTreeMap<String, GuardrailValue>,
+    key: &str,
+    field: &'static str,
+) -> Result<Option<&'data str>, NomaError> {
+    match fields.get(key) {
         None | Some(GuardrailValue::Null) => Ok(None),
-        Some(GuardrailValue::Text(id)) => Ok(Some(id)),
-        Some(_) => Err(NomaError::ResponseField { field: "id" }),
+        Some(GuardrailValue::Text(found)) => Ok(Some(found)),
+        Some(_) => Err(NomaError::ResponseField { field }),
     }
 }

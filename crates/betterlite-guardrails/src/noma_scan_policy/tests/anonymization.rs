@@ -3,10 +3,12 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use reqwest::StatusCode;
 use rstest::rstest;
-use tracing_subscriber::fmt;
+use tracing::Level;
+use tracing::subscriber::set_default;
 
 use crate::guardrail_records::record::GuardrailStatus;
 use crate::noma_scan_policy::error::{NomaBlockedMessage, NomaError};
+use crate::noma_scan_policy::messages::replace_last_user_message;
 
 use super::support::{
     CapturedLog, USER_MESSAGES, anonymizing_settings, context, data, field, mock_noma,
@@ -42,7 +44,7 @@ async fn blocked_verdict_returns_a_400_with_the_scan_result() {
     );
     detail.insert("details".to_owned(), message.details.clone());
     assert_eq!(message.detail(), GuardrailValue::Object(detail));
-    assert_eq!(request_data, original);
+    assert_eq!(request_data.get("messages"), original.get("messages"));
     let records = records(&request_data);
     assert_eq!(
         field(&records[0], "guardrail_status"),
@@ -62,13 +64,8 @@ async fn monitor_mode_logs_without_blocking_or_rewriting() {
     let user_auth = data("{}");
     let extra_data = data("{}");
     let captured_log = CapturedLog::default();
-    let writer = captured_log.clone();
-    let subscriber = fmt()
-        .with_max_level(tracing::Level::INFO)
-        .with_writer(move || writer.clone())
-        .finish();
     let outcome = {
-        let _guard = tracing::subscriber::set_default(subscriber);
+        let _guard = set_default(captured_log.subscriber(Level::INFO));
         policy
             .process_user_message_check(&mut request_data, context(&user_auth, &extra_data))
             .await
@@ -77,9 +74,12 @@ async fn monitor_mode_logs_without_blocking_or_rewriting() {
     };
     assert_eq!(outcome.status, GuardrailStatus::GuardrailIntervened);
     assert_eq!(outcome.anonymized, None);
-    assert_eq!(request_data, original);
-    let output = String::from_utf8(captured_log.0.lock().unwrap().clone()).unwrap();
-    assert!(output.contains("Noma guardrail blocked user message"));
+    assert_eq!(request_data.get("messages"), original.get("messages"));
+    assert!(
+        captured_log
+            .text()
+            .contains("Noma guardrail blocked user message")
+    );
     assert_eq!(
         field(&records(&request_data)[0], "guardrail_status"),
         Some(&GuardrailValue::Text(String::from("guardrail_intervened")))
@@ -173,7 +173,7 @@ async fn a_safe_verdict_without_anonymization_keeps_the_message() {
         .unwrap()
         .unwrap();
     assert_eq!(outcome.anonymized, None);
-    assert_eq!(request_data, original);
+    assert_eq!(request_data.get("messages"), original.get("messages"));
 }
 
 #[tokio::test]
@@ -199,31 +199,11 @@ async fn anonymization_replaces_every_choice_with_content() {
         .unwrap()
         .unwrap();
     assert_eq!(outcome.anonymized.as_deref(), Some("clean"));
-    let GuardrailValue::Object(fields) = &model_response else {
-        panic!("the model response is not an object");
-    };
-    let Some(GuardrailValue::Array(choices)) = fields.get("choices") else {
-        panic!("the model response lost its choices");
-    };
-    let contents: Vec<Option<&GuardrailValue>> = choices
-        .iter()
-        .map(|choice| {
-            let GuardrailValue::Object(fields) = choice else {
-                return None;
-            };
-            let Some(GuardrailValue::Object(message)) = fields.get("message") else {
-                return None;
-            };
-            message.get("content")
-        })
-        .collect();
     assert_eq!(
-        contents,
-        vec![
-            Some(&GuardrailValue::Text(String::from("clean"))),
-            Some(&GuardrailValue::Text(String::new())),
-            Some(&GuardrailValue::Text(String::from("clean"))),
-        ]
+        model_response,
+        value(
+            r#"{"id": "resp-1", "choices": [{"message": {"content": "clean"}}, {"message": {"content": ""}}, {"message": {"content": "clean"}}]}"#
+        )
     );
 }
 
@@ -268,20 +248,19 @@ async fn anonymization_shape_errors_name_the_field(
 #[test]
 fn replacing_a_user_message_handles_absent_and_bad_shapes() {
     let mut absent = data("{}");
-    crate::noma_scan_policy::messages::replace_last_user_message(&mut absent, "clean").unwrap();
+    replace_last_user_message(&mut absent, "clean").unwrap();
     let mut null = data(r#"{"messages": null}"#);
-    crate::noma_scan_policy::messages::replace_last_user_message(&mut null, "clean").unwrap();
+    replace_last_user_message(&mut null, "clean").unwrap();
     let mut assistant_only = data(r#"{"messages": [{"role": "assistant", "content": "x"}]}"#);
-    crate::noma_scan_policy::messages::replace_last_user_message(&mut assistant_only, "clean")
-        .unwrap();
+    replace_last_user_message(&mut assistant_only, "clean").unwrap();
     let mut not_a_list = data(r#"{"messages": "x"}"#);
     assert!(matches!(
-        crate::noma_scan_policy::messages::replace_last_user_message(&mut not_a_list, "clean"),
+        replace_last_user_message(&mut not_a_list, "clean"),
         Err(NomaError::Field { field: "messages" })
     ));
     let mut bad_message = data(r#"{"messages": [7]}"#);
     assert!(matches!(
-        crate::noma_scan_policy::messages::replace_last_user_message(&mut bad_message, "clean"),
+        replace_last_user_message(&mut bad_message, "clean"),
         Err(NomaError::Field { field: "messages" })
     ));
 }

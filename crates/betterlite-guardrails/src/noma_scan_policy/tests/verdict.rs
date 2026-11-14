@@ -1,13 +1,16 @@
 use rstest::rstest;
 use tracing::subscriber::with_default;
-use tracing_subscriber::fmt;
 
 use crate::guardrail_records::record::GuardrailStatus;
 use crate::noma_scan_policy::error::NomaError;
-use crate::noma_scan_policy::{MessageRole, NomaScanPolicy, NomaSettings};
+use crate::noma_scan_policy::verdict::{
+    check_verdict, determine_guardrail_status, extract_anonymized_content,
+    handle_verdict_background, only_sensitive_data_failed, should_anonymize,
+};
+use crate::noma_scan_policy::{MessageRole, NomaSettings};
 
 use super::support::{
-    CapturedLog, anonymizing_settings, data, monitoring_settings, policy_with, response, settings,
+    CapturedLog, anonymizing_settings, data, monitoring_settings, response, settings,
 };
 
 #[rstest]
@@ -33,10 +36,7 @@ fn determine_guardrail_status_reads_the_aggregated_result(
     #[case] text: &str,
     #[case] expected: GuardrailStatus,
 ) {
-    assert_eq!(
-        NomaScanPolicy::determine_guardrail_status(&response(text)),
-        expected
-    );
+    assert_eq!(determine_guardrail_status(&response(text)), expected);
 }
 
 #[rstest]
@@ -53,7 +53,7 @@ fn determine_guardrail_status_reads_the_aggregated_result(
     r#"{"sensitiveData": {"PII": {"result": false}}, "harmfulContent": {"result": false}}"#,
     false
 )]
-#[case::empty_classification(r#"{}"#, false)]
+#[case::empty_classification("{}", false)]
 #[case::nested_topic_true(
     r#"{"sensitiveData": {"PII": {"result": true}}, "customLlm": {"topic": {"result": true}}}"#,
     false
@@ -72,10 +72,7 @@ fn only_sensitive_data_detectors_allow_anonymization(
     #[case] classification: &str,
     #[case] expected: bool,
 ) {
-    assert_eq!(
-        NomaScanPolicy::only_sensitive_data_failed(&data(classification)),
-        expected
-    );
+    assert_eq!(only_sensitive_data_failed(&data(classification)), expected);
 }
 
 #[rstest]
@@ -100,13 +97,13 @@ fn only_sensitive_data_detectors_allow_anonymization(
     MessageRole::User,
     None
 )]
-#[case::no_scan_result(r#"{}"#, MessageRole::User, None)]
+#[case::no_scan_result("{}", MessageRole::User, None)]
 fn extracted_anonymized_content_comes_from_the_matching_role(
     #[case] text: &str,
     #[case] role: MessageRole,
     #[case] expected: Option<&str>,
 ) {
-    let extracted = NomaScanPolicy::extract_anonymized_content(&response(text), role).unwrap();
+    let extracted = extract_anonymized_content(&response(text), role).unwrap();
     assert_eq!(extracted.as_deref(), expected);
 }
 
@@ -129,14 +126,13 @@ fn mismatched_anonymized_content_shapes_name_the_field(
     #[case] text: &str,
     #[case] field: &'static str,
 ) {
-    let error =
-        NomaScanPolicy::extract_anonymized_content(&response(text), MessageRole::User).unwrap_err();
+    let error = extract_anonymized_content(&response(text), MessageRole::User).unwrap_err();
     assert!(matches!(error, NomaError::ResponseField { field: found } if found == field));
 }
 
 #[rstest]
 #[case::safe(r#"{"aggregatedScanResult": false}"#, true)]
-#[case::missing_verdict(r#"{}"#, true)]
+#[case::missing_verdict("{}", true)]
 #[case::null_verdict(r#"{"aggregatedScanResult": null}"#, true)]
 #[case::only_sensitive(
     r#"{"aggregatedScanResult": true, "scanResult": [{"role": "user", "results": {"sensitiveData": {"PII": {"result": true}}}}]}"#,
@@ -165,11 +161,9 @@ fn should_anonymize_follows_the_verdict_and_the_detectors(
     #[case] text: &str,
     #[case] expected: bool,
 ) {
-    let policy = policy_with(anonymizing_settings());
+    let settings = anonymizing_settings();
     assert_eq!(
-        policy
-            .should_anonymize(&response(text), MessageRole::User)
-            .unwrap(),
+        should_anonymize(&settings, &response(text), MessageRole::User).unwrap(),
         expected
     );
 }
@@ -178,13 +172,8 @@ fn should_anonymize_follows_the_verdict_and_the_detectors(
 #[case::monitor_mode(monitoring_settings())]
 #[case::disabled(settings())]
 fn anonymization_never_applies_outside_its_flags(#[case] settings: NomaSettings) {
-    let policy = policy_with(settings);
     let reply = r#"{"aggregatedScanResult": false}"#;
-    assert!(
-        !policy
-            .should_anonymize(&response(reply), MessageRole::User)
-            .unwrap()
-    );
+    assert!(!should_anonymize(&settings, &response(reply), MessageRole::User).unwrap());
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -224,23 +213,15 @@ fn monitor_verdicts_are_logged(
     #[case] level: tracing::Level,
     #[case] expected: &str,
 ) {
-    let policy = policy_with(monitoring_settings());
+    let settings = monitoring_settings();
     let captured_log = CapturedLog::default();
-    let writer = captured_log.clone();
-    let subscriber = fmt()
-        .with_max_level(level)
-        .with_writer(move || writer.clone())
-        .finish();
-    with_default(subscriber, || match call {
+    with_default(captured_log.subscriber(level), || match call {
         VerdictCall::Background => {
-            NomaScanPolicy::handle_verdict_background(MessageRole::User, "hi", &response(reply));
+            handle_verdict_background(MessageRole::User, "hi", &response(reply));
         }
         VerdictCall::Check => {
-            policy
-                .check_verdict(MessageRole::User, "hi", &response(reply))
-                .unwrap();
+            check_verdict(&settings, MessageRole::User, "hi", &response(reply)).unwrap();
         }
     });
-    let output = String::from_utf8(captured_log.0.lock().unwrap().clone()).unwrap();
-    assert!(output.contains(expected));
+    assert!(captured_log.text().contains(expected));
 }

@@ -13,7 +13,7 @@ use crate::noma_scan_policy::config::{
 };
 
 #[test]
-fn config_models_carry_litellm_fields_and_names() {
+fn config_models_carry_litellm_names() {
     assert_eq!(
         NomaGuardrailConfigModel::ui_friendly_name(),
         "Noma Security"
@@ -22,32 +22,60 @@ fn config_models_carry_litellm_fields_and_names() {
         NomaV2GuardrailConfigModel::ui_friendly_name(),
         "Noma Security v2"
     );
+}
+
+#[test]
+fn legacy_config_defaults_use_v2_to_false_and_keeps_an_explicit_null() {
+    let absent = NomaGuardrailConfigModel {
+        use_v2: Some(false),
+        api_key: None,
+        api_base: None,
+        application_id: None,
+    };
     assert_eq!(default_use_v2(), Some(false));
-    let legacy: NomaGuardrailConfigModel = serde_json::from_str("{}").unwrap();
-    assert_eq!(legacy.use_v2, Some(false));
-    assert_eq!(legacy.api_key, None);
-    assert_eq!(legacy.api_base, None);
-    assert_eq!(legacy.application_id, None);
-    let explicit: NomaGuardrailConfigModel = serde_json::from_str(
-        r#"{"use_v2": true, "api_key": "key", "api_base": "https://base/", "application_id": "app"}"#,
-    )
-    .unwrap();
-    assert_eq!(explicit.use_v2, Some(true));
-    assert_eq!(explicit.api_key.as_deref(), Some("key"));
-    assert_eq!(explicit.api_base.as_deref(), Some("https://base/"));
-    assert_eq!(explicit.application_id.as_deref(), Some("app"));
-    let null: NomaGuardrailConfigModel = serde_json::from_str(r#"{"use_v2": null}"#).unwrap();
-    assert_eq!(null.use_v2, None);
-    let v2: NomaV2GuardrailConfigModel = serde_json::from_str(
-        r#"{"api_key": "key", "api_base": "https://base/", "application_id": "app", "gateway_name": "gw", "monitor_mode": true, "block_failures": false}"#,
-    )
-    .unwrap();
-    assert_eq!(v2.api_key.as_deref(), Some("key"));
-    assert_eq!(v2.api_base.as_deref(), Some("https://base/"));
-    assert_eq!(v2.application_id.as_deref(), Some("app"));
-    assert_eq!(v2.gateway_name.as_deref(), Some("gw"));
-    assert_eq!(v2.monitor_mode, Some(true));
-    assert_eq!(v2.block_failures, Some(false));
-    let v2_default: NomaV2GuardrailConfigModel = serde_json::from_str("{}").unwrap();
-    assert!(v2_default == NomaV2GuardrailConfigModel::default());
+    assert_eq!(
+        serde_json::from_str::<NomaGuardrailConfigModel>("{}").unwrap(),
+        absent
+    );
+    assert_eq!(
+        serde_json::from_str::<NomaGuardrailConfigModel>(r#"{"use_v2": null}"#).unwrap(),
+        NomaGuardrailConfigModel {
+            use_v2: None,
+            ..absent
+        }
+    );
+}
+
+#[test]
+fn legacy_config_reads_every_field() {
+    let text = r#"{"use_v2": true, "api_key": "key", "api_base": "https://base/", "application_id": "app"}"#;
+    assert_eq!(
+        serde_json::from_str::<NomaGuardrailConfigModel>(text).unwrap(),
+        NomaGuardrailConfigModel {
+            use_v2: Some(true),
+            api_key: Some(String::from("key")),
+            api_base: Some(String::from("https://base/")),
+            application_id: Some(String::from("app")),
+        }
+    );
+}
+
+#[test]
+fn v2_config_reads_every_field_and_defaults_to_none() {
+    let text = r#"{"api_key": "key", "api_base": "https://base/", "application_id": "app", "gateway_name": "gw", "monitor_mode": true, "block_failures": false}"#;
+    assert_eq!(
+        serde_json::from_str::<NomaV2GuardrailConfigModel>(text).unwrap(),
+        NomaV2GuardrailConfigModel {
+            api_key: Some(String::from("key")),
+            api_base: Some(String::from("https://base/")),
+            application_id: Some(String::from("app")),
+            gateway_name: Some(String::from("gw")),
+            monitor_mode: Some(true),
+            block_failures: Some(false),
+        }
+    );
+    assert_eq!(
+        serde_json::from_str::<NomaV2GuardrailConfigModel>("{}").unwrap(),
+        NomaV2GuardrailConfigModel::default()
+    );
 }

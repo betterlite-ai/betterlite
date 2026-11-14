@@ -42,59 +42,51 @@ impl GuardrailSpanSink for NoSpanSink {
 
 static NO_SPAN_SINK: NoSpanSink = NoSpanSink;
 
-impl NomaScanPolicy {
-    pub(super) fn record_scan(
-        &self,
-        request_data: &mut BTreeMap<String, GuardrailValue>,
-        run: &GuardrailRun<'_>,
-    ) -> Result<(), NomaError> {
-        let mut base = GuardrailBase::new(GuardrailSettings::default(), true)
-            .map_err(|source| NomaError::RecordBase { source })?;
-        base.settings
-            .guardrail_name
-            .clone_from(&self.settings.guardrail_name);
-        base.settings
-            .event_hook
-            .clone_from(&self.settings.event_hook);
-        let serialized = serde_json::to_value(run.response)
-            .map_err(|source| NomaError::RecordJson { source })?;
-        let guardrail_response = serde_json::from_value(serialized)
-            .map_err(|source| NomaError::RecordJson { source })?;
-        let started = run
-            .timing
-            .started
-            .duration_since(UNIX_EPOCH)
-            .map_err(|source| NomaError::Clock { source })?;
-        let ended = run
-            .timing
-            .ended
-            .duration_since(UNIX_EPOCH)
-            .map_err(|source| NomaError::Clock { source })?;
-        let duration = run
-            .timing
-            .ended
-            .duration_since(run.timing.started)
-            .unwrap_or_default();
-        let mut context = GuardrailRecordContext {
-            base: &base,
-            request_data,
-            log_target: None,
-            sink: &NO_SPAN_SINK,
-        };
-        add_guardrail_record(
-            &mut context,
-            GuardrailRecordInput {
-                guardrail_response,
-                guardrail_status: run.status,
-                start_time: Some(started.as_secs_f64()),
-                end_time: Some(ended.as_secs_f64()),
-                duration: Some(duration.as_secs_f64()),
-                masked_entity_count: None,
-                guardrail_provider: Some(PROVIDER.to_owned()),
-                event_type: run.event_type,
-                tracing_detail: None,
-            },
-        )
-        .map_err(|source| NomaError::Record { source })
-    }
+fn epoch_seconds(time: SystemTime) -> Result<f64, NomaError> {
+    let since_epoch = time
+        .duration_since(UNIX_EPOCH)
+        .map_err(|source| NomaError::Clock { source })?;
+    Ok(since_epoch.as_secs_f64())
+}
+
+pub(super) fn record_scan(
+    policy: &NomaScanPolicy,
+    request_data: &mut BTreeMap<String, GuardrailValue>,
+    run: &GuardrailRun<'_>,
+) -> Result<(), NomaError> {
+    let mut base = GuardrailBase::new(GuardrailSettings::default(), true)
+        .map_err(|source| NomaError::RecordBase { source })?;
+    base.settings
+        .guardrail_name
+        .clone_from(&policy.settings.guardrail_name);
+    base.settings
+        .event_hook
+        .clone_from(&policy.settings.event_hook);
+    let serialized =
+        serde_json::to_value(run.response).map_err(|source| NomaError::RecordJson { source })?;
+    let guardrail_response =
+        serde_json::from_value(serialized).map_err(|source| NomaError::RecordJson { source })?;
+    let duration = run
+        .timing
+        .ended
+        .duration_since(run.timing.started)
+        .unwrap_or_default();
+    let mut context = GuardrailRecordContext {
+        base: &base,
+        request_data,
+        log_target: None,
+        sink: &NO_SPAN_SINK,
+    };
+    let input = GuardrailRecordInput {
+        guardrail_response,
+        guardrail_status: run.status,
+        start_time: Some(epoch_seconds(run.timing.started)?),
+        end_time: Some(epoch_seconds(run.timing.ended)?),
+        duration: Some(duration.as_secs_f64()),
+        masked_entity_count: None,
+        guardrail_provider: Some(PROVIDER.to_owned()),
+        event_type: run.event_type,
+        tracing_detail: None,
+    };
+    add_guardrail_record(&mut context, input).map_err(|source| NomaError::Record { source })
 }

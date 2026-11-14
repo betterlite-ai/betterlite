@@ -2,8 +2,9 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::fs;
 use std::future::IntoFuture as _;
+use std::io::{Result as IoResult, Write};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::Router;
@@ -18,6 +19,8 @@ use serde_json::value::RawValue;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
+use tracing::{Level, Subscriber};
+use tracing_subscriber::fmt;
 
 use crate::noma_scan_policy::wire::ScanResponse;
 use crate::noma_scan_policy::{NomaScanPolicy, NomaSettings, ScanCallContext};
@@ -34,7 +37,7 @@ pub(crate) struct Seen {
 pub(crate) struct MockNoma {
     pub(crate) base: String,
     pub(crate) seen: Arc<Mutex<Vec<Seen>>>,
-    _server: JoinSet<std::io::Result<()>>,
+    _server: JoinSet<IoResult<()>>,
 }
 
 pub(crate) async fn mock_noma(
@@ -44,20 +47,20 @@ pub(crate) async fn mock_noma(
 ) -> MockNoma {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let seen_by_handler = Arc::clone(&seen);
-    let reply = reply.to_owned();
+    let canned = reply.to_owned();
     let answer = move |uri: Uri, headers: HeaderMap, bytes: Bytes| {
-        let seen = Arc::clone(&seen_by_handler);
-        let reply = reply.clone();
+        let record = Arc::clone(&seen_by_handler);
+        let body = canned.clone();
         async move {
-            seen.lock().unwrap().push(Seen {
+            record.lock().unwrap().push(Seen {
                 path: uri.path().to_owned(),
                 headers,
                 body: bytes.to_vec(),
             });
-            if let Some(delay) = delay {
-                sleep(delay).await;
+            if let Some(pause) = delay {
+                sleep(pause).await;
             }
-            (status, [("content-type", "application/json")], reply)
+            (status, [("content-type", "application/json")], body)
         }
     };
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -188,7 +191,9 @@ pub(crate) fn policy_with(settings: NomaSettings) -> NomaScanPolicy {
 }
 
 pub(crate) fn fixed_now() -> SystemTime {
-    UNIX_EPOCH + Duration::from_secs(1_700_000_000)
+    UNIX_EPOCH
+        .checked_add(Duration::from_secs(1_700_000_000))
+        .unwrap()
 }
 
 thread_local! {
@@ -201,7 +206,9 @@ pub(crate) fn ticking_now() -> SystemTime {
         ticks.set(current.saturating_add(1));
         current
     });
-    UNIX_EPOCH + Duration::from_secs(1_700_000_000_u64.saturating_add(tick))
+    UNIX_EPOCH
+        .checked_add(Duration::from_secs(1_700_000_000_u64.saturating_add(tick)))
+        .unwrap()
 }
 
 pub(crate) fn context<'data>(
@@ -267,15 +274,32 @@ pub(crate) fn response_of(record: &GuardrailValue) -> &GuardrailValue {
 }
 
 #[derive(Clone, Default)]
-pub(crate) struct CapturedLog(pub(crate) Arc<Mutex<Vec<u8>>>);
+pub(crate) struct CapturedLog(Arc<Mutex<Vec<u8>>>);
 
-impl std::io::Write for CapturedLog {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
+impl CapturedLog {
+    pub(crate) fn text(&self) -> String {
+        let bytes = self.0.lock().unwrap().clone();
+        String::from_utf8(bytes).unwrap()
+    }
+
+    // A subscriber that writes the events at this level and louder into the log
+    pub(crate) fn subscriber(&self, level: Level) -> impl Subscriber + use<> {
+        let writer = self.clone();
+        fmt()
+            .with_max_level(level)
+            .with_writer(move || writer.clone())
+            .finish()
+    }
+}
+
+impl Write for CapturedLog {
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        let mut bytes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        bytes.extend_from_slice(buf);
         Ok(buf.len())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> IoResult<()> {
         Ok(())
     }
 }

@@ -7,7 +7,7 @@ pub const fn default_use_v2() -> Option<bool> {
     Some(false)
 }
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NomaGuardrailConfigModel {
     #[serde(default = "default_use_v2")]
     pub use_v2: Option<bool>,
@@ -25,7 +25,7 @@ impl GuardrailConfigModelIdentity for NomaGuardrailConfigModel {
     }
 }
 
-#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct NomaV2GuardrailConfigModel {
     pub api_key: Option<String>,

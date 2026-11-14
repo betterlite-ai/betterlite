@@ -1,18 +1,57 @@
 use std::collections::BTreeMap;
+use std::time::SystemTime;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use serde_json::value::to_raw_value;
+use serde_json::value::{RawValue, to_raw_value};
+
+use crate::guardrail_records::record::GuardrailStatus;
 
 use super::error::NomaError;
 use super::messages::{
-    converted_input, message_content, messages_from_request, replace_last_user_message,
-    replace_response_content, response_id,
+    message_content, replace_last_user_message, replace_response_content, response_id, scan_items,
 };
-use super::records::{GuardrailRun, ScanTiming};
-use super::transport::ScanTarget;
-use super::verdict::Verdict;
-use super::wire::{InputMessage, TextPart};
+use super::records::{GuardrailRun, ScanTiming, record_scan};
+use super::transport::{ScanTarget, call_noma_api};
+use super::verdict::{Verdict, decide_verdict, determine_guardrail_status};
+use super::wire::{InputMessage, ScanResponse, TextPart};
 use super::{MessageRole, NomaScanPolicy, ScanCallContext, ScanOutcome};
+
+struct ScanRound<'round> {
+    started: SystemTime,
+    role: MessageRole,
+    items: &'round [Box<RawValue>],
+    scanned: &'round str,
+    llm_request_id: Option<&'round str>,
+}
+
+// One scan: call Noma, write the standard logging record, then decide what the answer means
+async fn scan_and_record(
+    policy: &NomaScanPolicy,
+    request_data: &mut BTreeMap<String, GuardrailValue>,
+    call: ScanCallContext<'_>,
+    round: &ScanRound<'_>,
+) -> Result<(ScanResponse, GuardrailStatus, Verdict), NomaError> {
+    let target = ScanTarget {
+        user_auth: call.user_auth,
+        extra_data: call.extra_data,
+        llm_request_id: round.llm_request_id,
+    };
+    let response = call_noma_api(policy, round.items, request_data, &target).await?;
+    let ended = (policy.now)();
+    let status = determine_guardrail_status(&response);
+    let run = GuardrailRun {
+        response: &response,
+        status,
+        event_type: call.event_type,
+        timing: ScanTiming {
+            started: round.started,
+            ended,
+        },
+    };
+    record_scan(policy, request_data, &run)?;
+    let verdict = decide_verdict(&policy.settings, round.role, round.scanned, &response)?;
+    Ok((response, status, verdict))
+}
 
 impl NomaScanPolicy {
     pub async fn process_user_message_check(
@@ -21,57 +60,25 @@ impl NomaScanPolicy {
         call: ScanCallContext<'_>,
     ) -> Result<Option<ScanOutcome>, NomaError> {
         let started = (self.now)();
-        let Some(messages) = messages_from_request(request_data)? else {
+        let Some(items) = scan_items(request_data)? else {
             return Ok(None);
         };
-        let converted = converted_input(&messages)?;
-        let mut items = converted.items;
-        if let Some(instructions) = converted
-            .instructions
-            .as_deref()
-            .filter(|text| !text.is_empty())
-        {
-            let system = InputMessage {
-                kind: "message",
-                role: "system",
-                content: [TextPart {
-                    kind: "input_text",
-                    text: instructions,
-                }],
-            };
-            let raw = to_raw_value(&system).map_err(|source| NomaError::PayloadJson { source })?;
-            items.insert(0, raw);
-        }
-        if items.is_empty() {
-            return Ok(None);
-        }
-        let target = ScanTarget {
-            user_auth: call.user_auth,
-            extra_data: call.extra_data,
-            llm_request_id: None,
-        };
-        let response = self.call_noma_api(&items, request_data, &target).await?;
-        let ended = (self.now)();
-        let status = Self::determine_guardrail_status(&response);
-        let timing = ScanTiming { started, ended };
-        self.record_scan(
-            request_data,
-            &GuardrailRun {
-                response: &response,
-                status,
-                event_type: call.event_type,
-                timing,
-            },
-        )?;
         let scanned =
             serde_json::to_string(&items).map_err(|source| NomaError::PayloadJson { source })?;
-        let verdict = self.decide_verdict(MessageRole::User, &scanned, &response)?;
+        let round = ScanRound {
+            started,
+            role: MessageRole::User,
+            items: &items,
+            scanned: &scanned,
+            llm_request_id: None,
+        };
+        let (response, status, verdict) = scan_and_record(self, request_data, call, &round).await?;
         let anonymized = match verdict {
             Verdict::Allowed => None,
-            Verdict::Anonymized(anonymized) => {
-                replace_last_user_message(request_data, &anonymized)?;
-                tracing::debug!("Noma guardrail anonymized user message: {anonymized}");
-                Some(anonymized)
+            Verdict::Anonymized(text) => {
+                replace_last_user_message(request_data, &text)?;
+                tracing::debug!("Noma guardrail anonymized user message: {text}");
+                Some(text)
             }
         };
         Ok(Some(ScanOutcome {
@@ -89,10 +96,9 @@ impl NomaScanPolicy {
     ) -> Result<Option<ScanOutcome>, NomaError> {
         let started = (self.now)();
         let request_id = response_id(response)?.map(str::to_owned);
-        let Some(scanned_text) = message_content(response)? else {
+        let Some(content) = message_content(response)?.map(str::to_owned) else {
             return Ok(None);
         };
-        let content = scanned_text.to_owned();
         let item = InputMessage {
             kind: "message",
             role: "assistant",
@@ -101,33 +107,22 @@ impl NomaScanPolicy {
                 text: &content,
             }],
         };
-        let raw = to_raw_value(&item).map_err(|source| NomaError::PayloadJson { source })?;
-        let target = ScanTarget {
-            user_auth: call.user_auth,
-            extra_data: call.extra_data,
+        let items = [to_raw_value(&item).map_err(|source| NomaError::PayloadJson { source })?];
+        let round = ScanRound {
+            started,
+            role: MessageRole::Assistant,
+            items: &items,
+            scanned: &content,
             llm_request_id: request_id.as_deref(),
         };
-        let items = [raw];
-        let scan_response = self.call_noma_api(&items, request_data, &target).await?;
-        let ended = (self.now)();
-        let status = Self::determine_guardrail_status(&scan_response);
-        let timing = ScanTiming { started, ended };
-        self.record_scan(
-            request_data,
-            &GuardrailRun {
-                response: &scan_response,
-                status,
-                event_type: call.event_type,
-                timing,
-            },
-        )?;
-        let verdict = self.decide_verdict(MessageRole::Assistant, &content, &scan_response)?;
+        let (scan_response, status, verdict) =
+            scan_and_record(self, request_data, call, &round).await?;
         let anonymized = match verdict {
             Verdict::Allowed => None,
-            Verdict::Anonymized(anonymized) => {
-                replace_response_content(response, &anonymized);
-                tracing::debug!("Noma guardrail anonymized LLM response: {anonymized}");
-                Some(anonymized)
+            Verdict::Anonymized(text) => {
+                replace_response_content(response, &text);
+                tracing::debug!("Noma guardrail anonymized LLM response: {text}");
+                Some(text)
             }
         };
         Ok(Some(ScanOutcome {
