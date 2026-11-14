@@ -2052,6 +2052,7 @@ dependencies = [
  "futures-util",
  "h2",
  "hex",
+ "hmac 0.13.0",
  "http 1.5.0",
  "hyper",
  "indexmap 2.14.2",

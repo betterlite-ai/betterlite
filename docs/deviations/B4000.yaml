@@ -1,0 +1,46 @@
+task: B4000
+deviations:
+  - what: >-
+      A failed per-event upload stops the loop and keeps the failed event and every event after it queued for the
+      next flush cycle. LiteLLM's async_send_batch swallows the upload error, and CustomBatchLogger.flush_queue then
+      clears the whole queue, losing the events it never sent.
+    why: Losing log records on a transient upload failure is a data-loss bug no working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L60-L93
+  - what: >-
+      Events queued while a flush is running are kept and sent in the next cycle; LiteLLM's log_queue.clear() drops
+      them because preserve_events_added_during_flush is false.
+    why: Those events were accepted from the caller and were never uploaded, so dropping them loses data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L82-L86
+  - what: >-
+      The account-key path talks to the Data Lake REST API itself (HEAD/PUT directory, PUT file, PATCH append,
+      PATCH flush) with a SharedKey signature rather than constructing the Python DataLakeServiceClient. The requests
+      and stored files match what the SDK sends with an account key.
+    why: No Azure Data Lake SDK exists for Rust at the locked azure_core version, and the older SDK line would put a
+      second azure_core in Cargo.lock, which deny.toml rejects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L362-L406
+  - what: >-
+      The dated directory name comes from the injected clock in UTC; LiteLLM calls datetime.now(), which is the
+      host's local time.
+    why: The logging crate has no tz database dependency and the gateway runs with the host clock; UTC is the
+      stable equivalent for every deployment whose host runs UTC.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L378-L384
+  - what: >-
+      The DeploymentIdentityCredential chain provider is an unwired seam: without tenant, client and secret the token
+      path calls the injected factory, which reports that no chain is wired instead of walking workload identity and
+      IMDS. A deployment that relied on managed identity through AZURE_STORAGE_* fails with an authentication error.
+    why: The chain belongs to B677 in betterlite-azure, and betterlite-azure depends on betterlite-openai, which
+      depends on betterlite-logging, so importing it here is a crate cycle; the architect must wire it from a crate
+      that may depend on both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/get_azure_ad_token_provider.py#L37-L135
+  - what: >-
+      A payload id holding a percent escape, such as a%2Fb, is sent with its % escaped on both paths, so the
+      stored file is named a%2Fb.json. LiteLLM's token path puts the id into the URL unescaped, so the service
+      decodes it and stores a/b.json.
+    why: The account-key path already escapes it through the SDK, and one rule for both paths keeps the stored name
+      equal to the logged id.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L203
+  - what: >-
+      An account-key upload that fails (a 4xx or 5xx from the directory, create, append or flush request) returns the
+      error, so flush keeps the event queued. LiteLLM catches every exception in that path and logs it.
+    why: A swallowed error reports success for a record that was never stored, and the flush then drops the event.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L402-L406
