@@ -1,0 +1,22 @@
+kind: helper
+name: vertex-rerank-ignored-custom-base
+call:
+  vertex_rerank:
+    model: some-other-model
+    api_base: https://custom.example/v1
+    vertex_project: param-project
+    vertex_credentials: credentials-text
+    access_project: access-project
+    headers: {}
+    query: which one
+    documents: ["first document", "second document"]
+    top_n: null
+    return_documents: true
+    non_default_params: {}
+    litellm_params: null
+    response:
+      records:
+        - {id: "0", score: 0.9, title: "first document", content: "first document"}
+        - {id: "1", score: 0.2}
+env: {}
+compare: {ignore: []}

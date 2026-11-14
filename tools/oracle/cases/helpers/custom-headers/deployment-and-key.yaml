@@ -1,0 +1,34 @@
+kind: helper
+name: deployment-and-key
+call:
+  b9802:
+    key:
+      tpm_limit: 100
+      rpm_limit: 10
+      max_budget: 25.5
+      spend: 2.0
+      allowed_model_region: eu
+    call_id: call-1
+    model_id: model-1
+    cache_key: ""
+    api_base: "https://api.example/v1?key=secret"
+    version: "1.2.3"
+    model_region: eu
+    response_cost: 1.5
+    hidden_params: {}
+    fastest_response_batch_completion: true
+    request_data: {}
+    timeout: 30.0
+    logging:
+      cost_breakdown: null
+      call_type: completion
+      litellm_params:
+        litellm_metadata:
+          deployment: azure/gpt-4o
+      response_timing_metrics: {}
+    read_timing_from_logging: true
+    extra:
+      - ["x-litellm-model-id", "replaced"]
+      - ["x-custom", "Custom"]
+env: {}
+compare: {ignore: []}

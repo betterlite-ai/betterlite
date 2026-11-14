@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-recognition-request
+call:
+  vertex_recognition:
+    steps:
+      - {step: params, optional: {}, non_default: {language: en}, drop_params: false, global_drop_params: false}
+      - {step: url, api_base: 'https://proxy.example///', location: global, project: my-project}
+      - {step: request, model: vertex_ai/gemini-2.0-flash, content: seed, language: en}
+env: {}
+compare: {ignore: []}

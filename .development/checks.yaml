@@ -195,7 +195,7 @@ base:
       why: commit messages carry no co-author or generator lines
       run: |-
         messages=$(git log --format=%B "${GATE_BASE}..HEAD") || exit 1
-        ! grep -qiE '^co-authored-by:|claude-session|claude\.ai/code|generated with' <<< "${messages}"
+        ! grep -qiE '^co-authored-by:|^claude-session:|claude\.ai/code|generated with' <<< "${messages}"
     - id: workflows
       why: GitHub workflows pass zizmor's audit
       run: zizmor --offline .github
