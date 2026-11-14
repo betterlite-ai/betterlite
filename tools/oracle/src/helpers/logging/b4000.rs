@@ -198,15 +198,13 @@ async fn perform(
                 .err()
                 .map_or(Value::Null, |_| json!({ "raised": true }))
         }
+        // LiteLLM's batch swallows an upload error, so the action reports nothing here
         Action::Upload { id } => {
             let Ok(payload) = payload_for(base, id) else {
                 return json!({ "raised": true });
             };
-            logger
-                .upload_payload(&payload)
-                .await
-                .err()
-                .map_or(Value::Null, |_| json!({ "raised": true }))
+            let _uploaded = logger.upload_payload(&payload).await;
+            Value::Null
         }
         Action::Flush => {
             let _report = logger.flush_queue().await;

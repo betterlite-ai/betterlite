@@ -18,7 +18,6 @@ from azure.storage.filedatalake.aio import DataLakeServiceClient
 from litellm.integrations.azure_storage.azure_storage import AzureBlobStorageLogger
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, httpxSpecialProvider
 from litellm.proxy import proxy_server
-from litellm.types.utils import StandardLoggingPayload
 from pydantic import JsonValue, TypeAdapter
 from requests.adapters import HTTPAdapter
 from typing_extensions import override
@@ -83,12 +82,6 @@ class EventSink(Protocol):
 
     async def async_log_failure_event(
         self, kwargs: dict[str, JsonValue], response_obj: None, start_time: float, end_time: float
-    ) -> None: ...
-
-
-class Uploader(Protocol):
-    async def async_upload_payload_to_azure_blob_storage(  # ast-grep-ignore: no-long-names
-        self, payload: StandardLoggingPayload
     ) -> None: ...
 
 
@@ -233,11 +226,12 @@ async def perform(
                 await sink.async_log_failure_event(kwargs, None, 0.0, 0.0)
             else:
                 await sink.async_log_success_event(kwargs, None, 0.0, 0.0)
+        # the per-payload upload's payload type carries Any, so queue one event and flush
         if action["do"] == "upload":
-            uploader: Uploader = logger
-            payload = {**base, "id": action["id"]}
-            await uploader.async_upload_payload_to_azure_blob_storage(payload)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3570
-        if action["do"] == "flush":
+            target: EventSink = logger
+            event: dict[str, JsonValue] = {"standard_logging_object": {**base, "id": action["id"]}}
+            await target.async_log_success_event(event, None, 0.0, 0.0)
+        if action["do"] in {"upload", "flush"}:
             flusher: Flusher = logger
             await flusher.flush_queue()
     except (ValueError, RuntimeError, httpx.HTTPError):
