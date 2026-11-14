@@ -1,6 +1,6 @@
 import importlib
 import json
-from typing import Literal
+from typing import Literal, TypedDict
 
 import pytest
 from litellm import types as litellm_types
@@ -31,6 +31,14 @@ litellm_ui = litellm_types.proxy.ui_sso
 ModelPair = tuple[type[BaseModel], type[BaseModel]]
 PayloadPair = tuple[type[BaseModel], type[BaseModel], dict[str, JsonValue]]
 Mode = Literal["validation", "serialization"]
+
+
+class SchemaView(TypedDict):
+    keys: list[str]
+    required: list[str]
+    defaults: dict[str, JsonValue]
+    literals: list[tuple[str, list[str]]]
+
 
 SCIM_PAIRS: tuple[ModelPair, ...] = (
     (scim.LiteLLM_UserScimMetadata, litellm_scim.LiteLLM_UserScimMetadata),
@@ -243,12 +251,14 @@ TEAM_REJECTIONS: tuple[PayloadPair, ...] = (
     ),
 )
 
+MEMBER_ROW: list[JsonValue] = [{"user_id": "u"}]
+
 OVER_LIMIT_DELETES: dict[str, JsonValue] = {
-    "members": [{"user_id": "u"}] * (team.MAX_BULK_TEAM_MEMBER_DELETES + 1)
+    "members": MEMBER_ROW * (team.MAX_BULK_TEAM_MEMBER_DELETES + 1)
 }
 
 OVER_LIMIT_BUDGET_UPDATES: dict[str, JsonValue] = {
-    "members": [{"user_id": "u"}] * (team.MAX_BULK_TEAM_MEMBER_BUDGET_UPDATES + 1)
+    "members": MEMBER_ROW * (team.MAX_BULK_TEAM_MEMBER_BUDGET_UPDATES + 1)
 }
 
 
@@ -256,7 +266,7 @@ def schema_properties(schema: dict[str, JsonValue]) -> dict[str, JsonValue]:
     match schema["properties"]:
         case dict() as properties:
             return properties
-        case None | str() | int() | float() | bool() | list():
+        case None | str() | int() | float() | list():
             raise TypeError("schema has no properties")
 
 
@@ -266,7 +276,7 @@ def required_names(schema: dict[str, JsonValue]) -> list[str]:
             return []
         case list() as names:
             return sorted(json.dumps(name) for name in names)
-        case str() | int() | float() | bool() | dict():
+        case str() | int() | float() | dict():
             raise TypeError("required is not a list")
 
 
@@ -277,7 +287,7 @@ def defaults_of(properties: dict[str, JsonValue]) -> dict[str, JsonValue]:
             case dict():
                 if "default" in field:
                     defaults[name] = field["default"]
-            case None | str() | int() | float() | bool() | list():
+            case None | str() | int() | float() | list():
                 raise TypeError("property is not an object")
     return defaults
 
@@ -293,7 +303,7 @@ def collect_literals(node: JsonValue, found: set[str]) -> None:
         case list():
             for item in node:
                 collect_literals(item, found)
-        case None | str() | int() | float() | bool():
+        case None | str() | int() | float():
             return
 
 
@@ -316,15 +326,15 @@ def resolve_ref(schema: dict[str, JsonValue]) -> dict[str, JsonValue]:
                     match definitions[reference.rsplit("/", 1)[-1]]:
                         case dict() as resolved:
                             return resolved
-                        case None | str() | int() | float() | bool() | list():
+                        case None | str() | int() | float() | list():
                             raise TypeError("definition is not an object")
-                case None | str() | int() | float() | bool() | list():
+                case None | str() | int() | float() | list():
                     raise TypeError("$defs is not an object")
-        case int() | float() | bool() | list() | dict():
+        case int() | float() | list() | dict():
             raise TypeError("$ref is not a string")
 
 
-def schema_view(schema: dict[str, JsonValue]) -> dict[str, JsonValue]:
+def schema_view(schema: dict[str, JsonValue]) -> SchemaView:
     resolved = resolve_ref(schema)
     properties = schema_properties(resolved)
     return {
@@ -335,7 +345,7 @@ def schema_view(schema: dict[str, JsonValue]) -> dict[str, JsonValue]:
     }
 
 
-def model_view(model: type[BaseModel], mode: Mode) -> dict[str, JsonValue]:
+def model_view(model: type[BaseModel], mode: Mode) -> SchemaView:
     schema: dict[str, JsonValue] = model.model_json_schema(mode=mode)
     return schema_view(schema)
 
@@ -544,11 +554,12 @@ def test_names_team_valid_payloads() -> None:
 
 
 def test_names_team_list_items() -> None:
+    teams: list[JsonValue] = [
+        {"team_id": "d", "deleted_at": "2024-01-01T00:00:00Z", "deleted_by": "u"},
+        {"team_id": "p", "team_alias": "a"},
+    ]
     payload: dict[str, JsonValue] = {
-        "teams": [
-            {"team_id": "d", "deleted_at": "2024-01-01T00:00:00Z", "deleted_by": "u"},
-            {"team_id": "p", "team_alias": "a"},
-        ],
+        "teams": teams,
         "total": 2,
         "page": 1,
         "page_size": 10,
@@ -574,12 +585,12 @@ def test_names_team_member_limit() -> None:
     assert rejects(team.BulkTeamMemberBudgetUpdateRequest, OVER_LIMIT_BUDGET_UPDATES)
     assert rejects(litellm_team.BulkTeamMemberBudgetUpdateRequest, OVER_LIMIT_BUDGET_UPDATES)
     at_limit: dict[str, JsonValue] = {
-        "members": [{"user_id": "u"}] * team.MAX_BULK_TEAM_MEMBER_DELETES
+        "members": MEMBER_ROW * team.MAX_BULK_TEAM_MEMBER_DELETES
     }
     assert not rejects(team.BulkTeamMemberDeleteRequest, at_limit)
     assert not rejects(litellm_team.BulkTeamMemberDeleteRequest, at_limit)
     budget_at_limit: dict[str, JsonValue] = {
-        "members": [{"user_id": "u"}] * team.MAX_BULK_TEAM_MEMBER_BUDGET_UPDATES
+        "members": MEMBER_ROW * team.MAX_BULK_TEAM_MEMBER_BUDGET_UPDATES
     }
     assert not rejects(team.BulkTeamMemberBudgetUpdateRequest, budget_at_limit)
     assert not rejects(litellm_team.BulkTeamMemberBudgetUpdateRequest, budget_at_limit)
