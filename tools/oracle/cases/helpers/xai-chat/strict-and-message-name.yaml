@@ -1,0 +1,19 @@
+kind: helper
+name: strict-and-message-name
+call:
+  xai_chat:
+    settings: {api_base: null, oauth_api_base: null, xai_key: null, environment_key: null}
+    steps:
+      - kind: map
+        model: grok-4
+        supports_reasoning: true
+        params: [[tools, [{type: function, strict: true, function: {name: lookup, strict: false, parameters: {type: object, strict: true, properties: {city: {type: string, strict: true}}}}}]]]
+        optional_params: {}
+      - kind: request
+        model: grok-4
+        messages:
+          - {role: user, content: hello, name: alice}
+          - {role: assistant, content: hi there, name: grok}
+        optional_params: {}
+env: {}
+compare: {ignore: []}
