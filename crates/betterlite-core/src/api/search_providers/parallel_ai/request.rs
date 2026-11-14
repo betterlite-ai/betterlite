@@ -51,27 +51,24 @@ pub(super) fn search_body(
 fn mode(params: &mut Object) -> JsonValue {
     let caller_mode = params.remove("mode").filter(|value| !value.is_null());
     let legacy_processor = params.remove("processor").filter(|value| !value.is_null());
-    let resolved_mode = caller_mode.map_or_else(
-        || {
-            legacy_processor.map_or_else(
-                || JsonValue::String("basic".to_owned()),
-                |processor| match processor.as_str() {
-                    Some("base") => JsonValue::String("basic".to_owned()),
-                    Some("pro") => JsonValue::String("advanced".to_owned()),
-                    _ => processor,
-                },
-            )
-        },
-        |chosen_mode| chosen_mode,
-    );
+    let resolved_mode = caller_mode.unwrap_or_else(|| {
+        legacy_processor.map_or_else(
+            || JsonValue::String("basic".to_owned()),
+            |processor| match processor.as_str() {
+                Some("base") => JsonValue::String("basic".to_owned()),
+                Some("pro") => JsonValue::String("advanced".to_owned()),
+                _ => processor,
+            },
+        )
+    });
     match resolved_mode {
         JsonValue::String(text) if text.is_empty() => JsonValue::String("basic".to_owned()),
-        other @ JsonValue::Null
-        | other @ JsonValue::Bool(_)
-        | other @ JsonValue::Number(_)
-        | other @ JsonValue::String(_)
-        | other @ JsonValue::Array(_)
-        | other @ JsonValue::Object(_) => other,
+        other @ (JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::String(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_)) => other,
     }
 }
 
@@ -122,15 +119,15 @@ fn merge_caller_settings(
     settings: &mut Object,
     caller: Option<JsonValue>,
 ) -> Result<(), ParallelAiSearchError> {
-    let Some(caller) = caller.filter(|value| !value.is_null()) else {
+    let Some(given) = caller.filter(|value| !value.is_null()) else {
         return Ok(());
     };
-    let JsonValue::Object(caller) = caller else {
+    let JsonValue::Object(overrides) = given else {
         return Err(ParallelAiSearchError::OptionType {
             field: "advanced_settings",
         });
     };
-    for (name, value) in caller {
+    for (name, value) in overrides {
         settings.insert(name, value);
     }
     Ok(())
