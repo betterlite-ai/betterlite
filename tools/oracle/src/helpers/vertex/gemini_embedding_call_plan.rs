@@ -1,9 +1,15 @@
+mod ops;
+mod tests;
+
+use crate::helpers::Helper;
+use crate::helpers::HelperResult;
+
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+impl Helper for Op {
+    type Input = ops::Input;
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("gemini_embedding_call_plan")
+    fn run(input: &Self::Input) -> HelperResult {
+        Ok(ops::run(input))
     }
 }
