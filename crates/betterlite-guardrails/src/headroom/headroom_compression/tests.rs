@@ -607,10 +607,7 @@ fn guardrail_with_clock(input: HeadroomInput) -> HeadroomGuardrail {
 #[tokio::test]
 async fn hashes_are_pruned_once_the_ttl_has_passed() {
     let server = mock(StatusCode::OK, SERVICE_HASHES.to_owned()).await;
-    let input = HeadroomInput {
-        ..default_input(&server.base)
-    };
-    let (guardrail, now) = clocked(input);
+    let (guardrail, now) = clocked(default_input(&server.base));
     let mut target = logging_target("first");
     let mut request = data("{}");
     guardrail
@@ -653,9 +650,7 @@ async fn hashes_are_pruned_once_the_ttl_has_passed() {
 #[tokio::test]
 async fn a_response_without_hashes_does_not_prune() {
     let server = mock(StatusCode::OK, SERVICE_ONE.to_owned()).await;
-    let (guardrail, now) = clocked(HeadroomInput {
-        ..default_input(&server.base)
-    });
+    let (guardrail, now) = clocked(default_input(&server.base));
     guardrail.issued.record(
         "first",
         [SENT_HASH.to_owned()].into_iter().collect(),
