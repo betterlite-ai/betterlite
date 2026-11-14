@@ -24,12 +24,12 @@ const FOCUS_USAGE_SELECT: &str = "SELECT dus.id, dus.date, dus.user_id, dus.api_
     dus.created_at, dus.updated_at, vt.team_id, vt.key_alias AS api_key_alias, tt.team_alias, \
     ut.user_email AS user_email, \
     COALESCE(vt.organization_id, tt.organization_id) AS organization_id, \
-    ot.organization_alias AS organization_alias FROM \"LiteLLM_DailyUserSpend\" dus \
+    organization.organization_alias AS organization_alias FROM \"LiteLLM_DailyUserSpend\" dus \
     LEFT JOIN \"LiteLLM_VerificationToken\" vt ON dus.api_key = vt.token \
     LEFT JOIN \"LiteLLM_TeamTable\" tt ON vt.team_id = tt.team_id \
     LEFT JOIN \"LiteLLM_UserTable\" ut ON dus.user_id = ut.user_id \
-    LEFT JOIN \"LiteLLM_OrganizationTable\" ot \
-    ON ot.organization_id = COALESCE(vt.organization_id, tt.organization_id)";
+    LEFT JOIN \"LiteLLM_OrganizationTable\" organization \
+    ON organization.organization_id = COALESCE(vt.organization_id, tt.organization_id)";
 
 #[derive(Debug, thiserror::Error)]
 pub enum FocusUsageError {
