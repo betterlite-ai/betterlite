@@ -118,7 +118,7 @@ fn inline_data_and_uploaded_uris_pass_without_a_fetch(#[case] source: &str) {
 fn a_files_api_uri_is_sent_as_file_data() {
     let fetcher = CountingFetch::default();
     let source = format!(
-        r#"[{{"role": "user", "content": [{{"type": "file", "file": {{"file_id": "{FILES_URI}"}}}}]}}]"#
+        r#"[{{"role": "user", "content": [{{"type": "text", "text": "read"}}, {{"type": "file", "file": {{"file_id": "{FILES_URI}"}}}}]}}]"#
     );
 
     let history = convert(&fetcher, &source, "gemini-2.5-flash").unwrap();
@@ -126,7 +126,7 @@ fn a_files_api_uri_is_sent_as_file_data() {
     let encoded: Json =
         serde_json::from_value(serde_json::to_value(&history.contents).unwrap()).unwrap();
     let expected: Json = serde_json::from_str(&format!(
-        r#"[{{"role": "user", "parts": [{{"file_data": {{"file_uri": "{FILES_URI}"}}}}]}}]"#
+        r#"[{{"role": "user", "parts": [{{"text": "read"}}, {{"file_data": {{"file_uri": "{FILES_URI}"}}}}]}}]"#
     ))
     .unwrap();
     assert_eq!(encoded, expected);

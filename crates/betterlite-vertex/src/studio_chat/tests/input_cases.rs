@@ -193,13 +193,13 @@ fn inline_image_detail_reaches_the_part_for_gemini_three() {
     assert_eq!(
         contents(source, "gemini-3-pro-preview"),
         parse_json(
-            r#"{"contents": [{"role": "user", "parts": [
+            r#"[{"role": "user", "parts": [
                 {"text": "hi"},
                 {
                     "inline_data": {"data": "YWJj", "mime_type": "image/png"},
                     "media_resolution": {"level": "MEDIA_RESOLUTION_HIGH"}
                 }
-            ]}]}"#
+            ]}]"#
         )
     );
 }
@@ -214,10 +214,10 @@ fn a_files_api_uri_passes_through_as_file_data() {
     assert_eq!(
         contents(source, "gemini-2.5-flash"),
         parse_json(
-            r#"{"contents": [{"role": "user", "parts": [
+            r#"[{"role": "user", "parts": [
                 {"text": "read"},
                 {"file_data": {"file_uri": "https://generativelanguage.googleapis.com/v1beta/files/abc123"}}
-            ]}]}"#
+            ]}]"#
         )
     );
 }
