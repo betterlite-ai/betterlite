@@ -108,6 +108,78 @@ async fn model_string_only(#[case] source: &str, #[case] expected: Option<&str>)
     assert_eq!(recorder.calls.len(), 1);
     assert_eq!(recorder.calls[0].model.as_deref(), expected);
     assert_eq!(recorder.calls[0].input_type, InputType::Request);
+
+    let mut response = object(r#"{"candidates":[{"content":{"parts":[{"text":"x"}]}}]}"#);
+    process_response(
+        &mut response,
+        Some(&object(source)),
+        &Object::new(),
+        &mut recorder,
+    )
+    .await
+    .unwrap();
+    assert_eq!(recorder.calls.len(), 2);
+    assert_eq!(recorder.calls[1].model.as_deref(), expected);
+    assert_eq!(recorder.calls[1].input_type, InputType::Response);
+}
+
+#[tokio::test]
+async fn the_caller_request_data_reaches_the_guardrail() {
+    let mut recorder = Recorder {
+        replacement: None,
+        blocked: false,
+        calls: Vec::new(),
+    };
+    let mut data = object(r#"{"model":"gemini","contents":[{"parts":[{"text":"raw"}]}]}"#);
+    process_request(&mut data, &mut recorder).await.unwrap();
+    assert_eq!(
+        Json::Object(recorder.calls[0].request_data.clone()),
+        json(r#"{"model":"gemini","contents":[{"parts":[{"text":"raw"}]}]}"#)
+    );
+}
+
+#[tokio::test]
+async fn a_supplied_response_key_is_kept_and_metadata_is_added() {
+    let mut recorder = Recorder {
+        replacement: None,
+        blocked: false,
+        calls: Vec::new(),
+    };
+    let mut response = object(r#"{"candidates":[{"content":{"parts":[{"text":"raw"}]}}]}"#);
+    let request_data = object(r#"{"model":"gemini-2.5-flash","response":null}"#);
+    let metadata = object(r#"{"user_api_key_user_id":"u1"}"#);
+    process_response(&mut response, Some(&request_data), &metadata, &mut recorder)
+        .await
+        .unwrap();
+    assert_eq!(
+        Json::Object(recorder.calls[0].request_data.clone()),
+        json(
+            r#"{"model":"gemini-2.5-flash","response":null,"litellm_metadata":{"user_api_key_user_id":"u1"}}"#
+        )
+    );
+}
+
+#[tokio::test]
+async fn an_absent_response_key_gets_the_pre_write_response() {
+    let mut recorder = Recorder {
+        replacement: None,
+        blocked: false,
+        calls: Vec::new(),
+    };
+    let mut response = object(r#"{"candidates":[{"content":{"parts":[{"text":"raw"}]}}]}"#);
+    let original = Json::Object(response.clone());
+    process_response(
+        &mut response,
+        Some(&object(r#"{"model":"gemini"}"#)),
+        &Object::new(),
+        &mut recorder,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        recorder.calls[0].request_data.get("response"),
+        Some(&original)
+    );
 }
 
 #[tokio::test]
@@ -177,7 +249,8 @@ async fn stream_replacement_ignored() {
     ];
     let original = frames.clone();
     let request_data = object(r#"{"model":"gemini"}"#);
-    process_stream(&frames, Some(&request_data), &Object::new(), &mut recorder)
+    let metadata = object(r#"{"user_api_key_user_id":"u1"}"#);
+    process_stream(&frames, Some(&request_data), &metadata, &mut recorder)
         .await
         .unwrap();
     assert_eq!(frames, original);
@@ -189,6 +262,10 @@ async fn stream_replacement_ignored() {
     assert_eq!(
         call.request_data.get("responses_so_far"),
         Some(&Json::List(original))
+    );
+    assert_eq!(
+        call.request_data.get("litellm_metadata"),
+        Some(&json(r#"{"user_api_key_user_id":"u1"}"#))
     );
 }
 

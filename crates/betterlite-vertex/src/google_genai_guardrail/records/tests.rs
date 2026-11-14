@@ -113,6 +113,33 @@ fn request_write_back_rewrites_only_located_text_fields() {
     );
 }
 
+#[rstest]
+#[case::root_camel(
+    r#"{"systemInstruction":{"role":"system","parts":[{"text":"old"},{"inlineData":{"mimeType":"image/png"}}]}}"#,
+    r#"{"systemInstruction":{"role":"system","parts":[{"text":"SYS"},{"inlineData":{"mimeType":"image/png"}}]}}"#
+)]
+#[case::root_snake(
+    r#"{"system_instruction":{"role":"system","parts":[{"text":"old"}]}}"#,
+    r#"{"system_instruction":{"role":"system","parts":[{"text":"SYS"}]}}"#
+)]
+#[case::config_camel(
+    r#"{"config":{"systemInstruction":{"role":"system","parts":[{"text":"old"}]}}}"#,
+    r#"{"config":{"systemInstruction":{"role":"system","parts":[{"text":"SYS"}]}}}"#
+)]
+#[case::config_snake(
+    r#"{"config":{"system_instruction":{"role":"system","parts":[{"text":"old"}]}}}"#,
+    r#"{"config":{"system_instruction":{"role":"system","parts":[{"text":"SYS"}]}}}"#
+)]
+fn system_instruction_write_back_reaches_the_selected_field(
+    #[case] source: &str,
+    #[case] expected: &str,
+) {
+    let mut data = object(source);
+    let locations = request_texts(&data).0;
+    write_texts(&mut data, &locations, &["SYS".to_owned()]);
+    assert_eq!(Json::Object(data), json(expected));
+}
+
 #[test]
 fn response_write_back_visits_every_candidate() {
     let mut response = object(
@@ -209,6 +236,33 @@ fn a_frame_split_across_chunks_is_scanned_after_joining() {
     assert_eq!(
         decode_google_guardrail_sse(&[first.as_bytes(), second.as_bytes()]),
         vec!["hello".to_owned()]
+    );
+}
+
+fn two_frames_split_by(separator: &[u8]) -> Vec<u8> {
+    let mut chunk =
+        b"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"a\"}]}}]}".to_vec();
+    chunk.extend_from_slice(separator);
+    chunk.extend_from_slice(
+        b"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"b\"}]}}]}",
+    );
+    chunk
+}
+
+#[rstest]
+#[case::lone_cr(b"\r")]
+#[case::vertical_tab(b"\x0b")]
+#[case::form_feed(b"\x0c")]
+#[case::file_separator(b"\x1c")]
+#[case::group_separator(b"\x1d")]
+#[case::record_separator(b"\x1e")]
+#[case::next_line(b"\xc2\x85")]
+#[case::line_separator(b"\xe2\x80\xa8")]
+#[case::paragraph_separator(b"\xe2\x80\xa9")]
+fn python_splitlines_boundaries_end_a_data_line(#[case] separator: &[u8]) {
+    assert_eq!(
+        decode_google_guardrail_sse(&[&two_frames_split_by(separator)]),
+        vec!["a".to_owned(), "b".to_owned()]
     );
 }
 
