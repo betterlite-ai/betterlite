@@ -246,6 +246,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "eleven_transcript"
+path = "fuzz_targets/eleven_transcript.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "nimble_reply"
 path = "fuzz_targets/nimble_reply.rs"
 test = false
