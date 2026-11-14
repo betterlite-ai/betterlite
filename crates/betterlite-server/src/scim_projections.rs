@@ -1,1 +1,14 @@
-
+pub mod content_type;
+pub mod directory;
+pub mod error;
+pub mod group;
+pub mod lookups;
+pub mod member;
+pub mod naming;
+mod tests;
+pub mod timestamps;
+pub mod truthiness;
+pub mod user;
+pub const USER_SCHEMA: &str = "urn:ietf:params:scim:schemas:core:2.0:User";
+pub const GROUP_SCHEMA: &str = "urn:ietf:params:scim:schemas:core:2.0:Group";
+pub const MEMBER_KIND: &str = "User";
