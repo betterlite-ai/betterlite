@@ -24,3 +24,7 @@ probes:
             response_status: 408
           - user_content: seven
             response_status: 500
+          - user_content: eight
+            tool_results:
+              - {content: "first check passed", is_error: false}
+              - {content: "context window exceeded", is_error: false}
