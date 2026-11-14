@@ -34,8 +34,12 @@ fn prepare_sandbox(places: &Places<'_>, stem: &Path) -> Result<(PathBuf, String)
         .worktree
         .to_str()
         .ok_or(GateError::NotUnicode("the worktree path"))?;
+    let home = places
+        .home
+        .to_str()
+        .ok_or(GateError::NotUnicode("the home folder"))?;
     let settings = stem.with_extension("sandbox.json");
-    sandbox::write_settings(&settings, worktree, places.writable)?;
+    sandbox::write_settings(&settings, worktree, home, places.writable)?;
     let roots = serde_json::to_string(places.writable).map_err(|source| GateError::Json {
         what: "the writable folders".to_owned(),
         source,
