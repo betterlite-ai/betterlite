@@ -114,3 +114,10 @@ path = "fuzz_targets/guardrail_message_scope_sse_chunk.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "noma_scan_response"
+path = "fuzz_targets/noma_scan_response.rs"
+test = false
+doc = false
+bench = false

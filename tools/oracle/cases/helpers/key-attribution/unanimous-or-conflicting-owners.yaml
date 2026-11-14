@@ -1,0 +1,24 @@
+kind: helper
+name: unanimous_or_conflicting_owners
+call:
+  key_attribution:
+    digest_values: []
+    cli_keys: []
+    double_hashed_keys: []
+    daily_keys: [agree, first-only, last-only, conflict, empty, absent, '']
+    users: []
+    active_token_rows: []
+    deleted_token_rows: []
+    daily_owner_rows:
+      - {api_key: agree, first_owner: owner, last_owner: owner}
+      - {api_key: first-only, first_owner: owner, last_owner: null}
+      - {api_key: last-only, first_owner: null, last_owner: owner}
+      - {api_key: conflict, first_owner: first, last_owner: last}
+      - {api_key: empty, first_owner: '', last_owner: ''}
+      - {api_key: absent, first_owner: null, last_owner: null}
+      - {api_key: unrequested, first_owner: owner, last_owner: owner}
+    attach_metadata: {}
+    export_rows: []
+    export_fields: {api_key: api_key, alias: api_key_alias, team_id: team_id, user_email: user_email}
+env: {}
+compare: {ignore: []}

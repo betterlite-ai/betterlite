@@ -1,0 +1,19 @@
+kind: helper
+name: patch-no-query
+call:
+  b4118:
+    cases:
+      - model: claude-sonnet-4-5
+        messages:
+          - role: user
+            content: hi
+        tool_calls:
+          - id: toolu_1
+            type: tool_use
+            name: web_search
+            input: {}
+        optional_params: {}
+        kwargs: {}
+        searches: []
+env: {}
+compare: {ignore: []}
