@@ -5,11 +5,11 @@ from datetime import UTC, datetime
 from typing import Final, Literal, NotRequired, TypedDict
 
 import httpx
-from fastapi import HTTPException
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.proxy.guardrails.guardrail_hooks.headroom.headroom import HeadroomGuardrail
 from pydantic import JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
 
 API_BASE: Final = "https://headroom.test"
 TRANSPORT_DETAIL: Final = "<transport-error>"
