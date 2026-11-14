@@ -29,8 +29,8 @@ enum RawAlias {
 #[derive(Debug, Deserialize)]
 struct RawItem {
     model: String,
-    #[serde(default)]
-    hidden: bool,
+    // LiteLLM's type requires hidden, but an untagged enum's serde error names no key, so convert reports its absence
+    hidden: Option<bool>,
     #[serde(flatten)]
     unknown: IndexMap<String, IgnoredAny>,
 }
@@ -65,7 +65,11 @@ impl Section for Raw {
                             .keys()
                             .map(|key| format!("router_settings.model_group_alias.{name}.{key}")),
                     );
-                    (item.model, item.hidden)
+                    let Some(hidden) = item.hidden else {
+                        paths.push(format!("router_settings.model_group_alias.{name}.hidden"));
+                        continue;
+                    };
+                    (item.model, hidden)
                 }
             };
             let model = written
