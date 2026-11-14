@@ -71,11 +71,15 @@ struct RecordingHandler {
 
 impl CollectedChunksHandler for RecordingHandler {
     fn handle(&self, call: &CollectedChunksCall<'_>) -> Result<HandlerOutcome, HandlerError> {
-        self.calls
-            .lock()
-            .expect("the call log lock")
-            .push(recorded(self.name, call));
+        self.record(call);
         Ok(HandlerOutcome::default())
+    }
+}
+
+impl RecordingHandler {
+    fn record(&self, call: &CollectedChunksCall<'_>) {
+        let mut calls = self.calls.lock().expect("the call log lock");
+        calls.push(recorded(self.name, call));
     }
 }
 
@@ -102,10 +106,16 @@ struct BlockingHandler {
 
 impl CollectedChunksHandler for BlockingHandler {
     fn handle(&self, call: &CollectedChunksCall<'_>) -> Result<HandlerOutcome, HandlerError> {
-        self.calls
-            .lock()
-            .expect("the call log lock")
-            .push(recorded("gemini", call));
+        self.block_until_released(call);
+        Ok(HandlerOutcome::default())
+    }
+}
+
+impl BlockingHandler {
+    fn block_until_released(&self, call: &CollectedChunksCall<'_>) {
+        let mut calls = self.calls.lock().expect("the call log lock");
+        calls.push(recorded("gemini", call));
+        drop(calls);
         let started = self
             .started
             .lock()
@@ -123,7 +133,6 @@ impl CollectedChunksHandler for BlockingHandler {
             .take()
             .expect("the test waits for the handler");
         done.send(()).expect("the test holds the done receiver");
-        Ok(HandlerOutcome::default())
     }
 }
 
@@ -452,7 +461,10 @@ fn sync_stream_keeps_a_large_inline_media_event_whole() {
 
 #[test]
 fn sync_stream_reassembles_a_utf8_sequence_split_across_reads() {
-    let bytes = body(&["data: {\"text\":\"héllo 日本 🚀\"}", ""]);
+    let bytes = body(&[
+        "data: {\"text\":\"h\u{e9}llo \u{65e5}\u{672c} \u{1f680}\"}",
+        "",
+    ]);
     let chunks: Vec<Vec<u8>> = bytes.chunks(1).map(<[u8]>::to_vec).collect();
     let mut stream = sync_stream(chunks);
     assert_eq!(sync_events(&mut stream), [bytes]);
@@ -478,9 +490,10 @@ fn sync_stream_stops_at_a_transport_failure() {
 #[test]
 fn sync_stream_reports_a_long_line_after_the_events_before_it() {
     let input = b"data: a\n\ndata: 0123456789\n\n";
-    let chunks: Vec<Result<Vec<u8>, HttpError>> =
-        input.chunks(1).map(|byte| Ok(byte.to_vec())).collect();
-    let mut stream = GoogleGenAiStream::new(chunks.into_iter(), SMALL_LINE_LIMIT);
+    let mut stream = GoogleGenAiStream::new(
+        input.chunks(1).map(|byte| Ok(byte.to_vec())),
+        SMALL_LINE_LIMIT,
+    );
     let first = stream
         .next()
         .expect("the first event")
@@ -610,11 +623,11 @@ fn sync_stream_rejects_an_async_pull_with_litellms_message() {
     let mut stream = sync_stream(vec![body(&["data: a", ""])]);
     let mut context = Context::from_waker(Waker::noop());
     let rejected = Stream::poll_next(Pin::new(&mut stream), &mut context);
-    let Poll::Ready(Some(Err(rejected))) = rejected else {
+    let Poll::Ready(Some(Err(failure))) = rejected else {
         panic!("the async pull is refused");
     };
     assert_eq!(
-        rejected.to_string(),
+        failure.to_string(),
         "Use AsyncGoogleGenAIGenerateContentStreamingIterator for async iteration"
     );
     assert!(matches!(

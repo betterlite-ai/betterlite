@@ -16,8 +16,8 @@ async fn replays_the_genai_sse_corpus() {
 fn corpus_seeds() -> Vec<(String, Vec<u8>)> {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/genai_sse");
     let mut seeds: Vec<(String, Vec<u8>)> = Vec::new();
-    for entry in fs::read_dir(corpus).expect("the corpus folder") {
-        let entry = entry.expect("a corpus entry");
+    for dir_entry in fs::read_dir(corpus).expect("the corpus folder") {
+        let entry = dir_entry.expect("a corpus entry");
         let bytes = fs::read(entry.path()).expect("a seed file");
         let name = entry
             .file_name()
