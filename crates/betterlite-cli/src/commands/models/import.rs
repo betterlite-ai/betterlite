@@ -3,7 +3,6 @@ use std::io::Write;
 
 use betterlite_models::controls::json_value::JsonValue;
 use comfy_table::{Attribute, Cell, Table};
-use fancy_regex::Regex;
 use indexmap::IndexMap;
 use serde::Serialize;
 
@@ -14,10 +13,12 @@ use super::response::post_json;
 use super::value::ModelObject;
 use super::{ImportModels, ModelsError};
 
+mod filter;
+
+use filter::{ACCESS_REGEX_FLAG, MODEL_REGEX_FLAG, compile, filter_model};
+
 const NEW_PATH: &str = "/model/new";
 const MODELS_TITLE: &str = "Models Imported";
-const MODEL_REGEX_FLAG: &str = "--only-models-matching-regex";
-const ACCESS_REGEX_FLAG: &str = "--only-access-groups-matching-regex";
 const DRY_RUN_TITLE: &str = "Models that would be imported if --dry-run was not provided";
 
 #[derive(Serialize)]
@@ -112,83 +113,6 @@ fn send_new_model(client: &Client, info: &ModelYamlInfo<'_>) -> Result<(), Model
     Ok(())
 }
 
-fn compile(pattern: Option<&str>, flag: &'static str) -> Result<Option<Regex>, ModelsError> {
-    match pattern {
-        None => Ok(None),
-        Some(pattern) => Regex::new(pattern)
-            .map(Some)
-            .map_err(|source| ModelsError::Regex { flag, source }),
-    }
-}
-
-pub(super) fn filter_model(
-    model: &ModelObject,
-    model_regex: Option<&Regex>,
-    access_regex: Option<&Regex>,
-    index: usize,
-) -> Result<bool, ModelsError> {
-    if model
-        .get("model_name")
-        .is_none_or(|value| matches!(value, JsonValue::Null))
-    {
-        return Ok(false);
-    }
-    let params = match model.get("litellm_params") {
-        Some(JsonValue::Object(params)) => params,
-        None | Some(JsonValue::Null) => return Ok(false),
-        Some(_) => {
-            return Err(ModelsError::EntryField {
-                index,
-                field: "litellm_params",
-            });
-        }
-    };
-    let Some(JsonValue::Text(model_id)) = params.get("model") else {
-        return Ok(false);
-    };
-    if let Some(regex) = model_regex
-        && !regex
-            .is_match(model_id)
-            .map_err(|source| ModelsError::RegexMatch {
-                flag: MODEL_REGEX_FLAG,
-                source,
-            })?
-    {
-        return Ok(false);
-    }
-    let info = match model.get("model_info") {
-        Some(JsonValue::Object(info)) => Some(info),
-        None | Some(JsonValue::Null) => None,
-        Some(_) => {
-            return Err(ModelsError::EntryField {
-                index,
-                field: "model_info",
-            });
-        }
-    };
-    let Some(access_regex) = access_regex else {
-        return Ok(true);
-    };
-    let Some(JsonValue::Array(groups)) = info.and_then(|info| info.get("access_groups")) else {
-        return Ok(false);
-    };
-    for group in groups {
-        let JsonValue::Text(text) = group else {
-            continue;
-        };
-        let matched = access_regex
-            .is_match(text)
-            .map_err(|source| ModelsError::RegexMatch {
-                flag: ACCESS_REGEX_FLAG,
-                source,
-            })?;
-        if matched {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
 fn yaml_info<'model>(
     model: &'model ModelObject,
     index: usize,
@@ -214,7 +138,7 @@ fn yaml_info<'model>(
     let access_groups = access_group_names(model_info, index)?;
     let provider = model_id
         .split_once('/')
-        .map_or(model_id, |(before, _rest)| before);
+        .map_or(model_id.as_str(), |(before, _rest)| before);
     Ok(ModelYamlInfo {
         model_name,
         model_params,

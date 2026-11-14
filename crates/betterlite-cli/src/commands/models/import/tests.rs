@@ -12,7 +12,8 @@ use crate::commands::models::value::ModelObject;
 use crate::commands::models::{ImportModels, ModelsCommand, ModelsError};
 use crate::commands::tests::support::{Answer, TestServer};
 
-use super::{filter_model, summary_table};
+use super::filter::filter_model;
+use super::summary_table;
 
 fn yaml(text: &str) -> NamedTempFile {
     let mut file = NamedTempFile::new().unwrap();
@@ -466,8 +467,10 @@ fn summary_counts_each_provider_and_totals_them() {
     server.finish();
 }
 
-#[test]
-fn summary_renders_only_the_total_row_in_bold() {
+#[rstest]
+#[case::openai("openai")]
+#[case::azure("azure")]
+fn summary_renders_only_the_total_row_in_bold(#[case] provider: &str) {
     let counts = IndexMap::from([
         (String::from("openai"), 1_usize),
         (String::from("azure"), 2_usize),
@@ -482,14 +485,12 @@ fn summary_renders_only_the_total_row_in_bold() {
         .find(|line| line.contains("Total"))
         .unwrap_or_default();
     assert_eq!(total.matches("\u{1b}[1m").count(), 2, "{text:?}");
-    for provider in ["openai", "azure"] {
-        let row = text
-            .lines()
-            .find(|line| line.contains(provider))
-            .unwrap_or_default();
-        assert!(!row.contains('\u{1b}'), "{text:?}");
-    }
     assert!(total.contains('3'), "{text:?}");
+    let row = text
+        .lines()
+        .find(|line| line.contains(provider))
+        .unwrap_or_default();
+    assert!(!row.contains('\u{1b}'), "{text:?}");
 }
 
 fn object(text: &str) -> ModelObject {
