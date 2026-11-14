@@ -1,0 +1,10 @@
+kind: helper
+name: rerank-guardrail-fields-empty-query-and-instruction
+call:
+  rerank_guardrail_fields:
+    calls:
+      - operation: input
+        data: {query: "", instruction: "", documents: [a document], model: rerank-v3}
+        texts: ["", rewritten instruction]
+compare: {ignore: []}
+env: {}
