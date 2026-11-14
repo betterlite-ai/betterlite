@@ -83,7 +83,7 @@ fn status_error(reply: &ReplyInput<'_>) -> PetalsError {
 }
 
 // httpx raise_for_status rejects 1xx and 3xx too, and LiteLLM answers those with APIConnectionError status 500
-fn error_status(status: u16) -> u16 {
+const fn error_status(status: u16) -> u16 {
     if status >= 400 { status } else { 500 }
 }
 

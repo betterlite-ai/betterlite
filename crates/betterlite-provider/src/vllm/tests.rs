@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::any::type_name;
 use std::collections::BTreeMap;
 
 use betterlite_openai::error::{ProviderError, ProviderErrorParts};
@@ -62,10 +63,7 @@ fn url_request<'call>(
 
 #[test]
 fn vllm_config_is_the_hosted_vllm_chat_config() {
-    assert_eq!(
-        std::any::type_name::<VllmConfig>(),
-        std::any::type_name::<ChatConfig>()
-    );
+    assert_eq!(type_name::<VllmConfig>(), type_name::<ChatConfig>());
 }
 
 #[test]
