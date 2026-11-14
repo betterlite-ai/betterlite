@@ -1,0 +1,19 @@
+task: B1344
+deviations:
+  - what: >-
+      A Gemini (Google AI Studio) text or multimodal embedding call sends its API key in the x-goog-api-key
+      header. LiteLLM passes the x-goog-api-key mapping that _get_token_and_url returns into set_headers, which
+      formats it into an Authorization value, so the key travels as a malformed bearer value and the provider
+      rejects the call.
+    why: >-
+      A working LiteLLM setup cannot rely on the malformed Authorization value, and that value puts the
+      credential into a header LiteLLM logs. Sending the key in the header the Gemini API reads keeps every
+      other declared header unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L1138-L1147
+  - what: >-
+      A prediction answer larger than 32 MiB is refused with a 500 before it is parsed, where LiteLLM parses
+      whatever the handler received.
+    why: >-
+      Every provider body carries a size bound so one oversized answer cannot exhaust a worker, and no working
+      setup sends an embedding answer anywhere near that size.
+    link: ""

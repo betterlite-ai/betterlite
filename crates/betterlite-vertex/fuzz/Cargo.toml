@@ -119,6 +119,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vertex_embedding"
+path = "fuzz_targets/vertex_embedding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vertex_gcs_id"
 path = "fuzz_targets/vertex_gcs_id.rs"
 test = false
