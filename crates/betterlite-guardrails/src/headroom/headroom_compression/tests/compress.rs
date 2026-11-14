@@ -309,6 +309,28 @@ async fn a_non_json_body_is_previewed_in_the_failure_detail() {
     assert_eq!(body.chars().count(), BODY_PREVIEW_CHARS);
 }
 
+#[rstest]
+#[case::nan("NaN")]
+#[case::infinity("Infinity")]
+#[case::negative_infinity("-Infinity")]
+#[tokio::test]
+async fn non_finite_json_numbers_are_rejected_as_non_json(#[case] literal: &str) {
+    let payload = format!(
+        r#"{{"messages":[{{"role":"user","content":"short"}}],"tokens_before":{literal}}}"#
+    );
+    let server = mock(StatusCode::OK, payload).await;
+    let guardrail = guardrail(&server.base);
+    let mut request = data("{}");
+    let error = apply(&guardrail, inputs(FOUR), &mut request)
+        .await
+        .unwrap_err();
+    let (_status, detail) = detail_of(error);
+    assert_eq!(
+        detail.get("error"),
+        Some(&GuardrailValue::Text(NON_JSON_ERROR.to_owned()))
+    );
+}
+
 #[tokio::test]
 async fn a_missing_messages_field_keeps_the_whole_body() {
     let long = format!(r#"{{"other":"{}"}}"#, "x".repeat(BODY_PREVIEW_CHARS * 2));
