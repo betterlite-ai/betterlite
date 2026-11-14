@@ -160,3 +160,10 @@ path = "fuzz_targets/vertex_timestamp.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "vertex_tuning_job"
+path = "fuzz_targets/vertex_tuning_job.rs"
+test = false
+doc = false
+bench = false
