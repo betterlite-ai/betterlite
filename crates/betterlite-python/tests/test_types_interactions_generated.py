@@ -41,12 +41,27 @@ TAG_ERROR: Final = "does not match any of the expected tags"
 CONTENT_PAYLOADS: Final[tuple[dict[str, JsonValue], ...]] = (
     {"type": "text", "text": "hi"},
     {"type": "image", "uri": "https://example.com/i.png", "resolution": "high"},
+    {"type": "audio", "uri": "u", "mime_type": "audio/wav"},
+    {"type": "document", "uri": "u", "mime_type": "text/plain"},
+    {"type": "video", "uri": "u", "mime_type": "video/mp4", "resolution": "low"},
+    {"type": "thought", "signature": "c2ln", "summary": [{"type": "text", "text": "s"}]},
     {"type": "function_call", "name": "f", "arguments": {"a": 1}, "id": "c1"},
+    {"type": "function_result", "name": "f", "result": {"items": ["a"]}, "call_id": "c5"},
+    {"type": "code_execution_call", "arguments": {"language": "python", "code": "1"}, "id": "c6"},
     {"type": "code_execution_result", "result": "4", "call_id": "c2"},
+    {"type": "url_context_call", "arguments": {"urls": ["https://u"]}, "id": "c7"},
+    {"type": "url_context_result", "result": [{"url": "u", "status": "success"}], "call_id": "c8"},
+    {"type": "google_search_call", "arguments": {"queries": ["q"]}, "id": "c9"},
     {"type": "google_search_result", "result": [{"url": "u"}], "call_id": "c3"},
     {"type": "mcp_server_tool_call", "name": "t", "server_name": "s", "arguments": {}, "id": "c4"},
+    {
+        "type": "mcp_server_tool_result",
+        "name": "t",
+        "server_name": "s",
+        "result": "x",
+        "call_id": "c10",
+    },
     {"type": "file_search_result", "result": [{"title": "t", "text": "x"}]},
-    {"type": "thought", "signature": "c2ln", "summary": [{"type": "text", "text": "s"}]},
 )
 TOOL_PAYLOADS: Final[tuple[dict[str, JsonValue], ...]] = (
     {"type": "function", "name": "f"},
@@ -74,8 +89,34 @@ EVENT_PAYLOADS: Final[tuple[dict[str, JsonValue], ...]] = (
 )
 DELTA_PAYLOADS: Final[tuple[dict[str, JsonValue], ...]] = (
     {"type": "text", "text": "x"},
+    {"type": "image", "uri": "u", "mime_type": "image/png", "resolution": "high"},
+    {"type": "audio", "uri": "u", "mime_type": "audio/wav"},
+    {"type": "document", "uri": "u", "mime_type": "text/plain"},
+    {"type": "video", "uri": "u", "mime_type": "video/mp4", "resolution": "medium"},
     {"type": "thought_summary", "content": {"type": "image", "uri": "u"}},
+    {"type": "thought_signature", "signature": "c2ln"},
+    {"type": "function_call", "name": "f", "arguments": {"a": 1}, "id": "d1"},
     {"type": "function_result", "result": {"items": ["a"]}},
+    {"type": "code_execution_call", "arguments": {"language": "python", "code": "1"}, "id": "d2"},
+    {"type": "code_execution_result", "result": "4", "call_id": "d3"},
+    {"type": "url_context_call", "arguments": {"urls": ["u"]}, "id": "d4"},
+    {"type": "url_context_result", "result": [{"url": "u", "status": "error"}], "call_id": "d5"},
+    {"type": "google_search_call", "arguments": {"queries": ["q"]}, "id": "d6"},
+    {"type": "google_search_result", "result": [{"url": "u", "title": "t"}], "call_id": "d7"},
+    {
+        "type": "mcp_server_tool_call",
+        "name": "t",
+        "server_name": "s",
+        "arguments": {"a": 1},
+        "id": "d8",
+    },
+    {
+        "type": "mcp_server_tool_result",
+        "name": "t",
+        "server_name": "s",
+        "result": "done",
+        "call_id": "d9",
+    },
     {"type": "file_search_result", "result": []},
 )
 INPUT_PAYLOADS: Final[tuple[JsonValue, ...]] = (
