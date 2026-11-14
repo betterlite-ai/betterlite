@@ -960,6 +960,47 @@ fn parse_request_data_keeps_a_private_key_object_that_is_no_number() {
     );
 }
 
+#[rstest]
+#[case::positive(
+    r#"{"id": 123456789012345678901234567890}"#,
+    "123456789012345678901234567890"
+)]
+#[case::negative(
+    r#"{"id": -123456789012345678901234567890}"#,
+    "-123456789012345678901234567890"
+)]
+#[case::just_above_u64(r#"{"id": 18446744073709551616}"#, "18446744073709551616")]
+#[case::just_below_i64(r#"{"id": -9223372036854775809}"#, "-9223372036854775809")]
+#[case::nested(
+    r#"{"ids": [{"id": 123456789012345678901234567890}]}"#,
+    "123456789012345678901234567890"
+)]
+fn parse_request_data_refuses_an_integer_beyond_the_64_bit_range(
+    #[case] source: &str,
+    #[case] digits: &str,
+) {
+    let Err(PassthroughPayloadError::IntegerOutOfRange { text }) = parse_request_data(source)
+    else {
+        panic!("an integer wider than 64 bits must be refused");
+    };
+    assert_eq!(text, digits);
+}
+
+#[test]
+fn parse_request_data_keeps_a_wide_number_with_a_fraction_or_exponent_as_a_decimal() {
+    let parsed = data(r#"{"fraction": 123456789012345678901234567890.5, "exponent": 1.5e30}"#);
+    assert_eq!(
+        parsed,
+        BTreeMap::from([
+            (
+                "fraction".to_owned(),
+                GuardrailValue::Decimal(1.234_567_890_123_456_8e29)
+            ),
+            ("exponent".to_owned(), GuardrailValue::Decimal(1.5e30)),
+        ])
+    );
+}
+
 #[test]
 fn parse_request_data_rejects_a_payload_that_is_not_an_object() {
     assert!(matches!(

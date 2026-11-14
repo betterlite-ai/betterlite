@@ -31,62 +31,71 @@ struct PrivateNumber {
     extra: BTreeMap<String, WireValue>,
 }
 
-impl From<WireValue> for GuardrailValue {
-    fn from(wire: WireValue) -> Self {
-        match wire {
-            WireValue::PrivateNumber(private) => private_number(private),
-            WireValue::Object(entries) => Self::Object(
-                entries
-                    .into_iter()
-                    .map(|(key, child)| (key, Self::from(child)))
-                    .collect(),
-            ),
+impl TryFrom<WireValue> for GuardrailValue {
+    type Error = PassthroughPayloadError;
+
+    fn try_from(wire: WireValue) -> Result<Self, Self::Error> {
+        Ok(match wire {
+            WireValue::PrivateNumber(private) => private_number(private)?,
+            WireValue::Object(entries) => Self::Object(convert_entries(entries)?),
             WireValue::Null => Self::Null,
             WireValue::Boolean(flag) => Self::Boolean(flag),
             WireValue::SignedInteger(number) => Self::SignedInteger(number),
             WireValue::UnsignedInteger(number) => Self::UnsignedInteger(number),
             WireValue::Decimal(number) => Self::Decimal(number),
             WireValue::Text(text) => Self::Text(text),
-            WireValue::Array(children) => {
-                Self::Array(children.into_iter().map(Self::from).collect())
-            }
-        }
+            WireValue::Array(children) => Self::Array(
+                children
+                    .into_iter()
+                    .map(Self::try_from)
+                    .collect::<Result<_, _>>()?,
+            ),
+        })
     }
 }
 
+fn convert_entries(
+    entries: BTreeMap<String, WireValue>,
+) -> Result<BTreeMap<String, GuardrailValue>, PassthroughPayloadError> {
+    entries
+        .into_iter()
+        .map(|(key, child)| Ok((key, GuardrailValue::try_from(child)?)))
+        .collect()
+}
+
+fn is_integer_literal(text: &str) -> bool {
+    let digits = text.strip_prefix('-').unwrap_or(text);
+    !digits.is_empty() && digits.chars().all(|digit| digit.is_ascii_digit())
+}
+
 // a lone private key is a number; with siblings or text that is no number it is the caller's own object
-fn private_number(private: PrivateNumber) -> GuardrailValue {
+fn private_number(private: PrivateNumber) -> Result<GuardrailValue, PassthroughPayloadError> {
     let PrivateNumber {
         number: text,
         extra,
     } = private;
     if extra.is_empty() {
         if let Ok(number) = text.parse::<i64>() {
-            return GuardrailValue::SignedInteger(number);
+            return Ok(GuardrailValue::SignedInteger(number));
         }
         if let Ok(number) = text.parse::<u64>() {
-            return GuardrailValue::UnsignedInteger(number);
+            return Ok(GuardrailValue::UnsignedInteger(number));
+        }
+        if is_integer_literal(&text) {
+            return Err(PassthroughPayloadError::IntegerOutOfRange { text });
         }
         if let Ok(number) = text.parse::<f64>() {
-            return GuardrailValue::Decimal(number);
+            return Ok(GuardrailValue::Decimal(number));
         }
     }
     let mut entries = extra;
     entries.insert(PRIVATE_NUMBER_KEY.to_owned(), WireValue::Text(text));
-    GuardrailValue::Object(
-        entries
-            .into_iter()
-            .map(|(key, child)| (key, GuardrailValue::from(child)))
-            .collect(),
-    )
+    Ok(GuardrailValue::Object(convert_entries(entries)?))
 }
 
 // GuardrailValue's own Deserialize turns a non-integer number into the private-key object under arbitrary_precision
 pub fn parse_request_data(source: &str) -> Result<RequestData, PassthroughPayloadError> {
     let wire = serde_json::from_str::<BTreeMap<String, WireValue>>(source)
         .map_err(PassthroughPayloadError::Parse)?;
-    Ok(wire
-        .into_iter()
-        .map(|(key, value)| (key, GuardrailValue::from(value)))
-        .collect())
+    convert_entries(wire)
 }

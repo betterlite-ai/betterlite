@@ -6,6 +6,8 @@ pub enum PassthroughPayloadError {
     Serialize(#[source] PrivateJsonError),
     #[error("the passthrough payload is not a JSON object")]
     Parse(#[source] serde_json::Error),
+    #[error("the passthrough payload holds the integer {text}, which fits neither i64 nor u64")]
+    IntegerOutOfRange { text: String },
 }
 
 #[derive(Debug, thiserror::Error)]
