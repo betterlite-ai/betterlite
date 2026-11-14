@@ -74,10 +74,12 @@ where
 {
     let mut kwargs = call.kwargs.clone();
     kwargs.insert(LIST_ASYNC_FLAG.to_owned(), Json::Bool(true));
+    let provider = call.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
     let delegation = AgentListing {
-        custom_llm_provider: Some(call.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER)),
+        custom_llm_provider: Some(provider),
+        extra_headers: call.extra_headers,
+        timeout: call.timeout,
         kwargs: &kwargs,
-        ..call
     };
     match list(collection, delegation)? {
         AgentCollectionHandled::Done(output) => Ok(output),

@@ -502,6 +502,25 @@ async fn create_returns_a_pending_call_when_the_async_flag_is_true() {
 }
 
 #[tokio::test]
+async fn acreate_takes_the_default_provider_over_a_kwarg() {
+    let provider = Provider::start(200, "{}", None);
+    let kwargs = map(&[
+        ("api_base", text(&provider.url())),
+        ("custom_llm_provider", text("openai")),
+    ]);
+    let mut fixture = Fixture::new();
+
+    acreate(fixture.collection(), create_call("runner", &kwargs))
+        .await
+        .expect("gemini answers");
+
+    assert_eq!(
+        fixture.logging.custom_llm_provider.as_deref(),
+        Some("gemini")
+    );
+}
+
+#[tokio::test]
 async fn acreate_awaits_the_create_the_async_entry_starts() {
     let provider = Provider::start(200, r#"{"id":"agent-1"}"#, None);
     let kwargs = map(&[
@@ -599,6 +618,29 @@ async fn alist_awaits_the_list_the_async_entry_starts() {
     );
     assert_eq!(fixture.logging.model, "");
     assert_eq!(fixture.logging.call_type, "list_agents");
+    assert_eq!(
+        fixture.logging.custom_llm_provider.as_deref(),
+        Some("gemini")
+    );
+}
+
+#[tokio::test]
+async fn alist_takes_the_default_provider_over_a_kwarg() {
+    let provider = Provider::start(200, "{}", None);
+    let kwargs = map(&[
+        ("api_base", text(&provider.url())),
+        ("custom_llm_provider", text("openai")),
+    ]);
+    let mut fixture = Fixture::new();
+
+    alist(fixture.collection(), list_call(&kwargs))
+        .await
+        .expect("gemini answers");
+
+    assert_eq!(
+        fixture.logging.custom_llm_provider.as_deref(),
+        Some("gemini")
+    );
 }
 
 #[test]
