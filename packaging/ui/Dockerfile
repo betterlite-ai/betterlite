@@ -1,7 +1,5 @@
-# syntax=docker/dockerfile:1.7
-
-# The builder LiteLLM's own Dockerfile pins for its admin UI; it matches ui/litellm-dashboard/.nvmrc
 ARG UI_BUILD_IMAGE=node:24.19-alpine3.24@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43
+# The builder LiteLLM's own Dockerfile pins for its admin UI; it matches ui/litellm-dashboard/.nvmrc
 
 FROM --platform=$BUILDPLATFORM $UI_BUILD_IMAGE AS dependencies
 ENV NEXT_TELEMETRY_DISABLED=1 \
