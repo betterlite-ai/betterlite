@@ -1,0 +1,35 @@
+task: B3503
+deviations:
+  - what: All four functions take the agent name, the litellm params, the caller headers and the timeout inside one AgentRequest value, next to the config, the clients, the logging object and the optional supplied client.
+    why: the workspace lint table caps a function at five arguments; B3492's GetInteractionRequest carries the same fields the same way.
+    link: ""
+  - what: Each operation is a blocking function plus an async function, with no _is_async flag and no function that returns either a value or a coroutine.
+    why: Rust has no dynamic return type of that kind; B3504 and B3505 pick the form from the caller's adelete_agent or alist_agent_versions flag.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L303-L311
+  - what: There is no agents_http_handler singleton and no AgentsHTTPHandler type; callers use the free functions of the two modules.
+    why: The class holds no state, and the rules forbid module-level state and one-line wrappers. B3502's note gave this singleton to B3503, so the architect should confirm.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L447
+  - what: The async functions accept an optional async client, which LiteLLM's dispatcher never forwards.
+    why: LiteLLM's async_* methods already have a client parameter, and the dispatcher drops it only by omission; no caller at the pin supplies one, so a direct async call keeps the parameter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L303-L311
+  - what: A non-2xx answer to the versions GET becomes the provider's error through handle_error, and no post_call is recorded for it.
+    why: LiteLLM's GET does not raise, so its post_call logs the failing body first and the Gemini transform raises afterwards; betterlite checks the status in the transport so all four operations take one error path, and the error class is the same GeminiError the transform raises.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/agents/transformation.py#L121-L127
+  - what: post_call records original_response and additional_args only.
+    why: LiteLLM's Logging.post_call also writes input, api_key and log_event_type; those keys belong to B247's logging pipeline, which owns model_call_details, so the transport writes only the two arguments this call passes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1555-L1564
+  - what: pre_call records the input, the empty api key, the api base and the validated headers as a typed PreCall on the logging object instead of writing model_call_details keys.
+    why: B3492 records the same deviation for the interaction handlers; the header values stay in SecretString and the logging pipeline owns the keys.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1327-L1348
+  - what: The request carries B198's resolved RequestTimeout as data, and an unusable one, negative, NaN or too large, is a typed Timeout error before any request goes out.
+    why: betterlite reads no env and keeps no module state; LiteLLM passes the float to httpx and lets its ValueError escape through _handle_error, which re-raises it unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L561-L577
+  - what: A reply body that is not UTF-8 keeps the text up to its first invalid byte, both in post_call's original_response and in the provider error message.
+    why: httpx's response.text decodes with the charset and replacement characters; betterlite's transports refuse mangled text the same way gigachat_tokens does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L332
+  - what: litellm_params.api_base must be a string when it is set; any other JSON type is a Parameters error naming the field before the config sees it.
+    why: LiteLLM reads api_base with `or ""` from a field GenericLiteLLMParams declares as a string, so a typed wrong value never reaches the transform there; betterlite carries the params as open JSON and refuses the wrong type where B3492 does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L317-L321
+  - what: The clients come from B3492's base module, so an owned client refuses redirects, disables protocol retries, caps the buffered reply at the shared limit and refuses a proxy setting betterlite cannot use; a client the caller supplies keeps its own settings.
+    why: the transport policy B3492 lists applies unchanged to these two operations; LiteLLM's httpx clients follow redirects and read an unbounded body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1404-L1424
