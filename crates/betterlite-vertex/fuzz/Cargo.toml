@@ -155,6 +155,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vertex_rerank"
+path = "fuzz_targets/vertex_rerank.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vertex_timestamp"
 path = "fuzz_targets/vertex_timestamp.rs"
 test = false

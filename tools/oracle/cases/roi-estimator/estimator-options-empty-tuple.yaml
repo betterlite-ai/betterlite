@@ -1,0 +1,5 @@
+kind: helper
+name: estimator-options-empty-tuple
+call: {"b3154": {"operation": "estimator_options", "models": [], "supported": []}}
+env: {}
+compare: {ignore: []}

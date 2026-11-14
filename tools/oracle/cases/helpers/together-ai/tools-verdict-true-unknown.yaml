@@ -1,0 +1,39 @@
+kind: helper
+name: tools-verdict-true-unknown
+call:
+  b5831:
+    model_cost:
+      together_ai/together-b5831-tools-true: {litellm_provider: together_ai, mode: chat, supports_function_calling: true}
+      together_ai/together-b5831-tools-unknown: {litellm_provider: together_ai, mode: chat}
+    chat_supported: []
+    chat_map:
+    - model: together-b5831-tools-true
+      params:
+        tools:
+        - type: function
+          function: {name: lookup}
+        tool_choice: auto
+        function_call: {name: lookup}
+      optional_params: {}
+    - model: together-b5831-tools-unknown
+      params:
+        tools:
+        - type: function
+          function: {name: lookup}
+        tool_choice: auto
+      optional_params: {}
+    - model: together-b5831-no-entry
+      params:
+        tools:
+        - type: function
+          function: {name: lookup}
+      optional_params: {}
+    chat_messages: []
+    completion: []
+    rerank_requests: []
+    rerank_responses: []
+    cost_categories: []
+    cost_registry: []
+env: {}
+compare:
+  ignore: []

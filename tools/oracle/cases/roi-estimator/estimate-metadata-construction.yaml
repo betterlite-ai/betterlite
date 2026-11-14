@@ -1,0 +1,5 @@
+kind: helper
+name: estimate-metadata-construction
+call: {"b3154": {"operation": "estimate", "settings": {"estimator_model": "gpt-5.2", "estimator_prompt": "Estimate this pull request."}, "models": [["none-effort-model", "deepseek"]], "supported": ["none-effort-model"], "pull": {"repo": "octocat/hello", "number": 12, "title": "Add the thing", "body": "Line one\nline two", "url": "https://github.com/octocat/hello/pull/12", "login": "octocat", "emails": [], "profile_email": "", "merged_at": "2026-01-01T00:00:00Z", "head_sha": "abc123", "additions": 10, "deletions": 2, "changed_files": 3, "files": [], "commits": [], "commit_count": 0, "incomplete_metadata": false}, "response": {"choices": [{"finish_reason": "stop", "message": {"content": "{\"hours\": 2, \"reasoning\": \"Small change.\"}"}}]}, "response_is_error": false}}
+env: {}
+compare: {ignore: []}
