@@ -1,0 +1,5 @@
+task: B3245
+deviations:
+  - what: PolicyValidator gets its guardrail registry, database and router as generic parameters built with a struct literal. LiteLLM reads IN_MEMORY_GUARDRAIL_HANDLER and takes an optional Prisma client and router in `__init__`.
+    why: Rust has no module-level handler to import, and the registry adapter belongs to another task. A missing database or router is `None::<NoDatabase>` or `None::<NoRouter>`.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_validator.py#L38-L51
