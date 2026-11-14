@@ -8,6 +8,10 @@ const DEFAULT_API_BASE: &str = "https://api.soniox.com";
 const API_KEY_VAR: &str = "SONIOX_API_KEY";
 const API_BASE_VAR: &str = "SONIOX_API_BASE";
 
+#[expect(
+    clippy::multiple_inherent_impl,
+    reason = "Each provider keeps its settings resolver beside its own module; elevenlabs holds the first impl"
+)]
 impl LiteLlmParams {
     // get_secret_str reads true and false as unset, so both variables need the same filter
     #[must_use]
