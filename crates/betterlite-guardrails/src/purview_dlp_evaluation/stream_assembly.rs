@@ -57,9 +57,9 @@ pub fn assemble_responses_stream(
                 looks_like_responses_api |= event.r#type.starts_with("response.");
             }
             ResponsesAPIStreamingResponse::Known(event) => {
-                let (marks, response) = known_event_outcome(event);
+                let (marks, event_response) = known_event_outcome(event);
                 looks_like_responses_api |= marks;
-                if let Some(response) = response {
+                if let Some(response) = event_response {
                     final_response = Some(response);
                 }
             }

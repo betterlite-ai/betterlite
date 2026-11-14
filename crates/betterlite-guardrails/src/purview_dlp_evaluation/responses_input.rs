@@ -5,7 +5,6 @@ use betterlite_models::decisions::Json as DecisionsJson;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::Message;
 
-use crate::purview_dlp_evaluation::MicrosoftPurviewDLPGuardrail;
 use crate::purview_dlp_evaluation::error_handling::{self, PurviewDlpHttpError};
 use crate::purview_graph_client::message_concat::prompt_text_for_dlp;
 
@@ -41,43 +40,41 @@ fn transform_failure(
     Ok(None)
 }
 
-impl MicrosoftPurviewDLPGuardrail {
-    pub fn responses_api_input_to_str(
-        data: &Object,
-        cache: &DualLocalCache,
-        raise_on_failure: bool,
-    ) -> Result<Option<String>, PurviewDlpHttpError> {
-        let input = data
-            .get("input")
-            .filter(|value| !matches!(value, Json::Null));
-        let instructions = data
-            .get("instructions")
-            .and_then(Json::as_str)
-            .map(str::to_owned);
-        if input.is_none() && instructions.is_none() {
-            return Ok(None);
-        }
-        let request = InputRequest {
-            input: input.map(convert_json),
-            instructions,
-        };
-        let messages = match input_messages(&request, false, ApiLimits::default(), cache) {
-            Ok(messages) => messages,
-            Err(source) => return transform_failure(&source.to_string(), raise_on_failure),
-        };
-        // B909's converter emits its JSON message records; they enter the typed chat messages here.
-        let parsed: Result<Vec<Message>, serde_json::Error> = messages
-            .iter()
-            .map(|message| serde_json::from_value(message.clone()))
-            .collect();
-        let Ok(chat_messages) = parsed else {
-            return transform_failure(
-                "the transformed messages are not chat messages",
-                raise_on_failure,
-            );
-        };
-        Ok(prompt_text_for_dlp(&chat_messages))
+pub fn responses_api_input_to_str(
+    data: &Object,
+    cache: &DualLocalCache,
+    raise_on_failure: bool,
+) -> Result<Option<String>, PurviewDlpHttpError> {
+    let input = data
+        .get("input")
+        .filter(|value| !matches!(value, Json::Null));
+    let instructions = data
+        .get("instructions")
+        .and_then(Json::as_str)
+        .map(str::to_owned);
+    if input.is_none() && instructions.is_none() {
+        return Ok(None);
     }
+    let request = InputRequest {
+        input: input.map(convert_json),
+        instructions,
+    };
+    let messages = match input_messages(&request, false, ApiLimits::default(), cache) {
+        Ok(messages) => messages,
+        Err(source) => return transform_failure(&source.to_string(), raise_on_failure),
+    };
+    // B909's converter emits its JSON message records; they enter the typed chat messages here.
+    let parsed: Result<Vec<Message>, serde_json::Error> = messages
+        .iter()
+        .map(|message| serde_json::from_value(message.clone()))
+        .collect();
+    let Ok(chat_messages) = parsed else {
+        return transform_failure(
+            "the transformed messages are not chat messages",
+            raise_on_failure,
+        );
+    };
+    Ok(prompt_text_for_dlp(&chat_messages))
 }
 
 mod tests;

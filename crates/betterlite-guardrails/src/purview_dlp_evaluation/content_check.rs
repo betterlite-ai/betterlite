@@ -10,8 +10,9 @@ use crate::guardrail_records::invocation::GuardrailInvocation;
 use crate::guardrail_records::record::{
     GuardrailRecordContext, GuardrailRecordInput, GuardrailStatus,
 };
+use crate::purview_dlp_evaluation::GUARDRAIL_PROVIDER;
 use crate::purview_dlp_evaluation::error_handling::{self, PurviewDlpHttpError};
-use crate::purview_dlp_evaluation::{GUARDRAIL_PROVIDER, MicrosoftPurviewDLPGuardrail};
+use crate::purview_graph_client::PurviewGuardrailBase;
 use crate::purview_graph_client::error::PurviewGraphError;
 use crate::purview_graph_client::policy_action::should_block;
 use crate::purview_graph_client::process_content::{ContentRequest, process_content};
@@ -134,54 +135,54 @@ fn evaluation_failure(
     })
 }
 
-impl MicrosoftPurviewDLPGuardrail {
-    async fn evaluate(
-        &self,
-        check: &ContentCheck<'_>,
-    ) -> Result<ProcessContentResponse, PurviewGraphError> {
-        let (etag, _protection_scopes) =
-            compute_protection_scopes(&self.base, check.user_id).await?;
-        let correlation_id = check
-            .request_data
-            .get("litellm_call_id")
-            .and_then(Json::as_str)
-            .filter(|call_id| !call_id.is_empty());
-        let request = ContentRequest {
-            user_id: check.user_id,
-            text: check.text,
-            activity: check.activity,
-            etag: etag.as_str(),
-            correlation_id,
-        };
-        process_content(&self.base, &request).await
-    }
+async fn evaluate(
+    base: &PurviewGuardrailBase,
+    check: &ContentCheck<'_>,
+) -> Result<ProcessContentResponse, PurviewGraphError> {
+    let (etag, _protection_scopes) = compute_protection_scopes(base, check.user_id).await?;
+    let correlation_id = check
+        .request_data
+        .get("litellm_call_id")
+        .and_then(Json::as_str)
+        .filter(|call_id| !call_id.is_empty());
+    let request = ContentRequest {
+        user_id: check.user_id,
+        text: check.text,
+        activity: check.activity,
+        etag: etag.as_str(),
+        correlation_id,
+    };
+    process_content(base, &request).await
+}
 
-    pub async fn check_content(&self, check: &ContentCheck<'_>) -> ContentOutcome {
-        let started_at = (self.base.clock)();
-        let (result, status, recorded) = match self.evaluate(check).await {
-            Ok(response) if should_block(&response) => {
-                let answer = response_record(&response);
-                let blocked = if check.block_on_violation {
-                    Err(error_handling::policy_block(check.activity))
-                } else {
-                    Ok(response)
-                };
-                (blocked, GuardrailStatus::GuardrailIntervened, answer)
-            }
-            Ok(response) => {
-                let answer = response_record(&response);
-                (Ok(response), GuardrailStatus::Success, answer)
-            }
-            Err(error) => (
-                evaluation_failure(&error, check.activity, check.block_on_violation),
-                GuardrailStatus::GuardrailFailedToRespond,
-                GuardrailValue::Object(BTreeMap::new()),
-            ),
-        };
-        ContentOutcome {
-            result,
-            record: record_input(recorded, status, started_at, (self.base.clock)()),
+pub async fn check_content(
+    base: &PurviewGuardrailBase,
+    check: &ContentCheck<'_>,
+) -> ContentOutcome {
+    let started_at = (base.clock)();
+    let (result, status, recorded) = match evaluate(base, check).await {
+        Ok(response) if should_block(&response) => {
+            let answer = response_record(&response);
+            let blocked = if check.block_on_violation {
+                Err(error_handling::policy_block(check.activity))
+            } else {
+                Ok(response)
+            };
+            (blocked, GuardrailStatus::GuardrailIntervened, answer)
         }
+        Ok(response) => {
+            let answer = response_record(&response);
+            (Ok(response), GuardrailStatus::Success, answer)
+        }
+        Err(error) => (
+            evaluation_failure(&error, check.activity, check.block_on_violation),
+            GuardrailStatus::GuardrailFailedToRespond,
+            GuardrailValue::Object(BTreeMap::new()),
+        ),
+    };
+    ContentOutcome {
+        result,
+        record: record_input(recorded, status, started_at, (base.clock)()),
     }
 }
 

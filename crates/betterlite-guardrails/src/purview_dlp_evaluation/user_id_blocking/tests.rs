@@ -6,7 +6,7 @@ use betterlite_prompts::arguments::json::Object;
 use crate::purview_dlp_evaluation::error_handling::POLICY_BLOCK_STATUS;
 use crate::purview_dlp_evaluation::test_support::guardrail_at;
 use crate::purview_dlp_evaluation::user_id_blocking::{
-    NO_IDENTITY_ERROR, UNTRUSTED_IDENTITY_ERROR,
+    NO_IDENTITY_ERROR, UNTRUSTED_IDENTITY_ERROR, resolve_user_id_for_blocking,
 };
 use crate::purview_graph_client::user_id_resolution::KeyIdentity;
 
@@ -26,9 +26,7 @@ fn a_key_bound_user_id_is_accepted() {
         end_user_id: None,
     };
     assert_eq!(
-        guardrail
-            .resolve_user_id_for_blocking(&data("{}"), &identity)
-            .unwrap(),
+        resolve_user_id_for_blocking(&guardrail.base, &data("{}"), &identity).unwrap(),
         "user-1"
     );
 }
@@ -41,9 +39,7 @@ fn a_key_bound_user_id_wins_over_a_caller_hint() {
         end_user_id: Some("hint"),
     };
     assert_eq!(
-        guardrail
-            .resolve_user_id_for_blocking(&data("{}"), &identity)
-            .unwrap(),
+        resolve_user_id_for_blocking(&guardrail.base, &data("{}"), &identity).unwrap(),
         "trusted"
     );
 }
@@ -55,9 +51,7 @@ fn an_end_user_id_only_is_rejected() {
         user_id: None,
         end_user_id: Some("hint"),
     };
-    let error = guardrail
-        .resolve_user_id_for_blocking(&data("{}"), &identity)
-        .unwrap_err();
+    let error = resolve_user_id_for_blocking(&guardrail.base, &data("{}"), &identity).unwrap_err();
     assert_eq!(error.status, POLICY_BLOCK_STATUS);
     assert_eq!(
         error.detail.get("error"),
@@ -72,12 +66,12 @@ fn a_proxy_injected_metadata_user_id_only_is_rejected() {
         user_id: None,
         end_user_id: None,
     };
-    let error = guardrail
-        .resolve_user_id_for_blocking(
-            &data(r#"{"metadata":{"user_api_key_user_id":"hint"}}"#),
-            &identity,
-        )
-        .unwrap_err();
+    let error = resolve_user_id_for_blocking(
+        &guardrail.base,
+        &data(r#"{"metadata":{"user_api_key_user_id":"hint"}}"#),
+        &identity,
+    )
+    .unwrap_err();
     assert_eq!(
         error.detail.get("error"),
         Some(&text(UNTRUSTED_IDENTITY_ERROR))
@@ -91,9 +85,12 @@ fn a_configured_metadata_user_id_only_is_rejected() {
         user_id: None,
         end_user_id: None,
     };
-    let error = guardrail
-        .resolve_user_id_for_blocking(&data(r#"{"metadata":{"user_id":"hint"}}"#), &identity)
-        .unwrap_err();
+    let error = resolve_user_id_for_blocking(
+        &guardrail.base,
+        &data(r#"{"metadata":{"user_id":"hint"}}"#),
+        &identity,
+    )
+    .unwrap_err();
     assert_eq!(
         error.detail.get("error"),
         Some(&text(UNTRUSTED_IDENTITY_ERROR))
@@ -107,9 +104,9 @@ fn no_identity_at_all_is_reported_with_its_own_message() {
         user_id: None,
         end_user_id: None,
     };
-    let error = guardrail
-        .resolve_user_id_for_blocking(&data(r#"{"model":"gpt-4"}"#), &identity)
-        .unwrap_err();
+    let error =
+        resolve_user_id_for_blocking(&guardrail.base, &data(r#"{"model":"gpt-4"}"#), &identity)
+            .unwrap_err();
     assert_eq!(error.status, POLICY_BLOCK_STATUS);
     assert_eq!(error.detail.get("error"), Some(&text(NO_IDENTITY_ERROR)));
 }

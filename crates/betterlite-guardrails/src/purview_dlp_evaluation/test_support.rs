@@ -110,7 +110,7 @@ async fn serve(State(state): State<Arc<MockState>>, request: Request) -> Respons
     for (name, value) in &reply.headers {
         headers.insert(
             HeaderName::from_bytes(name.as_bytes()).unwrap(),
-            HeaderValue::from_static(*value),
+            HeaderValue::from_static(value),
         );
     }
     (reply.status, headers, reply.body.clone()).into_response()

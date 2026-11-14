@@ -5,6 +5,7 @@ use std::time::Duration;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use secrecy::{ExposeSecret as _, SecretString};
 
+use crate::purview_dlp_evaluation::hook_methods::{CONFIG_MODEL, get_supported_event_hooks};
 use crate::purview_dlp_evaluation::{
     GUARDRAIL_PROVIDER, MicrosoftPurviewDLPGuardrail, PurviewDlpGuardrailParams,
 };
@@ -36,13 +37,13 @@ fn build(
 
 #[test]
 fn config_model_is_none() {
-    assert_eq!(MicrosoftPurviewDLPGuardrail::CONFIG_MODEL, None);
+    assert_eq!(CONFIG_MODEL, None);
 }
 
 #[test]
 fn supported_event_hooks_are_pre_post_logging_in_order() {
     assert_eq!(
-        MicrosoftPurviewDLPGuardrail::get_supported_event_hooks(),
+        get_supported_event_hooks(),
         [
             GuardrailEventHooks::PreCall,
             GuardrailEventHooks::PostCall,
@@ -54,7 +55,7 @@ fn supported_event_hooks_are_pre_post_logging_in_order() {
 #[test]
 fn supported_event_hooks_serialize_to_litellms_wire_names() {
     assert_eq!(
-        serde_json::to_string(&MicrosoftPurviewDLPGuardrail::get_supported_event_hooks()).unwrap(),
+        serde_json::to_string(&get_supported_event_hooks()).unwrap(),
         r#"["pre_call","post_call","logging_only"]"#
     );
 }

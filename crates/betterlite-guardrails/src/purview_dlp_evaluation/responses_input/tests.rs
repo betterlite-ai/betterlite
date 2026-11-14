@@ -9,8 +9,8 @@ use betterlite_prompts::arguments::json::Object;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use tracing::subscriber::set_default;
 
-use crate::purview_dlp_evaluation::MicrosoftPurviewDLPGuardrail;
 use crate::purview_dlp_evaluation::error_handling::{POLICY_BLOCK_STATUS, PurviewDlpHttpError};
+use crate::purview_dlp_evaluation::responses_input::responses_api_input_to_str;
 use crate::purview_dlp_evaluation::test_support::Captured;
 
 const TRANSFORM_ERROR: &str = "Microsoft Purview DLP: Responses API input could not be transformed for DLP scanning in blocking mode";
@@ -34,7 +34,7 @@ fn data(raw: &str) -> Object {
 }
 
 fn convert(raw: &str, raise: bool) -> Result<Option<String>, PurviewDlpHttpError> {
-    MicrosoftPurviewDLPGuardrail::responses_api_input_to_str(&data(raw), &cache(), raise)
+    responses_api_input_to_str(&data(raw), &cache(), raise)
 }
 
 #[test]

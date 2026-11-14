@@ -72,7 +72,7 @@ impl MicrosoftPurviewDLPGuardrail {
         Self {
             base,
             guardrail_name: params.guardrail_name,
-            supported_event_hooks: Self::get_supported_event_hooks().to_vec(),
+            supported_event_hooks: hook_methods::get_supported_event_hooks().to_vec(),
         }
     }
 }

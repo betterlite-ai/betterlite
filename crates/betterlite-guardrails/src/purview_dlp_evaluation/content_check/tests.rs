@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 
+use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
@@ -17,7 +18,9 @@ use crate::guardrail_records::invocation::{GuardrailHookName, GuardrailInvocatio
 use crate::guardrail_records::record::{
     GuardrailInvocationRecord, GuardrailRecordContext, GuardrailSpanSink, GuardrailStatus,
 };
-use crate::purview_dlp_evaluation::content_check::{ContentCheck, ContentCheckError};
+use crate::purview_dlp_evaluation::content_check::{
+    ContentCheck, ContentCheckError, check_content,
+};
 use crate::purview_dlp_evaluation::error_handling::POLICY_BLOCK_STATUS;
 use crate::purview_dlp_evaluation::test_support::{
     Captured, GraphMock, Reply, guardrail_at, standard_replies, start,
@@ -78,11 +81,13 @@ async fn content_check_returns_the_process_content_answer() {
     let guardrail = guardrail_at(&mock.base);
     let data = request_data(Some("call-1"));
 
-    let response = guardrail
-        .check_content(&scan("hello", &data, Activity::UploadText, true))
-        .await
-        .result
-        .unwrap();
+    let response = check_content(
+        &guardrail.base,
+        &scan("hello", &data, Activity::UploadText, true),
+    )
+    .await
+    .result
+    .unwrap();
 
     assert!(response.policy_actions.is_empty());
     assert_eq!(mock.count(PROCESS_PATH), 1);
@@ -100,8 +105,7 @@ async fn content_check_sends_the_text_and_activity_to_graph(
     let guardrail = guardrail_at(&mock.base);
     let data = request_data(Some("call-1"));
 
-    let _response = guardrail
-        .check_content(&scan("secret text", &data, activity, true))
+    let _response = check_content(&guardrail.base, &scan("secret text", &data, activity, true))
         .await
         .result
         .unwrap();
@@ -124,7 +128,7 @@ async fn content_check_computes_scopes_then_scans_the_given_user_with_the_scope_
         ..scan("hello", &data, Activity::UploadText, true)
     };
 
-    let _response = guardrail.check_content(&check).await.result.unwrap();
+    let _response = check_content(&guardrail.base, &check).await.result.unwrap();
 
     let seen = mock.seen.lock().unwrap();
     let graph_calls: Vec<&str> = seen
@@ -150,6 +154,7 @@ async fn content_check_computes_scopes_then_scans_the_given_user_with_the_scope_
             .map(|value| value.to_str().unwrap()),
         Some(r#""etag-1""#)
     );
+    drop(seen);
 }
 
 #[tokio::test]
@@ -158,11 +163,13 @@ async fn content_check_uses_the_litellm_call_id_as_the_correlation_id() {
     let guardrail = guardrail_at(&mock.base);
     let data = request_data(Some("call-1"));
 
-    let _response = guardrail
-        .check_content(&scan("hello", &data, Activity::UploadText, true))
-        .await
-        .result
-        .unwrap();
+    let _response = check_content(
+        &guardrail.base,
+        &scan("hello", &data, Activity::UploadText, true),
+    )
+    .await
+    .result
+    .unwrap();
 
     assert!(last_body(&mock, PROCESS_PATH).contains(r#""correlationId":"call-1""#));
 }
@@ -173,11 +180,13 @@ async fn content_check_generates_a_correlation_id_when_the_call_id_is_absent() {
     let guardrail = guardrail_at(&mock.base);
     let data = request_data(None);
 
-    let _response = guardrail
-        .check_content(&scan("hello", &data, Activity::UploadText, true))
-        .await
-        .result
-        .unwrap();
+    let _response = check_content(
+        &guardrail.base,
+        &scan("hello", &data, Activity::UploadText, true),
+    )
+    .await
+    .result
+    .unwrap();
 
     let generated = Uuid::nil().to_string();
     assert!(last_body(&mock, PROCESS_PATH).contains(&format!(r#""correlationId":"{generated}""#)));
@@ -189,11 +198,13 @@ async fn content_check_generates_a_correlation_id_when_the_call_id_is_empty() {
     let guardrail = guardrail_at(&mock.base);
     let data = request_data(Some(""));
 
-    let _response = guardrail
-        .check_content(&scan("hello", &data, Activity::UploadText, true))
-        .await
-        .result
-        .unwrap();
+    let _response = check_content(
+        &guardrail.base,
+        &scan("hello", &data, Activity::UploadText, true),
+    )
+    .await
+    .result
+    .unwrap();
 
     let generated = Uuid::nil().to_string();
     assert!(last_body(&mock, PROCESS_PATH).contains(&format!(r#""correlationId":"{generated}""#)));
@@ -205,11 +216,13 @@ async fn content_check_raises_a_policy_block_in_blocking_mode() {
     let guardrail = guardrail_at(&mock.base);
     let data = request_data(None);
 
-    let error = guardrail
-        .check_content(&scan("secret", &data, Activity::UploadText, true))
-        .await
-        .result
-        .unwrap_err();
+    let error = check_content(
+        &guardrail.base,
+        &scan("secret", &data, Activity::UploadText, true),
+    )
+    .await
+    .result
+    .unwrap_err();
 
     assert_eq!(error.status, POLICY_BLOCK_STATUS);
     assert_eq!(
@@ -230,11 +243,13 @@ async fn content_check_does_not_raise_a_policy_block_in_logging_only_mode() {
     let guardrail = guardrail_at(&mock.base);
     let data = request_data(None);
 
-    let response = guardrail
-        .check_content(&scan("secret", &data, Activity::DownloadText, false))
-        .await
-        .result
-        .unwrap();
+    let response = check_content(
+        &guardrail.base,
+        &scan("secret", &data, Activity::DownloadText, false),
+    )
+    .await
+    .result
+    .unwrap();
 
     assert_eq!(response.policy_actions.len(), 1);
 }
@@ -244,7 +259,7 @@ async fn content_check_propagates_a_rate_limit_in_blocking_mode() {
     let mock = start(replies_with(
         PROCESS_PATH,
         Reply {
-            status: axum::http::StatusCode::TOO_MANY_REQUESTS,
+            status: StatusCode::TOO_MANY_REQUESTS,
             headers: vec![("retry-after", "17")],
             body: String::new(),
         },
@@ -253,11 +268,13 @@ async fn content_check_propagates_a_rate_limit_in_blocking_mode() {
     let guardrail = guardrail_at(&mock.base);
     let data = request_data(None);
 
-    let error = guardrail
-        .check_content(&scan("secret", &data, Activity::UploadText, true))
-        .await
-        .result
-        .unwrap_err();
+    let error = check_content(
+        &guardrail.base,
+        &scan("secret", &data, Activity::UploadText, true),
+    )
+    .await
+    .result
+    .unwrap_err();
 
     assert_eq!(error.status, 429);
     assert_eq!(error.retry_after.as_deref(), Some("17"));
@@ -268,7 +285,7 @@ async fn content_check_swallows_an_upstream_failure_in_logging_only_mode() {
     let mock = start(replies_with(
         PROCESS_PATH,
         Reply {
-            status: axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            status: StatusCode::INTERNAL_SERVER_ERROR,
             headers: Vec::new(),
             body: String::new(),
         },
@@ -287,11 +304,13 @@ async fn content_check_swallows_an_upstream_failure_in_logging_only_mode() {
             .finish(),
     );
 
-    let response = guardrail
-        .check_content(&scan("secret", &data, Activity::DownloadText, false))
-        .await
-        .result
-        .unwrap();
+    let response = check_content(
+        &guardrail.base,
+        &scan("secret", &data, Activity::DownloadText, false),
+    )
+    .await
+    .result
+    .unwrap();
 
     assert!(response.policy_actions.is_empty());
     assert!(response.protection_scope_state.is_none());
@@ -317,7 +336,7 @@ fn text(value: &str) -> GuardrailValue {
 
 fn server_error() -> Reply {
     Reply {
-        status: axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        status: StatusCode::INTERNAL_SERVER_ERROR,
         headers: Vec::new(),
         body: String::new(),
     }
@@ -339,14 +358,11 @@ async fn content_check_records_the_guardrail_status(
     let guardrail = guardrail_at(&mock.base);
     let data = request_data(None);
 
-    let outcome = guardrail
-        .check_content(&scan(
-            "secret",
-            &data,
-            Activity::UploadText,
-            block_on_violation,
-        ))
-        .await;
+    let outcome = check_content(
+        &guardrail.base,
+        &scan("secret", &data, Activity::UploadText, block_on_violation),
+    )
+    .await;
 
     assert_eq!(outcome.record.guardrail_status, status);
     assert_eq!(
@@ -363,9 +379,11 @@ async fn content_check_records_the_process_content_answer() {
     let guardrail = guardrail_at(&mock.base);
     let data = request_data(None);
 
-    let outcome = guardrail
-        .check_content(&scan("secret", &data, Activity::UploadText, false))
-        .await;
+    let outcome = check_content(
+        &guardrail.base,
+        &scan("secret", &data, Activity::UploadText, false),
+    )
+    .await;
 
     let action = GuardrailValue::Object(BTreeMap::from([
         (
@@ -401,9 +419,11 @@ async fn content_check_records_a_known_protection_scope_state(
     let guardrail = guardrail_at(&mock.base);
     let data = request_data(None);
 
-    let outcome = guardrail
-        .check_content(&scan("hello", &data, Activity::UploadText, true))
-        .await;
+    let outcome = check_content(
+        &guardrail.base,
+        &scan("hello", &data, Activity::UploadText, true),
+    )
+    .await;
 
     let mut expected = BTreeMap::from([(
         "policyActions".to_owned(),
@@ -424,9 +444,11 @@ async fn content_check_records_an_empty_answer_when_graph_fails() {
     let guardrail = guardrail_at(&mock.base);
     let data = request_data(None);
 
-    let outcome = guardrail
-        .check_content(&scan("hello", &data, Activity::UploadText, false))
-        .await;
+    let outcome = check_content(
+        &guardrail.base,
+        &scan("hello", &data, Activity::UploadText, false),
+    )
+    .await;
 
     assert_eq!(
         outcome.record.guardrail_response,
@@ -444,9 +466,11 @@ async fn content_check_records_the_timings_from_the_guardrail_clock() {
         .unwrap()
         .as_secs_f64();
 
-    let outcome = guardrail
-        .check_content(&scan("hello", &data, Activity::UploadText, true))
-        .await;
+    let outcome = check_content(
+        &guardrail.base,
+        &scan("hello", &data, Activity::UploadText, true),
+    )
+    .await;
 
     assert_eq!(outcome.record.start_time, Some(now));
     assert_eq!(outcome.record.end_time, Some(now));
@@ -493,6 +517,12 @@ async fn write_record_appends_the_record_before_returning_the_result(
         UNIX_EPOCH,
     )
     .unwrap();
+    let guardrail = guardrail_at(&mock.base);
+    let outcome = check_content(
+        &guardrail.base,
+        &scan("secret", &data, Activity::UploadText, true),
+    )
+    .await;
     let mut context = GuardrailRecordContext {
         base: &base,
         request_data: &mut request,
@@ -500,10 +530,7 @@ async fn write_record_appends_the_record_before_returning_the_result(
         sink: &DiscardSink,
     };
 
-    let result = guardrail_at(&mock.base)
-        .check_content(&scan("secret", &data, Activity::UploadText, true))
-        .await
-        .write_record(&mut invocation, &mut context);
+    let result = outcome.write_record(&mut invocation, &mut context);
 
     let returned_status = match result {
         Ok(_response) => None,
