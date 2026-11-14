@@ -12,9 +12,9 @@ so run `cargo gate run <ID> --only clippy` once before you finish. CI lints ever
 the change can affect, so don't use `--workspace`. `cargo gate run <ID> --only <check>`
 runs one of the task's test commands. Use `cargo deny --locked check` for dependency policy.
 
-In a dispatched run (`GATE_DISPATCHED=1`) nothing builds on this machine: the cargo
-on the PATH refuses build, check, clippy, test and nextest. Run `cargo fmt --all` and
-the checks `cargo gate list <ID> --local` prints; CI runs clippy and the tests on the
+In a dispatched run (`GATE_DISPATCHED=1`) nothing builds or checks on this machine:
+the cargo on the PATH refuses build, check, clippy, test and nextest. Format the Rust
+files you changed with `rustfmt --edition 2024` and commit; CI runs every check on the
 pull request, and a red run comes back with its errors.
 
 Run the oracle with `cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases`.

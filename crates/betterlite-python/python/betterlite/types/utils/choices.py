@@ -1,13 +1,19 @@
 import logging
 from collections.abc import Mapping
-from typing import Final, Literal, TypeAlias
+from typing import ClassVar, Final, Literal, TypeAlias
 
+from pydantic import JsonValue
 from typing_extensions import override
 
-from betterlite.types.utils.base import ResponseObject
+from betterlite.types.utils.base import (
+    Dumpable,
+    InitValue,
+    ModelValue,
+    ResponseObject,
+    dump_value,
+)
 from betterlite.types.utils.message import Delta, Message
 from betterlite.types.utils.tool_calls import ChoiceLogprobs
-from betterlite.types.utils.values import JsonValue, ModelObject, StoredValue, ValidationError
 
 FinishReason: TypeAlias = Literal[
     "stop", "length", "tool_calls", "content_filter", "function_call",
@@ -48,33 +54,42 @@ class Choices(ResponseObject):
     finish_reason: FinishReason
     index: int
     message: Message
-    logprobs: ChoiceLogprobs | JsonValue
-    provider_specific_fields: dict[str, StoredValue] | None
+    logprobs: ChoiceLogprobs | JsonValue = None
+    provider_specific_fields: dict[str, JsonValue] | None = None
 
     @override
     def __init__(
-        self, finish_reason: StoredValue = None, index: StoredValue = None,
-        message: StoredValue = None, logprobs: StoredValue = None,
-        enhancements: StoredValue = None, provider_specific_fields: StoredValue = None,
-        **params: StoredValue,
+        self, finish_reason: JsonValue = None, index: JsonValue = None,
+        message: ModelValue = None, logprobs: JsonValue = None,
+        enhancements: JsonValue = None,
+        provider_specific_fields: Mapping[str, ModelValue] | None = None,
+        **params: InitValue,
     ) -> None:
-        fields = provider_specific_fields
-        match finish_reason:
-            case None:
-                params["finish_reason"] = "stop"
-            case str():
-                mapped = map_finish_reason(finish_reason)
-                params["finish_reason"] = mapped
-                if finish_reason != mapped:
-                    fields = native_finish_reason(provider_specific_fields, finish_reason)
-            case _other:
-                raise ValidationError("Choices", ("finish_reason",), "wrong type")
-        params.update(index=0 if index is None else index, message=message_value(message))
-        params["logprobs"] = logprobs_value(logprobs)
-        super().__init__(**params)
+        selected: dict[str, InitValue] | None = (
+            None if provider_specific_fields is None
+            else {
+                str(name): dump_value(item, exclude_unset=True)
+                for name, item in provider_specific_fields.items()
+            }
+        )
+        if finish_reason is None:
+            mapped: JsonValue = "stop"
+        else:
+            mapped = finish_reason
+            match finish_reason:
+                case str():
+                    mapped = map_finish_reason(finish_reason)
+                    if finish_reason != mapped:
+                        selected = native_finish_reason(selected, finish_reason)
+                case bool() | int() | float() | list() | dict():
+                    mapped = finish_reason
+        super().__init__(
+            finish_reason=mapped, index=0 if index is None else index,
+            message=message_value(message), logprobs=logprobs_value(logprobs),
+            provider_specific_fields=selected, **params,
+        )
         if enhancements is not None:
             self["enhancements"] = enhancements
-        self.provider_specific_fields = provider_fields(fields)
         if self.logprobs is None:
             del self.logprobs
         if self.provider_specific_fields is None:
@@ -82,81 +97,72 @@ class Choices(ResponseObject):
 
 
 class StreamingChoices(ResponseObject):
-    finish_reason: FinishReason | None
-    index: int
-    delta: Delta
-    logprobs: ChoiceLogprobs | JsonValue
+    finish_reason: ClassVar[FinishReason | None]
+    index: ClassVar[int]
+    delta: ClassVar[Delta]
+    logprobs: ClassVar[ChoiceLogprobs | JsonValue]
 
     @override
     def __init__(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2007-L2038
-        self, finish_reason: StoredValue = None, index: StoredValue = 0,
-        delta: StoredValue = None, logprobs: StoredValue = None,
-        enhancements: StoredValue = None, **params: StoredValue,
+        self, finish_reason: JsonValue = None, index: JsonValue = 0,
+        delta: ModelValue = None, logprobs: JsonValue = None,
+        enhancements: JsonValue = None, **params: InitValue,
     ) -> None:
         params.pop("message", None)
-        match finish_reason:
-            case str() if finish_reason != "":
-                params["finish_reason"] = map_finish_reason(finish_reason)
-            case _other:
-                params["finish_reason"] = None
-        params["index"] = 0 if index is None else index
-        match delta:
-            case None:
-                params["delta"] = Delta()
-            case Delta():
-                params["delta"] = delta
-            case Mapping():
-                params["delta"] = Delta(**delta)
-            case _other:
-                params["delta"] = delta
-        params["logprobs"] = logprobs_value(logprobs)
-        super().__init__(**params)
+        reason: JsonValue = None
+        if finish_reason is not None and finish_reason != "":
+            match finish_reason:
+                case str():
+                    reason = map_finish_reason(finish_reason)
+                case bool() | int() | float() | list() | dict():
+                    reason = finish_reason
+        selected_delta: InitValue = Delta()
+        if delta is not None:
+            match delta:
+                case Delta():
+                    selected_delta = delta
+                case Dumpable():
+                    selected_delta = Delta.model_validate(delta.model_dump())
+                case Mapping():
+                    selected_delta = Delta.model_validate(delta)
+                case list() | bool() | int() | float() | str():
+                    selected_delta = delta
+        super().__init__(
+            finish_reason=reason, index=0 if index is None else index,
+            delta=selected_delta, logprobs=logprobs_value(logprobs), **params,
+        )
         if enhancements is not None:
             self["enhancements"] = enhancements
 
 
 def native_finish_reason(
-    fields: StoredValue, finish_reason: str,
-) -> dict[str, StoredValue]:
-    merged = provider_fields(fields)
-    if merged is None:
-        merged = {}
+    fields: dict[str, InitValue] | None, finish_reason: str,
+) -> dict[str, InitValue]:
+    merged: dict[str, InitValue] = {} if fields is None else dict(fields)
     merged["native_finish_reason"] = finish_reason
     return merged
 
 
-def provider_fields(value: StoredValue) -> dict[str, StoredValue] | None:
-    match value:
-        case None:
-            return None
-        case Mapping():
-            return {str(name): item for name, item in value.items()}
-        case _other:
-            raise ValidationError("Choices", ("provider_specific_fields",), "wrong type")
-
-
-def message_value(message: StoredValue) -> StoredValue:
+def message_value(message: ModelValue) -> ModelValue:
+    if message is None:
+        return Message()
     match message:
-        case None:
-            return Message()
         case Message():
             return message
+        case Dumpable():
+            dumped: dict[str, JsonValue] = message.model_dump()
+            return Message.model_validate(dumped)
         case Mapping():
-            return Message(**message)
-        case ModelObject():
-            dumped = message.model_dump()
-            match dumped:
-                case Mapping():
-                    return Message(**dumped)
-                case _other:
-                    return message
-        case _other:
+            return Message.model_validate(message)
+        case list() | bool() | int() | float() | str():
             return message
 
 
-def logprobs_value(logprobs: StoredValue) -> StoredValue:
+def logprobs_value(logprobs: JsonValue) -> ModelValue:
+    if logprobs is None:
+        return None
     match logprobs:
         case Mapping():
-            return ChoiceLogprobs(**logprobs)
-        case _other:
+            return ChoiceLogprobs.model_validate(logprobs)
+        case list() | bool() | int() | float() | str():
             return logprobs

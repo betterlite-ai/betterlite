@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-resources-seed-errors
+call:
+  openai_response_resources:
+    resource_json_error_status:
+      probes:
+        - {endpoint: list, body: 'not json', status: 401}
+env: {}
+compare: {ignore: []}
