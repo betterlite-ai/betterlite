@@ -1,7 +1,7 @@
 id: B639
 milestone: M3 providers
 title: Bedrock rerank request and results
-status: todo
+status: done
 depends_on: [B591, B595, B1013, B173, B171, B682, B249]
 file: tasks/B639-bedrock-other-rerank.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/bedrock/rerank/transformation.py"
 parent: B029
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1691
