@@ -8,7 +8,7 @@ deviations:
       those fields to the guardrail.
     why: >-
       The unified path gives these adapters a GuardrailLogTarget, which carries litellm_params and
-      model_call_details only, and GuardrailContract exposes no guardrail name, so the settings
+      model_call_params only, and GuardrailContract exposes no guardrail name, so the settings
       lookup cannot find a config here. The handler then takes the no-expressions branch, which is
       the branch LiteLLM takes for every pass-through endpoint that configures no fields.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L44-L51
