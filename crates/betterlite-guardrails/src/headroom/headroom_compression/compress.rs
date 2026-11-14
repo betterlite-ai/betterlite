@@ -86,10 +86,7 @@ impl HeadroomGuardrail {
             Ok(body) => body,
             Err(error) => return unreachable(request.rows, &error.to_string(), fallback),
         };
-        let Ok(text) = String::from_utf8(body) else {
-            return failure(fallback, request.rows, NON_JSON_ERROR, IndexMap::new())
-                .map_err(CompressError::Failure);
-        };
+        let text = String::from_utf8_lossy(&body);
         if status != 200 {
             let detail = build_compress_failure_detail(status, &text);
             return failure(fallback, request.rows, SERVICE_ERROR, detail)
