@@ -85,6 +85,7 @@ fn event_from(payload: &str) -> LoggerEvent {
     LoggerEvent {
         payload: Arc::new(serde_json::from_str(payload).expect("the fixture payload decodes")),
         dynamic_params: Arc::new(Json::Object(IndexMap::new())),
+        litellm_metadata: Arc::new(IndexMap::new()),
         stream: false,
         guardrail_snapshot: None,
     }
@@ -325,6 +326,7 @@ async fn a_payload_without_usable_times_is_a_delivery_error() {
     let event = LoggerEvent {
         payload: Arc::new(serde_json::from_str(&payload).expect("the fixture payload decodes")),
         dynamic_params: Arc::new(Json::Object(IndexMap::new())),
+        litellm_metadata: Arc::new(IndexMap::new()),
         stream: false,
         guardrail_snapshot: None,
     };
