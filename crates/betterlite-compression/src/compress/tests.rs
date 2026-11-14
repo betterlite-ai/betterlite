@@ -157,7 +157,7 @@ mod compress_behavior {
         async fn passes_messages_through_unchanged() {
             let messages = vec![
                 json!({"role": "system", "content": "be helpful"}),
-                json!({"role": "user", "content": "hello there"}),
+                json!({"role": "user", "content": [{"type": "text", "text": "hello there"}]}),
             ];
             let counter = fixture_counter(vec![10]);
             let result = compress(&request(&messages, 10, None), &counter)
@@ -242,6 +242,29 @@ mod compress_behavior {
                 );
                 assert_eq!(result.cache.len(), 1);
             }
+        }
+    }
+
+    mod scoring_query {
+        use super::super::*;
+
+        #[tokio::test]
+        async fn scores_candidates_with_the_last_user_message() {
+            let messages = vec![
+                json!({"role": "system", "content": "rules"}),
+                json!({"role": "user", "content": "beta beta beta"}),
+                json!({"role": "user", "content": "alpha alpha alpha"}),
+                json!({"role": "user", "content": "alpha question"}),
+            ];
+            let counter = fixture_counter(vec![40, 20]);
+            let result = compress(&request(&messages, 0, Some(6)), &counter)
+                .await
+                .expect("compressed");
+            assert_eq!(result.messages[2], messages[2]);
+            assert_eq!(
+                result.cache,
+                IndexMap::from([("message_1".to_owned(), "beta beta beta".to_owned())])
+            );
         }
     }
 
@@ -348,8 +371,10 @@ mod compress_behavior {
                 json!({"role": "assistant", "content": "pinned answer"}),
                 json!({
                     "role": "user",
-                    "content": "breakpoint question",
-                    "cache_control": {"type": "ephemeral"},
+                    "content": [
+                        {"type": "text", "text": "breakpoint question",
+                         "cache_control": {"type": "ephemeral"}}
+                    ],
                 }),
                 json!({"role": "user", "content": "middle question"}),
                 json!({"role": "user", "content": "new question"}),
