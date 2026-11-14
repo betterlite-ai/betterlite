@@ -17,7 +17,7 @@ struct HttpState {
 struct HttpServer {
     base: String,
     seen: Arc<Mutex<Vec<SeenHttp>>>,
-    tasks: JoinSet<()>,
+    _tasks: JoinSet<()>,
 }
 
 async fn record_http(
@@ -73,7 +73,11 @@ async fn http_server(
     tasks.spawn(async move {
         axum::serve(listener, application).await.unwrap();
     });
-    HttpServer { base, seen, tasks }
+    HttpServer {
+        base,
+        seen,
+        _tasks: tasks,
+    }
 }
 
 fn azure_http() -> AzureHttp {
@@ -88,7 +92,7 @@ async fn azure_http_the_client_secret_transport_posts_the_form() {
     let server = http_server(200, r#"{"access_token":"wire-token"}"#, None).await;
     let transport = azure_http();
     let url = format!("{}/tenant/oauth2/v2.0/token", server.base);
-    let reply = tokio::task::spawn_blocking(move || {
+    let reply = run_blocking(move || {
         ClientSecretTransport::send(
             &transport,
             &HttpRequest {
@@ -101,7 +105,6 @@ async fn azure_http_the_client_secret_transport_posts_the_form() {
         )
     })
     .await
-    .unwrap()
     .unwrap();
     assert_eq!(reply.status, 200);
     assert_eq!(
@@ -132,7 +135,7 @@ async fn azure_http_authority_discovery_sends_no_body() {
         "{}/tenant/v2.0/.well-known/openid-configuration",
         server.base
     );
-    let reply = tokio::task::spawn_blocking(move || {
+    let reply = run_blocking(move || {
         ClientSecretTransport::send(
             &transport,
             &HttpRequest {
@@ -145,7 +148,6 @@ async fn azure_http_authority_discovery_sends_no_body() {
         )
     })
     .await
-    .unwrap()
     .unwrap();
     assert_eq!(reply.status, 200);
     let seen = server.seen.lock().unwrap().clone();
@@ -158,7 +160,7 @@ async fn azure_http_the_password_transport_posts_the_form() {
     let server = http_server(200, "{}", None).await;
     let transport = azure_http();
     let url = format!("{}/tenant/oauth2/v2.0/token", server.base);
-    let reply = tokio::task::spawn_blocking(move || {
+    let reply = run_blocking(move || {
         PasswordTransport::send(
             &transport,
             &PasswordRequest {
@@ -171,7 +173,6 @@ async fn azure_http_the_password_transport_posts_the_form() {
         )
     })
     .await
-    .unwrap()
     .unwrap();
     assert_eq!(reply.status, 200);
     let seen = server.seen.lock().unwrap().clone();
@@ -184,7 +185,7 @@ async fn azure_http_the_imds_transport_returns_the_status_and_headers() {
     let server = http_server(403, r#"{"error":"denied"}"#, None).await;
     let transport = azure_http();
     let url = format!("{}/metadata/identity/oauth2/token", server.base);
-    let reply = tokio::task::spawn_blocking(move || {
+    let reply = run_blocking(move || {
         ImdsTransport::get(
             &transport,
             &ImdsRequest {
@@ -196,7 +197,6 @@ async fn azure_http_the_imds_transport_returns_the_status_and_headers() {
         )
     })
     .await
-    .unwrap()
     .unwrap();
     assert_eq!(reply.status, 403);
     assert_eq!(reply.body.expose_secret(), r#"{"error":"denied"}"#);
@@ -218,7 +218,7 @@ async fn azure_http_the_arc_transport_carries_its_secret_header() {
     let server = http_server(200, r#"{"access_token":"arc-token"}"#, None).await;
     let transport = azure_http();
     let url = format!("{}/metadata/identity/oauth2/token", server.base);
-    let reply = tokio::task::spawn_blocking(move || {
+    let reply = run_blocking(move || {
         ArcTransport::get(
             &transport,
             &ArcRequest {
@@ -235,7 +235,6 @@ async fn azure_http_the_arc_transport_carries_its_secret_header() {
         )
     })
     .await
-    .unwrap()
     .unwrap();
     assert_eq!(reply.status, 200);
     assert_eq!(
@@ -264,7 +263,7 @@ async fn azure_http_the_hosted_transport_returns_the_content_type() {
     .await;
     let transport = azure_http();
     let url = format!("{}/msi/token", server.base);
-    let reply = tokio::task::spawn_blocking(move || {
+    let reply = run_blocking(move || {
         HostedTransport::send(
             &transport,
             &HostedRequest {
@@ -277,7 +276,6 @@ async fn azure_http_the_hosted_transport_returns_the_content_type() {
         )
     })
     .await
-    .unwrap()
     .unwrap();
     assert_eq!(reply.content_type.as_deref(), Some("application/json"));
     assert_eq!(reply.body.expose_secret(), r#"{"access_token":"hosted"}"#);
@@ -294,7 +292,7 @@ async fn azure_http_the_hosted_transport_rejects_a_non_success_status() {
     let server = http_server(500, "failure", None).await;
     let transport = azure_http();
     let url = format!("{}/msi/token", server.base);
-    let error = tokio::task::spawn_blocking(move || {
+    let error = run_blocking(move || {
         HostedTransport::send(
             &transport,
             &HostedRequest {
@@ -307,7 +305,6 @@ async fn azure_http_the_hosted_transport_rejects_a_non_success_status() {
         )
     })
     .await
-    .unwrap()
     .unwrap_err();
     assert!(error.to_string().contains("500"));
 }
@@ -317,7 +314,7 @@ async fn azure_http_the_oidc_transport_posts_the_form() {
     let server = http_server(200, r#"{"access_token":"oidc"}"#, None).await;
     let transport = azure_http();
     let url = format!("{}/tenant/oauth2/v2.0/token", server.base);
-    let reply = tokio::task::spawn_blocking(move || {
+    let reply = run_blocking(move || {
         OidcTransport::post_form(
             &transport,
             &url,
@@ -328,7 +325,6 @@ async fn azure_http_the_oidc_transport_posts_the_form() {
         )
     })
     .await
-    .unwrap()
     .unwrap();
     assert_eq!(reply.status, 200);
     assert_eq!(reply.body.expose_secret(), r#"{"access_token":"oidc"}"#);
@@ -362,7 +358,7 @@ async fn azure_http_a_repeated_request_header_keeps_every_value() {
     let server = http_server(200, "{}", None).await;
     let transport = azure_http();
     let url = format!("{}/metadata/identity/oauth2/token", server.base);
-    tokio::task::spawn_blocking(move || {
+    run_blocking(move || {
         ImdsTransport::get(
             &transport,
             &ImdsRequest {
@@ -377,7 +373,6 @@ async fn azure_http_a_repeated_request_header_keeps_every_value() {
         )
     })
     .await
-    .unwrap()
     .unwrap();
     let seen = server.seen.lock().unwrap().clone();
     assert!(
@@ -397,7 +392,7 @@ async fn azure_http_a_response_header_outside_ascii_is_read_as_latin_1() {
     let (base, _tasks) = latin_one_server("x-note").await;
     let transport = azure_http();
     let url = format!("{base}/metadata/identity/oauth2/token");
-    let reply = tokio::task::spawn_blocking(move || {
+    let reply = run_blocking(move || {
         ImdsTransport::get(
             &transport,
             &ImdsRequest {
@@ -409,7 +404,6 @@ async fn azure_http_a_response_header_outside_ascii_is_read_as_latin_1() {
         )
     })
     .await
-    .unwrap()
     .unwrap();
     assert!(
         reply
@@ -423,7 +417,7 @@ async fn azure_http_a_content_type_outside_ascii_is_read_as_latin_1() {
     let (base, _tasks) = latin_one_server("content-type").await;
     let transport = azure_http();
     let url = format!("{base}/msi/token");
-    let reply = tokio::task::spawn_blocking(move || {
+    let reply = run_blocking(move || {
         HostedTransport::send(
             &transport,
             &HostedRequest {
@@ -436,7 +430,6 @@ async fn azure_http_a_content_type_outside_ascii_is_read_as_latin_1() {
         )
     })
     .await
-    .unwrap()
     .unwrap();
     assert_eq!(reply.content_type.as_deref(), Some("\u{e9}"));
 }

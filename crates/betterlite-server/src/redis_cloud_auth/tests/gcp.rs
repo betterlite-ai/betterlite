@@ -18,12 +18,9 @@ async fn gcp_the_request_carries_the_service_account_body_and_bearer() {
             token: Some("adc-token"),
         }),
     );
-    let token = tokio::task::spawn_blocking(move || {
-        GcpTokenFetcher::fetch(fetcher.as_ref(), SERVICE_ACCOUNT)
-    })
-    .await
-    .unwrap()
-    .unwrap();
+    let token = run_blocking(move || GcpTokenFetcher::fetch(fetcher.as_ref(), SERVICE_ACCOUNT))
+        .await
+        .unwrap();
     assert_eq!(token.expose_secret(), "iam-token");
     let seen = server.seen.lock().unwrap().clone();
     assert_eq!(seen.len(), 1);
@@ -49,16 +46,10 @@ async fn gcp_a_non_success_status_names_the_status() {
             token: Some("adc-token"),
         }),
     );
-    let error = tokio::task::spawn_blocking(move || {
-        GcpTokenFetcher::fetch(fetcher.as_ref(), SERVICE_ACCOUNT)
-    })
-    .await
-    .unwrap()
-    .unwrap_err();
-    match error {
-        IamTokenError::Status { status } => assert_eq!(status, 403),
-        other => panic!("expected the status error, got {other}"),
-    }
+    let error = run_blocking(move || GcpTokenFetcher::fetch(fetcher.as_ref(), SERVICE_ACCOUNT))
+        .await
+        .unwrap_err();
+    assert!(matches!(error, IamTokenError::Status { status: 403 }));
     assert_eq!(server.seen.lock().unwrap().len(), 1);
 }
 
@@ -71,12 +62,9 @@ async fn gcp_a_malformed_reply_is_an_error() {
             token: Some("adc-token"),
         }),
     );
-    let error = tokio::task::spawn_blocking(move || {
-        GcpTokenFetcher::fetch(fetcher.as_ref(), SERVICE_ACCOUNT)
-    })
-    .await
-    .unwrap()
-    .unwrap_err();
+    let error = run_blocking(move || GcpTokenFetcher::fetch(fetcher.as_ref(), SERVICE_ACCOUNT))
+        .await
+        .unwrap_err();
     assert!(matches!(error, IamTokenError::Reply { .. }));
 }
 
@@ -84,12 +72,9 @@ async fn gcp_a_malformed_reply_is_an_error() {
 async fn gcp_an_adc_failure_is_reported_before_the_request() {
     let server = iam_server(200, r#"{"accessToken":"iam-token"}"#).await;
     let fetcher = gcp_fetcher(server.base.clone(), Arc::new(FixedAdc { token: None }));
-    let error = tokio::task::spawn_blocking(move || {
-        GcpTokenFetcher::fetch(fetcher.as_ref(), SERVICE_ACCOUNT)
-    })
-    .await
-    .unwrap()
-    .unwrap_err();
+    let error = run_blocking(move || GcpTokenFetcher::fetch(fetcher.as_ref(), SERVICE_ACCOUNT))
+        .await
+        .unwrap_err();
     assert!(matches!(error, IamTokenError::Adc { .. }));
     assert!(server.seen.lock().unwrap().is_empty());
 }
@@ -163,10 +148,9 @@ async fn gcp_production_maps_an_adc_failure_to_the_source_error() {
             policy: HttpPolicy::default(),
         },
     };
-    let token = tokio::task::spawn_blocking(move || {
+    let token = run_blocking(move || {
         AdcTokenSource::access_token(&source, "https://www.googleapis.com/auth/cloud-platform")
     })
-    .await
-    .unwrap();
-    assert!(token.is_err());
+    .await;
+    assert!(matches!(token, Err(AdcError::Adc { .. })));
 }

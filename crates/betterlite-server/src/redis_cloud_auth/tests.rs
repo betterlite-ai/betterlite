@@ -3,10 +3,11 @@
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
+use std::io;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use aws_credential_types::credential_fn::provide_credentials_fn;
 use aws_credential_types::provider::SharedCredentialsProvider;
@@ -14,7 +15,7 @@ use aws_credential_types::provider::error::CredentialsError;
 use axum::Router;
 use axum::extract::State;
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse as _, Response};
 use axum::routing::any;
 use betterlite_azure::azure_arc_identity::{ArcHost, ArcPlatform, ArcRequest, ArcTransport};
 use betterlite_azure::azure_certificate::assertion::RandomIds;
@@ -41,7 +42,8 @@ use betterlite_config::sections::redis_credentials::aws::{
     AwsCredentialsResolver, ElastiCacheIamProvider, ElastiCacheSigningError,
 };
 use betterlite_config::sections::redis_credentials::azure::{
-    AZURE_REDIS_SCOPE, AzureAdCredentialProvider, AzureCredential, AzureSettings, AzureTokenFetcher,
+    AZURE_REDIS_SCOPE, AzureAdCredentialProvider, AzureCredential, AzureSettings,
+    AzureTokenFetcher as _,
 };
 use betterlite_config::sections::redis_credentials::gcp::GcpTokenFetcher;
 use betterlite_config::sections::vertex_credential_sources::vertex_settings::AdcEnvironment;
@@ -59,7 +61,7 @@ use super::azure::{AzureGrantError, AzureGrants, AzureRedisTokens};
 use super::azure_http::AzureHttp;
 use super::azure_production::{SdkAzureGrants, TokenCache};
 use super::azure_runtime::{ProductionClock, ProductionHost, ThreadScheduler};
-use super::gcp::{AdcTokenSource, IamTokenError, IamTokenFetcher, decode_iam_token};
+use super::gcp::{AdcError, AdcTokenSource, IamTokenError, IamTokenFetcher, decode_iam_token};
 use super::gcp_production::VertexAdcTokenSource;
 use super::production::production_cloud_redis_auth;
 use super::{
@@ -70,7 +72,7 @@ mod support;
 
 use support::{
     FakeIo, FixedAdc, GrantCall, RecordingGrants, Reply, aws_provider, aws_settings,
-    azure_provider, azure_settings, deps, gcp_provider, iam_server, proxied_client,
+    azure_provider, azure_settings, deps, gcp_provider, iam_server, proxied_client, run_blocking,
     sourced_settings, static_aws_provider,
 };
 

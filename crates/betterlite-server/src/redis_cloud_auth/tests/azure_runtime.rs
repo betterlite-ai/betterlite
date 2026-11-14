@@ -4,7 +4,7 @@ const WALL_CLOCK_FLOOR: i64 = 1_700_000_000;
 fn azure_runtime_the_clocks_read_the_wall_clock() {
     let clock = ProductionClock;
     assert!(TokenClock::now_unix_seconds(&clock) > WALL_CLOCK_FLOOR);
-    assert!(OidcClock::now_unix_seconds(&clock) > 1_700_000_000.0);
+    assert!(OidcClock::now_unix_seconds(&clock) > 1_700_000_000.0_f64);
     let host = ProductionHost {
         environment: BTreeMap::new(),
     };
@@ -50,20 +50,25 @@ fn azure_runtime_the_host_reads_files() {
     assert_eq!(host.file_size(&present).unwrap(), 6);
     assert_eq!(host.read_text(&present).unwrap(), "abcdef");
     let missing = directory.path().join("absent").to_str().unwrap().to_owned();
-    assert!(host.file_size(&missing).is_err());
-    assert!(host.read_text(&missing).is_err());
+    assert_eq!(
+        host.file_size(&missing).unwrap_err().kind(),
+        io::ErrorKind::NotFound
+    );
+    assert_eq!(
+        host.read_text(&missing).unwrap_err().kind(),
+        io::ErrorKind::NotFound
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn azure_runtime_the_scheduler_waits_for_its_delay() {
     let runtime = Handle::current();
-    let elapsed = tokio::task::spawn_blocking(move || {
+    let elapsed = run_blocking(move || {
         let scheduler = ThreadScheduler { runtime };
-        let started = std::time::Instant::now();
+        let started = Instant::now();
         Scheduler::sleep(&scheduler, Duration::from_millis(30));
         started.elapsed()
     })
-    .await
-    .unwrap();
+    .await;
     assert!(elapsed >= Duration::from_millis(30));
 }

@@ -88,6 +88,7 @@ impl TokenCache {
                     key: key.iter().copied().map(str::to_owned).collect(),
                     token: token.clone(),
                 });
+                drop(kept);
                 Ok(token)
             }
             // azure-identity serves the aging token when its refresh fails
@@ -122,11 +123,23 @@ impl<H: AzureIo> SdkAzureGrants<H> {
                 self.client_secret_settings.clone(),
             )
         });
+        let native = self.native_grants(cache);
+        let result = fetch(&native);
+        *kept = Some(
+            native
+                .client_secrets
+                .into_inner()
+                .unwrap_or_else(PoisonError::into_inner),
+        );
+        result
+    }
+
+    fn native_grants(&self, cache: ProviderCache) -> NativeGrants<'_, ProductionHost> {
         let hosted: &dyn HostedTransport = &*self.http;
         let imds: &dyn ImdsTransport = &*self.http;
         let arc: &dyn ArcTransport = &*self.http;
         let password: &dyn PasswordTransport = &*self.http;
-        let native = NativeGrants {
+        NativeGrants {
             transport: Arc::<H>::clone(&self.http),
             clock: Arc::<ProductionClock>::clone(&self.clock),
             client_secrets: Mutex::new(cache),
@@ -150,15 +163,7 @@ impl<H: AzureIo> SdkAzureGrants<H> {
             },
             password_transport: password,
             authority_host: self.authority_host.clone(),
-        };
-        let result = fetch(&native);
-        *kept = Some(
-            native
-                .client_secrets
-                .into_inner()
-                .unwrap_or_else(PoisonError::into_inner),
-        );
-        result
+        }
     }
 }
 
@@ -169,14 +174,16 @@ fn grant_token<G>(
 where
     G: Grant,
 {
-    let grant = grant.map_err(|error| AzureGrantError::Grant {
-        kind,
-        message: error.message,
-    })?;
-    grant.token().map_err(|error| {
-        let (LinkError::Unavailable(message) | LinkError::Authentication(message)) = error;
-        AzureGrantError::Grant { kind, message }
-    })
+    grant
+        .map_err(|error| AzureGrantError::Grant {
+            kind,
+            message: error.message,
+        })?
+        .token()
+        .map_err(|error| {
+            let (LinkError::Unavailable(message) | LinkError::Authentication(message)) = error;
+            AzureGrantError::Grant { kind, message }
+        })
 }
 
 impl<H: AzureIo> AzureGrants for SdkAzureGrants<H> {

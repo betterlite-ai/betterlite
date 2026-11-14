@@ -54,45 +54,46 @@ impl AzureTokenFetcher for AzureRedisTokens {
         credential: AzureCredential,
         scope: &str,
     ) -> Result<AzureToken, Self::Error> {
-        let token = match credential {
-            AzureCredential::ClientSecret => {
-                let tenant_id = self.settings.tenant_id.as_ref().ok_or_else(|| {
-                    AzureGrantError::MissingSettings {
-                        kind: "client secret",
-                        fields: "tenant_id",
-                    }
-                })?;
-                let client_id = self.settings.client_id.as_ref().ok_or_else(|| {
-                    AzureGrantError::MissingSettings {
-                        kind: "client secret",
-                        fields: "client_id",
-                    }
-                })?;
-                let client_secret = self.settings.client_secret.as_ref().ok_or_else(|| {
-                    AzureGrantError::MissingSettings {
-                        kind: "client secret",
-                        fields: "client_secret",
-                    }
-                })?;
-                self.grants.client_secret(
-                    tenant_id.expose_secret(),
-                    client_id.expose_secret(),
-                    client_secret,
-                    scope,
-                )?
-            }
-            AzureCredential::ManagedIdentity => {
-                let client_id = self.settings.client_id.as_ref().ok_or_else(|| {
-                    AzureGrantError::MissingSettings {
-                        kind: "managed identity",
-                        fields: "client_id",
-                    }
-                })?;
-                self.grants
-                    .managed_identity(client_id.expose_secret(), scope)?
-            }
-            AzureCredential::Default => self.grants.default_credential(scope)?,
-        };
+        let token =
+            match credential {
+                AzureCredential::ClientSecret => {
+                    let tenant_id = self.settings.tenant_id.as_ref().ok_or(
+                        AzureGrantError::MissingSettings {
+                            kind: "client secret",
+                            fields: "tenant_id",
+                        },
+                    )?;
+                    let client_id = self.settings.client_id.as_ref().ok_or(
+                        AzureGrantError::MissingSettings {
+                            kind: "client secret",
+                            fields: "client_id",
+                        },
+                    )?;
+                    let client_secret = self.settings.client_secret.as_ref().ok_or(
+                        AzureGrantError::MissingSettings {
+                            kind: "client secret",
+                            fields: "client_secret",
+                        },
+                    )?;
+                    self.grants.client_secret(
+                        tenant_id.expose_secret(),
+                        client_id.expose_secret(),
+                        client_secret,
+                        scope,
+                    )?
+                }
+                AzureCredential::ManagedIdentity => {
+                    let client_id = self.settings.client_id.as_ref().ok_or(
+                        AzureGrantError::MissingSettings {
+                            kind: "managed identity",
+                            fields: "client_id",
+                        },
+                    )?;
+                    self.grants
+                        .managed_identity(client_id.expose_secret(), scope)?
+                }
+                AzureCredential::Default => self.grants.default_credential(scope)?,
+            };
         Ok(AzureToken { token })
     }
 }

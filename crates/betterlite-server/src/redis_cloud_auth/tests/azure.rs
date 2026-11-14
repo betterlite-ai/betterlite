@@ -78,10 +78,8 @@ fn production_grants(
     chain_environment: ChainEnvironment,
 ) -> SdkAzureGrants<FakeIo> {
     let clock = Arc::new(ProductionClock);
-    let oidc_transport: Arc<dyn betterlite_azure::oidc_exchange::transport::Transport> =
-        Arc::<FakeIo>::clone(io);
-    let oidc_clock: Arc<dyn betterlite_azure::oidc_exchange::transport::Clock> =
-        Arc::<ProductionClock>::clone(&clock);
+    let oidc_transport: Arc<dyn OidcTransport> = Arc::<FakeIo>::clone(io);
+    let oidc_clock: Arc<dyn OidcClock> = Arc::<ProductionClock>::clone(&clock);
     let exchange = AzureOidcExchange::new(
         OidcSettings::default(),
         BTreeMap::new(),
@@ -242,7 +240,7 @@ fn azure_ad_provider_returns_the_username_and_token() {
 
 async fn two_client_secret_calls(io: &Arc<FakeIo>) -> (SecretString, SecretString) {
     let grants = production_grants(io, ChainEnvironment::default());
-    tokio::task::spawn_blocking(move || {
+    run_blocking(move || {
         let client_secret = SecretString::from("secret".to_owned());
         let first = grants
             .client_secret("tenant", "client", &client_secret, AZURE_REDIS_SCOPE)
@@ -253,7 +251,6 @@ async fn two_client_secret_calls(io: &Arc<FakeIo>) -> (SecretString, SecretStrin
         (first, second)
     })
     .await
-    .unwrap()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -277,13 +274,12 @@ async fn azure_an_expired_token_is_fetched_again() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn azure_the_managed_identity_grant_reports_an_unconfigured_environment() {
     let grants = production_grants(&production_io(LIVE_TOKEN, 1), ChainEnvironment::default());
-    let error = tokio::task::spawn_blocking(move || {
+    let error = run_blocking(move || {
         grants
             .managed_identity("client", AZURE_REDIS_SCOPE)
             .unwrap_err()
     })
-    .await
-    .unwrap();
+    .await;
     assert!(matches!(
         error,
         AzureGrantError::Grant {
@@ -296,11 +292,8 @@ async fn azure_the_managed_identity_grant_reports_an_unconfigured_environment() 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn azure_the_default_credential_reports_an_exhausted_chain() {
     let grants = production_grants(&production_io(LIVE_TOKEN, 1), ChainEnvironment::default());
-    let error = tokio::task::spawn_blocking(move || {
-        grants.default_credential(AZURE_REDIS_SCOPE).unwrap_err()
-    })
-    .await
-    .unwrap();
+    let error =
+        run_blocking(move || grants.default_credential(AZURE_REDIS_SCOPE).unwrap_err()).await;
     assert!(matches!(error, AzureGrantError::DefaultCredential { .. }));
 }
 
@@ -327,13 +320,12 @@ async fn azure_two_default_fetches_send_one_token_request() {
             authority_host: None,
         },
     );
-    let (first, second) = tokio::task::spawn_blocking(move || {
+    let (first, second) = run_blocking(move || {
         let first = grants.default_credential(AZURE_REDIS_SCOPE).unwrap();
         let second = grants.default_credential(AZURE_REDIS_SCOPE).unwrap();
         (first, second)
     })
-    .await
-    .unwrap();
+    .await;
     assert_eq!(first.expose_secret(), "fixture-token");
     assert_eq!(second.expose_secret(), "fixture-token");
     assert_eq!(io.requests().len(), 2);
@@ -471,7 +463,7 @@ fn azure_token_cache_fetches_again_for_another_key() {
 async fn azure_two_managed_identity_fetches_send_one_imds_request() {
     let io = Arc::new(FakeIo::new(Vec::new(), vec![IMDS_FIRST, IMDS_SECOND]));
     let grants = production_grants(&io, ChainEnvironment::default());
-    let (first, second) = tokio::task::spawn_blocking(move || {
+    let (first, second) = run_blocking(move || {
         let first = grants
             .managed_identity("client", AZURE_REDIS_SCOPE)
             .unwrap();
@@ -480,8 +472,7 @@ async fn azure_two_managed_identity_fetches_send_one_imds_request() {
             .unwrap();
         (first, second)
     })
-    .await
-    .unwrap();
+    .await;
     assert_eq!(first.expose_secret(), "imds-first");
     assert_eq!(second.expose_secret(), "imds-first");
     assert_eq!(io.requests().len(), 1);
@@ -491,7 +482,7 @@ async fn azure_two_managed_identity_fetches_send_one_imds_request() {
 async fn azure_an_expired_managed_identity_token_is_fetched_again() {
     let io = Arc::new(FakeIo::new(Vec::new(), vec![IMDS_EXPIRED, IMDS_SECOND]));
     let grants = production_grants(&io, ChainEnvironment::default());
-    let (first, second) = tokio::task::spawn_blocking(move || {
+    let (first, second) = run_blocking(move || {
         let first = grants
             .managed_identity("client", AZURE_REDIS_SCOPE)
             .unwrap();
@@ -500,8 +491,7 @@ async fn azure_an_expired_managed_identity_token_is_fetched_again() {
             .unwrap();
         (first, second)
     })
-    .await
-    .unwrap();
+    .await;
     assert_eq!(first.expose_secret(), "imds-first");
     assert_eq!(second.expose_secret(), "imds-second");
     assert_eq!(io.requests().len(), 2);
@@ -511,13 +501,12 @@ async fn azure_an_expired_managed_identity_token_is_fetched_again() {
 async fn azure_a_managed_identity_for_another_client_is_fetched_separately() {
     let io = Arc::new(FakeIo::new(Vec::new(), vec![IMDS_FIRST, IMDS_SECOND]));
     let grants = production_grants(&io, ChainEnvironment::default());
-    let (first, second) = tokio::task::spawn_blocking(move || {
+    let (first, second) = run_blocking(move || {
         let first = grants.managed_identity("one", AZURE_REDIS_SCOPE).unwrap();
         let second = grants.managed_identity("two", AZURE_REDIS_SCOPE).unwrap();
         (first, second)
     })
-    .await
-    .unwrap();
+    .await;
     assert_eq!(first.expose_secret(), "imds-first");
     assert_eq!(second.expose_secret(), "imds-second");
     assert_eq!(io.requests().len(), 2);
@@ -527,13 +516,12 @@ async fn azure_a_managed_identity_for_another_client_is_fetched_separately() {
 async fn azure_two_default_managed_identity_fetches_send_one_imds_request() {
     let io = Arc::new(FakeIo::new(Vec::new(), vec![IMDS_FIRST, IMDS_SECOND]));
     let grants = production_grants(&io, managed_identity_chain());
-    let (first, second) = tokio::task::spawn_blocking(move || {
+    let (first, second) = run_blocking(move || {
         let first = grants.default_credential(AZURE_REDIS_SCOPE).unwrap();
         let second = grants.default_credential(AZURE_REDIS_SCOPE).unwrap();
         (first, second)
     })
-    .await
-    .unwrap();
+    .await;
     assert_eq!(first.expose_secret(), "imds-first");
     assert_eq!(second.expose_secret(), "imds-first");
     assert_eq!(io.requests().len(), 1);
@@ -544,7 +532,7 @@ async fn azure_concurrent_default_fetches_send_one_imds_request() {
     let io = Arc::new(FakeIo::new(Vec::new(), vec![IMDS_FIRST, IMDS_SECOND]));
     let grants = Arc::new(production_grants(&io, managed_identity_chain()));
     let mut tasks = JoinSet::new();
-    (0..4).for_each(|_index| {
+    (0_u8..4).for_each(|_index| {
         let shared = Arc::clone(&grants);
         tasks.spawn_blocking(move || shared.default_credential(AZURE_REDIS_SCOPE).unwrap());
     });
@@ -563,7 +551,7 @@ async fn azure_concurrent_client_secret_fetches_share_one_provider() {
     let io = production_io(LIVE_TOKEN, 1);
     let grants = Arc::new(production_grants(&io, ChainEnvironment::default()));
     let mut tasks = JoinSet::new();
-    (0..4).for_each(|_index| {
+    (0_u8..4).for_each(|_index| {
         let shared = Arc::clone(&grants);
         tasks.spawn_blocking(move || {
             let client_secret = SecretString::from("secret".to_owned());

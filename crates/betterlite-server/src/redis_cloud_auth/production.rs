@@ -6,8 +6,8 @@ use betterlite_azure::azure_certificate::credential::StdFiles;
 use betterlite_azure::azure_default_chain::environment::ChainEnvironment;
 use betterlite_azure::azure_managed_identity::environment::ManagedIdentityEnvironment;
 use betterlite_azure::azure_managed_identity::runtime::FsTokenFiles;
-use betterlite_azure::oidc_exchange::AzureOidcExchange;
 use betterlite_azure::oidc_exchange::transport::{Clock as OidcClock, Transport as OidcTransport};
+use betterlite_azure::oidc_exchange::{AzureOidcExchange, OidcExchangeError};
 use betterlite_config::types::Config;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_redact::error::RedactionError;
@@ -31,7 +31,7 @@ pub enum CloudRedisAuthSetupError {
     #[error("the Azure OIDC exchange could not be built: {source}")]
     OidcExchange {
         #[source]
-        source: betterlite_azure::oidc_exchange::OidcExchangeError,
+        source: OidcExchangeError,
     },
     #[error("the Azure secret redactor could not be built: {source}")]
     Redactor {

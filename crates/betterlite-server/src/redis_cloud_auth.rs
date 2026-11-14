@@ -13,9 +13,10 @@ use std::io;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use aws_credential_types::provider::SharedCredentialsProvider;
 use betterlite_config::sections::redis_credentials::aws::ElastiCacheIamProvider;
 use betterlite_config::sections::redis_credentials::azure::AzureAdCredentialProvider;
-use betterlite_config::sections::redis_credentials::gcp::GcpTokenCache;
+use betterlite_config::sections::redis_credentials::gcp::{GcpTokenCache, SystemClock};
 use betterlite_config::sections::redis_credentials::{Provider, Settings};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_redis::redis_live_client::credentials::{
@@ -28,16 +29,16 @@ use self::aws::SdkAwsCredentials;
 use self::azure::{AzureGrants, AzureRedisTokens};
 use self::gcp::{AdcTokenSource, IamTokenFetcher};
 
-pub const GCP_REFRESH_AFTER: Duration = Duration::from_secs(3300);
+pub const GCP_REFRESH_AFTER: Duration = Duration::from_mins(55);
 pub const AZURE_REFRESH_AFTER: Duration = Duration::from_secs(300);
-pub const AWS_REFRESH_AFTER: Duration = Duration::from_secs(840);
+pub const AWS_REFRESH_AFTER: Duration = Duration::from_mins(14);
 
 pub struct CloudRedisAuthDeps {
     pub runtime: Handle,
     pub http: ProxiedClient,
     pub adc: Arc<dyn AdcTokenSource>,
     pub azure: Arc<dyn AzureGrants>,
-    pub aws: aws_credential_types::provider::SharedCredentialsProvider,
+    pub aws: SharedCredentialsProvider,
 }
 
 enum CloudCredentials {
@@ -59,6 +60,7 @@ pub struct CloudRedisAuth {
     refresh_after: Duration,
 }
 
+#[must_use]
 pub fn cloud_redis_auth(
     settings: &Settings,
     deps: &CloudRedisAuthDeps,
@@ -114,7 +116,7 @@ impl RedisCredentialSource for CloudRedisAuth {
                 cache,
                 ttl,
             } => {
-                let clock = betterlite_config::sections::redis_credentials::gcp::SystemClock;
+                let clock = SystemClock;
                 let token = cache
                     .get_or_fetch(service_account.expose_secret(), *ttl, &clock, fetcher)
                     .map_err(|error| RedisCredentialError::Fetch(io::Error::other(error)))?;

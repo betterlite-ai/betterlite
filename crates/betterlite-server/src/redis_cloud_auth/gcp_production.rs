@@ -3,6 +3,7 @@ use tokio::runtime::Handle;
 
 use betterlite_config::sections::vertex_credential_sources::vertex_settings::AdcEnvironment;
 use betterlite_vertex::credential_sources::adc::AdcDeps;
+use betterlite_vertex::credential_sources::adc_access_token;
 use betterlite_vertex::credential_sources::files::StdFiles;
 use betterlite_vertex::credential_sources::sdk::GoogleAuth;
 
@@ -23,9 +24,7 @@ impl AdcTokenSource for VertexAdcTokenSource {
             http: &self.http,
         };
         self.runtime
-            .block_on(betterlite_vertex::credential_sources::adc_access_token(
-                scope, &deps,
-            ))
+            .block_on(adc_access_token(scope, &deps))
             .map_err(|source| AdcError::Adc { source })
     }
 }

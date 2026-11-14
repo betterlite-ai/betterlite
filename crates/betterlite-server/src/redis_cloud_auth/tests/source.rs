@@ -26,8 +26,8 @@ async fn source_refresh_after_is_3300_for_gcp() {
         static_aws_provider(),
     );
     let source = cloud_redis_auth(&settings, &dependencies).unwrap();
-    assert_eq!(source.refresh_after(), Duration::from_secs(3300));
-    assert_eq!(GCP_REFRESH_AFTER, Duration::from_secs(3300));
+    assert_eq!(source.refresh_after(), Duration::from_mins(55));
+    assert_eq!(GCP_REFRESH_AFTER, Duration::from_mins(55));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -52,8 +52,8 @@ async fn source_refresh_after_is_840_for_aws() {
         static_aws_provider(),
     );
     let source = cloud_redis_auth(&settings, &dependencies).unwrap();
-    assert_eq!(source.refresh_after(), Duration::from_secs(840));
-    assert_eq!(AWS_REFRESH_AFTER, Duration::from_secs(840));
+    assert_eq!(source.refresh_after(), Duration::from_mins(14));
+    assert_eq!(AWS_REFRESH_AFTER, Duration::from_mins(14));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -79,10 +79,7 @@ async fn source_aws_returns_the_user_name_and_signed_token() {
         static_aws_provider(),
     );
     let source = cloud_redis_auth(&settings, &dependencies).unwrap();
-    let credentials = tokio::task::spawn_blocking(move || source.fetch())
-        .await
-        .unwrap()
-        .unwrap();
+    let credentials = run_blocking(move || source.fetch()).await.unwrap();
     assert_eq!(credentials.username.as_deref(), Some("app"));
     assert!(
         credentials
@@ -103,8 +100,8 @@ async fn source_gcp_maps_a_fetch_failure_to_the_credential_error() {
     let source = cloud_redis_auth(&settings, &dependencies).unwrap();
     let error = source.fetch().err().unwrap();
     match error {
-        RedisCredentialError::Fetch(source) => assert!(
-            source
+        RedisCredentialError::Fetch(cause) => assert!(
+            cause
                 .to_string()
                 .contains("application default credentials")
         ),
@@ -123,14 +120,10 @@ async fn source_aws_maps_a_fetch_failure_to_the_credential_error() {
         failing,
     );
     let source = cloud_redis_auth(&settings, &dependencies).unwrap();
-    let error = tokio::task::spawn_blocking(move || source.fetch())
-        .await
-        .unwrap()
-        .err()
-        .unwrap();
+    let error = run_blocking(move || source.fetch()).await.err().unwrap();
     match error {
-        RedisCredentialError::Fetch(source) => {
-            assert!(source.to_string().contains("no credentials in the test"));
+        RedisCredentialError::Fetch(cause) => {
+            assert!(cause.to_string().contains("no credentials in the test"));
         }
     }
 }

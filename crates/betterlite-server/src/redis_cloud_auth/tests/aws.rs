@@ -4,11 +4,9 @@ async fn aws_static_credentials_resolve_to_the_configured_keys() {
         runtime: Handle::current(),
         provider: static_aws_provider(),
     });
-    let credentials =
-        tokio::task::spawn_blocking(move || AwsCredentialsResolver::resolve(resolver.as_ref()))
-            .await
-            .unwrap()
-            .unwrap();
+    let credentials = run_blocking(move || AwsCredentialsResolver::resolve(resolver.as_ref()))
+        .await
+        .unwrap();
     assert_eq!(credentials.access_key_id(), "AKIAFIXTURE");
     assert_eq!(credentials.secret_access_key(), "fixture-secret");
 }
@@ -22,11 +20,9 @@ async fn aws_a_provider_failure_maps_to_the_credentials_error() {
         runtime: Handle::current(),
         provider,
     });
-    let error =
-        tokio::task::spawn_blocking(move || AwsCredentialsResolver::resolve(resolver.as_ref()))
-            .await
-            .unwrap()
-            .unwrap_err();
+    let error = run_blocking(move || AwsCredentialsResolver::resolve(resolver.as_ref()))
+        .await
+        .unwrap_err();
     assert!(matches!(error, ElastiCacheSigningError::Credentials { .. }));
     assert!(error.to_string().contains("no credentials in the test"));
 }
@@ -37,14 +33,13 @@ async fn aws_static_credentials_give_a_signed_token() {
         runtime: Handle::current(),
         provider: static_aws_provider(),
     });
-    let (user_name, signed) = tokio::task::spawn_blocking(move || {
+    let (user_name, signed) = run_blocking(move || {
         ElastiCacheIamProvider {
             settings: aws_settings(),
         }
         .get_credentials(resolver.as_ref(), SystemTime::UNIX_EPOCH)
     })
     .await
-    .unwrap()
     .unwrap();
     assert_eq!(user_name, "app");
     let url = signed.expose_secret();

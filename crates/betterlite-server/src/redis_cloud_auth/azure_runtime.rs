@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::env::consts::OS;
+use std::fs;
 use std::io;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -7,6 +9,7 @@ use betterlite_azure::azure_client_secret::transport::Clock as TokenClock;
 use betterlite_azure::azure_managed_identity::runtime::Scheduler;
 use betterlite_azure::oidc_exchange::transport::Clock as OidcClock;
 use tokio::runtime::Handle;
+use tokio::time::sleep;
 
 pub struct ProductionClock;
 
@@ -41,7 +44,7 @@ pub struct ThreadScheduler {
 
 impl Scheduler for ThreadScheduler {
     fn sleep(&self, delay: Duration) {
-        self.runtime.block_on(tokio::time::sleep(delay));
+        self.runtime.block_on(sleep(delay));
     }
 }
 
@@ -56,7 +59,7 @@ impl ArcHost for ProductionHost {
         } else if cfg!(target_os = "windows") {
             ArcPlatform::Windows
         } else {
-            ArcPlatform::Other(std::env::consts::OS.to_owned())
+            ArcPlatform::Other(OS.to_owned())
         }
     }
 
@@ -79,11 +82,11 @@ impl ArcHost for ProductionHost {
     }
 
     fn file_size(&self, path: &str) -> io::Result<u64> {
-        std::fs::metadata(path).map(|metadata| metadata.len())
+        fs::metadata(path).map(|metadata| metadata.len())
     }
 
     fn read_text(&self, path: &str) -> io::Result<String> {
-        std::fs::read_to_string(path)
+        fs::read_to_string(path)
     }
 
     fn now_unix_seconds(&self) -> i64 {

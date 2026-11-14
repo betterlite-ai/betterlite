@@ -94,10 +94,10 @@ impl AzureHttp {
 
 fn header_map(headers: Vec<(String, String)>) -> io::Result<HeaderMap> {
     let mut map = HeaderMap::new();
-    for (name, value) in headers {
-        let name = HeaderName::from_bytes(name.as_bytes())
+    for (raw_name, raw_value) in headers {
+        let name = HeaderName::from_bytes(raw_name.as_bytes())
             .map_err(|source| io::Error::new(io::ErrorKind::InvalidInput, source))?;
-        let value = HeaderValue::from_str(&value)
+        let value = HeaderValue::from_str(&raw_value)
             .map_err(|source| io::Error::new(io::ErrorKind::InvalidInput, source))?;
         map.append(name, value);
     }
@@ -153,7 +153,7 @@ impl ClientSecretTransport for AzureHttp {
     fn send(&self, request: &HttpRequest) -> io::Result<HttpReply> {
         let headers = header_map(request.headers.clone())?;
         // authority discovery is a GET and carries no form, so it sends no body at all
-        let (method, body) = match request.method {
+        let (method, request_body) = match request.method {
             HttpMethod::Get => (Method::GET, RequestBody::Empty),
             HttpMethod::Post => (Method::POST, form_body(&request.form)),
         };
@@ -162,7 +162,7 @@ impl ClientSecretTransport for AzureHttp {
             url: &request.url,
             query: request.query.clone(),
             headers,
-            body,
+            body: request_body,
             deadline: TOKEN_TIMEOUT,
         })?;
         let (status, body) = text_reply(reply.status, reply.body)?;
@@ -230,12 +230,11 @@ impl ArcTransport for AzureHttp {
             .iter()
             .map(|(name, value)| ((*name).to_owned(), value.clone()))
             .collect();
-        let headers = header_map(secret_headers(request.headers.clone()))?;
         let response = self.exchange(Exchange {
             method: Method::GET,
             url: &request.url,
             query,
-            headers,
+            headers: header_map(secret_headers(request.headers.clone()))?,
             body: RequestBody::Empty,
             deadline: METADATA_TIMEOUT,
         })?;
