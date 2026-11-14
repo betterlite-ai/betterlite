@@ -163,3 +163,10 @@ path = "fuzz_targets/bedrock_event_stream.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "token_response"
+path = "fuzz_targets/token_response.rs"
+test = false
+doc = false
+bench = false
