@@ -53,16 +53,6 @@ class ChunkView:
 CHUNK: Final = TypeAdapter(ChunkView)
 DELTA: Final = TypeAdapter(DeltaView)
 JSON_VALUE: Final = TypeAdapter(JsonValue)
-def _usage(usage: UsageView) -> JsonValue:
-    details = usage.prompt_tokens_details
-    return {
-        "prompt_tokens": usage.prompt_tokens,
-        "completion_tokens": usage.completion_tokens,
-        "total_tokens": usage.total_tokens,
-        "prompt_details": details is not None,
-        "completion_details": usage.completion_tokens_details is not None,
-        "web_search_requests": None if details is None else details.get("web_search_requests"),
-    }
 def _choice(choice: ChoiceView) -> JsonValue:
     return {
         "index": choice.index,
@@ -72,11 +62,24 @@ def _choice(choice: ChoiceView) -> JsonValue:
     }
 def _state(chunk: ModelResponseStream) -> JsonValue:
     view = CHUNK.validate_json(chunk.model_dump_json())
+    found = view.usage
+    details = None if found is None else found.prompt_tokens_details
+    searches = None if details is None else details.get("web_search_requests")
+    usage: JsonValue = None
+    if found is not None:
+        usage = {
+            "prompt_tokens": found.prompt_tokens,
+            "completion_tokens": found.completion_tokens,
+            "total_tokens": found.total_tokens,
+            "prompt_details": details is not None,
+            "completion_details": found.completion_tokens_details is not None,
+            "web_search_requests": searches,
+        }
     return {
         "id": view.id,
         "model": view.model,
         "choices": [_choice(choice) for choice in view.choices],
-        "usage": None if view.usage is None else _usage(view.usage),
+        "usage": usage,
         "service_tier": view.service_tier,
     }
 def _chunks(
