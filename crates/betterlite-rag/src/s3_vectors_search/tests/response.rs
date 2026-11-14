@@ -37,7 +37,8 @@ fn one_score(distance: &str) -> Option<String> {
     );
     let response = decode(&body, None);
     let results = response.data?;
-    wire_score(results.first()?)
+    assert_eq!(results.len(), 1, "the hit was dropped");
+    wire_score(&results[0])
 }
 
 #[test]
