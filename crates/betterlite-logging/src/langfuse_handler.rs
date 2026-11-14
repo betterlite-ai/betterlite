@@ -52,10 +52,7 @@ impl LangFuseHandler {
         }
         let config = Self::dynamic_logging_config(&services.settings, dynamic_params)?;
         let credentials = credential_map(&config);
-        if let Some(cached) = cache.get_cache(&credentials, SERVICE_NAME)? {
-            return Ok(cached);
-        }
-        Self::logger_from_credentials(services, cache, credentials, config).await
+        Self::cached_or_created(services, cache, credentials, config).await
     }
 
     // LangFuseHandler._return_global_langfuse_logger
@@ -64,15 +61,29 @@ impl LangFuseHandler {
         cache: &DynamicLoggerCache<Arc<LangFuseLogger>>,
         global: Option<Arc<LangFuseLogger>>,
     ) -> Result<Arc<LangFuseLogger>, LangfuseSelectionError> {
-        if let Some(global) = global {
-            return Ok(global);
+        if let Some(existing) = global {
+            return Ok(existing);
         }
-        let empty = BTreeMap::new();
-        if let Some(cached) = cache.get_cache(&empty, SERVICE_NAME)? {
+        Self::cached_or_created(
+            services,
+            cache,
+            BTreeMap::new(),
+            LangfuseLoggingConfig::default(),
+        )
+        .await
+    }
+
+    // the cache lookup both selection paths end in
+    async fn cached_or_created(
+        services: &LangfuseServices,
+        cache: &DynamicLoggerCache<Arc<LangFuseLogger>>,
+        credentials: BTreeMap<String, SecretString>,
+        config: LangfuseLoggingConfig,
+    ) -> Result<Arc<LangFuseLogger>, LangfuseSelectionError> {
+        if let Some(cached) = cache.get_cache(&credentials, SERVICE_NAME)? {
             return Ok(cached);
         }
-        Self::logger_from_credentials(services, cache, empty, LangfuseLoggingConfig::default())
-            .await
+        Self::logger_from_credentials(services, cache, credentials, config).await
     }
 
     // LangFuseHandler._create_langfuse_logger_from_credentials: build the logger, then cache it
@@ -163,7 +174,7 @@ fn is_set(fields: &IndexMap<String, Json>, name: &str) -> bool {
         .is_some_and(|value| !matches!(value, Json::Null))
 }
 
-fn dynamic_fields(
+const fn dynamic_fields(
     dynamic_params: &Json,
 ) -> Result<&IndexMap<String, Json>, LangfuseSelectionError> {
     match dynamic_params {
@@ -218,7 +229,7 @@ fn insert_credential(
     name: &str,
     value: Option<SecretString>,
 ) {
-    if let Some(value) = value {
-        credentials.insert(name.to_owned(), value);
+    if let Some(secret) = value {
+        credentials.insert(name.to_owned(), secret);
     }
 }
