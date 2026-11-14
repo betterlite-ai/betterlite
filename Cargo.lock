@@ -3463,6 +3463,7 @@ version = "0.0.0"
 dependencies = [
  "betterlite-bedrock",
  "betterlite-models",
+ "betterlite-tokenizer",
  "betterlite-vertex",
  "indexmap 2.14.2",
  "jiff",
