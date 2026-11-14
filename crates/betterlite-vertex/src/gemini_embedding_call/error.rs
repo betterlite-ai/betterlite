@@ -12,7 +12,9 @@ pub enum GeminiEmbeddingCallError {
     Mint(#[source] CredentialCacheError),
     #[error(transparent)]
     Target(#[from] EndpointTargetError),
-    #[error("An API key is required to resolve Gemini file references (files/...)")]
+    #[error(
+        "An API key is required to resolve Gemini file references (files/...). Pass api_key= or set GEMINI_API_KEY."
+    )]
     MissingApiKey,
     #[error("the {name} header cannot be sent")]
     Header {

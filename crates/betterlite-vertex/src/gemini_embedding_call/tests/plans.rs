@@ -73,7 +73,7 @@ fn missing_api_key(#[case] source: &str) {
     assert!(matches!(error, GeminiEmbeddingCallError::MissingApiKey));
     assert_eq!(
         error.to_string(),
-        "An API key is required to resolve Gemini file references (files/...)"
+        "An API key is required to resolve Gemini file references (files/...). Pass api_key= or set GEMINI_API_KEY."
     );
 }
 
