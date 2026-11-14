@@ -372,6 +372,7 @@ async fn an_over_cap_response_is_blocked_with_the_response_code() {
 #[case::null_function(r#"{"function":null}"#)]
 #[case::empty_function(r#"{"function":{}}"#)]
 #[case::blank_arguments_without_a_name(r#"{"function":{"arguments":" \n "}}"#)]
+#[case::a_whitespace_name(r#"{"function":{"name":" "}}"#)]
 #[case::an_empty_name_without_arguments(r#"{"function":{"name":""}}"#)]
 #[tokio::test]
 async fn a_call_with_nothing_to_scan_does_not_count_toward_the_cap(#[case] unscannable: &str) {
