@@ -1,4 +1,5 @@
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import ClassVar, Final, Literal, Required, Self
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
@@ -118,32 +119,15 @@ class _ResponsePayload(TypedDict, total=False):
 _RESPONSE_PAYLOAD_ADAPTER: Final[TypeAdapter[_ResponsePayload]] = TypeAdapter(_ResponsePayload)
 
 
+@dataclass(eq=False, repr=False)
 class GenericGuardrailAPIResponse:
-    texts: list[str] | None
-    images: list[str] | None
-    tools: list[GuardrailToolParam] | None
-    structured_messages: Sequence[_StructuredMessage] | None
     action: str
-    blocked_reason: str | None
-    stream_holdback_chars: list[int] | None
-
-    def __init__(
-        self,
-        action: str,
-        texts: list[str] | None = None,
-        blocked_reason: str | None = None,
-        images: list[str] | None = None,
-        tools: list[GuardrailToolParam] | None = None,
-        stream_holdback_chars: list[int] | None = None,
-        structured_messages: Sequence[_StructuredMessage] | None = None,
-    ) -> None:
-        self.action = action
-        self.blocked_reason = blocked_reason
-        self.texts = texts
-        self.images = images
-        self.tools = tools
-        self.structured_messages = structured_messages
-        self.stream_holdback_chars = stream_holdback_chars
+    texts: list[str] | None = None
+    blocked_reason: str | None = None
+    images: list[str] | None = None
+    tools: list[GuardrailToolParam] | None = None
+    stream_holdback_chars: list[int] | None = None
+    structured_messages: Sequence[_StructuredMessage] | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, JsonValue]) -> Self:
@@ -155,6 +139,8 @@ class GenericGuardrailAPIResponse:
                 stream_holdback_chars = [
                     coerce_stream_holdback_value(value) for value in raw_holdback
                 ]
+            case dict() | bool() | int() | float() | str() | None:
+                stream_holdback_chars = None
         action = payload.get("action")
         if action is None:
             action = "NONE"
