@@ -885,6 +885,34 @@ fn a_failing_delete_is_an_internal_server_error_with_the_agent_name() {
     drop(head_of(serving));
 }
 
+#[test]
+fn get_records_the_pre_call_and_the_post_call() {
+    let serving = serve(reply(200, GET_BODY));
+    let config = fixture();
+    let mut harness = Harness::new();
+    let call = Call::new("agent-1").kwarg("api_base", text(&base(serving.address)));
+    get(&config, harness.deps(), &call.request()).expect("the fixture answers");
+    let pre_call = harness
+        .record
+        .pre_call
+        .as_ref()
+        .expect("the pre call is recorded");
+    assert_eq!(pre_call.input, "agent-1");
+    assert_eq!(
+        pre_call.api_base,
+        format!("{}/v1beta/agents/agent-1", base(serving.address))
+    );
+    assert_eq!(
+        harness.record.model_call_details.get("original_response"),
+        Some(&JsonValue::Text(GET_BODY.to_owned()))
+    );
+    assert_eq!(
+        harness.record.model_call_details.get("additional_args"),
+        Some(&JsonValue::Object(IndexMap::new()))
+    );
+    drop(head_of(serving));
+}
+
 #[tokio::test]
 async fn aget_sends_the_same_request_as_get() {
     let serving = serve(reply(200, GET_BODY));
