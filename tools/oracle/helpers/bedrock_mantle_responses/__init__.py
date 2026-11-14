@@ -5,12 +5,28 @@ from contextlib import redirect_stdout
 from functools import partial
 from typing import Final
 
+from litellm.llms.bedrock_mantle.responses.transformation import BedrockMantleResponsesAPIConfig
 from pydantic import JsonValue
 
-from .handlers import auth_cases, hoist_cases, map_cases, url_cases
+from .calls import transform_body, warnings_recorded
+from .handlers import auth_cases, map_cases, url_cases
+from .models import HOIST_PAYLOAD
 
 # LiteLLM reads LITELLM_RUST per call; false pins the Python fallback the oracle compares against.
 os.environ["LITELLM_RUST"] = "false"
+
+
+def hoist_cases(payload: JsonValue) -> JsonValue:
+    results: list[JsonValue] = []
+    config = BedrockMantleResponsesAPIConfig()
+    for case in HOIST_PAYLOAD.validate_python(payload)["cases"]:
+        params = case.get("params")
+        given = {} if params is None else params
+        with warnings_recorded() as messages:
+            body = transform_body(config, case["model"], case["input"], given)
+        results.append({"body": body, "warnings": messages})
+    return {"results": results}
+
 
 HANDLERS: Final[dict[str, Callable[[JsonValue], JsonValue]]] = {
     "mantle_responses_url": url_cases,

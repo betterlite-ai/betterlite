@@ -159,7 +159,10 @@ pub(super) fn map_with(
     ))
 }
 
-fn block_on<F: Future>(future: F) -> F::Output {
+fn block_on<F>(future: F) -> F::Output
+where
+    F: Future,
+{
     Builder::new_current_thread()
         .enable_all()
         .build()

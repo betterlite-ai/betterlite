@@ -34,41 +34,42 @@ pub(super) fn unsupported_params_warn_drop() {
     repr_cases();
 }
 
+const DROPPED_CASES: [(&str, &str, &str); 6] = [
+    (
+        r#"{"service_tier": "flex", "temperature": 0.5}"#,
+        r#"{"temperature": 0.5}"#,
+        TIER_WARNING,
+    ),
+    (
+        r#"{"service_tier": 3}"#,
+        "{}",
+        "Bedrock Mantle Responses API: dropping unsupported service_tier 3 (supported: ['auto', 'default']).",
+    ),
+    (
+        r#"{"service_tier": true}"#,
+        "{}",
+        "Bedrock Mantle Responses API: dropping unsupported service_tier True (supported: ['auto', 'default']).",
+    ),
+    (
+        r#"{"reasoning": {"summary": "concise", "effort": "high"}}"#,
+        r#"{"reasoning": {"effort": "high"}}"#,
+        SUMMARY_WARNING,
+    ),
+    (
+        r#"{"reasoning": {"summary": "concise"}}"#,
+        "{}",
+        SUMMARY_WARNING,
+    ),
+    (
+        r#"{"reasoning": {"summary": 5}, "temperature": 0.5}"#,
+        r#"{"temperature": 0.5}"#,
+        "Bedrock Mantle Responses API: dropping unsupported reasoning.summary 5 (supported: ['auto']).",
+    ),
+];
+
 fn dropped_cases() {
     let (messages, _guard) = support::capture();
-    let cases = [
-        (
-            r#"{"service_tier": "flex", "temperature": 0.5}"#,
-            r#"{"temperature": 0.5}"#,
-            TIER_WARNING,
-        ),
-        (
-            r#"{"service_tier": 3}"#,
-            "{}",
-            "Bedrock Mantle Responses API: dropping unsupported service_tier 3 (supported: ['auto', 'default']).",
-        ),
-        (
-            r#"{"service_tier": true}"#,
-            "{}",
-            "Bedrock Mantle Responses API: dropping unsupported service_tier True (supported: ['auto', 'default']).",
-        ),
-        (
-            r#"{"reasoning": {"summary": "concise", "effort": "high"}}"#,
-            r#"{"reasoning": {"effort": "high"}}"#,
-            SUMMARY_WARNING,
-        ),
-        (
-            r#"{"reasoning": {"summary": "concise"}}"#,
-            "{}",
-            SUMMARY_WARNING,
-        ),
-        (
-            r#"{"reasoning": {"summary": 5}, "temperature": 0.5}"#,
-            r#"{"temperature": 0.5}"#,
-            "Bedrock Mantle Responses API: dropping unsupported reasoning.summary 5 (supported: ['auto']).",
-        ),
-    ];
-    for (index, (source, expected, warning)) in cases.into_iter().enumerate() {
+    for (index, (source, expected, warning)) in DROPPED_CASES.into_iter().enumerate() {
         let params = support::object(source);
         let original = params.clone();
         let tiered = drop_unsupported_tier(&params, DROPPING).expect("the tier drops");
@@ -77,7 +78,7 @@ fn dropped_cases() {
         assert_eq!(dropped, support::object(expected), "params {source}");
         assert_eq!(params, original, "params {source}");
         let warned = messages.at(Level::WARN);
-        assert_eq!(warned.len(), index + 1, "params {source}");
+        assert_eq!(warned.len(), index.saturating_add(1), "params {source}");
         assert_eq!(warned.last().map(String::as_str), Some(warning));
     }
 }

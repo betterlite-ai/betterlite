@@ -2,10 +2,9 @@ from litellm.llms.bedrock_mantle.responses.transformation import BedrockMantleRe
 from litellm.types.router import GenericLiteLLMParams
 from pydantic import JsonValue
 
-from .calls import config_of, map_result, transform_body
+from .calls import config_of, environment, map_result, warnings_recorded
 from .models import (
     AUTH_PAYLOAD,
-    HOIST_PAYLOAD,
     MAP_PAYLOAD,
     URL_PAYLOAD,
     AuthCase,
@@ -13,7 +12,6 @@ from .models import (
     MantleCalls,
     Object,
 )
-from .scope import environment, warnings_recorded
 
 MODEL = "openai.gpt-oss-120b"
 
@@ -79,16 +77,4 @@ def auth_cases(payload: JsonValue) -> JsonValue:
     for case in AUTH_PAYLOAD.validate_python(payload)["cases"]:
         with environment(case.get("environment")):
             results.append(auth_value(case))
-    return {"results": results}
-
-
-def hoist_cases(payload: JsonValue) -> JsonValue:
-    results: list[JsonValue] = []
-    config = BedrockMantleResponsesAPIConfig()
-    for case in HOIST_PAYLOAD.validate_python(payload)["cases"]:
-        params = case.get("params")
-        given = {} if params is None else params
-        with warnings_recorded() as messages:
-            body = transform_body(config, case["model"], case["input"], given)
-        results.append({"body": body, "warnings": messages})
     return {"results": results}
