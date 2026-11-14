@@ -1,0 +1,9 @@
+kind: helper
+name: hosted-vllm-embedding-response-scalar-error
+call:
+  b8150:
+    function: "embedding_response"
+    calls:
+      - body: '{"object": "list", "model": "m", "data": [], "error": 5}'
+env: {}
+compare: {ignore: []}

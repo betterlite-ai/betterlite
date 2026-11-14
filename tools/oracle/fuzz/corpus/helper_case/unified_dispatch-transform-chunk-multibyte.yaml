@@ -1,0 +1,14 @@
+kind: helper
+name: transform-chunk-multibyte
+call:
+  b3679:
+    function: transform_chunk
+    reference_chunk: {id: chunk-1, created: 7, model: gpt-4o, object: chat.completion.chunk, choices: []}
+    mutated: [[0, "héllo wörld"]]
+    emitted: [[0, "héllo"]]
+    holdback: [[0, 5]]
+    reasons: []
+    held: [[0, 0]]
+    is_final: false
+env: {}
+compare: {ignore: []}
