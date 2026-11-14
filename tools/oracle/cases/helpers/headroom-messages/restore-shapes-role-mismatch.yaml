@@ -1,0 +1,11 @@
+kind: helper
+name: headroom-messages-restore-shapes-role-mismatch
+call:
+  b3773:
+    function: restore_shapes
+    originals:
+      - {role: user, content: [{type: text, text: original}]}
+    returned:
+      - {role: assistant, content: rewritten}
+env: {}
+compare: {ignore: []}
