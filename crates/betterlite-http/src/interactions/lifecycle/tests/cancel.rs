@@ -23,7 +23,7 @@ fn cancel_interaction_posts_the_transformed_body_as_json() {
     let fixture = Fixture {
         headers: api_key_header(),
         cancel_data: base::params(r#"{"action": "cancel", "reason": "user"}"#),
-        ..Fixture::default()
+        ..Fixture::new()
     };
     let mut handler = sync_handler(&fixture);
 
@@ -59,7 +59,7 @@ fn cancel_interaction_posts_the_transformed_body_as_json() {
 #[test]
 fn cancel_interaction_turns_a_failing_status_into_the_error_class() {
     let serving = serve_with_body(base::reply("500 Internal Server Error", &[], "boom"), None);
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
 
     let error = handler
@@ -85,7 +85,7 @@ fn cancel_interaction_turns_a_3xx_answer_into_the_error_class() {
         base::reply("300 Multiple Choices", &[], "{\"status\":\"cancelled\"}"),
         None,
     );
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
 
     let error = handler
@@ -111,7 +111,7 @@ fn cancel_interaction_sends_the_given_timeout() {
         base::reply("200 OK", &[], "{}"),
         Some(Duration::from_millis(500)),
     );
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
     let mut call = Call::new(serving.address);
     call.timeout = Some(Duration::from_millis(50));
@@ -132,7 +132,7 @@ fn cancel_interaction_falls_back_to_the_request_timeout() {
         base::reply("200 OK", &[], "{}"),
         Some(Duration::from_millis(500)),
     );
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
     let mut call = Call::new(serving.address);
     call.request_timeout = Duration::from_millis(50);
@@ -149,7 +149,7 @@ fn cancel_interaction_falls_back_to_the_request_timeout() {
 #[test]
 fn cancel_interaction_uses_a_supplied_client() {
     let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let supplied = BlockingClientBuilder::new().build().unwrap();
     let mut handler = build_handler(&fixture, Some(supplied));
 
@@ -164,7 +164,7 @@ fn cancel_interaction_uses_a_supplied_client() {
 
 #[test]
 fn cancel_interaction_passes_a_transport_failure_through_the_error_handler() {
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
 
     let error = handler
@@ -191,7 +191,7 @@ async fn async_cancel_interaction_posts_the_transformed_body_as_json() {
     );
     let fixture = Fixture {
         cancel_data: base::params(r#"{"action": "cancel", "reason": "user"}"#),
-        ..Fixture::default()
+        ..Fixture::new()
     };
     let mut handler = async_handler(&fixture);
 
@@ -218,7 +218,7 @@ async fn async_cancel_interaction_sends_the_given_timeout() {
         base::reply("200 OK", &[], "{}"),
         Some(Duration::from_millis(500)),
     );
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = async_handler(&fixture);
     let mut call = Call::new(serving.address);
     call.timeout = Some(Duration::from_millis(50));
@@ -242,7 +242,7 @@ async fn async_cancel_interaction_falls_back_to_the_request_timeout() {
         base::reply("200 OK", &[], "{}"),
         Some(Duration::from_millis(500)),
     );
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = async_handler(&fixture);
     let mut call = Call::new(serving.address);
     call.request_timeout = Duration::from_millis(50);
@@ -262,7 +262,7 @@ async fn async_cancel_interaction_falls_back_to_the_request_timeout() {
 #[tokio::test]
 async fn async_cancel_interaction_turns_a_failing_status_into_the_error_class() {
     let serving = serve_with_body(base::reply("404 Not Found", &[], "gone"), None);
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = async_handler(&fixture);
 
     let error = handler

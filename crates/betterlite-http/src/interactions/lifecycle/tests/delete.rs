@@ -25,7 +25,7 @@ fn delete_interaction_deletes_the_interaction_through_the_config() {
     );
     let fixture = Fixture {
         headers: api_key_header(),
-        ..Fixture::default()
+        ..Fixture::new()
     };
     let mut call = Call::new(serving.address);
     call.params.insert(
@@ -69,7 +69,7 @@ fn delete_interaction_sends_no_body_when_the_transform_returns_data() {
     let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
     let fixture = Fixture {
         delete_data: base::params(r#"{"ignored": "yes"}"#),
-        ..Fixture::default()
+        ..Fixture::new()
     };
     let mut handler = sync_handler(&fixture);
 
@@ -91,7 +91,7 @@ fn delete_interaction_sends_no_body_when_the_transform_returns_data() {
 #[test]
 fn delete_interaction_accepts_a_no_content_answer() {
     let serving = serve_with_body(base::reply("204 No Content", &[], ""), None);
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
 
     let output = handler
@@ -117,7 +117,7 @@ fn delete_interaction_turns_a_failing_status_into_the_error_class() {
         ),
         None,
     );
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
 
     let error = handler
@@ -151,7 +151,7 @@ fn delete_interaction_reads_a_non_utf8_error_body_as_replacement_text() {
     .into_bytes();
     answer.extend_from_slice(body);
     let serving = serve_with_body(answer, None);
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
 
     let error = handler
@@ -174,7 +174,7 @@ fn delete_interaction_keeps_a_transform_error_out_of_the_error_handler() {
     let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
     let fixture = Fixture {
         fail_transform_status: Some(200),
-        ..Fixture::default()
+        ..Fixture::new()
     };
     let mut handler = sync_handler(&fixture);
 
@@ -197,7 +197,7 @@ fn delete_interaction_keeps_a_transform_error_out_of_the_error_handler() {
 
 #[test]
 fn delete_interaction_passes_a_transport_failure_through_the_error_handler() {
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
 
     let error = handler
@@ -218,7 +218,7 @@ fn delete_interaction_passes_a_transport_failure_through_the_error_handler() {
 
 #[test]
 fn delete_interaction_passes_an_invalid_url_through_the_error_handler() {
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
     let mut call = Call::new(dead_address());
     call.params.insert(
@@ -244,7 +244,7 @@ fn delete_interaction_does_not_follow_a_redirect() {
         ),
         None,
     );
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
 
     let error = handler
@@ -270,7 +270,7 @@ fn delete_interaction_sends_the_given_timeout() {
         base::reply("200 OK", &[], "{}"),
         Some(Duration::from_millis(500)),
     );
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
     let mut call = Call::new(serving.address);
     call.timeout = Some(Duration::from_millis(50));
@@ -291,7 +291,7 @@ fn delete_interaction_falls_back_to_the_request_timeout() {
         base::reply("200 OK", &[], "{}"),
         Some(Duration::from_millis(500)),
     );
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
     let mut call = Call::new(serving.address);
     call.request_timeout = Duration::from_millis(50);
@@ -311,7 +311,7 @@ fn delete_interaction_prefers_the_given_timeout_over_the_request_timeout() {
         base::reply("200 OK", &[], "{}"),
         Some(Duration::from_millis(200)),
     );
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
     let mut call = Call::new(serving.address);
     call.timeout = Some(Duration::from_secs(2));
@@ -326,7 +326,7 @@ fn delete_interaction_prefers_the_given_timeout_over_the_request_timeout() {
 #[test]
 fn delete_interaction_uses_a_supplied_client() {
     let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let supplied = BlockingClientBuilder::new()
         .timeout(Duration::from_millis(20))
         .build()
@@ -344,7 +344,7 @@ fn delete_interaction_uses_a_supplied_client() {
 
 #[test]
 fn delete_interaction_builds_the_client_before_validating_headers() {
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
     let mut call = Call::new(dead_address());
     call.params
@@ -369,7 +369,7 @@ fn delete_interaction_refuses_a_proxy_it_cannot_use_instead_of_connecting_direct
     #[case] proxy: &str,
     #[case] expected: &str,
 ) {
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = InteractionsHttpHandler {
         config: &fixture,
         clients: HttpClients::new(
@@ -393,7 +393,7 @@ fn delete_interaction_refuses_a_proxy_it_cannot_use_instead_of_connecting_direct
 #[test]
 fn delete_interaction_skips_the_proxy_check_for_a_supplied_client() {
     let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let supplied = BlockingClientBuilder::new().build().unwrap();
     let mut handler = InteractionsHttpHandler {
         config: &fixture,
@@ -421,7 +421,7 @@ async fn async_delete_interaction_refuses_a_proxy_it_cannot_use_instead_of_conne
     #[case] proxy: &str,
     #[case] expected: &str,
 ) {
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = InteractionsHttpHandler {
         config: &fixture,
         clients: HttpClients::new(
@@ -446,7 +446,7 @@ async fn async_delete_interaction_refuses_a_proxy_it_cannot_use_instead_of_conne
 #[tokio::test]
 async fn async_delete_interaction_skips_the_proxy_check_for_a_supplied_client() {
     let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let supplied = base_builder().build().unwrap();
     let mut handler = InteractionsHttpHandler {
         config: &fixture,
@@ -475,7 +475,7 @@ async fn async_delete_interaction_deletes_the_interaction_through_the_config() {
     );
     let fixture = Fixture {
         headers: api_key_header(),
-        ..Fixture::default()
+        ..Fixture::new()
     };
     let mut handler = async_handler(&fixture);
 
@@ -508,7 +508,7 @@ async fn async_delete_interaction_deletes_the_interaction_through_the_config() {
 #[tokio::test]
 async fn async_delete_interaction_builds_for_the_provider_its_caller_names() {
     let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = async_handler(&fixture);
     let mut call = Call::new(serving.address);
     call.provider = ProviderId::Openai;
@@ -533,7 +533,7 @@ async fn async_delete_interaction_builds_for_the_provider_its_caller_names() {
 #[tokio::test]
 async fn async_delete_interaction_turns_a_failing_status_into_the_error_class() {
     let serving = serve_with_body(base::reply("503 Service Unavailable", &[], "later"), None);
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = async_handler(&fixture);
 
     let error = handler
@@ -560,7 +560,7 @@ async fn async_delete_interaction_sends_the_given_timeout() {
         base::reply("200 OK", &[], "{}"),
         Some(Duration::from_millis(500)),
     );
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = async_handler(&fixture);
     let mut call = Call::new(serving.address);
     call.timeout = Some(Duration::from_millis(50));
@@ -584,7 +584,7 @@ async fn async_delete_interaction_falls_back_to_the_request_timeout() {
         base::reply("200 OK", &[], "{}"),
         Some(Duration::from_millis(500)),
     );
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = async_handler(&fixture);
     let mut call = Call::new(serving.address);
     call.request_timeout = Duration::from_millis(50);
@@ -604,7 +604,7 @@ async fn async_delete_interaction_falls_back_to_the_request_timeout() {
 #[tokio::test]
 async fn async_delete_interaction_uses_a_supplied_client() {
     let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let supplied = base_builder()
         .timeout(Duration::from_millis(20))
         .build()
@@ -623,7 +623,7 @@ async fn async_delete_interaction_uses_a_supplied_client() {
 
 #[tokio::test]
 async fn async_delete_interaction_builds_the_client_before_validating_headers() {
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let mut handler = async_handler(&fixture);
     let mut call = Call::new(dead_address());
     call.params

@@ -40,6 +40,11 @@ pub(super) struct Fixture {
 }
 
 impl Fixture {
+    // the base a test names one field on, since a struct update over Default::default() is banned
+    pub(super) fn new() -> Self {
+        Self::default()
+    }
+
     fn record(&self, call: String) {
         if let Ok(mut calls) = self.calls.lock() {
             calls.push(call);
