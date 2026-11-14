@@ -1,0 +1,28 @@
+kind: helper
+name: rerank-response-errors
+call:
+  b5831:
+    model_cost: {}
+    chat_supported: []
+    chat_map: []
+    chat_messages: []
+    completion: []
+    rerank_requests: []
+    rerank_responses:
+    - response: {id: req-1}
+      next_id: 00000000-0000-0000-0000-000000000007
+    - response:
+        id: req-1
+        results:
+        - {relevance_score: 0.5}
+      next_id: 00000000-0000-0000-0000-000000000007
+    - response:
+        id: req-1
+        results:
+        - {index: 0}
+      next_id: 00000000-0000-0000-0000-000000000007
+    cost_categories: []
+    cost_registry: []
+env: {}
+compare:
+  ignore: []
