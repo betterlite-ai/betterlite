@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-rag-store-create-request-seed
+call:
+  vertex_rag_store:
+    calls:
+      - function: create_request
+        api_base: https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1
+        optional_params: {name: seed-corpus, metadata: {team: rag}}
+env: {}
+compare: {ignore: []}
