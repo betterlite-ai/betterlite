@@ -5,7 +5,7 @@ from types import ModuleType
 from typing import Final, TypeVar
 
 import pytest
-from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
 from typing_extensions import TypeForm
 
 from betterlite.types.interactions import (
@@ -146,6 +146,16 @@ RESPONSE_NAMES: Final = (
     "DeleteInteractionResult",
     "CancelInteractionResult",
 )
+MODEL_CORE: Final[dict[str, JsonValue]] = {"model": "gemini-3", "input": "hi"}
+AGENT_CORE: Final[dict[str, JsonValue]] = {"agent": "a", "input": "hi"}
+DATETIME_CASES: Final[tuple[tuple[str, str, dict[str, JsonValue]], ...]] = (
+    ("Interaction", "created", INTERACTION_CORE),
+    ("Interaction", "updated", INTERACTION_CORE),
+    ("CreateModelInteractionParams", "created", MODEL_CORE),
+    ("CreateModelInteractionParams", "updated", MODEL_CORE),
+    ("CreateAgentInteractionParams", "created", AGENT_CORE),
+    ("CreateAgentInteractionParams", "updated", AGENT_CORE),
+)
 THOUGHT_PAYLOAD: Final[list[JsonValue]] = [
     {"type": "text", "text": "a"},
     {"type": "image", "uri": "u"},
@@ -274,8 +284,7 @@ def dict_shape(value: dict[str, JsonValue]) -> JsonValue:
     return found
 
 
-def schema_view(cls: type) -> dict[str, JsonValue]:
-    schema: dict[str, JsonValue] = schema_of(cls)
+def schema_view(schema: dict[str, JsonValue]) -> dict[str, JsonValue]:
     properties: dict[str, JsonValue] = mapping(schema.get("properties"))
     fields: dict[str, JsonValue] = {}
     for name, property_schema in properties.items():
@@ -300,9 +309,14 @@ def enum_view(cls: type) -> dict[str, JsonValue]:
 def class_view(cls: type) -> dict[str, JsonValue]:
     if Enum in cls.__mro__:
         return enum_view(cls)
+    schema: dict[str, JsonValue] = schema_of(cls)
+    root: dict[str, JsonValue] = {
+        key: value for key, value in schema.items() if key not in {"properties", "$defs"}
+    }
     view: dict[str, JsonValue] = {
-        "fields": schema_view(cls),
-        "defs": text_list(definition_names(schema_of(cls))),
+        "root": schema_shape(root),
+        "fields": schema_view(schema),
+        "defs": text_list(definition_names(schema)),
     }
     return view
 
@@ -312,6 +326,13 @@ def dumped_value(target: TypeForm[FormT], value: JsonValue) -> JsonValue:
     instance: FormT = adapter.validate_python(value)
     found: JsonValue = adapter.dump_python(instance, mode="json")
     return found
+
+
+def hidden_params(instance: BaseModel) -> dict[str, JsonValue]:
+    private: dict[str, JsonValue] | None = instance.__pydantic_private__
+    assert private is not None
+    hidden: JsonValue = private["_hidden_params"]
+    return mapping(hidden)
 
 
 def test_names_class_set() -> None:
@@ -404,6 +425,18 @@ def test_names_litellm_responses(name: str) -> None:
         "usage": {"total_tokens": 1},
     }
     assert dumped_value(OUR_CLASSES[name], payload) == dumped_value(THEIR_CLASSES[name], payload)
+    ours_cls: type[BaseModel] = OUR_CLASSES[name]
+    theirs_cls: type[BaseModel] = THEIR_CLASSES[name]
+    assert ours_cls.__private_attributes__.keys() == theirs_cls.__private_attributes__.keys()
+    assert ours_cls.__private_attributes__["_hidden_params"].default_factory is dict
+    our_adapter: TypeAdapter[BaseModel] = TypeAdapter(ours_cls)
+    their_adapter: TypeAdapter[BaseModel] = TypeAdapter(theirs_cls)
+    our_instance: BaseModel = our_adapter.validate_python(EMPTY_PAYLOAD)
+    their_instance: BaseModel = their_adapter.validate_python(EMPTY_PAYLOAD)
+    assert hidden_params(our_instance) == {}
+    assert hidden_params(their_instance) == {}
+    second: BaseModel = our_adapter.validate_python(EMPTY_PAYLOAD)
+    assert hidden_params(second) is not hidden_params(our_instance)
 
 
 def test_names_tool_choice_union() -> None:
@@ -450,18 +483,16 @@ def test_names_create_params() -> None:
         )
 
 
-def test_names_aware_datetime() -> None:
-    aware: JsonValue = dumped_value(
-        interaction.Interaction, {**INTERACTION_CORE, "created": AWARE_TIME}
-    )
-    theirs: JsonValue = dumped_value(
-        THEIR_CLASSES["Interaction"], {**INTERACTION_CORE, "created": AWARE_TIME}
-    )
-    assert aware == theirs
+@pytest.mark.parametrize(("name", "field", "base"), DATETIME_CASES)
+def test_names_aware_datetime(name: str, field: str, base: dict[str, JsonValue]) -> None:
+    aware_payload: dict[str, JsonValue] = {**base, field: AWARE_TIME}
+    ours: JsonValue = dumped_value(OUR_CLASSES[name], aware_payload)
+    assert ours == dumped_value(THEIR_CLASSES[name], aware_payload), name
+    naive_payload: dict[str, JsonValue] = {**base, field: NAIVE_TIME}
     with pytest.raises(ValidationError, match="timezone"):
-        dumped_value(interaction.Interaction, {**INTERACTION_CORE, "created": NAIVE_TIME})
+        dumped_value(OUR_CLASSES[name], naive_payload)
     with pytest.raises(ValidationError, match="timezone"):
-        dumped_value(THEIR_CLASSES["Interaction"], {**INTERACTION_CORE, "created": NAIVE_TIME})
+        dumped_value(THEIR_CLASSES[name], naive_payload)
 
 
 def test_names_unknown_type() -> None:
@@ -469,6 +500,14 @@ def test_names_unknown_type() -> None:
         dumped_value(content.Content, {"type": "bogus"})
     with pytest.raises(ValidationError, match=TAG_ERROR):
         dumped_value(THEIR_CLASSES["Content"], {"type": "bogus"})
+
+
+def test_names_event_tag() -> None:
+    payload: dict[str, JsonValue] = {"index": 0}
+    with pytest.raises(ValidationError, match="event_type"):
+        dumped_value(events.InteractionSseEvent, payload)
+    with pytest.raises(ValidationError, match="event_type"):
+        dumped_value(THEIR_CLASSES["InteractionSseEvent"], payload)
 
 
 def test_names_thought_summary() -> None:
