@@ -3432,6 +3432,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "data-encoding",
  "google-cloud-auth",
