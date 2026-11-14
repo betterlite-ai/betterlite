@@ -639,8 +639,10 @@ fn defaults_structured_messages_and_tool_names_are_empty() {
 
 #[test]
 fn defaults_class_flags_are_false() {
-    assert!(!<Dispatch as BaseTranslation>::DELIVERS_ENDED_STREAM_REWRITES);
-    assert!(!<Dispatch as BaseTranslation>::ASSEMBLES_STREAMED_RESPONSE);
+    let delivers_rewrites = <Dispatch as BaseTranslation>::DELIVERS_ENDED_STREAM_REWRITES;
+    let assembles_response = <Dispatch as BaseTranslation>::ASSEMBLES_STREAMED_RESPONSE;
+    assert!(!delivers_rewrites);
+    assert!(!assembles_response);
 }
 
 #[test]
