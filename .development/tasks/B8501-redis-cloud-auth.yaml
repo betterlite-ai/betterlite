@@ -62,6 +62,11 @@ scope:
   paths:
     - crates/betterlite-server/src/redis_cloud_auth.rs
     - crates/betterlite-server/src/redis_cloud_auth/**
+    - crates/betterlite-azure/src/azure_arc_identity.rs
+    - crates/betterlite-azure/src/azure_arc_identity/**
+    - crates/betterlite-azure/src/azure_managed_identity.rs
+    - crates/betterlite-azure/src/azure_managed_identity/**
+    - crates/betterlite-azure/src/azure_default_chain/tests/native.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/gcp_iam_token.rs
@@ -143,5 +148,5 @@ pitfalls:
 review_level: security
 
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1650
   max_new_expects: 0
