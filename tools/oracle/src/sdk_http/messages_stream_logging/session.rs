@@ -6,6 +6,7 @@ use betterlite_core::api::messages_stream_logging::slots::{Fields, StreamSlots};
 use betterlite_core::api::messages_stream_logging::{
     MessagesStreamLogging, SseChunk, StreamDeps, abort_upstream, convert_chunk_to_sse_format,
 };
+use betterlite_logging::logging_success::ports::SuccessClock;
 use betterlite_logging::passthrough_logging_state::logger::PassThroughEndpointLogging;
 use betterlite_logging::passthrough_stream_logging::object::StreamLoggingObject;
 use betterlite_logging::passthrough_stream_logging::types::EndpointType;
@@ -51,17 +52,20 @@ impl Session {
             injected_log_dispatch: None,
         });
         let logging_obj = logging_object()?;
-        let stream = MessagesStreamLogging::new(
-            StreamDeps {
-                seams: Arc::clone(&recorder),
-                worker: Arc::clone(&worker),
-                slots: Arc::clone(&slots),
-                clock: Arc::new(StepClock::default()),
-                success_handler: Arc::clone(&handler),
-            },
-            Arc::clone(&logging_obj),
-            body.clone(),
-        );
+        let deps = StreamDeps {
+            seams: Arc::clone(&recorder),
+            worker: Arc::clone(&worker),
+            slots: Arc::clone(&slots),
+            clock: Arc::new(StepClock::default()),
+            success_handler: Arc::clone(&handler),
+        };
+        let stream = MessagesStreamLogging {
+            start_time: deps.clock.now(),
+            deps,
+            logging_obj: Arc::clone(&logging_obj),
+            request_body: body.clone(),
+            completion_start_time: None,
+        };
         Ok(Self {
             recorder,
             worker,

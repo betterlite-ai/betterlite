@@ -175,19 +175,22 @@ impl Harness {
         });
         let logging_obj = logging_object();
         let request_body = IndexMap::from([("model".to_owned(), Json::Text("claude".to_owned()))]);
-        let stream = MessagesStreamLogging::new(
-            StreamDeps {
-                seams: Arc::clone(&seams),
-                worker: Arc::clone(&worker),
-                slots: Arc::clone(&slots),
-                clock: Arc::new(StepClock {
-                    reads: Mutex::new(0),
-                }),
-                success_handler: Arc::clone(&handler),
-            },
-            Arc::clone(&logging_obj),
-            request_body.clone(),
-        );
+        let deps = StreamDeps {
+            seams: Arc::clone(&seams),
+            worker: Arc::clone(&worker),
+            slots: Arc::clone(&slots),
+            clock: Arc::new(StepClock {
+                reads: Mutex::new(0),
+            }),
+            success_handler: Arc::clone(&handler),
+        };
+        let stream = MessagesStreamLogging {
+            start_time: deps.clock.now(),
+            deps,
+            logging_obj: Arc::clone(&logging_obj),
+            request_body: request_body.clone(),
+            completion_start_time: None,
+        };
         Self {
             seams,
             worker,
