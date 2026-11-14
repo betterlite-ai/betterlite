@@ -7,8 +7,11 @@ use clap::Parser;
 pub(crate) struct Arguments {
     #[command(flatten)]
     pub(crate) options: Options,
-    /// Run only the helper cases that call this helper operation, such as b4710.
-    #[arg(short = 'k', value_name = "OPERATION")]
+    #[arg(
+        short = 'k',
+        value_name = "OPERATION",
+        help = "Filter helper cases by operation."
+    )]
     pub(crate) operation: Option<String>,
 }
 
