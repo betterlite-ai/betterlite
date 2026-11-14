@@ -609,10 +609,7 @@ fn prepare_create_drops_nulls_and_keeps_explicit_values() {
 #[test]
 fn prepare_create_writes_a_float_timeout_as_a_number() {
     let prepared = create(&request(r#"{"server_name":"srv","timeout":30}"#));
-    assert_eq!(
-        prepared.get("timeout"),
-        Some(&JsonValue::Number(30.0_f64.into()))
-    );
+    assert_eq!(prepared.get("timeout"), Some(&json("30.0")));
 }
 
 #[test]
