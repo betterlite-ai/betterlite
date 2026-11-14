@@ -117,6 +117,12 @@ async fn stream_routing_uses_the_completion_bridge_for_a_non_empty_provider() {
             "status:completed:true",
         ]
     );
+    for event in &collected {
+        assert_eq!(
+            event.as_ref().expect("the event is forwarded")["id"],
+            parsed(r#""request-1""#)
+        );
+    }
     let calls = recorded_calls(&completion);
     assert_eq!(calls.len(), 1);
     assert!(calls[0].stream);
@@ -142,6 +148,7 @@ async fn stream_routing_selects_a_registered_provider() {
         source: &mut source,
     };
     let (dispatch, _calls) = recording_dispatch();
+    let agent_headers = BTreeMap::from([("x-team".to_owned(), "blue".to_owned())]);
     let call = StreamCall {
         a2a_client: None,
         request: request("hello"),
@@ -152,7 +159,7 @@ async fn stream_routing_selects_a_registered_provider() {
         agent_id: None,
         metadata: None,
         proxy_server_request: None,
-        agent_extra_headers: None,
+        agent_extra_headers: Some(agent_headers.clone()),
     };
 
     let deps = fixture.deps(dispatch);
@@ -165,6 +172,13 @@ async fn stream_routing_selects_a_registered_provider() {
         selected_configs(&providers),
         vec![A2AProviderConfig::PydanticAI]
     );
+    let calls = provider_calls(&providers);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].api_base.as_deref(),
+        Some("https://langflow.example")
+    );
+    assert_eq!(calls[0].agent_extra_headers, Some(agent_headers));
     assert_eq!(collected.len(), 1);
     assert_eq!(
         collected[0]
