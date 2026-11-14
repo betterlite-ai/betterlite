@@ -326,6 +326,7 @@ def containers_behavior(module):
         ),
         "bad_anchor": outcome(lambda: module.ExpiresAfter(anchor="created_at", minutes=1)),
         "hidden": container._hidden_params,
+        "difference": [outcome(lambda: container.json(encoder=str))],
     }
 
 
@@ -563,6 +564,7 @@ class ContainersBehavior(TypedDict):
     bad_object: Outcome
     bad_anchor: Outcome
     hidden: dict[str, JsonValue]
+    difference: list[Outcome]
 
 
 class GoogleCommon(TypedDict):
@@ -800,7 +802,15 @@ def test_containers_names(report: Report) -> None:
     litellm = TypeAdapter(ContainersBehavior).validate_python(
         report["behavior"]["containers"]["litellm"]
     )
-    assert betterlite == litellm
+    shared_betterlite = {
+        field: value for field, value in betterlite.items() if field != "difference"
+    }
+    shared_litellm = {field: value for field, value in litellm.items() if field != "difference"}
+    assert shared_betterlite == shared_litellm
+    difference = TypeAdapter(Outcome).validate_python(betterlite["difference"][0])
+    assert difference["error"] == "TypeError"
+    their_difference = TypeAdapter(Outcome).validate_python(litellm["difference"][0])
+    assert their_difference["ok"] is True
     assert betterlite["container"] == betterlite["container_json"]
     assert betterlite["container"]["object"] == "container"
     assert betterlite["container"]["expires_after"] == {
