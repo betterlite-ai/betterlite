@@ -37,14 +37,12 @@ async fn relay_stream(
     let relayed = shutdown
         .run_until_cancelled(stream.relay(outbox.clone(), billed_before))
         .await;
-    match relayed {
-        Some(billed) => billed,
-        None => {
-            // cancelling the stream closes its connection before the relay reports
-            stream.halt.cancel();
-            stream.relay(outbox.clone(), billed_before).await
-        }
-    }
+    let Some(billed) = relayed else {
+        // cancelling the stream closes its connection before the relay reports
+        stream.halt.cancel();
+        return stream.relay(outbox.clone(), billed_before).await;
+    };
+    billed
 }
 
 async fn pump_links(
@@ -54,10 +52,8 @@ async fn pump_links(
 ) -> Result<(), serde_json::Error> {
     let mut billed_before = 0.0_f64;
     loop {
-        let received = tokio::select! {
-            biased;
-            () = shutdown.cancelled() => break,
-            received = links.recv() => received,
+        let Some(received) = shutdown.run_until_cancelled(links.recv()).await else {
+            break;
         };
         let Some(link) = received else {
             break;

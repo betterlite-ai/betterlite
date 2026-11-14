@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
+use std::mem::take;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 use google_cloud_speech_v2::model::StreamingRecognitionConfig;
@@ -158,9 +160,7 @@ impl ChirpBackend {
         let current = self.turn.last().map(Arc::clone);
         if let Some(stream) = current {
             let elapsed = self.clock.now().saturating_duration_since(stream.opened_at);
-            let active = stream
-                .speech_active
-                .load(std::sync::atomic::Ordering::SeqCst);
+            let active = stream.speech_active.load(Ordering::SeqCst);
             if !policy::rotation_due(
                 elapsed,
                 active,
@@ -195,7 +195,7 @@ impl ChirpBackend {
     }
 
     async fn finish_turn(&mut self) -> Result<(), ChirpBackendError> {
-        let turn = std::mem::take(&mut self.turn);
+        let turn = take(&mut self.turn);
         self.turn_index = self.turn_index.saturating_add(1);
         if let Some(last) = turn.last() {
             half_close_turn_stream(last).await?;
@@ -207,7 +207,7 @@ impl ChirpBackend {
 
     async fn discard_turn(&mut self) -> Result<(), ChirpBackendError> {
         let turn = self.turn_index;
-        let streams = std::mem::take(&mut self.turn);
+        let streams = take(&mut self.turn);
         let _inserted = self.discarded.insert(turn);
         self.turn_index = self.turn_index.saturating_add(1);
         for stream in &streams {
@@ -230,7 +230,7 @@ impl ChirpBackend {
             .map_err(|_source| ChirpBackendError::QueueClosed)
     }
 
-    fn ensure_open(&self) -> Result<(), ChirpBackendError> {
+    const fn ensure_open(&self) -> Result<(), ChirpBackendError> {
         if self.closed {
             return Err(NORMAL_CLOSURE);
         }
@@ -243,11 +243,12 @@ impl ChirpBackend {
                 policy::deliver(policy::Deliverable::Event(&event), &mut self.discarded)
             }
             OutboxItem::TurnResult { turn, event } => {
-                let event = serde_json::to_string(&event).map_err(ChirpBackendError::Encode)?;
+                let event_json =
+                    serde_json::to_string(&event).map_err(ChirpBackendError::Encode)?;
                 policy::deliver(
                     policy::Deliverable::TurnResult {
                         turn,
-                        event: &event,
+                        event: &event_json,
                     },
                     &mut self.discarded,
                 )
