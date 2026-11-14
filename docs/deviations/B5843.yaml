@@ -9,6 +9,9 @@ deviations:
   - what: The user-agent validate_environment sets is litellm/1.105.1, the version B5940's OciEnvironment carries, where LiteLLM reports its installed package version.
     why: A Rust gateway has no LiteLLM package version to report.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L52-L58
+  - what: A non-string error value in a response body is rendered as JSON text ({"message":"x"}), where LiteLLM runs Python's str() over it and writes the value's Python repr instead. A string error value renders the same on both sides.
+    why: Python's str() of a dict is runtime text that betterlite does not port; the status and the OCI error message for a string value match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L617-L621
   - what: A chat completion response id is chatcmpl-<uuid4>, generated in this module, where LiteLLM leaves the id its ModelResponse constructor made; the wire body carries no id.
     why: The shared betterlite ChatResponse requires an id before B5942's handlers fill the rest.
     link: ""
