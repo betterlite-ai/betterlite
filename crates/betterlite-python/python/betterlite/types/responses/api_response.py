@@ -159,13 +159,11 @@ class ResponsesAPIResponse(ResponseObject):
     @classmethod
     def validate_reasoning_to_dict(cls, value: InitValue) -> InitValue:
         match value:
-            case None:
-                return None
             case Dumpable() as model:
                 return model.model_dump()
             case Mapping():
                 return value
-            case bool() | int() | float() | str() | Sequence():
+            case bool() | int() | float() | str() | Sequence() | None:
                 return value
 
     @override
