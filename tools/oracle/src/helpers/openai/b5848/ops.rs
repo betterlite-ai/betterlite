@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_openai::huggingface_chat::HuggingfaceEnv;
@@ -12,9 +11,6 @@ use betterlite_openai::huggingface_rerank::response::{ResponseRequest, transform
 use betterlite_openai::huggingface_rerank::url::{get_api_base, get_complete_url};
 use betterlite_openai::huggingface_rerank::{RequestIdSource, TextTokenCounter};
 use betterlite_tokenizer::count::error::CountError;
-use betterlite_tokenizer::engine::Engine;
-use betterlite_tokenizer::engine::assets;
-use betterlite_tokenizer::engine::tiktoken::{Encoding, TiktokenEngine};
 use secrecy::SecretString;
 use serde_json::{Value, json};
 use thiserror::Error;
@@ -29,23 +25,12 @@ enum B5848Error {
     Rerank(#[from] HuggingfaceRerankError),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
-    #[error("the case carries no token counter for the response")]
-    Counter,
 }
 
 pub(crate) fn run(input: &Input) -> HelperResult {
-    let needs_encoder = input
-        .steps
-        .iter()
-        .any(|step| matches!(step, Step::Response(response) if response.token_counts.is_none()));
-    let encoder = if needs_encoder {
-        Some(BundledCl100k::build()?)
-    } else {
-        None
-    };
     let mut outcomes = Vec::with_capacity(input.steps.len());
     for step in &input.steps {
-        outcomes.push(run_step(step, encoder.as_ref()).map_err(helper_error)?);
+        outcomes.push(run_step(step).map_err(helper_error)?);
     }
     Ok(Value::Array(outcomes))
 }
@@ -53,7 +38,7 @@ pub(crate) fn run(input: &Input) -> HelperResult {
 fn helper_error(error: B5848Error) -> Box<HelperError> {
     let status = match &error {
         B5848Error::Rerank(HuggingfaceRerankError::Huggingface(source)) => Some(source.status_code),
-        B5848Error::Rerank(_) | B5848Error::Json(_) | B5848Error::Counter => None,
+        B5848Error::Rerank(_) | B5848Error::Json(_) => None,
     };
     Box::new(HelperError {
         class: "HuggingfaceRerankError".to_owned(),
@@ -65,18 +50,21 @@ fn helper_error(error: B5848Error) -> Box<HelperError> {
     })
 }
 
-fn run_step(step: &Step, encoder: Option<&BundledCl100k>) -> Result<Value, B5848Error> {
+fn run_step(step: &Step) -> Result<Value, B5848Error> {
     match step {
         Step::Url(url) => Ok(url_value(url)),
         Step::SupportedParams(_) => Ok(json!(SUPPORTED_RERANK_PARAMS)),
         Step::Params(params) => Ok(serde_json::to_value(map_cohere_rerank_params(
             params.non_default_params.as_ref(),
         ))?),
-        Step::ValidateEnvironment(environment) => Ok(validate_value(environment)),
+        Step::ValidateEnvironment(call) => {
+            let key = call.api_key.as_deref().map(SecretString::from);
+            Ok(json!(validate_environment(&call.headers, key.as_ref())))
+        }
         Step::Request(request) => Ok(serde_json::to_value(transform_rerank_request(
             &request.params,
         )?)?),
-        Step::Response(response) => response_value(response, encoder),
+        Step::Response(response) => response_value(response),
     }
 }
 
@@ -88,33 +76,15 @@ fn url_value(step: &UrlStep) -> Value {
     })
 }
 
-fn validate_value(step: &ValidateEnvironmentStep) -> Value {
-    let key = step.api_key.as_deref().map(SecretString::from);
-    json!(validate_environment(&step.headers, key.as_ref()))
-}
-
-fn response_value(
-    step: &ResponseStep,
-    encoder: Option<&BundledCl100k>,
-) -> Result<Value, B5848Error> {
-    let recorded = step
-        .token_counts
-        .as_ref()
-        .map(|counts| RecordedCounter::new(counts));
-    let counter: &dyn TextTokenCounter = if let Some(counter) = &recorded {
-        counter
-    } else if let Some(encoder) = encoder {
-        encoder
-    } else {
-        return Err(B5848Error::Counter);
-    };
+fn response_value(step: &ResponseStep) -> Result<Value, B5848Error> {
+    let counter = RecordedCounter::new(&step.token_counts);
     let request = ResponseRequest {
         model: &step.model,
         status_code: Some(step.status),
         body: step.body.as_bytes(),
         request_data: &step.request_data,
     };
-    let response = transform_rerank_response(&request, counter, &FixedId(&step.id))?;
+    let response = transform_rerank_response(&request, &counter, &FixedId(&step.id))?;
     Ok(serde_json::to_value(response)?)
 }
 
@@ -157,39 +127,4 @@ impl TextTokenCounter for RecordedCounter {
             Some(None) | None => Err(CountError::MissingInput),
         }
     }
-}
-
-struct BundledCl100k {
-    engine: Engine,
-}
-
-impl BundledCl100k {
-    fn build() -> Result<Self, Box<HelperError>> {
-        let Some(data) = assets::bundled(Encoding::Cl100kBase) else {
-            return Err(failure("cl100k_base is not bundled"));
-        };
-        let engine = TiktokenEngine::from_bpe_file(Encoding::Cl100kBase, &data)
-            .map_err(|error| failure(&error.to_string()))?;
-        Ok(Self {
-            engine: Engine::Tiktoken(Arc::new(engine)),
-        })
-    }
-}
-
-impl TextTokenCounter for BundledCl100k {
-    fn count(&self, _model: &str, text: &str) -> Result<u64, CountError> {
-        let tokens = self.engine.encode(text).map_err(CountError::Engine)?;
-        u64::try_from(tokens.len()).map_err(|_error| CountError::Overflow)
-    }
-}
-
-fn failure(message: &str) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "B5848Tokenizer".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: message.to_owned(),
-    })
 }

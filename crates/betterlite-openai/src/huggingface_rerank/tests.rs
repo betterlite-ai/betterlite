@@ -21,8 +21,9 @@ use super::response::{
 use super::url::{get_api_base, get_complete_url};
 use super::{RequestIdSource, TextTokenCounter, Uuid4};
 use crate::api::rerank_contracts::records::{
-    RerankResponse, RerankResponseDocument, RerankResponseMeta, RerankResponseResult, Score,
+    RerankResponse, RerankResponseDocument, RerankResponseMeta, RerankResponseResult,
 };
+use crate::api::vector_store_records::records::score::Score;
 use crate::huggingface_chat::HuggingfaceEnv;
 use crate::openai_base_config::Headers;
 
@@ -67,9 +68,9 @@ impl TextTokenCounter for RecordedCounter {
     }
 }
 
-struct FixedId(&'static str);
+struct FixedId<'id>(&'id str);
 
-impl RequestIdSource for FixedId {
+impl RequestIdSource for FixedId<'_> {
     fn new_id(&self) -> String {
         self.0.to_owned()
     }
@@ -647,6 +648,45 @@ fn response_request_texts_must_be_a_list() {
         run_response(r#"[]"#, Some(200), r#"{"texts": "x"}"#, &[], "id"),
         Err(HuggingfaceRerankError::RequestField { field: "texts" })
     ));
+}
+
+#[rstest]
+#[case::return_documents(r#"{"query": "q", "return_documents": "yes"}"#, "return_documents")]
+#[case::return_text(r#"{"query": "q", "return_text": 1}"#, "return_text")]
+fn response_request_return_flags_must_be_bools(
+    #[case] request_data: &str,
+    #[case] expected: &'static str,
+) {
+    assert!(matches!(
+        run_response(r#"[]"#, Some(200), request_data, &[], "id"),
+        Err(HuggingfaceRerankError::RequestField { field }) if field == expected
+    ));
+}
+
+#[rstest]
+#[case::first_flag(
+    r#"{"query": "q", "texts": ["first"], "return_documents": true, "return_text": false}"#
+)]
+#[case::second_flag(
+    r#"{"query": "q", "texts": ["first"], "return_documents": false, "return_text": true}"#
+)]
+fn response_adds_documents_when_either_flag_is_set(#[case] request_data: &str) {
+    let response = success(
+        r#"[{"index": 0, "score": 0.5, "text": "provider"}]"#,
+        request_data,
+        &[Some(1), Some(2)],
+    );
+    assert_eq!(results(&response)[0].document, Some(document("provider")));
+}
+
+#[test]
+fn response_adds_no_documents_when_every_flag_is_false() {
+    let response = success(
+        r#"[{"index": 0, "score": 0.5, "text": "provider"}]"#,
+        r#"{"query": "q", "texts": ["first"], "return_documents": false, "return_text": false}"#,
+        &[Some(1), Some(2)],
+    );
+    assert_eq!(results(&response)[0].document, None);
 }
 
 #[test]

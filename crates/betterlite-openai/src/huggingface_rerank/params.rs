@@ -18,7 +18,6 @@ pub fn map_cohere_rerank_params(non_default_params: Option<&Params>) -> Params {
         let mapped_name = match name.as_str() {
             "documents" => "texts",
             "return_documents" if matches!(value, Json::Bool(_)) => "return_text",
-            "return_documents" => continue,
             "top_n" | "query" => name.as_str(),
             _ => continue,
         };

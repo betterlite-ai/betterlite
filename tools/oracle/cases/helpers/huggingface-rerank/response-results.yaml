@@ -36,7 +36,7 @@ call:
         status: 503
         body: 'not json'
         request_data: {query: "q"}
-        token_counts: null
+        token_counts: []
         id: "5f609f6b-2b0e-6a1e-4c1e-9a5f1f2c3d4e"
 env: {}
 compare: {ignore: []}

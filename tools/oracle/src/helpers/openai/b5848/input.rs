@@ -57,6 +57,6 @@ pub(crate) struct ResponseStep {
     pub(crate) body: String,
     #[serde(default)]
     pub(crate) request_data: BTreeMap<String, Json>,
-    pub(crate) token_counts: Option<Vec<Option<u64>>>,
+    pub(crate) token_counts: Vec<Option<u64>>,
     pub(crate) id: String,
 }

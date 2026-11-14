@@ -7,7 +7,6 @@ from unittest.mock import Mock
 
 import fastuuid
 import httpx
-import litellm.litellm_core_utils.token_counter as token_counter_module
 import litellm.llms.huggingface.rerank.transformation as rerank_transformation
 import litellm.utils
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -65,7 +64,9 @@ class RerankConfig(Protocol):
     def get_complete_url(self) -> CompleteUrl: ...
 
     @property
-    def get_supported_cohere_rerank_params(self) -> SupportedParams: ...
+    def get_supported_cohere_rerank_params(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> SupportedParams: ...
 
     @property
     def map_cohere_rerank_params(self) -> MapParams: ...
@@ -127,7 +128,7 @@ class ResponseStep(TypedDict):
     status: int
     body: str
     request_data: dict[str, JsonValue]
-    token_counts: list[int | None] | None
+    token_counts: list[int | None]
     id: str
 
 
@@ -169,24 +170,6 @@ def url_value(step: UrlStep, view: RerankConfig) -> JsonValue:
     return {"base": base, "complete": view.get_complete_url(step["api_base"], step["model"], None)}
 
 
-def supported_params_value(step: SupportedParamsStep, view: RerankConfig) -> JsonValue:
-    return REPLY.validate_python(view.get_supported_cohere_rerank_params(step["model"]))
-
-
-def params_value(step: ParamsStep, view: RerankConfig) -> JsonValue:
-    nondefault = step["non_default_params"]
-    drop = step["drop_params"]
-    return REPLY.validate_python(
-        view.map_cohere_rerank_params(
-            {} if nondefault is None else nondefault,
-            step["model"],
-            drop,
-            step["query"],
-            step["documents"],
-        )
-    )
-
-
 def validate_environment_value(step: ValidateEnvironmentStep, view: RerankConfig) -> JsonValue:
     return REPLY.validate_python(
         view.validate_environment(
@@ -218,17 +201,10 @@ def logging_object() -> Logging:
     )
 
 
-def real_token_counter(model: str = "", text: str | list[str] | None = None) -> int:
-    return token_counter_module.token_counter(model=model, text=text)
-
-
 def counter_mock(step: ResponseStep) -> Mock:
-    outcomes = step["token_counts"]
-    if outcomes is None:
-        return Mock(side_effect=real_token_counter)
     effects: list[int | Exception] = [
         ValueError("the case records a token counting failure") if outcome is None else outcome
-        for outcome in outcomes
+        for outcome in step["token_counts"]
     ]
     return Mock(side_effect=effects)
 
@@ -263,9 +239,18 @@ def run_step(step: Step, view: RerankConfig) -> JsonValue:
     if step["kind"] == "url":
         return url_value(step, view)
     if step["kind"] == "supported_params":
-        return supported_params_value(step, view)
+        return REPLY.validate_python(view.get_supported_cohere_rerank_params(step["model"]))
     if step["kind"] == "params":
-        return params_value(step, view)
+        nondefault = step["non_default_params"]
+        return REPLY.validate_python(
+            view.map_cohere_rerank_params(
+                {} if nondefault is None else nondefault,
+                step["model"],
+                step["drop_params"],
+                step["query"],
+                step["documents"],
+            )
+        )
     if step["kind"] == "validate_environment":
         return validate_environment_value(step, view)
     if step["kind"] == "request":

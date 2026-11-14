@@ -7,8 +7,9 @@ use serde_json::Value;
 
 use crate::api::rerank_contracts::records::{
     RerankBilledUnits, RerankDocument, RerankResponse, RerankResponseDocument, RerankResponseMeta,
-    RerankResponseResult, RerankTokens, Score,
+    RerankResponseResult, RerankTokens,
 };
+use crate::api::vector_store_records::records::score::Score;
 use crate::huggingface_rerank::error::{
     HuggingfaceRerankError, MAX_RESPONSE_BYTES, get_error_class,
 };
@@ -45,13 +46,57 @@ struct RequestData {
     return_documents: bool,
 }
 
+enum Field<'params> {
+    Absent,
+    Text(&'params str),
+    Bool(bool),
+    List(&'params [Json]),
+    Other,
+}
+
+fn field<'params>(params: &'params Params, name: &'static str) -> Field<'params> {
+    match params.get(name) {
+        None | Some(Json::Null) => Field::Absent,
+        Some(Json::Text(text)) => Field::Text(text),
+        Some(Json::Bool(value)) => Field::Bool(*value),
+        Some(Json::List(items)) => Field::List(items),
+        Some(Json::Number(_) | Json::Object(_)) => Field::Other,
+    }
+}
+
 impl RequestData {
     fn read(params: &Params) -> Result<Self, HuggingfaceRerankError> {
+        let query = match field(params, "query") {
+            Field::Absent => String::new(),
+            Field::Text(text) => text.to_owned(),
+            Field::Bool(_) | Field::List(_) | Field::Other => {
+                return Err(HuggingfaceRerankError::RequestField { field: "query" });
+            }
+        };
+        let mut return_documents = false;
+        for name in ["return_documents", "return_text"] {
+            match field(params, name) {
+                Field::Absent => {}
+                Field::Bool(value) => return_documents |= value,
+                Field::Text(_) | Field::List(_) | Field::Other => {
+                    return Err(HuggingfaceRerankError::RequestField { field: name });
+                }
+            }
+        }
+        let texts = match field(params, "texts") {
+            Field::Absent => Vec::new(),
+            Field::List(items) => items
+                .iter()
+                .map(document_from)
+                .collect::<Result<Vec<_>, _>>()?,
+            Field::Text(_) | Field::Bool(_) | Field::Other => {
+                return Err(HuggingfaceRerankError::RequestField { field: "texts" });
+            }
+        };
         Ok(Self {
-            query: text_field(params, "query")?.unwrap_or_default(),
-            texts: texts_field(params)?,
-            return_documents: bool_field(params, "return_documents")?
-                || bool_field(params, "return_text")?,
+            query,
+            texts,
+            return_documents,
         })
     }
 }
@@ -60,7 +105,11 @@ pub fn decode_rerank_response(
     body: &[u8],
     status_code: Option<u16>,
 ) -> Result<Vec<RerankResponseItem>, HuggingfaceRerankError> {
-    items_from(&parse_body(body, status_code)?)
+    let value = parse_body(body, status_code)?;
+    let Value::Array(entries) = &value else {
+        return Err(HuggingfaceRerankError::ResponseShape);
+    };
+    project_items(entries)
 }
 
 pub fn transform_rerank_response(
@@ -69,8 +118,11 @@ pub fn transform_rerank_response(
     ids: &dyn RequestIdSource,
 ) -> Result<RerankResponse, HuggingfaceRerankError> {
     let value = parse_body(request.body, request.status_code)?;
+    let Value::Array(entries) = &value else {
+        return Err(HuggingfaceRerankError::ResponseShape);
+    };
+    let items = project_items(entries)?;
     let output_text = value.to_string();
-    let items = items_from(&value)?;
     let data = RequestData::read(request.request_data)?;
     let (output_tokens, input_tokens) =
         count_tokens(request.model, &output_text, &items, &data, counter)?;
@@ -88,66 +140,23 @@ fn parse_body(body: &[u8], status_code: Option<u16>) -> Result<Value, Huggingfac
             limit: MAX_RESPONSE_BYTES,
         });
     }
-    let value: Value = match serde_json::from_slice(body) {
-        Ok(value) => value,
-        Err(_source) => {
-            return Err(HuggingfaceRerankError::Huggingface(get_error_class(
-                &String::from_utf8_lossy(body),
-                status_code.unwrap_or(DEFAULT_ERROR_STATUS),
-            )));
-        }
-    };
-    if matches!(value, Value::Array(_)) {
-        return Ok(value);
-    }
-    Err(HuggingfaceRerankError::ResponseShape)
+    serde_json::from_slice(body).map_err(|_source| {
+        HuggingfaceRerankError::Huggingface(get_error_class(
+            &String::from_utf8_lossy(body),
+            status_code.unwrap_or(DEFAULT_ERROR_STATUS),
+        ))
+    })
 }
 
-fn items_from(value: &Value) -> Result<Vec<RerankResponseItem>, HuggingfaceRerankError> {
-    let Value::Array(items) = value else {
-        return Err(HuggingfaceRerankError::ResponseShape);
-    };
-    items
+fn project_items(entries: &[Value]) -> Result<Vec<RerankResponseItem>, HuggingfaceRerankError> {
+    entries
         .iter()
         .enumerate()
-        .map(|(position, item)| {
-            RerankResponseItem::deserialize(item)
+        .map(|(position, entry)| {
+            RerankResponseItem::deserialize(entry)
                 .map_err(|source| HuggingfaceRerankError::ResponseItem { position, source })
         })
         .collect()
-}
-
-fn text_field<'params>(
-    params: &'params Params,
-    name: &'static str,
-) -> Result<Option<&'params str>, HuggingfaceRerankError> {
-    match params.get(name) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(HuggingfaceRerankError::RequestField { field: name })
-        }
-    }
-}
-
-fn bool_field(params: &Params, name: &'static str) -> Result<bool, HuggingfaceRerankError> {
-    match params.get(name) {
-        None | Some(Json::Null) => Ok(false),
-        Some(Json::Bool(value)) => Ok(*value),
-        Some(Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(HuggingfaceRerankError::RequestField { field: name })
-        }
-    }
-}
-
-fn texts_field(params: &Params) -> Result<Vec<RerankDocument>, HuggingfaceRerankError> {
-    match params.get("texts") {
-        None | Some(Json::Null) => Ok(Vec::new()),
-        Some(Json::List(items)) => items.iter().map(document_from).collect(),
-        Some(Json::Text(_) | Json::Bool(_) | Json::Number(_) | Json::Object(_)) => {
-            Err(HuggingfaceRerankError::RequestField { field: "texts" })
-        }
-    }
 }
 
 fn document_from(value: &Json) -> Result<RerankDocument, HuggingfaceRerankError> {
@@ -270,6 +279,10 @@ fn meta(
     output_tokens: u64,
     input_tokens: u64,
 ) -> Result<RerankResponseMeta, HuggingfaceRerankError> {
+    let input =
+        i64::try_from(input_tokens).map_err(|_error| HuggingfaceRerankError::TokenOverflow)?;
+    let output =
+        i64::try_from(output_tokens).map_err(|_error| HuggingfaceRerankError::TokenOverflow)?;
     let api_version = IndexMap::from([("version".to_owned(), Json::Text(API_VERSION.to_owned()))]);
     Ok(RerankResponseMeta {
         api_version: Some(Some(api_version)),
@@ -278,12 +291,8 @@ fn meta(
             total_tokens: None,
         })),
         tokens: Some(Some(RerankTokens {
-            input_tokens: Some(Some(token_count(input_tokens)?)),
-            output_tokens: Some(Some(token_count(output_tokens)?)),
+            input_tokens: Some(Some(input)),
+            output_tokens: Some(Some(output)),
         })),
     })
-}
-
-fn token_count(value: u64) -> Result<i64, HuggingfaceRerankError> {
-    i64::try_from(value).map_err(|_error| HuggingfaceRerankError::TokenOverflow)
 }
