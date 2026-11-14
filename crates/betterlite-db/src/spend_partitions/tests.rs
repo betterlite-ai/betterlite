@@ -127,6 +127,18 @@ impl ExecutesSpendPartitionSteps for Scripted {
     }
 }
 
+#[test]
+fn operation_names() {
+    assert_eq!(
+        SpendPartitionOperation::Partition.name(),
+        "partition-spend-logs"
+    );
+    assert_eq!(
+        SpendPartitionOperation::Unpartition.name(),
+        "unpartition-spend-logs"
+    );
+}
+
 #[tokio::test]
 async fn partition_populated_table() {
     let scripted = Scripted::default();
