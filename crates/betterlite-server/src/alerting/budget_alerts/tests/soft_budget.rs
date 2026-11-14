@@ -18,7 +18,7 @@ async fn spend_equal_to_the_soft_budget_sends_a_soft_budget_alert() {
         .budget_alerts(BudgetAlertKind::SoftBudget, &info)
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     let sent = sender.alerts.entries();
     let sent_alert = sent.first().expect("one soft budget alert");
     assert_eq!(
@@ -48,7 +48,7 @@ async fn spend_below_the_soft_budget_sends_nothing() {
         .budget_alerts(BudgetAlertKind::SoftBudget, &info)
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(sender.alerts.entries().is_empty());
     assert!(alerts.cache.writes().is_empty());
 }
@@ -64,7 +64,7 @@ async fn spend_above_the_soft_budget_sends_a_soft_budget_alert() {
         .budget_alerts(BudgetAlertKind::SoftBudget, &info)
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     let sent = sender.alerts.entries();
     let sent_alert = sent.first().expect("one soft budget alert");
     let event = sent_alert

@@ -21,7 +21,7 @@ async fn the_default_ttl_is_one_day() {
         .budget_alerts(BudgetAlertKind::UserBudget, &crossed_user())
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     let writes = alerts.cache.writes();
     let recorded = writes.first().expect("one cache write");
     assert_eq!(recorded.ttl_seconds, 86_400);
@@ -38,7 +38,7 @@ async fn a_configured_ttl_is_used() {
         .budget_alerts(BudgetAlertKind::UserBudget, &crossed_user())
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     let writes = alerts.cache.writes();
     let recorded = writes.first().expect("one cache write");
     assert_eq!(recorded.ttl_seconds, 120);
@@ -54,7 +54,7 @@ async fn an_existing_key_suppresses_the_alert() {
         .budget_alerts(BudgetAlertKind::UserBudget, &crossed_user())
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(sender.alerts.entries().is_empty());
     assert!(alerts.cache.writes().is_empty());
 }
@@ -72,8 +72,8 @@ async fn a_second_call_in_the_window_sends_once() {
         .budget_alerts(BudgetAlertKind::UserBudget, &info)
         .await;
 
-    assert!(first.is_ok());
-    assert!(second.is_ok());
+    first.unwrap();
+    second.unwrap();
     assert_eq!(sender.alerts.entries().len(), 1);
     assert_eq!(alerts.cache.writes().len(), 1);
 }

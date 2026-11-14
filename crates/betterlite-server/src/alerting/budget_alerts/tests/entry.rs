@@ -19,7 +19,7 @@ async fn no_destinations_configured_sends_nothing() {
         .budget_alerts(BudgetAlertKind::UserBudget, &info)
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(sender.alerts.entries().is_empty());
     assert!(alerts.cache.writes().is_empty());
 }
@@ -36,7 +36,7 @@ async fn a_missing_budget_alert_type_sends_nothing() {
         .budget_alerts(BudgetAlertKind::UserBudget, &info)
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(sender.alerts.entries().is_empty());
 }
 
@@ -50,7 +50,7 @@ async fn no_configured_budget_sends_nothing() {
         .budget_alerts(BudgetAlertKind::UserBudget, &info)
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(sender.alerts.entries().is_empty());
     assert!(alerts.cache.writes().is_empty());
 }
@@ -66,7 +66,7 @@ async fn more_than_fifteen_percent_left_sends_nothing() {
         .budget_alerts(BudgetAlertKind::UserBudget, &info)
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(sender.alerts.entries().is_empty());
     assert!(alerts.cache.writes().is_empty());
 }
@@ -83,6 +83,6 @@ async fn an_empty_destination_list_still_reaches_the_sender() {
         .budget_alerts(BudgetAlertKind::UserBudget, &info)
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     assert_eq!(sender.alerts.entries().len(), 1);
 }

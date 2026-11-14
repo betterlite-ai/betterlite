@@ -13,7 +13,7 @@ async fn no_destinations_configured_sends_nothing() {
 
     let result = alerts.failed_tracking_alert("boom", "gpt-4").await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(sender.alerts.entries().is_empty());
     assert!(alerts.cache.writes().is_empty());
 }
@@ -26,7 +26,7 @@ async fn a_missing_failed_tracking_type_sends_nothing() {
 
     let result = alerts.failed_tracking_alert("boom", "gpt-4").await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(sender.alerts.entries().is_empty());
     assert!(alerts.cache.writes().is_empty());
 }
@@ -38,7 +38,7 @@ async fn the_model_failure_alert_has_no_user_info() {
 
     let result = alerts.failed_tracking_alert("no cost found", "gpt-4").await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     let sent = sender.alerts.entries();
     let sent_alert = sent.first().expect("one failure alert");
     assert_eq!(sent_alert.message, "Failed Tracking Cost for no cost found");
@@ -56,7 +56,7 @@ async fn the_model_is_cached_for_the_default_ttl() {
 
     let result = alerts.failed_tracking_alert("boom", "gpt-4").await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     assert_eq!(
         alerts.cache.writes(),
         vec![CacheWrite {
@@ -75,7 +75,7 @@ async fn an_already_sent_model_failure_is_not_reported_again() {
 
     let result = alerts.failed_tracking_alert("boom", "gpt-4").await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(sender.alerts.entries().is_empty());
     assert!(alerts.cache.writes().is_empty());
 }
@@ -88,7 +88,7 @@ async fn a_configured_ttl_is_used_for_the_model_cache() {
 
     let result = alerts.failed_tracking_alert("boom", "gpt-4").await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     let writes = alerts.cache.writes();
     let recorded = writes.first().expect("one cache write");
     assert_eq!(recorded.ttl_seconds, 120);

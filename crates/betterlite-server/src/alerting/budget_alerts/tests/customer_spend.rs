@@ -26,7 +26,7 @@ async fn no_destinations_configured_sends_nothing() {
 
     let result = alerts.customer_spend_alert(customer_spend()).await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(sender.webhooks.entries().is_empty());
 }
 
@@ -38,7 +38,7 @@ async fn a_non_webhook_destination_sends_nothing() {
 
     let result = alerts.customer_spend_alert(customer_spend()).await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(sender.webhooks.entries().is_empty());
 }
 
@@ -51,7 +51,7 @@ async fn a_missing_end_user_sends_nothing() {
 
     let result = alerts.customer_spend_alert(spend).await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(sender.webhooks.entries().is_empty());
 }
 
@@ -64,7 +64,7 @@ async fn a_missing_key_sends_nothing() {
 
     let result = alerts.customer_spend_alert(spend).await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(sender.webhooks.entries().is_empty());
 }
 
@@ -77,7 +77,7 @@ async fn a_missing_cost_sends_nothing() {
 
     let result = alerts.customer_spend_alert(spend).await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(sender.webhooks.entries().is_empty());
 }
 
@@ -88,7 +88,7 @@ async fn the_spend_event_names_the_customer_and_the_cost() {
 
     let result = alerts.customer_spend_alert(customer_spend()).await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     let webhooks = sender.webhooks.entries();
     let event = webhooks.first().expect("one spend event");
     assert_eq!(event.event, WebhookEventType::SpendTracked);
@@ -119,7 +119,7 @@ async fn a_missing_max_budget_is_allowed() {
 
     let result = alerts.customer_spend_alert(spend).await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     let webhooks = sender.webhooks.entries();
     let event = webhooks.first().expect("one spend event");
     assert!(event.max_budget.is_none());

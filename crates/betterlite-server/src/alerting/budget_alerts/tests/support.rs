@@ -206,7 +206,7 @@ pub(super) fn service(cache: FakeCache, sender: FakeSender) -> BudgetAlerts<Fake
 pub(super) async fn written_key(kind: BudgetAlertKind, info: &CallInfo) -> String {
     let alerts = service(FakeCache::default(), FakeSender::default());
     let result = alerts.budget_alerts(kind, info).await;
-    assert!(result.is_ok());
+    result.unwrap();
     let writes = alerts.cache.writes();
     let recorded = writes.first().expect("one cache write");
     recorded.key.clone()

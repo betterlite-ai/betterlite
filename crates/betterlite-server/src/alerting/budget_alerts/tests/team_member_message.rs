@@ -21,7 +21,7 @@ async fn a_team_member_key_alert_is_labelled_team_member() {
         .budget_alerts(BudgetAlertKind::TokenBudget, &info)
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     let sent = sender.alerts.entries();
     let sent_alert = sent.first().expect("one team member alert");
     assert!(
@@ -54,7 +54,7 @@ async fn the_label_override_applies_to_any_budget_type() {
         .budget_alerts(BudgetAlertKind::UserBudget, &info)
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     let sent = sender.alerts.entries();
     let sent_alert = sent.first().expect("one team member alert");
     let event = sent_alert
@@ -79,7 +79,7 @@ async fn any_other_group_keeps_the_budget_type_label() {
         .budget_alerts(BudgetAlertKind::TokenBudget, &info)
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     let sent = sender.alerts.entries();
     let sent_alert = sent.first().expect("one budget alert");
     let event = sent_alert

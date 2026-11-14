@@ -26,7 +26,7 @@ async fn the_message_appends_the_user_info_block() {
         .budget_alerts(BudgetAlertKind::UserBudget, &crossed_user())
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     let sent = sender.alerts.entries();
     let sent_alert = sent.first().expect("one budget alert");
     assert_eq!(
@@ -44,7 +44,7 @@ async fn the_alert_carries_the_high_level_budget_type_and_event() {
         .budget_alerts(BudgetAlertKind::UserBudget, &crossed_user())
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     let sent = sender.alerts.entries();
     let sent_alert = sent.first().expect("one budget alert");
     assert_eq!(sent_alert.level, AlertLevel::High);

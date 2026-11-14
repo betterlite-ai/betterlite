@@ -19,7 +19,7 @@ async fn ten_percent_left_is_a_fifteen_percent_alert() {
         .budget_alerts(BudgetAlertKind::UserBudget, &info)
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     let sent = sender.alerts.entries();
     let sent_alert = sent.first().expect("one threshold alert");
     assert_eq!(
@@ -44,7 +44,7 @@ async fn exactly_fifteen_percent_left_is_a_fifteen_percent_alert() {
         .budget_alerts(BudgetAlertKind::UserBudget, &info)
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     let sent = sender.alerts.entries();
     let sent_alert = sent.first().expect("one threshold alert");
     let event = sent_alert
@@ -68,7 +68,7 @@ async fn just_over_fifteen_percent_left_sends_nothing() {
         .budget_alerts(BudgetAlertKind::UserBudget, &info)
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(sender.alerts.entries().is_empty());
     assert!(alerts.cache.writes().is_empty());
 }

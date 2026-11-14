@@ -19,7 +19,7 @@ async fn spend_equal_to_the_budget_crosses_it() {
         .budget_alerts(BudgetAlertKind::UserBudget, &info)
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     let sent = sender.alerts.entries();
     let sent_alert = sent.first().expect("one budget alert");
     assert_eq!(
@@ -44,7 +44,7 @@ async fn spend_above_the_budget_crosses_it() {
         .budget_alerts(BudgetAlertKind::UserBudget, &info)
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     let sent = sender.alerts.entries();
     let sent_alert = sent.first().expect("one budget alert");
     let event = sent_alert
@@ -69,7 +69,7 @@ async fn a_crossed_soft_budget_is_reported_before_the_budget_crossing() {
         .budget_alerts(BudgetAlertKind::UserBudget, &info)
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     let sent = sender.alerts.entries();
     let sent_alert = sent.first().expect("one budget alert");
     assert_eq!(
@@ -95,7 +95,7 @@ async fn an_uncrossed_soft_budget_leaves_the_budget_message_alone() {
         .budget_alerts(BudgetAlertKind::UserBudget, &info)
         .await;
 
-    assert!(result.is_ok());
+    result.unwrap();
     let sent = sender.alerts.entries();
     let sent_alert = sent.first().expect("one budget alert");
     let event = sent_alert
