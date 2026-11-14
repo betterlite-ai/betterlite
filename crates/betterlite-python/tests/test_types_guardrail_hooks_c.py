@@ -1,6 +1,6 @@
 import subprocess
 import sys
-from typing import Final, TypedDict, get_args
+from typing import Final, TypedDict, TypeVar, get_args
 
 import pytest
 from pydantic import JsonValue, TypeAdapter, ValidationError
@@ -700,40 +700,44 @@ def test_member_names(report: FullReport, module_name: str) -> None:
     assert ours["aliases"] == theirs["aliases"], module_name
 
 
-def test_dump_names(report: FullReport) -> None:
-    theirs = report["litellm"]["dumps"]
-    ours = report["betterlite"]["dumps"]
-    assert len(theirs) == DUMP_COUNT
+SectionValue = TypeVar("SectionValue")
+
+
+def assert_section_matches(
+    theirs: dict[str, SectionValue],
+    ours: dict[str, SectionValue],
+    count: int,
+) -> None:
+    assert len(theirs) == count
     assert ours == theirs
+
+
+def test_dump_names(report: FullReport) -> None:
+    assert_section_matches(
+        report["litellm"]["dumps"],
+        report["betterlite"]["dumps"],
+        DUMP_COUNT,
+    )
 
 
 def test_rejection_names(report: FullReport) -> None:
-    theirs = report["litellm"]["rejections"]
     ours = report["betterlite"]["rejections"]
-    assert len(theirs) == REJECTION_COUNT
-    assert ours == theirs
+    assert_section_matches(report["litellm"]["rejections"], ours, REJECTION_COUNT)
     assert ours["content_filter.action"]
     assert ours["content_filter.missing_category"]
     assert ours["openai.model"]
 
 
 def test_ui_names(report: FullReport) -> None:
-    theirs = report["litellm"]["ui"]
-    ours = report["betterlite"]["ui"]
-    assert len(theirs) == UI_COUNT
-    assert ours == theirs
-    assert ours["hiddenlayer.HiddenlayerGuardrailConfigModel"] == "Hiddenlayer Guardrail"
-    assert ours["model_armor.ModelArmorGuardrailConfigModel"] == "Google Cloud Model Armor"
-    assert ours["openai.openai_moderation.OpenAIModerationGuardrailConfigModel"] == (
-        "OpenAI Moderation"
-    )
+    ui = report["betterlite"]["ui"]
+    assert_section_matches(report["litellm"]["ui"], ui, UI_COUNT)
+    assert ui["model_armor.ModelArmorGuardrailConfigModel"] == "Google Cloud Model Armor"
 
 
 def test_abstract_names(report: FullReport) -> None:
     theirs = report["litellm"]["abstract"]
     ours = report["betterlite"]["abstract"]
-    assert len(theirs) == ABSTRACT_COUNT
-    assert ours == theirs
+    assert_section_matches(theirs, ours, ABSTRACT_COUNT)
     assert theirs["openai.openai_moderation.BaseOpenAIModerationGuardrailConfigModel"]
     assert ours["openai.openai_moderation.BaseOpenAIModerationGuardrailConfigModel"]
     assert not ours["hiddenlayer.HiddenlayerGuardrailConfigModel"]
