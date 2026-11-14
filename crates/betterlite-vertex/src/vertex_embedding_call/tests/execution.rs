@@ -25,6 +25,7 @@ use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::vertex_embedding_call::decode::{RESPONSE_BODY_LIMIT, decode_vertex_embedding};
 use crate::vertex_embedding_call::error::VertexEmbeddingCallError;
 use crate::vertex_embedding_call::multimodal::{MultimodalClients, multimodal_embedding};
+use crate::vertex_embedding_call::post::ClientTimeout;
 use crate::vertex_embedding_call::text::{TextClients, async_text_embedding, text_embedding};
 
 use super::support::{
@@ -302,6 +303,36 @@ async fn execution_gemini_reads_no_credentials() {
     assert_eq!(calls[0].headers.get("Authorization"), None);
 }
 
+#[tokio::test]
+async fn execution_gemini_multimodal_reads_no_credentials() {
+    let input = json(r#""hello""#);
+    let optional = extra("{}");
+    let key = SecretString::from(GEMINI_KEY.to_owned());
+    let mut call = multimodal_call(MULTIMODAL_MODEL, &input, &optional, &NO_HEADERS);
+    call.provider = VertexCapabilityProvider::Gemini;
+    call.gemini_api_key = Some(&key);
+    let recorder = Arc::new(PostRecorder::scripted(vec![reply(200, MULTIMODAL_ANSWER)]));
+    let fixture = auth();
+    let clients = MultimodalClients {
+        pooled: recorder.as_ref(),
+        caller: None,
+    };
+    multimodal_embedding(&call, &catalog(), &fixture.cache, &clients)
+        .await
+        .unwrap();
+    assert_eq!(fixture.executor.loads.load(Ordering::SeqCst), 0);
+    let calls = recorder.recorded();
+    assert_eq!(
+        calls[0].url,
+        "https://generativelanguage.googleapis.com/v1beta/models/multimodalembedding@001:embedContent"
+    );
+    assert_eq!(
+        calls[0].headers.get("x-goog-api-key").map(String::as_str),
+        Some(GEMINI_KEY)
+    );
+    assert_eq!(calls[0].headers.get("Authorization"), None);
+}
+
 #[rstest]
 #[case::sync(false)]
 #[case::async_handoff(true)]
@@ -368,7 +399,8 @@ async fn execution_text_transport_failure_is_a_500() {
 async fn execution_text_sync_client_used() {
     let optional = json("{}");
     let input = EmbeddingInput::Text(String::from("hello"));
-    let call = text_call(&input, &optional);
+    let mut call = text_call(&input, &optional);
+    call.timeout = Some(Duration::from_secs(30));
     let caller = Arc::new(PostRecorder::scripted(vec![reply(200, TEXT_ANSWER)]));
     let pooled = Arc::new(PostRecorder::scripted(vec![reply(200, TEXT_ANSWER)]));
     let fixture = auth();
@@ -379,7 +411,9 @@ async fn execution_text_sync_client_used() {
     text_embedding(&call, &catalog(), &text_auth(&fixture), &clients)
         .await
         .unwrap();
-    assert_eq!(caller.recorded().len(), 1);
+    let calls = caller.recorded();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].timeout, ClientTimeout::HandlerDefault);
     assert!(pooled.recorded().is_empty());
 }
 
@@ -387,7 +421,8 @@ async fn execution_text_sync_client_used() {
 async fn execution_direct_async_client_used() {
     let optional = json("{}");
     let input = EmbeddingInput::Text(String::from("hello"));
-    let call = text_call(&input, &optional);
+    let mut call = text_call(&input, &optional);
+    call.timeout = Some(Duration::from_secs(30));
     let caller = Arc::new(PostRecorder::scripted(vec![reply(200, TEXT_ANSWER)]));
     let pooled = Arc::new(PostRecorder::scripted(vec![reply(200, TEXT_ANSWER)]));
     let fixture = auth();
@@ -400,7 +435,9 @@ async fn execution_direct_async_client_used() {
     )
     .await
     .unwrap();
-    assert_eq!(caller.recorded().len(), 1);
+    let calls = caller.recorded();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].timeout, ClientTimeout::HandlerDefault);
     assert!(pooled.recorded().is_empty());
 }
 
@@ -413,6 +450,7 @@ async fn execution_multimodal_forwards_the_caller_client(#[case] aembedding: boo
     let optional = extra("{}");
     let mut call = multimodal_call(MULTIMODAL_MODEL, &input, &optional, &NO_HEADERS);
     call.aembedding = aembedding;
+    call.timeout = Some(Duration::from_secs(20));
     let caller = Arc::new(PostRecorder::scripted(vec![reply(200, MULTIMODAL_ANSWER)]));
     let pooled = Arc::new(PostRecorder::scripted(vec![reply(200, MULTIMODAL_ANSWER)]));
     let fixture = auth();
@@ -423,7 +461,9 @@ async fn execution_multimodal_forwards_the_caller_client(#[case] aembedding: boo
     multimodal_embedding(&call, &catalog(), &fixture.cache, &clients)
         .await
         .unwrap();
-    assert_eq!(caller.recorded().len(), 1);
+    let calls = caller.recorded();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].timeout, ClientTimeout::HandlerDefault);
     assert!(pooled.recorded().is_empty());
 }
 

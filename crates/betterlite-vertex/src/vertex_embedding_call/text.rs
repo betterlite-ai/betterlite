@@ -93,9 +93,13 @@ pub async fn text_embedding(
         // LiteLLM's outer handoff never passes the client it was given, so the caller's handler cannot be posted through
         return async_text_embedding(call, catalog, auth.refresh, clients.pooled, None).await;
     }
-    let post = clients.caller.unwrap_or(clients.pooled);
+    // A supplied client keeps its own timeouts; the call's timeout only reaches a client LiteLLM builds
+    let (post, client_timeout) = match clients.caller {
+        Some(caller) => (caller, ClientTimeout::HandlerDefault),
+        None => (clients.pooled, text_client_timeout(call.timeout)),
+    };
     let lookup = auth.cache.get_access_token(call.credentials, call.project);
-    run(call, catalog, lookup, post).await
+    run(call, catalog, lookup, post, client_timeout).await
 }
 
 pub async fn async_text_embedding(
@@ -105,12 +109,16 @@ pub async fn async_text_embedding(
     pooled: &dyn EmbeddingPost,
     caller: Option<&dyn EmbeddingPost>,
 ) -> Result<EmbeddingResponse, VertexEmbeddingCallError> {
-    let post = caller.unwrap_or(pooled);
+    let (post, client_timeout) = match caller {
+        Some(caller) => (caller, ClientTimeout::HandlerDefault),
+        None => (pooled, text_client_timeout(call.timeout)),
+    };
     run(
         call,
         catalog,
         refresh.get_access_token_async(call.credentials, call.project),
         post,
+        client_timeout,
     )
     .await
 }
@@ -120,18 +128,13 @@ async fn run<Lookup>(
     catalog: &ModelCatalog,
     lookup: Lookup,
     post: &dyn EmbeddingPost,
+    client_timeout: ClientTimeout,
 ) -> Result<EmbeddingResponse, VertexEmbeddingCallError>
 where
     Lookup: Future<Output = Result<AccessToken, CredentialCacheError>> + Send,
 {
     let prepared = prepare(call, catalog, lookup).await?;
-    send(
-        &prepared,
-        call.model,
-        text_client_timeout(call.timeout),
-        post,
-    )
-    .await
+    send(&prepared, call.model, client_timeout, post).await
 }
 
 async fn prepare<Lookup>(

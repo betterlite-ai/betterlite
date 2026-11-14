@@ -132,7 +132,14 @@ async fn sync_embedding(
     timeout: Option<Duration>,
     clients: &MultimodalClients<'_>,
 ) -> Result<MultimodalEmbeddingAnswer, VertexEmbeddingCallError> {
-    let post = clients.caller.unwrap_or(clients.pooled);
+    // A supplied client keeps its own timeouts; the call's timeout only reaches a client LiteLLM builds
+    let (post, client_timeout) = match clients.caller {
+        Some(caller) => (caller, ClientTimeout::HandlerDefault),
+        None => (
+            clients.pooled,
+            multimodal_timeout(timeout, ClientTimeout::Explicit(HANDLER_DEFAULT_TIMEOUT)),
+        ),
+    };
     logging::request(&request.url, model, request.body.len());
     // The sync branch never checks the status itself, so every transport failure is its generic 500
     let reply = post
@@ -140,7 +147,7 @@ async fn sync_embedding(
             url: &request.url,
             headers: &request.headers,
             body: &request.body,
-            timeout: multimodal_timeout(timeout, ClientTimeout::Explicit(HANDLER_DEFAULT_TIMEOUT)),
+            timeout: client_timeout,
         })
         .await
         .map_err(|source| VertexEmbeddingCallError::Transport { source })?;
@@ -156,14 +163,20 @@ pub async fn async_multimodal_embedding(
     caller: Option<&dyn EmbeddingPost>,
     pooled: &dyn EmbeddingPost,
 ) -> Result<MultimodalEmbeddingAnswer, VertexEmbeddingCallError> {
-    let post = caller.unwrap_or(pooled);
+    let (post, client_timeout) = match caller {
+        Some(caller) => (caller, ClientTimeout::HandlerDefault),
+        None => (
+            pooled,
+            multimodal_timeout(timeout, ClientTimeout::HandlerDefault),
+        ),
+    };
     logging::request(&request.url, model, request.body.len());
     let reply = post
         .post(PostRequest {
             url: &request.url,
             headers: &request.headers,
             body: &request.body,
-            timeout: multimodal_timeout(timeout, ClientTimeout::HandlerDefault),
+            timeout: client_timeout,
         })
         .await?;
     logging::answer(model, &reply);
