@@ -1,4 +1,6 @@
-from typing import Final, Literal, NotRequired, TypedDict
+import functools
+from collections.abc import Callable, Mapping, Sequence
+from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
 
 import httpx
 import litellm
@@ -14,7 +16,8 @@ from pydantic import JsonValue, TypeAdapter
 litellm.suppress_debug_info = True
 
 EMPTY: Final[dict[str, JsonValue]] = {}
-CONFIG: Final = VertexAgentEngineConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L57
+# transform_request takes a model for its signature, but the query payload never carries one
+REQUEST_MODEL: Final = "agent_engine"
 
 
 class UrlCall(TypedDict):
@@ -55,7 +58,7 @@ class ResponseInput(TypedDict):
     calls: list[ResponseCall]
 
 
-Input = UrlInput | RequestInput | ResponseInput
+Input: TypeAlias = UrlInput | RequestInput | ResponseInput
 
 
 class MessageView(TypedDict):
@@ -87,8 +90,8 @@ class Counter:
     def __call__(
         self,
         *,
-        model: str,
-        messages: list[dict[str, JsonValue]] | None = None,
+        model: str = "",
+        messages: Sequence[Mapping[str, JsonValue]] | None = None,
         text: str | None = None,
         count_response_tokens: bool = False,
     ) -> int:
@@ -108,6 +111,57 @@ class FixedUuid:
         return litellm_uuid.UUID(self.value)
 
 
+# the cast carries LiteLLM's message and logging types; this view names the shapes the case sends
+TransformResponse: TypeAlias = Callable[
+    [
+        str,
+        httpx.Response,
+        ModelResponse,
+        None,
+        dict[str, JsonValue],
+        Sequence[Mapping[str, JsonValue]],
+        dict[str, JsonValue],
+        dict[str, JsonValue],
+        None,
+    ],
+    ModelResponse,
+]
+
+
+class Config(Protocol):
+    def map_openai_params(
+        self,
+        non_default_params: dict[str, JsonValue],
+        optional_params: dict[str, JsonValue],
+        model: str,
+        *,
+        drop_params: bool,
+    ) -> dict[str, JsonValue]: ...
+
+    def get_complete_url(
+        self,
+        api_base: str | None,
+        api_key: str | None,
+        model: str,
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+    ) -> str: ...
+
+    def transform_request(
+        self,
+        model: str,
+        messages: Sequence[Mapping[str, JsonValue]],
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+        headers: dict[str, JsonValue],
+    ) -> dict[str, JsonValue]: ...
+
+    transform_response: TransformResponse
+
+
+CONFIG: Final[Config] = cast(Config, VertexAgentEngineConfig())  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L57-L65
+
+
 def url_outcome(call: UrlCall) -> JsonValue:
     params: dict[str, JsonValue] = {
         "vertex_project": call["project"],
@@ -123,7 +177,10 @@ def url_outcome(call: UrlCall) -> JsonValue:
 def request_outcome(call: RequestCall) -> JsonValue:
     litellm_uuid.uuid4 = FixedUuid(call["uuid"])
     optional: dict[str, JsonValue] = dict(call["optional_params"])
-    payload = CONFIG.transform_request(call["model"], call["messages"], CONFIG.map_openai_params(call["non_default_params"], optional, call["model"], False), EMPTY, EMPTY)  # type: ignore[misc, arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L184
+    mapped = CONFIG.map_openai_params(
+        call["non_default_params"], optional, REQUEST_MODEL, drop_params=False
+    )
+    payload = CONFIG.transform_request(REQUEST_MODEL, call["messages"], mapped, EMPTY, EMPTY)
     return {"ok": True, "payload": payload}
 
 
@@ -147,14 +204,26 @@ def answer_state(answer: AnswerView) -> JsonValue:
 
 
 def response_outcome(call: ResponseCall) -> JsonValue:
-    litellm.utils.token_counter = Counter(call["counter"], call["prompt_tokens"], call["completion_tokens"])  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2550
+    counter = Counter(call["counter"], call["prompt_tokens"], call["completion_tokens"])
+    # LiteLLM calls its counter with shapes this fixture ignores; only its int return matters
+    litellm.utils.token_counter = functools.partial(counter)
     raw = httpx.Response(
         call["status"],
         text=call["body"],
         request=httpx.Request("POST", "https://agent-engine.invalid"),
     )
     try:
-        response = CONFIG.transform_response(model=call["model"], raw_response=raw, model_response=ModelResponse(), logging_obj=None, request_data=EMPTY, messages=call["messages"], optional_params=EMPTY, litellm_params=EMPTY, encoding=None)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L300
+        response = CONFIG.transform_response(
+            call["model"],
+            raw,
+            ModelResponse(),
+            None,
+            EMPTY,
+            call["messages"],
+            EMPTY,
+            EMPTY,
+            None,
+        )
     except VertexAgentEngineError:
         return {"ok": False}
     return {"ok": True, "answer": answer_state(ANSWER.validate_json(response.model_dump_json()))}
@@ -162,7 +231,10 @@ def response_outcome(call: ResponseCall) -> JsonValue:
 
 def run(input_value: Input) -> JsonValue:
     if input_value["operation"] == "url":
-        return {"calls": [url_outcome(call) for call in input_value["calls"]]}
+        url_calls = input_value["calls"]
+        return {"calls": [url_outcome(call) for call in url_calls]}
     if input_value["operation"] == "request":
-        return {"calls": [request_outcome(call) for call in input_value["calls"]]}
-    return {"calls": [response_outcome(call) for call in input_value["calls"]]}
+        request_calls = input_value["calls"]
+        return {"calls": [request_outcome(call) for call in request_calls]}
+    response_calls = input_value["calls"]
+    return {"calls": [response_outcome(call) for call in response_calls]}
