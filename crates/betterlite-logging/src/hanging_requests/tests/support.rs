@@ -278,7 +278,7 @@ impl RecordingFactory {
 impl HangingCacheFactory for RecordingFactory {
     fn create(&self, ttl: Duration) -> Arc<dyn HangingRequestCache> {
         self.ttls.lock().unwrap().push(ttl);
-        Arc::clone(&self.cache)
+        Arc::<FakeHangingCache>::clone(&self.cache)
     }
 }
 
@@ -344,11 +344,11 @@ pub(crate) fn fixture_with(settings: RequestAlertSettings, resolver: FixedResolv
     let factory = Arc::new(RecordingFactory::new(Arc::clone(&cache)));
     let now = Arc::new(Mutex::new(NOW));
     let check = Arc::new(AlertingHangingRequestCheck::new(HangingCheckParts {
-        sink: Arc::clone(&sink),
-        api_base: Arc::clone(&resolver),
-        settings: Arc::clone(&fixed_settings),
-        completed: Arc::clone(&status),
-        caches: Arc::clone(&factory),
+        sink: Arc::<RecordingSink>::clone(&sink),
+        api_base: Arc::<FixedResolver>::clone(&resolver),
+        settings: Arc::<FixedSettings>::clone(&fixed_settings),
+        completed: Arc::<FakeStatus>::clone(&status),
+        caches: Arc::<RecordingFactory>::clone(&factory),
         clock: clock_at(&now),
     }));
     Fixture {
