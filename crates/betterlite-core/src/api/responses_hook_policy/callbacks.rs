@@ -108,8 +108,9 @@ pub fn has_pre_call_deployment_hook(
     lists: &CallbackLists<'_>,
     resolver: &dyn NamedCallbackResolver,
 ) -> bool {
-    let callbacks = custom_logger_callbacks(lists, resolver);
-    callbacks.iter().any(|callback| callback.overrides_pre_hook)
+    custom_logger_callbacks(lists, resolver)
+        .iter()
+        .any(|registered_callback| registered_callback.overrides_pre_hook)
 }
 
 #[must_use]
