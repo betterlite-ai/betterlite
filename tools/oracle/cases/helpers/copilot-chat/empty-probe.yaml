@@ -1,0 +1,15 @@
+kind: helper
+name: empty_probe
+call:
+  copilot_chat:
+    action: repair_reply
+    response:
+      id: msg_p
+      type: message
+      role: assistant
+      content: []
+      stop_reason: null
+      usage: {input_tokens: 1, output_tokens: 1}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,17 @@
+kind: helper
+name: tool_only_reply
+call:
+  copilot_chat:
+    action: repair_reply
+    response:
+      id: msg_1
+      type: message
+      role: assistant
+      model: claude-sonnet-4-5
+      content:
+        - {type: tool_use, id: toolu_1, name: lookup, input: {q: x}}
+      stop_reason: tool_use
+      usage: {input_tokens: 3, output_tokens: 4}
+env: {}
+compare:
+  ignore: []

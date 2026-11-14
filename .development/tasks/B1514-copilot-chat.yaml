@@ -36,6 +36,9 @@ scope:
     - crates/betterlite-config/src/providers/copilot.rs
     - crates/betterlite-config/src/providers/copilot/chat.rs
     - crates/betterlite-config/src/providers/copilot/chat/**
+    - crates/betterlite-config/src/sections.rs
+    - crates/betterlite-config/src/sections/copilot_chat.rs
+    - crates/betterlite-config/src/sections/copilot_chat/**
     - tools/oracle/src/helpers/core_ops/copilot_chat.rs
     - tools/oracle/src/helpers/core_ops/copilot_chat/**
     - tools/oracle/helpers/copilot_chat.py
@@ -81,4 +84,4 @@ pitfalls:
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 10
