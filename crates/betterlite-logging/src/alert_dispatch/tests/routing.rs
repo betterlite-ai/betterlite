@@ -1,7 +1,6 @@
 use betterlite_config::sections::alert_settings::types::AlertType;
 use betterlite_config::sections::alert_settings::webhooks::WebhookUrl;
 use indexmap::IndexMap;
-use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::super::destination::{
@@ -113,23 +112,59 @@ async fn the_default_webhook_url_wins_over_the_environment() {
     assert_eq!(pending[0].url.expose_secret(), "https://hooks/def");
 }
 
-#[rstest]
-#[case::slack_wins(
-    &[(SLACK_WEBHOOK_URL_ENV, "https://hooks/slack"), (ALERTING_WEBHOOK_URL_ENV, "https://hooks/alerting")],
-    Some("https://hooks/slack")
-)]
-#[case::alerting_fills_in(&[(ALERTING_WEBHOOK_URL_ENV, "https://hooks/alerting")], Some("https://hooks/alerting"))]
-#[case::empty_slack_falls_back(
-    &[(SLACK_WEBHOOK_URL_ENV, ""), (ALERTING_WEBHOOK_URL_ENV, "https://hooks/alerting")],
-    Some("https://hooks/alerting")
-)]
-#[case::neither_is_set(&[], None)]
-#[tokio::test]
-async fn the_webhook_url_environment_variables_fall_back_in_order(
-    #[case] environment: &[(&str, &str)],
-    #[case] expected: Option<&str>,
-) {
+async fn assert_single_slack_alert(environment: &[(&str, &str)], expected: &str) {
     let fixture = fixture(environment, 512);
+    let dispatcher = fixture.dispatcher(
+        Some(vec![AlertDestination::Slack]),
+        vec![AlertType::LlmExceptions],
+    );
+    assert!(
+        dispatcher
+            .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
+            .await
+            .is_ok()
+    );
+    let pending = fixture.delivery.queue.pending();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].url.expose_secret(), expected);
+}
+
+#[tokio::test]
+async fn a_slack_webhook_url_wins_over_the_alerting_url() {
+    assert_single_slack_alert(
+        &[
+            (SLACK_WEBHOOK_URL_ENV, "https://hooks/slack"),
+            (ALERTING_WEBHOOK_URL_ENV, "https://hooks/alerting"),
+        ],
+        "https://hooks/slack",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn the_alerting_webhook_url_fills_in_when_slack_is_unset() {
+    assert_single_slack_alert(
+        &[(ALERTING_WEBHOOK_URL_ENV, "https://hooks/alerting")],
+        "https://hooks/alerting",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn an_empty_slack_webhook_url_falls_back_to_the_alerting_url() {
+    assert_single_slack_alert(
+        &[
+            (SLACK_WEBHOOK_URL_ENV, ""),
+            (ALERTING_WEBHOOK_URL_ENV, "https://hooks/alerting"),
+        ],
+        "https://hooks/alerting",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn a_missing_webhook_url_raises_when_neither_variable_is_set() {
+    let fixture = fixture(&[], 512);
     let dispatcher = fixture.dispatcher(
         Some(vec![AlertDestination::Slack]),
         vec![AlertType::LlmExceptions],
@@ -137,18 +172,8 @@ async fn the_webhook_url_environment_variables_fall_back_in_order(
     let sent = dispatcher
         .send_alert(fixture.alert("boom", AlertType::LlmExceptions))
         .await;
-    match expected {
-        Some(url) => {
-            assert!(sent.is_ok());
-            let pending = fixture.delivery.queue.pending();
-            assert_eq!(pending.len(), 1);
-            assert_eq!(pending[0].url.expose_secret(), url);
-        }
-        None => {
-            assert!(matches!(sent, Err(SendAlertError::MissingWebhookUrl(_))));
-            assert!(fixture.delivery.queue.pending().is_empty());
-        }
-    }
+    assert!(matches!(sent, Err(SendAlertError::MissingWebhookUrl(_))));
+    assert!(fixture.delivery.queue.pending().is_empty());
 }
 
 #[test]

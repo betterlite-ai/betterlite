@@ -23,21 +23,30 @@ async fn alert_messages_carry_the_type_level_timestamp_and_message() {
     );
 }
 
-#[rstest]
-#[case::daily_reports(AlertType::DailyReports)]
-#[case::new_model_added(AlertType::NewModelAdded)]
-#[tokio::test]
-async fn reports_and_model_additions_omit_the_level_and_timestamp(#[case] alert_type: AlertType) {
+async fn assert_report_message(alert_type: AlertType, message: &str) {
     let fixture = slack_fixture();
     let dispatcher = fixture.dispatcher(Some(vec![AlertDestination::Slack]), vec![alert_type]);
-    let _sent = dispatcher
-        .send_alert(fixture.alert(" the report", alert_type))
-        .await;
+    assert!(
+        dispatcher
+            .send_alert(fixture.alert(message, alert_type))
+            .await
+            .is_ok()
+    );
     let pending = fixture.delivery.queue.pending();
     assert_eq!(
         pending[0].payload.text,
-        format!("Alert type: `{alert_type}` the report")
+        format!("Alert type: `{alert_type}`{message}")
     );
+}
+
+#[tokio::test]
+async fn daily_reports_omit_the_level_and_timestamp() {
+    assert_report_message(AlertType::DailyReports, " the report").await;
+}
+
+#[tokio::test]
+async fn new_model_added_omits_the_level_and_timestamp() {
+    assert_report_message(AlertType::NewModelAdded, " the model").await;
 }
 
 #[tokio::test]
