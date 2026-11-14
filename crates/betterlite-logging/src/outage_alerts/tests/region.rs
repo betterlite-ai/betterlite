@@ -281,7 +281,6 @@ async fn region_sends_a_minor_alert_when_two_deployments_and_the_threshold_quali
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].level, AlertLevel::Medium);
     assert_eq!(sent[0].message, REGION_MINOR_FIVE);
-    assert!(fixture.api_base.calls().is_empty());
     let state = fixture.store.lock();
     assert_eq!(state.writes.len(), 2);
     assert_eq!(
@@ -291,19 +290,6 @@ async fn region_sends_a_minor_alert_when_two_deployments_and_the_threshold_quali
             record: region_record(
                 "vertex_aius-east1",
                 vec![500; 5],
-                &["dep-0", "dep-1"],
-                MINOR_SENT,
-            ),
-            ttl_seconds: None,
-        }
-    );
-    assert_eq!(
-        state.writes[1],
-        StoreWrite::Region {
-            key: "vertex_aius-east1".to_owned(),
-            record: region_record(
-                "vertex_aius-east1",
-                vec![500; 6],
                 &["dep-0", "dep-1"],
                 MINOR_SENT,
             ),

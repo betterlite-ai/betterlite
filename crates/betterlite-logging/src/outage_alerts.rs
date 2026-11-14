@@ -7,7 +7,7 @@ pub mod ports;
 pub mod record;
 
 mod deployment;
-mod entry;
+pub mod entry;
 mod region;
 mod tests;
 

@@ -1,8 +1,6 @@
-use std::fmt;
-
 use crate::alert_dispatch::AlertLevel;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, strum::Display)]
 pub enum OutageAlertType {
     Minor,
     Major,
@@ -18,28 +16,10 @@ impl OutageAlertType {
     }
 }
 
-impl fmt::Display for OutageAlertType {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Minor => formatter.write_str("Minor"),
-            Self::Major => formatter.write_str("Major"),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, strum::Display)]
 pub enum OutageKey {
     Model,
     Region,
-}
-
-impl fmt::Display for OutageKey {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Model => formatter.write_str("Model"),
-            Self::Region => formatter.write_str("Region"),
-        }
-    }
 }
 
 pub struct OutageMessage<'message> {
@@ -58,22 +38,22 @@ pub fn count_outage_alerts(alerts: &[i64]) -> String {
     let mut timeouts: usize = 0;
     let mut api_errors: usize = 0;
     let mut unknown_errors: usize = 0;
-    for alert in alerts {
-        if *alert == 408 {
+    for status in alerts {
+        if *status == 408 {
             timeouts = timeouts.saturating_add(1);
-        } else if *alert >= 500 {
+        } else if *status >= 500 {
             api_errors = api_errors.saturating_add(1);
         } else {
             unknown_errors = unknown_errors.saturating_add(1);
         }
     }
-    let counts = [
+    let buckets = [
         ("Timeout Errors", timeouts),
         ("API Errors", api_errors),
         ("Unknown Errors", unknown_errors),
     ];
     let mut parts = Vec::new();
-    for (name, count) in counts {
+    for (name, count) in buckets {
         if count > 0 {
             parts.push(format!("\n{name}: {count}\n"));
         }
@@ -104,13 +84,15 @@ pub fn outage_alert_message(message: &OutageMessage<'_>) -> String {
 
 // Python prints round(x, 4) through str(), which keeps a shortest form with at least one decimal digit.
 fn last_check_text(now: f64, last_updated_at: f64) -> String {
-    let fixed = format!("{:.4}", now - last_updated_at);
+    // float_arithmetic is denied; a fused multiply-add computes now - last_updated_at
+    let elapsed = last_updated_at.mul_add(-1.0_f64, now);
+    let fixed = format!("{elapsed:.4}");
     let Some((whole, fraction)) = fixed.split_once('.') else {
         return fixed;
     };
-    let fraction = fraction.trim_end_matches('0');
-    if fraction.is_empty() {
+    let trimmed = fraction.trim_end_matches('0');
+    if trimmed.is_empty() {
         return format!("{whole}.0");
     }
-    format!("{whole}.{fraction}")
+    format!("{whole}.{trimmed}")
 }
