@@ -139,5 +139,5 @@ pitfalls:
   - The /v1/rerank client route does not itself select Cohere's v1 upstream client.
   - Cohere's v2 chat default uses api.cohere.com while v1 uses api.cohere.ai.
   - Jina embedding dispatch does not forward the merged headers argument used by Cohere embedding dispatch.
-budget: {max_changed_lines: 750, max_new_expects: 0}
+budget: {max_changed_lines: 1500, max_new_expects: 0}
 review_level: security

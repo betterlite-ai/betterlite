@@ -99,7 +99,7 @@ where
         let data = item.map_err(|source| SandboxOutputError::Read { source })?;
         for byte in data {
             if byte == b'\n' {
-                total = finish_line(&mut lines, &mut pending, total)?;
+                total = finish_line(&mut lines, &mut pending, total, true)?;
             } else {
                 pending.push(byte);
             }
@@ -111,7 +111,7 @@ where
         }
     }
     if !pending.is_empty() {
-        finish_line(&mut lines, &mut pending, total)?;
+        finish_line(&mut lines, &mut pending, total, false)?;
     }
     Ok(lines)
 }
@@ -120,14 +120,17 @@ fn finish_line<Source>(
     lines: &mut Vec<String>,
     pending: &mut Vec<u8>,
     total: usize,
+    ended_by_newline: bool,
 ) -> Result<usize, SandboxOutputError<Source>> {
     if pending.last() == Some(&b'\r') {
         pending.pop();
     }
     let text = String::from_utf8(mem::take(pending))
         .map_err(|source| SandboxOutputError::Utf8 { source })?;
+    // an empty line still costs its newline, so output of bare newlines reaches the cap too
     let counted = total
         .checked_add(text.len())
+        .and_then(|sum| sum.checked_add(usize::from(ended_by_newline)))
         .ok_or(SandboxOutputError::Exceeded {
             limit: SANDBOX_MAX_OUTPUT_BYTES,
         })?;

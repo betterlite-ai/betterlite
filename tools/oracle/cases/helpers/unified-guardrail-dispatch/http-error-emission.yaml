@@ -1,0 +1,15 @@
+kind: helper
+name: http-error-emission
+call:
+  b3679:
+    function: http_error_emission
+    call_type: completion
+    status_code: 422
+    detail: denied
+    responses_so_far: [{id: a, choices: []}, {id: b, choices: []}, {id: c, choices: []}]
+    request_data: {}
+    stream_started: true
+    responses_yielded: [{id: a, choices: []}]
+    translation: {error_items: [frame-1, frame-2]}
+env: {}
+compare: {ignore: []}

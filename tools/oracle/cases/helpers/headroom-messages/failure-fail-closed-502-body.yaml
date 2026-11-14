@@ -1,0 +1,15 @@
+kind: helper
+name: headroom-messages-failure-fail-closed-502-body
+call:
+  b3773:
+    function: handle_failure
+    fallback: fail_closed
+    rows:
+      - {role: user, content: first row}
+    error: Headroom compression service returned an error
+    detail:
+      status_code: 404
+      body: "not found"
+      hint: "The Headroom compression endpoint returned HTTP 404. Verify that the configured Headroom endpoint is correct and that the compression endpoint is available. If you are using a self-hosted deployment, some deployments require enabling remote compression (for example, HEADROOM_COMPRESS_ALLOW_REMOTE=1)."
+env: {}
+compare: {ignore: []}
