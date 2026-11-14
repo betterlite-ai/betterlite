@@ -126,8 +126,8 @@ def operation(method: str, url: str) -> str:
 def answer(method: str, url: str, body: bytes) -> tuple[int, str]:
     op = operation(method, url)
     # the flush position counts JSON bytes, and json.dumps spacing is outside the parity contract
-    position = re.sub(r"(\?action=flush&position=)\d+", r"\1{bytes}", url)
-    entry: dict[str, JsonValue] = {"op": op, "url": re.sub(r"\d{4}-\d{2}-\d{2}", "{date}", position)}
+    masked = re.sub(r"(\?action=flush&position=)\d+", r"\1{bytes}", url)
+    entry: dict[str, JsonValue] = {"op": op, "url": re.sub(r"\d{4}-\d{2}-\d{2}", "{date}", masked)}
     if op == "append":
         text = body.decode("utf-8")
         entry["body"] = JSON_VALUE.validate_json(text.rstrip("\n"))
@@ -136,7 +136,8 @@ def answer(method: str, url: str, body: bytes) -> tuple[int, str]:
     if Wire.replies:
         reply = Wire.replies.pop(0)
         return reply["status"], reply["body"]
-    return SUCCESS_STATUS.get(op, 200), ""
+    status = SUCCESS_STATUS[op] if op in SUCCESS_STATUS else 200
+    return status, ""
 
 
 def serve(request: httpx.Request) -> httpx.Response:
@@ -220,10 +221,10 @@ class NoCredentialChain:
 async def perform(
     action: Action,
     logger: AzureBlobStorageLogger,
-    sink: EventSink,
     clock: ManualClock,
     base: dict[str, JsonValue],
 ) -> JsonValue:
+    sink: EventSink = logger
     try:
         if action["do"] == "event":
             kwargs: dict[str, JsonValue] = {"standard_logging_object": {**base, "id": action["id"]}}
@@ -277,7 +278,7 @@ async def drive(scenario: Scenario, cache: ClientCache) -> JsonValue:
     base_payload = {} if base is None else base
     sys.modules[AIO_MODULE] = ScriptedAio(AIO_MODULE)
     sys.modules[IDENTITY_MODULE] = ScriptedIdentity(IDENTITY_MODULE)
-    results = [await perform(action, logger, logger, clock, base_payload) for action in scenario["actions"]]
+    results = [await perform(step, logger, clock, base_payload) for step in scenario["actions"]]
     queue: Queue = logger
     return {
         "initialized": True,
