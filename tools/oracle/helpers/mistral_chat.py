@@ -1,12 +1,14 @@
 import json
+from datetime import UTC, datetime
 from typing import Final, Literal, NotRequired, Protocol, TypedDict, Unpack, cast
 
 import httpx
+from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.mistral.chat.transformation import (
     MistralChatResponseIterator,
     MistralConfig,
 )
-from litellm.types.utils import ModelResponse
+from litellm.types.utils import ModelResponse, ModelResponseStream
 from pydantic import JsonValue, TypeAdapter
 
 
@@ -43,43 +45,35 @@ class Input(TypedDict):
     steps: list[RequestStep | ReplyStep | ChunkStep]
 
 
-class Capture:
-    def __init__(self) -> None:
-        self.model_call_details: dict[str, JsonValue] = {}
-
-    def post_call(self, original_response: str) -> None:
-        self.model_call_details["original_response"] = original_response
+class ReplyMessage(TypedDict):
+    content: NotRequired[str | None]
+    reasoning_content: NotRequired[str | None]
+    tool_calls: NotRequired[list[JsonValue] | None]
 
 
-class ReplyMessage(Protocol):
-    content: str | None
-    reasoning_content: str | None
-    tool_calls: list[JsonValue] | None
-
-
-class ReplyChoice(Protocol):
-    finish_reason: str | None
+class ReplyChoice(TypedDict):
+    finish_reason: NotRequired[str | None]
     message: ReplyMessage
 
 
-class Reply(Protocol):
+class Reply(TypedDict):
     model: str
     choices: list[ReplyChoice]
 
 
-class ChunkDelta(Protocol):
-    content: str | None
-    reasoning_content: str | None
-    thinking_blocks: list[dict[str, JsonValue]] | None
+class ChunkDelta(TypedDict):
+    content: NotRequired[str | None]
+    reasoning_content: NotRequired[str | None]
+    thinking_blocks: NotRequired[list[dict[str, JsonValue]] | None]
 
 
-class ChunkChoice(Protocol):
+class ChunkChoice(TypedDict):
     index: int
-    finish_reason: str | None
+    finish_reason: NotRequired[str | None]
     delta: ChunkDelta
 
 
-class Chunk(Protocol):
+class Chunk(TypedDict):
     object: str
     choices: list[ChunkChoice]
 
@@ -88,7 +82,7 @@ class ResponseArgs(TypedDict):
     model: str
     raw_response: httpx.Response
     model_response: ModelResponse
-    logging_obj: Capture
+    logging_obj: Logging
     request_data: dict[str, JsonValue]
     messages: list[Message]
     optional_params: dict[str, JsonValue]
@@ -106,11 +100,11 @@ class ReplyApi(Protocol):
         headers: dict[str, JsonValue],
     ) -> JsonValue: ...
 
-    def transform_response(self, **kwargs: Unpack[ResponseArgs]) -> Reply: ...
+    def transform_response(self, **kwargs: Unpack[ResponseArgs]) -> ModelResponse: ...
 
 
 class StreamApi(Protocol):
-    def chunk_parser(self, chunk: dict[str, JsonValue]) -> Chunk: ...
+    def chunk_parser(self, chunk: dict[str, JsonValue]) -> ModelResponseStream: ...
 
 
 LITELLM_PARAMS: Final[dict[str, JsonValue]] = {"custom_llm_provider": "mistral"}
@@ -142,12 +136,24 @@ def request_value(api: ReplyApi, step: RequestStep) -> JsonValue:
     )
 
 
+def logging_object() -> Logging:
+    return Logging(
+        model="mistral-small-latest",
+        messages=None,
+        stream=False,
+        call_type="completion",
+        start_time=datetime(2026, 1, 1, tzinfo=UTC),
+        litellm_call_id="b1409",
+        function_id="b1409",
+    )
+
+
 def reply_value(api: ReplyApi, step: ReplyStep) -> JsonValue:
     args: ResponseArgs = {
         "model": "mistral-small-latest",
         "raw_response": httpx.Response(200, text=json.dumps(step["reply"])),
         "model_response": ModelResponse(),
-        "logging_obj": Capture(),
+        "logging_obj": logging_object(),
         "request_data": {},
         "messages": [],
         "optional_params": {},
@@ -155,17 +161,20 @@ def reply_value(api: ReplyApi, step: ReplyStep) -> JsonValue:
         "encoding": None,
     }
     result = api.transform_response(**args)
-    choice = result.choices[0]
-    calls = choice.message.tool_calls
+    view = TypeAdapter(Reply).validate_json(result.model_dump_json())
+    choice = view["choices"][0]
+    message = choice["message"]
+    content = message.get("content")
+    calls = message.get("tool_calls")
     return {
         "message": {
-            "content": choice.message.content,
-            "reasoning_content": choice.message.reasoning_content,
+            "content": content,
+            "reasoning_content": message.get("reasoning_content"),
         },
         "response": {
-            "model": result.model,
-            "finish_reason": choice.finish_reason,
-            "content": choice.message.content,
+            "model": view["model"],
+            "finish_reason": choice.get("finish_reason"),
+            "content": content,
             "tool_calls": None if calls is None else len(calls),
         },
     }
@@ -173,21 +182,22 @@ def reply_value(api: ReplyApi, step: ReplyStep) -> JsonValue:
 
 def chunk_value(api: StreamApi, step: ChunkStep) -> JsonValue:
     result = api.chunk_parser(step["chunk"])
+    view = TypeAdapter(Chunk).validate_json(result.model_dump_json())
     choices: list[JsonValue] = []
-    for choice in result.choices:
-        projected = TypeAdapter(JsonValue).validate_python(
+    for choice in view["choices"]:
+        delta = choice["delta"]
+        choices.append(
             {
-                "index": choice.index,
-                "finish_reason": choice.finish_reason,
+                "index": choice["index"],
+                "finish_reason": choice.get("finish_reason"),
                 "delta": {
-                    "content": choice.delta.content,
-                    "reasoning_content": choice.delta.reasoning_content,
-                    "thinking_blocks": choice.delta.thinking_blocks,
+                    "content": delta.get("content"),
+                    "reasoning_content": delta.get("reasoning_content"),
+                    "thinking_blocks": delta.get("thinking_blocks"),
                 },
             }
         )
-        choices.append(projected)
-    return {"object": result.object, "choices": choices}
+    return {"object": view["object"], "choices": choices}
 
 
 def run(input_value: Input) -> JsonValue:
