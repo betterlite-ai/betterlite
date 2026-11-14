@@ -1253,6 +1253,7 @@ dependencies = [
  "betterlite-anthropic",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-core",
  "betterlite-env",
  "betterlite-http",
  "betterlite-logging",
@@ -1911,6 +1912,7 @@ version = "0.0.0"
 dependencies = [
  "betterlite-config",
  "betterlite-guardrails",
+ "betterlite-prompts",
  "libfuzzer-sys",
  "serde_json",
 ]
@@ -2523,6 +2525,7 @@ dependencies = [
  "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-transcribe",
+ "betterlite-vertex",
  "chrono",
  "futures-util",
  "hex",

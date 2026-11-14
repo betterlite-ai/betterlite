@@ -31,6 +31,7 @@ betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-streaming = { path = "../../../../../crates/betterlite-streaming" }
 betterlite-tokenizer = { path = "../../../../../crates/betterlite-tokenizer" }
 betterlite-transcribe = { path = "../../../../../crates/betterlite-transcribe" }
+betterlite-vertex = { path = "../../../../../crates/betterlite-vertex" }
 chrono.workspace = true
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 hex = "0.4.3"
