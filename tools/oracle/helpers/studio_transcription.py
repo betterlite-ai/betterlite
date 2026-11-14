@@ -1,3 +1,4 @@
+import json
 import os
 from collections.abc import Sequence
 from typing import Final, Literal, Never, Protocol, TypeAlias, TypedDict
@@ -24,8 +25,14 @@ class Config(Protocol):
     @property
     def supports_subtitle_synthesis(self) -> bool: ...
 
-    def map_openai_params(self, non_default_params: dict[str, JsonValue], optional_params: dict[str, JsonValue],
-                          model: str, *, drop_params: bool) -> dict[str, JsonValue]: ...
+    def map_openai_params(
+        self,
+        non_default_params: dict[str, JsonValue],
+        optional_params: dict[str, JsonValue],
+        model: str,
+        *,
+        drop_params: bool,
+    ) -> dict[str, JsonValue]: ...
 
     def validate_environment(self, headers: dict[str, str], model: str, messages: list[Never],
                              optional_params: dict[str, JsonValue],
@@ -39,7 +46,12 @@ class Config(Protocol):
     def transform_audio_transcription_response(self, raw_response: httpx.Response) -> ReplyData: ...
 
 
-CONFIG: Config = GeminiAudioTranscriptionConfig()
+class ConfigFactory(Protocol):
+    def __call__(self) -> Config: ...
+
+
+FACTORY: ConfigFactory = GeminiAudioTranscriptionConfig
+CONFIG: Config = FACTORY()
 
 
 class Supported(TypedDict):
@@ -58,7 +70,7 @@ class Params(TypedDict):
 
 class Environment(TypedDict):
     step: Literal["environment"]
-    headers: list[list[str]]
+    headers: list[tuple[str, str]]
     api_key: str | None
 
 
@@ -72,7 +84,7 @@ class Request(TypedDict):
 class Reply(TypedDict):
     step: Literal["reply"]
     status: int
-    headers: list[list[str]]
+    headers: list[tuple[str, str]]
     body: str
 
 
@@ -86,24 +98,26 @@ class Input(TypedDict):
 def guarded(step: Step) -> JsonValue:
     match step["step"]:
         case "supported":
-            return JSON.validate_python(list(CONFIG.get_supported_openai_params("")))
+            supported: list[str] = list(CONFIG.get_supported_openai_params(""))
+            return JSON.validate_python(supported)
         case "subtitle":
             return CONFIG.supports_subtitle_synthesis
         case "params":
             return JSON.validate_python(CONFIG.map_openai_params(
-                non_default_params=step["non_default"], optional_params=step["optional"], model="", drop_params=False))
+                non_default_params=step["non_default"], optional_params=step["optional"],
+                model="", drop_params=False))
         case "environment":
             if step["api_key"] is None:
                 os.environ.pop("GOOGLE_API_KEY", None)
             else:
                 os.environ["GOOGLE_API_KEY"] = step["api_key"]
             return JSON.validate_python(CONFIG.validate_environment(
-                {name: value for name, value in step["headers"]}, "", [], {}, {}))
+                dict(step["headers"]), "", [], {}, {}))
         case "request":
             request = CONFIG.transform_audio_transcription_request(
-                model=step["model"], audio_file=step["content"].encode(), optional_params=step["optional"],
-                litellm_params={})
-            return JSON.validate_python(request.data)
+                model=step["model"], audio_file=step["content"].encode(),
+                optional_params=step["optional"], litellm_params={})
+            return JSON.validate_json(json.dumps(request.data))
         case "reply":
             given = [(name, value) for name, value in step["headers"]]
             response = httpx.Response(step["status"], content=step["body"].encode(), headers=given)
@@ -121,5 +135,6 @@ def answer_or_raised(step: Step) -> JsonValue:
 
 
 def run(input_value: Input) -> list[JsonValue]:
-    steps = input_value["steps"]
-    return [answer_or_raised(step) for step in steps]
+    return [
+        answer_or_raised(step) for step in input_value["steps"]
+    ]
