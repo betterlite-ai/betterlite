@@ -14,10 +14,10 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1767
   - what: A metadata bucket that is present but not an object is treated as absent when the remaining-limit headers are read, so those headers are left out; LiteLLM calls .get on it and raises AttributeError.
     why: the request data is open JSON, and an internal writer's malformed bucket must not turn a successful LLM response into a 500.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L432-L455
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L446-L460
   - what: A litellm_metadata or metadata bucket inside litellm_params that is present but not an object is treated as absent when the deployment model name is read; LiteLLM calls .get on it and raises AttributeError.
     why: litellm_params is an open JSON map, and a malformed bucket must not turn a successful LLM response into a 500.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2419-L2425
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2416-L2419
   - what: A model_group that is a JSON list or object leaves both remaining-limit headers out; LiteLLM builds the lookup key and the header name from its repr and reads the metadata with that key.
     why: the group name is the proxy's own string, and porting repr would put "{'a': 1}" in a header name.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L443-L460
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L447-L453
