@@ -45,16 +45,16 @@ where
     response_from_dict(&answer, &request_id).map_err(SendEntryError::<C::Error, P::Error>::from)
 }
 
-pub(super) fn stream_via_completion_bridge<'deps, C, P, S>(
+// rustc's stream Send check cannot use the source's outlives bound, so the source is erased (rust-lang/rust#100013)
+pub(super) fn stream_via_completion_bridge<'deps, C, P>(
     call: StreamCall,
     completion: &'deps C,
     providers: &'deps P,
-    source: &'deps mut S,
+    mut source: &'deps mut (dyn EventSource + Send + 'deps),
 ) -> BoxStream<'deps, Result<AgentJson, SendEntryError<C::Error, P::Error>>>
 where
     C: CompletionPort,
     P: A2AProviderDispatch,
-    S: EventSource + Send + 'deps,
 {
     async_stream::stream! {
         let params = match bridge_params(&call.request) {
@@ -72,13 +72,8 @@ where
             api_base: call.api_base.as_deref(),
             agent_extra_headers: call.agent_extra_headers.as_ref(),
         };
-        let mut events = dispatch::<Streamed, C, P, S>(
-            &bridge_call,
-            completion,
-            providers,
-            source,
-        )
-        .await;
+        let mut events =
+            dispatch::<Streamed, C, P, _>(&bridge_call, completion, providers, &mut source).await;
         while let Some(event) = events.next().await {
             yield event.map_err(SendEntryError::<C::Error, P::Error>::Bridge);
         }

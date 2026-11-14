@@ -71,12 +71,13 @@ async fn stream_routing_uses_the_completion_bridge_for_a_non_empty_provider() {
             "status:completed:true",
         ]
     );
-    for event in &outcome.events {
-        assert_eq!(
-            event.as_ref().expect("the event is forwarded")["id"],
-            parsed(r#""request-1""#)
-        );
-    }
+    assert!(
+        outcome.events.iter().all(
+            |event| event.as_ref().expect("the event is forwarded")["id"]
+                == parsed(r#""request-1""#)
+        ),
+        "every streamed event carries the request id"
+    );
     let calls = recorded_calls(&fixture.completion);
     assert_eq!(calls.len(), 1);
     assert!(calls[0].stream);

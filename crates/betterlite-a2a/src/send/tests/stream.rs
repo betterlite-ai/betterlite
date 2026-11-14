@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 
 use crate::completion_bridge::tests::support::parsed;
 
@@ -9,8 +10,19 @@ use super::support::{
     pricing_params, send_call, status_frame, stream_call, with_agent,
 };
 
+#[rstest]
+#[case::model("model", r#""a2a_agent/fake-agent""#)]
+#[case::provider("custom_llm_provider", r#""a2a_agent""#)]
+#[case::call_type("call_type", r#""asend_message_streaming""#)]
+#[case::agent_id("agent_id", r#""agent-7""#)]
+#[case::metadata("metadata", r#"{"user_id":"u-1"}"#)]
+#[case::usage(
+    "usage",
+    r#"{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}"#
+)]
+#[case::stream("stream", "false")]
 #[tokio::test]
-async fn stream_logging_builds_an_object_when_absent() {
+async fn stream_logging_builds_an_object_when_absent(#[case] key: &str, #[case] expected: &str) {
     let reply = Reply::Sse(vec![status_frame("working"), message_frame("hi")]);
     let (outcome, _seen) = with_agent(reply, |base| async move {
         let mut fixture = SendFixture::new();
@@ -34,21 +46,7 @@ async fn stream_logging_builds_an_object_when_absent() {
     );
     assert_eq!(Json::Object(logging.litellm_params.clone()), built_params);
     assert_eq!(Json::Object(logging.optional_params.clone()), built_params);
-    let expected = [
-        ("model", json(r#""a2a_agent/fake-agent""#)),
-        ("custom_llm_provider", json(r#""a2a_agent""#)),
-        ("call_type", json(r#""asend_message_streaming""#)),
-        ("agent_id", json(r#""agent-7""#)),
-        ("metadata", json(r#"{"user_id":"u-1"}"#)),
-        (
-            "usage",
-            json(r#"{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}"#),
-        ),
-        ("stream", json("false")),
-    ];
-    for (key, value) in expected {
-        assert_eq!(details(logging, key), Some(value));
-    }
+    assert_eq!(details(logging, key), Some(json(expected)));
 }
 
 #[tokio::test]

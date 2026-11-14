@@ -539,7 +539,6 @@ fn resolver(settings: &HubSettings, client: &Arc<ProxiedClient>) -> Arc<HubToken
     ))
 }
 
-// The native harness every send borrows: the HTTP pool, env, TLS, counter and trace-id source
 struct NativeFixture<F> {
     counter: Counter,
     pool: ProxiedClient,
@@ -623,7 +622,6 @@ impl StreamFixture {
     }
 }
 
-// A send with the fixture request, no client, no agent id and no agent headers
 pub(crate) fn send_call(
     text: &str,
     api_base: Option<String>,
@@ -653,7 +651,6 @@ pub(crate) fn stream_call(send: SendCall) -> StreamCall {
     }
 }
 
-// What a streamed send produced: the forwarded events, the logging dispatch and the generated ids
 pub(crate) struct StreamOutcome {
     pub(crate) events: Vec<Result<AgentJson, SendEntryError<TestFailure, TestFailure>>>,
     pub(crate) dispatch: Vec<Recorded>,
@@ -704,10 +701,10 @@ impl SendFixture {
             source: &mut self.source,
         };
         let deps = self.stream.deps(dispatch);
-        let events = asend_message_streaming(call, logging, deps, &mut bridge)
+        let stream = asend_message_streaming(call, logging, deps, &mut bridge)
             .await
             .expect("the stream starts");
-        let events = collect_events(events).await;
+        let events = collect_events(stream).await;
         StreamOutcome {
             events,
             dispatch: recorded(&calls),
