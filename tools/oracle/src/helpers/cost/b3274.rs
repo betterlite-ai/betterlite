@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::Future;
+use std::future::{Future, ready};
 
 use betterlite_cost::search::error::SearchCostError;
 use betterlite_cost::search::model_info::SearchModelInfo;
@@ -39,13 +39,28 @@ impl SearchPricingSource for Records {
         model: &str,
         _custom_llm_provider: Option<&str>,
     ) -> impl Future<Output = Result<SearchModelInfo, Unmapped>> + Send {
-        std::future::ready(
+        ready(
             self.0
                 .get(model)
                 .cloned()
                 .ok_or_else(|| Unmapped(model.to_owned())),
         )
     }
+}
+
+fn pricing_failure(error: &SearchCostError<Unmapped>) -> Box<HelperError> {
+    let class = match error {
+        SearchCostError::ModelInfo { .. } => "ModelNotMappedError",
+        SearchCostError::Overflow => "OverflowError",
+    };
+    Box::new(HelperError {
+        class: class.to_owned(),
+        message: error.to_string(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+    })
 }
 
 impl crate::helpers::Helper for Op {
@@ -63,7 +78,7 @@ impl crate::helpers::Helper for Op {
             })
         })?;
         let records = Records(input.model_cost.clone());
-        let (input_cost, output_cost) = runtime
+        let (input_charge, output_charge) = runtime
             .block_on(search_provider_cost_per_query(
                 &records,
                 &input.model,
@@ -71,23 +86,10 @@ impl crate::helpers::Helper for Op {
                 input.number_of_queries,
                 &input.optional_params,
             ))
-            .map_err(|error| {
-                let class = match &error {
-                    SearchCostError::ModelInfo { .. } => "ModelNotMappedError",
-                    SearchCostError::Overflow => "OverflowError",
-                };
-                Box::new(HelperError {
-                    class: class.to_owned(),
-                    message: error.to_string(),
-                    status: None,
-                    error_type: None,
-                    param: None,
-                    code: None,
-                })
-            })?;
-        let [input_cost, output_cost] =
-            [input_cost, output_cost].map(|cost| cost.round_dp(9).to_f64());
-        let (Some(input_cost), Some(output_cost)) = (input_cost, output_cost) else {
+            .map_err(|error| pricing_failure(&error))?;
+        let input_float = input_charge.round_dp(9).to_f64();
+        let output_float = output_charge.round_dp(9).to_f64();
+        let (Some(input_cost), Some(output_cost)) = (input_float, output_float) else {
             return Err(Box::new(HelperError {
                 class: "OverflowError".to_owned(),
                 message: "the cost doesn't fit a float".to_owned(),

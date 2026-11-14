@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::sync::Mutex;
 
 use rust_decimal::Decimal;
@@ -62,7 +62,7 @@ impl SearchPricingSource for FakeSource {
             .lock()
             .expect("the calls lock is not poisoned")
             .push((model.to_owned(), custom_llm_provider.map(str::to_owned)));
-        std::future::ready(
+        ready(
             self.records
                 .lock()
                 .expect("the records lock is not poisoned")
