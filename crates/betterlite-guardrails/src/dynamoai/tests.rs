@@ -10,7 +10,7 @@ use axum::Router;
 use axum::body::Bytes;
 use axum::routing::post;
 use betterlite_config::loader::ConfigError;
-use betterlite_config::sections::Section;
+use betterlite_config::sections::Section as _;
 use betterlite_config::sections::dynamoai_moderation::{
     Configured, DEFAULT_API_BASE, DEFAULT_GUARDRAIL_TIMEOUT, Raw, Settings,
 };
@@ -19,9 +19,9 @@ use reqwest::StatusCode;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::Value;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use tokio::time::sleep;
 
 use super::decisions::{
     GuardrailStatus, ViolationDetails, create_error_message, determine_status, process_response,
@@ -29,7 +29,7 @@ use super::decisions::{
 use super::error::DynamoAiError;
 use super::guardrail::DynamoAiGuardrail;
 use super::hooks::{PostCallOutcome, RequestData, ResponseChoice, ResponseMessage};
-use super::wire::DynamoAiResponse;
+use super::wire::{DynamoAiRequest, DynamoAiResponse};
 
 type Server = JoinSet<Result<(), io::Error>>;
 
@@ -76,10 +76,10 @@ async fn answering(status: StatusCode, body: String, delay: Duration) -> (String
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let answer = move || {
-        let body = body.clone();
+        let answer_body = body.clone();
         async move {
-            tokio::time::sleep(delay).await;
-            (status, body)
+            sleep(delay).await;
+            (status, answer_body)
         }
     };
     let router = Router::new().route("/v1/moderation/analyze/", post(answer));
@@ -95,10 +95,10 @@ async fn capturing(body: String) -> (String, Arc<Mutex<Vec<u8>>>, Server) {
     let captured_for_handler = Arc::clone(&captured);
     let answer = move |request: Bytes| {
         let captured_for_body = Arc::clone(&captured_for_handler);
-        let body = body.clone();
+        let answer_body = body.clone();
         async move {
             *captured_for_body.lock().unwrap() = request.to_vec();
-            (StatusCode::OK, body)
+            (StatusCode::OK, answer_body)
         }
     };
     let router = Router::new().route("/v1/moderation/analyze/", post(answer));
@@ -107,7 +107,7 @@ async fn capturing(body: String) -> (String, Arc<Mutex<Vec<u8>>>, Server) {
     (base, captured, server)
 }
 
-fn captured_body(captured: &Arc<Mutex<Vec<u8>>>) -> Value {
+fn captured_body(captured: &Arc<Mutex<Vec<u8>>>) -> DynamoAiRequest {
     let bytes = captured.lock().unwrap().clone();
     serde_json::from_slice(&bytes).expect("the guardrail sends a JSON body")
 }
@@ -286,10 +286,11 @@ async fn dynamoai_guardrail_call_sends_the_path_and_the_raw_messages() {
         ("name", text("alice")),
     ]);
     let (base, captured, _server) = capturing(r#"{"finalAction":"NONE"}"#.to_owned()).await;
-    let result = guardrail(&base).call_moderation(&[extra.clone()]).await;
-    assert!(result.is_ok());
-    let body = captured_body(&captured);
-    assert_eq!(body["messages"], serde_json::json!([extra]));
+    guardrail(&base)
+        .call_moderation(std::slice::from_ref(&extra))
+        .await
+        .unwrap();
+    assert_eq!(captured_body(&captured).messages, vec![extra]);
 }
 
 #[tokio::test]
@@ -299,10 +300,10 @@ async fn dynamoai_guardrail_call_sends_policy_ids_and_model_id() {
     instance.settings.model_id = "model-1".to_owned();
     let (base, captured, _server) = capturing(r#"{"finalAction":"NONE"}"#.to_owned()).await;
     instance.settings.api_base = base;
-    assert!(instance.call_moderation(&[user_message()]).await.is_ok());
+    instance.call_moderation(&[user_message()]).await.unwrap();
     let body = captured_body(&captured);
-    assert_eq!(body["policyIds"], serde_json::json!(["policy-1"]));
-    assert_eq!(body["modelId"], serde_json::json!("model-1"));
+    assert_eq!(body.policy_ids, Some(vec!["policy-1".to_owned()]));
+    assert_eq!(body.model_id, Some("model-1".to_owned()));
 }
 
 #[tokio::test]
@@ -310,8 +311,10 @@ async fn dynamoai_guardrail_reads_an_answer_larger_than_a_few_kilobytes() {
     let padding = "x".repeat(10_000);
     let body = format!(r#"{{"finalAction":"NONE","padding":"{padding}"}}"#);
     let (base, _server) = answering(StatusCode::OK, body, Duration::ZERO).await;
-    let result = guardrail(&base).call_moderation(&[user_message()]).await;
-    assert!(result.is_ok());
+    guardrail(&base)
+        .call_moderation(&[user_message()])
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -322,7 +325,7 @@ async fn dynamoai_guardrail_an_answer_over_a_mebibyte_is_rejected() {
     let result = guardrail(&base).call_moderation(&[user_message()]).await;
     assert!(matches!(
         result,
-        Err(DynamoAiError::ResponseTooLarge { limit: 1_048_576 })
+        Err(DynamoAiError::ResponseTooLarge { limit: 0x0010_0000 })
     ));
 }
 
@@ -396,10 +399,7 @@ async fn dynamoai_guardrail_during_call_blocks_on_a_block_policy() {
         .async_moderation_hook(&[user_message()])
         .await;
     assert!(matches!(result, Err(DynamoAiError::Blocked { .. })));
-    assert_eq!(
-        captured_body(&captured)["messages"],
-        serde_json::json!([user_message()])
-    );
+    assert_eq!(captured_body(&captured).messages, vec![user_message()]);
 }
 
 #[tokio::test]
@@ -435,8 +435,11 @@ async fn dynamoai_guardrail_post_call_forwards_role_and_content() {
         Ok(PostCallOutcome::Inspected(GuardrailStatus::Success))
     ));
     assert_eq!(
-        captured_body(&captured)["messages"],
-        serde_json::json!([{"role": "assistant", "content": "an answer"}])
+        captured_body(&captured).messages,
+        vec![object(&[
+            ("role", text("assistant")),
+            ("content", text("an answer")),
+        ])]
     );
 }
 
@@ -452,15 +455,16 @@ async fn dynamoai_guardrail_post_call_defaults_the_role_to_assistant(#[case] rol
             content: Some(text("an answer")),
         },
     }];
-    assert!(
-        guardrail(&base)
-            .async_post_call_success_hook(&choices)
-            .await
-            .is_ok()
-    );
+    guardrail(&base)
+        .async_post_call_success_hook(&choices)
+        .await
+        .unwrap();
     assert_eq!(
-        captured_body(&captured)["messages"][0]["role"],
-        serde_json::json!("assistant")
+        captured_body(&captured).messages,
+        vec![object(&[
+            ("role", text("assistant")),
+            ("content", text("an answer")),
+        ])]
     );
 }
 
@@ -515,7 +519,8 @@ fn entry(guardrail: &str, params: &str) -> String {
 }
 
 fn convert(document: &str, env: &BTreeMap<String, String>) -> Result<Settings, ConfigError> {
-    let raw: Raw = serde_saphyr::from_str(document).expect("the test document is valid");
+    let raw: Raw =
+        serde_saphyr::from_str(document).map_err(|source| ConfigError::Yaml { source })?;
     raw.convert(env)
 }
 
@@ -614,7 +619,7 @@ fn dynamoai_config_reads_the_timeout_in_seconds() {
         &BTreeMap::new(),
     )
     .unwrap();
-    assert_eq!(settings.guardrails[0].timeout, Duration::from_secs_f64(2.5));
+    assert_eq!(settings.guardrails[0].timeout, Duration::from_millis(2500));
 }
 
 #[test]
@@ -627,7 +632,7 @@ fn dynamoai_config_resolves_an_environment_reference_in_the_timeout() {
         &env(&[("DYNAMOAI_TIMEOUT", "7.5")]),
     )
     .unwrap();
-    assert_eq!(settings.guardrails[0].timeout, Duration::from_secs_f64(7.5));
+    assert_eq!(settings.guardrails[0].timeout, Duration::from_millis(7500));
 }
 
 #[test]

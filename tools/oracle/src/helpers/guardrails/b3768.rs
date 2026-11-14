@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::loader::ConfigError;
-use betterlite_config::sections::dynamoai_moderation::Parameters;
+use betterlite_config::sections::dynamoai_moderation::{Configured, Parameters};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::dynamoai::decisions::GuardrailStatus;
 use betterlite_guardrails::dynamoai::error::DynamoAiError;
@@ -97,39 +97,41 @@ fn run_call(call: &Call) -> HelperResult {
         "model_id": call.model_id,
     }))
     .map_err(|error| failure("ValueError", error.to_string()))?;
-    let mut settings = match params.resolve("dynamoai", "guardrail", &call.env) {
-        Ok(settings) => settings,
-        Err(ConfigError::MissingEnvironment { .. }) => {
-            return serde_json::to_value(Output {
-                created: false,
-                api_base: None,
-                policy_ids: Vec::new(),
-                model_id: String::new(),
-                event_hooks: Vec::new(),
-                requests: Vec::new(),
-                status: None,
-                raised: false,
-                error: Some("missing_api_key"),
-            })
-            .map_err(|error| failure("ValueError", error.to_string()));
-        }
-        Err(error) => return Err(failure("ValueError", error.to_string())),
-    };
-    let api_base = settings.api_base.clone();
-    if call.mode == Mode::Constructor {
-        return serde_json::to_value(Output {
-            created: true,
-            api_base: Some(api_base),
-            policy_ids: settings.policy_ids.clone(),
-            model_id: settings.model_id.clone(),
-            event_hooks: event_hook_names(),
+    let output = match params.resolve("dynamoai", "guardrail", &call.env) {
+        Ok(settings) if call.mode == Mode::Constructor => constructor_output(settings),
+        Ok(settings) => hook_output(call, settings)?,
+        Err(ConfigError::MissingEnvironment { .. }) => Output {
+            created: false,
+            api_base: None,
+            policy_ids: Vec::new(),
+            model_id: String::new(),
+            event_hooks: Vec::new(),
             requests: Vec::new(),
             status: None,
             raised: false,
-            error: None,
-        })
-        .map_err(|error| failure("ValueError", error.to_string()));
+            error: Some("missing_api_key"),
+        },
+        Err(error) => return Err(failure("ValueError", error.to_string())),
+    };
+    serde_json::to_value(output).map_err(|error| failure("ValueError", error.to_string()))
+}
+
+fn constructor_output(settings: Configured) -> Output {
+    Output {
+        created: true,
+        api_base: Some(settings.api_base),
+        policy_ids: settings.policy_ids,
+        model_id: settings.model_id,
+        event_hooks: event_hook_names(),
+        requests: Vec::new(),
+        status: None,
+        raised: false,
+        error: None,
     }
+}
+
+fn hook_output(call: &Call, mut settings: Configured) -> Result<Output, Box<HelperError>> {
+    let api_base = settings.api_base.clone();
     let client = base_builder()
         .build()
         .map_err(|error| failure("RequestError", error.to_string()))?;
@@ -138,41 +140,49 @@ fn run_call(call: &Call) -> HelperResult {
     settings.api_base.clone_from(&mock.base_url);
     let guardrail = DynamoAiGuardrail { settings, client };
     let result = build_runtime()?.block_on(run_mode(call, &guardrail));
-    let requests: Vec<RequestRecord> = mock
-        .finish()
-        .map_err(|error| failure("MockError", error.to_string()))?
-        .into_iter()
-        .map(|received| RequestRecord {
-            path: received.request.path,
-            content_type: received.request.headers.get("content-type").cloned(),
-            authorization_present: received.request.headers.contains_key("authorization"),
-            body: received.request.body,
-        })
-        .collect();
-    let (status, raised) = if requests.is_empty() {
-        (None, false)
-    } else {
-        match &result {
-            Ok(Some(status)) => (Some(status.as_str()), false),
-            Ok(None) => (None, false),
-            Err(DynamoAiError::Blocked { .. }) => {
-                (Some(GuardrailStatus::Intervened.as_str()), true)
-            }
-            Err(_error) => (Some(GuardrailStatus::FailedToRespond.as_str()), true),
-        }
-    };
-    serde_json::to_value(Output {
+    let requests = request_records(mock)?;
+    let (status, raised) = decision(&result, !requests.is_empty());
+    Ok(Output {
         created: true,
         api_base: Some(api_base),
-        policy_ids: guardrail.settings.policy_ids.clone(),
-        model_id: guardrail.settings.model_id.clone(),
+        policy_ids: guardrail.settings.policy_ids,
+        model_id: guardrail.settings.model_id,
         event_hooks: event_hook_names(),
         requests,
         status,
         raised,
         error: None,
     })
-    .map_err(|error| failure("ValueError", error.to_string()))
+}
+
+fn request_records(mock: MockProvider) -> Result<Vec<RequestRecord>, Box<HelperError>> {
+    let received = mock
+        .finish()
+        .map_err(|error| failure("MockError", error.to_string()))?;
+    Ok(received
+        .into_iter()
+        .map(|call| RequestRecord {
+            path: call.request.path,
+            content_type: call.request.headers.get("content-type").cloned(),
+            authorization_present: call.request.headers.contains_key("authorization"),
+            body: call.request.body,
+        })
+        .collect())
+}
+
+fn decision(
+    result: &Result<Option<GuardrailStatus>, DynamoAiError>,
+    sent_a_request: bool,
+) -> (Option<&'static str>, bool) {
+    if !sent_a_request {
+        return (None, false);
+    }
+    match result {
+        Ok(Some(status)) => (Some(status.as_str()), false),
+        Ok(None) => (None, false),
+        Err(DynamoAiError::Blocked { .. }) => (Some(GuardrailStatus::Intervened.as_str()), true),
+        Err(_error) => (Some(GuardrailStatus::FailedToRespond.as_str()), true),
+    }
 }
 
 fn event_hook_names() -> Vec<&'static str> {
