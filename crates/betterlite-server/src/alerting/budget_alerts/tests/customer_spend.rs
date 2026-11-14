@@ -97,13 +97,8 @@ async fn the_spend_event_names_the_customer_and_the_cost() {
     assert_eq!(event.spend, decimal("0.5"));
     assert_eq!(event.max_budget, Some(decimal("10")));
     assert_eq!(event.key_alias.as_deref(), Some("key-1"));
-    assert_eq!(
-        event
-            .token
-            .as_ref()
-            .map(|token| token.expose_secret().as_str()),
-        Some("hashed-key")
-    );
+    let token = event.token.as_ref().expect("the event carries the key");
+    assert_eq!(token.expose_secret(), "hashed-key");
     assert_eq!(
         event.event_message,
         "Customer spend tracked. Customer=cust-1, spend=0.5"

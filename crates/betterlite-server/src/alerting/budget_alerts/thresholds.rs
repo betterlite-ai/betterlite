@@ -22,7 +22,7 @@ pub(super) fn get_percent_of_max_budget_left(user_info: &CallInfo) -> Decimal {
 pub(super) fn get_event_and_event_message(
     mut event: Option<WebhookEventType>,
     user_info: &CallInfo,
-    event_message: String,
+    mut event_message: String,
 ) -> (Option<WebhookEventType>, String) {
     let percent_left = get_percent_of_max_budget_left(user_info);
     let mut suffixes: Vec<String> = Vec::new();
@@ -51,5 +51,6 @@ pub(super) fn get_event_and_event_message(
         event = Some(max_event);
         suffixes.push(max_suffix);
     }
-    (event, format!("{event_message}{}", suffixes.concat()))
+    event_message.push_str(&suffixes.concat());
+    (event, event_message)
 }

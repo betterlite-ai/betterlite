@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::failure_hook::ports::EntityType;
+use crate::failure_hook::ports::{CallInfo, EntityType};
 
 use super::events::get_user_info_str;
 use super::support::{call_info, decimal};

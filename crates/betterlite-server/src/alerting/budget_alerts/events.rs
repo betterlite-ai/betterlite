@@ -179,7 +179,10 @@ pub(super) fn get_user_info_str(user_info: &CallInfo) -> String {
     text
 }
 
-fn field<T: Display>(text: &mut String, name: &str, value: Option<T>) {
+fn field<T>(text: &mut String, name: &str, value: Option<T>)
+where
+    T: Display,
+{
     if let Some(displayable) = value {
         let _ignored = writeln!(text, "*{name}:* `{displayable}`");
     }

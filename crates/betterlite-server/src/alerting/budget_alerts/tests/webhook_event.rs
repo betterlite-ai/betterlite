@@ -50,13 +50,8 @@ fn every_present_field_reaches_the_event() {
     assert_eq!(event.spend, decimal("300"));
     assert_eq!(event.max_budget, Some(decimal("1000")));
     assert_eq!(event.soft_budget, Some(decimal("500")));
-    assert_eq!(
-        event
-            .token
-            .as_ref()
-            .map(|token| token.expose_secret().as_str()),
-        Some("hashed-key")
-    );
+    let token = event.token.as_ref().expect("the event carries the key");
+    assert_eq!(token.expose_secret(), "hashed-key");
     assert_eq!(event.customer_id.as_deref(), Some("cust-1"));
     assert_eq!(event.user_id.as_deref(), Some("user-1"));
     assert_eq!(event.team_id.as_deref(), Some("team-1"));
