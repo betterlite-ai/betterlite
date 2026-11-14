@@ -36,7 +36,7 @@ use betterlite_vertex::google_native_content::request::{
     GenerateContentRequest as VertexRequest, transform_request as vertex_transform,
 };
 use betterlite_vertex::model_policy::partners::is_vertex_partner_model;
-use chrono::{DateTime, FixedOffset};
+use chrono::DateTime;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -190,21 +190,24 @@ fn answer(
         "config_dict": serde_json::to_value(&result.config_dict)?,
         "native_request_fields": native,
         "request_body": serde_json::to_value(&result.request_body)?,
-        "litellm_params": params_view(&result.litellm_params),
+        "litellm_params": params_view(&result.litellm_params)?,
         "merged_extra_body": merged,
         "logging": logging_view(result.logging)?,
     }))
 }
 
-fn params_view(params: &GenerateContentLiteLLMParams) -> Value {
-    json!({
+fn params_view(params: &GenerateContentLiteLLMParams) -> Result<Value, serde_json::Error> {
+    Ok(json!({
         "api_base": params.api_base,
         "api_version": params.api_version,
         "custom_llm_provider": params.custom_llm_provider,
         "max_retries": params.max_retries,
         "organization": params.organization,
         "api_key_set": params.api_key.is_some(),
-    })
+        "vertex_project": params.vertex_project,
+        "vertex_location": params.vertex_location,
+        "extra": serde_json::to_value(&params.extra)?,
+    }))
 }
 
 fn logging_view(state: &LoggingState) -> Result<Value, serde_json::Error> {
@@ -232,7 +235,8 @@ fn logging_state() -> Result<LoggingState, Box<HelperError>> {
         LoggingInit {
             model: "fixture-model".to_owned(),
             call_type: "generate_content".to_owned(),
-            start_time: moment()?,
+            start_time: DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00")
+                .or_value_error()?,
             litellm_call_id: "call-1".to_owned(),
             function_id: "fn-1".to_owned(),
             messages: None,
@@ -252,17 +256,9 @@ fn logging_state() -> Result<LoggingState, Box<HelperError>> {
             context: &mut context,
             settings: CorrelationSettings::default(),
         },
-        &redactor()?,
+        &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()?,
         || "generated-trace".to_owned(),
         Duration::default,
     )
     .or_value_error()
-}
-
-fn moment() -> Result<DateTime<FixedOffset>, Box<HelperError>> {
-    DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00").or_value_error()
-}
-
-fn redactor() -> Result<Redactor, Box<HelperError>> {
-    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()
 }
