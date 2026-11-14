@@ -1,0 +1,37 @@
+kind: helper
+name: mcp-client-credentials-mint-ttl
+call:
+  b4661:
+    function: mint
+    config:
+      client_id: gateway-client
+      client_secret: gateway-secret
+      token_url: https://idp.example.com/token
+      scopes: [read]
+    outcomes:
+      - {kind: success, body: '{"access_token": "tok-long-1", "expires_in": 3600}'}
+      - {kind: success, body: '{"access_token": "tok-long-2", "expires_in": 3600}'}
+      - {kind: success, body: '{"access_token": "tok-short-1", "expires_in": 5}'}
+      - {kind: success, body: '{"access_token": "tok-short-2", "expires_in": 5}'}
+      - {kind: success, body: '{"access_token": "tok-default-1"}'}
+      - {kind: success, body: '{"access_token": "tok-default-2"}'}
+      - {kind: success, body: '{"access_token": "tok-zero-1", "expires_in": 0}'}
+      - {kind: success, body: '{"access_token": "tok-zero-2", "expires_in": 0}'}
+      - {kind: success, body: '{"access_token": "tok-negative-1", "expires_in": -5}'}
+      - {kind: success, body: '{"access_token": "tok-negative-2", "expires_in": -5}'}
+    operations:
+      - {server_id: long-lived}
+      - {server_id: long-lived, advance_ms: 3539000}
+      - {server_id: long-lived, advance_ms: 2000}
+      - {server_id: short-lived}
+      - {server_id: short-lived, advance_ms: 4000}
+      - {server_id: short-lived, advance_ms: 2000}
+      - {server_id: no-expiry}
+      - {server_id: no-expiry, advance_ms: 299000}
+      - {server_id: no-expiry, advance_ms: 2000}
+      - {server_id: zero-expiry}
+      - {server_id: zero-expiry}
+      - {server_id: negative-expiry}
+      - {server_id: negative-expiry}
+env: {}
+compare: {ignore: []}
