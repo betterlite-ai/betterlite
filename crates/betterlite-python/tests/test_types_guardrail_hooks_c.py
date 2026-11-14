@@ -854,7 +854,7 @@ def test_json_value_names() -> None:
         javelin.JavelinGuardrailConfigModel.model_validate({"metadata": {"not": ...}})
 
 
-def test_optional_params_base_names() -> None:
+def test_optional_model_names() -> None:
     config = javelin.JavelinGuardrailConfigModel()
     assert config.optional_params is None
     payload: dict[str, JsonValue] = {"optional_params": {"unknown_knob": True}}
