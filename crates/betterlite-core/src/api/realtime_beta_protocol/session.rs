@@ -54,15 +54,11 @@ fn remap_modalities(fields: &mut IndexMap<String, Json>) -> Result<(), BetaProto
             }
         }
     }
-    if wants_audio {
+    if wants_audio || wants_text {
+        let preferred = if wants_audio { "audio" } else { "text" };
         fields.insert(
             "output_modalities".to_owned(),
-            Json::List(vec![Json::Text("audio".to_owned())]),
-        );
-    } else if wants_text {
-        fields.insert(
-            "output_modalities".to_owned(),
-            Json::List(vec![Json::Text("text".to_owned())]),
+            Json::List(vec![Json::Text(preferred.to_owned())]),
         );
     }
     Ok(())
@@ -121,7 +117,14 @@ fn merge_audio(
             }
             (
                 None
-                | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)),
+                | Some(
+                    Json::Null
+                    | Json::Bool(_)
+                    | Json::Number(_)
+                    | Json::Text(_)
+                    | Json::List(_)
+                    | Json::Object(_),
+                ),
                 value,
             ) => value,
         };

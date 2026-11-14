@@ -5,9 +5,7 @@ use rstest::rstest;
 
 use super::error::BetaProtocolError;
 use super::events::{translate_event_to_beta, translate_item_content_types};
-use super::headers::{
-    HeaderField, HeaderPair, HeaderScope, client_sent_openai_beta_realtime_header,
-};
+use super::headers::{HeaderField, HeaderPair, HeaderScope, openai_beta_realtime_header};
 use super::session::remap_beta_session_to_ga;
 
 fn parse(text: &str) -> Json {
@@ -40,50 +38,49 @@ fn header_pair(name: &str, value: &str, encoding: Encoding) -> HeaderPair {
 }
 
 #[rstest]
-#[case::byte_header(Encoding::Bytes, Some(&[("OpenAI-Beta", "realtime=v1")]), true)]
-#[case::string_header(Encoding::Text, Some(&[("OpenAI-Beta", "realtime=v1")]), true)]
-#[case::uppercase_value(Encoding::Bytes, Some(&[("OpenAI-Beta", "REALTIME=V1")]), true)]
-#[case::mixed_case_name(Encoding::Text, Some(&[("openai-BETA", "Realtime=V1")]), true)]
-#[case::other_token_first(Encoding::Text, Some(&[("OpenAI-Beta", "other, realtime=v1")]), true)]
-#[case::substring_v10(Encoding::Text, Some(&[("OpenAI-Beta", "realtime=v10")]), true)]
-#[case::missing_header(Encoding::Text, Some(&[]), false)]
-#[case::older_version(Encoding::Text, Some(&[("OpenAI-Beta", "realtime=v2")]), false)]
-#[case::wrong_name(Encoding::Text, Some(&[("X-Beta", "realtime=v1")]), false)]
+#[case::byte_header(Encoding::Bytes, Some(vec![("OpenAI-Beta", "realtime=v1")]), true)]
+#[case::string_header(Encoding::Text, Some(vec![("OpenAI-Beta", "realtime=v1")]), true)]
+#[case::uppercase_value(Encoding::Bytes, Some(vec![("OpenAI-Beta", "REALTIME=V1")]), true)]
+#[case::mixed_case_name(Encoding::Text, Some(vec![("openai-BETA", "Realtime=V1")]), true)]
+#[case::other_token_first(Encoding::Text, Some(vec![("OpenAI-Beta", "other, realtime=v1")]), true)]
+#[case::substring_v10(Encoding::Text, Some(vec![("OpenAI-Beta", "realtime=v10")]), true)]
+#[case::missing_header(Encoding::Text, Some(Vec::new()), false)]
+#[case::older_version(Encoding::Text, Some(vec![("OpenAI-Beta", "realtime=v2")]), false)]
+#[case::wrong_name(Encoding::Text, Some(vec![("X-Beta", "realtime=v1")]), false)]
 #[case::one_duplicate_matches(
     Encoding::Text,
-    Some(&[("OpenAI-Beta", "realtime=v2"), ("OpenAI-Beta", "realtime=v1")]),
+    Some(vec![("OpenAI-Beta", "realtime=v2"), ("OpenAI-Beta", "realtime=v1")]),
     true
 )]
 #[case::no_duplicate_matches(
     Encoding::Text,
-    Some(&[("OpenAI-Beta", "realtime=v2"), ("OpenAI-Beta", "realtime=v3")]),
+    Some(vec![("OpenAI-Beta", "realtime=v2"), ("OpenAI-Beta", "realtime=v3")]),
     false
 )]
 #[case::latin1_byte_after_the_token(
     Encoding::Bytes,
-    Some(&[("OpenAI-Beta", "realtime=v1\u{ff}")]),
+    Some(vec![("OpenAI-Beta", "realtime=v1\u{ff}")]),
     true
 )]
 #[case::latin1_byte_in_the_name(
     Encoding::Bytes,
-    Some(&[("OpenAI-Beta\u{ff}", "realtime=v1")]),
+    Some(vec![("OpenAI-Beta\u{ff}", "realtime=v1")]),
     false
 )]
 #[case::unreadable_scope(Encoding::Text, None, false)]
 fn beta_header_detection(
     #[case] encoding: Encoding,
-    #[case] pairs: Option<&[(&str, &str)]>,
+    #[case] pairs: Option<Vec<(&str, &str)>>,
     #[case] expected: bool,
 ) {
-    let headers: Vec<HeaderPair> = match pairs {
-        Some(pairs) => pairs
-            .iter()
-            .map(|(name, value)| header_pair(name, value, encoding))
-            .collect(),
-        None => Vec::new(),
-    };
+    let mut headers = Vec::new();
+    if let Some(pairs) = &pairs {
+        for (name, value) in pairs {
+            headers.push(header_pair(name, value, encoding));
+        }
+    }
     let scope = HeaderScope { headers: &headers };
-    let found = client_sent_openai_beta_realtime_header(pairs.map(|_| &scope));
+    let found = openai_beta_realtime_header(pairs.as_ref().map(|_| &scope));
     assert_eq!(found, expected);
 }
 
@@ -362,7 +359,7 @@ fn ga_events_for_beta_translates_response_output_of_unknown_events() {
                 "id": "r1",
                 "output": [
                     {"type": "message", "content": [{"type": "text", "text": "hi"}]},
-                    {"type": "audio", "audio": "AAA"},
+                    {"type": "output_audio", "audio": "AAA"},
                     7
                 ]
             }

@@ -1,14 +1,15 @@
-use betterlite_core::api::realtime_beta_protocol::error::BetaProtocolError;
 use betterlite_core::api::realtime_beta_protocol::events::translate_event_to_beta;
 use betterlite_core::api::realtime_beta_protocol::headers::{
-    HeaderField, HeaderScope, client_sent_openai_beta_realtime_header,
+    HeaderField, HeaderScope, openai_beta_realtime_header,
 };
 use betterlite_core::api::realtime_beta_protocol::session::remap_beta_session_to_ga;
 use betterlite_models::decisions::Json;
 use serde::Deserialize;
 use serde_json::json;
 
-type Failure = Box<crate::helpers::HelperError>;
+use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+
+type Failure = Box<HelperError>;
 
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
@@ -42,10 +43,10 @@ struct EventsInput {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::HeaderDetection(fields) => {
                 let answers = header_answers(&fields.websockets)?;
@@ -73,7 +74,7 @@ fn header_answers(websockets: &[WebSocketInput]) -> Result<Vec<bool>, Failure> {
 
 fn header_answer(websocket: &WebSocketInput) -> Result<bool, Failure> {
     if websocket.scope_error {
-        return Ok(client_sent_openai_beta_realtime_header(None));
+        return Ok(openai_beta_realtime_header(None));
     }
     let mut headers = Vec::with_capacity(websocket.headers.len());
     for (name, value) in &websocket.headers {
@@ -85,7 +86,7 @@ fn header_answer(websocket: &WebSocketInput) -> Result<bool, Failure> {
     let scope = HeaderScope {
         headers: headers.as_slice(),
     };
-    Ok(client_sent_openai_beta_realtime_header(Some(&scope)))
+    Ok(openai_beta_realtime_header(Some(&scope)))
 }
 
 fn header_field(text: &str, latin1: bool) -> Result<HeaderField, Failure> {
@@ -103,7 +104,7 @@ fn header_field(text: &str, latin1: bool) -> Result<HeaderField, Failure> {
 fn session_answers(sessions: &[Json]) -> Result<Vec<Json>, Failure> {
     let mut answers = Vec::with_capacity(sessions.len());
     for session in sessions {
-        answers.push(remap_beta_session_to_ga(session.clone()).map_err(failure)?);
+        answers.push(remap_beta_session_to_ga(session.clone()).or_value_error()?);
     }
     Ok(answers)
 }
@@ -111,24 +112,13 @@ fn session_answers(sessions: &[Json]) -> Result<Vec<Json>, Failure> {
 fn event_answers(events: &[Json]) -> Result<Vec<Option<Json>>, Failure> {
     let mut answers = Vec::with_capacity(events.len());
     for event in events {
-        answers.push(translate_event_to_beta(event.clone()).map_err(failure)?);
+        answers.push(translate_event_to_beta(event.clone()).or_value_error()?);
     }
     Ok(answers)
 }
 
-fn failure(error: &BetaProtocolError) -> Failure {
-    Box::new(crate::helpers::HelperError {
-        class: "BetaProtocolError".to_owned(),
-        status: None,
-        error_type: Some(None),
-        param: Some(None),
-        code: Some(None),
-        message: error.to_string(),
-    })
-}
-
 fn invalid_input(message: String) -> Failure {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
         error_type: Some(None),
