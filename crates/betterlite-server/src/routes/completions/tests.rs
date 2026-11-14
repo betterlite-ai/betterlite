@@ -11,7 +11,7 @@ use axum::http::{HeaderMap, Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
 use rstest::rstest;
-use serde_json::Value;
+use serde::Deserialize;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::time::timeout;
@@ -60,10 +60,37 @@ async fn serve(listener: TcpListener, status: u16, body: &str) -> String {
     String::from_utf8(received).unwrap_or_default()
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct AnswerBody {
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    object: Option<String>,
+    #[serde(default)]
+    choices: Vec<AnswerChoice>,
+    #[serde(default)]
+    error: Option<AnswerError>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct AnswerChoice {
+    #[serde(default)]
+    text: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct AnswerError {
+    #[serde(default, rename = "type")]
+    kind: Option<String>,
+    #[serde(default)]
+    code: Option<String>,
+}
+
 struct Answered {
     status: StatusCode,
     headers: HeaderMap,
-    body: Value,
+    body: AnswerBody,
+    raw: String,
     sent: String,
 }
 
@@ -74,6 +101,7 @@ async fn call(path: &str, body: &str, upstream_status: u16, upstream: &str) -> A
     let request = Request::post(path)
         .header("content-type", "application/json")
         .header("authorization", "Bearer oracle-master")
+        .header("x-litellm-call-id", "caller-id")
         .body(Body::from(body.to_owned()))
         .expect("request");
     let (response, sent) = tokio::join!(
@@ -84,10 +112,12 @@ async fn call(path: &str, body: &str, upstream_status: u16, upstream: &str) -> A
     let status = response.status();
     let headers = response.headers().clone();
     let bytes = to_bytes(response.into_body(), 1 << 20).await.expect("body");
+    let raw = std::str::from_utf8(&bytes).expect("utf8 body").to_owned();
     Answered {
         status,
         headers,
-        body: serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        body: serde_json::from_slice(&bytes).unwrap_or_default(),
+        raw,
         sent,
     }
 }
@@ -141,8 +171,8 @@ async fn text_completions_text_completion_tests_behavior(#[case] scenario: Scena
         Scenario::EnginesPath => alias("/engines/text-model/completions").await,
         Scenario::DeploymentsPath => alias("/openai/deployments/text-model/completions").await,
         Scenario::ParametersAndControls => parameters_and_controls().await,
-        Scenario::ProviderBadRequest => provider_error(400, "invalid_request_error").await,
-        Scenario::ProviderRateLimit => provider_error(429, "rate_limit_error").await,
+        Scenario::ProviderBadRequest => provider_error(400, None).await,
+        Scenario::ProviderRateLimit => provider_error(429, Some("throttling_error")).await,
         Scenario::StreamNotBuilt => stream_not_built().await,
         Scenario::AuthRequired => auth_required().await,
     }
@@ -157,12 +187,21 @@ async fn string_prompt() {
     let answered = text_answer("/v1/completions", r#""Once upon a time""#).await;
     assert_eq!(answered.status, StatusCode::OK);
     assert_eq!(
-        answered.body.pointer("/choices/0/text"),
-        Some(&Value::String(String::from(" hello")))
+        answered
+            .body
+            .choices
+            .first()
+            .and_then(|choice| choice.text.as_deref()),
+        Some(" hello")
     );
+    assert_eq!(answered.body.object.as_deref(), Some("text_completion"));
+    assert_eq!(answered.body.model.as_deref(), Some("text-model"));
     assert_eq!(
-        answered.body.pointer("/object"),
-        Some(&Value::String(String::from("text_completion")))
+        answered
+            .headers
+            .get("x-litellm-call-id")
+            .and_then(|value| value.to_str().ok()),
+        Some("caller-id")
     );
     assert!(
         answered.sent.starts_with("POST /v1/completions "),
@@ -199,13 +238,14 @@ async fn empty_string_prompt() {
 async fn empty_list_rejected() {
     let answered = text_answer("/v1/completions", "[]").await;
     assert_eq!(answered.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(answered.raw.contains(r#""type":null"#), "{}", answered.raw);
     assert_eq!(
-        answered.body.pointer("/error/type"),
-        Some(&Value::String(String::from("internal_server_error")))
-    );
-    assert_eq!(
-        answered.body.pointer("/error/code"),
-        Some(&Value::String(String::from("500")))
+        answered
+            .body
+            .error
+            .as_ref()
+            .and_then(|error| error.code.as_deref()),
+        Some("500")
     );
     assert!(answered.sent.is_empty(), "no provider request");
 }
@@ -213,6 +253,14 @@ async fn empty_list_rejected() {
 async fn mixed_prompt_rejected() {
     let answered = text_answer("/v1/completions", r#"[["a"]]"#).await;
     assert_eq!(answered.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        answered
+            .body
+            .error
+            .as_ref()
+            .and_then(|error| error.kind.as_deref()),
+        Some("internal_server_error")
+    );
     assert!(answered.sent.is_empty(), "no provider request");
 }
 
@@ -227,10 +275,11 @@ async fn alias(path: &str) {
         "{}",
         answered.sent
     );
+    assert_eq!(answered.body.model.as_deref(), Some("wrong"));
 }
 
 async fn parameters_and_controls() {
-    let body = r#"{"model":"text-model","prompt":"hi","temperature":0.7,"logprobs":2,"max_retries":5,"api_base":"http://evil.example","api_key":"sk-evil","metadata":{"user":"x"},"num_retries":3,"timeout":1}"#;
+    let body = r#"{"model":"text-model","prompt":"hi","temperature":0.7,"logprobs":2,"top_logprobs":1,"max_retries":5,"api_base":"http://evil.example","api_key":"sk-evil","metadata":{"user":"x"},"num_retries":3,"timeout":1}"#;
     let answered = call("/v1/completions", body, 200, ANSWER).await;
     assert_eq!(answered.status, StatusCode::OK);
     assert!(
@@ -240,6 +289,11 @@ async fn parameters_and_controls() {
     );
     assert!(
         answered.sent.contains(r#""logprobs":2"#),
+        "{}",
+        answered.sent
+    );
+    assert!(
+        answered.sent.contains(r#""top_logprobs":1"#),
         "{}",
         answered.sent
     );
@@ -276,18 +330,27 @@ async fn parameters_and_controls() {
     );
 }
 
-async fn provider_error(status: u16, error_type: &str) {
+async fn provider_error(status: u16, error_type: Option<&str>) {
     let upstream = r#"{"error":{"message":"provider refused","type":"invalid_request_error","param":"prompt","code":"bad"}}"#;
     let body = r#"{"model":"text-model","prompt":"hi"}"#;
     let answered = call("/v1/completions", body, status, upstream).await;
     assert_eq!(answered.status.as_u16(), status);
     assert_eq!(
-        answered.body.pointer("/error/type"),
-        Some(&Value::String(error_type.to_owned()))
+        answered
+            .body
+            .error
+            .as_ref()
+            .and_then(|error| error.kind.as_deref()),
+        error_type
     );
+    let code = status.to_string();
     assert_eq!(
-        answered.body.pointer("/error/code"),
-        Some(&Value::String(status.to_string()))
+        answered
+            .body
+            .error
+            .as_ref()
+            .and_then(|error| error.code.as_deref()),
+        Some(code.as_str())
     );
     assert_eq!(
         answered
@@ -303,8 +366,12 @@ async fn stream_not_built() {
     let answered = call("/v1/completions", body, 200, ANSWER).await;
     assert_eq!(answered.status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(
-        answered.body.pointer("/error/type"),
-        Some(&Value::String(String::from("internal_server_error")))
+        answered
+            .body
+            .error
+            .as_ref()
+            .and_then(|error| error.kind.as_deref()),
+        Some("internal_server_error")
     );
     assert!(answered.sent.is_empty(), "no provider request");
 }

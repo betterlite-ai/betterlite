@@ -16,14 +16,14 @@ struct ErrorBody {
 struct ErrorObject {
     message: String,
     #[serde(rename = "type")]
-    error_type: String,
+    error_type: Option<String>,
     param: Option<String>,
     code: String,
 }
 
 pub(super) struct FailureAnswer {
     pub(super) status: u16,
-    pub(super) error_type: String,
+    pub(super) error_type: Option<String>,
     pub(super) param: Option<String>,
     pub(super) message: String,
 }
@@ -32,7 +32,7 @@ impl FailureAnswer {
     pub(super) fn request(message: String) -> Self {
         Self {
             status: 400,
-            error_type: String::from("invalid_request_error"),
+            error_type: Some(String::from("invalid_request_error")),
             param: None,
             message,
         }
@@ -41,7 +41,7 @@ impl FailureAnswer {
     fn internal(message: &str) -> Self {
         Self {
             status: 500,
-            error_type: String::from("internal_server_error"),
+            error_type: Some(String::from("internal_server_error")),
             param: None,
             message: String::from(message),
         }
@@ -58,19 +58,20 @@ pub(super) fn failure_answer(error: DispatchError) -> FailureAnswer {
             ..
         } => FailureAnswer {
             status,
-            error_type,
+            // the text completion dispatch keeps a null type as an empty string, so it serializes as null again
+            error_type: (!error_type.is_empty()).then_some(error_type),
             param,
             message,
         },
         DispatchError::MissingDeployment { model_id } => FailureAnswer {
             status: 400,
-            error_type: String::from("invalid_request_error"),
+            error_type: Some(String::from("invalid_request_error")),
             param: None,
             message: format!("no model_list entry serves the model {model_id}"),
         },
         DispatchError::DeadlineExpired { .. } => FailureAnswer {
             status: 408,
-            error_type: String::from("invalid_request_error"),
+            error_type: Some(String::from("invalid_request_error")),
             param: None,
             message: String::from("the completion call passed its deadline"),
         },

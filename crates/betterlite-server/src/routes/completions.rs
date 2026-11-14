@@ -156,6 +156,7 @@ async fn execute(
     call_id: &str,
     started: Instant,
 ) -> Response {
+    let asked_model = request.model.clone();
     let (operation, last_upstream) = operation(state, request, deployment, call_id);
     let context = DispatchContext::start(CallInputs {
         now: SystemTime::now,
@@ -164,7 +165,11 @@ async fn execute(
         privacy: false,
     });
     match state.dispatch.execute(operation, &context).await {
-        Ok(CallResult::TextCompletion(result)) => {
+        Ok(CallResult::TextCompletion(mut result)) => {
+            // common_request_processing._override_openai_response_model answers the model the client named
+            if let Some(model) = asked_model {
+                result.response.model = Some(model);
+            }
             let response_headers = success_headers(
                 &result.upstream_headers,
                 deployment,
