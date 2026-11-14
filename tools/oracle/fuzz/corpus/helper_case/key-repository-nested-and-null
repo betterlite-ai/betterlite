@@ -1,0 +1,15 @@
+kind: helper
+name: key-repository-nested-and-null
+call:
+  key_repository:
+    cases:
+      nested_payloads_stay_inside_their_field:
+        records:
+          - mapping: {token: c1, metadata: '{"outer": {"inner": [1, 2]}}'}
+          - mapping: {token: c2, router_settings: 'null'}
+      invalid_fields_are_marked:
+        records:
+          - mapping: {token: c3, permissions: '[1, 2]'}
+          - mapping: {token: c4, config: 'null'}
+env: {}
+compare: {ignore: []}
