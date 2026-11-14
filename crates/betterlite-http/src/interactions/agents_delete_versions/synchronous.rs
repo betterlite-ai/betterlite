@@ -16,13 +16,16 @@ use crate::interactions::base::{
 macro_rules! agent_entries {
     ($($method:ident: $kind:expr, $output:ident, $transform:ident);* $(;)?) => {
         $(
-            pub fn $method<C: AgentsConfig>(
+            pub fn $method<C>(
                 config: &C,
                 clients: &mut HttpClients,
                 logging: &mut Logging,
                 supplied: Option<BlockingClient>,
                 request: &AgentRequest<'_>,
-            ) -> Result<C::$output, AgentsDeleteVersionsError<C::Error>> {
+            ) -> Result<C::$output, AgentsDeleteVersionsError<C::Error>>
+            where
+                C: AgentsConfig,
+            {
                 let (client, proxy) = open_client(clients, supplied, request)
                     .map_err(AgentsDeleteVersionsError::Client)?;
                 let call = prepare(config, logging, request, $kind)?;
