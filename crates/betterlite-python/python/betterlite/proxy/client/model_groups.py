@@ -1,7 +1,6 @@
-from datetime import datetime
 from typing import Literal, overload
 
-from betterlite.types.utils.values import JsonValue
+from pydantic import JsonValue
 
 from ._transport import UNAUTHORIZED_STATUS, HTTPError, Request, RequestError, send
 from .exceptions import UnauthorizedError
@@ -45,5 +44,5 @@ class ModelGroupsManagementClient:
         match reply:
             case dict() if "data" in reply:
                 return reply["data"]
-            case dict() | list() | str() | bool() | int() | float() | datetime() | None:
+            case dict() | list() | str() | bool() | int() | float() | None:
                 raise RequestError("the model group info reply has no data")

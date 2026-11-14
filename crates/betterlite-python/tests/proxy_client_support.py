@@ -6,9 +6,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import TracebackType
 from typing import ClassVar, Self
 
+from pydantic import JsonValue
 from typing_extensions import override
-
-from betterlite.types.utils.values import JsonValue
 
 HOST = "127.0.0.1"
 

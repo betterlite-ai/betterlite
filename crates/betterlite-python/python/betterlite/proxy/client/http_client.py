@@ -2,7 +2,7 @@ import urllib.parse
 from collections.abc import Mapping
 from typing import TypedDict, Unpack
 
-from betterlite.types.utils.values import JsonValue
+from pydantic import JsonValue
 
 from ._transport import Request, send
 

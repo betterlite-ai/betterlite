@@ -1,6 +1,4 @@
-from datetime import datetime
-
-from betterlite.types.utils.values import JsonValue
+from pydantic import JsonValue
 
 from ._transport import RequestError
 from .http_client import HTTPClient
@@ -15,12 +13,12 @@ class HealthManagementClient:
         match reply:
             case dict():
                 return reply
-            case list() | str() | bool() | int() | float() | datetime() | None:
+            case list() | str() | bool() | int() | float() | None:
                 raise RequestError("the readiness reply is not a JSON object")
 
     def get_server_version(self) -> str | None:
         match self.get_readiness().get("litellm_version"):
             case str() as version:
                 return version
-            case bool() | int() | float() | list() | dict() | datetime() | None:
+            case bool() | int() | float() | list() | dict() | None:
                 return None

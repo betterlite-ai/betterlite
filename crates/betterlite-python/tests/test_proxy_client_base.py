@@ -1,7 +1,6 @@
 import json
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from datetime import datetime
 from functools import partial
 from pathlib import Path
 
@@ -15,6 +14,7 @@ from litellm.proxy.client.model_groups import (
 )
 from litellm.proxy.client.users import UsersManagementClient as LiteLLMUsersClient
 from proxy_client_support import RecordingServer
+from pydantic import JsonValue
 
 from betterlite.proxy.client import _bridge
 from betterlite.proxy.client._transport import HTTPError, Request, RequestError, Response, send
@@ -23,14 +23,13 @@ from betterlite.proxy.client.health import HealthManagementClient
 from betterlite.proxy.client.http_client import HTTPClient
 from betterlite.proxy.client.model_groups import ModelGroupsManagementClient
 from betterlite.proxy.client.users import UsersManagementClient
-from betterlite.types.utils.values import JsonValue, StoredValue
 
 TIMEOUT = 5
 OK = 200
 LEAKY_TEXT = "api_key=sk-abcdefghijklmnop"
 CLOSED_URL = "http://127.0.0.1:1/unreachable"
 
-LiteCall = Callable[[], StoredValue | requests.Request | requests.Response]
+LiteCall = Callable[[], JsonValue | requests.Request | requests.Response]
 
 
 @dataclass(frozen=True)
@@ -73,7 +72,7 @@ def compare_call(
     match result:
         case Response():
             assert result.status_code == reply.status
-        case dict() | list() | str() | bool() | int() | float() | datetime() | None:
+        case dict() | list() | str() | bool() | int() | float() | None:
             assert result == expected
     assert server.requests[1] == server.requests[0]
 
@@ -141,7 +140,7 @@ def test_transport_error_text(server: RecordingServer) -> None:
         assert actual_error.value.response is response
 
 
-def test_transport_connection_error() -> None:
+def test_transport_connection() -> None:
     with pytest.raises(RequestError) as caught:
         send(Request(method="GET", url=CLOSED_URL), TIMEOUT)
     assert caught.value.__cause__ is not None
@@ -162,7 +161,7 @@ def test_exceptions_redact_string() -> None:
     assert "sk-abcdefghijklmnop" not in actual
 
 
-def test_exceptions_notfound_redacts() -> None:
+def test_exceptions_notfound() -> None:
     expected = str(LiteLLMNotFoundError(LEAKY_TEXT))
     actual = str(NotFoundError(LEAKY_TEXT))
     assert actual == expected

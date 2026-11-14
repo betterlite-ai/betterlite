@@ -1,7 +1,6 @@
 from collections.abc import Mapping
-from datetime import datetime
 
-from betterlite.types.utils.values import JsonValue
+from pydantic import JsonValue
 
 from ._transport import (
     NOT_FOUND_STATUS,
@@ -55,7 +54,7 @@ class UsersManagementClient:
         match reply:
             case dict() if "users" in reply:
                 return reply["users"]
-            case dict() | list() | str() | bool() | int() | float() | datetime() | None:
+            case dict() | list() | str() | bool() | int() | float() | None:
                 return reply
 
     def get_user(self, user_id: str | None = None) -> JsonValue:

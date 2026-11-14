@@ -6,9 +6,8 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from http.client import HTTPResponse
 
+from pydantic import JsonValue
 from typing_extensions import override
-
-from betterlite.types.utils.values import JsonValue
 
 CLIENT_ERRORS = range(400, 500)
 SERVER_ERRORS = range(500, 600)
