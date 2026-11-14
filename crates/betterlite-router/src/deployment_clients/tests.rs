@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -65,10 +65,10 @@ fn clock_at(millis: u64) -> Arc<Mutex<u64>> {
     Arc::new(Mutex::new(millis))
 }
 
-fn system_clock(shared: &Arc<Mutex<u64>>) -> Arc<dyn Fn() -> std::time::SystemTime + Send + Sync> {
-    let shared = Arc::clone(shared);
+fn system_clock(millis_cell: &Arc<Mutex<u64>>) -> Arc<dyn Fn() -> SystemTime + Send + Sync> {
+    let cell = Arc::clone(millis_cell);
     Arc::new(move || {
-        let millis = *shared.lock().expect("clock");
+        let millis = *cell.lock().expect("clock");
         UNIX_EPOCH
             .checked_add(Duration::from_millis(millis))
             .unwrap_or(UNIX_EPOCH)

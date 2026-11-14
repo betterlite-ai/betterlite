@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+use std::iter::repeat_with;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
@@ -17,28 +19,25 @@ use crate::deployment_clients::request::{DeploymentView, RequestContext};
 
 // Bounds, error fields and exact selection: the values just inside and just outside each limit.
 #[rstest]
-#[case::first_slot_of_one(1, 0, true)]
-#[case::last_slot_of_two(2, 1, true)]
-#[case::at_the_limit(1, 1, false)]
-#[case::at_the_limit_of_two(2, 2, false)]
-#[case::zero_admits_nothing(0, 0, false)]
-#[case::negative_admits_nothing(-1, 0, false)]
+#[case::first_slot_of_one(1, 0, true, 1)]
+#[case::last_slot_of_two(2, 1, true, 2)]
+#[case::at_the_limit(1, 1, false, 1)]
+#[case::at_the_limit_of_two(2, 2, false, 2)]
+#[case::zero_admits_nothing(0, 0, false, 0)]
+#[case::negative_admits_nothing(-1, 0, false, 0)]
 fn acquire_compares_against_the_cap(
     #[case] max_parallel_requests: i64,
-    #[case] held_slots: i64,
+    #[case] held_slots: usize,
     #[case] granted: bool,
+    #[case] in_flight_after: i64,
 ) {
     let limit = limit(max_parallel_requests);
-    let held: Vec<_> = (0..held_slots)
-        .map(|_| limit.acquire().expect("within the cap"))
+    let held: Vec<_> = repeat_with(|| limit.acquire().expect("within the cap"))
+        .take(held_slots)
         .collect();
     let acquired = limit.acquire();
-    let granted_now = acquired.is_ok();
-    assert_eq!(granted_now, granted);
-    assert_eq!(
-        limit.in_flight.load(Ordering::SeqCst),
-        held_slots + i64::from(granted_now)
-    );
+    assert_eq!(acquired.is_ok(), granted);
+    assert_eq!(limit.in_flight.load(Ordering::SeqCst), in_flight_after);
     drop(acquired);
     drop(held);
     assert_eq!(limit.in_flight.load(Ordering::SeqCst), 0);
@@ -171,10 +170,9 @@ fn a_declared_provider_wins_over_the_model_prefix() {
         &[],
     );
     let catalog = catalog(&[built]);
-    let credentials =
-        provider_credentials(&catalog, "d1", None, &std::collections::BTreeMap::new())
-            .expect("lookup")
-            .expect("credentials");
+    let credentials = provider_credentials(&catalog, "d1", None, &BTreeMap::new())
+        .expect("lookup")
+        .expect("credentials");
     assert_eq!(
         credentials.get("custom_llm_provider"),
         Some(&text("bedrock"))
@@ -205,19 +203,32 @@ fn a_credential_field_of_the_wrong_type_is_an_error() {
     let error = deployment_credentials(&catalog(&[flag]), "d1").expect_err("a bool is no key");
     assert!(error.to_string().contains("api_key"), "{error}");
     let list = spec("gpt", "d2", &[("api_key", Json::List(Vec::new()))], &[]);
-    assert!(deployment_credentials(&catalog(&[list]), "d2").is_err());
+    let list_error = deployment_credentials(&catalog(&[list]), "d2").expect_err("a list is no key");
+    assert!(list_error.to_string().contains("api_key"), "{list_error}");
     let object = spec(
         "gpt",
         "d3",
         &[("vertex_credentials", Json::Object(JsonObject::new()))],
         &[],
     );
-    assert!(deployment_credentials(&catalog(&[object]), "d3").is_ok());
+    let object_credentials = deployment_credentials(&catalog(&[object]), "d3")
+        .expect("an object is a vertex credential")
+        .expect("credentials");
+    assert_eq!(
+        object_credentials.get("vertex_credentials"),
+        Some(&Json::Object(JsonObject::new()))
+    );
     let tags = spec(
         "gpt",
         "d4",
         &[("bedrock_tags", Json::List(Vec::new()))],
         &[],
     );
-    assert!(deployment_credentials(&catalog(&[tags]), "d4").is_ok());
+    let tag_credentials = deployment_credentials(&catalog(&[tags]), "d4")
+        .expect("a list is a bedrock tag list")
+        .expect("credentials");
+    assert_eq!(
+        tag_credentials.get("bedrock_tags"),
+        Some(&Json::List(Vec::new()))
+    );
 }

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -24,6 +25,7 @@ use crate::deployment_clients::lookup::{
 };
 use crate::deployment_clients::mismatch::credential_mismatch_warning;
 use crate::deployment_clients::request::{DeploymentView, RequestContext, merged_tools};
+use crate::deployment_identity::stable_id::generate_model_id;
 
 // One assertion per observable outcome, so a wrong precedence, count or field fails the case by name.
 #[rstest]
@@ -89,7 +91,7 @@ fn enter_and_exit_release_after_a_failure() {
     };
     assert_eq!(outcome, Err("the provider failed"));
     assert_eq!(limit.in_flight.load(Ordering::SeqCst), 0);
-    assert!(limit.acquire().is_ok());
+    let _again = limit.acquire().expect("the slot is free again");
 }
 
 #[test]
@@ -259,20 +261,17 @@ fn a_request_key_never_reuses_the_configured_client() {
 }
 
 #[rstest]
-#[case::key(serde_json::json!({"api_key": "sk-a"}), true)]
-#[case::base(serde_json::json!({"api_base": "https://caller.example/v1"}), true)]
-#[case::base_url(serde_json::json!({"base_url": "https://caller.example/v1"}), true)]
-#[case::null_still_counts(serde_json::json!({"api_key": null}), true)]
-#[case::unrelated(serde_json::json!({"temperature": 0}), false)]
-#[case::empty(serde_json::json!({}), false)]
-fn clientside_detection_reads_presence(#[case] request: serde_json::Value, #[case] expected: bool) {
-    let kwargs: JsonObject = match request {
-        serde_json::Value::Object(fields) => fields
-            .into_iter()
-            .map(|(key, value)| (key, serde_json::from_value(value).expect("json")))
-            .collect(),
-        _ => JsonObject::new(),
-    };
+#[case::key(&[("api_key", Json::Text(String::from("sk-a")))], true)]
+#[case::base(&[("api_base", Json::Text(String::from("https://caller.example/v1")))], true)]
+#[case::base_url(&[("base_url", Json::Text(String::from("https://caller.example/v1")))], true)]
+#[case::null_still_counts(&[("api_key", Json::Null)], true)]
+#[case::unrelated(&[("stream", Json::Bool(true))], false)]
+#[case::empty(&[], false)]
+fn clientside_detection_reads_presence(#[case] request: &[(&str, Json)], #[case] expected: bool) {
+    let kwargs = request
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), value.clone()))
+        .collect::<JsonObject>();
     assert_eq!(is_clientside_credential(&kwargs), expected);
 }
 
@@ -314,10 +313,7 @@ fn a_clientside_deployment_gets_a_generated_id() {
     let id = deployment.id().expect("a generated id");
     assert_ne!(id, "d1");
     let dynamic = dynamic_litellm_params(configured.litellm_params.clone(), &request);
-    assert_eq!(
-        id,
-        crate::deployment_identity::stable_id::generate_model_id("gpt", &dynamic)
-    );
+    assert_eq!(id, generate_model_id("gpt", &dynamic));
     assert!(!deployment.litellm_params.contains_key("api_key"));
     assert!(!format!("{per_request:?}").contains("sk-caller"));
     assert_eq!(
@@ -473,14 +469,9 @@ fn the_provider_call_gets_model_and_provider() {
         &[],
     );
     let built_catalog = catalog(&[built]);
-    let credentials = provider_credentials(
-        &built_catalog,
-        "d1",
-        None,
-        &std::collections::BTreeMap::new(),
-    )
-    .expect("lookup")
-    .expect("credentials");
+    let credentials = provider_credentials(&built_catalog, "d1", None, &BTreeMap::new())
+        .expect("lookup")
+        .expect("credentials");
     assert_eq!(credentials.get("model"), Some(&text("openai/gpt-4o")));
     assert_eq!(
         credentials.get("custom_llm_provider"),
@@ -497,14 +488,10 @@ fn a_prefixed_model_names_its_provider() {
         &[],
     );
     let prefixed_catalog = catalog(&[prefixed]);
-    let prefixed_credentials = provider_credentials(
-        &prefixed_catalog,
-        "d2",
-        None,
-        &std::collections::BTreeMap::new(),
-    )
-    .expect("lookup")
-    .expect("credentials");
+    let prefixed_credentials =
+        provider_credentials(&prefixed_catalog, "d2", None, &BTreeMap::new())
+            .expect("lookup")
+            .expect("credentials");
     assert_eq!(
         prefixed_credentials.get("custom_llm_provider"),
         Some(&text("anthropic"))
@@ -523,7 +510,7 @@ fn a_named_credential_is_resolved_and_dropped() {
         &[],
     );
     let catalog = catalog(&[built]);
-    let mut stored = std::collections::BTreeMap::new();
+    let mut stored = BTreeMap::new();
     stored.insert(
         String::from("team-key"),
         JsonObject::from_iter([("api_key".to_owned(), text("sk-stored"))]),
