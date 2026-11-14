@@ -1408,6 +1408,7 @@ name = "betterlite-compression"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "betterlite-semantic",
  "regex",
  "rstest",
  "serde_json",

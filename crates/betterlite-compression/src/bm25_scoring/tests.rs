@@ -9,7 +9,12 @@ fn close(actual: f64, expected: f64) -> bool {
 }
 
 fn scores(query: &str, messages: &[Value]) -> Vec<f64> {
-    bm25_score_messages(query, messages, DEFAULT_K1, DEFAULT_B)
+    bm25_score_messages(
+        query,
+        messages,
+        DEFAULT_TERM_SATURATION,
+        DEFAULT_LENGTH_NORMALIZATION,
+    )
 }
 
 #[test]
@@ -81,7 +86,7 @@ fn scores_follow_the_bm25_formula() {
 }
 
 #[test]
-fn uses_the_supplied_k1_and_b_parameters() {
+fn uses_the_supplied_saturation_and_length_parameters() {
     let messages = vec![
         json!({"content": "authentication bug fix"}),
         json!({"content": "unrelated content"}),
@@ -94,8 +99,8 @@ fn uses_the_supplied_k1_and_b_parameters() {
 
 #[test]
 fn default_parameters_match_litellm() {
-    assert_eq!(DEFAULT_K1.to_bits(), 1.5_f64.to_bits());
-    assert_eq!(DEFAULT_B.to_bits(), 0.75_f64.to_bits());
+    assert_eq!(DEFAULT_TERM_SATURATION.to_bits(), 1.5_f64.to_bits());
+    assert_eq!(DEFAULT_LENGTH_NORMALIZATION.to_bits(), 0.75_f64.to_bits());
 }
 
 #[test]

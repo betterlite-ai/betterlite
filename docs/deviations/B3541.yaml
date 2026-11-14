@@ -22,16 +22,6 @@ deviations:
       iterative tool_result extraction.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/compress.py#L69-L97
   - what: >-
-      The embedding call goes through an injected EmbeddingExecutor whose call carries
-      the model, the processed inputs, the caching flag and the supplied
-      embedding_model_params, instead of calling litellm.embedding directly.
-    why: >-
-      betterlite-compression is a lower crate that does not depend on the dispatch crate
-      where B014's native single-call embedding executor lives, so the caller passes the
-      executor in. The model, input order, caching flag and parameter map are the values
-      LiteLLM's call builds.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/scoring/embedding_scorer.py#L78-L86
-  - what: >-
       An embedding response with no vectors returns a typed
       EmbeddingScoringError::EmptyResponse instead of an IndexError from the
       embeddings[0] read.
@@ -41,11 +31,12 @@ deviations:
       its caller can map.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/scoring/embedding_scorer.py#L89-L94
   - what: >-
-      BM25, cosine similarity and min-max normalization compute their arithmetic with
-      fused multiply-add and multiplication by a reciprocal where LiteLLM writes plain
-      floating point operators, so a score can differ from LiteLLM's in the last bit.
+      Cosine similarity comes from betterlite_semantic::cosine_similarity, which
+      accumulates the dot product with fused multiply-add and squares each value with
+      powi, so a score can differ from LiteLLM's separately rounded sum in the last bit.
     why: >-
-      The crate denies clippy::float_arithmetic and this task's expect budget is zero, so
-      the formulas use f64::mul_add, f64::recip and f64::sqrt. The scores keep their
-      order; only digits below any ranking decision can differ.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/scoring/bm25.py#L88-L119
+      The shared function already implements the same zipped dot product, the same full
+      vector norms and the same zero-norm result, and one implementation serves both the
+      semantic router and the compression scorer. BM25 and min-max normalization call
+      the std::ops traits, so their arithmetic matches LiteLLM's operators exactly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/scoring/embedding_scorer.py#L38-L45

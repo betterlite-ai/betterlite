@@ -1,17 +1,18 @@
 use crate::message_normalization::content_to_text;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::{Add, Div, Mul, Sub};
 
-pub const DEFAULT_K1: f64 = 1.5;
-pub const DEFAULT_B: f64 = 0.75;
+pub const DEFAULT_TERM_SATURATION: f64 = 1.5;
+pub const DEFAULT_LENGTH_NORMALIZATION: f64 = 0.75;
 const MINIMUM_PREFIX_LENGTH: usize = 4;
 
 struct ScoringContext<'context> {
     average_length: f64,
     idf: &'context BTreeMap<String, f64>,
     query_terms: &'context [String],
-    k1: f64,
-    b: f64,
+    term_saturation: f64,
+    length_normalization: f64,
 }
 
 fn tokenize(text: &str) -> Vec<String> {
@@ -43,7 +44,7 @@ fn average_document_length(documents: &[Vec<String>]) -> f64 {
     let total_as_f64 = u32::try_from(summed_length).map_or_else(|_| f64::from(u32::MAX), f64::from);
     let documents_as_f64 =
         u32::try_from(documents.len()).map_or_else(|_| f64::from(u32::MAX), f64::from);
-    total_as_f64.mul_add(documents_as_f64.recip(), 0.0)
+    Div::div(total_as_f64, documents_as_f64)
 }
 
 fn document_frequencies(documents: &[Vec<String>]) -> BTreeMap<&str, usize> {
@@ -73,11 +74,11 @@ fn inverse_document_frequencies(
         let occurrences = frequencies.get(term).copied().unwrap_or(0);
         let count_as_f64 =
             u32::try_from(occurrences).map_or_else(|_| f64::from(u32::MAX), f64::from);
-        let difference = count_as_f64.mul_add(-1.0, documents_as_f64);
-        let numerator = difference.mul_add(1.0, 0.5);
-        let denominator = count_as_f64.mul_add(1.0, 0.5);
-        let ratio = numerator.mul_add(denominator.recip(), 0.0);
-        idf.insert(term.to_owned(), ratio.mul_add(1.0, 1.0).ln());
+        let difference = Sub::sub(documents_as_f64, count_as_f64);
+        let numerator = Add::add(difference, 0.5);
+        let denominator = Add::add(count_as_f64, 0.5);
+        let ratio = Div::div(numerator, denominator);
+        idf.insert(term.to_owned(), Add::add(ratio, 1.0).ln());
     }
     idf
 }
@@ -97,12 +98,23 @@ fn term_frequency(term: &str, token_counts: &BTreeMap<&str, usize>) -> usize {
         .fold(0_usize, usize::saturating_add)
 }
 
-fn term_weight(idf: f64, occurrences: usize, k1_plus_one: f64, k1_saturation: f64) -> f64 {
+fn saturation_factor(document_length: f64, context: &ScoringContext<'_>) -> f64 {
+    let scaled_length = Div::div(
+        Mul::mul(context.length_normalization, document_length),
+        context.average_length,
+    );
+    let length_complement = Sub::sub(1.0, context.length_normalization);
+    Mul::mul(
+        context.term_saturation,
+        Add::add(length_complement, scaled_length),
+    )
+}
+
+fn term_weight(idf: f64, occurrences: usize, saturation_numerator: f64, saturation: f64) -> f64 {
     let count_as_f64 = u32::try_from(occurrences).map_or_else(|_| f64::from(u32::MAX), f64::from);
-    let numerator = count_as_f64.mul_add(k1_plus_one, 0.0);
-    let denominator = count_as_f64.mul_add(1.0, k1_saturation);
-    idf.mul_add(numerator, 0.0)
-        .mul_add(denominator.recip(), 0.0)
+    let numerator = Mul::mul(count_as_f64, saturation_numerator);
+    let denominator = Add::add(count_as_f64, saturation);
+    Div::div(Mul::mul(idf, numerator), denominator)
 }
 
 fn document_score(tokens: &[String], context: &ScoringContext<'_>) -> f64 {
@@ -118,12 +130,8 @@ fn document_score(tokens: &[String], context: &ScoringContext<'_>) -> f64 {
     }
     let document_length =
         u32::try_from(tokens.len()).map_or_else(|_| f64::from(u32::MAX), f64::from);
-    let length_ratio = document_length.mul_add(context.average_length.recip(), 0.0);
-    let one_minus_b = context.b.mul_add(-1.0, 1.0);
-    let k1_saturation = context
-        .k1
-        .mul_add(context.b.mul_add(length_ratio, one_minus_b), 0.0);
-    let k1_plus_one = context.k1.mul_add(1.0, 1.0);
+    let saturation = saturation_factor(document_length, context);
+    let saturation_numerator = Add::add(context.term_saturation, 1.0);
     let mut score = 0.0_f64;
     for term in context.query_terms {
         let Some(idf_value) = context.idf.get(term.as_str()) else {
@@ -133,13 +141,20 @@ fn document_score(tokens: &[String], context: &ScoringContext<'_>) -> f64 {
         if occurrences == 0 {
             continue;
         }
-        let weight = term_weight(*idf_value, occurrences, k1_plus_one, k1_saturation);
-        score = score.mul_add(1.0, weight);
+        score = Add::add(
+            score,
+            term_weight(*idf_value, occurrences, saturation_numerator, saturation),
+        );
     }
     score
 }
 
-pub fn bm25_score_messages(query: &str, messages: &[Value], k1: f64, b: f64) -> Vec<f64> {
+pub fn bm25_score_messages(
+    query: &str,
+    messages: &[Value],
+    term_saturation: f64,
+    length_normalization: f64,
+) -> Vec<f64> {
     let query_terms = tokenize(query);
     if query_terms.is_empty() {
         return vec![0.0; messages.len()];
@@ -154,8 +169,8 @@ pub fn bm25_score_messages(query: &str, messages: &[Value], k1: f64, b: f64) -> 
         average_length: average_document_length(&documents),
         idf: &idf,
         query_terms: query_terms.as_slice(),
-        k1,
-        b,
+        term_saturation,
+        length_normalization,
     };
     documents
         .iter()

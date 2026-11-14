@@ -13,16 +13,8 @@ enum FakeFailure {
     Failed,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct RecordedCall {
-    model: String,
-    input: Vec<String>,
-    caching: bool,
-    embedding_model_params: Option<Map<String, Value>>,
-}
-
 struct RecordingExecutor {
-    calls: Mutex<Vec<RecordedCall>>,
+    calls: Mutex<Vec<Map<String, Value>>>,
     embeddings: Vec<Vec<f64>>,
 }
 
@@ -34,7 +26,7 @@ impl RecordingExecutor {
         }
     }
 
-    fn recorded(&self) -> Vec<RecordedCall> {
+    fn recorded(&self) -> Vec<Map<String, Value>> {
         self.calls.lock().expect("recorded calls").clone()
     }
 }
@@ -47,12 +39,7 @@ impl EmbeddingExecutor for RecordingExecutor {
         self.calls
             .lock()
             .expect("recorded calls")
-            .push(RecordedCall {
-                model: call.model.to_owned(),
-                input: call.input.to_vec(),
-                caching: call.caching,
-                embedding_model_params: call.embedding_model_params.cloned(),
-            });
+            .push(call.parameters.clone());
         Ok(self.embeddings.clone())
     }
 }
@@ -130,8 +117,11 @@ async fn passes_query_then_message_contents_to_the_executor() {
         .expect("scores");
     let calls = executor.recorded();
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].model, MODEL);
-    assert_eq!(calls[0].input, ["auth", "auth code", "cooking recipe"]);
+    assert_eq!(calls[0].get("model"), Some(&json!(MODEL)));
+    assert_eq!(
+        calls[0].get("input"),
+        Some(&json!(["auth", "auth code", "cooking recipe"]))
+    );
 }
 
 #[tokio::test]
@@ -141,7 +131,10 @@ async fn replaces_blank_texts_with_the_empty_placeholder() {
     embedding_score_messages(request("", &messages), None::<&()>, &executor)
         .await
         .expect("scores");
-    assert_eq!(executor.recorded()[0].input, ["empty", "empty", "real"]);
+    assert_eq!(
+        executor.recorded()[0].get("input"),
+        Some(&json!(["empty", "empty", "real"]))
+    );
 }
 
 #[tokio::test]
@@ -158,7 +151,10 @@ async fn extracts_text_blocks_and_unrolls_tool_results() {
     embedding_score_messages(request("q", &messages), None::<&()>, &executor)
         .await
         .expect("scores");
-    assert_eq!(executor.recorded()[0].input, ["q", "one two three"]);
+    assert_eq!(
+        executor.recorded()[0].get("input"),
+        Some(&json!(["q", "one two three"]))
+    );
 }
 
 #[tokio::test]
@@ -169,14 +165,20 @@ async fn enables_caching_only_when_a_cache_is_present() {
     embedding_score_messages(request("auth", &messages), None::<&()>, &plain_executor)
         .await
         .expect("scores");
-    assert!(!plain_executor.recorded()[0].caching);
+    assert_eq!(
+        plain_executor.recorded()[0].get("caching"),
+        Some(&json!(false))
+    );
 
     let cached_executor = RecordingExecutor::new(vec![vec![1.0], vec![1.0]]);
     let cache = ();
     embedding_score_messages(request("auth", &messages), Some(&cache), &cached_executor)
         .await
         .expect("scores");
-    assert!(cached_executor.recorded()[0].caching);
+    assert_eq!(
+        cached_executor.recorded()[0].get("caching"),
+        Some(&json!(true))
+    );
 }
 
 #[tokio::test]
@@ -199,11 +201,36 @@ async fn forwards_embedding_model_params() {
     embedding_score_messages(configured_request, None::<&()>, &executor)
         .await
         .expect("scores");
+    let calls = executor.recorded();
     assert_eq!(
-        executor.recorded()[0].embedding_model_params,
-        Some(params),
+        calls[0].get("api_base"),
+        Some(&json!("https://example-embeddings.test")),
         "every supplied parameter reaches the executor"
     );
+    assert_eq!(calls[0].get("dimensions"), Some(&json!(256)));
+}
+
+#[tokio::test]
+async fn embedding_model_params_override_the_call_values() {
+    let executor = RecordingExecutor::new(vec![vec![1.0], vec![1.0]]);
+    let messages = vec![json!({"content": "auth"})];
+    let params: Map<String, Value> = Map::from_iter([
+        ("caching".to_owned(), json!(false)),
+        ("model".to_owned(), json!("other-embedding-model")),
+    ]);
+    let configured_request = EmbeddingScoringRequest {
+        query: "auth",
+        messages: &messages,
+        model: MODEL,
+        embedding_model_params: Some(&params),
+    };
+    let cache = ();
+    embedding_score_messages(configured_request, Some(&cache), &executor)
+        .await
+        .expect("scores");
+    let calls = executor.recorded();
+    assert_eq!(calls[0].get("caching"), Some(&json!(false)));
+    assert_eq!(calls[0].get("model"), Some(&json!("other-embedding-model")));
 }
 
 #[tokio::test]
@@ -250,9 +277,14 @@ async fn truncates_long_contents_before_the_embedding_call() {
     let messages = vec![json!({"content": "z".repeat(30_001)})];
     run_scorer(request("q", &messages), &executor).await;
     let calls = executor.recorded();
-    assert_eq!(calls[0].input[1].chars().count(), 30_005);
-    assert!(calls[0].input[1].starts_with(&"z".repeat(15_000)));
-    assert!(calls[0].input[1].ends_with(&"z".repeat(15_000)));
+    let inputs = calls[0]
+        .get("input")
+        .and_then(Value::as_array)
+        .expect("input array");
+    let content = inputs[1].as_str().expect("content text");
+    assert_eq!(content.chars().count(), 30_005);
+    assert!(content.starts_with(&"z".repeat(15_000)));
+    assert!(content.ends_with(&"z".repeat(15_000)));
 }
 
 #[tokio::test]
@@ -261,7 +293,7 @@ async fn returns_no_scores_without_messages() {
     let messages: Vec<Value> = Vec::new();
     let scores = run_scorer(request("q", &messages), &executor).await;
     assert!(scores.is_empty());
-    assert_eq!(executor.recorded()[0].input, ["q"]);
+    assert_eq!(executor.recorded()[0].get("input"), Some(&json!(["q"])));
 }
 
 #[tokio::test]
