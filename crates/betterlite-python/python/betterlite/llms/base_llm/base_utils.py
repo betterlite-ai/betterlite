@@ -1,8 +1,7 @@
 from copy import deepcopy
-from datetime import datetime
 from typing import Protocol
 
-from betterlite.types.utils.values import JsonValue
+from pydantic import JsonValue
 
 
 class ResponseFormatModel(Protocol):
@@ -16,7 +15,7 @@ def _as_dict(value: JsonValue) -> dict[str, JsonValue] | None:
     match value:
         case dict() as mapping:
             return mapping
-        case bool() | int() | float() | str() | datetime() | list() | None:
+        case bool() | int() | float() | str() | list() | None:
             return None
 
 
@@ -24,7 +23,7 @@ def _as_list(value: JsonValue) -> list[JsonValue] | None:
     match value:
         case list() as items:
             return items
-        case bool() | int() | float() | str() | datetime() | dict() | None:
+        case bool() | int() | float() | str() | dict() | None:
             return None
 
 
@@ -32,7 +31,7 @@ def _is_container(value: JsonValue) -> bool:
     match value:
         case dict() | list():
             return True
-        case bool() | int() | float() | str() | datetime() | None:
+        case bool() | int() | float() | str() | None:
             return False
 
 
@@ -42,7 +41,7 @@ def _container_children(value: JsonValue) -> list[JsonValue]:
             return [child for child in value.values() if _is_container(child)]
         case list():
             return [child for child in value if _is_container(child)]
-        case bool() | int() | float() | str() | datetime() | None:
+        case bool() | int() | float() | str() | None:
             return []
 
 
@@ -51,7 +50,7 @@ def _rewrite_ref(node: dict[str, JsonValue], ref_template: str) -> None:
     match ref:
         case str():
             node["$ref"] = ref_template.format(model=ref.rsplit("/", 1)[-1])
-        case bool() | int() | float() | datetime() | list() | dict() | None:
+        case bool() | int() | float() | list() | dict() | None:
             pass
 
 
@@ -66,7 +65,7 @@ def _rewrite_refs(schema: dict[str, JsonValue], ref_template: str) -> None:
         match node:
             case dict():
                 _rewrite_ref(node, ref_template)
-            case bool() | int() | float() | str() | datetime() | list() | None:
+            case bool() | int() | float() | str() | list() | None:
                 pass
         stack.extend(_container_children(node))
 
@@ -181,7 +180,7 @@ def _strictify_ref(
             return _inline_ref(schema, ref, path=path, root=root)
         case None | str():
             return schema
-        case bool() | int() | float() | datetime() | list() | dict():
+        case bool() | int() | float() | list() | dict():
             raise TypeError(f"Received non-string $ref - {ref}")
 
 
@@ -194,17 +193,8 @@ def _ensure_strict_json_schema(
             _strictify_properties(json_schema, path=path, root=root)
             _strictify_composition(json_schema, path=path, root=root)
             return _strictify_ref(json_schema, path=path, root=root)
-        case bool() | int() | float() | str() | datetime() | list() | None:
+        case bool() | int() | float() | str() | list() | None:
             raise TypeError(f"Expected {json_schema} to be a dictionary; path={path}")
-
-
-def _class_schema(
-    response_class: type[ResponseFormatModel], ref_template: str | None,
-) -> dict[str, JsonValue]:
-    if ref_template is not None:
-        return response_class.model_json_schema(ref_template=ref_template)
-    schema = response_class.model_json_schema()
-    return _ensure_strict_json_schema(schema, path=(), root=schema)
 
 
 def type_to_response_format_param(
@@ -216,14 +206,23 @@ def type_to_response_format_param(
     match response_format:
         case dict():
             return _dict_to_response_format_helper(response_format, ref_template)
-        case int() | float() | str() | datetime() | list():
+        case int() | float() | str() | list():
             raise TypeError(f"Unsupported response_format type - {response_format}")
     if not callable(response_format):
         raise TypeError(f"Unsupported response_format type - {response_format}")
+    try:
+        schema_method = response_format.model_json_schema
+    except AttributeError as error:
+        raise TypeError(f"Unsupported response_format type - {response_format}") from error
+    if ref_template is not None:
+        schema = schema_method(ref_template=ref_template)
+    else:
+        schema = schema_method()
+        schema = _ensure_strict_json_schema(schema, path=(), root=schema)
     return {
         "type": "json_schema",
         "json_schema": {
-            "schema": _class_schema(response_format, ref_template),
+            "schema": schema,
             "name": response_format.__name__,
             "strict": True,
         },

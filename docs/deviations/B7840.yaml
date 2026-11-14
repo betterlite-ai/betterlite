@@ -6,8 +6,8 @@ deviations:
   - what: The strict schema function is ported into base_utils.py and does not import openai.
     why: openai is not a wheel dependency, no other package carries this function, and it is about 70 lines.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L203
-  - what: "type_to_response_format_param accepts any callable with a model_json_schema attribute, where LiteLLM requires a pydantic BaseModel subclass."
-    why: The Python rules forbid isinstance and issubclass, so the class branch checks callable. An instance, a plain value or a pydantic model instance is still refused with LiteLLM's message, and a pydantic model class passes either check.
+  - what: "type_to_response_format_param accepts any class with a model_json_schema attribute, where LiteLLM requires a pydantic BaseModel subclass."
+    why: The Python rules forbid isinstance and issubclass, so the class branch checks callable and then reads model_json_schema. An instance, a plain value, a pydantic model instance, a dataclass, int or a plain function is still refused with LiteLLM's TypeError message, and a pydantic model class passes either check.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L179-L212
   - what: A ResponsesAPIResponse output item given as a dict dumps as given, where pydantic validates a message item into openai's ResponseOutputMessage and ResponseOutputText, whose dumps add phase null and logprobs null, and exclude_none drops null values inside a plain dict in LiteLLM but not here.
     why: The wheel has no openai models and the declared output union includes dict, which the shared response base keeps; the mock builder passes phase and logprobs as null in its literal so the mock's model_dump matches LiteLLM's value for value.
@@ -18,3 +18,6 @@ deviations:
   - what: A response_format dict of type json_schema whose json_schema or schema is missing or not a dict raises TypeError naming the part, where LiteLLM's helper raises a KeyError.
     why: docs/compatibility.md makes a value the declared shape cannot hold an error that names the field, and a KeyError names nothing.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L143-L176
+  - what: ResponsesAPIResponse drops the null status, content and encrypted_content keys of reasoning output items in model_dump only, where LiteLLM does it in a field serializer, so model_dump_json there drops them too and here it keeps them.
+    why: pydantic's wrap serializer handler returns Any, which the typed Python gate rejects, so the filter wraps model_dump instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1448-L1473

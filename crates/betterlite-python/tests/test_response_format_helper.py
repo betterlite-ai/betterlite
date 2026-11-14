@@ -1,14 +1,14 @@
 import json
+from collections.abc import Callable, Sized
 from copy import deepcopy
-from datetime import datetime
+from dataclasses import dataclass
 
 import pytest
 from litellm.llms.base_llm.base_utils import type_to_response_format_param as litellm_type_param  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L181
 from openai.lib._pydantic import _ensure_strict_json_schema as openai_strict_schema  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L203
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue
 
 from betterlite.llms.base_llm.base_utils import type_to_response_format_param
-from betterlite.types.utils.values import JsonValue
 
 REF_TEMPLATE = "#/$defs/{model}"
 URN_TEMPLATE = "urn:{model}"
@@ -32,12 +32,30 @@ DICT_FORMAT: dict[str, JsonValue] = {
         },
     },
 }
-INVALID_VALUES: tuple[JsonValue, ...] = (42, "text", 3.5, True, ["a"])
 UNSUPPORTED_MESSAGE = "Unsupported response_format type"
 
 
 class Nested(BaseModel):
     value: int = Field(description="a value")
+
+
+@dataclass
+class PlainDataclass:
+    value: int
+
+
+Refused = JsonValue | BaseModel | type[PlainDataclass] | type[int] | Callable[[Sized], int]
+REFUSED_VALUES: tuple[Refused, ...] = (
+    42,
+    "text",
+    3.5,
+    True,
+    ["a"],
+    Nested(value=1),
+    PlainDataclass,
+    int,
+    len,
+)
 
 
 class Leaf(BaseModel):
@@ -94,8 +112,13 @@ def litellm_convert(
     return converted
 
 
-def litellm_convert_value(value: JsonValue) -> dict[str, JsonValue] | None:
+def litellm_convert_value(value: Refused) -> dict[str, JsonValue] | None:
     converted: dict[str, JsonValue] | None = litellm_type_param(value)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L179-L212
+    return converted
+
+
+def convert_value(value: Refused) -> dict[str, JsonValue] | None:
+    converted: dict[str, JsonValue] | None = type_to_response_format_param(value)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L179-L212
     return converted
 
 
@@ -103,7 +126,7 @@ def as_mapping(value: JsonValue) -> dict[str, JsonValue]:
     match value:
         case dict():
             return value
-        case bool() | int() | float() | str() | datetime() | list() | None:
+        case bool() | int() | float() | str() | list() | None:
             raise AssertionError("the converted format is not a mapping")
 
 
@@ -111,7 +134,7 @@ def as_list(value: JsonValue) -> list[JsonValue]:
     match value:
         case list():
             return value
-        case bool() | int() | float() | str() | datetime() | dict() | None:
+        case bool() | int() | float() | str() | dict() | None:
             raise AssertionError("the converted format is not a list")
 
 
@@ -234,25 +257,16 @@ def test_strict_schema_shapes() -> None:
     assert as_mapping(properties["tuple_items"])["items"] == [{"type": "string"}]
 
 
-def test_instance_refused() -> None:
-    instance = Nested(value=1)
-    with pytest.raises(TypeError, match=UNSUPPORTED_MESSAGE) as ours_error:
-        type_to_response_format_param(instance)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L196-L198
-    with pytest.raises(TypeError, match=UNSUPPORTED_MESSAGE) as reference_error:
-        litellm_type_param(instance)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L196-L198
-    assert str(ours_error.value) == str(reference_error.value)
-
-
 def test_unsupported() -> None:
-    for value in INVALID_VALUES:
+    for value in REFUSED_VALUES:
         with pytest.raises(TypeError, match=UNSUPPORTED_MESSAGE):
-            type_to_response_format_param(value)
+            convert_value(value)
 
 
 def test_unsupported_message() -> None:
-    for value in INVALID_VALUES:
+    for value in REFUSED_VALUES:
         with pytest.raises(TypeError, match=UNSUPPORTED_MESSAGE) as ours_error:
-            type_to_response_format_param(value)
+            convert_value(value)
         with pytest.raises(TypeError, match=UNSUPPORTED_MESSAGE) as reference_error:
             litellm_convert_value(value)
         assert str(ours_error.value) == str(reference_error.value)

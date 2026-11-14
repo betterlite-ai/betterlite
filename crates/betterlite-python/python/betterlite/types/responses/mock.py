@@ -1,7 +1,7 @@
 from typing import Final
 
 from betterlite.types.responses.api_response import ResponsesAPIResponse
-from betterlite.types.utils.values import JsonValue
+from pydantic import JsonValue
 
 DEFAULT_RESPONSE_TEXT: Final = (
     "In a peaceful grove beneath a silver moon, a unicorn named Lumina discovered a hidden pool "
@@ -62,4 +62,4 @@ def mock_responses_api_response(
         "user": None,
         "metadata": {},
     }
-    return ResponsesAPIResponse(**body)
+    return ResponsesAPIResponse.model_validate(body)

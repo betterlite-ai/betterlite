@@ -1,12 +1,11 @@
 from collections.abc import Mapping, Sequence
-from datetime import datetime
 from typing import Protocol
 
 import litellm.types.llms.openai as litellm_openai  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1
 import litellm.types.responses.main as litellm_responses  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/responses/main.py#L1
 import pytest
 from litellm.responses.main import mock_responses_api_response as litellm_mock_response  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L105
-from pydantic import ValidationError as PydanticValidationError
+from pydantic import JsonValue, ValidationError
 
 from betterlite.types.responses import (
     CustomToolCallOutputItem,
@@ -28,8 +27,7 @@ from betterlite.types.responses import (
     build_web_search_call,
     mock_responses_api_response,
 )
-from betterlite.types.utils.base import ResponseObject
-from betterlite.types.utils.values import JsonValue, StoredValue, ValidationError
+from betterlite.types.utils.base import InitValue, ResponseObject
 
 ANNOTATION_VALUES: dict[str, JsonValue] = {
     "type": "url_citation",
@@ -164,7 +162,7 @@ REFERENCE_TOOLS: list[JsonValue] = [
     {**FUNCTION_TOOL, **FUNCTION_TOOL_DEFAULTS},
     {**WEB_SEARCH_TOOL, **WEB_SEARCH_TOOL_DEFAULTS},
 ]
-REASONING_RESPONSE: dict[str, StoredValue] = {
+REASONING_RESPONSE: dict[str, JsonValue] = {
     "id": "resp_1", "created_at": 1, "output": [], "reasoning": {"effort": "low"},
 }
 WEB_SEARCH_ACTION: dict[str, JsonValue] = {
@@ -206,8 +204,10 @@ class MockedResponse(Dumpable, Protocol):
     @property
     def output_text(self) -> str: ...
 
+    def model_dump_json(self) -> str: ...
 
-def reference_response(values: Mapping[str, StoredValue]) -> MockedResponse:
+
+def reference_response(values: Mapping[str, InitValue]) -> MockedResponse:
     return litellm_openai.ResponsesAPIResponse.model_validate(values)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1388
 
 
@@ -225,7 +225,7 @@ def as_mapping(value: JsonValue) -> dict[str, JsonValue]:
     match value:
         case dict():
             return value
-        case bool() | int() | float() | str() | datetime() | list() | None:
+        case bool() | int() | float() | str() | list() | None:
             raise AssertionError("model_dump returned a non-mapping")
 
 
@@ -242,12 +242,20 @@ def assert_output_text(output: list[JsonValue], expected: str) -> None:
     assert ours.output_text == expected
 
 
-def assert_hidden_fresh(first: ResponseObject, second: ResponseObject) -> None:
-    assert first["_hidden_params"] == {}
-    assert first["_hidden_params"] is not second["_hidden_params"]
-    first["_hidden_params"] = {"kept": 1}
-    assert second["_hidden_params"] == {}
-    assert "_hidden_params" not in as_mapping(first.model_dump())
+def hidden_params(response: ResponsesAPIResponse | DeleteResponseResult) -> dict[str, JsonValue]:
+    params: dict[str, JsonValue] = response._hidden_params  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    return params
+
+
+def assert_hidden_fresh(
+    first: ResponsesAPIResponse | DeleteResponseResult,
+    second: ResponsesAPIResponse | DeleteResponseResult,
+) -> None:
+    assert hidden_params(first) == {}
+    assert hidden_params(first) is not hidden_params(second)
+    hidden_params(first)["kept"] = 1
+    assert hidden_params(second) == {}
+    assert "_hidden_params" not in first.model_dump()
 
 
 def test_output_item_annotation() -> None:
@@ -328,17 +336,17 @@ def test_output_item_required() -> None:
     with pytest.raises(ValidationError):
         OutputText(text="hi")
     missing_text: dict[str, str] = {"text": "hi"}
-    with pytest.raises(PydanticValidationError):
+    with pytest.raises(ValidationError):
         litellm_responses.OutputText.model_validate(missing_text)
     without_status = {k: v for k, v in FUNCTION_VALUES.items() if k != "status"}
     with pytest.raises(ValidationError):
         OutputFunctionToolCall(**without_status)
-    with pytest.raises(PydanticValidationError):
+    with pytest.raises(ValidationError):
         litellm_responses.OutputFunctionToolCall.model_validate(without_status)
     without_outputs = {k: v for k, v in CODE_CALL_VALUES.items() if k != "outputs"}
     with pytest.raises(ValidationError):
         OutputCodeInterpreterCall(**without_outputs)
-    with pytest.raises(PydanticValidationError):
+    with pytest.raises(ValidationError):
         litellm_responses.OutputCodeInterpreterCall.model_validate(without_outputs)
 
 
@@ -347,7 +355,7 @@ def test_output_item_extras() -> None:
     ours = OutputText(**values)
     reference = litellm_responses.OutputText.model_validate(values)
     assert_same("extras", reference, ours)
-    assert ours.provider_field == "kept"
+    assert ours["provider_field"] == "kept"
 
 
 def test_builder_web_search() -> None:
@@ -364,14 +372,14 @@ def test_builder_web_search_failed() -> None:
     ours = build_web_search_call("abc", {}, {"content": content})
     reference = litellm_responses.build_web_search_call("abc", {}, {"content": content})
     assert_same("web_search_failed", reference, ours)
-    assert ours.status == "failed"
+    assert ours["status"] == "failed"
 
 
 def test_builder_web_search_status() -> None:
     ours = build_web_search_call("abc", {}, {}, status="searching")
     reference = litellm_responses.build_web_search_call("abc", {}, {}, status="searching")
     assert_same("web_search_status", reference, ours)
-    assert ours.status == "searching"
+    assert ours["status"] == "searching"
 
 
 def test_builder_web_search_input() -> None:
@@ -421,7 +429,7 @@ def test_delete_result_required() -> None:
     missing: dict[str, JsonValue] = {}
     with pytest.raises(ValidationError):
         DeleteResponseResult(**missing)
-    with pytest.raises(PydanticValidationError):
+    with pytest.raises(ValidationError):
         litellm_responses.DeleteResponseResult.model_validate(missing)
 
 
@@ -480,6 +488,14 @@ def test_api_response_nulls() -> None:
         OTHER_ITEM,
     ]
     assert ours.output == output
+
+
+def test_api_response_dump_json() -> None:
+    output = [dict(REASONING_ITEM)]
+    ours = ResponsesAPIResponse(id="resp_1", created_at=1, output=output)
+    reference = reference_response({"id": "resp_1", "created_at": 1, "output": output})
+    assert '"encrypted_content":null' in ours.model_dump_json()
+    assert '"encrypted_content":null' not in reference.model_dump_json()
 
 
 def test_api_response_output_text() -> None:
@@ -598,22 +614,22 @@ def test_usage_classes() -> None:
     assert_same("tool_usage_empty", reference_empty, empty)
     with pytest.raises(ValidationError):
         WebSearchToolUsage(num_requests=NEGATIVE_REQUESTS)
-    with pytest.raises(PydanticValidationError):
+    with pytest.raises(ValidationError):
         litellm_openai.WebSearchToolUsage(num_requests=NEGATIVE_REQUESTS)
     with pytest.raises(ValidationError):
         ResponsesToolUsage(web_search={"num_requests": NEGATIVE_REQUESTS})
     negative_usage: dict[str, dict[str, int]] = {"web_search": {"num_requests": NEGATIVE_REQUESTS}}
-    with pytest.raises(PydanticValidationError):
+    with pytest.raises(ValidationError):
         litellm_openai.ResponsesToolUsage.model_validate(negative_usage)
 
 
 def test_usage_frozen() -> None:
     tool = WebSearchToolUsage(num_requests=1)
     with pytest.raises(ValidationError, match="frozen"):
-        tool.num_requests = 2
+        tool["num_requests"] = 2
     usage = ResponsesToolUsage(web_search=tool)
     with pytest.raises(ValidationError, match="frozen"):
-        usage.web_search = None
+        usage["web_search"] = None
 
 
 def test_mock_default() -> None:

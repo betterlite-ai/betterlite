@@ -1,17 +1,10 @@
-from collections.abc import Collection, Mapping, Sequence
-from datetime import datetime
-from typing import ClassVar, Final, Literal
+from collections.abc import Mapping, Sequence
+from typing import ClassVar, Final, Literal, Unpack
 
+from pydantic import ConfigDict, JsonValue, NonNegativeInt, PrivateAttr, field_validator
 from typing_extensions import override
 
-from betterlite.types.utils.base import ResponseObject
-from betterlite.types.utils.values import (
-    JsonValue,
-    ModelObject,
-    StoredValue,
-    ValidationError,
-    field_validator,
-)
+from betterlite.types.utils.base import Dumpable, DumpOptions, InitValue, ResponseObject
 
 ResponsesAPIStatus = Literal[
     "completed", "failed", "in_progress", "cancelled", "queued", "incomplete",
@@ -20,108 +13,89 @@ DROPPED_REASONING_KEYS: Final[tuple[str, ...]] = ("status", "content", "encrypte
 
 
 class CachedTokensDetails(ResponseObject):
-    text_tokens: int | None
-    audio_tokens: int | None
-    image_tokens: int | None
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
+    text_tokens: int | None = None
+    audio_tokens: int | None = None
+    image_tokens: int | None = None
 
     @override
-    def __init__(self, **data: StoredValue) -> None:
-        super().__init__(
-            **{name: value for name, value in data.items() if name in type(self).__fields__},
-        )
+    def __init__(self, **data: InitValue) -> None:
+        super().__init__(**data)
 
 
 class OutputTokensDetails(ResponseObject):
-    audio_tokens: int | None
-    reasoning_tokens: int | None
-    text_tokens: int | None
+    audio_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    text_tokens: int | None = None
+
+    @override
+    def __init__(self, **data: InitValue) -> None:
+        super().__init__(**data)
 
 
 class InputTokensDetails(ResponseObject):
-    audio_tokens: int | None
-    cached_tokens: int
-    cached_tokens_details: CachedTokensDetails | None
-    image_tokens: int | None
-    text_tokens: int | None
-    video_tokens: int | None
-    defaults: ClassVar[dict[str, StoredValue]] = {"cached_tokens": 0}
+    audio_tokens: int | None = None
+    cached_tokens: int = 0
+    cached_tokens_details: CachedTokensDetails | None = None
+    image_tokens: int | None = None
+    text_tokens: int | None = None
+    video_tokens: int | None = None
 
-
-def _dict_value(value: StoredValue) -> Mapping[str, StoredValue] | None:
-    match value:
-        case dict() as mapping:
-            return mapping
-        case bool() | int() | float() | datetime() | None | ModelObject() | Sequence() | Mapping():
-            return None
-
-
-def _model_value(value: StoredValue) -> ModelObject | None:
-    match value:
-        case ModelObject() as model:
-            return model
-        case bool() | int() | float() | datetime() | None | Sequence() | Mapping():
-            return None
-
-
-def _negative_int(value: StoredValue) -> bool:
-    match value:
-        case int() if value < 0:
-            return True
-        case bool() | int() | float() | datetime() | None | ModelObject() | Sequence() | Mapping():
-            return False
+    @override
+    def __init__(self, **data: InitValue) -> None:
+        super().__init__(**data)
 
 
 class ResponseAPIUsage(ResponseObject):
     input_tokens: int
-    input_tokens_details: InputTokensDetails | None
+    input_tokens_details: InputTokensDetails | None = None
     output_tokens: int
-    output_tokens_details: OutputTokensDetails | None
+    output_tokens_details: OutputTokensDetails | None = None
     total_tokens: int
-    cost: float | None
+    cost: float | None = None
+
+    @override
+    def __init__(self, **data: InitValue) -> None:
+        super().__init__(**data)
 
     @field_validator("cost", mode="before")
-    def _cost_total(self, value: StoredValue) -> StoredValue:
-        mapping = _dict_value(value)
-        if mapping is None:
-            return value
-        return mapping.get("total_cost")
+    @classmethod
+    def parse_cost(cls, value: JsonValue) -> JsonValue:
+        match value:
+            case dict():
+                return value.get("total_cost")
+            case bool() | int() | float() | str() | list() | None:
+                return value
 
 
-class _FrozenObject(ResponseObject):
+class WebSearchToolUsage(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore", frozen=True)
+
+    num_requests: NonNegativeInt
+
     @override
-    def __init__(self, **data: StoredValue) -> None:
-        super().__init__(
-            **{name: value for name, value in data.items() if name in type(self).__fields__},
-        )
+    def __init__(self, **data: InitValue) -> None:
+        super().__init__(**data)
+
+
+class ResponsesToolUsage(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore", frozen=True)
+
+    web_search: WebSearchToolUsage | None = None
 
     @override
-    def __setattr__(self, name: str, value: StoredValue) -> None:
-        if name in type(self).__fields__:
-            raise ValidationError(type(self).__name__, (name,), "frozen")
-        super().__setattr__(name, value)
+    def __init__(self, **data: InitValue) -> None:
+        super().__init__(**data)
 
 
-class WebSearchToolUsage(_FrozenObject):
-    num_requests: int
-
-    @field_validator("num_requests", mode="before")
-    def _non_negative(self, value: StoredValue) -> StoredValue:
-        if _negative_int(value):
-            raise ValueError("num_requests must not be negative")
-        return value
-
-
-class ResponsesToolUsage(_FrozenObject):
-    web_search: WebSearchToolUsage | None
-
-
-def _field(item: StoredValue, name: str) -> StoredValue:
+def _field(item: InitValue, name: str) -> InitValue:
     match item:
         case ResponseObject():
             return item.get(name)
-        case dict() as mapping:
+        case Mapping() as mapping:
             return mapping.get(name)
-        case bool() | int() | float() | datetime() | None | ModelObject() | Sequence() | Mapping():
+        case Dumpable() | bool() | int() | float() | str() | Sequence() | None:
             return None
 
 
@@ -134,7 +108,7 @@ def _strip_reasoning_nulls(item: JsonValue) -> JsonValue:
                 key: value for key, value in item.items()
                 if value is not None or key not in DROPPED_REASONING_KEYS
             }
-        case bool() | int() | float() | str() | datetime() | list() | None:
+        case bool() | int() | float() | str() | list() | None:
             return item
 
 
@@ -143,7 +117,7 @@ def _without_reasoning_nulls(dumped: dict[str, JsonValue]) -> dict[str, JsonValu
     match output:
         case list():
             dumped["output"] = [_strip_reasoning_nulls(item) for item in output]
-        case bool() | int() | float() | str() | datetime() | dict() | None:
+        case bool() | int() | float() | str() | dict() | None:
             pass
     return dumped
 
@@ -151,59 +125,45 @@ def _without_reasoning_nulls(dumped: dict[str, JsonValue]) -> dict[str, JsonValu
 class ResponsesAPIResponse(ResponseObject):
     id: str
     created_at: int
-    error: dict[str, JsonValue] | None
-    incomplete_details: dict[str, JsonValue] | None
-    instructions: str | None
-    metadata: dict[str, JsonValue] | None
-    model: str | None
-    object: str | None
+    error: dict[str, JsonValue] | None = None
+    incomplete_details: dict[str, JsonValue] | None = None
+    instructions: str | None = None
+    metadata: dict[str, JsonValue] | None = None
+    model: str | None = None
+    object: str | None = None
     output: list[dict[str, JsonValue] | ResponseObject]
-    parallel_tool_calls: bool | None
-    temperature: float | None
-    tool_choice: JsonValue
-    tools: JsonValue
-    top_p: float | None
-    max_output_tokens: int | None
-    previous_response_id: str | None
-    reasoning: dict[str, JsonValue] | None
-    status: str | None
-    text: JsonValue
-    truncation: Literal["auto", "disabled"] | None
-    usage: ResponseAPIUsage | None
-    user: str | None
-    store: bool | None
-    _hidden_params: dict[str, StoredValue]
-    defaults: ClassVar[dict[str, StoredValue]] = {"_hidden_params": {}}
-
-    @field_validator("reasoning", mode="before")
-    def _reasoning_mapping(self, value: StoredValue) -> StoredValue:
-        model = _model_value(value)
-        if model is None:
-            return value
-        return model.model_dump()
-
-    @field_validator("usage", mode="before")
-    def _usage_object(self, value: StoredValue) -> StoredValue:
-        mapping = _dict_value(value)
-        if mapping is None:
-            return value
-        return ResponseAPIUsage(**mapping)
+    parallel_tool_calls: bool | None = None
+    temperature: float | None = None
+    tool_choice: JsonValue = None
+    tools: JsonValue = None
+    top_p: float | None = None
+    max_output_tokens: int | None = None
+    previous_response_id: str | None = None
+    reasoning: dict[str, JsonValue] | None = None
+    status: str | None = None
+    text: JsonValue = None
+    truncation: Literal["auto", "disabled"] | None = None
+    usage: ResponseAPIUsage | None = None
+    user: str | None = None
+    store: bool | None = None
+    _hidden_params: dict[str, JsonValue] = PrivateAttr(default_factory=dict)
 
     @override
-    def model_dump(
-        self, *, mode: Literal["python", "json"] = "python",
-        include: Collection[str] | None = None, exclude: Collection[str] | None = None,
-        exclude_unset: bool = False, exclude_none: bool = False,
-    ) -> JsonValue:
-        dumped = super().model_dump(
-            mode=mode, include=include, exclude=exclude,
-            exclude_unset=exclude_unset, exclude_none=exclude_none,
-        )
-        match dumped:
-            case dict():
-                return _without_reasoning_nulls(dumped)
-            case bool() | int() | float() | str() | datetime() | list() | None:
-                return dumped
+    def __init__(self, **data: InitValue) -> None:
+        super().__init__(**data)
+
+    @field_validator("reasoning", mode="before")
+    @classmethod
+    def validate_reasoning_to_dict(cls, value: InitValue) -> InitValue:
+        match value:
+            case Dumpable():
+                return value.model_dump()
+            case Mapping() | bool() | int() | float() | str() | Sequence() | None:
+                return value
+
+    @override
+    def model_dump(self, **kwargs: Unpack[DumpOptions]) -> dict[str, JsonValue]:
+        return _without_reasoning_nulls(super().model_dump(**kwargs))
 
     @property
     def output_text(self) -> str:
@@ -215,19 +175,16 @@ class ResponsesAPIResponse(ResponseObject):
             match content:
                 case list():
                     for content_item in content:
-                        if _field(content_item, "type") == "output_text":
-                            text = _field(content_item, "text")
-                            match text:
-                                case str():
-                                    texts.append(text)
-                                case (
-                                    bool() | int() | float() | datetime() | None
-                                    | ModelObject() | Sequence() | Mapping()
-                                ):
-                                    texts.append("")
-                case (
-                    bool() | int() | float() | str() | datetime() | None
-                    | ModelObject() | Sequence() | Mapping()
-                ):
+                        if _field(content_item, "type") != "output_text":
+                            continue
+                        text = _field(content_item, "text")
+                        match text:
+                            case str():
+                                texts.append(text)
+                            case Dumpable() | Mapping() | bool() | int() | float() | Sequence() | None:
+                                texts.append("")
+                case Dumpable() | Mapping() | bool() | int() | float() | str() | Sequence() | None:
                     pass
         return "".join(texts)
+
+
