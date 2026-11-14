@@ -9,7 +9,7 @@ use betterlite_vertex::google_genai_guardrail::sse::{
     accumulated_stream_text, decode_google_guardrail_sse,
 };
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::helpers::{Helper, HelperResult};
 
@@ -85,79 +85,102 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let calls = input
-            .calls
-            .iter()
-            .map(resolve)
-            .collect::<Result<Vec<_>, _>>()?;
+        let calls: Vec<Value> = input.calls.iter().map(resolve).collect();
         Ok(json!({ "calls": calls }))
     }
 }
 
-fn resolve(call: &Call) -> HelperResult {
+fn resolve(call: &Call) -> Value {
     match call {
-        Call::Request(given) => {
-            let mut data = given.data.clone();
-            let (locations, texts) = request_texts(&data);
-            let called = !texts.is_empty();
-            let request_data = called.then(|| data.clone());
-            if let Some(replacement) = &given.guarded.replacement {
-                write_texts(&mut data, &locations, replacement);
-            }
-            Ok(json!({
-                "texts": called.then_some(texts.as_slice()),
-                "request_data": request_data.as_ref(),
-                "data": Json::Object(data),
-            }))
-        }
-        Call::Response(given) => {
-            let mut response = given.response.clone();
-            let (locations, texts) = response_texts(&response);
-            let called = !texts.is_empty();
-            let metadata = given.guarded.user_api_key_dict.clone().unwrap_or_default();
-            let merged = called.then(|| {
-                merged_request_data(
-                    given.guarded.request_data.as_ref(),
-                    &metadata,
-                    "response",
-                    Json::Object(response.clone()),
-                )
-            });
-            if let Some(replacement) = &given.guarded.replacement {
-                write_texts(&mut response, &locations, replacement);
-            }
-            Ok(json!({
-                "texts": called.then_some(texts.as_slice()),
-                "request_data": merged.as_ref(),
-                "data": Json::Object(response),
-            }))
-        }
-        Call::Stream(given) => {
-            let accumulated = accumulated_stream_text(&given.frames);
-            let called = !accumulated.is_empty();
-            let metadata = given.guarded.user_api_key_dict.clone().unwrap_or_default();
-            let texts = called.then(|| vec![accumulated]);
-            let merged = called.then(|| {
-                merged_request_data(
-                    given.guarded.request_data.as_ref(),
-                    &metadata,
-                    "responses_so_far",
-                    Json::List(given.frames.clone()),
-                )
-            });
-            Ok(json!({
-                "texts": texts.as_deref(),
-                "request_data": merged.as_ref(),
-                "data": Json::List(given.frames.clone()),
-            }))
-        }
-        Call::Sse(given) => {
-            let chunks: Vec<&[u8]> = given.chunks.iter().map(SseChunk::bytes).collect();
-            let texts = decode_google_guardrail_sse(&chunks);
-            if texts.is_empty() {
-                return Ok(json!({ "text": null }));
-            }
-            Ok(json!({ "text": texts.concat() }))
-        }
+        Call::Request(given) => resolve_request(given),
+        Call::Response(given) => resolve_response(given),
+        Call::Stream(given) => resolve_stream(given),
+        Call::Sse(given) => resolve_sse(given),
     }
+}
+
+fn resolve_request(given: &RequestCall) -> Value {
+    let mut data = given.data.clone();
+    let (locations, texts) = request_texts(&data);
+    let called = !texts.is_empty();
+    let request_data = called.then(|| data.clone());
+    if let Some(replacement) = &given.guarded.replacement {
+        write_texts(&mut data, &locations, replacement);
+    }
+    outcome(
+        called.then_some(texts.as_slice()),
+        request_data.as_ref(),
+        Json::Object(data),
+    )
+}
+
+fn resolve_response(given: &ResponseCall) -> Value {
+    let (locations, texts) = response_texts(&given.response);
+    let called = !texts.is_empty();
+    let merged = merge_context(
+        &given.guarded,
+        called,
+        "response",
+        Json::Object(given.response.clone()),
+    );
+    let mut response = given.response.clone();
+    if let Some(replacement) = &given.guarded.replacement {
+        write_texts(&mut response, &locations, replacement);
+    }
+    outcome(
+        called.then_some(texts.as_slice()),
+        merged.as_ref(),
+        Json::Object(response),
+    )
+}
+
+fn resolve_stream(given: &StreamCall) -> Value {
+    let accumulated = accumulated_stream_text(&given.frames);
+    let called = !accumulated.is_empty();
+    let texts = called.then(|| vec![accumulated]);
+    let merged = merge_context(
+        &given.guarded,
+        called,
+        "responses_so_far",
+        Json::List(given.frames.clone()),
+    );
+    json!({
+        "texts": texts.as_deref(),
+        "request_data": merged.as_ref(),
+        "data": Json::List(given.frames.clone()),
+    })
+}
+
+fn outcome(texts: Option<&[String]>, request_data: Option<&Object>, data: Json) -> Value {
+    json!({
+        "texts": texts,
+        "request_data": request_data,
+        "data": data,
+    })
+}
+
+fn resolve_sse(given: &SseCall) -> Value {
+    let chunks: Vec<&[u8]> = given.chunks.iter().map(SseChunk::bytes).collect();
+    let texts = decode_google_guardrail_sse(&chunks);
+    if texts.is_empty() {
+        return json!({ "text": null });
+    }
+    json!({ "text": texts.concat() })
+}
+
+fn merge_context(
+    guarded: &Guarded,
+    called: bool,
+    context_key: &str,
+    context_value: Json,
+) -> Option<Object> {
+    let metadata = guarded.user_api_key_dict.clone().unwrap_or_default();
+    called.then(|| {
+        merged_request_data(
+            guarded.request_data.as_ref(),
+            &metadata,
+            context_key,
+            context_value,
+        )
+    })
 }
