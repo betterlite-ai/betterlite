@@ -1,12 +1,6 @@
-use betterlite_models::fireworks_catalog_metadata::{
-    Capability, Catalog, MODEL_COST_KEY_PREFIX, capability_exact, resolve_resource_name,
-};
+use betterlite_models::fireworks_catalog_metadata::{Capability, Catalog, capability_exact};
 
 use super::FireworksCapabilities;
-
-const MODELS_RESOURCE: &str = "accounts/fireworks/models/";
-const FIREROUTER_FAMILY: &str = "accounts/fireworks/routers/firerouter";
-const FIREROUTER_FAMILY_PREFIX: &str = "accounts/fireworks/routers/firerouter/";
 
 const BASE_SUPPORTED_PARAMS: [&str; 37] = [
     "stream",
@@ -68,7 +62,7 @@ where
             "fireworks_ai model is marked as not supporting function calling; tools and parallel_tool_calls are dropped from the request"
         );
     }
-    if exact_tool_choice(catalog, model) == Some(true)
+    if capability_exact(catalog, model, Capability::ToolChoice) == Some(true)
         || capabilities.supports_tool_choice(model).await
     {
         params.push("tool_choice");
@@ -81,25 +75,4 @@ where
         params.push("thinking");
     }
     params
-}
-
-// B2222's Capability enum has no tool_choice flag, so this repeats its exact candidate order for that key alone
-fn exact_tool_choice(catalog: &Catalog, model: &str) -> Option<bool> {
-    let without_provider = model.strip_prefix(MODEL_COST_KEY_PREFIX).unwrap_or(model);
-    let short_name = without_provider
-        .strip_prefix(MODELS_RESOURCE)
-        .unwrap_or(without_provider);
-    let mut candidates = vec![
-        model.to_owned(),
-        format!("{MODEL_COST_KEY_PREFIX}{short_name}"),
-        format!("{MODEL_COST_KEY_PREFIX}{MODELS_RESOURCE}{short_name}"),
-    ];
-    if resolve_resource_name(model).starts_with(FIREROUTER_FAMILY_PREFIX) {
-        candidates.push(format!("{MODEL_COST_KEY_PREFIX}{FIREROUTER_FAMILY}"));
-    }
-    candidates.iter().find_map(|candidate| {
-        catalog
-            .get(candidate)
-            .and_then(|fields| fields.capabilities.tooling.supports_tool_choice)
-    })
 }
