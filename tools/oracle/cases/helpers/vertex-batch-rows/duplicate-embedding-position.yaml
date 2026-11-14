@@ -1,0 +1,11 @@
+kind: helper
+name: vertex-batch-rows-duplicate-embedding-position
+call:
+  vertex_batch_rows:
+    operation: regroup
+    rows:
+      - {key: "id#0/2", request: {}, status: "", response: {embedding: {values: [1]}}}
+      - {key: "id#0/2", request: {}, status: "", response: {embedding: {values: [2]}}}
+    model: null
+env: {}
+compare: {ignore: []}

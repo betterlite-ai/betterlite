@@ -1,11 +1,13 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
 use determinator::rules::DeterminatorRules;
 
-use crate::affected::{RULES, arguments, packages};
+use crate::affected::{RULES, Shard, affected, arguments, package_graph, packages, share};
+use crate::error::GateError;
 use crate::git::git;
 
 const LOCK: &str = "version = 4\n\n[[package]]\nname = \"alpha\"\nversion = \"0.0.0\"\n\n[[package]]\nname = \"beta\"\nversion = \"0.0.0\"\ndependencies = [\n \"alpha\",\n]\n\n[[package]]\nname = \"betterlite-dashboard-browser\"\nversion = \"0.0.0\"\n\n[[package]]\nname = \"gamma\"\nversion = \"0.0.0\"\n";
@@ -57,13 +59,13 @@ fn only_edited_leaves_out_the_packages_that_depend_on_the_edit() {
     let base = commit(root);
     fs::write(root.join("alpha/src/lib.rs"), "pub const A: u8 = 1;\n").unwrap();
     commit(root);
+    let graph = package_graph(root).unwrap();
+    let mut affected = packages(root, &base, &graph, false).unwrap();
+    affected.sort_unstable();
+    assert_eq!(affected, vec!["alpha".to_owned(), "beta".to_owned()]);
     assert_eq!(
-        packages(root, &base, false).unwrap(),
-        vec!["-p alpha -p beta".to_owned()]
-    );
-    assert_eq!(
-        packages(root, &base, true).unwrap(),
-        vec!["-p alpha".to_owned()]
+        packages(root, &base, &graph, true).unwrap(),
+        vec!["alpha".to_owned()]
     );
 }
 
@@ -91,4 +93,54 @@ fn some_members_affected_print_sorted_package_flags() {
 #[test]
 fn the_rules_parse() {
     DeterminatorRules::parse(RULES).unwrap();
+}
+
+#[test]
+fn shards_take_the_largest_package_first_onto_the_lightest_shard() {
+    let names: Vec<String> = ["e", "d", "c", "b", "a"].map(str::to_owned).to_vec();
+    let seconds = BTreeMap::from([
+        ("a".to_owned(), 10),
+        ("b".to_owned(), 6),
+        ("c".to_owned(), 5),
+        ("d".to_owned(), 4),
+        ("unused".to_owned(), 50),
+    ]);
+    assert_eq!(share(&names, &seconds, 1, 2), vec!["a", "d"]);
+    assert_eq!(share(&names, &seconds, 2, 2), vec!["b", "c", "e"]);
+    assert_eq!(share(&names, &seconds, 3, 3), vec!["c", "d"]);
+}
+
+#[test]
+fn equal_shares_go_by_name_whatever_order_the_packages_come_in() {
+    let seconds = BTreeMap::from([
+        ("x".to_owned(), 3),
+        ("y".to_owned(), 3),
+        ("z".to_owned(), 0),
+    ]);
+    for names in [["x", "y", "z"], ["z", "y", "x"]] {
+        let owned: Vec<String> = names.map(str::to_owned).to_vec();
+        assert_eq!(share(&owned, &seconds, 1, 2), vec!["x", "z"]);
+        assert_eq!(share(&owned, &seconds, 2, 2), vec!["y"]);
+    }
+}
+
+#[test]
+fn a_shard_is_one_of_n() {
+    assert_eq!(
+        share(&["only".to_owned()], &BTreeMap::new(), 6, 6),
+        Vec::<&str>::new()
+    );
+    for (index, count) in [(0, 6), (7, 6), (1, 0)] {
+        let shard = Shard {
+            index: Some(index),
+            count: Some(count),
+        };
+        assert!(
+            matches!(
+                affected(Path::new("no-such-checkout"), false, shard),
+                Err(GateError::Shard { .. })
+            ),
+            "{index} of {count}"
+        );
+    }
 }
