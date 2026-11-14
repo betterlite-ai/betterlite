@@ -32,10 +32,11 @@ class CredentialHandler(Protocol):
     @staticmethod
     def get_dynamic_litellm_params(
         litellm_params: dict[str, JsonValue], request_kwargs: dict[str, object]
-    ) -> dict[str, JsonValue]: ...
+    ) -> object: ...
 
 
 CREDENTIAL_HANDLER: Final[CredentialHandler] = clientside_credential_handler
+JSON_OBJECT: Final = TypeAdapter(dict[str, JsonValue])
 OPTIONAL_TEXT: Final = TypeAdapter(str | None)
 
 
@@ -224,7 +225,7 @@ def request_kwargs(fields: RequestFields) -> dict[str, object]:
 def credential_lookup(spec: CredentialInput) -> CredentialObservation:
     kwargs = request_kwargs(spec.request)
     clientside = CREDENTIAL_HANDLER.is_clientside_credential(kwargs)
-    params = CREDENTIAL_HANDLER.get_dynamic_litellm_params(dict(spec.config), kwargs)
+    params = JSON_OBJECT.validate_python(CREDENTIAL_HANDLER.get_dynamic_litellm_params(dict(spec.config), kwargs))
     model_id = (
         ID_SOURCE.generate_model_id(spec.model_group, params)
         if clientside and spec.model_group is not None
