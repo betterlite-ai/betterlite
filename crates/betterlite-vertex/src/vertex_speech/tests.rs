@@ -11,6 +11,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use serde_json::Number;
 
 use super::audio::{BinaryAudio, decode_vertex_speech_audio};
 use super::error::{Base64Error, VertexSpeechError};
@@ -170,7 +171,7 @@ fn extracts_the_language_from_the_first_two_components(#[case] name: &str, #[cas
 fn keeps_a_voice_dictionary_unchanged() {
     let mut options = Object::new();
     options.insert("name".to_owned(), Json::Text("custom".to_owned()));
-    options.insert("extra".to_owned(), Json::Number(1_u64.into()));
+    options.insert("extra".to_owned(), Json::Number(Number::from(1_u64)));
     let mapped_params = map_openai_params(
         Some(&SpeechVoice::Options(options.clone())),
         &SpeechOptionalParams::default(),
@@ -415,7 +416,7 @@ fn keeps_an_empty_mapped_voice_dict_empty() {
 #[test]
 fn rejects_a_non_string_voice_field() {
     let mut options = Object::new();
-    options.insert("name".to_owned(), Json::Number(5_u64.into()));
+    options.insert("name".to_owned(), Json::Number(Number::from(5_u64)));
     let mapped = map_openai_params(
         Some(&SpeechVoice::Options(options)),
         &SpeechOptionalParams::default(),
