@@ -1,5 +1,5 @@
 import builtins
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Literal, overload
 
 from pydantic import JsonValue
@@ -35,6 +35,24 @@ def _model_body(
     if info:
         body["model_info"] = dict(info)
     return body
+
+
+def _find_model(
+    models: Sequence[JsonValue], model_id: str | None, model_name: str | None
+) -> dict[str, JsonValue] | None:
+    for model in models:
+        match model:
+            case dict() as entry:
+                match entry.get("model_info"):
+                    case {"id": str() as identifier} if model_id and identifier == model_id:
+                        return entry
+                    case dict() | list() | str() | bool() | int() | float() | None:
+                        pass
+                if model_name and entry.get("model_name") == model_name:
+                    return entry
+            case list() | str() | bool() | int() | float() | None:
+                continue
+    return None
 
 
 class ModelsManagementClient:
@@ -180,19 +198,9 @@ class ModelsManagementClient:
             raise ValueError("Exactly one of model_id or model_name must be provided")
         if return_request:
             return self.info(return_request=True)
-        models = self.info()
-        for model in models:
-            match model:
-                case dict() as entry:
-                    match entry.get("model_info"):
-                        case {"id": str() as identifier} if model_id and identifier == model_id:
-                            return entry
-                        case dict() | list() | str() | bool() | int() | float() | None:
-                            pass
-                    if model_name and entry.get("model_name") == model_name:
-                        return entry
-                case list() | str() | bool() | int() | float() | None:
-                    continue
+        found = _find_model(self.info(), model_id, model_name)
+        if found is not None:
+            return found
         if model_id:
             message = f"Model with id={model_id} not found"
         elif model_name:
