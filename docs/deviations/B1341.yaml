@@ -1,0 +1,11 @@
+task: B1341
+deviations:
+  - what: A file metadata reply or an embedding reply larger than 16777216 bytes fails the call with a decode error before it is parsed, where LiteLLM calls response.json() on whatever body arrives.
+    why: The bounded-inputs rule requires finite memory for provider bytes, and the pooled client already caps a buffered reply at the same size, so the decoder states the limit itself and the fuzz target reaches it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_handler.py#L49-L120
+  - what: A call whose timeout is None puts 600 seconds on the whole request and has no separate 5-second connect deadline, where LiteLLM builds its own HTTPHandler with a 600-second read timeout and a 5-second connect timeout.
+    why: The shared outbound request carries one deadline and the pooled client owns connection setup, so a per-call connect timeout cannot be set from this module; the deadline is the read value, so a slow reply still fails at the same moment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_handler.py#L149-L161
+  - what: A supplied sync client is sent with a 600-second deadline, where LiteLLM hands the request to that client and its own timeout applies.
+    why: Every betterlite outbound request carries a deadline and a supplied transport has no per-call timeout to read, so the 600-second default of LiteLLM's own HTTPHandler is the closest match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_handler.py#L149-L161
