@@ -68,16 +68,9 @@ pub fn initialize_purview(
 // LiteLLM str()s the two untyped extras, so a number reads as its text form
 fn app_text(map: &ParamMap, key: &str) -> Result<Option<String>, HookInitError> {
     match map.get(key) {
-        None | Some(GuardrailValue::Null) => Ok(None),
-        Some(GuardrailValue::Text(text)) => Ok(Some(text.clone())),
         Some(GuardrailValue::SignedInteger(number)) => Ok(Some(number.to_string())),
         Some(GuardrailValue::UnsignedInteger(number)) => Ok(Some(number.to_string())),
         Some(GuardrailValue::Decimal(number)) => Ok(Some(number.to_string())),
-        Some(GuardrailValue::Boolean(_) | GuardrailValue::Array(_) | GuardrailValue::Object(_)) => {
-            Err(HookInitError::InvalidField {
-                vendor: VENDOR,
-                field: key.to_owned(),
-            })
-        }
+        _ => read::<String>(map, VENDOR, key),
     }
 }

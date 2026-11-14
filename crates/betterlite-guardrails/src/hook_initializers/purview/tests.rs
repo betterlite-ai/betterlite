@@ -163,3 +163,19 @@ fn purview_refuses_a_missing_guardrail_name() {
         "Microsoft Purview: guardrail_name is required"
     );
 }
+
+#[test]
+fn purview_refuses_a_boolean_app_name_and_keeps_the_decoder_cause() {
+    let error = initialize_purview(
+        &params(&format!(
+            r#"{{{TENANT}, "api_key": "secret", "purview_app_name": true}}"#
+        )),
+        Some("name"),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Microsoft Purview: purview_app_name has an invalid value"
+    );
+    assert!(std::error::Error::source(&error).is_some());
+}

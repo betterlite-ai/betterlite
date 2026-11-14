@@ -16,7 +16,12 @@ pub enum HookInitError {
     #[error("Azure Content Safety: {part} is not a valid guardrail")]
     AzureGuardrailNotValid { part: String },
     #[error("{vendor}: {field} has an invalid value")]
-    InvalidField { vendor: &'static str, field: String },
+    InvalidField {
+        vendor: &'static str,
+        field: String,
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("{vendor}: the guardrail parameters could not be read")]
     UnreadableParams {
         vendor: &'static str,

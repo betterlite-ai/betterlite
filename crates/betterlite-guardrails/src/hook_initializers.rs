@@ -118,8 +118,9 @@ pub(crate) fn read<T: DeserializeOwned>(
         .map_err(|source| HookInitError::UnreadableParams { vendor, source })?;
     serde_json::from_value(encoded)
         .map(Some)
-        .map_err(|_wrong| HookInitError::InvalidField {
+        .map_err(|source| HookInitError::InvalidField {
             vendor,
             field: key.to_owned(),
+            source,
         })
 }
