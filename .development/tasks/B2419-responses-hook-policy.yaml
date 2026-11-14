@@ -34,6 +34,9 @@ description: >-
   95 adapters, 55 config and 30 wiring, 690 total under 730.
 scope:
   paths:
+  - "crates/betterlite-config/tests/fixtures/unsupported/**"
+  - "crates/betterlite-config/src/sections.rs"
+  - "crates/betterlite-config/src/loader.rs"
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_hook_policy.rs
   - crates/betterlite-core/src/api/responses_hook_policy/**
