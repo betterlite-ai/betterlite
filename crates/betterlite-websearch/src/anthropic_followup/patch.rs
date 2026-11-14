@@ -9,8 +9,9 @@ use super::followup_kwargs::prepare_followup_kwargs;
 use super::max_tokens::resolve_max_tokens;
 use crate::call_transformation::WebSearchTransformation;
 use crate::call_transformation::outcome::search_outcome_text;
-use crate::call_transformation::wire::{Call, Results, Thinking};
+use crate::call_transformation::wire::{Call, Results};
 use crate::chat_responses_followup::search::{SearchExecutor, SearchSurface, search_batch};
+use crate::native_blocks::{ResponseJson, inject_native_blocks};
 use crate::records::SearchOutcome;
 
 const ANTHROPIC_FORMAT: &str = "anthropic";
@@ -27,7 +28,7 @@ pub struct AnthropicPatchRequest<'request> {
     pub model: &'request str,
     pub messages: &'request [FollowupMessage],
     pub tool_calls: &'request [Call],
-    pub thinking_blocks: &'request [Thinking],
+    pub thinking_blocks: &'request [ResponseJson],
     pub optional_params: &'request JsonMap,
     pub logging: Option<&'request FollowupLogging<'request>>,
     pub kwargs: &'request JsonMap,
@@ -74,11 +75,11 @@ fn followup_messages(
     outcomes: &[SearchOutcome],
 ) -> Result<Vec<FollowupMessage>, AnthropicFollowupError> {
     let texts: Vec<String> = outcomes.iter().map(search_outcome_text).collect();
-    let (mut assistant, results) =
+    let (assistant, results) =
         WebSearchTransformation::transform_response(request.tool_calls, &texts, ANTHROPIC_FORMAT)?;
-    assistant.prepend_thinking(request.thinking_blocks);
+    let message = inject_native_blocks(serde_json::to_value(assistant)?, request.thinking_blocks);
     let mut messages: Vec<FollowupMessage> = request.messages.to_vec();
-    messages.push(FollowupMessage(to_raw_value(&assistant)?));
+    messages.push(FollowupMessage(to_raw_value(&message)?));
     match results {
         Results::Anthropic(user) => messages.push(FollowupMessage(to_raw_value(&user)?)),
         Results::OpenAi(_) => return Err(AnthropicFollowupError::UnexpectedResultFormat),

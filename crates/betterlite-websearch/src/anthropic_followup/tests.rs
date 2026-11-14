@@ -16,7 +16,7 @@ use super::patch::{
 use super::plan::{AnthropicFollowup, AnthropicPlanRequest};
 use crate::call_transformation::WebSearchTransformation;
 use crate::call_transformation::outcome::SearchResult;
-use crate::call_transformation::wire::{Call, Response, Thinking};
+use crate::call_transformation::wire::{Call, Response};
 use crate::chat_responses_followup::ChatResponsesFollowup;
 use crate::chat_responses_followup::search::SearchExecutor;
 use crate::execution::search::unclassified;
@@ -118,7 +118,7 @@ fn message_list(text: &str) -> Vec<FollowupMessage> {
     serde_json::from_str(text).unwrap()
 }
 
-fn thinking_list(text: &str) -> Vec<Thinking> {
+fn thinking_list(text: &str) -> Vec<ResponseJson> {
     serde_json::from_str(text).unwrap()
 }
 
@@ -820,24 +820,13 @@ async fn request_patch_rejects_a_non_object_agentic_loop_params() {
 }
 
 #[tokio::test]
-async fn anthropic_plan_rejects_a_malformed_thinking_block() {
+async fn anthropic_plan_prepends_a_null_signature_thinking_block() {
     let searcher = ScriptedSearches::new(Vec::new());
-    let blocks: Vec<ResponseJson> = vec![json!({"type": "thinking", "thinking": "hmm"})];
-    let tools = tools_dict(Vec::new(), "anthropic", Some(blocks));
-    let followup = followup(&searcher);
-    let messages = message_list(ONE_MESSAGE);
-    let optional_params = map("{}");
-    let kwargs = map("{}");
-    let request = AnthropicPlanRequest {
-        model: MODEL,
-        messages: &messages,
-        optional_params: &optional_params,
-        logging: None,
-        kwargs: &kwargs,
-    };
-    let result = followup.build_agentic_loop_plan(&tools, &request).await;
-    assert!(matches!(
-        result,
-        Err(AnthropicFollowupError::InvalidThinkingBlock(_))
-    ));
+    let block = json!({"type": "thinking", "thinking": "hmm", "signature": null});
+    let tools = tools_dict(Vec::new(), "anthropic", Some(vec![block.clone()]));
+    let value = plan_value(&searcher, &tools, &map("{}")).await;
+    assert_eq!(
+        value.pointer("/request_patch/messages/1/content/0"),
+        Some(&block)
+    );
 }

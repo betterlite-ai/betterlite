@@ -28,8 +28,6 @@ pub enum AnthropicFollowupError {
     InvalidBudgetTokens(#[source] serde_json::Error),
     #[error("thinking.budget_tokens is too large for a follow-up max_tokens")]
     BudgetTokensTooLarge,
-    #[error("thinking_blocks must hold thinking blocks")]
-    InvalidThinkingBlock(#[source] serde_json::Error),
     #[error("agentic_loop_params must be an object")]
     InvalidAgenticLoopParams(#[source] serde_json::Error),
     #[error("_websearch_interception_emit_native_blocks must be a boolean")]

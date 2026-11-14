@@ -5,7 +5,7 @@ use serde_json::value::to_raw_value;
 
 use super::AnthropicFollowupError;
 use super::patch::{AnthropicPatchRequest, FollowupLogging, build_anthropic_request_patch};
-use crate::call_transformation::wire::{Call, Thinking};
+use crate::call_transformation::wire::Call;
 use crate::chat_responses_followup::ChatResponsesFollowup;
 use crate::chat_responses_followup::chat::FollowupRequest;
 use crate::chat_responses_followup::responses::{ResponsesInput, ResponsesRequest};
@@ -74,12 +74,11 @@ impl AnthropicFollowup {
         tools: &ToolsDict,
         request: &AnthropicPlanRequest<'_>,
     ) -> Result<AgenticLoopPlan, AnthropicFollowupError> {
-        let thinking_blocks = thinking_blocks(tools.thinking_blocks.as_deref())?;
         let patch_request = AnthropicPatchRequest {
             model: request.model,
             messages: request.messages,
             tool_calls: &tools.tool_calls,
-            thinking_blocks: &thinking_blocks,
+            thinking_blocks: tools.thinking_blocks.as_deref().unwrap_or_default(),
             optional_params: request.optional_params,
             logging: request.logging,
             kwargs: request.kwargs,
@@ -132,21 +131,6 @@ fn terminated_plan(metadata: JsonMap) -> AgenticLoopPlan {
         stop_reason: Some(WEB_SEARCH_FAILED.to_owned()),
         metadata,
     }
-}
-
-fn thinking_blocks(
-    blocks: Option<&[ResponseJson]>,
-) -> Result<Vec<Thinking>, AnthropicFollowupError> {
-    let Some(found) = blocks else {
-        return Ok(Vec::new());
-    };
-    found
-        .iter()
-        .cloned()
-        .map(|block| {
-            serde_json::from_value(block).map_err(AnthropicFollowupError::InvalidThinkingBlock)
-        })
-        .collect()
 }
 
 fn native_flag(kwargs: &JsonMap) -> Result<bool, AnthropicFollowupError> {

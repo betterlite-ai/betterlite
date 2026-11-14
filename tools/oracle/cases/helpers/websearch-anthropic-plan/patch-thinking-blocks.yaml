@@ -18,6 +18,9 @@ call:
             signature: sig
           - type: redacted_thinking
             data: zzz
+          - type: thinking
+            thinking: hmm
+            signature: null
         optional_params: {}
         kwargs: {}
         searches:
