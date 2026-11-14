@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::batch_provider_cancel::Settings;
@@ -21,88 +21,34 @@ fn settings(yaml: &str, environment: &[(&str, &str)]) -> Settings {
     load(yaml, environment).expect("settings load")
 }
 
+fn exposed(value: Option<&SecretString>) -> Option<String> {
+    value.map(|token| token.expose_secret().clone())
+}
+
+// the settings contract reads one row per key, like the YAML and environment names it mirrors
+#[rustfmt::skip]
 fn snapshot(settings: &Settings) -> BTreeMap<&'static str, Option<String>> {
     BTreeMap::from([
         ("litellm_settings.api_base", settings.api_base.clone()),
         ("env.OPENAI_BASE_URL", settings.openai_base_url.clone()),
         ("env.OPENAI_API_BASE", settings.openai_api_base.clone()),
-        (
-            "litellm_settings.organization",
-            settings.organization.clone(),
-        ),
-        (
-            "env.OPENAI_ORGANIZATION",
-            settings.openai_organization.clone(),
-        ),
-        (
-            "litellm_settings.api_key",
-            settings
-                .api_key
-                .as_ref()
-                .map(|key| key.expose_secret().clone()),
-        ),
-        (
-            "litellm_settings.openai_key",
-            settings
-                .openai_key
-                .as_ref()
-                .map(|key| key.expose_secret().clone()),
-        ),
-        (
-            "env.OPENAI_API_KEY",
-            settings
-                .openai_api_key
-                .as_ref()
-                .map(|key| key.expose_secret().clone()),
-        ),
+        ("litellm_settings.organization", settings.organization.clone()),
+        ("env.OPENAI_ORGANIZATION", settings.openai_organization.clone()),
+        ("litellm_settings.api_key", exposed(settings.api_key.as_ref())),
+        ("litellm_settings.openai_key", exposed(settings.openai_key.as_ref())),
+        ("env.OPENAI_API_KEY", exposed(settings.openai_api_key.as_ref())),
         ("env.AZURE_API_BASE", settings.azure_api_base.clone()),
         ("litellm_settings.api_version", settings.api_version.clone()),
         ("env.AZURE_API_VERSION", settings.azure_api_version.clone()),
-        (
-            "litellm_settings.azure_key",
-            settings
-                .azure_key
-                .as_ref()
-                .map(|key| key.expose_secret().clone()),
-        ),
-        (
-            "env.AZURE_OPENAI_API_KEY",
-            settings
-                .azure_openai_api_key
-                .as_ref()
-                .map(|key| key.expose_secret().clone()),
-        ),
-        (
-            "env.AZURE_API_KEY",
-            settings
-                .azure_api_key
-                .as_ref()
-                .map(|key| key.expose_secret().clone()),
-        ),
-        (
-            "env.AZURE_AD_TOKEN",
-            settings
-                .azure_ad_token
-                .as_ref()
-                .map(|token| token.expose_secret().clone()),
-        ),
-        (
-            "litellm_settings.vertex_project",
-            settings.vertex_project.clone(),
-        ),
+        ("litellm_settings.azure_key", exposed(settings.azure_key.as_ref())),
+        ("env.AZURE_OPENAI_API_KEY", exposed(settings.azure_openai_api_key.as_ref())),
+        ("env.AZURE_API_KEY", exposed(settings.azure_api_key.as_ref())),
+        ("env.AZURE_AD_TOKEN", exposed(settings.azure_ad_token.as_ref())),
+        ("litellm_settings.vertex_project", settings.vertex_project.clone()),
         ("env.VERTEXAI_PROJECT", settings.vertexai_project.clone()),
-        (
-            "litellm_settings.vertex_location",
-            settings.vertex_location.clone(),
-        ),
+        ("litellm_settings.vertex_location", settings.vertex_location.clone()),
         ("env.VERTEXAI_LOCATION", settings.vertexai_location.clone()),
-        (
-            "env.VERTEXAI_CREDENTIALS",
-            settings
-                .vertexai_credentials
-                .as_ref()
-                .map(|token| token.expose_secret().clone()),
-        ),
+        ("env.VERTEXAI_CREDENTIALS", exposed(settings.vertexai_credentials.as_ref())),
     ])
 }
 
