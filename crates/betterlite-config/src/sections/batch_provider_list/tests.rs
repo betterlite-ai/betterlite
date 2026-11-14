@@ -37,28 +37,28 @@ enum Field {
     VertexProject,
 }
 
-fn exposed(value: &Option<SecretString>) -> Option<String> {
-    value.as_ref().map(|text| text.expose_secret().to_owned())
+fn exposed(value: Option<&SecretString>) -> Option<String> {
+    value.map(|text| text.expose_secret().to_owned())
 }
 
 fn value(settings: &Settings, field: Field) -> Option<String> {
     match field {
         Field::ApiBase => settings.api_base.clone(),
-        Field::ApiKey => exposed(&settings.api_key),
+        Field::ApiKey => exposed(settings.api_key.as_ref()),
         Field::ApiVersion => settings.api_version.clone(),
-        Field::AzureAdToken => exposed(&settings.azure_ad_token),
+        Field::AzureAdToken => exposed(settings.azure_ad_token.as_ref()),
         Field::AzureApiBase => settings.azure_api_base.clone(),
-        Field::AzureApiKey => exposed(&settings.azure_api_key),
+        Field::AzureApiKey => exposed(settings.azure_api_key.as_ref()),
         Field::AzureApiVersion => settings.azure_api_version.clone(),
-        Field::AzureKey => exposed(&settings.azure_key),
-        Field::AzureOpenaiApiKey => exposed(&settings.azure_openai_api_key),
+        Field::AzureKey => exposed(settings.azure_key.as_ref()),
+        Field::AzureOpenaiApiKey => exposed(settings.azure_openai_api_key.as_ref()),
         Field::OpenaiApiBase => settings.openai_api_base.clone(),
-        Field::OpenaiApiKey => exposed(&settings.openai_api_key),
+        Field::OpenaiApiKey => exposed(settings.openai_api_key.as_ref()),
         Field::OpenaiBaseUrl => settings.openai_base_url.clone(),
-        Field::OpenaiKey => exposed(&settings.openai_key),
+        Field::OpenaiKey => exposed(settings.openai_key.as_ref()),
         Field::OpenaiOrganization => settings.openai_organization.clone(),
         Field::Organization => settings.organization.clone(),
-        Field::VertexaiCredentials => exposed(&settings.vertexai_credentials),
+        Field::VertexaiCredentials => exposed(settings.vertexai_credentials.as_ref()),
         Field::VertexaiLocation => settings.vertexai_location.clone(),
         Field::VertexaiProject => settings.vertexai_project.clone(),
         Field::VertexLocation => settings.vertex_location.clone(),

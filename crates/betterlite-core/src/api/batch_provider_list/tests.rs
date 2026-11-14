@@ -26,6 +26,31 @@ fn service_with(settings: ConfiguredSettings) -> BatchProviderList {
     }
 }
 
+fn configured() -> ConfiguredSettings {
+    ConfiguredSettings {
+        api_base: None,
+        api_version: None,
+        api_key: None,
+        openai_key: None,
+        azure_key: None,
+        azure_ad_token: None,
+        organization: None,
+        vertex_project: None,
+        vertex_location: None,
+        openai_base_url: None,
+        openai_api_base: None,
+        openai_api_key: None,
+        openai_organization: None,
+        azure_api_base: None,
+        azure_api_version: None,
+        azure_openai_api_key: None,
+        azure_api_key: None,
+        vertexai_project: None,
+        vertexai_location: None,
+        vertexai_credentials: None,
+    }
+}
+
 fn input(provider: BatchListProvider) -> BatchProviderListInput {
     BatchProviderListInput {
         provider,
@@ -114,7 +139,7 @@ fn an_absent_after_and_limit_are_forwarded_as_absent() {
 
 #[test]
 fn openai_call_resolves_the_legacy_parameter_precedence() {
-    let mut settings = ConfiguredSettings::default();
+    let mut settings = configured();
     settings.api_key = Some(SecretString::from("global-key"));
     settings.openai_key = Some(SecretString::from("openai-key"));
     settings.openai_api_key = Some(SecretString::from("env-key"));
@@ -137,7 +162,7 @@ fn openai_call_resolves_the_legacy_parameter_precedence() {
 
 #[test]
 fn openai_call_falls_back_through_the_global_and_environment_settings() {
-    let mut settings = ConfiguredSettings::default();
+    let mut settings = configured();
     settings.api_key = Some(SecretString::from("global-key"));
     settings.openai_key = Some(SecretString::from("openai-key"));
     settings.api_base = Some("https://global.example".to_owned());
@@ -172,7 +197,7 @@ fn openai_call_uses_the_default_base_without_any_setting() {
 
 #[test]
 fn azure_call_resolves_the_azure_precedence() {
-    let mut settings = ConfiguredSettings::default();
+    let mut settings = configured();
     settings.api_key = Some(SecretString::from("global-key"));
     settings.azure_key = Some(SecretString::from("azure-key"));
     settings.azure_api_base = Some("https://env-azure.example".to_owned());
@@ -226,7 +251,7 @@ fn azure_call_keeps_the_request_credentials_in_the_litellm_params() {
 
 #[test]
 fn vertex_call_resolves_the_vertex_precedence() {
-    let mut settings = ConfiguredSettings::default();
+    let mut settings = configured();
     settings.vertex_project = Some("global-project".to_owned());
     settings.vertexai_project = Some("env-project".to_owned());
     settings.vertexai_location = Some("env-location".to_owned());
@@ -257,7 +282,7 @@ fn vertex_call_uses_an_empty_base_without_one_configured() {
 
 #[test]
 fn xai_call_uses_only_the_request_parameters() {
-    let mut settings = ConfiguredSettings::default();
+    let mut settings = configured();
     settings.api_key = Some(SecretString::from("global-key"));
     settings.api_base = Some("https://global.example".to_owned());
     let service = service_with(settings);
