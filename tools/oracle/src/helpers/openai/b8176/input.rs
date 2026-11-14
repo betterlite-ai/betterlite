@@ -11,20 +11,22 @@ pub(crate) struct Input {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum Step {
-    SupportedParams(SupportedParams),
+    // model and stream are accepted but change nothing, as in LiteLLM
+    SupportedParams {
+        #[serde(rename = "model")]
+        _model: String,
+    },
     Sanitize(Sanitize),
     Url(Url),
     Headers(HeadersStep),
     StreamEvent(StreamEvent),
     Reply(ReplyStep),
-    Capabilities(Capabilities),
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct SupportedParams {
-    #[serde(rename = "model")]
-    _model: String,
+    Capabilities {
+        #[serde(default, rename = "model")]
+        _model: Option<String>,
+        #[serde(rename = "stream")]
+        _stream: bool,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,13 +78,4 @@ pub(crate) struct ReplyStep {
     pub(crate) body: String,
     #[serde(default)]
     pub(crate) headers: Headers,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Capabilities {
-    #[serde(default, rename = "model")]
-    _model: Option<String>,
-    #[serde(rename = "stream")]
-    _stream: bool,
 }

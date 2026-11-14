@@ -86,9 +86,10 @@ fn event_value(step: &StreamEvent) -> HelperResult {
             let body = match &decoded {
                 DecodedStreamResponse::Known { record, .. } => serde_json::to_value(record),
                 DecodedStreamResponse::Generic(generic) => serde_json::to_value(generic),
-                DecodedStreamResponse::Lax { fields, .. } => {
-                    serde_json::to_value(Json::Object(fields.clone()))
-                }
+                DecodedStreamResponse::Lax {
+                    fields: event_fields,
+                    ..
+                } => serde_json::to_value(Json::Object(event_fields.clone())),
             }
             .map_err(|error| invalid_input(error.to_string()))?;
             Ok(json!({ "ok": true, "class": class, "event": with_nulls_dropped(body) }))
@@ -221,13 +222,13 @@ fn headers_step(step: &HeadersStep) -> Value {
 
 pub(crate) fn execute(step: &Step) -> HelperResult {
     match step {
-        Step::SupportedParams(_) => Ok(json!(params::supported_openai_params())),
+        Step::SupportedParams { .. } => Ok(json!(params::supported_openai_params())),
         Step::Sanitize(given) => Ok(json!(params::sanitize_request(&given.params))),
         Step::Url(given) => Ok(Value::String(url_step(given))),
         Step::Headers(given) => Ok(headers_step(given)),
         Step::StreamEvent(given) => event_value(given),
         Step::Reply(given) => reply_step(given),
-        Step::Capabilities(_) => Ok(json!({
+        Step::Capabilities { .. } => Ok(json!({
             "fake_stream": SHOULD_FAKE_STREAM,
             "websocket": SUPPORTS_NATIVE_WEBSOCKET,
         })),
