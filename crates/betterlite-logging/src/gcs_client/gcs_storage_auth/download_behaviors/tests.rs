@@ -4,7 +4,9 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use super::download_gcs_object;
-use crate::gcs_client::gcs_storage_auth::tests::support::{FakeAuth, Harness, RecordingClient};
+use crate::gcs_client::gcs_storage_auth::tests::support::{
+    FakeAuth, Harness, RecordingClient, capture_logs,
+};
 use crate::gcs_mock::request::GcsRequest;
 use crate::types::gcs_storage_auth::type_definitions::GcsLoggingKwargs;
 
@@ -101,6 +103,15 @@ async fn a_failed_transport_returns_none() {
     let base = harness.build(None);
     let body = download_gcs_object(&base, "object", &GcsLoggingKwargs::default()).await;
     assert_eq!(body, None);
+}
+
+#[tokio::test]
+async fn a_failed_download_is_logged_as_an_error() {
+    let (captured, _guard) = capture_logs();
+    let harness = harness_with(RecordingClient::failing());
+    let base = harness.build(None);
+    download_gcs_object(&base, "object", &GcsLoggingKwargs::default()).await;
+    assert!(captured.text().contains("GCS object download error"));
 }
 
 #[tokio::test]
