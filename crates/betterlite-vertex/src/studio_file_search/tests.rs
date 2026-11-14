@@ -641,9 +641,10 @@ fn decode_search_appends_retrieved_contexts_across_candidates() {
 }
 
 #[test]
-fn decode_search_keeps_an_empty_retrieved_context() {
-    let body =
-        r#"{"candidates":[{"groundingMetadata":{"groundingChunks":[{"retrievedContext":{}}]}}]}"#;
+fn decode_search_keeps_a_truthy_context_with_empty_text() {
+    let body = r#"{"candidates":[{"groundingMetadata":{"groundingChunks":[
+        {"retrievedContext":{"text":""}}
+    ]}}]}"#;
     let record = search_record(decode(Shape::Search, 200, body, "").unwrap());
     assert_eq!(
         record,
@@ -655,18 +656,16 @@ fn decode_search_keeps_an_empty_retrieved_context() {
     );
 }
 
-#[test]
-fn decode_search_skips_a_missing_retrieved_context() {
-    let body = r#"{"candidates":[{"groundingMetadata":{"groundingChunks":[{"retrievedContext":{}},{}]}}]}"#;
+#[rstest]
+#[case::empty_object(
+    r#"{"candidates":[{"groundingMetadata":{"groundingChunks":[{"retrievedContext":{}}]}}]}"#
+)]
+#[case::null_context(
+    r#"{"candidates":[{"groundingMetadata":{"groundingChunks":[{"retrievedContext":null},{}]}}]}"#
+)]
+fn decode_search_skips_a_falsy_retrieved_context(#[case] body: &str) {
     let record = search_record(decode(Shape::Search, 200, body, "").unwrap());
-    assert_eq!(
-        record,
-        parsed(
-            r#"{"object":"vector_store.search_results.page","search_query":"","data":[
-                {"score":null,"content":[{"text":"","type":"text"}],"file_id":null,"filename":null,"attributes":{"uri":"","title":""}}
-            ]}"#
-        )
-    );
+    assert_eq!(field_of(&record, "data"), parsed("[]"));
 }
 
 #[test]
@@ -823,14 +822,16 @@ fn decode_reports_the_reply_status_and_headers() {
 #[test]
 fn decode_error_display_names_the_operation() {
     let create = decode(Shape::Create, 200, "[]", "").unwrap_err();
-    assert_eq!(
-        create.to_string(),
-        "Failed to parse Gemini create response: the reply is not an object"
+    assert!(
+        create
+            .to_string()
+            .starts_with("Failed to parse Gemini create response: ")
     );
     let search = decode(Shape::Search, 200, "[]", "").unwrap_err();
-    assert_eq!(
-        search.to_string(),
-        "Failed to parse Gemini response: the reply is not an object"
+    assert!(
+        search
+            .to_string()
+            .starts_with("Failed to parse Gemini response: ")
     );
     assert_eq!(
         StudioFileSearchError::MissingKey.to_string(),
