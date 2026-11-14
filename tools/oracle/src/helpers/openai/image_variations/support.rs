@@ -8,7 +8,7 @@ use betterlite_openai::image_variations::request::{
 use serde_json::{Map, Value, json};
 
 use super::input::Probe;
-use super::{FakeTransport, Recorder, call_for, failure_view, image_for};
+use super::{FakeTransport, Recorder, call_for, failure_view};
 use crate::helpers::{HelperError, HelperResult};
 
 pub(crate) const NOW: i64 = 1_700_000_000;
@@ -47,8 +47,8 @@ fn empty_answer() -> Map<String, Value> {
 }
 
 pub(crate) fn transform_value(probe: &Probe) -> HelperResult {
-    let data =
-        OpenAiImageVariationConfig::request_data(image_for(probe), probe.optional_params.clone());
+    let image = call_for(probe).image;
+    let data = OpenAiImageVariationConfig::request_data(image, probe.optional_params.clone());
     let mut answer = empty_answer();
     if let Some(data) = data {
         let view = data_view(&data);

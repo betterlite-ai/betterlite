@@ -26,8 +26,6 @@ call:
         api_key: sk-test
         api_base: https://example.test/v1
         timeout: 30
-        client: async
-        async_call: true
         reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
 env: {}
 compare: {ignore: []}

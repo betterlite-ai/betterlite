@@ -202,8 +202,9 @@ pub(super) fn failure_view(error: &OpenAiImageVariationError) -> Value {
         None
     };
     json!({
+        "mapped": true,
         "status": error.status_code,
-        "headers": error.headers,
+        "headers": error.headers.clone().unwrap_or_default(),
         "diagnostic": diagnostic,
     })
 }
