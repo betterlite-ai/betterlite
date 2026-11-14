@@ -1,8 +1,9 @@
 import asyncio
+import importlib
 import itertools
 from collections.abc import Callable, Mapping
 from enum import Enum, StrEnum
-from typing import Final, Protocol, runtime_checkable
+from typing import Final, Protocol
 
 import httpx
 import litellm.types.mcp as litellm_mcp  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L1
@@ -108,6 +109,70 @@ NARROWED_FIELDS: Final = frozenset(
     }
 )
 
+class ModelClasses(Protocol):
+    def __getattr__(self, name: str) -> type[BaseModel]: ...
+
+
+class ServerFlags(Protocol):
+    @property
+    def effective_authorization_url(self) -> str | None: ...
+
+    @property
+    def effective_token_url(self) -> str | None: ...
+
+    @property
+    def effective_registration_url(self) -> str | None: ...
+
+    @property
+    def has_client_credentials(self) -> bool: ...
+
+    @property
+    def needs_user_oauth_token(self) -> bool: ...
+
+    @property
+    def is_gateway_managed_oauth2(self) -> bool: ...
+
+    @property
+    def uses_per_server_oauth_relay(self) -> bool: ...
+
+    @property
+    def advertises_gateway_authorization_server(self) -> bool: ...  # ast-grep-ignore: no-long-names
+
+    @property
+    def is_true_passthrough(self) -> bool: ...
+
+    @property
+    def is_oauth_delegate(self) -> bool: ...
+
+    @property
+    def is_client_forwarded_token(self) -> bool: ...
+
+    @property
+    def is_dcr_bridge(self) -> bool: ...
+
+    @property
+    def requires_per_user_auth(self) -> bool: ...
+
+    @property
+    def is_oauth_passthrough(self) -> bool: ...
+
+
+class ServerFlagsClass(Protocol):
+    def model_validate(self, obj: JsonValue) -> ServerFlags: ...
+
+
+class ServerFlagsModule(Protocol):
+    MCPServer: ServerFlagsClass
+
+
+their_mcp: ModelClasses = importlib.import_module("litellm.types.mcp")
+their_manager: ModelClasses = importlib.import_module("litellm.types.mcp_server.mcp_server_manager")
+their_toolset: ModelClasses = importlib.import_module("litellm.types.mcp_server.mcp_toolset")
+their_registry: ModelClasses = importlib.import_module("litellm.types.mcp_server.tool_registry")
+their_flags: ServerFlagsModule = importlib.import_module(
+    "litellm.types.mcp_server.mcp_server_manager"
+)
+
 ENUM_PAIRS: Final[list[tuple[type[StrEnum], type[Enum]]]] = [
     (betterlite_enums.MCPTransport, litellm_mcp.MCPTransport),
     (betterlite_enums.MCPSpecVersion, litellm_mcp.MCPSpecVersion),
@@ -139,11 +204,31 @@ BETTERLITE_MODELS: Final[list[type[BaseModel]]] = [
     betterlite_registry.CallToolRequest,
     betterlite_registry.ContentItem,
 ]
-# LiteLLM's models carry Any fields, which mypy rejects as values, so they are found by name
-LITELLM_MODELS: Final = {
-    model.__name__: model
-    for model in BaseModel.__subclasses__()
-    if model.__module__.startswith("litellm.types.mcp")
+LITELLM_MODELS: Final[dict[str, type[BaseModel]]] = {
+    "MCPPublicServer": their_mcp.MCPPublicServer,
+    "MCPAllowedClient": their_mcp.MCPAllowedClient,
+    "MCPToolSearchSettings": their_mcp.MCPToolSearchSettings,
+    "MCPPreCallRequestObject": their_mcp.MCPPreCallRequestObject,
+    "MCPPreCallResponseObject": their_mcp.MCPPreCallResponseObject,
+    "MCPDuringCallRequestObject": their_mcp.MCPDuringCallRequestObject,
+    "MCPDuringCallResponseObject": their_mcp.MCPDuringCallResponseObject,
+    "MCPPostCallResponseObject": their_mcp.MCPPostCallResponseObject,
+    "MCPGatewaySession": their_mcp.MCPGatewaySession,
+    "MCPGatewaySessionGroupCount": their_mcp.MCPGatewaySessionGroupCount,
+    "MCPGatewaySessionsResponse": their_mcp.MCPGatewaySessionsResponse,
+    "MCPGatewaySessionsTerminateResponse": their_mcp.MCPGatewaySessionsTerminateResponse,
+    "MCPOAuthMetadata": their_manager.MCPOAuthMetadata,
+    "MCPOAuthIdentityBinding": their_manager.MCPOAuthIdentityBinding,
+    "PinnedMCPTool": their_manager.PinnedMCPTool,
+    "MCPServer": their_manager.MCPServer,
+    "MCPToolset": their_toolset.MCPToolset,
+    "NewMCPToolsetRequest": their_toolset.NewMCPToolsetRequest,
+    "UpdateMCPToolsetRequest": their_toolset.UpdateMCPToolsetRequest,
+    "MCPTool": their_registry.MCPTool,
+    "ToolSchema": their_registry.ToolSchema,
+    "ListToolsResponse": their_registry.ListToolsResponse,
+    "CallToolRequest": their_registry.CallToolRequest,
+    "ContentItem": their_registry.ContentItem,
 }
 THEIR_SERVER: Final = LITELLM_MODELS["MCPServer"]
 # MCPTool holds a callable, which has no JSON schema
@@ -352,51 +437,6 @@ class ObjectSchema(BaseModel):
     required: list[str] = []
 
 
-@runtime_checkable
-class ServerFlags(Protocol):
-    @property
-    def effective_authorization_url(self) -> str | None: ...
-
-    @property
-    def effective_token_url(self) -> str | None: ...
-
-    @property
-    def effective_registration_url(self) -> str | None: ...
-
-    @property
-    def has_client_credentials(self) -> bool: ...
-
-    @property
-    def needs_user_oauth_token(self) -> bool: ...
-
-    @property
-    def is_gateway_managed_oauth2(self) -> bool: ...
-
-    @property
-    def uses_per_server_oauth_relay(self) -> bool: ...
-
-    @property
-    def advertises_gateway_authorization_server(self) -> bool: ...  # ast-grep-ignore: no-long-names
-
-    @property
-    def is_true_passthrough(self) -> bool: ...
-
-    @property
-    def is_oauth_delegate(self) -> bool: ...
-
-    @property
-    def is_client_forwarded_token(self) -> bool: ...
-
-    @property
-    def is_dcr_bridge(self) -> bool: ...
-
-    @property
-    def requires_per_user_auth(self) -> bool: ...
-
-    @property
-    def is_oauth_passthrough(self) -> bool: ...
-
-
 def object_schema(model: type[BaseModel]) -> ObjectSchema:
     raw: dict[str, JsonValue] = model.model_json_schema()
     return ObjectSchema.model_validate(raw)
@@ -435,33 +475,28 @@ def pinned_result(
     return dumped
 
 
-def server_flags(server: BaseModel) -> tuple[str | bool | None, ...]:
-    match server:
-        case ServerFlags():
-            return (
-                server.effective_authorization_url,
-                server.effective_token_url,
-                server.effective_registration_url,
-                server.has_client_credentials,
-                server.needs_user_oauth_token,
-                server.is_gateway_managed_oauth2,
-                server.uses_per_server_oauth_relay,
-                server.advertises_gateway_authorization_server,
-                server.is_true_passthrough,
-                server.is_oauth_delegate,
-                server.is_client_forwarded_token,
-                server.is_dcr_bridge,
-                server.requires_per_user_auth,
-                server.is_oauth_passthrough,
-            )
-        case BaseModel():
-            pass
-    raise TypeError(f"{type(server).__name__} has no server flags")
+def server_flags(server: ServerFlags) -> tuple[str | bool | None, ...]:
+    return (
+        server.effective_authorization_url,
+        server.effective_token_url,
+        server.effective_registration_url,
+        server.has_client_credentials,
+        server.needs_user_oauth_token,
+        server.is_gateway_managed_oauth2,
+        server.uses_per_server_oauth_relay,
+        server.advertises_gateway_authorization_server,
+        server.is_true_passthrough,
+        server.is_oauth_delegate,
+        server.is_client_forwarded_token,
+        server.is_dcr_bridge,
+        server.requires_per_user_auth,
+        server.is_oauth_passthrough,
+    )
 
 
 def assert_server_flags_match(payload: dict[str, JsonValue]) -> None:
     ours = server_flags(betterlite_manager.MCPServer.model_validate(payload))
-    theirs = server_flags(THEIR_SERVER.model_validate(payload))
+    theirs = server_flags(their_flags.MCPServer.model_validate(payload))
     assert ours == theirs, payload
 
 
@@ -575,9 +610,14 @@ def test_names_registry_meta() -> None:
     )
 
 
+def echo_handler(**arguments: JsonValue) -> JsonValue:
+    echoed: dict[str, JsonValue] = dict(arguments)
+    return echoed
+
+
 def test_names_tool_handler() -> None:
     tool = betterlite_registry.MCPTool(
-        name="n", description="d", input_schema={}, handler=lambda **arguments: arguments
+        name="n", description="d", input_schema={}, handler=echo_handler
     )
     assert tool.handler(a=1) == {"a": 1}
     payload: dict[str, JsonValue] = {

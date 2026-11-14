@@ -27,6 +27,18 @@ from betterlite.types.mcp.headers import normalize_upstream_header_name
 
 _UPSTREAM_PROTOCOL: Final[TypeAdapter[MCPUpstreamProtocol]] = TypeAdapter(MCPUpstreamProtocol)
 _CREDENTIAL_HEADER_NAMES: Final = ("authorization", "x-api-key", "api-key", "apikey")
+_HEADER_AUTH_TYPES: Final = frozenset(
+    {
+        None,
+        MCPAuth.none,
+        MCPAuth.api_key,
+        MCPAuth.bearer_token,
+        MCPAuth.basic,
+        MCPAuth.authorization,
+        MCPAuth.token,
+        MCPAuth.aws_sigv4,
+    }
+)
 # ruff S105 reads a literal assigned to a token_ name as a password, so the default sits here
 _EXCHANGE_PROFILE: Final = "rfc8693"
 
@@ -85,7 +97,15 @@ def parse_pinned_tools(
             decoded = json.loads(value)
         case str() | bool() | int() | float() | list() | Mapping() | None:
             pass
-    return _PINNED_TOOLS.validate_python(decoded or None)
+    if not decoded:
+        return None
+    return _PINNED_TOOLS.validate_python(decoded)
+
+
+def _has_credential_header(headers: list[str] | None) -> bool:
+    if headers is None:
+        return False
+    return any(header.lower() in _CREDENTIAL_HEADER_NAMES for header in headers)
 
 
 class MCPServer(BaseModel):
@@ -213,9 +233,13 @@ class MCPServer(BaseModel):
 
     @model_validator(mode="after")
     def resolve_protocol_version(self) -> Self:
-        if "protocol_version" not in self.model_fields_set and self.mcp_info is not None:
+        if (
+            "protocol_version" not in self.model_fields_set
+            and self.mcp_info is not None
+            and "protocol_version" in self.mcp_info
+        ):
             self.protocol_version = _UPSTREAM_PROTOCOL.validate_python(
-                self.mcp_info.get("protocol_version", "auto")
+                self.mcp_info["protocol_version"]
             )
         return self
 
@@ -252,19 +276,8 @@ class MCPServer(BaseModel):
     def advertises_gateway_authorization_server(self) -> bool:  # ast-grep-ignore: no-long-names
         if self.auth_type == MCPAuth.oauth2:
             return self.is_gateway_managed_oauth2 and not self.uses_per_server_oauth_relay
-        if self.auth_type not in (
-            None,
-            MCPAuth.none,
-            MCPAuth.api_key,
-            MCPAuth.bearer_token,
-            MCPAuth.basic,
-            MCPAuth.authorization,
-            MCPAuth.token,
-            MCPAuth.aws_sigv4,
-        ):
-            return False
-        return not any(
-            header.lower() in _CREDENTIAL_HEADER_NAMES for header in (self.extra_headers or ())
+        return self.auth_type in _HEADER_AUTH_TYPES and not _has_credential_header(
+            self.extra_headers
         )
 
     @property
@@ -287,9 +300,7 @@ class MCPServer(BaseModel):
     def requires_per_user_auth(self) -> bool:
         if self.needs_user_oauth_token or self.is_client_forwarded_token:
             return True
-        return self.auth_type == MCPAuth.none and any(
-            header.lower() in _CREDENTIAL_HEADER_NAMES for header in self.extra_headers or ()
-        )
+        return self.auth_type == MCPAuth.none and _has_credential_header(self.extra_headers)
 
     @property
     def is_oauth_passthrough(self) -> bool:
