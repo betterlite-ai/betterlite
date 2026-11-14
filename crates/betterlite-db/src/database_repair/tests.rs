@@ -17,7 +17,7 @@ use super::migration::{
     ImportEvent, ImportFailure, ImportReport, import_verification_tokens, read_verification_csv,
 };
 use super::unassigned::{UnassignedTeamError, apply_db_fixes};
-use super::{DecodeError, MAX_CSV_BYTES, MAX_JSON_DEPTH, decode_verification_csv};
+use super::{DecodeError, MAX_CSV_BYTES, MAX_JSON_DEPTH, TypedValue, decode_verification_csv};
 
 // the CSV columns LiteLLM's migrate_keys.py requires, in the order it reads them
 const COLUMNS: [&str; 31] = [
@@ -65,7 +65,7 @@ fn quote_cell(cell: &str) -> String {
     format!("\"{}\"", cell.replace('"', "\"\""))
 }
 
-fn cell_for<'a>(cells: &[(&str, &'a str)], name: &str) -> Option<&'a str> {
+fn cell_for<'cell>(cells: &[(&str, &'cell str)], name: &str) -> Option<&'cell str> {
     cells
         .iter()
         .find(|entry| entry.0 == name)
@@ -91,10 +91,25 @@ fn csv_data(rows: &[&[(&str, &str)]]) -> String {
     format!("{}\n{records}\n", COLUMNS.join(","))
 }
 
-fn decode_cell(column: &str, cell: &str) -> Result<VerificationTokenRow, RowError> {
+fn decode_cell(column: &str, cell: &str) -> TypedValue {
     let data = csv_data(&[&[(column, cell)]]);
-    let mut decoded = decode_verification_csv(data.as_bytes()).unwrap();
-    decoded.rows.remove(0).outcome
+    decode_verification_csv(data.as_bytes()).expect("the test CSV decodes")
+}
+
+fn cell_row(column: &str, cell: &str) -> VerificationTokenRow {
+    decode_cell(column, cell)
+        .rows
+        .remove(0)
+        .outcome
+        .expect("the cell decodes")
+}
+
+fn cell_error(column: &str, cell: &str) -> RowError {
+    decode_cell(column, cell)
+        .rows
+        .remove(0)
+        .outcome
+        .expect_err("the cell fails")
 }
 
 fn parsed_json(text: &str) -> JsonData {
@@ -163,7 +178,7 @@ fn csv_json_null_coercion() {
 #[case::json("config", "{oops", "JSON")]
 #[case::duplicate_json_key("config", r#"{"a":1,"a":2}"#, "JSON")]
 fn csv_invalid_value(#[case] column: &str, #[case] cell: &str, #[case] kind: &str) {
-    let error = decode_cell(column, cell).unwrap_err();
+    let error = cell_error(column, cell);
     assert!(
         matches!(&error, RowError::InvalidValue { name, kind: actual, .. } if *name == column && *actual == kind)
     );
@@ -183,11 +198,17 @@ fn csv_too_deep_cell_fails_only_its_row() {
     ]);
     let decoded = decode_verification_csv(data.as_bytes()).unwrap();
     assert_eq!(decoded.rows.len(), 3);
-    assert!(decoded.rows[0].outcome.is_ok());
+    assert_eq!(
+        decoded.rows[0].outcome.as_ref().unwrap().token.as_deref(),
+        Some("tok-before")
+    );
     let error = decoded.rows[1].outcome.as_ref().unwrap_err();
     assert!(matches!(error, RowError::TooDeep { name } if *name == "config"));
     assert_eq!(decoded.rows[1].token.as_deref(), Some("tok-deep"));
-    assert!(decoded.rows[2].outcome.is_ok());
+    assert_eq!(
+        decoded.rows[2].outcome.as_ref().unwrap().token.as_deref(),
+        Some("tok-after")
+    );
 }
 
 #[test]
@@ -199,7 +220,10 @@ fn csv_failed_rows_keep_their_error_and_other_rows() {
     ]);
     let decoded = decode_verification_csv(data.as_bytes()).unwrap();
     assert_eq!(decoded.rows.len(), 3);
-    assert!(decoded.rows[0].outcome.is_ok());
+    assert_eq!(
+        decoded.rows[0].outcome.as_ref().unwrap().token.as_deref(),
+        Some("tok-1")
+    );
     assert!(matches!(
         decoded.rows[1].outcome,
         Err(RowError::InvalidValue {
@@ -207,7 +231,10 @@ fn csv_failed_rows_keep_their_error_and_other_rows() {
             ..
         })
     ));
-    assert!(decoded.rows[2].outcome.is_ok());
+    assert_eq!(
+        decoded.rows[2].outcome.as_ref().unwrap().token.as_deref(),
+        Some("tok-3")
+    );
     assert_eq!(decoded.rows[1].token.as_deref(), Some("tok-2"));
 }
 
@@ -218,27 +245,27 @@ fn csv_failed_rows_keep_their_error_and_other_rows() {
 #[case::empty("", None)]
 #[case::null("NULL", None)]
 fn csv_boolean_cells(#[case] cell: &str, #[case] expected: Option<bool>) {
-    let row = decode_cell("blocked", cell).unwrap();
+    let row = cell_row("blocked", cell);
     assert_eq!(row.blocked, expected);
 }
 
 #[rstest]
 #[case::digits("42", Some(42))]
 #[case::zero("0", Some(0))]
-#[case::large("9007199254740993", Some(9_007_199_254_740_993))]
+#[case::large("9007199254740993", Some(0x0020_0000_0000_0001))]
 #[case::negative("-5", None)]
 #[case::decimal_point("1.5", None)]
 #[case::word("many", None)]
-#[case::unicode_digits("١٢", None)]
+#[case::unicode_digits("\u{661}\u{662}", None)]
 #[case::null("NULL", None)]
 fn csv_integer_cells(#[case] cell: &str, #[case] expected: Option<i64>) {
-    let row = decode_cell("tpm_limit", cell).unwrap();
+    let row = cell_row("tpm_limit", cell);
     assert_eq!(row.tpm_limit, expected);
 }
 
 #[test]
 fn csv_integer_overflow_fails_the_row() {
-    let error = decode_cell("tpm_limit", "99999999999999999999").unwrap_err();
+    let error = cell_error("tpm_limit", "99999999999999999999");
     assert!(matches!(
         error,
         RowError::InvalidValue {
@@ -262,7 +289,7 @@ fn csv_integer_overflow_fails_the_row() {
 #[case::fraction("2026-01-02T03:04:05.123456", Some("2026-01-02 03:04:05.123456"))]
 #[case::garbage("not-a-time", None)]
 fn csv_timestamp_cells(#[case] cell: &str, #[case] expected: Option<&str>) {
-    let row = decode_cell("expires", cell).unwrap();
+    let row = cell_row("expires", cell);
     let rendered = row.expires.map(|value| value.to_string());
     assert_eq!(rendered.as_deref(), expected);
 }
@@ -274,7 +301,7 @@ fn csv_timestamp_cells(#[case] cell: &str, #[case] expected: Option<&str>) {
 #[case::empty_braces("{}", Some(""))]
 #[case::null("NULL", None)]
 fn csv_string_array_cells(#[case] cell: &str, #[case] expected: Option<&str>) {
-    let row = decode_cell("models", cell).unwrap();
+    let row = cell_row("models", cell);
     let joined = row.models.map(|items| items.join("|"));
     assert_eq!(joined.as_deref(), expected);
 }
@@ -394,7 +421,10 @@ fn native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso
         Err(DecodeError::TooLarge { .. })
     ));
     let at_limit = decode_verification_csv(json_depth_csv(MAX_JSON_DEPTH).as_bytes()).unwrap();
-    assert!(at_limit.rows[0].outcome.is_ok());
+    assert_eq!(
+        at_limit.rows[0].outcome.as_ref().unwrap().token.as_deref(),
+        Some("tok-1")
+    );
     let over_limit =
         decode_verification_csv(json_depth_csv(MAX_JSON_DEPTH + 1).as_bytes()).unwrap();
     let error = over_limit.rows[0].outcome.as_ref().unwrap_err();
@@ -543,7 +573,10 @@ fn assert_full_budgets(row: &Row) {
         optional_decimal(row, "max_budget"),
         Some(Decimal::new(55, 1))
     );
-    assert_eq!(row.get::<_, Option<i32>>("max_parallel_requests"), Some(7));
+    assert_eq!(
+        row.get::<_, Option<i32>>("max_parallel_requests"),
+        Some(7_i32)
+    );
     assert_eq!(row.get::<_, Option<i64>>("tpm_limit"), Some(100));
     assert_eq!(row.get::<_, Option<i64>>("rpm_limit"), Some(200));
     assert_eq!(
@@ -552,19 +585,19 @@ fn assert_full_budgets(row: &Row) {
     );
     assert_eq!(
         row.get::<_, Option<NaiveDateTime>>("expires"),
-        Some(moment((2026, 1, 2), (3, 4, 5)))
+        Some(moment((2_026_i32, 1_u32, 2_u32), (3_u32, 4_u32, 5_u32)))
     );
     assert_eq!(
         row.get::<_, Option<NaiveDateTime>>("budget_reset_at"),
-        Some(moment((2026, 2, 3), (4, 5, 6)))
+        Some(moment((2_026_i32, 2_u32, 3_u32), (4_u32, 5_u32, 6_u32)))
     );
     assert_eq!(
         row.get::<_, Option<NaiveDateTime>>("created_at"),
-        Some(moment((2026, 3, 4), (5, 6, 7)))
+        Some(moment((2_026_i32, 3_u32, 4_u32), (5_u32, 6_u32, 7_u32)))
     );
     assert_eq!(
         row.get::<_, Option<NaiveDateTime>>("updated_at"),
-        Some(moment((2026, 3, 5), (6, 7, 8)))
+        Some(moment((2_026_i32, 3_u32, 5_u32), (6_u32, 7_u32, 8_u32)))
     );
 }
 
@@ -603,6 +636,11 @@ fn assert_full_objects(row: &Row) {
 
 async fn assert_minimal_row(postgres: &RepairCase) {
     let row = postgres.token_row("tok-minimal").await;
+    assert_minimal_absences(&row);
+    assert_minimal_defaults(&row);
+}
+
+fn assert_minimal_absences(row: &Row) {
     assert_eq!(row.get::<_, Option<String>>("key_name"), None);
     assert_eq!(row.get::<_, Option<String>>("team_id"), None);
     assert_eq!(row.get::<_, Option<String>>("budget_duration"), None);
@@ -611,14 +649,17 @@ async fn assert_minimal_row(postgres: &RepairCase) {
     assert_eq!(row.get::<_, Option<NaiveDateTime>>("expires"), None);
     assert_eq!(row.get::<_, Option<Vec<String>>>("models"), None);
     assert!(!row.get::<_, bool>("soft_budget_cooldown"));
-    assert_eq!(optional_decimal(&row, "spend"), Some(Decimal::ZERO));
-    assert_eq!(optional_decimal(&row, "max_budget"), None);
-    assert_eq!(json_column(&row, "aliases"), parsed_json("{}"));
-    assert_eq!(json_column(&row, "config"), parsed_json("{}"));
-    assert_eq!(json_column(&row, "permissions"), parsed_json("{}"));
-    assert_eq!(json_column(&row, "metadata"), parsed_json("{}"));
-    assert_eq!(json_column(&row, "model_spend"), parsed_json("{}"));
-    assert_eq!(json_column(&row, "model_max_budget"), parsed_json("{}"));
+    assert_eq!(optional_decimal(row, "spend"), Some(Decimal::ZERO));
+    assert_eq!(optional_decimal(row, "max_budget"), None);
+}
+
+fn assert_minimal_defaults(row: &Row) {
+    assert_eq!(json_column(row, "aliases"), parsed_json("{}"));
+    assert_eq!(json_column(row, "config"), parsed_json("{}"));
+    assert_eq!(json_column(row, "permissions"), parsed_json("{}"));
+    assert_eq!(json_column(row, "metadata"), parsed_json("{}"));
+    assert_eq!(json_column(row, "model_spend"), parsed_json("{}"));
+    assert_eq!(json_column(row, "model_max_budget"), parsed_json("{}"));
     assert_eq!(
         row.get::<_, Option<Vec<String>>>("allowed_cache_controls"),
         Some(Vec::new())

@@ -35,9 +35,9 @@ struct Environment {
 }
 
 pub struct RepairCase {
-    fixture: PostgresFixture,
+    pub fixture: PostgresFixture,
     pub client: Client,
-    tasks: JoinSet<Result<(), tokio_postgres::Error>>,
+    pub tasks: JoinSet<Result<(), tokio_postgres::Error>>,
 }
 
 impl RepairCase {
