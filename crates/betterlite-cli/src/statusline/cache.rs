@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::{ErrorKind, Read as _};
+use std::io::{self, ErrorKind};
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
@@ -107,14 +107,13 @@ impl SessionCache<'_> {
             open(path, OFlags::RDONLY.union(OFlags::NOFOLLOW), Mode::empty()).map(File::from);
         #[cfg(not(unix))]
         let opened = File::open(path);
-        let Ok(mut file) = opened else {
+        let Ok(file) = opened else {
             return Lookup::Stale;
         };
-        let mut raw = Vec::new();
-        if file.read_to_end(&mut raw).is_err() {
+        let Ok(raw) = io::read_to_string(file) else {
             return Lookup::Stale;
-        }
-        let Ok(entry) = serde_json::from_slice::<Entry<'_>>(&raw) else {
+        };
+        let Ok(entry) = serde_json::from_str::<Entry<'_>>(&raw) else {
             return Lookup::Stale;
         };
         let Some(fetched_at) = decimal(&entry.fetched_at) else {

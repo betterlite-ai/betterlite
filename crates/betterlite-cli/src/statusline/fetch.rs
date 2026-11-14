@@ -20,7 +20,7 @@ pub mod error;
 const SESSION_ENDPOINT: &str = "/auto_router/session";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
 // A session answer is a few hundred bytes; the cap keeps a hostile gateway from filling memory
-const BODY_LIMIT_BYTES: usize = 1_048_576;
+const BODY_LIMIT_BYTES: usize = 0x0010_0000;
 const ACCEPT_JSON: &str = "application/json";
 // definitive: this credential's answer is settled for the cache TTL, so the next refresh need not ask again
 #[derive(Debug, Default, PartialEq, Eq)]

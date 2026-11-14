@@ -289,14 +289,14 @@ fn a_wide_router_name_is_padded_by_its_display_width() {
             .lines()
             .nth(1)
             .unwrap()
-            .starts_with("\u{30e2}\u{30c7}\u{30eb}       ")
+            .starts_with("\u{30e2}\u{30c7}\u{30eb}        ")
     );
     assert!(
         !rendered
             .lines()
             .nth(1)
             .unwrap()
-            .starts_with("\u{30e2}\u{30c7}\u{30eb}        ")
+            .starts_with("\u{30e2}\u{30c7}\u{30eb}         ")
     );
 }
 

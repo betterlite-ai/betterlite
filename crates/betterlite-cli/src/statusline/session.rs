@@ -26,20 +26,18 @@ struct Payload {
     router_name: Option<Wire<String>>,
     last_model: Option<Wire<String>>,
     spend: Option<Wire<Number>>,
-    #[serde(rename = "savings_estimated_baseline_spend")]
-    #[serde(default, deserialize_with = "present_baseline")]
-    estimated_baseline: Option<Wire<Number>>,
+    // a present key counts even as null and hides the plain baseline, so a null stays apart from an absent key
+    #[serde(
+        rename = "savings_estimated_baseline_spend",
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
+    estimated_baseline: Option<Option<Wire<Number>>>,
     baseline_spend: Option<Wire<Number>>,
     baseline_model: Option<Wire<String>>,
     turns: Option<Wire<Number>>,
     savings_estimated_turns: Option<Wire<Number>>,
     savings_estimated_actual_spend: Option<Wire<Number>>,
-}
-// A present baseline key counts even as null and hides the plain one, so the field keeps a null apart from an absent key
-fn present_baseline<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<Wire<Number>>, D::Error> {
-    Wire::<Number>::deserialize(deserializer).map(Some)
 }
 impl Session {
     // The proxy's answer is trusted only once its labels and money fields pass; anything else is no session
@@ -51,11 +49,10 @@ impl Session {
             return None;
         }
         let spend = payload.spend.as_ref()?.amount()?;
-        // the estimated key wins whenever it is present, even as null
-        let baseline = payload
-            .estimated_baseline
-            .as_ref()
-            .or(payload.baseline_spend.as_ref());
+        let baseline = match &payload.estimated_baseline {
+            Some(present) => present.as_ref(),
+            None => payload.baseline_spend.as_ref(),
+        };
         let baseline_spend = match baseline {
             None | Some(Wire::Null) => None,
             Some(found) => Some(found.amount()?),

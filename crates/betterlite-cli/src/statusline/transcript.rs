@@ -8,7 +8,7 @@ use serde::de::IgnoredAny;
 use super::credentials::printable;
 
 // 4 MiB
-pub const SCAN_LIMIT_BYTES: u64 = 4_194_304;
+pub const SCAN_LIMIT_BYTES: u64 = 0x0040_0000;
 const SYNTHETIC_MODEL: &str = "<synthetic>";
 const ASSISTANT_TYPE: &str = "assistant";
 const MODEL_CACHE_DIRECTORY: &str = "cache";
@@ -46,7 +46,7 @@ pub(crate) fn latest_transcript_model(path: &Path) -> Option<String> {
         .seek(SeekFrom::Start(size.saturating_sub(SCAN_LIMIT_BYTES)))
         .ok()?;
     let mut tail = Vec::new();
-    let _read = file.read_to_end(&mut tail).ok()?;
+    let _read = file.take(SCAN_LIMIT_BYTES).read_to_end(&mut tail).ok()?;
     tail.split(|byte| *byte == b'\n').rev().find_map(line_model)
 }
 

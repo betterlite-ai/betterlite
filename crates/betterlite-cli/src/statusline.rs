@@ -4,6 +4,8 @@ use std::path::Path;
 
 use betterlite_logging::private_json::files::PrivateFiles;
 use clap::Args;
+#[cfg(unix)]
+use rustix::process::getuid;
 use tokio::runtime::Builder;
 
 use self::cache::SystemClock;
@@ -48,7 +50,7 @@ pub fn run(_args: StatuslineArgs, ports: &mut StatuslinePorts<'_>) -> Result<(),
         environment: ports.environment,
     };
     #[cfg(unix)]
-    let owner_uid = Some(rustix::process::getuid().as_raw());
+    let owner_uid = Some(getuid().as_raw());
     #[cfg(not(unix))]
     let owner_uid = None;
     let deps = Dependencies {
