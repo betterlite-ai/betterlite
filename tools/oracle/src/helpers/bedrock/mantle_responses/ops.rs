@@ -34,8 +34,8 @@ pub(super) fn run(input: &Input) -> HelperResult {
         | Input::UnsupportedParamsWarnDrop { cases }
         | Input::ToolFilter { cases } => map_cases(&warnings, cases, None),
         Input::ModelName { cases } => {
-            let input = ResponsesInput::Text("hello".to_owned());
-            map_cases(&warnings, cases, Some(&input))
+            let body_input = ResponsesInput::Text("hello".to_owned());
+            map_cases(&warnings, cases, Some(&body_input))
         }
         Input::ResponseAuth { cases } | Input::ProjectHeader { cases } => auth_cases(cases),
         Input::InputHoisting { cases } => hoist_cases(&warnings, cases),
