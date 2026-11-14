@@ -27,7 +27,7 @@ pub struct RankRequest {
     pub records: Vec<RankRecord>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_n: Option<i64>,
-    pub ignore_record_details: bool,
+    pub ignore_record_details_in_response: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_labels: Option<BTreeMap<String, String>>,
 }
@@ -76,7 +76,7 @@ pub fn transform_request(
         query: query.clone(),
         records,
         top_n: top_n(params)?,
-        ignore_record_details: !return_documents(params)?,
+        ignore_record_details_in_response: !return_documents(params)?,
         user_labels: request_labels_from_params(litellm_params),
     })
 }
@@ -99,9 +99,11 @@ fn top_n(params: &Extra) -> Result<Option<i64>, VertexRerankError> {
     }
 }
 
+// .get("return_documents", True) defaults only an absent key, and the proxy always sends a present None
 fn return_documents(params: &Extra) -> Result<bool, VertexRerankError> {
     match params.get("return_documents") {
-        None | Some(Json::Null) => Ok(true),
+        None => Ok(true),
+        Some(Json::Null) => Ok(false),
         Some(Json::Bool(flag)) => Ok(*flag),
         Some(_) => Err(VertexRerankError::FieldType(
             "return_documents",
@@ -134,10 +136,8 @@ fn mapping_content_and_title(
         Some(text) => text.to_owned(),
         None => repr(fields).map_err(|source| VertexRerankError::DocumentText { index, source })?,
     };
-    let title = match document_text(index, fields, "title")? {
-        Some(title) => title.to_owned(),
-        None => first_words(&content),
-    };
+    let title =
+        document_text(index, fields, "title")?.map_or_else(|| first_words(&content), str::to_owned);
     Ok((content, title))
 }
 

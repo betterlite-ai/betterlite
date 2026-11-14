@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
@@ -28,10 +29,10 @@ pub fn decode_vertex_rerank(bytes: &[u8]) -> Result<Vec<RankedRecord>, VertexRer
         return Err(VertexRerankError::TooLarge { size: bytes.len() });
     }
     let root: Json = serde_json::from_slice(bytes).map_err(VertexRerankError::Json)?;
-    let Json::Object(mut fields) = root else {
+    let Json::Object(mut envelope) = root else {
         return Err(VertexRerankError::NotObject);
     };
-    let records = match fields.shift_remove("records") {
+    let records = match envelope.shift_remove("records") {
         None | Some(Json::Null) => Vec::new(),
         Some(Json::List(records)) => records,
         Some(_) => return Err(VertexRerankError::RecordsNotList),
@@ -71,7 +72,7 @@ pub fn transform_response(
     request: &RankRequest,
     id: Uuid,
 ) -> RerankResponse {
-    records.sort_by(|left, right| right.score.0.cmp(&left.score.0));
+    records.sort_by_key(|record| Reverse(record.score.0));
     let results = records
         .into_iter()
         .map(|record| RerankResponseResult {

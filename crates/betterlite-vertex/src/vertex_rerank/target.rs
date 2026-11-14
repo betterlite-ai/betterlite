@@ -11,8 +11,8 @@ use crate::token_cache::probe::AccessToken;
 
 use super::error::VertexRerankError;
 
-// both LiteLLM entry points read credentials then project from copies of the params and authenticate on their own
-async fn authenticate<'text, Lookup, Make>(
+// get_complete_url and validate_environment each authenticate on their own, so a caller authenticates once for each
+pub async fn authenticate<'text, Lookup, Make>(
     params: VertexParams<'text>,
     vertex: &'text VertexSettings,
     make_lookup: Make,
@@ -29,16 +29,10 @@ where
 }
 
 // get_complete_url ignores api_base and the model: the ranking config is always the global default
-pub async fn complete_url<'text, Lookup, Make>(
-    params: VertexParams<'text>,
-    vertex: &'text VertexSettings,
-    make_lookup: Make,
-) -> Result<String, VertexRerankError>
-where
-    Make: FnOnce(Option<&ConfiguredCredentials>, Option<&str>) -> Lookup,
-    Lookup: Future<Output = Result<AccessToken, CredentialCacheError>> + Send,
-{
-    let access = authenticate(params, vertex, make_lookup).await?;
+pub fn complete_url(
+    access: &AccessToken,
+    vertex: &VertexSettings,
+) -> Result<String, VertexRerankError> {
     // the loaded setting already folds VERTEXAI_PROJECT and the module project
     let configured = vertex.project.as_deref().unwrap_or_default();
     let project = [access.project.as_str(), configured]
@@ -50,17 +44,11 @@ where
     ))
 }
 
-pub async fn request_headers<'text, Lookup, Make>(
-    params: VertexParams<'text>,
-    vertex: &'text VertexSettings,
+#[must_use]
+pub fn request_headers(
+    access: &AccessToken,
     caller_headers: &BTreeMap<String, String>,
-    make_lookup: Make,
-) -> Result<BTreeMap<String, SecretString>, VertexRerankError>
-where
-    Make: FnOnce(Option<&ConfiguredCredentials>, Option<&str>) -> Lookup,
-    Lookup: Future<Output = Result<AccessToken, CredentialCacheError>> + Send,
-{
-    let access = authenticate(params, vertex, make_lookup).await?;
+) -> BTreeMap<String, SecretString> {
     let mut headers = BTreeMap::new();
     headers.insert(
         String::from("Authorization"),
@@ -72,10 +60,10 @@ where
     );
     headers.insert(
         String::from("X-Goog-User-Project"),
-        SecretString::from(access.project),
+        SecretString::from(access.project.clone()),
     );
     for (name, value) in caller_headers {
         headers.insert(name.clone(), SecretString::from(value.clone()));
     }
-    Ok(headers)
+    headers
 }

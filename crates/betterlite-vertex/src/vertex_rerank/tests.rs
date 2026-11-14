@@ -24,7 +24,7 @@ use crate::token_cache::probe::AccessToken;
 use crate::vertex_rerank::error::VertexRerankError;
 use crate::vertex_rerank::request::{RankRequest, map_rerank_params, transform_request};
 use crate::vertex_rerank::response::{RankedRecord, decode_vertex_rerank, transform_response};
-use crate::vertex_rerank::target::{complete_url, request_headers};
+use crate::vertex_rerank::target::{authenticate, complete_url, request_headers};
 
 const MODEL: &str = "semantic-ranker-512@latest";
 
@@ -43,7 +43,7 @@ fn access(token: &str, project: &str) -> AccessToken {
     }
 }
 
-const fn decimal(mantissa: i64, scale: u32) -> Score {
+fn decimal(mantissa: i64, scale: u32) -> Score {
     Score(Decimal::new(mantissa, scale))
 }
 
@@ -125,12 +125,12 @@ fn top_n_is_emitted_for_every_non_null_value(#[case] field: &str, #[case] expect
 
 #[rstest]
 #[case::absent("", false)]
-#[case::null(r#","return_documents":null"#, false)]
+#[case::null(r#","return_documents":null"#, true)]
 #[case::true_value(r#","return_documents":true"#, false)]
 #[case::false_value(r#","return_documents":false"#, true)]
 fn return_documents_defaults_to_true_and_is_inverted(#[case] field: &str, #[case] ignored: bool) {
     let request = request_of(&format!(r#"{{"query":"q","documents":[]{field}}}"#));
-    assert_eq!(request.ignore_record_details, ignored);
+    assert_eq!(request.ignore_record_details_in_response, ignored);
 }
 
 #[test]
@@ -158,7 +158,7 @@ fn an_empty_query_and_an_empty_document_list_are_still_requests() {
 )]
 #[case::return_type(
     r#"{"query":"q","documents":[],"return_documents":1}"#,
-    "the return_documents value must be true or false"
+    "the return_documents value must be a boolean"
 )]
 #[case::document_type(
     r#"{"query":"q","documents":["a",3]}"#,
@@ -230,13 +230,14 @@ async fn the_url_is_the_global_ranking_config_of_the_resolved_project() {
         credentials: Some(&credentials),
         ai_credentials: None,
     };
-    let url = complete_url(call, &vertex, |found, project| {
+    let granted = authenticate(call, &vertex, |found, project| {
         assert_eq!(found.and_then(ConfiguredCredentials::as_text), Some("{}"));
         assert_eq!(project, Some("param-project"));
         ready(Ok(access("tok", "resolved")))
     })
     .await
     .unwrap();
+    let url = complete_url(&granted, &vertex).unwrap();
     assert_eq!(
         url,
         "https://discoveryengine.googleapis.com/v1/projects/resolved/locations/global/rankingConfigs/default_ranking_config:rank"
@@ -249,7 +250,7 @@ async fn the_url_is_the_global_ranking_config_of_the_resolved_project() {
 #[case::no_setting(None, "", None)]
 #[case::token_wins(Some("configured"), "resolved", Some("resolved"))]
 #[tokio::test]
-async fn an_empty_resolved_project_falls_back_to_the_configured_one(
+fn an_empty_resolved_project_falls_back_to_the_configured_one(
     #[case] configured: Option<&str>,
     #[case] resolved: &str,
     #[case] expected: Option<&str>,
@@ -260,10 +261,8 @@ async fn an_empty_resolved_project_falls_back_to_the_configured_one(
         credentials: None,
         adc: AdcEnvironment::default(),
     };
-    let outcome = complete_url(VertexParams::default(), &vertex, |_, _| {
-        ready(Ok(access("tok", resolved)))
-    })
-    .await;
+    let granted = access("tok", resolved);
+    let outcome = complete_url(&granted, &vertex);
     match expected {
         Some(project) => assert!(
             outcome
@@ -275,30 +274,18 @@ async fn an_empty_resolved_project_falls_back_to_the_configured_one(
 }
 
 #[tokio::test]
-async fn a_failed_credential_lookup_stops_both_the_url_and_the_headers() {
+async fn a_failed_credential_lookup_stops_the_target() {
     let vertex = VertexSettings::default();
-    let url = complete_url(VertexParams::default(), &vertex, |_, _| {
+    let outcome = authenticate(VertexParams::default(), &vertex, |_, _| {
         ready(Err(CredentialCacheError::MissingToken))
     })
     .await;
-    assert!(matches!(url, Err(VertexRerankError::Credentials(_))));
-    let none = BTreeMap::new();
-    let headers = request_headers(VertexParams::default(), &vertex, &none, |_, _| {
-        ready(Err(CredentialCacheError::MissingToken))
-    })
-    .await;
-    assert!(matches!(headers, Err(VertexRerankError::Credentials(_))));
+    assert!(matches!(outcome, Err(VertexRerankError::Credentials(_))));
 }
 
-#[tokio::test]
-async fn headers_carry_bearer_json_and_the_billing_project() {
-    let vertex = VertexSettings::default();
-    let none = BTreeMap::new();
-    let headers = request_headers(VertexParams::default(), &vertex, &none, |_, _| {
-        ready(Ok(access("tok", "proj")))
-    })
-    .await
-    .unwrap();
+#[test]
+fn headers_carry_bearer_json_and_the_billing_project() {
+    let headers = request_headers(&access("tok", "proj"), &BTreeMap::new());
     let shown: BTreeMap<&str, &str> = headers
         .iter()
         .map(|(name, value)| (name.as_str(), value.expose_secret()))
@@ -313,20 +300,15 @@ async fn headers_carry_bearer_json_and_the_billing_project() {
     );
 }
 
-#[tokio::test]
-async fn every_caller_header_overrides_the_defaults() {
-    let vertex = VertexSettings::default();
+#[test]
+fn every_caller_header_overrides_the_defaults() {
     let caller = BTreeMap::from([
         (String::from("Authorization"), String::from("Bearer mine")),
         (String::from("Content-Type"), String::from("text/plain")),
         (String::from("X-Goog-User-Project"), String::from("other")),
         (String::from("X-Extra"), String::from("1")),
     ]);
-    let headers = request_headers(VertexParams::default(), &vertex, &caller, |_, _| {
-        ready(Ok(access("tok", "proj")))
-    })
-    .await
-    .unwrap();
+    let headers = request_headers(&access("tok", "proj"), &caller);
     let shown: BTreeMap<String, String> = headers
         .iter()
         .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))

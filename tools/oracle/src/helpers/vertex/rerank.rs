@@ -11,7 +11,7 @@ use betterlite_vertex::token_cache::error::CredentialCacheError;
 use betterlite_vertex::token_cache::probe::AccessToken;
 use betterlite_vertex::vertex_rerank::request::{map_rerank_params, transform_request};
 use betterlite_vertex::vertex_rerank::response::{decode_vertex_rerank, transform_response};
-use betterlite_vertex::vertex_rerank::target::{complete_url, request_headers};
+use betterlite_vertex::vertex_rerank::target::{authenticate, complete_url, request_headers};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -93,17 +93,14 @@ async fn target(input: &Input) -> HelperResult {
     };
     let vertex = VertexSettings::default();
     let lookups = Mutex::new(Vec::new());
-    let url = complete_url(params, &vertex, scripted(&lookups, &input.access_project))
+    let url_access = authenticate(params, &vertex, scripted(&lookups, &input.access_project))
         .await
         .or_value_error()?;
-    let headers = request_headers(
-        params,
-        &vertex,
-        &input.headers,
-        scripted(&lookups, &input.access_project),
-    )
-    .await
-    .or_value_error()?;
+    let url = complete_url(&url_access, &vertex).or_value_error()?;
+    let header_access = authenticate(params, &vertex, scripted(&lookups, &input.access_project))
+        .await
+        .or_value_error()?;
+    let headers = request_headers(&header_access, &input.headers);
     let exposed: BTreeMap<String, String> = headers
         .iter()
         .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))

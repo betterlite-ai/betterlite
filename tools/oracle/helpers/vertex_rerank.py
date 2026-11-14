@@ -25,6 +25,9 @@ MapParams = Callable[
 class Config(Protocol):
     @property
     def map_cohere_rerank_params(self) -> MapParams: ...
+    def get_complete_url(
+        self, api_base: str | None, model: str, optional_params: Params | None
+    ) -> str: ...
     def validate_environment(
         self, headers: dict[str, str], model: str, api_key: str | None, optional_params: Params
     ) -> dict[str, str]: ...
@@ -32,6 +35,10 @@ class Config(Protocol):
         self, model: str, optional_rerank_params: Params, headers: dict[str, str],
         litellm_params: Params | None,
     ) -> Params: ...
+    def transform_rerank_response(
+        self, model: str, raw_response: httpx.Response, model_response: RerankResponse,
+        logging_obj: Logging, request_data: Params,
+    ) -> RerankResponse: ...
 
 
 class Reply(TypedDict):
@@ -83,7 +90,7 @@ def run(data: Input) -> JsonValue:
         "vertex_project": data.get("vertex_project"),
         "vertex_credentials": data.get("vertex_credentials"),
     }
-    url = scripted.get_complete_url(data.get("api_base"), data["model"], optional)
+    url = config.get_complete_url(data.get("api_base"), data["model"], optional)
     headers = config.validate_environment(data["headers"], data["model"], None, optional)
     drop_params = False
     mapped = config.map_cohere_rerank_params(
@@ -93,7 +100,7 @@ def run(data: Input) -> JsonValue:
     request = config.transform_rerank_request(
         data["model"], mapped, data["headers"], data.get("litellm_params")
     )
-    answer = scripted.transform_rerank_response(
+    answer = config.transform_rerank_response(
         model=data["model"],
         raw_response=httpx.Response(200, json=data["response"]),
         model_response=RerankResponse(),

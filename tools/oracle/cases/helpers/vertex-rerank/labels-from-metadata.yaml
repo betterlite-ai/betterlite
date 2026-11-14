@@ -11,7 +11,7 @@ call:
     query: which one
     documents: ["first"]
     top_n: null
-    return_documents: true
+    return_documents: null
     non_default_params: {}
     litellm_params:
       metadata: {requester_metadata: {team: search, count: 5}}
