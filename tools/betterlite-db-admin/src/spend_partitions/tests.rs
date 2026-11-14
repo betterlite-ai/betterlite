@@ -49,11 +49,11 @@ fn maps_partition_commands_to_their_variant() {
     );
     assert_eq!(partition.operation(), Operation::PartitionSpendLogs);
     assert_eq!(
-        Operation::PartitionSpendLogs.name(),
+        <&'static str>::from(Operation::PartitionSpendLogs),
         SpendPartitionOperation::Partition.name()
     );
     assert_eq!(
-        Operation::UnpartitionSpendLogs.name(),
+        <&'static str>::from(Operation::UnpartitionSpendLogs),
         SpendPartitionOperation::Unpartition.name()
     );
     let unpartition = Operation::UnpartitionSpendLogs.command(&environment);
