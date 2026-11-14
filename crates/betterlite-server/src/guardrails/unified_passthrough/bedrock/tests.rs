@@ -7,6 +7,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::passthrough_guardrail::errors::PassthroughGuardrailError;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
+use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
 use betterlite_guardrails::guardrail_translation::BaseTranslation;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
@@ -26,6 +27,16 @@ const CONVERSE: &str = "https://bedrock-runtime.us-east-1.amazonaws.com/model/m/
 
 fn adapter(skip: SkipFlags) -> BedrockAdapter {
     BedrockPassthroughTranslation::new(TestHook::echoing(), skip, None, None)
+}
+
+fn configured_adapter(config: &str) -> BedrockAdapter {
+    let config: Json = serde_json::from_str(config).expect("valid JSON fixture");
+    BedrockAdapter::new(
+        TestHook::echoing(),
+        SkipFlags::default(),
+        Some("g1".to_owned()),
+        Some(config),
+    )
 }
 
 fn refusal() -> GuardrailFailure {
@@ -84,14 +95,26 @@ async fn bedrock_converse_input_uses_the_stored_skip_flags(
 #[tokio::test]
 async fn bedrock_generic_input_uses_the_configured_request_fields() {
     let fake = FakeGuardrail::unchanged();
-    let config: Json = serde_json::from_str(r#"{"g1": {"request_fields": ["prompt"]}}"#)
-        .expect("valid JSON fixture");
-    let adapter = BedrockAdapter::new(
-        TestHook::echoing(),
-        SkipFlags::default(),
-        Some("g1".to_owned()),
-        Some(config),
+    let adapter = configured_adapter(r#"{"g1": {"request_fields": ["prompt"]}}"#);
+    let mut data = map_body(
+        r#"{"endpoint": "https://x/model/m/invoke", "model": "m", "prompt": "hello", "secret": "hide"}"#,
     );
+    let mut log_target = GuardrailLogTarget::default();
+    adapter
+        .process_input_messages(&mut data, &fake, Some(&mut log_target))
+        .await
+        .expect("the guardrail accepts");
+    assert_eq!(fake.calls()[0].texts, vec!["hello".to_owned()]);
+    assert_eq!(
+        data.get("secret"),
+        Some(&GuardrailValue::Text("hide".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn bedrock_generic_input_without_logging_scans_the_whole_payload() {
+    let fake = FakeGuardrail::unchanged();
+    let adapter = configured_adapter(r#"{"g1": {"request_fields": ["prompt"]}}"#);
     let mut data = map_body(
         r#"{"endpoint": "https://x/model/m/invoke", "model": "m", "prompt": "hello", "secret": "hide"}"#,
     );
@@ -99,7 +122,9 @@ async fn bedrock_generic_input_uses_the_configured_request_fields() {
         .process_input_messages(&mut data, &fake, None)
         .await
         .expect("the guardrail accepts");
-    assert_eq!(fake.calls()[0].texts, vec!["hello".to_owned()]);
+    let texts = fake.calls()[0].texts.clone();
+    assert_eq!(texts.len(), 1);
+    assert!(texts[0].contains("prompt") && texts[0].contains("secret"));
 }
 
 #[tokio::test]
