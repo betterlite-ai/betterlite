@@ -18,13 +18,17 @@ use crate::openai_base_config::{Headers, Object};
 
 type Environment = BTreeMap<String, String>;
 
+fn fixture(text: &str) -> Value {
+    serde_json::from_str(text).expect("test fixture must be valid JSON")
+}
+
 fn environment(api_base: Option<&str>, api_key: Option<&str>) -> Environment {
     let mut values = Environment::new();
-    if let Some(api_base) = api_base {
-        values.insert(String::from("HOSTED_VLLM_API_BASE"), String::from(api_base));
+    if let Some(base) = api_base {
+        values.insert(String::from("HOSTED_VLLM_API_BASE"), String::from(base));
     }
-    if let Some(api_key) = api_key {
-        values.insert(String::from("HOSTED_VLLM_API_KEY"), String::from(api_key));
+    if let Some(key) = api_key {
+        values.insert(String::from("HOSTED_VLLM_API_KEY"), String::from(key));
     }
     values
 }
@@ -33,24 +37,27 @@ fn header_values(headers: &Headers) -> Value {
     serde_json::to_value(headers).expect("headers must serialize")
 }
 
-fn reply(body: Value) -> Result<Value, HostedVllmEmbeddingError> {
-    let raw = serde_json::to_vec(&body).expect("the reply must serialize");
-    let response = transform_embedding_response(&raw, &mut |_text| {})?;
-    Ok(serde_json::to_value(response).expect("the response must serialize"))
+fn reply(body: &Value) -> Value {
+    let raw = serde_json::to_vec(body).expect("the reply must serialize");
+    let response =
+        transform_embedding_response(&raw, &mut |_text| {}).expect("the reply must decode");
+    serde_json::to_value(response).expect("the response must serialize")
 }
 
-fn reply_error(body: Value) -> HostedVllmEmbeddingError {
-    let raw = serde_json::to_vec(&body).expect("the reply must serialize");
+fn reply_error(body: &Value) -> HostedVllmEmbeddingError {
+    let raw = serde_json::to_vec(body).expect("the reply must serialize");
     transform_embedding_response(&raw, &mut |_text| {}).expect_err("the reply must not decode")
 }
 
 fn full_reply() -> Value {
-    json!({
-        "object": "list",
-        "model": "my-model",
-        "data": [{"object": "embedding", "embedding": [0.5, 0.25], "index": 0}],
-        "usage": {"prompt_tokens": 2, "completion_tokens": 0, "total_tokens": 2},
-    })
+    fixture(
+        r#"{
+            "object": "list",
+            "model": "my-model",
+            "data": [{"object": "embedding", "embedding": [0.5, 0.25], "index": 0}],
+            "usage": {"prompt_tokens": 2, "completion_tokens": 0, "total_tokens": 2}
+        }"#,
+    )
 }
 
 fn provider_parts(error: HostedVllmEmbeddingError) -> (String, u16) {
@@ -60,15 +67,17 @@ fn provider_parts(error: HostedVllmEmbeddingError) -> (String, u16) {
             status_code,
             ..
         } => (message, status_code),
-        other => panic!("unexpected error: {other}"),
+        HostedVllmEmbeddingError::MissingApiBase | HostedVllmEmbeddingError::Shape { .. } => {
+            panic!("unexpected error without a provider status");
+        }
     }
 }
 
 fn params(value: Value) -> Object {
-    match value {
-        Value::Object(fields) => fields,
-        other => panic!("test parameters must be an object: {other}"),
-    }
+    let Value::Object(fields) = value else {
+        panic!("test parameters must be an object");
+    };
+    fields
 }
 
 #[test]
@@ -77,7 +86,7 @@ fn headers_add_content_type_and_bearer() {
     let headers = validate_environment(&Headers::new(), Some(&key), &environment(None, None));
     assert_eq!(
         header_values(&headers),
-        json!({"Content-Type": "application/json", "Authorization": "Bearer secret"})
+        fixture(r#"{"Content-Type": "application/json", "Authorization": "Bearer secret"}"#)
     );
 }
 
@@ -87,7 +96,7 @@ fn headers_skip_authorization_for_the_placeholder_key() {
     let headers = validate_environment(&Headers::new(), Some(&key), &environment(None, None));
     assert_eq!(
         header_values(&headers),
-        json!({"Content-Type": "application/json"})
+        fixture(r#"{"Content-Type": "application/json"}"#)
     );
 }
 
@@ -98,7 +107,7 @@ fn headers_skip_authorization_for_an_empty_argument_key() {
         validate_environment(&Headers::new(), Some(&key), &environment(None, Some("env")));
     assert_eq!(
         header_values(&headers),
-        json!({"Content-Type": "application/json"})
+        fixture(r#"{"Content-Type": "application/json"}"#)
     );
 }
 
@@ -107,7 +116,7 @@ fn headers_read_the_environment_key_when_the_argument_is_missing() {
     let headers = validate_environment(&Headers::new(), None, &environment(None, Some("env-key")));
     assert_eq!(
         header_values(&headers),
-        json!({"Content-Type": "application/json", "Authorization": "Bearer env-key"})
+        fixture(r#"{"Content-Type": "application/json", "Authorization": "Bearer env-key"}"#)
     );
 }
 
@@ -116,7 +125,7 @@ fn headers_default_the_key_when_nothing_is_set() {
     let headers = validate_environment(&Headers::new(), None, &environment(None, None));
     assert_eq!(
         header_values(&headers),
-        json!({"Content-Type": "application/json"})
+        fixture(r#"{"Content-Type": "application/json"}"#)
     );
 }
 
@@ -125,7 +134,7 @@ fn headers_ignore_an_empty_environment_key() {
     let headers = validate_environment(&Headers::new(), None, &environment(None, Some("")));
     assert_eq!(
         header_values(&headers),
-        json!({"Content-Type": "application/json"})
+        fixture(r#"{"Content-Type": "application/json"}"#)
     );
 }
 
@@ -139,7 +148,7 @@ fn caller_headers_win_on_exact_keys() {
     let merged = validate_environment(&headers, Some(&key), &environment(None, None));
     assert_eq!(
         header_values(&merged),
-        json!({"Content-Type": "text/plain", "Authorization": "Bearer caller"})
+        fixture(r#"{"Content-Type": "text/plain", "Authorization": "Bearer caller"}"#)
     );
 }
 
@@ -149,7 +158,7 @@ fn a_differently_cased_caller_header_is_a_second_entry() {
     let merged = validate_environment(&headers, None, &environment(None, None));
     assert_eq!(
         header_values(&merged),
-        json!({"Content-Type": "application/json", "content-type": "text/plain"})
+        fixture(r#"{"Content-Type": "application/json", "content-type": "text/plain"}"#)
     );
 }
 
@@ -200,24 +209,27 @@ fn complete_url_treats_an_empty_environment_base_as_unset() {
 }
 
 #[rstest]
-#[case(json!({"timeout": 5}))]
-#[case(json!({"dimensions": 2}))]
-#[case(json!({"encoding_format": "float"}))]
-#[case(json!({"user": "me"}))]
-fn map_copies_each_supported_parameter(#[case] given: Value) {
+#[case(r#"{"timeout": 5}"#)]
+#[case(r#"{"dimensions": 2}"#)]
+#[case(r#"{"encoding_format": "float"}"#)]
+#[case(r#"{"user": "me"}"#)]
+fn map_copies_each_supported_parameter(#[case] given: &str) {
+    let expected = fixture(given);
     let mut optional = Object::new();
-    map_openai_params(&params(given.clone()), &mut optional);
-    assert_eq!(Value::Object(optional), given);
+    map_openai_params(&params(expected.clone()), &mut optional);
+    assert_eq!(Value::Object(optional), expected);
 }
 
 #[test]
 fn map_drops_unsupported_parameters() {
     let mut optional = Object::new();
     map_openai_params(
-        &params(json!({"timeout": 5, "input_type": "search_document"})),
+        &params(fixture(
+            r#"{"timeout": 5, "input_type": "search_document"}"#,
+        )),
         &mut optional,
     );
-    assert_eq!(optional, params(json!({"timeout": 5})));
+    assert_eq!(optional, params(fixture(r#"{"timeout": 5}"#)));
 }
 
 #[test]
@@ -229,22 +241,19 @@ fn supported_params_are_the_four_litellm_names() {
 }
 
 #[rstest]
-#[case(
-    EmbeddingInput::Text(String::from("hi")),
-    json!(["hi"]),
-)]
+#[case(EmbeddingInput::Text(String::from("hi")), r#"["hi"]"#)]
 #[case(
     EmbeddingInput::Texts(vec![String::from("a"), String::from("b")]),
-    json!(["a", "b"]),
+    r#"["a", "b"]"#
 )]
-#[case(EmbeddingInput::Tokens(vec![1, 2]), json!([1, 2]))]
+#[case(EmbeddingInput::Tokens(vec![1, 2]), r#"[1, 2]"#)]
 #[case(
     EmbeddingInput::TokenLists(vec![vec![1, 2], vec![3]]),
-    json!([[1, 2], [3]]),
+    r#"[[1, 2], [3]]"#
 )]
-fn requests_always_send_an_input_array(#[case] input: EmbeddingInput, #[case] expected: Value) {
+fn requests_always_send_an_input_array(#[case] input: EmbeddingInput, #[case] expected: &str) {
     let body = transform_embedding_request("my-model", &input, &Object::new());
-    assert_eq!(body.get("input"), Some(&expected));
+    assert_eq!(body.get("input"), Some(&fixture(expected)));
 }
 
 #[test]
@@ -262,16 +271,18 @@ fn requests_append_the_optional_params_after_model_and_input() {
     let body = transform_embedding_request(
         "my-model",
         &EmbeddingInput::Text(String::from("hi")),
-        &params(json!({"dimensions": 2, "encoding_format": "base64"})),
+        &params(fixture(r#"{"dimensions": 2, "encoding_format": "base64"}"#)),
     );
     assert_eq!(
         Value::Object(body),
-        json!({
-            "model": "my-model",
-            "input": ["hi"],
-            "dimensions": 2,
-            "encoding_format": "base64",
-        })
+        fixture(
+            r#"{
+                "model": "my-model",
+                "input": ["hi"],
+                "dimensions": 2,
+                "encoding_format": "base64"
+            }"#
+        )
     );
 }
 
@@ -280,7 +291,7 @@ fn an_optional_param_can_override_the_input() {
     let body = transform_embedding_request(
         "my-model",
         &EmbeddingInput::Text(String::from("hi")),
-        &params(json!({"input": "overridden"})),
+        &params(fixture(r#"{"input": "overridden"}"#)),
     );
     assert_eq!(body.get("input"), Some(&json!("overridden")));
 }
@@ -288,19 +299,21 @@ fn an_optional_param_can_override_the_input() {
 #[test]
 fn a_full_reply_decodes_unchanged() {
     assert_eq!(
-        reply(full_reply()).expect("reply"),
-        json!({
-            "object": "list",
-            "model": "my-model",
-            "data": [{"object": "embedding", "embedding": [0.5, 0.25], "index": 0}],
-            "usage": {
-                "prompt_tokens": 2,
-                "completion_tokens": 0,
-                "completion_tokens_details": null,
-                "prompt_tokens_details": null,
-                "total_tokens": 2,
-            },
-        })
+        reply(&full_reply()),
+        fixture(
+            r#"{
+                "object": "list",
+                "model": "my-model",
+                "data": [{"object": "embedding", "embedding": [0.5, 0.25], "index": 0}],
+                "usage": {
+                    "prompt_tokens": 2,
+                    "completion_tokens": 0,
+                    "completion_tokens_details": null,
+                    "prompt_tokens_details": null,
+                    "total_tokens": 2
+                }
+            }"#
+        )
     );
 }
 
@@ -311,10 +324,7 @@ fn a_reply_without_object_defaults_it_to_list() {
         .expect("object")
         .remove("object")
         .expect("object key");
-    assert_eq!(
-        reply(body).expect("reply").get("object"),
-        Some(&json!("list"))
-    );
+    assert_eq!(reply(&body).get("object"), Some(&json!("list")));
 }
 
 #[test]
@@ -323,10 +333,7 @@ fn a_reply_keeps_its_object_value() {
     body.as_object_mut()
         .expect("object")
         .insert(String::from("object"), json!("embedding_list"));
-    assert_eq!(
-        reply(body).expect("reply").get("object"),
-        Some(&json!("embedding_list"))
-    );
+    assert_eq!(reply(&body).get("object"), Some(&json!("embedding_list")));
 }
 
 #[test]
@@ -337,14 +344,16 @@ fn a_reply_without_usage_defaults_to_zero_counts() {
         .remove("usage")
         .expect("usage key");
     assert_eq!(
-        reply(body).expect("reply").get("usage"),
-        Some(&json!({
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "completion_tokens_details": null,
-            "prompt_tokens_details": null,
-            "total_tokens": 0,
-        }))
+        reply(&body).get("usage"),
+        Some(&fixture(
+            r#"{
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "completion_tokens_details": null,
+                "prompt_tokens_details": null,
+                "total_tokens": 0
+            }"#
+        ))
     );
 }
 
@@ -355,14 +364,16 @@ fn a_null_usage_defaults_to_zero_counts() {
         .expect("object")
         .insert(String::from("usage"), Value::Null);
     assert_eq!(
-        reply(body).expect("reply").get("usage"),
-        Some(&json!({
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "completion_tokens_details": null,
-            "prompt_tokens_details": null,
-            "total_tokens": 0,
-        }))
+        reply(&body).get("usage"),
+        Some(&fixture(
+            r#"{
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "completion_tokens_details": null,
+                "prompt_tokens_details": null,
+                "total_tokens": 0
+            }"#
+        ))
     );
 }
 
@@ -371,16 +382,18 @@ fn usage_missing_counters_default_to_zero() {
     let mut body = full_reply();
     body.as_object_mut()
         .expect("object")
-        .insert(String::from("usage"), json!({"prompt_tokens": 3}));
+        .insert(String::from("usage"), fixture(r#"{"prompt_tokens": 3}"#));
     assert_eq!(
-        reply(body).expect("reply").get("usage"),
-        Some(&json!({
-            "prompt_tokens": 3,
-            "completion_tokens": 0,
-            "completion_tokens_details": null,
-            "prompt_tokens_details": null,
-            "total_tokens": 0,
-        }))
+        reply(&body).get("usage"),
+        Some(&fixture(
+            r#"{
+                "prompt_tokens": 3,
+                "completion_tokens": 0,
+                "completion_tokens_details": null,
+                "prompt_tokens_details": null,
+                "total_tokens": 0
+            }"#
+        ))
     );
 }
 
@@ -389,17 +402,19 @@ fn usage_extra_fields_are_ignored() {
     let mut body = full_reply();
     body.as_object_mut().expect("object").insert(
         String::from("usage"),
-        json!({"prompt_tokens": 1, "total_tokens": 1, "extra": 9}),
+        fixture(r#"{"prompt_tokens": 1, "total_tokens": 1, "extra": 9}"#),
     );
     assert_eq!(
-        reply(body).expect("reply").get("usage"),
-        Some(&json!({
-            "prompt_tokens": 1,
-            "completion_tokens": 0,
-            "completion_tokens_details": null,
-            "prompt_tokens_details": null,
-            "total_tokens": 1,
-        }))
+        reply(&body).get("usage"),
+        Some(&fixture(
+            r#"{
+                "prompt_tokens": 1,
+                "completion_tokens": 0,
+                "completion_tokens_details": null,
+                "prompt_tokens_details": null,
+                "total_tokens": 1
+            }"#
+        ))
     );
 }
 
@@ -411,7 +426,7 @@ fn a_missing_model_is_an_error() {
         .remove("model")
         .expect("model key");
     assert!(matches!(
-        reply_error(body),
+        reply_error(&body),
         HostedVllmEmbeddingError::Shape { .. }
     ));
 }
@@ -424,7 +439,7 @@ fn a_missing_data_is_an_error() {
         .remove("data")
         .expect("data key");
     assert!(matches!(
-        reply_error(body),
+        reply_error(&body),
         HostedVllmEmbeddingError::Shape { .. }
     ));
 }
@@ -436,7 +451,7 @@ fn a_null_data_is_an_error() {
         .expect("object")
         .insert(String::from("data"), Value::Null);
     assert!(matches!(
-        reply_error(body),
+        reply_error(&body),
         HostedVllmEmbeddingError::Shape { .. }
     ));
 }
@@ -446,10 +461,10 @@ fn a_data_item_with_a_string_index_is_an_error() {
     let mut body = full_reply();
     body.as_object_mut().expect("object").insert(
         String::from("data"),
-        json!([{"object": "embedding", "embedding": [0.5], "index": "zero"}]),
+        fixture(r#"[{"object": "embedding", "embedding": [0.5], "index": "zero"}]"#),
     );
     assert!(matches!(
-        reply_error(body),
+        reply_error(&body),
         HostedVllmEmbeddingError::Shape { .. }
     ));
 }
@@ -457,7 +472,7 @@ fn a_data_item_with_a_string_index_is_an_error() {
 #[test]
 fn a_non_object_reply_is_an_error() {
     assert!(matches!(
-        reply_error(json!([1, 2])),
+        reply_error(&fixture("[1, 2]")),
         HostedVllmEmbeddingError::Shape { .. }
     ));
 }
@@ -479,21 +494,23 @@ fn the_post_call_hook_sees_the_reply_text() {
 
 #[test]
 fn a_reply_with_an_empty_data_array_decodes() {
-    let body = json!({"model": "m", "data": []});
+    let body = fixture(r#"{"model": "m", "data": []}"#);
     assert_eq!(
-        reply(body).expect("reply"),
-        json!({
-            "object": "list",
-            "data": [],
-            "model": "m",
-            "usage": {
-                "prompt_tokens": 0,
-                "completion_tokens": 0,
-                "completion_tokens_details": null,
-                "prompt_tokens_details": null,
-                "total_tokens": 0,
-            },
-        })
+        reply(&body),
+        fixture(
+            r#"{
+                "object": "list",
+                "data": [],
+                "model": "m",
+                "usage": {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "completion_tokens_details": null,
+                    "prompt_tokens_details": null,
+                    "total_tokens": 0
+                }
+            }"#
+        )
     );
 }
 
@@ -501,18 +518,17 @@ fn a_reply_with_an_empty_data_array_decodes() {
 fn the_error_class_keeps_the_message_status_and_headers() {
     let headers = Headers::from([(String::from("x"), String::from("y"))]);
     let error = get_error_class("bad", 429, &headers);
-    match &error {
-        HostedVllmEmbeddingError::Provider {
-            message,
-            status_code,
-            headers: kept,
-        } => {
-            assert_eq!(message, "bad");
-            assert_eq!(*status_code, 429);
-            assert_eq!(kept, &headers);
-        }
-        other => panic!("unexpected error: {other}"),
-    }
+    let HostedVllmEmbeddingError::Provider {
+        message,
+        status_code,
+        headers: kept,
+    } = &error
+    else {
+        panic!("unexpected error: {error}");
+    };
+    assert_eq!(message, "bad");
+    assert_eq!(*status_code, 429);
+    assert_eq!(kept, &headers);
     assert_eq!(error.status_code(), 429);
     assert_eq!(error.to_string(), "bad");
 }
@@ -530,10 +546,10 @@ fn a_meaningful_error_in_a_full_reply_is_a_provider_error() {
     let mut body = full_reply();
     body.as_object_mut().expect("object").insert(
         String::from("error"),
-        json!({"message": "boom", "code": 400}),
+        fixture(r#"{"message": "boom", "code": 400}"#),
     );
     assert_eq!(
-        provider_parts(reply_error(body)),
+        provider_parts(reply_error(&body)),
         (String::from("boom"), 400)
     );
 }
@@ -541,7 +557,7 @@ fn a_meaningful_error_in_a_full_reply_is_a_provider_error() {
 #[test]
 fn an_error_only_reply_reports_status_422() {
     assert_eq!(
-        provider_parts(reply_error(json!({"error": {"message": "boom"}}))),
+        provider_parts(reply_error(&fixture(r#"{"error": {"message": "boom"}}"#))),
         (String::from("boom"), 422)
     );
 }
@@ -551,9 +567,9 @@ fn an_error_message_alone_is_meaningful_with_no_code() {
     let mut body = full_reply();
     body.as_object_mut()
         .expect("object")
-        .insert(String::from("error"), json!({"message": "boom"}));
+        .insert(String::from("error"), fixture(r#"{"message": "boom"}"#));
     assert_eq!(
-        provider_parts(reply_error(body)),
+        provider_parts(reply_error(&body)),
         (String::from("boom"), 422)
     );
 }
@@ -561,10 +577,11 @@ fn an_error_message_alone_is_meaningful_with_no_code() {
 #[test]
 fn a_blank_error_message_with_a_code_is_meaningful() {
     let mut body = full_reply();
-    body.as_object_mut()
-        .expect("object")
-        .insert(String::from("error"), json!({"message": "", "code": 429}));
-    assert_eq!(provider_parts(reply_error(body)), (String::new(), 429));
+    body.as_object_mut().expect("object").insert(
+        String::from("error"),
+        fixture(r#"{"message": "", "code": 429}"#),
+    );
+    assert_eq!(provider_parts(reply_error(&body)), (String::new(), 429));
 }
 
 #[test]
@@ -572,9 +589,9 @@ fn an_error_code_alone_uses_the_default_message() {
     let mut body = full_reply();
     body.as_object_mut()
         .expect("object")
-        .insert(String::from("error"), json!({"code": 429}));
+        .insert(String::from("error"), fixture(r#"{"code": 429}"#));
     assert_eq!(
-        provider_parts(reply_error(body)),
+        provider_parts(reply_error(&body)),
         (String::from("Error in response object"), 429)
     );
 }
@@ -586,7 +603,7 @@ fn a_string_error_is_meaningful_with_status_422() {
         .expect("object")
         .insert(String::from("error"), json!("boom"));
     assert_eq!(
-        provider_parts(reply_error(body)),
+        provider_parts(reply_error(&body)),
         (String::from("Error in response object"), 422)
     );
 }
@@ -596,10 +613,10 @@ fn a_non_integer_error_code_reports_status_422() {
     let mut body = full_reply();
     body.as_object_mut().expect("object").insert(
         String::from("error"),
-        json!({"message": "boom", "code": "rate_limit"}),
+        fixture(r#"{"message": "boom", "code": "rate_limit"}"#),
     );
     assert_eq!(
-        provider_parts(reply_error(body)),
+        provider_parts(reply_error(&body)),
         (String::from("boom"), 422)
     );
 }
@@ -607,11 +624,12 @@ fn a_non_integer_error_code_reports_status_422() {
 #[test]
 fn a_null_error_message_with_a_code_uses_the_default_message() {
     let mut body = full_reply();
-    body.as_object_mut()
-        .expect("object")
-        .insert(String::from("error"), json!({"message": null, "code": 429}));
+    body.as_object_mut().expect("object").insert(
+        String::from("error"),
+        fixture(r#"{"message": null, "code": 429}"#),
+    );
     assert_eq!(
-        provider_parts(reply_error(body)),
+        provider_parts(reply_error(&body)),
         (String::from("Error in response object"), 429)
     );
 }
@@ -621,9 +639,9 @@ fn a_large_error_code_reports_status_422() {
     let mut body = full_reply();
     body.as_object_mut()
         .expect("object")
-        .insert(String::from("error"), json!({"code": 70000}));
+        .insert(String::from("error"), fixture(r#"{"code": 70000}"#));
     assert_eq!(
-        provider_parts(reply_error(body)),
+        provider_parts(reply_error(&body)),
         (String::from("Error in response object"), 422)
     );
 }
@@ -633,10 +651,10 @@ fn a_structured_error_message_is_encoded_as_json() {
     let mut body = full_reply();
     body.as_object_mut().expect("object").insert(
         String::from("error"),
-        json!({"message": {"reason": "boom"}}),
+        fixture(r#"{"message": {"reason": "boom"}}"#),
     );
     assert_eq!(
-        provider_parts(reply_error(body)),
+        provider_parts(reply_error(&body)),
         (String::from(r#"{"reason":"boom"}"#), 422)
     );
 }
@@ -646,9 +664,9 @@ fn a_truthy_error_message_that_is_not_a_string_is_meaningful() {
     let mut body = full_reply();
     body.as_object_mut()
         .expect("object")
-        .insert(String::from("error"), json!({"message": true}));
+        .insert(String::from("error"), fixture(r#"{"message": true}"#));
     assert_eq!(
-        provider_parts(reply_error(body)),
+        provider_parts(reply_error(&body)),
         (String::from("true"), 422)
     );
 }
@@ -658,8 +676,8 @@ fn a_nonzero_number_error_message_is_meaningful() {
     let mut body = full_reply();
     body.as_object_mut()
         .expect("object")
-        .insert(String::from("error"), json!({"message": 5}));
-    assert_eq!(provider_parts(reply_error(body)), (String::from("5"), 422));
+        .insert(String::from("error"), fixture(r#"{"message": 5}"#));
+    assert_eq!(provider_parts(reply_error(&body)), (String::from("5"), 422));
 }
 
 #[test]
@@ -668,10 +686,7 @@ fn a_null_error_in_a_reply_is_ignored() {
     body.as_object_mut()
         .expect("object")
         .insert(String::from("error"), Value::Null);
-    assert_eq!(
-        reply(body).expect("reply").get("model"),
-        Some(&json!("my-model"))
-    );
+    assert_eq!(reply(&body).get("model"), Some(&json!("my-model")));
 }
 
 #[test]
@@ -680,10 +695,7 @@ fn an_empty_string_error_is_ignored() {
     body.as_object_mut()
         .expect("object")
         .insert(String::from("error"), json!(""));
-    assert_eq!(
-        reply(body).expect("reply").get("model"),
-        Some(&json!("my-model"))
-    );
+    assert_eq!(reply(&body).get("model"), Some(&json!("my-model")));
 }
 
 #[test]
@@ -691,11 +703,8 @@ fn an_empty_error_object_is_ignored() {
     let mut body = full_reply();
     body.as_object_mut()
         .expect("object")
-        .insert(String::from("error"), json!({}));
-    assert_eq!(
-        reply(body).expect("reply").get("model"),
-        Some(&json!("my-model"))
-    );
+        .insert(String::from("error"), fixture("{}"));
+    assert_eq!(reply(&body).get("model"), Some(&json!("my-model")));
 }
 
 #[test]
@@ -703,24 +712,19 @@ fn a_null_error_message_with_a_null_code_is_ignored() {
     let mut body = full_reply();
     body.as_object_mut().expect("object").insert(
         String::from("error"),
-        json!({"message": null, "code": null}),
+        fixture(r#"{"message": null, "code": null}"#),
     );
-    assert_eq!(
-        reply(body).expect("reply").get("model"),
-        Some(&json!("my-model"))
-    );
+    assert_eq!(reply(&body).get("model"), Some(&json!("my-model")));
 }
 
 #[test]
 fn an_empty_error_message_with_a_null_code_is_ignored() {
     let mut body = full_reply();
-    body.as_object_mut()
-        .expect("object")
-        .insert(String::from("error"), json!({"message": "", "code": null}));
-    assert_eq!(
-        reply(body).expect("reply").get("model"),
-        Some(&json!("my-model"))
+    body.as_object_mut().insert(
+        String::from("error"),
+        fixture(r#"{"message": "", "code": null}"#),
     );
+    assert_eq!(reply(&body).get("model"), Some(&json!("my-model")));
 }
 
 #[test]
@@ -728,26 +732,21 @@ fn a_zero_error_message_with_a_null_code_is_ignored() {
     let mut body = full_reply();
     body.as_object_mut()
         .expect("object")
-        .insert(String::from("error"), json!({"message": 0}));
-    assert_eq!(
-        reply(body).expect("reply").get("model"),
-        Some(&json!("my-model"))
-    );
+        .insert(String::from("error"), fixture(r#"{"message": 0}"#));
+    assert_eq!(reply(&body).get("model"), Some(&json!("my-model")));
 }
 
 #[rstest]
-#[case::empty_list(json!([]))]
-#[case::empty_object(json!({}))]
-#[case::false_flag(json!(false))]
-fn an_empty_container_or_false_error_message_is_ignored(#[case] message: Value) {
+#[case::empty_list("[]")]
+#[case::empty_object("{}")]
+#[case::false_flag("false")]
+fn an_empty_container_or_false_error_message_is_ignored(#[case] message: &str) {
     let mut body = full_reply();
-    body.as_object_mut()
-        .expect("object")
-        .insert(String::from("error"), json!({"message": message}));
-    assert_eq!(
-        reply(body).expect("reply").get("model"),
-        Some(&json!("my-model"))
+    body.as_object_mut().expect("object").insert(
+        String::from("error"),
+        fixture(&format!(r#"{{"message": {message}}}"#)),
     );
+    assert_eq!(reply(&body).get("model"), Some(&json!("my-model")));
 }
 
 #[rstest]
