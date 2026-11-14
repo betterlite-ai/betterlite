@@ -84,6 +84,9 @@ scope:
     - tools/dashboard/build.sh
     - tools/dashboard/install.mjs
     - tools/dashboard/bundle.mjs
+    - tools/dashboard/bundle/**
+    - tools/dashboard/patches.mjs
+    - tools/dashboard/tests/source/**
     - tools/dashboard/check-build.sh
     - tools/dashboard/tests/build/**
     - ui/dashboard/patches/10-build.patch
@@ -142,5 +145,5 @@ pitfalls:
   - The upstream package name litellm-dashboard is private build metadata, so changing it would unnecessarily break the frozen package-lock.json pair.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1700
   max_new_expects: 0
