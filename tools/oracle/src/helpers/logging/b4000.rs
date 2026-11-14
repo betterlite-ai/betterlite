@@ -101,10 +101,7 @@ async fn drive(scenario: &Scenario) -> Value {
         Ok(settings) => settings,
         Err(error) => return json!({ "initialized": false, "error": error.to_string() }),
     };
-    let endpoints = json!({
-        "dfs": &settings.dfs_endpoint,
-        "blob": &settings.blob_endpoint,
-    });
+    let endpoints = json!({ "dfs": &settings.dfs_endpoint, "blob": &settings.blob_endpoint });
     let transport = Arc::new(ScriptedTransport {
         replies: Mutex::new(scenario.replies.iter().cloned().collect()),
         calls: Mutex::new(Vec::new()),
@@ -147,13 +144,7 @@ fn report(
         "endpoints": endpoints,
         "actions": results,
         "queue": queue,
-        "calls": transport
-            .calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .map(describe)
-            .collect::<Vec<Value>>(),
+        "calls": transport.calls.lock().unwrap_or_else(PoisonError::into_inner).iter().map(describe).collect::<Vec<Value>>(),
         "clients": {
             "created": logger.created_clients.load(Ordering::SeqCst),
             "closed": logger.closed_clients.load(Ordering::SeqCst),
@@ -244,10 +235,8 @@ fn operation(call: &StorageRequest) -> &'static str {
     if call.method == Method::HEAD {
         return "exists";
     }
-    MARKERS
-        .iter()
-        .find(|pair| url.contains(pair.0))
-        .map_or("other", |pair| pair.1)
+    let marker = MARKERS.iter().find(|pair| url.contains(pair.0));
+    marker.map_or("other", |pair| pair.1)
 }
 
 fn describe(call: &StorageRequest) -> Value {
@@ -255,13 +244,25 @@ fn describe(call: &StorageRequest) -> Value {
     if op == "entra_token" {
         return json!({ "op": op });
     }
-    let url = call.url.replace(START_DATE, "{date}");
+    let url = masked_position(&call.url).replace(START_DATE, "{date}");
     if op != "append" {
         return json!({ "op": op, "url": url });
     }
     let text = from_utf8(&call.body).unwrap_or_default();
     let body: Option<Value> = serde_json::from_str(text.trim_end_matches('\n')).ok();
     json!({ "op": op, "url": url, "body": body, "trailing_newline": text.ends_with('\n') })
+}
+
+// the flush position counts JSON bytes, and json.dumps spacing is outside the parity contract
+fn masked_position(url: &str) -> String {
+    let Some((head, rest)) = url.split_once("?action=flush&position=") else {
+        return url.to_owned();
+    };
+    let boundary = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
+    let (_position, after) = rest.split_at(boundary);
+    format!("{head}?action=flush&position={{bytes}}{after}")
 }
 
 #[async_trait]
