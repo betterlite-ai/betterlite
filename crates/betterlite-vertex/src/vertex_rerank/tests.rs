@@ -249,7 +249,6 @@ async fn the_url_is_the_global_ranking_config_of_the_resolved_project() {
 #[case::empty_setting(Some(""), "", None)]
 #[case::no_setting(None, "", None)]
 #[case::token_wins(Some("configured"), "resolved", Some("resolved"))]
-#[tokio::test]
 fn an_empty_resolved_project_falls_back_to_the_configured_one(
     #[case] configured: Option<&str>,
     #[case] resolved: &str,
