@@ -21,7 +21,7 @@ call:
       - step: reply
         status: 200
         now: 0
-        body: '{"id": "resp-4", "output": [], "usage": {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3, "cost_in_usd_ticks": 12500000000}}'
+        body: '{"id": "resp-4", "created_at": 7, "output": []}'
       - step: event
         event:
           type: response.completed

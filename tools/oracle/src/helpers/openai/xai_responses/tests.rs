@@ -41,7 +41,7 @@ fn helper_seeds_select_xai_responses() {
 )]
 #[case::oauth_token_and_base("oauth-token-and-base.yaml", r#"[{"Authorization":"Bearer oauth-token"},{"raised":null},"https://oauth.example/v1/responses","https://api.x.ai/v1/responses","https://explicit.example/v1/responses"]"#)]
 #[case::single_tool_and_null_metadata("single-tool-and-null-metadata.yaml", r#"[{"store":true,"model":"grok-4","tools":[{"type":"web_search","filters":{"allowed_domains":["one.example"]}}]},{"tools":["plain"]},{"tools":[]},{"tools":0}]"#)]
-#[case::terminal_cost_only("terminal-cost-only.yaml", r#"[{"cost":"1.25","ticks":12500000000},{"cost":"1.25","ticks":12500000000},{"cost":"0.25","ticks":-5},{"raised":200},{"cost":"0.5","ticks":5000000000,"class":"ResponseCompletedEvent"},{"cost":"0.25","ticks":2500000000,"class":"ResponseIncompleteEvent"},{"cost":null,"ticks":5000000000,"class":"ResponseCreatedEvent"},{"cost":null,"ticks":null,"class":"GenericEvent"}]"#)]
+#[case::terminal_cost_only("terminal-cost-only.yaml", r#"[{"cost":"1.25","ticks":12500000000},{"cost":"1.25","ticks":12500000000},{"cost":"0.25","ticks":-5},{"cost":null,"ticks":null},{"cost":"0.5","ticks":5000000000,"class":"ResponseCompletedEvent"},{"cost":"0.25","ticks":2500000000,"class":"ResponseIncompleteEvent"},{"cost":null,"ticks":5000000000,"class":"ResponseCreatedEvent"},{"cost":null,"ticks":null,"class":"GenericEvent"}]"#)]
 fn the_native_helper_answers_like_litellm(#[case] file: &str, #[case] litellm: &str) {
     use crate::helpers::Helper as _;
 

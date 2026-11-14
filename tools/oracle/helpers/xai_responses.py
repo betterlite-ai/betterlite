@@ -1,13 +1,13 @@
 import os
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict
+from typing import Final, Literal, Protocol, Required, TypeAlias, TypedDict
+from unittest.mock import patch
 
 import httpx
 import litellm
-from litellm.exceptions import AuthenticationError
+import openai
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.llms.openai.common_utils import OpenAIError
 from litellm.llms.xai import oauth as xai_oauth
 from litellm.llms.xai.oauth import XAIOAuthAuthenticator, XAIOAuthError
 from litellm.llms.xai.responses.transformation import XAIResponsesAPIConfig
@@ -16,7 +16,9 @@ from litellm.types.llms.openai import (
 )
 from litellm.types.llms.openai import ResponsesAPIStreamingResponse
 from litellm.types.router import GenericLiteLLMParams
+from openai.types.responses.response_text_config_param import ResponseTextConfigParam
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
 CONFIG: Final[XAIResponsesAPIConfig] = XAIResponsesAPIConfig.__new__(
     XAIResponsesAPIConfig
@@ -66,9 +68,22 @@ USAGE: Final[TypeAdapter[UsageView]] = TypeAdapter(UsageView)
 EVENT: Final[TypeAdapter[EventView]] = TypeAdapter(EventView)
 
 
+class PromptView(TypedDict, total=False):
+    id: Required[str]
+    variables: dict[str, object] | None
+    version: str | None
+
+
+# the case supplies these Any-carrying RequestParams fields, so their types are narrowed here
+class ToolParams(RequestParams, total=False):
+    metadata: dict[str, object] | None
+    text: ResponseTextConfigParam | None
+    prompt: PromptView | None
+
+
 class Tools(TypedDict):
     step: Literal["tools"]
-    params: RequestParams
+    params: ToolParams
 
 
 class Url(TypedDict):
@@ -117,6 +132,7 @@ class OauthFixture(XAIOAuthAuthenticator):
     token: str = ""
 
     # the fixture never reads the token store the real method would
+    @override
     def get_access_token(self) -> str:
         if not OauthFixture.token:
             raise XAIOAuthError("fixture failure")
@@ -170,16 +186,13 @@ def auth_value(config: ResponsesConfig, step: Auth) -> JsonValue:
     given = dict(step["headers"])
     token = step["oauth"]
     OauthFixture.token = "" if token is None else token
-    original = xai_oauth.XAIOAuthAuthenticator
-    xai_oauth.XAIOAuthAuthenticator = OauthFixture
-    try:
-        headers = config.validate_environment(given, "grok-4", params)
-    except ValueError:
-        return {"raised": None}
-    except AuthenticationError as error:
-        return {"raised": error.status_code}
-    finally:
-        xai_oauth.XAIOAuthAuthenticator = original
+    with patch.object(xai_oauth, "XAIOAuthAuthenticator", OauthFixture):
+        try:
+            headers = config.validate_environment(given, "grok-4", params)
+        except openai.AuthenticationError as error:
+            return {"raised": error.status_code}
+        except ValueError:
+            return {"raised": None}
     return JSON.validate_python(headers)
 
 
@@ -188,12 +201,9 @@ def reply_value(step: Reply) -> JsonValue:
     response = httpx.Response(
         step["status"], content=step["body"].encode(), request=request
     )
-    try:
-        reply = CONFIG.transform_response_api_response(
-            "grok-4", response, logging_object()
-        )
-    except OpenAIError as error:
-        return {"raised": error.status_code}
+    reply = CONFIG.transform_response_api_response(
+        "grok-4", response, logging_object()
+    )
     if reply.usage is None:
         return usage_value(None)
     return usage_value(USAGE.validate_json(reply.usage.model_dump_json()))
