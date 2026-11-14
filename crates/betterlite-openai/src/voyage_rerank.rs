@@ -210,7 +210,7 @@ pub fn calculate_rerank_cost(
 }
 
 fn response_id(root: &IndexMap<String, Json>, uuid: Uuid) -> Result<String, VoyageRerankError> {
-    let Some(value) = root.get("id").filter(|value| is_truthy(*value)) else {
+    let Some(value) = root.get("id").filter(|value| has_value(*value)) else {
         return Ok(uuid.to_string());
     };
     let Json::Text(text) = value else {
@@ -279,7 +279,7 @@ fn total_tokens(root: &IndexMap<String, Json>) -> Result<Option<i64>, VoyageRera
     }
 }
 
-fn is_truthy(value: &Json) -> bool {
+fn has_value(value: &Json) -> bool {
     match value {
         Json::Null => false,
         Json::Bool(flag) => *flag,
