@@ -1,7 +1,7 @@
 import importlib
 import json
 from types import UnionType
-from typing import Literal, Union, get_args, get_origin
+from typing import Any, Literal, Union, get_args, get_origin
 
 import pytest
 from pydantic import JsonValue, TypeAdapter
@@ -17,12 +17,14 @@ from betterlite.types.llms.bedrock.converse.tools import BedrockToolParameters, 
 
 PACKAGE = "betterlite.types.llms.bedrock.converse"
 theirs = importlib.import_module("litellm.types.llms.bedrock")
+openai = importlib.import_module("litellm.types.llms.openai")
 content = importlib.import_module(f"{PACKAGE}.content")
 citations = importlib.import_module(f"{PACKAGE}.citations")
 messages = importlib.import_module(f"{PACKAGE}.messages")
 tools = importlib.import_module(f"{PACKAGE}.tools")
 request = importlib.import_module(f"{PACKAGE}.request")
 stream_events = importlib.import_module(f"{PACKAGE}.stream_events")
+tool_call_chunk = importlib.import_module(f"{PACKAGE}.tool_call_chunk")
 sent_event = importlib.import_module(f"{PACKAGE}.server_sent_event")
 
 TYPED_DICTS = {
@@ -113,6 +115,14 @@ TYPED_DICTS = {
     "ContentBlockDeltaEvent": (stream_events.ContentBlockDeltaEvent, theirs.ContentBlockDeltaEvent),
     "GenericStreamingChunk": (stream_events.GenericStreamingChunk, theirs.GenericStreamingChunk),
     "Document": (stream_events.Document, theirs.Document),
+    "ChatCompletionToolCallFunctionChunk": (
+        tool_call_chunk.ChatCompletionToolCallFunctionChunk,
+        openai.ChatCompletionToolCallFunctionChunk,
+    ),
+    "ChatCompletionToolCallChunk": (
+        tool_call_chunk.ChatCompletionToolCallChunk,
+        openai.ChatCompletionToolCallChunk,
+    ),
 }
 
 LITERAL_ALIASES = {
@@ -259,7 +269,7 @@ def shape(annotation: type) -> str:
         return "|".join(sorted(shape(argument) for argument in arguments))
     if is_typeddict(annotation):
         return f"TypedDict:{annotation.__name__}"
-    if origin is dict and arguments[1] is JsonValue:
+    if origin is dict and arguments[1] in (JsonValue, Any):
         return "dict"
     if origin is None:
         return annotation.__name__
