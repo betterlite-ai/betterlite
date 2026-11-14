@@ -22,7 +22,9 @@ use super::fail;
 use crate::case::UpstreamAnswer;
 use crate::helpers::{HelperError, HelperResult};
 use crate::mock::MockProvider;
-use crate::routing_mock_scripts::{MockScript, Outcome, ScriptSpec, ScriptedReply, Wait};
+use crate::routing_mock_scripts::{
+    MockScript, Outcome, ProviderCall, ScriptSpec, ScriptedReply, Wait,
+};
 
 const SCRIPT_DEADLINE_MILLIS: u64 = 30_000;
 const TIMEOUT: Duration = Duration::from_secs(5);
@@ -93,9 +95,9 @@ fn resolved(
     default: Option<bool>,
     environment: &BTreeMap<String, String>,
 ) -> Option<bool> {
-    let provided = provided.map(BoolSetting::Boolean);
+    let setting = provided.map(BoolSetting::Boolean);
     resolve_bool_config(
-        provided.as_ref(),
+        setting.as_ref(),
         Some(env_var),
         default,
         environment,
@@ -219,11 +221,23 @@ fn captured_headers(headers: &BTreeMap<String, String>) -> BTreeMap<String, Stri
         .collect()
 }
 
-pub(super) fn run(input: &ProtectInput) -> HelperResult {
-    let mut settings = pillar_settings(&input.settings);
-    let mut data = guardrail_data(&input.data)?;
-    let mock = start_mock(&input.answer)?;
-    settings.api_base = mock.base_url.clone();
+fn captured_request(calls: &[ProviderCall]) -> Option<Value> {
+    calls.first().map(|call| {
+        json!({
+            "method": call.request.method.to_uppercase(),
+            "path": call.request.path.clone(),
+            "headers": captured_headers(&call.request.headers),
+            "body": call.request.body.clone(),
+        })
+    })
+}
+
+fn deliver(
+    input: &ProtectInput,
+    settings: &PillarSettings,
+    data: &mut BTreeMap<String, GuardrailValue>,
+    mock: MockProvider,
+) -> Result<(Option<u16>, Vec<ProviderCall>), Box<HelperError>> {
     let client = betterlite_http::proxy::base_builder()
         .build()
         .map_err(|error| fail("RequestError", error.to_string(), None))?;
@@ -245,21 +259,22 @@ pub(super) fn run(input: &ProtectInput) -> HelperResult {
         .build()
         .map_err(|error| fail("RuntimeError", error.to_string(), None))?;
     let outcome = runtime.block_on(call_and_process(
-        &client, &settings, &input.key, &resolver, &mut data,
+        &client, settings, &input.key, &resolver, data,
     ));
     let calls = mock
         .finish()
         .map_err(|error| fail("MockError", error.to_string(), None))?;
-    let request = calls.first().map(|call| {
-        json!({
-            "method": call.request.method.to_uppercase(),
-            "path": call.request.path.clone(),
-            "headers": captured_headers(&call.request.headers),
-            "body": call.request.body.clone(),
-        })
-    });
+    Ok((outcome, calls))
+}
+
+pub(super) fn run(input: &ProtectInput) -> HelperResult {
+    let mut settings = pillar_settings(&input.settings);
+    let mut data = guardrail_data(&input.data)?;
+    let mock = start_mock(&input.answer)?;
+    settings.api_base = mock.base_url.clone();
+    let (outcome, calls) = deliver(input, &settings, &mut data, mock)?;
     Ok(json!({
-        "request": request,
+        "request": captured_request(&calls),
         "data": serde_json::to_value(&data).map_err(|error| fail("ValueError", error.to_string(), None))?,
         "status": outcome,
     }))
