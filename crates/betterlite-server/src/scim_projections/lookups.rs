@@ -78,21 +78,21 @@ impl<'database> ScimLookups<'database> {
             writer_db: None,
             use_writer: false,
         };
-        Ok(users.find_by_id(user_id).await?)
+        let mut found = users.find_by_id(user_id).await?;
+        for user in &mut found {
+            as_utc([&mut user.created_at, &mut user.updated_at]);
+        }
+        Ok(found)
     }
 
     pub async fn check_user_exists(
         &self,
         user_id: &str,
     ) -> Result<LiteLLMUserTable, ProjectionError> {
-        let mut user =
-            self.find_user(user_id)
-                .await?
-                .ok_or_else(|| ProjectionError::UserNotFound {
-                    user_id: user_id.to_owned(),
-                })?;
-        as_utc([&mut user.created_at, &mut user.updated_at]);
-        Ok(user)
+        let found = self.find_user(user_id).await?;
+        found.ok_or_else(|| ProjectionError::UserNotFound {
+            user_id: user_id.to_owned(),
+        })
     }
 
     // the team row is validated as a whole here, where LiteLLM hands back the unvalidated Prisma row
@@ -100,13 +100,12 @@ impl<'database> ScimLookups<'database> {
         &self,
         team_id: &str,
     ) -> Result<LiteLLMTeamTable, ProjectionError> {
-        let mut team = self
-            .team_repository()?
-            .find_by_id(team_id)
-            .await?
-            .ok_or_else(|| ProjectionError::GroupNotFound {
+        let teams = self.team_repository()?;
+        let Some(mut team) = teams.find_by_id(team_id).await? else {
+            return Err(ProjectionError::GroupNotFound {
                 team_id: team_id.to_owned(),
-            })?;
+            });
+        };
         as_utc([&mut team.fields.created_at, &mut team.fields.updated_at]);
         Ok(team)
     }

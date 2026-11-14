@@ -64,13 +64,16 @@ fn emails(user_email: Option<&str>) -> Result<Vec<UserEmail>, ProjectionError> {
 }
 
 // metadata is writable outside SCIM, so a bad block is logged and left out instead of failing the response
-fn directory<T: DeserializeOwned>(
+fn directory<T>(
     metadata: &Metadata,
     key: &'static str,
     well_formed: fn(&JsonData) -> bool,
     user_id: &str,
     dropped: &mut Vec<&'static str>,
-) -> Result<Option<T>, ProjectionError> {
+) -> Result<Option<T>, ProjectionError>
+where
+    T: DeserializeOwned,
+{
     match parse_directory_metadata(metadata, key, well_formed)
         .map_err(|source| ProjectionError::Encode { source })?
     {

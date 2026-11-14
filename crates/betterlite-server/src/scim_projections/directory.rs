@@ -26,23 +26,22 @@ pub const fn is_object(value: &JsonData) -> bool {
 
 #[must_use]
 pub fn is_attribute_list(value: &JsonData) -> bool {
-    match value {
-        JsonData::Array(items) => items
-            .iter()
-            .all(|item| matches!(item, JsonData::String(_) | JsonData::Object(_))),
-        JsonData::Null
-        | JsonData::Bool(_)
-        | JsonData::Number(_)
-        | JsonData::String(_)
-        | JsonData::Object(_) => false,
-    }
+    let JsonData::Array(items) = value else {
+        return false;
+    };
+    items
+        .iter()
+        .all(|item| matches!(item, JsonData::String(_) | JsonData::Object(_)))
 }
 
-pub fn parse_directory_metadata<T: DeserializeOwned>(
+pub fn parse_directory_metadata<T>(
     metadata: &Metadata,
     key: &str,
     well_formed: fn(&JsonData) -> bool,
-) -> Result<Directory<T>, serde_json::Error> {
+) -> Result<Directory<T>, serde_json::Error>
+where
+    T: DeserializeOwned,
+{
     let Some(stored) = metadata.get(key).filter(|stored| is_set(stored)) else {
         return Ok(Directory::Absent);
     };

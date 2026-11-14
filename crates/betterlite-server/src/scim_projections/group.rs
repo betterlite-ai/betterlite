@@ -23,7 +23,11 @@ pub fn project_group(team: &LiteLLMTeamTable) -> Result<Group, ProjectionError> 
         schemas: vec![GROUP_SCHEMA.to_owned()],
         id: Some(fields.base.team_id.clone()),
         external_id: None,
-        meta: Some(resource_meta("Group", fields.created_at, fields.updated_at)?),
+        meta: Some(resource_meta(
+            "Group",
+            fields.created_at,
+            fields.updated_at,
+        )?),
         // displayName is required, so a team without an alias fails instead of borrowing its id
         display_name: fields
             .base
