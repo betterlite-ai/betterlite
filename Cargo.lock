@@ -1747,12 +1747,17 @@ dependencies = [
 name = "betterlite-foundry"
 version = "0.1.0"
 dependencies = [
+ "betterlite-azure",
+ "betterlite-config",
  "betterlite-context",
  "betterlite-models",
+ "betterlite-prompts",
  "chrono",
  "jiff",
  "rstest",
  "rust_decimal",
+ "secrecy",
+ "serde",
  "serde_json",
  "thiserror",
  "tracing",

@@ -1,0 +1,19 @@
+kind: helper
+name: foundry-anthropic-messages-transform
+call:
+  foundry_anthropic_messages:
+    function: transform
+    request:
+      model: claude-sonnet-4-5
+      system:
+        - type: text
+          text: a
+          cache_control: {type: ephemeral, ttl: 1h, scope: global}
+      messages:
+        - role: user
+          content:
+            - type: text
+              text: x
+              cache_control: {scope: global}
+env: {}
+compare: {ignore: []}

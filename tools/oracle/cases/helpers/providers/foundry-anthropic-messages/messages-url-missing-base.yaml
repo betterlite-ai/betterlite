@@ -1,0 +1,11 @@
+kind: helper
+name: foundry-anthropic-messages-url-missing-base
+call:
+  foundry_anthropic_messages:
+    function: url
+    api_bases:
+      - ""
+    environment: {}
+env: {}
+compare:
+  ignore: []

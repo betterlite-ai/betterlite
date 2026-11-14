@@ -1,0 +1,23 @@
+kind: helper
+name: foundry-anthropic-messages-url-normalization
+call:
+  foundry_anthropic_messages:
+    function: url
+    api_bases:
+      - https://r.services.ai.azure.com/anthropic
+      - https://r.services.ai.azure.com/anthropic///
+      - https://r.services.ai.azure.com
+      - https://r.services.ai.azure.com/v1/messages/
+      - https://r.services.ai.azure.com/anthropic/v1/messages
+      - https://r.services.ai.azure.com/anthropic/v1/other
+      - https://r.services.ai.azure.com/anthropic?x=1
+      - https://r.services.ai.azure.com/anthropic/v1/messages?x=1
+      - https://r.services.ai.azure.com/other?next=/anthropic/v2
+      - https://r.services.ai.azure.com/anthropicfoo/x
+      - ""
+      - null
+    environment:
+      AZURE_API_BASE: https://env.services.ai.azure.com/anthropic/
+env: {}
+compare:
+  ignore: []
