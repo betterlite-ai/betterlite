@@ -84,10 +84,7 @@ fn a_session_header_gives_each_call_its_own_trace() {
     assert_eq!(outcome.trace_id, Some(trace_id(CALL_ID)));
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(generation.span_context.trace_id(), trace_id(CALL_ID));
-    assert_eq!(
-        text(generation, "langfuse.trace.session_id").as_deref(),
-        Some(SESSION)
-    );
+    assert_eq!(text(generation, "session.id").as_deref(), Some(SESSION));
 }
 
 #[test]

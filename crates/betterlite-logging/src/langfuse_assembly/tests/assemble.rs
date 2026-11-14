@@ -3,8 +3,8 @@
 use betterlite_models::decisions::Json;
 
 use super::support::{
-    Fixture, absent, attribute, epoch_plus, fixture, json, payload, payload_with, run, seconds,
-    text, trace_id, value,
+    Fixture, absent, attribute, epoch_plus, fixture, hashed, json, payload, payload_with, run,
+    seconds, text, trace_id, value,
 };
 
 const CALL_ID: &str = "0102030405060708090a0b0c0d0e0f10";
@@ -35,25 +35,19 @@ fn assembles_a_new_trace_and_generation() {
     let case = new_trace_case();
     let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
-    assert_eq!(outcome.trace_id, Some(trace_id(CALL_ID)));
+    assert_eq!(outcome.trace_id, Some(hashed("trace-1")));
     assert_eq!(
         outcome.generation_id,
         Some(generation.span_context.span_id().to_string())
     );
     assert_eq!(generation.name.to_string(), "litellm-completion");
-    assert_eq!(generation.span_context.trace_id(), trace_id(CALL_ID));
+    assert_eq!(generation.span_context.trace_id(), hashed("trace-1"));
     assert_eq!(
         text(generation, "langfuse.trace.name").as_deref(),
         Some("litellm-completion")
     );
-    assert_eq!(
-        text(generation, "langfuse.trace.session_id").as_deref(),
-        Some("session-x")
-    );
-    assert_eq!(
-        text(generation, "langfuse.trace.user_id").as_deref(),
-        Some("end-user-1")
-    );
+    assert_eq!(text(generation, "session.id").as_deref(), Some("session-x"));
+    assert_eq!(text(generation, "user.id").as_deref(), Some("end-user-1"));
 }
 
 #[test]
@@ -78,20 +72,21 @@ fn a_new_trace_carries_the_input_output_tags_and_end_time() {
 
 #[test]
 fn the_trace_keeps_the_generation_input_only_when_they_differ() {
-    let mut case = fixture();
-    case.inputs.input = Some(Json::Text("hi".to_owned()));
-    let outcome = run(case.assemble());
-    let generation = outcome.generation().expect("a generation span");
-    assert!(absent(generation, "langfuse.trace.input"));
-    assert!(absent(generation, "langfuse.trace.output"));
+    let mut same = fixture();
+    same.inputs.input = Some(Json::Text("hi".to_owned()));
+    let same_outcome = run(same.assemble());
+    let same_generation = same_outcome.generation().expect("a generation span");
+    assert!(absent(same_generation, "langfuse.trace.input"));
+    assert!(absent(same_generation, "langfuse.trace.output"));
 
-    let mut case = fixture();
-    case.inputs
+    let mut differing = fixture();
+    differing
+        .inputs
         .set_metadata("trace_input", Json::Text("the trace input".to_owned()));
-    let outcome = run(case.assemble());
-    let generation = outcome.generation().expect("a generation span");
+    let differing_outcome = run(differing.assemble());
+    let differing_generation = differing_outcome.generation().expect("a generation span");
     assert_eq!(
-        text(generation, "langfuse.trace.input").as_deref(),
+        text(differing_generation, "langfuse.trace.input").as_deref(),
         Some("the trace input")
     );
 }

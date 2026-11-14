@@ -38,10 +38,12 @@ fn denied_steering_keys_never_reach_the_clean_metadata() {
 
 #[test]
 fn the_payload_prompt_management_metadata_rides_along() {
-    let mut inputs = Inputs::default();
-    inputs.payload = Some(payload(
-        r#"{"prompt_management_metadata": {"prompt_id": "p-1", "prompt_integration": "langfuse"}}"#,
-    ));
+    let inputs = Inputs {
+        payload: Some(payload(
+            r#"{"prompt_management_metadata": {"prompt_id": "p-1", "prompt_integration": "langfuse"}}"#,
+        )),
+        ..Inputs::default()
+    };
     let clean = cleaned(&inputs);
     assert_eq!(
         clean.fields.get("prompt_management_metadata"),
@@ -90,8 +92,8 @@ fn masking_applies_to_the_generation_input_and_output() {
         Some(value(r#"{"messages": ["HI"]}"#))
     );
     assert_eq!(
-        json(generation, "langfuse.observation.output"),
-        Some(Json::Text("BYE".to_owned()))
+        text(generation, "langfuse.observation.output").as_deref(),
+        Some("BYE")
     );
 }
 
@@ -142,10 +144,7 @@ fn redaction_drops_user_api_key_metadata_but_keeps_the_end_user() {
         generation,
         "langfuse.observation.metadata.user_api_key_end_user_id"
     ));
-    assert_eq!(
-        text(generation, "langfuse.trace.user_id").as_deref(),
-        Some("end-user-1")
-    );
+    assert_eq!(text(generation, "user.id").as_deref(), Some("end-user-1"));
     assert_eq!(generation.name.to_string(), "litellm-completion");
 }
 
@@ -185,14 +184,14 @@ fn the_cache_hit_tag_reports_the_flag(#[case] cache_hit: Option<bool>, #[case] e
 #[case::preset_key(None, Some("preset-1"), "cache_key:preset-1")]
 #[case::unset(None, None, "cache_key:None")]
 fn the_cache_key_tag_falls_back_to_the_preset_key(
-    #[case] hidden: Option<&str>,
+    #[case] hidden_key: Option<&str>,
     #[case] preset: Option<&str>,
     #[case] expected: &str,
 ) {
     let mut case = fixture();
     case.inputs.default_tags = vec!["cache_key".to_owned()];
     case.inputs.preset_cache_key = preset.map(str::to_owned);
-    if let Some(hidden) = hidden {
+    if let Some(hidden) = hidden_key {
         case.inputs.set_metadata(
             "hidden_params",
             value(&format!(r#"{{"cache_key": "{hidden}"}}"#)),
@@ -214,12 +213,12 @@ fn the_cache_key_tag_falls_back_to_the_preset_key(
 #[case::unset(None, None)]
 #[case::empty(Some(""), None)]
 fn the_proxy_base_url_tag_reads_the_environment(
-    #[case] base: Option<&str>,
+    #[case] base_url: Option<&str>,
     #[case] expected: Option<&str>,
 ) {
     let mut case = fixture();
     case.inputs.default_tags = vec!["proxy_base_url".to_owned()];
-    if let Some(base) = base {
+    if let Some(base) = base_url {
         case.inputs
             .environment
             .insert("PROXY_BASE_URL".to_owned(), base.to_owned());

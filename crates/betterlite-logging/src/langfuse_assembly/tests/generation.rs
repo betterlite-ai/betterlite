@@ -26,17 +26,16 @@ fn datetime() -> chrono::DateTime<Utc> {
 #[case::key_alias(None, Some("prod-key"), "litellm:prod-key")]
 #[case::call_type(None, None, "litellm-completion")]
 fn the_generation_name_falls_back_in_order(
-    #[case] name: Option<&str>,
-    #[case] alias: Option<&str>,
+    #[case] generation_name: Option<&str>,
+    #[case] key_alias: Option<&str>,
     #[case] expected: &str,
 ) {
     let mut case = fixture();
-    let metadata = match alias {
-        Some(alias) => format!(r#"{{"user_api_key_alias": "{alias}"}}"#),
-        None => "{}".to_owned(),
-    };
-    case.inputs.payload = Some(payload(&metadata));
-    if let Some(name) = name {
+    if let Some(alias) = key_alias {
+        case.inputs
+            .set_metadata("user_api_key_alias", Json::Text(alias.to_owned()));
+    }
+    if let Some(name) = generation_name {
         case.inputs
             .set_metadata("generation_name", Json::Text(name.to_owned()));
     }

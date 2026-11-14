@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
@@ -16,6 +16,7 @@ use opentelemetry::{Array, StringValue, Value};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SpanData};
 use rust_decimal::Decimal;
 use secrecy::SecretString;
+use tokio::runtime::Builder;
 use tokio_util::task::TaskTracker;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
@@ -146,7 +147,7 @@ pub(super) fn run<F>(future: F) -> F::Output
 where
     F: Future,
 {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("a runtime")
@@ -156,7 +157,9 @@ where
 pub(super) fn upper(value: &Json) -> Json {
     match value {
         Json::Text(text) => Json::Text(text.to_uppercase()),
-        other => other.clone(),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            value.clone()
+        }
     }
 }
 
@@ -318,7 +321,7 @@ pub(super) struct Outcome {
 
 impl Outcome {
     pub(super) fn by_name(&self, name: &str) -> Option<&SpanData> {
-        self.spans.iter().find(|span| span.name.to_string() == name)
+        self.spans.iter().find(|span| span.name == name)
     }
 
     pub(super) fn names(&self) -> Vec<String> {
@@ -368,8 +371,8 @@ pub(super) fn seconds(value: i64) -> Timestamp {
     Timestamp::Seconds(Decimal::new(value, 0))
 }
 
-pub(super) fn epoch_plus(seconds: u64) -> std::time::SystemTime {
-    std::time::UNIX_EPOCH
+pub(super) fn epoch_plus(seconds: u64) -> SystemTime {
+    UNIX_EPOCH
         .checked_add(Duration::from_secs(seconds))
         .expect("a timestamp")
 }
