@@ -1,0 +1,8 @@
+task: B3483
+deviations:
+  - what: A provider that only a slug names, such as a custom provider or an unknown custom_llm_provider string, reaches the chat adapter, where LiteLLM raises ValueError while building LlmProviders(custom_llm_provider).
+    why: Provider resolution belongs to B174, and a provider betterlite knows by slug is a real provider, so the adapter handles the call instead of the setup failing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L144-L148
+  - what: kwargs fields that GenericLiteLLMParams carries but this setup does not read, such as timeout, tpm, rpm or drop_params, are not validated at setup time.
+    why: The setup record carries only the fields the setup and the call handlers use, so a wrong type there is the handler's error to raise, not the setup's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L117
