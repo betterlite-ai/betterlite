@@ -1,0 +1,61 @@
+kind: helper
+name: mistral-chat-stream-concatenation-and-signature
+call:
+  mistral_chat:
+    steps:
+      - kind: chunk
+        chunk:
+          id: chunk-1
+          object: chat.completion.chunk
+          created: 1700000000
+          model: mistral-small-latest
+          choices:
+            - index: 0
+              delta:
+                content:
+                  - type: text
+                    text: a
+                  - type: thinking
+                    thinking:
+                      - type: text
+                        text: one
+                      - type: text
+                        text: two
+                  - type: text
+                    text: b
+                  - type: thinking
+                    thinking:
+                      - type: text
+                        text: three
+      - kind: chunk
+        chunk:
+          id: chunk-2
+          object: chat.completion.chunk
+          created: 1700000000
+          model: mistral-small-latest
+          choices:
+            - index: 0
+              delta:
+                content:
+                  - type: text
+                    text: only
+                thinking_blocks:
+                  - type: thinking
+                    thinking: stale
+                reasoning_content: stale
+      - kind: chunk
+        chunk:
+          id: chunk-3
+          object: chat.completion.chunk
+          created: 1700000000
+          model: mistral-small-latest
+          choices:
+            - index: 0
+              delta:
+                content:
+                  - type: thinking
+                    thinking:
+                      - type: text
+                        text: why
+env: {}
+compare: {ignore: []}

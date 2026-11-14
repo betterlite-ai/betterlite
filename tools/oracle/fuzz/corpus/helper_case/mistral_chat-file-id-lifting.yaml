@@ -1,0 +1,22 @@
+kind: helper
+name: mistral-chat-file-id-lifting
+call:
+  mistral_chat:
+    steps:
+      - kind: request
+        model: mistral-small-latest
+        messages:
+          - role: user
+            content:
+              - type: file
+                file:
+                  file_id: file-42
+                  file_data: ZGF0YQ==
+                  filename: given.pdf
+              - type: file
+                file:
+                  file_id: ""
+              - type: file
+                file: {}
+env: {}
+compare: {ignore: []}

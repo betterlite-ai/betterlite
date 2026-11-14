@@ -344,6 +344,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "mistral_chat"
+path = "fuzz_targets/mistral_chat.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vercel_ai_gateway_reply"
 path = "fuzz_targets/vercel_ai_gateway_reply.rs"
 test = false

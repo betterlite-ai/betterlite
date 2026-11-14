@@ -1,0 +1,91 @@
+kind: helper
+name: mistral-chat-last-nonstream-block-wins
+call:
+  mistral_chat:
+    steps:
+      - kind: reply
+        reply:
+          id: cmpl-1
+          created: 1700000000
+          model: mistral-small-latest
+          object: chat.completion
+          choices:
+            - index: 0
+              finish_reason: stop
+              message:
+                role: assistant
+                content:
+                  - type: text
+                    text: first
+                  - type: thinking
+                    thinking:
+                      - type: text
+                        text: one
+                      - type: text
+                        text: two
+                  - type: text
+                    text: second
+                  - type: thinking
+                    thinking:
+                      - type: text
+                        text: three
+                      - type: text
+                        text: four
+          usage:
+            prompt_tokens: 3
+            completion_tokens: 4
+            total_tokens: 7
+      - kind: reply
+        reply:
+          id: cmpl-2
+          created: 1700000000
+          model: mistral-small-latest
+          object: chat.completion
+          choices:
+            - index: 0
+              finish_reason: stop
+              message:
+                role: assistant
+                content: ""
+          usage:
+            prompt_tokens: 1
+            completion_tokens: 0
+            total_tokens: 1
+      - kind: reply
+        reply:
+          id: cmpl-3
+          created: 1700000000
+          model: mistral-small-latest
+          object: chat.completion
+          choices:
+            - index: 0
+              finish_reason: stop
+              message:
+                role: assistant
+                content:
+                  - type: thinking
+                    thinking:
+                      - type: text
+                        text: only
+          usage:
+            prompt_tokens: 2
+            completion_tokens: 2
+            total_tokens: 4
+      - kind: reply
+        reply:
+          id: cmpl-4
+          created: 1700000000
+          model: mistral-small-latest
+          object: chat.completion
+          choices:
+            - index: 0
+              finish_reason: stop
+              message:
+                role: assistant
+                content: plain
+          usage:
+            prompt_tokens: 1
+            completion_tokens: 1
+            total_tokens: 2
+env: {}
+compare: {ignore: []}
