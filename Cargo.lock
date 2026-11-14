@@ -1427,10 +1427,14 @@ dependencies = [
 name = "betterlite-compression"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "betterlite-semantic",
  "regex",
+ "rstest",
  "serde_json",
  "strum",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -2591,10 +2595,13 @@ version = "0.1.0"
 dependencies = [
  "betterlite-auth",
  "fancy-regex 0.19.2",
+ "indexmap 2.14.2",
+ "mutants",
  "rstest",
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "tracing",
  "tracing-subscriber",
 ]
@@ -3155,6 +3162,7 @@ dependencies = [
  "aws-smithy-types",
  "axum",
  "base64 0.23.1",
+ "betterlite-a2a",
  "betterlite-auth",
  "betterlite-azure",
  "betterlite-billing",

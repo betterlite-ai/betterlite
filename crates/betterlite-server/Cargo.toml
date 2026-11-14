@@ -14,6 +14,7 @@ aws-smithy-eventstream = "=0.61.6"
 aws-smithy-types = "=1.9.1"
 axum.workspace = true
 base64 = "0.23.1"
+betterlite-a2a = { path = "../betterlite-a2a" }
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-azure = { path = "../betterlite-azure" }
 betterlite-billing = { path = "../betterlite-billing" }
