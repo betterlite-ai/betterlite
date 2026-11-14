@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal, Protocol, Required, TypedDict, Unpack
 
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy._types import UserAPIKeyAuth
@@ -44,6 +44,33 @@ class Input(TypedDict):
     extra: list[tuple[str, JsonValue]]
 
 
+class HeaderArguments(TypedDict, total=False):
+    user_api_key_dict: Required[UserAPIKeyAuth]
+    call_id: str | None
+    model_id: str | None
+    cache_key: str | None
+    api_base: str | None
+    version: str | None
+    model_region: str | None
+    response_cost: float | str | None
+    hidden_params: Mapping[str, JsonValue] | None
+    # ast-grep-ignore: no-long-names
+    fastest_response_batch_completion: bool | None
+    request_data: dict[str, JsonValue] | None
+    timeout: float | None
+    litellm_logging_obj: Logging | None
+    read_timing_from_logging_obj: bool
+
+
+class HeaderProcessor(Protocol):
+    @staticmethod
+    def get_custom_headers(**kwargs: Unpack[HeaderArguments]) -> dict[str, JsonValue]: ...
+
+
+# get_custom_headers returns a bare dict, so this record names the types the case reads
+PROCESSOR: HeaderProcessor = ProxyBaseLLMRequestProcessing
+
+
 class LoggingRecord(Logging):
     cost_breakdown: CostBreakdown | None
     call_type: str
@@ -86,7 +113,7 @@ def logging_record(fields: LoggingFields | None) -> LoggingRecord | None:
 
 def run(input_value: Input) -> JsonValue:
     return JSON.validate_python(
-        ProxyBaseLLMRequestProcessing.get_custom_headers(
+        PROCESSOR.get_custom_headers(
             user_api_key_dict=key_auth(input_value["key"]),
             call_id=input_value["call_id"],
             model_id=input_value["model_id"],
