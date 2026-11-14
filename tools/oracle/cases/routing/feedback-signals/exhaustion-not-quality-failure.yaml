@@ -1,0 +1,26 @@
+kind: probe
+name: exhaustion-not-quality-failure
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      feedback_signals:
+        turns:
+          - user_content: one
+            tool_results: [{content: "", is_error: false}]
+            response_status: 429
+          - user_content: two
+            tool_results: [{content: "context length exceeded", is_error: false}]
+            response_status: 200
+          - user_content: three
+            tool_results: [{content: "", is_error: true}]
+            response_status: 200
+          - user_content: four
+            tool_results: [{content: "CONTEXT WINDOW is full", is_error: false}]
+          - user_content: five
+            tool_results: [{content: "everything is fine", is_error: false}]
+            response_status: 503
+          - user_content: six
+            response_status: 408
+          - user_content: seven
+            response_status: 500
