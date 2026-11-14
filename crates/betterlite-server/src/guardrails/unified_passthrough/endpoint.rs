@@ -25,7 +25,7 @@ use betterlite_models::decisions::Json;
 pub struct PassthroughEndpointTranslation<G> {
     guardrail_name: Option<String>,
     passthrough_guardrails_config: Option<Json>,
-    pub guardrail: PhantomData<fn() -> G>,
+    guardrail: PhantomData<fn() -> G>,
 }
 
 // ast-grep-ignore: no-long-names
