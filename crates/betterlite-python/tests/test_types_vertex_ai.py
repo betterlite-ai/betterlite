@@ -501,7 +501,7 @@ def test_protocol_gemma_fields() -> None:
     our_schema: dict[str, JsonValue] = VertexGemmaContainerError.model_json_schema()
     their_schema: dict[str, JsonValue] = THEIR_GEMMA.VertexGemmaContainerError.model_json_schema()
     assert our_schema == their_schema
-    assert VertexGemmaContainerError.model_config["frozen"] is True
+    assert VertexGemmaContainerError.model_config.get("frozen") is True
     assert dict(VertexGemmaContainerError.model_config) == dict(
         THEIR_GEMMA.VertexGemmaContainerError.model_config,
     )
