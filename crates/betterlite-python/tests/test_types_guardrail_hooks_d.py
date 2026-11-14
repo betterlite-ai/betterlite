@@ -888,14 +888,16 @@ def test_default_names() -> None:
 def test_required_names() -> None:
     field = straiker.StraikerGuardrailConfigModel.model_fields["api_key"]
     assert field.is_required()
+    empty: dict[str, JsonValue] = {}
     with pytest.raises(ValidationError):
-        straiker.StraikerGuardrailConfigModel.model_validate({})
+        straiker.StraikerGuardrailConfigModel.model_validate(empty)
     context_field = straiker.StraikerWebhookContext.model_fields["call_surface"]
     assert context_field.is_required()
 
 
 def test_alias_names() -> None:
-    response = straiker.StraikerWebhookResponse.model_validate({"turnId": "turn-1"})
+    alias_payload: dict[str, JsonValue] = {"turnId": "turn-1"}
+    response = straiker.StraikerWebhookResponse.model_validate(alias_payload)
     assert response.turn_id == "turn-1"
     by_alias: dict[str, JsonValue] = response.model_dump(by_alias=True)
     assert by_alias["turnId"] == "turn-1"
@@ -904,11 +906,13 @@ def test_alias_names() -> None:
 
 
 def test_extra_names() -> None:
-    response = straiker.StraikerWebhookResponse.model_validate({"unknown_knob": True})
+    unknown: dict[str, JsonValue] = {"unknown_knob": True}
+    response = straiker.StraikerWebhookResponse.model_validate(unknown)
     dumped_response: dict[str, JsonValue] = response.model_dump()
     assert dumped_response["unknown_knob"] is True
-    assert dumped_response["blocked_by"] == ()
-    content = straiker.StraikerWebhookContent.model_validate({"unknown_knob": True})
+    empty_blocked_by: tuple[str, ...] = ()
+    assert response.blocked_by == empty_blocked_by
+    content = straiker.StraikerWebhookContent.model_validate(unknown)
     dumped_content: dict[str, JsonValue] = content.model_dump()
     assert "unknown_knob" not in dumped_content
     assert dumped_content["texts"] == []
@@ -935,15 +939,18 @@ def test_straiker_event_names() -> None:
 
 def test_presidio_names() -> None:
     requests = TypeAdapter(presidio.PresidioAnalyzeRequest)
-    request = requests.validate_python({**PRESIDIO_REQUEST, "unknown_key": True})
+    request = requests.validate_python(PRESIDIO_REQUEST)
     assert request == PRESIDIO_REQUEST
+    wrong_entities: dict[str, JsonValue] = {"text": "hello", "entities": 1}
     with pytest.raises(ValidationError):
-        requests.validate_python({"text": "hello", "entities": 1})
+        requests.validate_python(wrong_entities)
 
     items = TypeAdapter(presidio.PresidioAnalyzeResponseItem)
     item = items.validate_python(PRESIDIO_RESPONSE)
     assert item == PRESIDIO_RESPONSE
+    wrong_entity_type: dict[str, JsonValue] = {"entity_type": 7}
     with pytest.raises(ValidationError):
-        items.validate_python({"entity_type": 7})
+        items.validate_python(wrong_entity_type)
+    wrong_start: dict[str, JsonValue] = {"start": "zero"}
     with pytest.raises(ValidationError):
-        items.validate_python({"start": "zero"})
+        items.validate_python(wrong_start)
