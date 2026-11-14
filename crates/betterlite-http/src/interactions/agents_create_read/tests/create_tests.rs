@@ -61,6 +61,9 @@ fn create_agent_logs_the_call_and_the_additional_arguments() {
     let params = params_at(serving.address);
     let mut request = support::create_request("agent-1", &params);
     request.extra_headers = caller_headers(&[("x-caller", "c1")]);
+    config
+        .headers
+        .insert("x-goog-api-key".to_owned(), SecretString::from("key-1"));
     let mut clients = clients();
     let mut logging = Recorder::default();
 
@@ -70,7 +73,7 @@ fn create_agent_logs_the_call_and_the_additional_arguments() {
     assert_eq!(
         logging.calls(),
         vec![
-            format!(r#"pre|agent-1||{url}||{{"name":"agent-1"}}"#),
+            format!(r#"pre|agent-1||{url}|x-goog-api-key=key-1|{{"name":"agent-1"}}"#),
             r#"post|{}|{"name":"agent-1"}"#.to_owned(),
         ]
     );

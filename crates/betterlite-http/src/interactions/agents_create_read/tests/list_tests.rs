@@ -46,7 +46,10 @@ fn list_agents_gets_the_configured_url_and_query() {
 #[test]
 fn list_agents_logs_the_list_input_and_empty_additional_arguments() {
     let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
-    let config = Config::for_address(serving.address);
+    let mut config = Config::for_address(serving.address);
+    config
+        .headers
+        .insert("x-goog-api-key".to_owned(), SecretString::from("key-1"));
     let params = params_at(serving.address);
     let mut clients = clients();
     let mut logging = Recorder::default();
@@ -63,7 +66,10 @@ fn list_agents_logs_the_list_input_and_empty_additional_arguments() {
     let url = format!("http://{}/v1beta/agents", serving.address);
     assert_eq!(
         logging.calls(),
-        vec![format!("pre|list_agents||{url}||-"), "post|{}|-".to_owned()]
+        vec![
+            format!("pre|list_agents||{url}|x-goog-api-key=key-1|-"),
+            "post|{}|-".to_owned(),
+        ]
     );
     serving.request.join().unwrap();
 }
@@ -177,7 +183,10 @@ async fn async_list_agents_gets_the_configured_url_and_query() {
 #[tokio::test]
 async fn async_list_agents_logs_the_list_input_and_empty_additional_arguments() {
     let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
-    let config = Config::for_address(serving.address);
+    let mut config = Config::for_address(serving.address);
+    config
+        .headers
+        .insert("x-goog-api-key".to_owned(), SecretString::from("key-1"));
     let params = params_at(serving.address);
     let mut clients = clients();
     let mut logging = Recorder::default();
@@ -195,7 +204,10 @@ async fn async_list_agents_logs_the_list_input_and_empty_additional_arguments() 
     let url = format!("http://{}/v1beta/agents", serving.address);
     assert_eq!(
         logging.calls(),
-        vec![format!("pre|list_agents||{url}||-"), "post|{}|-".to_owned()]
+        vec![
+            format!("pre|list_agents||{url}|x-goog-api-key=key-1|-"),
+            "post|{}|-".to_owned(),
+        ]
     );
     serving.request.join().unwrap();
 }
