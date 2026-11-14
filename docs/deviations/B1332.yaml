@@ -1,0 +1,11 @@
+task: B1332
+deviations:
+  - what: "A non-200 count-tokens reply keeps its upstream status through the convenience wrapper; LiteLLM raises a ValueError with no status_code, so the wrapper answers Vertex 500 for a 400 or 404 too."
+    why: "The wrapper preserves a status-bearing exception per the task text, and a provider 4xx is caller error rather than a Vertex failure."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/count_tokens/handler.py#L183-L186
+  - what: "The upstream error body is left out of the message when it is not valid UTF-8; LiteLLM's response.text includes it with replacement characters."
+    why: "clippy.toml bans String::from_utf8_lossy, and the message text is not a declared LiteLLM type; a UTF-8 body keeps its exact text."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/count_tokens/handler.py#L184-L186
+  - what: "vertex_count_tokens_location parses through the loader's own view into PartnerCountOptions in the tests tree only; ConfigLoader still rejects litellm_params.vertex_count_tokens_location as unsupported, and no runtime path reads the option yet."
+    why: "The section registry in crates/betterlite-config/src/sections.rs is outside this task's scope and has no stub for this key, the same arrangement B1325 recorded for its Vertex keys."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/count_tokens/handler.py#L132-L149
