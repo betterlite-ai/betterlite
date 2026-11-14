@@ -1,6 +1,7 @@
 use std::convert::Infallible;
 use std::fmt::Display;
 use std::future::{Future, ready};
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::passthrough_guardrail::PassThroughEndpointHandler;
@@ -135,8 +136,9 @@ async fn input_answer(
     logging: Option<&LoggingSpec>,
     mut data: RequestData,
 ) -> HelperResult {
-    let guardrail = QuietGuardrail {
+    let guardrail = RecordingGuardrail {
         name: guardrail_name.map(str::to_owned),
+        calls: Mutex::new(Vec::new()),
     };
     let mut logging_obj = logging.map(|spec| ScenarioLogging {
         config: spec.config.clone(),
@@ -149,7 +151,7 @@ async fn input_answer(
     )
     .await
     .map_err(failure)?;
-    Ok(json!({ "returned": data }))
+    Ok(json!({ "returned": data, "calls": guardrail.recorded() }))
 }
 
 async fn output_answer(
@@ -159,8 +161,9 @@ async fn output_answer(
     request_data: &Option<RequestData>,
     user_api_key: &Option<RequestData>,
 ) -> HelperResult {
-    let guardrail = QuietGuardrail {
+    let guardrail = RecordingGuardrail {
         name: guardrail_name.map(str::to_owned),
+        calls: Mutex::new(Vec::new()),
     };
     let mut logging_obj = logging.map(|spec| ScenarioLogging {
         config: spec.config.clone(),
@@ -178,11 +181,11 @@ async fn output_answer(
     )
     .await
     .map_err(failure)?;
-    let mut answer = json!({ "returned": returned });
+    let mut reply = json!({ "returned": returned, "calls": guardrail.recorded() });
     if let Some(request_data) = &owned_request_data {
-        answer["request_data"] = json!(request_data);
+        reply["request_data"] = json!(request_data);
     }
-    Ok(answer)
+    Ok(reply)
 }
 
 // the same split as the Python helper: a payload that parses as JSON is compared as JSON
@@ -217,11 +220,22 @@ impl PassthroughLogging for ScenarioLogging {
     }
 }
 
-struct QuietGuardrail {
+// the no-op reply keeps the check-only contract visible; the calls are what the cases compare
+struct RecordingGuardrail {
     name: Option<String>,
+    calls: Mutex<Vec<Value>>,
 }
 
-impl PassthroughGuardrail for QuietGuardrail {
+impl RecordingGuardrail {
+    fn recorded(&self) -> Vec<Value> {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl PassthroughGuardrail for RecordingGuardrail {
     type Failure = Infallible;
     type LogTarget = ScenarioLogging;
 
@@ -232,10 +246,23 @@ impl PassthroughGuardrail for QuietGuardrail {
     fn apply_guardrail(
         &self,
         inputs: PassthroughGuardrailInputs,
-        _request_data: &mut RequestData,
-        _input_type: PassthroughInputType,
+        request_data: &mut RequestData,
+        input_type: PassthroughInputType,
         _logging_obj: Option<&mut ScenarioLogging>,
     ) -> impl Future<Output = Result<PassthroughGuardrailInputs, Infallible>> + Send {
+        let kind = match input_type {
+            PassthroughInputType::Request => "request",
+            PassthroughInputType::Response => "response",
+        };
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(json!({
+                "texts": inputs.texts,
+                "model": inputs.model,
+                "input_type": kind,
+                "request_data": request_data,
+            }));
         ready(Ok(inputs))
     }
 }
@@ -259,5 +286,9 @@ impl PassthroughPolicy for Policy {
 
     fn extract_fields(&self, data: &Json, expressions: &[String]) -> String {
         betterlite_guardrails::passthrough_policy::extract_fields(data, expressions)
+    }
+
+    fn user_key_metadata(&self, user_api_key_dict: Option<&RequestData>) -> RequestData {
+        betterlite_guardrails::guardrail_translation::transform_user_key_metadata(user_api_key_dict)
     }
 }

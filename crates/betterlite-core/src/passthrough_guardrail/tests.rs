@@ -57,8 +57,10 @@ impl PassthroughLogging for FakeLogging {
 struct FakePolicy {
     settings: Option<PassThroughGuardrailSettings>,
     extracted: String,
+    metadata: RequestData,
     queries: Mutex<Vec<(Json, String)>>,
     extractions: Mutex<Vec<(Json, Vec<String>)>>,
+    projections: Mutex<Vec<Option<RequestData>>>,
 }
 
 impl FakePolicy {
@@ -66,18 +68,29 @@ impl FakePolicy {
         Self {
             settings,
             extracted: "extracted".to_owned(),
+            metadata: RequestData::new(),
             queries: Mutex::new(Vec::new()),
             extractions: Mutex::new(Vec::new()),
+            projections: Mutex::new(Vec::new()),
         }
     }
 
     fn extracting(extracted: &str) -> Self {
         Self {
-            settings: None,
             extracted: extracted.to_owned(),
-            queries: Mutex::new(Vec::new()),
-            extractions: Mutex::new(Vec::new()),
+            ..Self::resolving(None)
         }
+    }
+
+    fn projecting(metadata: &str) -> Self {
+        Self {
+            metadata: data(metadata),
+            ..Self::resolving(None)
+        }
+    }
+
+    fn projections(&self) -> Vec<Option<RequestData>> {
+        self.projections.lock().unwrap().clone()
     }
 
     fn queries(&self) -> Vec<(Json, String)> {
@@ -108,6 +121,14 @@ impl PassthroughPolicy for FakePolicy {
             .unwrap()
             .push((data.clone(), expressions.to_vec()));
         self.extracted.clone()
+    }
+
+    fn user_key_metadata(&self, user_api_key_dict: Option<&RequestData>) -> RequestData {
+        self.projections
+            .lock()
+            .unwrap()
+            .push(user_api_key_dict.cloned());
+        self.metadata.clone()
     }
 }
 
@@ -646,7 +667,7 @@ async fn process_output_response_skips_the_guardrail_for_empty_text() {
 }
 
 #[tokio::test]
-async fn process_output_response_adds_the_response_to_a_standalone_request_data() {
+async fn process_output_response_hands_the_response_alone_to_a_standalone_guardrail() {
     let response = value(r#"{"output": "answer"}"#);
     let guardrail = FakeGuardrail::named("g1");
     let policy = FakePolicy::resolving(None);
@@ -663,8 +684,31 @@ async fn process_output_response_adds_the_response_to_a_standalone_request_data(
             .calls()
             .first()
             .map(|call| call.request_data.clone()),
+        Some(data(r#"{"output": "answer"}"#))
+    );
+}
+
+#[tokio::test]
+async fn process_output_response_injects_user_key_metadata_into_a_standalone_request_data() {
+    let response = value(r#"{"output": "answer"}"#);
+    let guardrail = FakeGuardrail::named("g1");
+    let policy = FakePolicy::projecting(r#"{"user_api_key_user_id": "u1"}"#);
+    let user_api_key = data(r#"{"user_id": "u1"}"#);
+    PassThroughEndpointHandler::process_output_response(
+        response,
+        &guardrail,
+        response_call(None, Some(&user_api_key), None),
+        &policy,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        guardrail
+            .calls()
+            .first()
+            .map(|call| call.request_data.clone()),
         Some(data(
-            r#"{"output": "answer", "response": {"output": "answer"}}"#
+            r#"{"output": "answer", "litellm_metadata": {"user_api_key_user_id": "u1"}}"#
         ))
     );
 }
@@ -693,7 +737,7 @@ async fn process_output_response_adds_the_response_to_the_callers_request_data()
 async fn process_output_response_keeps_an_existing_response_key() {
     let response = value(r#"{"output": "answer"}"#);
     let guardrail = FakeGuardrail::named("g1");
-    let policy = FakePolicy::resolving(None);
+    let policy = FakePolicy::projecting(r#"{"user_api_key_user_id": "u1"}"#);
     let user_api_key = data(r#"{"user_id": "u1"}"#);
     let mut request_data = data(r#"{"response": "kept"}"#);
     PassThroughEndpointHandler::process_output_response(
@@ -711,13 +755,13 @@ async fn process_output_response_keeps_an_existing_response_key() {
 }
 
 #[tokio::test]
-async fn process_output_response_injects_the_prefixed_user_key_metadata() {
+async fn process_output_response_injects_the_policy_user_key_metadata() {
     let response = value(r#"{"output": "answer"}"#);
     let guardrail = FakeGuardrail::named("g1");
-    let policy = FakePolicy::resolving(None);
-    let user_api_key = data(
-        r#"{"user_id": "u1", "team_id": "t1", "spend": 0.0, "absent": null, "_internal": "x", "user_api_key_email": "a@b.c"}"#,
+    let policy = FakePolicy::projecting(
+        r#"{"user_api_key_user_id": "u1", "user_api_key_team_id": "t1", "user_api_key_spend": 0.0}"#,
     );
+    let user_api_key = data(r#"{"user_id": "u1", "team_id": "t1", "spend": 0.0}"#);
     let mut request_data = data(r#"{"extra": 1}"#);
     PassThroughEndpointHandler::process_output_response(
         response,
@@ -728,12 +772,13 @@ async fn process_output_response_injects_the_prefixed_user_key_metadata() {
     .await
     .unwrap();
     let expected = data(
-        r#"{"user_api_key_user_id": "u1", "user_api_key_team_id": "t1", "user_api_key_spend": 0.0, "user_api_key_email": "a@b.c"}"#,
+        r#"{"user_api_key_user_id": "u1", "user_api_key_team_id": "t1", "user_api_key_spend": 0.0}"#,
     );
     assert_eq!(
         request_data.get("litellm_metadata"),
         Some(&GuardrailValue::Object(expected))
     );
+    assert_eq!(policy.projections(), vec![Some(user_api_key)]);
 }
 
 #[rstest]
@@ -743,7 +788,7 @@ async fn process_output_response_injects_the_prefixed_user_key_metadata() {
 async fn process_output_response_keeps_an_existing_metadata_bucket(#[case] metadata: &str) {
     let response = value(r#"{"output": "answer"}"#);
     let guardrail = FakeGuardrail::named("g1");
-    let policy = FakePolicy::resolving(None);
+    let policy = FakePolicy::projecting(r#"{"user_api_key_user_id": "u1"}"#);
     let user_api_key = data(r#"{"user_id": "u1"}"#);
     let mut request_data = data(&format!(r#"{{"litellm_metadata": {metadata}}}"#));
     PassThroughEndpointHandler::process_output_response(
@@ -758,6 +803,7 @@ async fn process_output_response_keeps_an_existing_metadata_bucket(#[case] metad
         request_data.get("litellm_metadata"),
         Some(&GuardrailValue::Object(data(metadata)))
     );
+    assert!(policy.projections().is_empty());
 }
 
 #[rstest]
@@ -765,12 +811,12 @@ async fn process_output_response_keeps_an_existing_metadata_bucket(#[case] metad
 #[case::skipped_values(Some(r#"{"absent": null, "_internal": "x"}"#))]
 #[tokio::test]
 async fn process_output_response_does_not_inject_empty_user_metadata(
-    #[case] user_api_key: Option<&str>,
+    #[case] user_api_key_source: Option<&str>,
 ) {
     let response = value(r#"{"output": "answer"}"#);
     let guardrail = FakeGuardrail::named("g1");
     let policy = FakePolicy::resolving(None);
-    let user_api_key = user_api_key.map(data);
+    let user_api_key = user_api_key_source.map(data);
     let mut request_data = data(r#"{"extra": 1}"#);
     PassThroughEndpointHandler::process_output_response(
         response,
@@ -784,6 +830,7 @@ async fn process_output_response_does_not_inject_empty_user_metadata(
         request_data,
         data(r#"{"extra": 1, "response": {"output": "answer"}}"#)
     );
+    assert_eq!(policy.projections(), vec![user_api_key]);
 }
 
 #[tokio::test]

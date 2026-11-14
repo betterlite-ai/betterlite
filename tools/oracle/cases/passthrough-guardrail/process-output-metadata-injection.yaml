@@ -20,5 +20,13 @@ call:
         request_data:
           extra: 1
         user_api_key: null
+      - function: output
+        guardrail_name: g1
+        logging: null
+        response:
+          output: answer
+          model: m3
+        request_data: null
+        user_api_key: {"token": null, "key_name": null, "key_alias": null, "spend": 0.0, "total_spend": 0.0, "max_budget": null, "expires": null, "models": [], "aliases": {}, "config": {}, "user_id": "u1", "team_id": null, "agent_id": null, "project_id": null, "max_parallel_requests": null, "metadata": {}, "tpm_limit": null, "rpm_limit": null, "tpd_limit": null, "budget_duration": null, "budget_reset_at": null, "allowed_cache_controls": [], "allowed_routes": [], "key_type": null, "permissions": {}, "model_spend": {}, "model_max_budget": {}, "budget_fallbacks": {}, "soft_budget_cooldown": false, "blocked": null, "litellm_budget_table": null, "budget_id": null, "org_id": null, "created_at": null, "created_by": null, "updated_at": null, "updated_by": null, "settings_updated_at": null, "last_active": null, "object_permission_id": null, "object_permission": null, "access_group_ids": null, "rotation_count": 0, "auto_rotate": false, "rotation_interval": null, "last_rotation_at": null, "key_rotation_at": null, "router_settings": null, "budget_limits": null, "team_spend": null, "team_alias": null, "team_tpm_limit": null, "team_rpm_limit": null, "team_tpd_limit": null, "team_max_budget": null, "team_soft_budget": null, "team_model_max_budget": null, "team_models": [], "team_blocked": false, "soft_budget": null, "team_model_aliases": null, "team_member": null, "team_metadata": null, "team_object_permission_id": null, "team_member_spend": null, "team_member_tpm_limit": null, "team_member_rpm_limit": null, "end_user_id": null, "end_user_tpm_limit": null, "end_user_rpm_limit": null, "end_user_tpd_limit": null, "end_user_max_budget": null, "end_user_model_max_budget": null, "organization_alias": null, "organization_max_budget": null, "organization_tpm_limit": null, "organization_rpm_limit": null, "organization_metadata": null, "project_alias": null, "project_metadata": null, "last_refreshed_at": null, "api_key": null, "user_role": null, "allowed_model_region": null, "parent_otel_span": null, "rpm_limit_per_model": null, "tpm_limit_per_model": null, "user_tpm_limit": null, "user_rpm_limit": null, "user_email": null, "user_spend": null, "user_max_budget": null, "user_model_max_budget": null, "request_route": null, "is_session_token": false, "user": null, "created_by_user": null, "end_user_object_permission": null, "team_object_permission": null, "jwt_claims": null}
 env: {}
 compare: {ignore: []}

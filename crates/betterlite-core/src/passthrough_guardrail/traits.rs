@@ -21,6 +21,9 @@ pub trait PassthroughPolicy: Sync {
     ) -> Option<PassThroughGuardrailSettings>;
 
     fn extract_fields(&self, data: &Json, expressions: &[String]) -> String;
+
+    // B3661's transform_user_api_key_dict_to_metadata, which betterlite-guardrails owns for the same reason
+    fn user_key_metadata(&self, user_api_key_dict: Option<&RequestData>) -> RequestData;
 }
 
 // LiteLLM's CustomGuardrail.apply_guardrail, reduced to the check the passthrough handler runs

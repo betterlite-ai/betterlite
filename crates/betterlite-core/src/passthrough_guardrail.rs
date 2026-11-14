@@ -32,11 +32,11 @@ impl PassThroughEndpointHandler {
         Policy: PassthroughPolicy,
     {
         let config = logging_obj?.passthrough_guardrails_config()?;
-        let guardrail_name = guardrail_name.filter(|name| !name.is_empty())?;
+        let name = guardrail_name.filter(|candidate| !candidate.is_empty())?;
         if !carries_guardrails(config) {
             return None;
         }
-        policy.get_settings(config, guardrail_name)
+        policy.get_settings(config, name)
     }
 
     // LiteLLM's _extract_text_for_guardrail; the extractor is B3601's passthrough policy
@@ -140,13 +140,29 @@ where
     } = call;
     let mut standalone;
     let prepared = match request_data {
-        Some(request_data) => request_data,
+        Some(caller_data) => {
+            if !caller_data.contains_key("response") {
+                caller_data.insert(
+                    "response".to_owned(),
+                    GuardrailValue::Object(fields.clone()),
+                );
+            }
+            caller_data
+        }
         None => {
             standalone = fields.clone();
             &mut standalone
         }
     };
-    inject_output_context(prepared, fields, user_api_key_dict);
+    if !prepared.contains_key("litellm_metadata") {
+        let metadata = policy.user_key_metadata(user_api_key_dict);
+        if !metadata.is_empty() {
+            prepared.insert(
+                "litellm_metadata".to_owned(),
+                GuardrailValue::Object(metadata),
+            );
+        }
+    }
     let inputs = PassthroughGuardrailInputs {
         texts: vec![text_to_check],
         model: model_from(fields.get("model")),
@@ -159,7 +175,8 @@ where
             logging_obj,
         )
         .await
-        .map_err(PassthroughGuardrailError::Guardrail)
+        .map_err(PassthroughGuardrailError::Guardrail)?;
+    Ok(())
 }
 
 fn response_scan_text<Guardrail, Policy>(
@@ -192,49 +209,6 @@ fn carries_guardrails(config: &Json) -> bool {
         Json::Object(fields) => !fields.is_empty(),
         Json::Bool(_) | Json::Number(_) | Json::Text(_) => true,
     }
-}
-
-// the response key and the caller's metadata bucket are what the guardrail reads, the response stays untouched
-fn inject_output_context(
-    prepared: &mut RequestData,
-    fields: &RequestData,
-    user_api_key_dict: Option<&RequestData>,
-) {
-    if !prepared.contains_key("response") {
-        prepared.insert(
-            "response".to_owned(),
-            GuardrailValue::Object(fields.clone()),
-        );
-    }
-    if !prepared.contains_key("litellm_metadata") {
-        let metadata = transform_user_key_metadata(user_api_key_dict);
-        if !metadata.is_empty() {
-            prepared.insert(
-                "litellm_metadata".to_owned(),
-                GuardrailValue::Object(metadata),
-            );
-        }
-    }
-}
-
-// LiteLLM's BaseTranslation.transform_user_api_key_dict_to_metadata, owned in guardrails as B3661
-fn transform_user_key_metadata(user_api_key_dict: Option<&RequestData>) -> RequestData {
-    let Some(user_dict) = user_api_key_dict else {
-        return RequestData::new();
-    };
-    let mut transformed = RequestData::new();
-    for (key, value) in user_dict {
-        if matches!(value, GuardrailValue::Null) || key.starts_with('_') {
-            continue;
-        }
-        let metadata_key = if key.starts_with("user_api_key_") {
-            key.clone()
-        } else {
-            format!("user_api_key_{key}")
-        };
-        transformed.insert(metadata_key, value.clone());
-    }
-    transformed
 }
 
 fn model_from(value: Option<&GuardrailValue>) -> Option<String> {
