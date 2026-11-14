@@ -4,7 +4,7 @@ use std::time::Duration;
 use betterlite_vertex::chirp_backend::policy::{Deliverable, deliver, rotation_due};
 use betterlite_vertex::chirp_stream::limits::{STREAM_DEADLINE_SECONDS, STREAM_ROTATION_SECONDS};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 
@@ -29,7 +29,7 @@ enum ItemKind {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Input {
+pub(crate) struct Input {
     kind: Kind,
     elapsed_seconds: f64,
     speech_active: bool,
@@ -47,49 +47,52 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input.kind {
-            Kind::Deadline => {
-                let elapsed = Duration::try_from_secs_f64(input.elapsed_seconds)
-                    .map_err(|_source| failure("elapsed_seconds is out of range"))?;
-                let expired = rotation_due(
-                    elapsed,
-                    input.speech_active,
-                    STREAM_ROTATION_SECONDS,
-                    STREAM_DEADLINE_SECONDS,
-                );
-                Ok(json!({ "expired": expired }))
-            }
-            Kind::Deliver => {
-                let deliverable = match input.item_kind {
-                    ItemKind::Event => Deliverable::Event(&input.event),
-                    ItemKind::TurnResult => Deliverable::TurnResult {
-                        turn: input.turn,
-                        event: &input.event,
-                    },
-                    ItemKind::DiscardMarker => Deliverable::DiscardMarker {
-                        turn: input.turn,
-                        event: &input.event,
-                    },
-                    ItemKind::StreamFailure => Deliverable::StreamFailure {
-                        reason: &input.reason,
-                    },
-                    ItemKind::Closed => Deliverable::Closed,
-                };
-                let mut discarded: BTreeSet<usize> =
-                    input.discarded_turns.iter().copied().collect();
-                let outcome = match deliver(deliverable, &mut discarded) {
-                    Ok(Some(event)) => json!({ "kind": "delivered", "event": event }),
-                    Ok(None) => json!({ "kind": "suppressed" }),
-                    Err(frame) => {
-                        json!({ "kind": "closed", "code": frame.code, "reason": frame.reason })
-                    }
-                };
-                Ok(json!({
-                    "outcome": outcome,
-                    "discarded_turns": discarded.into_iter().collect::<Vec<_>>(),
-                }))
-            }
+            Kind::Deadline => deadline_outcome(input),
+            Kind::Deliver => Ok(deliver_outcome(input)),
         }
     }
+}
+
+fn deadline_outcome(input: &Input) -> HelperResult {
+    let elapsed = Duration::try_from_secs_f64(input.elapsed_seconds)
+        .map_err(|_source| failure("elapsed_seconds is out of range"))?;
+    let expired = rotation_due(
+        elapsed,
+        input.speech_active,
+        STREAM_ROTATION_SECONDS,
+        STREAM_DEADLINE_SECONDS,
+    );
+    Ok(json!({ "expired": expired }))
+}
+
+fn deliver_outcome(input: &Input) -> Value {
+    let deliverable = match input.item_kind {
+        ItemKind::Event => Deliverable::Event(&input.event),
+        ItemKind::TurnResult => Deliverable::TurnResult {
+            turn: input.turn,
+            event: &input.event,
+        },
+        ItemKind::DiscardMarker => Deliverable::DiscardMarker {
+            turn: input.turn,
+            event: &input.event,
+        },
+        ItemKind::StreamFailure => Deliverable::StreamFailure {
+            reason: &input.reason,
+        },
+        ItemKind::Closed => Deliverable::Closed,
+    };
+    let mut discarded: BTreeSet<usize> = input.discarded_turns.iter().copied().collect();
+    let outcome = match deliver(deliverable, &mut discarded) {
+        Ok(Some(event)) => json!({ "kind": "delivered", "event": event }),
+        Ok(None) => json!({ "kind": "suppressed" }),
+        Err(frame) => {
+            json!({ "kind": "closed", "code": frame.code, "reason": frame.reason })
+        }
+    };
+    json!({
+        "outcome": outcome,
+        "discarded_turns": discarded.into_iter().collect::<Vec<_>>(),
+    })
 }
 
 type Failure = Box<HelperError>;
