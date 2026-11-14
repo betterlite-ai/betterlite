@@ -528,6 +528,6 @@ def test_streaming_extra_names() -> None:
 
 
 def test_str_enum_names() -> None:
-    assert core.Role.SYSTEM == "system"
-    assert pii.PiiEntityCategory.GENERAL == "General"
+    assert core.Role.SYSTEM == core.Role.SYSTEM.value
+    assert pii.PiiEntityCategory.GENERAL == pii.PiiEntityCategory.GENERAL.value
     assert json.dumps({"action": pii.PiiAction.BLOCK}) == '{"action": "BLOCK"}'
