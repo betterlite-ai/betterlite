@@ -292,6 +292,17 @@ def defaults_of(properties: dict[str, JsonValue]) -> dict[str, JsonValue]:
     return defaults
 
 
+def descriptions_of(schema: dict[str, JsonValue]) -> tuple[JsonValue, dict[str, JsonValue]]:
+    descriptions: dict[str, JsonValue] = {}
+    for name, field in schema_properties(schema).items():
+        match field:
+            case dict():
+                descriptions[name] = field.get("description")
+            case None | str() | int() | float() | list():
+                raise TypeError("property is not an object")
+    return schema.get("description"), descriptions
+
+
 def collect_literals(node: JsonValue, found: set[str]) -> None:
     match node:
         case dict():
@@ -350,13 +361,14 @@ def model_view(model: type[BaseModel], mode: Mode) -> SchemaView:
     return schema_view(schema)
 
 
-def rejects(model: type[BaseModel], payload: dict[str, JsonValue]) -> bool:
+def rejection_errors(
+    model: type[BaseModel], payload: dict[str, JsonValue]
+) -> list[tuple[str, tuple[int | str, ...]]]:
     try:
         model.model_validate(payload)
-    except ValidationError:
-        return True
-    else:
-        return False
+    except ValidationError as error:
+        return [(detail["type"], detail["loc"]) for detail in error.errors()]
+    return []
 
 
 def assert_views_match(pairs: tuple[ModelPair, ...], mode: Mode) -> None:
@@ -382,6 +394,13 @@ def test_names_sso_models() -> None:
 def test_names_public_models() -> None:
     assert_views_match(PUBLIC_PAIRS, "validation")
     assert_views_match(PUBLIC_PAIRS, "serialization")
+
+
+def test_names_sso_descriptions() -> None:
+    for ours, reference in SSO_PAIRS:
+        assert descriptions_of(ours.model_json_schema(mode="validation")) == descriptions_of(
+            reference.model_json_schema(mode="validation")
+        ), ours.__name__
 
 
 def test_names_sso_typed_dicts() -> None:
@@ -482,8 +501,8 @@ def test_names_scim_absent_blocks() -> None:
 def test_names_scim_deviations() -> None:
     assert scim.LiteLLM_UserScimMetadata.__name__ == "UserScimMetadata"
     email: dict[str, JsonValue] = {"value": "not-an-email"}
-    assert not rejects(scim.SCIMUserEmail, email)
-    assert rejects(litellm_scim.SCIMUserEmail, email)
+    assert rejection_errors(scim.SCIMUserEmail, email) == []
+    assert rejection_errors(litellm_scim.SCIMUserEmail, email)
     assert "user_name" in scim.SCIMUser.model_fields
     assert "userName" in litellm_scim.SCIMUser.model_fields
     snake_case: dict[str, JsonValue] = {"schemas": ["s"], "user_name": "alice"}
@@ -497,6 +516,15 @@ def test_names_scim_deviations() -> None:
     )
     assert "properties" in our_schema
     assert "properties" not in their_schema
+
+
+def test_names_scim_email_normalization() -> None:
+    for address in ("Alice@EXAMPLE.COM", "  bob@x.io "):
+        payload: dict[str, JsonValue] = {"value": address}
+        assert (
+            scim.SCIMUserEmail.model_validate(payload).model_dump()
+            == litellm_scim.SCIMUserEmail.model_validate(payload).model_dump()
+        )
 
 
 def test_names_scim_json_fields() -> None:
@@ -557,8 +585,8 @@ def test_names_scim_patch_ops() -> None:
         )
     assert scim.SCIMPatchOperation.model_validate({"op": "ADD"}).op == "add"
     bogus: dict[str, JsonValue] = {"op": "bogus"}
-    assert rejects(scim.SCIMPatchOperation, bogus)
-    assert rejects(litellm_scim.SCIMPatchOperation, bogus)
+    assert rejection_errors(scim.SCIMPatchOperation, bogus)
+    assert rejection_errors(litellm_scim.SCIMPatchOperation, bogus)
 
 
 def test_names_team_valid_payloads() -> None:
@@ -608,40 +636,49 @@ def test_names_team_list_items() -> None:
 def test_names_team_rejections(
     ours: type[BaseModel], reference: type[BaseModel], payload: dict[str, JsonValue]
 ) -> None:
-    assert rejects(ours, payload)
-    assert rejects(reference, payload)
+    our_errors = rejection_errors(ours, payload)
+    assert our_errors
+    assert our_errors == rejection_errors(reference, payload)
 
 
 def test_names_team_member_limit() -> None:
-    assert rejects(team.BulkTeamMemberDeleteRequest, OVER_LIMIT_DELETES)
-    assert rejects(litellm_team.BulkTeamMemberDeleteRequest, OVER_LIMIT_DELETES)
-    assert rejects(team.BulkTeamMemberBudgetUpdateRequest, OVER_LIMIT_BUDGET_UPDATES)
-    assert rejects(litellm_team.BulkTeamMemberBudgetUpdateRequest, OVER_LIMIT_BUDGET_UPDATES)
+    delete_errors = rejection_errors(team.BulkTeamMemberDeleteRequest, OVER_LIMIT_DELETES)
+    assert delete_errors
+    assert delete_errors == rejection_errors(
+        litellm_team.BulkTeamMemberDeleteRequest, OVER_LIMIT_DELETES
+    )
+    budget_errors = rejection_errors(
+        team.BulkTeamMemberBudgetUpdateRequest, OVER_LIMIT_BUDGET_UPDATES
+    )
+    assert budget_errors
+    assert budget_errors == rejection_errors(
+        litellm_team.BulkTeamMemberBudgetUpdateRequest, OVER_LIMIT_BUDGET_UPDATES
+    )
     at_limit: dict[str, JsonValue] = {
         "members": MEMBER_ROW * team.MAX_BULK_TEAM_MEMBER_DELETES
     }
-    assert not rejects(team.BulkTeamMemberDeleteRequest, at_limit)
-    assert not rejects(litellm_team.BulkTeamMemberDeleteRequest, at_limit)
+    assert rejection_errors(team.BulkTeamMemberDeleteRequest, at_limit) == []
+    assert rejection_errors(litellm_team.BulkTeamMemberDeleteRequest, at_limit) == []
     budget_at_limit: dict[str, JsonValue] = {
         "members": MEMBER_ROW * team.MAX_BULK_TEAM_MEMBER_BUDGET_UPDATES
     }
-    assert not rejects(team.BulkTeamMemberBudgetUpdateRequest, budget_at_limit)
-    assert not rejects(litellm_team.BulkTeamMemberBudgetUpdateRequest, budget_at_limit)
+    assert rejection_errors(team.BulkTeamMemberBudgetUpdateRequest, budget_at_limit) == []
+    assert rejection_errors(litellm_team.BulkTeamMemberBudgetUpdateRequest, budget_at_limit) == []
 
 
 def test_names_team_deviations() -> None:
     json_metadata: dict[str, JsonValue] = {"team_id": "t", "metadata": '{"a": 1}'}
-    assert rejects(team.TeamListItem, json_metadata)
-    assert not rejects(litellm_team.TeamListItem, json_metadata)
+    assert rejection_errors(team.TeamListItem, json_metadata)
+    assert rejection_errors(litellm_team.TeamListItem, json_metadata) == []
     empty_roles: dict[str, JsonValue] = {"team_id": "t", "members_with_roles": {}}
-    assert rejects(team.TeamListItem, empty_roles)
-    assert not rejects(litellm_team.TeamListItem, empty_roles)
+    assert rejection_errors(team.TeamListItem, empty_roles)
+    assert rejection_errors(litellm_team.TeamListItem, empty_roles) == []
     budget_patch: dict[str, JsonValue] = {"user_id": "u", "budget_duration": "bogus"}
-    assert not rejects(team.TeamMemberBudgetPatch, budget_patch)
-    assert rejects(litellm_team.TeamMemberBudgetPatch, budget_patch)
+    assert rejection_errors(team.TeamMemberBudgetPatch, budget_patch) == []
+    assert rejection_errors(litellm_team.TeamMemberBudgetPatch, budget_patch)
     permissions: dict[str, JsonValue] = {"permissions": ["/bogus"]}
-    assert not rejects(team.BulkUpdateTeamMemberPermissionsRequest, permissions)
-    assert rejects(litellm_team.BulkUpdateTeamMemberPermissionsRequest, permissions)
+    assert rejection_errors(team.BulkUpdateTeamMemberPermissionsRequest, permissions) == []
+    assert rejection_errors(litellm_team.BulkUpdateTeamMemberPermissionsRequest, permissions)
     member: dict[str, JsonValue] = {
         "team_id": "t",
         "members_with_roles": [{"user_id": "u", "role": "user"}],
@@ -660,11 +697,11 @@ def test_names_sso_deviations() -> None:
     )
     assert sso.AccessControl_UI_AccessMode.__name__ == "UIAccessMode"
     permissions: dict[str, JsonValue] = {"team_member_permissions": ["/bogus"]}
-    assert not rejects(sso.DefaultTeamSSOParams, permissions)
-    assert rejects(litellm_sso.DefaultTeamSSOParams, permissions)
+    assert rejection_errors(sso.DefaultTeamSSOParams, permissions) == []
+    assert rejection_errors(litellm_sso.DefaultTeamSSOParams, permissions)
     role: dict[str, JsonValue] = {"provider": "p", "group_claim": "g", "default_role": "bogus"}
-    assert not rejects(sso.RoleMappings, role)
-    assert rejects(litellm_sso.RoleMappings, role)
+    assert rejection_errors(sso.RoleMappings, role) == []
+    assert rejection_errors(litellm_sso.RoleMappings, role)
 
 
 def test_names_public_presets() -> None:
@@ -674,8 +711,8 @@ def test_names_public_presets() -> None:
         == litellm_public.AutoRouterPresetTiers.model_validate(tiers).model_dump()
     )
     extra_tiers: dict[str, JsonValue] = tiers | {"UNKNOWN": []}
-    assert rejects(public.AutoRouterPresetTiers, extra_tiers)
-    assert rejects(litellm_public.AutoRouterPresetTiers, extra_tiers)
+    assert rejection_errors(public.AutoRouterPresetTiers, extra_tiers)
+    assert rejection_errors(litellm_public.AutoRouterPresetTiers, extra_tiers)
     config: dict[str, JsonValue] = {"tiers": tiers, "future_field": {"x": 1}}
     assert (
         public.AutoRouterPresetConfig.model_validate(config).model_dump()

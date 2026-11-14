@@ -1,11 +1,14 @@
 task: B7947
 deviations:
   - what: >-
-      SCIMUserEmail.value is str; LiteLLM declares pydantic EmailStr, which validates the address
-      through email-validator.
+      SCIMUserEmail.value is str with a validator that strips surrounding whitespace and lowercases
+      the domain; LiteLLM declares pydantic EmailStr, which validates the address through
+      email-validator.
     why: >-
       The wheel depends on pydantic, python-dotenv and typing-extensions only. Adding email-validator
-      for this field is a new dependency, so an address that EmailStr would reject is accepted here.
+      for this field is a new dependency, so an address that EmailStr would reject is accepted here,
+      and a display-name form such as "Alice <alice@example.com>" keeps the text as given where
+      email-validator extracts the address. Trimming and domain lowercasing match.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L52
   - what: >-
       RoleMappings.default_role and the keys of RoleMappings.roles are str; LiteLLM declares
