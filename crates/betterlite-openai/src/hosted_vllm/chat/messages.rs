@@ -20,7 +20,7 @@ const TEXT: &str = "text";
 const THINKING_BLOCKS: &str = "thinking_blocks";
 const TOOL_USE: &str = "tool_use";
 
-fn transform_assistant(message: &mut ChatMessage) -> Result<(), HostedVllmChatError> {
+fn remove_thinking_fields(message: &mut ChatMessage) {
     message.passthrough.shift_remove(THINKING_BLOCKS);
     if !matches!(
         message.passthrough.get(REASONING_CONTENT),
@@ -28,6 +28,79 @@ fn transform_assistant(message: &mut ChatMessage) -> Result<(), HostedVllmChatEr
     ) {
         message.passthrough.shift_remove(REASONING_CONTENT);
     }
+}
+
+fn assistant_text(item: &ContentPart) -> Result<String, HostedVllmChatError> {
+    match item.fields.get(TEXT) {
+        None | Some(Value::Null) => Ok(String::new()),
+        Some(Value::String(text)) => Ok(text.clone()),
+        Some(Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_)) => {
+            Err(HostedVllmChatError::PartString {
+                part: TEXT,
+                field: TEXT,
+            })
+        }
+    }
+}
+
+fn tool_use_text(item: &ContentPart, field: &'static str) -> Result<String, HostedVllmChatError> {
+    match item.fields.get(field) {
+        Some(Value::String(text)) => Ok(text.clone()),
+        None
+        | Some(
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_),
+        ) => Err(HostedVllmChatError::PartString {
+            part: TOOL_USE,
+            field,
+        }),
+    }
+}
+
+fn tool_arguments(item: &ContentPart) -> Result<String, HostedVllmChatError> {
+    let given = item
+        .fields
+        .get(INPUT)
+        .cloned()
+        .unwrap_or_else(|| Value::Object(Object::new()));
+    match given {
+        Value::String(text) => Ok(text),
+        other => {
+            serde_json::to_string(&other).map_err(|source| HostedVllmChatError::Json { source })
+        }
+    }
+}
+
+fn assistant_tool_call(item: &ContentPart) -> Result<ToolCall, HostedVllmChatError> {
+    let id = tool_use_text(item, ID)?;
+    let name = tool_use_text(item, NAME)?;
+    let arguments = tool_arguments(item)?;
+    Ok(ToolCall {
+        id,
+        kind: String::from(FUNCTION),
+        function: FunctionCall { name, arguments },
+    })
+}
+
+fn merge_tool_calls(message: &mut ChatMessage, calls: Vec<ToolCall>) {
+    if calls.is_empty() {
+        return;
+    }
+    match message.tool_calls.take() {
+        Some(mut existing) => {
+            let ids: BTreeSet<String> = existing.iter().map(|call| call.id.clone()).collect();
+            let added: Vec<ToolCall> = calls
+                .into_iter()
+                .filter(|call| !ids.contains(&call.id))
+                .collect();
+            existing.extend(added);
+            message.tool_calls = Some(existing);
+        }
+        None => message.tool_calls = Some(calls),
+    }
+}
+
+fn transform_assistant(message: &mut ChatMessage) -> Result<(), HostedVllmChatError> {
+    remove_thinking_fields(message);
     let Some(MessageContent::Parts(items)) = &message.content else {
         return Ok(());
     };
@@ -38,89 +111,17 @@ fn transform_assistant(message: &mut ChatMessage) -> Result<(), HostedVllmChatEr
     for item in items {
         match item.kind.as_str() {
             TEXT => {
-                match item.fields.get(TEXT) {
-                    None | Some(Value::Null) => text_parts.push(String::new()),
-                    Some(Value::String(text)) => text_parts.push(text.clone()),
-                    Some(
-                        Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_),
-                    ) => {
-                        return Err(HostedVllmChatError::PartString {
-                            part: TEXT,
-                            field: TEXT,
-                        });
-                    }
-                }
+                text_parts.push(assistant_text(item)?);
                 blocks.push(item.clone());
             }
-            TOOL_USE => {
-                let id = match item.fields.get(ID) {
-                    Some(Value::String(id)) => id.clone(),
-                    None
-                    | Some(
-                        Value::Null
-                        | Value::Bool(_)
-                        | Value::Number(_)
-                        | Value::Array(_)
-                        | Value::Object(_),
-                    ) => {
-                        return Err(HostedVllmChatError::PartString {
-                            part: TOOL_USE,
-                            field: ID,
-                        });
-                    }
-                };
-                let name = match item.fields.get(NAME) {
-                    Some(Value::String(name)) => name.clone(),
-                    None
-                    | Some(
-                        Value::Null
-                        | Value::Bool(_)
-                        | Value::Number(_)
-                        | Value::Array(_)
-                        | Value::Object(_),
-                    ) => {
-                        return Err(HostedVllmChatError::PartString {
-                            part: TOOL_USE,
-                            field: NAME,
-                        });
-                    }
-                };
-                let given = item
-                    .fields
-                    .get(INPUT)
-                    .cloned()
-                    .unwrap_or_else(|| Value::Object(Object::new()));
-                let arguments = match given {
-                    Value::String(text) => text,
-                    other => serde_json::to_string(&other)
-                        .map_err(|source| HostedVllmChatError::Json { source })?,
-                };
-                calls.push(ToolCall {
-                    id,
-                    kind: String::from(FUNCTION),
-                    function: FunctionCall { name, arguments },
-                });
-            }
+            TOOL_USE => calls.push(assistant_tool_call(item)?),
             _ => {
                 blocks.push(item.clone());
                 structured = true;
             }
         }
     }
-    if !calls.is_empty() {
-        match message.tool_calls.take() {
-            Some(mut existing) => {
-                let ids: BTreeSet<String> = existing.iter().map(|call| call.id.clone()).collect();
-                let added: Vec<ToolCall> = calls
-                    .into_iter()
-                    .filter(|call| !ids.contains(&call.id))
-                    .collect();
-                existing.extend(added);
-                message.tool_calls = Some(existing);
-            }
-            None => message.tool_calls = Some(calls),
-        }
-    }
+    merge_tool_calls(message, calls);
     message.content = Some(if structured {
         MessageContent::Parts(blocks)
     } else {
