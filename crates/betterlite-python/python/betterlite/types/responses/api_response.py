@@ -106,26 +106,20 @@ def _field(item: InitValue, name: str) -> InitValue:
             return None
 
 
-def _strip_reasoning_nulls(item: JsonValue) -> JsonValue:
-    match item:
-        case dict():
-            if item.get("type") != "reasoning":
-                return item
-            kept: dict[str, JsonValue] = {}
-            for key, value in item.items():
-                if value is None and key in DROPPED_REASONING_KEYS:
-                    continue
-                kept[key] = value
-            return kept
-        case bool() | int() | float() | str() | list() | None:
-            return item
-
-
 def _without_reasoning_nulls(dumped: dict[str, JsonValue]) -> dict[str, JsonValue]:
     output = dumped.get("output")
     match output:
         case list():
-            dumped["output"] = [_strip_reasoning_nulls(item) for item in output]
+            for index, item in enumerate(output):
+                match item:
+                    case dict():
+                        if item.get("type") == "reasoning":
+                            output[index] = {
+                                key: value for key, value in item.items()
+                                if value is not None or key not in DROPPED_REASONING_KEYS
+                            }
+                    case bool() | int() | float() | str() | list() | None:
+                        pass
         case bool() | int() | float() | str() | dict() | None:
             pass
     return dumped
@@ -165,10 +159,14 @@ class ResponsesAPIResponse(ResponseObject):
     @classmethod
     def validate_reasoning_to_dict(cls, value: InitValue) -> InitValue:
         match value:
-            case Mapping() | bool() | int() | float() | str() | Sequence() | None:
-                return value
+            case None:
+                return None
             case Dumpable() as model:
                 return model.model_dump()
+            case Mapping():
+                return value
+            case bool() | int() | float() | str() | Sequence():
+                return value
 
     @override
     def model_dump(self, **kwargs: Unpack[DumpOptions]) -> dict[str, JsonValue]:
