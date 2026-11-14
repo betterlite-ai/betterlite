@@ -1,0 +1,15 @@
+kind: helper
+name: headroom-messages-flatten-keeps-image-row
+call:
+  b3773:
+    function: flatten
+    rows:
+      - role: user
+        content:
+          - {type: text, text: look, cache_control: {type: ephemeral}}
+          - {type: image_url, image_url: {url: https://example.test/image.png}}
+          - {type: text, text: now}
+      - {role: user, content: []}
+      - {role: user}
+env: {}
+compare: {ignore: []}
