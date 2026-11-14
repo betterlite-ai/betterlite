@@ -2,7 +2,7 @@
 
 use std::convert::Infallible;
 
-use betterlite_a2a::agentcore_transform::parse_sse_events;
+use betterlite_a2a::agentcore_transform::sse::parse_sse_events;
 use futures_util::{StreamExt as _, stream};
 use libfuzzer_sys::fuzz_target;
 

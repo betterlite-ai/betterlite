@@ -3,8 +3,6 @@ use std::error::Error;
 
 use betterlite_core::agents::json::AgentJson;
 use betterlite_models::decisions::Json;
-use futures_core::Stream;
-use futures_util::StreamExt as _;
 use indexmap::IndexMap;
 use thiserror::Error;
 
@@ -16,12 +14,14 @@ use headers::filter_reserved_headers;
 use runtime::{
     AgentCoreRuntime, HttpRequest, HttpResponse, RpcMethod, SigningRequest, StreamedResponse,
 };
+use sse::{decode_body, replies};
 
 pub mod call;
 pub mod config;
 mod headers;
 pub mod params;
 pub mod runtime;
+pub mod sse;
 mod tests;
 
 // LiteLLM's _filter_reserved_headers, _request_scoped_runtime_session_id and _validate_runtime_session_id (which raises BadRequestError) are the three helpers below.
@@ -31,7 +31,6 @@ const SESSION_HEADER: &str = "X-Amzn-Bedrock-AgentCore-Runtime-Session-Id";
 const USER_HEADER: &str = "X-Amzn-Bedrock-AgentCore-Runtime-User-Id";
 const RESERVED_EXACT_HEADERS: [&str; 2] = ["authorization", "host"];
 const RESERVED_PREFIX_HEADERS: [&str; 2] = ["x-amzn-bedrock-agentcore-runtime-", "x-amz-"];
-const JSON_CONTENT_TYPE: &str = "application/json";
 
 #[derive(Debug, Error)]
 pub enum TransformError {
@@ -166,49 +165,6 @@ where
         .map_err(AgentCoreError::Runtime)
 }
 
-#[must_use]
-pub fn parse_sse_events<L, E>(lines: L) -> impl Stream<Item = Result<AgentJson, AgentCoreError<E>>>
-where
-    L: Stream<Item = Result<String, E>>,
-    E: Error + 'static,
-{
-    async_stream::stream! {
-        let mut pinned = std::pin::pin!(lines);
-        while let Some(next) = pinned.next().await {
-            let raw = match next {
-                Ok(raw) => raw,
-                Err(source) => {
-                    yield Err(AgentCoreError::Runtime(source));
-                    return;
-                }
-            };
-            let trimmed = raw.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            let Some(rest) = trimmed.strip_prefix("data:") else {
-                continue;
-            };
-            let payload = rest.trim();
-            if payload.is_empty() {
-                continue;
-            }
-            match serde_json::from_str::<AgentJson>(payload) {
-                Ok(event) => yield Ok(event),
-                Err(_) => tracing::debug!("BedrockAgentCore A2A: skipping a non-JSON SSE line"),
-            }
-        }
-    }
-}
-
-fn decode_body(body: &[u8]) -> Result<AgentJson, TransformError> {
-    let value: AgentJson = serde_json::from_slice(body).map_err(TransformError::Decode)?;
-    if value.get("error").is_some() {
-        tracing::warn!("BedrockAgentCore A2A: the agent returned an error response");
-    }
-    Ok(value)
-}
-
 fn check_status<E>(status: u16) -> Result<(), AgentCoreError<E>>
 where
     E: Error + 'static,
@@ -227,38 +183,6 @@ impl SignedRequest {
             body: &self.body,
         }
     }
-}
-
-fn replies<L, E>(response: StreamedResponse<L>) -> StreamedEvents<E>
-where
-    L: Stream<Item = Result<String, E>> + Send + 'static,
-    E: Error + Send + 'static,
-{
-    let json_reply = response
-        .content_type
-        .to_lowercase()
-        .contains(JSON_CONTENT_TYPE);
-    let lines = response.lines;
-    Box::pin(async_stream::stream! {
-        if json_reply {
-            let body = match runtime::collect_body(lines).await {
-                Ok(body) => body,
-                Err(error) => {
-                    yield Err(error);
-                    return;
-                }
-            };
-            match serde_json::from_str::<AgentJson>(&body) {
-                Ok(value) => yield Ok(value),
-                Err(source) => yield Err(AgentCoreError::Transform(TransformError::Decode(source))),
-            }
-        } else {
-            let mut events = std::pin::pin!(parse_sse_events(lines));
-            while let Some(event) = events.next().await {
-                yield event;
-            }
-        }
-    })
 }
 
 type Outcome<T, R> = Result<T, AgentCoreError<<R as AgentCoreRuntime>::Error>>;
