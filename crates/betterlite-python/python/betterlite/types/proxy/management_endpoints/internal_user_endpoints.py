@@ -2,7 +2,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Annotated, ClassVar, Final, Literal, Self, TypedDict
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, ValidationInfo
 from typing_extensions import ReadOnly
 
 from betterlite.types.proxy.management_endpoints.management_v1 import ResourceResponse
@@ -197,20 +197,17 @@ class BulkNewUserItem(DictJsonObject):
             return None
         return value
 
-    @field_validator("send_invite_email")
+    @field_validator("send_invite_email", "password")
     @classmethod
-    def reject_invite_email(cls, value: JsonValue) -> JsonValue:
-        if value is True:
+    def reject_unsupported_field(
+        cls, value: JsonValue, info: ValidationInfo
+    ) -> JsonValue:
+        if info.field_name == "send_invite_email" and value is True:
             raise ValueError(
                 "send_invite_email is not supported on /management/v1/users/bulk; "
                 "invite users separately"
             )
-        return value
-
-    @field_validator("password")
-    @classmethod
-    def reject_password(cls, value: JsonValue) -> JsonValue:
-        if value is not None:
+        if info.field_name == "password" and value is not None:
             raise ValueError(
                 "password cannot be set via /user/new. Users set their own password "
                 "through an invitation link (POST /invitation/new)."

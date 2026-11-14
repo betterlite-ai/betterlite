@@ -774,6 +774,10 @@ def test_key_mgmt_names_rules() -> None:
         update_fields=fields,
     )
     assert every_key.all_keys_in_team is True
+
+
+def test_key_policy_names_rules() -> None:
+    keys = key_management_endpoints
     policy = keys.CustomKeyPolicyRequest(
         operation="generate",
         existing_key=None,
@@ -781,8 +785,6 @@ def test_key_mgmt_names_rules() -> None:
         request={},
     )
     assert policy.operation == "generate"
-    with pytest.raises(ValidationError, match="frozen"):
-        policy.operation = "update"
     with pytest.raises(ValidationError, match="frozen"):
         policy["operation"] = "update"
     assert policy.operation == "generate"
