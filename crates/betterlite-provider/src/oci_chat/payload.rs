@@ -24,7 +24,7 @@ const MISSING_COMPARTMENT: &str = "oci_compartment_id is required for OCI chat r
 const BAD_SERVING_MODE: &str = "kwarg `oci_serving_mode` must be either 'ON_DEMAND' or 'DEDICATED'";
 
 const NO_USER_MESSAGE: &str =
-    "No user message found: Cohere models require at least one user message";
+    "No user message found — Cohere models require at least one user message";
 
 const MISSING_FUNCTION_NAME: &str =
     "Invalid tool_choice for OCI: 'FUNCTION' type requires a non-empty function name";
@@ -367,7 +367,7 @@ fn tool_choice_from_object(fields: &Object) -> Result<Json, OciError> {
             status: 400,
             message: format!(
                 "Invalid tool_choice for OCI: missing or non-string 'type' in {}",
-                Json::Object(fields.clone())
+                serde_json::to_string(fields).unwrap_or_default()
             ),
         });
     };
