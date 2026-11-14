@@ -56,11 +56,13 @@ deviations:
       camelCase wire fields are snake_case attributes carrying pydantic aliases with
       serialize_by_alias, so model_fields keys and attribute access use the snake_case names.
       model_dump(by_alias=False) still emits the wire names; SCIMUser's by-name dump emits the
-      enterprise URN where LiteLLM emits enterprise_user and ref.
+      enterprise URN where LiteLLM emits enterprise_user and ref. Validation also accepts the
+      snake_case name for a field, which LiteLLM's extra="ignore" drops as an unknown key.
     why: >-
       The Python rules reject mixed-case class attributes, so LiteLLM's spelling cannot be kept as
       the attribute name. Validation accepts LiteLLM's wire keys, and the JSON a FastAPI response
-      sends (by_alias=True) matches LiteLLM byte for byte.
+      sends (by_alias=True) matches LiteLLM byte for byte; the snake_case key lets our own code
+      build a model by keyword.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L30
   - what: >-
       SCIMUser's serialization-mode JSON schema lists its properties; LiteLLM's custom

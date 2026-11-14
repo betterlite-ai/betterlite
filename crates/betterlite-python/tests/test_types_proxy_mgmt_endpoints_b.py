@@ -247,6 +247,10 @@ OVER_LIMIT_DELETES: dict[str, JsonValue] = {
     "members": [{"user_id": "u"}] * (team.MAX_BULK_TEAM_MEMBER_DELETES + 1)
 }
 
+OVER_LIMIT_BUDGET_UPDATES: dict[str, JsonValue] = {
+    "members": [{"user_id": "u"}] * (team.MAX_BULK_TEAM_MEMBER_BUDGET_UPDATES + 1)
+}
+
 
 def schema_properties(schema: dict[str, JsonValue]) -> dict[str, JsonValue]:
     match schema["properties"]:
@@ -446,6 +450,11 @@ def test_names_scim_deviations() -> None:
     assert rejects(litellm_scim.SCIMUserEmail, email)
     assert "user_name" in scim.SCIMUser.model_fields
     assert "userName" in litellm_scim.SCIMUser.model_fields
+    snake_case: dict[str, JsonValue] = {"schemas": ["s"], "user_name": "alice"}
+    our_dump = scim.SCIMUser.model_validate(snake_case).model_dump(by_alias=True)
+    their_dump = litellm_scim.SCIMUser.model_validate(snake_case).model_dump(by_alias=True)
+    assert our_dump["userName"] == "alice"
+    assert their_dump["userName"] is None
     our_schema: dict[str, JsonValue] = scim.SCIMUser.model_json_schema(mode="serialization")
     their_schema: dict[str, JsonValue] = litellm_scim.SCIMUser.model_json_schema(
         mode="serialization"
@@ -545,11 +554,18 @@ def test_names_team_rejections(
 def test_names_team_member_limit() -> None:
     assert rejects(team.BulkTeamMemberDeleteRequest, OVER_LIMIT_DELETES)
     assert rejects(litellm_team.BulkTeamMemberDeleteRequest, OVER_LIMIT_DELETES)
+    assert rejects(team.BulkTeamMemberBudgetUpdateRequest, OVER_LIMIT_BUDGET_UPDATES)
+    assert rejects(litellm_team.BulkTeamMemberBudgetUpdateRequest, OVER_LIMIT_BUDGET_UPDATES)
     at_limit: dict[str, JsonValue] = {
         "members": [{"user_id": "u"}] * team.MAX_BULK_TEAM_MEMBER_DELETES
     }
     assert not rejects(team.BulkTeamMemberDeleteRequest, at_limit)
     assert not rejects(litellm_team.BulkTeamMemberDeleteRequest, at_limit)
+    budget_at_limit: dict[str, JsonValue] = {
+        "members": [{"user_id": "u"}] * team.MAX_BULK_TEAM_MEMBER_BUDGET_UPDATES
+    }
+    assert not rejects(team.BulkTeamMemberBudgetUpdateRequest, budget_at_limit)
+    assert not rejects(litellm_team.BulkTeamMemberBudgetUpdateRequest, budget_at_limit)
 
 
 def test_names_team_deviations() -> None:
