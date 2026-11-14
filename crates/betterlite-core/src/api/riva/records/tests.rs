@@ -143,15 +143,17 @@ fn empty_and_non_string_languages_become_en_us(#[case] language: &str) {
 #[test]
 fn map_keeps_every_non_null_input_and_skips_only_nulls() {
     let optional = map_openai_params(&params(
-        r#"{"language": null, "prompt": "words", "temperature": 0, "custom": false, "empty": ""}"#,
+        r#"{"language": null, "prompt": null, "temperature": 0, "custom": false, "empty": "", "alt": null}"#,
     ))
     .expect("mapped params");
     assert_eq!(
         optional,
-        params(r#"{"prompt": "words", "temperature": 0, "custom": false, "empty": ""}"#)
+        params(r#"{"temperature": 0, "custom": false, "empty": ""}"#)
     );
     assert!(!optional.contains_key("language"));
     assert!(!optional.contains_key("language_code"));
+    assert!(!optional.contains_key("prompt"));
+    assert!(!optional.contains_key("alt"));
 }
 
 #[rstest]
