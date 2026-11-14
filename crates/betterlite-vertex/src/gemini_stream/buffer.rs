@@ -9,6 +9,7 @@ pub(super) struct FragmentBuffer {
     pub(super) offset: usize,
     pub(super) could_close: bool,
     pub(super) copied: usize,
+    retained: usize,
 }
 impl FragmentBuffer {
     pub(super) fn append(&mut self, fragment: &str) -> Result<(), StreamError> {
@@ -16,16 +17,12 @@ impl FragmentBuffer {
         if fragment.is_empty() {
             return Ok(());
         }
-        let retained = self.fragments.iter().fold(
-            self.text
-                .len()
-                .saturating_sub(self.offset)
-                .saturating_add(fragment.len()),
-            |total, pending| total.saturating_add(pending.len()),
-        );
+        // a running total keeps this check O(1), so a run of keepalive fragments can't make appends quadratic
+        let retained = self.retained.saturating_add(fragment.len());
         if retained > MAX_RETAINED_BYTES {
             return Err(StreamError::TooLarge { size: retained });
         }
+        self.retained = retained;
         self.fragments.push(fragment.to_owned());
         match fragment.trim_end().chars().next_back() {
             Some('}' | ']') => self.could_close = true,
@@ -45,11 +42,17 @@ impl FragmentBuffer {
         let Some(Ok(value)) = values.next() else {
             return None;
         };
-        self.offset = start.checked_add(values.byte_offset())?;
+        let consumed = start.checked_add(values.byte_offset())?;
+        // the cursor dropped everything between the old offset and the consumed value, including skipped whitespace
+        self.retained = self
+            .retained
+            .saturating_sub(consumed.saturating_sub(self.offset));
+        self.offset = consumed;
         if self.offset >= self.text.len() {
             self.text.clear();
             self.offset = 0;
             self.could_close = false;
+            self.retained = 0;
         }
         Some(value)
     }

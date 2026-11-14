@@ -141,7 +141,7 @@ fn chunks_complete_object_before_a_truncated_tail_is_drained() {
 fn chunks_metadata_only_candidates_yield_empty_deltas() {
     let mut decoder = decoder();
     let chunk = decoder
-        .push(br#"{"responseId":"m1","candidates":[{"groundingMetadata":{"webSearchQueries":["q"]}},{"safetyRatings":[{"category":"X"}]}]}"#)
+        .push(br#"{"responseId":"m1","candidates":[{"groundingMetadata":{"webSearchQueries":["q"]}},{"index":1,"safetyRatings":[{"category":"X"}]}]}"#)
         .unwrap()
         .unwrap();
     assert_eq!(chunk.choices.len(), 2);
@@ -152,7 +152,7 @@ fn chunks_metadata_only_candidates_yield_empty_deltas() {
         panic!("a candidate without content or finishReason is skipped by the projection");
     };
     assert_eq!(*first, 0);
-    assert_eq!(*second, 0);
+    assert_eq!(*second, 1);
     assert!(chunk.metadata.grounding_metadata.is_empty());
     assert!(chunk.metadata.safety_ratings.is_empty());
     assert!(chunk.usage.is_none());
@@ -453,6 +453,33 @@ fn ownership_the_retained_buffer_stops_at_the_limit() {
 }
 
 #[test]
+fn ownership_draining_a_value_releases_the_retained_budget() {
+    let mut decoder = decoder();
+    assert!(decoder.push(br#"{"responseId":"#).unwrap().is_none());
+    let chunk = decoder.push(b"\"r1\"}").unwrap().unwrap();
+    assert_eq!(chunk.id, "r1");
+    let refill = "x".repeat(MAX_RETAINED_BYTES);
+    assert!(decoder.push(refill.as_bytes()).unwrap().is_none());
+}
+
+#[test]
+fn ownership_a_partially_drained_buffer_keeps_only_the_unconsumed_bytes() {
+    let mut decoder = decoder();
+    assert!(decoder.push(br#"{"responseId":"#).unwrap().is_none());
+    let padding = "x".repeat(MAX_RETAINED_BYTES.div_ceil(2));
+    let second = format!("\"{padding}\"}}{{\"responseId\":\"r1\"}}");
+    let chunk = decoder.push(second.as_bytes()).unwrap().unwrap();
+    assert_eq!(chunk.id.len(), padding.len());
+    let tail = decoder
+        .buffer
+        .text
+        .len()
+        .saturating_sub(decoder.buffer.offset);
+    let refill = "x".repeat(MAX_RETAINED_BYTES.saturating_sub(tail));
+    assert!(decoder.push(refill.as_bytes()).unwrap().is_none());
+}
+
+#[test]
 fn ownership_cursor_keeps_the_copy_cost_linear() {
     let mut decoder = decoder();
     let payload: String = (0_u32..50_u32)
@@ -461,6 +488,9 @@ fn ownership_cursor_keeps_the_copy_cost_linear() {
         .concat();
     let first = decoder.push(payload.as_bytes()).unwrap().unwrap();
     assert_eq!(first.id, "r0");
+    // the cursor must keep the whole payload in place, so the drain never copies the unconsumed tail
+    assert_eq!(decoder.buffer.text.len(), payload.len());
+    assert!(decoder.buffer.offset > 0);
     let mut drained = 0_usize;
     while let Some(chunk) = decoder.finish().unwrap() {
         drained = drained.saturating_add(1);
@@ -635,13 +665,32 @@ fn ownership_a_clean_close_logs_nothing() {
 
 #[test]
 fn ownership_the_adapter_ends_after_a_stream_error() {
-    let fixture = counting_stream(&[r#"{"error":{"code":429}}"#], false);
+    let fixture = counting_stream(
+        &[r#"{"error":{"code":429}}"#, r#"{"responseId":"r2"}"#],
+        false,
+    );
     let mut stream = fixture.stream;
     assert!(matches!(
         stream.next(),
         Some(Err(StreamError::Embedded { status: 429, .. }))
     ));
     assert!(stream.next().is_none());
+}
+
+#[test]
+fn ownership_the_sync_adapter_reports_a_fragment_without_a_chunk() {
+    let fixture = counting_stream(
+        &[
+            r#"{"responseId":"r1","candidates":[{"content":{"parts":[{"text":"te"#,
+            r#""}]}}]}"#,
+        ],
+        false,
+    );
+    let mut stream = fixture.stream;
+    assert!(matches!(stream.next(), Some(Ok(None))));
+    let chunk = stream.next().unwrap().unwrap().unwrap();
+    assert_eq!(chunk.id, "r1");
+    assert_eq!(content(&chunk), Some("te"));
 }
 
 #[test]
@@ -677,6 +726,29 @@ async fn ownership_the_async_adapter_yields_chunks_and_drains_at_eof() {
     let second = stream.next_chunk_async().await.unwrap().unwrap().unwrap();
     assert_eq!(second.id, "r2");
     assert!(stream.next_chunk_async().await.is_none());
+}
+
+#[tokio::test]
+async fn ownership_the_async_adapter_reports_a_fragment_without_a_chunk() {
+    let closed = Arc::new(AtomicUsize::new(0));
+    let source = AsyncSource {
+        fragments: vec![
+            r#"{"responseId":"r1","candidates":[{"content":{"parts":[{"text":"te"#.to_owned(),
+            r#""}]}}]}"#.to_owned(),
+        ],
+        closed: Arc::clone(&closed),
+    };
+    let mut stream = GeminiStream::new(
+        source,
+        None::<AsyncResponse>,
+        options(),
+        &HeaderMap::new(),
+        fixed_ids(),
+    );
+    assert!(matches!(stream.next_chunk_async().await, Some(Ok(None))));
+    let chunk = stream.next_chunk_async().await.unwrap().unwrap().unwrap();
+    assert_eq!(chunk.id, "r1");
+    assert_eq!(content(&chunk), Some("te"));
 }
 
 #[tokio::test]
