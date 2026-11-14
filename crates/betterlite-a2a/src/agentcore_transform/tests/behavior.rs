@@ -10,7 +10,7 @@ use serde_json::json;
 use crate::agentcore_transform::call::{AgentCoreHandler, HandlerCall, SignedRequestCall};
 use crate::agentcore_transform::config::{BedrockAgentCoreConfig, ConfigCall};
 use crate::agentcore_transform::params::LitellmParams;
-use crate::agentcore_transform::runtime::RpcMethod;
+use crate::agentcore_transform::runtime::{RpcMethod, collect_body};
 use crate::agentcore_transform::tests::support::{
     CONTEXT_ID, FixtureError, FixtureRuntime, GENERATED, SESSION_PREFIX, Source, URL,
     bearer_params, fixture, litellm_params, params,
@@ -665,6 +665,71 @@ async fn missing_params_streaming() {
         .await
         .err()
         .expect("litellm_params is required");
+
+    assert_eq!(error.to_string(), MISSING_PARAMS);
+}
+
+#[tokio::test]
+async fn collected_lines_are_joined_with_newlines() {
+    let body = collect_body::<_, FixtureError>(valid_lines(&["first", "second"]))
+        .await
+        .expect("the lines are collected");
+
+    assert_eq!(body, "first\nsecond");
+}
+
+#[test]
+fn optional_params_leave_out_the_model_and_provider() {
+    let params = litellm_params(&[
+        ("model", json!("bedrock/agentcore/arn")),
+        ("custom_llm_provider", json!("bedrock")),
+        ("api_key", json!("jwt-token")),
+        ("runtimeSessionId", json!("abc")),
+    ]);
+
+    let names: Vec<&str> = params.optional.keys().map(String::as_str).collect();
+
+    assert_eq!(names, vec!["api_key", "runtimeSessionId"]);
+}
+
+#[tokio::test]
+async fn the_principal_in_litellm_params_scopes_the_session() {
+    let runtime = fixture();
+    let request = params(Some(json!(CONTEXT_ID)));
+    let litellm = litellm_params(&[
+        ("model", json!("bedrock/agentcore/arn")),
+        ("api_key", json!("jwt-token")),
+        ("litellm_a2a_user_api_key_hash", json!("key-2")),
+    ]);
+    let expected_session = format!("{SCOPED_PREFIX}-{CONTEXT_ID}");
+
+    let result = signed_request(&runtime, &request, &litellm, RpcMethod::Send).await;
+
+    assert_eq!(
+        result
+            .expect("the request is signed")
+            .headers
+            .get(SESSION_HEADER)
+            .map(String::as_str),
+        Some(expected_session.as_str())
+    );
+}
+
+#[tokio::test]
+async fn an_empty_params_map_is_missing_params() {
+    let mut config = BedrockAgentCoreConfig {
+        handler: AgentCoreHandler {
+            runtime: fixture(),
+            ids: Source,
+        },
+    };
+    let request = params(None);
+    let raw = BTreeMap::new();
+
+    let error = config
+        .handle_non_streaming(&config_call(&request, Some(&raw)))
+        .await
+        .expect_err("an empty litellm_params is as good as none");
 
     assert_eq!(error.to_string(), MISSING_PARAMS);
 }

@@ -1,23 +1,9 @@
 task: B4804
 deviations:
   - what: >-
-      The JSON-RPC 2.0 envelope is a typed map built in Rust with jsonrpc, method, id and params, in that order.
-      The bytes on the wire are LiteLLM's; only the construction differs, since LiteLLM builds a plain dict.
-    why: >-
-      betterlite owns the fields it sends instead of depending on an SDK object, and the order keeps a signed body
-      byte-identical to LiteLLM's json.dumps output.
-    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/bedrock_agentcore/transformation.py#L176-L182'
-  - what: >-
       A data line that is not JSON is skipped silently, as LiteLLM does, and the debug log names no payload text.
       LiteLLM logs the first 100 characters of the skipped line.
     why: >-
       The skip is the behavior both sides share, so the oracle compares it; the log line stays free of response
       content so a malformed agent reply cannot write its body into the proxy log.
     link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/bedrock_agentcore/transformation.py#L244-L248'
-  - what: >-
-      Reserved outbound headers are matched case-insensitively against the exact names authorization and host and the
-      prefixes x-amzn-bedrock-agentcore-runtime- and x-amz-. The dropped names are sorted before they are logged.
-    why: >-
-      HTTP header names are case-insensitive, so an extra header of any casing must not spoof the AgentCore identity
-      or SigV4 metadata; sorting makes the warning stable across runs.
-    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/bedrock_agentcore/transformation.py#L70-L74'

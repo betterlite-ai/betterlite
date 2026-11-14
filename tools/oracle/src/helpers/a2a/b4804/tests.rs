@@ -8,6 +8,7 @@ use crate::case::{LoadedCase, load_cases};
 use crate::helpers::{HelperRun, run_case};
 
 #[rstest]
+#[case::config_empty_litellm_params("config-empty-litellm-params")]
 #[case::config_missing_litellm_params("config-missing-litellm-params")]
 #[case::config_present_litellm_params("config-present-litellm-params")]
 #[case::envelope_jsonrpc_2_0("envelope-jsonrpc-2-0")]

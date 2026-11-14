@@ -97,6 +97,7 @@ fn envelope(
     ]))
 }
 
+// LiteLLM's fn get_url_and_signed_request returns (url, signed_headers, signed_body_bytes), here a SignedRequest -> never a missing body
 pub async fn get_url_and_signed_request<R, S>(
     runtime: &R,
     call: &SignedRequestCall<'_>,
@@ -183,14 +184,6 @@ where
     }
 }
 
-fn http_request<'call>(signed: &'call SignedRequest) -> HttpRequest<'call> {
-    HttpRequest {
-        url: &signed.url,
-        headers: &signed.headers,
-        body: &signed.body,
-    }
-}
-
 fn decode_body(body: &[u8]) -> Result<AgentJson, TransformError> {
     let value: AgentJson = serde_json::from_slice(body).map_err(TransformError::Decode)?;
     if value.get("error").is_some() {
@@ -235,10 +228,15 @@ where
         call: &HandlerCall<'_>,
     ) -> Result<AgentJson, AgentCoreError<R::Error>> {
         let signed = self.signed(call, RpcMethod::Send).await?;
-        // LiteLLM branches here on client.post(..., stream=True); the runtime seam owns the HTTP client
+        // LiteLLM's client.post(url, headers=headers, data=body) then response.json(), with the httpx client behind the runtime seam
+        tracing::info!(url = %signed.url, "BedrockAgentCore A2A: sending a non-streaming request");
         let response = self
             .runtime
-            .post(&http_request(&signed))
+            .post(&HttpRequest {
+                url: &signed.url,
+                headers: &signed.headers,
+                body: &signed.body,
+            })
             .await
             .map_err(AgentCoreError::Runtime)?;
         check_status::<R::Error>(response.status)?;
@@ -250,9 +248,14 @@ where
         call: &HandlerCall<'_>,
     ) -> Result<StreamedEvents<R::Error>, AgentCoreError<R::Error>> {
         let signed = self.signed(call, RpcMethod::Stream).await?;
+        tracing::info!(url = %signed.url, "BedrockAgentCore A2A: sending a streaming request");
         let response = self
             .runtime
-            .post_stream(&http_request(&signed))
+            .post_stream(&HttpRequest {
+                url: &signed.url,
+                headers: &signed.headers,
+                body: &signed.body,
+            })
             .await
             .map_err(AgentCoreError::Runtime)?;
         check_status::<R::Error>(response.status)?;

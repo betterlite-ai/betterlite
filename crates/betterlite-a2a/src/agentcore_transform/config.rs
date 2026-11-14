@@ -19,7 +19,10 @@ pub struct ConfigCall<'call> {
 }
 
 fn handler_call<'call>(call: &'call ConfigCall<'_>) -> Result<HandlerCall<'call>, TransformError> {
-    let raw = call.litellm_params.ok_or(TransformError::MissingParams)?;
+    let raw = call
+        .litellm_params
+        .filter(|raw| !raw.is_empty())
+        .ok_or(TransformError::MissingParams)?;
     Ok(HandlerCall {
         request_id: call.request_id,
         params: call.params,
@@ -50,13 +53,6 @@ where
         &mut self,
         call: &ConfigCall<'_>,
     ) -> Result<StreamedEvents<R::Error>, AgentCoreError<R::Error>> {
-        let raw = call.litellm_params.ok_or(TransformError::MissingParams)?;
-        let request = HandlerCall {
-            request_id: call.request_id,
-            params: call.params,
-            litellm_params: LitellmParams::parse(raw)?,
-            agent_extra_headers: call.agent_extra_headers,
-        };
-        AgentCoreHandler::handle_streaming(&mut self.handler, &request).await
+        self.handler.handle_streaming(&handler_call(call)?).await
     }
 }
