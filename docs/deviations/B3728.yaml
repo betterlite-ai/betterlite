@@ -9,6 +9,21 @@ deviations:
       difference.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/azure_content_safety.py#L24-L47
   - what: >-
+      The modern transport attempts each POST once: a connection that fails before an answer is not retried, where
+      LiteLLM's AsyncHTTPHandler creates a second client and repeats the request once on ConnectError or
+      RemoteProtocolError.
+    why: >-
+      The pooled client is injected by the caller and the shared outbound client attempts each request once, so a
+      guardrail never delivers the same scan twice. B3976 records the same policy for the shared client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L836-L851
+  - what: >-
+      The modern transport reports a 3xx answer as an error status instead of following it, where LiteLLM's
+      AsyncHTTPHandler follows redirects by default.
+    why: >-
+      The shared outbound client never follows redirects, so the subscription key is not replayed to a redirect
+      target, and a healthy Content Safety endpoint answers 2xx.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L618
+  - what: >-
       The modern transport and the legacy analyze_text call reject a response body larger than 1 MiB, while LiteLLM
       reads whatever size the endpoint returns.
     why: >-
