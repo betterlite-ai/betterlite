@@ -1,0 +1,23 @@
+kind: helper
+name: pre-call-message-flattening
+call:
+  b3754:
+    function: analyze
+    settings: {api_key: test-key}
+    environment: {}
+    data:
+      messages:
+        - role: user
+          content:
+            - {type: text, text: first part}
+            - {type: image_url, image_url: {url: 'https://host/x.png'}}
+            - {type: input_text, text: second part}
+        - {role: user, content: plain}
+    hook: moderation
+    key_alias: null
+    user_email: null
+    answer:
+      status: 200
+      body: {required_action: null}
+env: {}
+compare: {ignore: []}

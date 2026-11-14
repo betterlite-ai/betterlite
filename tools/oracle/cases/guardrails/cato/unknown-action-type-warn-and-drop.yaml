@@ -1,0 +1,19 @@
+kind: helper
+name: unknown-action-type-warn-and-drop
+call:
+  b3754:
+    function: analyze
+    settings: {api_key: test-key}
+    environment: {}
+    data:
+      messages:
+        - {role: user, content: hello}
+    hook: pre_call
+    key_alias: null
+    user_email: null
+    answer:
+      status: 200
+      body:
+        required_action: {action_type: surprise_action}
+env: {}
+compare: {ignore: []}

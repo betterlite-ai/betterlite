@@ -1,0 +1,21 @@
+kind: helper
+name: anonymize-action-batch-size-mismatch
+call:
+  b3754:
+    function: analyze
+    settings: {api_key: test-key}
+    environment: {}
+    data:
+      input: [first document for ada, second document for ada]
+    hook: pre_call
+    key_alias: null
+    user_email: null
+    answer:
+      status: 200
+      body:
+        required_action: {action_type: anonymize_action}
+        redacted_chat:
+          all_redacted_messages:
+            - {role: user, content: 'first document for PERSON'}
+env: {}
+compare: {ignore: []}

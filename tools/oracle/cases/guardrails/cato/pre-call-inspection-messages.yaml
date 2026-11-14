@@ -1,0 +1,23 @@
+kind: helper
+name: pre-call-inspection-messages
+call:
+  b3754:
+    function: analyze
+    settings: {api_key: test-key}
+    environment: {}
+    data:
+      messages:
+        - {role: user, content: first question}
+        - {role: assistant, content: an answer, name: assistant-name}
+        - role: assistant
+          content: null
+          tool_calls:
+            - {id: call-1, type: function, function: {name: lookup, arguments: '{"q":"tokyo"}'}}
+    hook: pre_call
+    key_alias: key-alias
+    user_email: user@example.test
+    answer:
+      status: 200
+      body: {required_action: null}
+env: {}
+compare: {ignore: []}

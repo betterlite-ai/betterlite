@@ -1,0 +1,18 @@
+kind: helper
+name: pre-call-instructions-inspection
+call:
+  b3754:
+    function: analyze
+    settings: {api_key: test-key}
+    environment: {}
+    data:
+      instructions: be careful with secrets
+      input: hello
+    hook: pre_call
+    key_alias: null
+    user_email: null
+    answer:
+      status: 200
+      body: {required_action: null}
+env: {}
+compare: {ignore: []}

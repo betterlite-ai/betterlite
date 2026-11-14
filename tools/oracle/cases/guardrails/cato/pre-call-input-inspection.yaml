@@ -1,0 +1,20 @@
+kind: helper
+name: pre-call-input-inspection
+call:
+  b3754:
+    function: analyze
+    settings: {api_key: test-key}
+    environment: {}
+    data:
+      input:
+        - {type: input_text, text: hello}
+        - {role: assistant, content: an answer}
+        - {type: function_call_output, output: tool output}
+    hook: pre_call
+    key_alias: null
+    user_email: null
+    answer:
+      status: 200
+      body: {required_action: null}
+env: {}
+compare: {ignore: []}
