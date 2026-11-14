@@ -36,12 +36,12 @@ pub fn scan_cache_key(guardrail_name: Option<&str>, session_id: &str) -> String 
     )
 }
 
-// LiteLLM's _scanned_text_hash for each text: the lowercase hex SHA-256 of the UTF-8 bytes
-fn scanned_text_hashes(texts: &[String]) -> Vec<String> {
-    texts
-        .iter()
-        .map(|text| hex::encode(Sha256::digest(text.as_bytes())))
-        .collect()
+// LiteLLM's _scanned_text_hash: the lowercase hex SHA-256 of the UTF-8 bytes
+#[must_use]
+pub fn scanned_text_hash(text: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(text.as_bytes());
+    hex::encode(hasher.finalize())
 }
 
 impl GuardrailBase {
@@ -80,14 +80,12 @@ impl GuardrailBase {
                 return None;
             }
         };
-        let seen: BTreeSet<&str> = stored.iter().map(String::as_str).collect();
-        let hashes = scanned_text_hashes(present);
+        let seen: BTreeSet<String> = stored.into_iter().collect();
         Some(
             present
                 .iter()
-                .zip(&hashes)
-                .filter(|(_text, hash)| !seen.contains(hash.as_str()))
-                .map(|(text, _hash)| text.clone())
+                .cloned()
+                .filter(|text| !seen.contains(&scanned_text_hash(text)))
                 .collect(),
         )
     }
@@ -127,7 +125,10 @@ impl GuardrailBase {
         };
         let mut merged = Vec::new();
         let mut seen = BTreeSet::new();
-        for hash in stored.into_iter().chain(scanned_text_hashes(present)) {
+        for hash in stored
+            .into_iter()
+            .chain(present.iter().map(String::as_str).map(scanned_text_hash))
+        {
             if seen.insert(hash.clone()) {
                 merged.push(hash);
             }
