@@ -52,7 +52,7 @@ UI_COUNT: Final = 11
 ABSTRACT_COUNT: Final = 21
 COERCE_COUNT: Final = 18
 STRUCTURED_COUNT: Final = 12
-RESPONSE_COUNT: Final = 9
+RESPONSE_COUNT: Final = 10
 DESCRIBE_SCRIPT = """
 import importlib
 import inspect
@@ -378,6 +378,7 @@ RESPONSE_INPUTS = [
     ("blocked", {"action": "BLOCKED", "blocked_reason": "policy"}),
     ("texts", {"action": "NONE", "texts": ["a", "b"], "images": ["u"]}),
     ("holdback", {"action": "X", "stream_holdback_chars": [3, -1, "2", "x", None, True]}),
+    ("holdback_scalar", {"action": "NONE", "stream_holdback_chars": 5}),
     ("tools", {"tools": [{"type": "function", "name": "lookup"}]}),
     ("messages", {"structured_messages": [{"role": "user", "content": "hello"}]}),
     ("extra_key", {"action": "NONE", "other": {"nested": 1}}),
@@ -909,6 +910,15 @@ def test_response_names(report: FullReport) -> None:
         "images": None,
         "tools": None,
         "stream_holdback_chars": [3, 0, 2, 0, 0, 1],
+        "structured_messages": None,
+    }
+    assert ours["holdback_scalar"] == {
+        "action": "NONE",
+        "blocked_reason": None,
+        "texts": None,
+        "images": None,
+        "tools": None,
+        "stream_holdback_chars": None,
         "structured_messages": None,
     }
     assert ours["tools"] == {

@@ -111,7 +111,7 @@ class _ResponsePayload(TypedDict, total=False):
     texts: list[str] | None
     images: list[str] | None
     tools: list[GuardrailToolParam] | None
-    stream_holdback_chars: list[JsonValue] | None
+    stream_holdback_chars: JsonValue
     structured_messages: JsonValue
 
 
@@ -150,10 +150,11 @@ class GenericGuardrailAPIResponse:
         payload = _RESPONSE_PAYLOAD_ADAPTER.validate_python(data)
         raw_holdback = payload.get("stream_holdback_chars")
         stream_holdback_chars: list[int] | None = None
-        if raw_holdback is not None:
-            stream_holdback_chars = [
-                coerce_stream_holdback_value(value) for value in raw_holdback
-            ]
+        match raw_holdback:
+            case list():
+                stream_holdback_chars = [
+                    coerce_stream_holdback_value(value) for value in raw_holdback
+                ]
         action = payload.get("action")
         if action is None:
             action = "NONE"
