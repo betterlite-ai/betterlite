@@ -31,6 +31,14 @@ class Blocks(Protocol):
     def __getattr__(self, name: str) -> TypedDictClass: ...
 
 
+class ModelViews(Protocol):
+    def __getattr__(self, name: str) -> type[pydantic.BaseModel]: ...
+
+
+class TypeViews(Protocol):
+    def __getattr__(self, name: str) -> type: ...
+
+
 class ModelPair(NamedTuple):
     reference: type[pydantic.BaseModel]
     ours: type[pydantic.BaseModel]
@@ -52,6 +60,17 @@ ours_transcription_blocks: Blocks = importlib.import_module(
 ref_speech_blocks: Blocks = importlib.import_module("litellm.types.llms.vertex_ai_speech_to_text")
 ours_speech_blocks: Blocks = importlib.import_module(
     "betterlite.types.llms.vertex_ai_audio.vertex_ai_speech_to_text",
+)
+ref_gemini_models: ModelViews = importlib.import_module("litellm.types.llms.gemini")
+ref_speech_types: TypeViews = importlib.import_module(
+    "litellm.types.llms.vertex_ai_speech_to_text",
+)
+ours_speech_types: TypeViews = importlib.import_module(
+    "betterlite.types.llms.vertex_ai_audio.vertex_ai_speech_to_text",
+)
+ref_credentials: TypeViews = importlib.import_module("litellm.types.llms.vertex_ai")
+ours_credentials: TypeViews = importlib.import_module(
+    "betterlite.types.passthrough_endpoints.vertex_ai",
 )
 ref_tts_blocks: Blocks = importlib.import_module("litellm.types.llms.vertex_ai_text_to_speech")
 ours_tts_blocks: Blocks = importlib.import_module(
@@ -275,12 +294,12 @@ MODELS: dict[str, ModelPair] = {
         {"instances": [{"prompt": "a cat"}], "parameters": IMAGE_PARAMETERS},
     ),
     "GeminiVideoGenerationParameters": ModelPair(
-        ref_gemini.GeminiVideoGenerationParameters,
+        ref_gemini_models.GeminiVideoGenerationParameters,
         ours_gemini.GeminiVideoGenerationParameters,
         VIDEO_PARAMETERS,
     ),
     "GeminiVideoGenerationRequest": ModelPair(
-        ref_gemini.GeminiVideoGenerationRequest,
+        ref_gemini_models.GeminiVideoGenerationRequest,
         ours_gemini.GeminiVideoGenerationRequest,
         {"instances": [{"prompt": "a dog"}], "parameters": VIDEO_PARAMETERS},
     ),
@@ -310,7 +329,7 @@ MODELS: dict[str, ModelPair] = {
         OPERATION_METADATA,
     ),
     "GeminiLongRunningOperationResponse": ModelPair(
-        ref_gemini.GeminiLongRunningOperationResponse,
+        ref_gemini_models.GeminiLongRunningOperationResponse,
         ours_gemini.GeminiLongRunningOperationResponse,
         {
             "name": "operations/1",
@@ -467,31 +486,57 @@ MODELS: dict[str, ModelPair] = {
 }
 
 
+UNIONS: dict[str, tuple[type, type, type, type, list[str]]] = {
+    "command": (
+        ref_speech_types.VertexSpeechStreamingCommandUnion,
+        ours_speech_types.VertexSpeechStreamingCommandUnion,
+        ref_speech_types.VertexSpeechStreamingCommand,
+        ours_speech_types.VertexSpeechStreamingCommand,
+        [
+            "VertexSpeechStreamingConfigure",
+            "VertexSpeechStreamingFinishTurn",
+            "VertexSpeechStreamingDiscardTurn",
+        ],
+    ),
+    "event": (
+        ref_speech_types.VertexSpeechStreamingEventUnion,
+        ours_speech_types.VertexSpeechStreamingEventUnion,
+        ref_speech_types.VertexSpeechStreamingEvent,
+        ours_speech_types.VertexSpeechStreamingEvent,
+        [
+            "VertexSpeechStreamingResponse",
+            "VertexSpeechStreamingConfigured",
+            "VertexSpeechStreamingTurnFinished",
+            "VertexSpeechStreamingTurnDiscarded",
+        ],
+    ),
+}
+
+
 def shape(annotation: type) -> str:
     origin: type | None = get_origin(annotation)
     arguments: tuple[type, ...] = get_args(annotation)
+    name = annotation.__name__ if origin is None else origin.__name__
+    described = name
     if is_typeddict(annotation):
-        return f"TypedDict:{annotation.__name__}"
-    if origin is None:
-        name = annotation.__name__
-        if name in ("Any", "JsonValue"):
-            return "json"
-        return name
-    name = origin.__name__
-    if name == "Literal":
-        return f"Literal{sorted(str(argument) for argument in arguments)}"
-    if name in ("Union", "UnionType"):
-        members = sorted(shape(argument) for argument in arguments)
-        if "json" in members:
-            return "json"
-        return "|".join(members)
-    if name == "dict" and shape(arguments[1]) == "json":
-        return "dict"
-    if name == "list" and shape(arguments[0]) == "json":
-        return "list"
-    if name == "tuple":
-        return f"tuple[{shape(arguments[0])},...]"
-    return name + "[" + ",".join(shape(argument) for argument in arguments) + "]"
+        described = f"TypedDict:{name}"
+    elif name in ("Any", "JsonValue"):
+        described = "json"
+    elif origin is not None:
+        if name == "Literal":
+            described = f"Literal{sorted(str(argument) for argument in arguments)}"
+        elif name in ("Union", "UnionType"):
+            members = sorted(shape(argument) for argument in arguments)
+            described = "json" if "json" in members else "|".join(members)
+        elif name == "tuple":
+            described = f"tuple[{shape(arguments[0])},...]"
+        elif name == "dict" and shape(arguments[1]) == "json":
+            described = "dict"
+        elif name == "list" and shape(arguments[0]) == "json":
+            described = "list"
+        else:
+            described = name + "[" + ",".join(shape(argument) for argument in arguments) + "]"
+    return described
 
 
 def enum_members(enum: type[Enum]) -> list[tuple[str, JsonValue]]:
@@ -503,12 +548,8 @@ def enum_members(enum: type[Enum]) -> list[tuple[str, JsonValue]]:
 
 
 def model_hints(model: type[pydantic.BaseModel]) -> dict[str, type]:
-    hints: dict[str, type] = {}
-    for name, field in model.model_fields.items():
-        annotation = field.annotation
-        assert annotation is not None
-        hints[name] = annotation
-    return hints
+    declared: dict[str, type] = model.__annotations__
+    return {name: declared[name] for name in model.model_fields}
 
 
 def property_literal(schema: JsonValue) -> JsonValue:
@@ -588,66 +629,33 @@ def test_names_gemini_literals() -> None:
     assert ours_end == reference_end
 
 
-def test_names_command_union() -> None:
-    reference_members: tuple[type, ...] = get_args(ref_speech.VertexSpeechStreamingCommandUnion)
-    ours_members: tuple[type, ...] = get_args(ours_speech.VertexSpeechStreamingCommandUnion)
-    names = [
-        "VertexSpeechStreamingConfigure",
-        "VertexSpeechStreamingFinishTurn",
-        "VertexSpeechStreamingDiscardTurn",
-    ]
+@pytest.mark.parametrize("kind", UNIONS)
+def test_names_unions(kind: str) -> None:
+    reference_union, ours_union, reference_tagged, ours_tagged, names = UNIONS[kind]
+    reference_members: tuple[type, ...] = get_args(reference_union)
+    ours_members: tuple[type, ...] = get_args(ours_union)
     assert [member.__name__ for member in reference_members] == names
     assert [member.__name__ for member in ours_members] == names
-    reference_metadata: tuple[FieldInfo, ...] = get_args(
-        ref_speech.VertexSpeechStreamingCommand,
-    )[1:]
-    ours_metadata: tuple[FieldInfo, ...] = get_args(
-        ours_speech.VertexSpeechStreamingCommand,
-    )[1:]
-    assert [info.discriminator for info in reference_metadata] == ["kind"]
-    assert [info.discriminator for info in ours_metadata] == ["kind"]
+    reference_metadata: tuple[FieldInfo, ...] = get_args(reference_tagged)
+    ours_metadata: tuple[FieldInfo, ...] = get_args(ours_tagged)
+    assert [info.discriminator for info in reference_metadata[1:]] == ["kind"]
+    assert [info.discriminator for info in ours_metadata[1:]] == ["kind"]
 
-    reference_adapter = TypeAdapter(ref_speech.VertexSpeechStreamingCommand)
-    ours_adapter = TypeAdapter(ours_speech.VertexSpeechStreamingCommand)
+    reference_adapter: TypeAdapter[pydantic.BaseModel] = TypeAdapter(reference_tagged)
+    ours_adapter: TypeAdapter[pydantic.BaseModel] = TypeAdapter(ours_tagged)
     for name in names:
         payload = MODELS[name].payload
         reference_value = reference_adapter.validate_python(payload)
         ours_value = ours_adapter.validate_python(payload)
         assert reference_value.__class__.__name__ == name
         assert ours_value.__class__.__name__ == name
-        assert ours_value.model_dump() == reference_value.model_dump()
-
-
-def test_names_event_union() -> None:
-    reference_members: tuple[type, ...] = get_args(ref_speech.VertexSpeechStreamingEventUnion)
-    ours_members: tuple[type, ...] = get_args(ours_speech.VertexSpeechStreamingEventUnion)
-    names = [
-        "VertexSpeechStreamingResponse",
-        "VertexSpeechStreamingConfigured",
-        "VertexSpeechStreamingTurnFinished",
-        "VertexSpeechStreamingTurnDiscarded",
-    ]
-    assert [member.__name__ for member in reference_members] == names
-    assert [member.__name__ for member in ours_members] == names
-    reference_metadata: tuple[FieldInfo, ...] = get_args(
-        ref_speech.VertexSpeechStreamingEvent,
-    )[1:]
-    ours_metadata: tuple[FieldInfo, ...] = get_args(
-        ours_speech.VertexSpeechStreamingEvent,
-    )[1:]
-    assert [info.discriminator for info in reference_metadata] == ["kind"]
-    assert [info.discriminator for info in ours_metadata] == ["kind"]
-
-    reference_adapter = TypeAdapter(ref_speech.VertexSpeechStreamingEvent)
-    ours_adapter = TypeAdapter(ours_speech.VertexSpeechStreamingEvent)
-    for name in names:
-        payload = MODELS[name].payload
-        reference_value = reference_adapter.validate_python(payload)
-        ours_value = ours_adapter.validate_python(payload)
-        assert reference_value.__class__.__name__ == name
-        assert ours_value.__class__.__name__ == name
-        assert ours_value.model_dump() == reference_value.model_dump()
+        reference_dump: dict[str, JsonValue] = reference_value.model_dump()
+        ours_dump: dict[str, JsonValue] = ours_value.model_dump()
+        assert ours_dump == reference_dump
 
 
 def test_names_credentials_type() -> None:
-    assert ours_passthrough.VERTEX_CREDENTIALS_TYPES == ref_passthrough.VERTEX_CREDENTIALS_TYPES
+    reference_types: tuple[type, ...] = get_args(ref_credentials.VERTEX_CREDENTIALS_TYPES)
+    ours_types: tuple[type, ...] = get_args(ours_credentials.VERTEX_CREDENTIALS_TYPES)
+    assert [shape(member) for member in ours_types] == [shape(member) for member in reference_types]
+    assert [shape(member) for member in ours_types] == ["str", "dict[str,str]"]
