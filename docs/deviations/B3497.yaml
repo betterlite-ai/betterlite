@@ -1,0 +1,14 @@
+task: B3497
+deviations:
+  - what: The Rust entry points are to_responses_request and to_interactions_response, and the Responses request is the typed ResponsesRequest struct instead of LiteLLM's dict[str, object] of the same names.
+    why: A lint refuses names past 30 characters, and rule typed-wire asks for a typed wire record; every key LiteLLM writes is a field on the struct, and an extra kwarg this bridge does not model stays in its passthrough map.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/transformation.py#L33-L89
+  - what: The input reaches to_responses_request as JSON. Betterlite's typed InteractionInput has no Step variant, and LiteLLM transforms step dicts whose type is user_input or model_output, so the raw JSON keeps the step type that the typed enum loses.
+    why: Rule owned-behavior-is-built requires the step-type mapping, which the generated Interactions types only express as dicts at runtime; a Turn built from a step dict would otherwise report every role as user.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/transformation.py#L92-L141
+  - what: The created timestamp is formatted in a jiff TimeZone the caller passes in, where LiteLLM's datetime.fromtimestamp uses the process's local zone.
+    why: Rule inject-dependencies keeps the clock out of the transform, so a test can pin the offset and two proxies in different zones still print their own local time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/transformation.py#L234-L241
+  - what: A created_at outside the timestamp range returns a typed error naming the value; LiteLLM raises OverflowError or OSError from datetime.fromtimestamp, which reaches the caller as an unhandled 500.
+    why: Rule owned-behavior-is-built fixes a crash no working setup can rely on, since a provider response with such a timestamp never produced an interaction.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/transformation.py#L234-L241

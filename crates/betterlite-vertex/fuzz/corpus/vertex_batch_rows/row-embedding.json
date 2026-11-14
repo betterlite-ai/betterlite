@@ -1,0 +1,1 @@
+{"key": "req-1#1/2", "request": {"content": {"parts": [{"text": "hi"}]}}, "status": "", "response": {"embedding": {"values": [0.5, -1]}, "usageMetadata": {"promptTokenCount": 3}}}

@@ -1,0 +1,11 @@
+task: B3793
+deviations:
+  - what: The scanned schema text lists the scalar strings in the fixed order name, description, title, const, default, and the list items in enum, examples order, where LiteLLM iterates Python frozensets whose iteration order varies between processes.
+    why: A frozenset order is a Python runtime accident that no working setup can rely on, and a fixed order keeps the text sent to Argus stable between runs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L48-L50
+  - what: Nested schema objects are walked in sorted key order, where LiteLLM walks them in the order the keys appear in the request body.
+    why: Request bodies are BTreeMap values in betterlite and keep no insertion order, so the same strings are scanned in a different order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L116-L119
+  - what: Response text is read from a JSON body or from an output_text value, selected by the ResponseSource variant, in place of LiteLLM's dict, ModelResponse and arbitrary-object branches.
+    why: docs/compatibility.md keeps Python's isinstance and getattr duck typing out of the port; a body that only carries an output_text key is still not read, matching LiteLLM's dict branch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L498-L515
