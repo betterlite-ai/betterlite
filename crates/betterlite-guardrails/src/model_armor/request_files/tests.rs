@@ -51,7 +51,7 @@ impl ArmorTokens for StubTokens {
 async fn serve(replies: Vec<(StatusCode, String)>) -> (String, Arc<Mutex<usize>>, Server) {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let endpoint = format!("http://{}", listener.local_addr().expect("address"));
-    let requests = Arc::new(Mutex::new(0));
+    let requests = Arc::new(Mutex::new(0_usize));
     let queue = Arc::new(Mutex::new(VecDeque::from(replies)));
     let handler_requests = Arc::clone(&requests);
     let handler_queue = Arc::clone(&queue);

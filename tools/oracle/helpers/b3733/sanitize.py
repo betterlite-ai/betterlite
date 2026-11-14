@@ -88,7 +88,7 @@ def build_guardrail(call: SanitizeCall, recorder: Recorder) -> Guardrail:
         async_handler=AsyncHTTPHandler(transport=recorder),
     )
     # LiteLLM leaves make_model_armor_request's request_data and reply as dict[Any, Any]
-    return GuardrailRecord.model_validate({"guard": guard}).guard
+    return GuardrailRecord(guard=guard).guard
 
 
 async def send(guard: Guardrail, run: RequestRun) -> None:
