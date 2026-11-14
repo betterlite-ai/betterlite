@@ -25,7 +25,7 @@ Walk the LiteLLM code the task owns branch by branch: each default, header, conf
 - A finding names what a client, a provider or a config file sees differently, with an input of the type LiteLLM declares, and the LiteLLM line it differs from. A difference only Python's runtime makes (truthiness, duck typing, repr or str text, json.dumps formatting, object identity) is not a finding.
 - A test is weak when it would still pass with the behavior removed: it asserts only is_ok or is_some, compares a value with itself, checks a stub instead of the code, or an oracle case ignores the field that differs. Name the test and the change that makes it fail first.
 - An error message is betterlite's own; only the status, type, param and code must match.
-- Behavior the task lists out of scope with an owner is not a finding, and neither is a fix that docs/deviations/<ID>.yaml lists.
+- Behavior the task lists out of scope with an owner is not a finding, and neither is a fix that docs/deviations/<ID>.yaml lists. A fix that file doesn't list is a finding: name the LiteLLM line it changes.
 - Code that does what LiteLLM does is not a finding, unless it repeats a bug that owned-behavior-is-built says to fix: then report it with origin litellm. Everything else has origin ours.
 - Cite the betterlite line where the difference is. For missing behavior, cite the line in a changed file where it belongs.
 
