@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::future::ready;
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -59,7 +59,7 @@ impl PartnerCountTransport for Script {
     fn send(
         &self,
         request: OutboundRequest,
-    ) -> impl std::future::Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         let payload = match request.body {
             RequestBody::Json(bytes) => bytes,
             RequestBody::Empty | RequestBody::Bytes { .. } | RequestBody::Multipart { .. } => {
