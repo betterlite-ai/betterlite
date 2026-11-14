@@ -167,7 +167,7 @@ def provider(kind: Kind) -> RerankConfig:
 
 
 def complete_url(model: str, api_base: str | None) -> str:
-    config: RerankConfig = get_nvidia_nim_rerank_config(model)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/rerank/common_utils.py#L5
+    config: RerankConfig = get_nvidia_nim_rerank_config(model)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/rerank/common_utils.py#L6
     return config.get_complete_url(api_base, model)
 
 
@@ -284,7 +284,7 @@ def rerank_response(input_value: Input) -> JsonValue:
         except ERRORS:
             responses.append({"ok": False})
             continue
-        except BaseLLMException:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/rerank/transformation.py#L303-L308
+        except BaseLLMException:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41
             responses.append({"ok": False})
             continue
         responses.append(JSON.validate_json(response.model_dump_json()))

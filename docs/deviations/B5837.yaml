@@ -8,17 +8,17 @@ deviations:
   - what: A reply id of "" is returned as given instead of being replaced by a new UUID4.
     why: >-
       docs/compatibility.md keeps an explicit empty value as given and does not port Python truthiness.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/rerank/transformation.py#L357
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/rerank/transformation.py#L338
   - what: >-
       A null usage or a null total_tokens counts as 0, so billed_units.total_tokens is the number of results.
     why: >-
       LiteLLM calls .get on the null and raises AttributeError; absent-or-null-takes-the-default is the documented betterlite behavior.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/rerank/transformation.py#L347-L352
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/rerank/transformation.py#L330-L333
   - what: >-
       A document that is neither a string nor an object is rejected with a typed error naming documents; LiteLLM sends str(document) as the passage text.
     why: >-
       documents is declared list[str | dict] in LiteLLM, so the other case is outside the declared type, and docs/compatibility.md rejects such a value instead of porting Python's str text.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/rerank/transformation.py#L240-L253
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/rerank/transformation.py#L230-L231
   - what: >-
       An extra_body value that is not an object is rejected with a typed error naming extra_body; LiteLLM raises AttributeError from dict.update.
     why: >-
