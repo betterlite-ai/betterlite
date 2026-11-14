@@ -181,7 +181,7 @@ fn request_data(input: &Input) -> SkillsRequestData {
     }
 }
 
-fn helper_output(result: Value, continuation: &ScriptedContinuation, lines: &Lines) -> Value {
+fn helper_output(result: &Value, continuation: &ScriptedContinuation, lines: &Lines) -> Value {
     let calls = continuation
         .calls
         .lock()
@@ -243,6 +243,6 @@ impl Helper for Op {
         drop(guard);
         let reply = outcome.map_err(|error| failure("SkillsLoopError", error.to_string()))?;
         let result = result_value(reply)?;
-        Ok(helper_output(result, &continuation, &lines))
+        Ok(helper_output(&result, &continuation, &lines))
     }
 }
