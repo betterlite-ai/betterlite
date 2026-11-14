@@ -5,7 +5,7 @@ use crate::endpoint_target::error::EndpointTargetError;
 use crate::gemini_embedding_records::error::GeminiEmbeddingError;
 use crate::token_cache::error::CredentialCacheError;
 
-// LiteLLM raises plain exceptions on this path, so a caller reports every variant as a 500
+// LiteLLM sends these through exception_type, where _map_vertex_exception matches message text and status, so a caller classifies PostStatus and FileStatus by passing their status and Display text through betterlite_error::vertex_errors::map_vertex_exception the way model_policy::error::classify_vertex_error does; only variants it leaves unclassified fall back to 500
 #[derive(Debug, Error)]
 pub enum GeminiEmbeddingCallError {
     #[error("the Vertex AI access token could not be minted")]
