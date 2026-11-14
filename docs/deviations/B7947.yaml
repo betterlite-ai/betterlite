@@ -1,0 +1,72 @@
+task: B7947
+deviations:
+  - what: >-
+      SCIMUserEmail.value is str; LiteLLM declares pydantic EmailStr, which validates the address
+      through email-validator.
+    why: >-
+      The wheel depends on pydantic, python-dotenv and typing-extensions only. Adding email-validator
+      for this field is a new dependency, so an address that EmailStr would reject is accepted here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L52
+  - what: >-
+      RoleMappings.default_role and the keys of RoleMappings.roles are str; LiteLLM declares
+      LitellmUserRoles, a str Enum in litellm/proxy/_types.py.
+    why: >-
+      proxy/_types.py has no Python owner in the wheel, so the enum cannot be imported. A role name
+      outside the enum is accepted instead of rejected with an enum validation error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/ui_sso.py#L77-L84
+  - what: >-
+      DefaultTeamSSOParams.team_member_permissions and BulkUpdateTeamMemberPermissionsRequest.
+      permissions are list[str]; LiteLLM declares list[KeyManagementRoutes].
+    why: >-
+      KeyManagementRoutes lives in proxy/_types.py and has no Python owner. A route that is not in
+      the enum is accepted instead of rejected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/team_endpoints.py#L58
+  - what: >-
+      TeamListItem declares the fields of LiteLLM_TeamTable itself, TeamMemberRef those of
+      MemberDeleteRequest, TeamMemberInfoResponse those of LiteLLM_TeamMembership, and the bulk
+      delete and bulk budget responses declare data directly instead of deriving from
+      ResourceResponse. None of those base classes exists in the wheel.
+    why: >-
+      litellm/proxy/_types.py, litellm/models/team_membership.py and management_v1.py have no Python
+      owner. Fields, defaults, config and the two base validators that reject a member without an
+      identifier are reproduced; isinstance checks against the base classes and the inherited
+      LiteLLM_TeamMembership.safe_get_team_member_*_limit helpers are absent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team_membership.py#L12
+  - what: >-
+      Nested models that have no Python owner are JSON types: TeamListItem.members_with_roles,
+      budget_limits, litellm_model_table, object_permission, model_spend and model_max_budget,
+      BulkTeamMemberAddRequest.members and TeamMemberInfoResponse.litellm_budget_table are
+      list[dict[str, JsonValue]] or dict[str, JsonValue] instead of Member, BudgetLimitEntry,
+      LiteLLM_ModelTable, ObjectPermission, float and LiteLLM_BudgetTable.
+    why: >-
+      Those models live in litellm/models/team.py and litellm/models/budget.py, which have no Python
+      owner. A supplied key survives unchanged, but the nested models' validation and their defaults
+      for omitted keys are not applied; LiteLLM's dump of a member adds e.g. user_email: null, while
+      this port keeps only the keys the input carried.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L39
+  - what: >-
+      TeamMemberBudgetPatch accepts any budget_duration string; LiteLLM rejects one that does not
+      parse to a positive duration and resets at "now".
+    why: >-
+      The check calls budget_duration_error in litellm/proxy/common_utils/timezone_utils.py and the
+      duration parser in litellm/litellm_core_utils/duration_parser.py, neither of which has a
+      Python owner in the wheel.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/team_endpoints.py#L172-L178
+  - what: >-
+      camelCase wire fields are snake_case attributes carrying pydantic aliases with
+      serialize_by_alias, so model_fields keys and attribute access use the snake_case names.
+      model_dump(by_alias=False) still emits the wire names; SCIMUser's by-name dump emits the
+      enterprise URN where LiteLLM emits enterprise_user and ref.
+    why: >-
+      The Python rules reject mixed-case class attributes, so LiteLLM's spelling cannot be kept as
+      the attribute name. Validation accepts LiteLLM's wire keys, and the JSON a FastAPI response
+      sends (by_alias=True) matches LiteLLM byte for byte.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L30
+  - what: >-
+      SCIMUser's serialization-mode JSON schema lists its properties; LiteLLM's custom
+      model_serializer makes pydantic emit an object schema with no properties.
+    why: >-
+      betterlite omits the absent entitlement, role and enterprise-user blocks with pydantic's
+      exclude_if instead of a wrap serializer, whose return type is Any and would need a cast under
+      strict typing. The validation schema, required keys, defaults and every dump match LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L123-L133
