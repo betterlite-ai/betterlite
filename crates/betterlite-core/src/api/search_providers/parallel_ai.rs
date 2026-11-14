@@ -36,7 +36,7 @@ impl ParallelAiSearch {
         Self {
             api_key: ["PARALLEL_AI_API_KEY", "PARALLEL_API_KEY"]
                 .iter()
-                .find_map(|name| present(*name))
+                .find_map(|name| present(name))
                 .map(SecretString::from),
             api_base: present("PARALLEL_AI_API_BASE")
                 .unwrap_or_else(|| PARALLEL_AI_API_BASE.to_owned()),

@@ -375,7 +375,7 @@ fn body_maps_max_results_and_country(#[case] options: &str, #[case] expected: &s
 #[case::content_wins(r#"{"content":"c","description":"d"}"#, "c")]
 #[case::empty_content_falls_back(r#"{"content":"","description":"d"}"#, "d")]
 #[case::description_falls_back(r#"{"description":"d"}"#, "d")]
-#[case::nothing_is_empty(r#"{}"#, "")]
+#[case::nothing_is_empty("{}", "")]
 #[case::nulls_are_absent(r#"{"content":null,"description":null}"#, "")]
 #[case::empty_description_is_empty(r#"{"description":""}"#, "")]
 fn reply_projects_the_snippet(#[case] result: &str, #[case] snippet: &str) {
@@ -454,7 +454,7 @@ fn reply_keeps_additional_data_as_an_extra(#[case] result: &str, #[case] expecte
 }
 
 #[rstest]
-#[case::missing_results(r#"{}"#)]
+#[case::missing_results("{}")]
 #[case::null_results(r#"{"results":null}"#)]
 #[case::results_is_an_object(r#"{"results":{}}"#)]
 #[case::results_is_text(r#"{"results":"x"}"#)]
@@ -502,7 +502,9 @@ fn a_schema_failure_raises_through_the_error_class() {
                 Some(vec![("X-Trace".to_owned(), "1".to_owned())])
             );
         }
-        other => panic!("expected a provider error, got {other}"),
+        other @ (NimbleSearchError::Credential(_) | NimbleSearchError::MissingApiKey) => {
+            panic!("expected a provider error, got {other}")
+        }
     }
 }
 
@@ -515,7 +517,7 @@ fn a_schema_failure_raises_through_the_error_class() {
 #[case::detail_wins(r#"{"detail":"first","message":"second"}"#, "first")]
 #[case::empty_detail_falls_to_message(r#"{"detail":"","message":"second"}"#, "second")]
 #[case::numeric_detail_is_raw(r#"{"detail":7}"#, r#"{"detail":7}"#)]
-#[case::empty_object_is_raw(r#"{}"#, "{}")]
+#[case::empty_object_is_raw("{}", "{}")]
 #[case::array_document_is_raw("[1,2]", "[1,2]")]
 #[case::plain_text_is_raw("upstream said no", "upstream said no")]
 #[case::trailing_dots_and_spaces(r#"{"detail":"bad. . "}"#, "bad")]

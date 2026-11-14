@@ -80,16 +80,15 @@ pub fn decode_parallel_ai_reply(bytes: &[u8]) -> Result<SearchResponse, Parallel
 }
 
 fn usage_value(usage: Option<&Vec<Object>>) -> JsonValue {
-    match usage {
-        Some(entries) => JsonValue::Array(
+    usage.map_or(JsonValue::Null, |entries| {
+        JsonValue::Array(
             entries
                 .iter()
                 .cloned()
                 .map(JsonValue::Object)
                 .collect::<Vec<_>>(),
-        ),
-        None => JsonValue::Null,
-    }
+        )
+    })
 }
 
 fn project(result: ParallelResult) -> SearchResult {

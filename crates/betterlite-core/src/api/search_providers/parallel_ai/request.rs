@@ -8,7 +8,7 @@ use super::error::ParallelAiSearchError;
 
 pub const PARALLEL_AI_USAGE_PARAM: &str = "_parallel_ai_usage";
 
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct SearchBody(IndexMap<String, JsonValue>);
 
@@ -51,20 +51,27 @@ pub(super) fn search_body(
 fn mode(params: &mut Object) -> JsonValue {
     let caller_mode = params.remove("mode").filter(|value| !value.is_null());
     let legacy_processor = params.remove("processor").filter(|value| !value.is_null());
-    let resolved_mode = match caller_mode {
-        Some(chosen_mode) => chosen_mode,
-        None => legacy_processor.map_or_else(
-            || JsonValue::String("basic".to_owned()),
-            |processor| match processor.as_str() {
-                Some("base") => JsonValue::String("basic".to_owned()),
-                Some("pro") => JsonValue::String("advanced".to_owned()),
-                _ => processor,
-            },
-        ),
-    };
+    let resolved_mode = caller_mode.map_or_else(
+        || {
+            legacy_processor.map_or_else(
+                || JsonValue::String("basic".to_owned()),
+                |processor| match processor.as_str() {
+                    Some("base") => JsonValue::String("basic".to_owned()),
+                    Some("pro") => JsonValue::String("advanced".to_owned()),
+                    _ => processor,
+                },
+            )
+        },
+        |chosen_mode| chosen_mode,
+    );
     match resolved_mode {
         JsonValue::String(text) if text.is_empty() => JsonValue::String("basic".to_owned()),
-        other => other,
+        other @ JsonValue::Null
+        | other @ JsonValue::Bool(_)
+        | other @ JsonValue::Number(_)
+        | other @ JsonValue::String(_)
+        | other @ JsonValue::Array(_)
+        | other @ JsonValue::Object(_) => other,
     }
 }
 
@@ -107,18 +114,24 @@ fn advanced_settings(params: &mut Object) -> Result<Object, ParallelAiSearchErro
     if !source_policy.is_empty() {
         settings.insert("source_policy".to_owned(), JsonValue::Object(source_policy));
     }
-    match params.remove("advanced_settings") {
-        None | Some(JsonValue::Null) => {}
-        Some(JsonValue::Object(caller)) => {
-            for (name, value) in caller {
-                settings.insert(name, value);
-            }
-        }
-        Some(_) => {
-            return Err(ParallelAiSearchError::OptionType {
-                field: "advanced_settings",
-            });
-        }
-    }
+    merge_caller_settings(&mut settings, params.remove("advanced_settings"))?;
     Ok(settings)
+}
+
+fn merge_caller_settings(
+    settings: &mut Object,
+    caller: Option<JsonValue>,
+) -> Result<(), ParallelAiSearchError> {
+    let Some(caller) = caller.filter(|value| !value.is_null()) else {
+        return Ok(());
+    };
+    let JsonValue::Object(caller) = caller else {
+        return Err(ParallelAiSearchError::OptionType {
+            field: "advanced_settings",
+        });
+    };
+    for (name, value) in caller {
+        settings.insert(name, value);
+    }
+    Ok(())
 }

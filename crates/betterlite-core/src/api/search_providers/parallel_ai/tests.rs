@@ -438,14 +438,9 @@ fn reply_projects_results_extras_and_usage() {
     )
     .unwrap();
     assert_eq!(response.object.0, "search");
-    assert_eq!(
-        response
-            .results
-            .iter()
-            .map(|result| result.title.as_str())
-            .collect::<Vec<_>>(),
-        ["A", "B"]
-    );
+    assert_eq!(response.results.len(), 2);
+    assert_eq!(response.results[0].title, "A");
+    assert_eq!(response.results[1].title, "B");
     assert_eq!(response.results[0].url, "https://a.test");
     assert_eq!(response.results[0].snippet, "one ... two");
     assert_eq!(response.results[0].date.as_deref(), Some("2024-05-01"));
@@ -486,7 +481,7 @@ fn reply_defaults_missing_members_to_empty(#[case] body: &str) {
 
 #[test]
 fn reply_stores_a_null_usage_key() {
-    let response = decode_parallel_ai_reply(r#"{"usage":null,"results":[]}"#.as_bytes()).unwrap();
+    let response = decode_parallel_ai_reply(br#"{"usage":null,"results":[]}"#).unwrap();
     assert_eq!(
         response.hidden_params,
         serde_json::from_str::<Object>(r#"{"_parallel_ai_usage":null}"#).unwrap()
@@ -496,7 +491,7 @@ fn reply_stores_a_null_usage_key() {
 
 #[test]
 fn reply_keeps_empty_warnings_and_a_null_usage_absent() {
-    let response = decode_parallel_ai_reply(r#"{"warnings":[],"results":[]}"#.as_bytes()).unwrap();
+    let response = decode_parallel_ai_reply(br#"{"warnings":[],"results":[]}"#).unwrap();
     assert_eq!(
         response.extra,
         serde_json::from_str::<Object>(r#"{"warnings":[]}"#).unwrap()
@@ -572,7 +567,11 @@ fn transform_search_response_reports_a_schema_failure() {
     };
     match load(&[]).transform_search_response(&response).unwrap_err() {
         ParallelAiSearchError::Reply(ParallelAiReplyError::Schema { .. }) => {}
-        other => panic!("expected a schema error, got {other}"),
+        other @ (ParallelAiSearchError::Credential(_)
+        | ParallelAiSearchError::MissingApiKey
+        | ParallelAiSearchError::OptionType { .. }) => {
+            panic!("expected a schema error, got {other}")
+        }
     }
 }
 

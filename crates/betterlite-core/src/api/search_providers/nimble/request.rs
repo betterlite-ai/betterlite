@@ -4,7 +4,7 @@ use betterlite_openai::search::provider::{PERPLEXITY_PARAMS, SearchQuery};
 use indexmap::IndexMap;
 use serde::Serialize;
 
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct SearchBody(IndexMap<String, JsonValue>);
 
@@ -74,7 +74,7 @@ fn domain_filters(value: Option<&JsonValue>) -> (Vec<String>, Vec<String>) {
         .iter()
         .filter_map(|domain| domain.strip_prefix('-'))
         .filter(|domain| !domain.is_empty())
-        .map(|domain| domain.to_owned())
+        .map(ToOwned::to_owned)
         .collect();
     (include_domains, exclude_domains)
 }
