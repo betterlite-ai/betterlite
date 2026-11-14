@@ -1,0 +1,14 @@
+task: B3700
+deviations:
+  - what: >-
+      A streamed choice's buffer is trimmed even when an exception phrase or an
+      unfinished conditional sentence would leave it, so the buffer stays near two
+      context lengths. The dropped phrases and open-sentence words travel as per-choice
+      state, so every yielded chunk and every recorded detection stays what the
+      untrimmed buffer gives.
+    why: >-
+      LiteLLM defers the trim while a phrase sits outside the tail or a conditional
+      word sits in the sentence the cut splits. Once either is more than one context
+      behind the end it never re-enters the tail, so the deferral lasts for the rest of
+      the stream, the buffer holds the whole response and every chunk rescans it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1981-L1989
