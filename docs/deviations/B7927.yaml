@@ -1,0 +1,31 @@
+task: B7927
+deviations:
+  - what: >-
+      The five Vertex types gemini.py imports (GenerationConfig, HttpxBlobType, HttpxContentType, Tools,
+      UsageMetadata) are defined in betterlite/types/llms/gemini/vertex_ai_types.py, together with the
+      TypedDicts they reference, instead of being imported from types/llms/vertex_ai.py.
+    why: >-
+      types/llms/vertex_ai.py belongs to B7925 and is not on this branch, so importing it would make the
+      wheel fail at import time. When B7925 lands, gemini.py imports these five names from it and
+      vertex_ai_types.py goes away.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L6-L12
+  - what: >-
+      VERTEX_CREDENTIALS_TYPES is defined in betterlite/types/passthrough_endpoints/vertex_ai.py instead of
+      being imported from types/llms/vertex_ai.py.
+    why: >-
+      The same B7925 dependency as the entry above. The alias keeps LiteLLM's value, str | dict[str, str],
+      so the vertex_credentials field accepts the same values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L760
+  - what: >-
+      Fields that LiteLLM types as Any, or as a bare dict or list, are typed as JsonValue,
+      dict[str, JsonValue] or list[JsonValue].
+    why: >-
+      The Python rules reject object and Any in types and name JsonValue as the open-JSON type. JsonValue
+      accepts every value a JSON request or response body can carry, so the wire values are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L266-L278
+  - what: >-
+      The pydantic list defaults LiteLLM writes as `= []` are declared with Field(default_factory=list).
+    why: >-
+      RUF012 rejects mutable class defaults. The constructed value and the dumped default are the same
+      empty list, so model_construct().model_dump() matches LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_speech_to_text.py#L31-L41
