@@ -20,14 +20,15 @@ use thiserror::Error;
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     input: BatchProviderCancelInput,
-    settings: SettingsScript,
+    // the case scripts no litellm_settings globals when it names none
+    settings: Option<SettingsScript>,
     env: BTreeMap<String, String>,
     now: i64,
     script: Script,
 }
 
 // the litellm_settings globals cancel_batch reads, scripted by the case
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct SettingsScript {
     api_base: Option<String>,
@@ -124,7 +125,7 @@ impl Scripted {
 // the five provider branches differ only in their recorded fields, so one macro keeps them one shape
 macro_rules! scripted_branches {
     ($(
-        $method:ident($call_type:ident): $branch:literal => {
+        $method:ident($call_type:ident, $call:ident): $branch:literal => {
             $($key:literal: $value:expr),* $(,)?
         };
     )*) => {
@@ -134,7 +135,7 @@ macro_rules! scripted_branches {
             $(
                 fn $method(
                     &self,
-                    call: $call_type<'_>,
+                    $call: $call_type<'_>,
                 ) -> impl Future<Output = Result<BatchObject, ScriptFailure>> + Send {
                     self.record(json!({
                         "branch": $branch,
@@ -149,7 +150,7 @@ macro_rules! scripted_branches {
 }
 
 scripted_branches! {
-    openai(OpenAiCancelCall): "openai" => {
+    openai(OpenAiCancelCall, call): "openai" => {
         "is_async": call.is_async,
         "request": recorded_request(call.request),
         "api_base": call.api_base,
@@ -158,7 +159,7 @@ scripted_branches! {
         "timeout": call.timeout,
         "max_retries": call.max_retries,
     };
-    azure(AzureCancelCall): "azure" => {
+    azure(AzureCancelCall, call): "azure" => {
         "is_async": call.is_async,
         "request": recorded_request(call.request),
         "api_base": call.api_base,
@@ -167,7 +168,7 @@ scripted_branches! {
         "timeout": call.timeout,
         "max_retries": call.max_retries,
     };
-    vertex(VertexCancelCall): "vertex" => {
+    vertex(VertexCancelCall, call): "vertex" => {
         "is_async": call.is_async,
         "batch_id": call.batch_id,
         "api_base": call.api_base,
@@ -177,16 +178,18 @@ scripted_branches! {
         "timeout": call.timeout,
         "max_retries": call.max_retries,
     };
-    xai(XaiCancelCall): "xai" => {
+    xai(XaiCancelCall, call): "xai" => {
         "is_async": call.is_async,
         "batch_id": call.batch_id,
         "api_base": call.api_base,
         "api_key": call.api_key.map(|key| key.expose_secret()),
         "timeout": call.timeout,
     };
-    bedrock(BedrockCancelCall): "bedrock" => {
+    bedrock(BedrockCancelCall, call): "bedrock" => {
         "batch_id": call.batch_id,
-        "params": call.params,
+        "aws_region_name": call.params.aws_region_name.as_deref(),
+        "aws_session_token": call.params.aws_session_token.as_ref().map(|token| token.expose_secret()),
+        "timeout": call.params.timeout.as_ref(),
     };
 }
 
@@ -222,7 +225,11 @@ impl crate::helpers::Helper for Op {
                 script: input.script.clone(),
             },
             limits: ApiLimits::default(),
-            settings: input.settings.configured(&input.env),
+            settings: input
+                .settings
+                .clone()
+                .unwrap_or_default()
+                .configured(&input.env),
         };
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
