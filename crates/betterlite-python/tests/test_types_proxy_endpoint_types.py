@@ -19,12 +19,12 @@ import litellm.types.proxy.vantage_endpoints as litellm_vantage
 import pytest
 from litellm.constants import (
     MAX_CALLBACK_LOG_RECORDS,
+)
+from litellm.constants import (
     SPEND_CAPTURE_RATE_MAX_RANGE_DAYS as LITELLM_MAX_RANGE_DAYS,
 )
 from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
 
-import betterlite.types.proxy.agent_identity as agent_identity
-import betterlite.types.proxy.auth.auth_checks as auth_checks
 import betterlite.types.proxy.callback_logs_endpoints as callback_logs
 import betterlite.types.proxy.carried_budget_state as carried_budget
 import betterlite.types.proxy.claude_code_endpoints as claude_code
@@ -33,13 +33,17 @@ import betterlite.types.proxy.compliance_endpoints as compliance
 import betterlite.types.proxy.control_plane_endpoints as control_plane
 import betterlite.types.proxy.discovery_endpoints.agent_skills_endpoints as agent_skills
 import betterlite.types.proxy.discovery_endpoints.ui_discovery_endpoints as ui_discovery
-import betterlite.types.proxy.gateway_requests as gateway_requests
 import betterlite.types.proxy.model_access_group_budget as access_budget
-import betterlite.types.proxy.model_deprecation as model_deprecation
-import betterlite.types.proxy.model_listing as model_listing
 import betterlite.types.proxy.prompt_endpoints as prompts
 import betterlite.types.proxy.spend_capture_rate as spend_capture
 import betterlite.types.proxy.vantage_endpoints as vantage
+from betterlite.types.proxy import (
+    agent_identity,
+    gateway_requests,
+    model_deprecation,
+    model_listing,
+)
+from betterlite.types.proxy.auth import auth_checks
 from betterlite.types.proxy.litellm_pre_call_utils import RedactedDict, SecretFields
 
 MODEL_PAIRS: tuple[tuple[type[BaseModel], type[BaseModel]], ...] = (
@@ -399,6 +403,10 @@ def test_entra_identity_names() -> None:
 
 
 def test_error_names_match() -> None:
+    blank_key: dict[str, JsonValue] = {"api_key": " ", "integration_token": "token"}
+    blank_token: dict[str, JsonValue] = {"integration_token": ""}
+    blank_init_token: dict[str, JsonValue] = {"api_key": "key", "integration_token": " "}
+    valid_init: dict[str, JsonValue] = {"api_key": "key", "integration_token": "token"}
     with pytest.raises(ValidationError) as their_spend:
         litellm_spend_capture.SpendCaptureRateCheckSettings(lookback_days=0)
     with pytest.raises(ValidationError) as our_spend:
@@ -410,9 +418,9 @@ def test_error_names_match() -> None:
         control_plane.WorkerRegistryEntry(worker_id="w", name="n", url="ftp://worker")
     assert str(our_worker.value) == str(their_worker.value)
     with pytest.raises(ValidationError) as their_vantage:
-        litellm_vantage.VantageInitRequest(api_key=" ", integration_token="token")
+        litellm_vantage.VantageInitRequest.model_validate(blank_key)
     with pytest.raises(ValidationError) as our_vantage:
-        vantage.VantageInitRequest(api_key=" ", integration_token="token")
+        vantage.VantageInitRequest.model_validate(blank_key)
     assert str(our_vantage.value) == str(their_vantage.value)
     with pytest.raises(ValidationError) as their_blank_key:
         litellm_vantage.VantageSettingsUpdate(api_key=" ")
@@ -420,9 +428,9 @@ def test_error_names_match() -> None:
         vantage.VantageSettingsUpdate(api_key=" ")
     assert str(our_blank_key.value) == str(their_blank_key.value)
     with pytest.raises(ValidationError) as their_blank_token:
-        litellm_vantage.VantageSettingsUpdate(integration_token="")
+        litellm_vantage.VantageSettingsUpdate.model_validate(blank_token)
     with pytest.raises(ValidationError) as our_blank_token:
-        vantage.VantageSettingsUpdate(integration_token="")
+        vantage.VantageSettingsUpdate.model_validate(blank_token)
     assert str(our_blank_token.value) == str(their_blank_token.value)
     their_unset = litellm_vantage.VantageSettingsUpdate(api_key=None)
     our_unset = vantage.VantageSettingsUpdate(api_key=None)
@@ -432,14 +440,14 @@ def test_error_names_match() -> None:
     )
     our_worker_ok = control_plane.WorkerRegistryEntry(worker_id="w", name="n", url="https://worker")
     assert our_worker_ok.model_dump() == their_worker_ok.model_dump()
-    their_init_ok = litellm_vantage.VantageInitRequest(api_key="key", integration_token="token")
-    our_init_ok = vantage.VantageInitRequest(api_key="key", integration_token="token")
+    their_init_ok = litellm_vantage.VantageInitRequest.model_validate(valid_init)
+    our_init_ok = vantage.VantageInitRequest.model_validate(valid_init)
     assert our_init_ok.model_dump() == their_init_ok.model_dump()
     their_update_ok = litellm_vantage.VantageSettingsUpdate(api_key="key")
     our_update_ok = vantage.VantageSettingsUpdate(api_key="key")
     assert our_update_ok.model_dump() == their_update_ok.model_dump()
     with pytest.raises(ValidationError) as their_blank_init_token:
-        litellm_vantage.VantageInitRequest(api_key="key", integration_token=" ")
+        litellm_vantage.VantageInitRequest.model_validate(blank_init_token)
     with pytest.raises(ValidationError) as our_blank_init_token:
-        vantage.VantageInitRequest(api_key="key", integration_token=" ")
+        vantage.VantageInitRequest.model_validate(blank_init_token)
     assert str(our_blank_init_token.value) == str(their_blank_init_token.value)
