@@ -207,6 +207,22 @@ fn an_empty_environment_value_is_unset() {
 }
 
 #[test]
+fn saas_requires_credentials_at_resolution() {
+    let missing_id = resolve(
+        &credentials(Some("https://api.hiddenlayer.ai"), None, Some("secret")),
+        &BTreeMap::new(),
+    )
+    .unwrap_err();
+    assert!(matches!(missing_id, HiddenlayerError::MissingApiId));
+    let missing_key = resolve(
+        &credentials(Some("https://api.hiddenlayer.ai"), Some("client"), None),
+        &BTreeMap::new(),
+    )
+    .unwrap_err();
+    assert!(matches!(missing_key, HiddenlayerError::MissingApiKey));
+}
+
+#[test]
 fn an_empty_environment_secret_is_unset() {
     let env = BTreeMap::from([
         (
