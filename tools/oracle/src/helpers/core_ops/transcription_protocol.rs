@@ -35,31 +35,36 @@ use crate::helpers::{Helper, HelperResult};
 pub(crate) enum Function {
     Parse(ParseInput),
     Decode(DecodeInput),
-    Event(EventInput),
+    Event(Box<EventInput>),
 }
 
 #[derive(Debug, Deserialize)]
-struct ParseInput {
+pub(crate) struct ParseInput {
     payloads: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
-struct DecodeInput {
+pub(crate) struct DecodeInput {
     audio: Vec<Json>,
     max_encoded_bytes: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
 struct TokenUsageDocument {
-    input_tokens: i64,
-    output_tokens: i64,
-    total_tokens: i64,
-    text_tokens: i64,
-    audio_tokens: i64,
+    #[serde(rename = "input_tokens")]
+    input: i64,
+    #[serde(rename = "output_tokens")]
+    output: i64,
+    #[serde(rename = "total_tokens")]
+    total: i64,
+    #[serde(rename = "text_tokens")]
+    text: i64,
+    #[serde(rename = "audio_tokens")]
+    audio: i64,
 }
 
 #[derive(Debug, Deserialize)]
-struct EventInput {
+pub(crate) struct EventInput {
     event_ids: Vec<String>,
     session_id: String,
     model: String,
@@ -93,12 +98,10 @@ fn parse(fields: &ParseInput) -> Value {
     let sessions: Vec<Value> = fields
         .payloads
         .iter()
-        .map(
-            |payload| match parse_update::<ProtocolError>(payload.as_bytes(), limits) {
-                Ok(update) => session_document(&update),
-                Err(_) => Value::Null,
-            },
-        )
+        .map(|payload| {
+            parse_update::<ProtocolError>(payload.as_bytes(), limits)
+                .map_or(Value::Null, |update| session_document(&update))
+        })
         .collect();
     json!({ "sessions": sessions })
 }
@@ -122,10 +125,8 @@ fn decode(fields: &DecodeInput) -> Value {
         .audio
         .iter()
         .map(|audio| {
-            match decode_pcm16_append::<ProtocolError>(Some(audio), fields.max_encoded_bytes) {
-                Ok(bytes) => json!(bytes),
-                Err(_) => Value::Null,
-            }
+            decode_pcm16_append::<ProtocolError>(Some(audio), fields.max_encoded_bytes)
+                .map_or(Value::Null, |bytes| json!(bytes))
         })
         .collect();
     json!({ "decoded": decoded })
@@ -172,12 +173,12 @@ fn sessions(fields: &EventInput) -> (TranscriptionSession, TranscriptionSession)
 
 fn token_usage(document: &TokenUsageDocument) -> TranscriptionUsage {
     TranscriptionUsage::Tokens(Box::new(TokenUsage {
-        input_tokens: document.input_tokens,
-        output_tokens: document.output_tokens,
-        total_tokens: document.total_tokens,
+        input_tokens: document.input,
+        output_tokens: document.output,
+        total_tokens: document.total,
         input_token_details: InputTokenDetails {
-            text_tokens: document.text_tokens,
-            audio_tokens: document.audio_tokens,
+            text_tokens: document.text,
+            audio_tokens: document.audio,
         },
     }))
 }
