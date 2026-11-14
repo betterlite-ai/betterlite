@@ -39,8 +39,13 @@ impl TuningExecutionError {
     pub const fn status_code(&self) -> u16 {
         match self {
             Self::Http { status, .. } => *status,
-            Self::Credentials(_) | Self::Target(_) | Self::VertexUrl(_) | Self::Url(_) => 500,
-            Self::Header(_) | Self::Transport(_) | Self::Record(_) => 500,
+            Self::Credentials(_)
+            | Self::Target(_)
+            | Self::VertexUrl(_)
+            | Self::Url(_)
+            | Self::Header(_)
+            | Self::Transport(_)
+            | Self::Record(_) => 500,
         }
     }
 }

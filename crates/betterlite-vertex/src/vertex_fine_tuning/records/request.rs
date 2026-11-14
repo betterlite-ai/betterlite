@@ -3,6 +3,7 @@ use std::str::FromStr;
 use betterlite_openai::fine_tuning::job::FineTuneCreate;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use super::TuningRecordError;
 
@@ -17,6 +18,7 @@ pub struct VertexHyperparameters {
     #[serde(rename = "epoch_count", skip_serializing_if = "Option::is_none")]
     pub epoch_count: Option<i64>,
     #[serde(
+        default,
         skip_serializing_if = "Option::is_none",
         with = "rust_decimal::serde::arbitrary_precision_option"
     )]
@@ -51,22 +53,9 @@ pub fn to_vertex_request(
     let mut hyperparameters = VertexHyperparameters::default();
     // LiteLLM tests each hyperparameter for truthiness: null, the number 0 and "" never reach Vertex
     if let Some(raw) = create.hyperparameters.as_ref() {
-        let describe = |value| {
-            if value.is_null() {
-                (String::new(), false)
-            } else {
-                (
-                    value
-                        .as_str()
-                        .map_or_else(|| value.to_string(), str::to_owned),
-                    value.as_str().is_some(),
-                )
-            }
-        };
-        hyperparameters.epoch_count =
-            hyperparameter(raw.get("n_epochs").map(describe), "n_epochs")?;
+        hyperparameters.epoch_count = hyperparameter(raw.get("n_epochs"), "n_epochs")?;
         hyperparameters.learning_rate_multiplier = hyperparameter(
-            raw.get("learning_rate_multiplier").map(describe),
+            raw.get("learning_rate_multiplier"),
             "learning_rate_multiplier",
         )?;
     }
@@ -78,15 +67,18 @@ pub fn to_vertex_request(
 }
 
 fn hyperparameter<T>(
-    value: Option<(String, bool)>,
+    value: Option<&Value>,
     field: &'static str,
 ) -> Result<Option<T>, TuningRecordError>
 where
     T: FromStr + Default + PartialEq,
 {
-    let Some((text, from_text)) = value else {
+    let Some(value) = value.filter(|value| !value.is_null()) else {
         return Ok(None);
     };
+    let text = value
+        .as_str()
+        .map_or_else(|| value.to_string(), str::to_owned);
     if text.is_empty() {
         return Ok(None);
     }
@@ -94,7 +86,7 @@ where
         .trim()
         .parse::<T>()
         .map_err(|_error| TuningRecordError::Hyperparameter { field })?;
-    Ok((from_text || parsed != T::default()).then_some(parsed))
+    Ok((value.is_string() || parsed != T::default()).then_some(parsed))
 }
 
 fn vertex_job(

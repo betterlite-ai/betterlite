@@ -321,6 +321,7 @@ fn a_null_adapter_size_is_kept_in_the_openai_record() {
 #[case::space_separator("2024-01-01 03:04:05", 1_704_078_245)]
 #[case::minutes_only("2024-01-01T03:04", 1_704_078_240)]
 #[case::pre_epoch_fraction("1969-12-31T23:59:59.5Z", 0)]
+#[case::pre_epoch_second_fraction("1969-12-31T23:59:58.5Z", -1)]
 #[case::epoch_fraction("1970-01-01T00:00:00.9Z", 0)]
 #[case::pre_epoch("1969-12-31T23:59:59Z", -1)]
 #[case::first_year("0001-01-01T00:00:00Z", -62_135_596_800)]

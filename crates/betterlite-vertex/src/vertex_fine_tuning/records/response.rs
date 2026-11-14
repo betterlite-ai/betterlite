@@ -75,10 +75,10 @@ pub fn decode_vertex_tuning_job(
     local: &LocalTimeContext,
 ) -> Result<FineTuneJob, TuningRecordError> {
     let response: VertexTuningJob =
-        serde_json::from_slice(bytes).map_err(|source| TuningRecordError::Json(source))?;
+        serde_json::from_slice(bytes).map_err(TuningRecordError::Json)?;
     let record = openai_record(&response, local)?;
-    let encoded = serde_json::to_vec(&record).map_err(|source| TuningRecordError::Json(source))?;
-    decode_fine_tune_job(&encoded, false).map_err(|source| TuningRecordError::Job(source))
+    let encoded = serde_json::to_vec(&record).map_err(TuningRecordError::Json)?;
+    decode_fine_tune_job(&encoded, false).map_err(TuningRecordError::Job)
 }
 
 fn openai_record(
@@ -94,10 +94,10 @@ fn openai_record(
         id: response.name.clone().unwrap_or_default(),
         created_at: created_at(response.create_time.as_deref(), local),
         // LiteLLM's .get(..., "") keeps a missing name as "" but passes an explicit null through
-        fine_tuned_model: match &response.tuned_model_display_name {
-            None => Some(String::new()),
-            Some(value) => value.clone(),
-        },
+        fine_tuned_model: response
+            .tuned_model_display_name
+            .clone()
+            .unwrap_or_else(|| Some(String::new())),
         hyperparameters: openai_hyperparameters(
             spec.and_then(|spec| spec.hyperparameters.as_ref()),
         ),
@@ -130,6 +130,6 @@ fn openai_hyperparameters(values: Option<&ResponseHyperparameters>) -> OpenAiHyp
             Some(None) => None,
             Some(Some(count)) => Some(count),
         },
-        adapter_size: values.and_then(|values| values.adapter_size),
+        adapter_size: values.and_then(|values| values.adapter_size.clone()),
     }
 }
