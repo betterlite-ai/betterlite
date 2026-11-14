@@ -21,12 +21,12 @@ pub const fn as_object(value: &Json) -> Option<&IndexMap<String, Json>> {
     }
 }
 
-// Python's int(value) over the shapes a request can carry: booleans and integer literals
+// Python's int(value) over the shapes a request can carry: booleans and int-shaped numbers
 pub fn integer(value: &Json) -> Option<i64> {
     match value {
         Json::Bool(flag) => Some(i64::from(*flag)),
-        Json::Number(number) if !number.to_string().contains(['.', 'e', 'E']) => number.as_i64(),
-        Json::Null | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
+        Json::Number(number) => number.as_i64(),
+        Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
     }
 }
 

@@ -568,6 +568,21 @@ async fn adaptive_to_legacy_cap() {
             Some(DROP_ADAPTIVE_THINKING_WARNING.replacen("%s", "plain-model", 1))
         );
     }
+    for value in [r#""""#, "[]", "{}"] {
+        let request = format!(
+            r#"{{"thinking":{{"type":"adaptive"}},"max_completion_tokens":{value},"max_tokens":1500}}"#
+        );
+        let error = refused("plain-model", &request).await;
+        assert!(
+            matches!(
+                error,
+                ParamsError::NotNumber {
+                    field: "max_completion_tokens"
+                }
+            ),
+            "{value}: {error:?}"
+        );
+    }
 }
 
 const REWRITE_REQUEST: &str = r#"{"tools":[{"type":"function","function":{"name":"a","parameters":{"type":"object","properties":{}}}}],"tool_choice":"required","parallel_tool_calls":false,"stream":true,"stop":"END","temperature":0.5,"top_p":0.9,"user":"user-1","extra_headers":{"x":"1"},"cache_control":{"type":"ephemeral"},"context_management":[{"type":"compaction","compact_threshold":1000}]}"#;
@@ -600,6 +615,12 @@ async fn parameter_body_rewrites() {
     check_maps(&[
         ("plain-model", r#"{"stream":false,"user":"someone@example.com","extra_headers":null,"cache_control":"ephemeral"}"#, "{}", r#"{"extra_headers":null}"#),
         ("plain-model", r#"{"stop":["END","  "]}"#, "{}", r#"{"stop_sequences":["END","  "]}"#),
+        (
+            "plain-model",
+            r#"{"tool_choice":"required"}"#,
+            "{}",
+            r#"{"tool_choice":{"type":"any"}}"#,
+        ),
     ])
     .await;
     let stopped = map_with("plain-model", r#"{"stop":["END","  "]}"#, GLOBAL).await;
