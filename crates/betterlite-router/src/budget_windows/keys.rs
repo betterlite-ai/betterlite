@@ -8,7 +8,7 @@ pub struct WindowKeys {
 
 // LiteLLM interpolates the configured duration text into the spend key, so "1d" and "24h" name different windows
 #[must_use]
-pub fn period_label(period: &Option<BudgetPeriod>) -> &str {
+pub const fn period_label(period: &Option<BudgetPeriod>) -> &str {
     let Some(configured) = period else {
         return "None";
     };

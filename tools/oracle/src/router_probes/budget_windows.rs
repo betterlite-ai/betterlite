@@ -177,26 +177,33 @@ fn section(input: &Input) -> Result<config::Settings, String> {
             budget_duration: deployment.budget_duration.clone(),
         });
     }
-    let mut provider_budget_config = None;
-    if let Some(providers) = &input.provider_budget_config {
-        let mut resolved = IndexMap::with_capacity(providers.len());
-        for (name, provider) in providers {
-            let limit = money(provider.budget_limit.as_deref())?;
-            let duration = provider.time_period.clone();
-            resolved.insert(name.clone(), config::BudgetValues { limit, duration });
-        }
-        provider_budget_config = Some(resolved);
-    }
-    let mut tag_budget_config = None;
-    if let Some(tags) = &input.tag_budget_config {
-        let mut resolved = IndexMap::with_capacity(tags.len());
-        for (name, tag) in tags {
-            let limit = money(tag.max_budget.as_deref())?;
-            let duration = tag.budget_duration.clone();
-            resolved.insert(name.clone(), config::BudgetValues { limit, duration });
-        }
-        tag_budget_config = Some(resolved);
-    }
+    let provider_budget_config = input
+        .provider_budget_config
+        .as_ref()
+        .map(|providers| {
+            providers
+                .iter()
+                .map(|(name, provider)| -> Result<_, String> {
+                    let limit = money(provider.budget_limit.as_deref())?;
+                    let duration = provider.time_period.clone();
+                    Ok((name.clone(), config::BudgetValues { limit, duration }))
+                })
+                .collect::<Result<IndexMap<_, _>, String>>()
+        })
+        .transpose()?;
+    let tag_budget_config = input
+        .tag_budget_config
+        .as_ref()
+        .map(|tags| {
+            tags.iter()
+                .map(|(name, tag)| -> Result<_, String> {
+                    let limit = money(tag.max_budget.as_deref())?;
+                    let duration = tag.budget_duration.clone();
+                    Ok((name.clone(), config::BudgetValues { limit, duration }))
+                })
+                .collect::<Result<IndexMap<_, _>, String>>()
+        })
+        .transpose()?;
     Ok(config::Settings {
         provider_budget_config,
         tag_budget_config,
