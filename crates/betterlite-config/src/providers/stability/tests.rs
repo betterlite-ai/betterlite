@@ -6,7 +6,7 @@ use rstest::rstest;
 use secrecy::ExposeSecret;
 
 use crate::loader::ConfigLoader;
-use crate::types::Config;
+use crate::types::RouterSettings;
 
 const DEFAULT_API_BASE: &str = "https://api.stability.ai";
 
@@ -23,7 +23,7 @@ fn settings(entries: &[(&str, &str)]) -> (Option<String>, String) {
     };
     let loaded = loader.load("").expect("the empty config loads");
     assert!(loaded.model_list.is_empty());
-    let (api_key, api_base) = Config::stability_generation_settings(&loader.lookup);
+    let (api_key, api_base) = RouterSettings::stability_generation_settings(&loader.lookup);
     (api_key.map(|key| key.expose_secret().to_owned()), api_base)
 }
 

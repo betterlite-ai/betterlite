@@ -1,13 +1,14 @@
 use secrecy::SecretString;
 
 use crate::loader::EnvironmentLookup;
-use crate::types::Config;
+use crate::types::RouterSettings;
 
 const DEFAULT_API_BASE: &str = "https://api.stability.ai";
 const API_KEY_VAR: &str = "STABILITY_API_KEY";
 const API_BASE_VAR: &str = "STABILITY_API_BASE";
 
-impl Config {
+// clippy's multiple_inherent_impl gives each provider's resolver a config type of its own; searchapi holds Config
+impl RouterSettings {
     #[must_use]
     pub fn stability_generation_settings(
         lookup: &dyn EnvironmentLookup,
