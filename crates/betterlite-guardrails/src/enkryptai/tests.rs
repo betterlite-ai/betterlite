@@ -202,6 +202,15 @@ async fn enkryptai_guardrail_sends_the_policy_header_when_configured() {
     server.shutdown().await;
 }
 
+#[test]
+fn enkryptai_guardrail_supports_the_litellm_event_hooks() {
+    let guardrail = guardrail("http://127.0.0.1:1");
+    assert_eq!(
+        guardrail.base.settings.supported_event_hooks,
+        Some(super::SUPPORTED_EVENT_HOOKS.to_vec())
+    );
+}
+
 #[tokio::test]
 async fn enkryptai_guardrail_preserves_the_configured_api_base() {
     let (base, state, mut server) = serve(vec![Reply {
