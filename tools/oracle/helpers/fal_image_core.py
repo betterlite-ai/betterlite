@@ -1,5 +1,4 @@
 import os
-from collections.abc import Callable
 from typing import Literal, Protocol, TypeAlias, TypedDict
 
 from litellm.llms.fal_ai.image_generation.gpt_image_2_transformation import (
@@ -12,6 +11,7 @@ from litellm.llms.fal_ai.image_generation.transformation import (
     FalAIImageGenerationConfig,
     fal_images_to_image_objects,
 )
+from litellm.types.llms.openai import AllMessageValues
 from pydantic import JsonValue, TypeAdapter
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
@@ -21,15 +21,42 @@ MODEL = "fal-ai/model"
 
 
 class UrlConfig(Protocol):
-    get_complete_url: Callable[..., str]
+    def get_complete_url(
+        self,
+        api_base: str | None,
+        api_key: str | None,
+        model: str,
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+    ) -> str: ...
 
 
 class MappingConfig(Protocol):
-    map_openai_params: Callable[..., dict[str, JsonValue]]
+    def map_openai_params(
+        self,
+        non_default_params: dict[str, JsonValue],
+        optional_params: dict[str, JsonValue],
+        model: str,
+        drop_params: bool,
+    ) -> dict[str, JsonValue]: ...
 
 
 class AuthConfig(Protocol):
-    validate_environment: Callable[..., dict[str, str]]
+    def validate_environment(
+        self,
+        headers: dict[str, str],
+        model: str,
+        messages: list[AllMessageValues],
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+        *,
+        api_key: str | None = None,
+        api_base: str | None = None,
+    ) -> dict[str, str]: ...
+
+
+class NoMessages(list[AllMessageValues]):
+    pass
 
 
 class MappingCase(TypedDict):
@@ -155,7 +182,13 @@ def generic_base_only(call: GenericBaseOnly) -> JsonValue:
 def key_outcome(config: AuthConfig, case: KeyCase) -> JsonValue:
     try:
         headers = config.validate_environment(
-            dict(case["headers"]), MODEL, [], {}, {}, api_key=case["api_key"], api_base=None
+            dict(case["headers"]),
+            MODEL,
+            NoMessages(),
+            {},
+            {},
+            api_key=case["api_key"],
+            api_base=None,
         )
     except ValueError:
         return JSON.validate_python({"error": {"status": None}})
