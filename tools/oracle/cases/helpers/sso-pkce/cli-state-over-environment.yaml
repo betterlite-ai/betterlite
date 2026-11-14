@@ -1,0 +1,10 @@
+kind: helper
+name: sso-pkce-cli-state-over-environment
+call:
+  sso_pkce:
+    state: cli-state
+    environment:
+      GENERIC_CLIENT_STATE: environment-state
+env: {}
+compare:
+  ignore: []

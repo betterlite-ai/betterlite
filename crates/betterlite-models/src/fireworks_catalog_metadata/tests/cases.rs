@@ -109,6 +109,22 @@ const EXACT_CATALOG: &[(&str, &str)] = &[
     ),
 ];
 
+const TOOL_CHOICE_CATALOG: &[(&str, &str)] = &[
+    (
+        "fireworks_ai/short-choice",
+        r#"{"supports_tool_choice":true}"#,
+    ),
+    (
+        "fireworks_ai/accounts/fireworks/models/deep-choice",
+        r#"{"supports_tool_choice":false}"#,
+    ),
+    ("fireworks_ai/accounts/fireworks/models/empty-choice", "{}"),
+    (
+        "fireworks_ai/accounts/fireworks/routers/firerouter",
+        r#"{"supports_tool_choice":true}"#,
+    ),
+];
+
 const FUZZY_CATALOG: &[(&str, &str)] = &[
     (
         "fireworks_ai/accounts/fireworks/models/glm-5p2",
@@ -253,7 +269,31 @@ fn exact_capability() {
     exact_candidate_order();
     exact_later_candidates();
     exact_family_key();
+    exact_tool_choice();
     malformed_entries_fail();
+}
+
+fn exact_tool_choice() {
+    let catalog = catalog_of(TOOL_CHOICE_CATALOG);
+    let cases = [
+        ("short-choice", Some(true)),
+        ("deep-choice", Some(false)),
+        ("empty-choice", None),
+        ("unlisted-choice", None),
+        ("firerouter/opus", Some(true)),
+    ];
+    for (model, expected) in cases {
+        assert_eq!(
+            capability_exact(&catalog, model, Capability::ToolChoice),
+            expected,
+            "{model}"
+        );
+    }
+    // the flag reads supports_tool_choice only
+    assert_eq!(
+        capability_exact(&catalog, "short-choice", Capability::FunctionCalling),
+        None
+    );
 }
 
 fn exact_candidate_order() {
