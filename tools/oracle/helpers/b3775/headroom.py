@@ -10,8 +10,14 @@ from litellm.proxy.guardrails.guardrail_hooks.headroom.headroom import HeadroomG
 from litellm.types.integrations.custom_logger import AgenticLoopPlan
 from pydantic import JsonValue, TypeAdapter
 
-from b3775.inputs import Answer, LoggingSpec, PlanInput, ShouldRunInput
-from b3775.service import Applier, Service
+from b3775.service import (
+    Answer,
+    Applier,
+    LoggingSpec,
+    PlanInput,
+    Service,
+    ShouldRunInput,
+)
 
 JSON: Final = TypeAdapter(JsonValue)
 START_TIME: Final = datetime(2024, 1, 1, tzinfo=UTC)
@@ -107,10 +113,6 @@ async def gate(input_value: ShouldRunInput, agent: Gate) -> JsonValue:
     return result
 
 
-def should_run(input_value: ShouldRunInput) -> JsonValue:
-    return asyncio.run(gate(input_value, guardrail(None, None)))
-
-
 async def build_plan(agent: PlanBuilder, input_value: PlanInput) -> AgenticLoopPlan:
     return await agent.async_build_agentic_loop_plan(
         input_value["tools"],
@@ -128,9 +130,9 @@ async def build_plan(agent: PlanBuilder, input_value: PlanInput) -> AgenticLoopP
 async def plan_result(input_value: PlanInput, service: Service) -> JsonValue:
     agent = guardrail(input_value["api_key"], input_value["timeout"])
     agent.async_handler = AsyncHTTPHandler(transport=httpx.MockTransport(service))
-    applier: Applier = agent
+    applier = Applier(agent)
     seed = input_value["seed"]
-    await applier.apply_guardrail(
+    await applier.hook.apply_guardrail(
         {
             "structured_messages": [
                 {"role": "system", "content": "sys"},
@@ -155,13 +157,8 @@ async def plan_result(input_value: PlanInput, service: Service) -> JsonValue:
 
 def plan(input_value: PlanInput) -> JsonValue:
     seed = input_value["seed"]
-    compressed: Answer = {
-        "kind": "answer",
-        "status": 200,
-        "body": {
-            "messages": [{"role": "user", "content": "short"}],
-            "ccr_hashes": seed["hashes"],
-        },
-    }
+    messages: list[JsonValue] = [{"role": "user", "content": "short"}]
+    body: JsonValue = {"messages": messages, "ccr_hashes": seed["hashes"]}
+    compressed: Answer = {"kind": "answer", "status": 200, "body": body}
     service = Service([compressed, *input_value["replies"]])
     return asyncio.run(plan_result(input_value, service))

@@ -6,9 +6,10 @@ import socketserver
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from functools import partial
 from io import BufferedIOBase
-from typing import Final
+from typing import Final, TypeAlias
 
 import httpx
 import requests
@@ -19,17 +20,19 @@ from litellm.proxy.guardrails.guardrail_hooks.hiddenlayer.hiddenlayer import (
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
-from b3775.inputs import Answer, HiddenlayerInput, Reply, Seen
-from b3775.service import Applier
+from b3775.service import Answer, Applier, HiddenlayerInput, Reply, Seen
 
 JSON: Final = TypeAdapter(JsonValue)
 SAAS_BASE: Final = "https://api.hiddenlayer.ai"
-TOKEN_PREFIX: Final = "/oauth2/token"
+AUTH_PATH: Final = "/oauth2/token"
 INVALID_RESPONSE_PREFIX: Final = (
     "Unable to get authentication credentials for the HiddenLayer API - invalid response: "
 )
 TIMEOUT_SECONDS: Final = 0.3
 VERSION_TWO: Final = 2
+
+# LiteLLM reads timeout from the guardrail kwargs, which mypy cannot see through **kwargs
+Construct: TypeAlias = Callable[..., HiddenlayerGuardrail | HiddenlayerGuardrailV2]
 
 
 class Store:
@@ -49,11 +52,8 @@ class Store:
 
     def admit(self, path: str) -> Reply:
         with self.lock:
-            queue = self.tokens if path.startswith(TOKEN_PREFIX) else self.detection
-            if queue is None:
-                missing: Answer = {"kind": "answer", "status": 500, "body": {}}
-                return missing
-            if not queue:
+            queue = self.tokens if path.startswith(AUTH_PATH) else self.detection
+            if queue is None or not queue:
                 exhausted: Answer = {"kind": "answer", "status": 500, "body": {}}
                 return exhausted
             return queue.popleft()
@@ -98,7 +98,8 @@ class Handler(socketserver.StreamRequestHandler):
             return
         if reply["kind"] == "timeout":
             time.sleep(TIMEOUT_SECONDS)
-            reply = {"kind": "answer", "status": 200, "body": {"access_token": "late"}}
+            self.answer({"kind": "answer", "status": 200, "body": {"access_token": "late"}})
+            return
         self.answer(reply)
 
     def answer(self, reply: Answer) -> None:
@@ -116,7 +117,7 @@ class Handler(socketserver.StreamRequestHandler):
 
 
 def described(seen: list[Seen], *, tokens: bool) -> JsonValue:
-    matched = [entry for entry in seen if entry["path"].startswith(TOKEN_PREFIX) == tokens]
+    matched = [entry for entry in seen if entry["path"].startswith(AUTH_PATH) == tokens]
     return JSON.validate_python(matched)
 
 
@@ -134,15 +135,12 @@ def build(
     input_value: HiddenlayerInput, base: str
 ) -> HiddenlayerGuardrail | HiddenlayerGuardrailV2:
     api_base = SAAS_BASE if input_value["saas"] else base
-    if input_value["version"] == VERSION_TWO:
-        return HiddenlayerGuardrailV2(
-            api_id=input_value["api_id"],
-            api_key=input_value["api_key"],
-            api_base=api_base,
-            auth_url=base,
-            timeout=input_value["timeout"],
-        )
-    return HiddenlayerGuardrail(
+    constructor: Construct = (
+        HiddenlayerGuardrailV2
+        if input_value["version"] == VERSION_TWO
+        else HiddenlayerGuardrail
+    )
+    return constructor(
         api_id=input_value["api_id"],
         api_key=input_value["api_key"],
         api_base=api_base,
@@ -164,12 +162,12 @@ def construct(input_value: HiddenlayerInput, base: str) -> tuple[Applier | None,
         return None, classify_runtime(str(error))
     if input_value["saas"]:
         agent.api_base = base
-    return agent, None
+    return Applier(agent), None
 
 
 async def detect(agent: Applier) -> JsonValue:
     try:
-        await agent.apply_guardrail(
+        await agent.hook.apply_guardrail(
             {"structured_messages": [{"role": "user", "content": "hello"}]},
             {},
             "request",
@@ -185,18 +183,22 @@ async def detect(agent: Applier) -> JsonValue:
 def run(input_value: HiddenlayerInput) -> JsonValue:
     os.environ.update(input_value["env"])
     store = Store(input_value["tokens"], input_value["detection"])
-    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), partial(Handler, store)) as server:
-        server.daemon_threads = True
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+    server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), partial(Handler, store))
+    server.daemon_threads = True
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
         base = f"http://127.0.0.1:{server.server_address[1]}"
         agent, raised = construct(input_value, base)
         if agent is not None and input_value["detection"] is not None:
             raised = asyncio.run(detect(agent))
         seen = store.calls()
-        return JSON.validate_python(
-            {
-                "raised": raised,
-                "token_requests": described(seen, tokens=True),
-                "detection_requests": described(seen, tokens=False),
-            }
-        )
+        payload: dict[str, JsonValue] = {
+            "raised": raised,
+            "token_requests": described(seen, tokens=True),
+            "detection_requests": described(seen, tokens=False),
+        }
+        return JSON.validate_python(payload)
+    finally:
+        server.shutdown()
+        server.server_close()
