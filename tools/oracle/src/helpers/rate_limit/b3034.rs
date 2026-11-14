@@ -8,13 +8,17 @@ use tokio::sync::Mutex;
 
 use betterlite_rate_limit::atomic_counter::payload::IncrementAmounts;
 use betterlite_rate_limit::fail_closed::FailClosedPolicy;
-use betterlite_rate_limit::limiter_records::{CacheCounterValue, RateLimitDescriptor};
+use betterlite_rate_limit::limiter_records::{
+    CacheCounterValue, RateLimitDescriptor, RateLimitResponse,
+};
 use betterlite_rate_limit::rate_limit_window_store::{
     CounterScript, RequestBatchSource, WindowStore,
 };
 use betterlite_rate_limit::settlement_and_rollback::AtomicSettlement;
 use serde::Deserialize;
 use serde_json::json;
+
+use crate::helpers::HelperError;
 
 use fakes::{FixedClock, PlannedBatch, PlannedBatchSource, PlannedScript, RecordingCache};
 use output::{response_json, settlement_error};
@@ -73,37 +77,15 @@ impl crate::helpers::Helper for Op {
         let batch = input
             .pipelined
             .then(|| Arc::new(PlannedBatch::new(input.replies.clone())));
-        let request_batch: Option<Arc<dyn RequestBatchSource>> = batch.as_ref().map(|batch| {
-            Arc::new(PlannedBatchSource {
-                batch: Arc::clone(batch),
-            })
-        });
-        let store = WindowStore {
-            cache: Arc::clone(&cache),
-            rate_limiter_script: None,
-            counter_read_script: None,
-            request_batch,
-            check_and_increment_lock: Mutex::new(()),
-        };
+        let store = window_store(Arc::clone(&cache), batch.as_ref());
         let clock = FixedClock::at(input.now);
-        let script: Arc<dyn CounterScript> = Arc::clone(&main_script);
-        let refunds: Arc<dyn CounterScript> = Arc::clone(&refund_script);
-        let settlement = AtomicSettlement {
-            windows: &store,
-            clock: &clock,
-            script: Some(script),
-            refund_script: Some(refunds),
-            fail_closed: FailClosedPolicy {
-                enabled: input.fail_closed,
-            },
-            default_window_size: input.window_size,
-        };
-        let runtime = tokio::runtime::Builder::new_current_thread().build()?;
-        let response = runtime
-            .block_on(
-                settlement.atomic_check_and_increment_by_n(&input.descriptors, &input.increments),
-            )
-            .map_err(settlement_error)?;
+        let response = settle(
+            input,
+            &store,
+            &clock,
+            Arc::clone(&main_script),
+            Arc::clone(&refund_script),
+        )?;
         let calls = match &batch {
             Some(batch) => batch.calls(),
             None => main_script.calls(),
@@ -116,4 +98,46 @@ impl crate::helpers::Helper for Op {
             "writes": cache.writes(),
         }))
     }
+}
+
+fn window_store(cache: Arc<RecordingCache>, batch: Option<&Arc<PlannedBatch>>) -> WindowStore {
+    WindowStore {
+        cache,
+        rate_limiter_script: None,
+        counter_read_script: None,
+        request_batch: batch_source(batch),
+        check_and_increment_lock: Mutex::new(()),
+    }
+}
+
+fn batch_source(batch: Option<&Arc<PlannedBatch>>) -> Option<Arc<dyn RequestBatchSource>> {
+    let planned = batch?;
+    let source = PlannedBatchSource {
+        batch: Arc::clone(planned),
+    };
+    let shared: Arc<dyn RequestBatchSource> = Arc::new(source);
+    Some(shared)
+}
+
+fn settle(
+    input: &Input,
+    store: &WindowStore,
+    clock: &FixedClock,
+    script: Arc<dyn CounterScript>,
+    refund_script: Arc<dyn CounterScript>,
+) -> Result<RateLimitResponse, Box<HelperError>> {
+    let settlement = AtomicSettlement {
+        windows: store,
+        clock,
+        script: Some(script),
+        refund_script: Some(refund_script),
+        fail_closed: FailClosedPolicy {
+            enabled: input.fail_closed,
+        },
+        default_window_size: input.window_size,
+    };
+    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+    runtime
+        .block_on(settlement.atomic_check_and_increment_by_n(&input.descriptors, &input.increments))
+        .map_err(settlement_error)
 }
