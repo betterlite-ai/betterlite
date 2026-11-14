@@ -170,12 +170,9 @@ fn select_params(vendor: OciVendor, optional_params: &Object, token_key: &str) -
             selected.insert(target.to_owned(), value.clone());
         }
     }
-    if !selected.contains_key(token_key) {
-        selected.insert(
-            token_key.to_owned(),
-            Json::Number(Number::from(DEFAULT_MAX_TOKENS)),
-        );
-    }
+    selected
+        .entry(token_key.to_owned())
+        .or_insert(Json::Number(Number::from(DEFAULT_MAX_TOKENS)));
     selected
 }
 
