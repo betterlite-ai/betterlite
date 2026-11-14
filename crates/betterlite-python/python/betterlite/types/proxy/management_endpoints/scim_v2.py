@@ -11,7 +11,7 @@ from pydantic import (
 )
 from typing_extensions import override
 
-from betterlite.types.utils.base import DumpOptions
+from betterlite.types.utils.base import Dumpable, DumpOptions
 
 SCIM_ENTERPRISE_USER_SCHEMA: Final[str] = (
     "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"
@@ -26,14 +26,6 @@ SCIM_TEAM_DATA_METADATA_KEY: Final[str] = "scim_data"
 _ALIASED_CONFIG: Final[ConfigDict] = ConfigDict(
     serialize_by_alias=True, validate_by_name=True
 )
-
-
-def _absent(value: JsonValue | BaseModel) -> bool:
-    match value:
-        case None:
-            return True
-        case BaseModel() | str() | bool() | int() | float() | list() | dict():
-            return False
 
 
 class _SCIMBase(BaseModel):
@@ -93,11 +85,13 @@ class SCIMMultiValuedAttribute(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def coerce_bare_string(cls, data: JsonValue | BaseModel) -> JsonValue | BaseModel:
+    def coerce_bare_string(cls, data: JsonValue | Dumpable) -> JsonValue | Dumpable:
         match data:
             case str():
                 return {"value": data}
-            case None | bool() | int() | float() | list() | dict() | BaseModel():
+            case Dumpable():
+                return data
+            case bool() | int() | float() | list() | dict() | None:
                 return data
 
 
@@ -131,6 +125,14 @@ class SCIMEnterpriseUser(_SCIMBase):
     manager: SCIMUserManager | None = None
 
 
+def _absent(value: JsonValue | Dumpable) -> bool:
+    if value is None:
+        return True
+    match value:
+        case Dumpable() | bool() | int() | float() | str() | list() | dict():
+            return False
+
+
 class SCIMUser(SCIMResource):
     model_config: ClassVar[ConfigDict] = _ALIASED_CONFIG
 
@@ -146,8 +148,8 @@ class SCIMUser(SCIMResource):
     roles: list[SCIMMultiValuedAttribute] | None = Field(default=None, exclude_if=_absent)
     enterprise_user: SCIMEnterpriseUser | None = Field(
         default=None,
-        alias=SCIM_ENTERPRISE_USER_SCHEMA,
-        serialization_alias=SCIM_ENTERPRISE_USER_SCHEMA,
+        alias="urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+        serialization_alias="urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
         exclude_if=_absent,
     )
 
@@ -159,11 +161,11 @@ class SCIMMember(_SCIMBase):
 
     @field_validator("type", mode="before")
     @classmethod
-    def normalize_type(cls, value: JsonValue | BaseModel) -> str | None:
+    def normalize_type(cls, value: JsonValue | Dumpable) -> str | None:
         match value:
             case str():
                 return value
-            case None | bool() | int() | float() | list() | dict() | BaseModel():
+            case Dumpable() | bool() | int() | float() | list() | dict() | None:
                 return None
 
 

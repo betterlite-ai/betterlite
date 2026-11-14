@@ -4,6 +4,7 @@ from typing import ClassVar, Final, Literal, TypeAlias
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from betterlite.types.llms.base import LiteLLMPydanticObjectBase
+from betterlite.types.utils.base import Dumpable
 
 TeamIdSearchMatch: TypeAlias = Literal["exact", "prefix"]
 
@@ -138,13 +139,13 @@ class TeamMemberRef(LiteLLMPydanticObjectBase):
 
     @model_validator(mode="before")
     @classmethod
-    def check_user_info(cls, values: JsonValue | BaseModel) -> JsonValue | BaseModel:
+    def check_user_info(cls, values: JsonValue | Dumpable) -> JsonValue | Dumpable:
         match values:
             case dict():
                 if values.get("user_id") is None and values.get("user_email") is None:
                     raise ValueError("Either user id or user email must be provided")
                 return values
-            case None | bool() | int() | float() | str() | list() | BaseModel():
+            case Dumpable() | bool() | int() | float() | str() | list() | None:
                 return values
 
     @model_validator(mode="after")
@@ -188,7 +189,9 @@ class BulkTeamMemberBudgetUpdateRequest(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
 
     members: tuple[TeamMemberBudgetPatch, ...] = Field(
-        min_length=1, max_length=MAX_BULK_TEAM_MEMBER_BUDGET_UPDATES
+        min_length=1,
+        # ast-grep-ignore: no-long-names
+        max_length=MAX_BULK_TEAM_MEMBER_BUDGET_UPDATES,
     )
 
 
