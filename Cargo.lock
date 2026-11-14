@@ -1617,6 +1617,7 @@ dependencies = [
  "aws-types",
  "base64 0.23.1",
  "betterlite-env",
+ "betterlite-models",
  "betterlite-openai",
  "betterlite-postgres-fixture",
  "betterlite-roi",
