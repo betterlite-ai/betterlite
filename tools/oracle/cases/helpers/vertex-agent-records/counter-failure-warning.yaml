@@ -1,0 +1,16 @@
+kind: helper
+name: vertex-agent-records-counter-failure-warning
+call:
+  vertex_agent_records:
+    operation: response
+    calls:
+      - status: 200
+        body: |-
+          {"content":{"parts":[{"text":"kept"}]}}
+        model: agent_engine/7
+        messages: [{role: user, content: hi}]
+        prompt_tokens: 3
+        completion_tokens: 2
+        counter: failure
+env: {}
+compare: {ignore: []}

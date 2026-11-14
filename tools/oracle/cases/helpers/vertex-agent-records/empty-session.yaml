@@ -1,0 +1,20 @@
+kind: helper
+name: vertex-agent-records-empty-session
+call:
+  vertex_agent_records:
+    operation: request
+    calls:
+      - messages: [{role: user, content: hi}]
+        non_default_params: {}
+        optional_params: {session_id: ""}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - messages: [{role: user, content: hi}]
+        non_default_params: {}
+        optional_params: {session_id: null}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - messages: [{role: user, content: hi}]
+        non_default_params: {}
+        optional_params: {session_id: session}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+env: {}
+compare: {ignore: []}

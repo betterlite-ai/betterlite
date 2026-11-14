@@ -1,0 +1,25 @@
+kind: helper
+name: vertex-agent-records-last-snapshot
+call:
+  vertex_agent_records:
+    operation: response
+    calls:
+      - status: 200
+        body: |-
+          {"content":{"parts":[{"text":"first"}]}}
+          {"content":{"parts":[{"text":"second"}]}}
+          {"content":{"parts":[{"text":"third"}]}}
+        model: agent_engine/7
+        messages: [{role: user, content: hi}]
+        prompt_tokens: 4
+        completion_tokens: 1
+        counter: fixed
+      - status: 200
+        body: ''
+        model: agent_engine/7
+        messages: [{role: user, content: hi}]
+        prompt_tokens: 4
+        completion_tokens: 0
+        counter: fixed
+env: {}
+compare: {ignore: []}

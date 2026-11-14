@@ -1,0 +1,18 @@
+task: B1386
+deviations:
+  - what: >-
+      A buffered object whose content, parts, part or actions/state_delta the source cannot index
+      (content null, parts null, a part that is not an object, a text value that is not a string)
+      contributes no text; LiteLLM raises VertexAgentEngineError with the raw status, 200 for these bodies.
+    why: A provider error reporting the response's own 200 status is a bug no working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L244-L282
+  - what: >-
+      A buffered body that is not UTF-8 is an Agent Engine error carrying the raw status; LiteLLM decodes
+      it through httpx, which replaces invalid bytes and then ignores the lines that stop parsing.
+    why: The repository refuses bytes that are not UTF-8 instead of mangling them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L301-L303
+  - what: >-
+      A model needing a project with none configured, an empty message list, and a non-string user_id,
+      user or session_id answer 400 naming the field; LiteLLM lets ValueError or IndexError become a 500.
+    why: The request is at fault, so the 4xx the compatibility policy assigns to it replaces the 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L126-L128
