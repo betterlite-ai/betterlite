@@ -804,7 +804,8 @@ def test_google_genai_names(report: Report) -> None:
     assert betterlite["common"]["request_config"] == {"temperature": 0.5}
     assert betterlite["common"]["request_tools"] == [{"name": "x"}]
     assert betterlite["common"]["request_missing_tools"] == [None]
-    assert betterlite["common"]["parameters_dict"] == {"contents": []}
+    assert list(betterlite["common"]["parameters_dict"]) == ["contents"]
+    assert betterlite["common"]["parameters_dict"]["contents"] == []
     assert betterlite["common"]["config_dict"] == {"temperature": 0.2}
     assert betterlite["common"]["plain_dump"] == {}
     assert betterlite["common"]["response_hidden"] == {"model_id": "m"}
