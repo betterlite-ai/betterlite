@@ -131,7 +131,7 @@ async fn a_teams_only_configuration_flushes_when_the_queue_is_full() {
     assert!(fixture.delivery.queue.pending().is_empty());
     assert_eq!(fixture.delivery.delivery.request_count(), 1);
     let requests = fixture.delivery.delivery.take_requests();
-    let body = String::from_utf8(requests[0].body.clone()).unwrap();
+    let body = std::str::from_utf8(&requests[0].body).expect("the teams payload is UTF-8");
     assert!(body.contains("AdaptiveCard"));
 }
 

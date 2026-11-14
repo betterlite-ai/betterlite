@@ -177,7 +177,7 @@ where
     fn enqueue_slack(&self, webhook_url: &WebhookUrl, alert_type: AlertType, formatted: &str) {
         let urls: &[SecretString] = match webhook_url {
             WebhookUrl::Single(url) => slice::from_ref(url),
-            WebhookUrl::Multiple(urls) => urls,
+            WebhookUrl::Multiple(urls) => urls.as_slice(),
         };
         for url in urls {
             let _enqueued = self.delivery.queue.enqueue(AlertQueueItem {
