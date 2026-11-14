@@ -295,13 +295,28 @@ fn a_single_text_tool_part_with_a_null_text_keeps_null() {
 #[test]
 fn any_other_tool_content_list_becomes_python_json_text() {
     let transformed = tool_messages(
-        r#"[{"role": "tool", "content": [{"type": "text", "text": "café"}, {"type": "image_url", "image_url": {"url": "x"}}]}]"#,
+        r#"[{"role": "tool", "content": [{"type": "text", "text": "café"}, {"type": "text", "text": "done"}]}]"#,
     );
+    // Python's json.dumps escapes non-ASCII, so the content text keeps a literal backslash-u escape
     let expected = serde_json::json!({
         "role": "tool",
-        "content": r#"[{"type": "text", "text": "café"}, {"type": "image_url", "image_url": {"url": "x"}}]"#,
+        "content": r#"[{"type": "text", "text": "caf\u00e9"}, {"type": "text", "text": "done"}]"#,
     });
     assert_eq!(serde_json::to_value(&transformed[0]).unwrap(), expected);
+}
+
+// only a part whose type is text may supply its text value, even when another part type carries a text key
+#[test]
+fn a_single_non_text_tool_part_keeps_its_python_json_text() {
+    let transformed =
+        tool_messages(r#"[{"role": "tool", "content": [{"type": "audio", "text": "kept"}]}]"#);
+    assert_eq!(
+        serde_json::to_value(&transformed[0]).unwrap(),
+        serde_json::json!({
+            "role": "tool",
+            "content": r#"[{"type": "audio", "text": "kept"}]"#,
+        })
+    );
 }
 
 #[test]
