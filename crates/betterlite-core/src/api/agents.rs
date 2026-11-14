@@ -90,11 +90,11 @@ impl AgentsApiError {
 }
 
 // what LiteLLM's _make_logging_obj reads besides the logging object itself
-pub struct AgentLoggingCall<'a> {
-    pub kwargs: &'a IndexMap<String, Json>,
-    pub model: &'a str,
-    pub custom_llm_provider: &'a str,
-    pub call_type: &'a str,
+pub struct AgentLoggingCall<'call> {
+    pub kwargs: &'call IndexMap<String, Json>,
+    pub model: &'call str,
+    pub custom_llm_provider: &'call str,
+    pub call_type: &'call str,
     pub optional_params: IndexMap<String, Json>,
 }
 
@@ -116,7 +116,7 @@ pub fn make_logging_obj(
         "custom_llm_provider".to_owned(),
         Json::Text(call.custom_llm_provider.to_owned()),
     );
-    logging.call_type = call.call_type.to_owned();
+    call.call_type.clone_into(&mut logging.call_type);
     update_from_kwargs(
         logging,
         call.kwargs,
