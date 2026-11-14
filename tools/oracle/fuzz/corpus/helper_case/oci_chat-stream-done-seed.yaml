@@ -1,0 +1,10 @@
+kind: helper
+name: oci-chat-stream-done-seed
+call:
+  b5843:
+    function: stream
+    reads:
+      - "data: {\"apiFormat\": \"COHERE\", \"text\": \"hi\"}\n"
+      - "data: [DONE]\n"
+env: {}
+compare: {ignore: []}
