@@ -1,0 +1,12 @@
+kind: helper
+name: fal-image-core-bool-dimensions-excluded
+call:
+  fal_image_core:
+    operation: bool_dimensions_excluded
+    replies:
+      - status: 200
+        headers: {}
+        body: '{"images": [{"width": true, "height": false}, {"width": 0}, {"width": -3}, {"width": 1.5}, {"width": "10"}, {"width": 1024, "height": 768}, {"height": 480, "content_type": ""}]}'
+env: {}
+compare:
+  ignore: []

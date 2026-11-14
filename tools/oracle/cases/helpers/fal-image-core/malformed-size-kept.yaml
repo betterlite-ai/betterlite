@@ -1,0 +1,25 @@
+kind: helper
+name: fal-image-core-malformed-size-kept
+call:
+  fal_image_core:
+    operation: malformed_size_kept
+    sizes:
+      - "1024x768"
+      - "1024X768"
+      - " 10 x 20 "
+      - "-5x+6"
+      - "1_0x20"
+      - "auto"
+      - "AUTO"
+      - "10x20x30"
+      - "10x"
+      - "10.5x20"
+      - "abcxdef"
+      - ""
+      - 7
+      - true
+      - null
+      - {width: 5}
+env: {}
+compare:
+  ignore: []

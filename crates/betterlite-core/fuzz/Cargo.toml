@@ -230,3 +230,10 @@ path = "fuzz_targets/messages_sse_events.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fal_image_reply"
+path = "fuzz_targets/fal_image_reply.rs"
+test = false
+doc = false
+bench = false
