@@ -73,5 +73,5 @@ pitfalls:
   - A thoughtSignature returned on an edit image is not copied into provider_specific_fields.
   - usageMetadata is retained even when all inline image strings are empty.
   - use_multipart_form_data returns false although the proxy accepts a multipart image edit request.
-budget: {max_changed_lines: 500, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: standard

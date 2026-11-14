@@ -93,5 +93,5 @@ pitfalls:
   - A string upload value is JSONL content even when it resembles a filesystem path.
   - Passing passthrough=1 must not activate the source's is True branch.
   - 'A custom_id already ending in #0/2 must be escaped before a real fan-out suffix is appended.'
-budget: {max_changed_lines: 725, max_new_expects: 1}
+budget: {max_changed_lines: 1500, max_new_expects: 1}
 review_level: standard
