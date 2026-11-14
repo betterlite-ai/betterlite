@@ -1,0 +1,5 @@
+task: B7946
+deviations:
+  - what: "Fields whose LiteLLM type comes from a module with no Python mirror owner are typed as dict[str, JsonValue] or as the fields of LiteLLM's base model: CustomerResponse.litellm_budget_table and object_permission, BlockUsersResponse.blocked_users, UserListResponse.users, BulkUpdateUserRequest.users and user_updates, BulkUpdateKeyRequestItem.object_permission, KeyUpdateFields.budget_limits, model_max_budget, model_rpm_limit, model_tpm_limit and metadata, CustomKeyPolicyRequest.existing_key, effective_key and request, and ModelGroupInfoProxy.configurable_clientside_auth_params."
+    why: "litellm.proxy._types, litellm.models.*, litellm.models.verification_token and litellm.types.router have no betterlite Python module to import, so the port keeps the declared field names and the raw JSON shape instead of inventing counterpart classes; the task records this as the known base gap."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1289-L1327
