@@ -1,0 +1,65 @@
+task: B7939
+deviations:
+  - what: >-
+      Fields and TypedDict entries that LiteLLM types as Any, object, a bare dict or a bare list are
+      typed JsonValue, dict[str, JsonValue] or list[JsonValue] here. This covers the datadog_llm_obs
+      payloads, the argilla item fields, LangsmithInputs.messages, .input and .original_response,
+      LangsmithQueueObject.data, DatadogProxyFailureHookJsonMessage.user_api_key_dict,
+      PagerDutyPayload.custom_details, GCSLogQueueItem.kwargs and response_obj, LLMObsPayload.tags
+      and AgenticLoopPlan.response_override.
+    why: >-
+      The Python rules forbid Any and object in annotations, and JsonValue is the JSON type the wheel
+      uses. A JSON body validates the same; a non-JSON Python object, which Any, object and bare
+      dict accept, is rejected here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/datadog_llm_obs.py#L74
+  - what: >-
+      CBFRecord subclasses dict[str, JsonValue] and CBFRecordDict is dict[str, JsonValue], where
+      LiteLLM writes dict[str, Any].
+    why: >-
+      Same rule and the same validation difference as above; every CBF field is a JSON scalar or
+      string. The forward slashes in the CBF field names still rule out a TypedDict, so the dict
+      subclass stays.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/cloudzero.py#L4
+  - what: >-
+      DataDogStatus, LangfuseSpanAttributes and WeaveSpanAttributes derive from enum.StrEnum instead
+      of (str, Enum).
+    why: >-
+      Ruff UP042 requires StrEnum for a str-mixin Enum. Member names, values, comparisons to str and
+      JSON serialization are unchanged; the span attribute strings sent to the backend are the same,
+      and str() and repr text is not part of parity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/weave_otel.py#L18
+  - what: >-
+      Protocol is always the declared Literal["otlp_grpc", "otlp_http"] in arize.py, arize_phoenix.py
+      and langfuse_otel.py. LiteLLM assigns that Literal only under TYPE_CHECKING and assigns Any at
+      runtime, so its ArizeConfig.protocol, ArizePhoenixConfig.protocol and
+      LangfuseOtelConfig.protocol validate any value and carry no literals in their JSON schema.
+    why: >-
+      The Python rules reject TYPE_CHECKING aliases, and the declared type is the parity target.
+      Betterlite therefore rejects a protocol string outside the two declared values, where a
+      LiteLLM run accepts it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/arize.py#L5-L8
+  - what: >-
+      GCSLoggingConfig.vertex_instance is JsonValue. LiteLLM types it as VertexBase, which its
+      TYPE_CHECKING branch imports from litellm.llms.vertex_ai.vertex_llm_base and its runtime branch
+      sets to Any.
+    why: >-
+      The wheel has no vertex_llm_base port and the rules reject TYPE_CHECKING imports, so the field
+      carries the JSON value any working LiteLLM setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/gcs_bucket.py#L24
+  - what: >-
+      GCSLogQueueItem.payload is Mapping[str, JsonValue]. LiteLLM types it as StandardLoggingPayload
+      from litellm.types.utils.
+    why: >-
+      Betterlite has no StandardLoggingPayload port yet; types/utils belongs to B5657. The queue
+      item still carries the logging payload mapping, and the narrowed field is replaced by the
+      ported type when it lands.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/gcs_bucket.py#L33
+  - what: >-
+      pagerduty.py defines StandardLoggingUserAPIKeyMetadata with LiteLLM's twenty keys, where
+      LiteLLM imports it from litellm.types.utils. It is therefore an extra public name in that
+      module, and PagerDutyInternalEvent inherits the same required keys as in LiteLLM.
+    why: >-
+      Betterlite has no StandardLoggingUserAPIKeyMetadata port yet; types/utils belongs to B5657.
+      Defining the exact key set keeps PagerDutyInternalEvent's keys and required keys equal, and the
+      definition moves to types/utils when that port lands.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2843
