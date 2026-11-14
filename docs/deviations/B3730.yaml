@@ -1,0 +1,10 @@
+task: B3730
+deviations:
+  - what: >-
+      The default severity threshold is 2, the modern guardrail's own default, where the legacy
+      Azure Content Safety hook in the same crate defaults to 4.
+    why: >-
+      B3728 owns the legacy hook with its SDK-backed default of 4. This modern hook keeps
+      LiteLLM's default_severity_threshold of 2 so a config that sets no threshold behaves as it
+      does against LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/text_moderation.py#L46

@@ -1,0 +1,15 @@
+kind: helper
+name: studio-agents-successful-empty-delete
+call:
+  studio_agents:
+    calls:
+      - function: delete
+        name: my-agent
+        status: 200
+        body: "{}"
+      - function: delete
+        name: my-agent
+        status: 204
+        body: ""
+env: {}
+compare: {ignore: []}

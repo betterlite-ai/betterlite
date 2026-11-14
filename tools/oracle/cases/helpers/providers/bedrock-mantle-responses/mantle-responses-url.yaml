@@ -1,0 +1,21 @@
+kind: helper
+name: mantle-responses-url
+call:
+  bedrock_mantle_responses:
+    mantle_responses_url:
+      cases:
+        - {}
+        - api_base: https://bedrock-mantle.eu-west-1.api.aws/leftover/path
+          aws_region_name: us-west-2
+        - api_base: https://x.example.com/v1/
+          use_openai_path: false
+        - api_base: https://x.example.com/openai/v1/responses
+        - api_base: "https://bedrock-mantle.eu-west-1.api.aws\n"
+        - aws_region_name: US-EAST-1
+        - environment: {BEDROCK_MANTLE_API_BASE: https://mantle-proxy.example.com/v1}
+        - environment: {BEDROCK_MANTLE_REGION: eu-west-3}
+        - environment: {AWS_REGION_NAME: ap-south-1}
+        - api_base: https://bedrock-mantle.us-east-2.api.aws
+          aws_region_name: sa-east-1
+env: {}
+compare: {ignore: []}
