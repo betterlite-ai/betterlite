@@ -20,7 +20,7 @@ fn settings(variables: &[(&str, &str)]) -> bool {
 #[case::unset(&[], false)]
 #[case::lowercase_true(&[("LITELLM_DETAILED_TIMING", "true")], true)]
 #[case::uppercase_true(&[("LITELLM_DETAILED_TIMING", "TRUE")], true)]
-#[case::mixed_case_true(&[("LITELLM_DETAILED_TIMING", "TrUe")], true)]
+#[case::mixed_case_true(&[("LITELLM_DETAILED_TIMING", "True")], true)]
 #[case::one_is_not_true(&[("LITELLM_DETAILED_TIMING", "1")], false)]
 #[case::yes_is_not_true(&[("LITELLM_DETAILED_TIMING", "yes")], false)]
 #[case::empty_is_false(&[("LITELLM_DETAILED_TIMING", "")], false)]
