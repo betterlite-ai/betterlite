@@ -1,6 +1,7 @@
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::Object as JsonMap;
+use rust_decimal::Decimal;
 use serde::Deserialize;
 
 #[derive(Debug, thiserror::Error)]
@@ -15,8 +16,10 @@ pub enum CustomHeadersError {
 pub struct KeyHeaderView {
     pub tpm_limit: Option<i64>,
     pub rpm_limit: Option<i64>,
-    pub max_budget: Option<f64>,
-    pub spend: Option<f64>,
+    #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
+    pub max_budget: Option<Decimal>,
+    #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
+    pub spend: Option<Decimal>,
     pub allowed_model_region: Option<String>,
 }
 
@@ -49,7 +52,8 @@ pub struct CustomHeadersInput {
     pub model_region: Option<String>,
     pub response_cost: Option<JsonValue>,
     pub hidden_params: JsonMap,
-    pub fastest_response_batch_completion: Option<bool>,
+    #[serde(rename = "fastest_response_batch_completion")]
+    pub fastest_batch: Option<bool>,
     pub request_data: JsonMap,
     pub timeout: Option<f64>,
     pub logging: Option<LoggingHeaderView>,
@@ -72,8 +76,8 @@ pub(super) fn resolved_call_id(input: &CustomHeadersInput) -> Option<String> {
         input.hidden_params.get("litellm_call_id"),
         input.request_data.get("litellm_call_id"),
     ] {
-        if let Some(value) = candidate.filter(|value| truthy(value)) {
-            return python_str("x-litellm-call-id", value);
+        if let Some(value) = candidate.filter(|value| non_empty(value)) {
+            return header_text("x-litellm-call-id", value);
         }
     }
     None
@@ -95,8 +99,8 @@ pub(super) fn deployment_model_name(logging: Option<&LoggingHeaderView>) -> Opti
         let Some(JsonValue::Object(metadata)) = params.get(bucket) else {
             continue;
         };
-        if let Some(deployment) = metadata.get("deployment").filter(|value| truthy(value)) {
-            return python_str("x-litellm-model-name", deployment);
+        if let Some(deployment) = metadata.get("deployment").filter(|value| non_empty(value)) {
+            return header_text("x-litellm-model-name", deployment);
         }
     }
     None
@@ -120,21 +124,20 @@ pub(super) fn timing_values(
             .as_ref()
             .and_then(|logging| logging.response_timing_metrics.as_ref())
     };
-    match source {
-        Some(values) => (
+    source.map_or((None, None), |values| {
+        (
             values.get("_response_ms"),
             values.get("litellm_overhead_time_ms"),
-        ),
-        None => (None, None),
-    }
+        )
+    })
 }
 
 // Python's str() of a JSON value; a list or object has no header text and is left out
-pub(super) fn python_str(header: &str, value: &JsonValue) -> Option<String> {
+pub(super) fn header_text(header: &str, value: &JsonValue) -> Option<String> {
     match value {
         JsonValue::Null => Some("None".to_owned()),
         JsonValue::Bool(flag) => Some(if *flag { "True" } else { "False" }.to_owned()),
-        JsonValue::Number(number) => Some(python_number(number)),
+        JsonValue::Number(number) => Some(number_text(number)),
         JsonValue::String(text) => Some(text.clone()),
         JsonValue::Array(_) | JsonValue::Object(_) => {
             tracing::warn!(
@@ -146,15 +149,15 @@ pub(super) fn python_str(header: &str, value: &JsonValue) -> Option<String> {
     }
 }
 
-fn python_number(number: &serde_json::Number) -> String {
+fn number_text(number: &serde_json::Number) -> String {
     match number.as_f64() {
-        Some(float) if number.is_f64() => python_float(float),
+        Some(float) if number.is_f64() => float_text(float),
         Some(_) | None => number.to_string(),
     }
 }
 
 // Python's float repr stays in fixed notation only for decimal exponents -4 through 15
-pub(super) fn python_float(value: f64) -> String {
+pub(super) fn float_text(value: f64) -> String {
     if value.is_nan() {
         return "nan".to_owned();
     }
@@ -165,7 +168,7 @@ pub(super) fn python_float(value: f64) -> String {
             "inf".to_owned()
         };
     }
-    if value == 0.0 || (1e-4_f64..1e16_f64).contains(&value.abs()) {
+    if value == 0.0_f64 || (1e-4_f64..1e16_f64).contains(&value.abs()) {
         let fixed = value.to_string();
         let point = if fixed.contains('.') { "" } else { ".0" };
         return format!("{fixed}{point}");
@@ -180,11 +183,11 @@ pub(super) fn python_float(value: f64) -> String {
     }
 }
 
-pub(super) fn truthy(value: &JsonValue) -> bool {
+pub(super) fn non_empty(value: &JsonValue) -> bool {
     match value {
         JsonValue::Null => false,
         JsonValue::Bool(flag) => *flag,
-        JsonValue::Number(number) => number.as_f64().is_none_or(|float| float != 0.0),
+        JsonValue::Number(number) => number.as_f64().is_none_or(|float| float != 0.0_f64),
         JsonValue::String(text) => !text.is_empty(),
         JsonValue::Array(items) => !items.is_empty(),
         JsonValue::Object(fields) => !fields.is_empty(),

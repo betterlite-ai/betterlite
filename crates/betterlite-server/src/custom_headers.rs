@@ -11,8 +11,8 @@ mod tests;
 
 use cost::BreakdownHeaders;
 use input::{
-    CustomHeadersInput, KeyHeaderView, api_base, deployment_model_name, python_float, python_str,
-    resolved_call_id, timing_values, truthy,
+    CustomHeadersInput, KeyHeaderView, api_base, deployment_model_name, float_text, header_text,
+    non_empty, resolved_call_id, timing_values,
 };
 
 // LiteLLM's ProxyBaseLLMRequestProcessing.get_custom_headers, the headers every LLM route answers with
@@ -33,7 +33,7 @@ pub fn custom_headers(input: &CustomHeadersInput, timing: DetailedTiming) -> Hea
     }
     insert_batch_headers(&mut headers, input);
     for (name, value) in &input.extra {
-        headers.set(name, python_str(name, value));
+        headers.set(name, header_text(name, value));
     }
     if !input.request_data.is_empty() {
         insert_remaining_limits(&mut headers, &input.request_data);
@@ -110,47 +110,14 @@ fn insert_costs(headers: &mut HeaderSet, input: &CustomHeadersInput, breakdown: 
     let response_cost = input
         .response_cost
         .as_ref()
-        .and_then(|value| python_str("x-litellm-response-cost", value));
+        .and_then(|value| header_text("x-litellm-response-cost", value));
     headers.set("x-litellm-response-cost", response_cost);
-    let parts = [
-        ("x-litellm-response-cost-original", breakdown.original_cost),
-        (
-            "x-litellm-response-cost-discount-amount",
-            breakdown.discount_amount,
-        ),
-        (
-            "x-litellm-response-cost-margin-amount",
-            breakdown.margin_total_amount,
-        ),
-        (
-            "x-litellm-response-cost-margin-percent",
-            breakdown.margin_percent,
-        ),
-        ("x-litellm-response-cost-input", breakdown.input_cost),
-        ("x-litellm-response-cost-output", breakdown.output_cost),
-        (
-            "x-litellm-response-cost-cache-read",
-            breakdown.cache_read_cost,
-        ),
-        (
-            "x-litellm-response-cost-cache-creation",
-            breakdown.cache_creation_cost,
-        ),
-        (
-            "x-litellm-response-cost-reasoning",
-            breakdown.reasoning_cost,
-        ),
-        (
-            "x-litellm-response-cost-tool-usage",
-            breakdown.tool_usage_cost,
-        ),
-    ];
-    for (header, text) in parts {
+    for (header, text) in breakdown.into_headers() {
         headers.set(header, text);
     }
     headers.set(
         "x-litellm-classifier-cost",
-        cost::classifier_cost(&input.request_data).map(python_float),
+        cost::classifier_cost(&input.request_data).map(float_text),
     );
 }
 
@@ -163,27 +130,23 @@ fn insert_key_limits(headers: &mut HeaderSet, key: &KeyHeaderView, spend: f64) {
         "x-litellm-key-rpm-limit",
         key.rpm_limit.map(|limit| limit.to_string()),
     );
-    headers.set("x-litellm-key-max-budget", key.max_budget.map(python_float));
-    headers.set("x-litellm-key-spend", Some(python_float(spend)));
+    headers.set(
+        "x-litellm-key-max-budget",
+        key.max_budget.map(|budget| float_text(budget.as_f64())),
+    );
+    headers.set("x-litellm-key-spend", Some(float_text(spend)));
 }
 
 fn insert_timings(headers: &mut HeaderSet, input: &CustomHeadersInput) {
     let (response_ms, overhead_ms) = timing_values(input);
-    headers.set(
-        "x-litellm-response-duration-ms",
-        response_ms.and_then(|value| python_str("x-litellm-response-duration-ms", value)),
-    );
-    headers.set(
-        "x-litellm-overhead-duration-ms",
-        overhead_ms.and_then(|value| python_str("x-litellm-overhead-duration-ms", value)),
-    );
-    headers.set(
-        "x-litellm-callback-duration-ms",
-        input
-            .hidden_params
-            .get("callback_duration_ms")
-            .and_then(|value| python_str("x-litellm-callback-duration-ms", value)),
-    );
+    let callback_ms = input.hidden_params.get("callback_duration_ms");
+    for (header, value) in [
+        ("x-litellm-response-duration-ms", response_ms),
+        ("x-litellm-overhead-duration-ms", overhead_ms),
+        ("x-litellm-callback-duration-ms", callback_ms),
+    ] {
+        headers.set(header, value.and_then(|value| header_text(header, value)));
+    }
 }
 
 fn insert_detailed_timings(headers: &mut HeaderSet, hidden_params: &JsonMap) {
@@ -203,13 +166,13 @@ fn insert_detailed_timings(headers: &mut HeaderSet, hidden_params: &JsonMap) {
             header,
             hidden_params
                 .get(field)
-                .and_then(|value| python_str(header, value)),
+                .and_then(|value| header_text(header, value)),
         );
     }
 }
 
 fn insert_batch_headers(headers: &mut HeaderSet, input: &CustomHeadersInput) {
-    let batch = input.fastest_response_batch_completion.map(|flag| {
+    let batch = input.fastest_batch.map(|flag| {
         if flag {
             "True".to_owned()
         } else {
@@ -217,7 +180,7 @@ fn insert_batch_headers(headers: &mut HeaderSet, input: &CustomHeadersInput) {
         }
     });
     headers.set("x-litellm-fastest_response_batch_completion", batch);
-    headers.set("x-litellm-timeout", input.timeout.map(python_float));
+    headers.set("x-litellm-timeout", input.timeout.map(float_text));
 }
 
 fn insert_remaining_limits(headers: &mut HeaderSet, request_data: &JsonMap) {
@@ -226,25 +189,25 @@ fn insert_remaining_limits(headers: &mut HeaderSet, request_data: &JsonMap) {
     };
     let model_group = metadata.get("model_group");
     let group_text = match model_group {
-        Some(value) if !value.is_null() => match python_str("model_group", value) {
+        Some(value) if !value.is_null() => match header_text("model_group", value) {
             Some(text) => text,
             None => return,
         },
         None | Some(_) => "None".to_owned(),
     };
-    let header_group = model_group.filter(|value| truthy(value)).map_or_else(
+    let header_group = model_group.filter(|value| non_empty(value)).map_or_else(
         || "None".to_owned(),
-        |_| group_text.replace('/', "-").replace(':', "-"),
+        |_| group_text.replace(['/', ':'], "-"),
     );
     let requests_key = format!("litellm-key-remaining-requests-{group_text}");
-    if let Some(value) = metadata.get(&requests_key).filter(|value| truthy(value)) {
+    if let Some(value) = metadata.get(&requests_key).filter(|value| non_empty(value)) {
         let header = format!("x-litellm-key-remaining-requests-{header_group}");
-        headers.set(&header, python_str(&header, value));
+        headers.set(&header, header_text(&header, value));
     }
     let tokens_key = format!("litellm-key-remaining-tokens-{group_text}");
-    if let Some(value) = metadata.get(&tokens_key).filter(|value| truthy(value)) {
+    if let Some(value) = metadata.get(&tokens_key).filter(|value| non_empty(value)) {
         let header = format!("x-litellm-key-remaining-tokens-{header_group}");
-        headers.set(&header, python_str(&header, value));
+        headers.set(&header, header_text(&header, value));
     }
 }
 

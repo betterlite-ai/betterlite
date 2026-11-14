@@ -11,8 +11,14 @@ deviations:
   - what: A cost breakdown whose input_cost or cache costs carry a truthy value that is not a number leaves x-litellm-response-cost-input out; falsey ones count as zero as they do there, and LiteLLM raises a TypeError out of get_custom_headers for the truthy ones, failing the request.
     why: custom_headers returns a HeaderMap and has no error path, and one missing header beats a failed response for a breakdown the proxy wrote itself.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1472-L1480
-  - what: A response cost string is read as a float by Rust's float grammar, which rejects PEP 515 underscores and non-ASCII digits that Python's float() accepts.
-    why: response_cost's declared type is float or str; a string like "1_0" reaches the spend header but not the spend sum here, and nowhere in LiteLLM's own call sites.
+  - what: >-
+      A response cost string is read with Python float()'s grammar, underscores between digits
+      included, except that non-ASCII decimal digits float() also reads are rejected, so the
+      spend keeps its value where LiteLLM adds the cost.
+    why: >-
+      response_cost's declared type is float or str, but no LiteLLM call site sends a cost
+      spelled with non-ASCII digits, and the alternative is porting Python's Unicode digit
+      transliteration.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1767
   - what: A metadata bucket that is present but not an object is treated as absent when the remaining-limit headers are read, so those headers are left out; LiteLLM calls .get on it and raises AttributeError.
     why: the request data is open JSON, and an internal writer's malformed bucket must not turn a successful LLM response into a 500.

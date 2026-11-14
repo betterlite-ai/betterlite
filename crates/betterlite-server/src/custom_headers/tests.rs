@@ -8,10 +8,11 @@ use betterlite_config::sections::detailed_timing::DetailedTiming;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_db::budget_permission_rows::JsonData;
 use rstest::rstest;
+use rust_decimal::Decimal;
 use serde_json::json;
 
 use super::custom_headers;
-use super::input::{CustomHeadersInput, KeyHeaderView, python_float};
+use super::input::{CustomHeadersInput, KeyHeaderView, float_text};
 
 fn build(input: JsonValue) -> HeaderMap {
     build_with_timing(input, false)
@@ -378,15 +379,21 @@ fn a_non_numeric_cache_part_leaves_the_input_cost_header_out() {
 #[case::not_a_number(f64::NAN, "nan")]
 #[case::infinite(f64::INFINITY, "inf")]
 #[case::negative_infinite(f64::NEG_INFINITY, "-inf")]
-fn python_float_matches_str(#[case] value: f64, #[case] expected: &str) {
-    assert_eq!(python_float(value), expected);
+fn float_text_matches_python_str(#[case] value: f64, #[case] expected: &str) {
+    assert_eq!(float_text(value), expected);
 }
 
 #[rstest]
 #[case::number(json!(1.5), Some("3.5"))]
 #[case::string(json!("0.25"), Some("2.25"))]
 #[case::bad_string(json!("oops"), Some("2.0"))]
-#[case::underscore_string(json!("1_0"), Some("2.0"))]
+#[case::underscore_string(json!("1_0"), Some("12.0"))]
+#[case::underscore_fraction(json!("1_0.5"), Some("12.5"))]
+#[case::leading_underscore(json!("_1"), Some("2.0"))]
+#[case::trailing_underscore(json!("1_"), Some("2.0"))]
+#[case::doubled_underscore(json!("1__0"), Some("2.0"))]
+#[case::underscore_before_point(json!("1_.5"), Some("2.0"))]
+#[case::underscore_after_point(json!("1._5"), Some("2.0"))]
 #[case::negative(json!(-1.0), Some("2.0"))]
 #[case::zero(json!(0), Some("2.0"))]
 #[case::absent(json!(null), Some("2.0"))]
@@ -418,8 +425,8 @@ fn key_limits_come_from_the_serialized_key() {
     let view = KeyHeaderView::from_key(&key).expect("the key's header fields are read");
     assert_eq!(view.tpm_limit, Some(100));
     assert_eq!(view.rpm_limit, Some(10));
-    assert_eq!(view.max_budget, Some(25.5));
-    assert_eq!(view.spend, Some(1.5));
+    assert_eq!(view.max_budget, Some(Decimal::new(255, 1)));
+    assert_eq!(view.spend, Some(Decimal::new(15, 1)));
     assert_eq!(view.allowed_model_region.as_deref(), Some("eu"));
 }
 
@@ -542,18 +549,13 @@ fn extra_pairs_replace_the_headers_before_them() {
 }
 
 #[rstest]
-#[case::true_value(json!(true), Some("True"))]
-#[case::false_value(json!(false), Some("False"))]
-#[case::absent(json!(null), None)]
-fn fastest_batch_completion_is_python_text(
-    #[case] value: JsonValue,
-    #[case] expected: Option<&str>,
-) {
+#[case::true_value(json!(true), "True")]
+#[case::false_value(json!(false), "False")]
+#[case::absent(json!(null), "")]
+fn fastest_batch_completion_is_python_text(#[case] value: JsonValue, #[case] expected: &str) {
     let headers = build(json!({"fastest_response_batch_completion": value}));
-    assert_eq!(
-        header(&headers, "x-litellm-fastest_response_batch_completion").as_deref(),
-        expected
-    );
+    let rendered = header(&headers, "x-litellm-fastest_response_batch_completion");
+    assert_eq!(rendered.unwrap_or_default(), expected);
 }
 
 #[test]
