@@ -1,3 +1,4 @@
+use betterlite_models::catalog::ModelCatalog;
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
@@ -29,19 +30,18 @@ impl CallType {
     }
 }
 
-#[must_use]
 pub fn pre_call_deployment_hook<C>(
     logger: &CodeInterpreterInterceptionLogger<C>,
     kwargs: &mut Map<String, Value>,
     call_type: Option<CallType>,
-) -> bool {
+) -> Result<bool, serde_json::Error> {
     strip_root_metadata(kwargs);
     let Some(dialect) = interception_dialect(logger, kwargs, call_type) else {
-        return false;
+        return Ok(false);
     };
     seed_sandbox_metadata(kwargs);
-    rewrite_tools(kwargs, dialect);
-    true
+    rewrite_tools(kwargs, dialect)?;
+    Ok(true)
 }
 
 fn interception_dialect<C>(
@@ -53,7 +53,7 @@ fn interception_dialect<C>(
     if !logger.enabled {
         return None;
     }
-    if !provider_allowed(logger.enabled_providers.as_deref(), kwargs) {
+    if !provider_allowed(&logger.catalog, logger.enabled_providers.as_deref(), kwargs) {
         return None;
     }
     if !has_code_interpreter_tool(kwargs) {
@@ -62,11 +62,15 @@ fn interception_dialect<C>(
     Some(call_type.dialect())
 }
 
-fn provider_allowed(enabled_providers: Option<&[String]>, kwargs: &Map<String, Value>) -> bool {
+fn provider_allowed(
+    catalog: &ModelCatalog,
+    enabled_providers: Option<&[String]>,
+    kwargs: &Map<String, Value>,
+) -> bool {
     let Some(providers) = enabled_providers else {
         return true;
     };
-    resolve_provider(kwargs).is_some_and(|provider| {
+    resolve_provider(catalog, kwargs).is_some_and(|provider| {
         providers
             .iter()
             .any(|enabled| enabled.as_str() == provider.as_str())
@@ -107,9 +111,22 @@ fn at_root_depth(depth: Option<&Value>) -> bool {
     }
 }
 
+fn extract_session_id(kwargs: &Map<String, Value>) -> Option<String> {
+    ["metadata", "litellm_metadata"]
+        .into_iter()
+        .find_map(|key| {
+            kwargs
+                .get(key)
+                .and_then(|metadata| metadata.get("session_id"))
+                .and_then(Value::as_str)
+                .filter(|session_id| !session_id.is_empty())
+                .map(str::to_owned)
+        })
+}
+
 fn seed_sandbox_metadata(kwargs: &mut Map<String, Value>) {
     kwargs.insert(INTERCEPTION_ACTIVE_KEY.to_owned(), Value::Bool(true));
-    if let Some(session_id) = helpers::extract_session_id(kwargs) {
+    if let Some(session_id) = extract_session_id(kwargs) {
         let identity = helpers::extract_identity(kwargs);
         let sandbox_key = if identity.is_empty() {
             session_id
@@ -129,7 +146,10 @@ fn seed_sandbox_metadata(kwargs: &mut Map<String, Value>) {
     write(kwargs);
 }
 
-fn rewrite_tools(kwargs: &mut Map<String, Value>, dialect: CallDialect) {
+fn rewrite_tools(
+    kwargs: &mut Map<String, Value>,
+    dialect: CallDialect,
+) -> Result<(), serde_json::Error> {
     let replaced = kwargs
         .get("tools")
         .and_then(|tools| followup_filtering::tools(tools, dialect));
@@ -138,9 +158,10 @@ fn rewrite_tools(kwargs: &mut Map<String, Value>, dialect: CallDialect) {
     }
     let targets_code_interpreter = kwargs.get("tool_choice").is_some_and(tool_choice_detection);
     if targets_code_interpreter {
-        let serialized = serde_json::to_value(function_tool_choice(dialect)).unwrap_or(Value::Null);
+        let serialized = serde_json::to_value(function_tool_choice(dialect))?;
         kwargs.insert("tool_choice".to_owned(), serialized);
     }
+    Ok(())
 }
 
 include!("pre_call/tests/cases.rs");

@@ -21,6 +21,3 @@ deviations:
   - what: A code_interpreter_interception_params entry that is present but null falls back to the callback-specific entry or the default config instead of raising AttributeError inside from_config_yaml.
     why: LiteLLM only relies on the mapping shape of that entry; a null entry is a configuration mistake it crashes on, and betterlite reads null as absent per docs/compatibility.md.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L246-L257
-  - what: Provider resolution for the enabled_providers filter runs LiteLLM's model-string inference against an empty model catalog and an empty environment, so a bare model name that only LiteLLM's bundled model map recognizes resolves to None; requests with custom_llm_provider or a provider-prefixed model resolve the same way.
-    why: The interception hooks receive only request kwargs, and betterlite has no process-global catalog; the proxy's configured catalog is not threaded into this hook by B9824.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L387-L397

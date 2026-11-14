@@ -12,6 +12,8 @@ use tokio::runtime::Builder;
 
 #[cfg(test)]
 use betterlite_context::agentic_loop_plan::{FollowupMessage, JsonMap};
+#[cfg(test)]
+use betterlite_models::catalog::ModelCatalog;
 
 #[cfg(test)]
 use crate::code_execution_records::{CODE_EXECUTION_TOOL_NAME, CodeExecutionToolCall};
@@ -20,7 +22,7 @@ use crate::code_interpreter_plans::initialization::CodeInterpreterInterceptionLo
 #[cfg(test)]
 use crate::code_interpreter_plans::request::PlanRequest;
 #[cfg(test)]
-use crate::sandbox_lifecycle::cache_operations::{Clock, SandboxCache};
+use crate::sandbox_lifecycle::cache_operations::Clock;
 #[cfg(test)]
 use crate::sandbox_lifecycle::lifecycle::{SandboxConfig, SandboxRegistry};
 #[cfg(test)]
@@ -206,21 +208,24 @@ impl Clock for FixedClock {
 
 #[cfg(test)]
 fn empty_logger<C>() -> CodeInterpreterInterceptionLogger<C> {
-    CodeInterpreterInterceptionLogger {
-        enabled: true,
-        enabled_providers: None,
-        sandbox_tool_name: None,
-        sandbox_config: None,
-        cache: SandboxCache::default(),
-    }
+    CodeInterpreterInterceptionLogger::new(
+        true,
+        None,
+        None,
+        None,
+        Arc::new(ModelCatalog::default()),
+    )
 }
 
 #[cfg(test)]
 fn test_logger(config: MockConfig) -> CodeInterpreterInterceptionLogger<MockConfig> {
-    CodeInterpreterInterceptionLogger {
-        sandbox_config: Some(config),
-        ..empty_logger()
-    }
+    CodeInterpreterInterceptionLogger::new(
+        true,
+        None,
+        None,
+        Some(config),
+        Arc::new(ModelCatalog::default()),
+    )
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
-use serde::Deserialize;
+use std::sync::Arc;
 
-use crate::sandbox_lifecycle::cache_operations::SandboxCache;
+use betterlite_models::catalog::ModelCatalog;
+use serde::Deserialize;
 
 use super::initialization::CodeInterpreterInterceptionLogger;
 
@@ -37,28 +38,30 @@ pub struct ProxyParameters {
 #[must_use]
 pub fn from_config_yaml<C>(
     config: &CodeInterpreterInterceptionConfig,
+    catalog: Arc<ModelCatalog>,
 ) -> CodeInterpreterInterceptionLogger<C> {
-    CodeInterpreterInterceptionLogger {
-        enabled: config.enabled,
-        enabled_providers: config.enabled_providers.clone(),
-        sandbox_tool_name: config.sandbox_tool_name.clone(),
-        sandbox_config: None,
-        cache: SandboxCache::default(),
-    }
+    CodeInterpreterInterceptionLogger::new(
+        config.enabled,
+        config.enabled_providers.clone(),
+        config.sandbox_tool_name.clone(),
+        None,
+        catalog,
+    )
 }
 
 #[must_use]
 pub fn initialize_from_proxy_config<C>(
     params: &ProxyParameters,
+    catalog: Arc<ModelCatalog>,
 ) -> CodeInterpreterInterceptionLogger<C> {
     let Some(config) = params
         .code_interpreter_interception_params
         .as_ref()
         .or(params.callback_specific_params.as_ref())
     else {
-        return from_config_yaml(&CodeInterpreterInterceptionConfig::default());
+        return from_config_yaml(&CodeInterpreterInterceptionConfig::default(), catalog);
     };
-    from_config_yaml(config)
+    from_config_yaml(config, catalog)
 }
 
 include!("configuration/tests/cases.rs");
