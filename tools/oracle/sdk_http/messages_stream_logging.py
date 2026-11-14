@@ -1,40 +1,38 @@
 import asyncio
 import json
 import logging
+import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
-from datetime import UTC, datetime
+from datetime import datetime
+from types import ModuleType
 from typing import Annotated, Literal, Protocol, TypedDict, Unpack
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.litellm_core_utils.logging_worker import GLOBAL_LOGGING_WORKER
 from litellm.llms.anthropic.pass_through.messages import streaming_iterator
-from litellm.proxy.pass_through_endpoints import streaming_handler
 from litellm.proxy.pass_through_endpoints.success_handler import PassThroughEndpointLogging
 from litellm.types.passthrough_endpoints.pass_through_endpoints import EndpointType
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic import JsonValue as Json
+from pydantic import BaseModel, ConfigDict, Field, JsonValue as Json
 from typing_extensions import override
 
 Work = Coroutine[object, object, None]
 Hook = Callable[[Exception], Awaitable[None]]
-
+DeferredCallback = Callable[..., Work]
+HANDLER_MODULE = "litellm.proxy.pass_through_endpoints.streaming_handler"
 # route logging receives the raw chunks, direct delegation receives the live response
-RouteCall = TypedDict("RouteCall", {  # noqa: UP013  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L278-L374
-    "litellm_logging_obj": Logging, "passthrough_success_handler_obj": PassThroughEndpointLogging,
-    "url_route": str, "request_body": dict[str, Json], "endpoint_type": EndpointType,
-    "start_time": datetime, "raw_bytes": list[bytes], "end_time": datetime,
-})
-
-ProcessorCall = TypedDict("ProcessorCall", {  # noqa: UP013  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L139-L276
-    "litellm_logging_obj": Logging, "passthrough_success_handler_obj": PassThroughEndpointLogging,
-    "url_route": str, "request_body": dict[str, Json] | None, "endpoint_type": EndpointType,
-    "start_time": datetime, "response": httpx.Response,
-})
-
-class DeferredCallback(Protocol):
-    def __call__(self, *parked: Work) -> Work: ...
-
+class SeamCall(TypedDict):
+    litellm_logging_obj: Logging
+    passthrough_success_handler_obj: PassThroughEndpointLogging  # ast-grep-ignore: no-long-names
+    url_route: str
+    request_body: dict[str, Json]
+    endpoint_type: EndpointType
+    start_time: datetime
+class RouteCall(SeamCall):
+    raw_bytes: list[bytes]
+    end_time: datetime
+class ProcessorCall(SeamCall):
+    response: httpx.Response
 class Recorder(logging.Handler):
     def __init__(self) -> None:
         super().__init__(level=logging.WARNING)
@@ -48,7 +46,9 @@ class Recorder(logging.Handler):
         self.warnings.append(record.getMessage().strip())
     async def counted(self) -> None:
         self.ran += 1
-    def route(self, **call: Unpack[RouteCall]) -> Work:
+    def _route_streaming_logging_to_handler(  # ast-grep-ignore: no-long-names
+        self, **call: Unpack[RouteCall]
+    ) -> Work:
         if self.route_failure is not None:
             raise ValueError(self.route_failure)
         self.routed.append(call)
@@ -57,13 +57,18 @@ class Recorder(logging.Handler):
         self.processed.append(call)
         async for chunk in call["response"].aiter_bytes():
             yield chunk
-
-# the iterator looks the handler class up by name on each call
+class HandlerModule(ModuleType):
+    PassThroughStreamingHandler: Recorder
+# the iterator resolves the handler class by module and name on every call
 def install(recorder: Recorder) -> None:
-    handler = streaming_handler.PassThroughStreamingHandler
-    handler.chunk_processor = recorder.chunk_processor  # type: ignore[method-assign, assignment]  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L139-L276
-    handler._route_streaming_logging_to_handler = recorder.route  # type: ignore[method-assign, assignment]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L278-L374
-
+    module = HandlerModule(HANDLER_MODULE)
+    module.PassThroughStreamingHandler = recorder
+    sys.modules[HANDLER_MODULE] = module
+class IteratorFactory(Protocol):
+    def get_async_streaming_response_iterator(  # ast-grep-ignore: no-long-names
+        self, httpx_response: httpx.Response, request_body: dict[str, Json],
+        litellm_logging_obj: Logging, /
+    ) -> AsyncIterator[bytes]: ...
 class RecordedLogging(Logging):
     def __init__(self) -> None:
         details: dict[str, Json] = {}
@@ -83,7 +88,6 @@ class RecordedLogging(Logging):
         return self._deferred_stream_complete_args is not None
     def set_failure_hook(self, hook: Hook | None) -> None:
         self._on_detached_stream_failure = hook
-
 class FailureHook:
     def __init__(self, calls: list[Json], *, raises: bool) -> None:
         self.calls = calls
@@ -92,25 +96,31 @@ class FailureHook:
         self.calls.append(f"{type(exc).__name__}({exc})")
         if self.raises:
             raise ValueError("hook")
-
 class PlainStream(AsyncIterator[bytes]):
     @override
     async def __anext__(self) -> bytes:
         raise StopAsyncIteration
-
 class ClosingStream(PlainStream):
     def __init__(self, *, fails: bool) -> None:
         self.fails = fails
     async def aclose(self) -> None:
         if self.fails:
             raise ValueError("closed")
+class SingleChunk(AsyncIterator[bytes | dict[str, Json]]):
+    def __init__(self, chunk: dict[str, Json] | bytes) -> None:
+        self.chunks = [chunk]
+    @override
+    async def __anext__(self) -> bytes | dict[str, Json]:
+        if not self.chunks:
+            raise StopAsyncIteration
+        return self.chunks.pop()
 
 class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
     def __init__(self, body: dict[str, Json], api_base: str, client: httpx.AsyncClient) -> None:
         self.logging = RecordedLogging()
         self.litellm_logging_obj = self.logging
         self.request_body: dict[str, Json] = body
-        self.start_time = datetime.now(UTC).astimezone().replace(tzinfo=None)
+        self.start_time = datetime.now()
         self.completion_start_time: datetime | None = None
         self.url = f"{api_base}/messages"
         self.client = client
@@ -120,13 +130,6 @@ class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
         self.hook_calls: list[Json] = []
         self.callback_args: list[Json] = []
         self.text: str | None = None
-    async def collect_frames(self) -> list[bytes]:
-        response = await self.client.post(self.url, json=self.request_body)
-        parts = response.content.split(b"\n\n")
-        frames = [part + b"\n\n" for part in parts[:-1]]
-        if parts[-1]:
-            frames.append(parts[-1])
-        return frames
     def on_deferred(self, *parked: Work) -> Work:
         self.callback_args.append(len(parked))
         for coroutine in parked:
@@ -140,11 +143,10 @@ class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
         await self._abort_upstream(stream)
     async def fail(self, exc: Exception) -> None:
         await self._fire_detached_failure_hook(exc)
-    def convert(self, chunk: dict[str, Json] | bytes) -> bytes:
-        return self._convert_chunk_to_sse_format(chunk)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L453-L466
     def relay(self, response: httpx.Response, supplied: RecordedLogging) -> AsyncIterator[bytes]:
         body: dict[str, Json] = {"model": "supplied"}
-        return self.get_async_streaming_response_iterator(response, body, supplied)  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L431-L451
+        factory: IteratorFactory = self
+        return factory.get_async_streaming_response_iterator(response, body, supplied)
     async def run_step(self, step: "Step") -> Json:
         self.text = None
         await step.run(self)
@@ -188,12 +190,9 @@ class Session(streaming_iterator.BaseAnthropicMessagesStreamingIterator):
             "args_present": self.logging.has_parked(),
             "text": self.text,
         }
-        self.recorder.routed = []
-        self.recorder.processed = []
-        self.recorder.warnings = []
+        self.recorder.routed, self.recorder.processed, self.recorder.warnings = [], [], []
         self.recorder.ran = 0
-        self.callback_args = []
-        self.hook_calls = []
+        self.callback_args, self.hook_calls = [], []
         return outcome
 
 class StepModel(BaseModel):
@@ -202,10 +201,13 @@ class CollectStep(StepModel):
     op: Literal["collect"]
     first_chunk: bool
     async def run(self, session: Session) -> None:
-        session.frames = await session.collect_frames()
+        response = await session.client.post(session.url, json=session.request_body)
+        parts = response.content.split(b"\n\n")
+        session.frames = [part + b"\n\n" for part in parts[:-1]]
+        if parts[-1]:
+            session.frames.append(parts[-1])
         if self.first_chunk:
-            session.completion_start_time = datetime.now(UTC).astimezone().replace(tzinfo=None)
-
+            session.completion_start_time = datetime.now()
 class BillStep(StepModel):
     op: Literal["bill"]
     teardown: bool
@@ -213,23 +215,19 @@ class BillStep(StepModel):
     async def run(self, session: Session) -> None:
         session.recorder.route_failure = self.route_failure
         await session.bill(teardown=self.teardown)
-
 class ArmDeferredStep(StepModel):
     op: Literal["arm_deferred"]
     async def run(self, session: Session) -> None:
         session.logging.arm_deferred(session.on_deferred)
-
 class ParkArgsStep(StepModel):
     op: Literal["park_args"]
     count: int
     async def run(self, session: Session) -> None:
         session.logging.park(tuple(session.recorder.counted() for _ in range(self.count)))
-
 class DispatchStep(StepModel):
     op: Literal["dispatch"]
     async def run(self, session: Session) -> None:
         session.dispatch()
-
 class AbortUpstreamStep(StepModel):
     op: Literal["abort_upstream"]
     close: Literal["unsupported", "closes", "fails"]
@@ -240,7 +238,6 @@ class AbortUpstreamStep(StepModel):
             "fails": ClosingStream(fails=True),
         }
         await session.abort(streams[self.close])
-
 class DetachedFailureStep(StepModel):
     op: Literal["detached_failure"]
     hook: Literal["missing", "records", "raises"]
@@ -250,29 +247,30 @@ class DetachedFailureStep(StepModel):
             hook = FailureHook(session.hook_calls, raises=self.hook == "raises")
         session.logging.set_failure_hook(hook)
         await session.fail(ValueError("original"))
-
 class ConvertStep(StepModel):
     op: Literal["convert"]
-    chunk: dict[str, Json] | str
+    chunk: dict[str, Json] | bytes
     async def run(self, session: Session) -> None:
-        match self.chunk:
-            case str(text):
-                session.text = session.convert(text.encode()).decode(errors="replace")
-            case dict(mapping):
-                session.text = session.convert(mapping).decode(errors="replace")
-
+        quiet = Recorder()
+        install(quiet)
+        block = session.logging
+        first = session.completion_start_time
+        session.litellm_logging_obj = RecordedLogging()
+        relayed = session.async_sse_wrapper(SingleChunk(self.chunk))
+        frames = [frame async for frame in relayed]
+        session.litellm_logging_obj = block
+        install(session.recorder)
+        session.completion_start_time = first
+        session.text = frames[0].decode(errors="replace")
 class DelegateStep(StepModel):
     op: Literal["delegate"]
     async def run(self, session: Session) -> None:
         supplied = RecordedLogging()
         session.supplied = supplied
-        async with session.client.stream(
-            "POST", session.url, json=session.request_body
-        ) as response:
-            relayed = session.relay(response, supplied)
+        async with session.client.stream("POST", session.url, json=session.request_body) as reply:
+            relayed = session.relay(reply, supplied)
             relayed_bytes = b"".join([chunk async for chunk in relayed])
         session.text = relayed_bytes.decode(errors="replace")
-
 Step = Annotated[
     CollectStep | BillStep | ArmDeferredStep | ParkArgsStep | DispatchStep
     | AbortUpstreamStep | DetachedFailureStep | ConvertStep | DelegateStep,
