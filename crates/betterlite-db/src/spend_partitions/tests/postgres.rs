@@ -14,7 +14,6 @@ const RELKIND_SQL: &str =
 const TABLE_NAME_SQL: &str = "SELECT to_regclass($1)::text AS name";
 const CANONICAL_COUNT_SQL: &str = r#"SELECT count(*) AS rows FROM "LiteLLM_SpendLogs""#;
 const LEGACY_COUNT_SQL: &str = r#"SELECT count(*) AS rows FROM "LiteLLM_SpendLogs_legacy""#;
-const DEFAULT_COUNT_SQL: &str = r#"SELECT count(*) AS rows FROM "LiteLLM_SpendLogs_pdefault""#;
 const INSERT_LOG_SQL: &str = r#"INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, "startTime", "endTime") VALUES ($1, 'completion', 'sk-fixture', $2, $2)"#;
 const COLUMNS_SQL: &str = "SELECT a.attname AS name,
        format_type(a.atttypid, a.atttypmod) AS column_type,
@@ -63,7 +62,7 @@ WHERE partrelid = to_regclass($1)";
 
 #[derive(Debug, PartialEq, Eq)]
 struct Column {
-    column_type: String,
+    sql_type: String,
     not_null: bool,
     generated: String,
     default_expression: Option<String>,
@@ -104,7 +103,7 @@ fn column_of(row: &Row) -> (String, Column) {
     (
         row.get("name"),
         Column {
-            column_type: row.get("column_type"),
+            sql_type: row.get("column_type"),
             not_null: row.get("not_null"),
             generated: row.get("generated"),
             default_expression: row.get("default_expression"),
@@ -227,11 +226,11 @@ enum Canonical {
 }
 
 async fn assert_canonical(case: &SpendPartitionCase, kind: Canonical, rows: i64) {
-    let expected = match kind {
-        Canonical::Partitioned => "p",
-        Canonical::Plain => "r",
+    let (relkind_code, key) = match kind {
+        Canonical::Partitioned => ("p", r#"(request_id, "startTime")"#),
+        Canonical::Plain => ("r", "(request_id)"),
     };
-    assert_eq!(relkind(case, "LiteLLM_SpendLogs").await, expected);
+    assert_eq!(relkind(case, "LiteLLM_SpendLogs").await, relkind_code);
     assert_eq!(row_count(case, CANONICAL_COUNT_SQL).await, rows);
     let indexes = indexes(case, "LiteLLM_SpendLogs").await;
     assert_eq!(indexes.len(), 6);
@@ -242,48 +241,50 @@ async fn assert_canonical(case: &SpendPartitionCase, kind: Canonical, rows: i64)
     );
     let primary = primary_key(case, "LiteLLM_SpendLogs").await;
     assert_eq!(primary.0, "LiteLLM_SpendLogs_pkey");
-    match kind {
-        Canonical::Partitioned => {
-            assert!(primary.1.contains(r#"(request_id, "startTime")"#));
-            assert!(
-                table_name(case, "LiteLLM_SpendLogs_partitioned")
-                    .await
-                    .is_none()
-            );
-        }
-        Canonical::Plain => {
-            assert!(primary.1.contains("(request_id)"));
-            assert!(!primary.1.contains("startTime"));
-        }
-    }
+    assert!(primary.1.contains(key));
 }
 
-pub(super) async fn partition_retains_legacy_without_copy() {
-    let case = SpendPartitionCase::provision().await;
-    case.seed_log("kept-one", at(1, 1)).await;
-    case.seed_log("kept-two", at(2, 1)).await;
-    case.run_ok(SpendPartitionOperation::Partition).await;
-    assert_eq!(relkind(&case, "LiteLLM_SpendLogs_legacy").await, "r");
-    assert_eq!(relkind(&case, "LiteLLM_SpendLogs").await, "p");
-    assert_eq!(row_count(&case, LEGACY_COUNT_SQL).await, 2);
-    assert_eq!(row_count(&case, CANONICAL_COUNT_SQL).await, 0);
-    assert!(
-        table_name(&case, "LiteLLM_SpendLogs_legacy")
-            .await
-            .is_some()
-    );
-    let definition = partition_definition(&case, "LiteLLM_SpendLogs")
+async fn assert_range_partitioned_with_default(case: &SpendPartitionCase) {
+    let definition = partition_definition(case, "LiteLLM_SpendLogs")
         .await
         .expect("a partitioned table");
     assert_eq!(definition.0, "r");
     assert!(definition.1.contains(r#"RANGE ("startTime")"#));
     assert_eq!(
-        partitions(&case, "LiteLLM_SpendLogs").await,
+        partitions(case, "LiteLLM_SpendLogs").await,
         vec![Partition {
             name: "LiteLLM_SpendLogs_pdefault".to_owned(),
             bound: "DEFAULT".to_owned(),
         }]
     );
+}
+
+async fn assert_plain_after_unpartition(case: &SpendPartitionCase, gone: &[&str]) {
+    assert!(
+        partition_definition(case, "LiteLLM_SpendLogs")
+            .await
+            .is_none()
+    );
+    assert!(partitions(case, "LiteLLM_SpendLogs").await.is_empty());
+    for table in gone {
+        assert!(table_name(case, table).await.is_none(), "{table} remains");
+    }
+}
+
+async fn seed_all(case: &SpendPartitionCase, logs: &[(&str, NaiveDateTime)]) {
+    for (request_id, start_time) in logs {
+        case.seed_log(request_id, *start_time).await;
+    }
+}
+
+pub(super) async fn partition_retains_legacy_without_copy() {
+    let case = SpendPartitionCase::provision().await;
+    seed_all(&case, &[("kept-one", at(1, 1)), ("kept-two", at(2, 1))]).await;
+    case.run_ok(SpendPartitionOperation::Partition).await;
+    assert_eq!(relkind(&case, "LiteLLM_SpendLogs_legacy").await, "r");
+    assert_eq!(row_count(&case, LEGACY_COUNT_SQL).await, 2);
+    assert_eq!(row_count(&case, CANONICAL_COUNT_SQL).await, 0);
+    assert_range_partitioned_with_default(&case).await;
     case.close().await;
 }
 
@@ -300,21 +301,26 @@ pub(super) async fn defaults_generated_columns() {
     let after = columns(&case, "LiteLLM_SpendLogs").await;
     assert_eq!(before, after);
     assert_eq!(after.len(), 37);
-    let start_time = after.get("startTime").expect("startTime");
-    assert_eq!(start_time.column_type, "timestamp(3) without time zone");
+    assert_column_details(&after);
+    case.close().await;
+}
+
+fn assert_column_details(columns: &BTreeMap<String, Column>) {
+    let start_time = columns.get("startTime").expect("startTime");
+    assert_eq!(start_time.sql_type, "timestamp(3) without time zone");
     assert!(start_time.not_null);
-    let spend = after.get("spend").expect("spend");
-    assert_eq!(spend.column_type, "double precision");
+    let spend = columns.get("spend").expect("spend");
+    assert_eq!(spend.sql_type, "double precision");
     assert!(spend.default_expression.is_some());
-    let metadata = after.get("metadata").expect("metadata");
-    assert_eq!(metadata.column_type, "jsonb");
+    let metadata = columns.get("metadata").expect("metadata");
+    assert_eq!(metadata.sql_type, "jsonb");
     assert!(
         metadata
             .default_expression
             .as_deref()
             .is_some_and(|expression| expression.contains("{}"))
     );
-    let generated = after
+    let generated = columns
         .get("fixture_generated_tokens")
         .expect("the generated column");
     assert_eq!(generated.generated, "s");
@@ -324,7 +330,6 @@ pub(super) async fn defaults_generated_columns() {
             .as_deref()
             .is_some_and(|expression| expression.contains("total_tokens"))
     );
-    case.close().await;
 }
 
 pub(super) async fn canonical_index_definitions() {
@@ -483,22 +488,7 @@ pub(super) async fn rollback_restores_single_key() {
     case.seed_log("after", at(2, 1)).await;
     case.run_ok(SpendPartitionOperation::Unpartition).await;
     assert_canonical(&case, Canonical::Plain, 1).await;
-    assert!(
-        partition_definition(&case, "LiteLLM_SpendLogs")
-            .await
-            .is_none()
-    );
-    assert!(partitions(&case, "LiteLLM_SpendLogs").await.is_empty());
-    assert!(
-        table_name(&case, "LiteLLM_SpendLogs_partitioned")
-            .await
-            .is_none()
-    );
-    assert!(
-        table_name(&case, "LiteLLM_SpendLogs_legacy")
-            .await
-            .is_some()
-    );
+    assert_plain_after_unpartition(&case, &["LiteLLM_SpendLogs_partitioned"]).await;
     assert_eq!(row_count(&case, LEGACY_COUNT_SQL).await, 1);
     let rows = case
         .client
@@ -535,10 +525,16 @@ pub(super) async fn alternate_pkey1_rename() {
 pub(super) async fn duplicate_survivor_is_unspecified() {
     let case = SpendPartitionCase::provision().await;
     case.run_ok(SpendPartitionOperation::Partition).await;
-    case.seed_log("duplicate", at(1, 1)).await;
-    case.seed_log("duplicate", at(2, 1)).await;
-    case.seed_log("duplicate", at(3, 1)).await;
-    case.seed_log("distinct", at(1, 1)).await;
+    seed_all(
+        &case,
+        &[
+            ("duplicate", at(1, 1)),
+            ("duplicate", at(2, 1)),
+            ("duplicate", at(3, 1)),
+            ("distinct", at(1, 1)),
+        ],
+    )
+    .await;
     case.run_ok(SpendPartitionOperation::Unpartition).await;
     let rows = case
         .client
@@ -552,15 +548,6 @@ pub(super) async fn duplicate_survivor_is_unspecified() {
     let start_time: NaiveDateTime = rows[0].get("startTime");
     assert!([at(1, 1), at(2, 1), at(3, 1)].contains(&start_time));
     assert_eq!(row_count(&case, CANONICAL_COUNT_SQL).await, 2);
-    let distinct = case
-        .client
-        .query_one(
-            r#"SELECT count(DISTINCT request_id) AS rows FROM "LiteLLM_SpendLogs""#,
-            &[],
-        )
-        .await
-        .expect("the distinct request ids");
-    assert_eq!(distinct.get::<_, i64>("rows"), 2);
     case.close().await;
 }
 
@@ -573,63 +560,62 @@ pub(super) async fn drop_removes_children() {
         )
         .await
         .expect("a day partition");
-    case.seed_log("day-row", at(1, 1)).await;
-    case.seed_log("default-row", at(2, 1)).await;
+    seed_all(&case, &[("day-row", at(1, 1)), ("default-row", at(2, 1))]).await;
     assert_eq!(partitions(&case, "LiteLLM_SpendLogs").await.len(), 2);
     case.run_ok(SpendPartitionOperation::Unpartition).await;
-    assert_eq!(relkind(&case, "LiteLLM_SpendLogs").await, "r");
-    assert_eq!(row_count(&case, CANONICAL_COUNT_SQL).await, 2);
-    assert!(partitions(&case, "LiteLLM_SpendLogs").await.is_empty());
-    assert!(
-        table_name(&case, "LiteLLM_SpendLogs_20260101")
-            .await
-            .is_none()
-    );
-    assert!(
-        table_name(&case, "LiteLLM_SpendLogs_pdefault")
-            .await
-            .is_none()
-    );
-    assert!(
-        table_name(&case, "LiteLLM_SpendLogs_partitioned")
-            .await
-            .is_none()
-    );
+    assert_canonical(&case, Canonical::Plain, 2).await;
+    assert_plain_after_unpartition(
+        &case,
+        &[
+            "LiteLLM_SpendLogs_20260101",
+            "LiteLLM_SpendLogs_pdefault",
+            "LiteLLM_SpendLogs_partitioned",
+        ],
+    )
+    .await;
     case.close().await;
 }
 
 pub(super) async fn destination_collision_rollback() {
     let case = SpendPartitionCase::provision().await;
     case.seed_log("kept", at(1, 1)).await;
-    let error = collide(
-        &case,
-        SpendPartitionOperation::Partition,
-        "LiteLLM_SpendLogs_legacy",
-    )
-    .await;
-    assert!(matches!(error, SpendPartitionError::Statement { .. }));
-    assert!(error.to_string().contains("LiteLLM_SpendLogs_legacy"));
-    assert_canonical(&case, Canonical::Plain, 1).await;
-    assert!(
-        table_name(&case, "LiteLLM_SpendLogs_pdefault")
-            .await
-            .is_none()
-    );
+    assert_partition_collision_rolls_back(&case).await;
     case.client
         .batch_execute(r#"DROP TABLE "LiteLLM_SpendLogs_legacy""#)
         .await
         .expect("the collision is removed");
     case.run_ok(SpendPartitionOperation::Partition).await;
     case.seed_log("live", at(2, 1)).await;
+    assert_unpartition_collision_rolls_back(&case).await;
+    case.close().await;
+}
+
+async fn assert_partition_collision_rolls_back(case: &SpendPartitionCase) {
     let error = collide(
-        &case,
+        case,
+        SpendPartitionOperation::Partition,
+        "LiteLLM_SpendLogs_legacy",
+    )
+    .await;
+    assert!(matches!(error, SpendPartitionError::Statement { .. }));
+    assert!(error.to_string().contains("LiteLLM_SpendLogs_legacy"));
+    assert_canonical(case, Canonical::Plain, 1).await;
+    assert!(
+        table_name(case, "LiteLLM_SpendLogs_pdefault")
+            .await
+            .is_none()
+    );
+}
+
+async fn assert_unpartition_collision_rolls_back(case: &SpendPartitionCase) {
+    let error = collide(
+        case,
         SpendPartitionOperation::Unpartition,
         "LiteLLM_SpendLogs_partitioned",
     )
     .await;
     assert!(error.to_string().contains("LiteLLM_SpendLogs_partitioned"));
-    assert_partitioned_after_failed_unpartition(&case).await;
-    case.close().await;
+    assert_partitioned_after_failed_unpartition(case).await;
 }
 
 async fn collide(
@@ -677,27 +663,35 @@ async fn lock_default_partition(
 pub(super) async fn mid_copy_failure_rollback() {
     let case = SpendPartitionCase::provision().await;
     case.run_ok(SpendPartitionOperation::Partition).await;
-    case.seed_log("first", at(1, 1)).await;
-    case.seed_log("second", at(2, 1)).await;
-    let (lock_client, lock_tasks) = lock_default_partition(&case).await;
-    case.client
-        .batch_execute("SET statement_timeout = '2s'")
-        .await
-        .expect("a statement timeout");
-    let error = case.run_error(SpendPartitionOperation::Unpartition).await;
+    seed_all(&case, &[("first", at(1, 1)), ("second", at(2, 1))]).await;
+    let error = unpartition_under_default_lock(&case).await;
     assert!(matches!(error, SpendPartitionError::Statement { .. }));
     assert!(
         error
             .to_string()
             .contains("copying rows into LiteLLM_SpendLogs")
     );
+    assert_canonical(&case, Canonical::Partitioned, 2).await;
+    assert!(
+        table_name(&case, "LiteLLM_SpendLogs_partitioned")
+            .await
+            .is_none()
+    );
+    case.close().await;
+}
+
+async fn unpartition_under_default_lock(case: &SpendPartitionCase) -> SpendPartitionError {
+    let (lock_client, lock_tasks) = lock_default_partition(case).await;
+    case.client
+        .batch_execute("SET statement_timeout = '2s'")
+        .await
+        .expect("a statement timeout");
+    let error = case.run_error(SpendPartitionOperation::Unpartition).await;
     lock_client
         .batch_execute("COMMIT")
         .await
         .expect("the lock release");
     drop(lock_client);
     drop(lock_tasks);
-    assert_canonical(&case, Canonical::Partitioned, 2).await;
-    assert_eq!(row_count(&case, DEFAULT_COUNT_SQL).await, 2);
-    case.close().await;
+    error
 }

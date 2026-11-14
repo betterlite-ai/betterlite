@@ -72,8 +72,8 @@ impl Operation {
             Self::DailyToolSpend { .. } => "daily-tool-spend",
             Self::KeyTotalSpend => "key-total-spend",
             Self::KeyTotalSpendFromLogs => "key-total-spend-from-logs",
-            Self::PartitionSpendLogs => "partition-spend-logs",
-            Self::UnpartitionSpendLogs => "unpartition-spend-logs",
+            Self::PartitionSpendLogs => SpendPartitionOperation::Partition.name(),
+            Self::UnpartitionSpendLogs => SpendPartitionOperation::Unpartition.name(),
         }
     }
 

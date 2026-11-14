@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::path::Path;
+use std::str::from_utf8;
 use std::sync::Mutex;
 
 use rstest::rstest;
@@ -320,7 +321,7 @@ async fn startup_no_conversion() {
     assert!(!catalog.is_empty());
     let statements: Vec<&str> = catalog
         .iter()
-        .map(|migration| std::str::from_utf8(&migration.sql).expect("UTF-8 migration SQL"))
+        .map(|migration| from_utf8(&migration.sql).expect("UTF-8 migration SQL"))
         .collect();
     let conversion: Vec<&str> = [
         SpendPartitionOperation::Partition,

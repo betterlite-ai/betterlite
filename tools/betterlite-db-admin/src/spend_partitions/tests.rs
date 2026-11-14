@@ -193,25 +193,31 @@ async fn dispatches_native_operation() {
     assert_eq!(status, ExitStatus::Success);
     assert_eq!(lines, vec![format!("out|{PARTITION_LINE}")]);
     assert_converted(&postgres).await;
-    let (repeat_status, repeat_lines) =
-        run_command(&["partition-spend-logs"], &url, &backend).await;
-    assert_eq!(repeat_status, ExitStatus::Failure);
+    assert_repeat_partition_fails(&url, &backend).await;
+    assert_unpartition_restores(&postgres, &url, &backend).await;
+    postgres.close().await;
+}
+
+async fn assert_repeat_partition_fails(url: &str, backend: &DbAdminBackend) {
+    let (status, lines) = run_command(&["partition-spend-logs"], url, backend).await;
+    assert_eq!(status, ExitStatus::Failure);
     assert!(
-        repeat_lines
+        lines
             .iter()
             .any(|line| line.contains("LiteLLM_SpendLogs_legacy"))
     );
+}
+
+async fn assert_unpartition_restores(postgres: &Postgres, url: &str, backend: &DbAdminBackend) {
     postgres
         .client
         .batch_execute(LIVE_SQL)
         .await
         .expect("the live spend log row");
-    let (restore_status, restore_lines) =
-        run_command(&["unpartition-spend-logs"], &url, &backend).await;
-    assert_eq!(restore_status, ExitStatus::Success);
-    assert_eq!(restore_lines, vec![format!("out|{UNPARTITION_LINE}")]);
-    assert_restored(&postgres).await;
-    postgres.close().await;
+    let (status, lines) = run_command(&["unpartition-spend-logs"], url, backend).await;
+    assert_eq!(status, ExitStatus::Success);
+    assert_eq!(lines, vec![format!("out|{UNPARTITION_LINE}")]);
+    assert_restored(postgres).await;
 }
 
 async fn table_present(postgres: &Postgres, table: &str) -> bool {
