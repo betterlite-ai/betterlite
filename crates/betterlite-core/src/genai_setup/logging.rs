@@ -51,8 +51,10 @@ pub fn log_pre_call(
     kwargs: &Object,
     call: &CallLog<'_>,
 ) -> Result<(), LoggingUpdateError> {
-    let logged_kwargs = decision_object(kwargs)?;
-    let optional_params = decision_object(call.config_dict)?;
+    let logged_kwargs: IndexMap<String, Json> =
+        serde_json::from_str(&serde_json::to_string(kwargs)?)?;
+    let optional_params: IndexMap<String, Json> =
+        serde_json::from_str(&serde_json::to_string(call.config_dict)?)?;
     let mut litellm_params = IndexMap::new();
     litellm_params.insert(
         "litellm_call_id".to_owned(),
@@ -76,10 +78,4 @@ pub fn log_pre_call(
         },
     )?;
     Ok(())
-}
-
-// B247 keeps its own Json type, and serde carries every JSON value between the two exactly
-fn decision_object(object: &Object) -> Result<IndexMap<String, Json>, serde_json::Error> {
-    let text = serde_json::to_string(object)?;
-    serde_json::from_str(&text)
 }
