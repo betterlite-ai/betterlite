@@ -16,6 +16,13 @@ betterlite-anthropic = { path = ".." }
 libfuzzer-sys = "0.4.9"
 
 [[bin]]
+name = "anthropic_completion"
+path = "fuzz_targets/anthropic_completion.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "anthropic_count_tokens"
 path = "fuzz_targets/anthropic_count_tokens.rs"
 test = false
