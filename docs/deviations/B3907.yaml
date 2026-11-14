@@ -44,6 +44,15 @@ deviations:
       betterlite has no process-wide mutable environment; the alerting links read the logger the request already holds.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L338-L348
   - what: >-
+      LangFuseLogger::stop gives the logger's MAX_LANGFUSE_INITIALIZED_CLIENTS slot back, once, and then releases
+      the tracing channel for the grace period. LiteLLM's stop() releases only the tracing channel; its client count
+      is decremented by DynamicLoggingCache when the entry expires, so a logger stopped by hand there keeps its slot
+      until eviction.
+    why: >-
+      The cache is injected and its removal hook calls stop(), so the slot release has to live on the logger; doing
+      it once keeps a second stop from freeing a slot another logger holds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py#L27-L38
+  - what: >-
       LangFuseLogger::flush returns whether every queued batch drained before the deadline and no batch failed;
       LiteLLM's flush() returns None and drops the channel's result.
     why: >-
