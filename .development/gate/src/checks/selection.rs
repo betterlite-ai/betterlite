@@ -84,11 +84,20 @@ pub(crate) fn prerequisite(id: &str) -> bool {
     .contains(&id)
 }
 
-// the dispatcher's final gate runs only these, since none builds; clippy and every other check run in CI on the task's pull request (stage 3)
+// cargo gate list --local prints these, and CI's lint part runs them beside clippy
 pub(crate) fn lint(id: &str) -> bool {
     match id {
         "deny" | "shear" => true,
         _ => prerequisite(id),
+    }
+}
+
+// stage 3: CI runs every other check on the task's pull request, and on 11-13 the local hooks, mypy and basedpyright took 1 to 3 minutes a call under load
+pub(crate) fn committed() -> Selection {
+    Selection {
+        only: vec!["committed".to_owned()],
+        skip: Vec::new(),
+        beside: Vec::new(),
     }
 }
 

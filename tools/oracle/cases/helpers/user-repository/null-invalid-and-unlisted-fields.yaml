@@ -1,0 +1,16 @@
+kind: helper
+name: nullable_json_text_and_invalid_scalar_shapes
+call:
+  user_repository:
+    records:
+      absent_user_record: null
+      nullable_json_text: {user_id: u, metadata: 'null', model_spend: 'null', model_max_budget: 'null'}
+      invalid_metadata_array: {user_id: u, metadata: '[]'}
+      invalid_model_spend_scalar: {user_id: u, model_spend: '1'}
+      malformed_metadata: {user_id: u, metadata: '{'}
+      unlisted_teams_string: {user_id: u, teams: '[]'}
+      no_recursive_string_decode: {user_id: u, metadata: '{"nested": "{\"a\": 1}"}'}
+      password_exclusion: {user_id: u, password: secret}
+env: {}
+compare:
+  ignore: []
