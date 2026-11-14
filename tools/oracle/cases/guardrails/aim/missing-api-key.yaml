@@ -1,0 +1,8 @@
+kind: helper
+name: aim-missing-api-key
+call:
+  b3750:
+    function: construct
+    settings: {api_key: null, api_base: "http://aim.test"}
+env: {AIM_API_KEY: ""}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+kind: helper
+name: aim-output-anonymize-action
+call:
+  b3750:
+    function: output
+    settings: {api_key: aim-oracle-key, api_base: "http://aim.test", litellm_version: "1.105.1"}
+    request_data: {messages: [{role: user, content: "my email is alice@example.com"}]}
+    output: "hello alice@example.com"
+    key_alias: null
+    answer: {required_action: {action_type: anonymize_action}, analysis_result: {policy_drill_down: {}}, redacted_chat: {all_redacted_messages: [{role: user, content: "my email is [REDACTED]"}, {role: assistant, content: "hello [REDACTED]"}]}}
+    answer_status: 200
+env: {}
+compare: {ignore: []}
