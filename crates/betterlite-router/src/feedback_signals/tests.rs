@@ -549,6 +549,21 @@ enum Behavior {
     false,
     DISENGAGED
 ))]
+#[case::disengagement_isnt_working(Behavior::Feedback(
+    None,
+    Some("this isn't working"),
+    None,
+    false,
+    DISENGAGED
+))]
+#[case::disengagement_abort(Behavior::Feedback(None, Some("abort"), None, false, DISENGAGED))]
+#[case::disengagement_talk_to_human(Behavior::Feedback(
+    None,
+    Some("talk to human"),
+    None,
+    false,
+    DISENGAGED
+))]
 #[case::threaded_detectors(Behavior::Threaded)]
 fn feedback_signals_behaviors(#[case] behavior: Behavior) {
     match behavior {
