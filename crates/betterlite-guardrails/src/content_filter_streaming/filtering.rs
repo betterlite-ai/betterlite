@@ -226,17 +226,17 @@ pub(super) fn earlier_match(
     check: DetectionCheck,
     categories: &CategoryLoadResult,
 ) -> Option<CategoryMatch> {
-    let Some(found) = found else {
+    let Some(scanned) = found else {
         return carried.cloned();
     };
     match carried {
-        Some(carried)
-            if check_position(check, carried, categories)
-                <= check_position(check, &found, categories) =>
+        Some(prefix)
+            if check_position(check, prefix, categories)
+                <= check_position(check, &scanned, categories) =>
         {
-            Some(carried.clone())
+            Some(prefix.clone())
         }
-        _ => Some(found),
+        _ => Some(scanned),
     }
 }
 

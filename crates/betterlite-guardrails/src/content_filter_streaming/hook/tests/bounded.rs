@@ -214,8 +214,9 @@ fn short_items(opening: &str, final_text: &str) -> Vec<GuardrailValue> {
 }
 
 fn assert_buffer_bounded(driven: &DrivenStream) {
-    assert!(driven.max_buffered_len <= driven.context_chars * 2);
-    assert!(driven.max_carried_len <= driven.context_chars * 2);
+    let bar = driven.context_chars.saturating_mul(2);
+    assert!(driven.max_buffered_len <= bar);
+    assert!(driven.max_carried_len <= bar);
 }
 
 fn assert_stream_matches_untrimmed(case: &StreamCase, driven: &DrivenStream) {

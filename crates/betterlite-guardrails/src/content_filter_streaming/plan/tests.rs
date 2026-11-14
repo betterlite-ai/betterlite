@@ -43,7 +43,7 @@ fn word(keyword: &str) -> BlockedWord {
     }
 }
 
-fn source<'source>(
+const fn source<'source>(
     categories: &'source CategoryLoadResult,
     blocked_words: &'source [BlockedWord],
 ) -> ContentFilterSource<'source> {

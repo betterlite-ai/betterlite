@@ -68,7 +68,7 @@ fn stream_case(items: Vec<GuardrailValue>) -> StreamCase {
     }
 }
 
-fn stream_source(case: &StreamCase) -> ContentFilterSource<'_> {
+const fn stream_source(case: &StreamCase) -> ContentFilterSource<'_> {
     ContentFilterSource {
         categories: &case.categories,
         patterns: &case.patterns,

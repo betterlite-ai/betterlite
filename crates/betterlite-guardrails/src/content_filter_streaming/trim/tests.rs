@@ -26,7 +26,7 @@ fn word(keyword: &str, action: ContentFilterAction) -> BlockedWord {
     }
 }
 
-fn streamed(detection: ContentFilterDetection) -> StreamedDetection {
+const fn streamed(detection: ContentFilterDetection) -> StreamedDetection {
     StreamedDetection {
         check: DetectionCheck::BlockedWord,
         position: (0, 0),
@@ -77,7 +77,7 @@ fn phrase_category() -> CategoryLoadResult {
     categories
 }
 
-fn source<'source>(
+const fn source<'source>(
     categories: &'source CategoryLoadResult,
     patterns: &'source [CompiledPattern],
     blocked_words: &'source [BlockedWord],
