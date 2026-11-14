@@ -1,0 +1,1 @@
+[{"role":"user","content":[{"type":"text","text":"hi"},{"type":"image_url","image_url":{"url":"https://example.test/a.png"}},{"type":"file","file":{"file_data":"aGVsbG8=","format":"image/png"}}]}]
