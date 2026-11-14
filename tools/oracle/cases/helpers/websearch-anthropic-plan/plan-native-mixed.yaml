@@ -1,0 +1,39 @@
+kind: helper
+name: plan-native-mixed
+call:
+  b4118:
+    cases:
+      - model: claude-sonnet-4-5
+        messages:
+          - role: user
+            content: hi
+        tool_calls:
+          - id: toolu_1
+            type: tool_use
+            name: web_search
+            input: {query: first}
+          - id: toolu_2
+            type: tool_use
+            name: web_search
+            input: {query: second}
+        optional_params: {}
+        kwargs:
+          _websearch_interception_emit_native_blocks: true
+        searches:
+          - kind: success
+            text: one
+          - kind: rate_limit
+            message: boom
+env: {}
+compare:
+  ignore:
+    - pointer: /value/results/0/plan/metadata/websearch_native_blocks/0/id
+      why: fresh random srvtoolu_ uuid minted on every call
+    - pointer: /value/results/0/plan/metadata/websearch_native_blocks/1/tool_use_id
+      why: fresh random srvtoolu_ uuid minted on every call
+    - pointer: /value/results/0/plan/metadata/websearch_native_blocks/2/id
+      why: fresh random srvtoolu_ uuid minted on every call
+    - pointer: /value/results/0/plan/metadata/websearch_native_blocks/3/tool_use_id
+      why: fresh random srvtoolu_ uuid minted on every call
+    - pointer: /value/results/0/plan/request_patch/messages/2/content/1/content
+      why: LiteLLM prefixes the message with the Python exception class; the wording of a search failure is ignored
