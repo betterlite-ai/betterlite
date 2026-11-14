@@ -1,0 +1,5 @@
+task: B9090
+deviations:
+  - what: The retained dashboard is fetched and verified into target/dashboard instead of being committed under ui/litellm-dashboard, and later tasks change it only through reviewed patches.
+    why: A pinned archive keeps the MIT application byte-for-byte without adding thousands of upstream files to the repository or to a worker's diff.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/README.md#L1-L21
