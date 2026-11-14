@@ -32,7 +32,7 @@ call:
         supported_params: ["n", size, tools, web_search_options]
         optional_params: {}
         parse_image_config_string: false
-        pre_mapped: {tools: [{googleSearch: {}}]}
+        pre_mapped: {tools: [{urlContext: {}}]}
         response: {}
       - model: gemini-b1334-image
         catalog_supports_image_size: null

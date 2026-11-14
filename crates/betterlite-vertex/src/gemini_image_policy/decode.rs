@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use betterlite_prompts::arguments::json::{Json, Object};
 
 use super::error::GeminiImagePolicyError;
@@ -16,7 +18,7 @@ pub fn decode_image_options(bytes: &[u8]) -> Result<ImageOptions, GeminiImagePol
             limit: MAX_IMAGE_OPTIONS_BYTES,
         });
     }
-    let text = std::str::from_utf8(bytes).map_err(GeminiImagePolicyError::OptionsNotUtf8)?;
+    let text = from_utf8(bytes).map_err(GeminiImagePolicyError::OptionsNotUtf8)?;
     let trimmed = text.trim();
     if !trimmed.starts_with(['{', '[', '"']) {
         return Ok(ImageOptions::Size(trimmed.to_owned()));

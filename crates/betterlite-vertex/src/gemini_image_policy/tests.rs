@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs::read;
 use std::path::PathBuf;
 
 use betterlite_config::sections::Section as _;
@@ -9,6 +10,7 @@ use betterlite_models::decisions::Json as ResponseJson;
 use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 use rstest::rstest;
+use serde_json::Number;
 
 use super::decode::{ImageOptions, decode_image_options};
 use super::error::GeminiImagePolicyError;
@@ -416,9 +418,9 @@ fn web_search_options_add_one_google_search() {
 #[test]
 fn web_search_options_never_add_a_second_search_tool() {
     let params = object(r#"{"web_search_options":{}}"#);
-    let mapped = object(r#"{"tools":[{"googleSearch":{}}]}"#);
+    let mapped = object(r#"{"tools":[{"urlContext":{}}]}"#);
     let tools = map_gemini_image_tools_params(&params, &mapped, &settings()).expect("tools");
-    assert_eq!(wrapped(&tools), json(r#"{"tools":[{"googleSearch":{}}]}"#));
+    assert_eq!(wrapped(&tools), json(r#"{"tools":[{"urlContext":{}}]}"#));
 }
 
 #[test]
@@ -537,7 +539,7 @@ fn generation_config_takes_the_first_candidate_alias(
     let generation = image_generation_config("gemini-x", &object(optional), None);
     assert_eq!(
         generation.get("candidateCount"),
-        Some(&Json::Number(serde_json::Number::from(expected)))
+        Some(&Json::Number(Number::from(expected)))
     );
 }
 
@@ -637,7 +639,7 @@ fn malformed_image_options_are_rejected() {
         decode_image_options(&[0xff, 0xfe]),
         Err(GeminiImagePolicyError::OptionsNotUtf8(_))
     ));
-    let oversized = vec![b'a'; 65_537];
+    let oversized = vec![b'a'; 0x1_0001];
     assert!(matches!(
         decode_image_options(&oversized),
         Err(GeminiImagePolicyError::OptionsTooLarge { .. })
@@ -646,7 +648,7 @@ fn malformed_image_options_are_rejected() {
 
 #[rstest]
 fn replays_the_image_options_corpus(#[files("fuzz/corpus/image_options/*")] path: PathBuf) {
-    let bytes = std::fs::read(&path).expect("corpus file");
+    let bytes = read(&path).expect("corpus file");
     let name = path
         .file_name()
         .and_then(|name| name.to_str())
