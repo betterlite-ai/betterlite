@@ -168,7 +168,7 @@ where
     Provider: ProviderFailure,
 {
     let mut exception = exception(error.to_string(), name, provider);
-    exception.exception_type = "ValueError".to_owned();
+    "ValueError".clone_into(&mut exception.exception_type);
     exception
 }
 
